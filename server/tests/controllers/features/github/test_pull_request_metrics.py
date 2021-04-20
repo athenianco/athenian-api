@@ -7,8 +7,6 @@ import pandas as pd
 import pytest
 from sqlalchemy import select
 
-from athenian.api.controllers.features.entries import calc_pull_request_facts_github, \
-    calc_pull_request_metrics_line_github
 from athenian.api.controllers.features.github.pull_request_metrics import AllCounter, \
     ClosedCalculator, CycleCounter, CycleCounterWithQuantiles, CycleTimeCalculator, \
     DoneCalculator, FlowRatioCalculator, histogram_calculators, LeadCounter, \
@@ -326,27 +324,35 @@ def test_pull_request_metrics_counts_q(pr_samples, cls_q, cls):  # noqa: F811
                          itertools.product(*([[False, True]] * 2)))
 @with_defer
 async def test_calc_pull_request_metrics_line_github_cache(
-        branches, default_branches, mdb, pdb, rdb, cache, memcached, with_memcached,
+        metrics_calculator_factory, branches, default_branches,
+        mdb, pdb, rdb, cache, memcached, with_memcached,
         release_match_setting_tag, with_mine_cache_wipe):
     if with_memcached:
         if not has_memcached:
             raise pytest.skip("no memcached")
         cache = memcached
+
+    metrics_calculator = metrics_calculator_factory(
+        1, (6366825,), with_cache=True, with_memcached=with_memcached)
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2019, month=10, day=1, tzinfo=timezone.utc)
     args = ([PullRequestMetricID.PR_CYCLE_TIME], [[date_from, date_to]], [0, 1], [],
             [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(), False,
-            release_match_setting_tag, False, 1, (6366825,), mdb, pdb, rdb, cache)
-    metrics1 = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0][0]
+            release_match_setting_tag, False)
+    metrics1 = (
+        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
+    )[0][0][0][0][0][0]
     await wait_deferred()
-    assert await calc_pull_request_metrics_line_github.reset_cache(*args)
+    assert await metrics_calculator.calc_pull_request_metrics_line_github.reset_cache(*args)
     if with_mine_cache_wipe:
         assert await PullRequestMiner._mine.reset_cache(
             None, date_from, date_to, {"src-d/go-git"}, {}, LabelFilter.empty(),
             JIRAFilter.empty(), branches, default_branches,
             False, release_match_setting_tag, None, None, None, True,
             1, (6366825,), mdb, pdb, rdb, cache)
-    metrics2 = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0][0]
+    metrics2 = (
+        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
+    )[0][0][0][0][0][0]
     assert metrics1.exists and metrics2.exists
     assert metrics1.value == metrics2.value
     assert metrics1.confidence_score() == metrics2.confidence_score()
@@ -355,44 +361,50 @@ async def test_calc_pull_request_metrics_line_github_cache(
 
 @with_defer
 async def test_calc_pull_request_metrics_line_github_changed_releases(
-        mdb, pdb, rdb, cache, release_match_setting_tag):
+        metrics_calculator_factory, mdb, pdb, rdb, cache, release_match_setting_tag):
+    metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2017, month=10, day=1, tzinfo=timezone.utc)
     args = [[PullRequestMetricID.PR_CYCLE_TIME], [[date_from, date_to]], [0, 1], [],
             [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(), False,
-            release_match_setting_tag, False, 1, (6366825,), mdb, pdb, rdb, cache]
-    metrics1 = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0][0]
+            release_match_setting_tag, False]
+    metrics1 = (
+        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
+    )[0][0][0][0][0][0]
     release_match_setting_tag = ReleaseSettings({
         "github.com/src-d/go-git": ReleaseMatchSetting("master", ".*", ReleaseMatch.branch),
     })
-    args[-8] = release_match_setting_tag
-    metrics2 = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0][0]
+    args[-2] = release_match_setting_tag
+    metrics2 = (
+        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
+    )[0][0][0][0][0][0]
     assert metrics1 != metrics2
 
 
 @with_defer
 async def test_pr_list_miner_match_metrics_all_count_david_bug(
-        mdb, pdb, rdb, release_match_setting_tag):
+        metrics_calculator_factory, mdb, pdb, rdb, release_match_setting_tag):
+    metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(year=2016, month=11, day=17, tzinfo=timezone.utc)
     time_middle = time_from + timedelta(days=14)
     time_to = datetime(year=2016, month=12, day=15, tzinfo=timezone.utc)
-    metric1 = (await calc_pull_request_metrics_line_github(
+    metric1 = (await metrics_calculator_no_cache.calc_pull_request_metrics_line_github(
         [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_middle]], [0, 1], [],
         [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(), False,
-        release_match_setting_tag, False, 1, (6366825,), mdb, pdb, rdb, None,
+        release_match_setting_tag, False,
     ))[0][0][0][0][0][0].value
     await wait_deferred()
-    metric2 = (await calc_pull_request_metrics_line_github(
+    metric2 = (await metrics_calculator_no_cache.calc_pull_request_metrics_line_github(
         [PullRequestMetricID.PR_ALL_COUNT], [[time_middle, time_to]], [0, 1], [],
         [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(), False,
-        release_match_setting_tag, False, 1, (6366825,), mdb, pdb, rdb, None,
+        release_match_setting_tag, False,
     ))[0][0][0][0][0][0].value
     await wait_deferred()
     metric1_ext, metric2_ext = (m[0].value for m in (
-        await calc_pull_request_metrics_line_github(
+        await metrics_calculator_no_cache.calc_pull_request_metrics_line_github(
             [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_middle, time_to]],
             [0, 1], [], [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(), False,
-            release_match_setting_tag, False, 1, (6366825,), mdb, pdb, rdb, None,
+            release_match_setting_tag, False,
         )
     )[0][0][0][0])
     assert metric1 == metric1_ext
@@ -401,17 +413,22 @@ async def test_pr_list_miner_match_metrics_all_count_david_bug(
 
 @with_defer
 async def test_calc_pull_request_metrics_line_github_exclude_inactive(
-        mdb, pdb, rdb, cache, release_match_setting_tag):
+        metrics_calculator_factory, mdb, pdb, rdb, cache, release_match_setting_tag):
+    metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2017, month=1, day=12, tzinfo=timezone.utc)
     args = [[PullRequestMetricID.PR_ALL_COUNT], [[date_from, date_to]], [0, 1], [],
             [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(),
-            False, release_match_setting_tag, False, 1, (6366825,), mdb, pdb, rdb, cache]
-    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0][0]
+            False, release_match_setting_tag, False]
+    metrics = (
+        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
+    )[0][0][0][0][0][0]
     await wait_deferred()
     assert metrics.value == 7
     args[8] = True
-    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0][0]
+    metrics = (
+        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
+    )[0][0][0][0][0][0]
     await wait_deferred()
     assert metrics.value == 6
     date_from = datetime(year=2017, month=5, day=23, tzinfo=timezone.utc)
@@ -419,36 +436,49 @@ async def test_calc_pull_request_metrics_line_github_exclude_inactive(
     args[0] = [PullRequestMetricID.PR_RELEASE_COUNT]
     args[1] = [[date_from, date_to]]
     args[8] = False
-    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0][0]
+    metrics = (
+        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
+    )[0][0][0][0][0][0]
     await wait_deferred()
     assert metrics.value == 70
-    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0][0]
+    metrics = (
+        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
+    )[0][0][0][0][0][0]
     await wait_deferred()
     assert metrics.value == 70
     args[8] = True
-    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0][0]
+    metrics = (
+        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
+    )[0][0][0][0][0][0]
     assert metrics.value == 71
 
 
 @with_defer
 async def test_calc_pull_request_metrics_line_github_tag_after_branch(
-        mdb, pdb, rdb, cache, release_match_setting_branch, release_match_setting_tag_or_branch):
+        metrics_calculator_factory, mdb, pdb, rdb, cache,
+        release_match_setting_branch, release_match_setting_tag_or_branch):
+    metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2018, month=1, day=12, tzinfo=timezone.utc)
     args = [[PullRequestMetricID.PR_RELEASE_TIME], [[date_from, date_to]], [0, 1], [],
             [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(),
-            False, release_match_setting_branch, False, 1, (6366825,), mdb, pdb, rdb, cache]
-    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0][0]
+            False, release_match_setting_branch, False]
+    metrics = (
+        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
+    )[0][0][0][0][0][0]
     await wait_deferred()
     assert metrics.value == timedelta(seconds=395)
-    args[-8] = release_match_setting_tag_or_branch
-    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0][0]
+    args[-2] = release_match_setting_tag_or_branch
+    metrics = (
+        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
+    )[0][0][0][0][0][0]
     assert metrics.value == timedelta(days=41, seconds=19129)
 
 
 @with_defer
 async def test_calc_pull_request_metrics_line_jira_map(
-        mdb, pdb, rdb, cache, release_match_setting_tag_or_branch):
+        metrics_calculator_factory, mdb, pdb, rdb, cache, release_match_setting_tag_or_branch):
+    metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2018, month=1, day=12, tzinfo=timezone.utc)
     metrics = [
@@ -458,9 +488,10 @@ async def test_calc_pull_request_metrics_line_jira_map(
     ]
     args = [metrics, [[date_from, date_to]], [0, 1], [],
             [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(),
-            False, release_match_setting_tag_or_branch, False,
-            1, (6366825,), mdb, pdb, rdb, cache]
-    metrics = (await calc_pull_request_metrics_line_github(*args))[0][0][0][0][0]
+            False, release_match_setting_tag_or_branch, False]
+    metrics = (
+        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
+    )[0][0][0][0][0]
     await wait_deferred()
     assert metrics[0].value == 0.02527075812274368
     assert metrics[1].value == 0.01195219123505976
@@ -469,7 +500,8 @@ async def test_calc_pull_request_metrics_line_jira_map(
 
 @with_defer
 async def test_calc_pull_request_metrics_deep_filters(
-        mdb, pdb, rdb, cache, release_match_setting_tag_or_branch):
+        metrics_calculator_factory, mdb, pdb, rdb, cache, release_match_setting_tag_or_branch):
+    metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     settings = release_match_setting_tag_or_branch.copy()
     for r in ("gitbase", "hercules"):
         settings.native["src-d/" + r] = settings.prefixed["github.com/src-d/" + r] = \
@@ -486,7 +518,7 @@ async def test_calc_pull_request_metrics_deep_filters(
         [[date_from, date_to], [date_from, date_from + (date_to - date_from) / 2, date_to]],
         [0, 1], [0, 50, 10000], [{"src-d/go-git"}, {"src-d/gitbase"}, {"src-d/hercules"}],
         {}, LabelFilter.empty(), JIRAFilter.empty(),
-        False, settings, False, 1, (6366825,), mdb, pdb, rdb, cache,
+        False, settings, False,
     ]
     # 1. line: 2 groups
     # 2. repository: 3 groups
@@ -494,7 +526,7 @@ async def test_calc_pull_request_metrics_deep_filters(
     # 4. time series primary: 2 groups
     # 5. time series secondary: 1 and 2 groups
     # 6. metrics: 3 groups
-    metrics = (await calc_pull_request_metrics_line_github(*args))
+    metrics = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))
     ground_truth = np.array([
         [  # line group 1
             [  # repository group 1
@@ -610,65 +642,65 @@ def test_pull_request_metric_calculator_ensemble_empty(pr_samples):
 
 @with_defer
 async def test_calc_pull_request_facts_github_open_precomputed(
-        mdb, pdb, rdb, release_match_setting_tag):
+        metrics_calculator_factory, mdb, pdb, rdb, release_match_setting_tag):
+    metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
     args = (time_from, time_to, {"src-d/go-git"}, {},
             LabelFilter.empty(), JIRAFilter.empty(),
-            False, release_match_setting_tag, False, False,
-            1, (6366825,), mdb, pdb, rdb, None)
-    facts1 = await calc_pull_request_facts_github(*args)
+            False, release_match_setting_tag, False, False)
+    facts1 = await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
     await wait_deferred()
     open_facts = await pdb.fetch_all(select([GitHubOpenPullRequestFacts]))
     assert len(open_facts) == 21
-    facts2 = await calc_pull_request_facts_github(*args)
+    facts2 = await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
     assert set(facts1) == set(facts2)
 
 
 @with_defer
 async def test_calc_pull_request_facts_github_unreleased_precomputed(
-        mdb, pdb, rdb, release_match_setting_tag):
+        metrics_calculator_factory, mdb, pdb, rdb, release_match_setting_tag):
+    metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(year=2019, month=10, day=30, tzinfo=timezone.utc)
     time_to = datetime(year=2019, month=11, day=2, tzinfo=timezone.utc)
     args = (time_from, time_to, {"src-d/go-git"}, {},
             LabelFilter.empty(), JIRAFilter.empty(),
-            False, release_match_setting_tag, False, False,
-            1, (6366825,), mdb, pdb, rdb, None)
-    facts1 = await calc_pull_request_facts_github(*args)
+            False, release_match_setting_tag, False, False)
+    facts1 = await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
     await wait_deferred()
     unreleased_facts = await pdb.fetch_all(select([GitHubMergedPullRequestFacts]))
     assert len(unreleased_facts) == 2
     for row in unreleased_facts:
         assert row[GitHubMergedPullRequestFacts.data.key] is not None, \
             row[GitHubMergedPullRequestFacts.pr_node_id.key]
-    facts2 = await calc_pull_request_facts_github(*args)
+    facts2 = await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
     assert set(facts1) == set(facts2)
 
 
 @with_defer
 async def test_calc_pull_request_facts_github_jira(
-        mdb, pdb, rdb, release_match_setting_tag, cache):
+        metrics_calculator_factory, mdb, pdb, rdb, release_match_setting_tag, cache):
+    metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
+    metrics_calculator_cache_only = metrics_calculator_factory(1, (6366825,), cache_only=True)
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
     args = [time_from, time_to, {"src-d/go-git"}, {},
             LabelFilter.empty(), JIRAFilter.empty(),
-            False, release_match_setting_tag, False, False,
-            1, (6366825,), mdb, pdb, rdb, cache]
-    facts = await calc_pull_request_facts_github(*args)
+            False, release_match_setting_tag, False, False]
+    facts = await metrics_calculator.calc_pull_request_facts_github(*args)
     await wait_deferred()
     assert sum(bool(f.released) for f in facts) == 234
     args[5] = JIRAFilter(1, ["10003", "10009"], LabelFilter({"performance", "task"}, set()),
                          set(), set(), False)
-    facts = await calc_pull_request_facts_github(*args)
+    facts = await metrics_calculator.calc_pull_request_facts_github(*args)
     assert sum(bool(f.released) for f in facts) == 16
 
     args[5] = JIRAFilter.empty()
-    args[-7] = True
-    facts = await calc_pull_request_facts_github(*args)
+    args[-1] = True
+    facts = await metrics_calculator.calc_pull_request_facts_github(*args)
     assert sum(bool(f.jira_id) for f in facts) == 60
     await wait_deferred()
-    args[-4] = args[-3] = args[-2] = None
-    facts = await calc_pull_request_facts_github(*args)
+    facts = await metrics_calculator_cache_only.calc_pull_request_facts_github(*args)
     assert sum(bool(f.jira_id) for f in facts) == 60
 
 

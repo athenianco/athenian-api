@@ -215,28 +215,37 @@ def cached(exptime: Union[int, Callable[..., int]],
 def cached_methods(cls):
     """Decorate class to properly support cached instance methods."""
     for name, func in inspect.getmembers(cls, predicate=inspect.isfunction):
-        if getattr(func, "__cached__", False) and not getattr(func, "__cached_method__", False):
-            def generate_cls_method_shim(func):
-                def cls_method_shim(self):
-                    async def cached_wrapper(*args, **kwargs):
-                        return await func(self, *args, **kwargs)
+        outer_func = func
 
-                    async def reset_cache(*args, **kwargs):
-                        return await func.reset_cache(self, *args, **kwargs)
+        while not getattr(func, "__cached__", False) or getattr(func, "__cached_method__", False):
+            # This is needed in case the `@cached` decorator is not the outermost one
+            if not (func := getattr(func, "__wrapped__", None)):
+                break
 
-                    @functools.wraps(func.cache_key)
-                    def cache_key(*args, **kwargs):
-                        return func.cache_key(self, *args, **kwargs)
+        if not func:
+            continue
 
-                    cached_wrapper.__cached__ = True
-                    cached_wrapper.__cached_method__ = True  # do not screw inheritance
-                    cached_wrapper.reset_cache = wraps(reset_cache, func.reset_cache)
-                    cached_wrapper.cache_key = cache_key
-                    return wraps(cached_wrapper, func)
+        def generate_cls_method_shim(f):
+            def cls_method_shim(self):
+                async def cached_wrapper(*args, **kwargs):
+                    return await f(self, *args, **kwargs)
 
-                return cls_method_shim
+                async def reset_cache(*args, **kwargs):
+                    return await f.reset_cache(self, *args, **kwargs)
 
-            setattr(cls, name, property(generate_cls_method_shim(func)))
+                @functools.wraps(f.cache_key)
+                def cache_key(*args, **kwargs):
+                    return f.cache_key(self, *args, **kwargs)
+
+                cached_wrapper.__cached__ = True
+                cached_wrapper.__cached_method__ = True  # do not screw inheritance
+                cached_wrapper.reset_cache = wraps(reset_cache, f.reset_cache)
+                cached_wrapper.cache_key = cache_key
+                return wraps(cached_wrapper, f)
+
+            return cls_method_shim
+
+        setattr(cls, name, property(generate_cls_method_shim(outer_func)))
     return cls
 
 

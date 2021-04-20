@@ -11,7 +11,6 @@ import pytest
 from sqlalchemy import delete, insert, select
 
 from athenian.api.cache import setup_cache_metrics
-from athenian.api.controllers.features.entries import calc_pull_request_facts_github
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.release_mine import mine_releases
 from athenian.api.controllers.settings import ReleaseMatch
@@ -65,14 +64,15 @@ async def test_filter_repositories_no_repos(client, headers):
 @pytest.mark.filter_repositories
 @with_defer
 async def test_filter_repositories_smoke(
-        client, headers, mdb, pdb, rdb, release_match_setting_tag):
+        metrics_calculator_factory, client, headers, mdb, pdb, rdb, release_match_setting_tag):
+    metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(2017, 9, 15, tzinfo=timezone.utc)
     time_to = datetime(2017, 9, 18, tzinfo=timezone.utc)
     args = (time_from, time_to, {"src-d/go-git"}, {},
             LabelFilter.empty(), JIRAFilter.empty(),
             False, release_match_setting_tag,
-            False, False, 1, (6366825,), mdb, pdb, rdb, None)
-    await calc_pull_request_facts_github(*args)
+            False, False)
+    await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
     await wait_deferred()
     body = {
         "date_from": "2017-09-16",
@@ -95,14 +95,14 @@ async def test_filter_repositories_smoke(
 @pytest.mark.filter_repositories
 @with_defer
 async def test_filter_repositories_exclude_inactive(
-        client, headers, mdb, pdb, rdb, release_match_setting_tag):
+        metrics_calculator_factory, client, headers, mdb, pdb, rdb, release_match_setting_tag):
+    metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(2017, 9, 15, tzinfo=timezone.utc)
     time_to = datetime(2017, 9, 18, tzinfo=timezone.utc)
     args = (time_from, time_to, {"src-d/go-git"}, {},
             LabelFilter.empty(), JIRAFilter.empty(),
-            False, release_match_setting_tag, False, False,
-            1, (6366825,), mdb, pdb, rdb, None)
-    await calc_pull_request_facts_github(*args)
+            False, release_match_setting_tag, False, False)
+    await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
     await wait_deferred()
     body = {
         "date_from": "2017-09-16",

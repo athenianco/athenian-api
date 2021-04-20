@@ -26,7 +26,7 @@ from athenian.api.async_utils import gather
 from athenian.api.cache import setup_cache_metrics
 from athenian.api.controllers.account import copy_teams_as_needed, generate_jira_invitation_link, \
     get_metadata_account_ids
-from athenian.api.controllers.features.entries import calc_pull_request_facts_github
+from athenian.api.controllers.features.entries import MetricEntriesCalculator
 from athenian.api.controllers.invitation_controller import fetch_github_installation_progress
 from athenian.api.controllers.jira import match_jira_identities
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
@@ -200,7 +200,14 @@ def main():
                     await delete_force_push_dropped_prs(
                         repos, reposet.owner_id, meta_ids, mdb, pdb, None)
                 log.info("Extracting PR facts")
-                facts = await calc_pull_request_facts_github(
+                facts = await MetricEntriesCalculator(
+                    reposet.owner_id,
+                    meta_ids,
+                    mdb,
+                    pdb,
+                    rdb,
+                    None,  # yes, disable the cache
+                ).calc_pull_request_facts_github(
                     time_from,
                     time_to,
                     repos,
@@ -211,12 +218,6 @@ def main():
                     settings,
                     True,
                     False,
-                    reposet.owner_id,
-                    meta_ids,
-                    mdb,
-                    pdb,
-                    rdb,
-                    None,  # yes, disable the cache
                 )
                 if not reposet.precomputed and slack is not None:
                     prs = len(facts)

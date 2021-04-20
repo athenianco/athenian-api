@@ -5,7 +5,7 @@ from aiohttp import web
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
 from athenian.api.controllers.account import get_metadata_account_ids
-from athenian.api.controllers.features.entries import METRIC_ENTRIES
+from athenian.api.controllers.calculator_selector import get_calculator_for_user
 from athenian.api.controllers.features.histogram import HistogramParameters, Scale
 from athenian.api.controllers.metrics_controller import compile_repos_and_devs_prs
 from athenian.api.controllers.settings import Settings
@@ -28,8 +28,14 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
     filters, repos = await compile_repos_and_devs_prs(filt.for_, request, filt.account, meta_ids)
     time_from, time_to = filt.resolve_time_from_and_to()
-    release_settings = \
-        await Settings.from_request(request, filt.account).list_release_matches(repos)
+    services = set(s for s, _ in filters)
+    release_settings, calculators = await gather(
+        Settings.from_request(request, filt.account).list_release_matches(repos),
+        get_calculator_for_user(
+            services, filt.account, meta_ids, request.uid, getattr(request, "god_id", None),
+            request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
+        ),
+    )
     result = []
 
     async def calculate_for_set_histograms(service, repos, withgroups, labels, jira, for_set):
@@ -41,12 +47,12 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
                 bins=h.bins,
                 ticks=tuple(h.ticks) if h.ticks is not None else None,
             )].append(h.metric)
+        calculator = calculators[service]
         try:
-            histograms = await METRIC_ENTRIES[service]["prs_histogram"](
+            histograms = await calculator.calc_pull_request_histograms_github(
                 defs, time_from, time_to, filt.quantiles or (0, 1), for_set.lines or [],
                 repos, withgroups, labels, jira, filt.exclude_inactive, release_settings,
-                filt.fresh, filt.account, meta_ids,
-                request.mdb, request.pdb, request.rdb, request.cache)
+                filt.fresh)
         except ValueError as e:
             raise ResponseError(InvalidRequestError(str(e))) from None
         for line_groups in histograms:

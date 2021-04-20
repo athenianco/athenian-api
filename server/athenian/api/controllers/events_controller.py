@@ -10,7 +10,7 @@ from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
 from athenian.api.controllers.account import get_metadata_account_ids
-from athenian.api.controllers.features.entries import calc_pull_request_facts_github
+from athenian.api.controllers.features.entries import MetricEntriesCalculator
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import extract_branches
@@ -207,8 +207,9 @@ async def clear_precomputed_events(request: AthenianWebRequest, body: dict) -> w
             JIRAFilter.empty(), settings, prefixer, model.account, meta_ids, mdb, pdb, rdb, None,
             force_fresh=True)
         await wait_deferred()
-        await calc_pull_request_facts_github(
-            time_from, time_to, set(repos), {}, LabelFilter.empty(), JIRAFilter.empty(),
-            False, settings, True, False, model.account, meta_ids, mdb, pdb, rdb, None)
+        await MetricEntriesCalculator(
+            model.account, meta_ids, mdb, pdb, rdb, None).calc_pull_request_facts_github(
+                time_from, time_to, set(repos), {}, LabelFilter.empty(), JIRAFilter.empty(),
+                False, settings, True, False)
         await wait_deferred()
     return web.Response(status=200)

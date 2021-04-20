@@ -1,6 +1,5 @@
 from datetime import datetime, timezone
 
-from athenian.api.controllers.features.entries import calc_developer_metrics_github
 from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.developer import DeveloperTopic
@@ -9,7 +8,8 @@ from athenian.api.defer import with_defer
 
 @with_defer
 async def test_developer_metrics_smoke(
-        pdb, mdb, rdb, release_match_setting_tag):
+        metrics_calculator_factory, pdb, mdb, rdb, release_match_setting_tag):
+    metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     utc = timezone.utc
     requested_topics = {
         DeveloperTopic.commits_pushed,
@@ -25,7 +25,7 @@ async def test_developer_metrics_smoke(
         DeveloperTopic.review_rejections,
         DeveloperTopic.review_neutrals,
     }
-    metrics, topics = await calc_developer_metrics_github(
+    metrics, topics = await metrics_calculator_no_cache.calc_developer_metrics_github(
         [["mcuadros"], ["smola"]],
         [["src-d/go-git"]],
         [[datetime(2017, 1, 1, tzinfo=utc),
@@ -36,9 +36,7 @@ async def test_developer_metrics_smoke(
         requested_topics,
         LabelFilter.empty(),
         JIRAFilter.empty(),
-        release_match_setting_tag,
-        1,
-        (6366825,), mdb, pdb, rdb, None)
+        release_match_setting_tag)
     assert set(topics) == requested_topics
     metrics = metrics.swapaxes(1, 2)  # the test was written before the axes swap
     order = [
