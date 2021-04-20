@@ -201,6 +201,8 @@ def main():
                         repos, reposet.owner_id, meta_ids, mdb, pdb, None)
                 log.info("Extracting PR facts")
                 facts = await MetricEntriesCalculator(
+                    reposet.owner_id,
+                    meta_ids,
                     mdb,
                     pdb,
                     rdb,
@@ -216,8 +218,6 @@ def main():
                     settings,
                     True,
                     False,
-                    reposet.owner_id,
-                    meta_ids,
                 )
                 if not reposet.precomputed and slack is not None:
                     prs = len(facts)

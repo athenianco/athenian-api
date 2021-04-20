@@ -1,4 +1,4 @@
-from typing import Callable, Optional
+from typing import Callable, Optional, Tuple
 
 import aiomcache
 from sqlalchemy import and_, select
@@ -12,6 +12,7 @@ from athenian.api.typing_utils import DatabaseLike
 async def get_calculator_for_user(
     service: str,
     account_id: int,
+    meta_ids: Tuple[int, ...],
     user_id: str,
     god_id: Optional[str],
     sdb: DatabaseLike,
@@ -26,8 +27,8 @@ async def get_calculator_for_user(
 
     def _get_calculator(variation=None):
         return get_calculator(
-            service, mdb, pdb, rdb, cache, variation=variation, raise_err=raise_err,
-            base_module=base_module,
+            service, account_id, meta_ids, mdb, pdb, rdb, cache,
+            variation=variation, raise_err=raise_err, base_module=base_module,
         )
 
     feature_name_prefix = METRIC_ENTRIES_VARIATIONS_PREFIX[service]

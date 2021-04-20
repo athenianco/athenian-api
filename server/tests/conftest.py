@@ -465,23 +465,24 @@ async def rdb(persistentdata_db, loop, request):
 
 
 @pytest.fixture(scope="function")
-async def metrics_calculator(mdb, pdb, rdb, cache):
-    return MetricEntriesCalculator(mdb, pdb, rdb, cache)
+async def metrics_calculator_factory(mdb, pdb, rdb, cache, memcached):
 
+    def build(account_id, meta_ids,
+              with_cache=False, with_memcached=False, cache_only=False):
+        if cache_only:
+            return MetricEntriesCalculator(account_id, meta_ids, None, None, None,
+                                           memcached if with_memcached else cache)
 
-@pytest.fixture(scope="function")
-async def metrics_calculator_memcached(mdb, pdb, rdb, memcached):
-    return MetricEntriesCalculator(mdb, pdb, rdb, memcached)
+        if with_memcached:
+            c = memcached
+        elif with_cache:
+            c = cache
+        else:
+            c = None
 
+        return MetricEntriesCalculator(account_id, meta_ids, mdb, pdb, rdb, c)
 
-@pytest.fixture(scope="function")
-async def metrics_calculator_no_cache(mdb, pdb, rdb):
-    return MetricEntriesCalculator(mdb, pdb, rdb, None)
-
-
-@pytest.fixture(scope="function")
-async def metrics_calculator_cache_only(cache):
-    return MetricEntriesCalculator(None, None, None, cache)
+    return build
 
 
 @pytest.fixture(scope="session")

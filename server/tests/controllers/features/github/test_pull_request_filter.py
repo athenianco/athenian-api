@@ -71,7 +71,8 @@ async def test_pr_list_miner_match_participants(
                                                  date(year=2016, month=12, day=1))])
 @with_defer
 async def test_pr_list_miner_match_metrics_all_count(
-        metrics_calculator_no_cache, mdb, pdb, rdb, release_match_setting_tag, date_from, date_to):
+        metrics_calculator_factory, mdb, pdb, rdb, release_match_setting_tag, date_from, date_to):
+    metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
     time_to = datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc)
     prs = await filter_pull_requests(
@@ -85,7 +86,7 @@ async def test_pr_list_miner_match_metrics_all_count(
     metric = (await metrics_calculator_no_cache.calc_pull_request_metrics_line_github(
         [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_to]], [0, 1], [],
         [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(), False,
-        release_match_setting_tag, False, 1, (6366825,),
+        release_match_setting_tag, False,
     ))[0][0][0][0][0][0]
     assert len(prs) == metric.value
     if date_from.year == 2018:
@@ -229,14 +230,15 @@ async def test_pr_list_miner_filter_labels_cache_postprocess(
 
 @with_defer
 async def test_pr_list_miner_filter_labels_pdb(
-        metrics_calculator_no_cache, mdb, pdb, rdb, release_match_setting_tag):
+        metrics_calculator_factory, mdb, pdb, rdb, release_match_setting_tag):
+    metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(2018, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
     await metrics_calculator_no_cache.calc_pull_request_facts_github(
         time_from, time_to,
         {"src-d/go-git"}, {}, LabelFilter({"bug", "enhancement"}, set()), JIRAFilter.empty(),
         False, release_match_setting_tag,
-        False, False, 1, (6366825,),
+        False, False,
     )
     await wait_deferred()
     prs = await filter_pull_requests(
@@ -259,14 +261,15 @@ async def test_pr_list_miner_filter_labels_pdb(
 
 @with_defer
 async def test_fetch_pull_requests_smoke(
-        metrics_calculator_no_cache, mdb, pdb, rdb, release_match_setting_tag, cache):
+        metrics_calculator_factory, mdb, pdb, rdb, release_match_setting_tag, cache):
+    metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(2018, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
     await metrics_calculator_no_cache.calc_pull_request_facts_github(
         time_from, time_to,
         {"src-d/go-git"}, {}, LabelFilter({"bug", "enhancement"}, set()), JIRAFilter.empty(),
         False, release_match_setting_tag,
-        False, False, 1, (6366825,),
+        False, False,
     )
     await wait_deferred()
     prs1 = await filter_pull_requests(

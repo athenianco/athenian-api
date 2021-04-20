@@ -8,7 +8,7 @@ from athenian.api.controllers.calculator_selector import get_calculator_for_user
 from athenian.api.controllers.features.entries import \
     MetricEntriesCalculator as OriginalMetricEntriesCalculator
 from athenian.api.models.state.models import AccountFeature, Feature, \
-    FeatureComponent, God
+    FeatureComponent
 
 
 @pytest.fixture
@@ -44,7 +44,7 @@ async def test_get_calculator_for_user_no_global_feature(sdb, mdb, pdb, rdb, cac
     )
 
     calc = await get_calculator_for_user(
-        "github", 1, "1", None, sdb, mdb, pdb, rdb, cache,
+        "github", 1, (1, ), "1", None, sdb, mdb, pdb, rdb, cache,
         base_module=base_testing_module,
     )
     assert isinstance(calc, OriginalMetricEntriesCalculator)
@@ -65,7 +65,7 @@ async def test_get_calculator_for_user_disabled_global_feature(sdb, mdb, pdb, rd
     )
 
     calc = await get_calculator_for_user(
-        "github", 1, "1", None, sdb, mdb, pdb, rdb, cache,
+        "github", 1, (1, ), "1", None, sdb, mdb, pdb, rdb, cache,
         base_module=base_testing_module,
     )
     assert isinstance(calc, OriginalMetricEntriesCalculator)
@@ -86,7 +86,7 @@ async def test_get_calculator_for_user_no_feature_for_account(sdb, mdb, pdb, rdb
     )
 
     calc = await get_calculator_for_user(
-        "github", 1, "1", None,
+        "github", 1, (1, ), "1", None,
         sdb, mdb, pdb, rdb, cache, base_module=base_testing_module,
     )
     assert isinstance(calc, OriginalMetricEntriesCalculator)
@@ -115,7 +115,7 @@ async def test_get_calculator_for_user_with_feature(
     )
 
     calc = await get_calculator_for_user(
-        "github", 1, "1", None, sdb, mdb, pdb, rdb, cache,
+        "github", 1, (1, ), "1", None, sdb, mdb, pdb, rdb, cache,
         base_module=base_testing_module,
     )
     assert isinstance(calc, MetricEntriesCalculator)
@@ -150,7 +150,7 @@ async def test_get_calculator_for_user_with_feature_god_only(
     )
 
     calc = await get_calculator_for_user(
-        "github", 1, "1", "1" if is_god else None, sdb, mdb, pdb, rdb, cache,
+        "github", 1, (1, ), "1", "1" if is_god else None, sdb, mdb, pdb, rdb, cache,
         base_module=base_testing_module,
     )
 

@@ -72,9 +72,12 @@ def _postprocess_cached_facts(result: Tuple[Dict[str, List[PullRequestFacts]], b
 class MetricEntriesCalculator:
     """Calculator for different metrics."""
 
-    def __init__(self, mdb: Database, pdb: Database, rdb: Database,
+    def __init__(self, account: int, meta_ids: Tuple[int, ...],
+                 mdb: Database, pdb: Database, rdb: Database,
                  cache: Optional[aiomcache.Client]):
         """Create a `MetricEntriesCalculator`."""
+        self._account = account
+        self._meta_ids = meta_ids
         self._mdb = mdb
         self._pdb = pdb
         self._rdb = rdb
@@ -110,8 +113,6 @@ class MetricEntriesCalculator:
                                                     exclude_inactive: bool,
                                                     release_settings: ReleaseSettings,
                                                     fresh: bool,
-                                                    account: int,
-                                                    meta_ids: Tuple[int, ...],
                                                     ) -> np.ndarray:
         """
         Calculate pull request metrics on GitHub.
@@ -126,9 +127,8 @@ class MetricEntriesCalculator:
         time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
         mined_facts = await self.calc_pull_request_facts_github(
             time_from, time_to, all_repositories, all_participants, labels, jira, exclude_inactive,
-            release_settings, fresh, need_jira_mapping(metrics),
-            account, meta_ids)
-        df_facts = df_from_structs(mined_facts)
+            release_settings, fresh, need_jira_mapping(metrics))
+        df_facts = df_from_structs(mined_facts)            
         repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.key, repositories)
         with_grouper = partial(group_prs_by_participants, participants)
         groups = group_to_indexes(df_facts, partial(group_by_lines, lines), repo_grouper,
@@ -166,8 +166,6 @@ class MetricEntriesCalculator:
                                                   exclude_inactive: bool,
                                                   release_settings: ReleaseSettings,
                                                   fresh: bool,
-                                                  account: int,
-                                                  meta_ids: Tuple[int, ...],
                                                   ) -> np.ndarray:
         """
         Calculate the pull request histograms on GitHub.
@@ -183,8 +181,8 @@ class MetricEntriesCalculator:
         mined_facts = await self.calc_pull_request_facts_github(
             time_from, time_to, all_repositories, all_participants, labels, jira,
             exclude_inactive, release_settings,
-            fresh, False, account, meta_ids)
-        df_facts = df_from_structs(mined_facts)
+            fresh, False)
+        df_facts = df_from_structs(mined_facts)            
         lines_grouper = partial(group_by_lines, lines)
         repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.key, repositories)
         with_grouper = partial(group_prs_by_participants, participants)
@@ -208,16 +206,15 @@ class MetricEntriesCalculator:
                                        repos: Collection[str],
                                        with_author: Optional[Collection[str]],
                                        with_committer: Optional[Collection[str]],
-                                       meta_ids: Tuple[int, ...],
                                        ) -> List[CodeStats]:
         """Filter code pushed on GitHub according to the specified criteria."""
         time_from, time_to = time_intervals[0], time_intervals[-1]
         x_commits = await extract_commits(
-            prop, time_from, time_to, repos, with_author, with_committer, meta_ids, self._mdb,
-            self._cache)
+            prop, time_from, time_to, repos, with_author, with_committer,
+            self._meta_ids, self._mdb, self._cache)
         all_commits = await extract_commits(
             FilterCommitsProperty.NO_PR_MERGES, time_from, time_to, repos,
-            with_author, with_committer, meta_ids, self._mdb, self._cache,
+            with_author, with_committer, self._meta_ids, self._mdb, self._cache,
             columns=[PushCommit.committed_date, PushCommit.additions, PushCommit.deletions])
         return calc_code_stats(x_commits, all_commits, time_intervals)
 
@@ -245,8 +242,6 @@ class MetricEntriesCalculator:
                                             labels: LabelFilter,
                                             jira: JIRAFilter,
                                             release_settings: ReleaseSettings,
-                                            account: int,
-                                            meta_ids: Tuple[int, ...],
                                             ) -> Tuple[np.ndarray, List[DeveloperTopic]]:
         """
         Calculate the developer metrics on GitHub.
@@ -260,7 +255,7 @@ class MetricEntriesCalculator:
         time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
         mined_dfs = await mine_developer_activities(
             all_devs, all_repos, time_from, time_to, topics, labels, jira, release_settings,
-            account, meta_ids, self._mdb, self._pdb, self._rdb, self._cache)
+            self._account, self._meta_ids, self._mdb, self._pdb, self._rdb, self._cache)
         topics_seq = []
         arrays = []
         repo_grouper = partial(group_by_repo, developer_repository_column, repositories)
@@ -305,8 +300,6 @@ class MetricEntriesCalculator:
                                                jira: JIRAFilter,
                                                release_settings: ReleaseSettings,
                                                prefixer: PrefixerPromise,
-                                               account: int,
-                                               meta_ids: Tuple[int, ...],
                                                ) -> Tuple[np.ndarray, Dict[str, ReleaseMatch]]:
         """
         Calculate the release metrics on GitHub.
@@ -317,13 +310,13 @@ class MetricEntriesCalculator:
         time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
         all_repositories = set(chain.from_iterable(repositories))
         calc = ReleaseBinnedMetricCalculator(metrics, quantiles)
-        branches, default_branches = await extract_branches(all_repositories, meta_ids,
+        branches, default_branches = await extract_branches(all_repositories, self._meta_ids,
                                                             self._mdb, self._cache)
         all_participants = merge_release_participants(participants)
         releases, _, matched_bys = await mine_releases(
             all_repositories, all_participants, branches, default_branches, time_from, time_to,
-            jira, release_settings, prefixer, account, meta_ids, self._mdb, self._pdb, self._rdb,
-            self._cache)
+            jira, release_settings, prefixer, self._account, self._meta_ids,
+            self._mdb, self._pdb, self._rdb, self._cache)
         df_facts = df_from_dataclasses([f for _, f in releases])
         repo_grouper = partial(group_by_repo, Release.repository_full_name.key, repositories)
         participant_grouper = partial(group_releases_by_participants, participants)
@@ -342,8 +335,6 @@ class MetricEntriesCalculator:
                                              release_settings: ReleaseSettings,
                                              fresh: bool,
                                              with_jira_map: bool,
-                                             account: int,
-                                             meta_ids: Tuple[int, ...],
                                              ) -> List[PullRequestFacts]:
         """
         Calculate facts about pull request on GitHub.
@@ -366,8 +357,6 @@ class MetricEntriesCalculator:
             release_settings,
             fresh,
             with_jira_map,
-            account,
-            meta_ids,
         ))[0]
 
     @sentry_span
@@ -403,28 +392,26 @@ class MetricEntriesCalculator:
                                               release_settings: ReleaseSettings,
                                               fresh: bool,
                                               with_jira_map: bool,
-                                              account: int,
-                                              meta_ids: Tuple[int, ...],
                                               ) -> Tuple[List[PullRequestFacts], bool]:
         assert isinstance(repositories, set)
-        branches, default_branches = await extract_branches(repositories, meta_ids,
+        branches, default_branches = await extract_branches(repositories, self._meta_ids,
                                                             self._mdb, self._cache)
         precomputed_tasks = [
             load_precomputed_done_facts_filters(
                 time_from, time_to, repositories, participants, labels,
-                default_branches, exclude_inactive, release_settings, account, self._pdb),
+                default_branches, exclude_inactive, release_settings, self._account, self._pdb),
         ]
         if exclude_inactive:
             precomputed_tasks.append(load_precomputed_done_candidates(
                 time_from, time_to, repositories,
-                default_branches, release_settings, account, self._pdb))
+                default_branches, release_settings, self._account, self._pdb))
             (precomputed_facts, _), blacklist = await gather(*precomputed_tasks)
         else:
             (precomputed_facts, _) = blacklist = await precomputed_tasks[0]
         if with_jira_map:
             # schedule loading the PR->JIRA mapping
             done_jira_map_task = asyncio.create_task(append_pr_jira_mapping(
-                precomputed_facts, meta_ids, self._mdb))
+                precomputed_facts, self._meta_ids, self._mdb))
         ambiguous = blacklist[1]
         add_pdb_hits(self._pdb, "load_precomputed_done_facts_filters", len(precomputed_facts))
 
@@ -436,12 +423,12 @@ class MetricEntriesCalculator:
             facts = await fetch_pull_request_facts_unfresh(
                 precomputed_facts, ambiguous, time_from, time_to, repositories,
                 participants, labels, jira, exclude_inactive, branches,
-                default_branches, release_settings, account, meta_ids,
+                default_branches, release_settings, self._account, self._meta_ids,
                 self._mdb, self._pdb, self._rdb, self._cache)
             if with_jira_map:
                 undone_jira_map_task = asyncio.create_task(append_pr_jira_mapping(
                     {k: v for k, v in facts.items() if k not in precomputed_facts},
-                    meta_ids, self._mdb))
+                    self._meta_ids, self._mdb))
             if with_jira_map:
                 await gather(done_jira_map_task, undone_jira_map_task)
             return list(facts.values()), with_jira_map
@@ -454,12 +441,12 @@ class MetricEntriesCalculator:
             PullRequestMiner.mine(
                 date_from, date_to, time_from, time_to, repositories, participants,
                 labels, jira, branches, default_branches, exclude_inactive, release_settings,
-                account, meta_ids, self._mdb, self._pdb, self._rdb, self._cache,
+                self._account, self._meta_ids, self._mdb, self._pdb, self._rdb, self._cache,
                 pr_blacklist=blacklist),
         ]
         if jira and precomputed_facts:
             tasks.append(PullRequestMiner.filter_jira(
-                precomputed_facts, jira, meta_ids, self._mdb, self._cache,
+                precomputed_facts, jira, self._meta_ids, self._mdb, self._cache,
                 columns=[PullRequest.node_id]))
             (miner, unreleased_facts, matched_bys, unreleased_prs_event), filtered = \
                 await gather(*tasks, op="PullRequestMiner")
@@ -469,8 +456,9 @@ class MetricEntriesCalculator:
         precomputed_unreleased_prs = miner.drop(unreleased_facts)
         if with_jira_map:
             precomputed_unreleased_jira_map_task = asyncio.create_task(append_pr_jira_mapping(
-                unreleased_facts, meta_ids, self._mdb))
-            new_jira_map_task = load_pr_jira_mapping(miner.dfs.prs.index, meta_ids, self._mdb)
+                unreleased_facts, self._meta_ids, self._mdb))
+            new_jira_map_task = load_pr_jira_mapping(miner.dfs.prs.index, self._meta_ids,
+                                                     self._mdb)
         await asyncio.sleep(0)
         remove_ambiguous_prs(precomputed_facts, ambiguous, matched_bys)
         add_pdb_hits(self._pdb, "precomputed_unreleased_facts", len(precomputed_unreleased_prs))
@@ -509,15 +497,15 @@ class MetricEntriesCalculator:
             # also, we dump all the `mined_facts`, the called function will figure out who's
             # released
             await defer(store_precomputed_done_facts(
-                mined_prs, mined_facts, default_branches, release_settings, account, self._pdb),
-                "store_precomputed_done_facts(%d/%d)" % (done_count, len(miner)))
+                mined_prs, mined_facts, default_branches, release_settings, self._account,
+                self._pdb), "store_precomputed_done_facts(%d/%d)" % (done_count, len(miner)))
         if len(open_pr_facts) > 0:
-            await defer(store_open_pull_request_facts(open_pr_facts, account, self._pdb),
+            await defer(store_open_pull_request_facts(open_pr_facts, self._account, self._pdb),
                         "store_open_pull_request_facts(%d)" % len(open_pr_facts))
         if len(merged_unreleased_pr_facts) > 0:
             await defer(store_merged_unreleased_pull_request_facts(
                 merged_unreleased_pr_facts, matched_bys, default_branches, release_settings,
-                account, self._pdb, unreleased_prs_event),
+                self._account, self._pdb, unreleased_prs_event),
                 "store_merged_unreleased_pull_request_facts(%d)" % len(merged_unreleased_pr_facts))
         if with_jira_map:
             _, _, new_jira_map = await gather(
@@ -553,6 +541,8 @@ def _compose_cache_key_participants(participants: List[PRParticipants]) -> str:
 
 def get_calculator(
     service: str,
+    account: int,
+    meta_ids: Tuple[int, ...],
     mdb: Database,
     pdb: Database,
     rdb: Database,
@@ -562,9 +552,13 @@ def get_calculator(
     base_module: Optional[str] = "athenian.api.experiments",
 ) -> MetricEntriesCalculator:
     """Get the metrics calculator."""
+
+    def build_calculator(cls=MetricEntriesCalculator):
+        return cls(account, meta_ids, mdb, pdb, rdb, cache)
+
     log = logging.getLogger(__name__)
     if not variation:
-        return MetricEntriesCalculator(mdb, pdb, rdb, cache)
+        return build_calculator()
 
     try:
         mod = importlib.import_module(f"{base_module}.{variation}")
@@ -576,7 +570,7 @@ def get_calculator(
             "Invalid variation '%s' calculator, using default implementation",
             variation,
         )
-        return MetricEntriesCalculator(mdb, pdb, rdb, cache)
+        return build_calculator()
     else:
         try:
             cls = mod.MetricEntriesCalculator
@@ -591,6 +585,6 @@ def get_calculator(
                 "using default implementation",
                 variation,
             )
-            return MetricEntriesCalculator(mdb, pdb, rdb, cache)
+            return build_calculator()
         else:
-            return cls(mdb, pdb, rdb, cache)
+            return build_calculator(cls=cls)

@@ -761,13 +761,13 @@ async def test_discover_update_unreleased_prs_exclude_inactive(
 
 @with_defer
 async def test_discover_old_merged_unreleased_prs_smoke(
-        metrics_calculator, mdb, pdb, rdb, dag, release_match_setting_tag, cache):
+        metrics_calculator_factory, mdb, pdb, rdb, dag, release_match_setting_tag, cache):
+    metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     metrics_time_from = datetime(2018, 1, 1, tzinfo=timezone.utc)
     metrics_time_to = datetime(2020, 5, 1, tzinfo=timezone.utc)
     await metrics_calculator.calc_pull_request_facts_github(
         metrics_time_from, metrics_time_to, {"src-d/go-git"}, {}, LabelFilter.empty(),
         JIRAFilter.empty(), False, release_match_setting_tag, False, False,
-        1, (6366825,),
     )
     await wait_deferred()
     unreleased_time_from = datetime(2018, 11, 1, tzinfo=timezone.utc)
@@ -812,13 +812,13 @@ async def test_discover_old_merged_unreleased_prs_smoke(
 
 @with_defer
 async def test_discover_old_merged_unreleased_prs_labels(
-        metrics_calculator, mdb, pdb, rdb, release_match_setting_tag, cache):
+        metrics_calculator_factory, mdb, pdb, rdb, release_match_setting_tag, cache):
+    metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     metrics_time_from = datetime(2018, 5, 1, tzinfo=timezone.utc)
     metrics_time_to = datetime(2019, 1, 1, tzinfo=timezone.utc)
     await metrics_calculator.calc_pull_request_facts_github(
         metrics_time_from, metrics_time_to, {"src-d/go-git"}, {}, LabelFilter.empty(),
         JIRAFilter.empty(), False, release_match_setting_tag, False, False,
-        1, (6366825,),
     )
     await wait_deferred()
     unreleased_time_from = datetime(2018, 9, 19, tzinfo=timezone.utc)

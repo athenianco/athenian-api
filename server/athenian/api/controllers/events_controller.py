@@ -207,8 +207,9 @@ async def clear_precomputed_events(request: AthenianWebRequest, body: dict) -> w
             JIRAFilter.empty(), settings, prefixer, model.account, meta_ids, mdb, pdb, rdb, None,
             force_fresh=True)
         await wait_deferred()
-        await MetricEntriesCalculator(mdb, pdb, rdb, None).calc_pull_request_facts_github(
-            time_from, time_to, set(repos), {}, LabelFilter.empty(), JIRAFilter.empty(),
-            False, settings, True, False, model.account, meta_ids)
+        await MetricEntriesCalculator(
+            model.account, meta_ids, mdb, pdb, rdb, None).calc_pull_request_facts_github(
+                time_from, time_to, set(repos), {}, LabelFilter.empty(), JIRAFilter.empty(),
+                False, settings, True, False)
         await wait_deferred()
     return web.Response(status=200)
