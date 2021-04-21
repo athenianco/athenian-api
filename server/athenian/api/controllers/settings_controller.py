@@ -60,9 +60,11 @@ async def get_jira_projects(request: AthenianWebRequest,
     if jira_id is None:
         await get_user_account_status(request.uid, id, request.sdb, request.cache)
         jira_id = await get_jira_id(id, request.sdb, request.cache)
-    projects = await request.mdb.fetch_all(select([Project.key, Project.name, Project.avatar_url])
-                                           .where(Project.acc_id == jira_id)
-                                           .order_by(Project.key))
+    projects = await request.mdb.fetch_all(
+        select([Project.key, Project.name, Project.avatar_url])
+        .where(and_(Project.acc_id == jira_id,
+                    Project.is_deleted.is_(False)))
+        .order_by(Project.key))
     keys = [r[Project.key.key] for r in projects]
     settings = await request.sdb.fetch_all(
         select([JIRAProjectSetting.key, JIRAProjectSetting.enabled])
@@ -87,7 +89,10 @@ async def set_jira_projects(request: AthenianWebRequest, body: dict) -> web.Resp
         raise ResponseError(ForbiddenError(
             detail="User %s is not an admin of account %d" % (request.uid, model.account)))
     jira_id = await get_jira_id(model.account, request.sdb, request.cache)
-    projects = await request.mdb.fetch_all(select([Project.key]).where(Project.acc_id == jira_id))
+    projects = await request.mdb.fetch_all(
+        select([Project.key])
+        .where(and_(Project.acc_id == jira_id,
+                    Project.is_deleted.is_(False))))
     projects = {r[0] for r in projects}
     if diff := (model.projects.keys() - projects):
         raise ResponseError(InvalidRequestError(

@@ -117,6 +117,7 @@ class Project(Base):
     key = Column(Text)
     name = Column(Text)
     avatar_url = Column(Text)
+    is_deleted = Column(Boolean, default=False, server_default="false")
 
 
 class IssueType(Base):
