@@ -109,7 +109,7 @@ async def test_get_everything_smoke(client, headers):
     assert len(releases_df) == 53
     assert set(releases_df) == {
         "additions", "age", "commit_authors", "commits_count", "deletions", "matched_by", "name",
-        "prs_additions", "prs_deletions", "prs_node_id", "prs_number", "prs_title",
+        "prs_additions", "prs_deletions", "prs_node_id", "prs_number", "prs_title", "prs_jira",
         "prs_user_login", "published", "publisher", "repository_full_name", "sha", "url",
     }
 

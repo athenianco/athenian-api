@@ -10,8 +10,7 @@ from sqlalchemy import and_, select
 
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.controllers.features.github.pull_request_filter import PullRequestListMiner
-from athenian.api.controllers.features.metric_calculator import \
-    df_from_dataclasses, df_from_structs
+from athenian.api.controllers.features.metric_calculator import df_from_structs
 from athenian.api.controllers.miners.filters import JIRAFilter
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.precomputed_prs import \
@@ -102,29 +101,14 @@ async def mine_all_releases(repos: Collection[str],
     releases = (await mine_releases(
         repos, {}, branches, default_branches, datetime(1970, 1, 1, tzinfo=timezone.utc),
         datetime.now(timezone.utc), JIRAFilter.empty(), settings, prefixer, account, meta_ids,
-        mdb, pdb, rdb, cache, with_avatars=False))[0]
+        mdb, pdb, rdb, cache, with_avatars=False, with_pr_titles=True))[0]
     df_gen = pd.DataFrame.from_records([r[0] for r in releases])
-    df_facts = df_from_dataclasses([r[1] for r in releases])
+    df_facts = df_from_structs([r[1] for r in releases])
     del df_facts[Release.repository_full_name.key]
     result = df_gen.join(df_facts)
     result.set_index(Release.id.key, inplace=True)
-    for authors in result["commit_authors"].values:
-        authors[:] = [s.rsplit("/", 1)[1] for s in authors]
-    pr_column_names = [c.key for c in (
-        PullRequest.node_id,
-        PullRequest.number,
-        PullRequest.title,
-        PullRequest.additions,
-        PullRequest.deletions,
-        PullRequest.user_login,
-    )]
-    new_pr_columns = [[] for _ in pr_column_names]
-    for prs in result["prs"].values:
-        for new_col, col_name in zip(new_pr_columns, pr_column_names):
-            new_col.append(prs[col_name])
-    del result["prs"]
-    for new_col, col_name in zip(new_pr_columns, pr_column_names):
-        result[f"prs_{col_name}"] = new_col
+    for col in ("commit_authors", "prs_user_login"):
+        result[col] = [[s.decode() for s in subarr] for subarr in result[col].values]
     return result
 
 

@@ -79,8 +79,7 @@ def group_releases_by_participants(participants: List[ReleaseParticipants],
             indexes.append(np.arange(len(df)))
             continue
         if ReleaseParticipationKind.PR_AUTHOR in group:
-            key = PullRequest.user_login.key
-            pr_authors = [prs[key] for prs in df["prs"].values[missing_indexes]]
+            pr_authors = df["prs_" + PullRequest.user_login.key].values[missing_indexes]
             lengths = np.asarray([len(pra) for pra in pr_authors])
             offsets = np.zeros(len(lengths) + 1, dtype=int)
             np.cumsum(lengths, out=offsets[1:])
@@ -137,7 +136,7 @@ class ReleaseMetricCalculatorMixin(Generic[T]):
                facts: pd.DataFrame,
                min_times: np.ndarray,
                max_times: np.ndarray) -> np.ndarray:
-        published = facts[ReleaseFacts.published.__name__].values
+        published = facts[ReleaseFacts.f.published].values
         return (min_times[:, None] <= published) & (published < max_times[:, None])
 
     def _extract(self, facts: pd.DataFrame) -> np.ndarray:
@@ -183,8 +182,7 @@ class ReleasePRsMixin:
     dtype = int
 
     def _extract(self, facts: pd.DataFrame) -> np.ndarray:
-        return np.array([len(prs[PullRequest.number.key])
-                         for prs in facts[ReleaseFacts.prs.__name__].values])
+        return np.array([len(arr) for arr in facts["prs_" + PullRequest.number.key]])
 
 
 class ReleaseCommitsMixin:
@@ -194,7 +192,7 @@ class ReleaseCommitsMixin:
     dtype = int
 
     def _extract(self, facts: pd.DataFrame) -> np.ndarray:
-        return facts[ReleaseFacts.commits_count.__name__].values
+        return facts[ReleaseFacts.f.commits_count].values
 
 
 class ReleaseLinesMixin:
@@ -204,8 +202,8 @@ class ReleaseLinesMixin:
     dtype = int
 
     def _extract(self, facts: pd.DataFrame) -> np.ndarray:
-        return (facts[ReleaseFacts.additions.__name__].values +
-                facts[ReleaseFacts.deletions.__name__].values)
+        return (facts[ReleaseFacts.f.additions].values +
+                facts[ReleaseFacts.f.deletions].values)
 
 
 class ReleaseAgeMixin:
@@ -215,7 +213,7 @@ class ReleaseAgeMixin:
     dtype = "timedelta64[s]"
 
     def _extract(self, facts: pd.DataFrame) -> np.ndarray:
-        return facts[ReleaseFacts.age.__name__].values.astype(self.dtype).view(int)
+        return facts[ReleaseFacts.f.age].values.astype(self.dtype).view(int)
 
 
 @register_metric(ReleaseMetricID.RELEASE_COUNT)

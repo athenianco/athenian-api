@@ -30,6 +30,7 @@ from athenian.api.controllers.miners.github.release_match import \
 from athenian.api.controllers.miners.github.release_mine import mine_releases, \
     mine_releases_by_name
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
+from athenian.api.controllers.miners.types import released_prs_columns
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import Branch, NodeCommit, PullRequest, \
@@ -1190,13 +1191,13 @@ async def test_mine_releases_full_span(mdb, pdb, rdb, release_match_setting_tag,
         assert details[Release.repository_full_name.key] == "github.com/src-d/go-git"
         assert len(facts.commit_authors) > 0
         assert facts.age
-        assert facts.publisher
+        assert facts.publisher and facts.publisher.startswith("github.com/")
         assert facts.additions > 0
         assert facts.deletions > 0
         assert facts.commits_count > 0
-        assert len(facts.prs[PullRequest.number.key]) or facts.published <= pd.Timestamp(
-            "2017-02-01 09:51:10+0000", tz="UTC")
-        assert time_from < facts.published < time_to
+        assert len(facts["prs_" + PullRequest.number.key]) or \
+            facts.published <= pd.Timestamp("2017-02-01 09:51:10")
+        assert time_from < facts.published.item().replace(tzinfo=timezone.utc) < time_to
         assert facts.matched_by == ReleaseMatch.tag
 
 
@@ -1250,8 +1251,9 @@ async def test_mine_releases_precomputed_time_range(
         ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
         release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
     for _, f in releases:
-        assert time_from <= f.published < time_to
-        assert len(f.prs) > 0
+        assert time_from <= f.published.item().replace(tzinfo=timezone.utc) < time_to
+        for col in released_prs_columns:
+            assert len(f["prs_" + col.key]) > 0
         assert f.commits_count > 0
     assert len(releases) == 22
     assert len(avatars) == 93
@@ -1273,8 +1275,8 @@ async def test_mine_releases_precomputed_update(
         ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
         release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
     for _, f in releases:
-        assert time_from <= f.published < time_to
-        assert len(f.prs) > 0
+        assert time_from <= f.published.item().replace(tzinfo=timezone.utc) < time_to
+        assert len(getattr(f, "prs_" + PullRequest.number.key)) > 0
         assert f.commits_count > 0
     assert len(releases) == 22
     assert len(avatars) == 93
@@ -1455,8 +1457,8 @@ async def test_mine_releases_by_name(
     releases_dict = {r[0][Release.name.key]: r for r in releases}
     assert releases_dict.keys() == names
     assert len(releases_dict["36c78b9d1b1eea682703fb1cbb0f4f3144354389"][1]
-               .prs[PullRequest.number.key]) == 1
-    assert len(releases_dict["v4.0.0"][1].prs[PullRequest.number.key]) == 62
+               ["prs_" + PullRequest.number.key]) == 1
+    assert len(releases_dict["v4.0.0"][1]["prs_" + PullRequest.number.key]) == 62
     releases2, _ = await mine_releases_by_name(
         {"src-d/go-git": names},
         release_match_setting_tag_or_branch, prefixer_promise,

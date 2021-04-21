@@ -324,8 +324,8 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
         repos, meta_ids, request.mdb, request.cache)
     releases, avatars, _ = await mine_releases(
         repos, participants, branches, default_branches, filt.date_from, filt.date_to,
-        JIRAFilter.from_web(filt.jira, jira_ids), settings, prefixer,
-        filt.account, meta_ids, request.mdb, request.pdb, request.rdb, request.cache)
+        JIRAFilter.from_web(filt.jira, jira_ids), settings, prefixer, filt.account, meta_ids,
+        request.mdb, request.pdb, request.rdb, request.cache, with_pr_titles=True)
     return await _build_release_set_response(releases, avatars, jira_ids, meta_ids, request.mdb)
 
 
@@ -335,15 +335,15 @@ async def _load_jira_issues(jira_ids: Optional[Tuple[int, List[str]]],
                             mdb: databases.Database) -> Dict[str, LinkedJIRAIssue]:
     if jira_ids is None:
         for (_, facts) in releases:
-            facts.prs["jira"] = np.full(len(facts.prs[PullRequest.node_id.key]), None)
+            facts.prs_jira = np.full(len(facts["prs_" + PullRequest.node_id.key]), None)
         return {}
 
     pr_to_ix = {}
     for ri, (_, facts) in enumerate(releases):
-        node_ids = facts.prs[PullRequest.node_id.key]
-        facts.prs["jira"] = [[] for _ in range(len(node_ids))]
+        node_ids = facts["prs_" + PullRequest.node_id.key]
+        facts.prs_jira = [[] for _ in range(len(node_ids))]
         for pri, node_id in enumerate(node_ids):
-            pr_to_ix[node_id] = ri, pri
+            pr_to_ix[node_id.decode()] = ri, pri
     regiss = aliased(Issue, name="regular")
     epiciss = aliased(Epic, name="epic")
     prmap = aliased(NodePullRequestJiraIssues, name="m")
@@ -369,7 +369,7 @@ async def _load_jira_issues(jira_ids: Optional[Tuple[int, List[str]]],
         issues[key] = LinkedJIRAIssue(
             id=key, title=r["title"], epic=r["epic"], labels=r["labels"], type=r["type"])
         ri, pri = pr_to_ix[r["node_id"]]
-        releases[ri][1].prs["jira"][pri].append(key)
+        releases[ri][1].prs_jira[pri].append(key)
     return issues
 
 
@@ -394,32 +394,32 @@ def _filtered_release_from_tuple(t: Tuple[Dict[str, Any], ReleaseFacts]) -> Filt
                            repository=details[Release.repository_full_name.key],
                            url=details[Release.url.key],
                            publisher=facts.publisher,
-                           published=facts.published,
+                           published=facts.published.item().replace(tzinfo=timezone.utc),
                            age=facts.age,
                            added_lines=facts.additions,
                            deleted_lines=facts.deletions,
                            commits=facts.commits_count,
-                           commit_authors=facts.commit_authors,
-                           prs=_extract_release_prs(facts.prs))
+                           commit_authors=[u.decode() for u in facts.commit_authors],
+                           prs=_extract_release_prs(facts))
 
 
-def _extract_release_prs(prs: Dict[str, np.ndarray]) -> List[ReleasedPullRequest]:
+def _extract_release_prs(facts: ReleaseFacts) -> List[ReleasedPullRequest]:
     return [
         ReleasedPullRequest(
             number=number,
             title=title,
             additions=adds,
             deletions=dels,
-            author=author,
+            author=author.decode() or None,
             jira=jira or None,
         )
         for number, title, adds, dels, author, jira in zip(
-            prs[PullRequest.number.key],
-            prs[PullRequest.title.key],
-            prs[PullRequest.additions.key],
-            prs[PullRequest.deletions.key],
-            prs[PullRequest.user_login.key],
-            prs["jira"],
+            facts["prs_" + PullRequest.number.key],
+            facts["prs_" + PullRequest.title.key],
+            facts["prs_" + PullRequest.additions.key],
+            facts["prs_" + PullRequest.deletions.key],
+            facts["prs_" + PullRequest.user_login.key],
+            facts.prs_jira,
         )
     ]
 

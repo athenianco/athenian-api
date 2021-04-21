@@ -12,7 +12,6 @@ import numpy as np
 import pandas as pd
 import sentry_sdk
 from sqlalchemy import and_, func, select, union_all
-from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
@@ -33,13 +32,14 @@ from athenian.api.controllers.miners.github.release_match import \
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.github.users import mine_user_avatars
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
-from athenian.api.controllers.miners.types import ReleaseFacts, ReleaseParticipants, \
+from athenian.api.controllers.miners.types import released_prs_columns, ReleaseFacts, \
+    ReleaseParticipants, \
     ReleaseParticipationKind
 from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
 from athenian.api.db import add_pdb_hits, add_pdb_misses
 from athenian.api.defer import defer
-from athenian.api.models.metadata.github import PullRequest, PushCommit, Release
+from athenian.api.models.metadata.github import NodePullRequest, PullRequest, PushCommit, Release
 from athenian.api.tracing import sentry_span
 
 
@@ -70,6 +70,7 @@ async def mine_releases(repos: Iterable[str],
                         cache: Optional[aiomcache.Client],
                         force_fresh: bool = False,
                         with_avatars: bool = True,
+                        with_pr_titles: bool = False,
                         ) -> Tuple[List[Tuple[Dict[str, Any], ReleaseFacts]],
                                    Union[List[Tuple[str, str]], np.ndarray],
                                    Dict[str, ReleaseMatch]]:
@@ -102,6 +103,10 @@ async def mine_releases(repos: Iterable[str],
         return [], [], {r: v.match for r, v in settings.prefixed.items()}
     precomputed_facts = await load_precomputed_release_facts(
         releases_in_time_range, default_branches, settings, account, pdb)
+    if with_pr_titles:
+        pr_node_ids_for_pr_titles = [
+            f["prs_" + PullRequest.node_id.key] for f in precomputed_facts.values()
+        ]
     # uncomment this to compute releases from scratch
     # precomputed_facts = {}
     add_pdb_hits(pdb, "release_facts", len(precomputed_facts))
@@ -217,20 +222,20 @@ async def mine_releases(repos: Iterable[str],
                  PullRequest.acc_id.in_(meta_ids)],
                 jira, mdb, cache, columns=[PullRequest.merge_commit_id])
             tasks.append(mdb.fetch_all(query))
-        results = await gather(*tasks,
-                               op="mine_releases/fetch_pull_requests",
-                               description=str(len(commit_ids)))
-        prs_df, prs_columns = results[0]
+        prs_df, *rest = await gather(*tasks,
+                                     op="mine_releases/fetch_pull_requests",
+                                     description=str(len(commit_ids)))
         if jira:
-            filtered_prs_commit_ids = np.unique(np.array([r[0] for r in results[1]], dtype="U"))
+            filtered_prs_commit_ids = np.unique(np.array([r[0] for r in rest[0]], dtype="U"))
         prs_commit_ids = prs_df[PullRequest.merge_commit_id.key].values.astype("U")
         prs_authors = prs_df[PullRequest.user_login.key].values
         prs_authors_nz = prs_authors.nonzero()[0]
         prs_authors[prs_authors_nz] = \
             [prefixer.user_login_map[u] for u in prs_authors[prs_authors_nz]]
         prs_node_ids = prs_df[PullRequest.node_id.key].values.astype("U")
+        if with_pr_titles:
+            pr_node_ids_for_pr_titles.append(prs_node_ids)
         prs_numbers = prs_df[PullRequest.number.key].values
-        prs_titles = prs_df[PullRequest.title.key].values
         prs_additions = prs_df[PullRequest.additions.key].values
         prs_deletions = prs_df[PullRequest.deletions.key].values
 
@@ -277,10 +282,9 @@ async def mine_releases(repos: Iterable[str],
                     my_prs_authors = prs_authors[my_prs_indexes]
                     mentioned_authors.update(my_prs_authors[my_prs_authors.nonzero()[0]])
                     my_prs = dict(zip(
-                        [c.key for c in prs_columns[1:]],
+                        ["prs_" + c.key for c in released_prs_columns],
                         [prs_node_ids[my_prs_indexes],
                          prs_numbers[my_prs_indexes],
-                         prs_titles[my_prs_indexes],
                          prs_additions[my_prs_indexes],
                          prs_deletions[my_prs_indexes],
                          my_prs_authors]))
@@ -311,17 +315,18 @@ async def mine_releases(repos: Iterable[str],
                               Release.repository_full_name.key: prefixer.repo_name_map[repo],
                               Release.url.key: my_url,
                               Release.sha.key: my_commit},
-                             ReleaseFacts(published=my_published_at,
-                                          publisher=my_author,
-                                          matched_by=ReleaseMatch(my_matched_by),
-                                          age=my_age,
-                                          additions=my_additions,
-                                          deletions=my_deletions,
-                                          commits_count=commits_count,
-                                          prs=my_prs,
-                                          commit_authors=my_commit_authors,
-                                          repository_full_name=repo)))
-            await asyncio.sleep(0)
+                             ReleaseFacts.from_fields(published=my_published_at,
+                                                      publisher=my_author,
+                                                      matched_by=ReleaseMatch(my_matched_by),
+                                                      age=my_age,
+                                                      additions=my_additions,
+                                                      deletions=my_deletions,
+                                                      commits_count=commits_count,
+                                                      commit_authors=my_commit_authors,
+                                                      **my_prs,
+                                                      repository_full_name=repo)))
+                if len(data) % 500 == 0:
+                    await asyncio.sleep(0)
         if data:
             await defer(
                 store_precomputed_release_facts(
@@ -329,27 +334,43 @@ async def mine_releases(repos: Iterable[str],
                 "store_precomputed_release_facts(%d)" % len(data))
         return data
 
+    tasks = [main_flow()]
     if with_avatars:
         all_authors = np.concatenate([commits_authors[commits_authors_nz],
                                       prs_authors[prs_authors_nz],
                                       mentioned_authors])
         all_authors = [p[1] for p in np.char.split(np.unique(all_authors).astype("U"), "/", 1)]
+        tasks.insert(0, mine_user_avatars(all_authors, True, meta_ids, mdb, cache))
+    if with_pr_titles:
+        pr_node_ids_for_pr_titles = np.concatenate(pr_node_ids_for_pr_titles)
+        if pr_node_ids_for_pr_titles.dtype.char != "U":
+            pr_node_ids_for_pr_titles = pr_node_ids_for_pr_titles.astype("U")
+        tasks.insert(0, mdb.fetch_all(
+            select([NodePullRequest.id, NodePullRequest.title])
+            .where(and_(NodePullRequest.acc_id.in_(meta_ids),
+                        NodePullRequest.id.in_any_values(pr_node_ids_for_pr_titles)))))
     mentioned_authors = set(mentioned_authors)
+    *secondary, mined_releases = await gather(*tasks, op="mine missing releases")
+    result.extend(mined_releases)
     if with_avatars:
-        tasks = [
-            main_flow(),
-            mine_user_avatars(all_authors, True, meta_ids, mdb, cache),
-        ]
-        mined_releases, avatars = await gather(*tasks, op="main_flow + avatars")
-        avatars = [p for p in avatars if p[0] in mentioned_authors]
+        avatars = [p for p in secondary[-1] if p[0] in mentioned_authors]
     else:
-        mined_releases = await main_flow()
         avatars = np.array(
             [p[1] for p in np.char.split(np.array(list(mentioned_authors), dtype="U"), "/", 1)])
-    result.extend(mined_releases)
+    if with_pr_titles:
+        pr_title_map = {row[0].encode(): row[1] for row in secondary[0]}
+        for _, facts in result:
+            facts["prs_" + PullRequest.title.key] = [
+                pr_title_map.get(node) for node in facts["prs_" + PullRequest.node_id.key]
+            ]
     if participants:
         result = _filter_by_participants(result, participants)
     return result, avatars, {r: v.match for r, v in settings.prefixed.items()}
+
+
+def _release_facts_with_repository_full_name(facts: ReleaseFacts, repo: str) -> ReleaseFacts:
+    facts.repository_full_name = repo
+    return facts
 
 
 def _build_mined_releases(releases: pd.DataFrame,
@@ -365,7 +386,7 @@ def _build_mined_releases(releases: pd.DataFrame,
           Release.repository_full_name.key: prefixer.repo_name_map[repo],
           Release.url.key: my_url,
           Release.sha.key: my_commit},
-         precomputed_facts[my_id].with_repository_full_name(repo))
+         _release_facts_with_repository_full_name(precomputed_facts[my_id], repo))
         for my_id, my_name, my_tag, repo, my_url, my_commit in zip(
             releases[Release.id.key].values[has_precomputed_facts],
             releases[Release.name.key].values[has_precomputed_facts],
@@ -377,7 +398,7 @@ def _build_mined_releases(releases: pd.DataFrame,
     ]
     release_authors = releases[Release.author.key].values
     mentioned_authors = np.concatenate([
-        *(f.prs[PullRequest.user_login.key] for f in precomputed_facts.values()),
+        *(getattr(f, "prs_" + PullRequest.user_login.key) for f in precomputed_facts.values()),
         *(f.commit_authors for f in precomputed_facts.values()),
         [prefixer.user_login_map.get(u, "")  # e.g. deleted users not necessarily become "ghost"-s
          for u in release_authors[release_authors.nonzero()[0]]],
@@ -417,8 +438,8 @@ def _filter_by_participants(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
     if len(missing_indexes) == 0:
         return releases
     if ReleaseParticipationKind.PR_AUTHOR in participants:
-        key = PullRequest.user_login.key
-        pr_authors = [releases[i][1].prs[key] for i in missing_indexes]
+        pr_authors = [getattr(releases[i][1], "prs_" + PullRequest.user_login.key)
+                      for i in missing_indexes]
         lengths = np.asarray([len(pra) for pra in pr_authors])
         offsets = np.zeros(len(lengths) + 1, dtype=int)
         np.cumsum(lengths, out=offsets[1:])
@@ -444,7 +465,7 @@ async def _filter_precomputed_release_facts_by_jira(precomputed_facts: Dict[str,
                                                     cache: Optional[aiomcache.Client],
                                                     ) -> Dict[str, ReleaseFacts]:
     assert jira
-    pr_ids = [f.prs[PullRequest.node_id.key] for f in precomputed_facts.values()]
+    pr_ids = [getattr(f, "prs_" + PullRequest.node_id.key) for f in precomputed_facts.values()]
     if not pr_ids:
         return {}
     lengths = [len(ids) for ids in pr_ids]
@@ -453,10 +474,10 @@ async def _filter_precomputed_release_facts_by_jira(precomputed_facts: Dict[str,
         return {}
     # we could run the following in parallel with the rest, but
     # "the rest" is a no-op in most of the cases thanks to preheating
+    pr_ids = pr_ids.astype("U")
     query = await generate_jira_prs_query(
         [PullRequest.node_id.in_(pr_ids), PullRequest.acc_id.in_(meta_ids)],
         jira, mdb, cache, columns=[PullRequest.node_id])
-    pr_ids = pr_ids.astype("U")
     release_ids = np.repeat(list(precomputed_facts), lengths)
     order = np.argsort(pr_ids)
     pr_ids = pr_ids[order]
@@ -470,23 +491,14 @@ async def _filter_precomputed_release_facts_by_jira(precomputed_facts: Dict[str,
 async def _load_prs_by_merge_commit_ids(commit_ids: Sequence[str],
                                         meta_ids: Tuple[int, ...],
                                         mdb: databases.Database,
-                                        ) -> Tuple[pd.DataFrame, List[InstrumentedAttribute]]:
-    prs_columns = [
-        PullRequest.merge_commit_id,
-        PullRequest.node_id,
-        PullRequest.number,
-        PullRequest.title,
-        PullRequest.additions,
-        PullRequest.deletions,
-        PullRequest.user_login,
-    ]
-    df = await read_sql_query(
-        select(prs_columns)
+                                        ) -> pd.DataFrame:
+    columns = [PullRequest.merge_commit_id, *released_prs_columns]
+    return await read_sql_query(
+        select(columns)
         .where(and_(PullRequest.merge_commit_id.in_(commit_ids),
                     PullRequest.acc_id.in_(meta_ids)))
         .order_by(PullRequest.merge_commit_id),
-        mdb, prs_columns)
-    return df, prs_columns
+        mdb, columns)
 
 
 @sentry_span
@@ -557,7 +569,7 @@ async def mine_releases_by_name(names: Dict[str, Iterable[str]],
         mined_result, mined_authors, _ = await mine_releases(
             repos, {}, branches, default_branches, time_from, time_to, JIRAFilter.empty(),
             settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache,
-            force_fresh=True, with_avatars=False)
+            force_fresh=True, with_avatars=False, with_pr_titles=True)
         missing_releases_by_repo = defaultdict(set)
         for repo, name in zip(missing_releases[Release.repository_full_name.key].values,
                               missing_releases[Release.name.key].values):
@@ -735,7 +747,8 @@ async def diff_releases(borders: Dict[str, List[Tuple[str, str]]],
     tasks = [
         mine_releases(
             repos, {}, branches, default_branches, time_from, time_to, JIRAFilter.empty(),
-            settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache, force_fresh=True),
+            settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache, force_fresh=True,
+            with_pr_titles=True),
         fetch_dags(),
     ]
     (releases, avatars, _), dags = await gather(*tasks, op="mine_releases + dags")
