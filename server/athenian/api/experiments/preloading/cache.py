@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from typing import Dict, List, Optional, Union
 
 import pandas as pd
@@ -202,6 +203,46 @@ class MemoryCache:
             self._dfs[id_] = CachedDataFrame(id_, **opts)
 
         await asyncio.gather(*[cdf.refresh() for cdf in self._dfs.values()])
+
+
+class MemoryCachePreloader:
+    """Responsible for dealing with `MemoryCache` preloading and graceful shutdown."""
+
+    def __init__(self, log: logging.Logger):
+        """Initialize a `MemoryCachePreloader`."""
+        self._log = log
+        self._task = None
+
+    def preload(
+        self,
+        mdb: DatabaseLike,
+        pdb: DatabaseLike,
+        debug_memory: Optional[bool] = False,
+    ):
+        """Preloads the `MemoryCache`."""
+        options = build_memory_cache_options(mdb, pdb)
+        mc = MemoryCache.get_instance(mdb, pdb, options, debug_memory=debug_memory)
+        self._task = asyncio.create_task(self._load(mc))
+        self._task.add_done_callback(self._done)
+
+    async def shutdown(self, *_):
+        """Graceful handles the eventually running preloading task."""
+        if not self._task:
+            return
+
+        if not self._task.done():
+            self._log.info("Cancelling MemoryCache preloading")
+            self._task.cancel()
+
+    async def _load(self, mc: MemoryCache):
+        self._log.info("Preloading MemoryCache")
+        await mc.load()
+
+    def _done(self, *_):
+        if self._task.cancelled():
+            self._log.info("MemoryCache preloading cancelled")
+        elif self._task.done():
+            self._log.info("MemoryCache ready")
 
 
 def build_memory_cache_options(mdb: DatabaseLike, pdb: DatabaseLike) -> Dict[str, Dict]:
