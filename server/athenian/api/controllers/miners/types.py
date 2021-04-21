@@ -4,8 +4,8 @@ from typing import Any, Dict, List, Mapping, Optional, Set, Union
 
 import numpy as np
 import pandas as pd
+import sqlalchemy as sa
 
-from athenian.api.controllers.settings import ReleaseMatch
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
     PullRequestCommit, PullRequestReview, Release
 from athenian.api.typing_utils import dataclass, numpy_struct
@@ -289,7 +289,7 @@ class PullRequestFactsLegacy:
 
 
 # avoid F821 in the annotations
-datetime64 = List
+datetime64 = timedelta64 = List
 s = None
 
 
@@ -297,8 +297,12 @@ s = None
 class PullRequestFacts:
     """Various PR event timestamps and other properties."""
 
-    class dtype:
-        """Immutable fields, we store them in `_data` and mirror in `_arr`."""
+    class Immutable:
+        """
+        Immutable fields, we store them in `_data` and mirror in `_arr`.
+
+        We generate `dtype` from this spec.
+        """
 
         created: "datetime64[s]"
         first_commit: "datetime64[s]"
@@ -319,8 +323,8 @@ class PullRequestFacts:
         size: np.int64
         force_push_dropped: np.bool_
 
-    class optional:
-        """Mutable fields, we do not serialize them."""
+    class Optional:
+        """Mutable fields that are None by default. We do not serialize them."""
 
         jira_id: str
         repository_full_name: str
@@ -381,21 +385,52 @@ def nonemax(*args: Union[pd.Timestamp, type(None)]) -> Optional[pd.Timestamp]:
     return max(arg for arg in args if arg)
 
 
-@dataclass(slots=True, frozen=True, first_mutable="repository_full_name")
+released_prs_columns = [
+    PullRequest.node_id,
+    PullRequest.number,
+    PullRequest.additions,
+    PullRequest.deletions,
+    PullRequest.user_login,
+]
+
+
+def _add_prs_annotations(cls):
+    col_types_map = {
+        sa.Text: ascii,
+        sa.BigInteger: int,
+    }
+    for col in released_prs_columns:
+        cls.__annotations__["prs_" + col.key] = [col_types_map[type(col.type)]]
+    return cls
+
+
+@numpy_struct
 class ReleaseFacts:
     """Various release properties and statistics."""
 
-    published: datetime
-    publisher: str
-    matched_by: ReleaseMatch
-    age: timedelta
-    additions: int
-    deletions: int
-    commits_count: int
-    prs: Dict[str, np.ndarray]
-    commit_authors: List[str]
-    # Mutable optional fields go below.
-    repository_full_name: Optional[str] = None
+    @_add_prs_annotations
+    class Immutable:
+        """
+        Immutable fields, we store them in `_data` and mirror in `_arr`.
+
+        We generate `dtype` from this spec.
+        """
+
+        published: "datetime64[s]"
+        publisher: "ascii[39]"
+        matched_by: np.int8
+        age: "timedelta64[s]"
+        additions: int
+        deletions: int
+        commits_count: int
+        commit_authors: [ascii]
+
+    class Optional:
+        """Mutable fields that are None by default. We do not serialize them."""
+
+        repository_full_name: str
+        prs_title: List[str]
+        prs_jira: np.ndarray
 
     def max_timestamp(self) -> datetime:
         """Find the maximum timestamp contained in the struct."""

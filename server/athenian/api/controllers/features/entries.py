@@ -29,8 +29,8 @@ from athenian.api.controllers.features.github.release_metrics import \
 from athenian.api.controllers.features.github.unfresh_pull_request_metrics import \
     fetch_pull_request_facts_unfresh
 from athenian.api.controllers.features.histogram import HistogramParameters
-from athenian.api.controllers.features.metric_calculator import df_from_dataclasses, \
-    df_from_structs, group_by_repo, group_to_indexes
+from athenian.api.controllers.features.metric_calculator import df_from_structs, group_by_repo, \
+    group_to_indexes
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import extract_branches
@@ -317,7 +317,7 @@ class MetricEntriesCalculator:
             all_repositories, all_participants, branches, default_branches, time_from, time_to,
             jira, release_settings, prefixer, self._account, self._meta_ids,
             self._mdb, self._pdb, self._rdb, self._cache)
-        df_facts = df_from_dataclasses([f for _, f in releases])
+        df_facts = df_from_structs([f for _, f in releases])
         repo_grouper = partial(group_by_repo, Release.repository_full_name.key, repositories)
         participant_grouper = partial(group_releases_by_participants, participants)
         groups = group_to_indexes(df_facts, participant_grouper, repo_grouper)
@@ -550,7 +550,7 @@ def get_calculator(
     variation: Optional[str] = None,
     base_module: Optional[str] = "athenian.api.experiments",
 ) -> MetricEntriesCalculator:
-    """Get the metrics calculator."""
+    """Get the metrics calculator according to the account's features."""
 
     def build_calculator(cls=MetricEntriesCalculator):
         return cls(account, meta_ids, mdb, pdb, rdb, cache)
@@ -563,18 +563,17 @@ def get_calculator(
         mod = importlib.import_module(f"{base_module}.{variation}")
     except ModuleNotFoundError:
         log.error(
-            "Invalid variation '%s' calculator, using default implementation",
+            "Invalid variation '%s' calculator, using the default implementation",
             variation,
         )
         return build_calculator()
     else:
         try:
             cls = mod.MetricEntriesCalculator
-        except AttributeError as e:
-            sentry_sdk.capture_exception(e)
-            log.warning(
+        except AttributeError:
+            log.error(
                 "Variation '%s' doesn't provide `MetricEntriesCalculator`, "
-                "using default implementation",
+                "using the default implementation",
                 variation,
             )
             return build_calculator()

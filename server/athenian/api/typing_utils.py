@@ -231,13 +231,33 @@ class NumpyStruct(Mapping[str, Any]):
         for field_name, (field_dtype, _) in cls.dtype.fields.items():
             value = kwargs.pop(field_name)
             try:
-                array_dtype = cls.nested_dtypes[field_name]
+                nested_dtype = cls.nested_dtypes[field_name]
             except KeyError:
+                if value is None and field_dtype.char in ("S", "U"):
+                    value = ""
                 arr[field_name] = np.asarray(value, field_dtype)
             else:
-                value = np.asarray(value, array_dtype)
+                if is_str := ((is_ascii := _dtype_is_ascii(nested_dtype)) or
+                              nested_dtype.char in ("S", "U")):
+                    if isinstance(value, np.ndarray):
+                        if value.dtype == np.dtype(object):
+                            nan_mask = value == np.array([None])
+                        else:
+                            nan_mask = np.full(len(value), False)
+                    else:
+                        nan_mask = np.fromiter((v is None for v in value),
+                                               dtype=np.bool_, count=len(value))
+                    if is_ascii:
+                        nested_dtype = np.dtype("S")
+                value = np.asarray(value, nested_dtype)
+                if is_str:
+                    value[nan_mask] = ""
                 extra_bytes.append(data := value.view(np.byte).data)
-                arr[field_name] = [offset, len(value)]
+                pointer = [offset, len(value)]
+                if is_str:
+                    pointer.append(
+                        value.dtype.itemsize // np.dtype(nested_dtype.char + "1").itemsize)
+                arr[field_name] = pointer
                 offset += len(data)
         if not extra_bytes:
             return cls(arr.view(np.byte).data)
@@ -254,8 +274,12 @@ class NumpyStruct(Mapping[str, Any]):
         return memoryview(self.data)[:self.dtype.itemsize]
 
     def __getitem__(self, item: str) -> Any:
-        """Implement []."""
+        """Implement self[]."""
         return getattr(self, item)
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        """Implement self[] = ..."""
+        setattr(self, key, value)
 
     def __len__(self) -> int:
         """Implement len()."""
@@ -273,6 +297,15 @@ class NumpyStruct(Mapping[str, Any]):
         """Format for human-readability."""
         return "{\n\t%s\n}" % ",\n\t".join("%s: %s" % (k, v) for k, v in self.items())
 
+    def __repr__(self) -> str:
+        """Implement repr()."""
+        kwargs = {k: v for k in self.__slots__[2:] if (v := getattr(self, k)) is not None}
+        if kwargs:
+            kwargs_str = ", ".join(f"{k}={repr(v)}" for k, v in kwargs.items()) + ", "
+        else:
+            kwargs_str = ""
+        return f"{type(self).__name__}({kwargs_str}data={repr(self._data)})"
+
     def __eq__(self, other) -> bool:
         """Compare this object to another."""
         if self is other:
@@ -288,23 +321,41 @@ class NumpyStruct(Mapping[str, Any]):
     def _generate_get(name: str,
                       type_: Union[str, np.dtype, List[Union[str, np.dtype]]],
                       ) -> Callable[["NumpyStruct"], Any]:
-        if isinstance(type_, list):
+        if _dtype_is_ascii(type_):
+            type_ = str
+        elif isinstance(type_, list):
             type_ = np.ndarray
+        elif (char := np.dtype(type_).char) == "U":
+            type_ = np.str_
+        elif char == "S":
+            type_ = np.bytes_
 
         def get_field(self) -> Optional[type_]:
             if self._arr is None:
                 self._arr = np.frombuffer(self.data, self.dtype, count=1)
-            value = self._arr[name]
-            if len(value.shape) == 1:
-                value = value[0]
+            value = self._arr[name][0]
+            if (nested_dtype := self.nested_dtypes.get(name)) is None:
                 if value != value:
                     return None
+                if type_ is str:
+                    value = value.decode()
+                if type_ in (str, np.str_):
+                    value = value or None
                 return value
-            offset, count = value[0]
-            return np.frombuffer(self.data, self.nested_dtypes[name], offset=offset, count=count)
+            if (_dtype_is_ascii(nested_dtype) and (char := "S")) or \
+                    ((char := nested_dtype.char) in ("S", "U")):
+                offset, count, itemsize = value
+                nested_dtype = f"{char}{itemsize}"
+            else:
+                offset, count = value
+            return np.frombuffer(self.data, nested_dtype, offset=offset, count=count)
 
         get_field.__name__ = name
         return get_field
+
+
+def _dtype_is_ascii(dtype: Union[str, np.dtype]) -> bool:
+    return (dtype is ascii) or (isinstance(dtype, str) and dtype.startswith("ascii"))
 
 
 def numpy_struct(cls):
@@ -314,17 +365,26 @@ def numpy_struct(cls):
     The decorated class must define two sub-classes: `dtype` and `optional`.
     The former annotates numpy-friendly immutable fields. The latter annotates mutable fields.
     """
-    dtype = cls.dtype.__annotations__
+    dtype = cls.Immutable.__annotations__
     dtype_tuples = []
     nested_dtypes = {}
     for k, v in dtype.items():
         if isinstance(v, list):
             assert len(v) == 1, "Array must be specified as `[dtype]`."
-            nested_dtypes[k] = v[0]
-            dtype_tuples.append((k, np.int32, 2))
+            nested_dtype = v[0]
+            if not (is_ascii := _dtype_is_ascii(nested_dtype)):
+                nested_dtype = np.dtype(nested_dtype)
+            nested_dtypes[k] = nested_dtype
+            if is_ascii or nested_dtype.char in ("S", "U"):
+                # save the characters count
+                dtype_tuples.append((k, np.int32, 3))
+            else:
+                dtype_tuples.append((k, np.int32, 2))
+        elif _dtype_is_ascii(v):
+            dtype_tuples.append((k, "S" + v[6:-1]))
         else:
             dtype_tuples.append((k, v))
-    optional = cls.optional.__annotations__
+    optional = cls.Optional.__annotations__
     field_names = NamedTuple(
         f"{cls.__name__}FieldNames",
         [(k, str) for k in chain(dtype, optional)],
@@ -333,7 +393,7 @@ def numpy_struct(cls):
         "__slots__": ("_data", "_arr", *optional),
         **{k: property(NumpyStruct._generate_get(k, v)) for k, v in dtype.items()},
         "dtype": np.dtype(dtype_tuples),
-        "nested_dtypes": {k: np.dtype(v) for k, v in nested_dtypes.items()},
+        "nested_dtypes": nested_dtypes,
         "f": field_names,
     }
     struct_cls = type(cls.__name__, (NumpyStruct, cls), body)

@@ -337,6 +337,8 @@ class NodePullRequest(Base,
                       ):
     __tablename__ = "github_node_pull_request"
 
+    title = Column(Text, nullable=False)
+
 
 class NodePullRequestCommit(Base,
                             IDMixinNG,

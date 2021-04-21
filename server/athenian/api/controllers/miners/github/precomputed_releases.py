@@ -1,6 +1,6 @@
 from collections import defaultdict
+from datetime import timezone
 from itertools import chain
-import pickle
 from typing import Any, Dict, Iterable, List, Tuple
 
 import databases
@@ -65,7 +65,7 @@ async def load_precomputed_release_facts(releases: pd.DataFrame,
     with sentry_sdk.start_span(op="load_precomputed_release_facts/fetch",
                                description=str(len(releases))):
         rows = await pdb.fetch_all(query)
-    return {r[0]: pickle.loads(r[1]) for r in rows}
+    return {r[0]: ReleaseFacts(r[1]) for r in rows}
 
 
 def _compose_release_match(match: ReleaseMatch, value: str) -> str:
@@ -103,8 +103,8 @@ async def store_precomputed_release_facts(releases: List[Tuple[Dict[str, Any], R
             acc_id=account,
             release_match=_compose_release_match(setting.match, value),
             repository_full_name=repo,
-            published_at=facts.published,
-            data=pickle.dumps(facts),
+            published_at=facts.published.item().replace(tzinfo=timezone.utc),
+            data=facts.data,
         ).create_defaults().explode(with_primary_keys=True))
     if pdb.url.dialect in ("postgres", "postgresql"):
         sql = postgres_insert(GitHubReleaseFacts).on_conflict_do_nothing()

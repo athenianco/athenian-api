@@ -2,8 +2,7 @@ from datetime import datetime, timedelta
 from functools import reduce
 from itertools import chain
 from typing import Any, Callable, Collection, Dict, Generic, Iterable, List, Mapping, Optional, \
-    Sequence, \
-    Tuple, Type, TypeVar
+    Sequence, Tuple, Type, TypeVar
 
 import networkx as nx
 import numpy as np
@@ -362,65 +361,6 @@ class HistogramCalculatorEnsemble(MetricCalculatorEnsemble):
 
 
 @sentry_span
-def df_from_dataclasses(items: Iterable[Mapping[str, Any]],
-                        length: Optional[int] = None,
-                        ) -> pd.DataFrame:
-    """
-    Combine several dataclasses to a Pandas DataFrame.
-
-    The dataclass type must be a Mapping. Pass `(i.__dict__ for i in items)` if it isn't.
-    """
-    columns = {}
-    first_item = None
-    try:
-        if length is None:
-            length = len(items)
-    except TypeError:
-        # slower branch without pre-allocation
-        for i, item in enumerate(items):
-            if i == 0:
-                first_item = item
-                assert isinstance(first_item, Mapping)
-                for k in item:
-                    columns[k] = []
-            for k in item:
-                columns[k].append(item[k])
-    else:
-        for i, item in enumerate(items):
-            if i == 0:
-                first_item = item
-                assert isinstance(first_item, Mapping)
-                for k in item:
-                    columns[k] = [None] * length
-            for k in item:
-                columns[k][i] = item[k]
-    if first_item is None:
-        return pd.DataFrame()
-    column_types = {}
-    for k, v in type(first_item).__annotations__.items():
-        if typing_utils.is_optional(v):
-            if issubclass(unboxed := v.__args__[0], (datetime, np.datetime64, float)):
-                # we can only unbox types that have a "NaN" value
-                v = unboxed
-            else:
-                v = object
-        elif typing_utils.is_generic(v):
-            v = object
-        column_types[k] = v
-    for k, v in columns.items():
-        column_type = column_types[k]
-        if issubclass(column_type, datetime):
-            v = tslib.array_to_datetime(np.array(v, dtype=object), utc=True, errors="raise")[0]
-        elif issubclass(column_type, timedelta):
-            v = np.array(v, dtype="timedelta64[s]")
-        elif np.dtype(column_type) != np.dtype(object):
-            v = np.array(v, dtype=column_type)
-        columns[k] = v
-    df = pd.DataFrame.from_dict(columns)
-    return df
-
-
-@sentry_span
 def df_from_structs(items: Iterable[typing_utils.NumpyStruct],
                     length: Optional[int] = None,
                     ) -> pd.DataFrame:
@@ -483,8 +423,8 @@ def df_from_structs(items: Iterable[typing_utils.NumpyStruct],
             columns[field_name] = table_array[field_name]
     del table_array
     column_types = {}
-    for k, v in first_item.optional.__annotations__.items():
-        if not issubclass(v, (datetime, np.datetime64, float)):
+    for k, v in first_item.Optional.__annotations__.items():
+        if not isinstance(v, type) or not issubclass(v, (datetime, np.datetime64, float)):
             # we can only unbox types that have a "NaN" value
             v = object
         column_types[k] = v
