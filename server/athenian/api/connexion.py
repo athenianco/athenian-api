@@ -169,6 +169,7 @@ class AthenianApp(connexion.AioHttpApp):
                  pdb_options: Optional[Dict[str, Any]] = None,
                  rdb_options: Optional[Dict[str, Any]] = None,
                  on_startup_callbacks: Optional[Collection[Callable[..., None]]] = None,
+                 on_shutdown_callbacks: Optional[Collection[Callable[..., None]]] = None,
                  auth0_cls: Callable[..., Auth0] = Auth0,
                  kms_cls: Callable[[], AthenianKMS] = AthenianKMS,
                  cache: Optional[aiomcache.Client] = None,
@@ -274,7 +275,10 @@ class AthenianApp(connexion.AioHttpApp):
 
         if on_startup_callbacks:
             self.app.on_startup.extend(on_startup_callbacks)
-        self.app.on_shutdown.append(self.shutdown)
+
+        on_shutdown_callbacks = list(on_shutdown_callbacks or [])
+        on_shutdown_callbacks.append(self.shutdown)
+        self.app.on_shutdown.extend(on_shutdown_callbacks)
         # schedule the DB connections when the server starts
         self._db_futures = {
             args[1]: asyncio.ensure_future(connect_to_db(*args))
