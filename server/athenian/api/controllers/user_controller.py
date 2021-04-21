@@ -91,7 +91,8 @@ async def _get_account_jira(account: int,
     jira_id = await get_jira_id(account, sdb, cache)
     tasks = [
         mdb.fetch_all(select([JIRAProject.key])
-                      .where(JIRAProject.acc_id == jira_id)
+                      .where(and_(JIRAProject.acc_id == jira_id,
+                                  JIRAProject.is_deleted.is_(False)))
                       .order_by(JIRAProject.key)),
         mdb.fetch_val(select([JIRAInstallation.base_url])
                       .where(JIRAInstallation.acc_id == jira_id)),

@@ -65,7 +65,9 @@ async def get_jira_installation(account: int,
     """
     jira_id = await get_jira_id(account, sdb, cache)
     tasks = [
-        mdb.fetch_all(select([Project.id, Project.key]).where(Project.acc_id == jira_id)),
+        mdb.fetch_all(select([Project.id, Project.key])
+                      .where(and_(Project.acc_id == jira_id,
+                                  Project.is_deleted.is_(False)))),
         sdb.fetch_all(select([JIRAProjectSetting.key])
                       .where(and_(JIRAProjectSetting.account_id == account,
                                   JIRAProjectSetting.enabled.is_(False)))),
