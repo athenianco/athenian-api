@@ -6,7 +6,8 @@ import sentry_sdk
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from athenian.api import metadata, setup_context
+from athenian.api import metadata
+from athenian.api.__main__ import setup_context
 from athenian.api.models.metadata import check_schema_version, dereference_schemas, github, jira
 from athenian.api.slogging import setup as setup_logging
 

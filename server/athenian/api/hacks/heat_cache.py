@@ -20,8 +20,8 @@ from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import and_, desc, func, insert, select, update
 from tqdm import tqdm
 
-from athenian.api import check_schema_versions, compose_db_options, create_memcached, \
-    create_slack, patch_pandas, setup_context
+from athenian.api.__main__ import check_schema_versions, compose_db_options, create_memcached, \
+    create_slack, setup_context
 from athenian.api.async_utils import gather
 from athenian.api.cache import setup_cache_metrics
 from athenian.api.controllers.account import copy_teams_as_needed, generate_jira_invitation_link, \
@@ -43,6 +43,7 @@ from athenian.api.controllers.settings import ReleaseMatch, Settings
 import athenian.api.db
 from athenian.api.db import measure_db_overhead_and_retry, ParallelDatabase
 from athenian.api.defer import enable_defer, wait_deferred
+from athenian.api.faster_pandas import patch_pandas
 from athenian.api.models.metadata import dereference_schemas as dereference_metadata_schemas
 from athenian.api.models.metadata.github import NodePullRequest, NodeUser, PullRequestLabel, User
 from athenian.api.models.persistentdata import \

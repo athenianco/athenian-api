@@ -52,6 +52,12 @@ from athenian.api.tracing import InfiniteString, MAX_SENTRY_STRING_LENGTH
 from athenian.precomputer.db import dereference_schemas as dereference_precomputed_schemas
 
 
+flogging.trailing_dot_exceptions.update((
+    "connexion.api.security",
+    "connexion.apis.aiohttp_api",
+))
+
+
 class AthenianConnexionRequest(connexion.lifecycle.ConnexionRequest):
     """Optimize memory consumption and avoid parsing JSON more than once."""
 
