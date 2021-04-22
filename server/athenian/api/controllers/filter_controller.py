@@ -195,7 +195,8 @@ def _bake_updated_min_max(filt: FilterPullRequestsRequest) -> Tuple[datetime, da
             "`updated_from` and `updated_to` must be both either specified or not"))
     if filt.updated_from is not None:
         updated_min = datetime.combine(filt.updated_from, datetime.min.time(), tzinfo=timezone.utc)
-        updated_max = datetime.combine(filt.updated_to, datetime.min.time(), tzinfo=timezone.utc)
+        updated_max = datetime.combine(filt.updated_to, datetime.min.time(), tzinfo=timezone.utc) \
+            + timedelta(days=1)
     else:
         updated_min = updated_max = None
     return updated_min, updated_max
