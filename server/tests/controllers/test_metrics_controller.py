@@ -711,10 +711,10 @@ async def test_calc_metrics_prs_lines_smoke(client, headers):
             {
                 "with": {"author": ["github.com/vmarkovtsev", "github.com/mcuadros"]},
                 "repositories": ["{1}", "github.com/src-d/go-git"],
-                "lines": [0, 500, 100500],
+                "lines": [50, 200, 100000, 100500],
             },
         ],
-        "metrics": [PullRequestMetricID.PR_LEAD_TIME],
+        "metrics": [PullRequestMetricID.PR_OPENED],
         "date_from": "2017-10-13",
         "date_to": "2018-03-23",
         "granularities": ["all"],
@@ -724,14 +724,26 @@ async def test_calc_metrics_prs_lines_smoke(client, headers):
     response = await client.request(
         method="POST", path="/v1/metrics/prs", headers=headers, json=body,
     )
-    body = (await response.read()).decode("utf-8")
-    assert response.status == 200, "Response body is : " + body
-    cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(body))
-    assert len(cm.calculated) == 2
-    assert cm.calculated[0].values[0].values[0] == "3004941s"
-    assert cm.calculated[0].for_.lines == [0, 500]
-    assert cm.calculated[1].values[0].values[0] == "3771952s"
-    assert cm.calculated[1].for_.lines == [500, 100500]
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + rbody
+    cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(rbody))
+    assert len(cm.calculated) == 3
+    assert cm.calculated[0].values[0].values[0] == 3
+    assert cm.calculated[0].for_.lines == [50, 200]
+    assert cm.calculated[1].values[0].values[0] == 3
+    assert cm.calculated[1].for_.lines == [200, 100000]
+    assert cm.calculated[2].values[0].values[0] == 0
+    assert cm.calculated[2].for_.lines == [100000, 100500]
+
+    body["for"][0]["lines"] = [50, 100500]
+    response = await client.request(
+        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + rbody
+    cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(rbody))
+    assert len(cm.calculated) == 1
+    assert cm.calculated[0].values[0].values[0] == 6
 
 
 async def test_code_bypassing_prs_smoke(client, headers):
