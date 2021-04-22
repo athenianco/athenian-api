@@ -37,6 +37,7 @@ from athenian.api.kms import AthenianKMS
 from athenian.api.models import check_alembic_schema_version, check_collation, \
     DBSchemaMismatchError
 from athenian.api.models.metadata import check_schema_version as check_mdb_schema_version
+from athenian.api.preloading.cache import MemoryCachePreloader
 from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
 
 
@@ -348,6 +349,7 @@ def main() -> Optional[AthenianApp]:
     auth0_cls = create_auth0_factory(args.force_user)
     kms_cls = None if args.no_google_kms else AthenianKMS
     slack = create_slack(log)
+    mc_preloader = MemoryCachePreloader()
     app = AthenianApp(
         mdb_conn=args.metadata_db,
         sdb_conn=args.state_db,
@@ -358,9 +360,12 @@ def main() -> Optional[AthenianApp]:
                              args.precomputed_db,
                              args.persistentdata_db,
                              ),
+        on_shutdown_callbacks=[mc_preloader.shutdown],
         ui=args.ui, auth0_cls=auth0_cls, kms_cls=kms_cls, cache=cache, slack=slack,
         client_max_size=int(os.getenv("ATHENIAN_MAX_CLIENT_SIZE", 256 * 1024)),
         max_load=float(os.getenv("ATHENIAN_MAX_LOAD", 12)))
+    if args.preload_dataframes:
+        app.on_dbs_conected(mc_preloader.preload)
     app.run(host=args.host, port=args.port, print=lambda s: log.info("\n" + s))
     return app
 
