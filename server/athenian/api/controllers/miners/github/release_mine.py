@@ -395,11 +395,11 @@ def _build_mined_releases(releases: pd.DataFrame,
     result = [
         ({Release.id.key: my_id,
           Release.name.key: my_name or my_tag,
-          Release.repository_full_name.key: prefixer.repo_name_map[repo],
+          Release.repository_full_name.key: prefixed_repo,
           Release.url.key: my_url,
           Release.sha.key: my_commit},
-         _release_facts_with_repository_full_name(precomputed_facts[my_id], repo))
-        for my_id, my_name, my_tag, repo, my_url, my_commit in zip(
+         _release_facts_with_repository_full_name(precomputed_facts[my_id], my_repo))
+        for my_id, my_name, my_tag, my_repo, my_url, my_commit in zip(
             releases[Release.id.key].values[has_precomputed_facts],
             releases[Release.name.key].values[has_precomputed_facts],
             releases[Release.tag.key].values[has_precomputed_facts],
@@ -407,6 +407,8 @@ def _build_mined_releases(releases: pd.DataFrame,
             releases[Release.url.key].values[has_precomputed_facts],
             releases[Release.sha.key].values[has_precomputed_facts],
         )
+        # "gone" repositories, reposet-sync has not updated yet
+        if (prefixed_repo := prefixer.repo_name_map.get(my_repo)) is not None
     ]
     release_authors = releases[Release.author.key].values
     mentioned_authors = np.concatenate([
