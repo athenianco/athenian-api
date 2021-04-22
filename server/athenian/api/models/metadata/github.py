@@ -452,3 +452,56 @@ class TeamMember(Base,
                  AccountMixin,
                  ):
     __tablename__ = "github_node_team_members"
+
+
+class CheckSuite(Base,
+                 GitHubSchemaMixin,
+                 AccountMixin,
+                 RepositoryMixin,
+                 UpdatedMixin):
+    __tablename__ = "api_check_suites"
+
+    commit_node_id = Column(Text, nullable=False)
+    sha = Column(Text, nullable=False)
+    author_user = Column(Text)
+    author_login = Column(Text)
+    authored_date = Column(TIMESTAMP(timezone=True), nullable=False)
+    committed_date = Column(TIMESTAMP(timezone=True), nullable=False)
+    additions = Column(BigInteger, nullable=False)
+    deletions = Column(BigInteger, nullable=False)
+    changed_files = Column(BigInteger, nullable=False)
+    pull_request_node_id = Column(Text)
+    check_suite_node_id = Column(Text, primary_key=True)
+    app = Column(Text)
+    branch = Column(Text)
+    conclusion = Column(Text, nullable=False)
+    status = Column(Text)
+    url = Column(Text, nullable=False)
+
+
+class CheckRun(Base,
+               GitHubSchemaMixin,
+               AccountMixin,
+               RepositoryMixin):
+    __tablename__ = "api_check_runs"
+
+    commit_node_id = Column(Text, nullable=False)
+    sha = Column(Text, nullable=False)
+    author_user = Column(Text)
+    author_login = Column(Text)
+    authored_date = Column(TIMESTAMP(timezone=True), nullable=False)
+    committed_date = Column(TIMESTAMP(timezone=True), nullable=False)
+    additions = Column(BigInteger, nullable=False)
+    deletions = Column(BigInteger, nullable=False)
+    changed_files = Column(BigInteger, nullable=False)
+    pull_request_node_id = Column(Text)
+    started_at = Column(TIMESTAMP(timezone=True), nullable=False)
+    completed_at = Column(TIMESTAMP(timezone=True))
+    check_suite_node_id = Column(Text, nullable=False)
+    check_run_node_id = Column(Text, primary_key=True)
+    conclusion = Column(Text, nullable=False)
+    check_suite_conclusion = Column(Text, nullable=False)
+    url = Column(Text, nullable=False)
+    name = Column(Text)
+    status = Column(Text)
+    check_suite_status = Column(Text)
