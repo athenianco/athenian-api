@@ -306,8 +306,12 @@ class Auth0:
                     token = await self.mgmt_token()
                 else:
                     if resp.status >= 400:
+                        try:
+                            response_body = await resp.json()
+                        except aiohttp.ContentTypeError:
+                            response_body = await resp.text()
                         self.log.error("Auth0 Management API /users raised HTTP %d: %s",
-                                       resp.status, await resp.json())
+                                       resp.status, response_body)
                     break
             else:  # for retries in range
                 return []
