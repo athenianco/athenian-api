@@ -7,7 +7,7 @@ import sqlalchemy as sa
 from sqlalchemy import select
 
 from athenian.api import metadata
-from athenian.api.async_utils import read_sql_query
+from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.typing_utils import DatabaseLike
 
 
@@ -139,36 +139,19 @@ class CachedDataFrame:
 
 
 class MemoryCache:
-    """A singleton in-memory cache for instances of `CachedDataFrame`."""
-
-    _instance = None
+    """An in-memory cache of a specific db for instances of `CachedDataFrame`."""
 
     def __init__(
         self,
-        mdb: DatabaseLike,
-        pdb: DatabaseLike,
+        db: DatabaseLike,
         options: Dict[str, Dict],
         debug_memory: Optional[bool] = False,
     ):
         """Initialize a `MemoryCache`."""
-        self._mdb = mdb
-        self._pdb = pdb
+        self._db = db
         self._options = options
         self._debug_memory = debug_memory
         self._dfs = {}
-
-    @classmethod
-    def get_instance(
-        cls,
-        mdb: Optional[DatabaseLike] = None,
-        pdb: Optional[DatabaseLike] = None,
-        options: Optional[Dict[str, Dict]] = None,
-        debug_memory: Optional[bool] = False,
-    ) -> "MemoryCache":
-        """Return the singleton instance."""
-        if cls._instance is None:
-            cls._instance = cls(mdb, pdb, options, debug_memory=debug_memory)
-        return cls._instance
 
     @property
     def dfs(self) -> Dict[str, CachedDataFrame]:
@@ -195,15 +178,16 @@ class MemoryCache:
         if id_:
             await self._dfs[id_].refresh()
         else:
-            await asyncio.gather(*[df.refresh() for df in self._dfs.values()])
+            await gather(*[df.refresh() for df in self._dfs.values()])
 
     async def load(self):
         """Load all the DataFrames from the database."""
         for id_, opts in self._options.items():
+            opts["db"] = self._db
             opts["debug_memory"] = self._debug_memory
             self._dfs[id_] = CachedDataFrame(id_, **opts)
 
-        await asyncio.gather(*[cdf.refresh() for cdf in self._dfs.values()])
+        await gather(*[cdf.refresh() for cdf in self._dfs.values()])
 
 
 class MemoryCachePreloader:
@@ -217,13 +201,10 @@ class MemoryCachePreloader:
         self._debug_mode = self._log.isEnabledFor(logging.DEBUG)
 
     def preload(
-        self, mdb: DatabaseLike, pdb: DatabaseLike, debug_memory: Optional[bool] = None,
+        self, debug_memory: Optional[bool] = None, **dbs: Dict[str, DatabaseLike],
     ):
         """Preloads the `MemoryCache`."""
-        options = build_memory_cache_options(mdb, pdb)
-        debug_mode = self._debug_mode if debug_memory is None else debug_memory
-        mc = MemoryCache.get_instance(mdb, pdb, options, debug_memory=debug_mode)
-        self._task = asyncio.create_task(self._load(mc))
+        self._task = asyncio.create_task(self._preload_all(debug_memory, **dbs))
         self._task.add_done_callback(self._done)
 
     async def shutdown(self, *_):
@@ -235,45 +216,58 @@ class MemoryCachePreloader:
             self._log.info("Cancelling MemoryCache preloading")
             self._task.cancel()
 
-    async def _load(self, mc: MemoryCache):
+    async def _preload_all(self, debug_memory, **dbs: Dict[str, DatabaseLike]):
         self._log.info("Preloading MemoryCache")
-        await mc.load()
+        debug_mode = self._debug_mode if debug_memory is None else debug_memory
+        tasks = []
+        for db_name, opts in get_memory_cache_options().items():
+            db = dbs[db_name]
+            mc = MemoryCache(db, opts, debug_memory=debug_mode)
+            db.cache = mc
+            tasks.append(mc.load())
+
+        await gather(*tasks)
 
     def _done(self, *_):
         if self._task.cancelled():
             self._log.info("MemoryCache preloading cancelled")
-        elif self._task.done():
+        elif self._task.exception():
+            raise self._task.exception()
+        else:
             self._log.info("MemoryCache ready")
 
 
-def build_memory_cache_options(mdb: DatabaseLike, pdb: DatabaseLike) -> Dict[str, Dict]:
+def get_memory_cache_options() -> Dict[str, Dict]:
     """Return the options for the MemoryCache."""
     # TODO
     return {}
     # Example configuration:
-    # {
-    #     "prs": {
-    #         "db": mdb,
-    #         "cols": [
-    #             PullRequest.acc_id,
-    #             PullRequest.node_id,
-    #             PullRequest.closed,
-    #             PullRequest.closed_at,
-    #             PullRequest.created_at,
-    #             PullRequest.merged,
-    #             PullRequest.merged_at,
-    #             PullRequest.merged_by_login,
-    #             PullRequest.repository_full_name,
-    #             PullRequest.updated_at,
-    #             PullRequest.user_login,
-    #             PullRequest.hidden,
-    #         ],
-    #         "categorical_cols": [
-    #             PullRequest.acc_id,
-    #             PullRequest.merged_by_login,
-    #             PullRequest.repository_full_name,
-    #             PullRequest.user_login,
-    #         ],
-    #         "identifier_cols": [PullRequest.node_id],
+    # from athenian.api.models.metadata.github import PullRequest
+
+    # return {
+    #     "mdb": {
+    #         "prs": {
+    #             "cols": [
+    #                 PullRequest.acc_id,
+    #                 PullRequest.node_id,
+    #                 PullRequest.closed,
+    #                 PullRequest.closed_at,
+    #                 PullRequest.created_at,
+    #                 PullRequest.merged,
+    #                 PullRequest.merged_at,
+    #                 PullRequest.merged_by_login,
+    #                 PullRequest.repository_full_name,
+    #                 PullRequest.updated_at,
+    #                 PullRequest.user_login,
+    #                 PullRequest.hidden,
+    #             ],
+    #             "categorical_cols": [
+    #                 PullRequest.acc_id,
+    #                 PullRequest.merged_by_login,
+    #                 PullRequest.repository_full_name,
+    #                 PullRequest.user_login,
+    #             ],
+    #             "identifier_cols": [PullRequest.node_id],
+    #         },
     #     },
     # }
