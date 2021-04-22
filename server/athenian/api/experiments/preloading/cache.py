@@ -6,6 +6,7 @@ import pandas as pd
 import sqlalchemy as sa
 from sqlalchemy import select
 
+from athenian.api import metadata
 from athenian.api.async_utils import read_sql_query
 from athenian.api.typing_utils import DatabaseLike
 
@@ -208,20 +209,20 @@ class MemoryCache:
 class MemoryCachePreloader:
     """Responsible for dealing with `MemoryCache` preloading and graceful shutdown."""
 
-    def __init__(self, log: logging.Logger):
+    _log = logging.getLogger(f"{metadata.__package__}.MemoryCachePreloader")
+
+    def __init__(self):
         """Initialize a `MemoryCachePreloader`."""
-        self._log = log
         self._task = None
+        self._debug_mode = self._log.isEnabledFor(logging.DEBUG)
 
     def preload(
-        self,
-        mdb: DatabaseLike,
-        pdb: DatabaseLike,
-        debug_memory: Optional[bool] = False,
+        self, mdb: DatabaseLike, pdb: DatabaseLike, debug_memory: Optional[bool] = None,
     ):
         """Preloads the `MemoryCache`."""
         options = build_memory_cache_options(mdb, pdb)
-        mc = MemoryCache.get_instance(mdb, pdb, options, debug_memory=debug_memory)
+        debug_mode = self._debug_mode if debug_memory is None else debug_memory
+        mc = MemoryCache.get_instance(mdb, pdb, options, debug_memory=debug_mode)
         self._task = asyncio.create_task(self._load(mc))
         self._task.add_done_callback(self._done)
 
