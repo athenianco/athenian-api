@@ -311,8 +311,7 @@ async def mine_releases(repos: Iterable[str],
                             my_published_at - repo_releases[Release.published_at.key]._ixs(parent)
                     else:
                         my_age = my_published_at - first_commit_dates[repo]
-                    if my_author is not None:
-                        my_author = prefixer.user_login_map[my_author]
+                    if (my_author := prefixer.user_login_map.get(my_author)) is not None:
                         mentioned_authors.add(my_author)
                     computed_release_info_by_commit[my_commit] = (
                         my_age, my_additions, my_deletions, commits_count, my_prs,
