@@ -100,6 +100,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--memcached", required=False,
                         help="memcached (users profiles, preprocessed metadata cache) address, "
                              "for example, 0.0.0.0:11211")
+    parser.add_argument("--preload-dataframes", required=False, action="store_true",
+                        help="Whether to preload DB tables in memory and refresh periodically.")
     parser.add_argument("--ui", action="store_true", help="Enable the REST UI.")
     parser.add_argument("--no-google-kms", action="store_true",
                         help="Skip Google Key Management Service initialization. Personal Access "
