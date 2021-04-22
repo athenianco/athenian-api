@@ -323,7 +323,7 @@ def test_pull_request_metrics_counts_q(pr_samples, cls_q, cls):  # noqa: F811
 @pytest.mark.parametrize("with_memcached, with_mine_cache_wipe",
                          itertools.product(*([[False, True]] * 2)))
 @with_defer
-async def test_calc_pull_request_metrics_line_github_cache(
+async def test_calc_pull_request_metrics_line_github_cache_reset(
         metrics_calculator_factory, branches, default_branches,
         mdb, pdb, rdb, cache, memcached, with_memcached,
         release_match_setting_tag, with_mine_cache_wipe):
@@ -357,6 +357,27 @@ async def test_calc_pull_request_metrics_line_github_cache(
     assert metrics1.value == metrics2.value
     assert metrics1.confidence_score() == metrics2.confidence_score()
     assert metrics1.confidence_min < metrics1.value < metrics1.confidence_max
+
+
+@with_defer
+async def test_calc_pull_request_metrics_line_github_cache_lines(
+        metrics_calculator_factory, release_match_setting_tag):
+
+    metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
+    date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
+    date_to = datetime(year=2019, month=10, day=1, tzinfo=timezone.utc)
+    args = [[PullRequestMetricID.PR_CYCLE_TIME], [[date_from, date_to]], [0, 1], [0, 1000],
+            [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(), False,
+            release_match_setting_tag, False]
+    metrics1 = (
+        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
+    )[0][0][0][0][0][0]
+    await wait_deferred()
+    args[3] = []
+    metrics2 = (
+        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
+    )[0][0][0][0][0][0]
+    assert metrics1 != metrics2
 
 
 @with_defer

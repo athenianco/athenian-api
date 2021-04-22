@@ -88,11 +88,12 @@ class MetricEntriesCalculator:
         exptime=PullRequestMiner.CACHE_TTL,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda self, metrics, time_intervals, quantiles, repositories, participants, labels, jira, exclude_inactive, release_settings, **_:  # noqa
+        key=lambda metrics, time_intervals, quantiles, lines, repositories, participants, labels, jira, exclude_inactive, release_settings, **_:  # noqa
         (
             ",".join(sorted(metrics)),
             ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
             ",".join(str(q) for q in quantiles),
+            ",".join(str(n) for n in lines),
             _compose_cache_key_repositories(repositories),
             _compose_cache_key_participants(participants),
             labels, jira,
@@ -140,11 +141,12 @@ class MetricEntriesCalculator:
         exptime=PullRequestMiner.CACHE_TTL,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda self, defs, time_from, time_to, quantiles, repositories, participants, labels, jira, exclude_inactive, release_settings, **_:  # noqa
+        key=lambda defs, time_from, time_to, quantiles, lines, repositories, participants, labels, jira, exclude_inactive, release_settings, **_:  # noqa
         (
             ",".join("%s:%s" % (k, sorted(v)) for k, v in sorted(defs.items())),
             time_from, time_to,
             ",".join(str(q) for q in quantiles),
+            ",".join(str(n) for n in lines),
             _compose_cache_key_repositories(repositories),
             _compose_cache_key_participants(participants),
             labels, jira,
@@ -223,7 +225,7 @@ class MetricEntriesCalculator:
         exptime=5 * 60,  # 5 min
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda self, devs, repositories, time_intervals, topics, labels, jira, release_settings, **_:  # noqa
+        key=lambda devs, repositories, time_intervals, topics, labels, jira, release_settings, **_:  # noqa
         (
             ",".join(t.value for t in sorted(topics)),
             ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
@@ -278,7 +280,7 @@ class MetricEntriesCalculator:
         exptime=5 * 60,  # 5 min
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda self, metrics, time_intervals, quantiles, repositories, participants, jira, release_settings, **_:  # noqa
+        key=lambda metrics, time_intervals, quantiles, repositories, participants, jira, release_settings, **_:  # noqa
         (
             ",".join(sorted(metrics)),
             ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
@@ -364,7 +366,7 @@ class MetricEntriesCalculator:
         exptime=PullRequestMiner.CACHE_TTL,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda self, time_from, time_to, repositories, participants, labels, jira, exclude_inactive, release_settings, fresh, with_jira_map, **_:  # noqa
+        key=lambda time_from, time_to, repositories, participants, labels, jira, exclude_inactive, release_settings, fresh, with_jira_map, **_:  # noqa
         (
             time_from,
             time_to,
@@ -378,7 +380,6 @@ class MetricEntriesCalculator:
             fresh,
         ),
         postprocess=_postprocess_cached_facts,
-        version=2,
         cache=lambda self, **_: self._cache,
     )
     async def _calc_pull_request_facts_github(self,
