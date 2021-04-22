@@ -1319,6 +1319,40 @@ async def test_mine_releases_jira(
     assert len(releases) == 15
 
 
+@with_defer
+async def test_mine_releases_cache(
+        mdb, pdb, rdb, release_match_setting_tag, prefixer_promise, cache):
+    time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2018, month=11, day=1, tzinfo=timezone.utc)
+    releases1, _, _ = await mine_releases(
+        ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
+        release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
+    await wait_deferred()
+    releases2, _, _ = await mine_releases(
+        ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
+        release_match_setting_tag, prefixer_promise, 1, (6366825,), None, None, None, cache)
+    assert releases1 == releases2
+    with pytest.raises(AssertionError):
+        await mine_releases(
+            ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
+            release_match_setting_tag, prefixer_promise, 1, (6366825,), None, None, None, cache,
+            with_pr_titles=True)
+    releases3, _, _ = await mine_releases(
+        ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
+        release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache,
+        with_pr_titles=True)
+    await wait_deferred()
+    releases4, _, _ = await mine_releases(
+        ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
+        release_match_setting_tag, prefixer_promise, 1, (6366825,), None, None, None, cache,
+        with_pr_titles=True)
+    assert releases3 == releases4
+    releases2, _, _ = await mine_releases(
+        ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
+        release_match_setting_tag, prefixer_promise, 1, (6366825,), None, None, None, cache)
+    assert releases3 == releases2
+
+
 @pytest.mark.parametrize("settings_index", [0, 1])
 @with_defer
 async def test_precomputed_releases_low_level(

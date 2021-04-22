@@ -15,7 +15,7 @@ from sqlalchemy import and_, func, select, union_all
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
-from athenian.api.cache import cached
+from athenian.api.cache import cached, CancelCache
 from athenian.api.controllers.miners.filters import JIRAFilter
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.commit import fetch_precomputed_commit_history_dags, \
@@ -33,14 +33,25 @@ from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.github.users import mine_user_avatars
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
 from athenian.api.controllers.miners.types import released_prs_columns, ReleaseFacts, \
-    ReleaseParticipants, \
-    ReleaseParticipationKind
+    ReleaseParticipants, ReleaseParticipationKind
 from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
 from athenian.api.db import add_pdb_hits, add_pdb_misses
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import NodePullRequest, PullRequest, PushCommit, Release
 from athenian.api.tracing import sentry_span
+
+
+def _reject_releases_without_pr_titles(result: Tuple[List[Tuple[Dict[str, Any], ReleaseFacts]],
+                                                     Union[List[Tuple[str, str]], np.ndarray],
+                                                     Dict[str, ReleaseMatch]],
+                                       with_pr_titles: bool = False,
+                                       **_) -> Tuple[List[Tuple[Dict[str, Any], ReleaseFacts]],
+                                                     Union[List[Tuple[str, str]], np.ndarray],
+                                                     Dict[str, ReleaseMatch]]:
+    if with_pr_titles and any(r[1]["prs_" + PullRequest.title.key] is None for r in result[0]):
+        raise CancelCache()
+    return result
 
 
 @sentry_span
@@ -52,6 +63,7 @@ from athenian.api.tracing import sentry_span
         ",".join(sorted(repos)),
         ",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(participants.items())),
         time_from, time_to, jira, settings),
+    postprocess=_reject_releases_without_pr_titles,
 )
 async def mine_releases(repos: Iterable[str],
                         participants: ReleaseParticipants,
@@ -81,6 +93,7 @@ async def mine_releases(repos: Iterable[str],
                         the pdb is.
     :param with_avatars: Indicates whether to return the fetched user avatars or just an array of \
                          unique mentioned logins.
+    :param with_pr_titles: Indicates whether released PR titles must be fetched.
     :return: 1. List of releases (general info, computed facts). \
              2. User avatars. \
              3. Release matched_by-s.
@@ -103,12 +116,12 @@ async def mine_releases(repos: Iterable[str],
         return [], [], {r: v.match for r, v in settings.prefixed.items()}
     precomputed_facts = await load_precomputed_release_facts(
         releases_in_time_range, default_branches, settings, account, pdb)
+    # uncomment this line to compute releases from scratch:
+    # precomputed_facts = {}
     if with_pr_titles:
         pr_node_ids_for_pr_titles = [
             f["prs_" + PullRequest.node_id.key] for f in precomputed_facts.values()
         ]
-    # uncomment this to compute releases from scratch
-    # precomputed_facts = {}
     add_pdb_hits(pdb, "release_facts", len(precomputed_facts))
     missed_releases_count = len(releases_in_time_range) - len(precomputed_facts)
     add_pdb_misses(pdb, "release_facts", missed_releases_count)
@@ -357,14 +370,14 @@ async def mine_releases(repos: Iterable[str],
     else:
         avatars = np.array(
             [p[1] for p in np.char.split(np.array(list(mentioned_authors), dtype="U"), "/", 1)])
+    if participants:
+        result = _filter_by_participants(result, participants)
     if with_pr_titles:
         pr_title_map = {row[0].encode(): row[1] for row in secondary[0]}
         for _, facts in result:
             facts["prs_" + PullRequest.title.key] = [
                 pr_title_map.get(node) for node in facts["prs_" + PullRequest.node_id.key]
             ]
-    if participants:
-        result = _filter_by_participants(result, participants)
     return result, avatars, {r: v.match for r, v in settings.prefixed.items()}
 
 
