@@ -553,17 +553,17 @@ async def test_calc_pull_request_metrics_deep_filters(
             [  # repository group 1
                 [  # participants group 1
                     [  # time series primary 1
-                        [Metric(exists=True, value=135, confidence_min=None, confidence_max=None),
-                         Metric(exists=True, value=132, confidence_min=None, confidence_max=None),
-                         Metric(exists=True, value=111, confidence_min=None, confidence_max=None)],
+                        [Metric(exists=True, value=134, confidence_min=None, confidence_max=None),
+                         Metric(exists=True, value=131, confidence_min=None, confidence_max=None),
+                         Metric(exists=True, value=110, confidence_min=None, confidence_max=None)],
                     ],
                     [  # time series primary 2
                         [Metric(exists=True, value=65, confidence_min=None, confidence_max=None),
                          Metric(exists=True, value=62, confidence_min=None, confidence_max=None),
                          Metric(exists=True, value=54, confidence_min=None, confidence_max=None)],
-                        [Metric(exists=True, value=70, confidence_min=None, confidence_max=None),
-                         Metric(exists=True, value=70, confidence_min=None, confidence_max=None),
-                         Metric(exists=True, value=57, confidence_min=None, confidence_max=None)],
+                        [Metric(exists=True, value=69, confidence_min=None, confidence_max=None),
+                         Metric(exists=True, value=69, confidence_min=None, confidence_max=None),
+                         Metric(exists=True, value=56, confidence_min=None, confidence_max=None)],
                     ],
                 ],
             ],
@@ -585,17 +585,17 @@ async def test_calc_pull_request_metrics_deep_filters(
             [  # repository group 1
                 [  # participants group 1
                     [  # time series primary 1
-                        [Metric(exists=True, value=141, confidence_min=None, confidence_max=None),
-                         Metric(exists=True, value=141, confidence_min=None, confidence_max=None),
-                         Metric(exists=True, value=129, confidence_min=None, confidence_max=None)],
+                        [Metric(exists=True, value=142, confidence_min=None, confidence_max=None),
+                         Metric(exists=True, value=142, confidence_min=None, confidence_max=None),
+                         Metric(exists=True, value=130, confidence_min=None, confidence_max=None)],
                     ],
                     [  # time series primary 2
                         [Metric(exists=True, value=69, confidence_min=None, confidence_max=None),
                          Metric(exists=True, value=70, confidence_min=None, confidence_max=None),
                          Metric(exists=True, value=64, confidence_min=None, confidence_max=None)],
-                        [Metric(exists=True, value=72, confidence_min=None, confidence_max=None),
-                         Metric(exists=True, value=71, confidence_min=None, confidence_max=None),
-                         Metric(exists=True, value=65, confidence_min=None, confidence_max=None)],
+                        [Metric(exists=True, value=73, confidence_min=None, confidence_max=None),
+                         Metric(exists=True, value=72, confidence_min=None, confidence_max=None),
+                         Metric(exists=True, value=66, confidence_min=None, confidence_max=None)],
                     ],
                 ],
             ],

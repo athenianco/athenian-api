@@ -60,12 +60,16 @@ def group_by_lines(lines: Sequence[int], items: pd.DataFrame) -> List[np.ndarray
     line_group_assignments[line_group_assignments == len(lines)] = 0
     line_group_assignments -= 1
     order = np.argsort(line_group_assignments)
-    line_groups = np.split(
-        np.arange(len(items))[order],
-        np.cumsum(np.unique(line_group_assignments[order], return_index=True)[1][1:]))
+    existing_groups, existing_group_counts = np.unique(
+        line_group_assignments[order], return_counts=True)
+    line_groups = np.split(np.arange(len(items))[order], np.cumsum(existing_group_counts)[:-1])
     if line_group_assignments[order[0]] < 0:
         line_groups = line_groups[1:]
-    return line_groups
+        existing_groups = existing_groups[1:]
+    full_line_groups = [np.array([], dtype=int)] * (len(lines) - 1)
+    for i, g in zip(existing_groups, line_groups):
+        full_line_groups[i] = g
+    return full_line_groups
 
 
 def group_prs_by_participants(participants: List[PRParticipants],
