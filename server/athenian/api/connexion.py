@@ -12,7 +12,7 @@ import signal
 import socket
 import time
 import traceback
-from typing import Any, Callable, Coroutine, Dict, Optional
+from typing import Any, Callable, Collection, Coroutine, Dict, Optional
 
 import aiohttp.web
 from aiohttp.web_exceptions import HTTPClientError, HTTPFound, HTTPNoContent, HTTPRedirection, \
@@ -32,6 +32,7 @@ from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from werkzeug.exceptions import Unauthorized
 
 from athenian.api import metadata
+from athenian.api.async_utils import gather
 from athenian.api.auth import Auth0
 from athenian.api.balancing import extract_handler_weight
 from athenian.api.cache import setup_cache_metrics
@@ -167,6 +168,8 @@ class AthenianApp(connexion.AioHttpApp):
                  sdb_options: Optional[Dict[str, Any]] = None,
                  pdb_options: Optional[Dict[str, Any]] = None,
                  rdb_options: Optional[Dict[str, Any]] = None,
+                 on_startup_callbacks: Optional[Collection[Callable[..., None]]] = None,
+                 on_shutdown_callbacks: Optional[Collection[Callable[..., None]]] = None,
                  auth0_cls: Callable[..., Auth0] = Auth0,
                  kms_cls: Callable[[], AthenianKMS] = AthenianKMS,
                  cache: Optional[aiomcache.Client] = None,
@@ -270,7 +273,12 @@ class AthenianApp(connexion.AioHttpApp):
                 self.log.exception("Failed to connect to the %s DB at %s", name, db_conn)
                 raise GracefulExit() from None
 
-        self.app.on_shutdown.append(self.shutdown)
+        if on_startup_callbacks:
+            self.app.on_startup.extend(on_startup_callbacks)
+
+        on_shutdown_callbacks = list(on_shutdown_callbacks or [])
+        on_shutdown_callbacks.append(self.shutdown)
+        self.app.on_shutdown.extend(on_shutdown_callbacks)
         # schedule the DB connections when the server starts
         self._db_futures = {
             args[1]: asyncio.ensure_future(connect_to_db(*args))
@@ -287,6 +295,19 @@ class AthenianApp(connexion.AioHttpApp):
             self.server_name = node_name + "/" + self.server_name
         self._slack = self.app["slack"] = slack
         self._boot_time = psutil.boot_time()
+
+    def on_dbs_conected(self, callback):
+        """Register a callback on dbs connected."""
+
+        def callback_wrapper(*_):
+            dbs = {
+                db: getattr(self, db)
+                for db in self._db_futures
+            }
+            callback(**dbs)
+
+        task = asyncio.ensure_future(gather(*self._db_futures.values()))
+        task.add_done_callback(callback_wrapper)
 
     def __del__(self):
         """Check that shutdown() was called."""
