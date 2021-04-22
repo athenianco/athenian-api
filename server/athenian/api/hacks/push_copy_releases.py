@@ -11,7 +11,7 @@ from sqlalchemy import insert
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 
 import athenian
-from athenian.api import check_schema_versions, compose_db_options, patch_pandas, setup_context
+from athenian.api.__main__ import check_schema_versions, compose_db_options, setup_context
 from athenian.api.controllers.account import get_metadata_account_ids
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.release_load import load_releases
@@ -19,6 +19,7 @@ from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import Settings
 from athenian.api.db import ParallelDatabase
 from athenian.api.defer import enable_defer
+from athenian.api.faster_pandas import patch_pandas
 from athenian.api.models.metadata import dereference_schemas as dereference_metadata_schemas
 from athenian.api.models.metadata.github import Release
 from athenian.api.models.persistentdata import \

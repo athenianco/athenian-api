@@ -6,7 +6,7 @@ from random import randint
 from sqlalchemy import and_, create_engine, func
 from sqlalchemy.orm import sessionmaker
 
-from athenian.api import Auth0
+from athenian.api.auth import Auth0
 from athenian.api.controllers import invitation_controller
 from athenian.api.models import check_alembic_schema_version
 from athenian.api.models.state.models import Account, Invitation

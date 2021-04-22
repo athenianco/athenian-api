@@ -5,7 +5,7 @@ import traceback
 
 import sentry_sdk
 
-from athenian.api import setup_context
+from athenian.api.__main__ import setup_context
 
 
 def main() -> int:

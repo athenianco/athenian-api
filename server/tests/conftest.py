@@ -41,13 +41,14 @@ import uvloop
 # This must stay before any athenian.api import to override any external ATHENIAN_INVITATION_KEY
 os.environ["ATHENIAN_INVITATION_KEY"] = "vadim"
 
-from athenian.api import create_memcached, create_slack, patch_pandas
+from athenian.api.__main__ import create_memcached, create_slack
 from athenian.api.auth import Auth0, User
 from athenian.api.cache import setup_cache_metrics
 from athenian.api.connexion import AthenianApp
 from athenian.api.controllers import account, invitation_controller
 from athenian.api.controllers.features.entries import MetricEntriesCalculator
 from athenian.api.db import ParallelDatabase
+from athenian.api.faster_pandas import patch_pandas
 from athenian.api.metadata import __package__ as package
 from athenian.api.models import check_collation, metadata, persistentdata
 from athenian.api.models.metadata.github import Base as GithubBase, PullRequest
