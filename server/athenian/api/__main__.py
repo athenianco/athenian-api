@@ -15,6 +15,7 @@ from typing import Any, Callable, Dict, Optional
 import aiohttp.web
 from aiohttp.web_runner import GracefulExit
 import aiomcache
+from connexion.decorators import validation
 import databases
 from flogging import flogging
 import jinja2
@@ -136,6 +137,7 @@ def setup_context(log: logging.Logger) -> None:
     numpy.set_printoptions(threshold=10, edgeitems=1)
     if (level := log.getEffectiveLevel()) >= logging.INFO:
         databases.core.logger.setLevel(level + 10)
+    validation.logger.error = validation.logger.warning
 
     sentry_key, sentry_project = os.getenv("SENTRY_KEY"), os.getenv("SENTRY_PROJECT")
 
