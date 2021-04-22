@@ -5,7 +5,6 @@ from itertools import chain
 import pickle
 from typing import Any, Dict
 
-import lz4
 import pandas as pd
 from pandas.core.dtypes.common import is_datetime64_any_dtype
 from pandas.testing import assert_frame_equal
@@ -22,7 +21,7 @@ from athenian.api.controllers.miners.github.precomputed_prs import \
 from athenian.api.controllers.miners.github.pull_request import PullRequestFactsMiner, \
     PullRequestMiner
 from athenian.api.controllers.miners.github.release_load import load_releases
-from athenian.api.controllers.miners.types import MinedPullRequest, PRParticipationKind, \
+from athenian.api.controllers.miners.types import DAG, MinedPullRequest, PRParticipationKind, \
     PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
 import athenian.api.db
@@ -1127,9 +1126,8 @@ async def test_fetch_prs_dead(mdb, pdb):
     ]
     prs, xdags = await PullRequestMiner.fetch_prs(*args)
     assert prs["dead"].sum() == len(force_push_dropped_go_git_pr_numbers)
-    pdb_dag = pickle.loads(lz4.frame.decompress(
-        await pdb.fetch_val(select([GitHubCommitHistory.dag]))))
+    pdb_dag = DAG(await pdb.fetch_val(select([GitHubCommitHistory.dag])))
     dag = await fetch_dag(mdb, branches[Branch.commit_id.key].tolist())
-    assert not (set(dag["src-d/go-git"][0]) - set(pdb_dag[0]))
+    assert not (set(dag["src-d/go-git"][0]) - set(pdb_dag.hashes))
     for i in range(3):
-        assert (xdags["src-d/go-git"][i] == pdb_dag[i]).all()
+        assert (xdags["src-d/go-git"][i] == pdb_dag[["hashes", "vertexes", "edges"][i]]).all()

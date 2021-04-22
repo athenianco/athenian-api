@@ -853,11 +853,11 @@ async def load_merged_unreleased_pull_request_facts(
             continue
         repos_by_match[release_match].append(repo)
     queries = []
-    pr_repos = prs[PullRequest.repository_full_name.key].values.astype("U")
+    pr_repos = prs[PullRequest.repository_full_name.key].values.astype("S")
     pr_ids = prs.index.values
     for release_match, repos in repos_by_match.items():
         filters = [
-            ghmprf.pr_node_id.in_(pr_ids[np.in1d(pr_repos, np.array(repos, dtype="U"))]),
+            ghmprf.pr_node_id.in_(pr_ids[np.in1d(pr_repos, np.array(repos, dtype="S"))]),
             ghmprf.repository_full_name.in_(repos),
             ghmprf.release_match == release_match,
             *common_filters,
@@ -1417,7 +1417,7 @@ async def delete_force_push_dropped_prs(repos: Iterable[str],
     del pr_node_ids
     pr_merges, dags = await gather(*tasks, op="fetch merges + prune dags")
     accessible_hashes = np.sort(np.concatenate([dag[0] for dag in dags.values()]))
-    merge_hashes = np.sort(np.fromiter((r[0] for r in pr_merges), "U40", len(pr_merges)))
+    merge_hashes = np.sort(np.fromiter((r[0] for r in pr_merges), "S40", len(pr_merges)))
     found = searchsorted_inrange(accessible_hashes, merge_hashes)
     dead_indexes = np.nonzero(accessible_hashes[found] != merge_hashes)[0]
     dead_pr_node_ids = [None] * len(dead_indexes)

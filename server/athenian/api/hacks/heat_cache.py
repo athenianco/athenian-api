@@ -368,7 +368,7 @@ async def sync_labels(log: logging.Logger, mdb: ParallelDatabase, pdb: ParallelD
     tasks = []
     all_prs = await mdb.fetch_all(select([NodePullRequest.id, NodePullRequest.acc_id]))
     log.info("There are %d PRs in mdb", len(all_prs))
-    all_node_ids = np.array([pr[0] for pr in all_prs], dtype="U")
+    all_node_ids = np.array([pr[0] for pr in all_prs], dtype="S")
     all_accounts = np.array([pr[1] for pr in all_prs], dtype=np.uint32)
     del all_prs
     order = np.argsort(all_node_ids)
@@ -379,7 +379,7 @@ async def sync_labels(log: logging.Logger, mdb: ParallelDatabase, pdb: ParallelD
         select([GitHubDonePullRequestFacts.pr_node_id, GitHubDonePullRequestFacts.labels]))
     all_merged = await pdb.fetch_all(
         select([GitHubMergedPullRequestFacts.pr_node_id, GitHubMergedPullRequestFacts.labels]))
-    unique_prs = np.unique(np.array([pr[0] for pr in chain(all_pr_times, all_merged)], dtype="U"))
+    unique_prs = np.unique(np.array([pr[0] for pr in chain(all_pr_times, all_merged)], dtype="S"))
     found_account_indexes = searchsorted_inrange(all_node_ids, unique_prs)
     found_mask = all_node_ids[found_account_indexes] == unique_prs
     unique_prs = unique_prs[found_mask]
@@ -403,7 +403,7 @@ async def sync_labels(log: logging.Logger, mdb: ParallelDatabase, pdb: ParallelD
     for acc_id, node_ids in zip(unique_acc_ids, node_id_by_acc_id):
         tasks.append(mdb.fetch_all(
             select([PullRequestLabel.pull_request_node_id, func.lower(PullRequestLabel.name)])
-            .where(and_(PullRequestLabel.pull_request_node_id.in_(node_ids),
+            .where(and_(PullRequestLabel.pull_request_node_id.in_(node_ids.astype("U")),
                         PullRequestLabel.acc_id == int(acc_id)))))
     del unique_acc_ids
     del node_id_by_acc_id

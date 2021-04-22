@@ -545,8 +545,8 @@ async def _issue_flow(return_: Set[str],
         if not existing_mask.all():
             prs_df = prs_df.take(np.nonzero(existing_mask)[0])
         related_branches = branches.take(np.nonzero(np.in1d(
-            branches[Branch.repository_full_name.key].values.astype("U"),
-            prs_df[PullRequest.repository_full_name.key].unique().astype("U")))[0])
+            branches[Branch.repository_full_name.key].values.astype("S"),
+            prs_df[PullRequest.repository_full_name.key].unique().astype("S")))[0])
         mined_prs, dfs, facts, _ = await unwrap_pull_requests(
             prs_df, facts, ambiguous, False, related_branches, default_branches, release_settings,
             account, meta_ids, mdb, pdb, rdb, cache)
@@ -872,15 +872,15 @@ def _split_issues_by_with(with_: Optional[List[JIRAFilterWith]],
         if group.assignees:
             # None will become "None" and will match; nobody is going to name a user "None"
             # except for to troll Athenian.
-            assignees = np.char.lower(np.array(group.assignees, dtype="U"))
-            mask |= np.in1d(issues["assignee"].values.astype("U"), assignees)
+            assignees = np.char.lower(np.array(group.assignees, dtype="S"))
+            mask |= np.in1d(issues["assignee"].values.astype("S"), assignees)
         if group.reporters:
-            reporters = np.char.lower(np.array(group.reporters, dtype="U"))
-            mask |= np.in1d(issues["reporter"].values.astype("U"), reporters)
+            reporters = np.char.lower(np.array(group.reporters, dtype="S"))
+            mask |= np.in1d(issues["reporter"].values.astype("S"), reporters)
         if group.commenters:
-            commenters = np.char.lower(np.array(group.commenters, dtype="U"))
+            commenters = np.char.lower(np.array(group.commenters, dtype="S"))
             issue_commenters = issues["commenters"]
-            merged_issue_commenters = np.concatenate(issue_commenters).astype("U")
+            merged_issue_commenters = np.concatenate(issue_commenters).astype("S")
             offsets = np.zeros(len(issue_commenters) + 1, dtype=int)
             np.cumsum(issue_commenters.apply(len).values, out=offsets[1:])
             indexes = np.unique(np.searchsorted(

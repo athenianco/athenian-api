@@ -156,7 +156,7 @@ async def mine_releases(repos: Iterable[str],
         all_hashes = []
         for repo, repo_releases in releases.groupby(Release.repository_full_name.key, sort=False):
             hashes, vertexes, edges = dags[repo]
-            release_hashes = repo_releases[Release.sha.key].values
+            release_hashes = repo_releases[Release.sha.key].values.astype("S")
             release_timestamps = repo_releases[Release.published_at.key].values
             ownership = mark_dag_access(hashes, vertexes, edges, release_hashes)
             parents = mark_dag_parents(
@@ -186,7 +186,7 @@ async def mine_releases(repos: Iterable[str],
                         missing, relevant, assume_unique=True))[0]):
                     log.warning("%s has releases with 0 commits:\n%s",
                                 repo, repo_releases.take(really_missing))
-                empty = np.array([], dtype="U40")
+                empty = np.array([], dtype="S40")
                 for i in missing:
                     grouped_owned_hashes.insert(i, empty)
             assert len(grouped_owned_hashes) == len(repo_releases)
@@ -199,7 +199,7 @@ async def mine_releases(repos: Iterable[str],
             PushCommit.author_login,
             PushCommit.node_id,
         ]
-        all_hashes = np.concatenate(all_hashes) if all_hashes else []
+        all_hashes = np.concatenate(all_hashes).astype("U") if all_hashes else []
         with sentry_sdk.start_span(op="mine_releases/fetch_commits",
                                    description=str(len(all_hashes))):
             commits_df = await read_sql_query(
@@ -207,7 +207,7 @@ async def mine_releases(repos: Iterable[str],
                 .where(and_(PushCommit.sha.in_(all_hashes), PushCommit.acc_id.in_(meta_ids)))
                 .order_by(PushCommit.sha),
                 mdb, commits_df_columns, index=PushCommit.sha.key)
-        commits_index = commits_df.index.values.astype("U40")
+        commits_index = commits_df.index.values.astype("S40")
         commit_ids = commits_df[PushCommit.node_id.key].values
         commits_additions = commits_df[PushCommit.additions.key].values
         commits_deletions = commits_df[PushCommit.deletions.key].values
@@ -238,14 +238,15 @@ async def mine_releases(repos: Iterable[str],
         prs_df, *rest = await gather(*tasks,
                                      op="mine_releases/fetch_pull_requests",
                                      description=str(len(commit_ids)))
+        commit_ids = commit_ids.astype("S")
         if jira:
-            filtered_prs_commit_ids = np.unique(np.array([r[0] for r in rest[0]], dtype="U"))
-        prs_commit_ids = prs_df[PullRequest.merge_commit_id.key].values.astype("U")
+            filtered_prs_commit_ids = np.unique(np.array([r[0] for r in rest[0]], dtype="S"))
+        prs_commit_ids = prs_df[PullRequest.merge_commit_id.key].values.astype("S")
         prs_authors = prs_df[PullRequest.user_login.key].values
         prs_authors_nz = prs_authors.nonzero()[0]
         prs_authors[prs_authors_nz] = \
             [prefixer.user_login_map[u] for u in prs_authors[prs_authors_nz]]
-        prs_node_ids = prs_df[PullRequest.node_id.key].values.astype("U")
+        prs_node_ids = prs_df[PullRequest.node_id.key].values.astype("S")
         if with_pr_titles:
             pr_node_ids_for_pr_titles.append(prs_node_ids)
         prs_numbers = prs_df[PullRequest.number.key].values
@@ -426,13 +427,13 @@ def _filter_by_participants(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
                             ) -> List[Tuple[Dict[str, Any], ReleaseFacts]]:
     participants = participants.copy()
     for k, v in participants.items():
-        participants[k] = np.unique(v).astype("U")
+        participants[k] = np.unique(v).astype("S")
     if ReleaseParticipationKind.COMMIT_AUTHOR in participants:
         commit_authors = [r[1].commit_authors for r in releases]
         lengths = np.asarray([len(ca) for ca in commit_authors])
         offsets = np.zeros(len(lengths) + 1, dtype=int)
         np.cumsum(lengths, out=offsets[1:])
-        commit_authors = np.concatenate(commit_authors).astype("U")
+        commit_authors = np.concatenate(commit_authors).astype("S")
         included_indexes = np.nonzero(np.in1d(
             commit_authors, participants[ReleaseParticipationKind.COMMIT_AUTHOR]))[0]
         passed_indexes = np.unique(np.searchsorted(offsets, included_indexes, side="right") - 1)
@@ -445,7 +446,7 @@ def _filter_by_participants(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
         return releases
     if ReleaseParticipationKind.RELEASER in participants:
         still_missing = np.in1d(
-            np.array([releases[i][1].publisher for i in missing_indexes], dtype="U"),
+            np.array([releases[i][1].publisher for i in missing_indexes], dtype="S"),
             participants[ReleaseParticipationKind.RELEASER],
             invert=True)
         missing_indexes = missing_indexes[still_missing]
@@ -457,7 +458,7 @@ def _filter_by_participants(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
         lengths = np.asarray([len(pra) for pra in pr_authors])
         offsets = np.zeros(len(lengths) + 1, dtype=int)
         np.cumsum(lengths, out=offsets[1:])
-        pr_authors = np.concatenate(pr_authors).astype("U")
+        pr_authors = np.concatenate(pr_authors).astype("S")
         included_indexes = np.nonzero(np.in1d(
             pr_authors, participants[ReleaseParticipationKind.PR_AUTHOR]))[0]
         passed_indexes = np.unique(np.searchsorted(offsets, included_indexes, side="right") - 1)
@@ -488,15 +489,15 @@ async def _filter_precomputed_release_facts_by_jira(precomputed_facts: Dict[str,
         return {}
     # we could run the following in parallel with the rest, but
     # "the rest" is a no-op in most of the cases thanks to preheating
-    pr_ids = pr_ids.astype("U")
+    pr_ids = pr_ids.astype("S")
     query = await generate_jira_prs_query(
-        [PullRequest.node_id.in_(pr_ids), PullRequest.acc_id.in_(meta_ids)],
+        [PullRequest.node_id.in_(pr_ids.astype("U")), PullRequest.acc_id.in_(meta_ids)],
         jira, mdb, cache, columns=[PullRequest.node_id])
     release_ids = np.repeat(list(precomputed_facts), lengths)
     order = np.argsort(pr_ids)
     pr_ids = pr_ids[order]
     release_ids = release_ids[order]
-    matching_pr_ids = np.sort(np.array([r[0] for r in await mdb.fetch_all(query)], dtype="U"))
+    matching_pr_ids = np.sort(np.array([r[0] for r in await mdb.fetch_all(query)], dtype="S"))
     release_ids = np.unique(release_ids[np.searchsorted(pr_ids, matching_pr_ids)])
     return {k: precomputed_facts[k] for k in release_ids}
 
@@ -789,14 +790,15 @@ async def diff_releases(borders: Dict[str, List[Tuple[str, str]]],
             if start > finish:
                 log.warning("Release pair old %s is later than new %s for %s", old, new, repo)
                 continue
-            start_sha, finish_sha = (repo_releases[x][0][Release.sha.key] for x in (start, finish))
-            hashes, _, _ = extract_subdag(*dags[repo], np.array([finish_sha], dtype="U"))
-            if hashes[searchsorted_inrange(hashes, np.array([start_sha], dtype="U"))] == start_sha:
+            start_sha, finish_sha = (repo_releases[x][0][Release.sha.key].encode()
+                                     for x in (start, finish))
+            hashes, _, _ = extract_subdag(*dags[repo], np.array([finish_sha]))
+            if hashes[searchsorted_inrange(hashes, np.array([start_sha]))] == start_sha:
                 diff = []
                 for i in range(start + 1, finish + 1):
                     r = repo_releases[i]
-                    sha = r[0][Release.sha.key]
-                    if hashes[searchsorted_inrange(hashes, np.array([sha], dtype="U"))] == sha:
+                    sha = r[0][Release.sha.key].encode()
+                    if hashes[searchsorted_inrange(hashes, np.array([sha]))] == sha:
                         diff.append(r)
                 repo_result.append((old, new, diff))
             else:

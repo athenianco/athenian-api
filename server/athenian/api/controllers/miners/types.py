@@ -435,3 +435,19 @@ class ReleaseFacts:
     def max_timestamp(self) -> datetime:
         """Find the maximum timestamp contained in the struct."""
         return self.published
+
+
+@numpy_struct
+class DAG:
+    """Commit history DAG."""
+
+    class Immutable:
+        """
+        Immutable fields, we store them in `_data` and mirror in `_arr`.
+
+        We generate `dtype` from this spec.
+        """
+
+        hashes: ["S40"]  # noqa
+        vertexes: [np.uint32]
+        edges: [np.uint32]

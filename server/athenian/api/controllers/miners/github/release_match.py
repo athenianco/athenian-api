@@ -137,21 +137,21 @@ async def _map_prs_to_releases(prs: pd.DataFrame,
         repo_prs = repo_prs.take(np.where(~repo_prs[PullRequest.merge_commit_sha.key].isnull())[0])
         hashes, vertexes, edges = dags[repo]
         if len(hashes) == 0:
-            log.error("Very suspicious: empty DAG for %s\n%s",
-                      repo, repo_releases.to_csv())
-        ownership = mark_dag_access(hashes, vertexes, edges, repo_releases[Release.sha.key].values)
+            log.error("Very suspicious: empty DAG for %s\n%s", repo, repo_releases.to_csv())
+        ownership = mark_dag_access(
+            hashes, vertexes, edges, repo_releases[Release.sha.key].values.astype("S40"))
         unmatched = np.where(ownership == len(repo_releases))[0]
         if len(unmatched) > 0:
             hashes = np.delete(hashes, unmatched)
             ownership = np.delete(ownership, unmatched)
         if len(hashes) == 0:
             continue
-        merge_hashes = repo_prs[PullRequest.merge_commit_sha.key].values.astype("U40")
+        merge_hashes = repo_prs[PullRequest.merge_commit_sha.key].values.astype("S40")
         merges_found = searchsorted_inrange(hashes, merge_hashes)
         found_mask = hashes[merges_found] == merge_hashes
         found_releases = repo_releases[release_columns].take(ownership[merges_found[found_mask]])
         if not found_releases.empty:
-            found_prs = repo_prs.index.take(np.where(found_mask)[0])
+            found_prs = repo_prs.index.take(np.nonzero(found_mask)[0])
             found_releases.set_index(found_prs, inplace=True)
             released_prs.append(found_releases)
         await asyncio.sleep(0)
@@ -226,7 +226,7 @@ async def _find_old_released_prs(commits: np.ndarray,
         PullRequest.merged_at < time_boundary,
         PullRequest.hidden.is_(False),
         PullRequest.acc_id.in_(meta_ids),
-        PullRequest.merge_commit_sha.in_(commits),
+        PullRequest.merge_commit_sha.in_(commits.astype("U")),
     ]
     if updated_min is not None:
         filters.append(PullRequest.updated_at.between(updated_min, updated_max))
@@ -249,8 +249,8 @@ async def _find_old_released_prs(commits: np.ndarray,
     prs = await read_sql_query(query, mdb, PullRequest, index=PullRequest.node_id.key)
     if prs.empty:
         return prs
-    pr_commits = prs[PullRequest.merge_commit_sha.key].values
-    pr_repos = prs[PullRequest.repository_full_name.key].values
+    pr_commits = prs[PullRequest.merge_commit_sha.key].values.astype("S")
+    pr_repos = prs[PullRequest.repository_full_name.key].values.astype("S")
     indexes = np.searchsorted(commits, pr_commits)
     checked = np.nonzero(pr_repos == repos[indexes])[0]
     if len(checked) < len(prs):
@@ -267,10 +267,10 @@ def _extract_released_commits(releases: pd.DataFrame,
     assert not new_releases.empty, "you must check this before calling me"
     hashes, vertexes, edges = dag
     visited_hashes, _, _ = extract_subdag(
-        hashes, vertexes, edges, new_releases[Release.sha.key].values.astype("U40"))
+        hashes, vertexes, edges, new_releases[Release.sha.key].values.astype("S40"))
     # we need to traverse the DAG from *all* the previous releases because of release branches
     if not time_mask.all():
-        boundary_release_hashes = releases[Release.sha.key].values[~time_mask].astype("U40")
+        boundary_release_hashes = releases[Release.sha.key].values[~time_mask].astype("S40")
     else:
         boundary_release_hashes = []
     if len(boundary_release_hashes) == 0:
@@ -357,7 +357,8 @@ async def map_releases_to_prs(repos: Collection[str],
                 observed_commits = _extract_released_commits(repo_releases, dags[repo], time_from)
                 if len(observed_commits):
                     all_observed_commits.append(observed_commits)
-                    all_observed_repos.append(np.full_like(observed_commits, repo))
+                    all_observed_repos.append(np.full(
+                        len(observed_commits), repo, dtype=f"S{len(repo)}"))
     if all_observed_commits:
         all_observed_repos = np.concatenate(all_observed_repos)
         all_observed_commits = np.concatenate(all_observed_commits)
