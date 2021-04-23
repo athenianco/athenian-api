@@ -232,13 +232,13 @@ async def load_releases(repos: Iterable[str],
                     "store_precomputed_releases(%d, %d)" % (len(missings), repos_count))
 
     # we could have loaded both branch and tag releases for `tag_or_branch`, erase the errors
-    repos_vec = releases[Release.repository_full_name.key].values.astype("U")
+    repos_vec = releases[Release.repository_full_name.key].values.astype("S")
     published_at = releases[Release.published_at.key]
     matched_by_vec = releases[matched_by_column].values
     errors = np.full(len(releases), False)
     for repo, match in applied_matches.items():
         if settings.native[repo].match == ReleaseMatch.tag_or_branch:
-            errors |= (repos_vec == repo) & (matched_by_vec != match)
+            errors |= (repos_vec == repo.encode()) & (matched_by_vec != match)
     include = ~errors & (published_at >= time_from).values & (published_at < time_to).values
     releases = releases.take(np.nonzero(include)[0])
     if Release.acc_id.key in releases:
@@ -752,9 +752,11 @@ async def _match_releases_by_branch(repos: Iterable[str],
     _, dags = await gather(*tasks)
     dags = await fetch_repository_commits(
         dags, branches, BRANCH_FETCH_COMMITS_COLUMNS, False, account, meta_ids, mdb, pdb, cache)
-    first_shas = [extract_first_parents(*dags[repo], branches[Branch.commit_sha.key].values)
-                  for repo, branches in branches_matched.items()]
-    first_shas = np.sort(np.concatenate(first_shas))
+    first_shas = [
+        extract_first_parents(*dags[repo], branches[Branch.commit_sha.key].values.astype("S"))
+        for repo, branches in branches_matched.items()
+    ]
+    first_shas = np.sort(np.concatenate(first_shas)).astype("U")
     first_commits = await _fetch_commits(first_shas, time_from, time_to, meta_ids, mdb, cache)
     pseudo_releases = []
     for repo in branches_matched:
@@ -777,6 +779,7 @@ async def _match_releases_by_branch(repos: Iterable[str],
             Release.sha.key: commits[PushCommit.sha.key],
             Release.tag.key: None,
             Release.url.key: commits[PushCommit.url.key],
+            Release.acc_id.key: commits[PushCommit.acc_id.key],
             matched_by_column: [ReleaseMatch.branch.value] * len(commits),
         }))
     if not pseudo_releases:

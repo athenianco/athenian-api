@@ -254,7 +254,7 @@ class NumpyStruct(Mapping[str, Any]):
                     value[nan_mask] = ""
                 extra_bytes.append(data := value.view(np.byte).data)
                 pointer = [offset, len(value)]
-                if is_str:
+                if is_str and (is_ascii or nested_dtype.itemsize == 0):
                     pointer.append(
                         value.dtype.itemsize // np.dtype(nested_dtype.char + "1").itemsize)
                 arr[field_name] = pointer
@@ -343,7 +343,7 @@ class NumpyStruct(Mapping[str, Any]):
                     value = value or None
                 return value
             if (_dtype_is_ascii(nested_dtype) and (char := "S")) or \
-                    ((char := nested_dtype.char) in ("S", "U")):
+                    ((char := nested_dtype.char) in ("S", "U") and nested_dtype.itemsize == 0):
                 offset, count, itemsize = value
                 nested_dtype = f"{char}{itemsize}"
             else:
@@ -375,7 +375,7 @@ def numpy_struct(cls):
             if not (is_ascii := _dtype_is_ascii(nested_dtype)):
                 nested_dtype = np.dtype(nested_dtype)
             nested_dtypes[k] = nested_dtype
-            if is_ascii or nested_dtype.char in ("S", "U"):
+            if is_ascii or (nested_dtype.char in ("S", "U") and nested_dtype.itemsize == 0):
                 # save the characters count
                 dtype_tuples.append((k, np.int32, 3))
             else:
@@ -384,7 +384,10 @@ def numpy_struct(cls):
             dtype_tuples.append((k, "S" + v[6:-1]))
         else:
             dtype_tuples.append((k, v))
-    optional = cls.Optional.__annotations__
+    try:
+        optional = cls.Optional.__annotations__
+    except AttributeError:
+        optional = {}
     field_names = NamedTuple(
         f"{cls.__name__}FieldNames",
         [(k, str) for k in chain(dtype, optional)],

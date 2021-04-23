@@ -251,13 +251,13 @@ def group_actions_by_developers(devs: Sequence[Collection[str]],
                                 ) -> List[np.ndarray]:
     """Group developer actions by developer groups."""
     indexes = []
-    identities = df[developer_identity_column].values.astype("U")
+    identities = df[developer_identity_column].values.astype("S")
     for group in devs:
         if len(group) == 1:
             dev = next(iter(group))
-            indexes.append(np.nonzero(identities == dev)[0])
+            indexes.append(np.nonzero(identities == dev.encode())[0])
             continue
         if isinstance(group, set):
             group = list(group)
-        indexes.append(np.nonzero(np.in1d(identities, np.array(group, dtype="U")))[0])
+        indexes.append(np.nonzero(np.in1d(identities, np.array(group, dtype="S")))[0])
     return indexes

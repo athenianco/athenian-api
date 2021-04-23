@@ -104,7 +104,7 @@ def join_dags(hashes: np.ndarray,
               new_edges: List[Tuple[str, str, int]]) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     new_hashes = {k for k, v, _ in new_edges}.union(v for k, v, _ in new_edges)
     new_hashes.discard("")  # initial commit virtual parents
-    new_hashes = np.sort(np.fromiter(new_hashes, count=len(new_hashes), dtype="U40"))
+    new_hashes = np.sort(np.fromiter(new_hashes, count=len(new_hashes), dtype="S40"))
     if len(hashes) > 0:
         found_matches = np.searchsorted(hashes, new_hashes)
         found_matches_in_range = found_matches.copy()
@@ -128,9 +128,9 @@ def join_dags(hashes: np.ndarray,
         if not v:
             # initial commit
             continue
-        i = new_hashes_map.get(k, None)
+        i = new_hashes_map.get(k.encode(), None)
         if i is not None:
-            new_edges_lists[i].push_back(Edge(hashes_map[v], pos))
+            new_edges_lists[i].push_back(Edge(hashes_map[v.encode()], pos))
             new_edges_counter += 1
     old_vertex_map = np.zeros(len(hashes), dtype=np.uint32)
     result_vertexes = np.zeros(len(result_hashes) + 1, dtype=np.uint32)
@@ -196,7 +196,7 @@ def mark_dag_access(hashes: np.ndarray,
     existing_heads = searchsorted_inrange(hashes, heads)
     missing_flag = len(heads)  # mark unmatched commits with this value
     if len(hashes):
-        flags = np.where(hashes[existing_heads] == heads)[0]
+        flags = np.nonzero(hashes[existing_heads] == heads)[0]
         heads = existing_heads[flags].astype(np.uint32)
     else:
         flags = np.array([], dtype=int)

@@ -49,13 +49,13 @@ def group_releases_by_participants(participants: List[ReleaseParticipants],
     for group in participants:
         group = group.copy()
         for k, v in group.items():
-            group[k] = np.unique(v).astype("U")
+            group[k] = np.unique(v).astype("S")
         if ReleaseParticipationKind.COMMIT_AUTHOR in group:
             commit_authors = df["commit_authors"].values
             lengths = np.asarray([len(ca) for ca in commit_authors])
             offsets = np.zeros(len(lengths) + 1, dtype=int)
             np.cumsum(lengths, out=offsets[1:])
-            commit_authors = np.concatenate(commit_authors).astype("U")
+            commit_authors = np.concatenate(commit_authors).astype("S")
             included_indexes = np.nonzero(np.in1d(
                 commit_authors, group[ReleaseParticipationKind.COMMIT_AUTHOR]))[0]
             passed_indexes = np.unique(
@@ -71,7 +71,7 @@ def group_releases_by_participants(participants: List[ReleaseParticipants],
         if ReleaseParticipationKind.RELEASER in group:
             publishers = df["publisher"].values
             still_missing = np.in1d(
-                np.array(publishers[missing_indexes], dtype="U"),
+                np.array(publishers[missing_indexes], dtype="S"),
                 group[ReleaseParticipationKind.RELEASER],
                 invert=True)
             missing_indexes = missing_indexes[still_missing]
@@ -83,7 +83,7 @@ def group_releases_by_participants(participants: List[ReleaseParticipants],
             lengths = np.asarray([len(pra) for pra in pr_authors])
             offsets = np.zeros(len(lengths) + 1, dtype=int)
             np.cumsum(lengths, out=offsets[1:])
-            pr_authors = np.concatenate(pr_authors).astype("U")
+            pr_authors = np.concatenate(pr_authors).astype("S")
             included_indexes = np.nonzero(np.in1d(
                 pr_authors, group[ReleaseParticipationKind.PR_AUTHOR]))[0]
             passed_indexes = np.unique(

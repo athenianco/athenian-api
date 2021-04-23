@@ -7,7 +7,6 @@ from typing import Collection, Dict, Iterable, List, Optional, Sequence, Tuple
 import aiomcache
 import asyncpg
 import databases
-import lz4.frame
 import numpy as np
 import pandas as pd
 import sentry_sdk
@@ -21,6 +20,7 @@ from athenian.api.cache import cached
 from athenian.api.controllers.miners.github.branches import load_branch_commit_dates
 from athenian.api.controllers.miners.github.dag_accelerated import extract_first_parents, \
     extract_subdag, join_dags, partition_dag, searchsorted_inrange
+from athenian.api.controllers.miners.types import DAG as DAGStruct
 from athenian.api.db import add_pdb_hits, add_pdb_misses
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import Branch, NodeCommit, NodePullRequestCommit, \
@@ -177,7 +177,7 @@ async def fetch_repository_commits(repos: Dict[str, DAG],
     result = {}
     tasks = []
     for repo, repo_df in branches[[repo_col, sha_col]].groupby(repo_col, sort=False):
-        required_heads = repo_df[sha_col].values.astype("U40")
+        required_heads = repo_df[sha_col].values.astype("S40")
         repo_heads[repo] = required_heads
         hashes, vertexes, edges = repos[repo]
         if len(hashes) > 0:
@@ -189,6 +189,7 @@ async def fetch_repository_commits(repos: Dict[str, DAG],
             missed_heads = required_heads
         if len(missed_heads) > 0:
             # heuristic: order the heads from most to least recent
+            missed_heads = missed_heads.astype("U")
             order = sorted([(hash_to_dt[h], i) for i, h in enumerate(missed_heads)], reverse=True)
             missed_heads = [missed_heads[i] for _, i in order]
             missed_ids = [hash_to_id[h] for h in missed_heads]
@@ -209,7 +210,7 @@ async def fetch_repository_commits(repos: Dict[str, DAG],
             sql_values.append(GitHubCommitHistory(
                 acc_id=account,
                 repository_full_name=repo,
-                dag=lz4.frame.compress(pickle.dumps((hashes, vertexes, edges))),
+                dag=DAGStruct.from_fields(hashes=hashes, vertexes=vertexes, edges=edges).data,
             ).create_defaults().explode(with_primary_keys=True))
             if prune:
                 hashes, vertexes, edges = extract_subdag(hashes, vertexes, edges, repo_heads[repo])
@@ -291,7 +292,12 @@ async def fetch_precomputed_commit_history_dags(
                 ghrc.repository_full_name.in_(repos),
                 ghrc.acc_id == account,
             )))
-    dags = {row[0]: pickle.loads(lz4.frame.decompress(row[1])) for row in rows}
+    dags = {
+        row[ghrc.repository_full_name.key]: (
+            (dag := DAGStruct(row[ghrc.dag.key])).hashes, dag.vertexes, dag.edges,
+        )
+        for row in rows
+    }
     for repo in repos:
         if repo not in dags:
             dags[repo] = _empty_dag()
@@ -299,7 +305,7 @@ async def fetch_precomputed_commit_history_dags(
 
 
 def _empty_dag() -> DAG:
-    return np.array([], dtype="U40"), np.array([0], dtype=np.uint32), np.array([], dtype=np.uint32)
+    return np.array([], dtype="S40"), np.array([0], dtype=np.uint32), np.array([], dtype=np.uint32)
 
 
 @sentry_span
@@ -325,7 +331,7 @@ async def _fetch_commit_history_dag(hashes: np.ndarray,
                                                    NodeCommit.acc_id.in_(meta_ids)))
                                        .order_by(desc(NodeCommit.committed_date))
                                        .limit(max_stop_heads))
-            stop_heads = np.fromiter((r[0] for r in rows), dtype="U40", count=len(rows))
+            stop_heads = np.fromiter((r[0] for r in rows), dtype="S40", count=len(rows))
         first_parents = extract_first_parents(hashes, vertexes, edges, stop_heads, max_depth=1000)
         # We can still branch from an arbitrary point. Choose `max_partitions` graph partitions.
         if len(first_parents) >= max_inner_partitions:
@@ -333,11 +339,11 @@ async def _fetch_commit_history_dag(hashes: np.ndarray,
             partition_seeds = first_parents[:max_inner_partitions * step:step]
         else:
             partition_seeds = first_parents
-        partition_seeds = np.concatenate([stop_heads, partition_seeds])
+        partition_seeds = np.concatenate([stop_heads, partition_seeds]).astype("S")
         # the expansion factor is ~6x, so 2 * 25 -> 300
         with sentry_sdk.start_span(op="partition_dag",
                                    description="%d %d" % (len(hashes), len(partition_seeds))):
-            stop_hashes = partition_dag(hashes, vertexes, edges, partition_seeds)
+            stop_hashes = partition_dag(hashes, vertexes, edges, partition_seeds).astype("U")
     else:
         stop_hashes = []
     batch_size = 20

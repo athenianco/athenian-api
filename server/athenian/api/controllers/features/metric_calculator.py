@@ -626,7 +626,7 @@ def group_by_repo(repository_full_name_column_name: str,
     """Group items by the value of their "repository_full_name" column."""
     if items.empty or items.empty:
         return [np.ndarray([], dtype=int)]
-    repocol = items[repository_full_name_column_name].values.astype("U")
+    repocol = items[repository_full_name_column_name].values.astype("S")
     order = np.argsort(repocol)
     unique_repos, pivots = np.unique(repocol[order], return_index=True)
     unique_indexes = np.split(np.arange(len(repocol))[order], pivots[1:])
@@ -634,7 +634,8 @@ def group_by_repo(repository_full_name_column_name: str,
     for group in repos:
         indexes = []
         for repo in group:
-            if unique_repos[(repo_index := searchsorted_inrange(unique_repos, repo)[0])] == repo:
+            repob = repo.encode()
+            if unique_repos[(repo_index := searchsorted_inrange(unique_repos, repob)[0])] == repob:
                 indexes.append(unique_indexes[repo_index])
         indexes = np.concatenate(indexes) if indexes else np.array([], dtype=int)
         group_indexes.append(indexes)

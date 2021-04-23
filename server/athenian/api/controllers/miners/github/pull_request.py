@@ -526,8 +526,8 @@ class PullRequestMiner:
             # if we truncate and there are PRs merged after `time_to`
             merged_unreleased_prs = prs.take(merged_unreleased_indexes)
             label_matches = np.nonzero(np.in1d(
-                dfs.labels.index.get_level_values(0).values.astype("U"),
-                merged_unreleased_prs.index.values.astype("U")))[0]
+                dfs.labels.index.get_level_values(0).values.astype("S"),
+                merged_unreleased_prs.index.values.astype("S")))[0]
             labels = {}
             for k, v in zip(dfs.labels.index.values[label_matches],
                             dfs.labels[PullRequestLabel.name.key].take(label_matches).values):
@@ -711,7 +711,7 @@ class PullRequestMiner:
         repo_order = np.argsort(pr_repos)
         unique_pr_repos, pr_repo_counts = np.unique(pr_repos, return_counts=True)
         pr_merge_hashes = \
-            merged_prs[PullRequest.merge_commit_sha.key].values.astype("U")[repo_order]
+            merged_prs[PullRequest.merge_commit_sha.key].values.astype("S")[repo_order]
         pos = 0
         queries = []
         dead = []
@@ -776,7 +776,7 @@ class PullRequestMiner:
         pr_repos = resolved["repo"].values
         repo_order = np.argsort(pr_repos)
         unique_pr_repos, pr_repo_counts = np.unique(pr_repos, return_counts=True)
-        pr_merge_hashes = resolved["sha"].values.astype("U")[repo_order]
+        pr_merge_hashes = resolved["sha"].values.astype("S")[repo_order]
         pos = 0
         alive_indexes = []
         for repo, n_prs in zip(unique_pr_repos, pr_repo_counts):
@@ -1209,17 +1209,17 @@ class PullRequestMiner:
             node_ids = df.index.get_level_values(0).values
             if df.index.nlevels > 1:
                 # this is not really required but it makes iteration deterministic
-                order_keys = (node_ids + df.index.get_level_values(1).values).astype("U")
-                node_ids = node_ids.astype("U")
+                order_keys = (node_ids + df.index.get_level_values(1).values).astype("S")
+                node_ids = node_ids.astype("S")
             else:
-                order_keys = node_ids = node_ids.astype("U")
+                order_keys = node_ids = node_ids.astype("S")
             node_ids_order = np.argsort(order_keys)
             node_ids = node_ids[node_ids_order]
             node_ids_backtrack = np.arange(0, len(df))[node_ids_order]
             node_ids_unique_counts = np.unique(node_ids, return_counts=True)[1]
             node_ids_group_counts = np.zeros(len(node_ids_unique_counts) + 1, dtype=int)
             np.cumsum(node_ids_unique_counts, out=node_ids_group_counts[1:])
-            keys = node_ids[node_ids_group_counts[:-1]]
+            keys = node_ids[node_ids_group_counts[:-1]].astype("U")
             groups = np.split(node_ids_backtrack, node_ids_group_counts[1:-1])
             grouped_df_iters.append(iter(zip(keys, groups)))
             if plural:
@@ -1293,7 +1293,7 @@ class PullRequestFactsMiner:
 
     def __init__(self, bots: Set[str]):
         """Require the set of bots to be preloaded."""
-        self._bots = np.sort(list(bots))
+        self._bots = np.sort(list(bots)).astype("S")
 
     def __call__(self, pr: MinedPullRequest) -> PullRequestFacts:
         """
@@ -1324,10 +1324,12 @@ class PullRequestFactsMiner:
         first_commit = pr.commits[PullRequestCommit.authored_date.key].nonemin()
         # yes, first_commit uses authored_date while last_commit uses committed_date
         last_commit = pr.commits[PullRequestCommit.committed_date.key].nonemax()
-        # convert to "U" dtype to enable sorting in np.in1d
-        authored_comments = pr.comments[PullRequestReviewComment.user_login.key].values.astype("U")
+        # convert to "S" dtype to enable sorting in np.in1d
+        authored_comments = pr.comments[PullRequestReviewComment.user_login.key].values.astype("S")
+        if (author_login := pr.pr[PullRequest.user_login.key]) is not None:
+            author_login = author_login.encode()
         external_comments_times = pr.comments[PullRequestComment.created_at.key].take(
-            np.where((authored_comments != pr.pr[PullRequest.user_login.key]) &
+            np.where((authored_comments != author_login) &
                      np.in1d(authored_comments, self._bots, invert=True))[0])
         first_comment = nonemin(
             pr.review_comments[PullRequestReviewComment.created_at.key].nonemin(),
