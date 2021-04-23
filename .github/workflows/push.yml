@@ -7,13 +7,10 @@ on:
   pull_request:
 
 env:
-  GOOGLE_DOCKER_IMAGE: gcr.io/${{ secrets.GOOGLE_PROJECT }}/api
   AUTH0_AUDIENCE: ${{ secrets.AUTH0_AUDIENCE }}
   AUTH0_CLIENT_ID: ${{ secrets.AUTH0_CLIENT_ID }}
   AUTH0_CLIENT_SECRET: ${{ secrets.AUTH0_CLIENT_SECRET }}
   AUTH0_DOMAIN: ${{ secrets.AUTH0_DOMAIN }}
-  CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-  GKWILLIE_TOKEN: ${{ secrets.GKWILLIE_TOKEN }}
   GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
   GOOGLE_KMS_KEYNAME: ${{ secrets.GOOGLE_KMS_KEYNAME }}
   GOOGLE_KMS_KEYRING: ${{ secrets.GOOGLE_KMS_KEYRING }}
@@ -73,7 +70,7 @@ jobs:
     - name: pip
       run: |
         set -x
-        sed -i "s/git+ssh:\/\/git@/git+https:\/\/gkwillie:$GKWILLIE_TOKEN@/g" server/requirements.txt
+        sed -i "s/git+ssh:\/\/git@/git+https:\/\/gkwillie:${{ secrets.GKWILLIE_TOKEN }}@/g" server/requirements.txt
         pip3 install -r server/requirements.txt --no-warn-script-location
         git checkout -f server/requirements.txt
         sudo pip3 install -e server/
@@ -136,7 +133,7 @@ jobs:
     - name: pip
       run: |
         set -x
-        sed -i "s/git+ssh:\/\/git@/git+https:\/\/gkwillie:$GKWILLIE_TOKEN@/g" server/requirements.txt
+        sed -i "s/git+ssh:\/\/git@/git+https:\/\/gkwillie:${{ secrets.GKWILLIE_TOKEN }}@/g" server/requirements.txt
         pip3 install -r server/requirements.txt --no-warn-script-location
         pip3 install -r server/requirements-test.txt --no-warn-script-location
         sudo pip3 install -e server/
@@ -213,7 +210,7 @@ jobs:
     - uses: codecov/codecov-action@v1
       name: codecov
       with:
-        token: ${{ env.CODECOV_TOKEN }}
+        token: ${{ secrets.CODECOV_TOKEN }}
   spec:
     name: OpenAPI in JS
     if: "!contains(github.event.head_commit.message, 'Bump version')"
@@ -261,9 +258,9 @@ jobs:
     - name: docker build
       run: |
         set -x
-        docker build --cache-from $GOOGLE_DOCKER_IMAGE:latest --build-arg COMMIT=$GITHUB_SHA --build-arg GKWILLIE_TOKEN=$GKWILLIE_TOKEN -t $GOOGLE_DOCKER_IMAGE .
-        docker run --rm ${GOOGLE_DOCKER_IMAGE} --help
-        docker build -t test --build-arg base=${GOOGLE_DOCKER_IMAGE} server/tests
+        docker build --cache-from gcr.io/${{ secrets.GOOGLE_PROJECT }}/api:latest --build-arg COMMIT=$GITHUB_SHA --build-arg GKWILLIE_TOKEN=${{ secrets.GKWILLIE_TOKEN }} -t gcr.io/${{ secrets.GOOGLE_PROJECT }}/api .
+        docker run --rm gcr.io/${{ secrets.GOOGLE_PROJECT }}/api --help
+        docker build -t test --build-arg base=gcr.io/${{ secrets.GOOGLE_PROJECT }}/api server/tests
         run="docker run --network=host --rm -v $(pwd):/io -w /io --entrypoint python3 -e ATHENIAN_INVITATION_KEY=777 -e ATHENIAN_INVITATION_URL_PREFIX=https://app.athenian.co/i/ -e ATHENIAN_JIRA_INSTALLATION_URL_TEMPLATE=https://installation.athenian.co/jira/%s/atlassian-connect.json test -m coverage"
         $run run -a -m athenian.api.models.state postgres://postgres:postgres@0.0.0.0:5432/state
         $run run -a -m athenian.api.invite_admin postgres://postgres:postgres@0.0.0.0:5432/state
@@ -278,10 +275,10 @@ jobs:
     - uses: codecov/codecov-action@v1
       name: codecov
       with:
-        token: ${{ env.CODECOV_TOKEN }}
+        token: ${{ secrets.CODECOV_TOKEN }}
     - name: docker prune
       run: |
-        (docker image ls -a | grep -v $GOOGLE_DOCKER_IMAGE | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
+        (docker image ls -a | grep -v gcr.io/${{ secrets.GOOGLE_PROJECT }}/api | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
         (docker image ls -a | grep -v latest | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
   bump_version:
     name: Bump the version
@@ -304,7 +301,7 @@ jobs:
         commit_name: Groundskeeper Willie
         commit_email: bot@athenian.co
         login: gkwillie
-        token: "${{ env.GKWILLIE_TOKEN }}"
+        token: ${{ secrets.GKWILLIE_TOKEN }}
   deploy:
     name: Deploy
     if: "contains(github.event.head_commit.message, 'Bump version') && github.ref == 'refs/heads/master'"
@@ -329,15 +326,15 @@ jobs:
         current_version=$(grep __version__ $version_file | cut -d\" -f2)
         sentry-cli releases new -p $SENTRY_PROJECT $current_version
         sentry-cli releases set-commits --auto $current_version
-        export IMAGE=$GOOGLE_DOCKER_IMAGE:$current_version
+        export IMAGE=gcr.io/${{ secrets.GOOGLE_PROJECT }}/api:$current_version
         make gcloud-login
-        docker build --pull --cache-from $GOOGLE_DOCKER_IMAGE:latest --build-arg COMMIT=$GITHUB_SHA --build-arg GKWILLIE_TOKEN=$GKWILLIE_TOKEN -t $IMAGE .
+        docker build --pull --cache-from gcr.io/${{ secrets.GOOGLE_PROJECT }}/api:latest --build-arg COMMIT=$GITHUB_SHA --build-arg GKWILLIE_TOKEN=${{ secrets.GKWILLIE_TOKEN }} -t $IMAGE .
         make docker-push
         make pubsub-publish
-        docker tag $IMAGE $GOOGLE_DOCKER_IMAGE
-        IMAGE=$GOOGLE_DOCKER_IMAGE make docker-push
+        docker tag $IMAGE gcr.io/${{ secrets.GOOGLE_PROJECT }}/api
+        IMAGE=gcr.io/${{ secrets.GOOGLE_PROJECT }}/api make docker-push
         sentry-cli releases finalize $current_version
     - name: docker prune
       run: |
-        (docker image ls -a | grep -v $GOOGLE_DOCKER_IMAGE | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
+        (docker image ls -a | grep -v gcr.io/${{ secrets.GOOGLE_PROJECT }}/api | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
         (docker image ls -a | grep -v latest | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
