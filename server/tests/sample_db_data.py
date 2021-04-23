@@ -10,6 +10,7 @@ import sqlalchemy.orm
 from sqlalchemy.sql.type_api import Variant
 
 from athenian.api.controllers import invitation_controller
+from athenian.api.controllers.calculator_selector import METRIC_ENTRIES_VARIATIONS_PREFIX
 from athenian.api.controllers.invitation_controller import _generate_account_secret
 from athenian.api.models.metadata import __min_version__
 from athenian.api.models.metadata.github import Base as GithubBase, NodePullRequest, PullRequest, \
@@ -151,3 +152,9 @@ def fill_state_session(session: sqlalchemy.orm.Session):
     session.add(AccountFeature(account_id=1, feature_id=1000, enabled=True,
                                parameters={"a": "x"}))
     session.add(AccountJiraInstallation(id=1, account_id=1))
+    if os.getenv("WITH_PRELOADING", "0") == "1":
+        session.add(Feature(id=2000,
+                            name=f"{METRIC_ENTRIES_VARIATIONS_PREFIX['github']}preloading",
+                            component=FeatureComponent.server, enabled=True))
+        session.flush()
+        session.add(AccountFeature(account_id=1, feature_id=2000, enabled=True))
