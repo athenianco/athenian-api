@@ -11,15 +11,10 @@ env:
   AUTH0_CLIENT_ID: ${{ secrets.AUTH0_CLIENT_ID }}
   AUTH0_CLIENT_SECRET: ${{ secrets.AUTH0_CLIENT_SECRET }}
   AUTH0_DOMAIN: ${{ secrets.AUTH0_DOMAIN }}
-  GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
   GOOGLE_KMS_KEYNAME: ${{ secrets.GOOGLE_KMS_KEYNAME }}
   GOOGLE_KMS_KEYRING: ${{ secrets.GOOGLE_KMS_KEYRING }}
   GOOGLE_KMS_PROJECT: ${{ secrets.GOOGLE_KMS_PROJECT }}
   GOOGLE_KMS_SERVICE_ACCOUNT_B64: ${{ secrets.GOOGLE_KMS_SERVICE_ACCOUNT_B64 }}
-  GOOGLE_PROJECT: ${{ secrets.GOOGLE_PROJECT }}
-  GOOGLE_PUBSUB_TOPIC: ${{ secrets.GOOGLE_PUBSUB_TOPIC }}
-  K8S_DEPLOYMENT: ${{ secrets.K8S_DEPLOYMENT }}
-  K8S_NAMESPACE: ${{ secrets.K8S_NAMESPACE }}
   SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
   SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
   SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
@@ -330,6 +325,9 @@ jobs:
         make gcloud-login
         docker build --pull --cache-from gcr.io/${{ secrets.GOOGLE_PROJECT }}/api:latest --build-arg COMMIT=$GITHUB_SHA --build-arg GKWILLIE_TOKEN=${{ secrets.GKWILLIE_TOKEN }} -t $IMAGE .
         make docker-push
+        GOOGLE_CREDENTIALS=${{ secrets.GOOGLE_CREDENTIALS }} \
+        GOOGLE_PROJECT=${{ secrets.GOOGLE_PROJECT }} \
+        GOOGLE_PUBSUB_TOPIC=${{ secrets.GOOGLE_PUBSUB_TOPIC }} \
         make pubsub-publish
         docker tag $IMAGE gcr.io/${{ secrets.GOOGLE_PROJECT }}/api
         IMAGE=gcr.io/${{ secrets.GOOGLE_PROJECT }}/api make docker-push

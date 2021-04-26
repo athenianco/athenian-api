@@ -275,6 +275,7 @@ async def fetch_repository_commits_no_branch_dates(
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda repos, **_: (",".join(sorted(repos)),),
+    version=2,
 )
 async def fetch_precomputed_commit_history_dags(
         repos: Iterable[str],
