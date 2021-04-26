@@ -1475,6 +1475,18 @@ class PullRequestFactsMiner:
         ]).astype(ts_dtype).astype("datetime64[D]")
         activity_days = \
             np.unique(activity_days[activity_days == activity_days]).astype(ts_dtype)
+        review_comment_authors = \
+            pr.review_comments[PullRequestReviewComment.user_login.key].values.astype("S")
+        human_review_comments = np.in1d(review_comment_authors, self._bots, invert=True).sum()
+        participants = len(np.unique(np.concatenate([
+            np.array([pr.pr[PullRequest.user_login.key], pr.pr[PullRequest.merged_by_login.key]],
+                     dtype="S"),
+            pr.commits[PullRequestCommit.author_login.key].values.astype("S"),
+            pr.commits[PullRequestCommit.committer_login.key].values.astype("S"),
+            review_comment_authors,
+            pr.comments[PullRequestComment.user_login.key].values.astype("S"),
+            pr.reviews[PullRequestReview.user_login.key].values.astype("S"),
+        ])))
         facts = PullRequestFacts.from_fields(
             created=created,
             first_commit=first_commit,
@@ -1498,6 +1510,8 @@ class PullRequestFactsMiner:
             author=pr.pr[PullRequest.user_login.key],
             merger=pr.pr[PullRequest.merged_by_login.key],
             releaser=pr.release[Release.author.key],
+            review_comments=human_review_comments,
+            participants=participants,
         )
         self._validate(facts, pr.pr[PullRequest.htmlurl.key])
         return facts

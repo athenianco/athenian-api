@@ -322,6 +322,8 @@ class PullRequestFacts:
         activity_days: ["datetime64[s]"]
         size: np.int64
         force_push_dropped: np.bool_
+        review_comments: np.uint16
+        participants: np.uint16
 
     class Optional:
         """Mutable fields that are None by default. We do not serialize them."""

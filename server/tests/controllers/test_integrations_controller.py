@@ -104,7 +104,7 @@ async def test_get_everything_smoke(client, headers):
         "work_began", "releaser", "merged_by", "user_node_id", "repository_full_name",
         "first_review_request", "last_review", "activity_days", "closed", "merge_commit_id",
         "head_ref", "jira_id", "merger", "done", "size", "reviews", "release_url",
-        "release_node_id",
+        "release_node_id", "review_comments", "participants",
     }
     assert len(releases_df) == 53
     assert set(releases_df) == {
