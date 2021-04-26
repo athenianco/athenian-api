@@ -189,7 +189,7 @@ async def fetch_repository_commits(repos: Dict[str, DAG],
             missed_heads = required_heads
         if len(missed_heads) > 0:
             # heuristic: order the heads from most to least recent
-            missed_heads = missed_heads.astype("U")
+            missed_heads = missed_heads.astype("U40")
             order = sorted([(hash_to_dt[h], i) for i, h in enumerate(missed_heads)], reverse=True)
             missed_heads = [missed_heads[i] for _, i in order]
             missed_ids = [hash_to_id[h] for h in missed_heads]
@@ -326,7 +326,7 @@ async def _fetch_commit_history_dag(hashes: np.ndarray,
         if len(stop_heads) > max_stop_heads:
             min_commit_time = datetime.now(timezone.utc) - timedelta(days=90)
             rows = await mdb.fetch_all(select([NodeCommit.oid])
-                                       .where(and_(NodeCommit.oid.in_(stop_heads),
+                                       .where(and_(NodeCommit.oid.in_(stop_heads.astype("U40")),
                                                    NodeCommit.committed_date > min_commit_time,
                                                    NodeCommit.acc_id.in_(meta_ids)))
                                        .order_by(desc(NodeCommit.committed_date))
@@ -339,11 +339,12 @@ async def _fetch_commit_history_dag(hashes: np.ndarray,
             partition_seeds = first_parents[:max_inner_partitions * step:step]
         else:
             partition_seeds = first_parents
-        partition_seeds = np.concatenate([stop_heads, partition_seeds]).astype("S")
+        partition_seeds = np.concatenate([stop_heads, partition_seeds])
+        assert partition_seeds.dtype.char == "S"
         # the expansion factor is ~6x, so 2 * 25 -> 300
         with sentry_sdk.start_span(op="partition_dag",
                                    description="%d %d" % (len(hashes), len(partition_seeds))):
-            stop_hashes = partition_dag(hashes, vertexes, edges, partition_seeds).astype("U")
+            stop_hashes = partition_dag(hashes, vertexes, edges, partition_seeds).astype("U40")
     else:
         stop_hashes = []
     batch_size = 20

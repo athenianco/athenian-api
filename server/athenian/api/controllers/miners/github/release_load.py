@@ -753,10 +753,10 @@ async def _match_releases_by_branch(repos: Iterable[str],
     dags = await fetch_repository_commits(
         dags, branches, BRANCH_FETCH_COMMITS_COLUMNS, False, account, meta_ids, mdb, pdb, cache)
     first_shas = [
-        extract_first_parents(*dags[repo], branches[Branch.commit_sha.key].values.astype("S"))
+        extract_first_parents(*dags[repo], branches[Branch.commit_sha.key].values.astype("S40"))
         for repo, branches in branches_matched.items()
     ]
-    first_shas = np.sort(np.concatenate(first_shas)).astype("U")
+    first_shas = np.sort(np.concatenate(first_shas)).astype("U40")
     first_commits = await _fetch_commits(first_shas, time_from, time_to, meta_ids, mdb, cache)
     pseudo_releases = []
     for repo in branches_matched:

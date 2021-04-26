@@ -226,7 +226,7 @@ async def _find_old_released_prs(commits: np.ndarray,
         PullRequest.merged_at < time_boundary,
         PullRequest.hidden.is_(False),
         PullRequest.acc_id.in_(meta_ids),
-        PullRequest.merge_commit_sha.in_(commits.astype("U")),
+        PullRequest.merge_commit_sha.in_(commits.astype("U40")),
     ]
     if updated_min is not None:
         filters.append(PullRequest.updated_at.between(updated_min, updated_max))
@@ -249,7 +249,7 @@ async def _find_old_released_prs(commits: np.ndarray,
     prs = await read_sql_query(query, mdb, PullRequest, index=PullRequest.node_id.key)
     if prs.empty:
         return prs
-    pr_commits = prs[PullRequest.merge_commit_sha.key].values.astype("S")
+    pr_commits = prs[PullRequest.merge_commit_sha.key].values.astype("S40")
     pr_repos = prs[PullRequest.repository_full_name.key].values.astype("S")
     indexes = np.searchsorted(commits, pr_commits)
     checked = np.nonzero(pr_repos == repos[indexes])[0]
