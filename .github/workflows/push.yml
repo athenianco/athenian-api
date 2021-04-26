@@ -362,7 +362,7 @@ jobs:
         set -x
         version_file=server/athenian/api/metadata.py
         current_version=$(grep __version__ $version_file | cut -d\" -f2)
-        godotenv -s sentry-cli releases new -p $SENTRY_PROJECT $current_version
+        godotenv -s sentry-cli releases new -p ${{ secrets.SENTRY_PROJECT }} $current_version
         godotenv -s sentry-cli releases set-commits --auto $current_version
         export IMAGE=gcr.io/${{ secrets.GOOGLE_PROJECT }}/api:$current_version
         GOOGLE_CREDENTIALS=${{ secrets.GOOGLE_CREDENTIALS }} \
