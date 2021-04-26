@@ -137,6 +137,8 @@ def pr_samples():
                 size=randint(10, 1000),
                 force_push_dropped=False,
                 done=pd.Timestamp(released_at),
+                review_comments=max(0, randint(-5, 15)),
+                participants=max(randint(-1, 4), 1),
             )
 
         return [random_pr() for _ in range(n)]
