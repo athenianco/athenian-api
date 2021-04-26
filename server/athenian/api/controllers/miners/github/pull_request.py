@@ -711,7 +711,7 @@ class PullRequestMiner:
         repo_order = np.argsort(pr_repos)
         unique_pr_repos, pr_repo_counts = np.unique(pr_repos, return_counts=True)
         pr_merge_hashes = \
-            merged_prs[PullRequest.merge_commit_sha.key].values.astype("S")[repo_order]
+            merged_prs[PullRequest.merge_commit_sha.key].values.astype("S40")[repo_order]
         pos = 0
         queries = []
         dead = []

@@ -156,7 +156,7 @@ async def mine_releases(repos: Iterable[str],
         all_hashes = []
         for repo, repo_releases in releases.groupby(Release.repository_full_name.key, sort=False):
             hashes, vertexes, edges = dags[repo]
-            release_hashes = repo_releases[Release.sha.key].values.astype("S")
+            release_hashes = repo_releases[Release.sha.key].values.astype("S40")
             release_timestamps = repo_releases[Release.published_at.key].values
             ownership = mark_dag_access(hashes, vertexes, edges, release_hashes)
             parents = mark_dag_parents(
@@ -199,7 +199,7 @@ async def mine_releases(repos: Iterable[str],
             PushCommit.author_login,
             PushCommit.node_id,
         ]
-        all_hashes = np.concatenate(all_hashes).astype("U") if all_hashes else []
+        all_hashes = np.concatenate(all_hashes).astype("U40") if all_hashes else []
         with sentry_sdk.start_span(op="mine_releases/fetch_commits",
                                    description=str(len(all_hashes))):
             commits_df = await read_sql_query(

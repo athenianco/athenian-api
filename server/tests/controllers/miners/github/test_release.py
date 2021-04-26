@@ -806,7 +806,7 @@ async def test__fetch_repository_commits_smoke(mdb, pdb, prune):
     }
     for k, v in ground_truth.items():
         vertex = np.where(hashes == k.encode())[0][0]
-        assert hashes[edges[vertexes[vertex]:vertexes[vertex + 1]]].astype("U").tolist() == v
+        assert hashes[edges[vertexes[vertex]:vertexes[vertex + 1]]].astype("U40").tolist() == v
     assert len(hashes) == 9
     await wait_deferred()
     dags2 = await fetch_repository_commits(
@@ -1137,7 +1137,7 @@ async def test_mark_dag_parents_smoke(
         rdb,
         None,
     )
-    release_hashes = releases[Release.sha.key].values.astype("S")
+    release_hashes = releases[Release.sha.key].values.astype("S40")
     release_dates = releases[Release.published_at.key].values
     ownership = mark_dag_access(hashes, vertexes, edges, release_hashes)
     parents = mark_dag_parents(hashes, vertexes, edges, release_hashes, release_dates, ownership)
