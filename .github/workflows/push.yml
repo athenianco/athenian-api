@@ -112,6 +112,10 @@ jobs:
         path: ${{ env.PIP_CACHE }}
         key: ubuntu-20.04-pip-main-${{ hashFiles('server/requirements.txt', 'requirements-test.txt') }}
         restore-keys: ubuntu-20.04-pip-main-
+    - name: bin-path
+      run: |
+        set -x
+        mkdir -p $HOME/.local/bin
     - name: actions/cache godotenv
       uses: actions/cache@v2
       with:
@@ -333,6 +337,10 @@ jobs:
       with:
         path: ~/google-cloud-sdk
         key: ubuntu-20.04-google-cloud-sdk
+    - name: bin-path
+      run: |
+        set -x
+        mkdir -p $HOME/.local/bin
     - name: actions/cache godotenv
       uses: actions/cache@v2
       with:
