@@ -322,6 +322,8 @@ jobs:
         sentry-cli releases new -p $SENTRY_PROJECT $current_version
         sentry-cli releases set-commits --auto $current_version
         export IMAGE=gcr.io/${{ secrets.GOOGLE_PROJECT }}/api:$current_version
+        GOOGLE_CREDENTIALS=${{ secrets.GOOGLE_CREDENTIALS }} \
+        GOOGLE_PROJECT=${{ secrets.GOOGLE_PROJECT }} \
         make gcloud-login
         docker build --pull --cache-from gcr.io/${{ secrets.GOOGLE_PROJECT }}/api:latest --build-arg COMMIT=$GITHUB_SHA --build-arg GKWILLIE_TOKEN=${{ secrets.GKWILLIE_TOKEN }} -t $IMAGE .
         make docker-push
