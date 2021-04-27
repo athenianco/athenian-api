@@ -253,7 +253,16 @@ class AthenianApp(connexion.AioHttpApp):
         async def connect_to_db(name: str, shortcut: str, db_conn: str, db_options: dict):
             try:
                 db = ParallelDatabase(db_conn, **(db_options or {}))
-                await db.connect()
+                for i in range(attempts := 3):
+                    try:
+                        await db.connect()
+                        break
+                    except TimeoutError as e:
+                        self.log.warning("%d/%d timed out connecting to %s",
+                                         i + 1, attempts, db_conn)
+                        timeout = e  # `e` goes out of scope before `else`
+                else:
+                    raise timeout from None
                 self.log.info("Connected to the %s DB on %s", name, db_conn)
                 setattr(self, shortcut, measure_db_overhead_and_retry(db, shortcut, self.app))
                 if shortcut == "pdb":

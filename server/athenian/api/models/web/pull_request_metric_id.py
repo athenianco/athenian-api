@@ -39,6 +39,7 @@ class PullRequestMetricID(Model, metaclass=Enum):
     PR_WAIT_FIRST_REVIEW_COUNT = "pr-wait-first-review-count"
     PR_WAIT_FIRST_REVIEW_COUNT_Q = "pr-wait-first-review-count-q"
     PR_SIZE = "pr-size"
+    PR_MEDIAN_SIZE = "pr-median-size"
     PR_OPENED_MAPPED_TO_JIRA = "pr-opened-mapped-to-jira"
     PR_DONE_MAPPED_TO_JIRA = "pr-done-mapped-to-jira"
     PR_ALL_MAPPED_TO_JIRA = "pr-all-mapped-to-jira"

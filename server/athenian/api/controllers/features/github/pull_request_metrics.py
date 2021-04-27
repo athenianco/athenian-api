@@ -10,7 +10,7 @@ from athenian.api import metadata
 from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
     BinnedHistogramCalculator, BinnedMetricCalculator, Counter, HistogramCalculator, \
-    HistogramCalculatorEnsemble, make_register_metric, MetricCalculator, \
+    HistogramCalculatorEnsemble, make_register_metric, MedianMetricCalculator, MetricCalculator, \
     MetricCalculatorEnsemble, RatioCalculator, SumMetricCalculator, WithoutQuantilesMixin
 from athenian.api.controllers.miners.types import PRParticipants, PullRequestFacts
 from athenian.api.models.web import PullRequestMetricID
@@ -741,9 +741,8 @@ class FlowRatioCalculator(RatioCalculator):
     deps = (OpenedCalculator, ClosedCalculator)
 
 
-@register_metric(PullRequestMetricID.PR_SIZE)
-class SizeCalculator(AverageMetricCalculator[int]):
-    """Average PR size."""
+class SizeCalculatorMixin(MetricCalculator[int]):
+    """Calculate any aggregating statistic over PR sizes."""
 
     may_have_negative_values = False
     deps = (AllCounter,)
@@ -762,6 +761,16 @@ class SizeCalculator(AverageMetricCalculator[int]):
                           len(min_times), axis=0).astype(object)
         sizes[self._calcs[0].peek == np.array(None)] = None
         return sizes
+
+
+@register_metric(PullRequestMetricID.PR_SIZE)
+class SizeCalculator(SizeCalculatorMixin, AverageMetricCalculator[int]):
+    """Average PR size."""
+
+
+@register_metric(PullRequestMetricID.PR_MEDIAN_SIZE)
+class MedianSizeCalculator(SizeCalculatorMixin, MedianMetricCalculator[int]):
+    """Median PR size."""
 
 
 class PendingStage(IntEnum):
