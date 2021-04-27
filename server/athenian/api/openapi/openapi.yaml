@@ -2608,7 +2608,7 @@ components:
         * `pr-closed`: number of closed PRs.
         * `pr-done`: number of released, closed unmerged, and force push dropped PRs.
         * `pr-size`: average size of PRs (added + deleted lines) which are active on the time interval after applying the quantiles.
-        * `pr-median-size`: median size of PRs (added + deleted lines) which are active on the time interval after applying the quantiles.
+        * `pr-median-size`: median size of PRs (added + deleted lines) which are active on the time interval ignoring the quantiles.
         * `pr-wip-pending-count`: number of PRs currently in Work In Progress stage.
         * `pr-review-pending-count`: number of PRs currently in Review stage.
         * `pr-merging-pending-count`: number of PRs currently in Merge stage.
