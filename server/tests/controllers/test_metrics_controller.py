@@ -395,6 +395,34 @@ async def test_calc_metrics_prs_averages(client, headers):
                       [2.660493850708008, 2.5432097911834717, 3.709876537322998]]
 
 
+async def test_calc_metrics_prs_sizes(client, headers):
+    body = {
+        "for": [
+            {
+                "with": {},
+                "repositories": ["{1}"],
+            },
+        ],
+        "metrics": [PullRequestMetricID.PR_SIZE,
+                    PullRequestMetricID.PR_MEDIAN_SIZE],
+        "date_from": "2015-10-13",
+        "date_to": "2020-01-23",
+        "granularities": ["all"],
+        "exclude_inactive": False,
+        "account": 1,
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+    )
+    assert response.status == 200, response.text()
+    body = FriendlyJson.loads((await response.read()).decode("utf-8"))
+    values = [v["values"] for v in body["calculated"][0]["values"]]
+    assert values == [[296, 54]]
+    for ts in body["calculated"][0]["values"]:
+        for v, cmin, cmax in zip(ts["values"], ts["confidence_mins"], ts["confidence_maxs"]):
+            assert cmin < v < cmax
+
+
 async def test_calc_metrics_prs_index_error(client, headers):
     body = {
         "for": [
