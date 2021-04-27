@@ -365,6 +365,36 @@ async def test_calc_metrics_prs_counts_sums(client, headers, metric, count):
     assert s == count
 
 
+async def test_calc_metrics_prs_averages(client, headers):
+    body = {
+        "for": [
+            {
+                "with": {},
+                "repositories": ["{1}"],
+            },
+        ],
+        "metrics": [PullRequestMetricID.PR_PARTICIPANTS_PER,
+                    PullRequestMetricID.PR_REVIEWS_PER,
+                    PullRequestMetricID.PR_REVIEW_COMMENTS_PER],
+        "date_from": "2015-10-13",
+        "date_to": "2020-01-23",
+        "granularities": ["year"],
+        "exclude_inactive": False,
+        "account": 1,
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+    )
+    assert response.status == 200, response.text()
+    body = FriendlyJson.loads((await response.read()).decode("utf-8"))
+    values = [v["values"] for v in body["calculated"][0]["values"]]
+    assert values == [[2.461538553237915, 0.0, 0.0],
+                      [2.8358209133148193, 2.668656826019287, 3.7522387504577637],
+                      [3.003115177154541, 2.2554516792297363, 2.638629198074341],
+                      [2.9247312545776367, 2.1684587001800537, 2.6881721019744873],
+                      [2.660493850708008, 2.5432097911834717, 3.709876537322998]]
+
+
 async def test_calc_metrics_prs_index_error(client, headers):
     body = {
         "for": [

@@ -42,3 +42,6 @@ class PullRequestMetricID(Model, metaclass=Enum):
     PR_OPENED_MAPPED_TO_JIRA = "pr-opened-mapped-to-jira"
     PR_DONE_MAPPED_TO_JIRA = "pr-done-mapped-to-jira"
     PR_ALL_MAPPED_TO_JIRA = "pr-all-mapped-to-jira"
+    PR_PARTICIPANTS_PER = "pr-participants-per"
+    PR_REVIEW_COMMENTS_PER = "pr-review-comments-per"
+    PR_REVIEWS_PER = "pr-reviews-per"

@@ -905,3 +905,63 @@ def need_jira_mapping(metrics: Iterable[str]) -> bool:
         PullRequestMetricID.PR_DONE_MAPPED_TO_JIRA,
         PullRequestMetricID.PR_ALL_MAPPED_TO_JIRA,
     }))
+
+
+@register_metric(PullRequestMetricID.PR_PARTICIPANTS_PER)
+class AverageParticipantsCalculator(AverageMetricCalculator[np.float32]):
+    """Average number of PR participants metric."""
+
+    deps = (AllCounter,)
+    may_have_negative_values = False
+    dtype = np.float32
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **kwargs,
+                 ) -> np.ndarray:
+        result = np.repeat(facts[PullRequestFacts.f.participants].values[None, :],
+                           len(min_times), axis=0).astype(object)
+        result[self._calcs[0].peek == np.array(None)] = None
+        return result
+
+
+@register_metric(PullRequestMetricID.PR_REVIEW_COMMENTS_PER)
+class AverageReviewCommentsCalculator(AverageMetricCalculator[np.float32]):
+    """Average number of PR review comments in reviewed PRs metric."""
+
+    deps = (AllCounter,)
+    may_have_negative_values = False
+    dtype = np.float32
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **kwargs,
+                 ) -> np.ndarray:
+        result = np.repeat(facts[PullRequestFacts.f.review_comments].values[None, :],
+                           len(min_times), axis=0).astype(object)
+        result[self._calcs[0].peek == np.array(None)] = None
+        return result
+
+
+@register_metric(PullRequestMetricID.PR_REVIEWS_PER)
+class AverageReviewsCalculator(AverageMetricCalculator[np.float32]):
+    """Average number of reviews in reviewed PRs metric."""
+
+    deps = (AllCounter,)
+    may_have_negative_values = False
+    dtype = np.float32
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **kwargs,
+                 ) -> np.ndarray:
+        result = np.repeat(facts[PullRequestFacts.f.reviews].map(len).values[None, :],
+                           len(min_times), axis=0).astype(object)
+        result[self._calcs[0].peek == np.array(None)] = None
+        return result

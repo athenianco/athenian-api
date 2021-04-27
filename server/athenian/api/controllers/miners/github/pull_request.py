@@ -1478,7 +1478,7 @@ class PullRequestFactsMiner:
         review_comment_authors = \
             pr.review_comments[PullRequestReviewComment.user_login.key].values.astype("S")
         human_review_comments = np.in1d(review_comment_authors, self._bots, invert=True).sum()
-        participants = len(np.unique(np.concatenate([
+        participants = len(np.setdiff1d(np.unique(np.concatenate([
             np.array([pr.pr[PullRequest.user_login.key], pr.pr[PullRequest.merged_by_login.key]],
                      dtype="S"),
             pr.commits[PullRequestCommit.author_login.key].values.astype("S"),
@@ -1486,7 +1486,7 @@ class PullRequestFactsMiner:
             review_comment_authors,
             pr.comments[PullRequestComment.user_login.key].values.astype("S"),
             pr.reviews[PullRequestReview.user_login.key].values.astype("S"),
-        ])))
+        ])), self._bots, assume_unique=True))
         facts = PullRequestFacts.from_fields(
             created=created,
             first_commit=first_commit,
