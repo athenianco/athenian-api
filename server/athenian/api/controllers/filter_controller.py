@@ -257,45 +257,63 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
     utc = timezone.utc
     prefixer = await prefixer.load()
     repo_name_map, user_login_map = prefixer.repo_name_map, prefixer.user_login_map
-    for commit in commits.itertuples():
-        author_login = getattr(commit, PushCommit.author_login.key)
-        committer_login = getattr(commit, PushCommit.committer_login.key)
+    for author_login, committer_login, repository_full_name, sha, message, \
+            additions, deletions, changed_files, author_name, author_email, authored_date, \
+            committer_name, committer_email, committed_date, author_date, commit_date, \
+            author_avatar_url, committer_avatar_url in zip(
+            commits[PushCommit.author_login.key].values,
+            commits[PushCommit.committer_login.key].values,
+            commits[PushCommit.repository_full_name.key].values,
+            commits[PushCommit.sha.key].values,
+            commits[PushCommit.message.key].values,
+            commits[PushCommit.additions.key].values,
+            commits[PushCommit.deletions.key].values,
+            commits[PushCommit.changed_files.key].values,
+            commits[PushCommit.author_name.key].values,
+            commits[PushCommit.author_email.key].values,
+            commits[PushCommit.authored_date.key],
+            commits[PushCommit.committer_name.key].values,
+            commits[PushCommit.committer_email.key].values,
+            commits[PushCommit.committed_date.key],
+            commits[PushCommit.author_date.key],
+            commits[PushCommit.commit_date.key],
+            commits[PushCommit.author_avatar_url.key],
+            commits[PushCommit.committer_avatar_url.key]):
         obj = Commit(
-            repository=repo_name_map[getattr(commit, PushCommit.repository_full_name.key)],
-            hash=getattr(commit, PushCommit.sha.key),
-            message=getattr(commit, PushCommit.message.key),
-            size_added=_nan_to_none(getattr(commit, PushCommit.additions.key)),
-            size_removed=_nan_to_none(getattr(commit, PushCommit.deletions.key)),
-            files_changed=_nan_to_none(getattr(commit, PushCommit.changed_files.key)),
+            repository=repo_name_map[repository_full_name],
+            hash=sha,
+            message=message,
+            size_added=_nan_to_none(additions),
+            size_removed=_nan_to_none(deletions),
+            files_changed=_nan_to_none(changed_files),
             author=CommitSignature(
                 login=(user_login_map[author_login]) if author_login else None,
-                name=getattr(commit, PushCommit.author_name.key),
-                email=getattr(commit, PushCommit.author_email.key),
-                timestamp=getattr(commit, PushCommit.authored_date.key).replace(tzinfo=utc),
+                name=author_name,
+                email=author_email,
+                timestamp=authored_date.replace(tzinfo=utc),
             ),
             committer=CommitSignature(
                 login=(user_login_map[committer_login]) if committer_login else None,
-                name=getattr(commit, PushCommit.committer_name.key),
-                email=getattr(commit, PushCommit.committer_email.key),
-                timestamp=getattr(commit, PushCommit.committed_date.key).replace(tzinfo=utc),
+                name=committer_name,
+                email=committer_email,
+                timestamp=committed_date.replace(tzinfo=utc),
             ),
         )
         try:
-            dt = parse_datetime(getattr(commit, PushCommit.author_date.key))
+            dt = parse_datetime(author_date)
             obj.author.timezone = dt.tzinfo.utcoffset(dt).total_seconds() / 3600
         except ValueError:
             log.warning("Failed to parse the author timestamp of %s", obj.hash)
         try:
-            dt = parse_datetime(getattr(commit, PushCommit.commit_date.key))
+            dt = parse_datetime(commit_date)
             obj.committer.timezone = dt.tzinfo.utcoffset(dt).total_seconds() / 3600
         except ValueError:
             log.warning("Failed to parse the committer timestamp of %s", obj.hash)
         if obj.author.login and obj.author.login not in users:
             users[obj.author.login] = IncludedNativeUser(
-                avatar=getattr(commit, PushCommit.author_avatar_url.key))
+                avatar=author_avatar_url)
         if obj.committer.login and obj.committer.login not in users:
-            users[obj.committer.login] = IncludedNativeUser(
-                getattr(commit, PushCommit.committer_avatar_url.key))
+            users[obj.committer.login] = IncludedNativeUser(committer_avatar_url)
         model.data.append(obj)
     return model_response(model)
 

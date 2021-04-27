@@ -995,6 +995,7 @@ async def test_store_open_pull_request_facts_smoke(
     assert len(loaded_facts) == 0
 
 
+@pytest.mark.flaky(reruns=5)
 @with_only_master_branch
 @with_defer
 async def test_rescan_prs_mark_force_push_dropped(mdb, pdb, default_branches, pr_samples):
