@@ -769,7 +769,9 @@ class SizeCalculator(SizeCalculatorMixin, AverageMetricCalculator[int]):
 
 
 @register_metric(PullRequestMetricID.PR_MEDIAN_SIZE)
-class MedianSizeCalculator(SizeCalculatorMixin, MedianMetricCalculator[int]):
+class MedianSizeCalculator(SizeCalculatorMixin,
+                           WithoutQuantilesMixin,
+                           MedianMetricCalculator[int]):
     """Median PR size."""
 
 
