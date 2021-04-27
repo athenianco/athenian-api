@@ -112,19 +112,11 @@ jobs:
         path: ${{ env.PIP_CACHE }}
         key: ubuntu-20.04-pip-main-${{ hashFiles('server/requirements.txt', 'requirements-test.txt') }}
         restore-keys: ubuntu-20.04-pip-main-
-    - name: bin-path
-      run: |
-        set -x
-        mkdir -p $HOME/.local/bin
-    - name: actions/cache godotenv
-      uses: actions/cache@v2
-      with:
-        path: $HOME/.local/bin/godotenv
-        key: ubuntu-20.04-godotenv
     - name: godotenv
       run: |
         set -x
         if [ ! -e $HOME/.local/bin/godotenv ]; then \
+          mkdir -p $HOME/.local/bin && ls $HOME/.local/bin && \
           wget -O - https://github.com/athenianco/godotenv/releases/download/1.3.0-secure/godotenv.gz | gzip -d >$HOME/.local/bin/godotenv && \
           chmod +x $HOME/.local/bin/godotenv; \
         fi
@@ -337,19 +329,16 @@ jobs:
       with:
         path: ~/google-cloud-sdk
         key: ubuntu-20.04-google-cloud-sdk
-    - name: bin-path
-      run: |
-        set -x
-        mkdir -p $HOME/.local/bin
     - name: actions/cache godotenv
       uses: actions/cache@v2
       with:
-        path: $HOME/.local/bin/godotenv
+        path: ~/.local/bin/godotenv
         key: ubuntu-20.04-godotenv
     - name: godotenv
       run: |
         set -x
         if [ ! -e $HOME/.local/bin/godotenv ]; then \
+          mkdir -p $HOME/.local/bin && \
           wget -O - https://github.com/athenianco/godotenv/releases/download/1.3.0-secure/godotenv.gz | gzip -d >$HOME/.local/bin/godotenv && \
           chmod +x $HOME/.local/bin/godotenv; \
         fi
