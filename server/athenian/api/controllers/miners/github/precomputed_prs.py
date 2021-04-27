@@ -786,10 +786,13 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
     else:
         raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
     with sentry_sdk.start_span(op="store_precomputed_done_facts/execute_many"):
-        async with pdb.connection() as pdb_conn:
-            # we need a transaction to support pgbouncer
-            async with pdb_conn.transaction():
-                await pdb_conn.execute_many(sql, inserted)
+        if pdb.url.dialect == "sqlite":
+            async with pdb.connection() as pdb_conn:
+                async with pdb_conn.transaction():
+                    await pdb_conn.execute_many(sql, inserted)
+        else:
+            # don't require a transaction in Postgres, executemany() is atomic in new asyncpg
+            await pdb.execute_many(sql, inserted)
 
 
 def _flatten_set(s: set) -> Optional[Any]:
@@ -1047,10 +1050,13 @@ async def update_unreleased_prs(merged_prs: pd.DataFrame,
             sql = insert(GitHubMergedPullRequestFacts).prefix_with("OR REPLACE")
     try:
         with sentry_sdk.start_span(op="update_unreleased_prs/execute"):
-            async with pdb.connection() as pdb_conn:
-                # we need a transaction to support pgbouncer
-                async with pdb_conn.transaction():
-                    await pdb_conn.execute_many(sql, values)
+            if pdb.url.dialect == "sqlite":
+                async with pdb.connection() as pdb_conn:
+                    async with pdb_conn.transaction():
+                        await pdb_conn.execute_many(sql, values)
+            else:
+                # don't require a transaction in Postgres, executemany() is atomic in new asyncpg
+                await pdb.execute_many(sql, values)
     finally:
         unreleased_prs_event.set()
 
@@ -1107,10 +1113,13 @@ async def store_merged_unreleased_pull_request_facts(
             },
         )
         with sentry_sdk.start_span(op="store_merged_unreleased_pull_request_facts/execute"):
-            async with pdb.connection() as pdb_conn:
-                # we need a transaction to support pgbouncer
-                async with pdb_conn.transaction():
-                    await pdb_conn.execute_many(sql, values)
+            if pdb.url.dialect == "sqlite":
+                async with pdb.connection() as pdb_conn:
+                    async with pdb_conn.transaction():
+                        await pdb_conn.execute_many(sql, values)
+            else:
+                # don't require a transaction in Postgres, executemany() is atomic in new asyncpg
+                await pdb.execute_many(sql, values)
     else:
         tasks = [
             pdb.execute(update(ghmprf).where(and_(
@@ -1368,10 +1377,13 @@ async def store_open_pull_request_facts(
     else:
         sql = insert(GitHubOpenPullRequestFacts).prefix_with("OR REPLACE")
     with sentry_sdk.start_span(op="store_open_pull_request_facts/execute"):
-        async with pdb.connection() as pdb_conn:
-            # we need a transaction to support pgbouncer
-            async with pdb_conn.transaction():
-                await pdb_conn.execute_many(sql, values)
+        if pdb.url.dialect == "sqlite":
+            async with pdb.connection() as pdb_conn:
+                async with pdb_conn.transaction():
+                    await pdb_conn.execute_many(sql, values)
+        else:
+            # don't require a transaction in Postgres, executemany() is atomic in new asyncpg
+            await pdb.execute_many(sql, values)
 
 
 @sentry_span

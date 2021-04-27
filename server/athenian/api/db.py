@@ -57,6 +57,7 @@ def measure_db_overhead_and_retry(db: databases.Database,
                         (isinstance(raw_connection, aiosqlite.Connection) and
                          raw_connection.in_transaction)
                     ):
+                        # it is pointless to retry, the transaction is already considered as failed
                         wait_intervals = [None]
                 except AssertionError:
                     pass  # Connection is not acquired
@@ -70,7 +71,9 @@ def measure_db_overhead_and_retry(db: databases.Database,
                             if need_acquire:
                                 await connection.acquire()
                             return await func(*args, **kwargs)
-                        except (OSError, asyncpg.PostgresConnectionError) as e:
+                        except (OSError,
+                                asyncpg.PostgresConnectionError,
+                                asyncpg.OperatorInterventionError) as e:
                             if wait_time is None:
                                 raise e from None
                             log.warning("[%d] %s: %s", i + 1, type(e).__name__, e)

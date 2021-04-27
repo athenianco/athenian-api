@@ -227,9 +227,13 @@ async def fetch_repository_commits(repos: Dict[str, DAG],
             raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
 
         async def execute():
-            async with pdb.connection() as pdb_conn:
-                async with pdb_conn.transaction():
-                    await pdb_conn.execute_many(sql, sql_values)
+            if pdb.url.dialect == "sqlite":
+                async with pdb.connection() as pdb_conn:
+                    async with pdb_conn.transaction():
+                        await pdb_conn.execute_many(sql, sql_values)
+            else:
+                # don't require a transaction in Postgres, executemany() is atomic in new asyncpg
+                await pdb.execute_many(sql, sql_values)
 
         await defer(execute(), "fetch_repository_commits/pdb")
     for repo, pdag in repos.items():
