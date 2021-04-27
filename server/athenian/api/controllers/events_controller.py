@@ -152,9 +152,13 @@ async def notify_release(request: AthenianWebRequest, body: List[dict]) -> web.R
         )
     else:  # sqlite
         sql = insert(ReleaseNotification).prefix_with("OR REPLACE")
-    async with rdb.connection() as perdata_conn:
-        async with perdata_conn.transaction():
-            await perdata_conn.execute_many(sql, inserted)
+    if rdb.url.dialect == "sqlite":
+        async with rdb.connection() as perdata_conn:
+            async with perdata_conn.transaction():
+                await perdata_conn.execute_many(sql, inserted)
+    else:
+        # don't require a transaction in Postgres, executemany() is atomic in new asyncpg
+        await rdb.execute_many(sql, inserted)
     if (slack := request.app["slack"]) is not None:
         async def report_new_release_event_to_slack():
             await slack.post("new_release_event.jinja2",

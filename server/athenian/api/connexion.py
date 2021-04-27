@@ -20,7 +20,7 @@ from aiohttp.web_exceptions import HTTPClientError, HTTPFound, HTTPNoContent, HT
 from aiohttp.web_runner import GracefulExit
 import aiohttp_cors
 import aiomcache
-from asyncpg import InterfaceError, PostgresConnectionError
+from asyncpg import InterfaceError, OperatorInterventionError, PostgresConnectionError
 from connexion.apis import aiohttp_api
 from connexion.exceptions import ConnexionException
 import connexion.lifecycle
@@ -257,7 +257,7 @@ class AthenianApp(connexion.AioHttpApp):
                     try:
                         await db.connect()
                         break
-                    except TimeoutError as e:
+                    except asyncio.exceptions.TimeoutError as e:
                         self.log.warning("%d/%d timed out connecting to %s",
                                          i + 1, attempts, db_conn)
                         timeout = e  # `e` goes out of scope before `else`
@@ -402,7 +402,10 @@ class AthenianApp(connexion.AioHttpApp):
             request.cache = None
         try:
             return await handler(request)
-        except (ConnectionError, PostgresConnectionError, InterfaceError) as e:
+        except (ConnectionError,
+                PostgresConnectionError,
+                InterfaceError,
+                OperatorInterventionError) as e:
             sentry_sdk.add_breadcrumb(message=traceback.format_exc(), level="error")
             event_id = sentry_sdk.capture_message(
                 "Internal connectivity error: %s" % type(e).__name__, level="error")

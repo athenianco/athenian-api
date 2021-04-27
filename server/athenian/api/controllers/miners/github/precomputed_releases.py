@@ -111,9 +111,13 @@ async def store_precomputed_release_facts(releases: List[Tuple[Dict[str, Any], R
     else:
         sql = insert(GitHubReleaseFacts).prefix_with("OR IGNORE")
     with sentry_sdk.start_span(op="store_precomputed_release_facts/execute_many"):
-        async with pdb.connection() as pdb_conn:
-            async with pdb_conn.transaction():
-                await pdb_conn.execute_many(sql, values)
+        if pdb.url.dialect == "sqlite":
+            async with pdb.connection() as pdb_conn:
+                async with pdb_conn.transaction():
+                    await pdb_conn.execute_many(sql, values)
+        else:
+            # don't require a transaction in Postgres, executemany() is atomic in new asyncpg
+            await pdb.execute_many(sql, values)
 
 
 @sentry_span
