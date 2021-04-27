@@ -1,13 +1,15 @@
 import asyncio
 import logging
-from typing import Dict, List, Optional, Union
+from typing import Collection, Dict, List, Optional, Union
 
+import numpy as np
 import pandas as pd
 import sqlalchemy as sa
 from sqlalchemy import select
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
+from athenian.api.models.metadata.github import PullRequest
 from athenian.api.typing_utils import DatabaseLike
 
 
@@ -94,6 +96,35 @@ class CachedDataFrame:
             }
 
         return self
+
+    def filter(
+        self,
+        mask: pd.Series,
+        columns: Optional[Collection[str]],
+        index: Optional[str] = None,
+        uncast: bool = True,
+    ) -> pd.DataFrame:
+        """Filter the wrapped `pandas.Datarame` with the provided mask.
+
+        :param mask: boolean mask for filtering the wrapped DataFrame.
+        :param columns: the columns to select.
+        :param index: the column to set as index.
+        :param uncast: whether to uncast the columns dtypes, see the `_squeeze` method.
+
+        """
+        df = self._df[mask].copy()
+        if columns:
+            df = df[columns]
+        if uncast:
+            for col in self._identifier_cols:
+                df[col.key] = df[col.key].apply(lambda s: s.decode("utf8"))
+
+            for col in self._categorical_cols:
+                df[col.key] = df[col.key].astype("object").replace({np.nan: None})
+        if index:
+            df.set_index(index, inplace=True)
+
+        return df
 
     def memory_usage(
         self, total: bool = False, human: bool = False,
@@ -239,35 +270,41 @@ class MemoryCachePreloader:
 
 def get_memory_cache_options() -> Dict[str, Dict]:
     """Return the options for the MemoryCache."""
-    # TODO
-    return {}
-    # Example configuration:
-    # from athenian.api.models.metadata.github import PullRequest
-
-    # return {
-    #     "mdb": {
-    #         "prs": {
-    #             "cols": [
-    #                 PullRequest.acc_id,
-    #                 PullRequest.node_id,
-    #                 PullRequest.closed,
-    #                 PullRequest.closed_at,
-    #                 PullRequest.created_at,
-    #                 PullRequest.merged,
-    #                 PullRequest.merged_at,
-    #                 PullRequest.merged_by_login,
-    #                 PullRequest.repository_full_name,
-    #                 PullRequest.updated_at,
-    #                 PullRequest.user_login,
-    #                 PullRequest.hidden,
-    #             ],
-    #             "categorical_cols": [
-    #                 PullRequest.acc_id,
-    #                 PullRequest.merged_by_login,
-    #                 PullRequest.repository_full_name,
-    #                 PullRequest.user_login,
-    #             ],
-    #             "identifier_cols": [PullRequest.node_id],
-    #         },
-    #     },
-    # }
+    return {
+        "mdb": {
+            "prs": {
+                "cols": [
+                    PullRequest.acc_id,
+                    PullRequest.node_id,
+                    PullRequest.number,
+                    PullRequest.closed,
+                    PullRequest.closed_at,
+                    PullRequest.created_at,
+                    PullRequest.merged,
+                    PullRequest.merge_commit_id,
+                    PullRequest.merge_commit_sha,
+                    PullRequest.merged_at,
+                    PullRequest.merged_by_login,
+                    PullRequest.repository_full_name,
+                    PullRequest.updated_at,
+                    PullRequest.user_login,
+                    PullRequest.hidden,
+                    PullRequest.additions,
+                    PullRequest.deletions,
+                    PullRequest.htmlurl,
+                ],
+                "categorical_cols": [
+                    PullRequest.acc_id,
+                    PullRequest.merged_by_login,
+                    PullRequest.repository_full_name,
+                    PullRequest.user_login,
+                ],
+                "identifier_cols": [
+                    PullRequest.node_id,
+                    PullRequest.merge_commit_id,
+                    PullRequest.merge_commit_sha,
+                    PullRequest.htmlurl,
+                ],
+            },
+        },
+    }

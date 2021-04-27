@@ -9,8 +9,7 @@ from pathlib import Path
 import re
 import socket
 import sys
-import threading
-from typing import Any, Callable, Dict, Optional
+from typing import Callable, Optional
 
 import aiohttp.web
 from aiohttp.web_runner import GracefulExit
@@ -33,11 +32,9 @@ import uvloop
 from athenian.api import metadata
 from athenian.api.auth import Auth0
 from athenian.api.connexion import AthenianApp
+from athenian.api.db import check_schema_versions, compose_db_options
 from athenian.api.faster_pandas import patch_pandas
 from athenian.api.kms import AthenianKMS
-from athenian.api.models import check_alembic_schema_version, check_collation, \
-    DBSchemaMismatchError
-from athenian.api.models.metadata import check_schema_version as check_mdb_schema_version
 from athenian.api.preloading.cache import MemoryCachePreloader
 from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
 
@@ -272,66 +269,6 @@ def create_slack(log: logging.Logger) -> Optional[SlackWebClient]:
     slack_client.post = post
     log.info("Slack messaging to %s is enabled 👍", general_channel)
     return slack_client
-
-
-def check_schema_versions(metadata_db: str,
-                          state_db: str,
-                          precomputed_db: str,
-                          persistentdata_db: str,
-                          log: logging.Logger,
-                          ) -> bool:
-    """Validate schema versions in parallel threads."""
-    passed = True
-    logging.getLogger("alembic.runtime.migration").setLevel(logging.WARNING)
-
-    def check_alembic(name, cs):
-        nonlocal passed
-        try:
-            check_alembic_schema_version(name, cs, log)
-            check_collation(cs)
-        except DBSchemaMismatchError as e:
-            passed = False
-            log.error("%s schema version check failed: %s", name, e)
-        except Exception:
-            passed = False
-            log.exception("while checking %s", name)
-
-    def check_metadata(cs):
-        nonlocal passed
-        try:
-            check_mdb_schema_version(cs, log)
-            check_collation(cs)
-        except DBSchemaMismatchError as e:
-            passed = False
-            log.error("metadata schema version check failed: %s", e)
-        except Exception:
-            passed = False
-            log.exception("while checking metadata")
-
-    checkers = [threading.Thread(target=check_alembic, args=args)
-                for args in (("state", state_db),
-                             ("precomputed", precomputed_db),
-                             ("persistentdata", persistentdata_db),
-                             )]
-    checkers.append(threading.Thread(target=check_metadata, args=(metadata_db,)))
-    for t in checkers:
-        t.start()
-    for t in checkers:
-        t.join()
-    return passed
-
-
-def compose_db_options(mdb: str, sdb: str, pdb: str, rdb: str) -> Dict[str, Dict[str, Any]]:
-    """Create the kwargs for each of the three databases.Database __init__-s."""
-    result = {"mdb_options": {},
-              "sdb_options": {},
-              "pdb_options": {},
-              "rdb_options": {}}
-    for url, dikt in zip((mdb, sdb, pdb, rdb), result.values()):
-        if databases.DatabaseURL(url).dialect in ("postgres", "postgresql"):
-            # enable PgBouncer
-            dikt["statement_cache_size"] = 0
-    return result
 
 
 def main() -> Optional[AthenianApp]:
