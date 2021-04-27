@@ -1405,25 +1405,32 @@ class PullRequestFactsMiner:
         if reviews_before_merge.empty:
             # express lane
             grouped_reviews = self.dummy_reviews
-        elif reviews_before_merge[PullRequestReview.user_login.key].nunique() == 1:
-            # fast lane
-            grouped_reviews = reviews_before_merge._ixs(
-                reviews_before_merge[PullRequestReview.submitted_at.key].values.argmax())
         else:
-            # the most recent review for each reviewer
-            latest_review_ixs = [
-                ixs[0] for ixs in
-                reviews_before_merge[[PullRequestReview.user_login.key,
-                                      PullRequestReview.submitted_at.key]]
-                .take(np.where(reviews_before_merge[PullRequestReview.state.key] !=
-                               ReviewResolution.COMMENTED.value)[0])
-                .sort_values([PullRequestReview.submitted_at.key], ascending=False)
-                .groupby(PullRequestReview.user_login.key, sort=False)
-                .grouper.groups.values()
-            ]
-            grouped_reviews = {
-                k: reviews_before_merge[k].take(latest_review_ixs)
-                for k in (PullRequestReview.state.key, PullRequestReview.submitted_at.key)}
+            review_logins = \
+                reviews_before_merge[PullRequestReview.user_login.key].values.astype("S")
+            human_review_mask = np.in1d(review_logins, self._bots, invert=True)
+            if not human_review_mask.all():
+                reviews_before_merge = reviews_before_merge.take(np.nonzero(human_review_mask))
+                review_logins = review_logins[human_review_mask]
+            if len(np.unique(review_logins)) == 1:
+                # fast lane
+                grouped_reviews = reviews_before_merge._ixs(
+                    reviews_before_merge[PullRequestReview.submitted_at.key].values.argmax())
+            else:
+                # the most recent review for each reviewer
+                latest_review_ixs = [
+                    ixs[0] for ixs in
+                    reviews_before_merge[[PullRequestReview.user_login.key,
+                                          PullRequestReview.submitted_at.key]]
+                    .take(np.where(reviews_before_merge[PullRequestReview.state.key] !=
+                                   ReviewResolution.COMMENTED.value)[0])
+                    .sort_values([PullRequestReview.submitted_at.key], ascending=False)
+                    .groupby(PullRequestReview.user_login.key, sort=False)
+                    .grouper.groups.values()
+                ]
+                grouped_reviews = {
+                    k: reviews_before_merge[k].take(latest_review_ixs)
+                    for k in (PullRequestReview.state.key, PullRequestReview.submitted_at.key)}
         grouped_reviews_states = grouped_reviews[PullRequestReview.state.key]
         if isinstance(grouped_reviews_states, str):
             changes_requested = grouped_reviews_states == ReviewResolution.CHANGES_REQUESTED.value
@@ -1477,7 +1484,10 @@ class PullRequestFactsMiner:
             np.unique(activity_days[activity_days == activity_days]).astype(ts_dtype)
         review_comment_authors = \
             pr.review_comments[PullRequestReviewComment.user_login.key].values.astype("S")
-        human_review_comments = np.in1d(review_comment_authors, self._bots, invert=True).sum()
+        if len(review_comment_authors) > 0:
+            human_review_comments = np.in1d(review_comment_authors, self._bots, invert=True).sum()
+        else:
+            human_review_comments = 0
         participants = len(np.setdiff1d(np.unique(np.concatenate([
             np.array([pr.pr[PullRequest.user_login.key], pr.pr[PullRequest.merged_by_login.key]],
                      dtype="S"),
