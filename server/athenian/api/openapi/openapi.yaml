@@ -2615,6 +2615,9 @@ components:
         * `pr-opened-mapped-to-jira`: ratio of created PRs that are mapped to JIRA issues.
         * `pr-done-mapped-to-jira`: ratio of rejected or released PRs that are mapped to JIRA issues.
         * `pr-all-mapped-to-jira`: ratio of all observed PRs that are mapped to JIRA issues.
+        * `pr-participants-per`: average number of PR particpants excluding the releasers and the bots.
+        * `pr-review-comments-per`: average number of PR review comments for reviewed PRs, bots excluded.
+        * `pr-reviews-per`: average number of PR reviews for reviewed PRs, bots excluded.
       enum:
       - pr-wip-time
       - pr-wip-count
@@ -2654,6 +2657,9 @@ components:
       - pr-opened-mapped-to-jira
       - pr-done-mapped-to-jira
       - pr-all-mapped-to-jira
+      - pr-participants-per
+      - pr-review-comments-per
+      - pr-reviews-per
       example: pr-lead-time
       type: string
     DeveloperID:
