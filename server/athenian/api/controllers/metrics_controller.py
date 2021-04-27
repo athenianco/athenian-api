@@ -86,6 +86,7 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
         get_calculator_for_user(
             services, filt.account, meta_ids, request.uid, getattr(request, "god_id", None),
             request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
+            instrument=request.app["metrics_calculator"].get(),
         ),
     )
 
@@ -303,6 +304,7 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
     calculator = await get_calculator_for_user(
         "github", filt.account, meta_ids, request.uid, getattr(request, "god_id", None),
         request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
+        instrument=request.app["metrics_calculator"].get(),
     )
     stats = await calculator.calc_code_metrics_github(
         FilterCommitsProperty.BYPASSING_PRS, time_intervals, repos, with_author,
@@ -355,6 +357,7 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
     calculators = await get_calculator_for_user(
         services, filt.account, meta_ids, request.uid, getattr(request, "god_id", None),
         request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
+        instrument=request.app["metrics_calculator"].get(),
     )
 
     for service, (repos, devs, labels, jira, for_set) in filters:
@@ -442,6 +445,7 @@ async def calc_metrics_releases_linear(request: AthenianWebRequest, body: dict) 
         get_calculator_for_user(
             services, filt.account, meta_ids, request.uid, getattr(request, "god_id", None),
             request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
+            instrument=request.app["metrics_calculator"].get(),
         ),
     ]
     release_settings, jira_ids, calculators = await gather(*tasks)

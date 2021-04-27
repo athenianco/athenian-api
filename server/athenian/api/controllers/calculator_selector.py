@@ -1,3 +1,4 @@
+from contextvars import ContextVar
 from typing import Callable, List, Optional, Tuple, Union
 
 import aiomcache
@@ -21,13 +22,14 @@ async def get_calculator_for_user(
     pdb: DatabaseLike,
     rdb: DatabaseLike,
     cache: Optional[aiomcache.Client],
+    instrument: Optional[ContextVar] = None,
     base_module: Optional[str] = "athenian.api.experiments",
 ) -> Callable:
     """Get the metrics calculator function for the given user."""
     async def _get_calculator_for_service(s):
         return await _get_calculator_for_user(
             s, account_id, meta_ids, user_id, god_id,
-            sdb, mdb, pdb, rdb, cache, base_module=base_module)
+            sdb, mdb, pdb, rdb, cache, instrument=instrument, base_module=base_module)
 
     if isinstance(service, str):
         return await _get_calculator_for_service(service)
@@ -47,9 +49,13 @@ async def _get_calculator_for_user(
     pdb: DatabaseLike,
     rdb: DatabaseLike,
     cache: Optional[aiomcache.Client],
+    instrument: Optional[ContextVar] = None,
     base_module: Optional[str] = "athenian.api.experiments",
 ) -> Callable:
     def _get_calculator(variation=None):
+        if instrument is not None:
+            instrument[service] = variation or "default"
+
         return get_calculator(
             service, account_id, meta_ids, mdb, pdb, rdb, cache,
             variation=variation, base_module=base_module,

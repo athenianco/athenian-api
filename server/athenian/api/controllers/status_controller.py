@@ -51,6 +51,7 @@ def _after_response(request: web.Request,
                     start_time: float,
                     ) -> None:
     db_elapsed = request.app["db_elapsed"].get()
+    metrics_calculator = request.app["metrics_calculator"].get()
     cache_context = request.app["cache_context"]
     pdb_context = request.app["pdb_context"]
     sdb_elapsed, mdb_elapsed, pdb_elapsed, rdb_elapsed = (
@@ -60,6 +61,8 @@ def _after_response(request: web.Request,
             "X-Performance-DB",
             "s %.3f, m %.3f, p %.3f, r %.3f" % (
                 sdb_elapsed, mdb_elapsed, pdb_elapsed, rdb_elapsed))
+        response.headers.add("X-Metrics-Calculator",
+                             ",".join(f"{k}={v}" for k, v in metrics_calculator.items()))
         for k, v in cache_context.items():
             s = sorted("%s %d" % (f.replace("athenian.api.", ""), n)
                        for f, n in v.get().items())
@@ -111,12 +114,13 @@ def _after_response(request: web.Request,
 
 @web.middleware
 async def instrument(request: web.Request, handler) -> web.Response:
-    """Middleware to count requests and record the elapsed time."""
+    """Middleware to count requests, record the elapsed time and track features flags."""
     start_time = time.time()
     request.app["request_in_progress"] \
         .labels(__package__, __version__, request.path, request.method) \
         .inc()
     request.app["db_elapsed"].set(defaultdict(float))
+    request.app["metrics_calculator"].set(defaultdict(str))
     for v in chain(request.app["cache_context"].values(), request.app["pdb_context"].values()):
         v.set(defaultdict(int))
     try:
@@ -242,6 +246,7 @@ def setup_status(app) -> prometheus_client.CollectorRegistry:
             registry=registry,
         )
     app["db_elapsed"] = ContextVar("db_elapsed", default=None)
+    app["metrics_calculator"] = ContextVar("metrics_calculator", default=None)
     prometheus_client.Info("server", "API server version", registry=registry).info({
         "version": __version__,
         "commit": getattr(metadata, "__commit__", "null"),

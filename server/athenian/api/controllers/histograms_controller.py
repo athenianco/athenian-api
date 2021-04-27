@@ -34,6 +34,7 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
         get_calculator_for_user(
             services, filt.account, meta_ids, request.uid, getattr(request, "god_id", None),
             request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
+            instrument=request.app["metrics_calculator"].get(),
         ),
     )
     result = []
