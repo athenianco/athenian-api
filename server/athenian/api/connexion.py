@@ -119,6 +119,11 @@ class AthenianWebApplication(aiohttp.web.Application):
         asyncio.current_task().set_name("top %s %s" % (request.method, request.path))
         return request
 
+    def __str__(self) -> str:
+        """Override MutableMapping[str, Any]'s cringe."""
+        return f"<AthenianWebApplication with {len(self.router)} routes, " \
+               f"{len(self.middlewares)} middlewares, {len(self)} state properties>"
+
 
 class ServerCrashedError(GenericError):
     """HTTP 500."""
