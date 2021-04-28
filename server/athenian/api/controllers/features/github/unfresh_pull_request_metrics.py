@@ -59,7 +59,7 @@ async def fetch_pull_request_facts_unfresh(miner: PullRequestMiner,
             release_settings, account, meta_ids, mdb, pdb, rdb, cache),
         miner.fetch_prs(
             time_from, time_to, repositories, participants, labels, jira, exclude_inactive,
-            blacklist, branches, None, account, meta_ids, mdb, pdb, cache, columns=[
+            blacklist, None, branches, None, account, meta_ids, mdb, pdb, cache, columns=[
                 PullRequest.node_id, PullRequest.repository_full_name, PullRequest.merged_at,
                 PullRequest.user_login,
             ]),

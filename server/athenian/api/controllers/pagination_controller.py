@@ -38,7 +38,7 @@ async def paginate_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     tasks = [
         PullRequestMiner.fetch_prs(
             filt.request.date_from, filt.request.date_to, repos, participants, labels, jira,
-            filt.request.exclude_inactive, PullRequest.node_id.notin_(done_ats), branches,
+            filt.request.exclude_inactive, PullRequest.node_id.notin_(done_ats), None, branches,
             None, filt.request.account, meta_ids, request.mdb, request.pdb, request.cache,
             columns=[PullRequest.node_id, PullRequest.updated_at]),
     ]
