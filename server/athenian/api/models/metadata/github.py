@@ -289,6 +289,7 @@ class User(Base,
     login = Column(Text, nullable=False)
     name = Column(Text)
     html_url = Column(Text, nullable=False)
+    type = Column(Text, nullable=False, default="USER", server_default="'USER'")
 
 
 class Release(Base,

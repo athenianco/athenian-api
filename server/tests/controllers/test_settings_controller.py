@@ -1,4 +1,5 @@
 import json
+from random import random
 
 from aiohttp.web_runner import GracefulExit
 import pytest
@@ -167,7 +168,7 @@ async def test_set_release_match_login_failure(
     assert response.status == 403, await response.read()
 
 
-@pytest.mark.flaky(reruns=5)
+@pytest.mark.flaky(reruns=5, reruns_delay=random())
 @pytest.mark.parametrize("code", [200, 422])
 async def test_set_release_match_422(
         client, headers, sdb, mdb, gkwillie, disable_default_user, code):

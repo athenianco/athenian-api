@@ -1,5 +1,6 @@
 import asyncio
 from contextvars import ContextVar
+from random import random
 
 import pytest
 from sqlalchemy import delete
@@ -9,7 +10,7 @@ from athenian.api.models.state.models import RepositorySet
 from athenian.api.response import ResponseError
 
 
-@pytest.mark.flaky(reruns=3)
+@pytest.mark.flaky(reruns=3, reruns_delay=random())
 async def test_load_account_reposets_transaction(sdb, mdb):
     await sdb.execute(delete(RepositorySet))
     sdb._connection_context = ContextVar("connection_context")
