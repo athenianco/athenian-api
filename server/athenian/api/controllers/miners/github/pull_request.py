@@ -1410,7 +1410,7 @@ class PullRequestFactsMiner:
                 reviews_before_merge[PullRequestReview.user_login.key].values.astype("S")
             human_review_mask = np.in1d(review_logins, self._bots, invert=True)
             if not human_review_mask.all():
-                reviews_before_merge = reviews_before_merge.take(np.nonzero(human_review_mask))
+                reviews_before_merge = reviews_before_merge.take(np.nonzero(human_review_mask)[0])
                 review_logins = review_logins[human_review_mask]
             if len(np.unique(review_logins)) == 1:
                 # fast lane

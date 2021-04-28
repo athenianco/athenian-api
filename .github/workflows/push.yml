@@ -288,7 +288,7 @@ jobs:
         token: ${{ secrets.CODECOV_TOKEN }}
     - name: docker prune
       run: |
-        (docker image ls -a | grep -v gcr.io/${{ secrets.GOOGLE_PROJECT }}/api | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
+        (docker image ls -a | grep -v gcr.io/${{ secrets.GOOGLE_PROJECT }}/api | grep -v ubuntu | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
         (docker image ls -a | grep -v latest | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
   bump_version:
     name: Bump the version
@@ -372,5 +372,5 @@ jobs:
         rm .env
     - name: docker prune
       run: |
-        (docker image ls -a | grep -v gcr.io/${{ secrets.GOOGLE_PROJECT }}/api | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
+        (docker image ls -a | grep -v gcr.io/${{ secrets.GOOGLE_PROJECT }}/api | grep -v ubuntu | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
         (docker image ls -a | grep -v latest | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
