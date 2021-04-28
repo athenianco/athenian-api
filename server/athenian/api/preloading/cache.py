@@ -288,10 +288,8 @@ def get_memory_cache_options() -> Dict[str, Dict]:
                     PullRequest.repository_full_name,
                     PullRequest.updated_at,
                     PullRequest.user_login,
-                    PullRequest.hidden,
                     PullRequest.additions,
                     PullRequest.deletions,
-                    PullRequest.htmlurl,
                 ],
                 "categorical_cols": [
                     PullRequest.acc_id,
@@ -303,7 +301,6 @@ def get_memory_cache_options() -> Dict[str, Dict]:
                     PullRequest.node_id,
                     PullRequest.merge_commit_id,
                     PullRequest.merge_commit_sha,
-                    PullRequest.htmlurl,
                 ],
             },
         },
