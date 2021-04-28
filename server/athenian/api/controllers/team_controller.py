@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from itertools import chain
+import logging
 from sqlite3 import IntegrityError, OperationalError
 from typing import Dict, Iterable, List, Mapping, Optional, Tuple, Union
 
@@ -9,6 +10,7 @@ from asyncpg import UniqueViolationError
 import databases
 from sqlalchemy import and_, delete, insert, select, update
 
+from athenian.api import metadata
 from athenian.api.auth import disable_default_user
 from athenian.api.controllers.account import get_metadata_account_ids, get_user_account_status
 from athenian.api.controllers.miners.github.users import mine_users
@@ -79,11 +81,12 @@ async def get_team(request: AthenianWebRequest, id: int) -> web.Response:
         account = team[Team.owner_id.key]
         await get_user_account_status(user, account, sdb_conn, request.cache)
         meta_ids = await get_metadata_account_ids(account, sdb_conn, request.cache)
-    members = await _get_all_members([team], meta_ids, request.mdb, request.cache)
+    members = await _get_all_team_members([team], meta_ids, request.mdb, request.cache)
     model = TeamListItem(id=team[Team.id.key],
                          name=team[Team.name.key],
                          parent=team[Team.parent_id.key],
-                         members=sorted((members[m] for m in team[Team.members.key]),
+                         members=sorted((members[m] for m in team[Team.members.key]
+                                         if m in members),
                                         key=lambda u: u.login))
     return model_response(model)
 
@@ -100,11 +103,12 @@ async def list_teams(request: AthenianWebRequest, id: int) -> web.Response:
         teams = await sdb_conn.fetch_all(
             select([Team]).where(Team.owner_id == account).order_by(Team.name))
         meta_ids = await get_metadata_account_ids(account, sdb_conn, request.cache)
-    all_members = await _get_all_members(teams, meta_ids, request.mdb, request.cache)
+    all_members = await _get_all_team_members(teams, meta_ids, request.mdb, request.cache)
     items = [TeamListItem(id=t[Team.id.key],
                           name=t[Team.name.key],
                           parent=t[Team.parent_id.key],
-                          members=[all_members[m] for m in t[Team.members.key]])
+                          members=[all_members[m] for m in t[Team.members.key]
+                                   if m in all_members])
              for t in teams]
     return model_response(items)
 
@@ -170,7 +174,7 @@ async def _check_members(members: List[str],
     rows = await mdb.fetch_all(select([User.html_url])
                                .where(and_(User.acc_id.in_(meta_ids),
                                            User.login.in_(to_fetch))))
-    exist = {r[0].split("/", 2)[2] for r in rows}
+    exist = {r[0].split("://", 1)[1] for r in rows}
     invalid_members = sorted(members - exist)
 
     if invalid_members or len(members) == 0:
@@ -197,12 +201,12 @@ async def _check_parent_cycle(team_id: int, parent_id: Optional[int], sdb: Datab
         raise ResponseError(BadRequestError(detail="Detected a team parent cycle: %s." % visited))
 
 
-async def _get_all_members(teams: Iterable[Mapping],
-                           meta_ids: Tuple[int, ...],
-                           mdb: databases.Database,
-                           cache: Optional[aiomcache.Client]) -> Dict[str, Contributor]:
-    all_members = set(chain.from_iterable([t[Team.members.key] for t in teams]))
-    all_members = {m.rsplit("/", 1)[1]: m for m in all_members}
+async def _get_all_team_members(teams: Iterable[Mapping],
+                                meta_ids: Tuple[int, ...],
+                                mdb: databases.Database,
+                                cache: Optional[aiomcache.Client]) -> Dict[str, Contributor]:
+    all_members_prefixed = set(chain.from_iterable([t[Team.members.key] for t in teams]))
+    all_members = {m.rsplit("/", 1)[1]: m for m in all_members_prefixed}
     user_by_login = {
         u[User.login.key]: u for u in await mine_users(all_members, meta_ids, mdb, cache)
     }
@@ -214,11 +218,14 @@ async def _get_all_members(teams: Iterable[Mapping],
             login = all_members[m]
             c = Contributor(login=login)
         else:
-            login = ud[User.html_url.key].split("/", 2)[2]
+            login = ud[User.html_url.key].split("://", 1)[1]
             c = Contributor(login=login,
                             name=ud[User.name.key],
                             email=ud[User.email.key],
                             picture=ud[User.avatar_url.key])
         all_contributors[login] = c
 
+    if missing := all_members_prefixed - all_contributors.keys():
+        logging.getLogger("%s._get_all_team_members" % metadata.__package__).error(
+            "Some users are missing in %s: %s", meta_ids, missing)
     return all_contributors

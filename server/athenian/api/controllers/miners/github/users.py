@@ -17,16 +17,22 @@ from athenian.api.tracing import sentry_span
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda logins, **_: (",".join(sorted(logins)),),
-    version=2,
 )
 async def mine_users(logins: Collection[str],
                      meta_ids: Tuple[int, ...],
                      mdb: databases.Database,
                      cache: Optional[aiomcache.Client],
                      ) -> List[Mapping[str, Any]]:
-    """Fetch details about each GitHub user in the given list of `logins`."""
-    return [dict(u) for u in await mdb.fetch_all(
-        select([User]).where(and_(User.login.in_(logins), User.acc_id.in_(meta_ids))))]
+    """
+    Fetch details about each GitHub user in the given list of `logins`.
+
+    There can be duplicates when there are users of different types.
+    """
+    rows = await mdb.fetch_all(
+        select([User.node_id, User.email, User.login, User.name, User.html_url, User.avatar_url])
+        .where(and_(User.login.in_(logins), User.acc_id.in_(meta_ids)))
+        .order_by(User.type))  # BOT -> MANNEQUIN -> ORGANIZATION -> USER
+    return [dict(row) for row in rows]
 
 
 @sentry_span
@@ -51,4 +57,4 @@ async def mine_user_avatars(logins: Iterable[str],
                                            User.acc_id.in_(meta_ids))))
     if not with_prefix:
         return [(u[User.login.key], u[User.avatar_url.key]) for u in rows]
-    return [(u[User.html_url.key].split("/", 2)[2], u[User.avatar_url.key]) for u in rows]
+    return [(u[User.html_url.key].split("://", 1)[1], u[User.avatar_url.key]) for u in rows]

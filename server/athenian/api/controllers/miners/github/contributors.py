@@ -306,7 +306,7 @@ async def load_organization_members(account: int,
     github_prefixed_logins = {}
     for row in user_rows:
         node_id = row[User.node_id.key]
-        github_prefixed_logins[node_id] = row[User.html_url.key].split("/", 2)[2]
+        github_prefixed_logins[node_id] = row[User.html_url.key].split("://", 1)[1]
         if name := row[User.name.key]:
             github_names[node_id].add(name)
         if email := row[User.email.key]:

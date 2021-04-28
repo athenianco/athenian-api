@@ -68,7 +68,7 @@ class Prefixer:
         )
 
         def strip_proto(url: str) -> str:
-            return url.split("/", 2)[2]
+            return url.split("://", 1)[1]
 
         repo_node_map = {
             r[Repository.node_id.key]: strip_proto(r[Repository.html_url.key]) for r in repo_rows

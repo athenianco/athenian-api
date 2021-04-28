@@ -240,7 +240,7 @@ async def get_jira_identities(request: AthenianWebRequest,
             continue
         mentioned_jira_user_ids.add(jira_user_id)
         models.append(WebMappedJIRAIdentity(
-            developer_id=github_user[GitHubUser.html_url.key].split("/", 2)[2],
+            developer_id=github_user[GitHubUser.html_url.key].split("://", 1)[1],
             developer_name=github_user[GitHubUser.name.key],
             jira_name=jira_user[JIRAUser.display_name.key],
             confidence=map_row[MappedJIRAIdentity.confidence.key],
