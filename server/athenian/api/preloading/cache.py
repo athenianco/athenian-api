@@ -117,10 +117,16 @@ class CachedDataFrame:
             df = df[columns]
         if uncast:
             for col in self._identifier_cols:
-                df[col.key] = df[col.key].apply(lambda s: s.decode("utf8"))
+                try:
+                    df[col.key] = df[col.key].apply(lambda s: s.decode("utf8"))
+                except KeyError:
+                    continue
 
             for col in self._categorical_cols:
-                df[col.key] = df[col.key].astype("object").replace({np.nan: None})
+                try:
+                    df[col.key] = df[col.key].astype("object").replace({np.nan: None})
+                except KeyError:
+                    continue
         if index:
             df.set_index(index, inplace=True)
 
