@@ -22,7 +22,8 @@ from athenian.api.tracing import sentry_span
 
 
 @sentry_span
-async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFacts],
+async def fetch_pull_request_facts_unfresh(miner: PullRequestMiner,
+                                           done_facts: Dict[str, PullRequestFacts],
                                            ambiguous: Dict[str, List[str]],
                                            time_from: datetime,
                                            time_to: datetime,
@@ -56,7 +57,7 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFact
         load_releases(
             repositories, branches, default_branches, time_from, time_to,
             release_settings, account, meta_ids, mdb, pdb, rdb, cache),
-        PullRequestMiner.fetch_prs(
+        miner.fetch_prs(
             time_from, time_to, repositories, participants, labels, jira, exclude_inactive,
             blacklist, branches, None, account, meta_ids, mdb, pdb, cache, columns=[
                 PullRequest.node_id, PullRequest.repository_full_name, PullRequest.merged_at,
@@ -64,7 +65,7 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFact
             ]),
     ]
     if jira and done_facts:
-        tasks.append(_filter_done_facts_jira(done_facts, jira, meta_ids, mdb, cache))
+        tasks.append(_filter_done_facts_jira(miner, done_facts, jira, meta_ids, mdb, cache))
     else:
         async def identity():
             return done_facts
@@ -110,13 +111,14 @@ async def fetch_pull_request_facts_unfresh(done_facts: Dict[str, PullRequestFact
 
 
 @sentry_span
-async def _filter_done_facts_jira(done_facts: Dict[str, PullRequestFacts],
+async def _filter_done_facts_jira(miner: PullRequestMiner,
+                                  done_facts: Dict[str, PullRequestFacts],
                                   jira: JIRAFilter,
                                   meta_ids: Tuple[int, ...],
                                   mdb: databases.Database,
                                   cache: Optional[aiomcache.Client],
                                   ) -> Dict[str, PullRequestFacts]:
-    filtered = await PullRequestMiner.filter_jira(
+    filtered = await miner.filter_jira(
         done_facts, jira, meta_ids, mdb, cache, columns=[PullRequest.node_id])
     return {k: done_facts[k] for k in filtered.index.values}
 
