@@ -1,3 +1,3 @@
 __package__ = "athenian.api"
-__version__ = "0.9.79"
+__version__ = "0.9.80"
 __description__ = "Athenian API"
