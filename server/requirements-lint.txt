@@ -7,4 +7,4 @@ flake8-commas==2.0.0
 flake8-debugger==4.0.0
 pydocstyle==6.0.0
 pycodestyle==2.7.0
-semgrep==0.48.0
+semgrep==0.49.0
