@@ -13,8 +13,7 @@ from athenian.api.controllers import invitation_controller
 from athenian.api.controllers.invitation_controller import _generate_account_secret
 from athenian.api.models.metadata import __min_version__
 from athenian.api.models.metadata.github import Base as GithubBase, NodePullRequest, PullRequest, \
-    PushCommit, \
-    SchemaMigration
+    PushCommit, SchemaMigration, ShadowBase as ShadowGithubBase
 from athenian.api.models.metadata.jira import Base as JiraBase
 from athenian.api.models.state.models import Account, AccountFeature, AccountGitHubAccount, \
     AccountJiraInstallation, Feature, FeatureComponent, Invitation, RepositorySet, UserAccount
@@ -24,7 +23,9 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
     models = {}
     tables = {**GithubBase.metadata.tables, **JiraBase.metadata.tables}
     for cls in chain(GithubBase._decl_class_registry.values(),
-                     JiraBase._decl_class_registry.values()):
+                     JiraBase._decl_class_registry.values(),
+                     # shadow tables overwrite the original ones
+                     ShadowGithubBase._decl_class_registry.values()):
         table = getattr(cls, "__table__", None)
         if table is not None:
             models[table.fullname] = cls
