@@ -51,7 +51,8 @@ from athenian.api.db import ParallelDatabase
 from athenian.api.faster_pandas import patch_pandas
 from athenian.api.metadata import __package__ as package
 from athenian.api.models import check_collation, metadata, persistentdata
-from athenian.api.models.metadata.github import Base as GithubBase, PullRequest
+from athenian.api.models.metadata.github import Base as GithubBase, PullRequest, \
+    ShadowBase as ShadowGithubBase
 from athenian.api.models.metadata.jira import Base as JiraBase
 from athenian.api.models.persistentdata.models import Base as PersistentdataBase
 from athenian.api.models.precomputed.models import GitHubBase as PrecomputedBase
@@ -329,6 +330,7 @@ def metadata_db(worker_id) -> str:
         engine.execute("CREATE SCHEMA IF NOT EXISTS jira;")
     else:
         metadata.dereference_schemas()
+    ShadowGithubBase.metadata.create_all(engine)
     GithubBase.metadata.create_all(engine)
     JiraBase.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()

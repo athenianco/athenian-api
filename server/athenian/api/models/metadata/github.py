@@ -1,10 +1,12 @@
 import dateutil.parser
-from sqlalchemy import BigInteger, Boolean, Column, Integer, Text, TIMESTAMP
+from sqlalchemy import BigInteger, Boolean, Column, Integer, PrimaryKeyConstraint, Text, \
+    TIMESTAMP, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base, declared_attr
 from sqlalchemy.orm import synonym
 
 
 Base = declarative_base()
+ShadowBase = declarative_base()  # used in unit tests
 
 
 # -- MIXINS --
@@ -471,21 +473,19 @@ class CheckSuite(Base,
     additions = Column(BigInteger, nullable=False)
     deletions = Column(BigInteger, nullable=False)
     changed_files = Column(BigInteger, nullable=False)
-    pull_request_node_id = Column(Text)
+    pull_request_node_id = Column(Text, primary_key=True, nullable=True)
     check_suite_node_id = Column(Text, primary_key=True)
     app = Column(Text)
     branch = Column(Text)
-    conclusion = Column(Text, nullable=False)
-    status = Column(Text)
+    conclusion = Column(Text)
+    status = Column(Text, nullable=False)
     url = Column(Text, nullable=False)
 
 
-class CheckRun(Base,
-               GitHubSchemaMixin,
-               AccountMixin,
-               RepositoryMixin):
+class CheckRunMixin(RepositoryMixin):
     __tablename__ = "api_check_runs"
 
+    acc_id = Column(BigInteger)
     commit_node_id = Column(Text, nullable=False)
     sha = Column(Text, nullable=False)
     author_user = Column(Text)
@@ -495,14 +495,30 @@ class CheckRun(Base,
     additions = Column(BigInteger, nullable=False)
     deletions = Column(BigInteger, nullable=False)
     changed_files = Column(BigInteger, nullable=False)
-    pull_request_node_id = Column(Text)
+    pull_request_node_id = Column(Text, nullable=True)
     started_at = Column(TIMESTAMP(timezone=True), nullable=False)
     completed_at = Column(TIMESTAMP(timezone=True))
     check_suite_node_id = Column(Text, nullable=False)
-    check_run_node_id = Column(Text, primary_key=True)
-    conclusion = Column(Text, nullable=False)
-    check_suite_conclusion = Column(Text, nullable=False)
-    url = Column(Text, nullable=False)
+    check_run_node_id = Column(Text, nullable=False)
+    conclusion = Column(Text)
+    check_suite_conclusion = Column(Text)
+    url = Column(Text)  # legacy runs may have this set to null
     name = Column(Text)
-    status = Column(Text)
-    check_suite_status = Column(Text)
+    status = Column(Text, nullable=False)
+    check_suite_status = Column(Text, nullable=False)
+
+
+class CheckRun(CheckRunMixin, Base):
+    # pull_request_node_id may be null so we cannot include it in the real PK
+    # yet several records may differ only by pull_request_node_id
+    __table_args__ = (PrimaryKeyConstraint("acc_id", "check_run_node_id", "pull_request_node_id"),
+                      {"schema": "github"})
+
+
+class _CheckRun(CheckRunMixin, ShadowBase):
+    """Hidden version of "CheckRun" used in DDL-s."""
+
+    __table_args__ = (UniqueConstraint("acc_id", "check_run_node_id", "pull_request_node_id",
+                                       name="uc_check_run_pk_surrogate"),
+                      {"schema": "github"})
+    shadow_id = Column(Integer, primary_key=True)
