@@ -46,6 +46,10 @@ class PullRequestMiner(OriginalPullRequestMiner):
         updated_min: Optional[datetime] = None,
         updated_max: Optional[datetime] = None,
     ) -> pd.DataFrame:
+        # FIXME: prefer numpy operations rather than pandas for better performance
+        # See:
+        #   - https://github.com/athenianco/athenian-api/pull/1337#discussion_r621071935
+        #   - https://github.com/athenianco/athenian-api/pull/1337#discussion_r621073088
         if jira or labels:
             # TODO: not supported yet, call original implementation
             return await super(PullRequestMiner, cls)._fetch_prs_by_filters(
