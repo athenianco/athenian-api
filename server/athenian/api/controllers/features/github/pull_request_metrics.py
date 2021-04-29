@@ -952,8 +952,11 @@ class AverageReviewCommentsCalculator(AverageMetricCalculator[np.float32]):
                  max_times: np.ndarray,
                  **kwargs,
                  ) -> np.ndarray:
-        result = np.repeat(facts[PullRequestFacts.f.review_comments].values[None, :],
-                           len(min_times), axis=0).astype(object)
+        comments = facts[PullRequestFacts.f.review_comments].values
+        empty_mask = comments == 0
+        comments = comments.astype(object)
+        comments[empty_mask] = None
+        result = np.repeat(comments[None, :], len(min_times), axis=0)
         result[self._calcs[0].peek == np.array(None)] = None
         return result
 
@@ -972,7 +975,10 @@ class AverageReviewsCalculator(AverageMetricCalculator[np.float32]):
                  max_times: np.ndarray,
                  **kwargs,
                  ) -> np.ndarray:
-        result = np.repeat(facts[PullRequestFacts.f.reviews].map(len).values[None, :],
-                           len(min_times), axis=0).astype(object)
+        lengths = facts[PullRequestFacts.f.reviews].map(len).values
+        empty_mask = lengths == 0
+        lengths = lengths.astype(object)
+        lengths[empty_mask] = None
+        result = np.repeat(lengths[None, :], len(min_times), axis=0)
         result[self._calcs[0].peek == np.array(None)] = None
         return result
