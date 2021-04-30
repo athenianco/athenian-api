@@ -675,14 +675,14 @@ class RatioCalculator(WithoutQuantilesMixin, MetricCalculator[float]):
 
 
 def make_register_metric(metric_calculators: Dict[str, Type[MetricCalculator]],
-                         histogram_calculators: Dict[str, Type[HistogramCalculator]]):
+                         histogram_calculators: Optional[Dict[str, Type[HistogramCalculator]]]):
     """Create the decorator to keep track of the metric and histogram calculators."""
     def register_metric(name: str):
         assert isinstance(name, str)
 
         def register_with_name(cls: Type[MetricCalculator]):
             metric_calculators[name] = cls
-            if not issubclass(cls, SumMetricCalculator):
+            if histogram_calculators is not None and not issubclass(cls, SumMetricCalculator):
                 histogram_calculators[name] = \
                     type("HistogramOf" + cls.__name__, (cls, HistogramCalculator), {})
             return cls
