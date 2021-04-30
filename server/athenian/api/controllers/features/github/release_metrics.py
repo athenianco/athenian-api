@@ -6,7 +6,8 @@ import numpy as np
 import pandas as pd
 
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
-    BinnedMetricCalculator, MetricCalculator, MetricCalculatorEnsemble, SumMetricCalculator
+    BinnedMetricCalculator, make_register_metric, MetricCalculator, MetricCalculatorEnsemble, \
+    SumMetricCalculator
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.types import ReleaseFacts, ReleaseParticipants, \
     ReleaseParticipationKind
@@ -16,18 +17,8 @@ from athenian.api.models.web import ReleaseMetricID
 
 
 metric_calculators: Dict[str, Type[MetricCalculator]] = {}
+register_metric = make_register_metric(metric_calculators, None)
 T = TypeVar("T")
-
-
-def register_metric(name: str):
-    """Keep track of the release metric calculators."""
-    assert isinstance(name, str)
-
-    def register_with_name(cls: Type[MetricCalculator]):
-        metric_calculators[name] = cls
-        return cls
-
-    return register_with_name
 
 
 def merge_release_participants(participants: List[ReleaseParticipants]) -> ReleaseParticipants:

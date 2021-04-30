@@ -17,6 +17,9 @@ from athenian.api.async_utils import gather
 from athenian.api.cache import cached, cached_methods, CancelCache
 from athenian.api.controllers.datetime_utils import coarsen_time_interval
 from athenian.api.controllers.features.code import CodeStats
+from athenian.api.controllers.features.github.check_run_metrics import \
+    CheckRunBinnedHistogramCalculator, CheckRunBinnedMetricCalculator, \
+    group_check_runs_by_commit_authors
 from athenian.api.controllers.features.github.code import calc_code_stats
 from athenian.api.controllers.features.github.developer_metrics import \
     DeveloperBinnedMetricCalculator, group_actions_by_developers
@@ -34,6 +37,7 @@ from athenian.api.controllers.features.metric_calculator import df_from_structs,
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import extract_branches
+from athenian.api.controllers.miners.github.check_run import mine_check_runs
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
 from athenian.api.controllers.miners.github.developer import \
     developer_repository_column, DeveloperTopic, mine_developer_activities
@@ -52,7 +56,7 @@ from athenian.api.controllers.prefixer import PrefixerPromise
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.db import add_pdb_hits, add_pdb_misses
 from athenian.api.defer import defer
-from athenian.api.models.metadata.github import PullRequest, PushCommit, Release
+from athenian.api.models.metadata.github import CheckRun, PullRequest, PushCommit, Release
 from athenian.api.tracing import sentry_span
 
 
@@ -222,7 +226,7 @@ class MetricEntriesCalculator:
 
     @sentry_span
     @cached(
-        exptime=5 * 60,  # 5 min
+        exptime=PullRequestMiner.CACHE_TTL,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
         key=lambda devs, repositories, time_intervals, topics, labels, jira, release_settings, **_:  # noqa
@@ -277,7 +281,7 @@ class MetricEntriesCalculator:
 
     @sentry_span
     @cached(
-        exptime=5 * 60,  # 5 min
+        exptime=PullRequestMiner.CACHE_TTL,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
         key=lambda metrics, time_intervals, quantiles, repositories, participants, jira, release_settings, **_:  # noqa
@@ -325,6 +329,101 @@ class MetricEntriesCalculator:
         groups = group_to_indexes(df_facts, participant_grouper, repo_grouper)
         values = calc(df_facts, time_intervals, groups)
         return values, matched_bys
+
+    @sentry_span
+    @cached(
+        exptime=PullRequestMiner.CACHE_TTL,
+        serialize=pickle.dumps,
+        deserialize=pickle.loads,
+        key=lambda metrics, time_intervals, quantiles, repositories, commit_authors, jira, **_:  # noqa
+        (
+            ",".join(sorted(metrics)),
+            ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
+            ",".join(str(q) for q in quantiles),
+            ",".join(str(sorted(r)) for r in repositories),
+            ";".join(",".join(g) for g in commit_authors),
+            jira,
+        ),
+        cache=lambda self, **_: self._cache,
+    )
+    async def calc_check_run_metrics_line_github(self,
+                                                 metrics: Sequence[str],
+                                                 time_intervals: Sequence[Sequence[datetime]],
+                                                 quantiles: Sequence[float],
+                                                 repositories: Sequence[Collection[str]],
+                                                 commit_authors: List[List[str]],
+                                                 jira: JIRAFilter,
+                                                 ) -> np.ndarray:
+        """
+        Calculate the check run metrics on GitHub.
+
+        :return: commit_authors x repositories x granularities x time intervals x metrics.
+        """
+        time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
+        all_repositories = set(chain.from_iterable(repositories))
+        all_commit_authors = set(chain.from_iterable(commit_authors))
+        calc = CheckRunBinnedMetricCalculator(metrics, quantiles)
+        df_check_runs = await mine_check_runs(
+            time_from, time_to, all_repositories, all_commit_authors, jira,
+            self._meta_ids, self._mdb, self._cache)
+        repo_grouper = partial(group_by_repo, CheckRun.repository_full_name.key, repositories)
+        commit_author_grouper = partial(group_check_runs_by_commit_authors, commit_authors)
+        groups = group_to_indexes(df_check_runs, commit_author_grouper, repo_grouper)
+        values = calc(df_check_runs, time_intervals, groups)
+        return values
+
+    @sentry_span
+    @cached(
+        exptime=PullRequestMiner.CACHE_TTL,
+        serialize=pickle.dumps,
+        deserialize=pickle.loads,
+        key=lambda defs, date_from, date_to, quantiles, repositories, commit_authors, jira, **_:  # noqa
+        (
+            ",".join("%s:%s" % (k, sorted(v)) for k, v in sorted(defs.items())),
+            date_from.timestamp(), date_to.timestamp(),
+            ",".join(str(q) for q in quantiles),
+            ",".join(str(sorted(r)) for r in repositories),
+            ";".join(",".join(g) for g in commit_authors),
+            jira,
+        ),
+        cache=lambda self, **_: self._cache,
+    )
+    async def calc_check_run_histograms_line_github(self,
+                                                    defs: Dict[HistogramParameters, List[str]],
+                                                    time_from: datetime,
+                                                    time_to: datetime,
+                                                    quantiles: Sequence[float],
+                                                    repositories: Sequence[Collection[str]],
+                                                    commit_authors: List[List[str]],
+                                                    jira: JIRAFilter,
+                                                    ) -> np.ndarray:
+        """
+        Calculate the check run metrics on GitHub.
+
+        :return: defs x commit_authors x repositories -> List[Tuple[metric ID, Histogram]].
+        """
+        all_repositories = set(chain.from_iterable(repositories))
+        all_commit_authors = set(chain.from_iterable(commit_authors))
+        try:
+            calc = CheckRunBinnedHistogramCalculator(defs.values(), quantiles)
+        except KeyError as e:
+            raise ValueError("Unsupported metric") from e
+        df_check_runs = await mine_check_runs(
+            time_from, time_to, all_repositories, all_commit_authors, jira,
+            self._meta_ids, self._mdb, self._cache)
+        repo_grouper = partial(group_by_repo, CheckRun.repository_full_name.key, repositories)
+        commit_author_grouper = partial(group_check_runs_by_commit_authors, commit_authors)
+        groups = group_to_indexes(df_check_runs, commit_author_grouper, repo_grouper)
+        hists = calc(df_check_runs, [[time_from, time_to]], groups, defs)
+        reshaped = np.full(hists.shape[:-1], None, object)
+        reshaped_seq = reshaped.ravel()
+        pos = 0
+        for commit_author_groups, metrics in zip(hists, defs.values()):
+            for repo_groups in commit_author_groups:
+                for group_ts in repo_groups:
+                    reshaped_seq[pos] = [(m, hist) for hist, m in zip(group_ts[0][0], metrics)]
+                    pos += 1
+        return reshaped
 
     async def calc_pull_request_facts_github(self,
                                              time_from: datetime,

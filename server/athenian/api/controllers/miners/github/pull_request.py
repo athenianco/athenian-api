@@ -1215,12 +1215,11 @@ class PullRequestMiner:
                 order_keys = node_ids = node_ids.astype("S")
             node_ids_order = np.argsort(order_keys)
             node_ids = node_ids[node_ids_order]
-            node_ids_backtrack = np.arange(0, len(df))[node_ids_order]
             node_ids_unique_counts = np.unique(node_ids, return_counts=True)[1]
             node_ids_group_counts = np.zeros(len(node_ids_unique_counts) + 1, dtype=int)
             np.cumsum(node_ids_unique_counts, out=node_ids_group_counts[1:])
             keys = node_ids[node_ids_group_counts[:-1]].astype("U")
-            groups = np.split(node_ids_backtrack, node_ids_group_counts[1:-1])
+            groups = np.split(node_ids_order, node_ids_group_counts[1:-1])
             grouped_df_iters.append(iter(zip(keys, groups)))
             if plural:
                 index_backup.append(df.index)

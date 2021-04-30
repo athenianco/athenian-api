@@ -9,15 +9,15 @@ from athenian.api.models.metadata.github import CheckRun
 
 @pytest.mark.parametrize("time_from, time_to, repositories, commit_authors, jira, size", [
     (datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
-     ["src-d/go-git"], [], JIRAFilter.empty(), 5323),
+     ["src-d/go-git"], [], JIRAFilter.empty(), 4581),
     (datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
      ["src-d/hercules"], [], JIRAFilter.empty(), 0),
     (datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2018, 1, 1, tzinfo=timezone.utc),
-     ["src-d/go-git"], [], JIRAFilter.empty(), 2429),
+     ["src-d/go-git"], [], JIRAFilter.empty(), 2371),
     (datetime(2018, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
-     ["src-d/go-git"], [], JIRAFilter.empty(), 2894),
+     ["src-d/go-git"], [], JIRAFilter.empty(), 2210),
     (datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
-     ["src-d/go-git"], ["mcuadros"], JIRAFilter.empty(), 1741),
+     ["src-d/go-git"], ["mcuadros"], JIRAFilter.empty(), 1642),
     (datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
      ["src-d/go-git"], [],
      JIRAFilter(1, ["10003", "10009"], LabelFilter.empty(), set(), {"task"}, False), 229),
@@ -28,3 +28,4 @@ async def test_check_run_smoke(mdb, time_from, time_to, repositories, commit_aut
     assert len(df) == size
     for col in CheckRun.__table__.columns:
         assert col.key in df.columns
+    assert len(df[CheckRun.check_run_node_id.key].unique()) == len(df)
