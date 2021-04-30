@@ -92,7 +92,10 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
                 if table == "github.api_pull_requests":
                     session.add(NodePullRequest(id=kwargs["node_id"],
                                                 acc_id=kwargs["acc_id"],
-                                                title=kwargs["title"]))
+                                                title=kwargs["title"],
+                                                author=kwargs["user_node_id"],
+                                                created_at=kwargs["created_at"],
+                                                closed_at=kwargs["closed_at"]))
     session.add(SchemaMigration(version=__min_version__, dirty=False))
     session.flush()
     # append missed merge commit IDs to PRs

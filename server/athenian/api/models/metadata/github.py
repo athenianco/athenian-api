@@ -341,6 +341,9 @@ class NodePullRequest(Base,
     __tablename__ = "github_node_pull_request"
 
     title = Column(Text, nullable=False)
+    author = Column(Text)
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False)
+    closed_at = Column(TIMESTAMP(timezone=True))
 
 
 class NodePullRequestCommit(Base,

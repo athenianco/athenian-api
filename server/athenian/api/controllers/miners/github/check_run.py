@@ -1,17 +1,18 @@
-from datetime import datetime
+from datetime import datetime, timezone
 import pickle
 from typing import Collection, Optional, Tuple
 
 import aiomcache
+import numpy as np
 import pandas as pd
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
 
-from athenian.api.async_utils import read_sql_query
+from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import JIRAFilter
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
-from athenian.api.models.metadata.github import CheckRun
+from athenian.api.models.metadata.github import CheckRun, NodePullRequest, NodePullRequestCommit
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import DatabaseLike
 
@@ -41,6 +42,12 @@ async def mine_check_runs(time_from: datetime,
     """
     Filter check runs according to the specified parameters.
 
+    Relationship:
+
+    Commit -> Check Suite -> one or more Check Runs.
+    The same commit may appear in 0, 1, or more PRs. We have to disambiguate cases when there is
+    more than one PR mapped to the same commit by looking at their lifetimes [created, closed].
+
     :param time_from: Check runs must start later than this time.
     :param time_to: Check runs must start earlier than this time.
     :param repositories: Look for check runs in these repository names.
@@ -61,4 +68,77 @@ async def mine_check_runs(time_from: datetime,
         query = await generate_jira_prs_query(
             filters, jira, mdb, cache, columns=CheckRun.__table__.columns, seed=CheckRun,
             on=(CheckRun.pull_request_node_id, CheckRun.acc_id))
-    return await read_sql_query(query, mdb, columns=CheckRun)
+    df = await read_sql_query(query, mdb, columns=CheckRun)
+
+    # another groupby() replacement for speed
+    # we determine check runs belonging to the same commit with multiple pull requests
+    node_ids = df[CheckRun.check_run_node_id.key].values.astype("S")
+    unique_node_ids, node_id_counts = np.unique(node_ids, return_counts=True)
+    ambiguous_node_id_indexes = np.nonzero((unique_node_ids != b"None") & (node_id_counts > 1))[0]
+    if len(ambiguous_node_id_indexes):
+        node_ids_order = np.argsort(node_ids)
+        node_ids_group_counts = np.zeros(len(node_id_counts) + 1, dtype=int)
+        np.cumsum(node_id_counts, out=node_ids_group_counts[1:])
+        groups = np.array(np.split(node_ids_order, node_ids_group_counts[1:-1]))
+        groups = groups[ambiguous_node_id_indexes]
+
+        ambiguous_indexes = np.concatenate(groups)
+        ambiguous_pr_node_ids = \
+            df[CheckRun.pull_request_node_id.key].values.astype("U")[ambiguous_indexes]
+        unique_ambiguous_pr_node_ids = np.unique(ambiguous_pr_node_ids)
+        pr_cols = [NodePullRequest.id, NodePullRequest.author,
+                   NodePullRequest.created_at, NodePullRequest.closed_at]
+        pr_lifetimes, pr_commit_counts = await gather(
+            read_sql_query(
+                select(pr_cols)
+                .where(and_(NodePullRequest.acc_id.in_(meta_ids),
+                            NodePullRequest.id.in_any_values(unique_ambiguous_pr_node_ids))),
+                mdb, pr_cols, index=NodePullRequest.id.key),
+            read_sql_query(
+                select([NodePullRequestCommit.pull_request,
+                        func.count(NodePullRequestCommit.commit).label("count")])
+                .where(and_(NodePullRequestCommit.acc_id.in_(meta_ids),
+                            NodePullRequestCommit.pull_request.in_any_values(
+                                unique_ambiguous_pr_node_ids)))
+                .group_by(NodePullRequestCommit.pull_request),
+                mdb, [NodePullRequestCommit.pull_request.key, "count"],
+                index=NodePullRequestCommit.pull_request.key),
+        )
+        pr_lifetimes[NodePullRequest.closed_at.key].fillna(
+            datetime.now(timezone.utc), inplace=True)
+        ambiguous_check_run_node_ids = node_ids[ambiguous_indexes].astype("U")
+        ambiguous_df = pd.DataFrame({
+            CheckRun.check_run_node_id.key: ambiguous_check_run_node_ids,
+            CheckRun.pull_request_node_id.key: ambiguous_pr_node_ids,
+            CheckRun.author_user.key: df[CheckRun.author_user.key][ambiguous_indexes],
+            CheckRun.started_at.key: df[CheckRun.started_at.key][ambiguous_indexes],
+        }).join(pr_lifetimes, on=CheckRun.pull_request_node_id.key)
+        # heuristic 1: check run must launch while the PR is open
+        passed = np.nonzero(ambiguous_df[CheckRun.started_at.key].between(
+            ambiguous_df[NodePullRequest.created_at.key],
+            ambiguous_df[NodePullRequest.closed_at.key],
+        ).values)[0]
+        ambiguous_df = ambiguous_df.take(passed)
+        # heuristic 2: the PR should be created by the commit author
+        passed = np.nonzero((
+            ambiguous_df[NodePullRequest.author.key] == ambiguous_df[CheckRun.author_user.key]
+        ).values)[0]
+        ambiguous_df = ambiguous_df.take(passed).join(
+            pr_commit_counts, on=CheckRun.pull_request_node_id.key)
+        # heuristic 3: the PR with the least number of commits wins
+        passed = ambiguous_df.groupby(CheckRun.check_run_node_id.key)["count"].idxmin().values
+        # we may discard some check runs completely here, set pull_request_node_id to None for them
+        passed_check_run_node_ids = \
+            ambiguous_df[CheckRun.check_run_node_id.key].unique().astype("U")
+        reset_mask = np.in1d(
+            ambiguous_check_run_node_ids, passed_check_run_node_ids,
+            assume_unique=True, invert=True)
+        _, reset_indexes = np.unique(ambiguous_check_run_node_ids[reset_mask], return_index=True)
+        reset_indexes = ambiguous_indexes[reset_mask][reset_indexes]
+        removed_indexes = np.setdiff1d(ambiguous_indexes, passed, assume_unique=True)
+        removed_indexes = np.setdiff1d(removed_indexes, reset_indexes, assume_unique=True)
+        df.loc[reset_indexes, CheckRun.pull_request_node_id.key] = None
+        df.drop(index=removed_indexes, inplace=True)
+        df.reset_index(drop=True, inplace=True)
+
+    return df
