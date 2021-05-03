@@ -62,7 +62,8 @@ class Prefixer:
             ),
             mdb.fetch_all(
                 select([User.node_id, User.login, User.html_url])
-                .where(User.acc_id.in_(meta_ids)),
+                .where(and_(User.acc_id.in_(meta_ids),
+                            User.login.isnot(None))),
             ),
             op="Prefixer",
         )
