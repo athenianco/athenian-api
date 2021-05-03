@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import logging
 import pickle
 from typing import Collection, Optional, Tuple
 
@@ -7,6 +8,7 @@ import numpy as np
 import pandas as pd
 from sqlalchemy import and_, func, select
 
+from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import JIRAFilter
@@ -76,6 +78,8 @@ async def mine_check_runs(time_from: datetime,
     unique_node_ids, node_id_counts = np.unique(node_ids, return_counts=True)
     ambiguous_node_id_indexes = np.nonzero((unique_node_ids != b"None") & (node_id_counts > 1))[0]
     if len(ambiguous_node_id_indexes):
+        log = logging.getLogger(f"{metadata.__package__}.mine_check_runs")
+        log.debug("Must disambiguate %d check runs", len(ambiguous_node_id_indexes))
         node_ids_order = np.argsort(node_ids)
         node_ids_group_counts = np.zeros(len(node_id_counts) + 1, dtype=int)
         np.cumsum(node_id_counts, out=node_ids_group_counts[1:])
@@ -118,15 +122,18 @@ async def mine_check_runs(time_from: datetime,
             ambiguous_df[NodePullRequest.created_at.key],
             ambiguous_df[NodePullRequest.closed_at.key],
         ).values)[0]
+        log.info("Disambiguation step 1 - lifetimes: %d / %d", len(passed), len(ambiguous_df))
         ambiguous_df = ambiguous_df.take(passed)
         # heuristic 2: the PR should be created by the commit author
         passed = np.nonzero((
             ambiguous_df[NodePullRequest.author.key] == ambiguous_df[CheckRun.author_user.key]
         ).values)[0]
+        log.info("Disambiguation step 2 - authors: %d / %d", len(passed), len(ambiguous_df))
         ambiguous_df = ambiguous_df.take(passed).join(
             pr_commit_counts, on=CheckRun.pull_request_node_id.key)
         # heuristic 3: the PR with the least number of commits wins
         passed = ambiguous_df.groupby(CheckRun.check_run_node_id.key)["count"].idxmin().values
+        log.info("Disambiguation step 3 - commit counts: %d / %d", len(passed), len(ambiguous_df))
         # we may discard some check runs completely here, set pull_request_node_id to None for them
         passed_check_run_node_ids = \
             ambiguous_df[CheckRun.check_run_node_id.key].unique().astype("U")
@@ -134,6 +141,7 @@ async def mine_check_runs(time_from: datetime,
             ambiguous_check_run_node_ids, passed_check_run_node_ids,
             assume_unique=True, invert=True)
         _, reset_indexes = np.unique(ambiguous_check_run_node_ids[reset_mask], return_index=True)
+        log.info("Disambiguated null-s: %d / %d", len(reset_indexes), reset_mask.sum())
         reset_indexes = ambiguous_indexes[reset_mask][reset_indexes]
         removed_indexes = np.setdiff1d(ambiguous_indexes, passed, assume_unique=True)
         removed_indexes = np.setdiff1d(removed_indexes, reset_indexes, assume_unique=True)
