@@ -564,7 +564,7 @@ async def _issue_flow(return_: Set[str],
             for i in reversed(missing_repo_indexes):
                 pr_list_items.pop(i)
         return dict(zip((pr.node_id for pr in pr_list_items),
-                        (web_pr_from_struct(pr, prefixer) for pr in pr_list_items)))
+                        (web_pr_from_struct(pr, prefixer, log) for pr in pr_list_items)))
 
     prs, component_names, users, mapped_identities, priorities, statuses, issue_types, labels = \
         await gather(

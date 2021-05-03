@@ -13,6 +13,7 @@ import numpy as np
 from sqlalchemy import and_, join, outerjoin, select
 from sqlalchemy.orm import aliased
 
+from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
 from athenian.api.controllers.account import get_metadata_account_ids
@@ -202,7 +203,9 @@ def _bake_updated_min_max(filt: FilterPullRequestsRequest) -> Tuple[datetime, da
     return updated_min, updated_max
 
 
-def web_pr_from_struct(pr: PullRequestListItem, prefixer: Prefixer) -> WebPullRequest:
+def web_pr_from_struct(pr: PullRequestListItem,
+                       prefixer: Prefixer,
+                       log: logging.Logger) -> WebPullRequest:
     """Convert an intermediate PR representation to the web model."""
     props = dict(pr)
     del props["node_id"]
@@ -218,7 +221,10 @@ def web_pr_from_struct(pr: PullRequestListItem, prefixer: Prefixer) -> WebPullRe
     for pk, pids in sorted(pr.participants.items()):
         pkweb = pk.name.lower()
         for pid in pids:
-            participants[prefixer.user_login_map[pid]].append(pkweb)
+            try:
+                participants[prefixer.user_login_map[pid]].append(pkweb)
+            except KeyError:
+                log.error("Failed to resolve user %s", pid)
     props["participants"] = sorted(PullRequestParticipant(*p) for p in participants.items())
     if pr.labels is not None:
         props["labels"] = [PullRequestLabel(**label) for label in pr.labels]
@@ -504,7 +510,8 @@ async def _build_github_prs_response(prs: List[PullRequestListItem],
                                      meta_ids: Tuple[int, ...],
                                      mdb: databases.Database,
                                      cache: Optional[aiomcache.Client]) -> web.Response:
-    web_prs = sorted(web_pr_from_struct(pr, prefixer) for pr in prs)
+    log = logging.getLogger(f"{metadata.__package__}._build_github_prs_response")
+    web_prs = sorted(web_pr_from_struct(pr, prefixer, log) for pr in prs)
     users = set(chain.from_iterable(chain.from_iterable(pr.participants.values()) for pr in prs))
     avatars = await mine_user_avatars(users, False, meta_ids, mdb, cache)
     model = PullRequestSet(include=IncludedNativeUsers(users={
