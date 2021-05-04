@@ -179,10 +179,16 @@ class MemoryCache:
         debug_memory: Optional[bool] = False,
     ):
         """Initialize a `MemoryCache`."""
+        self._loaded = False
         self._db = db
         self._options = options
         self._debug_memory = debug_memory
         self._dfs = {}
+
+    @property
+    def loaded(self) -> bool:
+        """Return whether the `MemoryCache` has been loaded."""
+        return self._loaded
 
     @property
     def dfs(self) -> Dict[str, CachedDataFrame]:
@@ -219,6 +225,7 @@ class MemoryCache:
             self._dfs[id_] = CachedDataFrame(id_, **opts)
 
         await gather(*[cdf.refresh() for cdf in self._dfs.values()])
+        self._loaded = True
 
 
 class MemoryCachePreloader:
