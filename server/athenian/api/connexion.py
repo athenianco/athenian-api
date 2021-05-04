@@ -169,6 +169,7 @@ class AthenianApp(connexion.AioHttpApp):
                  ui: bool,
                  client_max_size: int,
                  max_load: float,
+                 preloading_enabled: bool = False,
                  mdb_options: Optional[Dict[str, Any]] = None,
                  sdb_options: Optional[Dict[str, Any]] = None,
                  pdb_options: Optional[Dict[str, Any]] = None,
@@ -250,6 +251,7 @@ class AthenianApp(connexion.AioHttpApp):
 
             self.app.router.add_get("/", index_redirect)
         self._enable_cors()
+        self._preloading_enabled = preloading_enabled
         self._cache = cache
         self.mdb = self.sdb = self.pdb = self.rdb = None  # type: Optional[ParallelDatabase]
         self._pdb_schema_task_box = []
@@ -390,6 +392,7 @@ class AthenianApp(connexion.AioHttpApp):
     @aiohttp.web.middleware
     async def with_db(self, request: aiohttp.web.Request, handler) -> aiohttp.web.Response:
         """Add "mdb", "pdb", "sdb", "rdb", and "cache" attributes to every incoming request."""
+        request.preloading_enabled = self._preloading_enabled
         for db in ("mdb", "sdb", "pdb", "rdb"):
             if getattr(self, db) is None:
                 await self._db_futures[db]

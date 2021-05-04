@@ -294,6 +294,7 @@ def main() -> Optional[AthenianApp]:
         sdb_conn=args.state_db,
         pdb_conn=args.precomputed_db,
         rdb_conn=args.persistentdata_db,
+        preloading_enabled=args.preload_dataframes,
         **compose_db_options(args.metadata_db,
                              args.state_db,
                              args.precomputed_db,
