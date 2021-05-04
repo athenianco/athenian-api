@@ -2500,6 +2500,22 @@ paths:
       - default
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.status_controller
+  /healthz:
+    get:
+      operationId: get_healthz
+      responses:
+        200:
+          description: OK
+        425:
+          description: Too early
+      security: []
+      summary: Query the readiness of the API.
+      tags:
+      - healthz
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.status_controller
 components:
   securitySchemes:
     bearerAuth:
