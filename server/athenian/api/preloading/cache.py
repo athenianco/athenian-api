@@ -250,12 +250,17 @@ class MemoryCachePreloader:
     async def _preload_all(self, debug_memory, **dbs: Dict[str, DatabaseLike]):
         self._log.info("Preloading MemoryCache")
         debug_mode = self._debug_mode if debug_memory is None else debug_memory
+        mc_opts = get_memory_cache_options()
         tasks = []
-        for db_name, opts in get_memory_cache_options().items():
-            db = dbs[db_name]
-            mc = MemoryCache(db, opts, debug_memory=debug_mode)
+        for db_name, db in dbs.items():
+            opts = mc_opts.get(db_name)
+            if not opts:
+                mc = None
+            else:
+                mc = MemoryCache(db, opts, debug_memory=debug_mode)
+                tasks.append(mc.load())
+
             db.cache = mc
-            tasks.append(mc.load())
 
         await gather(*tasks)
 
