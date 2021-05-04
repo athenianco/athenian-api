@@ -309,7 +309,7 @@ async def app(metadata_db, state_db, precomputed_db, persistentdata_db, slack) -
 
     app = AthenianApp(**app_kwargs)
     if with_preloading:
-        app.on_dbs_conected(mc_preloader.preload)
+        app.on_dbs_connected(mc_preloader.preload)
 
     await app.wait_for_dbs_connected_callbacks()
     return app

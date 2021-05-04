@@ -293,7 +293,7 @@ class AthenianApp(connexion.AioHttpApp):
         on_shutdown_callbacks = list(on_shutdown_callbacks or [])
         on_shutdown_callbacks.append(self.shutdown)
         self.app.on_shutdown.extend(on_shutdown_callbacks)
-        self._on_dbs_conected_events = []
+        self._on_dbs_connected_callbacks = []
         # schedule the DB connections when the server starts
         self._db_futures = {
             args[1]: asyncio.ensure_future(connect_to_db(*args))
@@ -311,7 +311,7 @@ class AthenianApp(connexion.AioHttpApp):
         self._slack = self.app["slack"] = slack
         self._boot_time = psutil.boot_time()
 
-    def on_dbs_conected(self, callback):
+    def on_dbs_connected(self, callback):
         """Register a callback on dbs connected."""
 
         async def task_wrapper(*_):
@@ -322,11 +322,11 @@ class AthenianApp(connexion.AioHttpApp):
             }
             callback(**dbs)
 
-        self._on_dbs_conected_events.append(asyncio.ensure_future(task_wrapper()))
+        self._on_dbs_connected_callbacks.append(asyncio.ensure_future(task_wrapper()))
 
     async def wait_for_dbs_connected_callbacks(self):
         """Wait until all callbacks on dbs connected are done."""
-        await gather(*self._on_dbs_conected_events)
+        await gather(*self._on_dbs_connected_callbacks)
 
     def __del__(self):
         """Check that shutdown() was called."""
