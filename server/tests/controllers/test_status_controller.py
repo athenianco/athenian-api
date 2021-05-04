@@ -61,3 +61,10 @@ async def test_objgraph_400(client, headers, query):
         method="GET", path="/objgraph?" + query, headers=headers, json={},
     )
     assert response.status == 400
+
+
+async def test_healthz_200(client, headers):
+    response = await client.request(
+        method="GET", path="/v1/healthz", headers=headers, json={},
+    )
+    assert response.status == 200

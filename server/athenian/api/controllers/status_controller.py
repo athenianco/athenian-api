@@ -1,5 +1,6 @@
 from collections import defaultdict
 from contextvars import ContextVar
+from http import HTTPStatus
 import io
 from itertools import chain
 import logging
@@ -40,6 +41,23 @@ async def get_versions(request: AthenianWebRequest) -> web.Response:
     metadata_version = await _get_metadata_version(request.mdb, request.cache)
     model = Versions(api=__version__, metadata=metadata_version)
     return model_response(model)
+
+
+async def get_healthz(request: AthenianWebRequest) -> web.Response:
+    """Return 200 if the API is ready 425 otherwise."""
+    if not request.preloading_enabled:
+        return web.Response(text=HTTPStatus.OK.phrase)
+
+    for db_name in ("sdb", "mdb", "pdb", "rdb"):
+        db = getattr(request, db_name)
+        if not (cache := db.cache):
+            continue
+
+        if not cache.loaded:
+            # TODO: HTTPStatus.TOO_EARLY has been added in Python 3.9
+            return web.Response(status=425, text="Too Early")
+
+    return web.Response(text=HTTPStatus.OK.phrase)
 
 
 elapsed_error_threshold = 60
