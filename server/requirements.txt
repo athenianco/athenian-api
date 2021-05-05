@@ -42,4 +42,4 @@ psutil==5.8.0
 flogging==0.0.12
 unidecode==1.2.0
 pluralizer==1.1.0
-pyarrow==3.0.0
+pyarrow==4.0.0
