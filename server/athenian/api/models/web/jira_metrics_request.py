@@ -1,11 +1,10 @@
 from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import AllOf, Model
+from athenian.api.models.web.common_metrics_properties import CommonMetricsProperties
 from athenian.api.models.web.filter_jira_common import FilterJIRACommon
-from athenian.api.models.web.granularity import Granularity
 from athenian.api.models.web.jira_filter_with import JIRAFilterWith
 from athenian.api.models.web.jira_metric_id import JIRAMetricID
-from athenian.api.models.web.quantiles import validate_quantiles
 
 
 class JIRAMetricsRequestSpecials(Model):
@@ -14,8 +13,6 @@ class JIRAMetricsRequestSpecials(Model):
     openapi_types = {
         "with_": List[JIRAFilterWith],
         "metrics": List[str],
-        "quantiles": List[float],
-        "granularities": List[str],
         "epics": List[str],
         "group_by_jira_label": Optional[bool],
     }
@@ -23,8 +20,6 @@ class JIRAMetricsRequestSpecials(Model):
     attribute_map = {
         "with_": "with",
         "metrics": "metrics",
-        "quantiles": "quantiles",
-        "granularities": "granularities",
         "epics": "epics",
         "group_by_jira_label": "group_by_jira_label",
     }
@@ -35,8 +30,6 @@ class JIRAMetricsRequestSpecials(Model):
         self,
         with_: Optional[List[JIRAFilterWith]] = None,
         metrics: Optional[List[str]] = None,
-        quantiles: Optional[List[float]] = None,
-        granularities: Optional[List[str]] = None,
         epics: Optional[List[str]] = None,
         group_by_jira_label: Optional[bool] = None,
     ):
@@ -44,15 +37,11 @@ class JIRAMetricsRequestSpecials(Model):
 
         :param with_: The with of this JIRAMetricsRequest.
         :param metrics: The metrics of this JIRAMetricsRequest.
-        :param quantiles: The quantiles of this JIRAMetricsRequest.
-        :param granularities: The granularities of this JIRAMetricsRequest.
         :param epics: The epics of this JIRAMetricsRequest.
         :param group_by_jira_label: The group_by_jira_label of this JIRAMetricsRequest.
         """
         self._with_ = with_
         self._metrics = metrics
-        self._quantiles = quantiles
-        self._granularities = granularities
         self._epics = epics
         self._group_by_jira_label = group_by_jira_label
 
@@ -102,58 +91,6 @@ class JIRAMetricsRequestSpecials(Model):
         self._metrics = metrics
 
     @property
-    def quantiles(self) -> Optional[List[float]]:
-        """Gets the quantiles of this JIRAMetricsRequest.
-
-        Cut the distributions at certain quantiles. The default is [0, 1].
-
-        :return: The quantiles of this JIRAMetricsRequest.
-        """
-        return self._quantiles
-
-    @quantiles.setter
-    def quantiles(self, quantiles: Optional[List[float]]):
-        """Sets the quantiles of this JIRAMetricsRequest.
-
-        Cut the distributions at certain quantiles. The default is [0, 1].
-
-        :param quantiles: The quantiles of this JIRAMetricsRequest.
-        """
-        if quantiles is None:
-            self._quantiles = None
-            return
-        validate_quantiles(quantiles)
-        self._quantiles = quantiles
-
-    @property
-    def granularities(self) -> List[str]:
-        """Gets the granularities of this JIRAMetricsRequest.
-
-        Splits of the specified time range `[date_from, date_to)`.
-
-        :return: The granularities of this JIRAMetricsRequest.
-        """
-        return self._granularities
-
-    @granularities.setter
-    def granularities(self, granularities: List[str]):
-        """Sets the granularities of this JIRAMetricsRequest.
-
-        Splits of the specified time range `[date_from, date_to)`.
-
-        :param granularities: The granularities of this JIRAMetricsRequest.
-        """
-        if granularities is None:
-            raise ValueError("Invalid value for `granularities`, must not be `None`")
-        for i, g in enumerate(granularities):
-            if not Granularity.format.match(g):
-                raise ValueError(
-                    'Invalid value for `granularity[%d]`: "%s"` does not match /%s/' %
-                    (i, g, Granularity.format.pattern))
-
-        self._granularities = granularities
-
-    @property
     def epics(self) -> Optional[List[str]]:
         """Gets the epics of this JIRAMetricsRequest.
 
@@ -194,5 +131,8 @@ class JIRAMetricsRequestSpecials(Model):
         self._group_by_jira_label = group_by_jira_label
 
 
-JIRAMetricsRequest = AllOf(FilterJIRACommon, JIRAMetricsRequestSpecials,
-                           name="JIRAMetricsRequest", module=__name__)
+JIRAMetricsRequest = AllOf(FilterJIRACommon,
+                           CommonMetricsProperties,
+                           JIRAMetricsRequestSpecials,
+                           name="JIRAMetricsRequest",
+                           module=__name__)

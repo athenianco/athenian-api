@@ -8,7 +8,7 @@ info:
   license:
     name: CC-BY-4.0
   title: '{{ title }}'
-  version: 1.3.1
+  version: 1.4.0
 servers:
 - description: '{{ server_description }} - {{ server_url }}'
   url: '{{ server_url }}/v1'
@@ -3536,7 +3536,8 @@ components:
       type: array
     CalculatedPullRequestMetrics:
       additionalProperties: false
-      description: The dates start from `date_from` and end earlier or equal to `date_to`.
+      description: Response from `/metrics/pull_requests`. The dates start from `date_from` and
+        end earlier or equal to `date_to`.
       example:
         metrics:
         - pr-lead-time
@@ -7506,7 +7507,8 @@ components:
       type: string
     CalculatedCodeCheckMetrics:
       additionalProperties: false
-      description: The dates start from `date_from` and end earlier or equal to `date_to`.
+      description: Response from `/metrics/code_checks`. The dates start from `date_from` and end
+        earlier or equal to `date_to`.
       example:
         metrics:
         - chk-suites-count

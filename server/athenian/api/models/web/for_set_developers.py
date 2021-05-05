@@ -57,27 +57,6 @@ class ForSetDevelopers(Model, RepositoryGroupsMixin):
         self._jira = jira
 
     @property
-    def repositories(self) -> List[str]:
-        """Gets the repositories of this ForSetDevelopers.
-
-        :return: The repositories of this ForSetDevelopers.
-        """
-        return self._repositories
-
-    @repositories.setter
-    def repositories(self, repositories: List[str]):
-        """Sets the repositories of this ForSetDevelopers.
-
-        :param repositories: The repositories of this ForSetDevelopers.
-        """
-        if repositories is None:
-            raise ValueError("Invalid value for `repositories`, must not be `None`")
-        if len(repositories) == 0:
-            raise ValueError("Invalid value for `repositories`, must not be an empty list")
-
-        self._repositories = repositories
-
-    @property
     def developers(self) -> List[str]:
         """Gets the developers of this ForSetDevelopers.
 

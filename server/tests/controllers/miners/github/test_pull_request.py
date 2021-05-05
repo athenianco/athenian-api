@@ -861,6 +861,8 @@ async def test_pr_miner_labels_unreleased(mdb, pdb, rdb, release_match_setting_t
     assert len(miner_complete._dfs.prs) == 0
 
 
+# sometimes we finish writing to pdb before returning from PullRequestMiner.mine()
+@pytest.mark.flaky(reruns=3)
 @with_defer
 async def test_pr_miner_unreleased_facts(
         branches, default_branches, mdb, pdb, rdb, release_match_setting_tag):
