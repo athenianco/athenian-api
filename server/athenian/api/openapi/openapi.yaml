@@ -1298,6 +1298,61 @@ paths:
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.metrics_controller
       x-codegen-request-body-name: body
+  /metrics/code_checks:
+    post:
+      operationId: calc_code_check_runs
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CodeCheckMetricsRequest'
+        description: Select the check runs of interest and the metrics to calculate.
+        required: true
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalculatedCodeCheckMetrics'
+          description: Calculated metrics.
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidRequestError'
+          description: The request is invalid.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user is forbidden to access the specified repositories
+            on behalf of the specified account.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The specified account does not exist or the user is not a member.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The account's installation has not finished yet.
+      security:
+      - bearerAuth: []
+      - apiKeyAuth: []
+      summary: Calculate metrics on continuous integration runs, such as GitHub Actions,
+        Jenkins, Circle, etc.
+      tags:
+      - metrics
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.metrics_controller
+      x-codegen-request-body-name: body
   /metrics/developers:
     post:
       operationId: calc_metrics_developer
@@ -3253,6 +3308,7 @@ components:
             Aggregate by groups of PR contributors.
             Currently, only the groupings by `author`, `merger`, and `releaser` are supported.
             People do not have to be mentioned in `with` in contrast to `repogroups`.
+            We treat `with` as another group, if specified.
           items:
             $ref: '#/components/schemas/PullRequestWith'
           type: array
@@ -7319,4 +7375,236 @@ components:
       - confidence
       - from
       - to
+      type: object
+    CodeCheckMetricsRequest:
+      additionalProperties: false
+      description: Request for calculating metrics on top of code check runs (CI) data.
+      example:
+        for:
+        - repositories:
+          - github.com/athenianco/athenian-webapp
+          - github.com/athenianco/athenian-api
+          commit_authors:
+          - - github.com/vmarkovtsev
+            - github.com/dpordomingo
+        - repositories:
+          - github.com/athenianco/metadata
+          - github.com/athenianco/athenian-api
+          commit_authors:
+          - - github.com/vmarkovtsev
+            - github.com/se7entyse7en
+        metrics:
+        - chk-suites-count
+        date_from: 2020-01-23
+        date_to: 2021-01-24
+        granularities:
+        - all
+        account: 1
+      properties:
+        for:
+          description: |-
+            Sets of developers and repositories for which to calculate the metrics.
+            The aggregation is `AND` between repositories and developers.
+            The aggregation is `OR` inside both repositories and developers.
+          items:
+            $ref: '#/components/schemas/ForSetCodeChecks'
+          type: array
+        metrics:
+          description: Requested metric identifiers.
+          items:
+            $ref: '#/components/schemas/CodeCheckMetricID'
+          type: array
+        date_from:
+          description: Date from when to start measuring the metrics.
+          format: date
+          type: string
+        date_to:
+          description: Date up to which to measure the metrics.
+          format: date
+          type: string
+        timezone:
+          $ref: '#/components/schemas/TimeZone'
+        granularities:
+          items:
+            $ref: '#/components/schemas/Granularity'
+          type: array
+        quantiles:
+          $ref: '#/components/schemas/Quantiles'
+        account:
+          description: Session account ID.
+          type: integer
+        split_by_check_runs:
+          description: Calculate metrics separately for each number of check runs in suite.
+          type: boolean
+      required:
+      - account
+      - date_from
+      - date_to
+      - for
+      - granularities
+      - metrics
+      type: object
+    ForSetCodeChecks:
+      additionalProperties: false
+      description: Filter for `/metrics/code_checks`.
+      example:
+        repositories:
+        - github.com/athenianco/athenian-webapp
+        - github.com/athenianco/athenian-api
+        commit_authors:
+        - github.com/vmarkovtsev
+        - github.com/dpordomingo
+        jira:
+          labels_include:
+          - bug
+      properties:
+        repositories:
+          $ref: '#/components/schemas/RepositorySet'
+        repogroups:
+          $ref: '#/components/schemas/IndexedGroups'
+        commit_authors:
+          description: Check runs must be triggered by commits authored by these people.
+          items:
+            $ref: '#/components/schemas/DeveloperID'
+          type: array
+        commit_author_groups:
+          description: |-
+            Check runs must be triggered by commits authored by these people.
+            We aggregate by each group so that you can request metrics of several teams at once.
+            We treat `commit_authors` as another group, if specified.
+          items:
+            items:
+              $ref: '#/components/schemas/DeveloperID'
+            type: array
+          type: array
+        jira:
+          allOf:
+          - description: Analyze only those check runs that belong to PRs mapped to JIRA issues
+              that satisfy this filter.
+          - $ref: '#/components/schemas/JIRAFilter'
+      required:
+      - repositories
+      type: object
+    CodeCheckMetricID:
+      description: |-
+        * `chk-suites-count` - number of executed check suites.
+        * `chk-success-ratio` - number of successful check suites divided by `chk-suites-count`.
+        * `chk-suite-time` - average check suite execution time.
+        * `chk-suites-per-pr` - average number of times check suites executed in a pull request.
+        * `chk-suite-time-per-pr` - average check suite execution time by pull request. The difference with `chk-suite-time` is that we don't consider checks triggered by direct pushes, e.g. by merge commits.
+        * `chk-prs-with-checks-count` - number of PRs that triggered at least one check suite.
+        * `chk-flaky-commit-checks-count` - number of check suites triggered by the same commit but having different outcomes - both successful and failed.
+      enum:
+      - chk-suites-count
+      - chk-success-ratio
+      - chk-suite-time
+      - chk-suites-per-pr
+      - chk-suite-time-per-pr
+      - chk-prs-with-checks-count
+      - chk-flaky-commit-checks-count
+      example: chk-suites-count
+      type: string
+    CalculatedCodeCheckMetrics:
+      additionalProperties: false
+      description: The dates start from `date_from` and end earlier or equal to `date_to`.
+      example:
+        metrics:
+        - chk-suites-count
+        date_from: 2020-01-23
+        date_to: 2021-01-24
+        granularities:
+        - all
+        calculated:
+        - values:
+          - date: 2020-01-23
+            values:
+            - 200
+          for:
+            repositories:
+            - github.com/athenianco/athenian-webapp
+            - github.com/athenianco/athenian-api
+            commit_authors:
+            - github.com/vmarkovtsev
+            - github.com/dpordomingo
+          granularity: all
+      properties:
+        calculated:
+          description: Values of the requested metrics through time.
+          items:
+            $ref: '#/components/schemas/CalculatedCodeCheckMetricsItem'
+          type: array
+        metrics:
+          description: Repeats `CodeCheckMetricsRequest.metrics`.
+          items:
+            $ref: '#/components/schemas/CodeCheckMetricID'
+          type: array
+        date_from:
+          description: Repeats `CodeCheckMetricsRequest.date_from`.
+          format: date
+          type: string
+        date_to:
+          description: Repeats `CodeCheckMetricsRequest.date_to`.
+          format: date
+          type: string
+        timezone:
+          $ref: '#/components/schemas/TimeZone'
+        granularities:
+          items:
+            $ref: '#/components/schemas/Granularity'
+          type: array
+        quantiles:
+          $ref: '#/components/schemas/Quantiles'
+        split_by_check_runs:
+          description: Repeats `CodeCheckMetricsRequest.split_by_check_runs`.
+          type: boolean
+      required:
+      - calculated
+      - date_from
+      - date_to
+      - granularities
+      - metrics
+      - quantiles
+      type: object
+    CalculatedCodeCheckMetricsItem:
+      additionalProperties: false
+      description: Series of calculated metrics for a specific set of repositories
+        and commit authors.
+      example:
+        values:
+        - date: 2020-01-23
+          values:
+          - 200
+        for:
+          repositories:
+          - github.com/athenianco/athenian-webapp
+          - github.com/athenianco/athenian-api
+          commit_authors:
+          - github.com/vmarkovtsev
+          - github.com/dpordomingo
+        granularity: all
+      properties:
+        for:
+          $ref: '#/components/schemas/ForSetCodeChecks'
+        granularity:
+          $ref: '#/components/schemas/Granularity'
+        check_runs:
+          description: We calculated metrics for check suites with this number of runs.
+            Not null only if the user specified `split_by_check_runs = true`.
+          type: integer
+        suites_ratio:
+          description: Number of check suites with `check_runs` number of check runs divided
+            by the overall number of check suites. Not null only if the user specified
+            `split_by_check_runs = true`.
+          format: float
+          maximum: 1
+          minimum: 0
+          type: number
+        values:
+          description: The sequence steps from `date_from` till `date_to` by `granularity`.
+          items:
+            $ref: '#/components/schemas/CalculatedLinearMetricValues'
+          type: array
+      required:
+      - for
+      - values
       type: object
