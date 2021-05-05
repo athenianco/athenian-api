@@ -78,7 +78,6 @@ class PullRequestMiner(OriginalPullRequestMiner):
             (~df["closed"] | (df["closed_at"] >= time_from))
             & (df["created_at"] < time_to)
             & (df["acc_id"].isin(meta_ids))
-            & (~df["hidden"])
             & (df["repository_full_name"].isin(repositories))
         )
 
