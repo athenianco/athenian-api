@@ -1,4 +1,5 @@
 import asyncio
+from collections import namedtuple
 from dataclasses import dataclass, fields as dataclass_fields
 from datetime import date, datetime, timedelta, timezone
 from enum import Enum
@@ -28,8 +29,8 @@ from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_
 from athenian.api.controllers.miners.github.precomputed_prs import \
     discover_inactive_merged_unreleased_prs, load_merged_unreleased_pull_request_facts, \
     load_open_pull_request_facts, update_unreleased_prs
-from athenian.api.controllers.miners.github.release_match import map_prs_to_releases, \
-    map_releases_to_prs
+from athenian.api.controllers.miners.github.release_match import PullRequestToReleaseMapper, \
+    ReleaseToPullRequestMapper
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
 from athenian.api.controllers.miners.types import MinedPullRequest, nonemax, nonemin, \
@@ -70,6 +71,11 @@ class PullRequestMiner:
 
     CACHE_TTL = 5 * 60
     log = logging.getLogger("%s.PullRequestMiner" % metadata.__package__)
+    AuxiliaryMappers = namedtuple("AuxiliaryMappers", ["releases_to_prs", "prs_to_releases"])
+    mappers = AuxiliaryMappers(
+        releases_to_prs=ReleaseToPullRequestMapper.map_releases_to_prs,
+        prs_to_releases=PullRequestToReleaseMapper.map_prs_to_releases,
+    )
 
     def __init__(self, dfs: PRDataFrames):
         """Initialize a new instance of `PullRequestMiner`."""
@@ -216,7 +222,7 @@ class PullRequestMiner:
         pdags = await fetch_precomputed_commit_history_dags(repositories, account, pdb, cache)
         # the heaviest task should always go first
         tasks = [
-            map_releases_to_prs(
+            cls.mappers.releases_to_prs(
                 repositories, branches, default_branches, time_from, time_to,
                 participants.get(PRParticipationKind.AUTHOR, []),
                 participants.get(PRParticipationKind.MERGER, []),
@@ -254,7 +260,7 @@ class PullRequestMiner:
             pr_whitelist = PullRequest.node_id.in_(
                 list(chain.from_iterable(missed_prs.values())))
             tasks = [
-                map_releases_to_prs(
+                cls.mappers.releases_to_prs(
                     missed_prs, branches, default_branches, time_from, time_to,
                     participants.get(PRParticipationKind.AUTHOR, []),
                     participants.get(PRParticipationKind.MERGER, []),
@@ -433,7 +439,7 @@ class PullRequestMiner:
                 merged_mask = prs[PullRequest.merged_at.key].notnull()
             merged_mask &= ~prs.index.isin(unreleased)
             merged_prs = prs.take(np.where(merged_mask)[0])
-            subtasks = [map_prs_to_releases(
+            subtasks = [cls.mappers.prs_to_releases(
                 merged_prs, releases, matched_bys, branches, default_branches, time_to,
                 dags, release_settings, account, meta_ids, mdb, pdb, cache),
                 load_merged_unreleased_pull_request_facts(
