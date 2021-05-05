@@ -112,7 +112,7 @@ class CachedDataFrame:
         :param uncast: whether to uncast the columns dtypes, see the `_squeeze` method.
 
         """
-        df = self._df.take(np.nonzero(mask)[0])
+        df = self._df.take(np.flatnonzero(mask))
         if columns:
             df = df[columns]
         if uncast:
