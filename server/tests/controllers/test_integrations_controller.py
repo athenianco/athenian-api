@@ -88,11 +88,28 @@ async def test_get_everything_smoke(client, headers):
     )
     assert response.status == 200
     body = await response.read()
+
+    developer_dfs = {
+        "jira_mapping": 206,
+        "active_commits_pushed_lines_changed": 3135,
+        "prs_created": 681,
+        "prs_merged": 554,
+        "releases": 53,
+        "prs_reviewed_review_approvals_review_neutrals_review_rejections_reviews": 1352,
+        "regular_pr_comments": 1035,
+        "review_pr_comments": 1604,
+        "pr_comments": 2639,
+    }
+
     with ZipFile(io.BytesIO(body)) as zipf:
         with zipf.open("prs.parquet") as prsf:
             prs_df = pd.read_parquet(prsf)
         with zipf.open("releases.parquet") as releasesf:
             releases_df = pd.read_parquet(releasesf)
+        for key, size in developer_dfs.items():
+            with zipf.open(f"developers_{key}.parquet") as devf:
+                df = pd.read_parquet(devf)
+                assert len(df) == size
     assert len(prs_df) == 679
     assert set(prs_df) == {
         "first_comment_on_first_review", "merged_by_login", "first_commit", "stage_time_review",

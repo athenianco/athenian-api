@@ -11,8 +11,12 @@ from sqlalchemy import and_, select
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.controllers.features.github.pull_request_filter import PullRequestListMiner
 from athenian.api.controllers.features.metric_calculator import df_from_structs
-from athenian.api.controllers.miners.filters import JIRAFilter
+from athenian.api.controllers.jira import load_mapped_jira_users
+from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import extract_branches
+from athenian.api.controllers.miners.github.contributors import mine_contributors
+from athenian.api.controllers.miners.github.developer import DeveloperTopic, \
+    mine_developer_activities
 from athenian.api.controllers.miners.github.precomputed_prs import \
     load_merged_pull_request_facts_all, load_open_pull_request_facts_all, \
     load_precomputed_done_facts_all
@@ -20,7 +24,7 @@ from athenian.api.controllers.miners.github.release_mine import mine_releases
 from athenian.api.controllers.miners.jira.issue import append_pr_jira_mapping
 from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
 from athenian.api.controllers.settings import ReleaseSettings
-from athenian.api.models.metadata.github import PullRequest, Release
+from athenian.api.models.metadata.github import PullRequest, Release, User
 from athenian.precomputer.db.models import GitHubDonePullRequestFacts
 
 
@@ -28,7 +32,7 @@ class MineTopic(Enum):
     """Possible extracted item types."""
 
     prs = "prs"
-    # developers = "developers"
+    developers = "developers"
     releases = "releases"
     # jira_epics = "jira_epics"
     # jira_issues = "jira_issues"
@@ -41,10 +45,11 @@ async def mine_all_prs(repos: Collection[str],
                        prefixer: PrefixerPromise,
                        account: int,
                        meta_ids: Tuple[int, ...],
+                       sdb: databases.Database,
                        mdb: databases.Database,
                        pdb: databases.Database,
                        rdb: databases.Database,
-                       cache: Optional[aiomcache.Client]) -> pd.DataFrame:
+                       cache: Optional[aiomcache.Client]) -> Dict[str, pd.DataFrame]:
     """Extract everything we know about pull requests."""
     ghdprf = GitHubDonePullRequestFacts
     done_facts, raw_done_rows = await load_precomputed_done_facts_all(
@@ -83,7 +88,40 @@ async def mine_all_prs(repos: Collection[str],
     for col in df_prs:
         if col in df_facts:
             del df_facts[col]
-    return df_prs.join(df_facts)
+    return {"": df_prs.join(df_facts)}
+
+
+async def mine_all_developers(repos: Collection[str],
+                              branches: pd.DataFrame,
+                              default_branches: Dict[str, str],
+                              settings: ReleaseSettings,
+                              prefixer: PrefixerPromise,
+                              account: int,
+                              meta_ids: Tuple[int, ...],
+                              sdb: databases.Database,
+                              mdb: databases.Database,
+                              pdb: databases.Database,
+                              rdb: databases.Database,
+                              cache: Optional[aiomcache.Client]) -> Dict[str, pd.DataFrame]:
+    """Extract everything we know about developers."""
+    contributors = await mine_contributors(
+        repos, None, None, False, [], settings, account, meta_ids, mdb, pdb, rdb, cache)
+    logins = [u[User.login.key] for u in contributors]
+    mined_dfs, mapped_jira = await gather(
+        mine_developer_activities(
+            logins, repos, datetime(1970, 1, 1, tzinfo=timezone.utc), datetime.now(timezone.utc),
+            set(DeveloperTopic), LabelFilter.empty(), JIRAFilter.empty(),
+            settings, account, meta_ids, mdb, pdb, rdb, cache),
+        load_mapped_jira_users(account, [u[User.node_id.key] for u in contributors],
+                               sdb, mdb, cache),
+    )
+    return {
+        "_jira_mapping": pd.DataFrame({
+            "login": logins,
+            "jira_user": [mapped_jira.get(u[User.node_id.key]) for u in contributors],
+        }),
+        **{"_" + "_".join(t.name.replace("dev-", "") for t in sorted(k)): v for k, v in mined_dfs},
+    }
 
 
 async def mine_all_releases(repos: Collection[str],
@@ -93,10 +131,11 @@ async def mine_all_releases(repos: Collection[str],
                             prefixer: PrefixerPromise,
                             account: int,
                             meta_ids: Tuple[int, ...],
+                            sdb: databases.Database,
                             mdb: databases.Database,
                             pdb: databases.Database,
                             rdb: databases.Database,
-                            cache: Optional[aiomcache.Client]) -> pd.DataFrame:
+                            cache: Optional[aiomcache.Client]) -> Dict[str, pd.DataFrame]:
     """Extract everything we know about releases."""
     releases = (await mine_releases(
         repos, {}, branches, default_branches, datetime(1970, 1, 1, tzinfo=timezone.utc),
@@ -109,12 +148,13 @@ async def mine_all_releases(repos: Collection[str],
     result.set_index(Release.id.key, inplace=True)
     for col in ("commit_authors", "prs_user_login"):
         result[col] = [[s.decode() for s in subarr] for subarr in result[col].values]
-    return result
+    return {"": result}
 
 
 miners = {
     MineTopic.prs: mine_all_prs,
     MineTopic.releases: mine_all_releases,
+    MineTopic.developers: mine_all_developers,
 }
 
 
@@ -122,17 +162,18 @@ async def mine_everything(topics: Set[MineTopic],
                           settings: ReleaseSettings,
                           account: int,
                           meta_ids: Tuple[int, ...],
+                          sdb: databases.Database,
                           mdb: databases.Database,
                           pdb: databases.Database,
                           rdb: databases.Database,
                           cache: Optional[aiomcache.Client],
-                          ) -> Dict[MineTopic, pd.DataFrame]:
+                          ) -> Dict[MineTopic, Dict[str, pd.DataFrame]]:
     """Mine all the specified data topics."""
     repos = settings.native.keys()
     prefixer = Prefixer.schedule_load(meta_ids, mdb)
     branches, default_branches = await extract_branches(repos, meta_ids, mdb, cache)
     tasks = [miners[t](repos, branches, default_branches, settings, prefixer,
-                       account, meta_ids, mdb, pdb, rdb, cache)
+                       account, meta_ids, sdb, mdb, pdb, rdb, cache)
              for t in topics]
     results = await gather(*tasks, op="mine_everything")
     return dict(zip(topics, results))
