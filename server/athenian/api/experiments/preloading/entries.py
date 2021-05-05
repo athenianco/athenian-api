@@ -24,7 +24,8 @@ class PullRequestMiner(OriginalPullRequestMiner):
 
     @classmethod
     def _prs_from_binary_expression(cls, bin_exp: BinaryExpression):
-        return [bp.value for bp in bin_exp.get_children()[1].get_children()[0].get_children()]
+        return [bp.value.encode()
+                for bp in bin_exp.get_children()[1].get_children()[0].get_children()]
 
     @classmethod
     @sentry_span
@@ -78,7 +79,6 @@ class PullRequestMiner(OriginalPullRequestMiner):
             (~df["closed"] | (df["closed_at"] >= time_from))
             & (df["created_at"] < time_to)
             & (df["acc_id"].isin(meta_ids))
-            & (~df["hidden"])
             & (df["repository_full_name"].isin(repositories))
         )
 
