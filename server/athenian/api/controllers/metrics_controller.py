@@ -1,6 +1,6 @@
 from collections import defaultdict
 from itertools import chain
-from typing import Dict, List, Sequence, Set, Tuple
+from typing import Dict, Iterable, List, Sequence, Set, Tuple, Union
 
 from aiohttp import web
 import databases.core
@@ -8,7 +8,7 @@ import databases.core
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
 from athenian.api.controllers.account import get_metadata_account_ids
-from athenian.api.controllers.calculator_selector import get_calculator_for_user
+from athenian.api.controllers.calculator_selector import get_calculators_for_account
 from athenian.api.controllers.datetime_utils import split_to_time_intervals
 from athenian.api.controllers.features.code import CodeStats
 from athenian.api.controllers.jira import get_jira_installation, get_jira_installation_or_none
@@ -21,10 +21,13 @@ from athenian.api.controllers.miners.types import PRParticipants, PRParticipatio
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.reposet import resolve_repos, resolve_reposet
 from athenian.api.controllers.settings import Settings
-from athenian.api.models.web import CalculatedDeveloperMetrics, CalculatedDeveloperMetricsItem, \
+from athenian.api.models.web import CalculatedCodeCheckMetrics, CalculatedCodeCheckMetricsItem, \
+    CalculatedDeveloperMetrics, \
+    CalculatedDeveloperMetricsItem, \
     CalculatedLinearMetricValues, CalculatedPullRequestMetrics, CalculatedPullRequestMetricsItem, \
-    CalculatedReleaseMetric, CodeBypassingPRsMeasurement, CodeFilter, DeveloperMetricsRequest, \
-    ForbiddenError, ForSet, ForSetDevelopers, ReleaseMetricsRequest
+    CalculatedReleaseMetric, CodeBypassingPRsMeasurement, CodeCheckMetricsRequest, CodeFilter, \
+    DeveloperMetricsRequest, ForbiddenError, ForSet, ForSetCodeChecks, ForSetDevelopers, \
+    ReleaseMetricsRequest
 from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.models.web.pull_request_metrics_request import PullRequestMetricsRequest
 from athenian.api.request import AthenianWebRequest
@@ -38,6 +41,10 @@ FilterPRs = Tuple[str, Tuple[List[Set[str]], List[PRParticipants], LabelFilter, 
 #                service                     developers
 FilterDevs = Tuple[str, Tuple[List[Set[str]], List[str], ForSetDevelopers]]
 #                              repositories                  originals
+
+#                  service                      commit_authors
+FilterChecks = Tuple[str, Tuple[List[Set[str]], List[List[str]], JIRAFilter, ForSetCodeChecks]]
+#                               repositories                                     originals
 
 
 @weight(10)
@@ -54,7 +61,7 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
-    filters, repos = await compile_repos_and_devs_prs(filt.for_, request, filt.account, meta_ids)
+    filters, repos = await compile_filters_prs(filt.for_, request, filt.account, meta_ids)
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
 
@@ -80,11 +87,10 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
     met.exclude_inactive = filt.exclude_inactive
     met.calculated = []
 
-    services = set(s for s, _ in filters)
     release_settings, calculators = await gather(
         Settings.from_request(request, filt.account).list_release_matches(repos),
-        get_calculator_for_user(
-            services, filt.account, meta_ids, request.uid, getattr(request, "god_id", None),
+        get_calculators_for_account(
+            {s for s, _ in filters}, filt.account, meta_ids, getattr(request, "god_id", None),
             request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
             instrument=request.app["metrics_calculator"].get(),
         ),
@@ -124,24 +130,24 @@ async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web
                                 v.confidence_maxs = None
                                 v.confidence_scores = None
                         met.calculated.append(cm)
-    tasks = []
-    for service, (repos, withgroups, labels, jira, for_set) in filters:
-        tasks.append(calculate_for_set_metrics(service, repos, withgroups, labels, jira, for_set))
-    await gather(*tasks)
+    await gather(*(
+        calculate_for_set_metrics(service, repos, withgroups, labels, jira, for_set)
+        for service, (repos, withgroups, labels, jira, for_set) in filters
+    ))
     return model_response(met)
 
 
-async def compile_repos_and_devs_prs(for_sets: List[ForSet],
-                                     request: AthenianWebRequest,
-                                     account: int,
-                                     meta_ids: Tuple[int, ...],
-                                     ) -> Tuple[List[FilterPRs], Set[str]]:
+async def compile_filters_prs(for_sets: List[ForSet],
+                              request: AthenianWebRequest,
+                              account: int,
+                              meta_ids: Tuple[int, ...],
+                              ) -> Tuple[List[FilterPRs], Set[str]]:
     """
     Build the list of filters for a given list of ForSet-s.
 
-    Repository sets are dereferenced. Access permissions are checked.
+    We dereference repository sets and validate access permissions.
 
-    :param for_sets: Paired lists of repositories, developers, and PR labels.
+    :param for_sets: Paired lists of repositories, developers, etc.
     :param request: Our incoming request to take the metadata DB, the user ID, the cache.
     :param account: Account ID on behalf of which we are loading reposets.
     :return: 1. Resulting list of filters; \
@@ -165,40 +171,28 @@ async def compile_repos_and_devs_prs(for_sets: List[ForSet],
                 for k, v in with_.items():
                     if not v:
                         continue
-                    withgroup[PRParticipationKind[k.upper()]] = dk = set()
-                    for dev in v:
-                        parts = dev.split("/")
-                        dev_prefix, dev_login = parts[0], parts[-1]
-                        if dev_prefix != prefix[:-1]:
-                            raise ResponseError(InvalidRequestError(
-                                detail='providers in "with" and "repositories" do not match',
-                                pointer=".for[%d].with" % i,
-                            ))
-                        dk.add(dev_login)
+                    withgroup[PRParticipationKind[k.upper()]] = _compile_dev_logins(
+                        v, prefix, ".for[%d].%s" % (
+                            i, "withgroups" if i < len(for_set.withgroups or []) else "with"))
                 if withgroup:
                     withgroups.append(withgroup)
             labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
-            try:
-                jira = JIRAFilter.from_web(
-                    for_set.jira,
-                    await get_jira_installation(account, request.sdb, request.mdb, request.cache))
-            except ResponseError:
-                jira = JIRAFilter.empty()
+            jira = await _compile_jira(for_set, account, request)
             filters.append((service, (repogroups, withgroups, labels, jira, for_set)))
     return filters, all_repos
 
 
-async def _compile_repos_and_devs_devs(for_sets: List[ForSetDevelopers],
-                                       request: AthenianWebRequest,
-                                       account: int,
-                                       meta_ids: Tuple[int, ...],
-                                       ) -> (List[FilterDevs], List[str]):
+async def _compile_filters_devs(for_sets: List[ForSetDevelopers],
+                                request: AthenianWebRequest,
+                                account: int,
+                                meta_ids: Tuple[int, ...],
+                                ) -> (List[FilterDevs], List[str]):
     """
     Build the list of filters for a given list of ForSetDevelopers'.
 
-    Repository sets are de-referenced. Access permissions are checked.
+    We dereference repository sets and validate access permissions.
 
-    :param for_sets: Paired lists of repositories and developers.
+    :param for_sets: Paired lists of repositories, developers, and other selectors.
     :param request: Our incoming request to take the metadata DB, the user ID, the cache.
     :param account: Account ID on behalf of which we are loading reposets.
     :param meta_ids: Metadata (GitHub) account IDs.
@@ -217,25 +211,81 @@ async def _compile_repos_and_devs_devs(for_sets: List[ForSetDevelopers],
                               for group in for_set.repogroups]
             else:
                 repogroups = [set(chain.from_iterable(repos))]
-            devs = []
-            for dev in for_set.developers:
-                parts = dev.split("/")
-                dev_prefix, dev_login = parts[0], parts[-1]
-                if dev_prefix != prefix[:-1]:
-                    raise ResponseError(InvalidRequestError(
-                        detail='providers in "developers" and "repositories" do not match',
-                        pointer=".for[%d].developers" % i,
-                    ))
-                devs.append(dev_login)
+            devs = _compile_dev_logins(
+                for_set.developers, prefix, ".for[%d].developers" % i, unique=False)
             labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
-            try:
-                jira = JIRAFilter.from_web(
-                    for_set.jira,
-                    await get_jira_installation(account, request.sdb, request.mdb, request.cache))
-            except ResponseError:
-                jira = JIRAFilter.empty()
+            jira = await _compile_jira(for_set, account, request)
             filters.append((service, (repogroups, devs, labels, jira, for_set)))
     return filters, all_repos
+
+
+async def _compile_filters_checks(for_sets: List[ForSetCodeChecks],
+                                  request: AthenianWebRequest,
+                                  account: int,
+                                  meta_ids: Tuple[int, ...],
+                                  ) -> List[FilterChecks]:
+    """
+    Build the list of filters for a given list of ForSetCodeChecks'.
+
+    We dereference repository sets and validate access permissions.
+
+    :param for_sets: Paired lists of repositories, commit authors, etc.
+    :param request: Our incoming request to take the metadata DB, the user ID, the cache.
+    :param account: Account ID on behalf of which we are loading reposets.
+    :return: Resulting list of filters.
+    """
+    filters = []
+    checkers = {}
+    all_repos = set()
+    async with request.sdb.connection() as sdb_conn:
+        for i, for_set in enumerate(for_sets):
+            repos, prefix, service = await _extract_repos(
+                request, account, meta_ids, for_set.repositories, i, all_repos, checkers, sdb_conn)
+            if for_set.repogroups is not None:
+                repogroups = [set(chain.from_iterable(repos[i] for i in group))
+                              for group in for_set.repogroups]
+            else:
+                repogroups = [set(chain.from_iterable(repos))]
+            commit_author_groups = []
+            for commit_authors in ((for_set.commit_author_groups or []) +
+                                   ([for_set.commit_authors] if for_set.commit_authors else [])):
+                if ca_group := _compile_dev_logins(commit_authors, prefix, ".for[%d].%s" % (
+                        i, "commit_author_groups"
+                        if i < len(for_set.commit_author_groups or []) else "commit_authors")):
+                    commit_author_groups.append(sorted(ca_group))
+            jira = await _compile_jira(for_set, account, request)
+            filters.append((service, (repogroups, commit_author_groups, jira, for_set)))
+    return filters
+
+
+def _compile_dev_logins(developers: Iterable[str],
+                        prefix: str,
+                        pointer: str,
+                        unique: bool = True) -> Union[List[str], Set[str]]:
+    devs = []
+    prefix = prefix.rstrip("/")
+    for dev in developers:
+        parts = dev.split("/")
+        dev_prefix, dev_login = parts[0], parts[-1]
+        if dev_prefix != prefix:
+            raise ResponseError(InvalidRequestError(
+                detail='User prefix "%s" does not match with the repository prefix "%s"' % (
+                    dev_prefix, prefix),
+                pointer=pointer,
+            ))
+        devs.append(dev_login)
+    if unique:
+        return set(devs)
+    return devs
+
+
+async def _compile_jira(for_set, account: int, request: AthenianWebRequest) -> JIRAFilter:
+    try:
+        return JIRAFilter.from_web(
+            for_set.jira,
+            await get_jira_installation(account, request.sdb, request.mdb, request.cache))
+    except ResponseError:
+        return JIRAFilter.empty()
 
 
 async def _extract_repos(request: AthenianWebRequest,
@@ -301,11 +351,11 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
         filt.date_from, filt.date_to, filt.granularity, filt.timezone)
     with_author = [s.rsplit("/", 1)[1] for s in (filt.with_author or [])]
     with_committer = [s.rsplit("/", 1)[1] for s in (filt.with_committer or [])]
-    calculator = await get_calculator_for_user(
-        "github", filt.account, meta_ids, request.uid, getattr(request, "god_id", None),
+    calculator = (await get_calculators_for_account(
+        ["github"], filt.account, meta_ids, getattr(request, "god_id", None),
         request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
         instrument=request.app["metrics_calculator"].get(),
-    )
+    ))["github"]
     stats = await calculator.calc_code_metrics_github(
         FilterCommitsProperty.BYPASSING_PRS, time_intervals, repos, with_author,
         with_committer)  # type: List[CodeStats]
@@ -330,7 +380,7 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
-    filters, all_repos = await _compile_repos_and_devs_devs(
+    filters, all_repos = await _compile_filters_devs(
         filt.for_, request, filt.account, meta_ids)
     if filt.date_to < filt.date_from:
         raise ResponseError(InvalidRequestError(
@@ -353,9 +403,8 @@ async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web
     tasks = []
     for_sets = []
 
-    services = set(s for s, _ in filters)
-    calculators = await get_calculator_for_user(
-        services, filt.account, meta_ids, request.uid, getattr(request, "god_id", None),
+    calculators = await get_calculators_for_account(
+        {s for s, _ in filters}, filt.account, meta_ids, getattr(request, "god_id", None),
         request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
         instrument=request.app["metrics_calculator"].get(),
     )
@@ -438,12 +487,11 @@ async def calc_metrics_releases_linear(request: AthenianWebRequest, body: dict) 
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
 
-    services = grouped_repos.keys()
     tasks = [
         Settings.from_request(request, filt.account).list_release_matches(repos),
         get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
-        get_calculator_for_user(
-            services, filt.account, meta_ids, request.uid, getattr(request, "god_id", None),
+        get_calculators_for_account(
+            grouped_repos.keys(), filt.account, meta_ids, getattr(request, "god_id", None),
             request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
             instrument=request.app["metrics_calculator"].get(),
         ),
@@ -495,10 +543,10 @@ async def calc_metrics_releases_linear(request: AthenianWebRequest, body: dict) 
                             v.confidence_scores = None
                     met.append(cm)
 
-    tasks = []
-    for service, repos in grouped_repos.items():
-        tasks.append(calculate_for_set_metrics(service, repos, grouped_for_sets[service]))
-    await gather(*tasks)
+    await gather(*(
+        calculate_for_set_metrics(service, repos, grouped_for_sets[service])
+        for service, repos in grouped_repos.items()
+    ))
     return model_response(met)
 
 
@@ -506,4 +554,77 @@ async def calc_metrics_releases_linear(request: AthenianWebRequest, body: dict) 
 async def calc_code_check_runs(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate metrics on continuous integration runs, such as GitHub Actions, Jenkins, Circle, \
     etc."""
-    raise NotImplementedError
+    try:
+        filt = CodeCheckMetricsRequest.from_dict(body)
+    except ValueError as e:
+        # for example, passing a date with day=32
+        return ResponseError(InvalidRequestError("?", detail=str(e))).response
+    meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
+    filters, calculators = await gather(
+        _compile_filters_checks(filt.for_, request, filt.account, meta_ids),
+    )
+    time_intervals, tzoffset = split_to_time_intervals(
+        filt.date_from, filt.date_to, filt.granularities, filt.timezone)
+    met = CalculatedCodeCheckMetrics()
+    met.date_from = filt.date_from
+    met.date_to = filt.date_to
+    met.timezone = filt.timezone
+    met.granularities = filt.granularities
+    met.quantiles = filt.quantiles
+    met.metrics = filt.metrics
+    met.split_by_check_runs = filt.split_by_check_runs
+    met.calculated = []
+    calculators = await get_calculators_for_account(
+        {s for s, _ in filters}, filt.account, meta_ids, getattr(request, "god_id", None),
+        request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
+        instrument=request.app["metrics_calculator"].get(),
+    )
+
+    @sentry_span
+    async def calculate_for_set_metrics(service, repos, ca_groups, jira, for_set):
+        calculator = calculators[service]
+        metric_values, group_suite_counts, suite_sizes = \
+            await calculator.calc_check_run_metrics_line_github(
+                filt.metrics, time_intervals, filt.quantiles or (0, 1),
+                repos, ca_groups, filt.split_by_check_runs, jira)
+        mrange = range(len(met.metrics))
+        for ca_group_index, ca_group in enumerate(metric_values):
+            for repos_group_index, repos_group in enumerate(ca_group):
+                group_suite_counts = group_suite_counts[ca_group_index, repos_group_index]
+                total_group_suites = group_suite_counts.sum()
+                for suite_size_group_index, suite_size_group in enumerate(repos_group):
+                    group_for_set = for_set \
+                        .select_commit_authors_group(ca_group_index) \
+                        .select_repogroup(repos_group_index)  # type: ForSetCodeChecks
+                    if filt.split_by_check_runs:
+                        suite_size = suite_sizes[suite_size_group_index]
+                        group_suites_count_ratio = \
+                            group_suite_counts[suite_size_group_index] / total_group_suites
+                    else:
+                        suite_size = group_suites_count_ratio = None
+                    for granularity, ts, mvs in zip(
+                            filt.granularities, time_intervals, suite_size_group):
+                        cm = CalculatedCodeCheckMetricsItem(
+                            for_=group_for_set,
+                            granularity=granularity,
+                            check_runs=suite_size,
+                            suites_ratio=group_suites_count_ratio,
+                            values=[CalculatedLinearMetricValues(
+                                date=(d - tzoffset).date(),
+                                values=[mvs[i][m].value for m in mrange],
+                                confidence_mins=[mvs[i][m].confidence_min for m in mrange],
+                                confidence_maxs=[mvs[i][m].confidence_max for m in mrange],
+                                confidence_scores=[mvs[i][m].confidence_score() for m in mrange],
+                            ) for i, d in enumerate(ts[:-1])])
+                        for v in cm.values:
+                            if sum(1 for c in v.confidence_scores if c is not None) == 0:
+                                v.confidence_mins = None
+                                v.confidence_maxs = None
+                                v.confidence_scores = None
+                        met.calculated.append(cm)
+
+    await gather(*(
+        calculate_for_set_metrics(service, repos, ca_groups, jira, for_set)
+        for service, (repos, ca_groups, jira, for_set) in filters
+    ))
+    return model_response(met)

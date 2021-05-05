@@ -5,9 +5,9 @@ from aiohttp import web
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
 from athenian.api.controllers.account import get_metadata_account_ids
-from athenian.api.controllers.calculator_selector import get_calculator_for_user
+from athenian.api.controllers.calculator_selector import get_calculators_for_account
 from athenian.api.controllers.features.histogram import HistogramParameters, Scale
-from athenian.api.controllers.metrics_controller import compile_repos_and_devs_prs
+from athenian.api.controllers.metrics_controller import compile_filters_prs
 from athenian.api.controllers.settings import Settings
 from athenian.api.models.web import InvalidRequestError
 from athenian.api.models.web.calculated_pull_request_histogram import \
@@ -26,13 +26,12 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
-    filters, repos = await compile_repos_and_devs_prs(filt.for_, request, filt.account, meta_ids)
+    filters, repos = await compile_filters_prs(filt.for_, request, filt.account, meta_ids)
     time_from, time_to = filt.resolve_time_from_and_to()
-    services = set(s for s, _ in filters)
     release_settings, calculators = await gather(
         Settings.from_request(request, filt.account).list_release_matches(repos),
-        get_calculator_for_user(
-            services, filt.account, meta_ids, request.uid, getattr(request, "god_id", None),
+        get_calculators_for_account(
+            {s for s, _ in filters}, filt.account, meta_ids, getattr(request, "god_id", None),
             request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
             instrument=request.app["metrics_calculator"].get(),
         ),

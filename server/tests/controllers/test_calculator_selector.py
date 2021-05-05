@@ -3,12 +3,11 @@ import sys
 import pytest
 from sqlalchemy import insert
 
-from athenian.api.controllers.calculator_selector import get_calculator_for_user, \
+from athenian.api.controllers.calculator_selector import get_calculators_for_account, \
     METRIC_ENTRIES_VARIATIONS_PREFIX
 from athenian.api.controllers.features.entries import \
     MetricEntriesCalculator as OriginalMetricEntriesCalculator
-from athenian.api.models.state.models import AccountFeature, Feature, \
-    FeatureComponent
+from athenian.api.models.state.models import AccountFeature, Feature, FeatureComponent
 
 
 @pytest.fixture
@@ -43,10 +42,10 @@ async def test_get_calculator_for_user_no_global_feature(sdb, mdb, pdb, rdb, cac
         ),
     )
 
-    calc = await get_calculator_for_user(
-        "github", 1, (1, ), "1", None, sdb, mdb, pdb, rdb, cache,
+    calc = (await get_calculators_for_account(
+        ["github"], 1, (1, ), None, sdb, mdb, pdb, rdb, cache,
         base_module=base_testing_module,
-    )
+    ))["github"]
     assert isinstance(calc, OriginalMetricEntriesCalculator)
 
 
@@ -64,10 +63,10 @@ async def test_get_calculator_for_user_disabled_global_feature(sdb, mdb, pdb, rd
         ),
     )
 
-    calc = await get_calculator_for_user(
-        "github", 1, (1, ), "1", None, sdb, mdb, pdb, rdb, cache,
+    calc = (await get_calculators_for_account(
+        ["github"], 1, (1, ), None, sdb, mdb, pdb, rdb, cache,
         base_module=base_testing_module,
-    )
+    ))["github"]
     assert isinstance(calc, OriginalMetricEntriesCalculator)
 
 
@@ -85,10 +84,10 @@ async def test_get_calculator_for_user_no_feature_for_account(sdb, mdb, pdb, rdb
         ),
     )
 
-    calc = await get_calculator_for_user(
-        "github", 1, (1, ), "1", None,
+    calc = (await get_calculators_for_account(
+        ["github"], 1, (1, ), None,
         sdb, mdb, pdb, rdb, cache, base_module=base_testing_module,
-    )
+    ))["github"]
     assert isinstance(calc, OriginalMetricEntriesCalculator)
 
 
@@ -114,10 +113,10 @@ async def test_get_calculator_for_user_with_feature(
         ),
     )
 
-    calc = await get_calculator_for_user(
-        "github", 1, (1, ), "1", None, sdb, mdb, pdb, rdb, cache,
+    calc = (await get_calculators_for_account(
+        ["github"], 1, (1, ), None, sdb, mdb, pdb, rdb, cache,
         base_module=base_testing_module,
-    )
+    ))["github"]
     assert isinstance(calc, MetricEntriesCalculator)
 
 
@@ -143,13 +142,18 @@ async def test_get_calculator_for_user_with_feature_multiple_services(
         ),
     )
 
-    calcs = await get_calculator_for_user(
-        ["github", "bitbucket"], 1, (1, ), "1", None, sdb, mdb, pdb, rdb, cache,
+    calcs = await get_calculators_for_account(
+        ["github"], 1, (1, ), None, sdb, mdb, pdb, rdb, cache,
         base_module=base_testing_module,
     )
-    assert len(calcs) == 2
+    assert len(calcs) == 1
     assert isinstance(calcs["github"], MetricEntriesCalculator)
-    assert isinstance(calcs["bitbucket"], OriginalMetricEntriesCalculator)
+
+    with pytest.raises(AssertionError):
+        await get_calculators_for_account(
+            ["github", "bitbucket"], 1, (1,), None, sdb, mdb, pdb, rdb, cache,
+            base_module=base_testing_module,
+        )
 
 
 @pytest.mark.parametrize("is_god", (True, False))
@@ -180,10 +184,10 @@ async def test_get_calculator_for_user_with_feature_god_only(
         ),
     )
 
-    calc = await get_calculator_for_user(
-        "github", 1, (1, ), "1", "1" if is_god else None, sdb, mdb, pdb, rdb, cache,
+    calc = (await get_calculators_for_account(
+        ["github"], 1, (1, ), "1" if is_god else None, sdb, mdb, pdb, rdb, cache,
         base_module=base_testing_module,
-    )
+    ))["github"]
 
     expected_cls = MetricEntriesCalculator if is_god else OriginalMetricEntriesCalculator
     assert isinstance(calc, expected_cls)

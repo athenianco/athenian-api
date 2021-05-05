@@ -357,18 +357,19 @@ class MetricEntriesCalculator:
                                                  commit_authors: List[List[str]],
                                                  split_by_check_runs: bool,
                                                  jira: JIRAFilter,
-                                                 ) -> Tuple[np.ndarray, Sequence[int]]:
+                                                 ) -> Tuple[np.ndarray, np.ndarray, Sequence[int]]:
         """
         Calculate the check run metrics on GitHub.
 
-        :return: check_runs x commit_authors x repositories x granularities x time intervals x metrics.
+        :return: commit_authors x repositories x check_runs x granularities x time intervals x metrics.
         """  # noqa
         calc = CheckRunBinnedMetricCalculator(metrics, quantiles)
-        df_check_runs, groups, size_counts = await self._mine_and_group_check_runs(
-            time_intervals[0][0], time_intervals[0][-1], repositories, commit_authors,
-            split_by_check_runs, jira)
+        df_check_runs, groups, group_suite_counts, suite_sizes = \
+            await self._mine_and_group_check_runs(
+                time_intervals[0][0], time_intervals[0][-1], repositories, commit_authors,
+                split_by_check_runs, jira)
         values = calc(df_check_runs, time_intervals, groups)
-        return values, size_counts
+        return values, group_suite_counts, suite_sizes
 
     @sentry_span
     @cached(
@@ -395,29 +396,32 @@ class MetricEntriesCalculator:
                                                     commit_authors: List[List[str]],
                                                     split_by_check_runs: bool,
                                                     jira: JIRAFilter,
-                                                    ) -> Tuple[np.ndarray, Sequence[int]]:
+                                                    ) -> Tuple[np.ndarray,
+                                                               np.ndarray,
+                                                               Sequence[int]]:
         """
         Calculate the check run metrics on GitHub.
 
-        :return: defs x check_runs x commit_authors x repositories -> List[Tuple[metric ID, Histogram]].
+        :return: defs x commit_authors x repositories x check_runs -> List[Tuple[metric ID, Histogram]].
         """  # noqa
         try:
             calc = CheckRunBinnedHistogramCalculator(defs.values(), quantiles)
         except KeyError as e:
             raise ValueError("Unsupported metric") from e
-        df_check_runs, groups, size_counts = await self._mine_and_group_check_runs(
-            time_from, time_to, repositories, commit_authors, split_by_check_runs, jira)
+        df_check_runs, groups, group_suite_counts, suite_sizes = \
+            await self._mine_and_group_check_runs(
+                time_from, time_to, repositories, commit_authors, split_by_check_runs, jira)
         hists = calc(df_check_runs, [[time_from, time_to]], groups, defs)
         reshaped = np.full(hists.shape[:-1], None, object)
         reshaped_seq = reshaped.ravel()
         pos = 0
-        for check_runs_groups, metrics in zip(hists, defs.values()):
-            for commit_author_groups in check_runs_groups:
-                for repo_groups in commit_author_groups:
-                    for group_ts in repo_groups:
-                        reshaped_seq[pos] = [(m, hist) for hist, m in zip(group_ts[0][0], metrics)]
+        for commit_author_group, metrics in zip(hists, defs.values()):
+            for repo_group in commit_author_group:
+                for check_runs_group in repo_group:
+                    for ts_group in check_runs_group:
+                        reshaped_seq[pos] = [(m, hist) for hist, m in zip(ts_group[0][0], metrics)]
                         pos += 1
-        return reshaped, size_counts
+        return reshaped, group_suite_counts, suite_sizes
 
     async def _mine_and_group_check_runs(self,
                                          time_from: datetime,
@@ -426,7 +430,10 @@ class MetricEntriesCalculator:
                                          commit_authors: List[List[str]],
                                          split_by_check_runs: bool,
                                          jira: JIRAFilter,
-                                         ) -> Tuple[pd.DataFrame, np.ndarray, Sequence[int]]:
+                                         ) -> Tuple[pd.DataFrame,
+                                                    np.ndarray,  # groups
+                                                    np.ndarray,  # how many suites in each group
+                                                    Sequence[int]]:  # distinct suite sizes
         all_repositories = set(chain.from_iterable(repositories))
         all_commit_authors = set(chain.from_iterable(commit_authors))
         df_check_runs = await mine_check_runs(
@@ -435,15 +442,20 @@ class MetricEntriesCalculator:
         repo_grouper = partial(group_by_repo, CheckRun.repository_full_name.key, repositories)
         commit_author_grouper = partial(group_check_runs_by_commit_authors, commit_authors)
         if split_by_check_runs:
-            check_runs_grouper, size_counts = make_check_runs_count_grouper(df_check_runs)
+            check_runs_grouper, suite_node_ids, suite_sizes = make_check_runs_count_grouper(
+                df_check_runs)
         else:
-            size_counts = [1]
+            suite_sizes = [1]
 
             def check_runs_grouper(df: pd.DataFrame) -> List[np.ndarray]:
                 return [np.arange(len(df))]
         groups = group_to_indexes(
-            df_check_runs, check_runs_grouper, commit_author_grouper, repo_grouper)
-        return df_check_runs, groups, size_counts
+            df_check_runs, commit_author_grouper, repo_grouper, check_runs_grouper)
+        group_suite_counts = np.zeros_like(groups, dtype=int)
+        if split_by_check_runs:
+            for i, group in enumerate(groups.ravel()):
+                group_suite_counts[i] = len(np.unique(suite_node_ids[group]))
+        return df_check_runs, groups, group_suite_counts, suite_sizes
 
     async def calc_pull_request_facts_github(self,
                                              time_from: datetime,
@@ -659,8 +671,7 @@ def _compose_cache_key_participants(participants: List[PRParticipants]) -> str:
                     for p in participants)
 
 
-def get_calculator(
-    service: str,
+def make_calculator(
     account: int,
     meta_ids: Tuple[int, ...],
     mdb: Database,
