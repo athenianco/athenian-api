@@ -309,12 +309,15 @@ async def _epic_flow(return_: Set[str],
     else:
         priority_ids = []
     if JIRAFilterReturn.STATUSES in return_:
+        # status IDs are account-wide unique
         status_ids = np.unique(np.concatenate([epics_df[Issue.status_id.key].values,
                                                children_columns[Issue.status_id.key]]))
-        status_project_map = dict(zip(epics_df[Issue.status_id.key].values,
-                                      epics_df[Issue.project_id.key].values))
-        status_project_map.update(zip(children_columns[Issue.status_id.key],
-                                      children_columns[Issue.project_id.key]))
+        status_project_map = defaultdict(set)
+        for status_id, project_id in chain(zip(epics_df[Issue.status_id.key].values,
+                                               epics_df[Issue.project_id.key].values),
+                                           zip(children_columns[Issue.status_id.key],
+                                               children_columns[Issue.project_id.key])):
+            status_project_map[status_id].add(project_id)
     else:
         status_ids = []
         status_project_map = {}
@@ -440,8 +443,10 @@ async def _issue_flow(return_: Set[str],
         priorities = []
     if JIRAFilterReturn.STATUSES in return_:
         statuses = issues[Issue.status_id.key].unique()
-        status_project_map = dict(zip(issues[Issue.status_id.key].values,
-                                      issues[Issue.project_id.key].values))
+        status_project_map = defaultdict(set)
+        for status_id, project_id in zip(issues[Issue.status_id.key].values,
+                                         issues[Issue.project_id.key].values):
+            status_project_map[status_id].add(project_id)
     else:
         statuses = []
         status_project_map = {}
@@ -710,7 +715,7 @@ async def _fetch_priorities(priorities: Collection[str],
 
 @sentry_span
 async def _fetch_statuses(statuses: Collection[str],
-                          status_project_map: Dict[str, str],
+                          status_project_map: Dict[str, Set[str]],
                           acc_id: int,
                           return_: Set[str],
                           mdb: databases.Database,
@@ -726,10 +731,11 @@ async def _fetch_statuses(statuses: Collection[str],
             Status.acc_id == acc_id,
         ))
         .order_by(Status.name))
+    # status IDs are account-wide unique
     return [JIRAStatus(name=row[Status.name.key],
                        stage=row[Status.category_name.key],
-                       project=status_project_map[row[Status.id.key]])
-            for row in rows]
+                       project=project)
+            for row in rows for project in status_project_map[row[Status.id.key]]]
 
 
 @sentry_span
