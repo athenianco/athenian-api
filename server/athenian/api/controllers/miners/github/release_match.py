@@ -26,7 +26,7 @@ from athenian.api.controllers.miners.github.dag_accelerated import extract_subda
 from athenian.api.controllers.miners.github.precomputed_prs import \
     load_merged_unreleased_pull_request_facts, load_precomputed_pr_releases, \
     update_unreleased_prs
-from athenian.api.controllers.miners.github.release_load import dummy_releases_df, load_releases
+from athenian.api.controllers.miners.github.release_load import dummy_releases_df, ReleaseLoader
 from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
     new_released_prs_df
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
@@ -225,6 +225,8 @@ map_prs_to_releases = PullRequestToReleaseMapper.map_prs_to_releases
 class ReleaseToPullRequestMapper:
     """Mapper from releases to pull requests."""
 
+    release_loader = ReleaseLoader
+
     @classmethod
     @sentry_span
     async def map_releases_to_prs(cls,
@@ -359,7 +361,7 @@ class ReleaseToPullRequestMapper:
             # we have to load releases in two separate batches: before and after time_from
             # that's because the release strategy can change depending on the time range
             # see ENG-710 and ENG-725
-            releases_in_time_range, matched_bys = await load_releases(
+            releases_in_time_range, matched_bys = await cls.release_loader.load_releases(
                 repos, branches, default_branches, time_from, time_to,
                 release_settings, account, meta_ids, mdb, pdb, rdb, cache)
         else:
@@ -389,7 +391,7 @@ class ReleaseToPullRequestMapper:
             today = datetime.combine((datetime.now(timezone.utc) + timedelta(days=1)).date(),
                                      datetime.min.time(), tzinfo=timezone.utc)
             if today > time_to:
-                until_today_task = load_releases(
+                until_today_task = cls.release_loader.load_releases(
                     repos, branches, default_branches, time_to, today,
                     consistent_release_settings, account, meta_ids, mdb, pdb, rdb, cache)
         if until_today_task is None:
@@ -413,12 +415,14 @@ class ReleaseToPullRequestMapper:
         tag_lookbehind_time_from = time_from - timedelta(days=2 * 365)
         tasks = [
             until_today_task,
-            load_releases(repos_matched_by_branch, branches, default_branches,
-                          branch_lookbehind_time_from, time_from, consistent_release_settings,
-                          account, meta_ids, mdb, pdb, rdb, cache),
-            load_releases(repos_matched_by_tag, branches, default_branches,
-                          tag_lookbehind_time_from, time_from, consistent_release_settings,
-                          account, meta_ids, mdb, pdb, rdb, cache),
+            cls.release_loader.load_releases(repos_matched_by_branch, branches, default_branches,
+                                             branch_lookbehind_time_from, time_from,
+                                             consistent_release_settings, account, meta_ids,
+                                             mdb, pdb, rdb, cache),
+            cls.release_loader.load_releases(repos_matched_by_tag, branches, default_branches,
+                                             tag_lookbehind_time_from, time_from,
+                                             consistent_release_settings, account, meta_ids,
+                                             mdb, pdb, rdb, cache),
             cls._fetch_repository_first_commit_dates(repos_matched_by_branch, account, meta_ids,
                                                      mdb, pdb, cache),
         ]
@@ -442,7 +446,7 @@ class ReleaseToPullRequestMapper:
                         repo_births_dates, branch_lookbehind_time_from)])
                     if not hard_repos:
                         break
-                    extra_releases, _ = await load_releases(
+                    extra_releases, _ = await cls.release_loader.load_releases(
                         hard_repos, branches, default_branches,
                         branch_lookbehind_time_from - deeper_step, branch_lookbehind_time_from,
                         consistent_release_settings, account, meta_ids, mdb, pdb, rdb, cache)
