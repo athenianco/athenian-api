@@ -143,4 +143,4 @@ class PullRequestMiner(OriginalPullRequestMiner):
 class MetricEntriesCalculator(OriginalMetricEntriesCalculator):
     """Calculator for different metrics using preloaded DataFrames."""
 
-    PRMiner = PullRequestMiner
+    miner = PullRequestMiner
