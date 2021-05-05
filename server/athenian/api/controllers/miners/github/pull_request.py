@@ -221,10 +221,10 @@ class PullRequestMiner:
                 participants.get(PRParticipationKind.AUTHOR, []),
                 participants.get(PRParticipationKind.MERGER, []),
                 jira, release_settings, updated_min, updated_max,
-                pdags, account, meta_ids, mdb, pdb, rdb, cache, pr_blacklist, truncate),
+                pdags, account, meta_ids, mdb, pdb, rdb, cache, pr_blacklist, None, truncate),
             cls.fetch_prs(
                 time_from, time_to, repositories, participants, labels, jira,
-                exclude_inactive, pr_blacklist, branches, pdags, account, meta_ids,
+                exclude_inactive, pr_blacklist, None, branches, pdags, account, meta_ids,
                 mdb, pdb, cache, updated_min=updated_min, updated_max=updated_max),
         ]
         # the following is a very rough approximation regarding updated_min/max:
@@ -251,7 +251,7 @@ class PullRequestMiner:
             # These PRs are released by branch and not by tag, and we require by tag.
             # Now fetch only them, respecting the filters.
             # TODO(vmarkovtsev): do not load the releases from scratch in map_releases_to_prs()
-            inverse_pr_blacklist = PullRequest.node_id.in_(
+            pr_whitelist = PullRequest.node_id.in_(
                 list(chain.from_iterable(missed_prs.values())))
             tasks = [
                 map_releases_to_prs(
@@ -259,10 +259,10 @@ class PullRequestMiner:
                     participants.get(PRParticipationKind.AUTHOR, []),
                     participants.get(PRParticipationKind.MERGER, []),
                     jira, release_settings, updated_min, updated_max, pdags,
-                    account, meta_ids, mdb, pdb, rdb, cache, inverse_pr_blacklist, truncate),
+                    account, meta_ids, mdb, pdb, rdb, cache, None, pr_whitelist, truncate),
                 cls.fetch_prs(
                     time_from, time_to, missed_prs, participants, labels, jira, exclude_inactive,
-                    inverse_pr_blacklist, branches, branch_dags, account, meta_ids,
+                    None, pr_whitelist, branches, branch_dags, account, meta_ids,
                     mdb, pdb, cache, updated_min=updated_min, updated_max=updated_max),
             ]
             (missed_released_prs, _, _, _), (missed_prs, _) = await gather(*tasks)
@@ -631,6 +631,7 @@ class PullRequestMiner:
                         jira: JIRAFilter,
                         exclude_inactive: bool,
                         pr_blacklist: Optional[BinaryExpression],
+                        pr_whitelist: Optional[BinaryExpression],
                         branches: pd.DataFrame,
                         dags: Optional[Dict[str, DAG]],
                         account: int,
@@ -659,7 +660,7 @@ class PullRequestMiner:
         assert isinstance(pdb, databases.Database)
         pr_list_coro = cls._fetch_prs_by_filters(
             time_from, time_to, repositories, participants, labels, jira, exclude_inactive,
-            pr_blacklist, meta_ids, mdb, cache, columns=columns,
+            pr_blacklist, pr_whitelist, meta_ids, mdb, cache, columns=columns,
             updated_min=updated_min, updated_max=updated_max,
         )
         if columns is not PullRequest and PullRequest.merge_commit_id not in columns and \
@@ -817,6 +818,7 @@ class PullRequestMiner:
                                     jira: JIRAFilter,
                                     exclude_inactive: bool,
                                     pr_blacklist: Optional[BinaryExpression],
+                                    pr_whitelist: Optional[BinaryExpression],
                                     meta_ids: Tuple[int, ...],
                                     mdb: databases.Database,
                                     cache: Optional[aiomcache.Client],
@@ -843,6 +845,8 @@ class PullRequestMiner:
             filters.append(PullRequest.updated_at.between(updated_min, updated_max))
         if pr_blacklist is not None:
             filters.append(pr_blacklist)
+        if pr_whitelist is not None:
+            filters.append(pr_whitelist)
         if len(participants) == 1:
             if PRParticipationKind.AUTHOR in participants:
                 filters.append(PullRequest.user_login.in_(

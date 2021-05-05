@@ -57,6 +57,7 @@ from athenian.api.models.metadata.jira import Base as JiraBase
 from athenian.api.models.persistentdata.models import Base as PersistentdataBase
 from athenian.api.models.precomputed.models import GitHubBase as PrecomputedBase
 from athenian.api.models.state.models import Base as StateBase
+from athenian.api.preloading.cache import MemoryCachePreloader
 from athenian.precomputer.db import dereference_schemas as dereference_precomputed_schemas
 from tests.sample_db_data import fill_metadata_session, fill_state_session
 
@@ -289,17 +290,29 @@ def slack():
 @pytest.fixture(scope="function")
 async def app(metadata_db, state_db, precomputed_db, persistentdata_db, slack) -> AthenianApp:
     logging.getLogger("connexion.operation").setLevel("WARNING")
-    return AthenianApp(mdb_conn=metadata_db,
-                       sdb_conn=state_db,
-                       pdb_conn=precomputed_db,
-                       rdb_conn=persistentdata_db,
-                       ui=False,
-                       auth0_cls=TestAuth0,
-                       kms_cls=FakeKMS,
-                       slack=slack,
-                       client_max_size=256 * 1024,
-                       max_load=15,
-                       with_pdb_schema_checks=False)
+    with_preloading = os.getenv("WITH_PRELOADING", "0") == "1"
+    app_kwargs = dict(mdb_conn=metadata_db,
+                      sdb_conn=state_db,
+                      pdb_conn=precomputed_db,
+                      rdb_conn=persistentdata_db,
+                      ui=False,
+                      auth0_cls=TestAuth0,
+                      kms_cls=FakeKMS,
+                      slack=slack,
+                      client_max_size=256 * 1024,
+                      max_load=15,
+                      with_pdb_schema_checks=False)
+
+    mc_preloader = MemoryCachePreloader()
+    if with_preloading:
+        app_kwargs["on_shutdown_callbacks"] = [mc_preloader.shutdown]
+
+    app = AthenianApp(**app_kwargs)
+    if with_preloading:
+        app.on_dbs_connected(mc_preloader.preload)
+
+    await app.wait_for_dbs_connected_callbacks()
+    return app
 
 
 @pytest.fixture(scope="function")

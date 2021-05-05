@@ -216,6 +216,7 @@ async def _find_old_released_prs(commits: np.ndarray,
                                  updated_min: Optional[datetime],
                                  updated_max: Optional[datetime],
                                  pr_blacklist: Optional[BinaryExpression],
+                                 pr_whitelist: Optional[BinaryExpression],
                                  meta_ids: Tuple[int, ...],
                                  mdb: databases.Database,
                                  cache: Optional[aiomcache.Client],
@@ -241,6 +242,8 @@ async def _find_old_released_prs(commits: np.ndarray,
         filters.append(PullRequest.merged_by_login.in_any_values(mergers))
     if pr_blacklist is not None:
         filters.append(pr_blacklist)
+    if pr_whitelist is not None:
+        filters.append(pr_whitelist)
     if not jira:
         query = select([PullRequest]).where(and_(*filters))
     else:
@@ -303,6 +306,7 @@ async def map_releases_to_prs(repos: Collection[str],
                               rdb: databases.Database,
                               cache: Optional[aiomcache.Client],
                               pr_blacklist: Optional[BinaryExpression] = None,
+                              pr_whitelist: Optional[BinaryExpression] = None,
                               truncate: bool = True,
                               ) -> Tuple[pd.DataFrame,
                                          pd.DataFrame,
@@ -329,6 +333,7 @@ async def map_releases_to_prs(repos: Collection[str],
     assert isinstance(mdb, databases.Database)
     assert isinstance(pdb, databases.Database)
     assert isinstance(pr_blacklist, (BinaryExpression, type(None)))
+    assert isinstance(pr_whitelist, (BinaryExpression, type(None)))
     assert (updated_min is None) == (updated_max is None)
 
     async def fetch_pdags():
@@ -367,7 +372,7 @@ async def map_releases_to_prs(repos: Collection[str],
         all_observed_repos = all_observed_repos[order]
         prs = await _find_old_released_prs(
             all_observed_commits, all_observed_repos, time_from, authors, mergers, jira,
-            updated_min, updated_max, pr_blacklist, meta_ids, mdb, cache)
+            updated_min, updated_max, pr_blacklist, pr_whitelist, meta_ids, mdb, cache)
     else:
         prs = pd.DataFrame(columns=[c.name for c in PullRequest.__table__.columns
                                     if c.name != PullRequest.node_id.key])

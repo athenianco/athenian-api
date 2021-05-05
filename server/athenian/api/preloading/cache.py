@@ -112,15 +112,21 @@ class CachedDataFrame:
         :param uncast: whether to uncast the columns dtypes, see the `_squeeze` method.
 
         """
-        df = self._df[mask].copy()
+        df = self._df.take(np.nonzero(mask)[0])
         if columns:
             df = df[columns]
         if uncast:
             for col in self._identifier_cols:
-                df[col.key] = df[col.key].apply(lambda s: s.decode("utf8"))
+                try:
+                    df[col.key] = df[col.key].apply(lambda s: s.decode("utf8"))
+                except KeyError:
+                    continue
 
             for col in self._categorical_cols:
-                df[col.key] = df[col.key].astype("object").replace({np.nan: None})
+                try:
+                    df[col.key] = df[col.key].astype("object").replace({np.nan: None})
+                except KeyError:
+                    continue
         if index:
             df.set_index(index, inplace=True)
 
@@ -288,10 +294,8 @@ def get_memory_cache_options() -> Dict[str, Dict]:
                     PullRequest.repository_full_name,
                     PullRequest.updated_at,
                     PullRequest.user_login,
-                    PullRequest.hidden,
                     PullRequest.additions,
                     PullRequest.deletions,
-                    PullRequest.htmlurl,
                 ],
                 "categorical_cols": [
                     PullRequest.acc_id,
@@ -303,7 +307,6 @@ def get_memory_cache_options() -> Dict[str, Dict]:
                     PullRequest.node_id,
                     PullRequest.merge_commit_id,
                     PullRequest.merge_commit_sha,
-                    PullRequest.htmlurl,
                 ],
             },
         },

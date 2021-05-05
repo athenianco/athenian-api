@@ -304,7 +304,7 @@ def main() -> Optional[AthenianApp]:
         client_max_size=int(os.getenv("ATHENIAN_MAX_CLIENT_SIZE", 256 * 1024)),
         max_load=float(os.getenv("ATHENIAN_MAX_LOAD", 12)))
     if args.preload_dataframes:
-        app.on_dbs_conected(mc_preloader.preload)
+        app.on_dbs_connected(mc_preloader.preload)
     app.run(host=args.host, port=args.port, print=lambda s: log.info("\n" + s))
     return app
 

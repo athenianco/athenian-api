@@ -1102,7 +1102,7 @@ async def test_fetch_prs_no_branches(mdb, pdb, dag):
         datetime(2015, 1, 1, tzinfo=timezone.utc),
         datetime(2021, 1, 1, tzinfo=timezone.utc),
         {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
-        False, None, branches, dags, 1, (6366825,), mdb, pdb, None,
+        False, None, None, branches, dags, 1, (6366825,), mdb, pdb, None,
     ]
     prs, xdags = await PullRequestMiner.fetch_prs(*args)
     assert prs["dead"].sum() == 0
@@ -1122,7 +1122,7 @@ async def test_fetch_prs_dead(mdb, pdb):
         datetime(2015, 1, 1, tzinfo=timezone.utc),
         datetime(2021, 1, 1, tzinfo=timezone.utc),
         {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
-        False, None, branches, None, 1, (6366825,), mdb, pdb, None,
+        False, None, None, branches, None, 1, (6366825,), mdb, pdb, None,
     ]
     prs, xdags = await PullRequestMiner.fetch_prs(*args)
     assert prs["dead"].sum() == len(force_push_dropped_go_git_pr_numbers)
