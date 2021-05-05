@@ -135,13 +135,14 @@ async def get_everything(request: AthenianWebRequest,
     meta_ids, settings = await gather(*tasks)
     data = await mine_everything(
         set(MineTopic), settings, account, meta_ids,
-        request.mdb, request.pdb, request.rdb, request.cache)
+        request.sdb, request.mdb, request.pdb, request.rdb, request.cache)
     serialize = _get_everything_formats[format]
     with NamedTemporaryFile(prefix=f"athenian_get_everything_{account}_",
                             suffix=".zip",
                             delete=False) as tmpf:
         with ZipFile(tmpf, "w") as zipf:
-            for key, df in data.items():
-                with zipf.open(f"{key.value}.{format}", mode="w") as pf:
-                    serialize(df, pf)
+            for key, df_dict in data.items():
+                for subkey, df in df_dict.items():
+                    with zipf.open(f"{key.value}{subkey}.{format}", mode="w") as pf:
+                        serialize(df, pf)
         return RemovingFileResponse(tmpf.name)
