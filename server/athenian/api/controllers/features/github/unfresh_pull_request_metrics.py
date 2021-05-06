@@ -12,7 +12,7 @@ from athenian.api.controllers.miners.github.precomputed_prs import \
     discover_inactive_merged_unreleased_prs, load_merged_unreleased_pull_request_facts, \
     load_open_pull_request_facts_unfresh, remove_ambiguous_prs
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
-from athenian.api.controllers.miners.github.release_load import load_releases
+from athenian.api.controllers.miners.github.release_load import ReleaseLoader
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
 from athenian.api.controllers.miners.types import PRParticipants, PullRequestFacts
 from athenian.api.controllers.settings import ReleaseSettings
@@ -23,6 +23,8 @@ from athenian.api.tracing import sentry_span
 
 class UnfreshPullRequestFactsFetcher:
     """Fetcher for unfreshed pull requests facts."""
+
+    release_loader = ReleaseLoader
 
     @classmethod
     @sentry_span
@@ -60,7 +62,7 @@ class UnfreshPullRequestFactsFetcher:
         tasks = [
             # map_releases_to_prs is not required because such PRs are already released,
             # by definition
-            load_releases(
+            cls.release_loader.load_releases(
                 repositories, branches, default_branches, time_from, time_to,
                 release_settings, account, meta_ids, mdb, pdb, rdb, cache),
             miner.fetch_prs(
