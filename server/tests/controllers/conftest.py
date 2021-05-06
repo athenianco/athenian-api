@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 from sqlalchemy import delete, insert, select
 
+from athenian.api.controllers.features.entries import MetricEntriesCalculator
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.commit import _empty_dag, _fetch_commit_history_edges
 from athenian.api.controllers.miners.github.dag_accelerated import join_dags
@@ -183,6 +184,26 @@ async def dag(mdb):
         return _dag
     _dag = await fetch_dag(mdb)
     return _dag
+
+
+@pytest.fixture(scope="function")
+async def metrics_calculator_factory(mdb, pdb, rdb, cache, memcached):
+
+    def build(account_id, meta_ids,
+              with_cache=False, with_memcached=False, cache_only=False):
+        if cache_only:
+            return MetricEntriesCalculator(account_id, meta_ids, None, None, None,
+                                           memcached if with_memcached else cache)
+        if with_memcached:
+            c = memcached
+        elif with_cache:
+            c = cache
+        else:
+            c = None
+
+        return MetricEntriesCalculator(account_id, meta_ids, mdb, pdb, rdb, c)
+
+    return build
 
 
 def pytest_configure(config):

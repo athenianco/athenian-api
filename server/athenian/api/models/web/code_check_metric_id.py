@@ -5,6 +5,9 @@ class CodeCheckMetricID(Model, metaclass=Enum):
     """Currently supported code check metric types."""
 
     SUITES_COUNT = "chk-suites-count"
+    SUCCESSFUL_SUITES_COUNT = "chk-successful-suites-count"
+    FAILED_SUITES_COUNT = "chk-failed-suites-count"
+    CANCELLED_SUITES_COUNT = "chk-cancelled-suites-count"
     SUCCESS_RATIO = "chk-success-ratio"
     SUITE_TIME = "chk-suite-time"
     SUITES_PER_PR = "chk-suites-per-pr"
