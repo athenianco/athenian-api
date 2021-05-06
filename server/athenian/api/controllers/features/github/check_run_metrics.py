@@ -58,16 +58,19 @@ def group_check_runs_by_commit_authors(commit_authors: List[List[str]],
 
 def make_check_runs_count_grouper(df: pd.DataFrame) -> Tuple[
         Callable[[pd.DataFrame], List[np.ndarray]],
+        np.ndarray,
         Sequence[int]]:
     """
     Split check runs by parent check suite size.
 
-    :return: Function to return the groups + check suite size frequencies.
+    :return: 1. Function to return the groups. \
+             2. Check suite node IDs column. \
+             3. Check suite sizes.
     """
     suites = df[CheckRun.check_suite_node_id.key].values.astype("S")
     unique_suites, run_counts = np.unique(suites, return_counts=True)
     suite_blocks = np.array(np.split(np.argsort(suites), np.cumsum(run_counts[:-1])))
-    suite_size_counts, back_indexes, group_counts = np.unique(
+    unique_run_counts, back_indexes, group_counts = np.unique(
         run_counts, return_inverse=True, return_counts=True)
     run_counts_order = np.argsort(back_indexes)
     ordered_indexes = np.concatenate(suite_blocks[run_counts_order])
@@ -76,4 +79,4 @@ def make_check_runs_count_grouper(df: pd.DataFrame) -> Tuple[
     def group_check_runs_by_check_runs_count(_) -> List[np.ndarray]:
         return groups
 
-    return group_check_runs_by_check_runs_count, suite_size_counts
+    return group_check_runs_by_check_runs_count, suites, unique_run_counts

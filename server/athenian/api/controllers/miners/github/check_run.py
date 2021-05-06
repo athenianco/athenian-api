@@ -6,7 +6,7 @@ from typing import Collection, Optional, Tuple
 import aiomcache
 import numpy as np
 import pandas as pd
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, select, union_all
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
@@ -71,6 +71,21 @@ async def mine_check_runs(time_from: datetime,
             filters, jira, mdb, cache, columns=CheckRun.__table__.columns, seed=CheckRun,
             on=(CheckRun.pull_request_node_id, CheckRun.acc_id))
     df = await read_sql_query(query, mdb, columns=CheckRun)
+
+    # load check runs mapped to the mentioned PRs even if they are outside of the date range
+    pr_node_ids = df[CheckRun.pull_request_node_id.key].unique()
+
+    def filters():
+        return [
+            CheckRun.acc_id.in_(meta_ids),
+            CheckRun.pull_request_node_id.in_any_values(pr_node_ids),
+        ]
+
+    query_before = select([CheckRun]).where(and_(*filters(), CheckRun.started_at < time_from))
+    query_after = select([CheckRun]).where(and_(*filters(), CheckRun.started_at >= time_to))
+    extra_df = await read_sql_query(union_all(query_before, query_after), mdb, columns=CheckRun)
+    df = df.append(extra_df, ignore_index=True)
+    del extra_df
 
     # another groupby() replacement for speed
     # we determine check runs belonging to the same commit with multiple pull requests
