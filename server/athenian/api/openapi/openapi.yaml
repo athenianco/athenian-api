@@ -7489,6 +7489,9 @@ components:
     CodeCheckMetricID:
       description: |-
         * `chk-suites-count` - number of executed check suites.
+        * `chk-successful-suites-count` - number of successfully executed check suites.
+        * `chk-failed-suites-count` - number of failed check suites.
+        * `chk-cancelled-suites-count` - number of cancelled check suites.
         * `chk-success-ratio` - number of successful check suites divided by `chk-suites-count`.
         * `chk-suite-time` - average check suite execution time.
         * `chk-suites-per-pr` - average number of times check suites executed in a pull request.
@@ -7497,6 +7500,9 @@ components:
         * `chk-flaky-commit-checks-count` - number of check suites triggered by the same commit but having different outcomes - both successful and failed.
       enum:
       - chk-suites-count
+      - chk-successful-suites-count
+      - chk-failed-suites-count
+      - chk-cancelled-suites-count
       - chk-success-ratio
       - chk-suite-time
       - chk-suites-per-pr
