@@ -1,5 +1,7 @@
 from datetime import datetime
-from typing import Optional, Set, Tuple
+import functools
+import operator
+from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
 
 import aiomcache
 import databases
@@ -11,16 +13,16 @@ from athenian.api.controllers.features.entries import \
 from athenian.api.controllers.features.github.unfresh_pull_request_metrics import \
     UnfreshPullRequestFactsFetcher as OriginalUnfreshPullRequestFactsFetcher
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.pull_request import (
-    PullRequestMiner as OriginalPullRequestMiner,
-)
-from athenian.api.controllers.miners.github.release_load import (
-    ReleaseLoader as OriginalReleaseLoader,
-)
-from athenian.api.controllers.miners.github.release_match import (
-    ReleaseToPullRequestMapper as OriginalReleaseToPullRequestMapper,
-)
+from athenian.api.controllers.miners.github.pull_request import \
+    PullRequestMiner as OriginalPullRequestMiner
+from athenian.api.controllers.miners.github.release_load import \
+    ReleaseLoader as OriginalReleaseLoader
+from athenian.api.controllers.miners.github.release_load import \
+    remove_ambigous_precomputed_releases
+from athenian.api.controllers.miners.github.release_match import \
+    ReleaseToPullRequestMapper as OriginalReleaseToPullRequestMapper
 from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind
+from athenian.api.controllers.settings import ReleaseMatch
 from athenian.api.models.metadata.github import PullRequest
 from athenian.api.tracing import sentry_span
 
@@ -28,7 +30,51 @@ from athenian.api.tracing import sentry_span
 class ReleaseLoader(OriginalReleaseLoader):
     """Loader for releases."""
 
-    pass
+    @classmethod
+    @sentry_span
+    async def _fetch_precomputed_releases(cls,
+                                          match_groups: Dict[ReleaseMatch, Dict[str, List[str]]],
+                                          time_from: datetime,
+                                          time_to: datetime,
+                                          account: int,
+                                          pdb: databases.Database,
+                                          index: Optional[Union[str, Sequence[str]]] = None,
+                                          ) -> pd.DataFrame:
+        cached_df = pdb.cache.dfs["releases"]
+        df = cached_df.df
+        mask = cls._match_groups_to_mask(df, match_groups)
+        releases = cached_df.filter(mask)
+        releases.sort_values("published_at", ascending=False, inplace=True)
+        releases = remove_ambigous_precomputed_releases(releases, "repository_full_name")
+        if index is not None:
+            releases.set_index(index, inplace=True)
+        else:
+            releases.reset_index(drop=True, inplace=True)
+        return releases
+
+    @classmethod
+    def _match_groups_to_mask(
+            df: pd.DataFrame,
+            match_groups: Dict[ReleaseMatch, Dict[str, Iterable[str]]]) -> pd.Series:
+        or_masks = []
+        for match, suffix in [
+            (ReleaseMatch.tag, "|"),
+            (ReleaseMatch.branch, "|"),
+            (ReleaseMatch.rejected, ""),
+            (ReleaseMatch.force_push_drop, ""),
+            (ReleaseMatch.event, ""),
+        ]:
+            if not (match_group := match_groups.get(match)):
+                continue
+
+            and_masks = [(
+                df["release_match"] == "".join([match.name, suffix, v]) &
+                df["repository_full_name"].isin(r)
+            ) for v, r in match_group.items()]
+
+            or_masks.append(functools.reduce(operator.and_, and_masks))
+
+        return functools.reduce(operator.or_, or_masks)
 
 
 class ReleaseToPullRequestMapper(OriginalReleaseToPullRequestMapper):
