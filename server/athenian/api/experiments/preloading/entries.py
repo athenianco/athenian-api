@@ -6,21 +6,51 @@ import databases
 import pandas as pd
 from sqlalchemy.sql.elements import BinaryExpression
 
-from athenian.api.controllers.features.entries import (
-    MetricEntriesCalculator as OriginalMetricEntriesCalculator,
-)
+from athenian.api.controllers.features.entries import \
+    MetricEntriesCalculator as OriginalMetricEntriesCalculator
+from athenian.api.controllers.features.github.unfresh_pull_request_metrics import \
+    UnfreshPullRequestFactsFetcher as OriginalUnfreshPullRequestFactsFetcher
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.pull_request import (
     PullRequestMiner as OriginalPullRequestMiner,
+)
+from athenian.api.controllers.miners.github.release_load import (
+    ReleaseLoader as OriginalReleaseLoader,
+)
+from athenian.api.controllers.miners.github.release_match import (
+    ReleaseToPullRequestMapper as OriginalReleaseToPullRequestMapper,
 )
 from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind
 from athenian.api.models.metadata.github import PullRequest
 from athenian.api.tracing import sentry_span
 
 
+class ReleaseLoader(OriginalReleaseLoader):
+    """Loader for releases."""
+
+    pass
+
+
+class ReleaseToPullRequestMapper(OriginalReleaseToPullRequestMapper):
+    """Mapper from releases to pull requests."""
+
+    release_loader = ReleaseLoader
+
+
+class UnfreshPullRequestFactsFetcher(OriginalUnfreshPullRequestFactsFetcher):
+    """Fetcher for unfreshed pull requests facts."""
+
+    release_loader = ReleaseLoader
+
+
 class PullRequestMiner(OriginalPullRequestMiner):
     """Load all the information related to Pull Requests from the metadata DB. Iterate over it \
     to access individual PR objects."""
+
+    mappers = OriginalPullRequestMiner.AuxiliaryMappers(
+        releases_to_prs=ReleaseToPullRequestMapper.map_releases_to_prs,
+        prs_to_releases=OriginalPullRequestMiner.mappers.prs_to_releases,
+    )
 
     @classmethod
     def _prs_from_binary_expression(cls, bin_exp: BinaryExpression):
@@ -144,3 +174,4 @@ class MetricEntriesCalculator(OriginalMetricEntriesCalculator):
     """Calculator for different metrics using preloaded DataFrames."""
 
     miner = PullRequestMiner
+    unfresh_fetcher = UnfreshPullRequestFactsFetcher
