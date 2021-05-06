@@ -1,4 +1,3 @@
-from datetime import timedelta
 import logging
 import os
 from tempfile import NamedTemporaryFile
@@ -96,12 +95,12 @@ class RemovingFileResponse(web.FileResponse):
 
 
 def _df_to_parquet(df: pd.DataFrame, fout) -> None:
+    zero = pd.Timestamp(0)
     for col in df:
-        try:
+        if df[col].dtype.type is np.datetime64:
             df[col] = df[col].dt.tz_localize(None)
-        except AttributeError:
-            if df[col].dtype.type is np.timedelta64:
-                df[col] = df[col].fillna(timedelta(-1)).astype(int)
+        elif df[col].dtype.type is np.timedelta64:
+            df[col] = zero + df[col]
     df.to_parquet(fout, engine="pyarrow", version="2.0")
 
 
