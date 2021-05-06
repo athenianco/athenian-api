@@ -357,11 +357,13 @@ class MetricEntriesCalculator:
                                                  commit_authors: List[List[str]],
                                                  split_by_check_runs: bool,
                                                  jira: JIRAFilter,
-                                                 ) -> Tuple[np.ndarray, np.ndarray, Sequence[int]]:
+                                                 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Calculate the check run metrics on GitHub.
 
-        :return: commit_authors x repositories x check_runs x granularities x time intervals x metrics.
+        :return: 1. commit_authors x repositories x check_runs x granularities x time intervals x metrics.
+                 2. how many suites in each check runs count group (meaningful only if split_by_check_runs=True).
+                 3. suite sizes (meaningful only if split_by_check_runs=True).
         """  # noqa
         calc = CheckRunBinnedMetricCalculator(metrics, quantiles)
         df_check_runs, groups, group_suite_counts, suite_sizes = \
@@ -396,13 +398,13 @@ class MetricEntriesCalculator:
                                                     commit_authors: List[List[str]],
                                                     split_by_check_runs: bool,
                                                     jira: JIRAFilter,
-                                                    ) -> Tuple[np.ndarray,
-                                                               np.ndarray,
-                                                               Sequence[int]]:
+                                                    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Calculate the check run metrics on GitHub.
 
-        :return: defs x commit_authors x repositories x check_runs -> List[Tuple[metric ID, Histogram]].
+        :return: 1. defs x commit_authors x repositories x check_runs -> List[Tuple[metric ID, Histogram]].
+                 2. how many suites in each check runs count group (meaningful only if split_by_check_runs=True).
+                 3. suite sizes (meaningful only if split_by_check_runs=True).
         """  # noqa
         try:
             calc = CheckRunBinnedHistogramCalculator(defs.values(), quantiles)
@@ -431,9 +433,9 @@ class MetricEntriesCalculator:
                                          split_by_check_runs: bool,
                                          jira: JIRAFilter,
                                          ) -> Tuple[pd.DataFrame,
-                                                    np.ndarray,  # groups
-                                                    np.ndarray,  # how many suites in each group
-                                                    Sequence[int]]:  # distinct suite sizes
+                                                    np.ndarray,   # groups
+                                                    np.ndarray,   # how many suites in each group
+                                                    np.ndarray]:  # distinct suite sizes
         all_repositories = set(chain.from_iterable(repositories))
         all_commit_authors = set(chain.from_iterable(commit_authors))
         df_check_runs = await mine_check_runs(
@@ -445,16 +447,17 @@ class MetricEntriesCalculator:
             check_runs_grouper, suite_node_ids, suite_sizes = make_check_runs_count_grouper(
                 df_check_runs)
         else:
-            suite_sizes = [1]
+            suite_sizes = np.array([])
 
             def check_runs_grouper(df: pd.DataFrame) -> List[np.ndarray]:
                 return [np.arange(len(df))]
         groups = group_to_indexes(
             df_check_runs, commit_author_grouper, repo_grouper, check_runs_grouper)
         group_suite_counts = np.zeros_like(groups, dtype=int)
+        flat_group_suite_counts = group_suite_counts.ravel()
         if split_by_check_runs:
             for i, group in enumerate(groups.ravel()):
-                group_suite_counts[i] = len(np.unique(suite_node_ids[group]))
+                flat_group_suite_counts[i] = len(np.unique(suite_node_ids[group]))
         return df_check_runs, groups, group_suite_counts, suite_sizes
 
     async def calc_pull_request_facts_github(self,
