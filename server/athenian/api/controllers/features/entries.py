@@ -31,7 +31,7 @@ from athenian.api.controllers.features.github.pull_request_metrics import \
 from athenian.api.controllers.features.github.release_metrics import \
     group_releases_by_participants, merge_release_participants, ReleaseBinnedMetricCalculator
 from athenian.api.controllers.features.github.unfresh_pull_request_metrics import \
-    fetch_pull_request_facts_unfresh
+    UnfreshPullRequestFactsFetcher
 from athenian.api.controllers.features.histogram import HistogramParameters
 from athenian.api.controllers.features.metric_calculator import df_from_structs, group_by_repo, \
     group_to_indexes
@@ -78,6 +78,7 @@ class MetricEntriesCalculator:
     """Calculator for different metrics."""
 
     miner = PullRequestMiner
+    unfresh_pr_facts_fetcher = UnfreshPullRequestFactsFetcher
 
     def __init__(self, account: int, meta_ids: Tuple[int, ...],
                  mdb: Database, pdb: Database, rdb: Database,
@@ -555,7 +556,7 @@ class MetricEntriesCalculator:
                 or
                 len(participants.get(prpk.AUTHOR, [])) > unfresh_participants_threshold) and \
                 not fresh and not (participants.keys() - {prpk.AUTHOR, prpk.MERGER}):
-            facts = await fetch_pull_request_facts_unfresh(
+            facts = await self.unfresh_pr_facts_fetcher.fetch_pull_request_facts_unfresh(
                 self.miner, precomputed_facts, ambiguous, time_from, time_to, repositories,
                 participants, labels, jira, exclude_inactive, branches,
                 default_branches, release_settings, self._account, self._meta_ids,
