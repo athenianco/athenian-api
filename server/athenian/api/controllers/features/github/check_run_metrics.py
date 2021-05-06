@@ -1,11 +1,14 @@
+from datetime import timedelta
 from typing import Callable, Dict, List, Sequence, Tuple, Type
+import warnings
 
 import numpy as np
 import pandas as pd
 
-from athenian.api.controllers.features.metric_calculator import BinnedHistogramCalculator, \
+from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
+    BinnedHistogramCalculator, \
     BinnedMetricCalculator, HistogramCalculatorEnsemble, make_register_metric, MetricCalculator, \
-    MetricCalculatorEnsemble, SumMetricCalculator
+    MetricCalculatorEnsemble, RatioCalculator, SumMetricCalculator
 from athenian.api.models.metadata.github import CheckRun
 from athenian.api.models.web import CodeCheckMetricID
 
@@ -168,3 +171,71 @@ class CancelledSuitesCounter(SuitesInStatusCounter):
     statuses = {
         b"COMPLETED": [b"CANCELLED"],
     }
+
+
+@register_metric(CodeCheckMetricID.SUCCESS_RATIO)
+class SuiteSuccessRatioCalculator(RatioCalculator):
+    """Ratio of successful check suites divided by the overall count."""
+
+    deps = (SuccessfulSuitesCounter, SuitesCounter)
+
+
+@register_metric(CodeCheckMetricID.SUITE_TIME)
+class SuiteTimeCalculator(AverageMetricCalculator[timedelta]):
+    """Average check suite execution time metric."""
+
+    may_have_negative_values = False
+    dtype = "timedelta64[s]"
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **kwargs) -> np.ndarray:
+        suite_node_ids = facts[CheckRun.check_suite_node_id.key].values.astype("S")
+        unique_suites, first_encounters, inverse_indexes, run_counts = np.unique(
+            suite_node_ids, return_index=True, return_inverse=True, return_counts=True)
+        statuses = facts[CheckRun.check_suite_status.key].values[first_encounters].astype("S")
+        completed = statuses == b"COMPLETED"
+        conclusions = facts[CheckRun.check_suite_conclusion.key].values[
+            first_encounters[completed]
+        ].astype("S")
+        sensibly_completed = np.nonzero(completed)[0][
+            (conclusions == b"SUCCESS") | (conclusions == b"FAILURE")]
+        # first_encounters[sensibly_completed] gives the indexes of the completed suites
+        first_encounters = first_encounters[sensibly_completed]
+
+        # measure elapsed time for each suite size group
+        suite_blocks = np.array(np.split(np.argsort(inverse_indexes), np.cumsum(run_counts)[:-1]))
+        unique_run_counts, back_indexes, group_counts = np.unique(
+            run_counts, return_inverse=True, return_counts=True)
+        run_counts_order = np.argsort(back_indexes)
+        ordered_indexes = np.concatenate(suite_blocks[run_counts_order])
+        groups = np.split(ordered_indexes, np.cumsum(group_counts * unique_run_counts)[:-1])
+        run_finished = facts[CheckRun.completed_at.key].values.astype(min_times.dtype)
+        run_started = facts[CheckRun.started_at.key].values.astype(min_times.dtype)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", "All-NaN slice encountered")
+            suite_finished = np.concatenate([
+                np.nanmax(run_finished[group].reshape(-1, unique_run_count), axis=1)
+                for group, unique_run_count in zip(groups, unique_run_counts)
+            ])
+            suite_started = np.concatenate([
+                np.nanmin(run_started[group].reshape(-1, unique_run_count), axis=1)
+                for group, unique_run_count in zip(groups, unique_run_counts)
+            ])
+        elapsed = suite_finished - suite_started
+        # if the check takes very little time, the timestamps may break
+        elapsed[elapsed < np.array([0], dtype=elapsed.dtype)] = 0
+        # reorder the sequence to match unique_suites
+        suite_order = np.argsort(run_counts_order)
+        elapsed = elapsed[suite_order]
+        suite_started = suite_started[suite_order]
+
+        result = np.full((len(min_times), len(facts)), None, object)
+        time_relevant_suite_mask = \
+            (min_times[:, None] <= suite_started) & (suite_started < max_times[:, None])
+        result_elapsed = np.repeat(elapsed[sensibly_completed][None, :], len(min_times), axis=0)
+        result_elapsed[~time_relevant_suite_mask[:, sensibly_completed]] = None
+        result[:, first_encounters] = result_elapsed.astype(self.dtype).view(int)
+        return result
