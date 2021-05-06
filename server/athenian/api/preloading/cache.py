@@ -101,7 +101,7 @@ class CachedDataFrame:
     def filter(
         self,
         mask: pd.Series,
-        columns: Optional[Collection[str]],
+        columns: Optional[Collection[str]] = None,
         index: Optional[str] = None,
         uncast: bool = True,
     ) -> pd.DataFrame:
