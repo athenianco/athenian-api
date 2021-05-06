@@ -313,7 +313,6 @@ class AthenianApp(connexion.AioHttpApp):
 
     def on_dbs_connected(self, callback):
         """Register a callback on dbs connected."""
-
         async def task_wrapper(*_):
             await gather(*self._db_futures.values())
             dbs = {

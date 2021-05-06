@@ -2,9 +2,8 @@ from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import AllOf, Model
 from athenian.api.models.web.common_filter_properties import CommonFilterProperties
-from athenian.api.models.web.granularity import Granularity
+from athenian.api.models.web.common_metrics_properties import CommonMetricsProperties
 from athenian.api.models.web.jira_filter import JIRAFilter
-from athenian.api.models.web.quantiles import validate_quantiles
 from athenian.api.models.web.release_metric_id import ReleaseMetricID
 from athenian.api.models.web.release_with import ReleaseWith
 
@@ -16,8 +15,6 @@ class _ReleaseMetricsRequest(Model):
         "for_": List[List[str]],
         "with_": Optional[List[ReleaseWith]],
         "metrics": List[str],
-        "granularities": List[str],
-        "quantiles": List[float],
         "jira": Optional[JIRAFilter],
     }
 
@@ -25,8 +22,6 @@ class _ReleaseMetricsRequest(Model):
         "for_": "for",
         "with_": "with",
         "metrics": "metrics",
-        "granularities": "granularities",
-        "quantiles": "quantiles",
         "jira": "jira",
     }
 
@@ -37,8 +32,6 @@ class _ReleaseMetricsRequest(Model):
         for_: Optional[List[List[str]]] = None,
         with_: Optional[List[ReleaseWith]] = None,
         metrics: Optional[List[str]] = None,
-        granularities: Optional[List[str]] = None,
-        quantiles: Optional[List[float]] = None,
         jira: Optional[JIRAFilter] = None,
     ):
         """ReleaseMetricsRequest - a model defined in OpenAPI
@@ -46,14 +39,11 @@ class _ReleaseMetricsRequest(Model):
         :param for_: The for of this ReleaseMetricsRequest.
         :param with_: The with of this ReleaseMetricsRequest.
         :param metrics: The metrics of this ReleaseMetricsRequest.
-        :param granularities: The granularities of this ReleaseMetricsRequest.
         :param jira: The jira of this ReleaseMetricsRequest.
         """
         self._for_ = for_
         self._with_ = with_
         self._metrics = metrics
-        self._granularities = granularities
-        self._quantiles = quantiles
         self._jira = jira
 
     @property
@@ -127,50 +117,6 @@ class _ReleaseMetricsRequest(Model):
         self._metrics = metrics
 
     @property
-    def granularities(self) -> List[str]:
-        """Gets the granularities of this ReleaseMetricsRequest.
-
-        :return: The granularities of this ReleaseMetricsRequest.
-        """
-        return self._granularities
-
-    @granularities.setter
-    def granularities(self, granularities: List[str]):
-        """Sets the granularities of this ReleaseMetricsRequest.
-
-        :param granularities: The granularities of this ReleaseMetricsRequest.
-        """
-        if granularities is None:
-            raise ValueError("Invalid value for `granularities`, must not be `None`")
-        for i, g in enumerate(granularities):
-            if not Granularity.format.match(g):
-                raise ValueError(
-                    'Invalid value for `granularity[%d]`: "%s"` does not match /%s/' %
-                    (i, g, Granularity.format.pattern))
-
-        self._granularities = granularities
-
-    @property
-    def quantiles(self) -> Optional[List[float]]:
-        """Gets the quantiles of this ReleaseMetricsRequest.
-
-        :return: The quantiles of this ReleaseMetricsRequest.
-        """
-        return self._quantiles
-
-    @quantiles.setter
-    def quantiles(self, quantiles: Optional[List[float]]):
-        """Sets the quantiles of this ReleaseMetricsRequest.
-
-        :param quantiles: The quantiles of this ReleaseMetricsRequest.
-        """
-        if quantiles is None:
-            self._quantiles = None
-            return
-        validate_quantiles(quantiles)
-        self._quantiles = quantiles
-
-    @property
     def jira(self) -> Optional[JIRAFilter]:
         """Gets the jira of this ReleaseMetricsRequest.
 
@@ -187,5 +133,8 @@ class _ReleaseMetricsRequest(Model):
         self._jira = jira
 
 
-ReleaseMetricsRequest = AllOf(_ReleaseMetricsRequest, CommonFilterProperties,
-                              name="ReleaseMetricsRequest", module=__name__)
+ReleaseMetricsRequest = AllOf(_ReleaseMetricsRequest,
+                              CommonFilterProperties,
+                              CommonMetricsProperties,
+                              name="ReleaseMetricsRequest",
+                              module=__name__)

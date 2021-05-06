@@ -9,7 +9,35 @@ ForSetLike = TypeVar("ForSetLike", bound=Model)
 
 
 class RepositoryGroupsMixin:
-    """ForSet mixin to add support for `repogroups`."""
+    """ForSet mixin to add support for `repositories` and `repogroups`."""
+
+    @property
+    def repositories(self) -> List[str]:
+        """Gets the repositories of this ForSet.
+
+        :return: The repositories of this ForSet.
+        """
+        return self._repositories
+
+    @repositories.setter
+    def repositories(self, repositories: List[str]):
+        """Sets the repositories of this ForSet.
+
+        :param repositories: The repositories of this ForSet.
+        """
+        if repositories is None:
+            raise ValueError("Invalid value for `repositories`, must not be `None`")
+        if len(repositories) == 0:
+            raise ValueError("Invalid value for `repositories`, must not be an empty list")
+        if self._repogroups is not None:
+            for i, group in enumerate(self._repogroups):
+                for j, v in enumerate(group):
+                    if v >= len(repositories):
+                        raise ValueError(
+                            "`repogroups[%d][%d]` = %s must be less than the number of "
+                            "repositories (%d)" % (i, j, v, len(repositories)))
+
+        self._repositories = repositories
 
     @property
     def repogroups(self) -> Optional[List[List[int]]]:
@@ -113,32 +141,6 @@ class ForSet(Model, RepositoryGroupsMixin):
         self._labels_exclude = labels_exclude
         self._jira = jira
         self._lines = lines
-
-    @property
-    def repositories(self) -> List[str]:
-        """Gets the repositories of this ForSet.
-
-        :return: The repositories of this ForSet.
-        """
-        return self._repositories
-
-    @repositories.setter
-    def repositories(self, repositories: List[str]):
-        """Sets the repositories of this ForSet.
-
-        :param repositories: The repositories of this ForSet.
-        """
-        if repositories is None:
-            raise ValueError("Invalid value for `repositories`, must not be `None`")
-        if self._repogroups is not None:
-            for i, group in enumerate(self._repogroups):
-                for j, v in enumerate(group):
-                    if v >= len(repositories):
-                        raise ValueError(
-                            "`repogroups[%d][%d]` = %s must be less than the number of "
-                            "repositories (%d)" % (i, j, v, len(repositories)))
-
-        self._repositories = repositories
 
     @property
     def with_(self) -> Optional[PullRequestWith]:

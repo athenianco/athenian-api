@@ -500,3 +500,10 @@ async def calc_metrics_releases_linear(request: AthenianWebRequest, body: dict) 
         tasks.append(calculate_for_set_metrics(service, repos, grouped_for_sets[service]))
     await gather(*tasks)
     return model_response(met)
+
+
+@weight(1)
+async def calc_code_check_runs(request: AthenianWebRequest, body: dict) -> web.Response:
+    """Calculate metrics on continuous integration runs, such as GitHub Actions, Jenkins, Circle, \
+    etc."""
+    raise NotImplementedError

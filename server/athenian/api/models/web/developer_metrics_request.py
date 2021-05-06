@@ -2,12 +2,12 @@ from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import AllOf, Model
 from athenian.api.models.web.common_filter_properties import CommonFilterProperties
+from athenian.api.models.web.common_metrics_properties import GranularitiesMixin
 from athenian.api.models.web.developer_metric_id import DeveloperMetricID
 from athenian.api.models.web.for_set_developers import ForSetDevelopers
-from athenian.api.models.web.granularity import Granularity
 
 
-class _DeveloperMetricsRequest(Model):
+class _DeveloperMetricsRequest(Model, GranularitiesMixin):
     """Request for calculating metrics on developer activities."""
 
     openapi_types = {
@@ -88,34 +88,6 @@ class _DeveloperMetricsRequest(Model):
             raise ValueError("Unsupported values of `metrics`: %s" % diff)
 
         self._metrics = metrics
-
-    @property
-    def granularities(self) -> List[str]:
-        """Gets the granularities of this DeveloperMetricsRequest.
-
-        Splits of the specified time range `[date_from, date_to)`.
-
-        :return: The granularities of this DeveloperMetricsRequest.
-        """
-        return self._granularities
-
-    @granularities.setter
-    def granularities(self, granularities: List[str]):
-        """Sets the granularities of this DeveloperMetricsRequest.
-
-        Splits of the specified time range `[date_from, date_to)`.
-
-        :param granularities: The granularities of this DeveloperMetricsRequest.
-        """
-        if granularities is None:
-            raise ValueError("Invalid value for `granularities`, must not be `None`")
-        for i, g in enumerate(granularities):
-            if not Granularity.format.match(g):
-                raise ValueError(
-                    'Invalid value for `granularity[%d]`: "%s"` does not match /%s/' %
-                    (i, g, Granularity.format.pattern))
-
-        self._granularities = granularities
 
 
 DeveloperMetricsRequest = AllOf(_DeveloperMetricsRequest, CommonFilterProperties,

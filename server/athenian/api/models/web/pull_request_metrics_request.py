@@ -2,20 +2,17 @@ from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import AllOf, Model
 from athenian.api.models.web.common_filter_properties import CommonFilterProperties
+from athenian.api.models.web.common_metrics_properties import CommonMetricsProperties
 from athenian.api.models.web.for_set import ForSet
-from athenian.api.models.web.granularity import Granularity
 from athenian.api.models.web.pull_request_metric_id import PullRequestMetricID
-from athenian.api.models.web.quantiles import validate_quantiles
 
 
 class _PullRequestMetricsRequest(Model):
-    """TRequest for calculating metrics on top of pull requests data."""
+    """Request for calculating metrics on top of pull requests data."""
 
     openapi_types = {
         "for_": List[ForSet],
         "metrics": List[PullRequestMetricID],
-        "granularities": List[str],
-        "quantiles": List[float],
         "exclude_inactive": bool,
         "fresh": bool,
     }
@@ -23,8 +20,6 @@ class _PullRequestMetricsRequest(Model):
     attribute_map = {
         "for_": "for",
         "metrics": "metrics",
-        "granularities": "granularities",
-        "quantiles": "quantiles",
         "exclude_inactive": "exclude_inactive",
         "fresh": "fresh",
     }
@@ -35,8 +30,6 @@ class _PullRequestMetricsRequest(Model):
         self,
         for_: Optional[List[ForSet]] = None,
         metrics: Optional[List[PullRequestMetricID]] = None,
-        granularities: Optional[List[str]] = None,
-        quantiles: Optional[List[float]] = None,
         exclude_inactive: Optional[bool] = None,
         fresh: Optional[bool] = None,
     ):
@@ -44,15 +37,11 @@ class _PullRequestMetricsRequest(Model):
 
         :param for_: The for_ of this PullRequestMetricsRequest.
         :param metrics: The metrics of this PullRequestMetricsRequest.
-        :param granularities: The granularities of this PullRequestMetricsRequest.
-        :param quantiles: The quantiles of this PullRequestMetricsRequest.
         :param exclude_inactive: The exclude_inactive of this PullRequestMetricsRequest.
         :param fresh: The fresh of this PullRequestMetricsRequest.
         """
         self._for_ = for_
         self._metrics = metrics
-        self._granularities = granularities
-        self._quantiles = quantiles
         self._exclude_inactive = exclude_inactive
         self._fresh = fresh
 
@@ -103,54 +92,6 @@ class _PullRequestMetricsRequest(Model):
         self._metrics = metrics
 
     @property
-    def granularities(self) -> List[str]:
-        """Gets the granularities of this PullRequestMetricsRequest.
-
-        Splits of the specified time range `[date_from, date_to)`.
-
-        :return: The granularities of this PullRequestMetricsRequest.
-        """
-        return self._granularities
-
-    @granularities.setter
-    def granularities(self, granularities: List[str]):
-        """Sets the granularities of this PullRequestMetricsRequest.
-
-        Splits of the specified time range `[date_from, date_to)`.
-
-        :param granularities: The granularities of this PullRequestMetricsRequest.
-        """
-        if granularities is None:
-            raise ValueError("Invalid value for `granularities`, must not be `None`")
-        for i, g in enumerate(granularities):
-            if not Granularity.format.match(g):
-                raise ValueError(
-                    'Invalid value for `granularity[%d]`: "%s"` does not match /%s/' %
-                    (i, g, Granularity.format.pattern))
-
-        self._granularities = granularities
-
-    @property
-    def quantiles(self) -> Optional[List[float]]:
-        """Gets the quantiles of this PullRequestMetricsRequest.
-
-        :return: The quantiles of this PullRequestMetricsRequest.
-        """
-        return self._quantiles
-
-    @quantiles.setter
-    def quantiles(self, quantiles: Optional[List[float]]):
-        """Sets the quantiles of this PullRequestMetricsRequest.
-
-        :param quantiles: The quantiles of this PullRequestMetricsRequest.
-        """
-        if quantiles is None:
-            self._quantiles = None
-            return
-        validate_quantiles(quantiles)
-        self._quantiles = quantiles
-
-    @property
     def exclude_inactive(self) -> bool:
         """Gets the exclude_inactive of this PullRequestMetricsRequest.
 
@@ -191,5 +132,8 @@ class _PullRequestMetricsRequest(Model):
         self._fresh = fresh
 
 
-PullRequestMetricsRequest = AllOf(_PullRequestMetricsRequest, CommonFilterProperties,
-                                  name="PullRequestMetricsRequest", module=__name__)
+PullRequestMetricsRequest = AllOf(_PullRequestMetricsRequest,
+                                  CommonFilterProperties,
+                                  CommonMetricsProperties,
+                                  name="PullRequestMetricsRequest",
+                                  module=__name__)
