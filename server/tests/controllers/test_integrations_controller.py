@@ -110,6 +110,8 @@ async def test_get_everything_smoke(client, headers):
             with zipf.open(f"developers_{key}.parquet") as devf:
                 df = pd.read_parquet(devf)
                 assert len(df) == size
+        with zipf.open("check_runs.parquet") as checkf:
+            check_runs_df = pd.read_parquet(checkf)
     assert len(prs_df) == 679
     assert set(prs_df) == {
         "first_comment_on_first_review", "merged_by_login", "first_commit", "stage_time_review",
@@ -128,6 +130,14 @@ async def test_get_everything_smoke(client, headers):
         "additions", "age", "commit_authors", "commits_count", "deletions", "matched_by", "name",
         "prs_additions", "prs_deletions", "prs_node_id", "prs_number", "prs_title", "prs_jira",
         "prs_user_login", "published", "publisher", "repository_full_name", "sha", "url",
+    }
+    assert len(check_runs_df) == 4614
+    assert set(check_runs_df) == {
+        "acc_id", "additions", "author_login", "author_user", "authored_date", "changed_files",
+        "check_run_node_id", "check_suite_conclusion", "check_suite_node_id", "check_suite_status",
+        "commit_node_id", "committed_date", "completed_at", "conclusion", "deletions", "name",
+        "pull_request_node_id", "repository_full_name", "repository_node_id", "sha", "started_at",
+        "status", "url",
     }
 
 

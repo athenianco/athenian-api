@@ -14,6 +14,7 @@ from athenian.api.controllers.features.metric_calculator import df_from_structs
 from athenian.api.controllers.jira import load_mapped_jira_users
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import extract_branches
+from athenian.api.controllers.miners.github.check_run import mine_check_runs
 from athenian.api.controllers.miners.github.contributors import mine_contributors
 from athenian.api.controllers.miners.github.developer import DeveloperTopic, \
     mine_developer_activities
@@ -34,6 +35,7 @@ class MineTopic(Enum):
     prs = "prs"
     developers = "developers"
     releases = "releases"
+    check_runs = "check_runs"
     # jira_epics = "jira_epics"
     # jira_issues = "jira_issues"
 
@@ -151,10 +153,30 @@ async def mine_all_releases(repos: Collection[str],
     return {"": result}
 
 
+async def mine_all_check_runs(repos: Collection[str],
+                              branches: pd.DataFrame,
+                              default_branches: Dict[str, str],
+                              settings: ReleaseSettings,
+                              prefixer: PrefixerPromise,
+                              account: int,
+                              meta_ids: Tuple[int, ...],
+                              sdb: databases.Database,
+                              mdb: databases.Database,
+                              pdb: databases.Database,
+                              rdb: databases.Database,
+                              cache: Optional[aiomcache.Client]) -> Dict[str, pd.DataFrame]:
+    """Extract everything we know about CI check runs."""
+    df = await mine_check_runs(
+        datetime(1970, 1, 1, tzinfo=timezone.utc), datetime.now(timezone.utc),
+        repos, [], JIRAFilter.empty(), meta_ids, mdb, cache)
+    return {"": df}
+
+
 miners = {
     MineTopic.prs: mine_all_prs,
     MineTopic.releases: mine_all_releases,
     MineTopic.developers: mine_all_developers,
+    MineTopic.check_runs: mine_all_check_runs,
 }
 
 
