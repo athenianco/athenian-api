@@ -7492,7 +7492,7 @@ components:
         * `chk-successful-suites-count` - number of successfully executed check suites.
         * `chk-failed-suites-count` - number of failed check suites.
         * `chk-cancelled-suites-count` - number of cancelled check suites.
-        * `chk-success-ratio` - number of successful check suites divided by `chk-suites-count`.
+        * `chk-success-ratio` - `chk-successful-suites-count` divided by `chk-suites-count`.
         * `chk-suite-time` - average check suite execution time.
         * `chk-suites-per-pr` - average number of times check suites executed in a pull request.
         * `chk-suite-time-per-pr` - average check suite execution time by pull request. The difference with `chk-suite-time` is that we don't consider checks triggered by direct pushes, e.g. by merge commits.
