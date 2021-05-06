@@ -16,7 +16,7 @@ from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.pull_request import \
     PullRequestMiner as OriginalPullRequestMiner
 from athenian.api.controllers.miners.github.release_load import \
-    ReleaseLoader as OriginalReleaseLoader
+    match_groups_to_conditions, ReleaseLoader as OriginalReleaseLoader
 from athenian.api.controllers.miners.github.release_load import \
     remove_ambigous_precomputed_releases
 from athenian.api.controllers.miners.github.release_match import \
@@ -54,25 +54,15 @@ class ReleaseLoader(OriginalReleaseLoader):
 
     @classmethod
     def _match_groups_to_mask(
+            cls,
             df: pd.DataFrame,
             match_groups: Dict[ReleaseMatch, Dict[str, Iterable[str]]]) -> pd.Series:
-        or_masks = []
-        for match, suffix in [
-            (ReleaseMatch.tag, "|"),
-            (ReleaseMatch.branch, "|"),
-            (ReleaseMatch.rejected, ""),
-            (ReleaseMatch.force_push_drop, ""),
-            (ReleaseMatch.event, ""),
-        ]:
-            if not (match_group := match_groups.get(match)):
-                continue
-
-            and_masks = [(
-                df["release_match"] == "".join([match.name, suffix, v]) &
-                df["repository_full_name"].isin(r)
-            ) for v, r in match_group.items()]
-
-            or_masks.append(functools.reduce(operator.and_, and_masks))
+        or_conditions, _ = match_groups_to_conditions(match_groups)
+        or_masks = [
+            (df["release_match"] == cond["release_match"]) &
+            (df["repository_full_name"].isin(cond["repository_full_name"]))
+            for cond in or_conditions
+        ]
 
         return functools.reduce(operator.or_, or_masks)
 
