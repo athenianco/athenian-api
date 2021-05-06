@@ -200,7 +200,7 @@ class PullRequestMiner(OriginalPullRequestMiner):
 
         if remove_acc_id:
             del prs[PullRequest.acc_id.key]
-        if PullRequest.closed.key in df:
+        if PullRequest.closed.key in prs:
             cls.adjust_pr_closed_merged_timestamps(prs)
 
         return prs
