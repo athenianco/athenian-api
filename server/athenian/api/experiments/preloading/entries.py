@@ -18,6 +18,7 @@ from athenian.api.controllers.miners.github.release_load import \
 from athenian.api.controllers.miners.github.release_load import \
     remove_ambigous_precomputed_releases
 from athenian.api.controllers.miners.github.release_match import ReleaseToPullRequestMapper
+from athenian.api.controllers.miners.jira.issue import PullRequestJiraMapper
 from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind
 from athenian.api.controllers.settings import ReleaseMatch
 from athenian.api.models.metadata.github import PullRequest
@@ -203,8 +204,15 @@ class PreloadedPullRequestMiner(PullRequestMiner):
         return prs
 
 
-class PreloadedMetricEntriesCalculator(MetricEntriesCalculator):
+class PreloadedPullRequestJiraMapper(PullRequestJiraMapper):
+    """Mapper of pull requests to JIRA tickets."""
+
+    pass
+
+
+class MetricEntriesCalculator(MetricEntriesCalculator):
     """Calculator for different metrics using preloaded DataFrames."""
 
-    miner = PreloadedPullRequestMiner
-    unfresh_fetcher = PreloadedUnfreshPullRequestFactsFetcher
+    miner = PullRequestMiner
+    unfresh_pr_facts_fetcher = UnfreshPullRequestFactsFetcher
+    pr_jira_mapper = PullRequestJiraMapper
