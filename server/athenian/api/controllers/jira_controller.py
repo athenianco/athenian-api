@@ -179,7 +179,7 @@ async def _epic_flow(return_: Set[str],
         Issue.url,
     ]
     if JIRAFilterReturn.USERS in return_:
-        extra_columns.extend(_participant_columns)
+        extra_columns.extend(participant_columns)
     epics_df, children_df, subtask_task, epic_children_map = await filter_epics(
         jira_ids, time_from, time_to, exclude_inactive, label_filter,
         priorities, reporters, assignees, commenters, default_branches,
@@ -416,7 +416,7 @@ async def _issue_flow(return_: Set[str],
             Issue.url,
         ])
     if JIRAFilterReturn.USERS in return_:
-        extra_columns.extend(_participant_columns)
+        extra_columns.extend(participant_columns)
     issues = await fetch_jira_issues(
         jira_ids, time_from, time_to, exclude_inactive, label_filter,
         # priorities are already lower-cased and de-None-d
@@ -769,7 +769,7 @@ async def _fetch_types(issue_type_projects: Mapping[str, Collection[str]],
     return await mdb.fetch_all(union_all(*queries))
 
 
-_participant_columns = [
+participant_columns = [
     func.lower(Issue.reporter_display_name).label("reporter"),
     func.lower(Issue.assignee_display_name).label("assignee"),
     Issue.commenters_display_names.label("commenters"),
@@ -841,7 +841,7 @@ async def _calc_jira_entry(request: AthenianWebRequest,
         reporters, assignees, commenters,
         default_branches, release_settings,
         filt.account, meta_ids, request.mdb, request.pdb, request.cache,
-        extra_columns=_participant_columns if len(filt.with_ or []) > 1 else (),
+        extra_columns=participant_columns if len(filt.with_ or []) > 1 else (),
     )
     return filt, time_intervals, issues, tzoffset, label_filter
 

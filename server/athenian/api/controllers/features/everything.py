@@ -11,7 +11,8 @@ from sqlalchemy import and_, select
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.controllers.features.github.pull_request_filter import PullRequestListMiner
 from athenian.api.controllers.features.metric_calculator import df_from_structs
-from athenian.api.controllers.jira import load_mapped_jira_users
+from athenian.api.controllers.jira import get_jira_installation, load_mapped_jira_users
+from athenian.api.controllers.jira_controller import participant_columns
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.check_run import mine_check_runs
@@ -22,10 +23,11 @@ from athenian.api.controllers.miners.github.precomputed_prs import \
     load_merged_pull_request_facts_all, load_open_pull_request_facts_all, \
     load_precomputed_done_facts_all
 from athenian.api.controllers.miners.github.release_mine import mine_releases
-from athenian.api.controllers.miners.jira.issue import append_pr_jira_mapping
+from athenian.api.controllers.miners.jira.issue import append_pr_jira_mapping, fetch_jira_issues
 from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
 from athenian.api.controllers.settings import ReleaseSettings
 from athenian.api.models.metadata.github import PullRequest, Release, User
+from athenian.api.response import ResponseError
 from athenian.precomputer.db.models import GitHubDonePullRequestFacts
 
 
@@ -36,8 +38,7 @@ class MineTopic(Enum):
     developers = "developers"
     releases = "releases"
     check_runs = "check_runs"
-    # jira_epics = "jira_epics"
-    # jira_issues = "jira_issues"
+    jira_issues = "jira_issues"
 
 
 async def mine_all_prs(repos: Collection[str],
@@ -172,11 +173,40 @@ async def mine_all_check_runs(repos: Collection[str],
     return {"": df}
 
 
+async def mine_all_jira_issues(repos: Collection[str],
+                               branches: pd.DataFrame,
+                               default_branches: Dict[str, str],
+                               settings: ReleaseSettings,
+                               prefixer: PrefixerPromise,
+                               account: int,
+                               meta_ids: Tuple[int, ...],
+                               sdb: databases.Database,
+                               mdb: databases.Database,
+                               pdb: databases.Database,
+                               rdb: databases.Database,
+                               cache: Optional[aiomcache.Client]) -> Dict[str, pd.DataFrame]:
+    """Extract everything we know about JIRA issues."""
+    try:
+        jira_ids = await get_jira_installation(account, sdb, mdb, cache)
+    except ResponseError:  # no JIRA installed
+        return {}
+    issues = await fetch_jira_issues(
+        jira_ids,
+        datetime(1970, 1, 1, tzinfo=timezone.utc), datetime.now(timezone.utc),
+        False, LabelFilter.empty(), [], set(), [], [], [], [],
+        default_branches, settings,
+        account, meta_ids, mdb, pdb, cache,
+        extra_columns=participant_columns,
+    )
+    return {"": issues}
+
+
 miners = {
     MineTopic.prs: mine_all_prs,
     MineTopic.releases: mine_all_releases,
     MineTopic.developers: mine_all_developers,
     MineTopic.check_runs: mine_all_check_runs,
+    MineTopic.jira_issues: mine_all_jira_issues,
 }
 
 
