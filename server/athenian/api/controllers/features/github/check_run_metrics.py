@@ -9,6 +9,8 @@ from athenian.api.controllers.features.metric_calculator import AverageMetricCal
     BinnedHistogramCalculator, \
     BinnedMetricCalculator, HistogramCalculatorEnsemble, make_register_metric, MetricCalculator, \
     MetricCalculatorEnsemble, RatioCalculator, SumMetricCalculator
+from athenian.api.controllers.miners.github.check_run import check_suite_started_column, \
+    pull_request_closed_column, pull_request_started_column
 from athenian.api.models.metadata.github import CheckRun
 from athenian.api.models.web import CodeCheckMetricID
 
@@ -192,9 +194,9 @@ class SuiteTimeCalculator(AverageMetricCalculator[timedelta]):
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **kwargs) -> np.ndarray:
-        suite_node_ids = facts[CheckRun.check_suite_node_id.key].values.astype("S")
         unique_suites, first_encounters, inverse_indexes, run_counts = np.unique(
-            suite_node_ids, return_index=True, return_inverse=True, return_counts=True)
+            facts[CheckRun.check_suite_node_id.key].values.astype("S"),
+            return_index=True, return_inverse=True, return_counts=True)
         statuses = facts[CheckRun.check_suite_status.key].values[first_encounters].astype("S")
         completed = statuses == b"COMPLETED"
         conclusions = facts[CheckRun.check_suite_conclusion.key].values[
@@ -213,7 +215,7 @@ class SuiteTimeCalculator(AverageMetricCalculator[timedelta]):
         ordered_indexes = np.concatenate(suite_blocks[run_counts_order])
         groups = np.split(ordered_indexes, np.cumsum(group_counts * unique_run_counts)[:-1])
         run_finished = facts[CheckRun.completed_at.key].values.astype(min_times.dtype)
-        run_started = facts[CheckRun.started_at.key].values.astype(min_times.dtype)
+        suite_started_col = facts[check_suite_started_column].values
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", "All-NaN slice encountered")
             suite_finished = np.concatenate([
@@ -221,7 +223,7 @@ class SuiteTimeCalculator(AverageMetricCalculator[timedelta]):
                 for group, unique_run_count in zip(groups, unique_run_counts)
             ])
             suite_started = np.concatenate([
-                np.nanmin(run_started[group].reshape(-1, unique_run_count), axis=1)
+                suite_started_col[group].reshape(-1, unique_run_count)[:, 0]
                 for group, unique_run_count in zip(groups, unique_run_counts)
             ])
         elapsed = suite_finished - suite_started
@@ -238,4 +240,52 @@ class SuiteTimeCalculator(AverageMetricCalculator[timedelta]):
         result_elapsed = np.repeat(elapsed[sensibly_completed][None, :], len(min_times), axis=0)
         result_elapsed[~time_relevant_suite_mask[:, sensibly_completed]] = None
         result[:, first_encounters] = result_elapsed.astype(self.dtype).view(int)
+        return result
+
+
+@register_metric(CodeCheckMetricID.SUITES_PER_PR)
+class SuitesPerPRCounter(AverageMetricCalculator[float]):
+    """Average number of executed check suites per pull request metric."""
+
+    may_have_negative_values = False
+    dtype = float
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **_) -> np.ndarray:
+        unique_suites, first_suite_encounters = np.unique(
+            facts[CheckRun.check_suite_node_id.key].values.astype("S"), return_index=True)
+        """
+        # only completed
+        completed = np.in1d(
+            facts[CheckRun.check_suite_status.key].values[first_suite_encounters].astype("S"),
+            [b"COMPLETED", b"SUCCESS", b"FAILURE"])
+        first_suite_encounters = first_suite_encounters[completed]
+        """
+        pull_requests = facts[CheckRun.pull_request_node_id.key].values.astype("S")
+        unique_prs, first_pr_encounters = np.unique(pull_requests, return_index=True)
+        none_mask = unique_prs == b"None"
+        none_pos = np.nonzero(none_mask)[0]
+        not_none_mask = ~none_mask
+        del none_mask
+        if len(none_pos):
+            first_pr_encounters = first_pr_encounters[not_none_mask]
+        unique_prs_alt, pr_suite_counts = np.unique(
+            pull_requests[first_suite_encounters], return_counts=True)
+        assert unique_prs.shape == unique_prs_alt.shape, \
+            f"invalid PR deduplication: {len(unique_prs)} vs. {len(unique_prs_alt)}"
+        del unique_prs_alt
+        del unique_prs
+        if len(none_pos):
+            pr_suite_counts = pr_suite_counts[not_none_mask]
+        mask_pr_times = (
+            (facts[pull_request_started_column].values < max_times[:, None])
+            &
+            (facts[pull_request_closed_column].values >= min_times[:, None])
+        )
+        result = np.zeros((len(min_times), len(facts)), dtype=np.float32)
+        result[:, first_pr_encounters] = pr_suite_counts
+        result[~mask_pr_times] = None
         return result
