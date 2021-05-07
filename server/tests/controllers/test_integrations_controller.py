@@ -112,6 +112,8 @@ async def test_get_everything_smoke(client, headers):
                 assert len(df) == size
         with zipf.open("check_runs.parquet") as checkf:
             check_runs_df = pd.read_parquet(checkf)
+        with zipf.open("jira_issues.parquet") as jiraf:
+            jira_issues_df = pd.read_parquet(jiraf)
     assert len(prs_df) == 679
     assert set(prs_df) == {
         "first_comment_on_first_review", "merged_by_login", "first_commit", "stage_time_review",
@@ -139,6 +141,12 @@ async def test_get_everything_smoke(client, headers):
         "pull_request_node_id", "repository_full_name", "repository_node_id", "sha", "started_at",
         "status", "url", "check_suite_started", "pull_request_created_at",
         "pull_request_closed_at",
+    }
+    assert len(jira_issues_df) == 1863
+    assert set(jira_issues_df) == {
+        "assignee", "category_name", "commenters", "created", "epic_id", "labels", "pr_ids",
+        "priority_name", "prs_began", "prs_count", "prs_released", "reporter", "resolved",
+        "status", "type", "updated", "work_began",
     }
 
 
