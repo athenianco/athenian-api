@@ -9,7 +9,7 @@ from sqlalchemy import select
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
-from athenian.api.models.metadata.github import PullRequest
+from athenian.api.models.metadata.github import NodePullRequestJiraIssues, PullRequest
 from athenian.api.models.precomputed.models import GitHubRelease as PrecomputedRelease
 from athenian.api.typing_utils import DatabaseLike
 
@@ -309,6 +309,18 @@ def get_memory_cache_options() -> Dict[str, Dict]:
                     PullRequest.merge_commit_id,
                     PullRequest.merge_commit_sha,
                 ],
+            },
+            "jira_mapping": {
+                "cols": [
+                    NodePullRequestJiraIssues.node_id,
+                    NodePullRequestJiraIssues.node_acc,
+                    NodePullRequestJiraIssues.jira_id,
+                ],
+                "categorical_cols": [
+                    NodePullRequestJiraIssues.node_acc,
+                    NodePullRequestJiraIssues.jira_id,
+                ],
+                "identifier_cols": [NodePullRequestJiraIssues.node_id],
             },
         },
         "pdb": {
