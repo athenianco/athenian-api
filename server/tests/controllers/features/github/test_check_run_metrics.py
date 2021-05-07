@@ -21,12 +21,13 @@ def metrics_calculator_force_cache(cache):
 
 
 @pytest.mark.parametrize("split_by_check_runs, suite_freqs, suite_sizes, metrics", [
-    (True, [[[983, 399, 495, 302, 7, 12]]], [1, 2, 3, 4, 5, 6], [[983, 648, 319, 0],
-                                                                 [399, 55, 343, 0],
-                                                                 [495, 345, 150, 0],
-                                                                 [302, 133, 169, 0],
-                                                                 [7, 1, 6, 0],
-                                                                 [12, 1, 11, 0]]),
+    (True, [[[983, 399, 495, 302, 7, 12]]], [1, 2, 3, 4, 5, 6],
+     [[983, 648, 319, 0],
+      [399, 55, 343, 0],
+      [495, 345, 150, 0],
+      [302, 133, 169, 0],
+      [7, 1, 6, 0],
+      [12, 1, 11, 0]]),
     (False, [[[0]]], [], [[2198, 1183, 998, 0]]),
 ])
 @with_defer
@@ -65,3 +66,12 @@ async def test_check_run_metrics_suite_time(metrics_calculator: MetricEntriesCal
     assert metrics[0, 0, 0, 0][0] == [
         Metric(True, timedelta(0), timedelta(0), timedelta(seconds=1)),
     ]
+
+
+@with_defer
+async def test_check_run_metrics_suites_per_pr(metrics_calculator: MetricEntriesCalculator):
+    metrics, _, _ = await metrics_calculator.calc_check_run_metrics_line_github(
+        [CodeCheckMetricID.SUITES_PER_PR],
+        [[datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc)]],
+        [0, 1], [["src-d/go-git"]], [], False, JIRAFilter.empty())
+    assert metrics[0, 0, 0, 0][0][0].value == 1.9697428139183055

@@ -137,7 +137,8 @@ async def test_get_everything_smoke(client, headers):
         "check_run_node_id", "check_suite_conclusion", "check_suite_node_id", "check_suite_status",
         "commit_node_id", "committed_date", "completed_at", "conclusion", "deletions", "name",
         "pull_request_node_id", "repository_full_name", "repository_node_id", "sha", "started_at",
-        "status", "url",
+        "status", "url", "check_suite_started", "pull_request_created_at",
+        "pull_request_closed_at",
     }
 
 
