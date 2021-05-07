@@ -482,29 +482,35 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
     return df.take(np.nonzero(passed)[0])
 
 
-async def append_pr_jira_mapping(prs: Dict[str, PullRequestFacts],
-                                 meta_ids: Tuple[int, ...],
-                                 mdb: DatabaseLike) -> None:
-    """Load and insert "jira_id" to the PR facts."""
-    jira_map = await load_pr_jira_mapping(prs, meta_ids, mdb)
-    for pr, facts in prs.items():
-        facts.jira_id = jira_map.get(pr)
+class PullRequestJiraMapper:
+    """Mapper of pull requests to JIRA tickets."""
 
+    @classmethod
+    async def append_pr_jira_mapping(cls,
+                                     prs: Dict[str, PullRequestFacts],
+                                     meta_ids: Tuple[int, ...],
+                                     mdb: DatabaseLike) -> None:
+        """Load and insert "jira_id" to the PR facts."""
+        jira_map = await cls.load_pr_jira_mapping(prs, meta_ids, mdb)
+        for pr, facts in prs.items():
+            facts.jira_id = jira_map.get(pr)
 
-@sentry_span
-async def load_pr_jira_mapping(prs: Collection[str],
-                               meta_ids: Tuple[int, ...],
-                               mdb: DatabaseLike) -> Dict[str, str]:
-    """Fetch the mapping from PR node IDs to JIRA issue IDs."""
-    nprji = NodePullRequestJiraIssues
-    if len(prs) >= 100:
-        node_id_cond = nprji.node_id.in_any_values(prs)
-    else:
-        node_id_cond = nprji.node_id.in_(prs)
-    rows = await mdb.fetch_all(sql.select([nprji.node_id, nprji.jira_id])
-                               .where(sql.and_(node_id_cond,
-                                               nprji.node_acc.in_(meta_ids))))
-    return {r[0]: r[1] for r in rows}
+    @classmethod
+    @sentry_span
+    async def load_pr_jira_mapping(cls,
+                                   prs: Collection[str],
+                                   meta_ids: Tuple[int, ...],
+                                   mdb: DatabaseLike) -> Dict[str, str]:
+        """Fetch the mapping from PR node IDs to JIRA issue IDs."""
+        nprji = NodePullRequestJiraIssues
+        if len(prs) >= 100:
+            node_id_cond = nprji.node_id.in_any_values(prs)
+        else:
+            node_id_cond = nprji.node_id.in_(prs)
+        rows = await mdb.fetch_all(sql.select([nprji.node_id, nprji.jira_id])
+                                   .where(sql.and_(node_id_cond,
+                                                   nprji.node_acc.in_(meta_ids))))
+        return {r[0]: r[1] for r in rows}
 
 
 def resolve_work_began_and_resolved(issue_work_began: Optional[np.datetime64],
@@ -526,3 +532,9 @@ def resolve_work_began_and_resolved(issue_work_began: Optional[np.datetime64],
             (issue_resolved != issue_resolved or issue_resolved is None):
         return work_began, None
     return work_began, max(issue_resolved, prs_released)
+
+
+# TODO: these have to be removed, these are here just for keeping backward-compatibility
+# without the need to re-write already all the places these functions are called
+load_pr_jira_mapping = PullRequestJiraMapper.load_pr_jira_mapping
+append_pr_jira_mapping = PullRequestJiraMapper.append_pr_jira_mapping
