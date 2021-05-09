@@ -238,7 +238,7 @@ class Counter(MetricCalculator[int]):
                  facts: pd.DataFrame,
                  min_times: np.ndarray,
                  max_times: np.ndarray,
-                 groups: Optional[Sequence[Sequence[int]]],
+                 groups: Sequence[Sequence[int]],
                  **kwargs) -> None:
         """Reference the same peek and samples from the only dependency."""  # noqa
         self._peek = self._calcs[0].peek
@@ -288,6 +288,10 @@ class MetricCalculatorEnsemble:
         """Initialize a new instance of MetricCalculatorEnsemble class."""
         metric_classes = {class_mapping[m]: m for m in metrics}
         self._calcs, self._metrics = self._plan_classes(metric_classes, quantiles)
+
+    def __getitem__(self, metric: str) -> MetricCalculator:
+        """Return the owned calculator for the given metric."""
+        return self._metrics[metric]
 
     @staticmethod
     def _plan_classes(metric_classes: Dict[Type[MetricCalculator], str],
