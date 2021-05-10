@@ -279,6 +279,7 @@ def get_memory_cache_options() -> Dict[str, Dict]:
     return {
         "mdb": {
             "prs": {
+                "account_col": PullRequest.acc_id,
                 "cols": [
                     PullRequest.acc_id,
                     PullRequest.node_id,
