@@ -22,6 +22,7 @@ from athenian.api.typing_utils import DatabaseLike
 check_suite_started_column = "check_suite_started"
 pull_request_started_column = "pull_request_" + NodePullRequest.created_at.key
 pull_request_closed_column = "pull_request_" + NodePullRequest.closed_at.key
+pull_request_merged_column = "pull_request_" + NodePullRequest.merged.key
 
 
 @sentry_span
@@ -111,7 +112,7 @@ async def mine_check_runs(time_from: datetime,
         unique_ambiguous_pr_node_ids = []
 
     # we need all PR lifetimes to check explicit_node_id_indexes
-    pr_cols = [NodePullRequest.id, NodePullRequest.author,
+    pr_cols = [NodePullRequest.id, NodePullRequest.author, NodePullRequest.merged,
                NodePullRequest.created_at, NodePullRequest.closed_at]
     pr_lifetimes, pr_commit_counts = await gather(
         read_sql_query(
@@ -132,15 +133,23 @@ async def mine_check_runs(time_from: datetime,
     del unique_ambiguous_pr_node_ids
     pr_lifetimes[NodePullRequest.closed_at.key].fillna(
         datetime.now(timezone.utc), inplace=True)
-    df = df.join(pr_lifetimes[[NodePullRequest.created_at.key, NodePullRequest.closed_at.key]],
-                 on=CheckRun.pull_request_node_id.key)
+    df = df.join(
+        pr_lifetimes[[
+            NodePullRequest.created_at.key,
+            NodePullRequest.closed_at.key,
+            NodePullRequest.merged.key,
+        ]],
+        on=CheckRun.pull_request_node_id.key)
     df.rename(columns={
         NodePullRequest.created_at.key: pull_request_started_column,
         NodePullRequest.closed_at.key: pull_request_closed_column,
+        NodePullRequest.merged.key: pull_request_merged_column,
     }, inplace=True)
+    df[pull_request_merged_column].fillna(False, inplace=True)
     # do not let different check runs belonging to the same suite map to different PRs
-    df[check_suite_started_column] = df \
-        .groupby(CheckRun.check_suite_node_id.key)[CheckRun.started_at.key].transform("min")
+    df[check_suite_started_column] = df.groupby(
+        CheckRun.check_suite_node_id.key, sort=False,
+    )[CheckRun.started_at.key].transform("min")
     check_runs_outside_pr_lifetime_indexes = np.nonzero(~df[check_suite_started_column].between(
         df[pull_request_started_column],
         df[pull_request_closed_column] + timedelta(hours=1),

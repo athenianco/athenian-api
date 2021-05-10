@@ -95,6 +95,7 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
                                                 acc_id=kwargs["acc_id"],
                                                 title=kwargs["title"],
                                                 author=kwargs["user_node_id"],
+                                                merged=kwargs["merged"],
                                                 created_at=kwargs["created_at"],
                                                 closed_at=kwargs["closed_at"]))
     session.add(SchemaMigration(version=__min_version__, dirty=False))
