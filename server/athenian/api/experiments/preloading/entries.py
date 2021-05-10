@@ -8,27 +8,24 @@ import databases
 import pandas as pd
 from sqlalchemy.sql.elements import BinaryExpression
 
-from athenian.api.controllers.features.entries import \
-    MetricEntriesCalculator as OriginalMetricEntriesCalculator
+from athenian.api.controllers.features.entries import MetricEntriesCalculator
 from athenian.api.controllers.features.github.unfresh_pull_request_metrics import \
-    UnfreshPullRequestFactsFetcher as OriginalUnfreshPullRequestFactsFetcher
+    UnfreshPullRequestFactsFetcher
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.pull_request import \
-    PullRequestMiner as OriginalPullRequestMiner
+from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.github.release_load import \
-    match_groups_to_conditions, ReleaseLoader as OriginalReleaseLoader
+    match_groups_to_conditions, ReleaseLoader
 from athenian.api.controllers.miners.github.release_load import \
     remove_ambigous_precomputed_releases
-from athenian.api.controllers.miners.github.release_match import \
-    ReleaseToPullRequestMapper as OriginalReleaseToPullRequestMapper
+from athenian.api.controllers.miners.github.release_match import ReleaseToPullRequestMapper
 from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind
 from athenian.api.controllers.settings import ReleaseMatch
 from athenian.api.models.metadata.github import PullRequest
 from athenian.api.tracing import sentry_span
 
 
-class ReleaseLoader(OriginalReleaseLoader):
-    """Loader for releases."""
+class PreloadedReleaseLoader(ReleaseLoader):
+    """Loader for preloaded releases."""
 
     @classmethod
     @sentry_span
@@ -67,25 +64,25 @@ class ReleaseLoader(OriginalReleaseLoader):
         return functools.reduce(operator.or_, or_masks)
 
 
-class ReleaseToPullRequestMapper(OriginalReleaseToPullRequestMapper):
-    """Mapper from releases to pull requests."""
+class PreloadedReleaseToPullRequestMapper(ReleaseToPullRequestMapper):
+    """Mapper from preloaded releases to pull requests."""
 
-    release_loader = ReleaseLoader
-
-
-class UnfreshPullRequestFactsFetcher(OriginalUnfreshPullRequestFactsFetcher):
-    """Fetcher for unfreshed pull requests facts."""
-
-    release_loader = ReleaseLoader
+    release_loader = PreloadedReleaseLoader
 
 
-class PullRequestMiner(OriginalPullRequestMiner):
-    """Load all the information related to Pull Requests from the metadata DB. Iterate over it \
-    to access individual PR objects."""
+class PreloadedUnfreshPullRequestFactsFetcher(UnfreshPullRequestFactsFetcher):
+    """Fetcher for preloaded unfresh pull requests facts."""
 
-    mappers = OriginalPullRequestMiner.AuxiliaryMappers(
-        releases_to_prs=ReleaseToPullRequestMapper.map_releases_to_prs,
-        prs_to_releases=OriginalPullRequestMiner.mappers.prs_to_releases,
+    release_loader = PreloadedReleaseLoader
+
+
+class PreloadedPullRequestMiner(PullRequestMiner):
+    """Load all the information related to PRS from the metadata DB with some preloaded methods. \
+    Iterate over it to access individual PR objects."""
+
+    mappers = PullRequestMiner.AuxiliaryMappers(
+        releases_to_prs=PreloadedReleaseToPullRequestMapper.map_releases_to_prs,
+        prs_to_releases=PullRequestMiner.mappers.prs_to_releases,
     )
 
     @classmethod
@@ -206,8 +203,8 @@ class PullRequestMiner(OriginalPullRequestMiner):
         return prs
 
 
-class MetricEntriesCalculator(OriginalMetricEntriesCalculator):
+class PreloadedMetricEntriesCalculator(MetricEntriesCalculator):
     """Calculator for different metrics using preloaded DataFrames."""
 
-    miner = PullRequestMiner
-    unfresh_fetcher = UnfreshPullRequestFactsFetcher
+    miner = PreloadedPullRequestMiner
+    unfresh_fetcher = PreloadedUnfreshPullRequestFactsFetcher
