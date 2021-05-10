@@ -17,7 +17,7 @@ class CalculatedPullRequestMetrics(Model):
         "date_to": date,
         "timezone": int,
         "granularities": List[str],
-        "quantiles": List[float],
+        "quantiles": Optional[List[float]],
         "exclude_inactive": bool,
     }
 
