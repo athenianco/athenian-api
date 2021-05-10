@@ -10,6 +10,7 @@ from sqlalchemy import select
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.models.metadata.github import PullRequest
+from athenian.api.models.state.models import AccountFeature, Feature
 from athenian.api.typing_utils import DatabaseLike
 
 
@@ -74,7 +75,7 @@ class CachedDataFrame:
     async def refresh(self) -> "CachedDataFrame":
         """Refresh the DataFrame from the database."""
         query = select(self._cols)
-        if self._filtering_clause:
+        if self._filtering_clause is not None:
             query = query.where(self._filtering_clause)
 
         df = await read_sql_query(query, self._db, self._cols)
@@ -217,11 +218,12 @@ class MemoryCache:
         else:
             await gather(*[df.refresh() for df in self._dfs.values()])
 
-    async def load(self):
+    async def load(self, accounts: List[int]):
         """Load all the DataFrames from the database."""
         for id_, opts in self._options.items():
             opts["db"] = self._db
             opts["debug_memory"] = self._debug_memory
+            opts["filtering_clause"] = opts.pop("account_col").in_(accounts)
             self._dfs[id_] = CachedDataFrame(id_, **opts)
 
         await gather(*[cdf.refresh() for cdf in self._dfs.values()])
@@ -257,11 +259,12 @@ class MemoryCachePreloader:
         self._log.info("Preloading MemoryCache")
         debug_mode = self._debug_mode if debug_memory is None else debug_memory
         tasks = []
+        enabled_accounts = await self._get_enabled_accounts(dbs["sdb"])
         for db_name, opts in get_memory_cache_options().items():
             db = dbs[db_name]
             mc = MemoryCache(db, opts, debug_memory=debug_mode)
             db.cache = mc
-            tasks.append(mc.load())
+            tasks.append(mc.load(enabled_accounts))
 
         await gather(*tasks)
 
@@ -272,6 +275,14 @@ class MemoryCachePreloader:
             raise self._task.exception()
         else:
             self._log.info("MemoryCache ready")
+
+    async def _get_enabled_accounts(self, sdb: DatabaseLike):
+        query = sa.select([AccountFeature.account_id])\
+                  .select_from(sa.join(Feature, AccountFeature,
+                                       Feature.id == AccountFeature.feature_id))\
+                  .where(sa.and_(AccountFeature.enabled,
+                                 Feature.name == "github_features_entries_preloading"))
+        return [r[0] for r in await sdb.fetch_all(query)]
 
 
 def get_memory_cache_options() -> Dict[str, Dict]:
