@@ -13,7 +13,7 @@ class ForSetCodeChecks(Model, RepositoryGroupsMixin):
         "repogroups": Optional[List[List[int]]],
         "commit_authors": Optional[List[str]],
         "commit_author_groups": Optional[List[List[str]]],
-        "jira": JIRAFilter,
+        "jira": Optional[JIRAFilter],
     }
 
     attribute_map = {

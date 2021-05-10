@@ -560,9 +560,7 @@ async def calc_code_check_runs(request: AthenianWebRequest, body: dict) -> web.R
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
-    filters, calculators = await gather(
-        _compile_filters_checks(filt.for_, request, filt.account, meta_ids),
-    )
+    filters = await _compile_filters_checks(filt.for_, request, filt.account, meta_ids)
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
     met = CalculatedCodeCheckMetrics()
@@ -590,8 +588,8 @@ async def calc_code_check_runs(request: AthenianWebRequest, body: dict) -> web.R
         mrange = range(len(met.metrics))
         for ca_group_index, ca_group in enumerate(metric_values):
             for repos_group_index, repos_group in enumerate(ca_group):
-                group_suite_counts = group_suite_counts[ca_group_index, repos_group_index]
-                total_group_suites = group_suite_counts.sum()
+                my_suite_counts = group_suite_counts[ca_group_index, repos_group_index]
+                total_group_suites = my_suite_counts.sum()
                 for suite_size_group_index, suite_size_group in enumerate(repos_group):
                     group_for_set = for_set \
                         .select_commit_authors_group(ca_group_index) \
@@ -599,7 +597,7 @@ async def calc_code_check_runs(request: AthenianWebRequest, body: dict) -> web.R
                     if filt.split_by_check_runs:
                         suite_size = suite_sizes[suite_size_group_index]
                         group_suites_count_ratio = \
-                            group_suite_counts[suite_size_group_index] / total_group_suites
+                            my_suite_counts[suite_size_group_index] / total_group_suites
                     else:
                         suite_size = group_suites_count_ratio = None
                     for granularity, ts, mvs in zip(

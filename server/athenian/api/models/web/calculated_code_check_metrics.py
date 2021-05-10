@@ -17,7 +17,7 @@ class CalculatedCodeCheckMetrics(Model):
         "date_to": date,
         "timezone": int,
         "granularities": List[str],
-        "quantiles": List[float],
+        "quantiles": Optional[List[float]],
         "split_by_check_runs": bool,
     }
 
@@ -221,9 +221,6 @@ class CalculatedCodeCheckMetrics(Model):
 
         :param quantiles: The quantiles of this CalculatedCodeCheckMetrics.
         """
-        if quantiles is None:
-            raise ValueError("Invalid value for `quantiles`, must not be `None`")
-
         self._quantiles = quantiles
 
     @property

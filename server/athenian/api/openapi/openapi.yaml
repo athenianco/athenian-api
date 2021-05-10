@@ -3653,7 +3653,6 @@ components:
       - exclude_inactive
       - granularities
       - metrics
-      - quantiles
       type: object
     CalculatedLinearMetricValues:
       additionalProperties: false
@@ -7577,7 +7576,6 @@ components:
       - date_to
       - granularities
       - metrics
-      - quantiles
       type: object
     CalculatedCodeCheckMetricsItem:
       additionalProperties: false

@@ -6,10 +6,10 @@ import pandas as pd
 import pytest
 
 from athenian.api.controllers.miners.github import developer
-from athenian.api.models.web import CalculatedDeveloperMetrics, \
+from athenian.api.models.web import CalculatedCodeCheckMetrics, CalculatedDeveloperMetrics, \
     CalculatedLinearMetricValues, CalculatedPullRequestMetrics, CalculatedReleaseMetric, \
     CodeBypassingPRsMeasurement, \
-    DeveloperMetricID, PullRequestMetricID, PullRequestWith, ReleaseMetricID
+    CodeCheckMetricID, DeveloperMetricID, PullRequestMetricID, PullRequestWith, ReleaseMetricID
 from athenian.api.serialization import FriendlyJson
 
 
@@ -1578,3 +1578,243 @@ async def test_release_metrics_participants_many_participants(client, headers):
     assert len(models) == 2
     assert models[0].values[0].values[0] == 12
     assert models[1].values[0].values[0] == 21
+
+
+async def test_code_check_metrics_smoke(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "for": [{
+            "repositories": ["github.com/src-d/go-git"],
+            "commit_authors": ["github.com/mcuadros"],
+        }],
+        "metrics": [CodeCheckMetricID.SUITES_COUNT],
+        "granularities": ["all"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/code_checks", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 200, rbody
+    rbody = json.loads(rbody)
+    model = CalculatedCodeCheckMetrics.from_dict(rbody)
+    assert model.to_dict() == {
+        "calculated": [{"for": {"commit_authors": ["github.com/mcuadros"],
+                                "repositories": ["github.com/src-d/go-git"]},
+                        "granularity": "all",
+                        "values": [{"date": date(2018, 1, 12),
+                                    "values": [221]}]}],
+        "date_from": date(2018, 1, 12),
+        "date_to": date(2020, 3, 1),
+        "granularities": ["all"],
+        "metrics": ["chk-suites-count"],
+        "split_by_check_runs": None,
+        "timezone": None,
+    }
+
+
+async def test_code_check_metrics_jira(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "for": [{
+            "repositories": ["github.com/src-d/go-git"],
+            "jira": {
+                "labels_include": ["bug", "onboarding", "performance"],
+            },
+        }],
+        "metrics": [CodeCheckMetricID.SUITES_COUNT],
+        "granularities": ["all"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/code_checks", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 200, rbody
+    rbody = json.loads(rbody)
+    model = CalculatedCodeCheckMetrics.from_dict(rbody)
+    assert model.to_dict() == {
+        "calculated": [{"for": {"jira": {"labels_include": ["bug",
+                                                            "onboarding",
+                                                            "performance"]},
+                                "repositories": ["github.com/src-d/go-git"]},
+                        "granularity": "all",
+                        "values": [{"date": date(2018, 1, 12),
+                                    "values": [44]}]}],
+        "date_from": date(2018, 1, 12),
+        "date_to": date(2020, 3, 1),
+        "granularities": ["all"],
+        "metrics": ["chk-suites-count"],
+        "split_by_check_runs": None,
+        "timezone": None,
+    }
+
+
+async def test_code_check_metrics_split_by_check_runs(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "for": [{
+            "repositories": ["github.com/src-d/go-git"],
+        }],
+        "metrics": [CodeCheckMetricID.SUITES_COUNT],
+        "split_by_check_runs": True,
+        "granularities": ["all"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/code_checks", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 200, rbody
+    rbody = json.loads(rbody)
+    model = CalculatedCodeCheckMetrics.from_dict(rbody)
+    assert model.to_dict() == {
+        "calculated": [{"check_runs": 1,
+                        "for": {"repositories": ["github.com/src-d/go-git"]},
+                        "granularity": "all",
+                        "suites_ratio": 0.28132118451025057,
+                        "values": [{"date": date(2018, 1, 12),
+                                    "values": [247]}]},
+                       {"check_runs": 2,
+                        "for": {"repositories": ["github.com/src-d/go-git"]},
+                        "granularity": "all",
+                        "suites_ratio": 0.13325740318906606,
+                        "values": [{"date": date(2018, 1, 12),
+                                    "values": [117]}]},
+                       {"check_runs": 3,
+                        "for": {"repositories": ["github.com/src-d/go-git"]},
+                        "granularity": "all",
+                        "suites_ratio": 0.39863325740318906,
+                        "values": [{"date": date(2018, 1, 12),
+                                    "values": [349]}]},
+                       {"check_runs": 4,
+                        "for": {"repositories": ["github.com/src-d/go-git"]},
+                        "granularity": "all",
+                        "suites_ratio": 0.16970387243735763,
+                        "values": [{"date": date(2018, 1, 12),
+                                    "values": [148]}]},
+                       {"check_runs": 5,
+                        "for": {"repositories": ["github.com/src-d/go-git"]},
+                        "granularity": "all",
+                        "suites_ratio": 0.00683371298405467,
+                        "values": [{"date": date(2018, 1, 12),
+                                    "values": [6]}]},
+                       {"check_runs": 6,
+                        "for": {"repositories": ["github.com/src-d/go-git"]},
+                        "granularity": "all",
+                        "suites_ratio": 0.010250569476082005,
+                        "values": [{"date": date(2018, 1, 12),
+                                    "values": [9]}]}],
+        "date_from": date(2018, 1, 12),
+        "date_to": date(2020, 3, 1),
+        "granularities": ["all"],
+        "metrics": ["chk-suites-count"],
+        "split_by_check_runs": True,
+        "timezone": None,
+    }
+
+
+async def test_code_check_metrics_repogroups(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "for": [{
+            "repositories": ["github.com/src-d/go-git"],
+            "repogroups": [[0], [0]],
+        }],
+        "metrics": [CodeCheckMetricID.SUITES_COUNT],
+        "granularities": ["all"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/code_checks", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 200, rbody
+    rbody = json.loads(rbody)
+    model = CalculatedCodeCheckMetrics.from_dict(rbody)
+    assert model.to_dict() == {
+        "calculated": [{"for": {"repositories": ["github.com/src-d/go-git"]},
+                        "granularity": "all",
+                        "values": [{"date": date(2018, 1, 12),
+                                    "values": [876]}]},
+                       {"for": {"repositories": ["github.com/src-d/go-git"]},
+                        "granularity": "all",
+                        "values": [{"date": date(2018, 1, 12),
+                                    "values": [876]}]}],
+        "date_from": date(2018, 1, 12),
+        "date_to": date(2020, 3, 1),
+        "granularities": ["all"],
+        "metrics": ["chk-suites-count"],
+        "split_by_check_runs": None,
+        "timezone": None,
+    }
+
+
+async def test_code_check_metrics_authorgroups(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "for": [{
+            "repositories": ["github.com/src-d/go-git"],
+            "commit_author_groups": [["github.com/mcuadros"], ["github.com/erizocosmico"]],
+        }],
+        "metrics": [CodeCheckMetricID.SUITES_COUNT],
+        "granularities": ["all"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/code_checks", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 200, rbody
+    rbody = json.loads(rbody)
+    model = CalculatedCodeCheckMetrics.from_dict(rbody)
+    assert model.to_dict() == {
+        "calculated": [{"for": {"commit_authors": ["github.com/mcuadros"],
+                                "repositories": ["github.com/src-d/go-git"]},
+                        "granularity": "all",
+                        "values": [{"date": date(2018, 1, 12),
+                                    "values": [221]}]},
+                       {"for": {"commit_authors": ["github.com/erizocosmico"],
+                                "repositories": ["github.com/src-d/go-git"]},
+                        "granularity": "all",
+                        "values": [{"date": date(2018, 1, 12),
+                                    "values": [20]}]}],
+        "date_from": date(2018, 1, 12),
+        "date_to": date(2020, 3, 1),
+        "granularities": ["all"],
+        "metrics": ["chk-suites-count"],
+        "split_by_check_runs": None,
+        "timezone": None,
+    }
+
+
+@pytest.mark.parametrize("account, repos, metrics, code", [
+    (3, ["{1}"], [CodeCheckMetricID.SUITES_COUNT], 404),
+    (2, ["github.com/src-d/go-git"], [CodeCheckMetricID.SUITES_COUNT], 422),
+    (10, ["{1}"], [CodeCheckMetricID.SUITES_COUNT], 404),
+    (1, None, [CodeCheckMetricID.SUITES_COUNT], 400),
+    (1, ["{1}"], None, 400),
+    (1, ["{1}"], ["xxx"], 400),
+    (1, ["github.com/athenianco/athenian-api"], [CodeCheckMetricID.SUITES_COUNT], 403),
+])
+async def test_code_check_metrics_nasty_input(client, headers, account, repos, metrics, code):
+    body = {
+        "account": account,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "for": [{
+            "repositories": repos,
+        }],
+        "metrics": metrics,
+        "granularities": ["all"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/code_checks", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == code, "Response body is : " + body
