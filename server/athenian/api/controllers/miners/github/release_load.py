@@ -654,8 +654,27 @@ def match_groups_to_sql(match_groups: Dict[ReleaseMatch, Dict[str, Iterable[str]
     :return: 1. List of the alternative SQL filters. \
              2. List of involved repository names for each SQL filter.
     """
-    or_items = []
-    repos = []
+    or_conditions, repos = match_groups_to_conditions(match_groups)
+    or_items = [
+        and_(
+            model.release_match == cond["release_match"],
+            model.repository_full_name.in_(cond["repository_full_name"]),
+        ) for cond in or_conditions
+    ]
+
+    return or_items, repos
+
+
+def match_groups_to_conditions(
+    match_groups: Dict[ReleaseMatch, Dict[str, Iterable[str]]],
+) -> Tuple[List[List[dict]], List[Iterable[str]]]:
+    """
+    Convert the grouped release matches to a list of conditions.
+
+    :return: 1. List of the filters to OR/UNION later. \
+             2. List of involved repository names for each filter.
+    """
+    or_conditions, repos = [], []
     for match, suffix in [
         (ReleaseMatch.tag, "|"),
         (ReleaseMatch.branch, "|"),
@@ -665,11 +684,14 @@ def match_groups_to_sql(match_groups: Dict[ReleaseMatch, Dict[str, Iterable[str]
     ]:
         if not (match_group := match_groups.get(match)):
             continue
-        or_items.extend(and_(model.release_match == "".join([match.name, suffix, v]),
-                             model.repository_full_name.in_(r))
-                        for v, r in match_group.items())
+
+        or_conditions.extend({
+            "release_match": "".join([match.name, suffix, v]),
+            "repository_full_name": r,
+        } for v, r in match_group.items())
         repos.extend(match_group.values())
-    return or_items, repos
+
+    return or_conditions, repos
 
 
 def remove_ambigous_precomputed_releases(df: pd.DataFrame, repo_column: str) -> pd.DataFrame:

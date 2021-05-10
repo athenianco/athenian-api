@@ -10,6 +10,7 @@ from sqlalchemy import select
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.models.metadata.github import PullRequest
+from athenian.api.models.precomputed.models import GitHubRelease as PrecomputedRelease
 from athenian.api.typing_utils import DatabaseLike
 
 
@@ -100,7 +101,7 @@ class CachedDataFrame:
     def filter(
         self,
         mask: pd.Series,
-        columns: Optional[Collection[str]],
+        columns: Optional[Collection[str]] = None,
         index: Optional[str] = None,
         uncast: bool = True,
     ) -> pd.DataFrame:
@@ -307,6 +308,21 @@ def get_memory_cache_options() -> Dict[str, Dict]:
                     PullRequest.node_id,
                     PullRequest.merge_commit_id,
                     PullRequest.merge_commit_sha,
+                ],
+            },
+        },
+        "pdb": {
+            "releases": {
+                "cols": [
+                    PrecomputedRelease.release_match,
+                    PrecomputedRelease.repository_full_name,
+                    PrecomputedRelease.published_at,
+                    PrecomputedRelease.acc_id,
+                ],
+                "categorical_cols": [
+                    PrecomputedRelease.acc_id,
+                    PrecomputedRelease.repository_full_name,
+                    PrecomputedRelease.release_match,
                 ],
             },
         },

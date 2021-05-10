@@ -1,26 +1,89 @@
 from datetime import datetime
-from typing import Optional, Set, Tuple
+import functools
+import operator
+from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
 
 import aiomcache
 import databases
 import pandas as pd
 from sqlalchemy.sql.elements import BinaryExpression
 
-from athenian.api.controllers.features.entries import (
-    MetricEntriesCalculator as OriginalMetricEntriesCalculator,
-)
+from athenian.api.controllers.features.entries import MetricEntriesCalculator
+from athenian.api.controllers.features.github.unfresh_pull_request_metrics import \
+    UnfreshPullRequestFactsFetcher
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.pull_request import (
-    PullRequestMiner as OriginalPullRequestMiner,
-)
+from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
+from athenian.api.controllers.miners.github.release_load import \
+    match_groups_to_conditions, ReleaseLoader
+from athenian.api.controllers.miners.github.release_load import \
+    remove_ambigous_precomputed_releases
+from athenian.api.controllers.miners.github.release_match import ReleaseToPullRequestMapper
 from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind
+from athenian.api.controllers.settings import ReleaseMatch
 from athenian.api.models.metadata.github import PullRequest
 from athenian.api.tracing import sentry_span
 
 
-class PullRequestMiner(OriginalPullRequestMiner):
-    """Load all the information related to Pull Requests from the metadata DB. Iterate over it \
-    to access individual PR objects."""
+class PreloadedReleaseLoader(ReleaseLoader):
+    """Loader for preloaded releases."""
+
+    @classmethod
+    @sentry_span
+    async def _fetch_precomputed_releases(cls,
+                                          match_groups: Dict[ReleaseMatch, Dict[str, List[str]]],
+                                          time_from: datetime,
+                                          time_to: datetime,
+                                          account: int,
+                                          pdb: databases.Database,
+                                          index: Optional[Union[str, Sequence[str]]] = None,
+                                          ) -> pd.DataFrame:
+        cached_df = pdb.cache.dfs["releases"]
+        df = cached_df.df
+        mask = cls._match_groups_to_mask(df, match_groups)
+        releases = cached_df.filter(mask)
+        releases.sort_values("published_at", ascending=False, inplace=True)
+        releases = remove_ambigous_precomputed_releases(releases, "repository_full_name")
+        if index is not None:
+            releases.set_index(index, inplace=True)
+        else:
+            releases.reset_index(drop=True, inplace=True)
+        return releases
+
+    @classmethod
+    def _match_groups_to_mask(
+            cls,
+            df: pd.DataFrame,
+            match_groups: Dict[ReleaseMatch, Dict[str, Iterable[str]]]) -> pd.Series:
+        or_conditions, _ = match_groups_to_conditions(match_groups)
+        or_masks = [
+            (df["release_match"] == cond["release_match"]) &
+            (df["repository_full_name"].isin(cond["repository_full_name"]))
+            for cond in or_conditions
+        ]
+
+        return functools.reduce(operator.or_, or_masks)
+
+
+class PreloadedReleaseToPullRequestMapper(ReleaseToPullRequestMapper):
+    """Mapper from preloaded releases to pull requests."""
+
+    release_loader = PreloadedReleaseLoader
+
+
+class PreloadedUnfreshPullRequestFactsFetcher(UnfreshPullRequestFactsFetcher):
+    """Fetcher for preloaded unfresh pull requests facts."""
+
+    release_loader = PreloadedReleaseLoader
+
+
+class PreloadedPullRequestMiner(PullRequestMiner):
+    """Load all the information related to PRS from the metadata DB with some preloaded methods. \
+    Iterate over it to access individual PR objects."""
+
+    mappers = PullRequestMiner.AuxiliaryMappers(
+        releases_to_prs=PreloadedReleaseToPullRequestMapper.map_releases_to_prs,
+        prs_to_releases=PullRequestMiner.mappers.prs_to_releases,
+    )
 
     @classmethod
     def _prs_from_binary_expression(cls, bin_exp: BinaryExpression):
@@ -134,13 +197,14 @@ class PullRequestMiner(OriginalPullRequestMiner):
 
         if remove_acc_id:
             del prs[PullRequest.acc_id.key]
-        if PullRequest.closed.key in df:
+        if PullRequest.closed.key in prs:
             cls.adjust_pr_closed_merged_timestamps(prs)
 
         return prs
 
 
-class MetricEntriesCalculator(OriginalMetricEntriesCalculator):
+class PreloadedMetricEntriesCalculator(MetricEntriesCalculator):
     """Calculator for different metrics using preloaded DataFrames."""
 
-    miner = PullRequestMiner
+    miner = PreloadedPullRequestMiner
+    unfresh_fetcher = PreloadedUnfreshPullRequestFactsFetcher
