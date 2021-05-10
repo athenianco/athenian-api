@@ -34,6 +34,9 @@ class MetricCalculator(Generic[T]):
     # numpy data type of the metric value
     dtype = None
 
+    # dtype may behave like NaN
+    has_nan = False
+
     def __init__(self, *deps: "MetricCalculator", quantiles: Sequence[float]):
         """Initialize a new `MetricCalculator` instance."""
         self.reset()
@@ -84,6 +87,8 @@ class MetricCalculator(Generic[T]):
         assert peek.shape[:2] == (len(min_times), len(facts)), (peek.shape, type(self))
         if peek.dtype is np.dtype(object):
             notnull = peek != np.array(None)
+        elif self.has_nan:
+            notnull = peek == peek
         else:
             notnull = peek != peek.dtype.type(0)
         gpeek = [peek[:, g] for g in groups]

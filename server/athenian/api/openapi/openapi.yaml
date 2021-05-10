@@ -7494,10 +7494,13 @@ components:
         * `chk-cancelled-suites-count` - number of cancelled check suites.
         * `chk-success-ratio` - `chk-successful-suites-count` divided by `chk-suites-count`.
         * `chk-suite-time` - average check suite execution time.
+        * `chk-robust-suite-time` - average check suite execution time, alternative algorithm. We consider each suite size group separately, fill missing daily values by averaging the neighbors, and then take the average of group averages.
         * `chk-suites-per-pr` - average number of times check suites executed in a pull request.
         * `chk-suite-time-per-pr` - average check suite execution time by pull request. The difference with `chk-suite-time` is that we don't consider checks triggered by direct pushes, e.g. by merge commits.
         * `chk-prs-with-checks-count` - number of PRs that triggered at least one check suite.
         * `chk-flaky-commit-checks-count` - number of check suites triggered by the same commit but having different outcomes - both successful and failed.
+        * `chk-prs-merged-with-failed-checks-count` - how many PRs were merged despite failing checks.
+        * `chk-prs-merged-with-failed-checks-ratio` - ratio of PRs merged with failing checks to all merged PRs with checks.
       enum:
       - chk-suites-count
       - chk-successful-suites-count
@@ -7505,10 +7508,13 @@ components:
       - chk-cancelled-suites-count
       - chk-success-ratio
       - chk-suite-time
+      - chk-robust-suite-time
       - chk-suites-per-pr
       - chk-suite-time-per-pr
       - chk-prs-with-checks-count
       - chk-flaky-commit-checks-count
+      - chk-prs-merged-with-failed-checks-count
+      - chk-prs-merged-with-failed-checks-ratio
       example: chk-suites-count
       type: string
     CalculatedCodeCheckMetrics:

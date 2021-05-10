@@ -62,6 +62,8 @@ async def test_check_run_metrics_suite_counts(
     (CodeCheckMetricID.SUITES_PER_PR, 1.9697428139183055),
     (CodeCheckMetricID.PRS_WITH_CHECKS_COUNT, 661),
     (CodeCheckMetricID.FLAKY_COMMIT_CHECKS_COUNT, 0),
+    (CodeCheckMetricID.PRS_MERGED_WITH_FAILED_CHECKS_COUNT, 238),
+    (CodeCheckMetricID.PRS_MERGED_WITH_FAILED_CHECKS_RATIO, 0.43933823529411764),
 ])
 @with_defer
 async def test_check_run_metrics_blitz(metrics_calculator: MetricEntriesCalculator,

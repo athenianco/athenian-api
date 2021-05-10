@@ -342,6 +342,7 @@ class NodePullRequest(Base,
 
     title = Column(Text, nullable=False)
     author = Column(Text)
+    merged = Column(Boolean)
     created_at = Column(TIMESTAMP(timezone=True), nullable=False)
     closed_at = Column(TIMESTAMP(timezone=True))
 

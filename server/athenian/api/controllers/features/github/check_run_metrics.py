@@ -5,12 +5,13 @@ import warnings
 import numpy as np
 import pandas as pd
 
+from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
-    BinnedHistogramCalculator, \
-    BinnedMetricCalculator, HistogramCalculatorEnsemble, make_register_metric, MetricCalculator, \
-    MetricCalculatorEnsemble, RatioCalculator, SumMetricCalculator
+    BinnedHistogramCalculator, BinnedMetricCalculator, HistogramCalculatorEnsemble, \
+    make_register_metric, MetricCalculator, MetricCalculatorEnsemble, RatioCalculator, \
+    SumMetricCalculator
 from athenian.api.controllers.miners.github.check_run import check_suite_started_column, \
-    pull_request_closed_column, pull_request_started_column
+    pull_request_closed_column, pull_request_merged_column, pull_request_started_column
 from athenian.api.models.metadata.github import CheckRun
 from athenian.api.models.web import CodeCheckMetricID
 
@@ -183,11 +184,12 @@ class SuiteSuccessRatioCalculator(RatioCalculator):
 
 
 @register_metric(CodeCheckMetricID.SUITE_TIME)
-class SuiteTimeCalculator(AverageMetricCalculator[timedelta]):
-    """Average check suite execution time metric."""
+class SuiteTimeCalculatorAnalysis(MetricCalculator[None]):
+    """Measure elapsed time and size of each check suite."""
 
     may_have_negative_values = False
-    dtype = "timedelta64[s]"
+    dtype = np.dtype([("elapsed", "timedelta64[s]"), ("size", int)])
+    has_nan = True
 
     def _analyze(self,
                  facts: pd.DataFrame,
@@ -231,16 +233,57 @@ class SuiteTimeCalculator(AverageMetricCalculator[timedelta]):
         elapsed[elapsed < np.array([0], dtype=elapsed.dtype)] = 0
         # reorder the sequence to match unique_suites
         suite_order = np.argsort(run_counts_order)
-        elapsed = elapsed[suite_order]
+        structs = np.zeros_like(suite_order, dtype=self.dtype)
+        structs["elapsed"] = elapsed[suite_order]
+        structs["size"] = np.repeat(unique_run_counts, group_counts)[suite_order]
         suite_started = suite_started[suite_order]
 
-        result = np.full((len(min_times), len(facts)), None, object)
+        result = np.full((len(min_times), len(facts)),
+                         np.array([(np.timedelta64("NaT"), -1)], dtype=self.dtype))
         time_relevant_suite_mask = \
             (min_times[:, None] <= suite_started) & (suite_started < max_times[:, None])
-        result_elapsed = np.repeat(elapsed[sensibly_completed][None, :], len(min_times), axis=0)
-        result_elapsed[~time_relevant_suite_mask[:, sensibly_completed]] = None
-        result[:, first_encounters] = result_elapsed.astype(self.dtype).view(int)
+        result_structs = np.repeat(structs[sensibly_completed][None, :], len(min_times), axis=0)
+        mask = ~time_relevant_suite_mask[:, sensibly_completed]
+        result_structs[mask]["elapsed"] = np.timedelta64("NaT")
+        result_structs[mask]["size"] = -1
+        result[:, first_encounters] = result_structs
         return result
+
+    def _value(self, samples: np.ndarray) -> Metric[None]:
+        return Metric(False, None, None, None)
+
+
+@register_metric(CodeCheckMetricID.SUITE_TIME)
+class SuiteTimeCalculator(AverageMetricCalculator[timedelta]):
+    """Average check suite execution time metric."""
+
+    may_have_negative_values = False
+    dtype = "timedelta64[s]"
+    deps = (SuiteTimeCalculatorAnalysis,)
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **kwargs) -> np.ndarray:
+        return self._calcs[0].peek.copy()["elapsed"].astype(object)
+
+
+@register_metric(CodeCheckMetricID.ROBUST_SUCCESS_RATIO)
+class RobustSuiteTimeCalculator(AverageMetricCalculator[timedelta]):
+    """Average check suite execution time metric, sustainable version."""
+
+    may_have_negative_values = False
+    dtype = "timedelta64[s]"
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **kwargs) -> np.ndarray:
+        structs = self._calcs[0].peek
+        _ = structs
+        raise NotImplementedError
 
 
 @register_metric(CodeCheckMetricID.SUITES_PER_PR)
@@ -374,3 +417,80 @@ class FlakyCommitChecksCounter(SumMetricCalculator[int]):
         mask = (min_times[:, None] <= started) & (started < max_times[:, None])
         result[mask] = 1
         return result
+
+
+@register_metric(CodeCheckMetricID.PRS_MERGED_WITH_FAILED_CHECKS_COUNT)
+class MergedPRsWithFailedChecksCounter(SumMetricCalculator[int]):
+    """Count how many PRs were merged despite failing checks."""
+
+    dtype = int
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **_) -> np.ndarray:
+        df = facts[[
+            CheckRun.pull_request_node_id.key, CheckRun.name.key, CheckRun.started_at.key,
+            CheckRun.status.key, CheckRun.conclusion.key, pull_request_merged_column]]
+        df = df.sort_values(CheckRun.started_at.key, ascending=False)  # no inplace=True, yes
+        pull_requests = df[CheckRun.pull_request_node_id.key].values.astype("S")
+        names = df[CheckRun.name.key].values.astype("S")
+        joint = np.char.add(pull_requests, names)
+        _, first_encounters = np.unique(joint, return_index=True)
+        statuses = df[CheckRun.status.key].values.astype("S")
+        conclusions = df[CheckRun.conclusion.key].values.astype("S")
+        failure_mask = np.zeros_like(statuses, dtype=bool)
+        failure_mask[first_encounters] = True
+        failure_mask &= (
+            ((statuses == b"COMPLETED") & (
+                (conclusions == b"FAILURE") | (conclusions == b"STALE"))
+             ) | (statuses == b"FAILURE") | (statuses == b"ERROR")
+        ) & (pull_requests != b"None") & df[pull_request_merged_column].values
+        failing_pull_requests = pull_requests[failure_mask]
+        _, failing_indexes = np.unique(failing_pull_requests, return_index=True)
+        failing_indexes = np.nonzero(failure_mask)[0][failing_indexes]
+        failing_indexes = df.index.values[failing_indexes]
+
+        mask_pr_times = (
+            (facts[pull_request_started_column].values < max_times[:, None])
+            &
+            (facts[pull_request_closed_column].values >= min_times[:, None])
+        )
+        result = np.zeros((len(min_times), len(facts)), dtype=int)
+        result[:, failing_indexes] = 1
+        result[~mask_pr_times] = 0
+        return result
+
+
+class MergedPRsCounter(SumMetricCalculator[int]):
+    """Count how many PRs were merged with checks."""
+
+    dtype = int
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **_) -> np.ndarray:
+        pull_requests = facts[CheckRun.pull_request_node_id.key].values.astype("S")
+        merged = facts[pull_request_merged_column].values
+        pull_requests[~merged] = b"None"
+        unique_prs, first_encounters = np.unique(pull_requests, return_index=True)
+        first_encounters = first_encounters[unique_prs != b"None"]
+        mask_pr_times = (
+            (facts[pull_request_started_column].values < max_times[:, None])
+            &
+            (facts[pull_request_closed_column].values >= min_times[:, None])
+        )
+        result = np.zeros((len(min_times), len(facts)), dtype=int)
+        result[:, first_encounters] = 1
+        result[~mask_pr_times] = 0
+        return result
+
+
+@register_metric(CodeCheckMetricID.PRS_MERGED_WITH_FAILED_CHECKS_RATIO)
+class MergedPRsWithFailedChecksRatioCalculator(RatioCalculator):
+    """Calculate the ratio of PRs merged with failing checks to all merged PRs with checks."""
+
+    deps = (MergedPRsWithFailedChecksCounter, MergedPRsCounter)
