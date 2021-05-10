@@ -4,7 +4,6 @@ from typing import List
 import pytest
 
 from athenian.api.controllers.features.entries import MetricEntriesCalculator
-from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.miners.filters import JIRAFilter
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.web import CodeCheckMetricID
@@ -57,21 +56,19 @@ async def test_check_run_metrics_suite_counts(
     check(await metrics_calculator_force_cache.calc_check_run_metrics_line_github(*args))
 
 
+@pytest.mark.parametrize("metric, value", [
+    (CodeCheckMetricID.SUITE_TIME, timedelta(0)),
+    (CodeCheckMetricID.SUITE_TIME_PER_PR, timedelta(0)),
+    (CodeCheckMetricID.SUITES_PER_PR, 1.9697428139183055),
+    (CodeCheckMetricID.PRS_WITH_CHECKS_COUNT, 661),
+    (CodeCheckMetricID.FLAKY_COMMIT_CHECKS_COUNT, 0),
+])
 @with_defer
-async def test_check_run_metrics_suite_time(metrics_calculator: MetricEntriesCalculator):
+async def test_check_run_metrics_blitz(metrics_calculator: MetricEntriesCalculator,
+                                       metric: str,
+                                       value):
     metrics, _, _ = await metrics_calculator.calc_check_run_metrics_line_github(
-        [CodeCheckMetricID.SUITE_TIME],
+        [metric],
         [[datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc)]],
         [0, 1], [["src-d/go-git"]], [], False, JIRAFilter.empty())
-    assert metrics[0, 0, 0, 0][0] == [
-        Metric(True, timedelta(0), timedelta(0), timedelta(seconds=1)),
-    ]
-
-
-@with_defer
-async def test_check_run_metrics_suites_per_pr(metrics_calculator: MetricEntriesCalculator):
-    metrics, _, _ = await metrics_calculator.calc_check_run_metrics_line_github(
-        [CodeCheckMetricID.SUITES_PER_PR],
-        [[datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc)]],
-        [0, 1], [["src-d/go-git"]], [], False, JIRAFilter.empty())
-    assert metrics[0, 0, 0, 0][0][0].value == 1.9697428139183055
+    assert metrics[0, 0, 0, 0][0][0].value == value
