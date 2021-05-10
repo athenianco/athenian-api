@@ -99,8 +99,8 @@ class SuitesCounter(SumMetricCalculator[int]):
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
-        result = np.full((len(min_times), len(facts)), None, object)
-        started = facts[CheckRun.started_at.key].values.astype(min_times.dtype)
+        result = np.zeros((len(min_times), len(facts)), int)
+        started = facts[check_suite_started_column].values.astype(min_times.dtype)
         _, first_encounters = np.unique(
             facts[CheckRun.check_suite_node_id.key].values.astype("S"), return_index=True)
         mask = np.zeros_like(started, dtype=bool)
@@ -121,8 +121,7 @@ class SuitesInStatusCounter(SumMetricCalculator[int]):
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
-        result = np.full((len(min_times), len(facts)), None, object)
-        started = facts[CheckRun.started_at.key].values.astype(min_times.dtype)
+        started = facts[check_suite_started_column].values.astype(min_times.dtype)
         statuses = facts[CheckRun.check_suite_status.key].values.astype("S")
         conclusions = facts[CheckRun.check_suite_conclusion.key].values.astype("S")
         relevant = np.zeros_like(started, dtype=bool)
@@ -142,6 +141,7 @@ class SuitesInStatusCounter(SumMetricCalculator[int]):
         mask[first_encounters] = True
         relevant[~mask] = False
         started[~relevant] = None
+        result = np.zeros((len(min_times), len(facts)), int)
         result[(min_times[:, None] <= started) & (started < max_times[:, None])] = 1
         return result
 
@@ -171,7 +171,7 @@ class CancelledSuitesCounter(SuitesInStatusCounter):
     """Number of cancelled check suites metric."""
 
     statuses = {
-        b"COMPLETED": [b"CANCELLED"],
+        b"COMPLETED": [b"CANCELLED", b"SKIPPED"],
     }
 
 
@@ -203,7 +203,7 @@ class SuiteTimeCalculator(AverageMetricCalculator[timedelta]):
             first_encounters[completed]
         ].astype("S")
         sensibly_completed = np.nonzero(completed)[0][
-            (conclusions == b"SUCCESS") | (conclusions == b"FAILURE")]
+            np.in1d(conclusions, [b"SUCCESS", b"FAILURE", b"STALE"])]
         # first_encounters[sensibly_completed] gives the indexes of the completed suites
         first_encounters = first_encounters[sensibly_completed]
 
@@ -288,4 +288,89 @@ class SuitesPerPRCounter(AverageMetricCalculator[float]):
         result = np.zeros((len(min_times), len(facts)), dtype=np.float32)
         result[:, first_pr_encounters] = pr_suite_counts
         result[~mask_pr_times] = None
+        return result
+
+
+@register_metric(CodeCheckMetricID.SUITE_TIME_PER_PR)
+class SuiteTimePerPRCalculator(AverageMetricCalculator[timedelta]):
+    """Average check suite execution in PRs time metric."""
+
+    may_have_negative_values = False
+    dtype = "timedelta64[s]"
+    deps = (SuiteTimeCalculator,)
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **_) -> np.ndarray:
+        pull_requests = facts[CheckRun.pull_request_node_id.key].values.astype("S")
+        no_prs_mask = pull_requests == b"None"
+        result = self._calcs[0].peek.copy()
+        result[:, no_prs_mask] = None
+        return result
+
+
+@register_metric(CodeCheckMetricID.PRS_WITH_CHECKS_COUNT)
+class PRsWithChecksCounter(SumMetricCalculator[int]):
+    """Number of PRs with executed check suites."""
+
+    dtype = int
+    deps = (SuitesPerPRCounter,)
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **_) -> np.ndarray:
+        result = self._calcs[0].peek.copy()
+        result[result > 0] = 1
+        return result
+
+
+@register_metric(CodeCheckMetricID.FLAKY_COMMIT_CHECKS_COUNT)
+class FlakyCommitChecksCounter(SumMetricCalculator[int]):
+    """Number of commits with both successful and failed check suites."""
+
+    dtype = int
+    deps = (SuccessfulSuitesCounter, FailedSuitesCounter)
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **_) -> np.ndarray:
+        statuses = facts[CheckRun.status.key].values.astype("S")
+        conclusions = facts[CheckRun.conclusion.key].values.astype("S")
+        completed = statuses == b"COMPLETED"
+        success_mask = (
+            (completed & ((conclusions == b"SUCCESS") | (conclusions == b"NEUTRAL"))) |
+            (statuses == b"SUCCESS")
+        )
+        failure_mask = (
+            (completed & ((conclusions == b"FAILURE") | (conclusions == b"STALE"))) |
+            (statuses == b"FAILURE") | (statuses == b"ERROR")
+        )
+
+        commits = facts[CheckRun.commit_node_id.key].values.astype("S")
+        check_run_names = facts[CheckRun.name.key].values.astype("S")
+        commits_with_names = np.char.add(commits, check_run_names)
+        _, first_encounters, unique_map = np.unique(
+            commits_with_names, return_inverse=True, return_index=True)
+        unique_flaky_indexes = np.intersect1d(unique_map[success_mask], unique_map[failure_mask])
+        first_flaky_indexes = first_encounters[unique_flaky_indexes]
+
+        # some commits may count several times => reduce
+        flaky_commits = np.unique(commits[first_flaky_indexes])
+        unique_commits, first_encounters = np.unique(commits, return_index=True)
+        flaky_mask = np.in1d(unique_commits, flaky_commits, assume_unique=True)
+        first_flaky_commits = first_encounters[flaky_mask]
+
+        started = facts[check_suite_started_column].values.astype(min_times.dtype)
+        result = np.zeros((len(min_times), len(facts)), int)
+        mask = np.zeros(len(facts), bool)
+        mask[first_flaky_commits] = 1
+        started[~mask] = None
+        mask = (min_times[:, None] <= started) & (started < max_times[:, None])
+        result[mask] = 1
         return result
