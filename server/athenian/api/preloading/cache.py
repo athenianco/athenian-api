@@ -287,6 +287,10 @@ def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[Instrumente
     return {
         "mdb": {
             MCID.prs.value: {
+                "sharding": {
+                    "column": PullRequest.acc_id,
+                    "key": "meta_id",
+                },
                 "cols": [
                     PullRequest.acc_id,
                     PullRequest.node_id,
@@ -318,6 +322,10 @@ def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[Instrumente
                 ],
             },
             MCID.jira_mapping.value: {
+                "sharding": {
+                    "column": NodePullRequestJiraIssues.node_acc,
+                    "key": "meta_id",
+                },
                 "cols": [
                     NodePullRequestJiraIssues.node_id,
                     NodePullRequestJiraIssues.node_acc,
@@ -332,6 +340,10 @@ def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[Instrumente
         },
         "pdb": {
             PCID.releases.value: {
+                "sharding": {
+                    "column": PrecomputedRelease.acc_id,
+                    "key": "acc_id",
+                },
                 "cols": [
                     PrecomputedRelease.release_match,
                     PrecomputedRelease.repository_full_name,
