@@ -1,7 +1,7 @@
 from datetime import datetime
 import functools
 import operator
-from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
+from typing import Collection, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
 
 import aiomcache
 import databases
@@ -18,6 +18,7 @@ from athenian.api.controllers.miners.github.release_load import \
 from athenian.api.controllers.miners.github.release_load import \
     remove_ambigous_precomputed_releases
 from athenian.api.controllers.miners.github.release_match import ReleaseToPullRequestMapper
+from athenian.api.controllers.miners.jira.issue import PullRequestJiraMapper
 from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind
 from athenian.api.controllers.settings import ReleaseMatch
 from athenian.api.models.metadata.github import PullRequest
@@ -203,8 +204,26 @@ class PreloadedPullRequestMiner(PullRequestMiner):
         return prs
 
 
-class PreloadedMetricEntriesCalculator(MetricEntriesCalculator):
+class PreloadedPullRequestJiraMapper(PullRequestJiraMapper):
+    """Mapper of pull requests to JIRA tickets."""
+
+    @classmethod
+    @sentry_span
+    async def load_pr_jira_mapping(cls,
+                                   prs: Collection[str],
+                                   meta_ids: Tuple[int, ...],
+                                   mdb: databases.Database) -> Dict[str, str]:
+        """Fetch the mapping from PR node IDs to JIRA issue IDs."""
+        cached_df = mdb.cache.dfs["jira_mapping"]
+        df = cached_df.df
+        mask = df["node_id"].isin([v.encode() for v in prs]) & df["node_acc"].isin(meta_ids)
+        mapping = cached_df.filter(mask)
+        return dict(zip(mapping["node_id"].values, mapping["jira_id"].values))
+
+
+class MetricEntriesCalculator(MetricEntriesCalculator):
     """Calculator for different metrics using preloaded DataFrames."""
 
-    miner = PreloadedPullRequestMiner
-    unfresh_fetcher = PreloadedUnfreshPullRequestFactsFetcher
+    miner = PullRequestMiner
+    unfresh_pr_facts_fetcher = UnfreshPullRequestFactsFetcher
+    pr_jira_mapper = PullRequestJiraMapper

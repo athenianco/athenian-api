@@ -49,8 +49,7 @@ from athenian.api.controllers.miners.github.precomputed_prs import \
 from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRequest, \
     PullRequestFactsMiner, PullRequestMiner
 from athenian.api.controllers.miners.github.release_mine import mine_releases
-from athenian.api.controllers.miners.jira.issue import append_pr_jira_mapping, \
-    load_pr_jira_mapping
+from athenian.api.controllers.miners.jira.issue import PullRequestJiraMapper
 from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind, \
     PullRequestFacts, ReleaseParticipants
 from athenian.api.controllers.prefixer import PrefixerPromise
@@ -79,6 +78,7 @@ class MetricEntriesCalculator:
 
     miner = PullRequestMiner
     unfresh_pr_facts_fetcher = UnfreshPullRequestFactsFetcher
+    pr_jira_mapper = PullRequestJiraMapper
 
     def __init__(self, account: int, meta_ids: Tuple[int, ...],
                  mdb: Database, pdb: Database, rdb: Database,
@@ -546,8 +546,9 @@ class MetricEntriesCalculator:
             (precomputed_facts, _) = blacklist = await precomputed_tasks[0]
         if with_jira_map:
             # schedule loading the PR->JIRA mapping
-            done_jira_map_task = asyncio.create_task(append_pr_jira_mapping(
-                precomputed_facts, self._meta_ids, self._mdb))
+            done_jira_map_task = asyncio.create_task(
+                self.pr_jira_mapper.append_pr_jira_mapping(
+                    precomputed_facts, self._meta_ids, self._mdb))
         ambiguous = blacklist[1]
         add_pdb_hits(self._pdb, "load_precomputed_done_facts_filters", len(precomputed_facts))
 
@@ -562,9 +563,10 @@ class MetricEntriesCalculator:
                 default_branches, release_settings, self._account, self._meta_ids,
                 self._mdb, self._pdb, self._rdb, self._cache)
             if with_jira_map:
-                undone_jira_map_task = asyncio.create_task(append_pr_jira_mapping(
-                    {k: v for k, v in facts.items() if k not in precomputed_facts},
-                    self._meta_ids, self._mdb))
+                undone_jira_map_task = asyncio.create_task(
+                    self.pr_jira_mapper.append_pr_jira_mapping(
+                        {k: v for k, v in facts.items() if k not in precomputed_facts},
+                        self._meta_ids, self._mdb))
             if with_jira_map:
                 await gather(done_jira_map_task, undone_jira_map_task)
             return list(facts.values()), with_jira_map
@@ -591,10 +593,11 @@ class MetricEntriesCalculator:
             miner, unreleased_facts, matched_bys, unreleased_prs_event = await tasks[0]
         precomputed_unreleased_prs = miner.drop(unreleased_facts)
         if with_jira_map:
-            precomputed_unreleased_jira_map_task = asyncio.create_task(append_pr_jira_mapping(
-                unreleased_facts, self._meta_ids, self._mdb))
-            new_jira_map_task = load_pr_jira_mapping(miner.dfs.prs.index, self._meta_ids,
-                                                     self._mdb)
+            precomputed_unreleased_jira_map_task = asyncio.create_task(
+                self.pr_jira_mapper.append_pr_jira_mapping(
+                    unreleased_facts, self._meta_ids, self._mdb))
+            new_jira_map_task = self.pr_jira_mapper.load_pr_jira_mapping(
+                miner.dfs.prs.index, self._meta_ids, self._mdb)
         await asyncio.sleep(0)
         remove_ambiguous_prs(precomputed_facts, ambiguous, matched_bys)
         add_pdb_hits(self._pdb, "precomputed_unreleased_facts", len(precomputed_unreleased_prs))
