@@ -105,7 +105,7 @@ async def mine_check_runs(time_from: datetime,
         # we determine check runs belonging to the same commit with multiple pull requests
         node_ids_order = np.argsort(check_run_node_ids)
         node_ids_group_counts = np.cumsum(node_id_counts)
-        groups = np.array(np.split(node_ids_order, node_ids_group_counts[:-1]))
+        groups = np.array(np.split(node_ids_order, node_ids_group_counts[:-1]), dtype=object)
         groups = groups[ambiguous_unique_check_run_indexes]
         unique_ambiguous_pr_node_ids = np.unique(pr_node_ids[np.concatenate(groups)])
     else:
@@ -170,7 +170,7 @@ async def mine_check_runs(time_from: datetime,
         if len(ambiguous_unique_check_run_indexes):
             node_ids_order = np.argsort(check_run_node_ids)
             node_ids_group_counts = np.cumsum(node_id_counts)
-            groups = np.array(np.split(node_ids_order, node_ids_group_counts[:-1]))
+            groups = np.array(np.split(node_ids_order, node_ids_group_counts[:-1]), dtype=object)
             groups = groups[ambiguous_unique_check_run_indexes]
             ambiguous_indexes = np.concatenate(groups)
             log.info("Must disambiguate %d check runs", len(ambiguous_indexes))

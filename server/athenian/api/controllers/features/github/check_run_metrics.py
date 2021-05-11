@@ -210,7 +210,8 @@ class SuiteTimeCalculatorAnalysis(MetricCalculator[None]):
         first_encounters = first_encounters[sensibly_completed]
 
         # measure elapsed time for each suite size group
-        suite_blocks = np.array(np.split(np.argsort(inverse_indexes), np.cumsum(run_counts)[:-1]))
+        suite_blocks = np.array(np.split(np.argsort(inverse_indexes), np.cumsum(run_counts)[:-1]),
+                                dtype=object)
         unique_run_counts, back_indexes, group_counts = np.unique(
             run_counts, return_inverse=True, return_counts=True)
         run_counts_order = np.argsort(back_indexes)
@@ -239,13 +240,13 @@ class SuiteTimeCalculatorAnalysis(MetricCalculator[None]):
         suite_started = suite_started[suite_order]
 
         result = np.full((len(min_times), len(facts)),
-                         np.array([(np.timedelta64("NaT"), -1)], dtype=self.dtype))
+                         np.array([(np.timedelta64("NaT"), 0)], dtype=self.dtype))
         time_relevant_suite_mask = \
             (min_times[:, None] <= suite_started) & (suite_started < max_times[:, None])
         result_structs = np.repeat(structs[sensibly_completed][None, :], len(min_times), axis=0)
         mask = ~time_relevant_suite_mask[:, sensibly_completed]
-        result_structs[mask]["elapsed"] = np.timedelta64("NaT")
-        result_structs[mask]["size"] = -1
+        result_structs["elapsed"][mask] = np.timedelta64("NaT")
+        result_structs["size"][mask] = 0
         result[:, first_encounters] = result_structs
         return result
 
@@ -269,21 +270,79 @@ class SuiteTimeCalculator(AverageMetricCalculator[timedelta]):
         return self._calcs[0].peek.copy()["elapsed"].astype(object)
 
 
-@register_metric(CodeCheckMetricID.ROBUST_SUCCESS_RATIO)
-class RobustSuiteTimeCalculator(AverageMetricCalculator[timedelta]):
+@register_metric(CodeCheckMetricID.ROBUST_SUITE_TIME)
+class RobustSuiteTimeCalculator(MetricCalculator[timedelta]):
     """Average check suite execution time metric, sustainable version."""
 
-    may_have_negative_values = False
     dtype = "timedelta64[s]"
+    deps = (SuiteTimeCalculatorAnalysis,)
 
-    def _analyze(self,
+    def __call__(self,
                  facts: pd.DataFrame,
                  min_times: np.ndarray,
                  max_times: np.ndarray,
-                 **kwargs) -> np.ndarray:
+                 groups: Sequence[Sequence[int]],
+                 **kwargs) -> None:
+        """Completely ignore the default boilerplate and calculate metrics from scratch."""
         structs = self._calcs[0].peek
-        _ = structs
-        raise NotImplementedError
+        meaningful = np.nonzero(np.bitwise_or.reduce(structs["size"]) > 0)[0]
+        elapsed = structs["elapsed"]
+        sizes = structs["size"].astype("S")
+        repos = facts[CheckRun.repository_node_id.key].values.astype("S")
+        repos_sizes = np.char.add(repos, np.char.add(b"|", sizes))
+        self._metrics = metrics = []
+        for group in groups:
+            effective = np.intersect1d(group, meaningful, assume_unique=True)
+            group_repos_sizes = repos_sizes[:, effective]
+            group_elapsed = elapsed[:, effective]
+            if (self._quantiles[0] != 0 or self._quantiles[1] != 1) and len(group_elapsed) > 0:
+                not_nat_ts, not_nat_facts = np.nonzero(group_elapsed == group_elapsed)
+                if len(not_nat_facts):
+                    not_nat_facts_unique, first_encounters = np.unique(
+                        not_nat_facts, return_index=True)
+                    quantiles = self._calc_quantile_cut_values(
+                        group_elapsed[not_nat_ts[first_encounters], not_nat_facts_unique])
+                    if self._quantiles[0] != 0:
+                        group_repos_sizes[group_elapsed < quantiles[0]] = b"|0"
+                    if self._quantiles[1] != 1:
+                        group_repos_sizes[group_elapsed > quantiles[1]] = b"|0"
+            vocabulary, mapped_indexes = np.unique(group_repos_sizes, return_inverse=True)
+            existing_vocabulary_indexes = np.nonzero(~np.char.endswith(vocabulary, b"|0"))[0]
+            masks_by_reposize = (
+                mapped_indexes[:, np.newaxis] == existing_vocabulary_indexes
+            ).T.reshape((len(existing_vocabulary_indexes), *group_repos_sizes.shape))
+            # we don't call mean() because there may be empty slices
+            sums = np.sum(np.repeat(group_elapsed[None, :], len(masks_by_reposize), axis=0),
+                          axis=-1, where=masks_by_reposize)
+            counts = np.sum(masks_by_reposize, axis=-1)
+            # backfill
+            if (missing := counts == 0).any():
+                existing_reposizes, existing_ts = np.array(np.nonzero(np.flip(~missing, axis=1)))
+                _, existing_reposizes_counts = np.unique(existing_reposizes, return_counts=True)
+                existing_borders = np.cumsum(existing_reposizes_counts)[:-1]
+                saturated_existing_ts = existing_ts.copy()
+                ts_len = counts.shape[-1]
+                saturated_existing_ts[existing_borders - 1] = ts_len
+                saturated_existing_ts[-1] = ts_len
+                offsets = np.diff(np.insert(saturated_existing_ts, existing_borders, 0), prepend=0)
+                offsets = np.delete(offsets, existing_borders + np.arange(len(existing_borders)))
+                reposize_indexes = np.repeat(existing_reposizes, offsets, axis=-1)
+                ts_indexes = np.repeat(existing_ts, offsets)
+                ts_indexes = \
+                    ts_len - 1 - np.flip(ts_indexes.reshape(len(counts), ts_len), axis=1).ravel()
+                sums[missing] = sums[reposize_indexes, ts_indexes].reshape(sums.shape)[missing]
+                counts[missing] = counts[reposize_indexes, ts_indexes].reshape(sums.shape)[missing]
+            # average the individual backfilled means
+            means = sums / counts
+            if len(means):
+                ts_means = np.mean(means, axis=0)
+            else:
+                ts_means = np.full(len(min_times), None, dtype=elapsed.dtype)
+            # confidence intervals are not implemented
+            metrics.append([Metric(m is not None, m, None, None) for m in ts_means.tolist()])
+
+    def _values(self) -> List[List[Metric[timedelta]]]:
+        return self._metrics
 
 
 @register_metric(CodeCheckMetricID.SUITES_PER_PR)

@@ -141,11 +141,12 @@ class MetricCalculator(Generic[T]):
         raise NotImplementedError
 
     def _values(self) -> List[List[Metric[T]]]:
-        return [
-            [self._value(self._cut_by_quantiles(s, self._calc_quantile_cut_values(
-                np.concatenate(gs))))
-             for s in gs]
-            for gs in self._samples]
+        values = []
+        for gs in self._samples:
+            quantiles = self._calc_quantile_cut_values(np.concatenate(gs))
+            values.append([self._value(self._cut_by_quantiles(s, quantiles))
+                           for s in gs])
+        return values
 
     def _calc_quantile_cut_values(self,
                                   samples: np.ndarray,
