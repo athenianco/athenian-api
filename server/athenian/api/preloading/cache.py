@@ -5,6 +5,7 @@ from typing import Collection, Dict, List, Optional, Union
 
 import numpy as np
 import pandas as pd
+import sentry_sdk
 import sqlalchemy as sa
 from sqlalchemy import select
 from sqlalchemy.orm.attributes import InstrumentedAttribute
@@ -129,25 +130,26 @@ class CachedDataFrame:
         :param uncast: whether to uncast the columns dtypes, see the `_squeeze` method.
 
         """
-        df = self._df.take(np.flatnonzero(mask))
-        if columns:
-            df = df[columns]
-        if uncast:
-            for col in self._identifier_cols:
-                try:
-                    df[col.key] = df[col.key].apply(lambda s: s.decode("utf8"))
-                except KeyError:
-                    continue
+        with sentry_sdk.start_span(op=f"CachedDataFrame.filter/{self._id}"):
+            df = self._df.take(np.flatnonzero(mask))
+            if columns:
+                df = df[columns]
+            if uncast:
+                for col in self._identifier_cols:
+                    try:
+                        df[col.key] = df[col.key].apply(lambda s: s.decode("utf8"))
+                    except KeyError:
+                        continue
 
-            for col in self._categorical_cols:
-                try:
-                    df[col.key] = df[col.key].astype("object").replace({np.nan: None})
-                except KeyError:
-                    continue
-        if index:
-            df.set_index(index, inplace=True)
+                for col in self._categorical_cols:
+                    try:
+                        df[col.key] = df[col.key].astype("object").replace({np.nan: None})
+                    except KeyError:
+                        continue
+            if index:
+                df.set_index(index, inplace=True)
 
-        return df
+            return df
 
     def memory_usage(
         self, total: bool = False, human: bool = False,
