@@ -139,7 +139,7 @@ class PreloadedPullRequestMiner(PullRequestMiner):
         #   - https://github.com/athenianco/athenian-api/pull/1337#discussion_r621073088
         if jira or labels:
             # TODO: not supported yet, call original implementation
-            return await super(PullRequestMiner, cls)._fetch_prs_by_filters(
+            return await super(PreloadedPullRequestMiner, cls)._fetch_prs_by_filters(
                 time_from,
                 time_to,
                 repositories,
@@ -246,7 +246,7 @@ class PreloadedPullRequestJiraMapper(PullRequestJiraMapper):
 class MetricEntriesCalculator(MetricEntriesCalculator):
     """Calculator for different metrics using preloaded DataFrames."""
 
-    pr_miner = PullRequestMiner
+    pr_miner = PreloadedPullRequestMiner
     branch_miner = PreloadedBranchMiner
-    unfresh_pr_facts_fetcher = UnfreshPullRequestFactsFetcher
-    pr_jira_mapper = PullRequestJiraMapper
+    unfresh_pr_facts_fetcher = PreloadedUnfreshPullRequestFactsFetcher
+    pr_jira_mapper = PreloadedPullRequestJiraMapper
