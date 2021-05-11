@@ -14,7 +14,9 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.models.metadata.github import Branch, NodePullRequestJiraIssues, \
     PullRequest
-from athenian.api.models.precomputed.models import GitHubRelease as PrecomputedRelease
+from athenian.api.models.precomputed.models import \
+    GitHubRelease as PrecomputedRelease, \
+    GitHubReleaseMatchTimespan as PrecomputedGitHubReleaseMatchTimespan
 from athenian.api.models.state.models import AccountFeature, AccountGitHubAccount, Feature
 from athenian.api.typing_utils import DatabaseLike
 
@@ -333,6 +335,7 @@ class PCID(str, Enum):
     """Identifiers of the cached tables from precomputed DB."""
 
     releases = PrecomputedRelease.__table__.fullname
+    releases_match_timespan = PrecomputedGitHubReleaseMatchTimespan.__table__.fullname
 
 
 def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[InstrumentedAttribute]]]]:
@@ -429,6 +432,24 @@ def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[Instrumente
                     PrecomputedRelease.acc_id,
                     PrecomputedRelease.repository_full_name,
                     PrecomputedRelease.release_match,
+                ],
+            },
+            PCID.releases_match_timespan.value: {
+                "sharding": {
+                    "column": PrecomputedGitHubReleaseMatchTimespan.acc_id,
+                    "key": "acc_id",
+                },
+                "cols": [
+                    PrecomputedGitHubReleaseMatchTimespan.release_match,
+                    PrecomputedGitHubReleaseMatchTimespan.repository_full_name,
+                    PrecomputedGitHubReleaseMatchTimespan.acc_id,
+                    PrecomputedGitHubReleaseMatchTimespan.time_from,
+                    PrecomputedGitHubReleaseMatchTimespan.time_to,
+                ],
+                "categorical_cols": [
+                    PrecomputedGitHubReleaseMatchTimespan.release_match,
+                    PrecomputedGitHubReleaseMatchTimespan.repository_full_name,
+                    PrecomputedGitHubReleaseMatchTimespan.acc_id,
                 ],
             },
         },
