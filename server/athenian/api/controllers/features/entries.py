@@ -37,7 +37,7 @@ from athenian.api.controllers.features.metric_calculator import df_from_structs,
     group_to_indexes
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
-from athenian.api.controllers.miners.github.branches import extract_branches
+from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.check_run import mine_check_runs
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
 from athenian.api.controllers.miners.github.developer import \
@@ -77,6 +77,7 @@ class MetricEntriesCalculator:
     """Calculator for different metrics."""
 
     pr_miner = PullRequestMiner
+    branch_miner = BranchMiner
     unfresh_pr_facts_fetcher = UnfreshPullRequestFactsFetcher
     pr_jira_mapper = PullRequestJiraMapper
 
@@ -320,8 +321,8 @@ class MetricEntriesCalculator:
         time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
         all_repositories = set(chain.from_iterable(repositories))
         calc = ReleaseBinnedMetricCalculator(metrics, quantiles)
-        branches, default_branches = await extract_branches(all_repositories, self._meta_ids,
-                                                            self._mdb, self._cache)
+        branches, default_branches = await self.branch_miner.extract_branches(
+            all_repositories, self._meta_ids, self._mdb, self._cache)
         all_participants = merge_release_participants(participants)
         releases, _, matched_bys = await mine_releases(
             all_repositories, all_participants, branches, default_branches, time_from, time_to,
@@ -530,8 +531,8 @@ class MetricEntriesCalculator:
                                               with_jira_map: bool,
                                               ) -> Tuple[List[PullRequestFacts], bool]:
         assert isinstance(repositories, set)
-        branches, default_branches = await extract_branches(repositories, self._meta_ids,
-                                                            self._mdb, self._cache)
+        branches, default_branches = await self.branch_miner.extract_branches(
+            repositories, self._meta_ids, self._mdb, self._cache)
         precomputed_tasks = [
             load_precomputed_done_facts_filters(
                 time_from, time_to, repositories, participants, labels,
