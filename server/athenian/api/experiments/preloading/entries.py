@@ -225,6 +225,6 @@ class PreloadedPullRequestJiraMapper(PullRequestJiraMapper):
 class MetricEntriesCalculator(MetricEntriesCalculator):
     """Calculator for different metrics using preloaded DataFrames."""
 
-    miner = PullRequestMiner
+    pr_miner = PullRequestMiner
     unfresh_pr_facts_fetcher = UnfreshPullRequestFactsFetcher
     pr_jira_mapper = PullRequestJiraMapper

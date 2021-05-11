@@ -76,7 +76,7 @@ def _postprocess_cached_facts(result: Tuple[Dict[str, List[PullRequestFacts]], b
 class MetricEntriesCalculator:
     """Calculator for different metrics."""
 
-    miner = PullRequestMiner
+    pr_miner = PullRequestMiner
     unfresh_pr_facts_fetcher = UnfreshPullRequestFactsFetcher
     pr_jira_mapper = PullRequestJiraMapper
 
@@ -558,7 +558,7 @@ class MetricEntriesCalculator:
                 len(participants.get(prpk.AUTHOR, [])) > unfresh_participants_threshold) and \
                 not fresh and not (participants.keys() - {prpk.AUTHOR, prpk.MERGER}):
             facts = await self.unfresh_pr_facts_fetcher.fetch_pull_request_facts_unfresh(
-                self.miner, precomputed_facts, ambiguous, time_from, time_to, repositories,
+                self.pr_miner, precomputed_facts, ambiguous, time_from, time_to, repositories,
                 participants, labels, jira, exclude_inactive, branches,
                 default_branches, release_settings, self._account, self._meta_ids,
                 self._mdb, self._pdb, self._rdb, self._cache)
@@ -576,14 +576,14 @@ class MetricEntriesCalculator:
         # the adjacent out-of-range pieces [date_from, time_from] and [time_to, date_to]
         # are effectively discarded later in BinnedMetricCalculator
         tasks = [
-            self.miner.mine(
+            self.pr_miner.mine(
                 date_from, date_to, time_from, time_to, repositories, participants,
                 labels, jira, branches, default_branches, exclude_inactive, release_settings,
                 self._account, self._meta_ids, self._mdb, self._pdb, self._rdb, self._cache,
                 pr_blacklist=blacklist),
         ]
         if jira and precomputed_facts:
-            tasks.append(self.miner.filter_jira(
+            tasks.append(self.pr_miner.filter_jira(
                 precomputed_facts, jira, self._meta_ids, self._mdb, self._cache,
                 columns=[PullRequest.node_id]))
             (miner, unreleased_facts, matched_bys, unreleased_prs_event), filtered = \
