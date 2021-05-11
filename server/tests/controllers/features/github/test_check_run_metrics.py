@@ -64,6 +64,7 @@ async def test_check_run_metrics_suite_counts(
     (CodeCheckMetricID.FLAKY_COMMIT_CHECKS_COUNT, 0),
     (CodeCheckMetricID.PRS_MERGED_WITH_FAILED_CHECKS_COUNT, 238),
     (CodeCheckMetricID.PRS_MERGED_WITH_FAILED_CHECKS_RATIO, 0.43933823529411764),
+    (CodeCheckMetricID.ROBUST_SUITE_TIME, timedelta(0)),
 ])
 @with_defer
 async def test_check_run_metrics_blitz(metrics_calculator: MetricEntriesCalculator,
@@ -74,3 +75,23 @@ async def test_check_run_metrics_blitz(metrics_calculator: MetricEntriesCalculat
         [[datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc)]],
         [0, 1], [["src-d/go-git"]], [], False, JIRAFilter.empty())
     assert metrics[0, 0, 0, 0][0][0].value == value
+
+
+@with_defer
+async def test_check_run_metrics_robust_empty(metrics_calculator: MetricEntriesCalculator):
+    metrics, _, _ = await metrics_calculator.calc_check_run_metrics_line_github(
+        [CodeCheckMetricID.ROBUST_SUITE_TIME],
+        [[datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2017, 6, 1, tzinfo=timezone.utc)]],
+        [0.8, 1], [["src-d/go-git"]], [], False, JIRAFilter.empty())
+    assert metrics[0, 0, 0, 0][0][0].value is None
+
+
+@with_defer
+async def test_check_run_metrics_robust_quantiles(metrics_calculator: MetricEntriesCalculator):
+    metrics, _, _ = await metrics_calculator.calc_check_run_metrics_line_github(
+        [CodeCheckMetricID.ROBUST_SUITE_TIME],
+        [[datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2017, 6, 1, tzinfo=timezone.utc),
+         datetime(2020, 1, 1, tzinfo=timezone.utc)]],
+        [0.8, 1], [["src-d/go-git"]], [], False, JIRAFilter.empty())
+    assert metrics[0, 0, 0, 0][0][0].value == timedelta(seconds=2)
+    assert metrics[0, 0, 0, 0][1][0].value == timedelta(seconds=2)
