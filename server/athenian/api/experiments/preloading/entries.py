@@ -82,7 +82,21 @@ class PreloadedUnfreshPullRequestFactsFetcher(UnfreshPullRequestFactsFetcher):
 class PreloadedBranchMiner(BranchMiner):
     """Load information related to preloaded branches."""
 
-    pass
+    @classmethod
+    async def _extract_branches(cls,
+                                repos: Iterable[str],
+                                meta_ids: Tuple[int, ...],
+                                mdb: databases.Database,
+                                ) -> Tuple[pd.DataFrame, Dict[str, str]]:
+        df = mdb.cache.dfs[MCID.branches].df
+
+        mask = (
+            df["repository_full_name"].isin(repos)
+            & df["acc_id"].isin(meta_ids)
+            & df["commit_sha"].notna()
+        )
+
+        return mdb.cache.dfs[MCID.branches].filter(mask)
 
 
 class PreloadedPullRequestMiner(PullRequestMiner):
