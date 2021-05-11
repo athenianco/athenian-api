@@ -12,7 +12,8 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
-from athenian.api.models.metadata.github import NodePullRequestJiraIssues, PullRequest
+from athenian.api.models.metadata.github import Branch, NodePullRequestJiraIssues, \
+    PullRequest
 from athenian.api.models.precomputed.models import GitHubRelease as PrecomputedRelease
 from athenian.api.models.state.models import AccountFeature, AccountGitHubAccount, Feature
 from athenian.api.typing_utils import DatabaseLike
@@ -325,6 +326,7 @@ class MCID(str, Enum):
 
     prs = PullRequest.__table__.fullname
     jira_mapping = NodePullRequestJiraIssues.__table__.fullname
+    branches = Branch.__table__.fullname
 
 
 class PCID(str, Enum):
@@ -387,6 +389,28 @@ def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[Instrumente
                     NodePullRequestJiraIssues.jira_id,
                 ],
                 "identifier_cols": [NodePullRequestJiraIssues.node_id],
+            },
+            MCID.branches.value: {
+                "sharding": {
+                    "column": Branch.acc_id,
+                    "key": "meta_id",
+                },
+                "cols": [
+                    Branch.repository_full_name,
+                    Branch.acc_id,
+                    Branch.is_default,
+                    Branch.branch_name,
+                    Branch.commit_sha,
+                    Branch.commit_id,
+                ],
+                "categorical_cols": [
+                    Branch.repository_full_name,
+                    Branch.acc_id,
+                ],
+                "identifier_cols": [
+                    Branch.commit_sha,
+                    Branch.commit_id,
+                ],
             },
         },
         "pdb": {
