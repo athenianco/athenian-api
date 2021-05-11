@@ -12,6 +12,7 @@ from athenian.api.controllers.features.entries import MetricEntriesCalculator
 from athenian.api.controllers.features.github.unfresh_pull_request_metrics import \
     UnfreshPullRequestFactsFetcher
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.github.release_load import \
     match_groups_to_conditions, ReleaseLoader
@@ -76,6 +77,12 @@ class PreloadedUnfreshPullRequestFactsFetcher(UnfreshPullRequestFactsFetcher):
     """Fetcher for preloaded unfresh pull requests facts."""
 
     release_loader = PreloadedReleaseLoader
+
+
+class PreloadedBranchMiner(BranchMiner):
+    """Load information related to preloaded branches."""
+
+    pass
 
 
 class PreloadedPullRequestMiner(PullRequestMiner):
@@ -226,5 +233,6 @@ class MetricEntriesCalculator(MetricEntriesCalculator):
     """Calculator for different metrics using preloaded DataFrames."""
 
     pr_miner = PullRequestMiner
+    branch_miner = PreloadedBranchMiner
     unfresh_pr_facts_fetcher = UnfreshPullRequestFactsFetcher
     pr_jira_mapper = PullRequestJiraMapper
