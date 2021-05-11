@@ -42,7 +42,12 @@ class PreloadedReleaseLoader(ReleaseLoader):
                                           ) -> pd.DataFrame:
         cached_df = pdb.cache.dfs[PCID.releases]
         df = cached_df.df
-        mask = cls._match_groups_to_mask(df, match_groups)
+        mask = (
+            cls._match_groups_to_mask(df, match_groups)
+            & (df["acc_id"] == account)
+            & (df["published_at"] >= time_from)
+            & (df["published_at"] < time_to)
+        )
         releases = cached_df.filter(mask)
         releases.sort_values("published_at", ascending=False, inplace=True)
         releases = remove_ambigous_precomputed_releases(releases, "repository_full_name")
