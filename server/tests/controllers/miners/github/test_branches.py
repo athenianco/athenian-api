@@ -38,7 +38,7 @@ async def test_extract_branches_cache(mdb, cache):
         await extract_branches(["src-d/go-git", "src-d/gitbase"], (6366825,), None, cache)
 
 
-@pytest.mark.flaky(reruns=5, reruns_delay=random())
+@pytest.mark.flaky(reruns=5, reruns_delay=0.1 + random())
 async def test_extract_branches_main(mdb):
     await mdb.execute(update(Branch).where(Branch.branch_name == "master").values({
         Branch.is_default: False,
@@ -54,7 +54,7 @@ async def test_extract_branches_main(mdb):
         }))
 
 
-@pytest.mark.flaky(reruns=5, reruns_delay=random())
+@pytest.mark.flaky(reruns=5, reruns_delay=0.1 + random())
 async def test_extract_branches_max_date(mdb):
     await mdb.execute(update(Branch).where(Branch.branch_name == "master").values({
         Branch.is_default: False,
@@ -70,7 +70,7 @@ async def test_extract_branches_max_date(mdb):
         }))
 
 
-@pytest.mark.flaky(reruns=5, reruns_delay=random())
+@pytest.mark.flaky(reruns=5, reruns_delay=0.1 + random())
 async def test_extract_branches_only_one(mdb):
     branches = await mdb.fetch_all(select([Branch]).where(Branch.branch_name != "master"))
     await mdb.execute(update(Branch).where(Branch.branch_name == "master").values({

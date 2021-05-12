@@ -168,7 +168,7 @@ async def test_set_release_match_login_failure(
     assert response.status == 403, await response.read()
 
 
-@pytest.mark.flaky(reruns=5, reruns_delay=random())
+@pytest.mark.flaky(reruns=5, reruns_delay=0.1 + random())
 @pytest.mark.parametrize("code", [200, 422])
 async def test_set_release_match_422(
         client, headers, sdb, mdb, gkwillie, disable_default_user, code):
