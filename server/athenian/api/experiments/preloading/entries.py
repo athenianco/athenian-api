@@ -12,6 +12,7 @@ from athenian.api.controllers.features.entries import MetricEntriesCalculator
 from athenian.api.controllers.features.github.unfresh_pull_request_metrics import \
     UnfreshPullRequestFactsFetcher
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.github.release_load import \
     match_groups_to_conditions, ReleaseLoader
@@ -78,6 +79,26 @@ class PreloadedUnfreshPullRequestFactsFetcher(UnfreshPullRequestFactsFetcher):
     release_loader = PreloadedReleaseLoader
 
 
+class PreloadedBranchMiner(BranchMiner):
+    """Load information related to preloaded branches."""
+
+    @classmethod
+    async def _extract_branches(cls,
+                                repos: Iterable[str],
+                                meta_ids: Tuple[int, ...],
+                                mdb: databases.Database,
+                                ) -> Tuple[pd.DataFrame, Dict[str, str]]:
+        df = mdb.cache.dfs[MCID.branches].df
+
+        mask = (
+            df["repository_full_name"].isin(repos)
+            & df["acc_id"].isin(meta_ids)
+            & df["commit_sha"].notna()
+        )
+
+        return mdb.cache.dfs[MCID.branches].filter(mask)
+
+
 class PreloadedPullRequestMiner(PullRequestMiner):
     """Load all the information related to PRS from the metadata DB with some preloaded methods. \
     Iterate over it to access individual PR objects."""
@@ -118,7 +139,7 @@ class PreloadedPullRequestMiner(PullRequestMiner):
         #   - https://github.com/athenianco/athenian-api/pull/1337#discussion_r621073088
         if jira or labels:
             # TODO: not supported yet, call original implementation
-            return await super(PullRequestMiner, cls)._fetch_prs_by_filters(
+            return await super(PreloadedPullRequestMiner, cls)._fetch_prs_by_filters(
                 time_from,
                 time_to,
                 repositories,
@@ -225,6 +246,7 @@ class PreloadedPullRequestJiraMapper(PullRequestJiraMapper):
 class MetricEntriesCalculator(MetricEntriesCalculator):
     """Calculator for different metrics using preloaded DataFrames."""
 
-    miner = PullRequestMiner
-    unfresh_pr_facts_fetcher = UnfreshPullRequestFactsFetcher
-    pr_jira_mapper = PullRequestJiraMapper
+    pr_miner = PreloadedPullRequestMiner
+    branch_miner = PreloadedBranchMiner
+    unfresh_pr_facts_fetcher = PreloadedUnfreshPullRequestFactsFetcher
+    pr_jira_mapper = PreloadedPullRequestJiraMapper
