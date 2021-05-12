@@ -85,7 +85,7 @@ async def mine_check_runs(time_from: datetime,
     def filters():
         return [
             CheckRun.acc_id.in_(meta_ids),
-            CheckRun.pull_request_node_id.in_any_values(np.unique(pr_node_ids)),
+            CheckRun.pull_request_node_id.in_(np.unique(pr_node_ids)),
         ]
 
     query_before = select([CheckRun]).where(and_(*filters(), CheckRun.started_at < time_from))
