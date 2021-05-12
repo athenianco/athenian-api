@@ -134,7 +134,7 @@ async def instrument(request: web.Request, handler) -> web.Response:
             _after_response(request, response, start_time)
 
 
-class StatusRenderer:
+class PrometheusRenderer:
     """Render the status page with Prometheus."""
 
     def __init__(self, registry: prometheus_client.CollectorRegistry, cache_ttl=1):
@@ -198,8 +198,8 @@ async def graph_type_memory(request: web.Request) -> web.Response:
     return resp
 
 
-def setup_status(app) -> prometheus_client.CollectorRegistry:
-    """Add /status to serve Prometheus-driven runtime metrics."""
+def setup_prometheus(app: web.Application) -> prometheus_client.CollectorRegistry:
+    """Add /prometheus to serve Prometheus-driven runtime metrics."""
     registry = prometheus_client.CollectorRegistry(auto_describe=True)
     app["request_count"] = prometheus_client.Counter(
         "requests_total", "Total Request Count",
@@ -253,9 +253,19 @@ def setup_status(app) -> prometheus_client.CollectorRegistry:
         "build_date": getattr(metadata, "__date__", "null"),
     })
     app.middlewares.insert(0, instrument)
-    # passing StatusRenderer(registry) without __call__ triggers a spurious DeprecationWarning
+    # passing PrometheusRenderer(registry) without __call__ triggers a spurious DeprecationWarning
     # FIXME(vmarkovtsev): https://github.com/aio-libs/aiohttp/issues/4519
-    app.router.add_get("/status", StatusRenderer(registry).__call__)
+    app.router.add_get("/prometheus", PrometheusRenderer(registry).__call__)
     app.router.add_get("/memory", summarize_memory)
     app.router.add_get("/objgraph", graph_type_memory)
     return registry
+
+
+async def render_status(request: web.Request) -> web.Response:
+    """Return HTTP 200 to indicate that we are alive."""
+    return web.Response()
+
+
+def setup_status(app: web.Application) -> None:
+    """Add /status for health checks."""
+    app.router.add_get("/status", render_status)
