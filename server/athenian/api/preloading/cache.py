@@ -13,7 +13,11 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.models.metadata.github import NodePullRequestJiraIssues, PullRequest
 from athenian.api.models.precomputed.models import GitHubRelease as PrecomputedRelease
+from athenian.api.models.state.models import AccountFeature, AccountGitHubAccount, Feature
 from athenian.api.typing_utils import DatabaseLike
+
+
+PRELOADING_FEATURE_FLAG_NAME = "github_features_entries_preloading"
 
 
 def _humanize_size(v):
@@ -41,6 +45,7 @@ class CachedDataFrame:
         categorical_cols: Optional[List[sa.Column]] = None,
         identifier_cols: Optional[List[sa.Column]] = None,
         filtering_clause: Optional[sa.sql.ClauseElement] = None,
+        sharding: Optional[Dict] = None,
         debug_memory: Optional[bool] = False,
     ):
         """Initialize a `CachedDataFrame`.
@@ -57,6 +62,7 @@ class CachedDataFrame:
         self._categorical_cols = categorical_cols or []
         self._identifier_cols = identifier_cols or []
         self._filtering_clause = filtering_clause
+        self._sharding = sharding
         self._db = db
         self._debug_memory = debug_memory
         self._mem = {}
@@ -73,10 +79,19 @@ class CachedDataFrame:
         assert self._df is not None, "Need to await refresh() at least once."
         return self._df
 
+    @property
+    def filtering_clause(self) -> sa.sql.ClauseElement:
+        """Return the filtering clause used for refreshing the data."""
+        return self._filtering_clause
+
+    @filtering_clause.setter
+    def filtering_clause(self, fc: sa.sql.ClauseElement):
+        self._filtering_clause = fc
+
     async def refresh(self) -> "CachedDataFrame":
         """Refresh the DataFrame from the database."""
         query = select(self._cols)
-        if self._filtering_clause:
+        if self._filtering_clause is not None:
             query = query.where(self._filtering_clause)
 
         df = await read_sql_query(query, self._db, self._cols)
@@ -182,11 +197,13 @@ class MemoryCache:
 
     def __init__(
         self,
+        sdb: DatabaseLike,
         db: DatabaseLike,
         options: Dict[str, Dict],
         debug_memory: Optional[bool] = False,
     ):
         """Initialize a `MemoryCache`."""
+        self._sdb = sdb
         self._db = db
         self._options = options
         self._debug_memory = debug_memory
@@ -215,12 +232,44 @@ class MemoryCache:
         else:
             return size_by_df
 
-    async def refresh(self, id_: Optional[str] = None):
+    async def refresh(self, id_: Optional[str] = None) -> None:
         """Refresh the DataFrames from the database."""
         if id_:
-            await self._dfs[id_].refresh()
+            df = self._dfs[id_]
+            df.filtering_clause = await self._build_filtering_clause(id_)
+            await df.refresh()
         else:
-            await gather(*[df.refresh() for df in self._dfs.values()])
+            tasks = []
+            accounts = await self._get_enabled_accounts()
+            for id_, df in self._dfs.items():
+                df.filtering_clause = await self._build_filtering_clause(id_, accounts=accounts)
+                tasks.append(df.refresh())
+
+            await gather(*tasks)
+
+    async def _build_filtering_clause(
+            self, id_: str, accounts: Optional[Dict[str, Collection[int]]] = None,
+    ) -> sa.sql.ClauseElement:
+        if not accounts:
+            accounts = await self._get_enabled_accounts()
+
+        sharding_opts = self._options[id_]["sharding"]
+        return sharding_opts["column"].in_(accounts[sharding_opts["key"]])
+
+    async def _get_enabled_accounts(self) -> Dict[str, List[int]]:
+        query = (
+            sa.select([AccountFeature.account_id])
+            .select_from(sa.join(Feature, AccountFeature,
+                                 Feature.id == AccountFeature.feature_id))
+            .where(sa.and_(AccountFeature.enabled,
+                           Feature.name == PRELOADING_FEATURE_FLAG_NAME))
+        )
+        acc_ids = [r[0] for r in await self._sdb.fetch_all(query)]
+        query = sa.select([AccountGitHubAccount.id]).where(
+            AccountGitHubAccount.account_id.in_(acc_ids))
+        meta_ids = [r[0] for r in await self._sdb.fetch_all(query)]
+
+        return {"acc_id": acc_ids, "meta_id": meta_ids}
 
 
 class MemoryCachePreloader:
@@ -255,7 +304,7 @@ class MemoryCachePreloader:
         tasks = []
         for db_name, opts in get_memory_cache_options().items():
             db = dbs[db_name]
-            db.cache = mc = MemoryCache(db, opts, debug_memory=debug_mode)
+            db.cache = mc = MemoryCache(dbs["sdb"], db, opts, debug_memory=debug_mode)
             tasks.append(mc.refresh())
 
         await gather(*tasks)
@@ -287,6 +336,10 @@ def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[Instrumente
     return {
         "mdb": {
             MCID.prs.value: {
+                "sharding": {
+                    "column": PullRequest.acc_id,
+                    "key": "meta_id",
+                },
                 "cols": [
                     PullRequest.acc_id,
                     PullRequest.node_id,
@@ -318,6 +371,10 @@ def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[Instrumente
                 ],
             },
             MCID.jira_mapping.value: {
+                "sharding": {
+                    "column": NodePullRequestJiraIssues.node_acc,
+                    "key": "meta_id",
+                },
                 "cols": [
                     NodePullRequestJiraIssues.node_id,
                     NodePullRequestJiraIssues.node_acc,
@@ -332,6 +389,10 @@ def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[Instrumente
         },
         "pdb": {
             PCID.releases.value: {
+                "sharding": {
+                    "column": PrecomputedRelease.acc_id,
+                    "key": "acc_id",
+                },
                 "cols": [
                     PrecomputedRelease.release_match,
                     PrecomputedRelease.repository_full_name,
