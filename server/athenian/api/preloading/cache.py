@@ -138,7 +138,7 @@ class CachedDataFrame:
             if uncast:
                 for col in self._identifier_cols:
                     try:
-                        df[col.key] = df[col.key].apply(lambda s: s.decode("utf8"))
+                        df[col.key] = df[col.key].values.astype("U")
                     except KeyError:
                         continue
 
