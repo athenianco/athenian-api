@@ -22,6 +22,7 @@ from athenian.api.controllers.miners.jira.issue import PullRequestJiraMapper
 from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind
 from athenian.api.controllers.settings import ReleaseMatch
 from athenian.api.models.metadata.github import PullRequest
+from athenian.api.preloading.cache import MCID, PCID
 from athenian.api.tracing import sentry_span
 
 
@@ -38,7 +39,7 @@ class PreloadedReleaseLoader(ReleaseLoader):
                                           pdb: databases.Database,
                                           index: Optional[Union[str, Sequence[str]]] = None,
                                           ) -> pd.DataFrame:
-        cached_df = pdb.cache.dfs["releases"]
+        cached_df = pdb.cache.dfs[PCID.releases]
         df = cached_df.df
         mask = cls._match_groups_to_mask(df, match_groups)
         releases = cached_df.filter(mask)
@@ -137,7 +138,7 @@ class PreloadedPullRequestMiner(PullRequestMiner):
 
         assert (updated_min is None) == (updated_max is None)
 
-        df = mdb.cache.dfs["prs"].df
+        df = mdb.cache.dfs[MCID.prs].df
 
         mask = (
             (~df["closed"] | (df["closed_at"] >= time_from))
@@ -193,8 +194,8 @@ class PreloadedPullRequestMiner(PullRequestMiner):
 
             selected_columns = [c.key for c in selected_columns]
 
-        prs = mdb.cache.dfs["prs"].filter(mask, columns=selected_columns,
-                                          index=PullRequest.node_id.key)
+        prs = mdb.cache.dfs[MCID.prs].filter(mask, columns=selected_columns,
+                                             index=PullRequest.node_id.key)
 
         if remove_acc_id:
             del prs[PullRequest.acc_id.key]
@@ -214,7 +215,7 @@ class PreloadedPullRequestJiraMapper(PullRequestJiraMapper):
                                    meta_ids: Tuple[int, ...],
                                    mdb: databases.Database) -> Dict[str, str]:
         """Fetch the mapping from PR node IDs to JIRA issue IDs."""
-        cached_df = mdb.cache.dfs["jira_mapping"]
+        cached_df = mdb.cache.dfs[MCID.jira_mapping]
         df = cached_df.df
         mask = df["node_id"].isin([v.encode() for v in prs]) & df["node_acc"].isin(meta_ids)
         mapping = cached_df.filter(mask)
