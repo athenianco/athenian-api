@@ -48,7 +48,7 @@ FilterChecks = Tuple[str, Tuple[List[Set[str]], List[List[str]], JIRAFilter, For
 
 
 @weight(10)
-async def calc_metrics_pr_linear(request: AthenianWebRequest, body: dict) -> web.Response:
+async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate linear metrics over PRs.
 
     :param request: HTTP request.
@@ -372,7 +372,7 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
 
 
 @weight(1.5)
-async def calc_metrics_developer(request: AthenianWebRequest, body: dict) -> web.Response:
+async def calc_metrics_developers(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate metrics over developer activities."""
     try:
         filt = DeveloperMetricsRequest.from_dict(body)
@@ -468,7 +468,7 @@ async def _compile_repos_releases(request: AthenianWebRequest,
 
 
 @weight(4)
-async def calc_metrics_releases_linear(request: AthenianWebRequest, body: dict) -> web.Response:
+async def calc_metrics_releases(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate linear metrics over releases."""
     try:
         filt = ReleaseMetricsRequest.from_dict(body)
@@ -551,7 +551,7 @@ async def calc_metrics_releases_linear(request: AthenianWebRequest, body: dict) 
 
 
 @weight(1)
-async def calc_code_check_runs(request: AthenianWebRequest, body: dict) -> web.Response:
+async def calc_metrics_code_checks(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate metrics on continuous integration runs, such as GitHub Actions, Jenkins, Circle, \
     etc."""
     try:
