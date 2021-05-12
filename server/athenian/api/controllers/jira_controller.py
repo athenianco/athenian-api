@@ -542,7 +542,8 @@ async def _issue_flow(return_: Set[str],
                 )).order_by(PullRequest.node_id.key),
                 mdb, PullRequest, index=PullRequest.node_id.key),
             load_precomputed_done_facts_ids(
-                pr_ids, default_branches, release_settings, account, pdb),
+                pr_ids, default_branches, release_settings, account, pdb,
+                panic_on_missing_repositories=False),
         ]
         prs_df, (facts, ambiguous) = await gather(*tasks)
         existing_mask = prs_df[PullRequest.repository_full_name.key].isin(
