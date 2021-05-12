@@ -79,3 +79,10 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
             service, repos, withgroups, labels, jira, for_set))
     await gather(*tasks)
     return model_response(result)
+
+
+@weight(1)
+async def calc_histogram_code_checks(request: AthenianWebRequest, body: dict) -> web.Response:
+    """Calculate histograms on continuous integration runs, such as GitHub Actions, Jenkins, \
+    Circle, etc."""
+    raise NotImplementedError

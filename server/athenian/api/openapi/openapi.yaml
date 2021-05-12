@@ -873,6 +873,61 @@ paths:
       - default
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.filter_controller
+  /histograms/code_checks:
+    post:
+      operationId: calc_histogram_code_checks
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CodeCheckHistogramsRequest'
+        description: Select the check runs of interest and the metrics to calculate.
+        required: true
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalculatedCodeCheckHistograms'
+          description: Calculated histograms.
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidRequestError'
+          description: The request is invalid.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The user is forbidden to access the specified repositories
+            on behalf of the specified account.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The specified account does not exist or the user is not a member.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The account's installation has not finished yet.
+      security:
+      - bearerAuth: []
+      - apiKeyAuth: []
+      summary: Calculate histograms on continuous integration runs, such as GitHub Actions,
+        Jenkins, Circle, etc.
+      tags:
+      - histograms
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.histograms_controller
+      x-codegen-request-body-name: body
   /histograms/jira:
     post:
       operationId: calc_histogram_jira
@@ -1300,7 +1355,7 @@ paths:
       x-codegen-request-body-name: body
   /metrics/code_checks:
     post:
-      operationId: calc_code_check_runs
+      operationId: calc_metrics_code_checks
       requestBody:
         content:
           application/json:
@@ -1355,7 +1410,7 @@ paths:
       x-codegen-request-body-name: body
   /metrics/developers:
     post:
-      operationId: calc_metrics_developer
+      operationId: calc_metrics_developers
       requestBody:
         content:
           application/json:
@@ -1463,7 +1518,7 @@ paths:
       x-codegen-request-body-name: body
   /metrics/prs:
     post:
-      operationId: calc_metrics_pr_linear
+      operationId: calc_metrics_prs
       requestBody:
         content:
           application/json:
@@ -1517,7 +1572,7 @@ paths:
       x-codegen-request-body-name: body
   /metrics/releases:
     post:
-      operationId: calc_metrics_releases_linear
+      operationId: calc_metrics_releases
       requestBody:
         content:
           application/json:
@@ -7619,4 +7674,163 @@ components:
       required:
       - for
       - values
+      type: object
+    CodeCheckHistogramsRequest:
+      additionalProperties: false
+      description: Request of `/histograms/code_checks`.
+      example:
+        for:
+        - repositories:
+          - github.com/athenianco/athenian-webapp
+          - github.com/athenianco/athenian-api
+          commit_authors:
+            - github.com/vmarkovtsev
+            - github.com/dpordomingo
+        histograms:
+        - scale: log
+          metric: chk-suite-time
+        account: 1
+        date_to: 2020-11-23
+        date_from: 2020-01-23
+        timezone: 120
+      properties:
+        for:
+          description: |-
+            Sets of developers and repositories for which to calculate the histograms.
+            The aggregation is `AND` between repositories and developers.
+            The aggregation is `OR` inside both repositories and developers.
+          items:
+            $ref: '#/components/schemas/ForSetCodeChecks'
+          type: array
+        histograms:
+          description: Histogram parameters for each wanted topic.
+          items:
+            $ref: '#/components/schemas/CodeCheckHistogramDefinition'
+          type: array
+        date_from:
+          description: Date from when to start measuring the distribution.
+          format: date
+          type: string
+        date_to:
+          description: Date up to which to measure the distribution.
+          format: date
+          type: string
+        timezone:
+          $ref: '#/components/schemas/TimeZone'
+        quantiles:
+          $ref: '#/components/schemas/Quantiles'
+        account:
+          description: Session account ID.
+          type: integer
+      required:
+      - account
+      - date_from
+      - date_to
+      - for
+      - histograms
+      type: object
+    CodeCheckHistogramDefinition:
+      additionalProperties: false
+      description: 'Histogram parameters: topic, bins.'
+      example:
+        metric: chk-suite-time
+        ticks:
+        - 60s
+        - 120s
+        - 180s
+        - 360s
+        - 720s
+        - 1440s
+      properties:
+        metric:
+          $ref: '#/components/schemas/CodeCheckMetricID'
+        scale:
+          allOf:
+          - $ref: '#/components/schemas/HistogramScale'
+          - description: Histogram's X axis scale.
+        bins:
+          description: Number of bars in the histogram. 0 or null means automatic.
+          minimum: 0
+          type: integer
+        ticks:
+          description: |-
+            Alternatively to `bins` and `scale`, set the X axis bar borders manually.
+            Only one of two may be specified. The ticks are automatically prepended
+            the distribution minimum and appended the distribution maximum.
+          items:
+# {% if False %}
+            allOf:
+# {% else %}{{ "\n" }}            oneOf:{% endif %}
+            - type: number
+            - $ref: '#/components/schemas/TimeDuration'
+          minItems: 1
+          type: array
+      required:
+      - metric
+      type: object
+    CalculatedCodeCheckHistograms:
+      description: Response from `/histograms/code_checks`.
+      items:
+        $ref: '#/components/schemas/CalculatedCodeCheckHistogram'
+      type: array
+    CalculatedCodeCheckHistogram:
+      additionalProperties: false
+      description: Calculated histogram over code checks (CI).
+      example:
+        for:
+          repositories:
+          - github.com/athenianco/athenian-webapp
+          - github.com/athenianco/athenian-api
+        metric: chk-suites-per-pr
+        scale: linear
+        ticks:
+        - 0
+        - 1
+        - 2
+        - 3
+        - 5
+        - 8
+        - 12
+        frequencies:
+        - 0
+        - 38
+        - 28
+        - 13
+        - 120
+        - 100
+        interquartile:
+          left: 2
+          right: 8
+      properties:
+        for:
+          $ref: '#/components/schemas/ForSetCodeChecks'
+        metric:
+          $ref: '#/components/schemas/CodeCheckMetricID'
+        scale:
+          $ref: '#/components/schemas/HistogramScale'
+        ticks:
+          description: Series of horizontal bar borders aka X axis. Their count is
+            `len(y) + 1` because there are `N` intervals between `(N + 1)` ticks.
+          items:
+# {% if False %}
+            allOf:
+# {% else %}{{ "\n" }}            oneOf:{% endif %}
+            - type: number
+            - $ref: '#/components/schemas/TimeDuration'
+          type: array
+        frequencies:
+          description: Series of histogram bar heights aka Y axis.
+          items:
+            minimum: 0
+            type: integer
+          type: array
+        interquartile:
+          $ref: '#/components/schemas/Interquartile'
+      required:
+      - for
+      - frequencies
+      - interquartile
+      - metric
+      - scale
+      - ticks
       type: object
