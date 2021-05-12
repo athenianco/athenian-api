@@ -24,8 +24,7 @@ from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.branches import extract_branches, \
     load_branch_commit_dates
 from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_COLUMNS, \
-    fetch_precomputed_commit_history_dags, \
-    fetch_repository_commits
+    fetch_precomputed_commit_history_dags, fetch_repository_commits
 from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_inrange
 from athenian.api.controllers.miners.github.release_load import group_repos_by_release_match, \
     match_groups_to_sql
@@ -68,12 +67,13 @@ def triage_by_release_match(repo: str,
                             release_settings: ReleaseSettings,
                             default_branches: Dict[str, str],
                             result: Any,
-                            ambiguous: Dict[str, Any]) -> Optional[Any]:
+                            ambiguous: Dict[str, Any],
+                            ) -> Optional[Any]:
     """Check the release match of the specified `repo` and return `None` if it is not effective \
     or decide between `result` and `ambiguous`, depending on the settings."""
     # DEV-1451: if we don't have this repository in the release settings, then it is deleted
     assert repo in release_settings.native, \
-        "You must take care of deleted repositories separately."
+        f"You must take care of deleted repositories separately: {repo}"
     if release_match in (ReleaseMatch.rejected.name,
                          ReleaseMatch.force_push_drop.name):
         return result
@@ -540,6 +540,7 @@ async def load_precomputed_done_facts_ids(node_ids: Iterable[str],
                                           release_settings: ReleaseSettings,
                                           account: int,
                                           pdb: databases.Database,
+                                          panic_on_missing_repositories: bool = True,
                                           ) -> Tuple[Dict[str, PullRequestFacts],
                                                      Dict[str, List[str]]]:
     """
@@ -547,10 +548,14 @@ async def load_precomputed_done_facts_ids(node_ids: Iterable[str],
 
     node ID version.
 
+    :param panic_on_missing_repositories: Whether to assert that `release_settings` contain \
+      all the loaded PR repositories. If `False`, we log warnings and discard the offending PRs.
+
     :return: 1. Map PR node ID -> repository name & specified column value. \
              2. Map from repository name to ambiguous PR node IDs which are released by \
              branch with tag_or_branch strategy and without tags on the time interval.
     """
+    log = logging.getLogger(f"{metadata.__package__}.load_precomputed_done_facts_ids")
     ghprt = GitHubDonePullRequestFacts
     selected = [ghprt.pr_node_id,
                 ghprt.repository_full_name,
@@ -571,8 +576,13 @@ async def load_precomputed_done_facts_ids(node_ids: Iterable[str],
     result = {}
     ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
     for row in rows:
+        repo = row[ghprt.repository_full_name.key]
+        if not panic_on_missing_repositories and repo not in release_settings.native:
+            log.warning("Discarding PR %s because repository %s is missing",
+                        row[ghprt.pr_node_id.key], repo)
+            continue
         dump = triage_by_release_match(
-            row[ghprt.repository_full_name.key], row[ghprt.release_match.key],
+            repo, row[ghprt.release_match.key],
             release_settings, default_branches, result, ambiguous)
         if dump is None:
             continue
