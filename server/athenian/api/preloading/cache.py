@@ -258,8 +258,13 @@ class MemoryCache:
         if not accounts:
             accounts = await self._get_enabled_accounts()
 
-        sharding_opts = self._options[id_]["sharding"]
-        return sharding_opts["column"].in_(accounts[sharding_opts["key"]])
+        opts = self._options[id_]
+        sharding_opts = opts["sharding"]
+        filtering_clause = sharding_opts["column"].in_(accounts[sharding_opts["key"]])
+        if fc := opts.get("filtering_clause") is not None:
+            filtering_clause = sa.and_(filtering_clause, fc)
+
+        return filtering_clause
 
     async def _get_enabled_accounts(self) -> Dict[str, List[int]]:
         query = (
