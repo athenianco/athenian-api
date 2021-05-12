@@ -1,4 +1,5 @@
 import asyncio
+from enum import Enum
 import logging
 from typing import Collection, Dict, List, Optional, Union
 
@@ -6,6 +7,7 @@ import numpy as np
 import pandas as pd
 import sqlalchemy as sa
 from sqlalchemy import select
+from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
@@ -15,7 +17,6 @@ from athenian.api.typing_utils import DatabaseLike
 
 
 def _humanize_size(v):
-    unit = ""
     for u in ["B", "KiB", "MiB", "GiB"]:
         unit = u
         if v < 1024:
@@ -189,7 +190,10 @@ class MemoryCache:
         self._db = db
         self._options = options
         self._debug_memory = debug_memory
-        self._dfs = {}
+        self._dfs = {
+            id_: CachedDataFrame(id_, **opts, db=self._db, debug_memory=self._debug_memory)
+            for id_, opts in self._options.items()
+        }
 
     @property
     def dfs(self) -> Dict[str, CachedDataFrame]:
@@ -217,15 +221,6 @@ class MemoryCache:
             await self._dfs[id_].refresh()
         else:
             await gather(*[df.refresh() for df in self._dfs.values()])
-
-    async def load(self):
-        """Load all the DataFrames from the database."""
-        for id_, opts in self._options.items():
-            opts["db"] = self._db
-            opts["debug_memory"] = self._debug_memory
-            self._dfs[id_] = CachedDataFrame(id_, **opts)
-
-        await gather(*[cdf.refresh() for cdf in self._dfs.values()])
 
 
 class MemoryCachePreloader:
@@ -260,9 +255,8 @@ class MemoryCachePreloader:
         tasks = []
         for db_name, opts in get_memory_cache_options().items():
             db = dbs[db_name]
-            mc = MemoryCache(db, opts, debug_memory=debug_mode)
-            db.cache = mc
-            tasks.append(mc.load())
+            db.cache = mc = MemoryCache(db, opts, debug_memory=debug_mode)
+            tasks.append(mc.refresh())
 
         await gather(*tasks)
 
@@ -275,11 +269,24 @@ class MemoryCachePreloader:
             self._log.info("MemoryCache ready")
 
 
-def get_memory_cache_options() -> Dict[str, Dict]:
+class MCID(str, Enum):
+    """Identifiers of the cached tables from metadata DB."""
+
+    prs = PullRequest.__table__.fullname
+    jira_mapping = NodePullRequestJiraIssues.__table__.fullname
+
+
+class PCID(str, Enum):
+    """Identifiers of the cached tables from precomputed DB."""
+
+    releases = PrecomputedRelease.__table__.fullname
+
+
+def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[InstrumentedAttribute]]]]:
     """Return the options for the MemoryCache."""
     return {
         "mdb": {
-            "prs": {
+            MCID.prs.value: {
                 "cols": [
                     PullRequest.acc_id,
                     PullRequest.node_id,
@@ -310,7 +317,7 @@ def get_memory_cache_options() -> Dict[str, Dict]:
                     PullRequest.merge_commit_sha,
                 ],
             },
-            "jira_mapping": {
+            MCID.jira_mapping.value: {
                 "cols": [
                     NodePullRequestJiraIssues.node_id,
                     NodePullRequestJiraIssues.node_acc,
@@ -324,7 +331,7 @@ def get_memory_cache_options() -> Dict[str, Dict]:
             },
         },
         "pdb": {
-            "releases": {
+            PCID.releases.value: {
                 "cols": [
                     PrecomputedRelease.release_match,
                     PrecomputedRelease.repository_full_name,
