@@ -37,7 +37,7 @@ from athenian.api.auth import Auth0
 from athenian.api.balancing import extract_handler_weight
 from athenian.api.cache import setup_cache_metrics
 from athenian.api.controllers import invitation_controller
-from athenian.api.controllers.status_controller import setup_status
+from athenian.api.controllers.status_controller import setup_prometheus, setup_status
 from athenian.api.db import add_pdb_metrics_context, measure_db_overhead_and_retry, \
     ParallelDatabase
 from athenian.api.defer import enable_defer, launch_defer, wait_all_deferred, wait_deferred
@@ -216,6 +216,7 @@ class AthenianApp(connexion.AioHttpApp):
             r"/v1/ui(/|$)",
             r"/v1/invite/check/?$",
             r"/status/?$",
+            r"/prometheus/?$",
             r"/memory/?$",
             r"/objgraph/?$",
         ], cache=cache)
@@ -241,7 +242,8 @@ class AthenianApp(connexion.AioHttpApp):
             self.log.warning("Google Key Management Service is disabled, PATs will not work")
             self.app["kms"] = self._kms = None
         self._max_load = max_load
-        prometheus_registry = setup_status(self.app)
+        prometheus_registry = setup_prometheus(self.app)
+        setup_status(self.app)
         self._setup_survival()
         setup_cache_metrics(cache, self.app, prometheus_registry)
         if ui:

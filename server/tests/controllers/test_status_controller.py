@@ -16,14 +16,21 @@ async def test_versions(client, headers):
     assert body["metadata"] == str(__min_version__)
 
 
-async def test_status(client, headers, client_cache, app):
+async def test_prometheus(client, headers, client_cache, app):
     for _ in range(2):
         response = await client.request(
-            method="GET", path="/status", headers=headers, json={},
+            method="GET", path="/prometheus", headers=headers, json={},
         )
         assert response.status == 200
         body = (await response.read()).decode("utf-8")
         assert "requests_total" in body
+
+
+async def test_status(client, headers):
+    response = await client.request(
+        method="GET", path="/status", headers=headers, json={},
+    )
+    assert response.status == 200
 
 
 @pytest.mark.parametrize("limit", ["", "?limit=30"])
