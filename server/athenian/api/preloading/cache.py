@@ -15,6 +15,7 @@ from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.models.metadata.github import Branch, NodePullRequestJiraIssues, \
     PullRequest
 from athenian.api.models.precomputed.models import \
+    GitHubDonePullRequestFacts, \
     GitHubRelease as PrecomputedRelease, \
     GitHubReleaseMatchTimespan as PrecomputedGitHubReleaseMatchTimespan
 from athenian.api.models.state.models import AccountFeature, AccountGitHubAccount, Feature
@@ -341,6 +342,7 @@ class PCID(str, Enum):
 
     releases = PrecomputedRelease.__table__.fullname
     releases_match_timespan = PrecomputedGitHubReleaseMatchTimespan.__table__.fullname
+    done_pr_facts = GitHubDonePullRequestFacts.__table__.fullname
 
 
 def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[InstrumentedAttribute]]]]:
@@ -455,6 +457,49 @@ def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[Instrumente
                     PrecomputedGitHubReleaseMatchTimespan.release_match,
                     PrecomputedGitHubReleaseMatchTimespan.repository_full_name,
                     PrecomputedGitHubReleaseMatchTimespan.acc_id,
+                ],
+            },
+            PCID.done_pr_facts.value: {
+                "sharding": {
+                    "column": GitHubDonePullRequestFacts.acc_id,
+                    "key": "acc_id",
+                },
+                "filtering_clause": (
+                    GitHubDonePullRequestFacts.format_version ==
+                    GitHubDonePullRequestFacts.__table__.columns[
+                        GitHubDonePullRequestFacts.format_version.key].default.arg,
+                ),
+                "cols": [
+                    GitHubDonePullRequestFacts.pr_node_id,
+                    GitHubDonePullRequestFacts.repository_full_name,
+                    GitHubDonePullRequestFacts.release_match,
+                    GitHubDonePullRequestFacts.acc_id,
+                    GitHubDonePullRequestFacts.pr_created_at,
+                    GitHubDonePullRequestFacts.pr_done_at,
+                    GitHubDonePullRequestFacts.activity_days,
+                    GitHubDonePullRequestFacts.data,
+                    GitHubDonePullRequestFacts.author,
+                    GitHubDonePullRequestFacts.merger,
+                    GitHubDonePullRequestFacts.releaser,
+                    GitHubDonePullRequestFacts.reviewers,
+                    GitHubDonePullRequestFacts.commenters,
+                    GitHubDonePullRequestFacts.commit_authors,
+                    GitHubDonePullRequestFacts.commit_committers,
+                ],
+                "categorical_cols": [
+                    GitHubDonePullRequestFacts.repository_full_name,
+                    GitHubDonePullRequestFacts.release_match,
+                    GitHubDonePullRequestFacts.acc_id,
+                    GitHubDonePullRequestFacts.author,
+                    GitHubDonePullRequestFacts.merger,
+                    GitHubDonePullRequestFacts.releaser,
+                    GitHubDonePullRequestFacts.reviewers,
+                    GitHubDonePullRequestFacts.commenters,
+                    GitHubDonePullRequestFacts.commit_authors,
+                    GitHubDonePullRequestFacts.commit_committers,
+                ],
+                "identifier_cols": [
+                    GitHubDonePullRequestFacts.pr_node_id,
                 ],
             },
         },
