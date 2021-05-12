@@ -36,7 +36,7 @@ class NumpyRandomChoiceCache:
     @wraps(np.random.choice)
     def __call__(self, a, size=None, replace=True, p=None):
         """Pretend to be np.random.choice."""
-        if isinstance(a, (int, np.int)) and len(size) == 2 and replace and p is None:
+        if isinstance(a, (int, np.int32, np.int64)) and len(size) == 2 and replace and p is None:
             item = self.Item.get(a)
             if item.random.shape < size:
                 item.random = self.vanilla_random_choice(a, size=size)
