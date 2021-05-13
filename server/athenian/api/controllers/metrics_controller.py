@@ -42,7 +42,7 @@ FilterPRs = Tuple[str, Tuple[List[Set[str]], List[PRParticipants], LabelFilter, 
 FilterDevs = Tuple[str, Tuple[List[Set[str]], List[str], ForSetDevelopers]]
 #                              repositories                  originals
 
-#                  service                      commit_authors
+#                  service                      pusher groups
 FilterChecks = Tuple[str, Tuple[List[Set[str]], List[List[str]], JIRAFilter, ForSetCodeChecks]]
 #                               repositories                                     originals
 
@@ -247,11 +247,11 @@ async def _compile_filters_checks(for_sets: List[ForSetCodeChecks],
             else:
                 repogroups = [set(chain.from_iterable(repos))]
             commit_author_groups = []
-            for commit_authors in ((for_set.commit_author_groups or []) +
-                                   ([for_set.commit_authors] if for_set.commit_authors else [])):
-                if ca_group := _compile_dev_logins(commit_authors, prefix, ".for[%d].%s" % (
+            for pushers in ((for_set.pusher_groups or []) +
+                            ([for_set.pushers] if for_set.pushers else [])):
+                if ca_group := _compile_dev_logins(pushers, prefix, ".for[%d].%s" % (
                         i, "commit_author_groups"
-                        if i < len(for_set.commit_author_groups or []) else "commit_authors")):
+                        if i < len(for_set.pusher_groups or []) else "pushers")):
                     commit_author_groups.append(sorted(ca_group))
             jira = await _compile_jira(for_set, account, request)
             filters.append((service, (repogroups, commit_author_groups, jira, for_set)))
@@ -579,20 +579,20 @@ async def calc_metrics_code_checks(request: AthenianWebRequest, body: dict) -> w
     )
 
     @sentry_span
-    async def calculate_for_set_metrics(service, repos, ca_groups, jira, for_set):
+    async def calculate_for_set_metrics(service, repos, pusher_groups, jira, for_set):
         calculator = calculators[service]
         metric_values, group_suite_counts, suite_sizes = \
             await calculator.calc_check_run_metrics_line_github(
                 filt.metrics, time_intervals, filt.quantiles or (0, 1),
-                repos, ca_groups, filt.split_by_check_runs, jira)
+                repos, pusher_groups, filt.split_by_check_runs, jira)
         mrange = range(len(met.metrics))
-        for ca_group_index, ca_group in enumerate(metric_values):
-            for repos_group_index, repos_group in enumerate(ca_group):
+        for ca_group_index, pushers_group in enumerate(metric_values):
+            for repos_group_index, repos_group in enumerate(pushers_group):
                 my_suite_counts = group_suite_counts[ca_group_index, repos_group_index]
                 total_group_suites = my_suite_counts.sum()
                 for suite_size_group_index, suite_size_group in enumerate(repos_group):
                     group_for_set = for_set \
-                        .select_commit_authors_group(ca_group_index) \
+                        .select_pushers_group(ca_group_index) \
                         .select_repogroup(repos_group_index)  # type: ForSetCodeChecks
                     if filt.split_by_check_runs:
                         suite_size = suite_sizes[suite_size_group_index]

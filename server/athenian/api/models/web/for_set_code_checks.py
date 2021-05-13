@@ -11,16 +11,16 @@ class ForSetCodeChecks(Model, RepositoryGroupsMixin):
     openapi_types = {
         "repositories": List[str],
         "repogroups": Optional[List[List[int]]],
-        "commit_authors": Optional[List[str]],
-        "commit_author_groups": Optional[List[List[str]]],
+        "pushers": Optional[List[str]],
+        "pusher_groups": Optional[List[List[str]]],
         "jira": Optional[JIRAFilter],
     }
 
     attribute_map = {
         "repositories": "repositories",
         "repogroups": "repogroups",
-        "commit_authors": "commit_authors",
-        "commit_author_groups": "commit_author_groups",
+        "pushers": "pushers",
+        "pusher_groups": "pusher_groups",
         "jira": "jira",
     }
 
@@ -28,67 +28,67 @@ class ForSetCodeChecks(Model, RepositoryGroupsMixin):
         self,
         repositories: Optional[List[str]] = None,
         repogroups: Optional[List[List[int]]] = None,
-        commit_authors: Optional[List[str]] = None,
-        commit_author_groups: Optional[List[List[str]]] = None,
+        pushers: Optional[List[str]] = None,
+        pusher_groups: Optional[List[List[str]]] = None,
         jira: Optional[JIRAFilter] = None,
     ):
         """ForSetCodeChecks - a model defined in OpenAPI
 
         :param repositories: The repositories of this ForSetCodeChecks.
         :param repogroups: The repogroups of this ForSetCodeChecks.
-        :param commit_authors: The commit_authors of this ForSetCodeChecks.
-        :param commit_author_groups: The commit_author_groups of this ForSetCodeChecks.
+        :param pushers: The pushers of this ForSetCodeChecks.
+        :param pusher_groups: The pusher_groups of this ForSetCodeChecks.
         :param jira: The jira of this ForSetCodeChecks.
         """
         self._repositories = repositories
         self._repogroups = repogroups
-        self._commit_authors = commit_authors
-        self._commit_author_groups = commit_author_groups
+        self._pushers = pushers
+        self._pusher_groups = pusher_groups
         self._jira = jira
 
     @property
-    def commit_authors(self) -> Optional[List[str]]:
-        """Gets the commit_authors of this ForSetCodeChecks.
+    def pushers(self) -> Optional[List[str]]:
+        """Gets the pushers of this ForSetCodeChecks.
 
-        Check runs must be triggered by commits authored by these people.
+        Check runs must be triggered by commits pushed by these people.
 
-        :return: The commit_authors of this ForSetCodeChecks.
+        :return: The pushers of this ForSetCodeChecks.
         """
-        return self._commit_authors
+        return self._pushers
 
-    @commit_authors.setter
-    def commit_authors(self, commit_authors: Optional[List[str]]):
-        """Sets the commit_authors of this ForSetCodeChecks.
+    @pushers.setter
+    def pushers(self, pushers: Optional[List[str]]):
+        """Sets the pushers of this ForSetCodeChecks.
 
-        Check runs must be triggered by commits authored by these people.
+        Check runs must be triggered by commits pushed by these people.
 
-        :param commit_authors: The commit_authors of this ForSetCodeChecks.
+        :param pushers: The pushers of this ForSetCodeChecks.
         """
-        self._commit_authors = commit_authors
+        self._pushers = pushers
 
     @property
-    def commit_author_groups(self) -> Optional[List[List[str]]]:
-        """Gets the commit_author_groups of this ForSetCodeChecks.
+    def pusher_groups(self) -> Optional[List[List[str]]]:
+        """Gets the pusher_groups of this ForSetCodeChecks.
 
         Check runs must be triggered by commits authored by these people. We aggregate by each
-        group so that you can request metrics of several teams at once. We treat `commit_authors`
+        group so that you can request metrics of several teams at once. We treat `pushers`
         as another group, if specified.
 
-        :return: The commit_author_groups of this ForSetCodeChecks.
+        :return: The pusher_groups of this ForSetCodeChecks.
         """
-        return self._commit_author_groups
+        return self._pusher_groups
 
-    @commit_author_groups.setter
-    def commit_author_groups(self, commit_author_groups: Optional[List[List[str]]]):
-        """Sets the commit_author_groups of this ForSetCodeChecks.
+    @pusher_groups.setter
+    def pusher_groups(self, pusher_groups: Optional[List[List[str]]]):
+        """Sets the pusher_groups of this ForSetCodeChecks.
 
         Check runs must be triggered by commits authored by these people. We aggregate by each
-        group so that you can request metrics of several teams at once. We treat `commit_authors`
+        group so that you can request metrics of several teams at once. We treat `pushers`
         as another group, if specified.
 
-        :param commit_author_groups: The commit_author_groups of this ForSetCodeChecks.
+        :param pusher_groups: The pusher_groups of this ForSetCodeChecks.
         """
-        self._commit_author_groups = commit_author_groups
+        self._pusher_groups = pusher_groups
 
     @property
     def jira(self) -> Optional[JIRAFilter]:
@@ -106,16 +106,16 @@ class ForSetCodeChecks(Model, RepositoryGroupsMixin):
         """
         self._jira = jira
 
-    def select_commit_authors_group(self, index: int) -> "ForSetCodeChecks":
-        """Change `commit_authors` to point at the specified `commit_authors_group`."""
+    def select_pushers_group(self, index: int) -> "ForSetCodeChecks":
+        """Change `pushers` to point at the specified `pushers_group`."""
         fs = self.copy()
-        if self.commit_author_groups is None:
+        if self.pusher_groups is None:
             if index > 0:
-                raise IndexError("%d is out of range (no commit_author_groups)" % index)
+                raise IndexError("%d is out of range (no pusher_groups)" % index)
             return fs
-        if index >= len(self.commit_author_groups):
+        if index >= len(self.pusher_groups):
             raise IndexError("%d is out of range (max is %d)" % (
-                index, len(self.withcommit_author_groupsgroups) - 1))
-        fs.commit_authors = self.commit_author_groups[index]
-        fs.commit_author_groups = None
+                index, len(self.withpusher_groupsgroups) - 1))
+        fs.pushers = self.pusher_groups[index]
+        fs.pusher_groups = None
         return fs

@@ -31,18 +31,18 @@ pull_request_merged_column = "pull_request_" + NodePullRequest.merged.key
     exptime=PullRequestMiner.CACHE_TTL,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda time_from, time_to, repositories, commit_authors, jira, **_:  # noqa
+    key=lambda time_from, time_to, repositories, pushers, jira, **_:  # noqa
     (
         time_from.timestamp(), time_to.timestamp(),
         ",".join(sorted(repositories)),
-        ",".join(sorted(commit_authors)),
+        ",".join(sorted(pushers)),
         jira,
     ),
 )
 async def mine_check_runs(time_from: datetime,
                           time_to: datetime,
                           repositories: Collection[str],
-                          commit_authors: Collection[str],
+                          pushers: Collection[str],
                           jira: JIRAFilter,
                           meta_ids: Tuple[int, ...],
                           mdb: DatabaseLike,
@@ -60,7 +60,7 @@ async def mine_check_runs(time_from: datetime,
     :param time_from: Check runs must start later than this time.
     :param time_to: Check runs must start earlier than this time.
     :param repositories: Look for check runs in these repository names.
-    :param commit_authors: Check runs must link to the commits with the given author logins.
+    :param pushers: Check runs must link to the commits with the given pusher logins.
     :param jira: Check runs must link to PRs satisfying this JIRA filter.
     :return: Pandas DataFrame with columns mapped from CheckRun model.
     """
@@ -74,8 +74,8 @@ async def mine_check_runs(time_from: datetime,
         CheckRun.started_at.between(time_from, time_to),
         CheckRun.repository_node_id.in_(repo_nodes),
     ]
-    if commit_authors:
-        filters.append(CheckRun.author_login.in_(commit_authors))
+    if pushers:
+        filters.append(CheckRun.author_login.in_(pushers))
     if not jira:
         query = select([CheckRun]).where(and_(*filters))
     else:
