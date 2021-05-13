@@ -201,7 +201,7 @@ async def test_create_team_same_name(client, headers, sdb, disable_default_user)
     ids=["empty", "non-empty"],
 )
 @pytest.mark.parametrize("account", [1, 2], ids=["as admin", "as non-admin"])
-async def test_list_teams_smoke(client, headers, initial_teams, sdb, account):
+async def test_list_teams_smoke(client, headers, initial_teams, sdb, account, vadim_id_mapping):
     await sdb.execute(insert(AccountGitHubAccount).values({
         AccountGitHubAccount.account_id: 2,
         AccountGitHubAccount.id: 1,
@@ -219,6 +219,7 @@ async def test_list_teams_smoke(client, headers, initial_teams, sdb, account):
             "email": "gmarkhor@gmail.com",
             "name": "Vadim Markovtsev",
             "picture": "https://avatars1.githubusercontent.com/u/2793551?s=600&v=4",
+            "jira_user": "Vadim Markovtsev",
         },
     }
     for t in initial_teams:
@@ -432,11 +433,11 @@ async def test_delete_team_nasty_input(client, headers, sdb, disable_default_use
     assert response.status == status, "Response body is : " + body
 
 
-async def test_get_team_smoke(client, headers, sdb):
+async def test_get_team_smoke(client, headers, sdb, vadim_id_mapping):
     await sdb.execute(insert(Team).values(Team(
         owner_id=1,
         name="Engineering",
-        members=["github.com/se7entyse7en", "github.com/mcuadros"],
+        members=["github.com/vmarkovtsev", "github.com/mcuadros"],
     ).create_defaults().explode()))
     response = await client.request(
         method="GET", path="/v1/team/1", headers=headers, json={},
@@ -449,11 +450,12 @@ async def test_get_team_smoke(client, headers, sdb):
          "name": "Máximo Cuadros",
          "email": "mcuadros@gmail.com",
          "picture": "https://avatars0.githubusercontent.com/u/1573114?s=600&v=4"},
-        {"login": "github.com/se7entyse7en",
-         "email": "loumarvincaraig@gmail.com",
-         "name": "Lou Marvin Caraig",
-         "picture": "https://avatars.githubusercontent.com/u/5599208?s=600&u=46e13fb429c44109e0b125f133c4e694a6d2646e&v=4"},  # noqa
-    ]}
+        {"login": "github.com/vmarkovtsev",
+         "email": "gmarkhor@gmail.com",
+         "name": "Vadim Markovtsev",
+         "picture": "https://avatars1.githubusercontent.com/u/2793551?s=600&v=4",
+         "jira_user": "Vadim Markovtsev",
+         }]}
 
 
 @pytest.mark.parametrize("owner, id, status", [

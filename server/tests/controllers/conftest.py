@@ -17,7 +17,7 @@ from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
     ReleaseMatchSetting, ReleaseSettings
 from athenian.api.models.metadata.github import Branch
-from athenian.api.models.state.models import JIRAProjectSetting
+from athenian.api.models.state.models import JIRAProjectSetting, MappedJIRAIdentity
 from athenian.api.typing_utils import wraps
 
 
@@ -144,6 +144,30 @@ def pr_samples():
 
         return [random_pr() for _ in range(n)]
     return generate
+
+
+@pytest.fixture(scope="function")
+async def vadim_id_mapping(sdb):
+    await sdb.execute(insert(MappedJIRAIdentity).values(
+        MappedJIRAIdentity(
+            account_id=1,
+            github_user_id="MDQ6VXNlcjI3OTM1NTE=",
+            jira_user_id="5de5049e2c5dd20d0f9040c1",
+            confidence=1.0,
+        ).create_defaults().explode(with_primary_keys=True),
+    ))
+
+
+@pytest.fixture(scope="function")
+async def denys_id_mapping(sdb):
+    await sdb.execute(insert(MappedJIRAIdentity).values(
+        MappedJIRAIdentity(
+            account_id=1,
+            github_user_id="MDQ6VXNlcjY3NjcyNA==",
+            jira_user_id="5de4cff936b8050e29258600",
+            confidence=1.0,
+        ).create_defaults().explode(with_primary_keys=True),
+    ))
 
 
 _dag = None

@@ -330,18 +330,6 @@ async def test_set_jira_projects_nasty_input(
     assert response.status == code
 
 
-@pytest.fixture(scope="function")
-async def denys_id_mapping(sdb):
-    await sdb.execute(insert(MappedJIRAIdentity).values(
-        MappedJIRAIdentity(
-            account_id=1,
-            github_user_id="MDQ6VXNlcjY3NjcyNA==",
-            jira_user_id="5de4cff936b8050e29258600",
-            confidence=1.0,
-        ).create_defaults().explode(with_primary_keys=True),
-    ))
-
-
 async def test_get_jira_identities_smoke(client, headers, sdb, denys_id_mapping):
     response = await client.request(
         method="GET", path="/v1/settings/jira/identities/1", headers=headers)
