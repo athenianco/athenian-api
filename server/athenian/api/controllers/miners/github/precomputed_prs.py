@@ -446,18 +446,23 @@ def _post_process_ambiguous_done_prs(result: Dict[str, Mapping[str, Any]],
     return result, ambiguous_prs
 
 
-def _append_activity_days_filter(time_from: datetime, time_to: datetime,
-                                 selected: List[InstrumentedAttribute],
-                                 filters: List[ClauseElement],
-                                 activity_days_column: InstrumentedAttribute,
-                                 postgres: bool) -> Set[datetime]:
+def build_days_range(time_from: datetime, time_to: datetime) -> Set[datetime]:
+    """Build the daily range between the two provided times."""
     # timezones: date_from and date_to may be not exactly 00:00
     date_from_day = datetime.combine(
         time_from.date(), datetime.min.time(), tzinfo=timezone.utc)
     date_to_day = datetime.combine(
         time_to.date(), datetime.min.time(), tzinfo=timezone.utc)
     # date_to_day will be included
-    date_range = rrule(DAILY, dtstart=date_from_day, until=date_to_day)
+    return rrule(DAILY, dtstart=date_from_day, until=date_to_day)
+
+
+def _append_activity_days_filter(time_from: datetime, time_to: datetime,
+                                 selected: List[InstrumentedAttribute],
+                                 filters: List[ClauseElement],
+                                 activity_days_column: InstrumentedAttribute,
+                                 postgres: bool) -> Set[datetime]:
+    date_range = build_days_range(time_from, time_to)
     if postgres:
         filters.append(activity_days_column.overlap(list(date_range)))
     else:

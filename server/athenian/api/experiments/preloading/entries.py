@@ -1,7 +1,7 @@
 from datetime import datetime
 import functools
 import operator
-from typing import Collection, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
+from typing import Collection, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple, Union
 
 import aiomcache
 import databases
@@ -13,7 +13,8 @@ from athenian.api.controllers.features.github.unfresh_pull_request_metrics impor
     UnfreshPullRequestFactsFetcher
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import BranchMiner
-from athenian.api.controllers.miners.github.precomputed_prs import OpenPRFactsLoader
+from athenian.api.controllers.miners.github.precomputed_prs import \
+    build_days_range, OpenPRFactsLoader
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.github.release_load import \
     match_groups_to_conditions, ReleaseLoader
@@ -21,7 +22,8 @@ from athenian.api.controllers.miners.github.release_load import \
     remove_ambigous_precomputed_releases
 from athenian.api.controllers.miners.github.release_match import ReleaseToPullRequestMapper
 from athenian.api.controllers.miners.jira.issue import PullRequestJiraMapper
-from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind
+from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind, \
+    PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch
 from athenian.api.models.metadata.github import PullRequest
 from athenian.api.preloading.cache import MCID, PCID
@@ -110,7 +112,53 @@ class PreloadedReleaseToPullRequestMapper(ReleaseToPullRequestMapper):
 class PreloadedOpenPRFactsLoader(OpenPRFactsLoader):
     """Loader for preloaded open PRs facts."""
 
-    pass
+    @classmethod
+    @sentry_span
+    async def load_open_pull_request_facts_unfresh(cls,
+                                                   prs: Iterable[str],
+                                                   time_from: datetime,
+                                                   time_to: datetime,
+                                                   exclude_inactive: bool,
+                                                   authors: Mapping[str, str],
+                                                   account: int,
+                                                   pdb: databases.Database,
+                                                   ) -> Dict[str, PullRequestFacts]:
+        """
+        Fetch preloaded precomputed facts about the open PRs from the DataFrame.
+
+        We don't filter PRs by the last update here.
+
+        :param authors: Map from PR node IDs to their author logins.
+        :return: Map from PR node IDs to their facts.
+        """
+        cached_df = pdb.cache.dfs[PCID.done_pr_facts]
+        df = cached_df.df
+        mask = (
+            (df["acc_id"] == account)
+            & df["pr_node_id"].isin(prs)
+        )
+
+        if exclude_inactive:
+            date_range = build_days_range(time_from, time_to)
+            mask &= df["activity_days"].apply(lambda v: bool(set(v).intersection(date_range)))
+
+        open_prs_facts = cached_df.filter(mask, columns=[
+            "pr_node_id", "repository_full_name", "data"])
+        if open_prs_facts.empty:
+            return {}
+
+        facts = {}
+        for pr_node_id, repository_full_name, data in zip(
+                open_prs_facts["pr_node_id"].values,
+                open_prs_facts["repository_full_name"].values,
+                open_prs_facts["data"].values,
+        ):
+            node_id = pr_node_id.rstrip()
+            facts[node_id] = PullRequestFacts(
+                data=data,
+                repository_full_name=repository_full_name,
+                author=authors[node_id])
+        return facts
 
 
 class PreloadedUnfreshPullRequestFactsFetcher(UnfreshPullRequestFactsFetcher):
