@@ -9,7 +9,7 @@ import pandas as pd
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.precomputed_prs import \
-    discover_inactive_merged_unreleased_prs, load_merged_unreleased_pull_request_facts, \
+    discover_inactive_merged_unreleased_prs, MergedPRFactsLoader, \
     OpenPRFactsLoader, remove_ambiguous_prs
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.github.release_load import ReleaseLoader
@@ -26,6 +26,7 @@ class UnfreshPullRequestFactsFetcher:
 
     release_loader = ReleaseLoader
     open_prs_facts_loader = OpenPRFactsLoader
+    merged_prs_facts_loader = MergedPRFactsLoader
 
     @classmethod
     @sentry_span
@@ -107,7 +108,7 @@ class UnfreshPullRequestFactsFetcher:
             cls.open_prs_facts_loader.load_open_pull_request_facts_unfresh(
                 open_prs, time_from, time_to, exclude_inactive, open_pr_authors, account, pdb),
             # require `checked_until` to be after `time_to` or now() - 1 hour (heater interval)
-            load_merged_unreleased_pull_request_facts(
+            cls.merged_prs_facts_loader.load_merged_unreleased_pull_request_facts(
                 merged_prs, min(time_to, datetime.now(timezone.utc) - timedelta(hours=1)),
                 LabelFilter.empty(), matched_bys,
                 default_branches, release_settings, account, pdb,
