@@ -13,6 +13,7 @@ from sqlalchemy import and_, delete, insert, select, update
 from athenian.api import metadata
 from athenian.api.auth import disable_default_user
 from athenian.api.controllers.account import get_metadata_account_ids, get_user_account_status
+from athenian.api.controllers.jira import load_mapped_jira_users
 from athenian.api.controllers.miners.github.users import mine_users
 from athenian.api.models.metadata.github import User
 from athenian.api.models.state.models import Team
@@ -81,7 +82,8 @@ async def get_team(request: AthenianWebRequest, id: int) -> web.Response:
         account = team[Team.owner_id.key]
         await get_user_account_status(user, account, sdb_conn, request.cache)
         meta_ids = await get_metadata_account_ids(account, sdb_conn, request.cache)
-    members = await _get_all_team_members([team], meta_ids, request.mdb, request.cache)
+    members = await _get_all_team_members(
+        [team], account, meta_ids, request.mdb, request.sdb, request.cache)
     model = TeamListItem(id=team[Team.id.key],
                          name=team[Team.name.key],
                          parent=team[Team.parent_id.key],
@@ -103,7 +105,8 @@ async def list_teams(request: AthenianWebRequest, id: int) -> web.Response:
         teams = await sdb_conn.fetch_all(
             select([Team]).where(Team.owner_id == account).order_by(Team.name))
         meta_ids = await get_metadata_account_ids(account, sdb_conn, request.cache)
-    all_members = await _get_all_team_members(teams, meta_ids, request.mdb, request.cache)
+    all_members = await _get_all_team_members(
+        teams, account, meta_ids, request.mdb, request.sdb, request.cache)
     items = [TeamListItem(id=t[Team.id.key],
                           name=t[Team.name.key],
                           parent=t[Team.parent_id.key],
@@ -202,14 +205,18 @@ async def _check_parent_cycle(team_id: int, parent_id: Optional[int], sdb: Datab
 
 
 async def _get_all_team_members(teams: Iterable[Mapping],
+                                account: int,
                                 meta_ids: Tuple[int, ...],
                                 mdb: databases.Database,
+                                sdb: databases.Database,
                                 cache: Optional[aiomcache.Client]) -> Dict[str, Contributor]:
     all_members_prefixed = set(chain.from_iterable([t[Team.members.key] for t in teams]))
     all_members = {m.rsplit("/", 1)[1]: m for m in all_members_prefixed}
     user_by_login = {
         u[User.login.key]: u for u in await mine_users(all_members, meta_ids, mdb, cache)
     }
+    mapped_jira = await load_mapped_jira_users(
+        account, [u[User.node_id.key] for u in user_by_login.values()], sdb, mdb, cache)
     all_contributors = {}
     for m in all_members:
         try:
@@ -222,7 +229,8 @@ async def _get_all_team_members(teams: Iterable[Mapping],
             c = Contributor(login=login,
                             name=ud[User.name.key],
                             email=ud[User.email.key],
-                            picture=ud[User.avatar_url.key])
+                            picture=ud[User.avatar_url.key],
+                            jira_user=mapped_jira.get(ud[User.node_id.key]))
         all_contributors[login] = c
 
     if missing := all_members_prefixed - all_contributors.keys():
