@@ -1587,7 +1587,7 @@ async def test_code_check_metrics_smoke(client, headers):
         "date_to": "2020-03-01",
         "for": [{
             "repositories": ["github.com/src-d/go-git"],
-            "commit_authors": ["github.com/mcuadros"],
+            "pushers": ["github.com/mcuadros"],
         }],
         "metrics": [CodeCheckMetricID.SUITES_COUNT],
         "granularities": ["all"],
@@ -1600,7 +1600,7 @@ async def test_code_check_metrics_smoke(client, headers):
     rbody = json.loads(rbody)
     model = CalculatedCodeCheckMetrics.from_dict(rbody)
     assert model.to_dict() == {
-        "calculated": [{"for": {"commit_authors": ["github.com/mcuadros"],
+        "calculated": [{"for": {"pushers": ["github.com/mcuadros"],
                                 "repositories": ["github.com/src-d/go-git"]},
                         "granularity": "all",
                         "values": [{"date": date(2018, 1, 12),
@@ -1761,7 +1761,7 @@ async def test_code_check_metrics_authorgroups(client, headers):
         "date_to": "2020-03-01",
         "for": [{
             "repositories": ["github.com/src-d/go-git"],
-            "commit_author_groups": [["github.com/mcuadros"], ["github.com/erizocosmico"]],
+            "pusher_groups": [["github.com/mcuadros"], ["github.com/erizocosmico"]],
         }],
         "metrics": [CodeCheckMetricID.SUITES_COUNT],
         "granularities": ["all"],
@@ -1774,12 +1774,12 @@ async def test_code_check_metrics_authorgroups(client, headers):
     rbody = json.loads(rbody)
     model = CalculatedCodeCheckMetrics.from_dict(rbody)
     assert model.to_dict() == {
-        "calculated": [{"for": {"commit_authors": ["github.com/mcuadros"],
+        "calculated": [{"for": {"pushers": ["github.com/mcuadros"],
                                 "repositories": ["github.com/src-d/go-git"]},
                         "granularity": "all",
                         "values": [{"date": date(2018, 1, 12),
                                     "values": [221]}]},
-                       {"for": {"commit_authors": ["github.com/erizocosmico"],
+                       {"for": {"pushers": ["github.com/erizocosmico"],
                                 "repositories": ["github.com/src-d/go-git"]},
                         "granularity": "all",
                         "values": [{"date": date(2018, 1, 12),

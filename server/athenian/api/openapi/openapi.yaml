@@ -5091,7 +5091,7 @@ components:
           description: Login of the person who created the release.
           type: string
         commit_authors:
-          description: List of released commit commit_authors' logins.
+          description: List of released commit authors' logins.
           items:
             $ref: '#/components/schemas/DeveloperID'
           type: array
@@ -7439,13 +7439,13 @@ components:
         - repositories:
           - github.com/athenianco/athenian-webapp
           - github.com/athenianco/athenian-api
-          commit_authors:
+          pushers:
           - - github.com/vmarkovtsev
             - github.com/dpordomingo
         - repositories:
           - github.com/athenianco/metadata
           - github.com/athenianco/athenian-api
-          commit_authors:
+          pushers:
           - - github.com/vmarkovtsev
             - github.com/se7entyse7en
         metrics:
@@ -7506,7 +7506,7 @@ components:
         repositories:
         - github.com/athenianco/athenian-webapp
         - github.com/athenianco/athenian-api
-        commit_authors:
+        pushers:
         - github.com/vmarkovtsev
         - github.com/dpordomingo
         jira:
@@ -7517,16 +7517,18 @@ components:
           $ref: '#/components/schemas/RepositorySet'
         repogroups:
           $ref: '#/components/schemas/IndexedGroups'
-        commit_authors:
-          description: Check runs must be triggered by commits authored by these people.
+        pushers:
+          description: Check runs must be triggered by commits pushed by these people.
+            When it is impossible to determine who pushed, e.g. in legacy API based checks,
+            they are committers.
           items:
             $ref: '#/components/schemas/DeveloperID'
           type: array
-        commit_author_groups:
+        pusher_groups:
           description: |-
             Check runs must be triggered by commits authored by these people.
             We aggregate by each group so that you can request metrics of several teams at once.
-            We treat `commit_authors` as another group, if specified.
+            We treat `pushers` as another group, if specified.
           items:
             items:
               $ref: '#/components/schemas/DeveloperID'
@@ -7591,7 +7593,7 @@ components:
             repositories:
             - github.com/athenianco/athenian-webapp
             - github.com/athenianco/athenian-api
-            commit_authors:
+            pushers:
             - github.com/vmarkovtsev
             - github.com/dpordomingo
           granularity: all
@@ -7645,7 +7647,7 @@ components:
           repositories:
           - github.com/athenianco/athenian-webapp
           - github.com/athenianco/athenian-api
-          commit_authors:
+          pushers:
           - github.com/vmarkovtsev
           - github.com/dpordomingo
         granularity: all
@@ -7683,7 +7685,7 @@ components:
         - repositories:
           - github.com/athenianco/athenian-webapp
           - github.com/athenianco/athenian-api
-          commit_authors:
+          pushers:
             - github.com/vmarkovtsev
             - github.com/dpordomingo
         histograms:

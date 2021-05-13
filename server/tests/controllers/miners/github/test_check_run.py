@@ -7,7 +7,7 @@ from athenian.api.controllers.miners.github.check_run import mine_check_runs
 from athenian.api.models.metadata.github import CheckRun
 
 
-@pytest.mark.parametrize("time_from, time_to, repositories, commit_authors, jira, size", [
+@pytest.mark.parametrize("time_from, time_to, repositories, pushers, jira, size", [
     (datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
      ["src-d/go-git"], [], JIRAFilter.empty(), 4581),
     (datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
@@ -22,9 +22,9 @@ from athenian.api.models.metadata.github import CheckRun
      ["src-d/go-git"], [],
      JIRAFilter(1, ["10003", "10009"], LabelFilter.empty(), set(), {"task"}, False), 229),
 ])
-async def test_check_run_smoke(mdb, time_from, time_to, repositories, commit_authors, jira, size):
+async def test_check_run_smoke(mdb, time_from, time_to, repositories, pushers, jira, size):
     df = await mine_check_runs(
-        time_from, time_to, repositories, commit_authors, jira, (6366825,), mdb, None)
+        time_from, time_to, repositories, pushers, jira, (6366825,), mdb, None)
     assert len(df) == size
     for col in CheckRun.__table__.columns:
         assert col.key in df.columns

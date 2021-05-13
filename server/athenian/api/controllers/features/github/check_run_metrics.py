@@ -48,17 +48,17 @@ class CheckRunBinnedHistogramCalculator(BinnedHistogramCalculator):
     ensemble_class = CheckRunHistogramCalculatorEnsemble
 
 
-def group_check_runs_by_commit_authors(commit_authors: List[List[str]],
-                                       df: pd.DataFrame,
-                                       ) -> List[np.ndarray]:
+def group_check_runs_by_pushers(pushers: List[List[str]],
+                                df: pd.DataFrame,
+                                ) -> List[np.ndarray]:
     """Triage check runs by their corresponding commit authors."""
-    if not commit_authors or df.empty:
+    if not pushers or df.empty:
         return [np.arange(len(df))]
     indexes = []
-    for group in commit_authors:
+    for group in pushers:
         group = np.unique(group).astype("S")
-        commit_authors = df[CheckRun.author_login.key].values.astype("S")
-        included_indexes = np.nonzero(np.in1d(commit_authors, group))[0]
+        pushers = df[CheckRun.author_login.key].values.astype("S")
+        included_indexes = np.nonzero(np.in1d(pushers, group))[0]
         indexes.append(included_indexes)
     return indexes
 
