@@ -14,7 +14,8 @@ from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import JIRAFilter
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
-from athenian.api.models.metadata.github import CheckRun, NodePullRequest, NodePullRequestCommit
+from athenian.api.models.metadata.github import CheckRun, NodePullRequest, NodePullRequestCommit, \
+    NodeRepository
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import DatabaseLike
 
@@ -64,10 +65,14 @@ async def mine_check_runs(time_from: datetime,
     :return: Pandas DataFrame with columns mapped from CheckRun model.
     """
     log = logging.getLogger(f"{metadata.__package__}.mine_check_runs")
+    repo_nodes = [r[0] for r in await mdb.fetch_all(
+        select([NodeRepository.id])
+        .where(and_(NodeRepository.acc_id.in_(meta_ids),
+                    NodeRepository.name_with_owner.in_(repositories))))]
     filters = [
         CheckRun.acc_id.in_(meta_ids),
         CheckRun.started_at.between(time_from, time_to),
-        CheckRun.repository_full_name.in_(repositories),
+        CheckRun.repository_node_id.in_(repo_nodes),
     ]
     if commit_authors:
         filters.append(CheckRun.author_login.in_(commit_authors))
