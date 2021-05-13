@@ -14,7 +14,7 @@ from athenian.api.controllers.features.github.unfresh_pull_request_metrics impor
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.precomputed_prs import \
-    build_days_range, OpenPRFactsLoader
+    build_days_range, MergedPRFactsLoader, OpenPRFactsLoader
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.github.release_load import \
     match_groups_to_conditions, ReleaseLoader
@@ -109,6 +109,12 @@ class PreloadedReleaseToPullRequestMapper(ReleaseToPullRequestMapper):
     release_loader = PreloadedReleaseLoader
 
 
+class PreloadedMergedPRFactsLoader(MergedPRFactsLoader):
+    """Loader for preloaded merged PRs facts."""
+
+    pass
+
+
 class PreloadedOpenPRFactsLoader(OpenPRFactsLoader):
     """Loader for preloaded open PRs facts."""
 
@@ -167,6 +173,7 @@ class PreloadedUnfreshPullRequestFactsFetcher(UnfreshPullRequestFactsFetcher):
 
     release_loader = PreloadedReleaseLoader
     open_prs_facts_loader = PreloadedOpenPRFactsLoader
+    merged_prs_facts_loader = PreloadedMergedPRFactsLoader
 
 
 class PreloadedBranchMiner(BranchMiner):
