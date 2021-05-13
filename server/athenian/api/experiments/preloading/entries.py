@@ -42,7 +42,12 @@ class PreloadedReleaseLoader(ReleaseLoader):
                                           ) -> pd.DataFrame:
         cached_df = pdb.cache.dfs[PCID.releases]
         df = cached_df.df
-        mask = cls._match_groups_to_mask(df, match_groups)
+        mask = (
+            cls._match_groups_to_mask(df, match_groups)
+            & (df["acc_id"] == account)
+            & (df["published_at"] >= time_from)
+            & (df["published_at"] < time_to)
+        )
         releases = cached_df.filter(mask)
         releases.sort_values("published_at", ascending=False, inplace=True)
         releases = remove_ambigous_precomputed_releases(releases, "repository_full_name")
@@ -51,6 +56,34 @@ class PreloadedReleaseLoader(ReleaseLoader):
         else:
             releases.reset_index(drop=True, inplace=True)
         return releases
+
+    @classmethod
+    @sentry_span
+    async def fetch_precomputed_release_match_spans(
+            cls,
+            match_groups: Dict[ReleaseMatch, Dict[str, List[str]]],
+            account: int,
+            pdb: databases.Database) -> Dict[str, Dict[str, Tuple[datetime, datetime]]]:
+        """Find out the precomputed time intervals for each release match group of repositories."""
+        cached_df = pdb.cache.dfs[PCID.releases_match_timespan]
+        df = cached_df.df
+        mask = cls._match_groups_to_mask(df, match_groups) & (df["acc_id"] == account)
+        release_match_spans = cached_df.filter(mask)
+        spans = {}
+        for time_from, time_to, release_match, repository_full_name in zip(
+                release_match_spans["time_from"].values,
+                release_match_spans["time_to"].values,
+                release_match_spans["release_match"].values,
+                release_match_spans["repository_full_name"].values,
+        ):
+            if release_match.startswith("tag|"):
+                release_match = ReleaseMatch.tag
+            else:
+                release_match = ReleaseMatch.branch
+            times = time_from, time_to
+            spans.setdefault(repository_full_name, {})[release_match] = times
+
+        return spans
 
     @classmethod
     def _match_groups_to_mask(
