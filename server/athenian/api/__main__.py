@@ -36,6 +36,7 @@ from athenian.api.db import check_schema_versions, compose_db_options
 from athenian.api.faster_pandas import patch_pandas
 from athenian.api.kms import AthenianKMS
 from athenian.api.preloading.cache import MemoryCachePreloader
+from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME
 from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
 
 
@@ -271,6 +272,17 @@ def create_slack(log: logging.Logger) -> Optional[SlackWebClient]:
     return slack_client
 
 
+PRELOADER_VAR_NAME = "mc_preloader"
+
+
+def setup_preloading(app: AthenianApp, log: logging.Logger) -> None:
+    """Initialize the memory cache and schedule loading the DB tables."""
+    log.info("Preloading DB tables to memory is enabled")
+    app.app[PRELOADER_VAR_NAME] = mc_preloader = MemoryCachePreloader(
+        app.app[PROMETHEUS_REGISTRY_VAR_NAME])
+    app.on_dbs_connected(mc_preloader.preload)
+
+
 def main() -> Optional[AthenianApp]:
     """Server's entry point."""
     uvloop.install()
@@ -288,7 +300,6 @@ def main() -> Optional[AthenianApp]:
     auth0_cls = create_auth0_factory(args.force_user)
     kms_cls = None if args.no_google_kms else AthenianKMS
     slack = create_slack(log)
-    mc_preloader = MemoryCachePreloader()
     app = AthenianApp(
         mdb_conn=args.metadata_db,
         sdb_conn=args.state_db,
@@ -299,12 +310,11 @@ def main() -> Optional[AthenianApp]:
                              args.precomputed_db,
                              args.persistentdata_db,
                              ),
-        on_shutdown_callbacks=[mc_preloader.shutdown],
         ui=args.ui, auth0_cls=auth0_cls, kms_cls=kms_cls, cache=cache, slack=slack,
         client_max_size=int(os.getenv("ATHENIAN_MAX_CLIENT_SIZE", 256 * 1024)),
         max_load=float(os.getenv("ATHENIAN_MAX_LOAD", 12)))
     if args.preload_dataframes:
-        app.on_dbs_connected(mc_preloader.preload)
+        setup_preloading(app, log)
     app.run(host=args.host, port=args.port, print=lambda s: log.info("\n" + s))
     return app
 

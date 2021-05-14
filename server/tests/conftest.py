@@ -23,7 +23,6 @@ except ImportError:
         def apply():
             pass
 import numpy as np
-from prometheus_client import CollectorRegistry
 try:
     import pytest
 except ImportError:
@@ -43,7 +42,7 @@ os.environ["ATHENIAN_INVITATION_KEY"] = "vadim"
 
 from athenian.api.__main__ import create_memcached, create_slack
 from athenian.api.auth import Auth0, User
-from athenian.api.cache import setup_cache_metrics
+from athenian.api.cache import CACHE_VAR_NAME, setup_cache_metrics
 from athenian.api.connexion import AthenianApp
 from athenian.api.controllers import account, invitation_controller
 from athenian.api.db import ParallelDatabase
@@ -122,8 +121,8 @@ class FakeCache:
 
 @pytest.fixture(scope="function")
 def cache(loop, xapp):
-    fc = FakeCache()
-    setup_cache_metrics(fc, xapp.app, CollectorRegistry(auto_describe=True))
+    xapp.app[CACHE_VAR_NAME] = fc = FakeCache()
+    setup_cache_metrics(xapp.app)
     for v in fc.metrics["context"].values():
         v.set(defaultdict(int))
     return fc
@@ -131,17 +130,19 @@ def cache(loop, xapp):
 
 @pytest.fixture(scope="function")
 def client_cache(loop, app):
-    fc = FakeCache()
-    setup_cache_metrics(fc, app.app, CollectorRegistry(auto_describe=True))
+    app.app[CACHE_VAR_NAME] = fc = FakeCache()
+    setup_cache_metrics(app.app)
     for v in fc.metrics["context"].values():
         v.set(defaultdict(int))
-    app._cache = fc
+    app.app[CACHE_VAR_NAME] = fc
     return fc
 
 
 @pytest.fixture(scope="function")
 def memcached(loop, xapp, request):
-    client = create_memcached(override_memcached or "0.0.0.0:11211", logging.getLogger("pytest"))
+    old_cache = xapp.app[CACHE_VAR_NAME]
+    xapp.app[CACHE_VAR_NAME] = client = create_memcached(
+        override_memcached or "0.0.0.0:11211", logging.getLogger("pytest"))
     client.version_future.cancel()
     trash = []
     set = client.set
@@ -161,7 +162,11 @@ def memcached(loop, xapp, request):
         loop.run_until_complete(delete_trash())
 
     request.addfinalizer(shutdown)
-    setup_cache_metrics(client, xapp.app, CollectorRegistry(auto_describe=True))
+    try:
+        setup_cache_metrics(xapp.app)
+    except ValueError:
+        # double metrics registration is harmless
+        client.metrics = old_cache.metrics
     for v in client.metrics["context"].values():
         v.set(defaultdict(int))
     return client
@@ -289,8 +294,7 @@ def slack():
 @pytest.fixture(scope="function")
 async def app(metadata_db, state_db, precomputed_db, persistentdata_db, slack) -> AthenianApp:
     logging.getLogger("connexion.operation").setLevel("WARNING")
-    with_preloading = os.getenv("WITH_PRELOADING", "0") == "1"
-    app_kwargs = dict(mdb_conn=metadata_db,
+    app = AthenianApp(mdb_conn=metadata_db,
                       sdb_conn=state_db,
                       pdb_conn=precomputed_db,
                       rdb_conn=persistentdata_db,
@@ -301,23 +305,16 @@ async def app(metadata_db, state_db, precomputed_db, persistentdata_db, slack) -
                       client_max_size=256 * 1024,
                       max_load=15,
                       with_pdb_schema_checks=False)
-
-    mc_preloader = MemoryCachePreloader()
-    if with_preloading:
-        app_kwargs["on_shutdown_callbacks"] = [mc_preloader.shutdown]
-
-    app = AthenianApp(**app_kwargs)
-    if with_preloading:
-        app.on_dbs_connected(mc_preloader.preload)
-
-    await app.wait_for_dbs_connected_callbacks()
+    if os.getenv("WITH_PRELOADING", "0") == "1":
+        app.on_dbs_connected(MemoryCachePreloader(None, False).preload)
+    await app.ready()
     return app
 
 
 @pytest.fixture(scope="function")
 async def xapp(app: AthenianApp, request, loop) -> AthenianApp:
     def shutdown():
-        loop.run_until_complete(app.shutdown(app))
+        loop.run_until_complete(app.shutdown())
 
     request.addfinalizer(shutdown)
     return app

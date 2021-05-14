@@ -2,6 +2,7 @@ import itertools
 
 import pytest
 
+from athenian.api.cache import CACHE_VAR_NAME
 from athenian.api.models.web import CalculatedPullRequestHistogram, PullRequestMetricID
 from athenian.api.serialization import FriendlyJson
 
@@ -32,7 +33,7 @@ from athenian.api.serialization import FriendlyJson
 async def test_calc_histogram_prs_smoke(
         client, headers, metric, cached, app, client_cache, result):
     if cached:
-        app._cache = client_cache
+        app.app[CACHE_VAR_NAME] = client_cache
     repeats = 1 if not cached else 2
     for _ in range(repeats):
         body = {

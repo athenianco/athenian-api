@@ -3,6 +3,7 @@ import json
 import pytest
 from sqlalchemy import delete
 
+from athenian.api.cache import CACHE_VAR_NAME
 from athenian.api.models.state.models import RepositorySet
 from athenian.api.models.web import Contributor
 
@@ -19,7 +20,7 @@ async def test_get_contributors_as_non_admin(client, cached, headers, app, clien
 
 async def _test_get_contributors(client, cached, headers, app, client_cache):
     if not cached:
-        app._cache = None
+        app.app[CACHE_VAR_NAME] = None
 
     response = await client.request(
         method="GET", path="/v1/get/contributors/1", headers=headers,

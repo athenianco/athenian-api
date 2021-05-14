@@ -9,14 +9,14 @@ from athenian.api.models.web import RepositorySetCreateRequest, RepositorySetWit
 from athenian.api.response import ResponseError
 
 
-async def test_delete_repository_set(client, app, headers, disable_default_user):
+async def test_delete_repository_set(client, app, headers, disable_default_user, sdb):
     body = {}
     response = await client.request(
         method="DELETE", path="/v1/reposet/1", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
-    rs = await app.sdb.fetch_one(select([RepositorySet]).where(RepositorySet.id == 1))
+    rs = await sdb.fetch_one(select([RepositorySet]).where(RepositorySet.id == 1))
     assert rs is None
 
 

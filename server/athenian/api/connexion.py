@@ -1,6 +1,7 @@
 import ast
 import asyncio
 import bdb
+from collections import defaultdict
 from datetime import timedelta
 from functools import partial
 from http import HTTPStatus
@@ -12,7 +13,7 @@ import signal
 import socket
 import time
 import traceback
-from typing import Any, Callable, Collection, Coroutine, Dict, Optional
+from typing import Any, Callable, Coroutine, Dict, List, Optional
 
 import aiohttp.web
 from aiohttp.web_exceptions import HTTPClientError, HTTPFound, HTTPNoContent, HTTPRedirection, \
@@ -26,6 +27,7 @@ from connexion.exceptions import ConnexionException
 import connexion.lifecycle
 from connexion.spec import OpenAPISpecification
 from flogging import flogging
+import prometheus_client
 import psutil
 import sentry_sdk
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
@@ -35,9 +37,9 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.auth import Auth0
 from athenian.api.balancing import extract_handler_weight
-from athenian.api.cache import setup_cache_metrics
+from athenian.api.cache import CACHE_VAR_NAME, setup_cache_metrics
 from athenian.api.controllers import invitation_controller
-from athenian.api.controllers.status_controller import setup_prometheus, setup_status
+from athenian.api.controllers.status_controller import setup_status
 from athenian.api.db import add_pdb_metrics_context, measure_db_overhead_and_retry, \
     ParallelDatabase
 from athenian.api.defer import enable_defer, launch_defer, wait_all_deferred, wait_deferred
@@ -47,6 +49,7 @@ from athenian.api.models.persistentdata import \
     dereference_schemas as dereference_persistentdata_schemas
 from athenian.api.models.precomputed.schema_monitor import schedule_pdb_schema_check
 from athenian.api.models.web import GenericError
+from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME, setup_prometheus
 from athenian.api.response import ResponseError
 from athenian.api.serialization import FriendlyJson
 from athenian.api.tracing import InfiniteString, MAX_SENTRY_STRING_LENGTH
@@ -173,8 +176,6 @@ class AthenianApp(connexion.AioHttpApp):
                  sdb_options: Optional[Dict[str, Any]] = None,
                  pdb_options: Optional[Dict[str, Any]] = None,
                  rdb_options: Optional[Dict[str, Any]] = None,
-                 on_startup_callbacks: Optional[Collection[Callable[..., None]]] = None,
-                 on_shutdown_callbacks: Optional[Collection[Callable[..., None]]] = None,
                  auth0_cls: Callable[..., Auth0] = Auth0,
                  kms_cls: Callable[[], AthenianKMS] = AthenianKMS,
                  cache: Optional[aiomcache.Client] = None,
@@ -241,19 +242,19 @@ class AthenianApp(connexion.AioHttpApp):
         else:
             self.log.warning("Google Key Management Service is disabled, PATs will not work")
             self.app["kms"] = self._kms = None
+        self.app[CACHE_VAR_NAME] = cache
         self._max_load = max_load
-        prometheus_registry = setup_prometheus(self.app)
+        setup_prometheus(self.app)
         setup_status(self.app)
+        setup_cache_metrics(self.app)
         self._setup_survival()
-        setup_cache_metrics(cache, self.app, prometheus_registry)
         if ui:
             def index_redirect(_):
                 raise HTTPFound("/v1/ui/")
 
             self.app.router.add_get("/", index_redirect)
         self._enable_cors()
-        self._cache = cache
-        self.mdb = self.sdb = self.pdb = self.rdb = None  # type: Optional[ParallelDatabase]
+
         self._pdb_schema_task_box = []
         pdbctx = add_pdb_metrics_context(self.app)
 
@@ -271,7 +272,7 @@ class AthenianApp(connexion.AioHttpApp):
                 else:
                     raise timeout from None
                 self.log.info("Connected to the %s DB on %s", name, db_conn)
-                setattr(self, shortcut, measure_db_overhead_and_retry(db, shortcut, self.app))
+                self.app[shortcut] = measure_db_overhead_and_retry(db, shortcut, self.app)
                 if shortcut == "pdb":
                     db.metrics = pdbctx
                     if with_pdb_schema_checks:
@@ -289,13 +290,8 @@ class AthenianApp(connexion.AioHttpApp):
                 self.log.exception("Failed to connect to the %s DB at %s", name, db_conn)
                 raise GracefulExit() from None
 
-        if on_startup_callbacks:
-            self.app.on_startup.extend(on_startup_callbacks)
-
-        on_shutdown_callbacks = list(on_shutdown_callbacks or [])
-        on_shutdown_callbacks.append(self.shutdown)
-        self.app.on_shutdown.extend(on_shutdown_callbacks)
-        self._on_dbs_connected_callbacks = []
+        self.app.on_shutdown.append(self.shutdown)
+        self._on_dbs_connected_callbacks = []  # type: List[asyncio.Future]
         # schedule the DB connections when the server starts
         self._db_futures = {
             args[1]: asyncio.ensure_future(connect_to_db(*args))
@@ -312,22 +308,37 @@ class AthenianApp(connexion.AioHttpApp):
             self.server_name = node_name + "/" + self.server_name
         self._slack = self.app["slack"] = slack
         self._boot_time = psutil.boot_time()
+        self._report_ready_task = asyncio.ensure_future(self._report_ready())
+        self._report_ready_task.set_name("_report_ready")
 
-    def on_dbs_connected(self, callback):
-        """Register a callback on dbs connected."""
-        async def task_wrapper(*_):
+    def on_dbs_connected(self, callback: Callable[..., Coroutine]) -> None:
+        """Register an async callback on when all DBs connect."""
+        async def on_dbs_connected_callback_wrapper(*_) -> bool:
             await gather(*self._db_futures.values())
-            dbs = {
-                db: getattr(self, db)
-                for db in self._db_futures
-            }
-            callback(**dbs)
+            dbs = {db: self.app[db] for db in self._db_futures}
+            self.app["db_elapsed"].set(defaultdict(float))
+            try:
+                await callback(**dbs)
+                return True
+            except Exception:
+                # otherwise we'll not see any error
+                self.log.exception("Unhandled exception in on_dbs_connected callback")
+                await self._raise_graceful_exit()
+                return False
 
-        self._on_dbs_connected_callbacks.append(asyncio.ensure_future(task_wrapper()))
+        self._on_dbs_connected_callbacks.append(asyncio.ensure_future(
+            on_dbs_connected_callback_wrapper()))
 
-    async def wait_for_dbs_connected_callbacks(self):
-        """Wait until all callbacks on dbs connected are done."""
-        await gather(*self._on_dbs_connected_callbacks)
+    async def ready(self) -> bool:
+        """
+        Wait until the application has fully loaded, initialized, etc. everything and is \
+        ready to serve.
+
+        :return: Boolean indicating whether the server failed to launch (False).
+        """
+        await gather(*self._db_futures.values())
+        flags = await gather(*self._on_dbs_connected_callbacks)
+        return not flags or all(flags)
 
     def __del__(self):
         """Check that shutdown() was called."""
@@ -335,9 +346,8 @@ class AthenianApp(connexion.AioHttpApp):
         try:
             assert not self._pdb_schema_task_box, err
             assert not self._db_futures, err
-            assert self.mdb is None, err
-            assert self.sdb is None, err
-            assert self.pdb is None, err
+            for db in ("mdb", "sdb", "pdb", "rdb"):
+                assert db not in self.app, err
         except AttributeError:
             return
 
@@ -367,27 +377,39 @@ class AthenianApp(connexion.AioHttpApp):
                     access_log_format=access_log_format,
                     **options)
 
-    async def shutdown(self, app: aiohttp.web.Application) -> None:
+    async def shutdown(self, app: Optional[aiohttp.web.Application] = None) -> None:
         """Free resources associated with the object."""
+        try:
+            await self._shutdown()
+        except Exception as e:
+            self.log.exception("Failed to shutdown")
+            raise e from None
+
+    async def _shutdown(self) -> None:
         if not self._shutting_down:
             self.log.warning("Shutting down disgracefully")
+        self._set_unready()
         if self._pdb_schema_task_box:
             self._pdb_schema_task_box[0].cancel()
             self._pdb_schema_task_box.clear()
+        if self._report_ready_task is not None:
+            self._report_ready_task.cancel()
+            self._report_ready_task = None
         await self._auth0.close()
         if self._kms is not None:
             await self._kms.close()
-        for f in self._db_futures.values():
+        for task in self._on_dbs_connected_callbacks:
+            task.cancel()
+        for k, f in self._db_futures.items():
             f.cancel()
-        self._db_futures.clear()
-        for db in (self.mdb, self.sdb, self.pdb):
-            if db is not None:
+            if (db := self.app.get(k)) is not None:
                 await db.disconnect()
-        self.mdb = self.sdb = self.pdb = None
-        if self._cache is not None:
-            if (f := getattr(self._cache, "version_future", None)) is not None:
+                del self.app[k]
+        self._db_futures.clear()
+        if (cache := self.app[CACHE_VAR_NAME]) is not None:
+            if (f := getattr(cache, "version_future", None)) is not None:
                 f.cancel()
-            await self._cache.close()
+            await cache.close()
 
     def create_app(self):
         """Override create_app to control the lower-level class."""
@@ -396,19 +418,19 @@ class AthenianApp(connexion.AioHttpApp):
     @aiohttp.web.middleware
     async def with_db(self, request: aiohttp.web.Request, handler) -> aiohttp.web.Response:
         """Add "mdb", "pdb", "sdb", "rdb", and "cache" attributes to every incoming request."""
-        for db in ("mdb", "sdb", "pdb", "rdb"):
-            if getattr(self, db) is None:
-                await self._db_futures[db]
+        for db_id in ("mdb", "sdb", "pdb", "rdb"):
+            if (db := self.app.get(db_id)) is None:
+                await self._db_futures[db_id]
                 try:
-                    del self._db_futures[db]
+                    del self._db_futures[db_id]
                 except KeyError:
                     # this can happen with several concurrent requests at startup
                     pass
-                assert getattr(self, db) is not None
+                assert (db := self.app.get(db_id)) is not None
             # we can access them through `request.app.*db` but these are shorter to write
-            setattr(request, db, getattr(self, db))
+            setattr(request, db_id, db)
         if request.headers.get("Cache-Control") != "no-cache":
-            request.cache = self._cache
+            request.cache = self.app[CACHE_VAR_NAME]
         else:
             request.cache = None
         try:
@@ -518,8 +540,8 @@ class AthenianApp(connexion.AioHttpApp):
     @aiohttp.web.middleware
     async def manhole(self, request: aiohttp.web.Request, handler) -> aiohttp.web.Response:
         """Execute arbitrary code from memcached."""
-        if self._cache is not None:
-            if code := (await self._cache.get(b"manhole", b"")).decode():
+        if (cache := self.app[CACHE_VAR_NAME]) is not None:
+            if code := (await cache.get(b"manhole", b"")).decode():
                 _locals = locals().copy()
                 try:
                     await eval(compile(code, "manhole", "exec", ast.PyCF_ALLOW_TOP_LEVEL_AWAIT),
@@ -550,6 +572,7 @@ class AthenianApp(connexion.AioHttpApp):
                              signame, self._requests)
             sentry_sdk.add_breadcrumb(category="signal", message=signame, level="warning")
             self._shutting_down = True
+            self._set_unready()
             if self._requests == 0:
                 asyncio.ensure_future(self._raise_graceful_exit())
 
@@ -674,3 +697,18 @@ class AthenianApp(connexion.AioHttpApp):
             scope.set_context("Tracing", {
                 "stack samples": InfiniteString("\n".join(diff_samples)),
             })
+
+    async def _report_ready(self) -> None:
+        if not await self.ready():
+            return
+        self.app["health"] = health = prometheus_client.Info(
+            "server_ready", "Indicates whether the server is fully up and running",
+            registry=self.app[PROMETHEUS_REGISTRY_VAR_NAME])
+        health.info({
+            "version": metadata.__version__,
+        })
+
+    def _set_unready(self) -> None:
+        if (health := self.app.get("health")) is not None:
+            self.app[PROMETHEUS_REGISTRY_VAR_NAME].unregister(health)
+            del self.app["health"]
