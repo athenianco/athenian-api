@@ -16,7 +16,7 @@ from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.commit import _empty_dag
 from athenian.api.controllers.miners.github.precomputed_prs import \
-    load_merged_unreleased_pull_request_facts, store_merged_unreleased_pull_request_facts, \
+    MergedPRFactsLoader, store_merged_unreleased_pull_request_facts, \
     store_open_pull_request_facts
 from athenian.api.controllers.miners.github.pull_request import PullRequestFactsMiner, \
     PullRequestMiner
@@ -27,7 +27,7 @@ from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting,
 import athenian.api.db
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.experiments.preloading.entries import PreloadedBranchMiner, \
-    PreloadedReleaseLoader
+    PreloadedMergedPRFactsLoader, PreloadedReleaseLoader
 from athenian.api.models.metadata.github import Branch, PullRequest
 from athenian.api.models.metadata.jira import Issue
 from athenian.api.models.precomputed.models import GitHubCommitHistory, \
@@ -869,7 +869,10 @@ async def test_pr_miner_labels_unreleased(mdb, pdb, rdb, release_match_setting_t
 @pytest.mark.flaky(reruns=3)
 @with_defer
 async def test_pr_miner_unreleased_facts(
-        branches, default_branches, mdb, pdb, rdb, release_match_setting_tag):
+        branches, default_branches, mdb, pdb, rdb, release_match_setting_tag,
+        with_preloading):
+    merged_prs_facts_loader = (PreloadedMergedPRFactsLoader if with_preloading
+                               else MergedPRFactsLoader)
     date_from = date(year=2018, month=1, day=1)
     date_to = date(year=2020, month=4, day=1)
     time_from = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
@@ -922,7 +925,7 @@ async def test_pr_miner_unreleased_facts(
         GitHubMergedPullRequestFacts.data: pickle.dumps(FakeFacts()),
         GitHubMergedPullRequestFacts.updated_at: datetime.now(timezone.utc),
     }))
-    discovered = await load_merged_unreleased_pull_request_facts(
+    discovered = await merged_prs_facts_loader.load_merged_unreleased_pull_request_facts(
         miner._dfs.prs, time_to, LabelFilter.empty(), matched_bys, default_branches,
         release_match_setting_tag, 1, pdb)
     assert {pr.pr[PullRequest.node_id.key] for pr, _ in merged_unreleased_prs_and_facts} == \
