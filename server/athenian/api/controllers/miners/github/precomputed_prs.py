@@ -1466,10 +1466,3 @@ async def delete_force_push_dropped_prs(repos: Iterable[str],
             .where(and_(ghdprf.pr_node_id.in_(dead_pr_node_ids),
                         ghdprf.release_match != ReleaseMatch.force_push_drop.name)))
     return dead_pr_node_ids
-
-
-# TODO: these have to be removed, these are here just for keeping backward-compatibility
-# without the need to re-write already all the places these functions are called
-load_open_pull_request_facts = OpenPRFactsLoader.load_open_pull_request_facts
-load_open_pull_request_facts_unfresh = OpenPRFactsLoader.load_open_pull_request_facts_unfresh
-load_open_pull_request_facts_all = OpenPRFactsLoader.load_open_pull_request_facts_all
