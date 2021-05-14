@@ -72,9 +72,7 @@ async def _main(db_conns: dict, db_options: dict, detailed: bool):
 
     await gather(*tasks)
 
-    mc = MemoryCachePreloader()
-    mc.preload(detailed, **dbs)
-    await mc._task
+    await MemoryCachePreloader(None, detailed).preload(**dbs)
 
     for db_name, db in dbs.items():
         if not (cache := getattr(db, "cache", None)):

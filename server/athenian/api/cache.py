@@ -10,7 +10,7 @@ from typing import Any, Callable, Coroutine, Mapping, Optional, Tuple, Union
 from aiohttp import web
 import aiomcache
 import lz4.frame
-from prometheus_client import CollectorRegistry, Counter, Histogram
+from prometheus_client import Counter, Histogram
 from prometheus_client.utils import INF
 import sentry_sdk
 from xxhash import xxh64_hexdigest
@@ -18,6 +18,7 @@ from xxhash import xxh64_hexdigest
 from athenian.api import metadata
 from athenian.api.defer import defer
 from athenian.api.metadata import __package__, __version__
+from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME
 from athenian.api.typing_utils import serialize_mutable_fields_in_dataclasses, wraps
 
 pickle.dumps = functools.partial(pickle.dumps, protocol=-1)
@@ -249,10 +250,13 @@ def cached_methods(cls):
     return cls
 
 
-def setup_cache_metrics(cache: Optional[aiomcache.Client],
-                        app: Union[web.Application, Mapping],
-                        registry: Optional[CollectorRegistry]) -> None:
+CACHE_VAR_NAME = "cache"
+
+
+def setup_cache_metrics(app: Union[web.Application, Mapping]) -> None:
     """Initialize the Prometheus metrics for tracking the cache interoperability."""
+    cache = app[CACHE_VAR_NAME]
+    registry = app[PROMETHEUS_REGISTRY_VAR_NAME]
     if cache is None:
         app["cache_context"] = {}
         return

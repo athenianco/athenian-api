@@ -23,7 +23,7 @@ from tqdm import tqdm
 from athenian.api.__main__ import check_schema_versions, compose_db_options, create_memcached, \
     create_slack, setup_context
 from athenian.api.async_utils import gather
-from athenian.api.cache import setup_cache_metrics
+from athenian.api.cache import CACHE_VAR_NAME, setup_cache_metrics
 from athenian.api.controllers.account import copy_teams_as_needed, generate_jira_invitation_link, \
     get_metadata_account_ids
 from athenian.api.controllers.features.entries import MetricEntriesCalculator
@@ -52,6 +52,7 @@ from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
     GitHubMergedPullRequestFacts
 from athenian.api.models.state.models import Account, RepositorySet, Team, UserAccount
 from athenian.api.models.web import InstallationProgress, NoSourceDataError, NotFoundError
+from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME
 from athenian.api.response import ResponseError
 from athenian.precomputer.db import dereference_schemas as dereference_precomputed_schemas
 
@@ -128,7 +129,7 @@ def main():
     async def async_run():
         enable_defer(False)
         cache = create_memcached(args.memcached, log)
-        setup_cache_metrics(cache, {}, None)
+        setup_cache_metrics({CACHE_VAR_NAME: cache, PROMETHEUS_REGISTRY_VAR_NAME: None})
         for v in cache.metrics["context"].values():
             v.set(defaultdict(int))
         sdb, mdb, pdb, rdb = await _connect_to_dbs(args)

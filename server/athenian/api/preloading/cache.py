@@ -1,10 +1,11 @@
-import asyncio
 from enum import Enum
 import logging
 from typing import Collection, Dict, List, Optional, Union
 
+import databases
 import numpy as np
 import pandas as pd
+import prometheus_client
 import sentry_sdk
 import sqlalchemy as sa
 from sqlalchemy import select
@@ -15,11 +16,9 @@ from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.models.metadata.github import Branch, NodePullRequestJiraIssues, \
     PullRequest
 from athenian.api.models.precomputed.models import \
-    GitHubOpenPullRequestFacts, \
-    GitHubRelease as PrecomputedRelease, \
+    GitHubOpenPullRequestFacts, GitHubRelease as PrecomputedRelease, \
     GitHubReleaseMatchTimespan as PrecomputedGitHubReleaseMatchTimespan
 from athenian.api.models.state.models import AccountFeature, AccountGitHubAccount, Feature
-from athenian.api.typing_utils import DatabaseLike
 
 
 PRELOADING_FEATURE_FLAG_NAME = "github_features_entries_preloading"
@@ -39,18 +38,20 @@ class CachedDataFrame:
     """A DataFrame that is loaded and can be refreshed from the database.
 
     This can be read as a normal `pandas.DataFrame`.
-
     """
+
+    _log = logging.getLogger(f"{metadata.__package__}.CachedDataFrame")
 
     def __init__(
         self,
         id_: str,
-        db: DatabaseLike,
+        db: databases.Database,
         cols: Optional[List[sa.Column]] = None,
         categorical_cols: Optional[List[sa.Column]] = None,
         identifier_cols: Optional[List[sa.Column]] = None,
         filtering_clause: Optional[sa.sql.ClauseElement] = None,
         sharding: Optional[Dict] = None,
+        gauge: Optional[prometheus_client.Gauge] = None,
         debug_memory: Optional[bool] = False,
     ):
         """Initialize a `CachedDataFrame`.
@@ -62,6 +63,7 @@ class CachedDataFrame:
         :param categorical_cols: Columns that can be cast to `category` dtype
         :param identifier_cols: Columns that can be cast to bytes, `S` dtype
         """
+        assert isinstance(db, databases.Database)
         self._id = id_
         self._cols = cols or ["*"]
         self._categorical_cols = categorical_cols or []
@@ -72,6 +74,8 @@ class CachedDataFrame:
         self._debug_memory = debug_memory
         self._mem = {}
         self._df = None
+        self._metrics = {}
+        self._gauge = gauge
 
     @property
     def id_(self) -> str:
@@ -99,15 +103,29 @@ class CachedDataFrame:
         if self._filtering_clause is not None:
             query = query.where(self._filtering_clause)
 
+        self._log.debug("Refreshing %s", self._id)
         df = await read_sql_query(query, self._db, self._cols)
+
         if self._debug_memory:
-            size = df.memory_usage(index=True, deep=True)
-            self._mem["raw"] = {"series": size, "total": sum(size)}
+            sizes = df.memory_usage(index=True, deep=True)
+            self._mem["raw"] = {"series": sizes, "total": sizes.sum()}
 
         self._df = self._squeeze(df)
+        del df
+
+        if self._debug_memory or self._gauge is not None:
+            sizes = self._df.memory_usage(index=True, deep=True)
+            for key, val in sizes.items():
+                self._gauge.labels(
+                    metadata.__package__, metadata.__version__,
+                    self._db.url.database, self._id, key,
+                ).set(val)
+            self._gauge.labels(
+                metadata.__package__, metadata.__version__,
+                self._db.url.database, self._id, "__all__",
+            ).set(sizes.sum())
         if self._debug_memory:
-            size = self._df.memory_usage(index=True, deep=True)
-            self._mem["processed"] = {"series": size, "total": sum(size)}
+            self._mem["processed"] = {"series": sizes, "total": sizes.sum()}
             self._mem["percentage"] = {
                 "series": self._mem["processed"]["series"]
                 / self._mem["raw"]["series"]
@@ -201,20 +219,25 @@ class CachedDataFrame:
 class MemoryCache:
     """An in-memory cache of a specific db for instances of `CachedDataFrame`."""
 
+    _log = logging.getLogger(f"{metadata.__package__}.MemoryCache")
+
     def __init__(
         self,
-        sdb: DatabaseLike,
-        db: DatabaseLike,
+        sdb: databases.Database,
+        db: databases.Database,
         options: Dict[str, Dict],
-        debug_memory: Optional[bool] = False,
+        gauge: Optional[prometheus_client.Gauge],
+        debug_memory: Optional[bool],
     ):
         """Initialize a `MemoryCache`."""
+        assert isinstance(db, databases.Database)
         self._sdb = sdb
         self._db = db
         self._options = options
         self._debug_memory = debug_memory
         self._dfs = {
-            id_: CachedDataFrame(id_, **opts, db=self._db, debug_memory=self._debug_memory)
+            id_: CachedDataFrame(
+                id_, **opts, db=self._db, gauge=gauge, debug_memory=self._debug_memory)
             for id_, opts in self._options.items()
         }
 
@@ -241,17 +264,22 @@ class MemoryCache:
     async def refresh(self, id_: Optional[str] = None) -> None:
         """Refresh the DataFrames from the database."""
         if id_:
+            refreshed = 1
             df = self._dfs[id_]
             df.filtering_clause = await self._build_filtering_clause(id_)
             await df.refresh()
         else:
             tasks = []
+            refreshed = len(self._dfs)
             accounts = await self._get_enabled_accounts()
             for id_, df in self._dfs.items():
                 df.filtering_clause = await self._build_filtering_clause(id_, accounts=accounts)
                 tasks.append(df.refresh())
 
             await gather(*tasks)
+        memory_used = self.memory_usage(total=True, human=True)
+        self._log.info("Refreshed %d tables in %s, total memory: %s",
+                       refreshed, self._db.url.database, memory_used)
 
     async def _build_filtering_clause(
             self, id_: str, accounts: Optional[Dict[str, Collection[int]]] = None,
@@ -288,45 +316,39 @@ class MemoryCachePreloader:
 
     _log = logging.getLogger(f"{metadata.__package__}.MemoryCachePreloader")
 
-    def __init__(self):
+    def __init__(self,
+                 prometheus_registry: Optional[prometheus_client.CollectorRegistry] = None,
+                 debug_memory: Optional[bool] = None):
         """Initialize a `MemoryCachePreloader`."""
-        self._task = None
-        self._debug_mode = self._log.isEnabledFor(logging.DEBUG)
+        if debug_memory is None:
+            self._debug_memory = self._log.isEnabledFor(logging.DEBUG)
+        else:
+            self._debug_memory = debug_memory
+        if prometheus_registry is not None:
+            self._gauge = prometheus_client.Gauge(
+                "memory_cache", "Consumed memory",
+                ["app_name", "version", "db", "table", "column"],
+                registry=prometheus_registry,
+            )
+        else:
+            self._gauge = None
 
-    def preload(
-        self, debug_memory: Optional[bool] = None, **dbs: Dict[str, DatabaseLike],
-    ):
-        """Preloads the `MemoryCache`."""
-        self._task = asyncio.create_task(self._preload_all(debug_memory, **dbs))
-        self._task.add_done_callback(self._done)
+    async def preload(self, **dbs: databases.Database) -> None:
+        """
+        Load in memory the tables configured in `get_memory_cache_options()`.
 
-    async def shutdown(self, *_):
-        """Graceful handles the eventually running preloading task."""
-        if not self._task:
-            return
-
-        if not self._task.done():
-            self._log.info("Cancelling MemoryCache preloading")
-            self._task.cancel()
-
-    async def _preload_all(self, debug_memory, **dbs: Dict[str, DatabaseLike]):
-        self._log.info("Preloading MemoryCache")
-        debug_mode = self._debug_mode if debug_memory is None else debug_memory
+        We set each db's "cache" attribute to the loaded `MemoryCache` object.
+        """
+        self._log.debug("Starting to preload DB tables in memory")
         tasks = []
+        sdb = dbs["sdb"]
         for db_name, opts in get_memory_cache_options().items():
             db = dbs[db_name]
-            db.cache = mc = MemoryCache(dbs["sdb"], db, opts, debug_memory=debug_mode)
+            db.cache = mc = MemoryCache(sdb, db, opts, self._gauge, self._debug_memory)
             tasks.append(mc.refresh())
 
         await gather(*tasks)
-
-    def _done(self, *_):
-        if self._task.cancelled():
-            self._log.info("MemoryCache preloading cancelled")
-        elif self._task.exception():
-            raise self._task.exception()
-        else:
-            self._log.info("MemoryCache ready")
+        self._log.info("Finished preloading DB tables in memory")
 
 
 class MCID(str, Enum):

@@ -6,11 +6,10 @@ from typing import Collection, Dict, Optional, Set
 
 from aiohttp import ClientResponse
 import dateutil
-from prometheus_client import CollectorRegistry
 import pytest
 from sqlalchemy import delete, insert, select
 
-from athenian.api.cache import setup_cache_metrics
+from athenian.api.cache import CACHE_VAR_NAME, setup_cache_metrics
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.release_mine import mine_releases
 from athenian.api.controllers.settings import ReleaseMatch
@@ -22,6 +21,7 @@ from athenian.api.models.state.models import AccountJiraInstallation, ReleaseSet
 from athenian.api.models.web import CommitsList, FilteredLabel, PullRequestEvent, \
     PullRequestParticipant, PullRequestSet, PullRequestStage, ReleaseSet
 from athenian.api.models.web.diffed_releases import DiffedReleases
+from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME
 from athenian.api.typing_utils import wraps
 from tests.conftest import FakeCache
 from tests.controllers.conftest import with_only_master_branch
@@ -318,7 +318,7 @@ async def test_filter_contributors_nasty_input(client, headers, account, date_to
 @pytest.fixture(scope="module")
 def filter_prs_single_cache():
     fc = FakeCache()
-    setup_cache_metrics(fc, {}, CollectorRegistry(auto_describe=True))
+    setup_cache_metrics({CACHE_VAR_NAME: fc, PROMETHEUS_REGISTRY_VAR_NAME: None})
     for v in fc.metrics["context"].values():
         v.set(defaultdict(int))
     return fc
@@ -330,7 +330,7 @@ def filter_prs_single_cache():
 async def test_filter_prs_single_stage(
         # do not remove "mdb", it is required by the decorators
         client, headers, mdb, stage, app, filter_prs_single_cache):
-    app._cache = filter_prs_single_cache
+    app.app[CACHE_VAR_NAME] = filter_prs_single_cache
     body = {
         "date_from": "2015-10-13",
         "date_to": "2020-04-23",
@@ -351,7 +351,7 @@ async def test_filter_prs_single_stage(
 async def test_filter_prs_single_event(
         # do not remove "mdb", it is required by the decorators
         client, headers, mdb, event, app, filter_prs_single_cache):
-    app._cache = filter_prs_single_cache
+    app.app[CACHE_VAR_NAME] = filter_prs_single_cache
     body = {
         "date_from": "2015-10-13",
         "date_to": "2020-04-23",
@@ -506,7 +506,7 @@ async def test_filter_prs_event_releases(client, headers, with_event_releases):
 
 
 async def test_filter_prs_jira(client, headers, app, filter_prs_single_cache):
-    app._cache = filter_prs_single_cache
+    app.app[CACHE_VAR_NAME] = filter_prs_single_cache
     body = {
         "date_from": "2015-10-13",
         "date_to": "2020-04-23",
@@ -996,7 +996,7 @@ async def test_filter_prs_exclude_inactive(client, headers):
 
 def skip_if_no_memcached(func):
     async def wrapped_skip_if_no_memcached(**kwargs):
-        kwargs["app"]._cache = kwargs["client_cache"] if kwargs["cached"] else None
+        kwargs["app"].app[CACHE_VAR_NAME] = kwargs["client_cache"] if kwargs["cached"] else None
         return await func(**kwargs)
 
     wraps(wrapped_skip_if_no_memcached, func)
