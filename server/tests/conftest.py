@@ -287,13 +287,23 @@ def slack():
 
 
 @pytest.fixture(scope="function")
-def with_preloading():
+def with_preloading_enabled():
     return os.getenv("WITH_PRELOADING", "0") == "1"
 
 
 @pytest.fixture(scope="function")
+async def with_preloading(sdb, mdb, pdb, rdb, with_preloading_enabled):
+    if not with_preloading_enabled:
+        return
+
+    mc_preloader = MemoryCachePreloader()
+    mc_preloader.preload(sdb=sdb, mdb=mdb, pdb=pdb, rdb=rdb)
+    await mc_preloader._task
+
+
+@pytest.fixture(scope="function")
 async def app(metadata_db, state_db, precomputed_db, persistentdata_db, slack,
-              with_preloading) -> AthenianApp:
+              with_preloading_enabled) -> AthenianApp:
     logging.getLogger("connexion.operation").setLevel("WARNING")
     app_kwargs = dict(mdb_conn=metadata_db,
                       sdb_conn=state_db,
@@ -308,11 +318,11 @@ async def app(metadata_db, state_db, precomputed_db, persistentdata_db, slack,
                       with_pdb_schema_checks=False)
 
     mc_preloader = MemoryCachePreloader()
-    if with_preloading:
+    if with_preloading_enabled:
         app_kwargs["on_shutdown_callbacks"] = [mc_preloader.shutdown]
 
     app = AthenianApp(**app_kwargs)
-    if with_preloading:
+    if with_preloading_enabled:
         app.on_dbs_connected(mc_preloader.preload)
 
     await app.wait_for_dbs_connected_callbacks()
