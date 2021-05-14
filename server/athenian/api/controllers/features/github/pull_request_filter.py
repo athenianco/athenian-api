@@ -33,7 +33,7 @@ from athenian.api.controllers.miners.github.precomputed_prs import \
     store_precomputed_done_facts
 from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRequest, \
     PRDataFrames, PullRequestFactsMiner, PullRequestMiner, ReviewResolution
-from athenian.api.controllers.miners.github.release_load import dummy_releases_df, load_releases
+from athenian.api.controllers.miners.github.release_load import dummy_releases_df, ReleaseLoader
 from athenian.api.controllers.miners.github.release_match import load_commit_dags
 from athenian.api.controllers.miners.types import Label, MinedPullRequest, PRParticipants, \
     PullRequestEvent, PullRequestFacts, PullRequestJIRAIssueItem, PullRequestListItem, \
@@ -790,7 +790,7 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
         milestone_releases = dummy_releases_df().append(milestone_prs.reset_index(drop=True))
         milestone_releases = milestone_releases.take(np.where(
             milestone_releases[Release.sha.key].notnull())[0])
-        releases, matched_bys = await load_releases(
+        releases, matched_bys = await ReleaseLoader.load_releases(
             prs_df[PullRequest.repository_full_name.key].unique(), branches, default_branches,
             rel_time_from, now, release_settings, account, meta_ids, mdb, pdb, rdb, cache)
         add_pdb_misses(pdb, "load_precomputed_done_facts_reponums/ambiguous",

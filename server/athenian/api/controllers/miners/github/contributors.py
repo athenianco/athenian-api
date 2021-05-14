@@ -15,7 +15,7 @@ from athenian.api.async_utils import gather
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.github.bots import Bots
 from athenian.api.controllers.miners.github.branches import BranchMiner
-from athenian.api.controllers.miners.github.release_load import load_releases
+from athenian.api.controllers.miners.github.release_load import ReleaseLoader
 from athenian.api.controllers.settings import ReleaseSettings
 from athenian.api.models.metadata.github import NodeCommit, NodeRepository, OrganizationMember, \
     PullRequest, PullRequestComment, PullRequestReview, PushCommit, Release, User
@@ -182,7 +182,7 @@ async def mine_contributors(repos: Collection[str],
             rt_from = datetime(1970, 1, 1, tzinfo=timezone.utc)
             now = datetime.now(timezone.utc) + timedelta(days=1)
             rt_to = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
-        releases, _ = await load_releases(
+        releases, _ = await ReleaseLoader.load_releases(
             repos, branches, default_branches, rt_from, rt_to,
             release_settings, account, meta_ids, mdb, pdb, rdb, cache,
             force_fresh=force_fresh_releases)
