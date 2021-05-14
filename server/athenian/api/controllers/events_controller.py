@@ -13,7 +13,7 @@ from athenian.api.controllers.account import get_metadata_account_ids
 from athenian.api.controllers.features.entries import MetricEntriesCalculator
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.branches import extract_branches
+from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.release_mine import mine_releases
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.reposet import resolve_repos
@@ -203,7 +203,7 @@ async def clear_precomputed_events(request: AthenianWebRequest, body: dict) -> w
         no_time_from = datetime(1970, 1, 1, tzinfo=timezone.utc)
         time_from = time_to - timedelta(days=365 * 2)
         (branches, default_branches), settings = await gather(
-            extract_branches(repos, meta_ids, mdb, cache),
+            BranchMiner.extract_branches(repos, meta_ids, mdb, cache),
             Settings.from_account(model.account, sdb, mdb, cache, None)
             .list_release_matches(prefixed_repos))
         await mine_releases(

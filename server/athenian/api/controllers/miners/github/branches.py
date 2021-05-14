@@ -155,8 +155,3 @@ async def load_branch_commit_dates(branches: pd.DataFrame,
 def dummy_branches_df() -> pd.DataFrame:
     """Create an empty dataframe with Branch columns."""
     return pd.DataFrame(columns=[c.name for c in Branch.__table__.columns])
-
-
-# TODO: these have to be removed, these are here just for keeping backward-compatibility
-# without the need to re-write already all the places these functions are called
-extract_branches = BranchMiner.extract_branches

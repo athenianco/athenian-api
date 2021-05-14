@@ -23,7 +23,7 @@ from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.features.metric_calculator import df_from_structs, MetricCalculator
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
-from athenian.api.controllers.miners.github.branches import extract_branches
+from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_COLUMNS, \
     fetch_precomputed_commit_history_dags, fetch_repository_commits_no_branch_dates
 from athenian.api.controllers.miners.github.precomputed_prs import \
@@ -557,7 +557,7 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
     date_from, date_to = coarsen_time_interval(time_from, time_to)
     if updated_min is not None:
         coarsen_time_interval(updated_min, updated_max)
-    branches, default_branches = await extract_branches(repos, meta_ids, mdb, cache)
+    branches, default_branches = await BranchMiner.extract_branches(repos, meta_ids, mdb, cache)
     tasks = (
         PullRequestMiner.mine(
             date_from, date_to, time_from, time_to, repos, participants,
@@ -713,7 +713,7 @@ async def _fetch_pull_requests(prs: Dict[str, Set[int]],
                                           PRDataFrames,
                                           Dict[str, PullRequestFacts],
                                           Dict[str, ReleaseMatch]]:
-    branches, default_branches = await extract_branches(prs, meta_ids, mdb, cache)
+    branches, default_branches = await BranchMiner.extract_branches(prs, meta_ids, mdb, cache)
     filters = [and_(PullRequest.repository_full_name == repo,
                     PullRequest.number.in_(numbers),
                     PullRequest.acc_id.in_(meta_ids))

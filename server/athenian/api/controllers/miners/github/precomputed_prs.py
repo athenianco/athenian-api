@@ -21,7 +21,7 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import LabelFilter
-from athenian.api.controllers.miners.github.branches import extract_branches, \
+from athenian.api.controllers.miners.github.branches import BranchMiner, \
     load_branch_commit_dates
 from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_COLUMNS, \
     fetch_precomputed_commit_history_dags, fetch_repository_commits
@@ -1425,7 +1425,7 @@ async def delete_force_push_dropped_prs(repos: Iterable[str],
     """
     @sentry_span
     async def fetch_branches():
-        branches, _ = await extract_branches(repos, meta_ids, mdb, cache)
+        branches, _ = await BranchMiner.extract_branches(repos, meta_ids, mdb, cache)
         await load_branch_commit_dates(branches, meta_ids, mdb)
         return branches
 

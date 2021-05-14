@@ -14,7 +14,7 @@ from athenian.api.controllers.features.metric_calculator import df_from_structs
 from athenian.api.controllers.jira import get_jira_installation, load_mapped_jira_users
 from athenian.api.controllers.jira_controller import participant_columns
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.branches import extract_branches
+from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.check_run import mine_check_runs
 from athenian.api.controllers.miners.github.contributors import mine_contributors
 from athenian.api.controllers.miners.github.developer import DeveloperTopic, \
@@ -223,7 +223,7 @@ async def mine_everything(topics: Set[MineTopic],
     """Mine all the specified data topics."""
     repos = settings.native.keys()
     prefixer = Prefixer.schedule_load(meta_ids, mdb)
-    branches, default_branches = await extract_branches(repos, meta_ids, mdb, cache)
+    branches, default_branches = await BranchMiner.extract_branches(repos, meta_ids, mdb, cache)
     tasks = [miners[t](repos, branches, default_branches, settings, prefixer,
                        account, meta_ids, sdb, mdb, pdb, rdb, cache)
              for t in topics]
