@@ -23,7 +23,7 @@ from athenian.api.controllers.miners.github.precomputed_prs import \
     load_merged_pull_request_facts_all, load_open_pull_request_facts_all, \
     load_precomputed_done_facts_all
 from athenian.api.controllers.miners.github.release_mine import mine_releases
-from athenian.api.controllers.miners.jira.issue import append_pr_jira_mapping, fetch_jira_issues
+from athenian.api.controllers.miners.jira.issue import fetch_jira_issues, PullRequestJiraMapper
 from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
 from athenian.api.controllers.settings import ReleaseSettings
 from athenian.api.models.metadata.github import PullRequest, Release, User
@@ -71,7 +71,7 @@ async def mine_all_prs(repos: Collection[str],
             PullRequest.acc_id.in_(meta_ids),
             PullRequest.node_id.in_(facts),
         )), mdb, PullRequest, index=PullRequest.node_id.key),
-        append_pr_jira_mapping(facts, meta_ids, mdb),
+        PullRequestJiraMapper.append_pr_jira_mapping(facts, meta_ids, mdb),
     ]
     df_prs, _ = await gather(*tasks, op="fetch raw data")
     df_facts = df_from_structs(facts.values())

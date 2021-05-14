@@ -532,9 +532,3 @@ def resolve_work_began_and_resolved(issue_work_began: Optional[np.datetime64],
             (issue_resolved != issue_resolved or issue_resolved is None):
         return work_began, None
     return work_began, max(issue_resolved, prs_released)
-
-
-# TODO: these have to be removed, these are here just for keeping backward-compatibility
-# without the need to re-write already all the places these functions are called
-load_pr_jira_mapping = PullRequestJiraMapper.load_pr_jira_mapping
-append_pr_jira_mapping = PullRequestJiraMapper.append_pr_jira_mapping
