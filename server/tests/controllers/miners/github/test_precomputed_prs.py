@@ -14,10 +14,9 @@ from athenian.api.controllers.features.github.pull_request_filter import _fetch_
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.precomputed_prs import \
     delete_force_push_dropped_prs, discover_inactive_merged_unreleased_prs, \
-    load_merged_unreleased_pull_request_facts, load_open_pull_request_facts, \
-    load_open_pull_request_facts_unfresh, load_precomputed_done_candidates, \
+    load_merged_unreleased_pull_request_facts, load_precomputed_done_candidates, \
     load_precomputed_done_facts_filters, load_precomputed_done_facts_ids, \
-    load_precomputed_done_facts_reponums, load_precomputed_pr_releases, \
+    load_precomputed_done_facts_reponums, load_precomputed_pr_releases, OpenPRFactsLoader, \
     store_merged_unreleased_pull_request_facts, store_open_pull_request_facts, \
     store_precomputed_done_facts, update_unreleased_prs
 from athenian.api.controllers.miners.github.release_load import ReleaseLoader
@@ -28,7 +27,8 @@ from athenian.api.controllers.miners.types import MinedPullRequest, PRParticipat
     PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
 from athenian.api.defer import wait_deferred, with_defer
-from athenian.api.experiments.preloading.entries import PreloadedReleaseLoader
+from athenian.api.experiments.preloading.entries import PreloadedOpenPRFactsLoader, \
+    PreloadedReleaseLoader
 from athenian.api.models.metadata.github import Branch, PullRequest, PullRequestCommit, Release
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
     GitHubMergedPullRequestFacts, \
@@ -947,7 +947,9 @@ async def test_store_merged_unreleased_pull_request_facts_smoke(
 
 @with_defer
 async def test_store_open_pull_request_facts_smoke(
-        mdb, pdb, rdb, release_match_setting_tag):
+        mdb, pdb, rdb, release_match_setting_tag, with_preloading):
+    open_prs_facts_loader = (PreloadedOpenPRFactsLoader if with_preloading
+                             else OpenPRFactsLoader)
     prs, dfs, facts, _ = await _fetch_pull_requests(
         {"src-d/go-git": set(range(1000, 1010))},
         release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, None)
@@ -986,18 +988,18 @@ async def test_store_open_pull_request_facts_smoke(
             author=authors[row[ghoprf.pr_node_id.key]])
     assert true_dict == new_dict
 
-    loaded_facts = await load_open_pull_request_facts(dfs.prs, 1, pdb)
+    loaded_facts = await open_prs_facts_loader.load_open_pull_request_facts(dfs.prs, 1, pdb)
     for facts in loaded_facts.values():
         assert facts.repository_full_name == "src-d/go-git"
     assert true_dict == loaded_facts
 
-    loaded_facts = await load_open_pull_request_facts_unfresh(
+    loaded_facts = await open_prs_facts_loader.load_open_pull_request_facts_unfresh(
         dfs.prs.index, datetime(2016, 1, 1), datetime(2020, 1, 1), True, authors, 1, pdb)
     for node_id, facts in loaded_facts.items():
         assert facts.repository_full_name == "src-d/go-git"
         assert facts.author == authors[node_id]
     assert true_dict == loaded_facts
-    loaded_facts = await load_open_pull_request_facts_unfresh(
+    loaded_facts = await open_prs_facts_loader.load_open_pull_request_facts_unfresh(
         dfs.prs.index, datetime(2019, 11, 1), datetime(2020, 1, 1), True, authors, 1, pdb)
     assert len(loaded_facts) == 0
 

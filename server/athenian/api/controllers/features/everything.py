@@ -20,8 +20,7 @@ from athenian.api.controllers.miners.github.contributors import mine_contributor
 from athenian.api.controllers.miners.github.developer import DeveloperTopic, \
     mine_developer_activities
 from athenian.api.controllers.miners.github.precomputed_prs import \
-    load_merged_pull_request_facts_all, load_open_pull_request_facts_all, \
-    load_precomputed_done_facts_all
+    load_merged_pull_request_facts_all, load_precomputed_done_facts_all, OpenPRFactsLoader
 from athenian.api.controllers.miners.github.release_mine import mine_releases
 from athenian.api.controllers.miners.jira.issue import fetch_jira_issues, PullRequestJiraMapper
 from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
@@ -60,7 +59,8 @@ async def mine_all_prs(repos: Collection[str],
         extra=[ghdprf.release_url, ghdprf.release_node_id])
     merged_facts = await load_merged_pull_request_facts_all(repos, done_facts, account, pdb)
     merged_node_ids = list(chain(done_facts.keys(), merged_facts.keys()))
-    open_facts = await load_open_pull_request_facts_all(repos, merged_node_ids, account, pdb)
+    open_facts = await OpenPRFactsLoader.load_open_pull_request_facts_all(
+        repos, merged_node_ids, account, pdb)
     del merged_node_ids
     facts = {**open_facts, **merged_facts, **done_facts}
     del open_facts
