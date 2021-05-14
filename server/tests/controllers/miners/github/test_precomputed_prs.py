@@ -21,7 +21,7 @@ from athenian.api.controllers.miners.github.precomputed_prs import \
     store_merged_unreleased_pull_request_facts, store_open_pull_request_facts, \
     store_precomputed_done_facts, update_unreleased_prs
 from athenian.api.controllers.miners.github.release_load import ReleaseLoader
-from athenian.api.controllers.miners.github.release_match import map_prs_to_releases
+from athenian.api.controllers.miners.github.release_match import PullRequestToReleaseMapper
 from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
     new_released_prs_df
 from athenian.api.controllers.miners.types import MinedPullRequest, PRParticipationKind, \
@@ -695,7 +695,7 @@ async def test_discover_update_unreleased_prs_released(
         time_to,
         release_match_setting_tag,
         1, (6366825,), mdb, pdb, rdb, None)
-    released_prs, _, _ = await map_prs_to_releases(
+    released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
         prs, releases, matched_bys, pd.DataFrame(columns=[Branch.commit_id.key]), {}, time_to, dag,
         release_match_setting_tag, 1, (6366825,), mdb, pdb, None)
     await wait_deferred()
@@ -737,7 +737,7 @@ async def test_discover_update_unreleased_prs_exclude_inactive(
         time_to,
         release_match_setting_tag,
         1, (6366825,), mdb, pdb, rdb, None)
-    released_prs, _, _ = await map_prs_to_releases(
+    released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
         prs, releases, matched_bys, pd.DataFrame(columns=[Branch.commit_id.key]), {}, time_to, dag,
         release_match_setting_tag, 1, (6366825,), mdb, pdb, None)
     await wait_deferred()
@@ -803,7 +803,7 @@ async def test_discover_old_merged_unreleased_prs_smoke(
         release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, cache)
     await wait_deferred()
     unreleased_prs["dead"] = False
-    released_prs, _, _ = await map_prs_to_releases(
+    released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
         unreleased_prs, releases, matched_bys, pd.DataFrame(columns=[Branch.commit_id.key]), {},
         unreleased_time_to, dag, release_match_setting_tag, 1, (6366825,), mdb, pdb, cache)
     await wait_deferred()

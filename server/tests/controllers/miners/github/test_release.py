@@ -24,8 +24,7 @@ from athenian.api.controllers.miners.github.pull_request import PullRequestFacts
 from athenian.api.controllers.miners.github.release_load import \
     group_repos_by_release_match, ReleaseLoader
 from athenian.api.controllers.miners.github.release_match import \
-    _fetch_repository_first_commit_dates, _find_dead_merged_prs, map_prs_to_releases, \
-    map_releases_to_prs
+    PullRequestToReleaseMapper, ReleaseToPullRequestMapper
 from athenian.api.controllers.miners.github.release_mine import mine_releases, \
     mine_releases_by_name
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
@@ -33,7 +32,7 @@ from athenian.api.controllers.miners.types import released_prs_columns
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.experiments.preloading.entries import PreloadedBranchMiner, \
-    PreloadedReleaseLoader
+    PreloadedReleaseLoader, PreloadedReleaseToPullRequestMapper
 from athenian.api.models.metadata.github import Branch, NodeCommit, PullRequest, \
     PullRequestLabel, Release
 from athenian.api.models.persistentdata.models import ReleaseNotification
@@ -63,7 +62,7 @@ async def test_map_prs_to_releases_cache(branches, default_branches, dag, mdb, p
         1, (6366825,), mdb, pdb, rdb, None)
     tag = "https://github.com/src-d/go-git/releases/tag/v4.12.0"
     for i in range(2):
-        released_prs, facts, _ = await map_prs_to_releases(
+        released_prs, facts, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
             prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
             1, (6366825,), mdb, pdb, cache)
         await wait_deferred()
@@ -75,7 +74,7 @@ async def test_map_prs_to_releases_cache(branches, default_branches, dag, mdb, p
         assert released_prs.iloc[0][Release.published_at.key] == \
             pd.Timestamp("2019-06-18 22:57:34+0000", tzinfo=timezone.utc)
         assert released_prs.iloc[0][Release.author.key] == "mcuadros"
-    released_prs, _, _ = await map_prs_to_releases(
+    released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
         prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
         1, (6366825,), mdb, pdb, None)
     # the PR was merged and released in the past, we must detect that
@@ -96,7 +95,7 @@ async def test_map_prs_to_releases_pdb(branches, default_branches, dag, mdb, pdb
     releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"], branches, default_branches, time_from, time_to, settings,
         1, (6366825,), mdb, pdb, rdb, None)
-    released_prs, _, _ = await map_prs_to_releases(
+    released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
         prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
         1, (6366825,), mdb, pdb, None)
     await wait_deferred()
@@ -110,7 +109,7 @@ async def test_map_prs_to_releases_pdb(branches, default_branches, dag, mdb, pdb
             prlt.schema = None
         for table in (PullRequestLabel, NodeCommit):
             await dummy_mdb.execute(CreateTable(table.__table__))
-        released_prs, _, _ = await map_prs_to_releases(
+        released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
             prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
             1, (6366825,), dummy_mdb, pdb, None)
         assert len(released_prs) == 1
@@ -134,13 +133,13 @@ async def test_map_prs_to_releases_empty(branches, default_branches, dag, mdb, p
         ["src-d/go-git"], branches, default_branches, time_from, time_to, settings,
         1, (6366825,), mdb, pdb, rdb, None)
     for i in range(2):
-        released_prs, _, _ = await map_prs_to_releases(
+        released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
             prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
             1, (6366825,), mdb, pdb, cache)
         assert len(cache.mem) == 1, i
         assert released_prs.empty
     prs = prs.iloc[:0]
-    released_prs, _, _ = await map_prs_to_releases(
+    released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
         prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
         1, (6366825,), mdb, pdb, cache)
     assert len(cache.mem) == 1
@@ -196,7 +195,7 @@ async def test_map_prs_to_releases_precomputed_released(
         await store_precomputed_done_facts(
             true_prs, facts, default_branches, release_match_setting_tag, 1, pdb)
 
-        released_prs, _, _ = await map_prs_to_releases(
+        released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
             prs, releases, matched_bys, branches, default_branches, time_to, dag,
             release_match_setting_tag, 1, (6366825,), dummy_mdb, pdb, None)
         assert len(released_prs) == len(prs)
@@ -208,8 +207,11 @@ async def test_map_prs_to_releases_precomputed_released(
 
 @with_defer
 async def test_map_releases_to_prs_early_merges(
-        branches, default_branches, mdb, pdb, rdb, release_match_setting_tag):
-    prs, releases, matched_bys, dag = await map_releases_to_prs(
+        branches, default_branches, mdb, pdb, rdb, release_match_setting_tag,
+        with_preloading):
+    releases_to_prs_mapper = (PreloadedReleaseToPullRequestMapper if with_preloading
+                              else ReleaseToPullRequestMapper)
+    prs, releases, matched_bys, dag = await releases_to_prs_mapper.map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
         datetime(year=2018, month=1, day=7, tzinfo=timezone.utc),
@@ -232,9 +234,12 @@ async def test_map_releases_to_prs_early_merges(
 
 @with_defer
 async def test_map_releases_to_prs_smoke(
-        branches, default_branches, mdb, pdb, rdb, cache, release_match_setting_tag):
+        branches, default_branches, mdb, pdb, rdb, cache, release_match_setting_tag,
+        with_preloading):
+    releases_to_prs_mapper = (PreloadedReleaseToPullRequestMapper if with_preloading
+                              else ReleaseToPullRequestMapper)
     for _ in range(2):
-        prs, releases, matched_bys, dag = await map_releases_to_prs(
+        prs, releases, matched_bys, dag = await releases_to_prs_mapper.map_releases_to_prs(
             ["src-d/go-git"],
             branches, default_branches,
             datetime(year=2019, month=7, day=31, tzinfo=timezone.utc),
@@ -258,8 +263,10 @@ async def test_map_releases_to_prs_smoke(
 
 @with_defer
 async def test_map_releases_to_prs_no_truncate(
-        branches, default_branches, mdb, pdb, rdb, release_match_setting_tag):
-    prs, releases, matched_bys, _ = await map_releases_to_prs(
+        branches, default_branches, mdb, pdb, rdb, release_match_setting_tag, with_preloading):
+    releases_to_prs_mapper = (PreloadedReleaseToPullRequestMapper if with_preloading
+                              else ReleaseToPullRequestMapper)
+    prs, releases, matched_bys, _ = await releases_to_prs_mapper.map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
         datetime(year=2018, month=7, day=31, tzinfo=timezone.utc),
@@ -276,8 +283,11 @@ async def test_map_releases_to_prs_no_truncate(
 
 @with_defer
 async def test_map_releases_to_prs_empty(
-        branches, default_branches, mdb, pdb, rdb, cache, release_match_setting_tag):
-    prs, releases, matched_bys, _ = await map_releases_to_prs(
+        branches, default_branches, mdb, pdb, rdb, cache, release_match_setting_tag,
+        with_preloading):
+    releases_to_prs_mapper = (PreloadedReleaseToPullRequestMapper if with_preloading
+                              else ReleaseToPullRequestMapper)
+    prs, releases, matched_bys, _ = await releases_to_prs_mapper.map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
         datetime(year=2019, month=7, day=1, tzinfo=timezone.utc),
@@ -293,7 +303,7 @@ async def test_map_releases_to_prs_empty(
         "6241d0e70427cb0db4ca00182717af88f638268c",
     }
     assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
-    prs, releases, matched_bys, _ = await map_releases_to_prs(
+    prs, releases, matched_bys, _ = await releases_to_prs_mapper.map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
         datetime(year=2019, month=7, day=1, tzinfo=timezone.utc),
@@ -310,8 +320,11 @@ async def test_map_releases_to_prs_empty(
 
 @with_defer
 async def test_map_releases_to_prs_blacklist(
-        branches, default_branches, mdb, pdb, rdb, cache, release_match_setting_tag):
-    prs, releases, matched_bys, _ = await map_releases_to_prs(
+        branches, default_branches, mdb, pdb, rdb, cache, release_match_setting_tag,
+        with_preloading):
+    releases_to_prs_mapper = (PreloadedReleaseToPullRequestMapper if with_preloading
+                              else ReleaseToPullRequestMapper)
+    prs, releases, matched_bys, _ = await releases_to_prs_mapper.map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
         datetime(year=2019, month=7, day=31, tzinfo=timezone.utc),
@@ -339,8 +352,10 @@ async def test_map_releases_to_prs_blacklist(
 @with_defer
 async def test_map_releases_to_prs_authors_mergers(
         branches, default_branches, mdb, pdb, rdb, cache,
-        release_match_setting_tag, authors, mergers, n):
-    prs, releases, matched_bys, _ = await map_releases_to_prs(
+        release_match_setting_tag, authors, mergers, n, with_preloading):
+    releases_to_prs_mapper = (PreloadedReleaseToPullRequestMapper if with_preloading
+                              else ReleaseToPullRequestMapper)
+    prs, releases, matched_bys, _ = await releases_to_prs_mapper.map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
         datetime(year=2019, month=7, day=31, tzinfo=timezone.utc),
@@ -358,8 +373,11 @@ async def test_map_releases_to_prs_authors_mergers(
 
 @with_defer
 async def test_map_releases_to_prs_hard(
-        branches, default_branches, mdb, pdb, rdb, cache, release_match_setting_tag):
-    prs, releases, matched_bys, _ = await map_releases_to_prs(
+        branches, default_branches, mdb, pdb, rdb, cache, release_match_setting_tag,
+        with_preloading):
+    releases_to_prs_mapper = (PreloadedReleaseToPullRequestMapper if with_preloading
+                              else ReleaseToPullRequestMapper)
+    prs, releases, matched_bys, _ = await releases_to_prs_mapper.map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
         datetime(year=2019, month=6, day=18, tzinfo=timezone.utc),
@@ -376,8 +394,10 @@ async def test_map_releases_to_prs_hard(
 
 @with_defer
 async def test_map_releases_to_prs_future(
-        branches, default_branches, mdb, pdb, rdb, release_match_setting_tag):
-    prs, releases, matched_bys, _ = await map_releases_to_prs(
+        branches, default_branches, mdb, pdb, rdb, release_match_setting_tag, with_preloading):
+    releases_to_prs_mapper = (PreloadedReleaseToPullRequestMapper if with_preloading
+                              else ReleaseToPullRequestMapper)
+    prs, releases, matched_bys, _ = await releases_to_prs_mapper.map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
         datetime(year=2018, month=7, day=31, tzinfo=timezone.utc),
@@ -410,7 +430,7 @@ async def test_map_prs_to_releases_smoke_metrics(branches, default_branches, dag
     releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"], branches, default_branches, time_from, time_to, settings,
         1, (6366825,), mdb, pdb, rdb, None)
-    released_prs, _, _ = await map_prs_to_releases(
+    released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
         prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
         1, (6366825,), mdb, pdb, None)
     assert set(released_prs[Release.url.key].unique()) == {
@@ -587,10 +607,13 @@ async def test_load_releases_tag_or_branch_initial(branches, default_branches, m
 
 
 @with_defer
-async def test_map_releases_to_prs_branches(branches, default_branches, mdb, pdb, rdb):
+async def test_map_releases_to_prs_branches(branches, default_branches, mdb, pdb, rdb,
+                                            with_preloading):
+    releases_to_prs_mapper = (PreloadedReleaseToPullRequestMapper if with_preloading
+                              else ReleaseToPullRequestMapper)
     time_from = datetime(year=2015, month=4, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2015, month=5, day=1, tzinfo=timezone.utc)
-    prs, releases, matched_bys, _ = await map_releases_to_prs(
+    prs, releases, matched_bys, _ = await releases_to_prs_mapper.map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
         time_from, time_to,
@@ -607,8 +630,10 @@ async def test_map_releases_to_prs_branches(branches, default_branches, mdb, pdb
 
 @with_defer
 async def test_map_releases_to_prs_updated_min_max(
-        branches, default_branches, release_match_setting_tag, mdb, pdb, rdb):
-    prs, releases, matched_bys, _ = await map_releases_to_prs(
+        branches, default_branches, release_match_setting_tag, mdb, pdb, rdb, with_preloading):
+    releases_to_prs_mapper = (PreloadedReleaseToPullRequestMapper if with_preloading
+                              else ReleaseToPullRequestMapper)
+    prs, releases, matched_bys, _ = await releases_to_prs_mapper.map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
         datetime(year=2018, month=7, day=31, tzinfo=timezone.utc),
@@ -1006,7 +1031,7 @@ async def test__find_dead_merged_prs_smoke(mdb):
         mdb, PullRequest, index=PullRequest.node_id.key)
     prs["dead"] = False
     prs.loc[prs[PullRequest.number.key].isin(force_push_dropped_go_git_pr_numbers), "dead"] = True
-    dead_prs = await _find_dead_merged_prs(prs)
+    dead_prs = await PullRequestToReleaseMapper._find_dead_merged_prs(prs)
     assert len(dead_prs) == len(force_push_dropped_go_git_pr_numbers)
     assert dead_prs[Release.published_at.key].isnull().all()
     assert (dead_prs[matched_by_column] == ReleaseMatch.force_push_drop).all()
@@ -1016,13 +1041,15 @@ async def test__find_dead_merged_prs_smoke(mdb):
 
 
 @with_defer
-async def test__fetch_repository_first_commit_dates_pdb_cache(mdb, pdb, cache):
-    fcd1 = await _fetch_repository_first_commit_dates(
+async def test__fetch_repository_first_commit_dates_pdb_cache(mdb, pdb, cache, with_preloading):
+    releases_to_prs_mapper = (PreloadedReleaseToPullRequestMapper if with_preloading
+                              else ReleaseToPullRequestMapper)
+    fcd1 = await releases_to_prs_mapper._fetch_repository_first_commit_dates(
         ["src-d/go-git"], 1, (6366825,), mdb, pdb, cache)
     await wait_deferred()
-    fcd2 = await _fetch_repository_first_commit_dates(
+    fcd2 = await releases_to_prs_mapper._fetch_repository_first_commit_dates(
         ["src-d/go-git"], 1, (6366825,), Database("sqlite://"), pdb, None)
-    fcd3 = await _fetch_repository_first_commit_dates(
+    fcd3 = await releases_to_prs_mapper._fetch_repository_first_commit_dates(
         ["src-d/go-git"], 1, (6366825,), Database("sqlite://"), Database("sqlite://"), cache)
     assert len(fcd1) == len(fcd2) == len(fcd3) == 1
     assert fcd1["src-d/go-git"] == fcd2["src-d/go-git"] == fcd3["src-d/go-git"]
@@ -1550,7 +1577,7 @@ async def test_map_prs_to_releases_miguel(mdb, pdb, rdb, release_match_setting_t
     releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"], None, None, time_from, time_to,
         release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, cache)
-    released_prs, _ = await map_prs_to_releases(
+    released_prs, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
         miguel_pr, releases, matched_bys, pd.DataFrame(), {}, time_to,
         release_match_setting_tag, 1, (6366825,), mdb, pdb, cache)
     assert len(released_prs) == 1
