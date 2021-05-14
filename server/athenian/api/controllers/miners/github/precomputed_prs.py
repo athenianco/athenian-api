@@ -436,7 +436,7 @@ def _post_process_ambiguous_done_prs(result: Dict[str, Mapping[str, Any]],
     result.update(ambiguous[ReleaseMatch.tag.name])
     repokey = GitHubDonePullRequestFacts.repository_full_name.key
     # We've found PRs released by tag belonging to these repos.
-    # This means that we are going to load tags in load_releases().
+    # This means that we are going to load tags in ReleaseLoader.load_releases().
     confirmed_tag_repos = {obj[repokey] for obj in ambiguous[ReleaseMatch.tag.name].values()}
     ambiguous_prs = defaultdict(list)
     for node_id, obj in ambiguous[ReleaseMatch.branch.name].items():

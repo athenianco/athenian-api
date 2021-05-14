@@ -20,7 +20,7 @@ from athenian.api.controllers.miners.github.precomputed_prs import \
     load_precomputed_done_facts_reponums, load_precomputed_pr_releases, \
     store_merged_unreleased_pull_request_facts, store_open_pull_request_facts, \
     store_precomputed_done_facts, update_unreleased_prs
-from athenian.api.controllers.miners.github.release_load import load_releases
+from athenian.api.controllers.miners.github.release_load import ReleaseLoader
 from athenian.api.controllers.miners.github.release_match import map_prs_to_releases
 from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
     new_released_prs_df
@@ -28,6 +28,7 @@ from athenian.api.controllers.miners.types import MinedPullRequest, PRParticipat
     PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
 from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.experiments.preloading.entries import PreloadedReleaseLoader
 from athenian.api.models.metadata.github import Branch, PullRequest, PullRequestCommit, Release
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
     GitHubMergedPullRequestFacts, \
@@ -599,14 +600,15 @@ async def test_load_precomputed_pr_releases_tag(pr_samples, default_branches, pd
 
 @with_defer
 async def test_discover_update_unreleased_prs_smoke(
-        mdb, pdb, rdb, default_branches, release_match_setting_tag):
+        mdb, pdb, rdb, default_branches, release_match_setting_tag, with_preloading):
+    release_loader = PreloadedReleaseLoader if with_preloading else ReleaseLoader
     prs = await read_sql_query(
         select([PullRequest]).where(and_(PullRequest.number.in_(range(1000, 1010)),
                                          PullRequest.merged_at.isnot(None))),
         mdb, PullRequest, index=PullRequest.node_id.key)
     prs[prs[PullRequest.merged_at.key].isnull()] = datetime.now(tz=timezone.utc)
     utc = timezone.utc
-    releases, matched_bys = await load_releases(
+    releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"], None, default_branches,
         datetime(2018, 9, 1, tzinfo=utc),
         datetime(2018, 11, 1, tzinfo=utc),
@@ -620,7 +622,7 @@ async def test_discover_update_unreleased_prs_smoke(
     await update_unreleased_prs(
         prs, empty_rdf, datetime(2018, 11, 1, tzinfo=utc), {},
         matched_bys, default_branches, release_match_setting_tag, 1, pdb, asyncio.Event())
-    releases, matched_bys = await load_releases(
+    releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"], None, default_branches,
         datetime(2018, 11, 1, tzinfo=utc),
         datetime(2018, 11, 20, tzinfo=utc),
@@ -645,7 +647,7 @@ async def test_discover_update_unreleased_prs_smoke(
         prs, datetime(2018, 11, 20, tzinfo=utc), LabelFilter.empty(), matched_bys,
         default_branches, release_match_setting_tag, 1, pdb)
     assert set(prs.index) == set(unreleased_prs)
-    releases, matched_bys = await load_releases(
+    releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"], None, default_branches,
         datetime(2018, 9, 1, tzinfo=utc),
         datetime(2018, 11, 1, tzinfo=utc),
@@ -660,7 +662,7 @@ async def test_discover_update_unreleased_prs_smoke(
             branches="", tags="v.*", match=ReleaseMatch.tag)}),
         1, pdb)
     assert len(unreleased_prs) == 0
-    releases, matched_bys = await load_releases(
+    releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"], None, default_branches,
         datetime(2019, 1, 29, tzinfo=utc),
         datetime(2019, 2, 1, tzinfo=utc),
@@ -676,7 +678,8 @@ async def test_discover_update_unreleased_prs_smoke(
 
 @with_defer
 async def test_discover_update_unreleased_prs_released(
-        mdb, pdb, rdb, dag, default_branches, release_match_setting_tag):
+        mdb, pdb, rdb, dag, default_branches, release_match_setting_tag, with_preloading):
+    release_loader = PreloadedReleaseLoader if with_preloading else ReleaseLoader
     prs = await read_sql_query(
         select([PullRequest]).where(and_(PullRequest.number.in_(range(1000, 1010)),
                                          PullRequest.merged_at.isnot(None))),
@@ -686,7 +689,7 @@ async def test_discover_update_unreleased_prs_released(
     utc = timezone.utc
     time_from = datetime(2018, 10, 1, tzinfo=utc)
     time_to = datetime(2018, 12, 1, tzinfo=utc)
-    releases, matched_bys = await load_releases(
+    releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"], None, default_branches,
         time_from,
         time_to,
@@ -716,7 +719,8 @@ async def test_discover_update_unreleased_prs_released(
 
 @with_defer
 async def test_discover_update_unreleased_prs_exclude_inactive(
-        mdb, pdb, rdb, dag, default_branches, release_match_setting_tag):
+        mdb, pdb, rdb, dag, default_branches, release_match_setting_tag, with_preloading):
+    release_loader = PreloadedReleaseLoader if with_preloading else ReleaseLoader
     postgres = pdb.url.dialect in ("postgres", "postgresql")
     prs = await read_sql_query(
         select([PullRequest]).where(and_(PullRequest.number.in_(range(1000, 1010)),
@@ -727,7 +731,7 @@ async def test_discover_update_unreleased_prs_exclude_inactive(
     utc = timezone.utc
     time_from = datetime(2018, 10, 1, tzinfo=utc)
     time_to = datetime(2018, 12, 1, tzinfo=utc)
-    releases, matched_bys = await load_releases(
+    releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"], None, default_branches,
         time_from,
         time_to,
@@ -762,7 +766,9 @@ async def test_discover_update_unreleased_prs_exclude_inactive(
 
 @with_defer
 async def test_discover_old_merged_unreleased_prs_smoke(
-        metrics_calculator_factory, mdb, pdb, rdb, dag, release_match_setting_tag, cache):
+        metrics_calculator_factory, mdb, pdb, rdb, dag, release_match_setting_tag, cache,
+        with_preloading):
+    release_loader = PreloadedReleaseLoader if with_preloading else ReleaseLoader
     metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     metrics_time_from = datetime(2018, 1, 1, tzinfo=timezone.utc)
     metrics_time_to = datetime(2020, 5, 1, tzinfo=timezone.utc)
@@ -792,7 +798,7 @@ async def test_discover_old_merged_unreleased_prs_smoke(
     unreleased_prs = await read_sql_query(
         select([PullRequest]).where(PullRequest.node_id.in_(unreleased_prs)),
         mdb, PullRequest, index=PullRequest.node_id.key)
-    releases, matched_bys = await load_releases(
+    releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"], None, None, metrics_time_from, unreleased_time_to,
         release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, cache)
     await wait_deferred()
