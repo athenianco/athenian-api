@@ -94,8 +94,8 @@ async def test_filter_repositories_smoke(
 
 @pytest.mark.filter_repositories
 @with_defer
-async def test_filter_repositories_exclude_inactive(
-        metrics_calculator_factory, client, headers, mdb, pdb, rdb, release_match_setting_tag):
+async def test_filter_repositories_exclude_inactive_precomputed(
+        metrics_calculator_factory, client, headers, release_match_setting_tag):
     metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(2017, 9, 15, tzinfo=timezone.utc)
     time_to = datetime(2017, 9, 18, tzinfo=timezone.utc)
@@ -112,6 +112,27 @@ async def test_filter_repositories_exclude_inactive(
         "in": ["github.com/src-d/go-git"],
         "exclude_inactive": True,
     }
+    response = await client.request(
+        method="POST", path="/v1/filter/repositories", headers=headers, json=body)
+    repos = json.loads((await response.read()).decode("utf-8"))
+    assert repos == []
+
+
+@pytest.mark.filter_repositories
+async def test_filter_repositories_exclude_inactive_cache(client, headers, client_cache):
+    body = {
+        "date_from": "2017-09-16",
+        "date_to": "2017-09-17",
+        "timezone": 60,
+        "account": 1,
+        "in": ["github.com/src-d/go-git"],
+        "exclude_inactive": False,
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/repositories", headers=headers, json=body)
+    repos = json.loads((await response.read()).decode("utf-8"))
+    assert repos == ["github.com/src-d/go-git"]
+    body["exclude_inactive"] = True
     response = await client.request(
         method="POST", path="/v1/filter/repositories", headers=headers, json=body)
     repos = json.loads((await response.read()).decode("utf-8"))

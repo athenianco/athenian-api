@@ -211,17 +211,29 @@ async def dag(mdb):
 
 
 @pytest.fixture(scope="function")
-async def metrics_calculator_factory(mdb, pdb, rdb, cache, memcached):
+async def metrics_calculator_factory(mdb, pdb, rdb, cache):
 
-    def build(account_id, meta_ids,
-              with_cache=False, with_memcached=False, cache_only=False):
+    def build(account_id, meta_ids, with_cache=False, cache_only=False):
         if cache_only:
-            return MetricEntriesCalculator(account_id, meta_ids, None, None, None,
-                                           memcached if with_memcached else cache)
-        if with_memcached:
-            c = memcached
-        elif with_cache:
+            return MetricEntriesCalculator(account_id, meta_ids, None, None, None, cache)
+        if with_cache:
             c = cache
+        else:
+            c = None
+
+        return MetricEntriesCalculator(account_id, meta_ids, mdb, pdb, rdb, c)
+
+    return build
+
+
+@pytest.fixture(scope="function")
+async def metrics_calculator_factory_memcached(mdb, pdb, rdb, memcached):
+
+    def build(account_id, meta_ids, with_cache=False, cache_only=False):
+        if cache_only:
+            return MetricEntriesCalculator(account_id, meta_ids, None, None, None, memcached)
+        if with_cache:
+            c = memcached
         else:
             c = None
 
