@@ -15,6 +15,7 @@ from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.models.metadata.github import Branch, NodePullRequestJiraIssues, \
     PullRequest
 from athenian.api.models.precomputed.models import \
+    GitHubOpenPullRequestFacts, \
     GitHubRelease as PrecomputedRelease, \
     GitHubReleaseMatchTimespan as PrecomputedGitHubReleaseMatchTimespan
 from athenian.api.models.state.models import AccountFeature, AccountGitHubAccount, Feature
@@ -258,8 +259,13 @@ class MemoryCache:
         if not accounts:
             accounts = await self._get_enabled_accounts()
 
-        sharding_opts = self._options[id_]["sharding"]
-        return sharding_opts["column"].in_(accounts[sharding_opts["key"]])
+        opts = self._options[id_]
+        sharding_opts = opts["sharding"]
+        filtering_clause = sharding_opts["column"].in_(accounts[sharding_opts["key"]])
+        if fc := opts.get("filtering_clause") is not None:
+            filtering_clause = sa.and_(filtering_clause, fc)
+
+        return filtering_clause
 
     async def _get_enabled_accounts(self) -> Dict[str, List[int]]:
         query = (
@@ -336,6 +342,7 @@ class PCID(str, Enum):
 
     releases = PrecomputedRelease.__table__.fullname
     releases_match_timespan = PrecomputedGitHubReleaseMatchTimespan.__table__.fullname
+    open_pr_facts = GitHubOpenPullRequestFacts.__table__.fullname
 
 
 def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[InstrumentedAttribute]]]]:
@@ -450,6 +457,34 @@ def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[Instrumente
                     PrecomputedGitHubReleaseMatchTimespan.release_match,
                     PrecomputedGitHubReleaseMatchTimespan.repository_full_name,
                     PrecomputedGitHubReleaseMatchTimespan.acc_id,
+                ],
+            },
+            PCID.open_pr_facts.value: {
+                "sharding": {
+                    "column": GitHubOpenPullRequestFacts.acc_id,
+                    "key": "acc_id",
+                },
+                "filtering_clause": (
+                    GitHubOpenPullRequestFacts.format_version ==
+                    GitHubOpenPullRequestFacts.__table__.columns[
+                        GitHubOpenPullRequestFacts.format_version.key].default.arg,
+                ),
+                "cols": [
+                    GitHubOpenPullRequestFacts.pr_node_id,
+                    GitHubOpenPullRequestFacts.repository_full_name,
+                    GitHubOpenPullRequestFacts.acc_id,
+                    GitHubOpenPullRequestFacts.pr_created_at,
+                    GitHubOpenPullRequestFacts.pr_updated_at,
+                    GitHubOpenPullRequestFacts.activity_days,
+                    GitHubOpenPullRequestFacts.number,
+                    GitHubOpenPullRequestFacts.data,
+                ],
+                "categorical_cols": [
+                    GitHubOpenPullRequestFacts.repository_full_name,
+                    GitHubOpenPullRequestFacts.acc_id,
+                ],
+                "identifier_cols": [
+                    GitHubOpenPullRequestFacts.pr_node_id,
                 ],
             },
         },

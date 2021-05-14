@@ -446,18 +446,23 @@ def _post_process_ambiguous_done_prs(result: Dict[str, Mapping[str, Any]],
     return result, ambiguous_prs
 
 
-def _append_activity_days_filter(time_from: datetime, time_to: datetime,
-                                 selected: List[InstrumentedAttribute],
-                                 filters: List[ClauseElement],
-                                 activity_days_column: InstrumentedAttribute,
-                                 postgres: bool) -> Set[datetime]:
+def build_days_range(time_from: datetime, time_to: datetime) -> Set[datetime]:
+    """Build the daily range between the two provided times."""
     # timezones: date_from and date_to may be not exactly 00:00
     date_from_day = datetime.combine(
         time_from.date(), datetime.min.time(), tzinfo=timezone.utc)
     date_to_day = datetime.combine(
         time_to.date(), datetime.min.time(), tzinfo=timezone.utc)
     # date_to_day will be included
-    date_range = rrule(DAILY, dtstart=date_from_day, until=date_to_day)
+    return rrule(DAILY, dtstart=date_from_day, until=date_to_day)
+
+
+def _append_activity_days_filter(time_from: datetime, time_to: datetime,
+                                 selected: List[InstrumentedAttribute],
+                                 filters: List[ClauseElement],
+                                 activity_days_column: InstrumentedAttribute,
+                                 postgres: bool) -> Set[datetime]:
+    date_range = build_days_range(time_from, time_to)
     if postgres:
         filters.append(activity_days_column.overlap(list(date_range)))
     else:
@@ -1220,129 +1225,137 @@ async def discover_inactive_merged_unreleased_prs(time_from: datetime,
     return node_ids, repos
 
 
-@sentry_span
-async def load_open_pull_request_facts(prs: pd.DataFrame,
-                                       account: int,
-                                       pdb: databases.Database,
-                                       ) -> Dict[str, PullRequestFacts]:
-    """
-    Fetch precomputed facts about the open PRs from the DataFrame.
+class OpenPRFactsLoader:
+    """Loader for open PRs facts."""
 
-    We filter open PRs inplace so the user does not have to worry about that.
-    """
-    open_indexes = np.nonzero(prs[PullRequest.closed_at.key].isnull().values)[0]
-    node_ids = prs.index.take(open_indexes)
-    authors = dict(zip(node_ids, prs[PullRequest.user_login.key].values[open_indexes]))
-    ghoprf = GitHubOpenPullRequestFacts
-    default_version = ghoprf.__table__.columns[ghoprf.format_version.key].default.arg
-    selected = [
-        ghoprf.pr_node_id,
-        ghoprf.pr_updated_at,
-        ghoprf.repository_full_name,
-        ghoprf.data,
-    ]
-    rows = await pdb.fetch_all(
-        select(selected)
-        .where(and_(ghoprf.pr_node_id.in_(node_ids),
-                    ghoprf.format_version == default_version,
-                    ghoprf.acc_id == account)))
-    if not rows:
-        return {}
-    found_node_ids = [r[0].rstrip() for r in rows]
-    found_updated_ats = [r[1] for r in rows]
-    if pdb.url.dialect == "sqlite":
-        found_updated_ats = [dt.replace(tzinfo=timezone.utc) for dt in found_updated_ats]
-    updated_ats = prs[PullRequest.updated_at.key].take(open_indexes)
-    passed_mask = updated_ats[found_node_ids] <= found_updated_ats
-    passed_node_ids = set(updated_ats.index.take(np.where(passed_mask)[0]))
-    facts = {}
-    for row in rows:
-        node_id = row[ghoprf.pr_node_id.key]
-        if node_id in passed_node_ids:
+    @classmethod
+    @sentry_span
+    async def load_open_pull_request_facts(cls,
+                                           prs: pd.DataFrame,
+                                           account: int,
+                                           pdb: databases.Database,
+                                           ) -> Dict[str, PullRequestFacts]:
+        """
+        Fetch precomputed facts about the open PRs from the DataFrame.
+
+        We filter open PRs inplace so the user does not have to worry about that.
+        """
+        open_indexes = np.nonzero(prs[PullRequest.closed_at.key].isnull().values)[0]
+        node_ids = prs.index.take(open_indexes)
+        authors = dict(zip(node_ids, prs[PullRequest.user_login.key].values[open_indexes]))
+        ghoprf = GitHubOpenPullRequestFacts
+        default_version = ghoprf.__table__.columns[ghoprf.format_version.key].default.arg
+        selected = [
+            ghoprf.pr_node_id,
+            ghoprf.pr_updated_at,
+            ghoprf.repository_full_name,
+            ghoprf.data,
+        ]
+        rows = await pdb.fetch_all(
+            select(selected)
+            .where(and_(ghoprf.pr_node_id.in_(node_ids),
+                        ghoprf.format_version == default_version,
+                        ghoprf.acc_id == account)))
+        if not rows:
+            return {}
+        found_node_ids = [r[0].rstrip() for r in rows]
+        found_updated_ats = [r[1] for r in rows]
+        if pdb.url.dialect == "sqlite":
+            found_updated_ats = [dt.replace(tzinfo=timezone.utc) for dt in found_updated_ats]
+        updated_ats = prs[PullRequest.updated_at.key].take(open_indexes)
+        passed_mask = updated_ats[found_node_ids] <= found_updated_ats
+        passed_node_ids = set(updated_ats.index.take(np.where(passed_mask)[0]))
+        facts = {}
+        for row in rows:
+            node_id = row[ghoprf.pr_node_id.key]
+            if node_id in passed_node_ids:
+                facts[node_id] = PullRequestFacts(
+                    data=row[ghoprf.data.key],
+                    repository_full_name=row[ghoprf.repository_full_name.key],
+                    author=authors[node_id])
+        return facts
+
+    @classmethod
+    @sentry_span
+    async def load_open_pull_request_facts_unfresh(cls,
+                                                   prs: Iterable[str],
+                                                   time_from: datetime,
+                                                   time_to: datetime,
+                                                   exclude_inactive: bool,
+                                                   authors: Mapping[str, str],
+                                                   account: int,
+                                                   pdb: databases.Database,
+                                                   ) -> Dict[str, PullRequestFacts]:
+        """
+        Fetch precomputed facts about the open PRs from the DataFrame.
+
+        We don't filter PRs by the last update here.
+
+        :param authors: Map from PR node IDs to their author logins.
+        :return: Map from PR node IDs to their facts.
+        """
+        postgres = pdb.url.dialect in ("postgres", "postgresql")
+        ghoprf = GitHubOpenPullRequestFacts
+        selected = [ghoprf.pr_node_id, ghoprf.repository_full_name, ghoprf.data]
+        default_version = ghoprf.__table__.columns[ghoprf.format_version.key].default.arg
+        filters = [
+            ghoprf.pr_node_id.in_(prs),
+            ghoprf.format_version == default_version,
+            ghoprf.acc_id == account,
+        ]
+        if exclude_inactive:
+            date_range = _append_activity_days_filter(
+                time_from, time_to, selected, filters, ghoprf.activity_days, postgres)
+        rows = await pdb.fetch_all(select(selected).where(and_(*filters)))
+        if not rows:
+            return {}
+        facts = {}
+        for row in rows:
+            if exclude_inactive and not postgres:
+                activity_days = {datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                                 for d in row[ghoprf.activity_days.key]}
+                if not activity_days.intersection(date_range):
+                    continue
+            node_id = row[ghoprf.pr_node_id.key].rstrip()
             facts[node_id] = PullRequestFacts(
                 data=row[ghoprf.data.key],
                 repository_full_name=row[ghoprf.repository_full_name.key],
                 author=authors[node_id])
-    return facts
+        return facts
 
-
-@sentry_span
-async def load_open_pull_request_facts_unfresh(prs: Iterable[str],
-                                               time_from: datetime,
-                                               time_to: datetime,
-                                               exclude_inactive: bool,
-                                               authors: Mapping[str, str],
+    @classmethod
+    @sentry_span
+    async def load_open_pull_request_facts_all(cls,
+                                               repos: Collection[str],
+                                               pr_node_id_blacklist: Collection[str],
                                                account: int,
                                                pdb: databases.Database,
                                                ) -> Dict[str, PullRequestFacts]:
-    """
-    Fetch precomputed facts about the open PRs from the DataFrame.
+        """
+        Load the precomputed open PR facts through all the time.
 
-    We don't filter PRs by the last update here.
+        We do not load the repository and the author!
 
-    :param authors: Map from PR node IDs to their author logins.
-    :return: Map from PR node IDs to their facts.
-    """
-    postgres = pdb.url.dialect in ("postgres", "postgresql")
-    ghoprf = GitHubOpenPullRequestFacts
-    selected = [ghoprf.pr_node_id, ghoprf.repository_full_name, ghoprf.data]
-    default_version = ghoprf.__table__.columns[ghoprf.format_version.key].default.arg
-    filters = [
-        ghoprf.pr_node_id.in_(prs),
-        ghoprf.format_version == default_version,
-        ghoprf.acc_id == account,
-    ]
-    if exclude_inactive:
-        date_range = _append_activity_days_filter(
-            time_from, time_to, selected, filters, ghoprf.activity_days, postgres)
-    rows = await pdb.fetch_all(select(selected).where(and_(*filters)))
-    if not rows:
-        return {}
-    facts = {}
-    for row in rows:
-        if exclude_inactive and not postgres:
-            activity_days = {datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-                             for d in row[ghoprf.activity_days.key]}
-            if not activity_days.intersection(date_range):
-                continue
-        node_id = row[ghoprf.pr_node_id.key].rstrip()
-        facts[node_id] = PullRequestFacts(
-            data=row[ghoprf.data.key],
-            repository_full_name=row[ghoprf.repository_full_name.key],
-            author=authors[node_id])
-    return facts
-
-
-@sentry_span
-async def load_open_pull_request_facts_all(repos: Collection[str],
-                                           pr_node_id_blacklist: Collection[str],
-                                           account: int,
-                                           pdb: databases.Database,
-                                           ) -> Dict[str, PullRequestFacts]:
-    """
-    Load the precomputed open PR facts through all the time.
-
-    We do not load the repository and the author!
-
-    :return: Map from PR node IDs to their facts.
-    """
-    ghoprf = GitHubOpenPullRequestFacts
-    selected = [
-        ghoprf.pr_node_id,
-        ghoprf.data,
-    ]
-    default_version = ghoprf.__table__.columns[ghoprf.format_version.key].default.arg
-    filters = [
-        ghoprf.pr_node_id.notin_(pr_node_id_blacklist),
-        ghoprf.repository_full_name.in_(repos),
-        ghoprf.format_version == default_version,
-        ghoprf.acc_id == account,
-    ]
-    query = select(selected).where(and_(*filters))
-    with sentry_sdk.start_span(op="load_open_pull_request_facts_all/fetch"):
-        rows = await pdb.fetch_all(query)
-    facts = {row[ghoprf.pr_node_id.key]: PullRequestFacts(row[ghoprf.data.key]) for row in rows}
-    return facts
+        :return: Map from PR node IDs to their facts.
+        """
+        ghoprf = GitHubOpenPullRequestFacts
+        selected = [
+            ghoprf.pr_node_id,
+            ghoprf.data,
+        ]
+        default_version = ghoprf.__table__.columns[ghoprf.format_version.key].default.arg
+        filters = [
+            ghoprf.pr_node_id.notin_(pr_node_id_blacklist),
+            ghoprf.repository_full_name.in_(repos),
+            ghoprf.format_version == default_version,
+            ghoprf.acc_id == account,
+        ]
+        query = select(selected).where(and_(*filters))
+        with sentry_sdk.start_span(op="load_open_pull_request_facts_all/fetch"):
+            rows = await pdb.fetch_all(query)
+        facts = {row[ghoprf.pr_node_id.key]: PullRequestFacts(row[ghoprf.data.key])
+                 for row in rows}
+        return facts
 
 
 @sentry_span
@@ -1453,3 +1466,10 @@ async def delete_force_push_dropped_prs(repos: Iterable[str],
             .where(and_(ghdprf.pr_node_id.in_(dead_pr_node_ids),
                         ghdprf.release_match != ReleaseMatch.force_push_drop.name)))
     return dead_pr_node_ids
+
+
+# TODO: these have to be removed, these are here just for keeping backward-compatibility
+# without the need to re-write already all the places these functions are called
+load_open_pull_request_facts = OpenPRFactsLoader.load_open_pull_request_facts
+load_open_pull_request_facts_unfresh = OpenPRFactsLoader.load_open_pull_request_facts_unfresh
+load_open_pull_request_facts_all = OpenPRFactsLoader.load_open_pull_request_facts_all
