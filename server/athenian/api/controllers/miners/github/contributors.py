@@ -14,7 +14,7 @@ from sqlalchemy.sql.functions import coalesce
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.github.bots import Bots
-from athenian.api.controllers.miners.github.branches import extract_branches
+from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.release_load import load_releases
 from athenian.api.controllers.settings import ReleaseSettings
 from athenian.api.models.metadata.github import NodeCommit, NodeRepository, OrganizationMember, \
@@ -64,7 +64,7 @@ async def mine_contributors(repos: Collection[str],
         PullRequest.acc_id.in_(meta_ids),
     ]
     tasks = [
-        extract_branches(repos, meta_ids, mdb, cache),
+        BranchMiner.extract_branches(repos, meta_ids, mdb, cache),
         mdb.fetch_all(select([NodeRepository.node_id])
                       .where(and_(NodeRepository.name_with_owner.in_(repos),
                                   NodeRepository.acc_id.in_(meta_ids)))),

@@ -13,7 +13,7 @@ from sqlalchemy import select, update
 
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
-from athenian.api.controllers.miners.github.branches import extract_branches
+from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.commit import _empty_dag
 from athenian.api.controllers.miners.github.precomputed_prs import \
     load_merged_unreleased_pull_request_facts, store_merged_unreleased_pull_request_facts, \
@@ -26,6 +26,7 @@ from athenian.api.controllers.miners.types import DAG, MinedPullRequest, PRParti
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
 import athenian.api.db
 from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.experiments.preloading.entries import PreloadedBranchMiner
 from athenian.api.models.metadata.github import Branch, PullRequest
 from athenian.api.models.metadata.jira import Issue
 from athenian.api.models.precomputed.models import GitHubCommitHistory, \
@@ -1093,8 +1094,9 @@ async def test_pr_miner_jira_cache(
 
 
 @with_defer
-async def test_fetch_prs_no_branches(mdb, pdb, dag):
-    branches, _ = await extract_branches(["src-d/go-git"], (6366825,), mdb, None)
+async def test_fetch_prs_no_branches(mdb, pdb, dag, with_preloading):
+    branch_miner = PreloadedBranchMiner if with_preloading else BranchMiner
+    branches, _ = await branch_miner.extract_branches(["src-d/go-git"], (6366825,), mdb, None)
     branches = branches[branches[Branch.branch_name.key] == "master"]
     branches[Branch.repository_full_name.key] = "xxx"
     branches[Branch.commit_date] = [datetime.now(timezone.utc)]
@@ -1116,8 +1118,9 @@ async def test_fetch_prs_no_branches(mdb, pdb, dag):
 
 
 @with_defer
-async def test_fetch_prs_dead(mdb, pdb):
-    branches, _ = await extract_branches(["src-d/go-git"], (6366825,), mdb, None)
+async def test_fetch_prs_dead(mdb, pdb, with_preloading):
+    branch_miner = PreloadedBranchMiner if with_preloading else BranchMiner
+    branches, _ = await branch_miner.extract_branches(["src-d/go-git"], (6366825,), mdb, None)
     branches = branches[branches[Branch.branch_name.key] == "master"]
     branches[Branch.commit_date] = datetime.now(timezone.utc)
     args = [

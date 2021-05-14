@@ -13,7 +13,7 @@ from sqlalchemy.schema import CreateTable
 from athenian.api.async_utils import read_sql_query
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
-from athenian.api.controllers.miners.github.branches import extract_branches
+from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.commit import _empty_dag, _fetch_commit_history_dag, \
     fetch_repository_commits
 from athenian.api.controllers.miners.github.dag_accelerated import extract_subdag, join_dags, \
@@ -33,6 +33,7 @@ from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.types import released_prs_columns
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
 from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.experiments.preloading.entries import PreloadedBranchMiner
 from athenian.api.models.metadata.github import Branch, NodeCommit, PullRequest, \
     PullRequestLabel, Release
 from athenian.api.models.persistentdata.models import ReleaseNotification
@@ -943,8 +944,9 @@ async def test__fetch_repository_commits_many(mdb, pdb):
 
 
 @with_defer
-async def test__fetch_repository_commits_full(mdb, pdb, dag, cache):
-    branches, _ = await extract_branches(dag, (6366825,), mdb, None)
+async def test__fetch_repository_commits_full(mdb, pdb, dag, cache, with_preloading):
+    branch_miner = PreloadedBranchMiner if with_preloading else BranchMiner
+    branches, _ = await branch_miner.extract_branches(dag, (6366825,), mdb, None)
     commit_ids = branches[Branch.commit_id.key].values
     commit_dates = await mdb.fetch_all(select([NodeCommit.id, NodeCommit.committed_date])
                                        .where(NodeCommit.id.in_(commit_ids)))

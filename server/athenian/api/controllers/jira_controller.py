@@ -31,7 +31,7 @@ from athenian.api.controllers.filter_controller import web_pr_from_struct
 from athenian.api.controllers.jira import get_jira_installation, normalize_issue_type, \
     normalize_user_type
 from athenian.api.controllers.miners.filters import LabelFilter
-from athenian.api.controllers.miners.github.branches import extract_branches
+from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.precomputed_prs import load_precomputed_done_facts_ids
 from athenian.api.controllers.miners.jira.epic import filter_epics
 from athenian.api.controllers.miners.jira.issue import fetch_jira_issues, ISSUE_PR_IDS, \
@@ -798,7 +798,7 @@ async def _collect_ids(account: int,
     ]
     repos, jira_ids, meta_ids = await gather(*tasks, op="sdb/ids")
     tasks = [
-        extract_branches(
+        BranchMiner.extract_branches(
             [r.split("/", 1)[1] for r in repos], meta_ids, mdb, cache),
         Settings.from_request(request, account).list_release_matches(repos),
     ]

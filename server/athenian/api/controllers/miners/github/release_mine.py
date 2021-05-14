@@ -17,7 +17,7 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached, CancelCache
 from athenian.api.controllers.miners.filters import JIRAFilter
-from athenian.api.controllers.miners.github.branches import extract_branches
+from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.commit import fetch_precomputed_commit_history_dags, \
     fetch_repository_commits, RELEASE_FETCH_COMMITS_COLUMNS
 from athenian.api.controllers.miners.github.dag_accelerated import extract_subdag, \
@@ -614,7 +614,7 @@ async def _load_releases_by_name(names: Dict[str, Set[str]],
                                             Dict[str, str]]:
     names = await _complete_commit_hashes(names, meta_ids, mdb)
     tasks = [
-        extract_branches(names, meta_ids, mdb, cache),
+        BranchMiner.extract_branches(names, meta_ids, mdb, cache),
         fetch_precomputed_releases_by_name(names, account, pdb),
     ]
     (branches, default_branches), releases = await gather(*tasks)

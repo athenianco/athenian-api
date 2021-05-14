@@ -31,7 +31,7 @@ from athenian.api.controllers.invitation_controller import fetch_github_installa
 from athenian.api.controllers.jira import match_jira_identities
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import Bots
-from athenian.api.controllers.miners.github.branches import extract_branches
+from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.contributors import mine_contributors
 from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_inrange
 from athenian.api.controllers.miners.github.precomputed_prs import \
@@ -184,7 +184,8 @@ def main():
                      reposet.id, reposet.owner_id, len(repos))
             try:
                 log.info("Mining all the releases")
-                branches, default_branches = await extract_branches(repos, meta_ids, mdb, None)
+                branches, default_branches = await BranchMiner.extract_branches(
+                    repos, meta_ids, mdb, None)
                 releases, _, _ = await mine_releases(
                     repos, {}, branches, default_branches, no_time_from, time_to,
                     JIRAFilter.empty(), settings, prefixer, reposet.owner_id, meta_ids,
