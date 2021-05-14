@@ -24,8 +24,7 @@ from athenian.api.controllers.miners.github.commit import DAG, \
 from athenian.api.controllers.miners.github.dag_accelerated import extract_subdag, \
     mark_dag_access, searchsorted_inrange
 from athenian.api.controllers.miners.github.precomputed_prs import \
-    load_merged_unreleased_pull_request_facts, load_precomputed_pr_releases, \
-    update_unreleased_prs
+    load_precomputed_pr_releases, MergedPRFactsLoader, update_unreleased_prs
 from athenian.api.controllers.miners.github.release_load import dummy_releases_df, ReleaseLoader
 from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
     new_released_prs_df
@@ -93,7 +92,7 @@ class PullRequestToReleaseMapper:
             return pr_releases, {}, unreleased_prs_event
         tasks = [
             load_branch_commit_dates(branches, meta_ids, mdb),
-            load_merged_unreleased_pull_request_facts(
+            MergedPRFactsLoader.load_merged_unreleased_pull_request_facts(
                 prs, nonemax(releases[Release.published_at.key].nonemax(), time_to),
                 LabelFilter.empty(), matched_bys, default_branches, release_settings,
                 account, pdb),

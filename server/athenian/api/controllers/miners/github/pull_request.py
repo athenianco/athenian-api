@@ -27,7 +27,7 @@ from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_C
     DAG, fetch_precomputed_commit_history_dags, fetch_repository_commits_no_branch_dates
 from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_inrange
 from athenian.api.controllers.miners.github.precomputed_prs import \
-    discover_inactive_merged_unreleased_prs, load_merged_unreleased_pull_request_facts, \
+    discover_inactive_merged_unreleased_prs, MergedPRFactsLoader, \
     OpenPRFactsLoader, update_unreleased_prs
 from athenian.api.controllers.miners.github.release_match import PullRequestToReleaseMapper, \
     ReleaseToPullRequestMapper
@@ -442,7 +442,7 @@ class PullRequestMiner:
             subtasks = [cls.mappers.prs_to_releases(
                 merged_prs, releases, matched_bys, branches, default_branches, time_to,
                 dags, release_settings, account, meta_ids, mdb, pdb, cache),
-                load_merged_unreleased_pull_request_facts(
+                MergedPRFactsLoader.load_merged_unreleased_pull_request_facts(
                     prs.take(np.where(~merged_mask)[0]),
                     nonemax(releases[Release.published_at.key].nonemax(), time_to),
                     LabelFilter.empty(), matched_bys, default_branches, release_settings,
