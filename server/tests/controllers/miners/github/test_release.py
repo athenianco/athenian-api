@@ -18,8 +18,7 @@ from athenian.api.controllers.miners.github.commit import _empty_dag, _fetch_com
 from athenian.api.controllers.miners.github.dag_accelerated import extract_subdag, join_dags, \
     mark_dag_access, mark_dag_parents, partition_dag
 from athenian.api.controllers.miners.github.precomputed_prs import store_precomputed_done_facts
-from athenian.api.controllers.miners.github.pull_request import PullRequestFactsMiner, \
-    PullRequestMiner
+from athenian.api.controllers.miners.github.pull_request import PullRequestFactsMiner
 from athenian.api.controllers.miners.github.release_load import group_repos_by_release_match
 from athenian.api.controllers.miners.github.release_match import PullRequestToReleaseMapper
 from athenian.api.controllers.miners.github.release_mine import mine_releases, \
@@ -142,11 +141,11 @@ async def test_map_prs_to_releases_empty(branches, default_branches, dag, mdb, p
 @with_defer
 async def test_map_prs_to_releases_precomputed_released(
         branches, default_branches, dag, mdb, pdb, rdb, release_match_setting_tag,
-        release_loader):
+        release_loader, pr_miner):
     time_to = datetime(year=2019, month=8, day=2, tzinfo=timezone.utc)
     time_from = time_to - timedelta(days=2)
 
-    miner, _, _, _ = await PullRequestMiner.mine(
+    miner, _, _, _ = await pr_miner.mine(
         time_from.date(),
         time_to.date(),
         time_from,
