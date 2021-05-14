@@ -28,7 +28,7 @@ from athenian.api.controllers.miners.github.precomputed_releases import \
 from athenian.api.controllers.miners.github.release_load import \
     group_repos_by_release_match, ReleaseLoader
 from athenian.api.controllers.miners.github.release_match import \
-    _fetch_repository_first_commit_dates, _find_releases_for_matching_prs, load_commit_dags
+    load_commit_dags, ReleaseToPullRequestMapper
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.github.users import mine_user_avatars
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
@@ -142,13 +142,13 @@ async def mine_releases(repos: Iterable[str],
         releases_in_time_range = releases_in_time_range.take(np.where(
             releases_in_time_range[Release.repository_full_name.key].isin(missing_repos).values,
         )[0])
-        _, releases, _, _ = await _find_releases_for_matching_prs(
+        _, releases, _, _ = await ReleaseToPullRequestMapper._find_releases_for_matching_prs(
             missing_repos, branches, default_branches, time_from, time_to, False,
             settings, account, meta_ids, mdb, pdb, rdb, cache,
             releases_in_time_range=releases_in_time_range)
         tasks = [
             load_commit_dags(releases, account, meta_ids, mdb, pdb, cache),
-            _fetch_repository_first_commit_dates(
+            ReleaseToPullRequestMapper._fetch_repository_first_commit_dates(
                 missing_repos, account, meta_ids, mdb, pdb, cache),
         ]
         dags, first_commit_dates = await gather(*tasks, op="mine_releases/commits")

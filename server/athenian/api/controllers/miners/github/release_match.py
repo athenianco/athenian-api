@@ -217,11 +217,6 @@ class PullRequestToReleaseMapper:
         return labels
 
 
-# TODO: these have to be removed, these are here just for keeping backward-compatibility
-# without the need to re-write already all the places these functions are called
-map_prs_to_releases = PullRequestToReleaseMapper.map_prs_to_releases
-
-
 class ReleaseToPullRequestMapper:
     """Mapper from releases to pull requests."""
 
@@ -617,12 +612,3 @@ class ReleaseToPullRequestMapper:
         deleted_indexes = deleted_indexes[deleted_indexes < len(visited_hashes)]
         released_hashes = np.delete(visited_hashes, deleted_indexes)
         return released_hashes
-
-
-# TODO: these have to be removed, these are here just for keeping backward-compatibility
-# without the need to re-write already all the places these functions are called
-map_releases_to_prs = ReleaseToPullRequestMapper.map_releases_to_prs
-_fetch_repository_first_commit_dates = \
-    ReleaseToPullRequestMapper._fetch_repository_first_commit_dates
-_find_releases_for_matching_prs = ReleaseToPullRequestMapper._find_releases_for_matching_prs
-_find_dead_merged_prs = PullRequestToReleaseMapper._find_dead_merged_prs
