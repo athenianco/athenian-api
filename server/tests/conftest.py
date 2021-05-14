@@ -292,7 +292,13 @@ def slack():
 
 
 @pytest.fixture(scope="function")
-async def app(metadata_db, state_db, precomputed_db, persistentdata_db, slack) -> AthenianApp:
+def with_preloading():
+    return os.getenv("WITH_PRELOADING", "0") == "1"
+
+
+@pytest.fixture(scope="function")
+async def app(metadata_db, state_db, precomputed_db, persistentdata_db, slack,
+              with_preloading) -> AthenianApp:
     logging.getLogger("connexion.operation").setLevel("WARNING")
     app = AthenianApp(mdb_conn=metadata_db,
                       sdb_conn=state_db,
@@ -305,7 +311,7 @@ async def app(metadata_db, state_db, precomputed_db, persistentdata_db, slack) -
                       client_max_size=256 * 1024,
                       max_load=15,
                       with_pdb_schema_checks=False)
-    if os.getenv("WITH_PRELOADING", "0") == "1":
+    if with_preloading:
         app.on_dbs_connected(MemoryCachePreloader(None, False).preload)
     await app.ready()
     return app
