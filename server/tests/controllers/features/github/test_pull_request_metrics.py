@@ -325,15 +325,18 @@ def test_pull_request_metrics_counts_q(pr_samples, cls_q, cls):  # noqa: F811
 @with_defer
 async def test_calc_pull_request_metrics_line_github_cache_reset(
         metrics_calculator_factory, branches, default_branches,
-        mdb, pdb, rdb, cache, memcached, with_memcached,
+        mdb, pdb, rdb, cache, memcached, with_memcached, metrics_calculator_factory_memcached,
         release_match_setting_tag, with_mine_cache_wipe):
     if with_memcached:
         if not has_memcached:
             raise pytest.skip("no memcached")
         cache = memcached
 
-    metrics_calculator = metrics_calculator_factory(
-        1, (6366825,), with_cache=True, with_memcached=with_memcached)
+    if with_memcached:
+        factory = metrics_calculator_factory_memcached
+    else:
+        factory = metrics_calculator_factory
+    metrics_calculator = factory(1, (6366825,), with_cache=True)
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2019, month=10, day=1, tzinfo=timezone.utc)
     args = ([PullRequestMetricID.PR_CYCLE_TIME], [[date_from, date_to]], [0, 1], [],
