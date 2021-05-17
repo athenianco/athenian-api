@@ -3,10 +3,11 @@ from typing import List, Optional
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.calculated_linear_metric_values import \
     CalculatedLinearMetricValues
+from athenian.api.models.web.granularity import GranularityMixin
 from athenian.api.models.web.jira_filter_with import JIRAFilterWith
 
 
-class CalculatedJIRAMetricValues(Model):
+class CalculatedJIRAMetricValues(Model, GranularityMixin):
     """Calculated JIRA metrics for a specific granularity."""
 
     openapi_types = {
@@ -39,33 +40,6 @@ class CalculatedJIRAMetricValues(Model):
         self._jira_label = jira_label
         self._with_ = with_
         self._values = values
-
-    @property
-    def granularity(self) -> str:
-        """Gets the granularity of this CalculatedJIRAMetricValues.
-
-        How often the metrics are reported. The value must satisfy the following regular \
-        expression: /^(([1-9]\\d* )?(day|week|month|year)|all)$/. \"all\" produces a single \
-        interval [`date_from`, `date_to`].
-
-        :return: The granularity of this CalculatedJIRAMetricValues.
-        """
-        return self._granularity
-
-    @granularity.setter
-    def granularity(self, granularity: str):
-        """Sets the granularity of this CalculatedJIRAMetricValues.
-
-        How often the metrics are reported. The value must satisfy the following regular
-        expression: /^(([1-9]\\d* )?(day|week|month|year)|all)$/. \"all\" produces a single
-        interval [`date_from`, `date_to`].
-
-        :param granularity: The granularity of this CalculatedJIRAMetricValues.
-        """
-        if granularity is None:
-            raise ValueError("Invalid value for `granularity`, must not be `None`")
-
-        self._granularity = granularity
 
     @property
     def jira_label(self) -> Optional[str]:

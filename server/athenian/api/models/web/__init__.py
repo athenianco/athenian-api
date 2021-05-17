@@ -61,7 +61,7 @@ from athenian.api.models.web.generic_error import BadRequestError, DatabaseConfl
     ForbiddenError, GenericError, NotFoundError, ServerNotImplementedError, TooManyRequestsError
 from athenian.api.models.web.get_pull_requests_request import GetPullRequestsRequest
 from athenian.api.models.web.get_releases_request import GetReleasesRequest
-from athenian.api.models.web.granularity import Granularity
+from athenian.api.models.web.granularity import Granularity, GranularityMixin
 from athenian.api.models.web.histogram_definition import HistogramDefinition
 from athenian.api.models.web.histogram_scale import HistogramScale
 from athenian.api.models.web.included_jira_issues import IncludedJIRAIssues

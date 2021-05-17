@@ -24,7 +24,7 @@ async def get_calculators_for_account(
     instrument: Optional[Dict[str, str]] = None,
     base_module: Optional[str] = "athenian.api.experiments",
 ) -> Dict[str, MetricEntriesCalculator]:
-    """Get the metrics calculator function for the given user."""
+    """Get the species calculator function for the given account."""
     calcs = await gather(*(_get_calculator_for_account(
         s, account_id, meta_ids, god_id, sdb, mdb, pdb, rdb, cache,
         instrument=instrument, base_module=base_module)

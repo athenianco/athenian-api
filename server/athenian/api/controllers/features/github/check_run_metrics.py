@@ -17,7 +17,7 @@ from athenian.api.models.web import CodeCheckMetricID
 
 metric_calculators: Dict[str, Type[MetricCalculator]] = {}
 histogram_calculators: Dict[str, Type[MetricCalculator]] = {}
-register_metric = make_register_metric(metric_calculators, None)
+register_metric = make_register_metric(metric_calculators, histogram_calculators)
 
 
 class CheckRunMetricCalculatorEnsemble(MetricCalculatorEnsemble):
@@ -351,6 +351,7 @@ class SuitesPerPRCounter(AverageMetricCalculator[float]):
 
     may_have_negative_values = False
     dtype = float
+    has_nan = True
 
     def _analyze(self,
                  facts: pd.DataFrame,
@@ -387,7 +388,7 @@ class SuitesPerPRCounter(AverageMetricCalculator[float]):
             &
             (facts[pull_request_closed_column].values >= min_times[:, None])
         )
-        result = np.zeros((len(min_times), len(facts)), dtype=np.float32)
+        result = np.full((len(min_times), len(facts)), np.nan, dtype=np.float32)
         result[:, first_pr_encounters] = pr_suite_counts
         result[~mask_pr_times] = None
         return result

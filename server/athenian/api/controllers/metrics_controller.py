@@ -11,6 +11,7 @@ from athenian.api.controllers.account import get_metadata_account_ids
 from athenian.api.controllers.calculator_selector import get_calculators_for_account
 from athenian.api.controllers.datetime_utils import split_to_time_intervals
 from athenian.api.controllers.features.code import CodeStats
+from athenian.api.controllers.features.entries import MetricEntriesCalculator
 from athenian.api.controllers.jira import get_jira_installation, get_jira_installation_or_none
 from athenian.api.controllers.miners.access_classes import access_classes, AccessChecker
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
@@ -87,11 +88,7 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
 
     release_settings, calculators = await gather(
         Settings.from_request(request, filt.account).list_release_matches(repos),
-        get_calculators_for_account(
-            {s for s, _ in filters}, filt.account, meta_ids, getattr(request, "god_id", None),
-            request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
-            instrument=request.app["metrics_calculator"].get(),
-        ),
+        get_calculators_for_request({s for s, _ in filters}, filt.account, meta_ids, request),
     )
 
     @sentry_span
@@ -133,6 +130,19 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
         for service, (repos, withgroups, labels, jira, for_set) in filters
     ))
     return model_response(met)
+
+
+async def get_calculators_for_request(services: Iterable[str],
+                                      account: int,
+                                      meta_ids: Tuple[int, ...],
+                                      request: AthenianWebRequest,
+                                      ) -> Dict[str, MetricEntriesCalculator]:
+    """Get the metrics calculator species for the given account."""
+    return await get_calculators_for_account(
+        services, account, meta_ids, getattr(request, "god_id", None),
+        request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
+        instrument=request.app["metrics_calculator"].get(),
+    )
 
 
 async def compile_filters_prs(for_sets: List[ForSet],
@@ -217,11 +227,11 @@ async def _compile_filters_devs(for_sets: List[ForSetDevelopers],
     return filters, all_repos
 
 
-async def _compile_filters_checks(for_sets: List[ForSetCodeChecks],
-                                  request: AthenianWebRequest,
-                                  account: int,
-                                  meta_ids: Tuple[int, ...],
-                                  ) -> List[FilterChecks]:
+async def compile_filters_checks(for_sets: List[ForSetCodeChecks],
+                                 request: AthenianWebRequest,
+                                 account: int,
+                                 meta_ids: Tuple[int, ...],
+                                 ) -> List[FilterChecks]:
     """
     Build the list of filters for a given list of ForSetCodeChecks'.
 
@@ -349,11 +359,8 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
         filt.date_from, filt.date_to, filt.granularity, filt.timezone)
     with_author = [s.rsplit("/", 1)[1] for s in (filt.with_author or [])]
     with_committer = [s.rsplit("/", 1)[1] for s in (filt.with_committer or [])]
-    calculator = (await get_calculators_for_account(
-        ["github"], filt.account, meta_ids, getattr(request, "god_id", None),
-        request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
-        instrument=request.app["metrics_calculator"].get(),
-    ))["github"]
+    calculator = (await get_calculators_for_request(
+        ["github"], filt.account, meta_ids, request))["github"]
     stats = await calculator.calc_code_metrics_github(
         FilterCommitsProperty.BYPASSING_PRS, time_intervals, repos, with_author,
         with_committer)  # type: List[CodeStats]
@@ -401,11 +408,8 @@ async def calc_metrics_developers(request: AthenianWebRequest, body: dict) -> we
     tasks = []
     for_sets = []
 
-    calculators = await get_calculators_for_account(
-        {s for s, _ in filters}, filt.account, meta_ids, getattr(request, "god_id", None),
-        request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
-        instrument=request.app["metrics_calculator"].get(),
-    )
+    calculators = await get_calculators_for_request(
+        {s for s, _ in filters}, filt.account, meta_ids, request)
 
     for service, (repos, devs, labels, jira, for_set) in filters:
         if for_set.aggregate_devgroups:
@@ -488,11 +492,7 @@ async def calc_metrics_releases(request: AthenianWebRequest, body: dict) -> web.
     tasks = [
         Settings.from_request(request, filt.account).list_release_matches(repos),
         get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
-        get_calculators_for_account(
-            grouped_repos.keys(), filt.account, meta_ids, getattr(request, "god_id", None),
-            request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
-            instrument=request.app["metrics_calculator"].get(),
-        ),
+        get_calculators_for_request(grouped_repos.keys(), filt.account, meta_ids, request),
     ]
     release_settings, jira_ids, calculators = await gather(*tasks)
     met = []
@@ -558,7 +558,7 @@ async def calc_metrics_code_checks(request: AthenianWebRequest, body: dict) -> w
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
-    filters = await _compile_filters_checks(filt.for_, request, filt.account, meta_ids)
+    filters = await compile_filters_checks(filt.for_, request, filt.account, meta_ids)
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
     met = CalculatedCodeCheckMetrics()
@@ -570,11 +570,8 @@ async def calc_metrics_code_checks(request: AthenianWebRequest, body: dict) -> w
     met.metrics = filt.metrics
     met.split_by_check_runs = filt.split_by_check_runs
     met.calculated = []
-    calculators = await get_calculators_for_account(
-        {s for s, _ in filters}, filt.account, meta_ids, getattr(request, "god_id", None),
-        request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
-        instrument=request.app["metrics_calculator"].get(),
-    )
+    calculators = await get_calculators_for_request(
+        {s for s, _ in filters}, filt.account, meta_ids, request)
 
     @sentry_span
     async def calculate_for_set_metrics(service, repos, pusher_groups, jira, for_set):
@@ -584,13 +581,13 @@ async def calc_metrics_code_checks(request: AthenianWebRequest, body: dict) -> w
                 filt.metrics, time_intervals, filt.quantiles or (0, 1),
                 repos, pusher_groups, filt.split_by_check_runs, jira)
         mrange = range(len(met.metrics))
-        for ca_group_index, pushers_group in enumerate(metric_values):
+        for pushers_group_index, pushers_group in enumerate(metric_values):
             for repos_group_index, repos_group in enumerate(pushers_group):
-                my_suite_counts = group_suite_counts[ca_group_index, repos_group_index]
+                my_suite_counts = group_suite_counts[pushers_group_index, repos_group_index]
                 total_group_suites = my_suite_counts.sum()
                 for suite_size_group_index, suite_size_group in enumerate(repos_group):
                     group_for_set = for_set \
-                        .select_pushers_group(ca_group_index) \
+                        .select_pushers_group(pushers_group_index) \
                         .select_repogroup(repos_group_index)  # type: ForSetCodeChecks
                     if filt.split_by_check_runs:
                         suite_size = suite_sizes[suite_size_group_index]

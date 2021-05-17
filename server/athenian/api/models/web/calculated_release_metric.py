@@ -2,11 +2,12 @@ from typing import Dict, List, Optional
 
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.calculated_linear_metric_values import CalculatedLinearMetricValues
+from athenian.api.models.web.granularity import GranularityMixin
 from athenian.api.models.web.release_metric_id import ReleaseMetricID
 from athenian.api.models.web.release_with import ReleaseWith
 
 
-class CalculatedReleaseMetric(Model):
+class CalculatedReleaseMetric(Model, GranularityMixin):
     """Response from `/metrics/releases`."""
 
     openapi_types = {
@@ -132,34 +133,6 @@ class CalculatedReleaseMetric(Model):
                     i, metric, list(ReleaseMetricID)))
 
         self._metrics = metrics
-
-    @property
-    def granularity(self) -> str:
-        """Gets the granularity of this CalculatedReleaseMetric.
-
-        How often the metrics are reported. The value must satisfy the following regular
-        expression: /^(([1-9]\\d* )?(day|week|month|year)|all)$/. \"all\" produces a single
-        interval [`date_from`, `date_to`].
-
-        :return: The granularity of this CalculatedReleaseMetric.
-        """
-        return self._granularity
-
-    @granularity.setter
-    def granularity(self, granularity: str):
-        """Sets the granularity of this CalculatedReleaseMetric.
-
-        How often the metrics are reported. The value must satisfy the following regular
-        expression: /^(([1-9]\\d* )?(day|week|month|year)|all)$/. \"all\" produces a single
-        interval [`date_from`, `date_to`].
-
-        :param granularity: The granularity of this CalculatedReleaseMetric.
-        :type granularity: str
-        """
-        if granularity is None:
-            raise ValueError("Invalid value for `granularity`, must not be `None`")
-
-        self._granularity = granularity
 
     @property
     def values(self) -> List[CalculatedLinearMetricValues]:

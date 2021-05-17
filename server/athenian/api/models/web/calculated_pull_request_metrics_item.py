@@ -4,10 +4,10 @@ from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.calculated_linear_metric_values import \
     CalculatedLinearMetricValues
 from athenian.api.models.web.for_set import ForSet
-from athenian.api.models.web.granularity import Granularity
+from athenian.api.models.web.granularity import GranularityMixin
 
 
-class CalculatedPullRequestMetricsItem(Model):
+class CalculatedPullRequestMetricsItem(Model, GranularityMixin):
     """Series of calculated metrics for a specific set of repositories and developers."""
 
     openapi_types = {
@@ -52,28 +52,6 @@ class CalculatedPullRequestMetricsItem(Model):
             raise ValueError("Invalid value for `for`, must not be `None`")
 
         self._for_ = for_
-
-    @property
-    def granularity(self) -> str:
-        """Gets the granularity of this PullRequestMetricsRequest.
-
-        :return: The granularity of this PullRequestMetricsRequest.
-        """
-        return self._granularity
-
-    @granularity.setter
-    def granularity(self, granularity: str):
-        """Sets the granularity of this PullRequestMetricsRequest.
-
-        :param granularity: The granularity of this PullRequestMetricsRequest.
-        """
-        if granularity is None:
-            raise ValueError("Invalid value for `granularity`, must not be `None`")
-        if not Granularity.format.match(granularity):
-            raise ValueError('Invalid value for `granularity`: "%s" does not match /%s/' %
-                             granularity, Granularity.format.pattern)
-
-        self._granularity = granularity
 
     @property
     def values(self):

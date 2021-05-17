@@ -3,7 +3,8 @@ import itertools
 import pytest
 
 from athenian.api.cache import CACHE_VAR_NAME
-from athenian.api.models.web import CalculatedPullRequestHistogram, PullRequestMetricID
+from athenian.api.models.web import CalculatedPullRequestHistogram, CodeCheckMetricID, \
+    PullRequestMetricID
 from athenian.api.serialization import FriendlyJson
 
 
@@ -74,29 +75,30 @@ async def test_calc_histogram_prs_smoke(
         }]
 
 
-@pytest.mark.parametrize(
-    "metric, date_to, bins, scale, ticks, quantiles, account, status",
-    [
-        (PullRequestMetricID.PR_OPENED, "2020-01-23", 10, "log", None, [0, 1], 1, 400),
-        (PullRequestMetricID.PR_CYCLE_TIME, "2020-01-23", -1, "log", None, [0, 1], 1, 400),
-        (PullRequestMetricID.PR_CYCLE_TIME, "2020-01-23", 10, "xxx", None, [0, 1], 1, 400),
-        (PullRequestMetricID.PR_CYCLE_TIME, "2015-01-23", 10, "linear", None, [0, 1], 1, 400),
-        (PullRequestMetricID.PR_CYCLE_TIME, "2020-01-23", 10, "linear", None, [0, 1], 2, 422),
-        (PullRequestMetricID.PR_CYCLE_TIME, "2020-01-23", 10, "linear", None, [0, 1], 4, 404),
-        (PullRequestMetricID.PR_CYCLE_TIME, "2015-11-23", 10, "linear", None, [-1, 1], 1, 400),
-        (PullRequestMetricID.PR_CYCLE_TIME, "2015-11-23", None, None, None, [0, 1], 1, 200),
-        (PullRequestMetricID.PR_CYCLE_TIME, "2015-11-23", None, None, [], [0, 1], 1, 400),
-    ],
-)
+_gg = "github.com/src-d/go-git"
+
+
+@pytest.mark.parametrize("metric, date_to, bins, scale, ticks, quantiles, account, repo, status", [
+    (PullRequestMetricID.PR_OPENED, "2020-01-23", 10, "log", None, [0, 1], 1, _gg, 400),
+    (PullRequestMetricID.PR_CYCLE_TIME, "2020-01-23", -1, "log", None, [0, 1], 1, _gg, 400),
+    (PullRequestMetricID.PR_CYCLE_TIME, "2020-01-23", 10, "xxx", None, [0, 1], 1, _gg, 400),
+    (PullRequestMetricID.PR_CYCLE_TIME, "2015-01-23", 10, "linear", None, [0, 1], 1, _gg, 400),
+    (PullRequestMetricID.PR_CYCLE_TIME, "2020-01-23", 10, "linear", None, [0, 1], 2, _gg, 422),
+    (PullRequestMetricID.PR_CYCLE_TIME, "2020-01-23", 10, "linear", None, [0, 1], 4, _gg, 404),
+    (PullRequestMetricID.PR_CYCLE_TIME, "2015-11-23", 10, "linear", None, [-1, 1], 1, _gg, 400),
+    (PullRequestMetricID.PR_CYCLE_TIME, "2015-11-23", None, None, None, [0, 1], 1, _gg, 200),
+    (PullRequestMetricID.PR_CYCLE_TIME, "2015-11-23", None, None, [], [0, 1], 1, _gg, 400),
+    ("xxx", "2015-11-23", None, None, None, [0, 1], 1, _gg, 400),
+    (PullRequestMetricID.PR_CYCLE_TIME, "2015-11-23", None, None, None, [0, 1], 1,
+     "github.com/athenianco/athenian-api", 403),
+])
 async def test_calc_histogram_prs_nasty_input(
-        client, headers, metric, date_to, bins, scale, ticks, quantiles, account, status):
+        client, headers, metric, date_to, bins, scale, ticks, quantiles, account, repo, status):
     body = {
         "for": [
             {
                 "with": {},
-                "repositories": [
-                    "github.com/src-d/go-git",
-                ],
+                "repositories": [repo],
             },
         ],
         "histograms": [{
@@ -329,3 +331,118 @@ async def test_calc_histogram_prs_lines(client, headers):
         "frequencies": [8, 4, 1, 4, 7, 2],
         "interquartile": {"left": "60s", "right": "49999s"},
     }
+
+
+async def test_calc_histogram_code_checks_smoke(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "histograms": [{
+            "metric": CodeCheckMetricID.SUITES_PER_PR,
+            "ticks": [0, 1, 2, 3, 4, 5, 10, 50],
+        }],
+        "for": [{
+            "repositories": ["github.com/src-d/go-git"],
+        }],
+    }
+    response = await client.request(
+        method="POST", path="/v1/histograms/code_checks", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + rbody
+    rbody = FriendlyJson.loads(rbody)
+    assert rbody == [{
+        "metric": "chk-suites-per-pr", "scale": "linear",
+        "ticks": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 50.0, 62.0],
+        "frequencies": [0, 68, 137, 8, 14, 15, 4, 1],
+        "interquartile": {"left": 1.0, "right": 2.0},
+        "for": {"repositories": ["github.com/src-d/go-git"]},
+    }]
+
+
+@pytest.mark.parametrize("metric, account, repo, status", [
+    ("xxx", 1, _gg, 400),
+    (CodeCheckMetricID.SUITES_COUNT, 1, _gg, 400),
+    (CodeCheckMetricID.SUITES_PER_PR, 2, _gg, 422),
+    (CodeCheckMetricID.SUITES_PER_PR, 3, _gg, 404),
+    (CodeCheckMetricID.SUITES_PER_PR, 1, "github.com/athenianco/athenian-api", 403),
+])
+async def test_calc_histogram_code_checks_nasty_input(
+        client, headers, metric, account, repo, status):
+    body = {
+        "account": account,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "histograms": [{
+            "metric": metric,
+        }],
+        "for": [{
+            "repositories": [repo],
+        }],
+    }
+    response = await client.request(
+        method="POST", path="/v1/histograms/code_checks", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == status, "Response body is : " + rbody
+
+
+async def test_calc_histogram_code_checks_split(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "histograms": [{
+            "metric": CodeCheckMetricID.SUITES_PER_PR,
+            "ticks": [0, 1, 2, 3, 4, 5, 10, 50],
+        }],
+        "for": [{
+            "repositories": ["github.com/src-d/go-git"],
+        }],
+        "split_by_check_runs": True,
+    }
+    response = await client.request(
+        method="POST", path="/v1/histograms/code_checks", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + rbody
+    rbody = FriendlyJson.loads(rbody)
+    assert rbody == [
+        {"metric": "chk-suites-per-pr", "scale": "linear",
+         "ticks": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 50.0],
+         "frequencies": [0, 1, 4, 0, 1, 0, 0],
+         "interquartile": {"left": 2.0, "right": 2.0},
+         "for": {"repositories": ["github.com/src-d/go-git"]}, "check_runs": 1,
+         "suites_ratio": 0.28132118451025057},
+        {"metric": "chk-suites-per-pr", "scale": "linear",
+         "ticks": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 50.0],
+         "frequencies": [0, 3, 29, 0, 1, 3, 1],
+         "interquartile": {"left": 2.0, "right": 2.0},
+         "for": {"repositories": ["github.com/src-d/go-git"]}, "check_runs": 2,
+         "suites_ratio": 0.13325740318906606},
+        {"metric": "chk-suites-per-pr", "scale": "linear",
+         "ticks": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 50.0, 62.0],
+         "frequencies": [0, 19, 93, 1, 10, 8, 1, 1],
+         "interquartile": {"left": 2.0, "right": 2.0},
+         "for": {"repositories": ["github.com/src-d/go-git"]}, "check_runs": 3,
+         "suites_ratio": 0.39863325740318906},
+        {"metric": "chk-suites-per-pr", "scale": "linear",
+         "ticks": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 50.0],
+         "frequencies": [0, 45, 10, 7, 2, 4, 1],
+         "interquartile": {"left": 1.0, "right": 2.0},
+         "for": {"repositories": ["github.com/src-d/go-git"]}, "check_runs": 4,
+         "suites_ratio": 0.16970387243735763},
+        {"metric": "chk-suites-per-pr", "scale": "linear",
+         "ticks": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 50.0],
+         "frequencies": [0, 0, 1, 0, 0, 0, 0],
+         "interquartile": {"left": 2.0, "right": 2.0},
+         "for": {"repositories": ["github.com/src-d/go-git"]}, "check_runs": 5,
+         "suites_ratio": 0.00683371298405467},
+        {"metric": "chk-suites-per-pr", "scale": "linear",
+         "ticks": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 50.0],
+         "frequencies": [0, 0, 0, 0, 0, 0, 1],
+         "interquartile": {"left": 12.0, "right": 12.0},
+         "for": {"repositories": ["github.com/src-d/go-git"]}, "check_runs": 6,
+         "suites_ratio": 0.010250569476082005},
+    ]

@@ -8,8 +8,8 @@ import pytest
 from athenian.api.controllers.miners.github import developer
 from athenian.api.models.web import CalculatedCodeCheckMetrics, CalculatedDeveloperMetrics, \
     CalculatedLinearMetricValues, CalculatedPullRequestMetrics, CalculatedReleaseMetric, \
-    CodeBypassingPRsMeasurement, \
-    CodeCheckMetricID, DeveloperMetricID, PullRequestMetricID, PullRequestWith, ReleaseMetricID
+    CodeBypassingPRsMeasurement, CodeCheckMetricID, DeveloperMetricID, PullRequestMetricID, \
+    PullRequestWith, ReleaseMetricID
 from athenian.api.serialization import FriendlyJson
 
 
