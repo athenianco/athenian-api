@@ -6,7 +6,7 @@ from athenian.api.models.web.quantiles import validate_quantiles
 
 
 class GranularitiesMixin:
-    """Define `granularities` and `quantiles`."""
+    """Implement `granularities` property."""
 
     @property
     def granularities(self) -> List[str]:
@@ -37,7 +37,31 @@ class GranularitiesMixin:
         self._granularities = granularities
 
 
-class CommonMetricsProperties(Model, GranularitiesMixin):
+class QuantilesMixin:
+    """Implement `quantiles` property."""
+
+    @property
+    def quantiles(self) -> Optional[List[float]]:
+        """Gets the quantiles of this CommonMetricsProperties.
+
+        :return: The quantiles of this CommonMetricsProperties.
+        """
+        return self._quantiles
+
+    @quantiles.setter
+    def quantiles(self, quantiles: Optional[List[float]]):
+        """Sets the quantiles of this CommonMetricsProperties.
+
+        :param quantiles: The quantiles of this CommonMetricsProperties.
+        """
+        if quantiles is None:
+            self._quantiles = None
+            return
+        validate_quantiles(quantiles)
+        self._quantiles = quantiles
+
+
+class CommonMetricsProperties(Model, GranularitiesMixin, QuantilesMixin):
     """Define `account`, `date_from`, `date_to`, and `timezone` properties."""
 
     openapi_types = {
@@ -63,24 +87,4 @@ class CommonMetricsProperties(Model, GranularitiesMixin):
         :param quantiles: The quantiles of this CommonMetricsProperties.
         """
         self._granularities = granularities
-        self._quantiles = quantiles
-
-    @property
-    def quantiles(self) -> Optional[List[float]]:
-        """Gets the quantiles of this CommonMetricsProperties.
-
-        :return: The quantiles of this CommonMetricsProperties.
-        """
-        return self._quantiles
-
-    @quantiles.setter
-    def quantiles(self, quantiles: Optional[List[float]]):
-        """Sets the quantiles of this CommonMetricsProperties.
-
-        :param quantiles: The quantiles of this CommonMetricsProperties.
-        """
-        if quantiles is None:
-            self._quantiles = None
-            return
-        validate_quantiles(quantiles)
         self._quantiles = quantiles

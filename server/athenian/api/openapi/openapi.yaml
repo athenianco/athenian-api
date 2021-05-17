@@ -744,7 +744,8 @@ paths:
               schema:
                 format: binary
                 type: string
-          description: Uncompressed ZIP archive with binary files in the configured format.
+          description: Uncompressed ZIP archive with binary files in the configured
+            format.
         400:
           content:
             application/json:
@@ -919,8 +920,8 @@ paths:
       security:
       - bearerAuth: []
       - apiKeyAuth: []
-      summary: Calculate histograms on continuous integration runs, such as GitHub Actions,
-        Jenkins, Circle, etc.
+      summary: Calculate histograms on continuous integration runs, such as GitHub
+        Actions, Jenkins, Circle, etc.
       tags:
       - histograms
 # {% if False %}
@@ -7433,7 +7434,8 @@ components:
       type: object
     CodeCheckMetricsRequest:
       additionalProperties: false
-      description: Request for calculating metrics on top of code check runs (CI) data.
+      description: Request for calculating metrics on top of code check runs (CI)
+        data.
       example:
         for:
         - repositories:
@@ -7519,8 +7521,8 @@ components:
           $ref: '#/components/schemas/IndexedGroups'
         pushers:
           description: Check runs must be triggered by commits pushed by these people.
-            When it is impossible to determine who pushed, e.g. in legacy API based checks,
-            they are committers.
+            When it is impossible to determine who pushed, e.g. in legacy API based
+            checks, they are committers.
           items:
             $ref: '#/components/schemas/DeveloperID'
           type: array
@@ -7536,8 +7538,8 @@ components:
           type: array
         jira:
           allOf:
-          - description: Analyze only those check runs that belong to PRs mapped to JIRA issues
-              that satisfy this filter.
+          - description: Analyze only those check runs that belong to PRs mapped to
+              JIRA issues that satisfy this filter.
           - $ref: '#/components/schemas/JIRAFilter'
       required:
       - repositories
@@ -7575,8 +7577,8 @@ components:
       type: string
     CalculatedCodeCheckMetrics:
       additionalProperties: false
-      description: Response from `/metrics/code_checks`. The dates start from `date_from` and end
-        earlier or equal to `date_to`.
+      description: Response from `/metrics/code_checks`. The dates start from `date_from`
+        and end earlier or equal to `date_to`.
       example:
         metrics:
         - chk-suites-count
@@ -7657,13 +7659,13 @@ components:
         granularity:
           $ref: '#/components/schemas/Granularity'
         check_runs:
-          description: We calculated metrics for check suites with this number of runs.
-            Not null only if the user specified `split_by_check_runs = true`.
+          description: We calculated metrics for check suites with this number of
+            runs. Not null only if the user specified `split_by_check_runs = true`.
           type: integer
         suites_ratio:
-          description: Number of check suites with `check_runs` number of check runs divided
-            by the overall number of check suites. Not null only if the user specified
-            `split_by_check_runs = true`.
+          description: Number of check suites with `check_runs` number of check runs
+            divided by the overall number of check suites. Not null only if the user
+            specified `split_by_check_runs = true`.
           format: float
           maximum: 1
           minimum: 0
@@ -7686,8 +7688,8 @@ components:
           - github.com/athenianco/athenian-webapp
           - github.com/athenianco/athenian-api
           pushers:
-            - github.com/vmarkovtsev
-            - github.com/dpordomingo
+          - github.com/vmarkovtsev
+          - github.com/dpordomingo
         histograms:
         - scale: log
           metric: chk-suite-time

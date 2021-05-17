@@ -2,6 +2,7 @@ from athenian.api.models.web.account import Account
 from athenian.api.models.web.account_user_change_request import AccountUserChangeRequest, \
     UserChangeStatus
 from athenian.api.models.web.base_model_ import AllOf, Enum, Model, Slots
+from athenian.api.models.web.calculated_code_check_histogram import CalculatedCodeCheckHistogram
 from athenian.api.models.web.calculated_code_check_metrics import CalculatedCodeCheckMetrics
 from athenian.api.models.web.calculated_code_check_metrics_item import \
     CalculatedCodeCheckMetricsItem
@@ -18,6 +19,8 @@ from athenian.api.models.web.calculated_pull_request_metrics_item import \
     CalculatedPullRequestMetricsItem
 from athenian.api.models.web.calculated_release_metric import CalculatedReleaseMetric
 from athenian.api.models.web.code_bypassing_p_rs_measurement import CodeBypassingPRsMeasurement
+from athenian.api.models.web.code_check_histogram_definition import CodeCheckHistogramDefinition
+from athenian.api.models.web.code_check_histograms_request import CodeCheckHistogramsRequest
 from athenian.api.models.web.code_check_metric_id import CodeCheckMetricID
 from athenian.api.models.web.code_check_metrics_request import CodeCheckMetricsRequest
 from athenian.api.models.web.code_filter import CodeFilter
@@ -27,7 +30,7 @@ from athenian.api.models.web.commit_signature import CommitSignature
 from athenian.api.models.web.commits_list import CommitsList
 from athenian.api.models.web.common_filter_properties import CommonFilterProperties
 from athenian.api.models.web.common_metrics_properties import CommonMetricsProperties, \
-    GranularitiesMixin
+    GranularitiesMixin, QuantilesMixin
 from athenian.api.models.web.contributor import Contributor
 from athenian.api.models.web.contributor_identity import ContributorIdentity
 from athenian.api.models.web.create_token_request import CreateTokenRequest
