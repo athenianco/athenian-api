@@ -940,7 +940,8 @@ async def test_store_merged_unreleased_pull_request_facts_smoke(
 
 @with_defer
 async def test_store_open_pull_request_facts_smoke(
-        mdb, pdb, rdb, release_match_setting_tag, open_prs_facts_loader):
+        mdb, pdb, rdb, release_match_setting_tag, open_prs_facts_loader,
+        with_preloading_enabled):
     prs, dfs, facts, _ = await _fetch_pull_requests(
         {"src-d/go-git": set(range(1000, 1010))},
         release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, None)
@@ -966,6 +967,8 @@ async def test_store_open_pull_request_facts_smoke(
         true_dict[pr.pr[PullRequest.node_id.key]] = f
     dfs.prs[PullRequest.closed_at.key] = None
     await store_open_pull_request_facts(zip(prs, samples), 1, pdb)
+    if with_preloading_enabled:
+        await pdb.cache.refresh()
     ghoprf = GitHubOpenPullRequestFacts
     rows = await pdb.fetch_all(select([ghoprf]))
     assert len(rows) == 10

@@ -500,7 +500,7 @@ async def test_load_releases_branches_empty(branches, default_branches, mdb, pdb
 @with_defer
 async def test_load_releases_tag_or_branch_dates(
         branches, default_branches, release_match_setting_tag, mdb, pdb, rdb, cache,
-        time_from, n, pretag, release_loader):
+        time_from, n, pretag, release_loader, with_preloading_enabled):
     time_to = datetime(year=2017, month=12, day=8, tzinfo=timezone.utc)
 
     if pretag:
@@ -518,6 +518,8 @@ async def test_load_releases_tag_or_branch_dates(
             cache,
         )
         await wait_deferred()
+        if with_preloading_enabled:
+            await pdb.cache.refresh()
 
     settings = ReleaseSettings({"github.com/src-d/go-git": ReleaseMatchSetting(
         branches="master", tags=".*", match=ReleaseMatch.tag_or_branch)})
@@ -535,6 +537,8 @@ async def test_load_releases_tag_or_branch_dates(
         cache,
     )
     await wait_deferred()
+    if with_preloading_enabled:
+        await pdb.cache.refresh()
     match_groups, _, repos_count = group_repos_by_release_match(
         ["src-d/go-git"], default_branches, settings)
     spans = (await release_loader.fetch_precomputed_release_match_spans(
@@ -1375,7 +1379,8 @@ async def test_mine_releases_cache(
 @with_defer
 async def test_precomputed_releases_low_level(
         mdb, pdb, rdb, branches, default_branches,
-        release_match_setting_tag, release_match_setting_branch, settings_index, release_loader):
+        release_match_setting_tag, release_match_setting_branch, settings_index, release_loader,
+        with_preloading_enabled):
     settings = [release_match_setting_branch, release_match_setting_tag][settings_index]
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
@@ -1383,6 +1388,8 @@ async def test_precomputed_releases_low_level(
         ["src-d/go-git"], branches, default_branches, time_from, time_to,
         settings, 1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
+    if with_preloading_enabled:
+        await pdb.cache.refresh()
     prels = await release_loader._fetch_precomputed_releases(
         {ReleaseMatch(settings_index): {["master", ".*"][settings_index]: ["src-d/go-git"]}},
         time_from, time_to, 1, pdb)
@@ -1397,7 +1404,8 @@ async def test_precomputed_releases_low_level(
 @with_defer
 async def test_precomputed_releases_ambiguous(
         mdb, pdb, rdb, branches, default_branches,
-        release_match_setting_tag, release_match_setting_branch, release_loader):
+        release_match_setting_tag, release_match_setting_branch, release_loader,
+        with_preloading_enabled):
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
     releases_tag, _ = await release_loader.load_releases(
@@ -1407,6 +1415,8 @@ async def test_precomputed_releases_ambiguous(
         ["src-d/go-git"], branches, default_branches, time_from, time_to,
         release_match_setting_branch, 1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
+    if with_preloading_enabled:
+        await pdb.cache.refresh()
     prels = await release_loader._fetch_precomputed_releases(
         {ReleaseMatch.tag: {".*": ["src-d/go-git"]},
          ReleaseMatch.branch: {"master": ["src-d/go-git"]}},
@@ -1419,7 +1429,7 @@ async def test_precomputed_releases_ambiguous(
     assert_frame_equal(releases_tag, prels)
 
 
-async def test_precomputed_release_timespans(pdb, release_loader):
+async def test_precomputed_release_timespans(pdb, release_loader, with_preloading_enabled):
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime.now(timezone.utc) - timedelta(days=100)
     mg1 = {ReleaseMatch.tag: {".*": ["src-d/go-git"]}}
@@ -1433,6 +1443,8 @@ async def test_precomputed_release_timespans(pdb, release_loader):
             await release_loader._store_precomputed_release_match_spans(
                 mg1, {"src-d/go-git": ReleaseMatch.tag},
                 time_from - timedelta(days=300), time_to + timedelta(days=200), 1, pdb_conn)
+    if with_preloading_enabled:
+        await pdb.cache.refresh()
     spans = await release_loader.fetch_precomputed_release_match_spans(
         {**mg1, **mg2}, 1, pdb)
     assert len(spans) == 1

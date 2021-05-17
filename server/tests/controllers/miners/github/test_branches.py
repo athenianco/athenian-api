@@ -12,11 +12,10 @@ async def test_extract_branches_zero(mdb, branch_miner):
         ["src-d/gitbase"], (6366825,), mdb, None)
     assert branches.empty
     assert defaults == {"src-d/gitbase": "master"}
-    async with mdb.connection() as conn:
-        branches, defaults = await branch_miner.extract_branches(
-            ["src-d/gitbase"], (6366825,), conn, None)
-        assert branches.empty
-        assert defaults == {"src-d/gitbase": "master"}
+    branches, defaults = await branch_miner.extract_branches(
+        ["src-d/gitbase"], (6366825,), mdb, None)
+    assert branches.empty
+    assert defaults == {"src-d/gitbase": "master"}
 
 
 async def test_extract_branches_trash(mdb, branch_miner):
@@ -44,11 +43,13 @@ async def test_extract_branches_cache(mdb, cache, branch_miner):
 
 
 @pytest.mark.flaky(reruns=5, reruns_delay=0.1 + random())
-async def test_extract_branches_main(mdb, branch_miner):
+async def test_extract_branches_main(mdb, branch_miner, with_preloading_enabled):
     await mdb.execute(update(Branch).where(Branch.branch_name == "master").values({
         Branch.is_default: False,
         Branch.branch_name: "main",
     }))
+    if with_preloading_enabled:
+        await mdb.cache.refresh()
     try:
         _, defaults = await branch_miner.extract_branches(["src-d/go-git"], (6366825,), mdb, None)
         assert defaults == {"src-d/go-git": "main"}
@@ -60,11 +61,13 @@ async def test_extract_branches_main(mdb, branch_miner):
 
 
 @pytest.mark.flaky(reruns=5, reruns_delay=0.1 + random())
-async def test_extract_branches_max_date(mdb, branch_miner):
+async def test_extract_branches_max_date(mdb, branch_miner, with_preloading_enabled):
     await mdb.execute(update(Branch).where(Branch.branch_name == "master").values({
         Branch.is_default: False,
         Branch.branch_name: "whatever_it_takes",
     }))
+    if with_preloading_enabled:
+        await mdb.cache.refresh()
     try:
         _, defaults = await branch_miner.extract_branches(["src-d/go-git"], (6366825,), mdb, None)
         assert defaults == {"src-d/go-git": "whatever_it_takes"}
@@ -76,12 +79,14 @@ async def test_extract_branches_max_date(mdb, branch_miner):
 
 
 @pytest.mark.flaky(reruns=5, reruns_delay=0.1 + random())
-async def test_extract_branches_only_one(mdb, branch_miner):
+async def test_extract_branches_only_one(mdb, branch_miner, with_preloading_enabled):
     branches = await mdb.fetch_all(select([Branch]).where(Branch.branch_name != "master"))
     await mdb.execute(update(Branch).where(Branch.branch_name == "master").values({
         Branch.is_default: False,
         Branch.branch_name: "whatever_it_takes",
     }))
+    if with_preloading_enabled:
+        await mdb.cache.refresh()
     try:
         await mdb.execute(delete(Branch).where(Branch.branch_name != "whatever_it_takes"))
         try:
