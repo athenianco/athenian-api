@@ -1,17 +1,16 @@
 from typing import List, Optional
 
-from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web.base_model_ import AllOf, Model
 from athenian.api.models.web.code_check_metric_id import CodeCheckMetricID
-from athenian.api.models.web.for_set_code_checks import ForSetCodeChecks
+from athenian.api.models.web.for_set_code_checks import _CalculatedCodeCheckCommon
 from athenian.api.models.web.histogram_scale import HistogramScale
 from athenian.api.models.web.interquartile import Interquartile
 
 
-class CalculatedCodeCheckHistogram(Model):
+class _CalculatedCodeCheckHistogram(Model):
     """Calculated histogram over code checks (CI)."""
 
     openapi_types = {
-        "for_": ForSetCodeChecks,
         "metric": str,
         "scale": str,
         "ticks": List[float],
@@ -20,7 +19,6 @@ class CalculatedCodeCheckHistogram(Model):
     }
 
     attribute_map = {
-        "for_": "for",
         "metric": "metric",
         "scale": "scale",
         "ticks": "ticks",
@@ -28,9 +26,10 @@ class CalculatedCodeCheckHistogram(Model):
         "interquartile": "interquartile",
     }
 
+    __enable_slots__ = False
+
     def __init__(
         self,
-        for_: Optional[ForSetCodeChecks] = None,
         metric: Optional[str] = None,
         scale: Optional[str] = None,
         ticks: Optional[List[float]] = None,
@@ -39,38 +38,17 @@ class CalculatedCodeCheckHistogram(Model):
     ):
         """CalculatedCodeCheckHistogram - a model defined in OpenAPI
 
-        :param for_: The for_ of this CalculatedCodeCheckHistogram.
         :param metric: The metric of this CalculatedCodeCheckHistogram.
         :param scale: The scale of this CalculatedCodeCheckHistogram.
         :param ticks: The ticks of this CalculatedCodeCheckHistogram.
         :param frequencies: The frequencies of this CalculatedCodeCheckHistogram.
         :param interquartile: The interquartile of this CalculatedCodeCheckHistogram.
         """
-        self._for_ = for_
         self._metric = metric
         self._scale = scale
         self._ticks = ticks
         self._frequencies = frequencies
         self._interquartile = interquartile
-
-    @property
-    def for_(self) -> ForSetCodeChecks:
-        """Gets the for_ of this CalculatedCodeCheckHistogram.
-
-        :return: The for_ of this CalculatedCodeCheckHistogram.
-        """
-        return self._for_
-
-    @for_.setter
-    def for_(self, for_: ForSetCodeChecks):
-        """Sets the for_ of this CalculatedCodeCheckHistogram.
-
-        :param for_: The for_ of this CalculatedCodeCheckHistogram.
-        """
-        if for_ is None:
-            raise ValueError("Invalid value for `for_`, must not be `None`")
-
-        self._for_ = for_
 
     @property
     def metric(self) -> str:
@@ -180,3 +158,9 @@ class CalculatedCodeCheckHistogram(Model):
             raise ValueError("Invalid value for `interquartile`, must not be `None`")
 
         self._interquartile = interquartile
+
+
+CalculatedCodeCheckHistogram = AllOf(_CalculatedCodeCheckHistogram,
+                                     _CalculatedCodeCheckCommon,
+                                     name="CalculatedCodeCheckHistogram",
+                                     module=__name__)

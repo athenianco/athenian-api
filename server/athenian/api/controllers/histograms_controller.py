@@ -5,14 +5,13 @@ from aiohttp import web
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
 from athenian.api.controllers.account import get_metadata_account_ids
-from athenian.api.controllers.calculator_selector import get_calculators_for_account
 from athenian.api.controllers.features.histogram import HistogramParameters, Scale
-from athenian.api.controllers.metrics_controller import compile_filters_prs
+from athenian.api.controllers.metrics_controller import compile_filters_checks, \
+    compile_filters_prs, get_calculators_for_request
 from athenian.api.controllers.settings import Settings
-from athenian.api.models.web import InvalidRequestError
-from athenian.api.models.web.calculated_pull_request_histogram import \
-    CalculatedPullRequestHistogram, Interquartile
-from athenian.api.models.web.pull_request_histograms_request import PullRequestHistogramsRequest
+from athenian.api.models.web import CalculatedCodeCheckHistogram, CalculatedPullRequestHistogram, \
+    CodeCheckHistogramsRequest, ForSetCodeChecks, Interquartile, InvalidRequestError, \
+    PullRequestHistogramsRequest
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 
@@ -30,16 +29,11 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
     time_from, time_to = filt.resolve_time_from_and_to()
     release_settings, calculators = await gather(
         Settings.from_request(request, filt.account).list_release_matches(repos),
-        get_calculators_for_account(
-            {s for s, _ in filters}, filt.account, meta_ids, getattr(request, "god_id", None),
-            request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
-            instrument=request.app["metrics_calculator"].get(),
-        ),
+        get_calculators_for_request({s for s, _ in filters}, filt.account, meta_ids, request),
     )
     result = []
 
     async def calculate_for_set_histograms(service, repos, withgroups, labels, jira, for_set):
-        # for each filter, we find the functions to calculate the histograms
         defs = defaultdict(list)
         for h in filt.histograms:
             defs[HistogramParameters(
@@ -73,10 +67,10 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
                                 interquartile=Interquartile(*histogram.interquartile),
                             ))
 
-    tasks = []
-    for service, (repos, withgroups, labels, jira, for_set) in filters:
-        tasks.append(calculate_for_set_histograms(
-            service, repos, withgroups, labels, jira, for_set))
+    tasks = [
+        calculate_for_set_histograms(service, repos, withgroups, labels, jira, for_set)
+        for service, (repos, withgroups, labels, jira, for_set) in filters
+    ]
     await gather(*tasks)
     return model_response(result)
 
@@ -85,4 +79,64 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
 async def calc_histogram_code_checks(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate histograms on continuous integration runs, such as GitHub Actions, Jenkins, \
     Circle, etc."""
-    raise NotImplementedError
+    try:
+        filt = CodeCheckHistogramsRequest.from_dict(body)
+    except ValueError as e:
+        # for example, passing a date with day=32
+        return ResponseError(InvalidRequestError("?", detail=str(e))).response
+    meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
+    filters = await compile_filters_checks(filt.for_, request, filt.account, meta_ids)
+    time_from, time_to = filt.resolve_time_from_and_to()
+    calculators = await get_calculators_for_request(
+        {s for s, _ in filters}, filt.account, meta_ids, request)
+    result = []
+
+    async def calculate_for_set_histograms(service, repos, pusher_groups, jira, for_set):
+        defs = defaultdict(list)
+        for h in filt.histograms:
+            defs[HistogramParameters(
+                scale=Scale[h.scale.upper()] if h.scale is not None else None,
+                bins=h.bins,
+                ticks=tuple(h.ticks) if h.ticks is not None else None,
+            )].append(h.metric)
+        calculator = calculators[service]
+        try:
+            histograms, group_suite_counts, suite_sizes = \
+                await calculator.calc_check_run_histograms_line_github(
+                    defs, time_from, time_to, filt.quantiles or (0, 1), repos, pusher_groups,
+                    filt.split_by_check_runs, jira)
+        except ValueError as e:
+            raise ResponseError(InvalidRequestError(pointer="?", detail=str(e))) from None
+        for pusher_groups in histograms:
+            for pushers_group_index, pushers_group in enumerate(pusher_groups):
+                for repos_group_index, repos_group in enumerate(pushers_group):
+                    my_suite_counts = group_suite_counts[pushers_group_index, repos_group_index]
+                    total_group_suites = my_suite_counts.sum()
+                    for suite_size_group_index, suite_size_group in enumerate(repos_group):
+                        group_for_set = for_set \
+                            .select_pushers_group(pushers_group_index) \
+                            .select_repogroup(repos_group_index)  # type: ForSetCodeChecks
+                        if filt.split_by_check_runs:
+                            suite_size = suite_sizes[suite_size_group_index]
+                            group_suites_count_ratio = \
+                                my_suite_counts[suite_size_group_index] / total_group_suites
+                        else:
+                            suite_size = group_suites_count_ratio = None
+                        for metric, histogram in sorted(suite_size_group):
+                            result.append(CalculatedCodeCheckHistogram(
+                                for_=group_for_set,
+                                check_runs=suite_size,
+                                suites_ratio=group_suites_count_ratio,
+                                metric=metric,
+                                scale=histogram.scale.name.lower(),
+                                ticks=histogram.ticks,
+                                frequencies=histogram.frequencies,
+                                interquartile=Interquartile(*histogram.interquartile),
+                            ))
+
+    tasks = [
+        calculate_for_set_histograms(service, repos, withgroups, jira, for_set)
+        for service, (repos, withgroups, jira, for_set) in filters
+    ]
+    await gather(*tasks)
+    return model_response(result)

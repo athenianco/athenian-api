@@ -7723,6 +7723,9 @@ components:
           $ref: '#/components/schemas/TimeZone'
         quantiles:
           $ref: '#/components/schemas/Quantiles'
+        split_by_check_runs:
+          description: Calculate histograms separately for each number of check runs in suite.
+          type: boolean
         account:
           description: Session account ID.
           type: integer

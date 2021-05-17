@@ -119,3 +119,105 @@ class ForSetCodeChecks(Model, RepositoryGroupsMixin):
         fs.pushers = self.pusher_groups[index]
         fs.pusher_groups = None
         return fs
+
+
+class _CalculatedCodeCheckCommon(Model):
+    openapi_types = {
+        "for_": ForSetCodeChecks,
+        "check_runs": Optional[int],
+        "suites_ratio": Optional[float],
+    }
+
+    attribute_map = {
+        "for_": "for",
+        "check_runs": "check_runs",
+        "suites_ratio": "suites_ratio",
+    }
+
+    __enable_slots__ = False
+
+    def __init__(
+        self,
+        for_: Optional[ForSetCodeChecks] = None,
+        check_runs: Optional[int] = None,
+        suites_ratio: Optional[float] = None,
+    ):
+        """CalculatedCodeCheckMetricsItem - a model defined in OpenAPI
+
+        :param for_: The for_ of this CalculatedCodeCheckMetricsItem.
+        :param check_runs: The check_runs of this CalculatedCodeCheckMetricsItem.
+        :param suites_ratio: The suites_ratio of this CalculatedCodeCheckMetricsItem.
+        """
+        self._for_ = for_
+        self._check_runs = check_runs
+        self._suites_ratio = suites_ratio
+
+    @property
+    def for_(self) -> ForSetCodeChecks:
+        """Gets the for_ of this CalculatedCodeCheckMetricsItem.
+
+        :return: The for_ of this CalculatedCodeCheckMetricsItem.
+        """
+        return self._for_
+
+    @for_.setter
+    def for_(self, for_: ForSetCodeChecks):
+        """Sets the for_ of this CalculatedCodeCheckMetricsItem.
+
+        :param for_: The for_ of this CalculatedCodeCheckMetricsItem.
+        """
+        if for_ is None:
+            raise ValueError("Invalid value for `for_`, must not be `None`")
+
+        self._for_ = for_
+
+    @property
+    def check_runs(self) -> Optional[int]:
+        """Gets the check_runs of this CalculatedCodeCheckMetricsItem.
+
+        We calculated metrics for check suites with this number of runs. Not null only if the user
+        specified `split_by_check_runs = true`.
+
+        :return: The check_runs of this CalculatedCodeCheckMetricsItem.
+        """
+        return self._check_runs
+
+    @check_runs.setter
+    def check_runs(self, check_runs: Optional[int]):
+        """Sets the check_runs of this CalculatedCodeCheckMetricsItem.
+
+        We calculated metrics for check suites with this number of runs. Not null only if the user
+        specified `split_by_check_runs = true`.
+
+        :param check_runs: The check_runs of this CalculatedCodeCheckMetricsItem.
+        """
+        self._check_runs = check_runs
+
+    @property
+    def suites_ratio(self) -> Optional[float]:
+        """Gets the suites_ratio of this CalculatedCodeCheckMetricsItem.
+
+        Number of check suites with `check_runs` number of check runs divided by the overall number
+        of check suites. Not null only if the user specified `split_by_check_runs = true`.
+
+        :return: The suites_ratio of this CalculatedCodeCheckMetricsItem.
+        """
+        return self._suites_ratio
+
+    @suites_ratio.setter
+    def suites_ratio(self, suites_ratio: Optional[float]):
+        """Sets the suites_ratio of this CalculatedCodeCheckMetricsItem.
+
+        Number of check suites with `check_runs` number of check runs divided by the overall number
+        of check suites. Not null only if the user specified `split_by_check_runs = true`.
+
+        :param suites_ratio: The suites_ratio of this CalculatedCodeCheckMetricsItem.
+        """
+        if suites_ratio is not None and suites_ratio > 1:
+            raise ValueError(
+                "Invalid value for `suites_ratio`, must be a value less than or equal to `1`")
+        if suites_ratio is not None and suites_ratio < 0:
+            raise ValueError(
+                "Invalid value for `suites_ratio`, must be a value greater than or equal to `0`")
+
+        self._suites_ratio = suites_ratio

@@ -15,12 +15,14 @@ class _CodeCheckHistogramsRequest(Model, QuantilesMixin):
         "for_": List[ForSetCodeChecks],
         "histograms": List[CodeCheckHistogramDefinition],
         "quantiles": List[float],
+        "split_by_check_runs": bool,
     }
 
     attribute_map = {
         "for_": "for",
         "histograms": "histograms",
         "quantiles": "quantiles",
+        "split_by_check_runs": "split_by_check_runs",
     }
 
     __enable_slots__ = False
@@ -30,16 +32,19 @@ class _CodeCheckHistogramsRequest(Model, QuantilesMixin):
         for_: Optional[List[ForSetCodeChecks]] = None,
         histograms: Optional[List[CodeCheckHistogramDefinition]] = None,
         quantiles: Optional[List[float]] = None,
+        split_by_check_runs: Optional[bool] = None,
     ):
         """CodeCheckHistogramsRequest - a model defined in OpenAPI
 
         :param for_: The for_ of this CodeCheckHistogramsRequest.
         :param histograms: The histograms of this CodeCheckHistogramsRequest.
         :param quantiles: The quantiles of this CodeCheckHistogramsRequest.
+        :param split_by_check_runs: The split_by_check_runs of this CodeCheckHistogramsRequest.
         """
         self._for_ = for_
         self._histograms = histograms
         self._quantiles = quantiles
+        self._split_by_check_runs = split_by_check_runs
 
     @property
     def for_(self) -> List[ForSetCodeChecks]:
@@ -90,6 +95,26 @@ class _CodeCheckHistogramsRequest(Model, QuantilesMixin):
             raise ValueError("Invalid value for `histograms`, must not be `None`")
 
         self._histograms = histograms
+
+    @property
+    def split_by_check_runs(self) -> Optional[bool]:
+        """Gets the split_by_check_runs of this CodeCheckMetricsRequest.
+
+        Calculate histograms separately for each number of check runs in suite.
+
+        :return: The split_by_check_runs of this CodeCheckMetricsRequest.
+        """
+        return self._split_by_check_runs
+
+    @split_by_check_runs.setter
+    def split_by_check_runs(self, split_by_check_runs: Optional[bool]):
+        """Sets the split_by_check_runs of this CodeCheckMetricsRequest.
+
+        Calculate histograms separately for each number of check runs in suite.
+
+        :param split_by_check_runs: The split_by_check_runs of this CodeCheckMetricsRequest.
+        """
+        self._split_by_check_runs = split_by_check_runs
 
 
 CodeCheckHistogramsRequest = AllOf(_CodeCheckHistogramsRequest,
