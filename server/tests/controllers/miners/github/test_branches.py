@@ -3,14 +3,11 @@ from random import random
 import pytest
 from sqlalchemy import delete, insert, select, update
 
-from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.defer import wait_deferred, with_defer
-from athenian.api.experiments.preloading.entries import PreloadedBranchMiner
 from athenian.api.models.metadata.github import Branch
 
 
-async def test_extract_branches_zero(mdb, with_preloading):
-    branch_miner = PreloadedBranchMiner if with_preloading else BranchMiner
+async def test_extract_branches_zero(mdb, branch_miner):
     branches, defaults = await branch_miner.extract_branches(
         ["src-d/gitbase"], (6366825,), mdb, None)
     assert branches.empty
@@ -22,8 +19,7 @@ async def test_extract_branches_zero(mdb, with_preloading):
         assert defaults == {"src-d/gitbase": "master"}
 
 
-async def test_extract_branches_trash(mdb, with_preloading):
-    branch_miner = PreloadedBranchMiner if with_preloading else BranchMiner
+async def test_extract_branches_trash(mdb, branch_miner):
     branches, defaults = await branch_miner.extract_branches(
         ["src-d/whatever"], (6366825,), mdb, None)
     assert branches.empty
@@ -31,8 +27,7 @@ async def test_extract_branches_trash(mdb, with_preloading):
 
 
 @with_defer
-async def test_extract_branches_cache(mdb, cache, with_preloading):
-    branch_miner = PreloadedBranchMiner if with_preloading else BranchMiner
+async def test_extract_branches_cache(mdb, cache, branch_miner):
     branches, defaults = await branch_miner.extract_branches(
         ["src-d/go-git"], (6366825,), mdb, cache)
     await wait_deferred()
@@ -49,8 +44,7 @@ async def test_extract_branches_cache(mdb, cache, with_preloading):
 
 
 @pytest.mark.flaky(reruns=5, reruns_delay=0.1 + random())
-async def test_extract_branches_main(mdb, with_preloading):
-    branch_miner = PreloadedBranchMiner if with_preloading else BranchMiner
+async def test_extract_branches_main(mdb, branch_miner):
     await mdb.execute(update(Branch).where(Branch.branch_name == "master").values({
         Branch.is_default: False,
         Branch.branch_name: "main",
@@ -66,8 +60,7 @@ async def test_extract_branches_main(mdb, with_preloading):
 
 
 @pytest.mark.flaky(reruns=5, reruns_delay=0.1 + random())
-async def test_extract_branches_max_date(mdb, with_preloading):
-    branch_miner = PreloadedBranchMiner if with_preloading else BranchMiner
+async def test_extract_branches_max_date(mdb, branch_miner):
     await mdb.execute(update(Branch).where(Branch.branch_name == "master").values({
         Branch.is_default: False,
         Branch.branch_name: "whatever_it_takes",
@@ -83,8 +76,7 @@ async def test_extract_branches_max_date(mdb, with_preloading):
 
 
 @pytest.mark.flaky(reruns=5, reruns_delay=0.1 + random())
-async def test_extract_branches_only_one(mdb, with_preloading):
-    branch_miner = PreloadedBranchMiner if with_preloading else BranchMiner
+async def test_extract_branches_only_one(mdb, branch_miner):
     branches = await mdb.fetch_all(select([Branch]).where(Branch.branch_name != "master"))
     await mdb.execute(update(Branch).where(Branch.branch_name == "master").values({
         Branch.is_default: False,

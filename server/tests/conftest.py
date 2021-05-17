@@ -45,7 +45,13 @@ from athenian.api.auth import Auth0, User
 from athenian.api.cache import CACHE_VAR_NAME, setup_cache_metrics
 from athenian.api.connexion import AthenianApp
 from athenian.api.controllers import account, invitation_controller
+from athenian.api.controllers.miners.github.branches import BranchMiner
+from athenian.api.controllers.miners.github.precomputed_prs import OpenPRFactsLoader
+from athenian.api.controllers.miners.github.release_load import ReleaseLoader
+from athenian.api.controllers.miners.github.release_match import ReleaseToPullRequestMapper
 from athenian.api.db import ParallelDatabase
+from athenian.api.experiments.preloading.entries import PreloadedBranchMiner, \
+    PreloadedOpenPRFactsLoader, PreloadedReleaseLoader, PreloadedReleaseToPullRequestMapper
 from athenian.api.faster_pandas import patch_pandas
 from athenian.api.metadata import __package__ as package
 from athenian.api.models import check_collation, metadata, persistentdata
@@ -291,7 +297,7 @@ def slack():
     return create_slack(logging.getLogger("pytest"))
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(scope="session")
 def with_preloading_enabled():
     return os.getenv("WITH_PRELOADING", "0") == "1"
 
@@ -299,10 +305,11 @@ def with_preloading_enabled():
 @pytest.fixture(scope="function")
 async def with_preloading(sdb, mdb, pdb, rdb, with_preloading_enabled):
     if not with_preloading_enabled:
-        return
+        return False
 
     mc_preloader = MemoryCachePreloader()
     await mc_preloader.preload(sdb=sdb, mdb=mdb, pdb=pdb, rdb=rdb)
+    return True
 
 
 @pytest.fixture(scope="function")
@@ -489,6 +496,27 @@ async def pdb(precomputed_db, loop, request):
 @pytest.fixture(scope="function")
 async def rdb(persistentdata_db, loop, request):
     return await _connect_to_db(persistentdata_db, loop, request)
+
+
+@pytest.fixture(scope="function")
+def branch_miner(with_preloading):
+    return PreloadedBranchMiner if with_preloading else BranchMiner
+
+
+@pytest.fixture(scope="function")
+def release_loader(with_preloading):
+    return PreloadedReleaseLoader if with_preloading else ReleaseLoader
+
+
+@pytest.fixture(scope="function")
+def releases_to_prs_mapper(with_preloading):
+    return (PreloadedReleaseToPullRequestMapper if with_preloading
+            else ReleaseToPullRequestMapper)
+
+
+@pytest.fixture(scope="function")
+def open_prs_facts_loader(with_preloading):
+    return PreloadedOpenPRFactsLoader if with_preloading else OpenPRFactsLoader
 
 
 @pytest.fixture(scope="session")

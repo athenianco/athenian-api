@@ -9,14 +9,12 @@ import pytest
 from sqlalchemy import delete, insert, select
 
 from athenian.api.controllers.features.entries import MetricEntriesCalculator
-from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.commit import _empty_dag, _fetch_commit_history_edges
 from athenian.api.controllers.miners.github.dag_accelerated import join_dags
 from athenian.api.controllers.miners.types import nonemin, PullRequestFacts
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
     ReleaseMatchSetting, ReleaseSettings
-from athenian.api.experiments.preloading.entries import PreloadedBranchMiner
 from athenian.api.models.metadata.github import Branch
 from athenian.api.models.state.models import JIRAProjectSetting, MappedJIRAIdentity
 from athenian.api.typing_utils import wraps
@@ -61,8 +59,7 @@ _branches = None
 
 
 @pytest.fixture(scope="function")
-async def branches(mdb, with_preloading):
-    branch_miner = PreloadedBranchMiner if with_preloading else BranchMiner
+async def branches(mdb, branch_miner):
     global _branches
     if _branches is None:
         _branches, _ = await branch_miner.extract_branches(["src-d/go-git"], (6366825,), mdb, None)
