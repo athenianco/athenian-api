@@ -22,12 +22,10 @@ from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.reposet import resolve_repos, resolve_reposet
 from athenian.api.controllers.settings import Settings
 from athenian.api.models.web import CalculatedCodeCheckMetrics, CalculatedCodeCheckMetricsItem, \
-    CalculatedDeveloperMetrics, \
-    CalculatedDeveloperMetricsItem, \
-    CalculatedLinearMetricValues, CalculatedPullRequestMetrics, CalculatedPullRequestMetricsItem, \
-    CalculatedReleaseMetric, CodeBypassingPRsMeasurement, CodeCheckMetricsRequest, CodeFilter, \
-    DeveloperMetricsRequest, ForbiddenError, ForSet, ForSetCodeChecks, ForSetDevelopers, \
-    ReleaseMetricsRequest
+    CalculatedDeveloperMetrics, CalculatedDeveloperMetricsItem, CalculatedLinearMetricValues, \
+    CalculatedPullRequestMetrics, CalculatedPullRequestMetricsItem, CalculatedReleaseMetric, \
+    CodeBypassingPRsMeasurement, CodeCheckMetricsRequest, CodeFilter, DeveloperMetricsRequest, \
+    ForbiddenError, ForSet, ForSetCodeChecks, ForSetDevelopers, ReleaseMetricsRequest
 from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.models.web.pull_request_metrics_request import PullRequestMetricsRequest
 from athenian.api.request import AthenianWebRequest

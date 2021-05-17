@@ -2,13 +2,13 @@ from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import AllOf, Model
 from athenian.api.models.web.common_filter_properties import CommonFilterProperties
+from athenian.api.models.web.common_metrics_properties import QuantilesMixin
 from athenian.api.models.web.for_set import ForSet
 from athenian.api.models.web.pull_request_histogram_definition import \
     PullRequestHistogramDefinition
-from athenian.api.models.web.quantiles import validate_quantiles
 
 
-class _PullRequestHistogramsRequest(Model):
+class _PullRequestHistogramsRequest(Model, QuantilesMixin):
     """Request of `/histograms/prs`."""
 
     openapi_types = {
@@ -120,26 +120,6 @@ class _PullRequestHistogramsRequest(Model):
             raise ValueError("Invalid value for `exclude_inactive`, must not be `None`")
 
         self._exclude_inactive = exclude_inactive
-
-    @property
-    def quantiles(self) -> Optional[List[float]]:
-        """Gets the quantiles of this PullRequestHistogramsRequest.
-
-        :return: The quantiles of this PullRequestHistogramsRequest.
-        """
-        return self._quantiles
-
-    @quantiles.setter
-    def quantiles(self, quantiles: Optional[List[float]]):
-        """Sets the quantiles of this PullRequestHistogramsRequest.
-
-        :param quantiles: The quantiles of this PullRequestHistogramsRequest.
-        """
-        if quantiles is None:
-            self._quantiles = None
-            return
-        validate_quantiles(quantiles)
-        self._quantiles = quantiles
 
     @property
     def fresh(self) -> bool:

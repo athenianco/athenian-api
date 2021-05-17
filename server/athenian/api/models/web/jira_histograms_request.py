@@ -2,11 +2,12 @@ from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import AllOf, Model
 from athenian.api.models.web.common_filter_properties import CommonFilterProperties
+from athenian.api.models.web.common_metrics_properties import QuantilesMixin
 from athenian.api.models.web.jira_filter_with import JIRAFilterWith
 from athenian.api.models.web.jira_histogram_definition import JIRAHistogramDefinition
 
 
-class _JIRAHistogramsRequest(Model):
+class _JIRAHistogramsRequest(Model, QuantilesMixin):
     """Request of `/histograms/jira`."""
 
     openapi_types = {
@@ -236,28 +237,6 @@ class _JIRAHistogramsRequest(Model):
             raise ValueError("Invalid value for `exclude_inactive`, must not be `None`")
 
         self._exclude_inactive = exclude_inactive
-
-    @property
-    def quantiles(self) -> Optional[List[float]]:
-        """Gets the quantiles of this JIRAHistogramsRequest.
-
-        Cut the distributions at certain quantiles. The default values are [0, 1] which means no
-        cutting.
-
-        :return: The quantiles of this JIRAHistogramsRequest.
-        """
-        return self._quantiles
-
-    @quantiles.setter
-    def quantiles(self, quantiles: Optional[List[float]]):
-        """Sets the quantiles of this JIRAHistogramsRequest.
-
-        Cut the distributions at certain quantiles. The default values are [0, 1] which means no
-        cutting.
-
-        :param quantiles: The quantiles of this JIRAHistogramsRequest.
-        """
-        self._quantiles = quantiles
 
 
 JIRAHistogramsRequest = AllOf(_JIRAHistogramsRequest, CommonFilterProperties,
