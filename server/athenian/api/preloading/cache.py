@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from enum import Enum
 import logging
 from typing import Collection, Dict, List, Optional, Union
@@ -51,6 +52,7 @@ class CachedDataFrame:
         identifier_cols: Optional[List[sa.Column]] = None,
         filtering_clause: Optional[sa.sql.ClauseElement] = None,
         sharding: Optional[Dict] = None,
+        coerce_cols: Optional[Dict] = None,
         gauge: Optional[prometheus_client.Gauge] = None,
         debug_memory: Optional[bool] = False,
     ):
@@ -70,6 +72,7 @@ class CachedDataFrame:
         self._identifier_cols = identifier_cols or []
         self._filtering_clause = filtering_clause
         self._sharding = sharding
+        self._coerce_cols = coerce_cols or {}
         self._db = db
         self._debug_memory = debug_memory
         self._mem = {}
@@ -110,7 +113,7 @@ class CachedDataFrame:
             sizes = df.memory_usage(index=True, deep=True)
             self._mem["raw"] = {"series": sizes, "total": sizes.sum()}
 
-        self._df = self._squeeze(df)
+        self._df = self._squeeze(self._coerce(df))
         del df
 
         if self._debug_memory or self._gauge is not None:
@@ -183,6 +186,18 @@ class CachedDataFrame:
             return size if not human else _humanize_size(size)
         else:
             return s if not human else s.apply(_humanize_size)
+
+    def _coerce(self, df: pd.DataFrame) -> pd.DataFrame:
+        for col, coerce_opts in self._coerce_cols.items():
+            if isinstance(coerce_opts, dict):
+                if not (coerce_func := coerce_opts.get(self._db.url.dialect)):
+                    continue
+            else:
+                coerce_func = coerce_opts
+
+            df[col.key] = coerce_func(df[col.key])
+
+        return df
 
     def _squeeze(self, df: pd.DataFrame) -> pd.DataFrame:
         def _cast_category(df: pd.DataFrame, cols: List[sa.Column]) -> pd.DataFrame:
@@ -508,6 +523,14 @@ def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[Instrumente
                 "identifier_cols": [
                     GitHubOpenPullRequestFacts.pr_node_id,
                 ],
+                "coerce_cols": {
+                    GitHubOpenPullRequestFacts.activity_days: {
+                        "sqlite": lambda col_series: [
+                            [datetime.strptime(v, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                             for v in r] for r in col_series
+                        ],
+                    },
+                },
             },
         },
     }
