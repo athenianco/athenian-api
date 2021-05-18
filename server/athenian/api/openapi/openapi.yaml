@@ -7919,6 +7919,11 @@ components:
           $ref: '#/components/schemas/RepositorySet'
         triggered_by:
           $ref: '#/components/schemas/CommitPushers'
+        jira:
+          allOf:
+          - description: Analyze only those check runs that belong to PRs mapped to
+              JIRA issues that satisfy this filter.
+          - $ref: '#/components/schemas/JIRAFilter'
         date_from:
           description: Date from when to start measuring the metrics.
           format: date
@@ -7932,6 +7937,11 @@ components:
         account:
           description: Session account ID.
           type: integer
+        quantiles:
+          allOf:
+          - description: Quantiles to apply to the execution time series before calculating
+              the average.
+          - $ref: '#/components/schemas/Quantiles'
       required:
       - account
       - date_from
@@ -7947,7 +7957,8 @@ components:
         items:
         - title: Unit tests
           repository: github.com/src-d/athenian-api
-          last_execution: 2021-05-18
+          last_execution_time: 2021-05-18
+          last_execution_url: https://github.com/athenianco/athenian-api/pull/1448/checks?check_run_id=2610787628
           size_groups:
           - 3
           - 5
@@ -8030,8 +8041,12 @@ components:
         - 2020-05-05
       properties:
         timeline:
-          description: Sequence of dates from `date_from` till `date_to`. We choose
-            such an interval that the number of items is approximately 50.
+          description: |-
+            Sequence of dates from `date_from` till `date_to`. We choose
+            the adaptive intervals by applying these rules on `(date_to - date_from)`:
+            - Less than 5 weeks: daily.
+            - Less than 5 months: weekly (*not aligned*).
+            - Aligned monthly.
           items:
             format: date
             type: string
@@ -8108,7 +8123,7 @@ components:
         flaky_count:
           description: |-
             Number of times this check run appeared flaky: it both failed and succeeded for
-            the same commit.'
+            the same commit.
           minimum: 0
           type: integer
         count_timeline:
@@ -8154,7 +8169,8 @@ components:
       example:
         title: Unit tests
         repository: github.com/src-d/athenian-api
-        last_execution: 2021-05-18
+        last_execution_time: 2021-05-18
+        last_execution_url: https://github.com/athenianco/athenian-api/pull/1448/checks?check_run_id=2610787628
         size_groups:
         - 3
         - 5
@@ -8235,9 +8251,13 @@ components:
           type: string
         repository:
           $ref: '#/components/schemas/RepositoryID'
-        last_execution:
-          description: Timestamp of when the check run launched last time.
+        last_execution_time:
+          description: Timestamp of when the check run launched the latest.
           format: date-time
+          type: string
+        last_execution_url:
+          description: Link to the check run that launched the latest.
+          format: url
           type: string
         total_stats:
           allOf:
@@ -8255,7 +8275,8 @@ components:
             type: integer
           type: array
       required:
-      - last_execution
+      - last_execution_time
+      - last_execution_url
       - prs_stats
       - repository
       - size_groups

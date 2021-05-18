@@ -23,6 +23,7 @@ from athenian.api.models.web.code_check_histogram_definition import CodeCheckHis
 from athenian.api.models.web.code_check_histograms_request import CodeCheckHistogramsRequest
 from athenian.api.models.web.code_check_metric_id import CodeCheckMetricID
 from athenian.api.models.web.code_check_metrics_request import CodeCheckMetricsRequest
+from athenian.api.models.web.code_check_run_statistics import CodeCheckRunStatistics
 from athenian.api.models.web.code_filter import CodeFilter
 from athenian.api.models.web.commit import Commit
 from athenian.api.models.web.commit_filter import CommitFilter
@@ -43,6 +44,7 @@ from athenian.api.models.web.developer_summary import DeveloperSummary
 from athenian.api.models.web.developer_updates import DeveloperUpdates
 from athenian.api.models.web.diff_releases_request import DiffReleasesRequest
 from athenian.api.models.web.diffed_releases import DiffedReleases
+from athenian.api.models.web.filter_code_checks_request import FilterCodeChecksRequest
 from athenian.api.models.web.filter_commits_request import FilterCommitsRequest
 from athenian.api.models.web.filter_contributors_request import FilterContributorsRequest
 from athenian.api.models.web.filter_jira_common import FilterJIRACommon
@@ -51,6 +53,8 @@ from athenian.api.models.web.filter_labels_request import FilterLabelsRequest
 from athenian.api.models.web.filter_pull_requests_request import FilterPullRequestsRequest
 from athenian.api.models.web.filter_releases_request import FilterReleasesRequest
 from athenian.api.models.web.filter_repositories_request import FilterRepositoriesRequest
+from athenian.api.models.web.filtered_code_check_run import FilteredCodeCheckRun
+from athenian.api.models.web.filtered_code_check_runs import FilteredCodeCheckRuns
 from athenian.api.models.web.filtered_jira_stuff import FilteredJIRAStuff
 from athenian.api.models.web.filtered_label import FilteredLabel
 from athenian.api.models.web.filtered_release import FilteredRelease
