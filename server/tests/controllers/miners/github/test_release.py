@@ -31,7 +31,8 @@ from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import Branch, NodeCommit, PullRequest, \
     PullRequestLabel, Release
 from athenian.api.models.persistentdata.models import ReleaseNotification
-from athenian.api.models.precomputed.models import GitHubCommitHistory
+from athenian.api.models.precomputed.models import GitHubCommitHistory, \
+    GitHubRelease as PrecomputedRelease
 from tests.controllers.test_filter_controller import force_push_dropped_go_git_pr_numbers
 
 
@@ -1394,6 +1395,16 @@ async def test_precomputed_releases_low_level(
         {ReleaseMatch(settings_index): {["master", ".*"][settings_index]: ["src-d/go-git"]}},
         time_from, time_to, 1, pdb)
     if with_preloading_enabled:
+        # Currently, due to preloading being applied to only a subset of endpoints, some
+        # columns are not preloaded, so they're missing here. Once preloading is extended
+        # to other endpoints, these columns will be needed and they'll be added in the options
+        # defined in `athenian.api.preloading.cache`.
+        # Once it will happen, this test will fail and we can just temove this `if` branch.
+        missing_prels_columns = [PrecomputedRelease.repository_node_id, PrecomputedRelease.author,
+                                 PrecomputedRelease.name, PrecomputedRelease.tag,
+                                 PrecomputedRelease.url, PrecomputedRelease.sha,
+                                 PrecomputedRelease.commit_id]
+        assert all(col not in prels.columns for col in missing_prels_columns)
         cols = set(releases.columns).intersection(prels.columns)
         releases, prels = releases[cols], prels[cols]
     else:
@@ -1422,6 +1433,16 @@ async def test_precomputed_releases_ambiguous(
          ReleaseMatch.branch: {"master": ["src-d/go-git"]}},
         time_from, time_to, 1, pdb)
     if with_preloading_enabled:
+        # Currently, due to preloading being applied to only a subset of endpoints, some
+        # columns are not preloaded, so they're missing here. Once preloading is extended
+        # to other endpoints, these columns will be needed and they'll be added in the options
+        # defined in `athenian.api.preloading.cache`.
+        # Once it will happen, this test will fail and we can just temove this `if` branch.
+        missing_prels_columns = [PrecomputedRelease.repository_node_id, PrecomputedRelease.author,
+                                 PrecomputedRelease.name, PrecomputedRelease.tag,
+                                 PrecomputedRelease.url, PrecomputedRelease.sha,
+                                 PrecomputedRelease.commit_id]
+        assert all(col not in prels.columns for col in missing_prels_columns)
         cols = set(releases_tag.columns).intersection(prels.columns)
         releases_tag, prels = releases_tag[cols], prels[cols]
     else:
