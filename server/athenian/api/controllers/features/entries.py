@@ -43,8 +43,7 @@ from athenian.api.controllers.miners.github.commit import extract_commits, Filte
 from athenian.api.controllers.miners.github.developer import \
     developer_repository_column, DeveloperTopic, mine_developer_activities
 from athenian.api.controllers.miners.github.precomputed_prs import \
-    load_precomputed_done_candidates, load_precomputed_done_facts_filters, \
-    remove_ambiguous_prs, store_merged_unreleased_pull_request_facts, \
+    DonePRFactsLoader, remove_ambiguous_prs, store_merged_unreleased_pull_request_facts, \
     store_open_pull_request_facts, store_precomputed_done_facts
 from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRequest, \
     PullRequestFactsMiner, PullRequestMiner
@@ -80,6 +79,7 @@ class MetricEntriesCalculator:
     branch_miner = BranchMiner
     unfresh_pr_facts_fetcher = UnfreshPullRequestFactsFetcher
     pr_jira_mapper = PullRequestJiraMapper
+    done_prs_facts_loader = DonePRFactsLoader
     load_delta = 0
 
     def __init__(self, account: int, meta_ids: Tuple[int, ...],
@@ -561,12 +561,12 @@ class MetricEntriesCalculator:
         branches, default_branches = await self.branch_miner.extract_branches(
             repositories, self._meta_ids, self._mdb, self._cache)
         precomputed_tasks = [
-            load_precomputed_done_facts_filters(
+            self.done_prs_facts_loader.load_precomputed_done_facts_filters(
                 time_from, time_to, repositories, participants, labels,
                 default_branches, exclude_inactive, release_settings, self._account, self._pdb),
         ]
         if exclude_inactive:
-            precomputed_tasks.append(load_precomputed_done_candidates(
+            precomputed_tasks.append(self.done_prs_facts_loader.load_precomputed_done_candidates(
                 time_from, time_to, repositories,
                 default_branches, release_settings, self._account, self._pdb))
             (precomputed_facts, _), blacklist = await gather(*precomputed_tasks)
