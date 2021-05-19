@@ -138,10 +138,6 @@ class CodeCheckRunStatistics(Model):
 
         :param mean_execution_time: The mean_execution_time of this CodeCheckRunStatistics.
         """
-        if mean_execution_time is None:
-            raise ValueError(
-                "Invalid value for `mean_execution_time`, must not be `None`")
-
         self._mean_execution_time = mean_execution_time
 
     @property
@@ -158,10 +154,6 @@ class CodeCheckRunStatistics(Model):
 
         :param median_execution_time: The median_execution_time of this CodeCheckRunStatistics.
         """
-        if median_execution_time is None:
-            raise ValueError(
-                "Invalid value for `median_execution_time`, must not be `None`")
-
         self._median_execution_time = median_execution_time
 
     @property

@@ -383,7 +383,7 @@ async def calc_metrics_developers(request: AthenianWebRequest, body: dict) -> we
         filt = DeveloperMetricsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        return ResponseError(InvalidRequestError("?", detail=str(e))).response
+        raise ResponseError(InvalidRequestError("?", detail=str(e)))
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
     filters, all_repos = await _compile_filters_devs(
         filt.for_, request, filt.account, meta_ids)

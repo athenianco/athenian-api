@@ -75,6 +75,19 @@ class AthenianConnexionRequest(connexion.lifecycle.ConnexionRequest):
         return self._json
 
 
+class AthenianOperation(connexion.spec.OpenAPIOperation):
+    """Patched OpenAPIOperation with proper support of incoming "allOf"."""
+
+    def _get_val_from_param(self, value, query_defn):
+        query_schema = query_defn["schema"]
+        if (allOf := query_schema.get("allOf")) is not None:
+            schema = {}
+            for item in allOf:
+                schema.update(item)
+            query_defn = {"schema": schema}
+        return super()._get_val_from_param(value, query_defn)
+
+
 class AthenianAioHttpApi(connexion.AioHttpApi):
     """
     Hack connexion internals to solve our problems.
@@ -108,6 +121,11 @@ class AthenianAioHttpApi(connexion.AioHttpApi):
                 req._read_bytes = ('"%s"' % body_id).encode()
 
         return api_req
+
+    def add_paths(self, paths=None):
+        """Patch OpenAPIOperation to support allOf well."""
+        self.specification.operation_cls = AthenianOperation
+        super().add_paths(paths=paths)
 
 
 # Avoid DeprecationWarning on inheritance, because we know better than @asvetlov.

@@ -85,12 +85,10 @@ async def mine_check_runs(time_from: datetime,
     df = await read_sql_query(query, mdb, columns=CheckRun)
 
     # load check runs mapped to the mentioned PRs even if they are outside of the date range
-    pr_node_ids = df[CheckRun.pull_request_node_id.key].values.astype("U")
-
     def filters():
         return [
             CheckRun.acc_id.in_(meta_ids),
-            CheckRun.pull_request_node_id.in_(np.unique(pr_node_ids)),
+            CheckRun.pull_request_node_id.in_(df[CheckRun.pull_request_node_id.key].unique()),
         ]
 
     query_before = select([CheckRun]).where(and_(*filters(), CheckRun.started_at < time_from))
@@ -100,6 +98,7 @@ async def mine_check_runs(time_from: datetime,
     del extra_df
 
     check_run_node_ids = df[CheckRun.check_run_node_id.key].values.astype("S")
+    pr_node_ids = df[CheckRun.pull_request_node_id.key].values.astype("U")
 
     unique_node_ids, node_id_counts = np.unique(check_run_node_ids, return_counts=True)
     assert (unique_node_ids != b"None").all()
@@ -222,4 +221,13 @@ async def mine_check_runs(time_from: datetime,
         df = df.take(first_encounters)
         df.reset_index(inplace=True, drop=True)
 
+    # exclude skipped checks from execution time calculation
+    df.loc[df[CheckRun.conclusion.key] == "NEUTRAL", CheckRun.completed_at.key] = None
+
+    # there can be checks that finished before starting 🤦‍
+    # pd.DataFrame.max(axis=1) does not work correctly because of the NaT-s
+    started_ats = df[CheckRun.started_at.key].values
+    df[CheckRun.completed_at.key] = np.maximum(
+        df[CheckRun.completed_at.key].fillna(pd.NaT).values, started_ats)
+    df[CheckRun.completed_at.key] = df[CheckRun.completed_at.key].astype(started_ats.dtype)
     return df

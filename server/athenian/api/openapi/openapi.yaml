@@ -5084,7 +5084,6 @@ components:
           allOf:
           - $ref: '#/components/schemas/IncludedNativeUsers'
           - $ref: '#/components/schemas/IncludedJIRAIssues'
-          type: object
         data:
           description: List of matching release metadata.
           items:
@@ -8111,10 +8110,12 @@ components:
         mean_execution_time:
           allOf:
           - description: Average elapsed execution time.
+            nullable: true
           - $ref: '#/components/schemas/TimeDuration'
         median_execution_time:
           allOf:
           - description: Median elapsed execution time.
+            nullable: true
           - $ref: '#/components/schemas/TimeDuration'
         skips:
           description: Number of times this check run was skipped.

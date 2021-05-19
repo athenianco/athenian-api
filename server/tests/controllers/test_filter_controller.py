@@ -1,5 +1,6 @@
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from itertools import chain
 import json
 from operator import itemgetter
 from typing import Collection, Dict, Optional, Set
@@ -18,7 +19,8 @@ from athenian.api.models.metadata.github import Release
 from athenian.api.models.persistentdata.models import ReleaseNotification
 from athenian.api.models.precomputed.models import GitHubRelease
 from athenian.api.models.state.models import AccountJiraInstallation, ReleaseSetting
-from athenian.api.models.web import CommitsList, FilteredLabel, PullRequestEvent, \
+from athenian.api.models.web import CommitsList, FilteredCodeCheckRuns, FilteredLabel, \
+    PullRequestEvent, \
     PullRequestParticipant, PullRequestSet, PullRequestStage, ReleaseSet
 from athenian.api.models.web.diffed_releases import DiffedReleases
 from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME
@@ -1882,3 +1884,93 @@ async def test_diff_releases_nasty_input(client, headers, account, repo, old, ne
             assert len(response_body["data"]) == 0
         elif not body:
             assert response_body["data"] == [[{"old": old, "new": new, "releases": []}]]
+
+
+async def test_filter_check_runs_smoke(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-01-12",
+        "timezone": 60,
+        "in": ["{1}"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/code_checks", headers=headers, json=body)
+    response_text = (await response.read()).decode("utf-8")
+    assert response.status == 200, response_text
+    check_runs = FilteredCodeCheckRuns.from_dict(json.loads(response_text))
+    timeline = check_runs.timeline
+    assert timeline == [
+        date(2018, 1, 11), date(2018, 2, 1), date(2018, 3, 1),
+        date(2018, 4, 1), date(2018, 5, 1), date(2018, 6, 1), date(2018, 7, 1), date(2018, 8, 1),
+        date(2018, 9, 1), date(2018, 10, 1), date(2018, 11, 1), date(2018, 12, 1),
+        date(2019, 1, 1), date(2019, 2, 1), date(2019, 3, 1), date(2019, 4, 1), date(2019, 5, 1),
+        date(2019, 6, 1), date(2019, 7, 1), date(2019, 8, 1), date(2019, 9, 1), date(2019, 10, 1),
+        date(2019, 11, 1), date(2019, 12, 1), date(2020, 1, 1), date(2020, 1, 12),
+    ]
+    check_runs = check_runs.items
+    assert len(check_runs) == 7
+    assert {cr.title for cr in check_runs} == {
+        "signed-off-by", "continuous-integration/travis-ci/push", "DCO", "codecov/project",
+        "continuous-integration/appveyor/pr", "continuous-integration/appveyor/branch",
+        "continuous-integration/travis-ci/pr",
+    }
+    assert {cr.repository for cr in check_runs} == {"github.com/src-d/go-git"}
+    assert all(cr.last_execution_time > datetime(2018, 1, 12, tzinfo=timezone.utc)
+               for cr in check_runs)
+    assert all(cr.last_execution_url.startswith("https://") for cr in check_runs)
+    assert len({cr.last_execution_url for cr in check_runs}) == 7
+    assert all(len(cr.size_groups) > 0 for cr in check_runs)
+    assert set(chain.from_iterable(cr.size_groups for cr in check_runs)) == {1, 2, 3, 4, 5, 6}
+    nn_means = nn_medians = 0
+    nn_means_timeline = nn_medians_timeline = nn_count_timeline = nn_successes_timeline = 0
+    skips = 0
+    for cr in check_runs:
+        for stats in (cr.total_stats, cr.prs_stats):
+            assert stats.count > 0
+            assert stats.flaky_count == 0
+            assert 0 <= stats.successes <= stats.count
+            if stats.mean_execution_time is not None:
+                nn_means += 1
+            if stats.median_execution_time is not None:
+                nn_medians += 1
+            skips += stats.skips
+            assert len(stats.mean_execution_time_timeline) == len(timeline) - 1
+            nn_means_timeline += sum(
+                1 for x in stats.mean_execution_time_timeline if x is not None)
+            assert len(stats.median_execution_time_timeline) == len(timeline) - 1
+            nn_medians_timeline += sum(
+                1 for x in stats.median_execution_time_timeline if x is not None)
+            assert len(stats.count_timeline) == len(timeline) - 1
+            nn_count_timeline += sum(1 for x in stats.count_timeline if x > 0)
+            assert len(stats.successes_timeline) == len(timeline) - 1
+            nn_successes_timeline += sum(1 for x in stats.successes_timeline if x > 0)
+    assert nn_means > 0
+    assert nn_medians > 0
+    assert skips == 0  # indeed, go-git has no skips
+    assert nn_means_timeline > 0
+    assert nn_medians_timeline > 0
+    assert nn_count_timeline > 0
+    assert nn_successes_timeline > 0
+
+
+@pytest.mark.parametrize("account, date_to, repo, quantiles, status", [
+    (2, "2020-01-11", "github.com/src-d/go-git", [0, 1], 422),
+    (3, "2020-01-11", "github.com/src-d/go-git", [0, 1], 404),
+    (1, "2020-01-11", "github.com/athenianco/athenian-api", [0, 1], 403),
+    (1, "2020-01-11", "github.com/src-d/go-git", [1, 0], 400),
+    (1, "2018-01-11", "github.com/src-d/go-git", [0, 1], 400),
+])
+async def test_filter_check_runs_nasty_input(
+        client, headers, account, date_to, repo, quantiles, status):
+    body = {
+        "account": account,
+        "date_from": "2018-01-12",
+        "date_to": date_to,
+        "in": [repo],
+        "quantiles": quantiles,
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/code_checks", headers=headers, json=body)
+    response_text = (await response.read()).decode("utf-8")
+    assert response.status == status, response_text
