@@ -10,6 +10,7 @@ import aiomcache
 import databases
 import numpy as np
 import pandas as pd
+import sentry_sdk
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql.elements import BinaryExpression
 
@@ -21,11 +22,11 @@ from athenian.api.controllers.features.github.unfresh_pull_request_metrics impor
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.precomputed_prs import \
-    DonePRFactsLoader, MergedPRFactsLoader, OpenPRFactsLoader
+    DonePRFactsLoader, MergedPRFactsLoader, OpenPRFactsLoader, triage_by_release_match
 from athenian.api.controllers.miners.github.precomputed_prs.utils import extract_release_match
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.github.release_load import \
-    match_groups_to_conditions, ReleaseLoader
+    group_repos_by_release_match, match_groups_to_conditions, ReleaseLoader
 from athenian.api.controllers.miners.github.release_load import \
     remove_ambigous_precomputed_releases
 from athenian.api.controllers.miners.github.release_match import ReleaseToPullRequestMapper
@@ -36,8 +37,10 @@ from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.models.metadata.github import Base as MetadataGitHubBase, \
     Branch, NodePullRequestJiraIssues, PullRequest
 from athenian.api.models.precomputed.models import \
-    GitHubBase as PrecomputedGitHubBase, GitHubMergedPullRequestFacts, \
-    GitHubOpenPullRequestFacts, GitHubRelease as PrecomputedRelease, \
+    GitHubBase as PrecomputedGitHubBase, \
+    GitHubDonePullRequestFacts, \
+    GitHubMergedPullRequestFacts, GitHubOpenPullRequestFacts, \
+    GitHubRelease as PrecomputedRelease, \
     GitHubReleaseMatchTimespan as PrecomputedGitHubReleaseMatchTimespan
 from athenian.api.preloading.cache import MCID, PCID
 from athenian.api.tracing import sentry_span
@@ -59,6 +62,21 @@ def _build_activity_mask(model: Union[MetadataGitHubBase, PrecomputedGitHubBase]
     return activity_mask
 
 
+def _match_groups_to_mask(
+        model: Union[MetadataGitHubBase, PrecomputedGitHubBase],
+        df: pd.DataFrame,
+        match_groups: Dict[ReleaseMatch, Dict[str, Iterable[str]]]) -> pd.Series:
+    or_conditions, _ = match_groups_to_conditions(match_groups)
+    or_masks = [
+        (df[model.release_match.key] == cond["release_match"]) &
+        (df[model.repository_full_name.key].isin(cond["repository_full_name"]))
+        for cond in or_conditions
+    ]
+
+    return (functools.reduce(operator.or_, or_masks) if or_masks
+            else np.ones(len(df), dtype=bool))
+
+
 class PreloadedReleaseLoader(ReleaseLoader):
     """Loader for preloaded releases."""
 
@@ -76,7 +94,7 @@ class PreloadedReleaseLoader(ReleaseLoader):
         cached_df = pdb.cache.dfs[PCID.releases]
         df = cached_df.df
         mask = (
-            cls._match_groups_to_mask(model, df, match_groups)
+            _match_groups_to_mask(model, df, match_groups)
             & (df[model.acc_id.key] == account)
             & (df[model.published_at.key] >= time_from)
             & (df[model.published_at.key] < time_to)
@@ -102,7 +120,7 @@ class PreloadedReleaseLoader(ReleaseLoader):
         cached_df = pdb.cache.dfs[PCID.releases_match_timespan]
         df = cached_df.df
         mask = (
-            cls._match_groups_to_mask(model, df, match_groups) & (df[model.acc_id.key] == account)
+            _match_groups_to_mask(model, df, match_groups) & (df[model.acc_id.key] == account)
         )
         release_match_spans = cached_df.filter(mask)
         spans = {}
@@ -173,7 +191,92 @@ class PreloadedDonePRFactsLoader(DonePRFactsLoader):
                  2. Map from repository name to ambiguous PR node IDs which are released by \
                  branch with tag_or_branch strategy and without tags on the time interval.
         """
-        pass
+        if labels:
+            # TODO: not supported yet, call original implementation
+            return await super(PreloadedDonePRFactsLoader, cls)\
+                ._load_precomputed_done_filters(
+                    columns, time_from, time_to, repos, participants, labels,
+                    default_branches, exclude_inactive, release_settings, account, pdb)
+
+        model = GitHubDonePullRequestFacts
+        cached_df = pdb.cache.dfs[PCID.done_pr_facts]
+        df = cached_df.df
+
+        with sentry_sdk.start_span(op="_load_precomputed_done_filters/mask_creation"):
+            mask = df[model.acc_id.key] == account
+            if time_from is not None:
+                mask &= df[model.pr_done_at.key] >= time_from
+            if time_to is not None:
+                mask &= df[model.pr_created_at.key] < time_to
+            if repos is not None:
+                mask &= df[model.repository_full_name.key].isin(repos)
+
+            if len(participants) > 0:
+                mask &= cls._build_participants_mask(df, participants)
+
+            if exclude_inactive:
+                with sentry_sdk.start_span(
+                    op="_load_precomputed_done_filters/mask_creation/activity_days",
+                ):
+                    mask &= _build_activity_mask(model, df, time_from, time_to)
+
+            match_groups, event_repos, _ = group_repos_by_release_match(
+                repos, default_branches, release_settings)
+            match_groups[ReleaseMatch.rejected] = match_groups[
+                ReleaseMatch.force_push_drop
+            ] = {"": repos}
+            if event_repos:
+                match_groups[ReleaseMatch.event] = {"": event_repos}
+
+            mask &= _match_groups_to_mask(model, df, match_groups)
+
+        done_pr_facts = cached_df.filter(
+            mask, columns=[model.pr_node_id.key, model.repository_full_name.key,
+                           model.release_match.key] + [c.key for c in columns],
+        )
+
+        with sentry_sdk.start_span(op="_load_precomputed_done_filters/triage"):
+            result = {}
+            ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
+
+            # TODO: this `to_dict` call can probably be removed. The reason why it's here
+            # is because `dump` values requires to be `dict`, but iterating over the numpy
+            # arrays and doing the following:
+            #
+            #     dump[pr_node_id] = dict(done_pr_facts.iloc[i])
+            #
+            # is super slow because of the `dict` conversion.
+            i = 0
+            for row in done_pr_facts.to_dict(orient="records"):
+                dump = triage_by_release_match(
+                    row[model.repository_full_name.key],
+                    row[model.release_match.key],
+                    release_settings,
+                    default_branches,
+                    result,
+                    ambiguous,
+                )
+                if dump is None:
+                    continue
+                dump[row[model.pr_node_id.key]] = row
+                i += 1
+
+        return cls._post_process_ambiguous_done_prs(result, ambiguous)
+
+    @classmethod
+    def _build_participants_mask(cls, df: pd.DataFrame, participants: PRParticipants) -> pd.Series:
+        dev_conds_single, dev_conds_multiple = cls._build_participants_conditions(participants)
+        or_masks = []
+        for col, value in dev_conds_single:
+            or_masks.append(df[col.key].isin(value))
+        for col, values in dev_conds_multiple:
+            or_masks.append(
+                df[col.key].apply(lambda actual_values: bool(
+                    set(actual_values).intersection(set(values))),
+                ),
+            )
+        return (functools.reduce(operator.or_, or_masks) if or_masks
+                else np.ones(len(df), dtype=bool))
 
 
 class PreloadedMergedPRFactsLoader(MergedPRFactsLoader):

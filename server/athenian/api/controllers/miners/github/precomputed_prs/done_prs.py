@@ -528,34 +528,48 @@ class DonePRFactsLoader:
                                     postgres: bool) -> None:
         ghdprf = GitHubDonePullRequestFacts
         if postgres:
-            developer_filters_single = []
-            for col, pk in ((ghdprf.author, PRParticipationKind.AUTHOR),
-                            (ghdprf.merger, PRParticipationKind.MERGER),
-                            (ghdprf.releaser, PRParticipationKind.RELEASER)):
-                col_parts = participants.get(pk)
-                if not col_parts:
-                    continue
-                developer_filters_single.append(col.in_(col_parts))
+            dev_conds_single, dev_conds_multiple = cls._build_participants_conditions(participants)
+
+            developer_filters_single = [
+                col.in_(col_parts) for col, col_parts in dev_conds_single
+            ]
             # do not send the same array several times
             for f in developer_filters_single[1:]:
                 f.right = developer_filters_single[0].right
-            developer_filters_multiple = []
-            for col, pk in ((ghdprf.commenters, PRParticipationKind.COMMENTER),
-                            (ghdprf.reviewers, PRParticipationKind.REVIEWER),
-                            (ghdprf.commit_authors, PRParticipationKind.COMMIT_AUTHOR),
-                            (ghdprf.commit_committers, PRParticipationKind.COMMIT_COMMITTER)):
-                col_parts = participants.get(pk)
-                if not col_parts:
-                    continue
-                developer_filters_multiple.append(col.has_any(col_parts))
+
+            developer_filters_multiple = [
+                col.has_any(col_parts) for col, col_parts in dev_conds_multiple
+            ]
             # do not send the same array several times
             for f in developer_filters_multiple[1:]:
                 f.right = developer_filters_multiple[0].right
+
             filters.append(or_(*developer_filters_single, *developer_filters_multiple))
         else:
             selected.extend([
                 ghdprf.author, ghdprf.merger, ghdprf.releaser, ghdprf.reviewers, ghdprf.commenters,
                 ghdprf.commit_authors, ghdprf.commit_committers])
+
+    @classmethod
+    def _build_participants_conditions(cls, participants: PRParticipants) -> Tuple[list]:
+
+        def _build_conditions(roles):
+            return [
+                (c, cp) for c, cp in (
+                    (col, participants.get(pk)) for col, pk in roles
+                ) if cp
+            ]
+
+        ghdprf = GitHubDonePullRequestFacts
+        single_roles = ((ghdprf.author, PRParticipationKind.AUTHOR),
+                        (ghdprf.merger, PRParticipationKind.MERGER),
+                        (ghdprf.releaser, PRParticipationKind.RELEASER))
+        multiple_roles = ((ghdprf.commenters, PRParticipationKind.COMMENTER),
+                          (ghdprf.reviewers, PRParticipationKind.REVIEWER),
+                          (ghdprf.commit_authors, PRParticipationKind.COMMIT_AUTHOR),
+                          (ghdprf.commit_committers, PRParticipationKind.COMMIT_COMMITTER))
+
+        return _build_conditions(single_roles), _build_conditions(multiple_roles)
 
     @classmethod
     def _check_participants(cls, row: Mapping, participants: PRParticipants) -> bool:
