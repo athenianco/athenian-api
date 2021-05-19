@@ -592,3 +592,9 @@ async def diff_releases(request: AthenianWebRequest, body: dict) -> web.Response
                 old=diff[0], new=diff[1],
                 releases=[_filtered_release_from_tuple(t) for t in diff[2]]))
     return model_response(result)
+
+
+@weight(1)
+async def filter_code_checks(request: AthenianWebRequest, body: dict) -> web.Response:
+    """Find code check runs that match the specified query."""
+    raise NotImplementedError

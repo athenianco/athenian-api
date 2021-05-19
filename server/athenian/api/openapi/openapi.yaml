@@ -327,6 +327,58 @@ paths:
 # {% endif %}
       x-openapi-router-controller: athenian.api.controllers.events_controller
       x-codegen-request-body-name: body
+  /filter/code_checks:
+    post:
+      operationId: filter_code_checks
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FilterCodeChecksRequest'
+        x-body-name: body
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FilteredCodeCheckRuns'
+          description: Code check runs that satisfy the specified filters.
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvalidRequestError'
+          description: The request is invalid.
+        403:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: Calling user is not allowed to access the specified repositories.
+        404:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The specified account does not exist or the user is not a member.
+        422:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericError'
+          description: The account's installation has not finished yet.
+      security:
+      - bearerAuth: []
+      - apiKeyAuth: []
+      summary: Find code check runs that match the specified query. [What a code check
+        run is exactly.](https://docs.github.com/en/rest/guides/getting-started-with-the-checks-api#about-check-runs)
+      tags:
+      - filter
+# {% if False %}
+      - default
+# {% endif %}
+      x-openapi-router-controller: athenian.api.controllers.filter_controller
+      x-codegen-request-body-name: body
   /filter/commits:
     post:
       operationId: filter_commits
@@ -7520,12 +7572,7 @@ components:
         repogroups:
           $ref: '#/components/schemas/IndexedGroups'
         pushers:
-          description: Check runs must be triggered by commits pushed by these people.
-            When it is impossible to determine who pushed, e.g. in legacy API based
-            checks, they are committers.
-          items:
-            $ref: '#/components/schemas/DeveloperID'
-          type: array
+          $ref: '#/components/schemas/CommitPushers'
         pusher_groups:
           description: |-
             Check runs must be triggered by commits authored by these people.
@@ -7546,6 +7593,7 @@ components:
       type: object
     CodeCheckMetricID:
       description: |-
+        The mentioned terms such as "check suite" and "check run" belong to [the official documentation on GitHub](https://docs.github.com/en/rest/guides/getting-started-with-the-checks-api#about-check-runs).
         * `chk-suites-count` - number of executed check suites.
         * `chk-successful-suites-count` - number of successfully executed check suites.
         * `chk-failed-suites-count` - number of failed check suites.
@@ -7724,7 +7772,8 @@ components:
         quantiles:
           $ref: '#/components/schemas/Quantiles'
         split_by_check_runs:
-          description: Calculate histograms separately for each number of check runs in suite.
+          description: Calculate histograms separately for each number of check runs
+            in suite.
           type: boolean
         account:
           description: Session account ID.
@@ -7840,4 +7889,397 @@ components:
       - metric
       - scale
       - ticks
+      type: object
+    CommitPushers:
+      description: Check runs must be triggered by commits pushed by these people.
+        When it is impossible to determine who pushed, e.g. in legacy API based checks,
+        they are committers.
+      example:
+      - github.com/vmarkovtsev
+      - github.com/se7entyse7en
+      items:
+        $ref: '#/components/schemas/DeveloperID'
+      type: array
+    FilterCodeChecksRequest:
+      additionalProperties: false
+      description: Request body of `/filter/code_checks`.
+      example:
+        in:
+        - github.com/athenianco/athenian-webapp
+        - github.com/athenianco/athenian-api
+        triggered_by:
+        - github.com/vmarkovtsev
+        - github.com/se7entyse7en
+        date_from: 2020-05-01
+        date_to: 2021-05-01
+        timezone: 120
+        account: 1
+      properties:
+        in:
+          $ref: '#/components/schemas/RepositorySet'
+        triggered_by:
+          $ref: '#/components/schemas/CommitPushers'
+        jira:
+          allOf:
+          - description: Analyze only those check runs that belong to PRs mapped to
+              JIRA issues that satisfy this filter.
+          - $ref: '#/components/schemas/JIRAFilter'
+        date_from:
+          description: Date from when to start measuring the metrics.
+          format: date
+          type: string
+        date_to:
+          description: Date up to which to measure the metrics.
+          format: date
+          type: string
+        timezone:
+          $ref: '#/components/schemas/TimeZone'
+        account:
+          description: Session account ID.
+          type: integer
+        quantiles:
+          allOf:
+          - description: Quantiles to apply to the execution time series before calculating
+              the average.
+          - $ref: '#/components/schemas/Quantiles'
+      required:
+      - account
+      - date_from
+      - date_to
+      - in
+      type: object
+    FilteredCodeCheckRuns:
+      additionalProperties: false
+      description: |-
+        Response from `/filter/code_checks`, found code check runs ordered by repository
+        name and then by title. Note: we always consider the completed run executions only.
+      example:
+        items:
+        - title: Unit tests
+          repository: github.com/src-d/athenian-api
+          last_execution_time: 2021-05-18
+          last_execution_url: https://github.com/athenianco/athenian-api/pull/1448/checks?check_run_id=2610787628
+          size_groups:
+          - 3
+          - 5
+          - 8
+          total_stats:
+            count: 100
+            successes: 50
+            mean_execution_time: 200s
+            median_execution_time: 120s
+            skips: 30
+            flaky_count: 0
+            count_timeline:
+            - 0
+            - 20
+            - 40
+            - 30
+            - 0
+            - 10
+            successes_timeline:
+            - 0
+            - 10
+            - 20
+            - 15
+            - 0
+            - 5
+            mean_execution_time_timeline:
+            - null
+            - 160s
+            - 210s
+            - 205s
+            - null
+            - 180s
+            median_execution_time_timeline:
+            - null
+            - 100s
+            - 125s
+            - 120s
+            - null
+            - 110s
+          prs_stats:
+            count: 100
+            successes: 50
+            mean_execution_time: 200s
+            median_execution_time: 120s
+            skips: 30
+            flaky_count: 0
+            count_timeline:
+            - 0
+            - 20
+            - 40
+            - 30
+            - 0
+            - 10
+            successes_timeline:
+            - 0
+            - 10
+            - 20
+            - 15
+            - 0
+            - 5
+            mean_execution_time_timeline:
+            - null
+            - 160s
+            - 210s
+            - 205s
+            - null
+            - 180s
+            median_execution_time_timeline:
+            - null
+            - 100s
+            - 125s
+            - 120s
+            - null
+            - 110s
+        timeline:
+        - 2020-05-01
+        - 2020-05-02
+        - 2020-05-03
+        - 2020-05-04
+        - 2020-05-05
+      properties:
+        timeline:
+          description: |-
+            Sequence of dates from `date_from` till `date_to`. We choose
+            the adaptive intervals by applying these rules on `(date_to - date_from)`:
+            - Less than 5 weeks: daily.
+            - Less than 5 months: weekly (*not aligned*).
+            - Aligned monthly.
+          items:
+            format: date
+            type: string
+          type: array
+        items:
+          description: Found check runs and their stats.
+          items:
+            $ref: '#/components/schemas/FilteredCodeCheckRun'
+          type: array
+      required:
+      - items
+      - timeline
+      type: object
+    CodeCheckRunStatistics:
+      additionalProperties: false
+      description: Gathered statistics about a group of check runs.
+      example:
+        count: 100
+        successes: 50
+        mean_execution_time: 200s
+        median_execution_time: 120s
+        skips: 30
+        flaky_count: 0
+        count_timeline:
+        - 0
+        - 20
+        - 40
+        - 30
+        - 0
+        - 10
+        successes_timeline:
+        - 0
+        - 10
+        - 20
+        - 15
+        - 0
+        - 5
+        mean_execution_time_timeline:
+        - null
+        - 160s
+        - 210s
+        - 205s
+        - null
+        - 180s
+        median_execution_time_timeline:
+        - null
+        - 100s
+        - 125s
+        - 120s
+        - null
+        - 110s
+      properties:
+        count:
+          description: Number of executions with respect to `date_from` and `date_to`.
+          minimum: 1
+          type: integer
+        successes:
+          description: Number of successful executions with respect to `date_from`
+            and `date_to`.
+          minimum: 0
+          type: integer
+        mean_execution_time:
+          allOf:
+          - description: Average elapsed execution time.
+          - $ref: '#/components/schemas/TimeDuration'
+        median_execution_time:
+          allOf:
+          - description: Median elapsed execution time.
+          - $ref: '#/components/schemas/TimeDuration'
+        skips:
+          description: Number of times this check run was skipped.
+          minimum: 0
+          type: integer
+        flaky_count:
+          description: |-
+            Number of times this check run appeared flaky: it both failed and succeeded for
+            the same commit.
+          minimum: 0
+          type: integer
+        count_timeline:
+          description: Number of executions through time. The dates sequence is `FilteredCodeCheckRuns.timeline`.
+          items:
+            minimum: 0
+            type: integer
+          type: array
+        successes_timeline:
+          description: Number of successful executions through time. The dates sequence
+            is `FilteredCodeCheckRuns.timeline`.
+          items:
+            minimum: 0
+            type: integer
+          type: array
+        mean_execution_time_timeline:
+          description: Average elapsed execution time through time. The dates sequence
+            is `FilteredCodeCheckRuns.timeline`.
+          items:
+            $ref: '#/components/schemas/TimeDuration'
+          type: array
+        median_execution_time_timeline:
+          description: Median elapsed execution time through time. The dates sequence
+            is `FilteredCodeCheckRuns.timeline`.
+          items:
+            $ref: '#/components/schemas/TimeDuration'
+          type: array
+      required:
+      - count
+      - count_timeline
+      - flaky_count
+      - mean_execution_time
+      - mean_execution_time_timeline
+      - median_execution_time
+      - median_execution_time_timeline
+      - skips
+      - successes
+      - successes_timeline
+      type: object
+    FilteredCodeCheckRun:
+      additionalProperties: false
+      description: Mined information about a code check run.
+      example:
+        title: Unit tests
+        repository: github.com/src-d/athenian-api
+        last_execution_time: 2021-05-18
+        last_execution_url: https://github.com/athenianco/athenian-api/pull/1448/checks?check_run_id=2610787628
+        size_groups:
+        - 3
+        - 5
+        - 8
+        total_stats:
+          count: 100
+          successes: 50
+          mean_execution_time: 200s
+          median_execution_time: 120s
+          skips: 30
+          flaky_count: 0
+          count_timeline:
+          - 0
+          - 20
+          - 40
+          - 30
+          - 0
+          - 10
+          successes_timeline:
+          - 0
+          - 10
+          - 20
+          - 15
+          - 0
+          - 5
+          mean_execution_time_timeline:
+          - null
+          - 160s
+          - 210s
+          - 205s
+          - null
+          - 180s
+          median_execution_time_timeline:
+          - null
+          - 100s
+          - 125s
+          - 120s
+          - null
+          - 110s
+        prs_stats:
+          count: 100
+          successes: 50
+          mean_execution_time: 200s
+          median_execution_time: 120s
+          skips: 30
+          flaky_count: 0
+          count_timeline:
+          - 0
+          - 20
+          - 40
+          - 30
+          - 0
+          - 10
+          successes_timeline:
+          - 0
+          - 10
+          - 20
+          - 15
+          - 0
+          - 5
+          mean_execution_time_timeline:
+          - null
+          - 160s
+          - 210s
+          - 205s
+          - null
+          - 180s
+          median_execution_time_timeline:
+          - null
+          - 100s
+          - 125s
+          - 120s
+          - null
+          - 110s
+      properties:
+        title:
+          description: Unique name of the check run.
+          type: string
+        repository:
+          $ref: '#/components/schemas/RepositoryID'
+        last_execution_time:
+          description: Timestamp of when the check run launched the latest.
+          format: date-time
+          type: string
+        last_execution_url:
+          description: Link to the check run that launched the latest.
+          format: url
+          type: string
+        total_stats:
+          allOf:
+          - description: Gathered statistics for executions triggered by both direct
+              commit pushes and pull requests.
+          - $ref: '#/components/schemas/CodeCheckRunStatistics'
+        prs_stats:
+          allOf:
+          - description: Gathered statistics for executions triggered by pull requests.
+          - $ref: '#/components/schemas/CodeCheckRunStatistics'
+        size_groups:
+          description: Check suite sizes this check run belongs to.
+          items:
+            minimum: 1
+            type: integer
+          type: array
+      required:
+      - last_execution_time
+      - last_execution_url
+      - prs_stats
+      - repository
+      - size_groups
+      - title
+      - total_stats
       type: object
