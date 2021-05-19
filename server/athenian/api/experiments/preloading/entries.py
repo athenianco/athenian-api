@@ -3,13 +3,14 @@ from datetime import datetime, timezone
 import functools
 import logging
 import operator
-from typing import Collection, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple, Union
+from typing import Any, Collection, Dict, Iterable, List, Mapping, Optional, Sequence, Set, \
+    Tuple, Union
 
 import aiomcache
 import databases
 import numpy as np
 import pandas as pd
-from sqlalchemy.ext.declarative.api import Base as SQLABase
+from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql.elements import BinaryExpression
 
 from athenian.api import metadata
@@ -20,7 +21,7 @@ from athenian.api.controllers.features.github.unfresh_pull_request_metrics impor
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.precomputed_prs import \
-    MergedPRFactsLoader, OpenPRFactsLoader
+    DonePRFactsLoader, MergedPRFactsLoader, OpenPRFactsLoader
 from athenian.api.controllers.miners.github.precomputed_prs.utils import extract_release_match
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.github.release_load import \
@@ -143,6 +144,36 @@ class PreloadedReleaseToPullRequestMapper(ReleaseToPullRequestMapper):
     """Mapper from preloaded releases to pull requests."""
 
     release_loader = PreloadedReleaseLoader
+
+
+class PreloadedDonePRFactsLoader(DonePRFactsLoader):
+    """Loader for preloaded done PRs facts."""
+
+    @classmethod
+    @sentry_span
+    async def _load_precomputed_done_filters(cls,
+                                             columns: List[InstrumentedAttribute],
+                                             time_from: Optional[datetime],
+                                             time_to: Optional[datetime],
+                                             repos: Collection[str],
+                                             participants: PRParticipants,
+                                             labels: LabelFilter,
+                                             default_branches: Dict[str, str],
+                                             exclude_inactive: bool,
+                                             release_settings: ReleaseSettings,
+                                             account: int,
+                                             pdb: databases.Database,
+                                             ) -> Tuple[Dict[str, Mapping[str, Any]],
+                                                        Dict[str, List[str]]]:
+        """
+        Load some data belonging to released or rejected PRs from the preloaded precomputed DB.
+
+        Query version. JIRA must be filtered separately.
+        :return: 1. Map PR node ID -> repository name & specified column value. \
+                 2. Map from repository name to ambiguous PR node IDs which are released by \
+                 branch with tag_or_branch strategy and without tags on the time interval.
+        """
+        pass
 
 
 class PreloadedMergedPRFactsLoader(MergedPRFactsLoader):
@@ -497,4 +528,5 @@ class MetricEntriesCalculator(OriginalMetricEntriesCalculator):
     branch_miner = PreloadedBranchMiner
     unfresh_pr_facts_fetcher = PreloadedUnfreshPullRequestFactsFetcher
     pr_jira_mapper = PreloadedPullRequestJiraMapper
+    done_prs_facts_loader = PreloadedDonePRFactsLoader
     load_delta = 10
