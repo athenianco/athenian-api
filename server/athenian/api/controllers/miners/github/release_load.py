@@ -901,11 +901,3 @@ class ReleaseMatcher:
                             PushCommit.acc_id.in_(self._meta_ids))) \
                 .order_by(desc(PushCommit.committed_date))
         return await read_sql_query(query, self._mdb, PushCommit)
-
-
-# TODO: these have to be removed, these are here just for keeping backward-compatibility
-# without the need to re-write already all the places these functions are called
-load_releases = ReleaseLoader.load_releases
-fetch_precomputed_release_match_spans = ReleaseLoader.fetch_precomputed_release_match_spans
-_fetch_precomputed_releases = ReleaseLoader._fetch_precomputed_releases
-_store_precomputed_release_match_spans = ReleaseLoader._store_precomputed_release_match_spans

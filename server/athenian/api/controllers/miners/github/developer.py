@@ -11,8 +11,8 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.branches import extract_branches
-from athenian.api.controllers.miners.github.release_load import load_releases
+from athenian.api.controllers.miners.github.branches import BranchMiner
+from athenian.api.controllers.miners.github.release_load import ReleaseLoader
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
 from athenian.api.controllers.settings import ReleaseSettings
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
@@ -177,8 +177,9 @@ async def _mine_releases(repo_ids: np.ndarray,
                          rdb: databases.Database,
                          cache: Optional[aiomcache.Client],
                          ) -> pd.DataFrame:
-    branches, default_branches = await extract_branches(repo_names, meta_ids, mdb, cache)
-    releases, _ = await load_releases(
+    branches, default_branches = await BranchMiner.extract_branches(
+        repo_names, meta_ids, mdb, cache)
+    releases, _ = await ReleaseLoader.load_releases(
         repo_names, branches, default_branches, time_from, time_to,
         release_settings, account, meta_ids, mdb, pdb, rdb, cache)
     release_authors = releases[Release.author.key].values.astype("U")

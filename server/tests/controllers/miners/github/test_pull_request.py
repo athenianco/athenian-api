@@ -13,14 +13,12 @@ from sqlalchemy import select, update
 
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
-from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.commit import _empty_dag
 from athenian.api.controllers.miners.github.precomputed_prs import \
     load_merged_unreleased_pull_request_facts, store_merged_unreleased_pull_request_facts, \
     store_open_pull_request_facts
 from athenian.api.controllers.miners.github.pull_request import PullRequestFactsMiner, \
     PullRequestMiner
-from athenian.api.controllers.miners.github.release_load import load_releases
 from athenian.api.controllers.miners.types import DAG, MinedPullRequest, PRParticipationKind, \
     PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
@@ -580,7 +578,8 @@ async def test_pr_facts_miner_empty_releases(branches, default_branches, mdb, pd
 
 
 @with_defer
-async def test_pr_mine_by_ids(branches, default_branches, dag, mdb, pdb, rdb, cache):
+async def test_pr_mine_by_ids(branches, default_branches, dag, mdb, pdb, rdb, cache,
+                              release_loader):
     date_from = date(year=2017, month=1, day=1)
     date_to = date(year=2018, month=1, day=1)
     time_from = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
@@ -612,7 +611,7 @@ async def test_pr_mine_by_ids(branches, default_branches, dag, mdb, pdb, rdb, ca
     mined_prs = list(miner)
     prs = pd.DataFrame([pd.Series(pr.pr) for pr in mined_prs])
     prs.set_index(PullRequest.node_id.key, inplace=True)
-    releases, matched_bys = await load_releases(
+    releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"], branches, default_branches, time_from, time_to,
         release_settings, 1, (6366825,), mdb, pdb, rdb, cache)
     dfs1, _, _ = await PullRequestMiner.mine_by_ids(
@@ -1093,8 +1092,8 @@ async def test_pr_miner_jira_cache(
 
 
 @with_defer
-async def test_fetch_prs_no_branches(mdb, pdb, dag):
-    branches, _ = await extract_branches(["src-d/go-git"], (6366825,), mdb, None)
+async def test_fetch_prs_no_branches(mdb, pdb, dag, branch_miner):
+    branches, _ = await branch_miner.extract_branches(["src-d/go-git"], (6366825,), mdb, None)
     branches = branches[branches[Branch.branch_name.key] == "master"]
     branches[Branch.repository_full_name.key] = "xxx"
     branches[Branch.commit_date] = [datetime.now(timezone.utc)]
@@ -1116,8 +1115,8 @@ async def test_fetch_prs_no_branches(mdb, pdb, dag):
 
 
 @with_defer
-async def test_fetch_prs_dead(mdb, pdb):
-    branches, _ = await extract_branches(["src-d/go-git"], (6366825,), mdb, None)
+async def test_fetch_prs_dead(mdb, pdb, branch_miner):
+    branches, _ = await branch_miner.extract_branches(["src-d/go-git"], (6366825,), mdb, None)
     branches = branches[branches[Branch.branch_name.key] == "master"]
     branches[Branch.commit_date] = datetime.now(timezone.utc)
     args = [

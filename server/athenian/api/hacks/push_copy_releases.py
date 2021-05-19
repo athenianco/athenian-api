@@ -13,8 +13,8 @@ from sqlalchemy.dialects.postgresql import insert as postgres_insert
 import athenian
 from athenian.api.__main__ import check_schema_versions, compose_db_options, setup_context
 from athenian.api.controllers.account import get_metadata_account_ids
-from athenian.api.controllers.miners.github.branches import extract_branches
-from athenian.api.controllers.miners.github.release_load import load_releases
+from athenian.api.controllers.miners.github.branches import BranchMiner
+from athenian.api.controllers.miners.github.release_load import ReleaseLoader
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import Settings
 from athenian.api.db import ParallelDatabase
@@ -93,10 +93,11 @@ def main():
         settings = await Settings \
             .from_account(args.account, sdb, mdb, None, None) \
             .list_release_matches(prefixer.prefix_repo_names(args.repos))
-        branches, default_branches = await extract_branches(args.repos, meta_ids, mdb, None)
+        branches, default_branches = await BranchMiner.extract_branches(
+            args.repos, meta_ids, mdb, None)
         now = datetime.now(timezone.utc)
         log.info("Loading releases in %s", args.repos)
-        releases, _ = await load_releases(
+        releases, _ = await ReleaseLoader.load_releases(
             args.repos, branches, default_branches, now - timedelta(days=365 * 2), now,
             settings, args.account, meta_ids, mdb, pdb, rdb, None)
         inserted = []

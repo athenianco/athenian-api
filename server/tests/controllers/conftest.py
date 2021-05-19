@@ -9,7 +9,6 @@ import pytest
 from sqlalchemy import delete, insert, select
 
 from athenian.api.controllers.features.entries import MetricEntriesCalculator
-from athenian.api.controllers.miners.github.branches import extract_branches
 from athenian.api.controllers.miners.github.commit import _empty_dag, _fetch_commit_history_edges
 from athenian.api.controllers.miners.github.dag_accelerated import join_dags
 from athenian.api.controllers.miners.types import nonemin, PullRequestFacts
@@ -60,10 +59,10 @@ _branches = None
 
 
 @pytest.fixture(scope="function")
-async def branches(mdb):
+async def branches(mdb, branch_miner):
     global _branches
     if _branches is None:
-        _branches, _ = await extract_branches(["src-d/go-git"], (6366825,), mdb, None)
+        _branches, _ = await branch_miner.extract_branches(["src-d/go-git"], (6366825,), mdb, None)
     return _branches
 
 

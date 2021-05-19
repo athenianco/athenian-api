@@ -14,14 +14,12 @@ from athenian.api.controllers.features.github.pull_request_filter import _fetch_
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.precomputed_prs import \
     delete_force_push_dropped_prs, discover_inactive_merged_unreleased_prs, \
-    load_merged_unreleased_pull_request_facts, load_open_pull_request_facts, \
-    load_open_pull_request_facts_unfresh, load_precomputed_done_candidates, \
+    load_merged_unreleased_pull_request_facts, load_precomputed_done_candidates, \
     load_precomputed_done_facts_filters, load_precomputed_done_facts_ids, \
     load_precomputed_done_facts_reponums, load_precomputed_pr_releases, \
     store_merged_unreleased_pull_request_facts, store_open_pull_request_facts, \
     store_precomputed_done_facts, update_unreleased_prs
-from athenian.api.controllers.miners.github.release_load import load_releases
-from athenian.api.controllers.miners.github.release_match import map_prs_to_releases
+from athenian.api.controllers.miners.github.release_match import PullRequestToReleaseMapper
 from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
     new_released_prs_df
 from athenian.api.controllers.miners.types import MinedPullRequest, PRParticipationKind, \
@@ -599,14 +597,14 @@ async def test_load_precomputed_pr_releases_tag(pr_samples, default_branches, pd
 
 @with_defer
 async def test_discover_update_unreleased_prs_smoke(
-        mdb, pdb, rdb, default_branches, release_match_setting_tag):
+        mdb, pdb, rdb, default_branches, release_match_setting_tag, release_loader):
     prs = await read_sql_query(
         select([PullRequest]).where(and_(PullRequest.number.in_(range(1000, 1010)),
                                          PullRequest.merged_at.isnot(None))),
         mdb, PullRequest, index=PullRequest.node_id.key)
     prs[prs[PullRequest.merged_at.key].isnull()] = datetime.now(tz=timezone.utc)
     utc = timezone.utc
-    releases, matched_bys = await load_releases(
+    releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"], None, default_branches,
         datetime(2018, 9, 1, tzinfo=utc),
         datetime(2018, 11, 1, tzinfo=utc),
@@ -620,7 +618,7 @@ async def test_discover_update_unreleased_prs_smoke(
     await update_unreleased_prs(
         prs, empty_rdf, datetime(2018, 11, 1, tzinfo=utc), {},
         matched_bys, default_branches, release_match_setting_tag, 1, pdb, asyncio.Event())
-    releases, matched_bys = await load_releases(
+    releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"], None, default_branches,
         datetime(2018, 11, 1, tzinfo=utc),
         datetime(2018, 11, 20, tzinfo=utc),
@@ -645,7 +643,7 @@ async def test_discover_update_unreleased_prs_smoke(
         prs, datetime(2018, 11, 20, tzinfo=utc), LabelFilter.empty(), matched_bys,
         default_branches, release_match_setting_tag, 1, pdb)
     assert set(prs.index) == set(unreleased_prs)
-    releases, matched_bys = await load_releases(
+    releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"], None, default_branches,
         datetime(2018, 9, 1, tzinfo=utc),
         datetime(2018, 11, 1, tzinfo=utc),
@@ -660,7 +658,7 @@ async def test_discover_update_unreleased_prs_smoke(
             branches="", tags="v.*", match=ReleaseMatch.tag)}),
         1, pdb)
     assert len(unreleased_prs) == 0
-    releases, matched_bys = await load_releases(
+    releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"], None, default_branches,
         datetime(2019, 1, 29, tzinfo=utc),
         datetime(2019, 2, 1, tzinfo=utc),
@@ -676,7 +674,7 @@ async def test_discover_update_unreleased_prs_smoke(
 
 @with_defer
 async def test_discover_update_unreleased_prs_released(
-        mdb, pdb, rdb, dag, default_branches, release_match_setting_tag):
+        mdb, pdb, rdb, dag, default_branches, release_match_setting_tag, release_loader):
     prs = await read_sql_query(
         select([PullRequest]).where(and_(PullRequest.number.in_(range(1000, 1010)),
                                          PullRequest.merged_at.isnot(None))),
@@ -686,13 +684,13 @@ async def test_discover_update_unreleased_prs_released(
     utc = timezone.utc
     time_from = datetime(2018, 10, 1, tzinfo=utc)
     time_to = datetime(2018, 12, 1, tzinfo=utc)
-    releases, matched_bys = await load_releases(
+    releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"], None, default_branches,
         time_from,
         time_to,
         release_match_setting_tag,
         1, (6366825,), mdb, pdb, rdb, None)
-    released_prs, _, _ = await map_prs_to_releases(
+    released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
         prs, releases, matched_bys, pd.DataFrame(columns=[Branch.commit_id.key]), {}, time_to, dag,
         release_match_setting_tag, 1, (6366825,), mdb, pdb, None)
     await wait_deferred()
@@ -716,7 +714,7 @@ async def test_discover_update_unreleased_prs_released(
 
 @with_defer
 async def test_discover_update_unreleased_prs_exclude_inactive(
-        mdb, pdb, rdb, dag, default_branches, release_match_setting_tag):
+        mdb, pdb, rdb, dag, default_branches, release_match_setting_tag, release_loader):
     postgres = pdb.url.dialect in ("postgres", "postgresql")
     prs = await read_sql_query(
         select([PullRequest]).where(and_(PullRequest.number.in_(range(1000, 1010)),
@@ -727,13 +725,13 @@ async def test_discover_update_unreleased_prs_exclude_inactive(
     utc = timezone.utc
     time_from = datetime(2018, 10, 1, tzinfo=utc)
     time_to = datetime(2018, 12, 1, tzinfo=utc)
-    releases, matched_bys = await load_releases(
+    releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"], None, default_branches,
         time_from,
         time_to,
         release_match_setting_tag,
         1, (6366825,), mdb, pdb, rdb, None)
-    released_prs, _, _ = await map_prs_to_releases(
+    released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
         prs, releases, matched_bys, pd.DataFrame(columns=[Branch.commit_id.key]), {}, time_to, dag,
         release_match_setting_tag, 1, (6366825,), mdb, pdb, None)
     await wait_deferred()
@@ -762,7 +760,8 @@ async def test_discover_update_unreleased_prs_exclude_inactive(
 
 @with_defer
 async def test_discover_old_merged_unreleased_prs_smoke(
-        metrics_calculator_factory, mdb, pdb, rdb, dag, release_match_setting_tag, cache):
+        metrics_calculator_factory, mdb, pdb, rdb, dag, release_match_setting_tag, cache,
+        release_loader):
     metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     metrics_time_from = datetime(2018, 1, 1, tzinfo=timezone.utc)
     metrics_time_to = datetime(2020, 5, 1, tzinfo=timezone.utc)
@@ -792,12 +791,12 @@ async def test_discover_old_merged_unreleased_prs_smoke(
     unreleased_prs = await read_sql_query(
         select([PullRequest]).where(PullRequest.node_id.in_(unreleased_prs)),
         mdb, PullRequest, index=PullRequest.node_id.key)
-    releases, matched_bys = await load_releases(
+    releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"], None, None, metrics_time_from, unreleased_time_to,
         release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, cache)
     await wait_deferred()
     unreleased_prs["dead"] = False
-    released_prs, _, _ = await map_prs_to_releases(
+    released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
         unreleased_prs, releases, matched_bys, pd.DataFrame(columns=[Branch.commit_id.key]), {},
         unreleased_time_to, dag, release_match_setting_tag, 1, (6366825,), mdb, pdb, cache)
     await wait_deferred()
@@ -941,7 +940,8 @@ async def test_store_merged_unreleased_pull_request_facts_smoke(
 
 @with_defer
 async def test_store_open_pull_request_facts_smoke(
-        mdb, pdb, rdb, release_match_setting_tag):
+        mdb, pdb, rdb, release_match_setting_tag, open_prs_facts_loader,
+        with_preloading_enabled):
     prs, dfs, facts, _ = await _fetch_pull_requests(
         {"src-d/go-git": set(range(1000, 1010))},
         release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, None)
@@ -967,6 +967,8 @@ async def test_store_open_pull_request_facts_smoke(
         true_dict[pr.pr[PullRequest.node_id.key]] = f
     dfs.prs[PullRequest.closed_at.key] = None
     await store_open_pull_request_facts(zip(prs, samples), 1, pdb)
+    if with_preloading_enabled:
+        await pdb.cache.refresh()
     ghoprf = GitHubOpenPullRequestFacts
     rows = await pdb.fetch_all(select([ghoprf]))
     assert len(rows) == 10
@@ -980,18 +982,18 @@ async def test_store_open_pull_request_facts_smoke(
             author=authors[row[ghoprf.pr_node_id.key]])
     assert true_dict == new_dict
 
-    loaded_facts = await load_open_pull_request_facts(dfs.prs, 1, pdb)
+    loaded_facts = await open_prs_facts_loader.load_open_pull_request_facts(dfs.prs, 1, pdb)
     for facts in loaded_facts.values():
         assert facts.repository_full_name == "src-d/go-git"
     assert true_dict == loaded_facts
 
-    loaded_facts = await load_open_pull_request_facts_unfresh(
+    loaded_facts = await open_prs_facts_loader.load_open_pull_request_facts_unfresh(
         dfs.prs.index, datetime(2016, 1, 1), datetime(2020, 1, 1), True, authors, 1, pdb)
     for node_id, facts in loaded_facts.items():
         assert facts.repository_full_name == "src-d/go-git"
         assert facts.author == authors[node_id]
     assert true_dict == loaded_facts
-    loaded_facts = await load_open_pull_request_facts_unfresh(
+    loaded_facts = await open_prs_facts_loader.load_open_pull_request_facts_unfresh(
         dfs.prs.index, datetime(2019, 11, 1), datetime(2020, 1, 1), True, authors, 1, pdb)
     assert len(loaded_facts) == 0
 

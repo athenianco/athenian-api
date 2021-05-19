@@ -163,9 +163,3 @@ class UnfreshPullRequestFactsFetcher:
             [PullRequest.node_id.in_(node_ids), PullRequest.acc_id.in_(meta_ids)],
             jira, mdb, cache, columns=columns)
         return await read_sql_query(query, mdb, columns, index=PullRequest.node_id.key)
-
-
-# TODO: these have to be removed, these are here just for keeping backward-compatibility
-# without the need to re-write already all the places these functions are called
-fetch_pull_request_facts_unfresh = \
-    UnfreshPullRequestFactsFetcher.fetch_pull_request_facts_unfresh

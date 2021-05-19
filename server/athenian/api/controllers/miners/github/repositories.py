@@ -12,7 +12,7 @@ from sqlalchemy.sql.functions import coalesce
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import LabelFilter
-from athenian.api.controllers.miners.github.branches import extract_branches
+from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.precomputed_prs import \
     discover_inactive_merged_unreleased_prs
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
@@ -96,7 +96,7 @@ async def mine_repositories(repos: Collection[str],
 
     @sentry_span
     async def fetch_inactive_merged_prs():
-        _, default_branches = await extract_branches(repos, meta_ids, mdb, cache)
+        _, default_branches = await BranchMiner.extract_branches(repos, meta_ids, mdb, cache)
         _, inactive_repos = await discover_inactive_merged_unreleased_prs(
             time_from, time_to, repos, {}, LabelFilter.empty(), default_branches,
             release_settings, account, pdb, cache)

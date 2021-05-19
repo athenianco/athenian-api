@@ -28,7 +28,7 @@ from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_C
 from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_inrange
 from athenian.api.controllers.miners.github.precomputed_prs import \
     discover_inactive_merged_unreleased_prs, load_merged_unreleased_pull_request_facts, \
-    load_open_pull_request_facts, update_unreleased_prs
+    OpenPRFactsLoader, update_unreleased_prs
 from athenian.api.controllers.miners.github.release_match import PullRequestToReleaseMapper, \
     ReleaseToPullRequestMapper
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
@@ -283,7 +283,7 @@ class PullRequestMiner:
                 prs, unreleased.index, time_to, releases, matched_bys, branches,
                 default_branches, release_dags, release_settings, account, meta_ids,
                 mdb, pdb, cache, truncate=truncate),
-            load_open_pull_request_facts(prs, account, pdb),
+            OpenPRFactsLoader.load_open_pull_request_facts(prs, account, pdb),
         ]
         (dfs, unreleased_facts, unreleased_prs_event), open_facts = await gather(
             *tasks, op="PullRequestMiner.mine/external_data")

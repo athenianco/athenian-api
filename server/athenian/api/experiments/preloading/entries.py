@@ -1,10 +1,11 @@
-from datetime import datetime
+from datetime import datetime, timezone
 import functools
 import operator
 from typing import Collection, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple, Union
 
 import aiomcache
 import databases
+import numpy as np
 import pandas as pd
 from sqlalchemy.sql.elements import BinaryExpression
 
@@ -13,8 +14,7 @@ from athenian.api.controllers.features.github.unfresh_pull_request_metrics impor
     UnfreshPullRequestFactsFetcher
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import BranchMiner
-from athenian.api.controllers.miners.github.precomputed_prs import \
-    build_days_range, OpenPRFactsLoader
+from athenian.api.controllers.miners.github.precomputed_prs import OpenPRFactsLoader
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.github.release_load import \
     match_groups_to_conditions, ReleaseLoader
@@ -74,8 +74,8 @@ class PreloadedReleaseLoader(ReleaseLoader):
         release_match_spans = cached_df.filter(mask)
         spans = {}
         for time_from, time_to, release_match, repository_full_name in zip(
-                release_match_spans["time_from"].values,
-                release_match_spans["time_to"].values,
+                release_match_spans["time_from"],
+                release_match_spans["time_to"],
                 release_match_spans["release_match"].values,
                 release_match_spans["repository_full_name"].values,
         ):
@@ -83,6 +83,7 @@ class PreloadedReleaseLoader(ReleaseLoader):
                 release_match = ReleaseMatch.tag
             else:
                 release_match = ReleaseMatch.branch
+
             times = time_from, time_to
             spans.setdefault(repository_full_name, {})[release_match] = times
 
@@ -100,7 +101,8 @@ class PreloadedReleaseLoader(ReleaseLoader):
             for cond in or_conditions
         ]
 
-        return functools.reduce(operator.or_, or_masks)
+        return (functools.reduce(operator.or_, or_masks) if or_masks
+                else np.ones(len(df), dtype=bool))
 
 
 class PreloadedReleaseToPullRequestMapper(ReleaseToPullRequestMapper):
@@ -135,12 +137,22 @@ class PreloadedOpenPRFactsLoader(OpenPRFactsLoader):
         df = cached_df.df
         mask = (
             (df["acc_id"] == account)
-            & df["pr_node_id"].isin(prs)
+            & df["pr_node_id"].isin(pr.encode() for pr in prs)
         )
 
         if exclude_inactive:
-            date_range = build_days_range(time_from, time_to)
-            mask &= df["activity_days"].apply(lambda v: bool(set(v).intersection(date_range)))
+            activity_days = np.concatenate(df["activity_days"])
+            activity_mask = np.full(len(df["activity_days"]), False)
+            activity_days_in_range = (
+                (time_from.replace(tzinfo=timezone.utc) <= activity_days) &
+                (activity_days < time_to.replace(tzinfo=timezone.utc))
+            )
+            activity_offsets = np.cumsum(df["activity_days"].apply(len).values)
+            indexes = np.searchsorted(activity_offsets, np.nonzero(activity_days_in_range)[0],
+                                      side="right")
+            activity_mask[indexes] = 1
+
+            mask &= activity_mask
 
         open_prs_facts = cached_df.filter(mask, columns=[
             "pr_node_id", "repository_full_name", "data"])

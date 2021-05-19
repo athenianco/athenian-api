@@ -21,7 +21,7 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import LabelFilter
-from athenian.api.controllers.miners.github.branches import extract_branches, \
+from athenian.api.controllers.miners.github.branches import BranchMiner, \
     load_branch_commit_dates
 from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_COLUMNS, \
     fetch_precomputed_commit_history_dags, fetch_repository_commits
@@ -436,7 +436,7 @@ def _post_process_ambiguous_done_prs(result: Dict[str, Mapping[str, Any]],
     result.update(ambiguous[ReleaseMatch.tag.name])
     repokey = GitHubDonePullRequestFacts.repository_full_name.key
     # We've found PRs released by tag belonging to these repos.
-    # This means that we are going to load tags in load_releases().
+    # This means that we are going to load tags in ReleaseLoader.load_releases().
     confirmed_tag_repos = {obj[repokey] for obj in ambiguous[ReleaseMatch.tag.name].values()}
     ambiguous_prs = defaultdict(list)
     for node_id, obj in ambiguous[ReleaseMatch.branch.name].items():
@@ -1425,7 +1425,7 @@ async def delete_force_push_dropped_prs(repos: Iterable[str],
     """
     @sentry_span
     async def fetch_branches():
-        branches, _ = await extract_branches(repos, meta_ids, mdb, cache)
+        branches, _ = await BranchMiner.extract_branches(repos, meta_ids, mdb, cache)
         await load_branch_commit_dates(branches, meta_ids, mdb)
         return branches
 
@@ -1466,10 +1466,3 @@ async def delete_force_push_dropped_prs(repos: Iterable[str],
             .where(and_(ghdprf.pr_node_id.in_(dead_pr_node_ids),
                         ghdprf.release_match != ReleaseMatch.force_push_drop.name)))
     return dead_pr_node_ids
-
-
-# TODO: these have to be removed, these are here just for keeping backward-compatibility
-# without the need to re-write already all the places these functions are called
-load_open_pull_request_facts = OpenPRFactsLoader.load_open_pull_request_facts
-load_open_pull_request_facts_unfresh = OpenPRFactsLoader.load_open_pull_request_facts_unfresh
-load_open_pull_request_facts_all = OpenPRFactsLoader.load_open_pull_request_facts_all

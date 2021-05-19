@@ -17,7 +17,7 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached, CancelCache
 from athenian.api.controllers.miners.filters import JIRAFilter
-from athenian.api.controllers.miners.github.branches import extract_branches
+from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.commit import fetch_precomputed_commit_history_dags, \
     fetch_repository_commits, RELEASE_FETCH_COMMITS_COLUMNS
 from athenian.api.controllers.miners.github.dag_accelerated import extract_subdag, \
@@ -26,9 +26,9 @@ from athenian.api.controllers.miners.github.precomputed_releases import \
     fetch_precomputed_releases_by_name, load_precomputed_release_facts, \
     store_precomputed_release_facts
 from athenian.api.controllers.miners.github.release_load import \
-    fetch_precomputed_release_match_spans, group_repos_by_release_match, load_releases
+    group_repos_by_release_match, ReleaseLoader
 from athenian.api.controllers.miners.github.release_match import \
-    _fetch_repository_first_commit_dates, _find_releases_for_matching_prs, load_commit_dags
+    load_commit_dags, ReleaseToPullRequestMapper
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.github.users import mine_user_avatars
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
@@ -99,7 +99,7 @@ async def mine_releases(repos: Iterable[str],
              3. Release matched_by-s.
     """
     log = logging.getLogger("%s.mine_releases" % metadata.__package__)
-    releases_in_time_range, matched_bys = await load_releases(
+    releases_in_time_range, matched_bys = await ReleaseLoader.load_releases(
         repos, branches, default_branches, time_from, time_to,
         settings, account, meta_ids, mdb, pdb, rdb, cache, force_fresh=force_fresh)
     # resolve ambiguous release match settings
@@ -142,13 +142,13 @@ async def mine_releases(repos: Iterable[str],
         releases_in_time_range = releases_in_time_range.take(np.where(
             releases_in_time_range[Release.repository_full_name.key].isin(missing_repos).values,
         )[0])
-        _, releases, _, _ = await _find_releases_for_matching_prs(
+        _, releases, _, _ = await ReleaseToPullRequestMapper._find_releases_for_matching_prs(
             missing_repos, branches, default_branches, time_from, time_to, False,
             settings, account, meta_ids, mdb, pdb, rdb, cache,
             releases_in_time_range=releases_in_time_range)
         tasks = [
             load_commit_dags(releases, account, meta_ids, mdb, pdb, cache),
-            _fetch_repository_first_commit_dates(
+            ReleaseToPullRequestMapper._fetch_repository_first_commit_dates(
                 missing_repos, account, meta_ids, mdb, pdb, cache),
         ]
         dags, first_commit_dates = await gather(*tasks, op="mine_releases/commits")
@@ -614,7 +614,7 @@ async def _load_releases_by_name(names: Dict[str, Set[str]],
                                             Dict[str, str]]:
     names = await _complete_commit_hashes(names, meta_ids, mdb)
     tasks = [
-        extract_branches(names, meta_ids, mdb, cache),
+        BranchMiner.extract_branches(names, meta_ids, mdb, cache),
         fetch_precomputed_releases_by_name(names, account, pdb),
     ]
     (branches, default_branches), releases = await gather(*tasks)
@@ -632,7 +632,8 @@ async def _load_releases_by_name(names: Dict[str, Set[str]],
         match_groups, event_releases, repos_count = group_repos_by_release_match(
             missing, default_branches, settings)
         # event releases will be loaded in any case
-        spans = await fetch_precomputed_release_match_spans(match_groups, account, pdb)
+        spans = await ReleaseLoader.fetch_precomputed_release_match_spans(
+            match_groups, account, pdb)
         offset = timedelta(hours=2)
         max_offset = timedelta(days=5 * 365)
         for repo in missing:
@@ -650,7 +651,7 @@ async def _load_releases_by_name(names: Dict[str, Set[str]],
             except KeyError:
                 offset = max_offset
                 break
-        new_releases, _ = await load_releases(
+        new_releases, _ = await ReleaseLoader.load_releases(
             missing, branches, default_branches, now - offset, now,
             settings, account, meta_ids, mdb, pdb, rdb, cache, force_fresh=True)
         new_releases_index = defaultdict(dict)

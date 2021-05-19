@@ -23,7 +23,7 @@ from athenian.api.controllers.jira import get_jira_installation, get_jira_instal
     load_mapped_jira_users
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.branches import extract_branches
+from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
 from athenian.api.controllers.miners.github.contributors import mine_contributors
 from athenian.api.controllers.miners.github.label import mine_labels
@@ -345,7 +345,7 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
     ]
     settings, jira_ids = await gather(*tasks)
     repos = [r.split("/", 1)[1] for r in repos]
-    branches, default_branches = await extract_branches(
+    branches, default_branches = await BranchMiner.extract_branches(
         repos, meta_ids, request.mdb, request.cache)
     releases, avatars, _ = await mine_releases(
         repos, participants, branches, default_branches, filt.date_from, filt.date_to,

@@ -14,16 +14,15 @@ from athenian.api.controllers.features.metric_calculator import df_from_structs
 from athenian.api.controllers.jira import get_jira_installation, load_mapped_jira_users
 from athenian.api.controllers.jira_controller import participant_columns
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.branches import extract_branches
+from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.check_run import mine_check_runs
 from athenian.api.controllers.miners.github.contributors import mine_contributors
 from athenian.api.controllers.miners.github.developer import DeveloperTopic, \
     mine_developer_activities
 from athenian.api.controllers.miners.github.precomputed_prs import \
-    load_merged_pull_request_facts_all, load_open_pull_request_facts_all, \
-    load_precomputed_done_facts_all
+    load_merged_pull_request_facts_all, load_precomputed_done_facts_all, OpenPRFactsLoader
 from athenian.api.controllers.miners.github.release_mine import mine_releases
-from athenian.api.controllers.miners.jira.issue import append_pr_jira_mapping, fetch_jira_issues
+from athenian.api.controllers.miners.jira.issue import fetch_jira_issues, PullRequestJiraMapper
 from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
 from athenian.api.controllers.settings import ReleaseSettings
 from athenian.api.models.metadata.github import PullRequest, Release, User
@@ -60,7 +59,8 @@ async def mine_all_prs(repos: Collection[str],
         extra=[ghdprf.release_url, ghdprf.release_node_id])
     merged_facts = await load_merged_pull_request_facts_all(repos, done_facts, account, pdb)
     merged_node_ids = list(chain(done_facts.keys(), merged_facts.keys()))
-    open_facts = await load_open_pull_request_facts_all(repos, merged_node_ids, account, pdb)
+    open_facts = await OpenPRFactsLoader.load_open_pull_request_facts_all(
+        repos, merged_node_ids, account, pdb)
     del merged_node_ids
     facts = {**open_facts, **merged_facts, **done_facts}
     del open_facts
@@ -71,7 +71,7 @@ async def mine_all_prs(repos: Collection[str],
             PullRequest.acc_id.in_(meta_ids),
             PullRequest.node_id.in_(facts),
         )), mdb, PullRequest, index=PullRequest.node_id.key),
-        append_pr_jira_mapping(facts, meta_ids, mdb),
+        PullRequestJiraMapper.append_pr_jira_mapping(facts, meta_ids, mdb),
     ]
     df_prs, _ = await gather(*tasks, op="fetch raw data")
     df_facts = df_from_structs(facts.values())
@@ -223,7 +223,7 @@ async def mine_everything(topics: Set[MineTopic],
     """Mine all the specified data topics."""
     repos = settings.native.keys()
     prefixer = Prefixer.schedule_load(meta_ids, mdb)
-    branches, default_branches = await extract_branches(repos, meta_ids, mdb, cache)
+    branches, default_branches = await BranchMiner.extract_branches(repos, meta_ids, mdb, cache)
     tasks = [miners[t](repos, branches, default_branches, settings, prefixer,
                        account, meta_ids, sdb, mdb, pdb, rdb, cache)
              for t in topics]
