@@ -453,3 +453,34 @@ class DAG:
         hashes: ["S40"]  # noqa
         vertexes: [np.uint32]
         edges: [np.uint32]
+
+
+@dataclass(slots=True, frozen=True)
+class CodeCheckRunListStats:
+    """Mined statistics of a check run type identified by the name (title) in a repository in \
+    a time window."""
+
+    count: int
+    successes: int
+    skips: int
+    flaky_count: int
+    mean_execution_time: Optional[timedelta]
+    median_execution_time: Optional[timedelta]
+    count_timeline: List[int]
+    successes_timeline: List[int]
+    mean_execution_time_timeline: List[Optional[timedelta]]
+    median_execution_time_timeline: List[Optional[timedelta]]
+
+
+@dataclass(slots=True, frozen=True)
+class CodeCheckRunListItem:
+    """Overview of a check run type identified by the name (title) in a repository in a time \
+    window."""
+
+    title: str
+    repository: str
+    last_execution_time: datetime
+    last_execution_url: str
+    size_groups: List[int]
+    total_stats: CodeCheckRunListStats
+    prs_stats: CodeCheckRunListStats

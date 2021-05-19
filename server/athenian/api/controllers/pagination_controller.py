@@ -23,21 +23,20 @@ async def paginate_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     except ValueError as e:
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError("?", detail=str(e)))
-    date_to_orig = filt.request.date_to  # will be +1 day in resolve_filter_prs_parameters()
     # we ignore events and stages because we cannot do anything with them
-    repos, _, _, participants, labels, jira, settings, prefixer, meta_ids = \
+    time_from, time_to, repos, _, _, participants, labels, jira, settings, prefixer, meta_ids = \
         await resolve_filter_prs_parameters(filt.request, request)
     prefixer.cancel()
     branches, default_branches = await BranchMiner.extract_branches(
         repos, meta_ids, request.mdb, request.cache)
     # we ignore the ambiguous PRs, thus producing a pessimistic prediction (that's OK)
     done_ats, _ = await load_precomputed_done_timestamp_filters(
-        filt.request.date_from, filt.request.date_to, repos, participants, labels,
+        time_from, time_to, repos, participants, labels,
         default_branches, filt.request.exclude_inactive, settings,
         filt.request.account, request.pdb)
     tasks = [
         PullRequestMiner.fetch_prs(
-            filt.request.date_from, filt.request.date_to, repos, participants, labels, jira,
+            time_from, time_to, repos, participants, labels, jira,
             filt.request.exclude_inactive, PullRequest.node_id.notin_(done_ats), None, branches,
             None, filt.request.account, meta_ids, request.mdb, request.pdb, request.cache,
             columns=[PullRequest.node_id, PullRequest.updated_at]),
@@ -55,7 +54,7 @@ async def paginate_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     elif len(other_prs) > 0:
         updateds = other_prs[PullRequest.updated_at.key].values
     else:
-        updateds = np.array([filt.request.date_from, date_to_orig], dtype="datetime64[ns]")
+        updateds = np.array([time_from, filt.request.date_to], dtype="datetime64[ns]")
     updateds = np.sort(updateds.astype("datetime64[D]"))
     split = updateds[::-filt.batch]
     split = np.concatenate([split, [updateds[0]]])  # append the other end

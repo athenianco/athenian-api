@@ -90,7 +90,7 @@ class UnfreshPullRequestFactsFetcher:
                 return pd.DataFrame()
 
             tasks.append(dummy_inactive_prs())
-        (releases, matched_bys), (unreleased_prs, _), done_facts, inactive_merged_prs = \
+        (_, matched_bys), (unreleased_prs, _), done_facts, inactive_merged_prs = \
             await gather(*tasks, op="discover PRs")
         add_pdb_misses(pdb, "load_precomputed_done_facts_filters/ambiguous",
                        remove_ambiguous_prs(done_facts, ambiguous, matched_bys))

@@ -164,6 +164,7 @@ class FailedSuitesCounter(SuitesInStatusCounter):
     statuses = {
         b"COMPLETED": [b"FAILURE", b"STALE"],
         b"FAILURE": [],
+        b"ERROR": [],
     }
 
 
@@ -230,8 +231,6 @@ class SuiteTimeCalculatorAnalysis(MetricCalculator[None]):
                 for group, unique_run_count in zip(groups, unique_run_counts)
             ])
         elapsed = suite_finished - suite_started
-        # if the check takes very little time, the timestamps may break
-        elapsed[elapsed < np.array([0], dtype=elapsed.dtype)] = 0
         # reorder the sequence to match unique_suites
         suite_order = np.argsort(run_counts_order)
         structs = np.zeros_like(suite_order, dtype=self.dtype)
@@ -312,7 +311,8 @@ class RobustSuiteTimeCalculator(MetricCalculator[timedelta]):
                 mapped_indexes[:, np.newaxis] == existing_vocabulary_indexes
             ).T.reshape((len(existing_vocabulary_indexes), *group_repos_sizes.shape))
             # we don't call mean() because there may be empty slices
-            sums = np.sum(np.repeat(group_elapsed[None, :], len(masks_by_reposize), axis=0),
+            sums = np.sum(np.broadcast_to(group_elapsed[None, :],
+                                          (len(masks_by_reposize), *group_elapsed.shape)),
                           axis=-1, where=masks_by_reposize)
             counts = np.sum(masks_by_reposize, axis=-1)
             # backfill

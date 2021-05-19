@@ -17,6 +17,7 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
 from athenian.api.controllers.account import get_metadata_account_ids
+from athenian.api.controllers.features.github.check_run_filter import filter_check_runs
 from athenian.api.controllers.features.github.pull_request_filter import fetch_pull_requests, \
     filter_pull_requests
 from athenian.api.controllers.jira import get_jira_installation, get_jira_installation_or_none, \
@@ -46,8 +47,12 @@ from athenian.api.models.web import BadRequestError, Commit, CommitSignature, Co
     GetReleasesRequest, IncludedNativeUser, IncludedNativeUsers, InvalidRequestError, \
     LinkedJIRAIssue, PullRequest as WebPullRequest, PullRequestLabel, PullRequestParticipant, \
     PullRequestSet, ReleasedPullRequest, ReleaseSet, ReleaseSetInclude, StageTimings
+from athenian.api.models.web.code_check_run_statistics import CodeCheckRunStatistics
 from athenian.api.models.web.diff_releases_request import DiffReleasesRequest
 from athenian.api.models.web.diffed_releases import DiffedReleases
+from athenian.api.models.web.filter_code_checks_request import FilterCodeChecksRequest
+from athenian.api.models.web.filtered_code_check_run import FilteredCodeCheckRun
+from athenian.api.models.web.filtered_code_check_runs import FilteredCodeCheckRuns
 from athenian.api.models.web.release_diff import ReleaseDiff
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
@@ -61,13 +66,14 @@ async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Re
         filt = FilterContributorsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        return ResponseError(InvalidRequestError("?", detail=str(e))).response
-    repos, meta_ids, prefixer = await _common_filter_preprocess(filt, request, strip_prefix=False)
+        raise ResponseError(InvalidRequestError("?", detail=str(e)))
+    time_from, time_to, repos, meta_ids, prefixer = await _common_filter_preprocess(
+        filt, request, strip_prefix=False)
     release_settings = \
         await Settings.from_request(request, filt.account).list_release_matches(repos)
     repos = [r.split("/", 1)[1] for r in repos]
     users = await mine_contributors(
-        repos, filt.date_from, filt.date_to, True, filt.as_ or [], release_settings,
+        repos, time_from, time_to, True, filt.as_ or [], release_settings,
         filt.account, meta_ids, request.mdb, request.pdb, request.rdb, request.cache)
     mapped_jira = await load_mapped_jira_users(
         filt.account, [u[User.node_id.key] for u in users],
@@ -98,12 +104,13 @@ async def filter_repositories(request: AthenianWebRequest, body: dict) -> web.Re
     except ValueError as e:
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError("?", detail=str(e)))
-    repos, meta_ids, prefixer = await _common_filter_preprocess(filt, request, strip_prefix=False)
+    time_from, time_to, repos, meta_ids, prefixer = await _common_filter_preprocess(
+        filt, request, strip_prefix=False)
     release_settings = \
         await Settings.from_request(request, filt.account).list_release_matches(repos)
     repos = [r.split("/", 1)[1] for r in repos]
     repos = await mine_repositories(
-        repos, filt.date_from, filt.date_to, filt.exclude_inactive, release_settings,
+        repos, time_from, time_to, filt.exclude_inactive, release_settings,
         filt.account, meta_ids, request.mdb, request.pdb, request.cache)
     prefixer = await prefixer.load()
     repos = prefixer.prefix_repo_names(repos)
@@ -113,22 +120,27 @@ async def filter_repositories(request: AthenianWebRequest, body: dict) -> web.Re
 async def _common_filter_preprocess(filt: Union[FilterReleasesRequest,
                                                 FilterRepositoriesRequest,
                                                 FilterPullRequestsRequest,
-                                                FilterCommitsRequest],
+                                                FilterCommitsRequest,
+                                                FilterCodeChecksRequest],
                                     request: AthenianWebRequest,
                                     strip_prefix=True,
-                                    ) -> Tuple[Set[str], Tuple[int, ...], PrefixerPromise]:
+                                    ) -> Tuple[datetime,
+                                               datetime,
+                                               Set[str],
+                                               Tuple[int, ...],
+                                               PrefixerPromise]:
     if filt.date_to < filt.date_from:
         raise ResponseError(InvalidRequestError(
             detail="date_from may not be greater than date_to",
             pointer=".date_from",
         ))
-    filt.date_from = datetime.combine(filt.date_from, datetime.min.time(), tzinfo=timezone.utc)
-    filt.date_to = datetime.combine(
-        filt.date_to + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
+    min_time = datetime.min.time()
+    time_from = datetime.combine(filt.date_from, min_time, tzinfo=timezone.utc)
+    time_to = datetime.combine(filt.date_to + timedelta(days=1), min_time, tzinfo=timezone.utc)
     if filt.timezone is not None:
         tzoffset = timedelta(minutes=-filt.timezone)
-        filt.date_from += tzoffset
-        filt.date_to += tzoffset
+        time_from += tzoffset
+        time_to += tzoffset
 
     async def login_loader() -> str:
         return (await request.user()).login
@@ -138,18 +150,20 @@ async def _common_filter_preprocess(filt: Union[FilterReleasesRequest,
         request.sdb, request.mdb, request.cache, request.app["slack"],
         strip_prefix=strip_prefix)
     prefixer = Prefixer.schedule_load(meta_ids, request.mdb)
-    return repos, meta_ids, prefixer
+    return time_from, time_to, repos, meta_ids, prefixer
 
 
 async def resolve_filter_prs_parameters(filt: FilterPullRequestsRequest,
                                         request: AthenianWebRequest,
-                                        ) -> Tuple[Set[str], Set[str], Set[str], PRParticipants,
-                                                   LabelFilter, JIRAFilter,
+                                        ) -> Tuple[datetime, datetime,
+                                                   Set[str], Set[str], Set[str],
+                                                   PRParticipants, LabelFilter, JIRAFilter,
                                                    ReleaseSettings,
                                                    PrefixerPromise,
                                                    Tuple[int, ...]]:
     """Infer all the required PR filters from the request."""
-    repos, meta_ids, prefixer = await _common_filter_preprocess(filt, request, strip_prefix=False)
+    time_from, time_to, repos, meta_ids, prefixer = await _common_filter_preprocess(
+        filt, request, strip_prefix=False)
     events = set(getattr(PullRequestEvent, e.upper()) for e in (filt.events or []))
     stages = set(getattr(PullRequestStage, s.upper()) for s in (filt.stages or []))
     if not events and not stages:
@@ -167,7 +181,8 @@ async def resolve_filter_prs_parameters(filt: FilterPullRequestsRequest,
             await get_jira_installation(filt.account, request.sdb, request.mdb, request.cache))
     except ResponseError:
         jira = JIRAFilter.empty()
-    return repos, events, stages, participants, labels, jira, settings, prefixer, meta_ids
+    return time_from, time_to, repos, events, stages, participants, labels, jira, settings, \
+        prefixer, meta_ids
 
 
 @weight(6)
@@ -178,11 +193,11 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     except ValueError as e:
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError("?", detail=str(e)))
-    repos, events, stages, participants, labels, jira, settings, prefixer, meta_ids = \
-        await resolve_filter_prs_parameters(filt, request)
+    time_from, time_to, repos, events, stages, participants, labels, jira, settings, prefixer, \
+        meta_ids = await resolve_filter_prs_parameters(filt, request)
     updated_min, updated_max = _bake_updated_min_max(filt)
     prs, prefixer = await gather(filter_pull_requests(
-        events, stages, filt.date_from, filt.date_to, repos, participants, labels, jira,
+        events, stages, time_from, time_to, repos, participants, labels, jira,
         filt.exclude_inactive, settings, updated_min, updated_max,
         filt.account, meta_ids, request.mdb, request.pdb, request.rdb, request.cache),
         prefixer.load())
@@ -250,13 +265,13 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
         filt = FilterCommitsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        return ResponseError(InvalidRequestError("?", detail=str(e))).response
-    repos, meta_ids, prefixer = await _common_filter_preprocess(filt, request)
+        raise ResponseError(InvalidRequestError("?", detail=str(e)))
+    time_from, time_to, repos, meta_ids, prefixer = await _common_filter_preprocess(filt, request)
     with_author = [s.rsplit("/", 1)[1] for s in (filt.with_author or [])]
     with_committer = [s.rsplit("/", 1)[1] for s in (filt.with_committer or [])]
     log = logging.getLogger("filter_commits")
     commits = await extract_commits(
-        FilterCommitsProperty(filt.property), filt.date_from, filt.date_to, repos,
+        FilterCommitsProperty(filt.property), time_from, time_to, repos,
         with_author, with_committer, meta_ids, request.mdb, request.cache)
     model = CommitsList(data=[], include=IncludedNativeUsers(users={}))
     users = model.include.users
@@ -331,8 +346,9 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
         filt = FilterReleasesRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        return ResponseError(InvalidRequestError("?", detail=str(e))).response
-    repos, meta_ids, prefixer = await _common_filter_preprocess(filt, request, strip_prefix=False)
+        raise ResponseError(InvalidRequestError("?", detail=str(e)))
+    time_from, time_to, repos, meta_ids, prefixer = await _common_filter_preprocess(
+        filt, request, strip_prefix=False)
     participants = {
         rpk: getattr(filt.with_, attr) or []
         for attr, rpk in (("releaser", ReleaseParticipationKind.RELEASER),
@@ -348,7 +364,7 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
     branches, default_branches = await BranchMiner.extract_branches(
         repos, meta_ids, request.mdb, request.cache)
     releases, avatars, _ = await mine_releases(
-        repos, participants, branches, default_branches, filt.date_from, filt.date_to,
+        repos, participants, branches, default_branches, time_from, time_to,
         JIRAFilter.from_web(filt.jira, jira_ids), settings, prefixer, filt.account, meta_ids,
         request.mdb, request.pdb, request.rdb, request.cache, with_pr_titles=True)
     return await _build_release_set_response(releases, avatars, jira_ids, meta_ids, request.mdb)
@@ -597,4 +613,29 @@ async def diff_releases(request: AthenianWebRequest, body: dict) -> web.Response
 @weight(1)
 async def filter_code_checks(request: AthenianWebRequest, body: dict) -> web.Response:
     """Find code check runs that match the specified query."""
-    raise NotImplementedError
+    try:
+        filt = FilterCodeChecksRequest.from_dict(body)
+    except ValueError as e:
+        # for example, passing a date with day=32
+        raise ResponseError(InvalidRequestError("?", detail=str(e)))
+    (time_from, time_to, repos, meta_ids, prefixer), jira_ids = await gather(
+        _common_filter_preprocess(filt, request, strip_prefix=True),
+        get_jira_installation(filt.account, request.sdb, request.mdb, request.cache),
+    )
+    timeline, check_runs = await filter_check_runs(
+        time_from, time_to, repos, filt.triggered_by or [],
+        JIRAFilter.from_web(filt.jira, jira_ids), filt.quantiles or [0, 1],
+        meta_ids, request.mdb, request.cache)
+    prefixer = await prefixer.load()
+    model = FilteredCodeCheckRuns(timeline=timeline, items=[
+        FilteredCodeCheckRun(
+            title=cr.title,
+            repository=prefixer.repo_name_map[cr.repository],
+            last_execution_time=cr.last_execution_time,
+            last_execution_url=cr.last_execution_url,
+            size_groups=cr.size_groups,
+            total_stats=CodeCheckRunStatistics(**cr.total_stats),
+            prs_stats=CodeCheckRunStatistics(**cr.prs_stats),
+        ) for cr in check_runs
+    ])
+    return model_response(model)
