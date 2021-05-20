@@ -47,15 +47,15 @@ from athenian.api.cache import CACHE_VAR_NAME, setup_cache_metrics
 from athenian.api.connexion import AthenianApp
 from athenian.api.controllers import account, invitation_controller
 from athenian.api.controllers.miners.github.branches import BranchMiner
-from athenian.api.controllers.miners.github.precomputed_prs import MergedPRFactsLoader, \
-    OpenPRFactsLoader
+from athenian.api.controllers.miners.github.precomputed_prs import DonePRFactsLoader, \
+    MergedPRFactsLoader, OpenPRFactsLoader
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.github.release_load import ReleaseLoader
 from athenian.api.controllers.miners.github.release_match import ReleaseToPullRequestMapper
 from athenian.api.db import ParallelDatabase
 from athenian.api.experiments.preloading.entries import PreloadedBranchMiner, \
-    PreloadedMergedPRFactsLoader, PreloadedOpenPRFactsLoader, PreloadedPullRequestMiner, \
-    PreloadedReleaseLoader, PreloadedReleaseToPullRequestMapper
+    PreloadedDonePRFactsLoader, PreloadedMergedPRFactsLoader, PreloadedOpenPRFactsLoader, \
+    PreloadedPullRequestMiner, PreloadedReleaseLoader, PreloadedReleaseToPullRequestMapper
 from athenian.api.faster_pandas import patch_pandas
 from athenian.api.metadata import __package__ as package
 from athenian.api.models import check_collation, metadata, persistentdata
@@ -544,6 +544,11 @@ def release_loader(with_preloading):
 def releases_to_prs_mapper(with_preloading):
     return (PreloadedReleaseToPullRequestMapper if with_preloading
             else ReleaseToPullRequestMapper)
+
+
+@pytest.fixture(scope="function")
+def done_prs_facts_loader(with_preloading):
+    return PreloadedDonePRFactsLoader if with_preloading else DonePRFactsLoader
 
 
 @pytest.fixture(scope="function")

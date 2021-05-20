@@ -13,10 +13,8 @@ from athenian.api.controllers.features.github.pull_request_filter import _fetch_
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.precomputed_prs import \
     delete_force_push_dropped_prs, discover_inactive_merged_unreleased_prs, \
-    load_precomputed_done_candidates, load_precomputed_done_facts_filters, \
-    load_precomputed_done_facts_ids, load_precomputed_done_facts_reponums, \
-    load_precomputed_pr_releases, store_merged_unreleased_pull_request_facts, \
-    store_open_pull_request_facts, store_precomputed_done_facts, update_unreleased_prs
+    store_merged_unreleased_pull_request_facts, store_open_pull_request_facts, \
+    store_precomputed_done_facts, update_unreleased_prs
 from athenian.api.controllers.miners.github.release_match import PullRequestToReleaseMapper
 from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
     new_released_prs_df
@@ -36,7 +34,7 @@ def gen_dummy_df(dt: datetime) -> pd.DataFrame:
         [["xxx", dt, dt]], columns=["user_login", "created_at", "submitted_at"])
 
 
-async def test_load_store_precomputed_done_smoke(pdb, pr_samples):
+async def test_load_store_precomputed_done_smoke(pdb, pr_samples, done_prs_facts_loader):
     samples = pr_samples(200)  # type: Sequence[PullRequestFacts]
     for i in range(1, 6):
         # merged but unreleased
@@ -102,7 +100,7 @@ async def test_load_store_precomputed_done_smoke(pdb, pr_samples):
     n = len(released_ats) - len(released_ats) // 2 + \
         sum(1 for s in samples[-10:-5]
             if s.closed.item().replace(tzinfo=timezone.utc) >= time_from)
-    loaded_prs, _ = await load_precomputed_done_facts_filters(
+    loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_filters(
         time_from, time_to, names, {}, LabelFilter.empty(), default_branches,
         False, settings, 1, pdb)
     assert len(loaded_prs) == n
@@ -121,7 +119,7 @@ async def test_load_store_precomputed_done_smoke(pdb, pr_samples):
             assert load_value.releaser is not None
 
 
-async def test_load_store_precomputed_done_filters(pr_samples, pdb):
+async def test_load_store_precomputed_done_filters(pr_samples, pdb, done_prs_facts_loader):
     samples = pr_samples(102)  # type: Sequence[PullRequestFacts]
     names = ["one", "two", "three"]
     settings = ReleaseSettings({
@@ -170,30 +168,31 @@ async def test_load_store_precomputed_done_filters(pr_samples, pdb):
         default_branches, settings, 1, pdb)
     time_from = min(s.created for s in samples).item().replace(tzinfo=timezone.utc)
     time_to = max(s.max_timestamp() for s in samples).item().replace(tzinfo=timezone.utc)
-    loaded_prs, _ = await load_precomputed_done_facts_filters(
+    loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_filters(
         time_from, time_to, ["one"], {}, LabelFilter.empty(), default_branches,
         False, settings, 1, pdb)
     assert set(loaded_prs) == {pr.pr[PullRequest.node_id.key] for pr in prs[::3]}
-    loaded_prs, _ = await load_precomputed_done_facts_filters(
+    loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_filters(
         time_from, time_to, names, {PRParticipationKind.AUTHOR: {"wow"},
                                     PRParticipationKind.RELEASER: {"zzz"}},
         LabelFilter.empty(), default_branches, False, settings, 1, pdb)
     assert set(loaded_prs) == {pr.pr[PullRequest.node_id.key] for pr in prs[1::2]}
-    loaded_prs, _ = await load_precomputed_done_facts_filters(
+    loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_filters(
         time_from, time_to, names, {PRParticipationKind.COMMIT_AUTHOR: {"yyy"}},
         LabelFilter.empty(), default_branches, False, settings, 1, pdb)
     assert len(loaded_prs) == len(prs)
-    loaded_prs, _ = await load_precomputed_done_facts_filters(
+    loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_filters(
         time_from, time_to, names, {}, LabelFilter({"bug", "xxx"}, set()),
         default_branches, False, settings, 1, pdb)
     assert len(loaded_prs) == len(prs) / 2
-    loaded_prs, _ = await load_precomputed_done_facts_filters(
+    loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_filters(
         time_from, time_to, names, {}, LabelFilter({"bug"}, {"bad"}),
         default_branches, False, settings, 1, pdb)
     assert len(loaded_prs) == int(math.ceil(len(prs) / 4.0))
 
 
-async def test_load_store_precomputed_done_match_by(pr_samples, default_branches, pdb):
+async def test_load_store_precomputed_done_match_by(pr_samples, default_branches, pdb,
+                                                    done_prs_facts_loader):
     samples, prs, settings = _gen_one_pr(pr_samples)
 
     def with_mutables(s):
@@ -208,21 +207,21 @@ async def test_load_store_precomputed_done_match_by(pr_samples, default_branches
         default_branches, settings, 1, pdb)
     time_from = samples[0].created.item().replace(tzinfo=timezone.utc) - timedelta(days=365)
     time_to = samples[0].released.item().replace(tzinfo=timezone.utc) + timedelta(days=1)
-    loaded_prs, _ = await load_precomputed_done_facts_filters(
+    loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_filters(
         time_from, time_to, ["src-d/go-git"], {}, LabelFilter.empty(),
         default_branches, False, settings, 1, pdb)
     assert len(loaded_prs) == 1
     settings = ReleaseSettings({
         "github.com/src-d/go-git": ReleaseMatchSetting("master", ".*", ReleaseMatch.branch),
     })
-    loaded_prs, _ = await load_precomputed_done_facts_filters(
+    loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_filters(
         time_from, time_to, ["src-d/go-git"], {}, LabelFilter.empty(),
         default_branches, False, settings, 1, pdb)
     assert len(loaded_prs) == 1
     settings = ReleaseSettings({
         "github.com/src-d/go-git": ReleaseMatchSetting("nope", ".*", ReleaseMatch.tag_or_branch),
     })
-    loaded_prs, ambiguous = await load_precomputed_done_facts_filters(
+    loaded_prs, ambiguous = await done_prs_facts_loader.load_precomputed_done_facts_filters(
         time_from, time_to, ["src-d/go-git"], {}, LabelFilter.empty(),
         default_branches, False, settings, 1, pdb)
     assert len(loaded_prs) == 0
@@ -230,7 +229,7 @@ async def test_load_store_precomputed_done_match_by(pr_samples, default_branches
     settings = ReleaseSettings({
         "github.com/src-d/go-git": ReleaseMatchSetting("{{default}}", ".*", ReleaseMatch.tag),
     })
-    loaded_prs, _ = await load_precomputed_done_facts_filters(
+    loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_filters(
         time_from, time_to, ["src-d/go-git"], {}, LabelFilter.empty(),
         default_branches, False, settings, 1, pdb)
     assert len(loaded_prs) == 0
@@ -246,20 +245,21 @@ async def test_load_store_precomputed_done_match_by(pr_samples, default_branches
     await store_precomputed_done_facts(
         prs, [with_mutables(s) for s in samples],
         default_branches, settings, 1, pdb)
-    loaded_prs, _ = await load_precomputed_done_facts_filters(
+    loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_filters(
         time_from, time_to, ["src-d/go-git"], {}, LabelFilter.empty(),
         default_branches, False, settings, 1, pdb)
     assert len(loaded_prs) == 1
     settings = ReleaseSettings({
         "github.com/src-d/go-git": ReleaseMatchSetting("{{default}}", "xxx", ReleaseMatch.tag),
     })
-    loaded_prs, _ = await load_precomputed_done_facts_filters(
+    loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_filters(
         time_from, time_to, ["src-d/go-git"], {}, LabelFilter.empty(),
         default_branches, False, settings, 1, pdb)
     assert len(loaded_prs) == 0
 
 
-async def test_load_store_precomputed_done_exclude_inactive(pr_samples, default_branches, pdb):
+async def test_load_store_precomputed_done_exclude_inactive(pr_samples, default_branches, pdb,
+                                                            done_prs_facts_loader):
     while True:
         samples = pr_samples(2)  # type: Sequence[PullRequestFacts]
         samples = sorted(samples, key=lambda s: s.first_comment_on_first_review)
@@ -311,21 +311,21 @@ async def test_load_store_precomputed_done_exclude_inactive(pr_samples, default_
         default_branches, settings, 1, pdb)
     time_from = samples[1].created.item().replace(tzinfo=timezone.utc) + timedelta(days=1)
     time_to = samples[0].first_comment_on_first_review.item().replace(tzinfo=timezone.utc)
-    loaded_prs, _ = await load_precomputed_done_facts_filters(
+    loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_filters(
         time_from, time_to, ["one"], {}, LabelFilter.empty(), default_branches,
         True, settings, 1, pdb)
     assert len(loaded_prs) == 1
     assert loaded_prs[prs[0].pr[PullRequest.node_id.key]] == with_mutables(samples[0])
     time_from = samples[1].created.item().replace(tzinfo=timezone.utc) - timedelta(days=1)
     time_to = samples[1].created.item().replace(tzinfo=timezone.utc) + timedelta(seconds=1)
-    loaded_prs, _ = await load_precomputed_done_facts_filters(
+    loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_filters(
         time_from, time_to, ["one"], {}, LabelFilter.empty(), default_branches,
         True, settings, 1, pdb)
     assert len(loaded_prs) == 1
     assert loaded_prs[prs[1].pr[PullRequest.node_id.key]] == with_mutables(samples[1])
 
 
-async def test_load_precomputed_done_times_reponums_smoke(pr_samples, pdb):
+async def test_load_precomputed_done_times_reponums_smoke(pr_samples, pdb, done_prs_facts_loader):
     samples = pr_samples(12)  # type: Sequence[PullRequestFacts]
     names = ["one", "two", "three"]
     settings = ReleaseSettings({
@@ -373,7 +373,7 @@ async def test_load_precomputed_done_times_reponums_smoke(pr_samples, pdb):
     query1 = {"one": {pr.pr[PullRequest.number.key] for pr in prs
                       if pr.pr[PullRequest.repository_full_name.key] == "one"}}
     assert len(query1["one"]) == 4
-    new_prs, _ = await load_precomputed_done_facts_reponums(
+    new_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_reponums(
         query1, default_branches, settings, 1, pdb)
     assert new_prs == {
         pr.pr[PullRequest.node_id.key]: s
@@ -381,11 +381,11 @@ async def test_load_precomputed_done_times_reponums_smoke(pr_samples, pdb):
         if pr.pr[PullRequest.repository_full_name.key] == "one"
     }
     query2 = {"one": set()}
-    new_prs, _ = await load_precomputed_done_facts_reponums(
+    new_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_reponums(
         query2, default_branches, settings, 1, pdb)
     assert len(new_prs) == 0
     query3 = {"one": {100500}}
-    new_prs, _ = await load_precomputed_done_facts_reponums(
+    new_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_reponums(
         query3, default_branches, settings, 1, pdb)
     assert len(new_prs) == 0
 
@@ -430,7 +430,8 @@ async def test_store_precomputed_done_facts_empty(pdb):
     await store_precomputed_done_facts([], [], None, None, 1, pdb)
 
 
-async def test_load_precomputed_done_candidates_smoke(pr_samples, default_branches, pdb):
+async def test_load_precomputed_done_candidates_smoke(pr_samples, default_branches, pdb,
+                                                      done_prs_facts_loader):
     samples, prs, settings = _gen_one_pr(pr_samples)
 
     def with_mutables(s):
@@ -445,19 +446,20 @@ async def test_load_precomputed_done_candidates_smoke(pr_samples, default_branch
         default_branches, settings, 1, pdb)
     time_from = samples[0].created.item().replace(tzinfo=timezone.utc)
     time_to = samples[0].released.item().replace(tzinfo=timezone.utc)
-    loaded_prs, _ = await load_precomputed_done_candidates(
+    loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_candidates(
         time_from, time_to, ["one"], {"one": "master"}, settings, 1, pdb)
     assert len(loaded_prs) == 0
-    loaded_prs, _ = await load_precomputed_done_candidates(
+    loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_candidates(
         time_from, time_to, ["src-d/go-git"], default_branches, settings, 1, pdb)
     assert loaded_prs == {prs[0].pr[PullRequest.node_id.key]}
-    loaded_prs, _ = await load_precomputed_done_candidates(
+    loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_candidates(
         time_from, time_from, ["src-d/go-git"],
         default_branches, settings, 1, pdb)
     assert len(loaded_prs) == 0
 
 
-async def test_load_precomputed_done_candidates_ambiguous(pr_samples, default_branches, pdb):
+async def test_load_precomputed_done_candidates_ambiguous(pr_samples, default_branches, pdb,
+                                                          done_prs_facts_loader):
     samples, prs, settings = _gen_one_pr(pr_samples)
 
     def with_mutables(s):
@@ -472,7 +474,7 @@ async def test_load_precomputed_done_candidates_ambiguous(pr_samples, default_br
         default_branches, settings, 1, pdb)
     time_from = samples[0].created.item().replace(tzinfo=timezone.utc)
     time_to = samples[0].released.item().replace(tzinfo=timezone.utc)
-    loaded_prs, ambiguous = await load_precomputed_done_candidates(
+    loaded_prs, ambiguous = await done_prs_facts_loader.load_precomputed_done_candidates(
         time_from, time_to, ["src-d/go-git"], default_branches, settings, 1, pdb)
     assert len(loaded_prs) == 1
     assert len(ambiguous["src-d/go-git"]) == 1
@@ -481,14 +483,15 @@ async def test_load_precomputed_done_candidates_ambiguous(pr_samples, default_br
     await store_precomputed_done_facts(
         prs, [with_mutables(s) for s in samples],
         default_branches, settings, 1, pdb)
-    loaded_prs, ambiguous = await load_precomputed_done_candidates(
+    loaded_prs, ambiguous = await done_prs_facts_loader.load_precomputed_done_candidates(
         time_from, time_to, ["src-d/go-git"], default_branches, settings, 1, pdb)
     assert len(loaded_prs) == 1
     assert len(ambiguous["src-d/go-git"]) == 0
 
 
 @with_defer
-async def test_load_precomputed_pr_releases_smoke(pr_samples, default_branches, pdb, cache):
+async def test_load_precomputed_pr_releases_smoke(pr_samples, default_branches, pdb, cache,
+                                                  done_prs_facts_loader):
     samples, prs, settings = _gen_one_pr(pr_samples)
 
     def with_mutables(s):
@@ -502,7 +505,7 @@ async def test_load_precomputed_pr_releases_smoke(pr_samples, default_branches, 
         prs, [with_mutables(s) for s in samples],
         default_branches, settings, 1, pdb)
     for i in range(2):
-        released_prs = await load_precomputed_pr_releases(
+        released_prs = await done_prs_facts_loader.load_precomputed_pr_releases(
             [pr.pr[PullRequest.node_id.key] for pr in prs],
             max(s.released.item().replace(tzinfo=timezone.utc) for s in samples) +
             timedelta(days=1),
@@ -518,7 +521,8 @@ async def test_load_precomputed_pr_releases_smoke(pr_samples, default_branches, 
                 pr.pr[PullRequest.repository_full_name.key], i
 
 
-async def test_load_precomputed_pr_releases_time_to(pr_samples, default_branches, pdb):
+async def test_load_precomputed_pr_releases_time_to(pr_samples, default_branches, pdb,
+                                                    done_prs_facts_loader):
     samples, prs, settings = _gen_one_pr(pr_samples)
 
     def with_mutables(s):
@@ -531,7 +535,7 @@ async def test_load_precomputed_pr_releases_time_to(pr_samples, default_branches
     await store_precomputed_done_facts(
         prs, [with_mutables(s) for s in samples],
         default_branches, settings, 1, pdb)
-    released_prs = await load_precomputed_pr_releases(
+    released_prs = await done_prs_facts_loader.load_precomputed_pr_releases(
         [pr.pr[PullRequest.node_id.key] for pr in prs],
         min(s.released.item().replace(tzinfo=timezone.utc) for s in samples),
         {pr.pr[PullRequest.repository_full_name.key]: ReleaseMatch.branch for pr in prs},
@@ -539,7 +543,8 @@ async def test_load_precomputed_pr_releases_time_to(pr_samples, default_branches
     assert released_prs.empty
 
 
-async def test_load_precomputed_pr_releases_release_mismatch(pr_samples, default_branches, pdb):
+async def test_load_precomputed_pr_releases_release_mismatch(pr_samples, default_branches, pdb,
+                                                             done_prs_facts_loader):
     samples, prs, settings = _gen_one_pr(pr_samples)
 
     def with_mutables(s):
@@ -552,13 +557,13 @@ async def test_load_precomputed_pr_releases_release_mismatch(pr_samples, default
     await store_precomputed_done_facts(
         prs, [with_mutables(s) for s in samples],
         default_branches, settings, 1, pdb)
-    released_prs = await load_precomputed_pr_releases(
+    released_prs = await done_prs_facts_loader.load_precomputed_pr_releases(
         [pr.pr[PullRequest.node_id.key] for pr in prs],
         max(s.released.item().replace(tzinfo=timezone.utc) for s in samples) + timedelta(days=1),
         {pr.pr[PullRequest.repository_full_name.key]: ReleaseMatch.tag for pr in prs},
         default_branches, settings, 1, pdb, None)
     assert released_prs.empty
-    released_prs = await load_precomputed_pr_releases(
+    released_prs = await done_prs_facts_loader.load_precomputed_pr_releases(
         [pr.pr[PullRequest.node_id.key] for pr in prs],
         max(s.released.item().replace(tzinfo=timezone.utc) for s in samples) + timedelta(days=1),
         {pr.pr[PullRequest.repository_full_name.key]: ReleaseMatch.branch for pr in prs},
@@ -566,7 +571,8 @@ async def test_load_precomputed_pr_releases_release_mismatch(pr_samples, default
     assert released_prs.empty
 
 
-async def test_load_precomputed_pr_releases_tag(pr_samples, default_branches, pdb):
+async def test_load_precomputed_pr_releases_tag(pr_samples, default_branches, pdb,
+                                                done_prs_facts_loader):
     samples, prs, settings = _gen_one_pr(pr_samples)
     prs[0].release[matched_by_column] = ReleaseMatch.tag
 
@@ -577,13 +583,13 @@ async def test_load_precomputed_pr_releases_tag(pr_samples, default_branches, pd
     await store_precomputed_done_facts(
         prs, [with_repository_full_name(s) for s in samples],
         default_branches, settings, 1, pdb)
-    released_prs = await load_precomputed_pr_releases(
+    released_prs = await done_prs_facts_loader.load_precomputed_pr_releases(
         [pr.pr[PullRequest.node_id.key] for pr in prs],
         max(s.released.item().replace(tzinfo=timezone.utc) for s in samples) + timedelta(days=1),
         {pr.pr[PullRequest.repository_full_name.key]: ReleaseMatch.tag for pr in prs},
         {}, settings, 1, pdb, None)
     assert len(released_prs) == len(prs)
-    released_prs = await load_precomputed_pr_releases(
+    released_prs = await done_prs_facts_loader.load_precomputed_pr_releases(
         [pr.pr[PullRequest.node_id.key] for pr in prs],
         max(s.released.item().replace(tzinfo=timezone.utc) for s in samples) + timedelta(days=1),
         {pr.pr[PullRequest.repository_full_name.key]: ReleaseMatch.tag for pr in prs},
@@ -1050,7 +1056,8 @@ async def test_rescan_prs_mark_force_push_dropped(mdb_rw, pdb, default_branches,
     assert release_match is None
 
 
-async def test_load_precomputed_done_facts_ids(pdb, default_branches, pr_samples):
+async def test_load_precomputed_done_facts_ids(pdb, default_branches, pr_samples,
+                                               done_prs_facts_loader):
     sfacts, prs, settings = _gen_one_pr(pr_samples)
 
     def with_mutables(s):
@@ -1062,7 +1069,7 @@ async def test_load_precomputed_done_facts_ids(pdb, default_branches, pr_samples
 
     sfacts = [with_mutables(s) for s in sfacts]
     await store_precomputed_done_facts(prs, sfacts, default_branches, settings, 1, pdb)
-    pfacts, ambiguous = await load_precomputed_done_facts_ids(
+    pfacts, ambiguous = await done_prs_facts_loader.load_precomputed_done_facts_ids(
         [prs[0].pr[PullRequest.node_id.key]], default_branches, settings, 1, pdb)
     assert sfacts == list(pfacts.values())
     assert len(ambiguous["src-d/go-git"]) == 1
