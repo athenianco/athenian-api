@@ -1954,6 +1954,23 @@ async def test_filter_check_runs_smoke(client, headers):
     assert nn_successes_timeline > 0
 
 
+async def test_filter_check_runs_triggered_by(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-01-12",
+        "timezone": 60,
+        "in": ["{1}"],
+        "triggered_by": ["github.com/mcuadros"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/code_checks", headers=headers, json=body)
+    response_text = (await response.read()).decode("utf-8")
+    assert response.status == 200, response_text
+    check_runs = FilteredCodeCheckRuns.from_dict(json.loads(response_text))
+    assert len(check_runs.items) == 7
+
+
 @pytest.mark.parametrize("account, date_to, repo, quantiles, status", [
     (2, "2020-01-11", "github.com/src-d/go-git", [0, 1], 422),
     (3, "2020-01-11", "github.com/src-d/go-git", [0, 1], 404),
