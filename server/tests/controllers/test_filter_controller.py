@@ -1085,7 +1085,7 @@ async def test_filter_commits_no_pr_merges_mcuadros(client, cached, headers, app
         method="POST", path="/v1/filter/commits", headers=headers, json=body)
     assert response.status == 200
     commits = CommitsList.from_dict(json.loads((await response.read()).decode("utf-8")))
-    assert len(commits.data) == 6
+    assert len(commits.data) == 5
     assert len(commits.include.users) == 1
     for c in commits.data:
         assert c.author.login == "github.com/mcuadros"
@@ -1109,7 +1109,7 @@ async def test_filter_commits_bypassing_prs_merges(client, cached, headers, app,
         method="POST", path="/v1/filter/commits", headers=headers, json=body)
     assert response.status == 200
     commits = CommitsList.from_dict(json.loads((await response.read()).decode("utf-8")))
-    assert len(commits.data) == 25
+    assert len(commits.data) == 2
     for c in commits.data:
         assert c.committer.email != "noreply@github.com"
 
@@ -1141,7 +1141,7 @@ async def test_filter_commits_bypassing_prs_empty(client, cached, headers, app, 
 async def test_filter_commits_bypassing_prs_no_with(client, cached, headers, app, client_cache):
     body = {
         "account": 1,
-        "date_from": "2020-01-12",
+        "date_from": "2019-11-01",
         "date_to": "2020-02-21",
         "in": ["{1}"],
         "property": "bypassing_prs",
@@ -1153,13 +1153,13 @@ async def test_filter_commits_bypassing_prs_no_with(client, cached, headers, app
         json.loads((await response.read()).decode("utf-8")))
     assert len(commits.data) == 0
     assert len(commits.include.users) == 0
-    body["date_to"] = "2020-02-22"
+    body["date_from"] = "2019-06-01"
     response = await client.request(
         method="POST", path="/v1/filter/commits", headers=headers, json=body)
     assert response.status == 200
     commits = CommitsList.from_dict(json.loads((await response.read()).decode("utf-8")))
     assert len(commits.data) == 1
-    assert commits.data[0].committer.timestamp == datetime(2020, 2, 22, 18, 58, 50,
+    assert commits.data[0].committer.timestamp == datetime(2019, 7, 25, 8, 56, 22,
                                                            tzinfo=dateutil.tz.tzutc())
 
 

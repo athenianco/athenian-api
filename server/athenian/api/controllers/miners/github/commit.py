@@ -17,7 +17,7 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached
-from athenian.api.controllers.miners.github.branches import load_branch_commit_dates
+from athenian.api.controllers.miners.github.branches import BranchMiner, load_branch_commit_dates
 from athenian.api.controllers.miners.github.dag_accelerated import extract_first_parents, \
     extract_subdag, join_dags, partition_dag, searchsorted_inrange
 from athenian.api.controllers.miners.types import DAG as DAGStruct
@@ -58,8 +58,11 @@ async def extract_commits(prop: FilterCommitsProperty,
                           repos: Collection[str],
                           with_author: Optional[Collection[str]],
                           with_committer: Optional[Collection[str]],
+                          branch_miner: Optional[BranchMiner],
+                          account: int,
                           meta_ids: Tuple[int, ...],
                           mdb: DatabaseLike,
+                          pdb: DatabaseLike,
                           cache: Optional[aiomcache.Client],
                           columns: Optional[List[InstrumentedAttribute]] = None,
                           ) -> pd.DataFrame:
@@ -105,24 +108,33 @@ async def extract_commits(prop: FilterCommitsProperty,
     if columns is None:
         cols_query, cols_df = [PushCommit], PushCommit
     else:
-        if PushCommit.node_id not in columns:
-            columns.append(PushCommit.node_id)
+        for col in (PushCommit.node_id, PushCommit.repository_full_name, PushCommit.sha):
+            if col not in columns:
+                columns.append(col)
         cols_query = cols_df = columns
     if prop == FilterCommitsProperty.NO_PR_MERGES:
-        with sentry_sdk.start_span(op="extract_commits/fetch/NO_PR_MERGES"):
-            commits = await read_sql_query(
-                select(cols_query).where(and_(*sql_filters)), mdb, cols_df)
+        commits_task = read_sql_query(
+            select(cols_query).where(and_(*sql_filters)), mdb, cols_df)
     elif prop == FilterCommitsProperty.BYPASSING_PRS:
-        with sentry_sdk.start_span(op="extract_commits/fetch/BYPASSING_PRS"):
-            commits = await read_sql_query(
-                select(cols_query)
-                .select_from(outerjoin(PushCommit, NodePullRequestCommit,
-                                       and_(PushCommit.node_id == NodePullRequestCommit.commit,
-                                            PushCommit.acc_id == NodePullRequestCommit.acc_id)))
-                .where(and_(NodePullRequestCommit.commit.is_(None), *sql_filters)),
-                mdb, cols_df)
+        commits_task = read_sql_query(
+            select(cols_query)
+            .select_from(outerjoin(
+                PushCommit, NodePullRequestCommit,
+                and_(PushCommit.node_id == NodePullRequestCommit.commit,
+                     PushCommit.acc_id == NodePullRequestCommit.acc_id)))
+            .where(and_(NodePullRequestCommit.commit.is_(None), *sql_filters)),
+            mdb, cols_df)
     else:
         raise AssertionError('Unsupported primary commit filter "%s"' % prop)
+    tasks = [
+        commits_task,
+        fetch_repository_commits_from_scratch(
+            repos, branch_miner, True, account, meta_ids, mdb, pdb, cache),
+    ]
+    commits, (dags, _, _) = await gather(*tasks, op="extract_commits/fetch")
+    candidates_count = len(commits)
+    commits = _remove_force_push_dropped(commits, dags)
+    log.info("Removed force push dropped commits: %d / %d", len(commits), candidates_count)
     for number_prop in (PushCommit.additions, PushCommit.deletions, PushCommit.changed_files):
         try:
             number_col = commits[number_prop.key]
@@ -132,6 +144,22 @@ async def extract_commits(prop: FilterCommitsProperty,
         if not nans.empty:
             log.error("[DEV-546] Commits have NULL in %s: %s", number_prop.key, ", ".join(nans))
     return commits
+
+
+def _remove_force_push_dropped(commits: pd.DataFrame, dags: Dict[str, DAG]) -> pd.DataFrame:
+    if commits.empty:
+        return commits
+    repos_order, indexes = np.unique(
+        commits[PushCommit.repository_full_name.key].values.astype("U"), return_inverse=True)
+    hashes = commits[PushCommit.sha.key].values.astype("S")
+    accessible_indexes = []
+    for i, repo in enumerate(repos_order):
+        repo_indexes = np.nonzero(indexes == i)[0]
+        repo_hashes = hashes[repo_indexes]
+        accessible_indexes.append(
+            repo_indexes[np.in1d(repo_hashes, dags[repo][0], assume_unique=True)])
+    accessible_indexes = np.sort(np.concatenate(accessible_indexes))
+    return commits.take(accessible_indexes)
 
 
 @sentry_span
@@ -155,7 +183,7 @@ async def fetch_repository_commits(repos: Dict[str, DAG],
                                    mdb: databases.Database,
                                    pdb: databases.Database,
                                    cache: Optional[aiomcache.Client],
-                                   ) -> Dict[str, Tuple[np.ndarray, np.array, np.array]]:
+                                   ) -> Dict[str, DAG]:
     """
     Load full commit DAGs for the given repositories.
 
@@ -261,7 +289,7 @@ async def fetch_repository_commits_no_branch_dates(
         mdb: databases.Database,
         pdb: databases.Database,
         cache: Optional[aiomcache.Client],
-) -> Dict[str, Tuple[np.ndarray, np.array, np.array]]:
+) -> Dict[str, DAG]:
     """
     Load full commit DAGs for the given repositories.
 
@@ -271,6 +299,33 @@ async def fetch_repository_commits_no_branch_dates(
     await load_branch_commit_dates(branches, meta_ids, mdb)
     return await fetch_repository_commits(
         repos, branches, columns, prune, account, meta_ids, mdb, pdb, cache)
+
+
+@sentry_span
+async def fetch_repository_commits_from_scratch(repos: Iterable[str],
+                                                branch_miner: BranchMiner,
+                                                prune: bool,
+                                                account: int,
+                                                meta_ids: Tuple[int, ...],
+                                                mdb: databases.Database,
+                                                pdb: databases.Database,
+                                                cache: Optional[aiomcache.Client],
+                                                ) -> Tuple[Dict[str, DAG],
+                                                           pd.DataFrame,
+                                                           Dict[str, str]]:
+    """
+    Load full commit DAGs for the given repositories.
+
+    The difference with fetch_repository_commits is that we don't have `branches`. We load them
+    in-place.
+    """
+    (branches, defaults), pdags = await gather(
+        branch_miner.extract_branches(repos, meta_ids, mdb, cache),
+        fetch_precomputed_commit_history_dags(repos, account, pdb, cache),
+    )
+    dags = await fetch_repository_commits_no_branch_dates(
+        pdags, branches, BRANCH_FETCH_COMMITS_COLUMNS, prune, account, meta_ids, mdb, pdb, cache)
+    return dags, branches, defaults
 
 
 @sentry_span
