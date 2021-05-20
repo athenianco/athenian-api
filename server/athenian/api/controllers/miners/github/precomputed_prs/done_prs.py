@@ -769,14 +769,3 @@ def _flatten_set(s: set) -> Optional[Any]:
         return None
     assert len(s) == 1
     return next(iter(s))
-
-
-# TODO: these have to be removed, these are here just for keeping backward-compatibility
-# without the need to re-write already all the places these functions are called
-load_precomputed_done_candidates = DonePRFactsLoader.load_precomputed_done_candidates
-load_precomputed_done_facts_all = DonePRFactsLoader.load_precomputed_done_facts_all
-load_precomputed_done_facts_filters = DonePRFactsLoader.load_precomputed_done_facts_filters
-load_precomputed_done_facts_ids = DonePRFactsLoader.load_precomputed_done_facts_ids
-load_precomputed_done_facts_reponums = DonePRFactsLoader.load_precomputed_done_facts_reponums
-load_precomputed_pr_releases = DonePRFactsLoader.load_precomputed_pr_releases
-load_precomputed_done_timestamp_filters = DonePRFactsLoader.load_precomputed_done_timestamp_filters

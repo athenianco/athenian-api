@@ -5,8 +5,7 @@ from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
 from athenian.api.controllers.filter_controller import resolve_filter_prs_parameters
 from athenian.api.controllers.miners.github.branches import BranchMiner
-from athenian.api.controllers.miners.github.precomputed_prs import \
-    load_precomputed_done_timestamp_filters
+from athenian.api.controllers.miners.github.precomputed_prs import DonePRFactsLoader
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.models.metadata.github import PullRequest
 from athenian.api.models.web import InvalidRequestError, PaginatePullRequestsRequest, \
@@ -30,7 +29,7 @@ async def paginate_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     branches, default_branches = await BranchMiner.extract_branches(
         repos, meta_ids, request.mdb, request.cache)
     # we ignore the ambiguous PRs, thus producing a pessimistic prediction (that's OK)
-    done_ats, _ = await load_precomputed_done_timestamp_filters(
+    done_ats, _ = await DonePRFactsLoader.load_precomputed_done_timestamp_filters(
         time_from, time_to, repos, participants, labels,
         default_branches, filt.request.exclude_inactive, settings,
         filt.request.account, request.pdb)

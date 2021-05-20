@@ -34,7 +34,8 @@ def gen_dummy_df(dt: datetime) -> pd.DataFrame:
         [["xxx", dt, dt]], columns=["user_login", "created_at", "submitted_at"])
 
 
-async def test_load_store_precomputed_done_smoke(pdb, pr_samples, done_prs_facts_loader):
+async def test_load_store_precomputed_done_smoke(pdb, pr_samples, done_prs_facts_loader,
+                                                 with_preloading_enabled):
     samples = pr_samples(200)  # type: Sequence[PullRequestFacts]
     for i in range(1, 6):
         # merged but unreleased
@@ -94,6 +95,8 @@ async def test_load_store_precomputed_done_smoke(pdb, pr_samples, done_prs_facts
         prs, [with_mutables(s, names[i % len(names)])
               for i, s in enumerate(samples)],
         default_branches, settings, 1, pdb)
+    if with_preloading_enabled:
+        await pdb.cache.refresh()
     released_ats = sorted((t.released, i) for i, t in enumerate(samples[:-10]))
     time_from = released_ats[len(released_ats) // 2][0].item().replace(tzinfo=timezone.utc)
     time_to = released_ats[-1][0].item().replace(tzinfo=timezone.utc)
@@ -119,7 +122,8 @@ async def test_load_store_precomputed_done_smoke(pdb, pr_samples, done_prs_facts
             assert load_value.releaser is not None
 
 
-async def test_load_store_precomputed_done_filters(pr_samples, pdb, done_prs_facts_loader):
+async def test_load_store_precomputed_done_filters(pr_samples, pdb, done_prs_facts_loader,
+                                                   with_preloading_enabled):
     samples = pr_samples(102)  # type: Sequence[PullRequestFacts]
     names = ["one", "two", "three"]
     settings = ReleaseSettings({
@@ -166,6 +170,8 @@ async def test_load_store_precomputed_done_filters(pr_samples, pdb, done_prs_fac
     await store_precomputed_done_facts(
         prs, [with_mutables(s, i) for i, s in enumerate(samples)],
         default_branches, settings, 1, pdb)
+    if with_preloading_enabled:
+        await pdb.cache.refresh()
     time_from = min(s.created for s in samples).item().replace(tzinfo=timezone.utc)
     time_to = max(s.max_timestamp() for s in samples).item().replace(tzinfo=timezone.utc)
     loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_filters(
@@ -192,7 +198,8 @@ async def test_load_store_precomputed_done_filters(pr_samples, pdb, done_prs_fac
 
 
 async def test_load_store_precomputed_done_match_by(pr_samples, default_branches, pdb,
-                                                    done_prs_facts_loader):
+                                                    done_prs_facts_loader,
+                                                    with_preloading_enabled):
     samples, prs, settings = _gen_one_pr(pr_samples)
 
     def with_mutables(s):
@@ -205,6 +212,8 @@ async def test_load_store_precomputed_done_match_by(pr_samples, default_branches
     await store_precomputed_done_facts(
         prs, [with_mutables(s) for s in samples],
         default_branches, settings, 1, pdb)
+    if with_preloading_enabled:
+        await pdb.cache.refresh()
     time_from = samples[0].created.item().replace(tzinfo=timezone.utc) - timedelta(days=365)
     time_to = samples[0].released.item().replace(tzinfo=timezone.utc) + timedelta(days=1)
     loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_filters(
@@ -245,6 +254,8 @@ async def test_load_store_precomputed_done_match_by(pr_samples, default_branches
     await store_precomputed_done_facts(
         prs, [with_mutables(s) for s in samples],
         default_branches, settings, 1, pdb)
+    if with_preloading_enabled:
+        await pdb.cache.refresh()
     loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_filters(
         time_from, time_to, ["src-d/go-git"], {}, LabelFilter.empty(),
         default_branches, False, settings, 1, pdb)
@@ -259,7 +270,8 @@ async def test_load_store_precomputed_done_match_by(pr_samples, default_branches
 
 
 async def test_load_store_precomputed_done_exclude_inactive(pr_samples, default_branches, pdb,
-                                                            done_prs_facts_loader):
+                                                            done_prs_facts_loader,
+                                                            with_preloading_enabled):
     while True:
         samples = pr_samples(2)  # type: Sequence[PullRequestFacts]
         samples = sorted(samples, key=lambda s: s.first_comment_on_first_review)
@@ -309,6 +321,8 @@ async def test_load_store_precomputed_done_exclude_inactive(pr_samples, default_
     await store_precomputed_done_facts(
         prs, [with_mutables(s) for s in samples],
         default_branches, settings, 1, pdb)
+    if with_preloading_enabled:
+        await pdb.cache.refresh()
     time_from = samples[1].created.item().replace(tzinfo=timezone.utc) + timedelta(days=1)
     time_to = samples[0].first_comment_on_first_review.item().replace(tzinfo=timezone.utc)
     loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_filters(

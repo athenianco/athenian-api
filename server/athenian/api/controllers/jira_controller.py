@@ -32,7 +32,7 @@ from athenian.api.controllers.jira import get_jira_installation, normalize_issue
     normalize_user_type, resolve_projects
 from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.branches import BranchMiner
-from athenian.api.controllers.miners.github.precomputed_prs import load_precomputed_done_facts_ids
+from athenian.api.controllers.miners.github.precomputed_prs import DonePRFactsLoader
 from athenian.api.controllers.miners.jira.epic import filter_epics
 from athenian.api.controllers.miners.jira.issue import fetch_jira_issues, ISSUE_PR_IDS, \
     ISSUE_PRS_BEGAN, ISSUE_PRS_COUNT, ISSUE_PRS_RELEASED, resolve_work_began_and_resolved
@@ -546,7 +546,7 @@ async def _issue_flow(return_: Set[str],
                     PullRequest.node_id.in_(pr_ids),
                 )).order_by(PullRequest.node_id.key),
                 mdb, PullRequest, index=PullRequest.node_id.key),
-            load_precomputed_done_facts_ids(
+            DonePRFactsLoader.load_precomputed_done_facts_ids(
                 pr_ids, default_branches, release_settings, account, pdb,
                 panic_on_missing_repositories=False),
         ]

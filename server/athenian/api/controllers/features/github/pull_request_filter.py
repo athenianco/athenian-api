@@ -27,8 +27,7 @@ from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_COLUMNS, \
     fetch_precomputed_commit_history_dags, fetch_repository_commits_no_branch_dates
 from athenian.api.controllers.miners.github.precomputed_prs import \
-    load_precomputed_done_facts_filters, load_precomputed_done_facts_reponums, \
-    MergedPRFactsLoader, remove_ambiguous_prs, \
+    DonePRFactsLoader, MergedPRFactsLoader, remove_ambiguous_prs, \
     store_merged_unreleased_pull_request_facts, store_open_pull_request_facts, \
     store_precomputed_done_facts
 from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRequest, \
@@ -564,7 +563,7 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
             labels, jira, branches, default_branches, exclude_inactive, release_settings,
             account, meta_ids, mdb, pdb, rdb, cache,
             truncate=False, updated_min=updated_min, updated_max=updated_max),
-        load_precomputed_done_facts_filters(
+        DonePRFactsLoader.load_precomputed_done_facts_filters(
             time_from, time_to, repos, participants, labels, default_branches,
             exclude_inactive, release_settings, account, pdb),
     )
@@ -722,7 +721,7 @@ async def _fetch_pull_requests(prs: Dict[str, Set[int]],
     tasks = [
         read_sql_query(union_all(*queries) if len(queries) > 1 else queries[0],  # sqlite sucks
                        mdb, PullRequest, index=PullRequest.node_id.key),
-        load_precomputed_done_facts_reponums(
+        DonePRFactsLoader.load_precomputed_done_facts_reponums(
             prs, default_branches, release_settings, account, pdb),
     ]
     prs_df, (facts, ambiguous) = await gather(*tasks)

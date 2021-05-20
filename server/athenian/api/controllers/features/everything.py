@@ -20,7 +20,7 @@ from athenian.api.controllers.miners.github.contributors import mine_contributor
 from athenian.api.controllers.miners.github.developer import DeveloperTopic, \
     mine_developer_activities
 from athenian.api.controllers.miners.github.precomputed_prs import \
-    load_precomputed_done_facts_all, MergedPRFactsLoader, OpenPRFactsLoader
+    DonePRFactsLoader, MergedPRFactsLoader, OpenPRFactsLoader
 from athenian.api.controllers.miners.github.release_mine import mine_releases
 from athenian.api.controllers.miners.jira.issue import fetch_jira_issues, PullRequestJiraMapper
 from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
@@ -54,7 +54,7 @@ async def mine_all_prs(repos: Collection[str],
                        cache: Optional[aiomcache.Client]) -> Dict[str, pd.DataFrame]:
     """Extract everything we know about pull requests."""
     ghdprf = GitHubDonePullRequestFacts
-    done_facts, raw_done_rows = await load_precomputed_done_facts_all(
+    done_facts, raw_done_rows = await DonePRFactsLoader.load_precomputed_done_facts_all(
         repos, default_branches, settings, account, pdb,
         extra=[ghdprf.release_url, ghdprf.release_node_id])
     merged_facts = await MergedPRFactsLoader.load_merged_pull_request_facts_all(
