@@ -7,6 +7,7 @@ application-package-names=athenian,tests
 per-file-ignores=
     setup.py:D
     tests/*:D
+    **/__init__.py:F401
     athenian/api/models/web/__init__.py:F401
     athenian/api/models/*.py:D400,D401,D403
     athenian/api/models/metadata/github.py:D101
