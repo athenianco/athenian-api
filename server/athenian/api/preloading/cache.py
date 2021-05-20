@@ -17,7 +17,8 @@ from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.models.metadata.github import Branch, NodePullRequestJiraIssues, \
     PullRequest
 from athenian.api.models.precomputed.models import \
-    GitHubOpenPullRequestFacts, GitHubRelease as PrecomputedRelease, \
+    GitHubMergedPullRequestFacts, GitHubOpenPullRequestFacts, \
+    GitHubRelease as PrecomputedRelease, \
     GitHubReleaseMatchTimespan as PrecomputedGitHubReleaseMatchTimespan
 from athenian.api.models.state.models import AccountFeature, AccountGitHubAccount, Feature
 
@@ -380,6 +381,7 @@ class PCID(str, Enum):
     releases = PrecomputedRelease.__table__.fullname
     releases_match_timespan = PrecomputedGitHubReleaseMatchTimespan.__table__.fullname
     open_pr_facts = GitHubOpenPullRequestFacts.__table__.fullname
+    merged_pr_facts = GitHubMergedPullRequestFacts.__table__.fullname
 
 
 def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[InstrumentedAttribute]]]]:
@@ -529,6 +531,47 @@ def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[Instrumente
                 ],
                 "coerce_cols": {
                     GitHubOpenPullRequestFacts.activity_days: {
+                        "sqlite": lambda col_series: [
+                            [datetime.strptime(v, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                             for v in r] for r in col_series
+                        ],
+                    },
+                },
+            },
+            PCID.merged_pr_facts.value: {
+                "sharding": {
+                    "column": GitHubMergedPullRequestFacts.acc_id,
+                    "key": "acc_id",
+                },
+                "filtering_clause": (
+                    GitHubMergedPullRequestFacts.format_version ==
+                    GitHubMergedPullRequestFacts.__table__.columns[
+                        GitHubMergedPullRequestFacts.format_version.key].default.arg,
+                ),
+                "cols": [
+                    GitHubMergedPullRequestFacts.pr_node_id,
+                    GitHubMergedPullRequestFacts.repository_full_name,
+                    GitHubMergedPullRequestFacts.data,
+                    GitHubMergedPullRequestFacts.author,
+                    GitHubMergedPullRequestFacts.merger,
+                    GitHubMergedPullRequestFacts.checked_until,
+                    GitHubMergedPullRequestFacts.acc_id,
+                    GitHubMergedPullRequestFacts.labels,
+                    GitHubMergedPullRequestFacts.activity_days,
+                    GitHubMergedPullRequestFacts.release_match,
+                ],
+                "categorical_cols": [
+                    GitHubMergedPullRequestFacts.repository_full_name,
+                    GitHubMergedPullRequestFacts.author,
+                    GitHubMergedPullRequestFacts.merger,
+                    GitHubMergedPullRequestFacts.acc_id,
+                    GitHubMergedPullRequestFacts.release_match,
+                ],
+                "identifier_cols": [
+                    GitHubMergedPullRequestFacts.pr_node_id,
+                ],
+                "coerce_cols": {
+                    GitHubMergedPullRequestFacts.activity_days: {
                         "sqlite": lambda col_series: [
                             [datetime.strptime(v, "%Y-%m-%d").replace(tzinfo=timezone.utc)
                              for v in r] for r in col_series

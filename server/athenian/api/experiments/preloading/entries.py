@@ -1,5 +1,7 @@
+from collections import defaultdict
 from datetime import datetime, timezone
 import functools
+import logging
 import operator
 from typing import Collection, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple, Union
 
@@ -9,12 +11,15 @@ import numpy as np
 import pandas as pd
 from sqlalchemy.sql.elements import BinaryExpression
 
+from athenian.api import metadata
 from athenian.api.controllers.features.entries import MetricEntriesCalculator
 from athenian.api.controllers.features.github.unfresh_pull_request_metrics import \
     UnfreshPullRequestFactsFetcher
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import BranchMiner
-from athenian.api.controllers.miners.github.precomputed_prs import OpenPRFactsLoader
+from athenian.api.controllers.miners.github.precomputed_prs import \
+    MergedPRFactsLoader, OpenPRFactsLoader
+from athenian.api.controllers.miners.github.precomputed_prs.utils import extract_release_match
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.github.release_load import \
     match_groups_to_conditions, ReleaseLoader
@@ -24,7 +29,7 @@ from athenian.api.controllers.miners.github.release_match import ReleaseToPullRe
 from athenian.api.controllers.miners.jira.issue import PullRequestJiraMapper
 from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind, \
     PullRequestFacts
-from athenian.api.controllers.settings import ReleaseMatch
+from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.models.metadata.github import PullRequest
 from athenian.api.preloading.cache import MCID, PCID
 from athenian.api.tracing import sentry_span
@@ -111,6 +116,123 @@ class PreloadedReleaseToPullRequestMapper(ReleaseToPullRequestMapper):
     release_loader = PreloadedReleaseLoader
 
 
+class PreloadedMergedPRFactsLoader(MergedPRFactsLoader):
+    """Loader for preloaded merged PRs facts."""
+
+    @classmethod
+    @sentry_span
+    async def load_merged_unreleased_pull_request_facts(
+            cls,
+            prs: pd.DataFrame,
+            time_to: datetime,
+            labels: LabelFilter,
+            matched_bys: Dict[str, ReleaseMatch],
+            default_branches: Dict[str, str],
+            release_settings: ReleaseSettings,
+            account: int,
+            pdb: databases.Database,
+            time_from: Optional[datetime] = None,
+            exclude_inactive: bool = False,
+    ) -> Dict[str, PullRequestFacts]:
+        """
+        Load the mapping from PR node identifiers which we are sure are not released in one of \
+        `releases` to the serialized facts.
+
+        For each merged PR we maintain the set of releases that do include that PR.
+
+        :return: Map from PR node IDs to their facts.
+        """
+        if labels:
+            # TODO: not supported yet, call original implementation
+            return await super(PreloadedMergedPRFactsLoader, cls)\
+                .load_merged_unreleased_pull_request_facts(
+                    prs,
+                    time_to,
+                    labels,
+                    matched_bys,
+                    default_branches,
+                    release_settings,
+                    account,
+                    pdb,
+                    time_from=time_from,
+                    exclude_inactive=exclude_inactive,
+            )
+
+        if time_to != time_to:
+            return {}
+        assert time_to.tzinfo is not None
+        if exclude_inactive:
+            assert time_from is not None
+        log = logging.getLogger("%s.load_merged_unreleased_pull_request_facts" %
+                                metadata.__package__)
+
+        cached_df = pdb.cache.dfs[PCID.merged_pr_facts]
+        df = cached_df.df
+
+        common_mask = (
+            (df["checked_until"] >= time_to) &
+            (df["acc_id"] == account)
+        )
+
+        if exclude_inactive:
+            activity_days = np.concatenate(df["activity_days"])
+            activity_mask = np.full(len(df["activity_days"]), False)
+            activity_days_in_range = (
+                (time_from.replace(tzinfo=timezone.utc) <= activity_days) &
+                (activity_days < time_to.replace(tzinfo=timezone.utc))
+            )
+            activity_offsets = np.cumsum(df["activity_days"].apply(len).values)
+            indexes = np.searchsorted(activity_offsets, np.nonzero(activity_days_in_range)[0],
+                                      side="right")
+            activity_mask[indexes] = 1
+
+            common_mask &= activity_mask
+
+        repos_by_match = defaultdict(list)
+        for repo in prs[PullRequest.repository_full_name.key].unique():
+            if (release_match := extract_release_match(
+                    repo, matched_bys, default_branches, release_settings)) is None:
+                # no new releases
+                continue
+            repos_by_match[release_match].append(repo)
+
+        or_masks = []
+        pr_repos = prs[PullRequest.repository_full_name.key].values.astype("S")
+        pr_ids = prs.index.values.astype("S")
+        for release_match, repos in repos_by_match.items():
+            or_masks.append(
+                common_mask &
+                df["pr_node_id"].isin(pr_ids[np.in1d(pr_repos, np.array(repos, dtype="S"))]) &
+                df["repository_full_name"].isin(repos) &
+                (df["release_match"] == release_match),
+            )
+        if not or_masks:
+            return {}
+
+        mask = functools.reduce(operator.or_, or_masks)
+        merged_pr_facts = cached_df.filter(mask, columns=[
+            "pr_node_id", "repository_full_name", "data", "author", "merger",
+        ])
+
+        facts = {}
+        for node_id, data, repository_full_name, author, merger in zip(
+                merged_pr_facts["pr_node_id"].values, merged_pr_facts["data"].values,
+                merged_pr_facts["repository_full_name"].values,
+                merged_pr_facts["author"].values, merged_pr_facts["merger"].values):
+            if data is None:
+                # There are two known cases:
+                # 1. When we load all PRs without a blacklist (/filter/pull_requests) so some
+                #    merged PR is matched to releases but exists in
+                #    `github_done_pull_request_facts`.
+                # 2. "Impossible" PRs that are merged.
+                log.warning("No precomputed facts for merged %s", node_id)
+                continue
+            facts[node_id] = PullRequestFacts(
+                data=data, repository_full_name=repository_full_name,
+                author=author, merger=merger)
+        return facts
+
+
 class PreloadedOpenPRFactsLoader(OpenPRFactsLoader):
     """Loader for preloaded open PRs facts."""
 
@@ -179,6 +301,7 @@ class PreloadedUnfreshPullRequestFactsFetcher(UnfreshPullRequestFactsFetcher):
 
     release_loader = PreloadedReleaseLoader
     open_prs_facts_loader = PreloadedOpenPRFactsLoader
+    merged_prs_facts_loader = PreloadedMergedPRFactsLoader
 
 
 class PreloadedBranchMiner(BranchMiner):

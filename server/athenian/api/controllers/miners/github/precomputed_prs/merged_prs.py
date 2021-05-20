@@ -425,10 +425,3 @@ async def discover_inactive_merged_unreleased_prs(time_from: datetime,
         repos.append(row[1])
     add_pdb_hits(pdb, "inactive_merged_unreleased", len(node_ids))
     return node_ids, repos
-
-
-# TODO: these have to be removed, these are here just for keeping backward-compatibility
-# without the need to re-write already all the places these functions are called
-load_merged_unreleased_pull_request_facts = MergedPRFactsLoader.\
-    load_merged_unreleased_pull_request_facts
-load_merged_pull_request_facts_all = MergedPRFactsLoader.load_merged_pull_request_facts_all

@@ -27,8 +27,8 @@ from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_COLUMNS, \
     fetch_precomputed_commit_history_dags, fetch_repository_commits_no_branch_dates
 from athenian.api.controllers.miners.github.precomputed_prs import \
-    load_merged_unreleased_pull_request_facts, load_precomputed_done_facts_filters, \
-    load_precomputed_done_facts_reponums, remove_ambiguous_prs, \
+    load_precomputed_done_facts_filters, load_precomputed_done_facts_reponums, \
+    MergedPRFactsLoader, remove_ambiguous_prs, \
     store_merged_unreleased_pull_request_facts, store_open_pull_request_facts, \
     store_precomputed_done_facts
 from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRequest, \
@@ -799,7 +799,7 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
             load_commit_dags(
                 releases.append(milestone_releases), account, meta_ids, mdb, pdb, cache),
             # not nonemax() here! we want NaT-s inside load_merged_unreleased_pull_request_facts
-            load_merged_unreleased_pull_request_facts(
+            MergedPRFactsLoader.load_merged_unreleased_pull_request_facts(
                 prs_df, releases[Release.published_at.key].max(), LabelFilter.empty(),
                 matched_bys, default_branches, release_settings, account, pdb),
         ]
