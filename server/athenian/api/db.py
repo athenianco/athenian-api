@@ -227,7 +227,12 @@ class ExecuteManyConnection(databases.core.Connection):
         transaction.commit = commit_transaction
         return transaction
 
-    def _compile(self, query: ClauseElement, values: List[Mapping]) -> Tuple[str, List[list]]:
+    def _compile(self,
+                 query: ClauseElement,
+                 values: Optional[List[Mapping]],
+                 ) -> Tuple[str, List[list]]:
+        if values is None:
+            return self._connection._compile(query)
         compiled = query.compile(dialect=self._backend._dialect)
         compiled_params = sorted(compiled.params.items())
 
