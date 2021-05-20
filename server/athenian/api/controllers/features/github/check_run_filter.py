@@ -6,6 +6,7 @@ import warnings
 import aiomcache
 from dateutil.rrule import MONTHLY, rrule
 import numpy as np
+from numpy.lib.nanfunctions import _remove_nan_1d
 
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import JIRAFilter
@@ -22,12 +23,13 @@ from athenian.api.typing_utils import DatabaseLike
     exptime=PullRequestMiner.CACHE_TTL,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda time_from, time_to, repositories, pushers, jira, **_:  # noqa
+    key=lambda time_from, time_to, repositories, pushers, jira, quantiles, **_:  # noqa
     (
         time_from.timestamp(), time_to.timestamp(),
         ",".join(sorted(repositories)),
         ",".join(sorted(pushers)),
         jira,
+        "%s,%s" % tuple(quantiles),
     ),
 )
 async def filter_check_runs(time_from: datetime,
@@ -139,12 +141,10 @@ async def filter_check_runs(time_from: datetime,
                             timeline_elapseds, where=timeline_masks & qmask[None, :], axis=1,
                         ).tolist(),
                         # np.median does not have `where` in 1.20.1
-                        # np.nanmedian loses the dtype when axis=1
-                        median_execution_time_timeline=np.nanmedian(
+                        median_execution_time_timeline=_nanmedian_last_axis(
                             np.where(timeline_masks & mask[None, :],
                                      timeline_elapseds,
-                                     np.timedelta64("NaT")),
-                            axis=1).astype(timeline_elapseds.dtype).tolist(),
+                                     np.timedelta64("NaT"))).tolist(),
                     )
                     for key, mask in masks.items()
                 },
@@ -194,3 +194,29 @@ def _val_or_none(val):
     if val == val:
         return val.item()
     return None
+
+
+def _nanmedian_last_axis(a: np.ndarray) -> np.ndarray:
+    """
+    Work around bugs in numpy's nanmedian().
+
+    * https://github.com/numpy/numpy/issues/19050
+    * https://github.com/numpy/numpy/issues/19051
+    """
+    if a.shape[1] < 600:
+        nan = np.full_like(a, None, shape=1)[0]
+        a = np.ma.masked_array(a, np.isnan(a))
+        m = np.ma.median(a, axis=1, overwrite_input=True)
+        result = m.filled(nan)
+    else:
+        result = np.apply_along_axis(_nanmedian1d, 1, a, True)
+    return result
+
+
+def _nanmedian1d(arr1d, overwrite_input=False):
+    """Patch the original _nanmedian1d to return correctly typed NaN-s."""
+    nan = np.full_like(arr1d, None, shape=1)[0]
+    arr1d, overwrite_input = _remove_nan_1d(arr1d, overwrite_input=overwrite_input)
+    if arr1d.size == 0:
+        return nan
+    return np.median(arr1d, overwrite_input=overwrite_input)

@@ -623,7 +623,7 @@ async def filter_code_checks(request: AthenianWebRequest, body: dict) -> web.Res
         get_jira_installation(filt.account, request.sdb, request.mdb, request.cache),
     )
     timeline, check_runs = await filter_check_runs(
-        time_from, time_to, repos, filt.triggered_by or [],
+        time_from, time_to, repos, {d.rsplit("/", 1)[1] for d in (filt.triggered_by or [])},
         JIRAFilter.from_web(filt.jira, jira_ids), filt.quantiles or [0, 1],
         meta_ids, request.mdb, request.cache)
     prefixer = await prefixer.load()
