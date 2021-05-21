@@ -143,6 +143,8 @@ class MetricEntriesCalculator:
         repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.key, repositories)
         with_grouper = partial(group_prs_by_participants, participants)
         groups = group_to_indexes(df_facts, lines_grouper, repo_grouper, with_grouper)
+        with open("/tmp/bench.pickle", "wb") as fout:
+            pickle.dump((calc, df_facts, time_intervals, groups), fout, protocol=-1)
         return calc(df_facts, time_intervals, groups)
 
     @sentry_span

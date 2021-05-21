@@ -37,6 +37,9 @@ class MetricCalculator(Generic[T]):
     # dtype may behave like NaN
     has_nan = False
 
+    # _analyze() may return arrays of shape longer than 2, `samples` are ignored
+    is_pure_dependency = False
+
     def __init__(self, *deps: "MetricCalculator", quantiles: Sequence[float]):
         """Initialize a new `MetricCalculator` instance."""
         self.reset()
@@ -55,6 +58,7 @@ class MetricCalculator(Generic[T]):
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  groups: Sequence[Sequence[int]],
+                 groups_mask: Optional[np.ndarray] = None,
                  **kwargs) -> None:
         """Calculate the samples over the supplied facts.
 
@@ -64,6 +68,9 @@ class MetricCalculator(Generic[T]):
         :param max_times: Endings of the considered time intervals. They are needed to discard \
                           samples with both ends greater than the maximum time.
         :param groups: Series of group indexes to split the samples into.
+        :param groups_mask: Alternative to `groups` that gives better performance. \
+                            The len(groups) * len(facts) boolean array that chooses elements \
+                            of each group.
         """
         assert isinstance(facts, pd.DataFrame)
         assert isinstance(min_times, np.ndarray)
@@ -85,17 +92,33 @@ class MetricCalculator(Generic[T]):
         self._peek = peek = self._analyze(facts, min_times, max_times, **kwargs)
         assert isinstance(peek, np.ndarray), type(self)
         assert peek.shape[:2] == (len(min_times), len(facts)), (peek.shape, type(self))
+        if len(peek.shape) > 2:
+            assert self.is_pure_dependency, "len(peek.shape) > 2 => no samples are possible"
+            return
         if peek.dtype is np.dtype(object):
+            # this is the slowest, avoid as much as possible
             notnull = peek != np.array(None)
         elif self.has_nan:
             notnull = peek == peek
         else:
             notnull = peek != peek.dtype.type(0)
-        gpeek = [peek[:, g] for g in groups]
-        gnotnull = [notnull[:, g] for g in groups]
-        self._samples = [[p[nn].astype(self.dtype)
-                          for p, nn in zip(gp, gnn)]
-                         for gp, gnn in zip(gpeek, gnotnull)]
+
+        if groups_mask is not None:
+            notnull = np.broadcast_to(notnull[None, :], (len(groups_mask), *notnull.shape))
+            group_sample_mask = notnull & groups_mask[:, None, :]
+            flat_samples = np.broadcast_to(peek[None, :], notnull.shape)[group_sample_mask] \
+                .astype(self.dtype, copy=False).ravel()
+            group_sample_lengths = np.sum(group_sample_mask, axis=-1)
+            grouped_samples = np.full(len(groups) * len(peek), None, object)
+            grouped_samples[:] = np.split(
+                flat_samples, np.cumsum(group_sample_lengths.ravel())[:-1])
+            self._samples = grouped_samples.reshape((len(groups), len(peek)))
+        else:
+            gpeek = [peek[:, g] for g in groups]
+            gnotnull = [notnull[:, g] for g in groups]
+            self._samples = [[p[nn].astype(self.dtype)
+                              for p, nn in zip(gp, gnn)]
+                             for gp, gnn in zip(gpeek, gnotnull)]
 
     @property
     def values(self) -> List[List[Metric[T]]]:
@@ -337,8 +360,11 @@ class MetricCalculatorEnsemble:
                  groups: Optional[Sequence[Sequence[int]]],
                  **kwargs) -> None:
         """Invoke all the owned metric calculators on the same input."""
+        groups_mask = np.zeros((len(groups), len(facts)), dtype=bool)
+        for i, g in enumerate(groups):
+            groups_mask[i, g] = True
         for calc in self._calcs:
-            calc(facts, min_times, max_times, groups, **kwargs)
+            calc(facts, min_times, max_times, groups, groups_mask=groups_mask, **kwargs)
 
     def __bool__(self) -> bool:
         """Return True if there is at leat one calculator inside; otherwise, False."""
@@ -656,6 +682,7 @@ class RatioCalculator(WithoutQuantilesMixin, MetricCalculator[float]):
     """Calculate the ratio of two counts from the dependencies."""
 
     dtype = float
+    has_nan = True
 
     def __init__(self, *deps: MetricCalculator, quantiles: Sequence[float]):
         """Initialize a new instance of RatioCalculator."""
@@ -681,7 +708,7 @@ class RatioCalculator(WithoutQuantilesMixin, MetricCalculator[float]):
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **kwargs) -> np.ndarray:
-        return np.full((len(min_times), len(facts)), None, object)
+        return np.full((len(min_times), len(facts)), None, self.dtype)
 
 
 def make_register_metric(metric_calculators: Dict[str, Type[MetricCalculator]],
