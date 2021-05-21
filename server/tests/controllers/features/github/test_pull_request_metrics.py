@@ -76,8 +76,8 @@ def test_pull_request_metrics_2d(pr_samples, cls):  # noqa: F811
                         dtype="datetime64[ns]")
     prs = df_from_structs(random_dropout(pr, 0.5) for pr in pr_samples(1000))
     r = calc._analyze(prs, time_froms, time_tos)
-    assert (r[0, r[0] != np.array(None)] >= 0).any()
-    assert (r[1, r[1] != np.array(None)] >= 0).any()
+    assert (r[0, r[0] == r[0]] >= np.array(0, dtype=r.dtype)).any()
+    assert (r[1, r[1] == r[1]] >= np.array(0, dtype=r.dtype)).any()
 
 
 @pytest.mark.parametrize("cls", [
@@ -90,7 +90,7 @@ def test_pull_request_metrics_timedelta_stability(pr_samples, cls):  # noqa: F81
     time_to = datetime.utcnow()
     prs = df_from_structs(random_dropout(pr, 0.5) for pr in pr_samples(1000))
     r = calc._analyze(prs, dt64arr_ns(time_from), dt64arr_ns(time_to))
-    assert (r[r != np.array(None)] >= 0).all()
+    assert (r[~np.isnat(r)] >= np.array(0, dtype=r.dtype)).all()
 
 
 def test_pull_request_metrics_empty_input(pr_samples):
@@ -282,13 +282,16 @@ def test_pull_request_metrics_counts_nq(pr_samples, cls):  # noqa: F811
     delta = calc.peek
     assert isinstance(delta, np.ndarray)
     assert delta.shape == (2, 1000)
-    assert (delta[0] == delta[1]).all()
+    assert (delta[0][delta[0] == delta[0]] == delta[1][delta[1] == delta[1]]).all()
     if cls != AllCounter:
         peek = calc._calcs[0].peek
     else:
         peek = calc.peek
-    assert (peek[0] == peek[1]).all()
-    nonones = (peek != np.array(None)).sum()
+    assert (peek[0][peek[0] == peek[0]] == peek[1][peek[1] == peek[1]]).all()
+    if cls != AllCounter:
+        nonones = (peek == peek).sum()
+    else:
+        nonones = (peek != 0).sum()
     nones = (peek.shape[0] * peek.shape[1]) - nonones
     if cls not in (WorkInProgressCounter, CycleCounter, AllCounter):
         assert nones > 0, cls

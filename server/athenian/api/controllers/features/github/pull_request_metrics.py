@@ -115,6 +115,7 @@ class WorkInProgressTimeCalculator(AverageMetricCalculator[timedelta]):
 
     may_have_negative_values = False
     dtype = "timedelta64[s]"
+    has_nan = True
 
     def _analyze(self,
                  facts: pd.DataFrame,
@@ -123,42 +124,40 @@ class WorkInProgressTimeCalculator(AverageMetricCalculator[timedelta]):
                  override_event_time: Optional[datetime] = None,
                  override_event_indexes: Optional[np.ndarray] = None,
                  ) -> np.ndarray:
-        wip_end = np.full(len(facts), None, object)
+        wip_end = np.full(len(facts), None, min_times.dtype)
         no_last_review = facts[PullRequestFacts.f.last_review].isnull().values
         has_last_review = ~no_last_review
-        wip_end[has_last_review] = facts[PullRequestFacts.f.first_review_request].take(
-            np.nonzero(has_last_review)[0])
+        wip_end[has_last_review] = \
+            facts[PullRequestFacts.f.first_review_request].values[has_last_review]
 
         # review was probably requested but never happened
         no_last_commit = facts[PullRequestFacts.f.last_commit].isnull().values
         has_last_commit = ~no_last_commit & no_last_review
-        wip_end[has_last_commit] = facts[PullRequestFacts.f.last_commit].take(np.nonzero(
-            has_last_commit)[0])
+        wip_end[has_last_commit] = facts[PullRequestFacts.f.last_commit].values[has_last_commit]
 
         # 0 commits in the PR, no reviews and review requests
         # => review time = 0
         # => merge time = 0 (you cannot merge an empty PR)
         # => release time = 0
         # This PR is 100% closed.
-        remaining = np.nonzero(wip_end == np.array(None))[0]
-        closed = facts[PullRequestFacts.f.closed].take(remaining)
+        remaining = np.nonzero(np.isnat(wip_end))[0]
+        closed = facts[PullRequestFacts.f.closed].values[remaining]
         wip_end[remaining] = closed
         wip_end[remaining[closed != closed]] = None  # deal with NaNs
 
         if override_event_time is not None:
             wip_end[override_event_indexes] = override_event_time
 
-        wip_end_indexes = np.nonzero(wip_end != np.array(None))[0]
+        wip_end_indexes = np.nonzero(~np.isnat(wip_end))[0]
         dtype = facts[PullRequestFacts.f.created].dtype
         wip_end = wip_end[wip_end_indexes].astype(dtype)
         wip_end_in_range = (min_times[:, None] <= wip_end) & (wip_end < max_times[:, None])
-        result = np.full((len(min_times), len(facts)), None, object)
+        result = np.full((len(min_times), len(facts)), None, self.dtype)
         work_began = facts[PullRequestFacts.f.work_began].values
         for result_dim, wip_end_in_range_dim in zip(result, wip_end_in_range):
             wip_end_indexes_dim = wip_end_indexes[wip_end_in_range_dim]
-            result_dim[wip_end_indexes_dim] = (
+            result_dim[wip_end_indexes_dim] = \
                 wip_end[wip_end_in_range_dim] - work_began[wip_end_indexes_dim]
-            ).astype(self.dtype).view(int)
         return result
 
 
@@ -183,6 +182,7 @@ class ReviewTimeCalculator(AverageMetricCalculator[timedelta]):
 
     may_have_negative_values = False
     dtype = "timedelta64[s]"
+    has_nan = True
 
     def _analyze(self,
                  facts: pd.DataFrame,
@@ -192,10 +192,9 @@ class ReviewTimeCalculator(AverageMetricCalculator[timedelta]):
                  override_event_time: Optional[datetime] = None,
                  override_event_indexes: Optional[np.ndarray] = None,
                  ) -> np.ndarray:
-        result = np.full(len(facts), None, object)
         has_first_review_request = \
             facts[PullRequestFacts.f.first_review_request].notnull().values
-        review_end = result.copy()
+        review_end = np.full(len(facts), None, min_times.dtype)
         # we cannot be sure that the approvals finished unless the PR is closed.
         if allow_unclosed:
             closed_mask = has_first_review_request
@@ -207,30 +206,27 @@ class ReviewTimeCalculator(AverageMetricCalculator[timedelta]):
         last_review_mask = (not_approved_mask &
                             facts[PullRequestFacts.f.last_review].notnull().values &
                             closed_mask)
-        review_end[approved_mask] = facts[PullRequestFacts.f.approved].take(
-            np.nonzero(approved_mask)[0])
-        review_end[last_review_mask] = facts[PullRequestFacts.f.last_review].take(
-            np.nonzero(last_review_mask)[0])
+        review_end[approved_mask] = facts[PullRequestFacts.f.approved].values[approved_mask]
+        review_end[last_review_mask] = \
+            facts[PullRequestFacts.f.last_review].values[last_review_mask]
 
         if override_event_time is not None:
             review_end[override_event_indexes] = override_event_time
 
-        review_not_none = review_end != np.array(None)
-        review_in_range = np.full((len(min_times), len(result)), False)
+        review_not_none = ~np.isnat(review_end)
+        review_in_range = np.full((len(min_times), len(facts)), False)
         dtype = facts[PullRequestFacts.f.created].dtype
         review_end = review_end[review_not_none].astype(dtype)
         review_in_range_mask = \
             (min_times[:, None] <= review_end) & (review_end < max_times[:, None])
         review_in_range[:, review_not_none] = review_in_range_mask
         review_end = np.repeat(review_end[None, :], len(min_times), axis=0)
-        result = np.repeat(result[None, :], len(min_times), axis=0)
+        result = np.full((len(min_times), len(facts)), None, self.dtype)
         frr = facts[PullRequestFacts.f.first_review_request].values
         for result_dim, review_end_dim, review_in_range_mask_dim, review_in_range_dim in \
                 zip(result, review_end, review_in_range_mask, review_in_range):
             review_end_dim = review_end_dim[review_in_range_mask_dim]
-            result_dim[review_in_range_dim] = (
-                review_end_dim - frr[review_in_range_dim]
-            ).astype(self.dtype).view(int)
+            result_dim[review_in_range_dim] = review_end_dim - frr[review_in_range_dim]
         return result
 
 
@@ -256,6 +252,7 @@ class MergingTimeCalculator(AverageMetricCalculator[timedelta]):
 
     may_have_negative_values = False
     dtype = "timedelta64[s]"
+    has_nan = True
 
     def _analyze(self,
                  facts: pd.DataFrame,
@@ -264,10 +261,10 @@ class MergingTimeCalculator(AverageMetricCalculator[timedelta]):
                  override_event_time: Optional[datetime] = None,
                  override_event_indexes: Optional[np.ndarray] = None,
                  ) -> np.ndarray:
-        result = np.full((len(min_times), len(facts)), None, object)
-        merge_end = result.copy()
+        result = np.full((len(min_times), len(facts)), None, self.dtype)
+        merge_end = result.copy().astype(min_times.dtype)
         closed_indexes = np.nonzero(facts[PullRequestFacts.f.closed].notnull().values)[0]
-        closed = facts[PullRequestFacts.f.closed].take(closed_indexes).values
+        closed = facts[PullRequestFacts.f.closed].values[closed_indexes]
         closed_in_range = (min_times[:, None] <= closed) & (closed < max_times[:, None])
         closed_indexes = np.repeat(closed_indexes[None, :], len(min_times), axis=0)
         closed_mask = np.full((len(min_times), len(facts)), False)
@@ -289,9 +286,7 @@ class MergingTimeCalculator(AverageMetricCalculator[timedelta]):
         merge_end_approved = merge_end[approved_mask].astype(dtype)
         approved = np.repeat(facts[PullRequestFacts.f.approved].values[None, :],
                              len(min_times), axis=0)
-        result[approved_mask] = (
-            merge_end_approved - approved[approved_mask]
-        ).astype(self.dtype).view(int)
+        result[approved_mask] = merge_end_approved - approved[approved_mask]
         not_last_review_mask = \
             np.repeat(facts[PullRequestFacts.f.last_review].isnull().values[None, :],
                       len(min_times), axis=0)
@@ -299,9 +294,7 @@ class MergingTimeCalculator(AverageMetricCalculator[timedelta]):
         merge_end_last_reviewed = merge_end[last_review_mask].astype(dtype)
         last_review = np.repeat(facts[PullRequestFacts.f.last_review].values[None, :],
                                 len(min_times), axis=0)
-        result[last_review_mask] = (
-            merge_end_last_reviewed - last_review[last_review_mask]
-        ).astype(self.dtype).view(int)
+        result[last_review_mask] = merge_end_last_reviewed - last_review[last_review_mask]
         has_last_commit = \
             np.repeat(facts[PullRequestFacts.f.last_commit].notnull().values[None, :],
                       len(min_times), axis=0)
@@ -310,9 +303,7 @@ class MergingTimeCalculator(AverageMetricCalculator[timedelta]):
         merge_end_last_commit = merge_end[last_commit_mask].astype(dtype)
         last_commit = np.repeat(facts[PullRequestFacts.f.last_commit].values[None, :],
                                 len(min_times), axis=0)
-        result[last_commit_mask] = (
-            merge_end_last_commit - last_commit[last_commit_mask]
-        ).astype(self.dtype).view(int)
+        result[last_commit_mask] = merge_end_last_commit - last_commit[last_commit_mask]
         return result
 
 
@@ -338,6 +329,7 @@ class ReleaseTimeCalculator(AverageMetricCalculator[timedelta]):
 
     may_have_negative_values = False
     dtype = "timedelta64[s]"
+    has_nan = True
 
     def _analyze(self,
                  facts: pd.DataFrame,
@@ -346,10 +338,10 @@ class ReleaseTimeCalculator(AverageMetricCalculator[timedelta]):
                  override_event_time: Optional[datetime] = None,
                  override_event_indexes: Optional[np.ndarray] = None,
                  ) -> np.ndarray:
-        result = np.full((len(min_times), len(facts)), None, object)
+        result = np.full((len(min_times), len(facts)), None, self.dtype)
         released = facts[PullRequestFacts.f.released].values
         released_mask = (min_times[:, None] <= released) & (released < max_times[:, None])
-        release_end = result.copy()
+        release_end = result.copy().astype(min_times.dtype)
         release_end[released_mask] = \
             np.repeat(released[None, :], len(min_times), axis=0)[released_mask]
 
@@ -361,8 +353,8 @@ class ReleaseTimeCalculator(AverageMetricCalculator[timedelta]):
         result_mask[:, facts[PullRequestFacts.f.merged].isnull().values] = False
         merged = np.repeat(facts[PullRequestFacts.f.merged].values[None, :],
                            len(min_times), axis=0)[result_mask]
-        release_end = release_end[result_mask].astype(merged.dtype)
-        result[result_mask] = (release_end - merged).astype(self.dtype).view(int)
+        release_end = release_end[result_mask]
+        result[result_mask] = release_end - merged
         return result
 
 
@@ -388,23 +380,23 @@ class LeadTimeCalculator(AverageMetricCalculator[timedelta]):
 
     may_have_negative_values = False
     dtype = "timedelta64[s]"
+    has_nan = True
 
     def _analyze(self,
                  facts: pd.DataFrame,
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **kwargs) -> np.ndarray:
-        result = np.full((len(min_times), len(facts)), None, object)
+        result = np.full((len(min_times), len(facts)), None, self.dtype)
         released_indexes = \
             np.nonzero(facts[PullRequestFacts.f.released].notnull().values)[0]
-        released = facts[PullRequestFacts.f.released].take(released_indexes).values
+        released = facts[PullRequestFacts.f.released].values[released_indexes]
         released_in_range = (min_times[:, None] <= released) & (released < max_times[:, None])
         work_began = facts[PullRequestFacts.f.work_began].values
         for result_dim, released_in_range_dim in zip(result, released_in_range):
             released_indexes_dim = released_indexes[released_in_range_dim]
-            result_dim[released_indexes_dim] = (
+            result_dim[released_indexes_dim] = \
                 released[released_in_range_dim] - work_began[released_indexes_dim]
-            ).astype(self.dtype).view(int)
         return result
 
 
@@ -433,6 +425,7 @@ class CycleTimeCalculator(WithoutQuantilesMixin, MetricCalculator[timedelta]):
             MergingTimeCalculator,
             ReleaseTimeCalculator)
     dtype = "timedelta64[s]"
+    has_nan = True
 
     def _values(self) -> List[List[Metric[timedelta]]]:
         """Calculate the current metric value."""
@@ -469,11 +462,11 @@ class CycleTimeCalculator(WithoutQuantilesMixin, MetricCalculator[timedelta]):
                  **kwargs) -> np.ndarray:
         """Update the states of the underlying calcs and return whether at least one of the PR's \
         metrics exists."""
-        sumval = np.full((len(min_times), len(facts)), None, object)
+        sumval = np.full((len(min_times), len(facts)), None, self.dtype)
         for calc in self._calcs:
             peek = calc.peek
-            sum_none_mask = sumval == np.array(None)
-            peek_not_none_mask = peek != np.array(None)
+            sum_none_mask = np.isnat(sumval)
+            peek_not_none_mask = ~np.isnat(peek)
             copy_mask = sum_none_mask & peek_not_none_mask
             sumval[copy_mask] = peek[copy_mask]
             add_mask = ~sum_none_mask & peek_not_none_mask
@@ -525,7 +518,7 @@ class AllCounter(SumMetricCalculator[int]):
             # we should intersect each PR's activity days with [min_times, max_times).
             # the following is similar to ReviewedCalculator
             activity_mask = np.full((len(min_times), len(facts)), False)
-            activity_days = np.concatenate(facts[PullRequestFacts.f.activity_days]) \
+            activity_days = np.concatenate(facts[PullRequestFacts.f.activity_days].values) \
                 .astype(facts[PullRequestFacts.f.created].dtype)
             activities_in_range = (
                 (min_times[:, None] <= activity_days)
@@ -546,8 +539,8 @@ class AllCounter(SumMetricCalculator[int]):
         )
         if self.exclude_inactive:
             in_range_mask &= activity_mask
-        result = np.full((len(min_times), len(facts)), None, object)
-        result[in_range_mask] = 1
+        result = np.zeros((len(min_times), len(facts)), int)
+        result[in_range_mask] = True
         return result
 
 
@@ -557,27 +550,26 @@ class WaitFirstReviewTimeCalculator(AverageMetricCalculator[timedelta]):
 
     may_have_negative_values = False
     dtype = "timedelta64[s]"
+    has_nan = True
 
     def _analyze(self,
                  facts: pd.DataFrame,
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **kwargs) -> np.ndarray:
-        result = np.full((len(min_times), len(facts)), None, object)
+        result = np.full((len(min_times), len(facts)), None, self.dtype)
         result_mask = (
             facts[PullRequestFacts.f.first_comment_on_first_review].notnull().values &
             facts[PullRequestFacts.f.first_review_request].notnull().values
         )
-        fc_on_fr = facts[PullRequestFacts.f.first_comment_on_first_review].take(
-            np.nonzero(result_mask)[0]).values
+        fc_on_fr = facts[PullRequestFacts.f.first_comment_on_first_review].values[result_mask]
         fc_on_fr_in_range_mask = (min_times[:, None] <= fc_on_fr) & (fc_on_fr < max_times[:, None])
         result_indexes = np.nonzero(result_mask)[0]
         first_review_request = facts[PullRequestFacts.f.first_review_request].values
         for result_dim, fc_on_fr_in_range_mask_dim in zip(result, fc_on_fr_in_range_mask):
             result_indexes_dim = result_indexes[fc_on_fr_in_range_mask_dim]
-            result_dim[result_indexes_dim] = (
+            result_dim[result_indexes_dim] = \
                 fc_on_fr[fc_on_fr_in_range_mask_dim] - first_review_request[result_indexes_dim]
-            ).astype(self.dtype).view(int)
         return result
 
 
@@ -608,7 +600,7 @@ class OpenedCalculator(SumMetricCalculator[int]):
                  max_times: np.ndarray,
                  **kwargs) -> np.ndarray:
         created = facts[PullRequestFacts.f.created].values
-        result = np.full((len(min_times), len(facts)), None, object)
+        result = np.zeros((len(min_times), len(facts)), int)
         result[(min_times[:, None] <= created) & (created < max_times[:, None])] = 1
         return result
 
@@ -624,7 +616,7 @@ class ReviewedCalculator(SumMetricCalculator[int]):
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **kwargs) -> np.ndarray:
-        review_timestamps = np.concatenate(facts[PullRequestFacts.f.reviews]) \
+        review_timestamps = np.concatenate(facts[PullRequestFacts.f.reviews].values) \
             .astype(facts[PullRequestFacts.f.created].dtype)
         reviews_in_range = \
             (min_times[:, None] <= review_timestamps) & (review_timestamps < max_times[:, None])
@@ -632,7 +624,7 @@ class ReviewedCalculator(SumMetricCalculator[int]):
         review_offsets = np.zeros(len(facts) + 1, dtype=int)
         np.cumsum(facts[PullRequestFacts.f.reviews].apply(len).values,
                   out=review_offsets[1:])
-        result = np.full((len(min_times), len(facts)), None, object)
+        result = np.zeros((len(min_times), len(facts)), int)
         for result_dim, reviews_in_range_dim in zip(result, reviews_in_range):
             # np.searchsorted aliases several reviews of the same PR to the right border of a
             # `review_offsets` interval
@@ -655,7 +647,7 @@ class MergedCalculator(SumMetricCalculator[int]):
                  max_times: np.ndarray,
                  **kwargs) -> np.ndarray:
         merged = facts[PullRequestFacts.f.merged].values
-        result = np.full((len(min_times), len(facts)), None, object)
+        result = np.zeros((len(min_times), len(facts)), int)
         result[(min_times[:, None] <= merged) & (merged < max_times[:, None])] = 1
         return result
 
@@ -674,7 +666,7 @@ class RejectedCalculator(SumMetricCalculator[int]):
         closed = facts[PullRequestFacts.f.closed].values
         closed_in_range_mask = (min_times[:, None] <= closed) & (closed < max_times[:, None])
         unmerged_mask = facts[PullRequestFacts.f.merged].isnull().values
-        result = np.full((len(min_times), len(facts)), None, object)
+        result = np.zeros((len(min_times), len(facts)), int)
         result[closed_in_range_mask & unmerged_mask] = 1
         return result
 
@@ -688,7 +680,7 @@ class ClosedCalculator(SumMetricCalculator[int]):
     def _analyze(self, facts: pd.DataFrame, min_times: np.ndarray, max_times: np.ndarray,
                  **kwargs) -> np.ndarray:
         closed = facts[PullRequestFacts.f.closed].values
-        result = np.full((len(min_times), len(facts)), None, object)
+        result = np.zeros((len(min_times), len(facts)), int)
         result[(min_times[:, None] <= closed) & (closed < max_times[:, None])] = 1
         return result
 
@@ -707,7 +699,7 @@ class NotReviewedCalculator(SumMetricCalculator[int]):
                  **kwargs) -> np.ndarray:
         not_reviewed = ~self._calcs[0].peek.astype(bool)
         closed = self._calcs[1].peek.astype(bool)
-        result = np.full((len(min_times), len(facts)), None, object)
+        result = np.zeros((len(min_times), len(facts)), int)
         result[closed & not_reviewed] = 1
         return result
 
@@ -721,7 +713,7 @@ class DoneCalculator(SumMetricCalculator[int]):
     def _analyze(self, facts: pd.DataFrame, min_times: np.ndarray, max_times: np.ndarray,
                  **kwargs) -> np.ndarray:
         released = facts[PullRequestFacts.f.released].values
-        result = np.full((len(min_times), len(facts)), None, object)
+        result = np.zeros((len(min_times), len(facts)), int)
         result[(min_times[:, None] <= released) & (released < max_times[:, None])] = 1
         rejected_mask = (
             facts[PullRequestFacts.f.closed].notnull().values
@@ -759,7 +751,7 @@ class SizeCalculatorMixin(MetricCalculator[int]):
                  **kwargs) -> np.ndarray:
         sizes = np.repeat(facts[PullRequestFacts.f.size].values[None, :],
                           len(min_times), axis=0).astype(object)
-        sizes[self._calcs[0].peek == np.array(None)] = None
+        sizes[self._calcs[0].peek == 0] = None
         return sizes
 
 
@@ -789,6 +781,7 @@ class StagePendingDependencyCalculator(WithoutQuantilesMixin, SumMetricCalculato
 
     dtype = int
     deps = (AllCounter,)
+    is_pure_dependency = True
 
     def _analyze(self,
                  facts: pd.DataFrame,
@@ -799,7 +792,7 @@ class StagePendingDependencyCalculator(WithoutQuantilesMixin, SumMetricCalculato
             facts[c].notnull().values
             for c in ("merged", "approved", "first_review_request"))
 
-        stage_masks = np.full((len(min_times), len(facts), len(PendingStage)), None, object)
+        stage_masks = np.zeros((len(min_times), len(facts), len(PendingStage)), int)
         other = ~facts[PullRequestFacts.f.done].values
         stage_masks[:, merged_mask & other, PendingStage.RELEASE] = True
         other &= ~merged_mask
@@ -808,7 +801,7 @@ class StagePendingDependencyCalculator(WithoutQuantilesMixin, SumMetricCalculato
         stage_masks[:, frr_mask & other, PendingStage.REVIEW] = True
         other &= ~frr_mask
         stage_masks[:, other, PendingStage.WIP] = True
-        stage_masks[self._calcs[0].peek == np.array(None)] = None
+        stage_masks[self._calcs[0].peek == 0] = False
         return stage_masks
 
 
@@ -866,7 +859,7 @@ class JIRAMappingCalculator(SumMetricCalculator[int]):
                  max_times: np.ndarray,
                  **kwargs) -> np.ndarray:
         result = self._calcs[0].peek.copy()
-        result[:, facts[PullRequestFacts.f.jira_id].isnull().values] = None
+        result[:, facts[PullRequestFacts.f.jira_id].isnull().values] = 0
         return result
 
 
@@ -925,6 +918,7 @@ class AverageParticipantsCalculator(AverageMetricCalculator[np.float32]):
     deps = (AllCounter,)
     may_have_negative_values = False
     dtype = np.float32
+    has_nan = True
 
     def _analyze(self,
                  facts: pd.DataFrame,
@@ -932,9 +926,10 @@ class AverageParticipantsCalculator(AverageMetricCalculator[np.float32]):
                  max_times: np.ndarray,
                  **kwargs,
                  ) -> np.ndarray:
-        result = np.repeat(facts[PullRequestFacts.f.participants].values[None, :],
-                           len(min_times), axis=0).astype(object)
-        result[self._calcs[0].peek == np.array(None)] = None
+        result = np.repeat(
+            facts[PullRequestFacts.f.participants].values[None, :].astype(self.dtype),
+            len(min_times), axis=0)
+        result[self._calcs[0].peek == 0] = None
         return result
 
 
@@ -945,6 +940,7 @@ class AverageReviewCommentsCalculator(AverageMetricCalculator[np.float32]):
     deps = (AllCounter,)
     may_have_negative_values = False
     dtype = np.float32
+    has_nan = True
 
     def _analyze(self,
                  facts: pd.DataFrame,
@@ -954,10 +950,10 @@ class AverageReviewCommentsCalculator(AverageMetricCalculator[np.float32]):
                  ) -> np.ndarray:
         comments = facts[PullRequestFacts.f.review_comments].values
         empty_mask = comments == 0
-        comments = comments.astype(object)
+        comments = comments.astype(self.dtype)
         comments[empty_mask] = None
         result = np.repeat(comments[None, :], len(min_times), axis=0)
-        result[self._calcs[0].peek == np.array(None)] = None
+        result[self._calcs[0].peek == 0] = None
         return result
 
 
@@ -968,6 +964,7 @@ class AverageReviewsCalculator(AverageMetricCalculator[np.float32]):
     deps = (AllCounter,)
     may_have_negative_values = False
     dtype = np.float32
+    has_nan = True
 
     def _analyze(self,
                  facts: pd.DataFrame,
@@ -977,8 +974,8 @@ class AverageReviewsCalculator(AverageMetricCalculator[np.float32]):
                  ) -> np.ndarray:
         lengths = facts[PullRequestFacts.f.reviews].map(len).values
         empty_mask = lengths == 0
-        lengths = lengths.astype(object)
+        lengths = lengths.astype(self.dtype)
         lengths[empty_mask] = None
         result = np.repeat(lengths[None, :], len(min_times), axis=0)
-        result[self._calcs[0].peek == np.array(None)] = None
+        result[self._calcs[0].peek == 0] = None
         return result

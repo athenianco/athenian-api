@@ -1,5 +1,5 @@
 from datetime import timedelta
-from functools import lru_cache, wraps
+from functools import wraps
 from typing import Tuple
 
 import bootstrapped.bootstrap as bootstrap
@@ -20,31 +20,30 @@ class NumpyRandomChoiceCache:
 
     vanilla_random_choice = np.random.choice
 
-    class Item:
-        """Cached 2D array of randomness. It may grow over time."""
+    def __init__(self, n: int):
+        """
+        Generate n random integers on startup.
 
-        def __init__(self):
-            """Initialize a new instance of the Item class."""
-            self.random = np.zeros((0, 0))
+        They will be re-used every time we random.choice with replacement.
+        """
+        self._generate(n)
 
-        @staticmethod
-        @lru_cache(100)
-        def get(a):
-            """Use lru_cache to maintain a distinct array for each `a`."""
-            return NumpyRandomChoiceCache.Item()
+    def _generate(self, n: int):
+        np.random.seed(777)
+        self.entropy = np.random.randint(low=np.iinfo(np.uint32).max + 1, size=n, dtype=np.uint32)
 
     @wraps(np.random.choice)
     def __call__(self, a, size=None, replace=True, p=None):
         """Pretend to be np.random.choice."""
-        if isinstance(a, (int, np.int32, np.int64)) and len(size) == 2 and replace and p is None:
-            item = self.Item.get(a)
-            if item.random.shape < size:
-                item.random = self.vanilla_random_choice(a, size=size)
-            return item.random[:size[0], :size[1]]
+        if isinstance(a, (int, np.int32, np.int64)) and replace and p is None:
+            full_size = np.prod(size)
+            if full_size > len(self.entropy):
+                self._generate(full_size)
+            return self.entropy[:full_size].reshape(size) % a
         return self.vanilla_random_choice(a, size=size, replace=replace, p=p)
 
 
-np.random.choice = NumpyRandomChoiceCache()
+np.random.choice = NumpyRandomChoiceCache(2_000_000)  # +8MB
 
 
 def mean_confidence_interval(data: np.ndarray, may_have_negative_values: bool, confidence=0.8,

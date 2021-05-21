@@ -277,7 +277,7 @@ class PullRequestListMiner:
             for k in self._calcs:
                 seconds = stage_timings[k][i]
                 if seconds is not None:
-                    pr_stage_timings[k] = timedelta(seconds=seconds)
+                    pr_stage_timings[k] = seconds.item()
             item = self._compile(pr, facts[pr.pr[node_id_key]], pr_stage_timings,
                                  hard_events_time_machine, hard_events_now)
             if item is not None:
