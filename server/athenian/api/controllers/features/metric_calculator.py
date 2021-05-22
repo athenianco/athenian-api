@@ -37,6 +37,9 @@ class MetricCalculator(Generic[T]):
     # dtype may behave like NaN
     has_nan = False
 
+    # artificial "NaN" value to compare against
+    nan = None
+
     # _analyze() may return arrays of shape longer than 2, `samples` are ignored
     is_pure_dependency = False
 
@@ -100,6 +103,8 @@ class MetricCalculator(Generic[T]):
             notnull = peek != np.array(None)
         elif self.has_nan:
             notnull = peek == peek
+        elif self.nan is not None:
+            notnull = peek != self.nan
         else:
             notnull = peek != peek.dtype.type(0)
 

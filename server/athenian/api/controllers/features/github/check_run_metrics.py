@@ -259,6 +259,7 @@ class SuiteTimeCalculator(AverageMetricCalculator[timedelta]):
 
     may_have_negative_values = False
     dtype = "timedelta64[s]"
+    has_nan = True
     deps = (SuiteTimeCalculatorAnalysis,)
 
     def _analyze(self,
@@ -266,7 +267,7 @@ class SuiteTimeCalculator(AverageMetricCalculator[timedelta]):
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **kwargs) -> np.ndarray:
-        return self._calcs[0].peek.copy()["elapsed"].astype(object)
+        return self._calcs[0].peek["elapsed"].astype(self.dtype, copy=False)
 
 
 @register_metric(CodeCheckMetricID.ROBUST_SUITE_TIME)
@@ -400,6 +401,7 @@ class SuiteTimePerPRCalculator(AverageMetricCalculator[timedelta]):
 
     may_have_negative_values = False
     dtype = "timedelta64[s]"
+    has_nan = True
     deps = (SuiteTimeCalculator,)
 
     def _analyze(self,
