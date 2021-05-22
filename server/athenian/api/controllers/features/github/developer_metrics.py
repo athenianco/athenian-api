@@ -54,7 +54,7 @@ class DeveloperTopicCounter(SumMetricCalculator[int]):
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **kwargs) -> np.array:
-        result = np.full((len(min_times), len(facts)), None, object)
+        result = np.zeros((len(min_times), len(facts)), self.dtype)
         column = facts[self.timestamp_column].values
         column_in_range = (min_times[:, None] <= column) & (column < max_times[:, None])
         result[column_in_range] = 1
@@ -74,7 +74,7 @@ class DeveloperTopicSummator(SumMetricCalculator[int]):
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **kwargs) -> np.array:
-        result = np.full((len(min_times), len(facts)), None, object)
+        result = np.zeros((len(min_times), len(facts)), self.dtype)
         topic_column = facts[self.topic_column].values
         ts_column = facts[self.timestamp_column].values
         column_in_range = (min_times[:, None] <= ts_column) & (ts_column < max_times[:, None])
@@ -186,7 +186,7 @@ class PRReviewedCounter(SumMetricCalculator[int]):
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **kwargs) -> np.array:
-        result = np.full((len(min_times), len(facts)), None, object)
+        result = np.zeros((len(min_times), len(facts)), self.dtype)
         column = facts[PullRequestReview.submitted_at.key].values
         column_in_range = (min_times[:, None] <= column) & (column < max_times[:, None])
         duplicated = facts.duplicated([
@@ -216,7 +216,7 @@ class ReviewStatesCounter(SumMetricCalculator[int]):
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **kwargs) -> np.array:
-        result = np.full((len(min_times), len(facts)), None, object)
+        result = np.zeros((len(min_times), len(facts)), self.dtype)
         column = facts[PullRequestReview.submitted_at.key].values
         column_in_range = (min_times[:, None] <= column) & (column < max_times[:, None])
         wrong_state = facts[PullRequestReview.state.key].values != self.state.value

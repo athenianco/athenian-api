@@ -57,7 +57,7 @@ class RaisedCounter(SumMetricCalculator[int]):
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
-        result = np.full((len(min_times), len(facts)), None, object)
+        result = np.zeros((len(min_times), len(facts)), self.dtype)
         created = facts[Issue.created.key].values
         result[(min_times[:, None] <= created) & (created < max_times[:, None])] = 1
         return result
@@ -74,7 +74,7 @@ class ResolvedCounter(SumMetricCalculator[int]):
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
-        result = np.full((len(min_times), len(facts)), None, object)
+        result = np.zeros((len(min_times), len(facts)), self.dtype)
         resolved = facts[AthenianIssue.resolved.key].values.astype(min_times.dtype)
         prs_began = facts[ISSUE_PRS_BEGAN].values.astype(min_times.dtype)
         have_prs_mask = prs_began == prs_began
@@ -95,7 +95,7 @@ class OpenCounter(SumMetricCalculator[int]):
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
-        result = np.full((len(min_times), len(facts)), None, object)
+        result = np.zeros((len(min_times), len(facts)), self.dtype)
         created = facts[Issue.created.key].values
         resolved = facts[AthenianIssue.resolved.key].values.astype(min_times.dtype)
         prs_began = facts[ISSUE_PRS_BEGAN].values.astype(min_times.dtype)
@@ -132,13 +132,14 @@ class LifeTimeCalculator(AverageMetricCalculator[timedelta]):
 
     may_have_negative_values = False
     dtype = "timedelta64[s]"
+    has_nan = True
 
     def _analyze(self,
                  facts: pd.DataFrame,
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
-        result = np.full((len(min_times), len(facts)), None, object)
+        result = np.full((len(min_times), len(facts)), None, self.dtype)
         created = facts[Issue.created.key].values
         prs_began = facts[ISSUE_PRS_BEGAN].values.astype(min_times.dtype)
         resolved = facts[Issue.resolved.key].values.astype(min_times.dtype)
@@ -147,10 +148,7 @@ class LifeTimeCalculator(AverageMetricCalculator[timedelta]):
         life_times = np.maximum(released, resolved) - np.fmin(created, prs_began)
         unmapped_mask = prs_began != prs_began
         life_times[unmapped_mask] = resolved[unmapped_mask] - created[unmapped_mask]
-        empty_life_time_mask = life_times != life_times
-        life_times = life_times.astype(self.dtype).view(int)
         result[:] = life_times
-        result[:, empty_life_time_mask] = None
         result[~focus_mask] = None
         return result
 
@@ -170,13 +168,14 @@ class LeadTimeCalculator(AverageMetricCalculator[timedelta]):
 
     may_have_negative_values = False
     dtype = "timedelta64[s]"
+    has_nan = True
 
     def _analyze(self,
                  facts: pd.DataFrame,
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
-        result = np.full((len(min_times), len(facts)), None, object)
+        result = np.full((len(min_times), len(facts)), None, self.dtype)
         work_began = facts[AthenianIssue.work_began.key].values.astype(min_times.dtype)
         prs_began = facts[ISSUE_PRS_BEGAN].values.astype(min_times.dtype)
         resolved = facts[Issue.resolved.key].values.astype(min_times.dtype)
@@ -185,10 +184,7 @@ class LeadTimeCalculator(AverageMetricCalculator[timedelta]):
         lead_times = np.maximum(released, resolved) - np.fmin(work_began, prs_began)
         unmapped_mask = prs_began != prs_began
         lead_times[unmapped_mask] = resolved[unmapped_mask] - work_began[unmapped_mask]
-        empty_lead_time_mask = lead_times != lead_times
-        lead_times = lead_times.astype(self.dtype).view(int)
         result[:] = lead_times
-        result[:, empty_lead_time_mask] = None
         result[~focus_mask] = None
         return result
 
@@ -207,13 +203,14 @@ class AcknowledgeTimeCalculator(AverageMetricCalculator[timedelta]):
 
     may_have_negative_values = False
     dtype = "timedelta64[s]"
+    has_nan = True
 
     def _analyze(self,
                  facts: pd.DataFrame,
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
-        result = np.full((len(min_times), len(facts)), None, object)
+        result = np.full((len(min_times), len(facts)), None, self.dtype)
         work_began = facts[AthenianIssue.work_began.key].values.astype(min_times.dtype)
         prs_began = facts[ISSUE_PRS_BEGAN].values.astype(min_times.dtype)
         acknowledged = np.fmin(work_began, prs_began)
@@ -224,7 +221,7 @@ class AcknowledgeTimeCalculator(AverageMetricCalculator[timedelta]):
         ack_times = acknowledged - created
         ack_times = np.maximum(ack_times, ack_times.dtype.type(0))
         focus_mask = (min_times[:, None] <= acknowledged) & (acknowledged < max_times[:, None])
-        result[:] = ack_times.astype(self.dtype).view(int)
+        result[:] = ack_times
         result[~focus_mask] = None
         return result
 

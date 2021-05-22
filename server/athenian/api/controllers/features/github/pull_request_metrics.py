@@ -739,6 +739,7 @@ class SizeCalculatorMixin(MetricCalculator[int]):
     may_have_negative_values = False
     deps = (AllCounter,)
     dtype = int
+    nan = -1
 
     def _shift_log(self, samples: np.ndarray) -> np.ndarray:
         samples[samples == 0] = 1
@@ -750,8 +751,8 @@ class SizeCalculatorMixin(MetricCalculator[int]):
                  max_times: np.ndarray,
                  **kwargs) -> np.ndarray:
         sizes = np.repeat(facts[PullRequestFacts.f.size].values[None, :],
-                          len(min_times), axis=0).astype(object)
-        sizes[self._calcs[0].peek == 0] = None
+                          len(min_times), axis=0)
+        sizes[self._calcs[0].peek == 0] = -1
         return sizes
 
 

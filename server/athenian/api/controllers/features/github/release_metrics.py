@@ -117,7 +117,14 @@ class ReleaseMetricCalculatorMixin(Generic[T]):
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **kwargs) -> np.array:
-        result = np.full((len(min_times), len(facts)), None, object)
+        fill_value = None
+        dtype = object
+        if self.has_nan:
+            dtype = self.dtype
+        elif self.nan is not None:
+            fill_value = self.nan
+            dtype = self.dtype
+        result = np.full((len(min_times), len(facts)), fill_value, dtype)
         checked_mask = self._check(facts, min_times, max_times)
         extracted = np.repeat(self._extract(facts)[None, :], len(min_times), axis=0)
         result[checked_mask] = extracted[checked_mask]
@@ -161,6 +168,7 @@ class ReleaseCounterMixin:
 
     may_have_negative_values = False
     dtype = int
+    nan = -1
 
     def _extract(self, facts: pd.DataFrame) -> np.ndarray:
         return np.full(len(facts), 1)
@@ -171,6 +179,7 @@ class ReleasePRsMixin:
 
     may_have_negative_values = False
     dtype = int
+    nan = -1
 
     def _extract(self, facts: pd.DataFrame) -> np.ndarray:
         return np.array([len(arr) for arr in facts["prs_" + PullRequest.number.key]])
@@ -181,6 +190,7 @@ class ReleaseCommitsMixin:
 
     may_have_negative_values = False
     dtype = int
+    nan = -1
 
     def _extract(self, facts: pd.DataFrame) -> np.ndarray:
         return facts[ReleaseFacts.f.commits_count].values
@@ -191,6 +201,7 @@ class ReleaseLinesMixin:
 
     may_have_negative_values = False
     dtype = int
+    nan = -1
 
     def _extract(self, facts: pd.DataFrame) -> np.ndarray:
         return (facts[ReleaseFacts.f.additions].values +
@@ -202,6 +213,7 @@ class ReleaseAgeMixin:
 
     may_have_negative_values = False
     dtype = "timedelta64[s]"
+    has_nan = True
 
     def _extract(self, facts: pd.DataFrame) -> np.ndarray:
         return facts[ReleaseFacts.f.age].values.astype(self.dtype).view(int)
