@@ -1,8 +1,39 @@
+FROM ubuntu:20.04 AS cpython
+RUN mkdir /cpython
+WORKDIR /cpython
+
+RUN echo 'deb-src http://archive.ubuntu.com/ubuntu focal-updates main' >>/etc/apt/sources.list && \
+    apt-get update && \
+    apt-get install --no-install-suggests --no-install-recommends -y \
+      ca-certificates dpkg-dev devscripts apt-utils wget python3-distutils && \
+    apt-get source python3.8 && \
+    DEBIAN_FRONTEND="noninteractive" TZ="Europe/Madrid" apt-get build-dep -y python3.8 && \
+    wget -O - https://bootstrap.pypa.io/get-pip.py | python3 && \
+    pip3 install resolve-march-native
+
+# matches our production
+ENV OPT="-fno-semantic-interposition -mabm -mno-pku -mno-sgx --param l1-cache-line-size=64 --param l1-cache-size=32 --param l2-cache-size=33792"
+RUN resolve-march-native && \
+    OPT="$OPT $(resolve-march-native --vertical | head -n1)" && \
+    echo $OPT && \
+    echo $OPT >OPT && \
+    cd python3.8* && \
+    sed -i 's/__main__/__skip__/g' Tools/scripts/run_tests.py && \
+    dch --bin-nmu -Dunstable "Optimized build" && \
+    DEB_CFLAGS_SET="$OPT" DEB_LDFLAGS_SET="$OPT" dpkg-buildpackage -uc -b -j2 && \
+    rm ../libpython3.8-testsuite* ../python3.8-examples* ../python3.8-doc* ../idle-python3.8* ../python3.8-venv*
+
+
 FROM ubuntu:20.04
+
+RUN mkdir /cpython
+COPY --from=cpython /cpython/*.deb /cpython/OPT /cpython/
 
 ENV BROWSER=/browser \
     LC_ALL=en_US.UTF-8 \
-    SETUPTOOLS_USE_DISTUTILS=stdlib
+    SETUPTOOLS_USE_DISTUTILS=stdlib \
+    DEBIAN_FRONTEND=noninteractive \
+    TZ=Europe/Madrid
 
 RUN echo '#!/bin/bash\n\
 \n\
@@ -14,7 +45,9 @@ echo\n' > /browser && \
 # runtime environment
 RUN apt-get update && \
     apt-get install -y --no-install-suggests --no-install-recommends \
-      apt-utils ca-certificates locales wget python3 python3-distutils && \
+      apt-utils ca-certificates locales wget python3 python3-dev python3-distutils && \
+    dpkg -i /cpython/*.deb && \
+    apt-mark hold python3.8 python3.8-minimal libpython3.8 libpython3.8-minimal && \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
     locale-gen && \
     wget -O - https://bootstrap.pypa.io/get-pip.py | python3 && \
@@ -51,8 +84,8 @@ RUN apt-get update && \
 
 # numpy
 RUN echo '[ALL]\n\
-extra_compile_args = -O3 -fopenmp -flto -ftree-vectorize -march=haswell -mmmx -msse -msse2 -msse3 -mssse3 -mcx16 -msahf -mmovbe -maes -mpclmul -mpopcnt -mabm -mfma -mbmi -mbmi2 -mavx -mavx2 -msse4.2 -msse4.1 -mlzcnt -mrdrnd -mf16c -mfsgsbase -mfxsr -mxsave -mxsaveopt --param l1-cache-size=32 --param l1-cache-line-size=64 --param l2-cache-size=46080 -mtune=haswell\n\
-extra_link_args = -O3 -fopenmp -flto -ftree-vectorize -march=haswell -mmmx -msse -msse2 -msse3 -mssse3 -mcx16 -msahf -mmovbe -maes -mpclmul -mpopcnt -mabm -mfma -mbmi -mbmi2 -mavx -mavx2 -msse4.2 -msse4.1 -mlzcnt -mrdrnd -mf16c -mfsgsbase -mfxsr -mxsave -mxsaveopt --param l1-cache-size=32 --param l1-cache-line-size=64 --param l2-cache-size=46080 -mtune=haswell \n\
+extra_compile_args = -O3 -fopenmp -flto -ftree-vectorize OPT\n\
+extra_link_args = -O3 -fopenmp -flto -ftree-vectorize OPT\n\
 \n\
 [fftw]\n\
 libraries = fftw3\n\
@@ -61,14 +94,17 @@ libraries = fftw3\n\
 library_dirs = /opt/intel/mkl/lib/intel64_lin\n\
 include_dirs = /opt/intel/mkl/include\n\
 mkl_libs = mkl_rt\n\
-lapack_libs = mkl_lapack95_lp64' > /root/.numpy-site.cfg && \
+lapack_libs = mkl_lapack95_lp64' >/root/.numpy-site.cfg && \
+    OPT=$(cat /cpython/OPT) && \
+    sed -i "s/OPT/$OPT/g" /root/.numpy-site.cfg && \
+    cat /root/.numpy-site.cfg && \
     apt-get update && \
     apt-get install -y --no-install-suggests --no-install-recommends \
-      libfftw3-3 libfftw3-dev gfortran libgfortran5 python3-dev gcc g++ && \
+      libfftw3-3 libfftw3-dev gfortran libgfortran5 gcc g++ && \
     export NPY_NUM_BUILD_JOBS=$(getconf _NPROCESSORS_ONLN) && \
     echo $NPY_NUM_BUILD_JOBS && \
     pip3 $VERBOSE install --no-cache-dir scipy==1.6.2 numpy==1.20.3 --no-binary numpy && \
-    apt-get purge -y libfftw3-dev gfortran python3-dev gcc g++ && \
+    apt-get purge -y libfftw3-dev gfortran gcc g++ && \
     apt-get autoremove -y --purge && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
@@ -78,7 +114,7 @@ ADD server/requirements.txt /server/requirements.txt
 ADD patches /patches
 ARG GKWILLIE_TOKEN
 RUN apt-get update && \
-    apt-get install -y --no-install-suggests --no-install-recommends python3-dev gcc g++ patch git && \
+    apt-get install -y --no-install-suggests --no-install-recommends gcc g++ patch git && \
     sed -i "s/git+ssh:\/\/git@/git+https:\/\/gkwillie:$GKWILLIE_TOKEN@/g" server/requirements.txt && \
     pip3 install --no-cache-dir -r /server/requirements.txt && \
     sed -i "s/git+https:\/\/gkwillie:$GKWILLIE_TOKEN@/git+ssh:\/\/git@/g" server/requirements.txt && \
