@@ -1,7 +1,7 @@
 import logging
 import marshal
 import re
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 import aiomcache
 from names_matcher import NamesMatcher
@@ -94,6 +94,18 @@ async def get_jira_installation_or_none(account: int,
         return await get_jira_installation(account, sdb, mdb, cache)
     except ResponseError:
         return None
+
+
+@sentry_span
+async def resolve_projects(keys: Iterable[str],
+                           jira_acc: int,
+                           mdb: DatabaseLike,
+                           ) -> Set[str]:
+    """Lookup JIRA project IDs by their keys."""
+    rows = await mdb.fetch_all(select([Project.id])
+                               .where(and_(Project.acc_id == jira_acc,
+                                           Project.key.in_(keys))))
+    return {r[0] for r in rows}
 
 
 @sentry_span

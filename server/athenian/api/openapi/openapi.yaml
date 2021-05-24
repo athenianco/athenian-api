@@ -6366,6 +6366,12 @@ components:
           - description: JIRA issue participants.
           - $ref: '#/components/schemas/JIRAFilterWith'
           type: object
+        projects:
+          description: Issues must belong to these JIRA projects.
+          items:
+            example: DEV
+            type: string
+          type: array
         return:
           description: Specifies which items are required, an empty or missing array
             means everything.
@@ -6389,6 +6395,7 @@ components:
         * `priorities`: Include the details aboud the mentioned issue priorities.
         * `statuses`: Include the details aboud the mentioned issue statuses.
         * `users`: Include the details aboud the issue participants.
+
         If neither `epics` nor `issues` are specified, nothing is returned.
         If `epics` is not specified, the corresponding `epics` list is not populated.
         The difference is that `issues` flow examines all the issues that satisfy the given filters,
@@ -6759,6 +6766,12 @@ components:
           items:
             $ref: '#/components/schemas/JIRAFilterWith'
           type: array
+        projects:
+          description: Issues must belong to these JIRA projects.
+          items:
+            example: DEV
+            type: string
+          type: array
         metrics:
           description: List of measured metrics.
           items:
@@ -6951,6 +6964,12 @@ components:
             for each group.
           items:
             $ref: '#/components/schemas/JIRAFilterWith'
+          type: array
+        projects:
+          description: Issues must belong to these JIRA projects.
+          items:
+            example: DEV
+            type: string
           type: array
         histograms:
           description: Histogram parameters for each wanted topic.

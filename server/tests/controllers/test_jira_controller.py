@@ -1,5 +1,6 @@
 from datetime import date, datetime, timedelta
 import json
+from typing import List
 
 from dateutil.tz import tzutc
 import numpy as np
@@ -458,6 +459,28 @@ async def test_filter_jira_disabled_projects(client, headers, disabled_dev):
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     model = FilteredJIRAStuff.from_dict(json.loads(body))
+    _check_filter_jira_no_dev_project(model)
+
+
+async def test_filter_jira_selected_projects(client, headers):
+    body = {
+        "date_from": "2019-10-13",
+        "date_to": "2020-01-23",
+        "timezone": 120,
+        "account": 1,
+        "exclude_inactive": False,
+        "projects": ["PRO", "OPS", "ENG", "GRW", "CS", "CON"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/jira", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    model = FilteredJIRAStuff.from_dict(json.loads(body))
+    _check_filter_jira_no_dev_project(model)
+
+
+def _check_filter_jira_no_dev_project(model: FilteredJIRAStuff) -> None:
     assert model.labels == [
         JIRALabel(title="accounts", last_used=datetime(2020, 12, 15, 10, 16, 15, tzinfo=tzutc()),
                   issues_count=1, kind="regular"),
@@ -1015,6 +1038,30 @@ async def test_jira_metrics_disabled_projects(client, headers, disabled_dev):
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     items = [CalculatedJIRAMetricValues.from_dict(i) for i in json.loads(body)]
+    _check_metrics_no_dev_project(items)
+
+
+async def test_jira_metrics_selected_projects(client, headers):
+    body = {
+        "date_from": "2020-01-01",
+        "date_to": "2020-10-23",
+        "timezone": 120,
+        "account": 1,
+        "metrics": [JIRAMetricID.JIRA_RAISED, JIRAMetricID.JIRA_RESOLVED],
+        "exclude_inactive": False,
+        "projects": ["PRO", "OPS", "ENG", "GRW", "CS", "CON"],
+        "granularities": ["all", "2 month"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/jira", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    items = [CalculatedJIRAMetricValues.from_dict(i) for i in json.loads(body)]
+    _check_metrics_no_dev_project(items)
+
+
+def _check_metrics_no_dev_project(items: List[CalculatedJIRAMetricValues]) -> None:
     assert items[0].values == [CalculatedLinearMetricValues(
         date=date(2020, 1, 1),
         values=[768, 829],
@@ -1172,6 +1219,10 @@ async def test_jira_histogram_disabled_projects(client, headers, disabled_dev):
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     histogram = FriendlyJson.loads(body)[0]
+    _check_histogram_no_dev_project(histogram)
+
+
+def _check_histogram_no_dev_project(histogram: dict) -> None:
     assert histogram == {
         "metric": JIRAMetricID.JIRA_LEAD_TIME,
         "scale": "log",
@@ -1180,6 +1231,27 @@ async def test_jira_histogram_disabled_projects(client, headers, disabled_dev):
         "frequencies": [214, 3, 6, 20, 25, 31, 33, 33, 31, 55, 54, 55, 74, 222],
         "interquartile": {"left": "149s", "right": "1273387s"},
     }
+
+
+async def test_jira_histogram_selected_projects(client, headers):
+    body = {
+        "histograms": [{
+            "metric": JIRAMetricID.JIRA_LEAD_TIME,
+            "scale": "log",
+        }],
+        "date_from": "2015-10-13",
+        "date_to": "2020-11-01",
+        "exclude_inactive": False,
+        "projects": ["PRO", "OPS", "ENG", "GRW", "CS", "CON"],
+        "account": 1,
+    }
+    response = await client.request(
+        method="POST", path="/v1/histograms/jira", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    histogram = FriendlyJson.loads(body)[0]
+    _check_histogram_no_dev_project(histogram)
 
 
 @pytest.mark.parametrize(
