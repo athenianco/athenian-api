@@ -29,7 +29,7 @@ from athenian.api.controllers.features.jira.issue_metrics import JIRABinnedHisto
 from athenian.api.controllers.features.metric_calculator import group_to_indexes
 from athenian.api.controllers.filter_controller import web_pr_from_struct
 from athenian.api.controllers.jira import get_jira_installation, normalize_issue_type, \
-    normalize_user_type
+    normalize_user_type, resolve_projects
 from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.precomputed_prs import load_precomputed_done_facts_ids
@@ -62,6 +62,9 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         raise ResponseError(InvalidRequestError("?", detail=str(e)))
     meta_ids, jira_ids, branches, default_branches, release_settings = await _collect_ids(
         filt.account, request, request.sdb, request.mdb, request.cache)
+    if filt.projects is not None:
+        jira_ids = (jira_ids[0], list(set(jira_ids[1]).intersection(
+            await resolve_projects(filt.projects, jira_ids[0], request.mdb))))
     if filt.date_from is None or filt.date_to is None:
         if (filt.date_from is None) != (filt.date_to is None):
             raise ResponseError(InvalidRequestError(
@@ -822,6 +825,9 @@ async def _calc_jira_entry(request: AthenianWebRequest,
         raise ResponseError(InvalidRequestError("?", detail=str(e))) from None
     meta_ids, jira_ids, _, default_branches, release_settings = await _collect_ids(
         filt.account, request, request.sdb, request.mdb, request.cache)
+    if filt.projects is not None:
+        jira_ids = (jira_ids[0], list(set(jira_ids[1]).intersection(
+            await resolve_projects(filt.projects, jira_ids[0], request.mdb))))
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, getattr(filt, "granularities", ["all"]), filt.timezone)
     reporters = list(set(chain.from_iterable(

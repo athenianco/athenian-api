@@ -10,6 +10,7 @@ class _FilterJIRACommon(Model):
     openapi_types = {
         "priorities": Optional[List[str]],
         "types": Optional[List[str]],
+        "projects": Optional[List[str]],
         "labels_include": Optional[List[str]],
         "labels_exclude": Optional[List[str]],
         "exclude_inactive": bool,
@@ -18,6 +19,7 @@ class _FilterJIRACommon(Model):
     attribute_map = {
         "priorities": "priorities",
         "types": "types",
+        "projects": "projects",
         "labels_include": "labels_include",
         "labels_exclude": "labels_exclude",
         "exclude_inactive": "exclude_inactive",
@@ -29,6 +31,7 @@ class _FilterJIRACommon(Model):
         self,
         priorities: Optional[List[str]] = None,
         types: Optional[List[str]] = None,
+        projects: Optional[List[str]] = None,
         labels_include: Optional[List[str]] = None,
         labels_exclude: Optional[List[str]] = None,
         exclude_inactive: Optional[bool] = None,
@@ -37,12 +40,14 @@ class _FilterJIRACommon(Model):
 
         :param priorities: The priorities of this FilterJIRACommon.
         :param types: The types of this FilterJIRACommon.
+        :param projects: The projects of this FilterJIRACommon.
         :param labels_include: The labels_include of this FilterJIRACommon.
         :param labels_exclude: The labels_exclude of this FilterJIRACommon.
         :param exclude_inactive: The exclude_inactive of this FilterJIRACommon.
         """
         self._priorities = priorities
         self._types = types
+        self._projects = projects
         self._labels_include = labels_include
         self._labels_exclude = labels_exclude
         self._exclude_inactive = exclude_inactive
@@ -86,6 +91,26 @@ class _FilterJIRACommon(Model):
         :param types: The types of this FilterJIRACommon.
         """
         self._types = types
+
+    @property
+    def projects(self) -> Optional[List[str]]:
+        """Gets the projects of this FilterJIRACommon.
+
+        Selected issue projects. Ignored for epics.
+
+        :return: The projects of this FilterJIRACommon.
+        """
+        return self._projects
+
+    @projects.setter
+    def projects(self, projects: Optional[List[str]]):
+        """Sets the projects of this FilterJIRACommon.
+
+        Selected issue projects. Ignored for epics.
+
+        :param projects: The projects of this FilterJIRACommon.
+        """
+        self._projects = projects
 
     @property
     def labels_include(self) -> Optional[List[str]]:
