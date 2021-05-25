@@ -9,6 +9,7 @@ import aiomcache
 import databases
 import numpy as np
 import pandas as pd
+from sqlalchemy.ext.declarative.api import Base as SQLABase
 from sqlalchemy.sql.elements import BinaryExpression
 
 from athenian.api import metadata
