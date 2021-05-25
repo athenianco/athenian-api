@@ -9,7 +9,6 @@ import aiomcache
 import databases
 import numpy as np
 import pandas as pd
-from sqlalchemy.ext.declarative.api import Base as SQLABase
 from sqlalchemy.sql.elements import BinaryExpression
 
 from athenian.api import metadata
@@ -31,14 +30,32 @@ from athenian.api.controllers.miners.jira.issue import PullRequestJiraMapper
 from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind, \
     PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
-from athenian.api.models.metadata.github import Branch, NodePullRequestJiraIssues, \
+from athenian.api.models.metadata.github import Base as MetadataGitHubBase, \
+    Branch, NodePullRequestJiraIssues, \
     PullRequest
 from athenian.api.models.precomputed.models import \
+    GitHubBase as PrecomputedGitHubBase, \
     GitHubMergedPullRequestFacts, GitHubOpenPullRequestFacts, \
     GitHubRelease as PrecomputedRelease, \
     GitHubReleaseMatchTimespan as PrecomputedGitHubReleaseMatchTimespan
 from athenian.api.preloading.cache import MCID, PCID
 from athenian.api.tracing import sentry_span
+
+
+def _build_activity_mask(model: Union[MetadataGitHubBase, PrecomputedGitHubBase],
+                         df: pd.DataFrame, time_from: datetime, time_to: datetime):
+    activity_days = np.concatenate(df[model.activity_days.key].values)
+    activity_mask = np.full(len(df[model.activity_days.key]), False)
+    activity_days_in_range = (
+        (time_from.replace(tzinfo=timezone.utc) <= activity_days) &
+        (activity_days < time_to.replace(tzinfo=timezone.utc))
+    )
+    activity_offsets = np.cumsum(df[model.activity_days.key].apply(len).values)
+    indexes = np.searchsorted(activity_offsets, np.nonzero(activity_days_in_range)[0],
+                              side="right")
+    activity_mask[indexes] = 1
+
+    return activity_mask
 
 
 class PreloadedReleaseLoader(ReleaseLoader):
@@ -187,18 +204,7 @@ class PreloadedMergedPRFactsLoader(MergedPRFactsLoader):
         )
 
         if exclude_inactive:
-            activity_days = np.concatenate(df[model.activity_days.key])
-            activity_mask = np.full(len(df[model.activity_days.key]), False)
-            activity_days_in_range = (
-                (time_from.replace(tzinfo=timezone.utc) <= activity_days) &
-                (activity_days < time_to.replace(tzinfo=timezone.utc))
-            )
-            activity_offsets = np.cumsum(df[model.activity_days.key].apply(len).values)
-            indexes = np.searchsorted(activity_offsets, np.nonzero(activity_days_in_range)[0],
-                                      side="right")
-            activity_mask[indexes] = 1
-
-            common_mask &= activity_mask
+            common_mask &= _build_activity_mask(model, df, time_from, time_to)
 
         repos_by_match = defaultdict(list)
         for repo in prs[model.repository_full_name.key].unique():
@@ -280,18 +286,7 @@ class PreloadedOpenPRFactsLoader(OpenPRFactsLoader):
         )
 
         if exclude_inactive:
-            activity_days = np.concatenate(df[model.activity_days.key])
-            activity_mask = np.full(len(df[model.activity_days.key]), False)
-            activity_days_in_range = (
-                (time_from.replace(tzinfo=timezone.utc) <= activity_days) &
-                (activity_days < time_to.replace(tzinfo=timezone.utc))
-            )
-            activity_offsets = np.cumsum(df[model.activity_days.key].apply(len).values)
-            indexes = np.searchsorted(activity_offsets, np.nonzero(activity_days_in_range)[0],
-                                      side="right")
-            activity_mask[indexes] = 1
-
-            mask &= activity_mask
+            mask &= _build_activity_mask(model, df, time_from, time_to)
 
         open_prs_facts = cached_df.filter(mask, columns=[
             model.pr_node_id.key, model.repository_full_name.key, model.data.key])
