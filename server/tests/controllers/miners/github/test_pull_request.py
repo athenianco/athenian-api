@@ -22,7 +22,7 @@ from athenian.api.controllers.miners.types import DAG, MinedPullRequest, PRParti
     PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
 import athenian.api.db
-from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.defer import launch_defer, wait_deferred, with_defer, with_explicit_defer
 from athenian.api.models.metadata.github import Branch, PullRequest
 from athenian.api.models.metadata.jira import Issue
 from athenian.api.models.precomputed.models import GitHubCommitHistory, \
@@ -859,9 +859,7 @@ async def test_pr_miner_labels_unreleased(mdb, pdb, rdb, release_match_setting_t
     assert len(miner_complete._dfs.prs) == 0
 
 
-# sometimes we finish writing to pdb before returning from PullRequestMiner.mine()
-@pytest.mark.flaky(reruns=3)
-@with_defer
+@with_explicit_defer
 async def test_pr_miner_unreleased_facts(
         branches, default_branches, mdb, pdb, rdb, release_match_setting_tag,
         merged_prs_facts_loader, with_preloading_enabled):
@@ -894,6 +892,7 @@ async def test_pr_miner_unreleased_facts(
     finally:
         athenian.api.db._testing = True
     assert not event.is_set()
+    launch_defer(0, "enable_defer")
     await wait_deferred()
     if with_preloading_enabled:
         await pdb.cache.refresh()

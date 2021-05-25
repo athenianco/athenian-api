@@ -141,7 +141,7 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
     async with sdb.connection() as conn:
         try:
             async with conn.transaction():
-                acc_id, user = await _accept_invitation(iid, salt, request, conn)
+                acc_id, user = await _accept_invitation(iid, salt, request, conn, sdb)
         except (IntegrityConstraintViolationError, IntegrityError, OperationalError) as e:
             raise ResponseError(DatabaseConflict(detail=str(e)))
     return model_response(InvitedUser(account=acc_id, user=user))
@@ -151,7 +151,14 @@ async def _accept_invitation(iid: int,
                              salt: int,
                              request: AthenianWebRequest,
                              sdb_conn: databases.core.Connection,
+                             sdb: databases.Database,
                              ) -> Tuple[int, User]:
+    """
+    We need both `sdb_conn` and `sdb` because `sdb` is required in the deferred code outside of
+    the transaction.
+    You should work with `sdb_conn` in the code that blocks the request flow and with `sdb`
+    in the code that defer()-s.
+    """  # noqa: D
     log = logging.getLogger(metadata.__package__)
     inv = await sdb_conn.fetch_one(
         select([Invitation.account_id, Invitation.accepted, Invitation.is_active])
@@ -193,7 +200,11 @@ async def _accept_invitation(iid: int,
         log.info("Created new account %d", acc_id)
         if slack is not None:
             async def report_new_account_to_slack():
-                await slack.post("new_account.jinja2", user=await request.user(), account=acc_id)
+                jira_link = await generate_jira_invitation_link(acc_id, sdb)
+                await slack.post("new_account.jinja2",
+                                 user=await request.user(),
+                                 account=acc_id,
+                                 jira_link=jira_link)
 
             await defer(report_new_account_to_slack(), "report_new_account_to_slack")
         status = None

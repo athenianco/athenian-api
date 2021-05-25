@@ -154,6 +154,20 @@ def with_defer(func):
     return wrapped_with_defer
 
 
+def with_explicit_defer(func):
+    """Decorate a coroutine to enable defer() - but the user must call launch_defer()."""
+    async def wrapped_with_defer(*args, **kwargs):
+        enable_defer(True)
+        try:
+            await func(*args, **kwargs)
+        finally:
+            launch_defer(0, "with_explicit_defer")
+            await wait_deferred()
+
+    wraps(wrapped_with_defer, func)
+    return wrapped_with_defer
+
+
 class AllEvents:
     """Wait for multiple asyncio Event-s to happen."""
 
