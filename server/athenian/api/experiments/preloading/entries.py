@@ -9,6 +9,7 @@ import aiomcache
 import databases
 import numpy as np
 import pandas as pd
+from sqlalchemy.ext.declarative.api import Base as SQLABase
 from sqlalchemy.sql.elements import BinaryExpression
 
 from athenian.api import metadata
@@ -30,7 +31,12 @@ from athenian.api.controllers.miners.jira.issue import PullRequestJiraMapper
 from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind, \
     PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
-from athenian.api.models.metadata.github import PullRequest
+from athenian.api.models.metadata.github import Branch, NodePullRequestJiraIssues, \
+    PullRequest
+from athenian.api.models.precomputed.models import \
+    GitHubMergedPullRequestFacts, GitHubOpenPullRequestFacts, \
+    GitHubRelease as PrecomputedRelease, \
+    GitHubReleaseMatchTimespan as PrecomputedGitHubReleaseMatchTimespan
 from athenian.api.preloading.cache import MCID, PCID
 from athenian.api.tracing import sentry_span
 
@@ -48,17 +54,18 @@ class PreloadedReleaseLoader(ReleaseLoader):
                                           pdb: databases.Database,
                                           index: Optional[Union[str, Sequence[str]]] = None,
                                           ) -> pd.DataFrame:
+        model = PrecomputedRelease
         cached_df = pdb.cache.dfs[PCID.releases]
         df = cached_df.df
         mask = (
-            cls._match_groups_to_mask(df, match_groups)
-            & (df["acc_id"] == account)
-            & (df["published_at"] >= time_from)
-            & (df["published_at"] < time_to)
+            cls._match_groups_to_mask(model, df, match_groups)
+            & (df[model.acc_id.key] == account)
+            & (df[model.published_at.key] >= time_from)
+            & (df[model.published_at.key] < time_to)
         )
         releases = cached_df.filter(mask)
-        releases.sort_values("published_at", ascending=False, inplace=True)
-        releases = remove_ambigous_precomputed_releases(releases, "repository_full_name")
+        releases.sort_values(model.published_at.key, ascending=False, inplace=True)
+        releases = remove_ambigous_precomputed_releases(releases, model.repository_full_name.key)
         if index is not None:
             releases.set_index(index, inplace=True)
         else:
@@ -73,16 +80,19 @@ class PreloadedReleaseLoader(ReleaseLoader):
             account: int,
             pdb: databases.Database) -> Dict[str, Dict[str, Tuple[datetime, datetime]]]:
         """Find out the precomputed time intervals for each release match group of repositories."""
+        model = PrecomputedGitHubReleaseMatchTimespan
         cached_df = pdb.cache.dfs[PCID.releases_match_timespan]
         df = cached_df.df
-        mask = cls._match_groups_to_mask(df, match_groups) & (df["acc_id"] == account)
+        mask = (
+            cls._match_groups_to_mask(model, df, match_groups) & (df[model.acc_id.key] == account)
+        )
         release_match_spans = cached_df.filter(mask)
         spans = {}
         for time_from, time_to, release_match, repository_full_name in zip(
-                release_match_spans["time_from"],
-                release_match_spans["time_to"],
-                release_match_spans["release_match"].values,
-                release_match_spans["repository_full_name"].values,
+                release_match_spans[model.time_from.key],
+                release_match_spans[model.time_to.key],
+                release_match_spans[model.release_match.key].values,
+                release_match_spans[model.repository_full_name.key].values,
         ):
             if release_match.startswith("tag|"):
                 release_match = ReleaseMatch.tag
@@ -97,12 +107,13 @@ class PreloadedReleaseLoader(ReleaseLoader):
     @classmethod
     def _match_groups_to_mask(
             cls,
+            model: Union[MetadataGitHubBase, PrecomputedGitHubBase],
             df: pd.DataFrame,
             match_groups: Dict[ReleaseMatch, Dict[str, Iterable[str]]]) -> pd.Series:
         or_conditions, _ = match_groups_to_conditions(match_groups)
         or_masks = [
-            (df["release_match"] == cond["release_match"]) &
-            (df["repository_full_name"].isin(cond["repository_full_name"]))
+            (df[model.release_match.key] == cond["release_match"]) &
+            (df[model.repository_full_name.key].isin(cond["repository_full_name"]))
             for cond in or_conditions
         ]
 
@@ -166,22 +177,23 @@ class PreloadedMergedPRFactsLoader(MergedPRFactsLoader):
         log = logging.getLogger("%s.load_merged_unreleased_pull_request_facts" %
                                 metadata.__package__)
 
+        model = GitHubMergedPullRequestFacts
         cached_df = pdb.cache.dfs[PCID.merged_pr_facts]
         df = cached_df.df
 
         common_mask = (
-            (df["checked_until"] >= time_to) &
-            (df["acc_id"] == account)
+            (df[model.checked_until.key] >= time_to) &
+            (df[model.acc_id.key] == account)
         )
 
         if exclude_inactive:
-            activity_days = np.concatenate(df["activity_days"])
-            activity_mask = np.full(len(df["activity_days"]), False)
+            activity_days = np.concatenate(df[model.activity_days.key])
+            activity_mask = np.full(len(df[model.activity_days.key]), False)
             activity_days_in_range = (
                 (time_from.replace(tzinfo=timezone.utc) <= activity_days) &
                 (activity_days < time_to.replace(tzinfo=timezone.utc))
             )
-            activity_offsets = np.cumsum(df["activity_days"].apply(len).values)
+            activity_offsets = np.cumsum(df[model.activity_days.key].apply(len).values)
             indexes = np.searchsorted(activity_offsets, np.nonzero(activity_days_in_range)[0],
                                       side="right")
             activity_mask[indexes] = 1
@@ -189,7 +201,7 @@ class PreloadedMergedPRFactsLoader(MergedPRFactsLoader):
             common_mask &= activity_mask
 
         repos_by_match = defaultdict(list)
-        for repo in prs[PullRequest.repository_full_name.key].unique():
+        for repo in prs[model.repository_full_name.key].unique():
             if (release_match := extract_release_match(
                     repo, matched_bys, default_branches, release_settings)) is None:
                 # no new releases
@@ -197,28 +209,32 @@ class PreloadedMergedPRFactsLoader(MergedPRFactsLoader):
             repos_by_match[release_match].append(repo)
 
         or_masks = []
-        pr_repos = prs[PullRequest.repository_full_name.key].values.astype("S")
+        pr_repos = prs[model.repository_full_name.key].values.astype("S")
         pr_ids = prs.index.values.astype("S")
         for release_match, repos in repos_by_match.items():
             or_masks.append(
                 common_mask &
-                df["pr_node_id"].isin(pr_ids[np.in1d(pr_repos, np.array(repos, dtype="S"))]) &
-                df["repository_full_name"].isin(repos) &
-                (df["release_match"] == release_match),
+                df[model.pr_node_id.key].isin(
+                    pr_ids[np.in1d(pr_repos, np.array(repos, dtype="S"))]) &
+                df[model.repository_full_name.key].isin(repos) &
+                (df[model.release_match.key] == release_match),
             )
         if not or_masks:
             return {}
 
         mask = functools.reduce(operator.or_, or_masks)
         merged_pr_facts = cached_df.filter(mask, columns=[
-            "pr_node_id", "repository_full_name", "data", "author", "merger",
+            model.pr_node_id.key, model.repository_full_name.key, model.data.key,
+            model.author.key, model.merger.key,
         ])
 
         facts = {}
         for node_id, data, repository_full_name, author, merger in zip(
-                merged_pr_facts["pr_node_id"].values, merged_pr_facts["data"].values,
-                merged_pr_facts["repository_full_name"].values,
-                merged_pr_facts["author"].values, merged_pr_facts["merger"].values):
+                merged_pr_facts[model.pr_node_id.key].values,
+                merged_pr_facts[model.data.key].values,
+                merged_pr_facts[model.repository_full_name.key].values,
+                merged_pr_facts[model.author.key].values,
+                merged_pr_facts[model.merger.key].values):
             if data is None:
                 # There are two known cases:
                 # 1. When we load all PRs without a blacklist (/filter/pull_requests) so some
@@ -255,21 +271,22 @@ class PreloadedOpenPRFactsLoader(OpenPRFactsLoader):
         :param authors: Map from PR node IDs to their author logins.
         :return: Map from PR node IDs to their facts.
         """
+        model = GitHubOpenPullRequestFacts
         cached_df = pdb.cache.dfs[PCID.open_pr_facts]
         df = cached_df.df
         mask = (
-            (df["acc_id"] == account)
-            & df["pr_node_id"].isin(pr.encode() for pr in prs)
+            (df[model.acc_id.key] == account)
+            & df[model.pr_node_id.key].isin(pr.encode() for pr in prs)
         )
 
         if exclude_inactive:
-            activity_days = np.concatenate(df["activity_days"])
-            activity_mask = np.full(len(df["activity_days"]), False)
+            activity_days = np.concatenate(df[model.activity_days.key])
+            activity_mask = np.full(len(df[model.activity_days.key]), False)
             activity_days_in_range = (
                 (time_from.replace(tzinfo=timezone.utc) <= activity_days) &
                 (activity_days < time_to.replace(tzinfo=timezone.utc))
             )
-            activity_offsets = np.cumsum(df["activity_days"].apply(len).values)
+            activity_offsets = np.cumsum(df[model.activity_days.key].apply(len).values)
             indexes = np.searchsorted(activity_offsets, np.nonzero(activity_days_in_range)[0],
                                       side="right")
             activity_mask[indexes] = 1
@@ -277,7 +294,7 @@ class PreloadedOpenPRFactsLoader(OpenPRFactsLoader):
             mask &= activity_mask
 
         open_prs_facts = cached_df.filter(mask, columns=[
-            "pr_node_id", "repository_full_name", "data"])
+            model.pr_node_id.key, model.repository_full_name.key, model.data.key])
         if open_prs_facts.empty:
             return {}
 
@@ -288,9 +305,9 @@ class PreloadedOpenPRFactsLoader(OpenPRFactsLoader):
                 author=authors[pr_node_id],
             )
             for pr_node_id, repository_full_name, data in zip(
-                open_prs_facts["pr_node_id"].str.rstrip().values,
-                open_prs_facts["repository_full_name"].values,
-                open_prs_facts["data"].values,
+                open_prs_facts[model.pr_node_id.key].str.rstrip().values,
+                open_prs_facts[model.repository_full_name.key].values,
+                open_prs_facts[model.data.key].values,
             )
         }
         return facts
@@ -313,12 +330,13 @@ class PreloadedBranchMiner(BranchMiner):
                                 meta_ids: Tuple[int, ...],
                                 mdb: databases.Database,
                                 ) -> Tuple[pd.DataFrame, Dict[str, str]]:
+        model = Branch
         df = mdb.cache.dfs[MCID.branches].df
 
         mask = (
-            df["repository_full_name"].isin(repos)
-            & df["acc_id"].isin(meta_ids)
-            & df["commit_sha"].notna()
+            df[model.repository_full_name.key].isin(repos)
+            & df[model.acc_id.key].isin(meta_ids)
+            & df[model.commit_sha.key].notna()
         )
 
         return mdb.cache.dfs[MCID.branches].filter(mask)
@@ -384,34 +402,38 @@ class PreloadedPullRequestMiner(PullRequestMiner):
 
         assert (updated_min is None) == (updated_max is None)
 
+        model = PullRequest
         df = mdb.cache.dfs[MCID.prs].df
 
         mask = (
-            (~df["closed"] | (df["closed_at"] >= time_from))
-            & (df["created_at"] < time_to)
-            & (df["acc_id"].isin(meta_ids))
-            & (df["repository_full_name"].isin(repositories))
+            (~df[model.closed.key] | (df[model.closed_at.key] >= time_from))
+            & (df[model.created_at.key] < time_to)
+            & (df[model.acc_id.key].isin(meta_ids))
+            & (df[model.repository_full_name.key].isin(repositories))
         )
 
         if pr_blacklist is not None:
             pr_blacklist = cls._prs_from_binary_expression(pr_blacklist)
-            mask &= ~df["node_id"].isin(pr_blacklist)
+            mask &= ~df[model.node_id.key].isin(pr_blacklist)
         if pr_whitelist is not None:
             pr_whitelist = cls._prs_from_binary_expression(pr_blacklist)
-            mask &= df["node_id"].isin(pr_whitelist)
+            mask &= df[model.node_id.key].isin(pr_whitelist)
 
         if exclude_inactive and updated_min is None:
             # this does not provide 100% guarantee because it can be after time_to,
             # we need to properly filter later
-            mask &= df["updated_at"] >= time_from
+            mask &= df[model.updated_at.key] >= time_from
         if updated_min is not None:
-            mask &= (df["updated_at"] >= updated_min) & (df["updated_at"] < updated_max)
+            mask &= (
+                (df[model.updated_at.key] >= updated_min) &
+                (df[model.updated_at.key] < updated_max)
+            )
 
         if len(participants) == 1:
             if PRParticipationKind.AUTHOR in participants:
-                mask &= df["user_login"].isin(participants[PRParticipationKind.AUTHOR])
+                mask &= df[model.user_login.key].isin(participants[PRParticipationKind.AUTHOR])
             elif PRParticipationKind.MERGER in participants:
-                mask &= df["merged_by_login"].isin(
+                mask &= df[model.merged_by_login.key].isin(
                     participants[PRParticipationKind.MERGER],
                 )
         elif (
@@ -419,9 +441,9 @@ class PreloadedPullRequestMiner(PullRequestMiner):
             and PRParticipationKind.AUTHOR in participants
             and PRParticipationKind.MERGER in participants
         ):
-            mask &= df["user_login"].isin(
+            mask &= df[model.user_login.key].isin(
                 participants[PRParticipationKind.AUTHOR],
-            ) | df["merged_by_login"].isin(participants[PRParticipationKind.MERGER])
+            ) | df[model.merged_by_login.key].isin(participants[PRParticipationKind.MERGER])
 
         if columns is PullRequest:
             selected_columns = []
@@ -461,11 +483,15 @@ class PreloadedPullRequestJiraMapper(PullRequestJiraMapper):
                                    meta_ids: Tuple[int, ...],
                                    mdb: databases.Database) -> Dict[str, str]:
         """Fetch the mapping from PR node IDs to JIRA issue IDs."""
+        model = NodePullRequestJiraIssues
         cached_df = mdb.cache.dfs[MCID.jira_mapping]
         df = cached_df.df
-        mask = df["node_id"].isin([v.encode() for v in prs]) & df["node_acc"].isin(meta_ids)
+        mask = (
+            df[model.node_id.key].isin([v.encode() for v in prs]) &
+            df[model.node_acc.key].isin(meta_ids)
+        )
         mapping = cached_df.filter(mask)
-        return dict(zip(mapping["node_id"].values, mapping["jira_id"].values))
+        return dict(zip(mapping[model.node_id.key].values, mapping[model.jira_id.key].values))
 
 
 class MetricEntriesCalculator(MetricEntriesCalculator):
