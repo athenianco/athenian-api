@@ -363,7 +363,7 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
         ["github"], filt.account, meta_ids, request))["github"]
     stats = await calculator.calc_code_metrics_github(
         FilterCommitsProperty.BYPASSING_PRS, time_intervals, repos, with_author,
-        with_committer)  # type: List[CodeStats]
+        with_committer, filt.only_default_branch)  # type: List[CodeStats]
     model = [
         CodeBypassingPRsMeasurement(
             date=(d - tzoffset).date(),

@@ -46,11 +46,16 @@ DAG = Tuple[np.ndarray, np.ndarray, np.ndarray]
     exptime=5 * 60,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda prop, date_from, date_to, repos, with_author, with_committer, **kwargs:
-        (prop.value, date_from.timestamp(), date_to.timestamp(), ",".join(sorted(repos)),
-         ",".join(sorted(with_author)) if with_author else "",
-         ",".join(sorted(with_committer)) if with_committer else "",
-         "" if kwargs.get("columns") is None else ",".join(c.key for c in kwargs["columns"])),
+    key=lambda prop, date_from, date_to, repos, with_author, with_committer, only_default_branch, **kwargs:  # noqa
+    (
+        prop.value,
+        date_from.timestamp(), date_to.timestamp(),
+        ",".join(sorted(repos)),
+        ",".join(sorted(with_author)) if with_author else "",
+        ",".join(sorted(with_committer)) if with_committer else "",
+        "" if kwargs.get("columns") is None else ",".join(c.key for c in kwargs["columns"]),
+        only_default_branch,
+    ),
 )
 async def extract_commits(prop: FilterCommitsProperty,
                           date_from: datetime,
@@ -58,6 +63,7 @@ async def extract_commits(prop: FilterCommitsProperty,
                           repos: Collection[str],
                           with_author: Optional[Collection[str]],
                           with_committer: Optional[Collection[str]],
+                          only_default_branch: bool,
                           branch_miner: Optional[BranchMiner],
                           account: int,
                           meta_ids: Tuple[int, ...],
@@ -131,10 +137,14 @@ async def extract_commits(prop: FilterCommitsProperty,
         fetch_repository_commits_from_scratch(
             repos, branch_miner, True, account, meta_ids, mdb, pdb, cache),
     ]
-    commits, (dags, _, _) = await gather(*tasks, op="extract_commits/fetch")
+    commits, (dags, branches, default_branches) = await gather(*tasks, op="extract_commits/fetch")
     candidates_count = len(commits)
-    commits = _remove_force_push_dropped(commits, dags)
-    log.info("Removed force push dropped commits: %d / %d", len(commits), candidates_count)
+    if only_default_branch:
+        commits = _take_commits_in_default_branches(commits, dags, branches, default_branches)
+        log.info("Removed force push dropped commits: %d / %d", len(commits), candidates_count)
+    else:
+        commits = _remove_force_push_dropped(commits, dags)
+        log.info("Removed side branch commits: %d / %d", len(commits), candidates_count)
     for number_prop in (PushCommit.additions, PushCommit.deletions, PushCommit.changed_files):
         try:
             number_col = commits[number_prop.key]
@@ -144,6 +154,44 @@ async def extract_commits(prop: FilterCommitsProperty,
         if not nans.empty:
             log.error("[DEV-546] Commits have NULL in %s: %s", number_prop.key, ", ".join(nans))
     return commits
+
+
+def _take_commits_in_default_branches(commits: pd.DataFrame,
+                                      dags: Dict[str, DAG],
+                                      branches: pd.DataFrame,
+                                      default_branches: Dict[str, str],
+                                      ) -> pd.DataFrame:
+    if commits.empty:
+        return commits
+    branch_repos = branches[Branch.repository_full_name.key].values.astype("U")
+    branch_names = branches[Branch.branch_name.key].values.astype("U")
+    branch_repos_names = np.char.add(np.char.add(branch_repos, "|"), branch_names)
+    default_repos_names = np.array([f"{k}|{v}" for k, v in default_branches.items()], dtype="U")
+    default_mask = np.in1d(branch_repos_names, default_repos_names, assume_unique=True)
+    branch_repos = branch_repos[default_mask]
+    branch_hashes = branches[Branch.commit_sha.key].values[default_mask].astype("S")
+    repos_order = np.argsort(branch_repos)
+    branch_repos = branch_repos[repos_order]
+    branch_hashes = branch_hashes[repos_order]
+
+    commit_repos, commit_repo_indexes = np.unique(
+        commits[PushCommit.repository_full_name.key].values.astype("U"), return_inverse=True)
+    commit_repos_in_branches_mask = np.in1d(commit_repos, branch_repos, assume_unique=True)
+    branch_repos_in_commits_mask = np.in1d(branch_repos, commit_repos, assume_unique=True)
+    branch_repos = branch_repos[branch_repos_in_commits_mask]
+    branch_hashes = branch_hashes[branch_repos_in_commits_mask]
+    commit_hashes = commits[PushCommit.sha.key].values.astype("S")
+
+    accessible_indexes = []
+    for repo, head_sha, commit_repo_index in zip(
+            branch_repos, branch_hashes, np.nonzero(commit_repos_in_branches_mask)[0]):
+        repo_indexes = np.nonzero(commit_repo_indexes == commit_repo_index)[0]
+        repo_hashes = commit_hashes[repo_indexes]
+        default_branch_hashes = extract_subdag(*dags[repo], np.array([head_sha]))[0]
+        accessible_indexes.append(
+            repo_indexes[np.in1d(repo_hashes, default_branch_hashes, assume_unique=True)])
+    accessible_indexes = np.sort(np.concatenate(accessible_indexes))
+    return commits.take(accessible_indexes)
 
 
 def _remove_force_push_dropped(commits: pd.DataFrame, dags: Dict[str, DAG]) -> pd.DataFrame:

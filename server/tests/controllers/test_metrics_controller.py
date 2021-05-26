@@ -807,7 +807,7 @@ async def test_calc_metrics_prs_lines_smoke(client, headers):
 async def test_code_bypassing_prs_smoke(client, headers):
     body = {
         "account": 1,
-        "date_from": "2019-01-12",
+        "date_from": "2015-01-12",
         "date_to": "2020-02-22",
         "timezone": 60,
         "in": ["{1}"],
@@ -819,15 +819,44 @@ async def test_code_bypassing_prs_smoke(client, headers):
     assert response.status == 200
     body = FriendlyJson.loads((await response.read()).decode("utf-8"))
     ms = [CodeBypassingPRsMeasurement.from_dict(x) for x in body]
-    assert len(ms) == 14
+    assert len(ms) == 62
+    total_commits = total_lines = 0
     for s in ms:
-        assert date(year=2019, month=1, day=12) <= s.date <= date(year=2020, month=2, day=22)
+        assert date(year=2015, month=1, day=12) <= s.date <= date(year=2020, month=2, day=22)
         assert s.total_commits >= 0
         assert s.total_lines >= 0
         assert 0 <= s.bypassed_commits <= s.total_commits
         assert 0 <= s.bypassed_lines <= s.total_lines
+        total_commits += s.bypassed_commits
+        total_lines += s.total_lines
+    assert total_commits == 492
+    assert total_lines == 261325
     for i in range(len(ms) - 1):
         assert ms[i].date < ms[i + 1].date
+
+
+async def test_code_bypassing_prs_only_default_branch(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2015-01-12",
+        "date_to": "2020-02-22",
+        "timezone": 60,
+        "in": ["{1}"],
+        "granularity": "month",
+        "only_default_branch": True,
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/code_bypassing_prs", headers=headers, json=body,
+    )
+    assert response.status == 200
+    body = FriendlyJson.loads((await response.read()).decode("utf-8"))
+    ms = [CodeBypassingPRsMeasurement.from_dict(x) for x in body]
+    total_commits = total_lines = 0
+    for s in ms:
+        total_commits += s.bypassed_commits
+        total_lines += s.total_lines
+    assert total_commits == 417
+    assert total_lines == 175297
 
 
 @pytest.mark.parametrize("account, date_to, in_, code",

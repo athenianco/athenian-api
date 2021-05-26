@@ -1017,19 +1017,24 @@ async def test_filter_prs_exclude_inactive(client, headers):
     assert len(prs.data) == 6
 
 
-def skip_if_no_memcached(func):
-    async def wrapped_skip_if_no_memcached(**kwargs):
-        kwargs["app"].app[CACHE_VAR_NAME] = kwargs["client_cache"] if kwargs["cached"] else None
-        return await func(**kwargs)
+def _test_cached_mdb_pdb(func):
+    async def wrapped_test_cached_mdb(**kwargs):
+        await func(**kwargs)
+        for db in ("mdb", "pdb"):
+            await kwargs["app"].app[db].disconnect()
+        try:
+            await func(**kwargs)
+        finally:
+            for db in ("mdb", "pdb"):
+                del kwargs["app"].app[db]
 
-    wraps(wrapped_skip_if_no_memcached, func)
-    return wrapped_skip_if_no_memcached
+    wraps(wrapped_test_cached_mdb, func)
+    return wrapped_test_cached_mdb
 
 
 @pytest.mark.filter_commits
-@pytest.mark.parametrize("cached", [False, True], ids=["no cache", "with cache"])
-@skip_if_no_memcached
-async def test_filter_commits_bypassing_prs_mcuadros(client, cached, headers, app, client_cache):
+@_test_cached_mdb_pdb
+async def test_filter_commits_bypassing_prs_mcuadros(client, headers, app, client_cache):
     body = {
         "account": 1,
         "date_from": "2019-01-12",
@@ -1068,9 +1073,7 @@ async def test_filter_commits_bypassing_prs_mcuadros(client, cached, headers, ap
 
 
 @pytest.mark.filter_commits
-@pytest.mark.parametrize("cached", [False, True], ids=["no cache", "with cache"])
-@skip_if_no_memcached
-async def test_filter_commits_no_pr_merges_mcuadros(client, cached, headers, app, client_cache):
+async def test_filter_commits_no_pr_merges_mcuadros(client, headers):
     body = {
         "account": 1,
         "date_from": "2019-01-12",
@@ -1093,9 +1096,7 @@ async def test_filter_commits_no_pr_merges_mcuadros(client, cached, headers, app
 
 
 @pytest.mark.filter_commits
-@pytest.mark.parametrize("cached", [False, True], ids=["no cache", "with cache"])
-@skip_if_no_memcached
-async def test_filter_commits_bypassing_prs_merges(client, cached, headers, app, client_cache):
+async def test_filter_commits_bypassing_prs_merges(client, headers):
     body = {
         "account": 1,
         "date_from": "2019-01-12",
@@ -1115,9 +1116,26 @@ async def test_filter_commits_bypassing_prs_merges(client, cached, headers, app,
 
 
 @pytest.mark.filter_commits
-@pytest.mark.parametrize("cached", [False, True], ids=["no cache", "with cache"])
-@skip_if_no_memcached
-async def test_filter_commits_bypassing_prs_empty(client, cached, headers, app, client_cache):
+@pytest.mark.parametrize("only_default_branch, length", [(True, 375), (False, 450)])
+async def test_filter_commits_bypassing_prs_only_default_branch(
+        client, headers, only_default_branch, length):
+    body = {
+        "account": 1,
+        "date_from": "2015-01-12",
+        "date_to": "2017-02-22",
+        "in": ["{1}"],
+        "property": "bypassing_prs",
+        "only_default_branch": only_default_branch,
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/commits", headers=headers, json=body)
+    assert response.status == 200
+    commits = CommitsList.from_dict(json.loads((await response.read()).decode("utf-8")))
+    assert len(commits.data) == length
+
+
+@pytest.mark.filter_commits
+async def test_filter_commits_bypassing_prs_empty(client, headers):
     body = {
         "account": 1,
         "date_from": "2020-01-12",
@@ -1136,9 +1154,7 @@ async def test_filter_commits_bypassing_prs_empty(client, cached, headers, app, 
 
 
 @pytest.mark.filter_commits
-@pytest.mark.parametrize("cached", [False, True], ids=["no cache", "with cache"])
-@skip_if_no_memcached
-async def test_filter_commits_bypassing_prs_no_with(client, cached, headers, app, client_cache):
+async def test_filter_commits_bypassing_prs_no_with(client, headers):
     body = {
         "account": 1,
         "date_from": "2019-11-01",
@@ -1174,9 +1190,8 @@ async def test_filter_commits_bypassing_prs_no_with(client, cached, headers, app
                           (1, "2020-02-32", "{1}", 400),
                           (1, "2020-01-12", "github.com/athenianco/athenian-api", 403),
                           ])
-@skip_if_no_memcached
-async def test_filter_commits_bypassing_prs_nasty_input(client, cached, headers, app, client_cache,
-                                                        account, date_to, in_, code):
+async def test_filter_commits_bypassing_prs_nasty_input(
+        client, cached, headers, account, date_to, in_, code):
     body = {
         "account": account,
         "date_from": "2020-01-12",

@@ -4512,6 +4512,13 @@ components:
           - no_pr_merges
           - bypassing_prs
           type: string
+        only_default_branch:
+          description: |-
+            Consider only commits that are accessible from the head of the default branch.
+            For example, if your workflow includes PR-ing feature branches, you rebase and merge
+            them and don't delete afterward, `bypassing_prs` will report the commits in those
+            feature branches unless you set `only_default_branch` to `true`.
+          type: boolean
       required:
       - account
       - date_from
@@ -4697,6 +4704,13 @@ components:
           $ref: '#/components/schemas/DeveloperSet'
         granularity:
           $ref: '#/components/schemas/Granularity'
+        only_default_branch:
+          description: |-
+            Consider only commits that are accessible from the head of the default branch.
+            For example, if your workflow includes PR-ing feature branches, you rebase and merge
+            them and don't delete afterward, `bypassing_prs` will report the commits in those
+            feature branches unless you set `only_default_branch` to `true`.
+          type: boolean
       required:
       - account
       - date_from
