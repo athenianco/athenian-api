@@ -1,9 +1,12 @@
 import asyncio
+import pickle
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
+import aiomcache
 from sqlalchemy import and_, select
 
 from athenian.api.async_utils import gather
+from athenian.api.cache import cached
 from athenian.api.models.metadata.github import Repository, User
 from athenian.api.typing_utils import DatabaseLike
 
@@ -52,7 +55,16 @@ class Prefixer:
         return self._user_login_map
 
     @staticmethod
-    async def load(meta_ids: Iterable[int], mdb: DatabaseLike) -> "Prefixer":
+    @cached(
+        exptime=5 * 60,
+        serialize=pickle.dumps,
+        deserialize=pickle.loads,
+        key=lambda meta_ids, **_: (",".join(str(i) for i in meta_ids),),
+    )
+    async def load(meta_ids: Iterable[int],
+                   mdb: DatabaseLike,
+                   cache: Optional[aiomcache.Client],
+                   ) -> "Prefixer":
         """Create a Prefixer for all repositories and users of the given metadata account IDs."""
         repo_rows, user_rows = await gather(
             mdb.fetch_all(
@@ -90,10 +102,13 @@ class Prefixer:
                         user_login_map=user_login_map)
 
     @staticmethod
-    def schedule_load(meta_ids: Tuple[int, ...], mdb: DatabaseLike) -> "PrefixerPromise":
+    def schedule_load(meta_ids: Tuple[int, ...],
+                      mdb: DatabaseLike,
+                      cache: Optional[aiomcache.Client],
+                      ) -> "PrefixerPromise":
         """Postponse the Prefixer initialization so that it can load asynchronously in \
         the background."""
-        task = asyncio.create_task(Prefixer.load(meta_ids, mdb))
+        task = asyncio.create_task(Prefixer.load(meta_ids, mdb, cache))
         return PrefixerPromise(None, task=task)
 
     def as_promise(self) -> "PrefixerPromise":

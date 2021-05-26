@@ -363,7 +363,7 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
         ["github"], filt.account, meta_ids, request))["github"]
     stats = await calculator.calc_code_metrics_github(
         FilterCommitsProperty.BYPASSING_PRS, time_intervals, repos, with_author,
-        with_committer)  # type: List[CodeStats]
+        with_committer, filt.only_default_branch)  # type: List[CodeStats]
     model = [
         CodeBypassingPRsMeasurement(
             date=(d - tzoffset).date(),
@@ -478,7 +478,7 @@ async def calc_metrics_releases(request: AthenianWebRequest, body: dict) -> web.
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
-    prefixer = Prefixer.schedule_load(meta_ids, request.mdb)
+    prefixer = Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
     filters, repos = await _compile_repos_releases(request, filt.for_, filt.account, meta_ids)
     grouped_for_sets = defaultdict(list)
     grouped_repos = defaultdict(list)

@@ -213,22 +213,38 @@ class MetricEntriesCalculator:
         return reshaped
 
     @sentry_span
+    @cached(
+        exptime=PullRequestMiner.CACHE_TTL,
+        serialize=pickle.dumps,
+        deserialize=pickle.loads,
+        key=lambda prop, time_intervals, repos, with_author, with_committer, only_default_branch, **kwargs:  # noqa
+        (
+            prop.value,
+            ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
+            ",".join(sorted(repos)),
+            ",".join(sorted(with_author)) if with_author else "",
+            ",".join(sorted(with_committer)) if with_committer else "",
+            only_default_branch,
+        ),
+        cache=lambda self, **_: self._cache,
+    )
     async def calc_code_metrics_github(self,
                                        prop: FilterCommitsProperty,
                                        time_intervals: Sequence[datetime],
                                        repos: Collection[str],
                                        with_author: Optional[Collection[str]],
                                        with_committer: Optional[Collection[str]],
+                                       only_default_branch: bool,
                                        ) -> List[CodeStats]:
         """Filter code pushed on GitHub according to the specified criteria."""
         time_from, time_to = time_intervals[0], time_intervals[-1]
         x_commits = await extract_commits(
-            prop, time_from, time_to, repos, with_author, with_committer,
+            prop, time_from, time_to, repos, with_author, with_committer, only_default_branch,
             self.branch_miner(), self._account, self._meta_ids, self._mdb, self._pdb, self._cache)
         all_commits = await extract_commits(
             FilterCommitsProperty.NO_PR_MERGES, time_from, time_to, repos,
-            with_author, with_committer, self.branch_miner(), self._account, self._meta_ids,
-            self._mdb, self._pdb, self._cache,
+            with_author, with_committer, only_default_branch, self.branch_miner(),
+            self._account, self._meta_ids, self._mdb, self._pdb, self._cache,
             columns=[PushCommit.committed_date, PushCommit.additions, PushCommit.deletions])
         return calc_code_stats(x_commits, all_commits, time_intervals)
 

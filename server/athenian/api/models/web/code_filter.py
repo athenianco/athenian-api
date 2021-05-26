@@ -1,47 +1,32 @@
-from datetime import date
-from typing import List, Optional
+from typing import Optional
 
-from athenian.api.models.web.commit_filter import CommitFilter
+from athenian.api.models.web.base_model_ import AllOf, Model
+from athenian.api.models.web.commit_filter import _CommitFilter
+from athenian.api.models.web.common_filter_properties import CommonFilterProperties
 from athenian.api.models.web.granularity import Granularity
 
 
-class CodeFilter(CommitFilter):
+class _CodeFilter(Model):
     """Filter for revealing code bypassing PRs."""
 
-    openapi_types = CommitFilter.openapi_types.copy()
-    openapi_types["granularity"] = str
-    attribute_map = CommitFilter.attribute_map.copy()
-    attribute_map["granularity"] = "granularity"
+    openapi_types = {
+        "granularity": str,
+    }
+
+    attribute_map = {
+        "granularity": "granularity",
+    }
+
+    __enable_slots__ = False
 
     def __init__(
         self,
-        account: Optional[int] = None,
-        date_from: Optional[date] = None,
-        date_to: Optional[date] = None,
-        timezone: Optional[int] = None,
-        in_: Optional[List[str]] = None,
-        with_author: Optional[List[str]] = None,
-        with_committer: Optional[List[str]] = None,
         granularity: Optional[str] = None,
     ):
         """CodeFilter - a model defined in OpenAPI
 
-        :param account: The account of this CodeFilter.
-        :param date_from: The date_from of this CodeFilter.
-        :param date_to: The date_to of this CodeFilter.
-        :param timezone: The timezone of this CodeFilter.
-        :param in_: The in of this CodeFilter.
-        :param with_author: The with_author of this CodeFilter.
-        :param with_committer: The with_committer of this CodeFilter.
         :param granularity: The granularity of this CodeFilter.
         """
-        super().__init__(account=account,
-                         date_from=date_from,
-                         date_to=date_to,
-                         timezone=timezone,
-                         in_=in_,
-                         with_author=with_author,
-                         with_committer=with_committer)
         self._granularity = granularity
 
     @property
@@ -71,3 +56,7 @@ class CodeFilter(CommitFilter):
                              Granularity.format.pattern)
 
         self._granularity = granularity
+
+
+CodeFilter = AllOf(_CodeFilter, _CommitFilter, CommonFilterProperties,
+                   name="CodeFilter", module=__name__)

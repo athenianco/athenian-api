@@ -11,12 +11,14 @@ class _CommitFilter(Model):
         "in_": List[str],
         "with_author": List[str],
         "with_committer": List[str],
+        "only_default_branch": Optional[bool],
     }
 
     attribute_map = {
         "in_": "in",
         "with_author": "with_author",
         "with_committer": "with_committer",
+        "only_default_branch": "only_default_branch",
     }
 
     __enable_slots__ = False
@@ -26,16 +28,19 @@ class _CommitFilter(Model):
         in_: Optional[List[str]] = None,
         with_author: Optional[List[str]] = None,
         with_committer: Optional[List[str]] = None,
+        only_default_branch: Optional[bool] = None,
     ):
         """CommitFilter - a model defined in OpenAPI
 
         :param in_: The in of this CommitFilter.
         :param with_author: The with_author of this CommitFilter.
         :param with_committer: The with_committer of this CommitFilter.
+        :param only_default_branch: The only_default_branch of this CommitFilter.
         """
         self._in_ = in_
         self._with_author = with_author
         self._with_committer = with_committer
+        self._only_default_branch = only_default_branch
 
     @property
     def in_(self) -> List[str]:
@@ -105,6 +110,32 @@ class _CommitFilter(Model):
         :param with_committer: The with_committer of this CommitFilter.
         """
         self._with_committer = with_committer
+
+    @property
+    def only_default_branch(self) -> bool:
+        """Gets the only_default_branch of this CommitFilter.
+
+        Consider only commits that are accessible from the head of the default branch.
+        For example, if your workflow includes PR-ing feature branches, you rebase and merge
+        them and don't delete afterward, `bypassing_prs` will report the commits in those
+        feature branches unless you set `only_default_branch` to `true`.
+
+        :return: The only_default_branch of this CommitFilter.
+        """
+        return self._only_default_branch or False  # force True or False
+
+    @only_default_branch.setter
+    def only_default_branch(self, only_default_branch: Optional[bool]):
+        """Sets the only_default_branch of this CommitFilter.
+
+        Consider only commits that are accessible from the head of the default branch.
+        For example, if your workflow includes PR-ing feature branches, you rebase and merge
+        them and don't delete afterward, `bypassing_prs` will report the commits in those
+        feature branches unless you set `only_default_branch` to `true`.
+
+        :param only_default_branch: The only_default_branch of this CommitFilter.
+        """
+        self._only_default_branch = only_default_branch
 
 
 CommitFilter = AllOf(_CommitFilter, CommonFilterProperties, name="CommitFilter", module=__name__)

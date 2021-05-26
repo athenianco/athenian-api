@@ -149,7 +149,7 @@ async def _common_filter_preprocess(filt: Union[FilterReleasesRequest,
         filt.in_, filt.account, request.uid, login_loader,
         request.sdb, request.mdb, request.cache, request.app["slack"],
         strip_prefix=strip_prefix)
-    prefixer = Prefixer.schedule_load(meta_ids, request.mdb)
+    prefixer = Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
     return time_from, time_to, repos, meta_ids, prefixer
 
 
@@ -272,8 +272,8 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
     log = logging.getLogger("filter_commits")
     commits = await extract_commits(
         FilterCommitsProperty(filt.property), time_from, time_to, repos,
-        with_author, with_committer, BranchMiner(), filt.account, meta_ids,
-        request.mdb, request.pdb, request.cache)
+        with_author, with_committer, filt.only_default_branch,
+        BranchMiner(), filt.account, meta_ids, request.mdb, request.pdb, request.cache)
     model = CommitsList(data=[], include=IncludedNativeUsers(users={}))
     users = model.include.users
     utc = timezone.utc
@@ -479,7 +479,7 @@ async def get_prs(request: AthenianWebRequest, body: dict) -> web.Response:
         fetch_pull_requests(
             prs_by_repo, settings, body.account, meta_ids,
             request.mdb, request.pdb, request.rdb, request.cache),
-        Prefixer.load(meta_ids, request.mdb),
+        Prefixer.load(meta_ids, request.mdb, request.cache),
     )
     return await _build_github_prs_response(prs, prefixer, meta_ids, request.mdb, request.cache)
 
@@ -568,7 +568,7 @@ async def get_releases(request: AthenianWebRequest, body: dict) -> web.Response:
         )
     except KeyError:
         return model_response(ReleaseSet())
-    prefixer = Prefixer.schedule_load(meta_ids, request.mdb)
+    prefixer = Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
     releases, avatars = await mine_releases_by_name(
         releases_by_repo, settings, prefixer, body.account, meta_ids,
         request.mdb, request.pdb, request.rdb, request.cache)
@@ -589,7 +589,7 @@ async def diff_releases(request: AthenianWebRequest, body: dict) -> web.Response
         )
     except KeyError:
         return model_response(ReleaseSet())
-    prefixer = Prefixer.schedule_load(meta_ids, request.mdb)
+    prefixer = Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
     releases, avatars = await mine_diff_releases(
         borders, settings, prefixer, body.account, meta_ids,
         request.mdb, request.pdb, request.rdb, request.cache)

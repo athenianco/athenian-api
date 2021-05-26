@@ -195,7 +195,7 @@ async def _load_account_reposets(account: int,
 
             async def load_prefixer():
                 meta_ids = await get_metadata_account_ids(account, sdb_conn, cache)
-                prefixer = await Prefixer.load(meta_ids, mdb_conn)
+                prefixer = await Prefixer.load(meta_ids, mdb_conn, cache)
                 return prefixer, meta_ids
 
             prefixer_meta_ids, login = await asyncio.gather(
@@ -213,7 +213,7 @@ async def _load_account_reposets(account: int,
                 meta_ids -= owned_accounts
                 if not meta_ids:
                     raise_no_source_data()
-                prefixer = await Prefixer.load(meta_ids, mdb_conn)
+                prefixer = await Prefixer.load(meta_ids, mdb_conn, cache)
                 for acc_id in meta_ids:
                     # we don't expect many installations for the same account so don't go parallel
                     values = AccountGitHubAccount(id=acc_id, account_id=account).explode(
