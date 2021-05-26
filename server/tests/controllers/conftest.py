@@ -68,7 +68,7 @@ async def branches(mdb, branch_miner):
 
 @pytest.fixture(scope="function")
 async def prefixer_promise(mdb):
-    return Prefixer.schedule_load((6366825,), mdb)
+    return Prefixer.schedule_load((6366825,), mdb, None)
 
 
 @pytest.fixture(scope="function")

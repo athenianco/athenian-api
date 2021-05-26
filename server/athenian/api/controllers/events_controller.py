@@ -179,7 +179,7 @@ async def clear_precomputed_events(request: AthenianWebRequest, body: dict) -> w
     prefixed_repos, meta_ids = await resolve_repos(
         model.repositories, model.account, request.uid, login_loader,
         request.sdb, request.mdb, request.cache, request.app["slack"], strip_prefix=False)
-    prefixer = Prefixer.schedule_load(meta_ids, request.mdb)
+    prefixer = Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
     repos = [r.split("/", 1)[1] for r in prefixed_repos]
     pdb = request.pdb
     if "release" in model.targets:

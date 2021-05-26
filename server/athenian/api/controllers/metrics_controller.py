@@ -478,7 +478,7 @@ async def calc_metrics_releases(request: AthenianWebRequest, body: dict) -> web.
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
-    prefixer = Prefixer.schedule_load(meta_ids, request.mdb)
+    prefixer = Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
     filters, repos = await _compile_repos_releases(request, filt.for_, filt.account, meta_ids)
     grouped_for_sets = defaultdict(list)
     grouped_repos = defaultdict(list)

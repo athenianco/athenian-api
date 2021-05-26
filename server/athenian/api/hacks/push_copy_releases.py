@@ -89,7 +89,7 @@ def main():
             dereference_precomputed_schemas()
 
         meta_ids = await get_metadata_account_ids(args.account, sdb, None)
-        prefixer = await Prefixer.load(meta_ids, mdb)
+        prefixer = await Prefixer.load(meta_ids, mdb, None)
         settings = await Settings \
             .from_account(args.account, sdb, mdb, None, None) \
             .list_release_matches(prefixer.prefix_repo_names(args.repos))
