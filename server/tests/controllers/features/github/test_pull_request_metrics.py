@@ -20,7 +20,6 @@ from athenian.api.controllers.features.histogram import Scale
 from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.features.metric_calculator import df_from_structs, MetricCalculator
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.types import PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
 from athenian.api.defer import wait_deferred, with_defer
@@ -329,7 +328,7 @@ def test_pull_request_metrics_counts_q(pr_samples, cls_q, cls):  # noqa: F811
 async def test_calc_pull_request_metrics_line_github_cache_reset(
         metrics_calculator_factory, branches, default_branches,
         mdb, pdb, rdb, cache, memcached, with_memcached, metrics_calculator_factory_memcached,
-        release_match_setting_tag, with_mine_cache_wipe):
+        release_match_setting_tag, with_mine_cache_wipe, pr_miner):
     if with_memcached:
         if not has_memcached:
             raise pytest.skip("no memcached")
@@ -351,7 +350,7 @@ async def test_calc_pull_request_metrics_line_github_cache_reset(
     await wait_deferred()
     assert await metrics_calculator.calc_pull_request_metrics_line_github.reset_cache(*args)
     if with_mine_cache_wipe:
-        assert await PullRequestMiner._mine.reset_cache(
+        assert await pr_miner._mine.reset_cache(
             None, date_from, date_to, {"src-d/go-git"}, {}, LabelFilter.empty(),
             JIRAFilter.empty(), branches, default_branches,
             False, release_match_setting_tag, None, None, None, True,
