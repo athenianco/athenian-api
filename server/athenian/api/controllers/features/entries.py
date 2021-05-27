@@ -80,6 +80,7 @@ class MetricEntriesCalculator:
     branch_miner = BranchMiner
     unfresh_pr_facts_fetcher = UnfreshPullRequestFactsFetcher
     pr_jira_mapper = PullRequestJiraMapper
+    load_delta = 0
 
     def __init__(self, account: int, meta_ids: Tuple[int, ...],
                  mdb: Database, pdb: Database, rdb: Database,

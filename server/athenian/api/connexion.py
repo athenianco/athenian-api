@@ -2,6 +2,7 @@ import ast
 import asyncio
 import bdb
 from collections import defaultdict
+from contextvars import ContextVar
 from datetime import timedelta
 from functools import partial
 from http import HTTPStatus
@@ -177,6 +178,9 @@ class ServiceUnavailableError(GenericError):
                          instance=instance)
 
 
+ADJUST_LOAD_VAR_NAME = "adjust_load"
+
+
 class AthenianApp(connexion.AioHttpApp):
     """Athenian API connexion application, everything roots here."""
 
@@ -262,6 +266,7 @@ class AthenianApp(connexion.AioHttpApp):
             self.app["kms"] = self._kms = None
         self.app[CACHE_VAR_NAME] = cache
         self._max_load = max_load
+        self.app[ADJUST_LOAD_VAR_NAME] = ContextVar(ADJUST_LOAD_VAR_NAME, default=None)
         setup_prometheus(self.app)
         setup_status(self.app)
         setup_cache_metrics(self.app)
@@ -514,6 +519,16 @@ class AthenianApp(connexion.AioHttpApp):
                 type="/errors/HeavyLoadError",
                 detail="This server is serving too much load, please repeat your request.",
             )).response
+
+        custom_load_delta = 0
+
+        def adjust_load(value: float) -> None:
+            nonlocal custom_load_delta
+            custom_load_delta += value
+            assert load + custom_load_delta >= 0, "you cannot lower the load below 0"
+            self._load += value
+
+        self.app[ADJUST_LOAD_VAR_NAME].set(adjust_load)
         self._requests += 1
         self._load = new_load
 
@@ -551,7 +566,7 @@ class AthenianApp(connexion.AioHttpApp):
                 launch_defer(0.1 * (1 - self._shutting_down),
                              "%s %s" % (request.method, request.path))
             self._requests -= 1
-            self._load -= load
+            self._load -= load + custom_load_delta
             if self._requests == 0 and self._shutting_down:
                 asyncio.ensure_future(self._raise_graceful_exit())
 

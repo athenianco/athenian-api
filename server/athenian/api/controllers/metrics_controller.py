@@ -7,6 +7,7 @@ import databases.core
 
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
+from athenian.api.connexion import ADJUST_LOAD_VAR_NAME
 from athenian.api.controllers.account import get_metadata_account_ids
 from athenian.api.controllers.calculator_selector import get_calculators_for_account
 from athenian.api.controllers.datetime_utils import split_to_time_intervals
@@ -138,11 +139,14 @@ async def get_calculators_for_request(services: Iterable[str],
                                       request: AthenianWebRequest,
                                       ) -> Dict[str, MetricEntriesCalculator]:
     """Get the metrics calculator species for the given account."""
-    return await get_calculators_for_account(
+    calcs = await get_calculators_for_account(
         services, account, meta_ids, getattr(request, "god_id", None),
         request.sdb, request.mdb, request.pdb, request.rdb, request.cache,
         instrument=request.app["metrics_calculator"].get(),
     )
+    load_delta = max(calc.load_delta for calc in calcs.values())
+    request.app[ADJUST_LOAD_VAR_NAME].get()(load_delta)
+    return calcs
 
 
 async def compile_filters_prs(for_sets: List[ForSet],
