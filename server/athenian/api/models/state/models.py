@@ -104,6 +104,7 @@ class Account(create_time_mixin(created_at=True), Base):
     id = Column(Integer(), primary_key=True)
     secret_salt = Column(Integer(), nullable=False)
     secret = Column(String(8), nullable=False)
+    expires_at = Column(TIMESTAMP(timezone=True), nullable=False)
 
 
 class Team(create_time_mixin(created_at=True, updated_at=True),
