@@ -12,3 +12,4 @@ class JIRAFilterReturn(Model, metaclass=Enum):
     PRIORITIES = "priorities"
     STATUSES = "statuses"
     USERS = "users"
+    ONLY_FLYING = "only_flying"

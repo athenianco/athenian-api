@@ -83,6 +83,8 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
     filt.priorities = [p.lower() for p in (filt.priorities or [])]
     filt.types = {normalize_issue_type(p) for p in (filt.types or [])}
     return_ = set(filt.return_ or JIRAFilterReturn)
+    if not filt.return_:
+        return_.remove(JIRAFilterReturn.ONLY_FLYING)
     sdb, mdb, pdb, rdb = request.sdb, request.mdb, request.pdb, request.rdb
     cache = request.cache
     tasks = [
@@ -140,7 +142,6 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         ",".join("%s:%s" % db for db in sorted(default_branches.items())),
         release_settings,
     ),
-    version=2,
 )
 async def _epic_flow(return_: Set[str],
                      jira_ids: Tuple[int, List[str]],
@@ -354,6 +355,7 @@ async def _epic_flow(return_: Set[str],
         JIRAFilterReturn.ISSUE_TYPES in return_,
         JIRAFilterReturn.PRIORITIES in return_,
         JIRAFilterReturn.STATUSES in return_,
+        JIRAFilterReturn.ONLY_FLYING in return_,
         time_from.timestamp() if time_from else "-",
         time_to.timestamp() if time_to else "-",
         exclude_inactive,
@@ -365,7 +367,6 @@ async def _epic_flow(return_: Set[str],
         ",".join("%s:%s" % db for db in sorted(default_branches.items())),
         release_settings,
     ),
-    version=2,
 )
 async def _issue_flow(return_: Set[str],
                       account: int,
@@ -420,10 +421,11 @@ async def _issue_flow(return_: Set[str],
         ])
     if JIRAFilterReturn.USERS in return_:
         extra_columns.extend(participant_columns)
+    epics = [] if JIRAFilterReturn.ONLY_FLYING not in return_ else False
     issues = await fetch_jira_issues(
         jira_ids, time_from, time_to, exclude_inactive, label_filter,
         # priorities are already lower-cased and de-None-d
-        priorities, types, [], reporters, assignees, commenters,
+        priorities, types, epics, reporters, assignees, commenters,
         default_branches, release_settings, account, meta_ids, mdb, pdb, cache,
         extra_columns=extra_columns)
     if JIRAFilterReturn.LABELS in return_:
