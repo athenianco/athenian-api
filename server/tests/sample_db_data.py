@@ -107,14 +107,16 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
 
 
 def fill_state_session(session: sqlalchemy.orm.Session):
+    expires = datetime.datetime(2030, 1, 1)
     salt, secret = _generate_account_secret(1, "secret")
-    session.add(Account(secret_salt=salt, secret=secret))
+    session.add(Account(secret_salt=salt, secret=secret, expires_at=expires))
     salt, secret = _generate_account_secret(2, "secret")
-    session.add(Account(secret_salt=salt, secret=secret))
+    session.add(Account(secret_salt=salt, secret=secret, expires_at=expires))
     salt, secret = _generate_account_secret(3, "secret")
-    session.add(Account(secret_salt=salt, secret=secret))
+    session.add(Account(secret_salt=salt, secret=secret, expires_at=expires))
     salt, secret = _generate_account_secret(invitation_controller.admin_backdoor, "secret")
-    session.add(Account(id=invitation_controller.admin_backdoor, secret_salt=salt, secret=secret))
+    session.add(Account(id=invitation_controller.admin_backdoor, secret_salt=salt, secret=secret,
+                        expires_at=expires))
     session.flush()
     session.add(AccountGitHubAccount(id=6366825, account_id=1))
     session.add(UserAccount(

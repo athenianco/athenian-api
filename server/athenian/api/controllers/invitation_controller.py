@@ -49,6 +49,8 @@ from athenian.api.typing_utils import DatabaseLike
 
 admin_backdoor = (1 << 24) - 1
 url_prefix = os.getenv("ATHENIAN_INVITATION_URL_PREFIX")
+# we add 4 hours to compensate the installation time
+trial_period = timedelta(days=14, hours=4)
 
 
 def validate_env():
@@ -304,7 +306,9 @@ async def _create_new_account_fast(conn: DatabaseLike, secret: str) -> int:
     Should be used for PostgreSQL.
     """
     account_id = await conn.execute(
-        insert(Account).values(Account(secret_salt=0, secret=Account.missing_secret)
+        insert(Account).values(Account(secret_salt=0,
+                                       secret=Account.missing_secret,
+                                       expires_at=datetime.now(timezone.utc) + trial_period)
                                .create_defaults().explode()))
     salt, secret = _generate_account_secret(account_id, secret)
     await conn.execute(update(Account).where(Account.id == account_id).values({
@@ -320,7 +324,9 @@ async def _create_new_account_slow(conn: DatabaseLike, secret: str) -> int:
     SQLite does not allow resetting the primary key sequence, so we have to increment the ID
     by hand.
     """
-    acc = Account(secret_salt=0, secret=Account.missing_secret).create_defaults()
+    acc = Account(secret_salt=0,
+                  secret=Account.missing_secret,
+                  expires_at=datetime.now() + trial_period).create_defaults()
     max_id = (await conn.fetch_one(select([func.max(Account.id)])
                                    .where(Account.id < admin_backdoor)))[0] or 0
     acc.id = max_id + 1
