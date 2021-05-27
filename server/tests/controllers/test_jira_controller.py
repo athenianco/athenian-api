@@ -17,8 +17,8 @@ from athenian.api.serialization import FriendlyJson
 
 @pytest.mark.parametrize("return_, checked", [
     (None, set(JIRAFilterReturn)),
-    ([], set(JIRAFilterReturn)),
-    [*([list(JIRAFilterReturn)] * 2)],
+    ([], set(JIRAFilterReturn) - {JIRAFilterReturn.ONLY_FLYING}),
+    [*([list(set(JIRAFilterReturn) - {JIRAFilterReturn.ONLY_FLYING})] * 2)],
     ([JIRAFilterReturn.EPICS], {JIRAFilterReturn.EPICS}),
     [*([[JIRAFilterReturn.EPICS, JIRAFilterReturn.PRIORITIES, JIRAFilterReturn.STATUSES]] * 2)],
     ([JIRAFilterReturn.ISSUES], ()),
@@ -621,6 +621,24 @@ async def test_filter_jira_issue_prs_comments(client, headers):
             assert not pr.jira
     assert prs == 6
     assert comments == 1113
+
+
+async def test_filter_jira_issue_only_flying(client, headers):
+    body = {
+        "date_from": "2020-09-01",
+        "date_to": "2021-01-01",
+        "timezone": 120,
+        "account": 1,
+        "exclude_inactive": True,
+        "return": ["issues", "issue_bodies", "only_flying"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/jira", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    model = FilteredJIRAStuff.from_dict(json.loads(body))
+    assert len(model.issues) == 235
 
 
 async def test_filter_jira_issue_disabled(client, headers, mdb):

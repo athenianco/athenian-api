@@ -178,7 +178,7 @@ ISSUE_PR_IDS = "pr_ids"
         labels,
         ",".join(sorted(priorities)),
         ",".join(sorted(types)),
-        ",".join(sorted(epics)),
+        ",".join(sorted(epics) if not isinstance(epics, bool) else ["<flying>"]),
         ",".join(sorted(reporters)),
         ",".join(sorted((ass if ass is not None else "<None>") for ass in assignees)),
         ",".join(sorted(commenters)),
@@ -192,7 +192,7 @@ async def fetch_jira_issues(installation_ids: Tuple[int, List[str]],
                             labels: LabelFilter,
                             priorities: Collection[str],
                             types: Collection[str],
-                            epics: Collection[str],
+                            epics: Union[Collection[str], bool],
                             reporters: Collection[str],
                             assignees: Collection[Optional[str]],
                             commenters: Collection[str],
@@ -217,7 +217,9 @@ async def fetch_jira_issues(installation_ids: Tuple[int, List[str]],
     :param labels: Issues must satisfy these label conditions.
     :param priorities: List of lower-case priorities.
     :param types: List of lower-case types.
-    :param epics: List of required parent epic keys.
+    :param epics: List of required parent epic keys. If empty, disable filtering by epics. \
+                  If false, return only those issues which are without an epic and are not epics \
+                  themselves.
     :param reporters: List of lower-case issue reporters.
     :param assignees: List of lower-case issue assignees. None means unassigned.
     :param commenters: List of lower-case issue commenters.
@@ -366,7 +368,7 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
                         labels: LabelFilter,
                         priorities: Collection[str],
                         types: Collection[str],
-                        epics: Collection[str],
+                        epics: Union[Collection[str], bool],
                         reporters: Collection[str],
                         assignees: Collection[Optional[str]],
                         commenters: Collection[str],
@@ -407,7 +409,14 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
         and_filters.append(sql.func.lower(Issue.priority_name).in_(priorities))
     if len(types):
         and_filters.append(sql.func.lower(Issue.type).in_(types))
-    if len(epics):
+    if isinstance(epics, bool):
+        assert epics is False
+        epics_major = aliased(Epic, name="epics_major")
+        epics_parent = aliased(Epic, name="epics_parent")
+        epics_self = aliased(Epic, name="epics_self")
+        for alias in (epics_major, epics_parent, epics_self):
+            and_filters.append(alias.key.is_(None))
+    elif len(epics):
         and_filters.append(Epic.key.in_(epics))
     or_filters = []
     if labels:
@@ -435,7 +444,21 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
     def query_starts():
         seeds = [seed := sql.join(Issue, Status, sql.and_(Issue.status_id == Status.id,
                                                           Issue.acc_id == Status.acc_id))]
-        if len(epics):
+        if epics is False:
+            seeds = [
+                sql.outerjoin(
+                    sql.outerjoin(
+                        sql.outerjoin(seed, epics_major,
+                                      sql.and_(Issue.epic_id == epics_major.id,
+                                               Issue.acc_id == epics_major.acc_id)),
+                        epics_parent, sql.and_(Issue.parent_id == epics_parent.id,
+                                               Issue.acc_id == epics_parent.acc_id),
+                    ),
+                    epics_self, sql.and_(Issue.id == epics_self.id,
+                                         Issue.acc_id == epics_self.acc_id),
+                ),
+            ]
+        elif len(epics):
             seeds = [
                 sql.join(seed, Epic, sql.and_(Issue.epic_id == Epic.id,
                                               Issue.acc_id == Epic.acc_id)),

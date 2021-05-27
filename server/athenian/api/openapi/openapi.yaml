@@ -6409,11 +6409,13 @@ components:
         * `priorities`: Include the details aboud the mentioned issue priorities.
         * `statuses`: Include the details aboud the mentioned issue statuses.
         * `users`: Include the details aboud the issue participants.
+        * `only_flying`: Exclude the epics' children and epics themselves from `issues`.
 
         If neither `epics` nor `issues` are specified, nothing is returned.
         If `epics` is not specified, the corresponding `epics` list is not populated.
         The difference is that `issues` flow examines all the issues that satisfy the given filters,
         whereas `epics` flow examines only the epics that satisfy the given filters, and their children.
+        `only_flying` does not affect the `epics` flow.
       enum:
       - epics
       - issues
@@ -6423,6 +6425,7 @@ components:
       - priorities
       - statuses
       - users
+      - only_flying
       type: string
     ReleaseMetricsRequest:
       additionalProperties: false
