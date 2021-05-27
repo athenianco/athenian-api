@@ -1,5 +1,5 @@
 import asyncio
-from datetime import timedelta
+from datetime import datetime, timedelta
 import functools
 from http import HTTPStatus
 import logging
@@ -31,7 +31,7 @@ from athenian.api.async_utils import gather
 from athenian.api.cache import cached
 from athenian.api.controllers.account import get_user_account_status
 from athenian.api.kms import AthenianKMS
-from athenian.api.models.state.models import God, UserToken
+from athenian.api.models.state.models import Account, God, UserToken
 from athenian.api.models.web import ForbiddenError, GenericError
 from athenian.api.models.web.user import User
 from athenian.api.request import AthenianWebRequest
@@ -234,7 +234,15 @@ class Auth0:
                                 required = False
                             if required:
                                 request.json["account"] = account
-
+                    context.account = account
+                # check whether the account is enabled
+                if context.account is not None:
+                    expires_at = await context.sdb.fetch_val(
+                        select([Account.expires_at]).where(Account.id == context.account))
+                    if expires_at is None or expires_at < datetime.now(expires_at.tzinfo):
+                        self.log.warning("Attempt to use an expired account %d by user %s",
+                                         context.account, context.uid)
+                        raise Unauthorized("Your account has expired.")
                 # finish the auth processing and chain forward
                 return await function(request)
             return wrapper
