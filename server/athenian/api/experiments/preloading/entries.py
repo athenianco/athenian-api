@@ -12,7 +12,8 @@ import pandas as pd
 from sqlalchemy.sql.elements import BinaryExpression
 
 from athenian.api import metadata
-from athenian.api.controllers.features.entries import MetricEntriesCalculator
+from athenian.api.controllers.features.entries import \
+    MetricEntriesCalculator as OriginalMetricEntriesCalculator
 from athenian.api.controllers.features.github.unfresh_pull_request_metrics import \
     UnfreshPullRequestFactsFetcher
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
@@ -468,10 +469,11 @@ class PreloadedPullRequestJiraMapper(PullRequestJiraMapper):
         return dict(zip(mapping["node_id"].values, mapping["jira_id"].values))
 
 
-class MetricEntriesCalculator(MetricEntriesCalculator):
+class MetricEntriesCalculator(OriginalMetricEntriesCalculator):
     """Calculator for different metrics using preloaded DataFrames."""
 
     pr_miner = PreloadedPullRequestMiner
     branch_miner = PreloadedBranchMiner
     unfresh_pr_facts_fetcher = PreloadedUnfreshPullRequestFactsFetcher
     pr_jira_mapper = PreloadedPullRequestJiraMapper
+    load_delta = 10
