@@ -1,13 +1,14 @@
+from datetime import datetime, timezone
 import pickle
 
 from aiohttp.web_runner import GracefulExit
 import lz4.frame
 import pytest
-from sqlalchemy import insert
+from sqlalchemy import insert, update
 
 from athenian.api.auth import Auth0
 from athenian.api.cache import gen_cache_key
-from athenian.api.models.state.models import UserToken
+from athenian.api.models.state.models import Account, UserToken
 from athenian.api.models.web import User
 
 
@@ -77,6 +78,18 @@ async def test_set_account_from_token(client, headers, sdb):
     headers = headers.copy()
     headers["X-API-Key"] = "AQAAAAAAAAA="
     response = await client.request(
-        method="POST", path="/v1//filter/repositories", headers=headers, json=body,
+        method="POST", path="/v1/filter/repositories", headers=headers, json=body,
     )
     assert response.status == 200
+
+
+async def test_account_expiration(client, headers, sdb):
+    await sdb.execute(update(Account).values({Account.expires_at: datetime.now(timezone.utc)}))
+    body = {
+        "account": 1,
+        "name": "this should fail",
+    }
+    response = await client.request(
+        method="POST", path="/v1/token/create", headers=headers, json=body,
+    )
+    assert response.status == 401
