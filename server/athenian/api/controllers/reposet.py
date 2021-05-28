@@ -5,10 +5,11 @@ from sqlite3 import IntegrityError, OperationalError
 from typing import Callable, Coroutine, List, Mapping, Optional, Sequence, Set, Tuple, Type, Union
 
 import aiomcache
+import asyncpg
 from asyncpg import UniqueViolationError
 import databases.core
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
-from sqlalchemy import and_, insert, select
+from sqlalchemy import and_, func, insert, select
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api import metadata
@@ -221,11 +222,26 @@ async def _load_account_reposets(account: int,
                     await sdb_conn.execute(insert(AccountGitHubAccount).values(values))
             else:
                 prefixer, meta_ids = prefixer_meta_ids
-            repo_node_ids = await mdb_conn.fetch_all(
-                select([AccountRepository.repo_node_id])
-                .where(and_(AccountRepository.acc_id.in_(meta_ids),
-                            AccountRepository.enabled))
-                .order_by(AccountRepository.repo_full_name))
+            ar = AccountRepository
+            updated_col = (ar.updated_at == func.max(ar.updated_at).over(
+                partition_by=ar.repo_node_id,
+            )).label("latest")
+            window_query = (
+                select([ar.repo_node_id, ar.enabled, updated_col])
+                .where(ar.acc_id.in_(meta_ids))
+            ).alias("w")
+            if isinstance(sdb_conn.raw_connection, asyncpg.Connection):
+                and_func = func.bool_and
+            else:
+                and_func = func.max
+            query = (
+                select([window_query.c.repo_node_id])
+                .select_from(window_query)
+                .where(window_query.c.latest)
+                .group_by(window_query.c.repo_node_id)
+                .having(and_func(window_query.c.enabled))
+            )
+            repo_node_ids = await mdb_conn.fetch_all(query)
             try:
                 repos = prefixer.resolve_repo_nodes(r[0] for r in repo_node_ids)
             except KeyError as e:
