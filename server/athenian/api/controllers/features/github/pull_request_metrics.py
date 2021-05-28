@@ -455,6 +455,9 @@ class CycleTimeCalculator(WithoutQuantilesMixin, MetricCalculator[timedelta]):
         ]
         return metrics
 
+    def _value(self, samples: np.ndarray) -> Metric[timedelta]:
+        raise AssertionError("this must be never called")
+
     def _analyze(self,
                  facts: pd.DataFrame,
                  min_times: np.ndarray,
