@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
 from functools import reduce
 from itertools import chain
@@ -19,7 +20,7 @@ from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_
 from athenian.api.tracing import sentry_span
 
 
-class MetricCalculator(Generic[T]):
+class MetricCalculator(Generic[T], ABC):
     """
     Arbitrary type T metric calculator, base abstract class.
 
@@ -152,6 +153,7 @@ class MetricCalculator(Generic[T]):
         self._peek = np.empty((0, 0), dtype=object)
         self._last_values = None
 
+    @abstractmethod
     def _analyze(self,
                  facts: pd.DataFrame,
                  min_times: np.ndarray,
@@ -164,6 +166,7 @@ class MetricCalculator(Generic[T]):
         """
         raise NotImplementedError
 
+    @abstractmethod
     def _value(self, samples: np.ndarray) -> Metric[T]:
         """Calculate the metric values from the current samples."""
         raise NotImplementedError
@@ -202,7 +205,7 @@ class MetricCalculator(Generic[T]):
         return samples
 
 
-class AverageMetricCalculator(MetricCalculator[T]):
+class AverageMetricCalculator(MetricCalculator[T], ABC):
     """Mean calculator."""
 
     may_have_negative_values: bool
@@ -224,12 +227,8 @@ class AverageMetricCalculator(MetricCalculator[T]):
                     raise e from None
         return Metric(True, *mean_confidence_interval(samples, self.may_have_negative_values))
 
-    def _analyze(self, facts: Any, min_time: datetime, max_time: datetime,
-                 **kwargs) -> Optional[T]:
-        raise NotImplementedError
 
-
-class MedianMetricCalculator(MetricCalculator[T]):
+class MedianMetricCalculator(MetricCalculator[T], ABC):
     """Median calculator."""
 
     def _value(self, samples: np.ndarray) -> Metric[T]:
@@ -237,24 +236,36 @@ class MedianMetricCalculator(MetricCalculator[T]):
             return Metric(False, None, None, None)
         return Metric(True, *median_confidence_interval(samples))
 
-    def _analyze(self, facts: Any, min_time: datetime, max_time: datetime,
-                 **kwargs) -> Optional[T]:
-        raise NotImplementedError
 
-
-class SumMetricCalculator(MetricCalculator[T]):
-    """Sum calculator."""
+class AggregationMetricCalculator(MetricCalculator[T], ABC):
+    """Any simple array aggregation calculator."""
 
     def _value(self, samples: np.ndarray) -> Metric[T]:
         exists = len(samples) > 0
-        return Metric(True, samples.sum() if exists else np.dtype(self.dtype).type(), None, None)
+        return Metric(True,
+                      self._agg(samples) if exists else np.dtype(self.dtype).type(),
+                      None, None)
 
-    def _analyze(self, facts: Any, min_time: datetime, max_time: datetime,
-                 **kwargs) -> Optional[T]:
+    @abstractmethod
+    def _agg(self, samples: np.ndarray) -> T:
         raise NotImplementedError
 
 
-class Counter(MetricCalculator[int]):
+class SumMetricCalculator(AggregationMetricCalculator[T], ABC):
+    """Sum calculator."""
+
+    def _agg(self, samples: np.ndarray) -> T:
+        return samples.sum()
+
+
+class MaxMetricCalculator(AggregationMetricCalculator[T], ABC):
+    """Maximum calculator."""
+
+    def _agg(self, samples: np.ndarray) -> T:
+        return samples.max()
+
+
+class Counter(MetricCalculator[int], ABC):
     """Count the number of PRs that were used to calculate the specified metric."""
 
     dtype = int
@@ -278,6 +289,13 @@ class Counter(MetricCalculator[int]):
         self._peek = self._calcs[0].peek
         self._samples = self._calcs[0].samples
 
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **kwargs) -> np.ndarray:
+        raise AssertionError("this must be never called")
+
 
 class WithoutQuantilesMixin:
     """Ignore the quantiles."""
@@ -289,7 +307,7 @@ class WithoutQuantilesMixin:
         return None
 
 
-class HistogramCalculator(MetricCalculator):
+class HistogramCalculator(MetricCalculator, ABC):
     """Pull request histogram calculator, base abstract class."""
 
     def histogram(self,
@@ -707,6 +725,9 @@ class RatioCalculator(WithoutQuantilesMixin, MetricCalculator[float]):
                 val = ((opened.value or 0) + 1) / ((closed.value or 0) + 1)
                 metrics[i][j] = Metric(True, val, None, None)
         return metrics
+
+    def _value(self, samples: np.ndarray) -> Metric[timedelta]:
+        raise AssertionError("this must be never called")
 
     def _analyze(self,
                  facts: pd.DataFrame,

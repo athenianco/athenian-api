@@ -16,6 +16,15 @@ def dt64arr(dt: datetime) -> np.ndarray:
     return np.array([dt], dtype="datetime64[ns]")
 
 
+class DummyAverageMetricCalculator(AverageMetricCalculator):
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **_) -> np.ndarray:
+        raise AssertionError("this must be never called")
+
+
 @pytest.fixture
 def square_centered_samples():
     data = (10 - np.arange(0, 21, dtype=int)) ** 2
@@ -121,8 +130,8 @@ def test_median_confidence_interval_empty():
 @pytest.mark.parametrize(
     "cls, negative, dtype",
     ((*t[0], t[1]) for t in itertools.product(
-        [(AverageMetricCalculator, False),
-         (AverageMetricCalculator, True),
+        [(DummyAverageMetricCalculator, False),
+         (DummyAverageMetricCalculator, True),
          (MedianMetricCalculator, False)],
         [datetime, pd.Timestamp])))
 def test_metric_calculator(pr_samples, cls, negative, dtype):
@@ -163,7 +172,7 @@ def test_metric_calculator(pr_samples, cls, negative, dtype):
 
 
 def test_average_metric_calculator_zeros_nonnegative():
-    calc = AverageMetricCalculator(quantiles=(0, 1))
+    calc = DummyAverageMetricCalculator(quantiles=(0, 1))
     calc.may_have_negative_values = False
     calc._samples = [[np.full(3, timedelta(0), "timedelta64[s]")]]
     m = calc.values[0][0]

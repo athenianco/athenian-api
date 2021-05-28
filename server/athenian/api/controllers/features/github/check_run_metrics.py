@@ -5,11 +5,13 @@ import warnings
 import numpy as np
 import pandas as pd
 
+from athenian.api.controllers.features.github.check_run_metrics_accelerated import \
+    calculate_interval_intersections
 from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
     BinnedHistogramCalculator, BinnedMetricCalculator, HistogramCalculatorEnsemble, \
-    make_register_metric, MetricCalculator, MetricCalculatorEnsemble, RatioCalculator, \
-    SumMetricCalculator
+    make_register_metric, MaxMetricCalculator, MetricCalculator, MetricCalculatorEnsemble, \
+    RatioCalculator, SumMetricCalculator
 from athenian.api.controllers.miners.github.check_run import check_suite_started_column, \
     pull_request_closed_column, pull_request_merged_column, pull_request_started_column
 from athenian.api.models.metadata.github import CheckRun
@@ -345,6 +347,16 @@ class RobustSuiteTimeCalculator(MetricCalculator[timedelta]):
     def _values(self) -> List[List[Metric[timedelta]]]:
         return self._metrics
 
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **_) -> np.ndarray:
+        raise AssertionError("this must be never called")
+
+    def _value(self, samples: np.ndarray) -> Metric[timedelta]:
+        raise AssertionError("this must be never called")
+
 
 @register_metric(CodeCheckMetricID.SUITES_PER_PR)
 class SuitesPerPRCounter(AverageMetricCalculator[float]):
@@ -556,3 +568,83 @@ class MergedPRsWithFailedChecksRatioCalculator(RatioCalculator):
     """Calculate the ratio of PRs merged with failing checks to all merged PRs with checks."""
 
     deps = (MergedPRsWithFailedChecksCounter, MergedPRsCounter)
+
+
+class ConcurrencyCalculator(MetricCalculator[float]):
+    """Calculate the concurrency value for each check run."""
+
+    dtype = float
+    has_nan = True
+    is_pure_dependency = True
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **_) -> np.ndarray:
+        repos = facts[CheckRun.repository_full_name.key].values.astype("S")
+        names = facts[CheckRun.name.key].values.astype("S")
+        crtypes = np.char.add(np.char.add(repos, b"|"), names)
+        del repos, names
+        started_ats = facts[CheckRun.started_at.key].values.astype(min_times.dtype, copy=False)
+        completed_ats = facts[CheckRun.completed_at.key].values.astype(min_times.dtype, copy=False)
+        have_completed = completed_ats == completed_ats
+        time_order = np.argsort(started_ats[have_completed])
+        crtypes = crtypes[have_completed][time_order]
+        time_order_started_ats = started_ats[have_completed][time_order]
+        time_order_completed_ats = completed_ats[have_completed][time_order]
+        _, crtypes_counts = np.unique(crtypes, return_counts=True)
+        crtypes_order = np.argsort(crtypes, kind="stable")
+        crtype_order_started_ats = time_order_started_ats[crtypes_order].astype("datetime64[s]")
+        crtype_order_completed_ats = time_order_completed_ats[crtypes_order].astype("datetime64[s]")  # noqa
+        intersections = calculate_interval_intersections(
+            crtype_order_started_ats.view(np.int64),
+            crtype_order_completed_ats.view(np.int64),
+            np.cumsum(crtypes_counts),
+        )
+        intersections = intersections[np.argsort(crtypes_order)][np.argsort(time_order)]
+        result = np.full((len(min_times), len(facts)), np.nan, dtype=float)
+        result[:, have_completed] = intersections
+        mask = (min_times[:, None] <= started_ats) & (started_ats < max_times[:, None])
+        result[~mask] = None
+        return result
+
+    def _value(self, samples: np.ndarray) -> Metric[float]:
+        raise AssertionError("disabled for pure dependencies")
+
+
+@register_metric(CodeCheckMetricID.CONCURRENCY)
+class AvgConcurrencyCalculator(AverageMetricCalculator[float]):
+    """Calculate the average concurrency of the check runs."""
+
+    may_have_negative_values = False
+    dtype = float
+    has_nan = True
+    deps = (ConcurrencyCalculator,)
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **_) -> np.ndarray:
+        return self._calcs[0].peek
+
+
+@register_metric(CodeCheckMetricID.CONCURRENCY_MAX)
+class MaxConcurrencyCalculator(MaxMetricCalculator[int]):
+    """Calculate the maximum concurrency of the check runs."""
+
+    may_have_negative_values = False
+    dtype = float
+    has_nan = True
+    deps = (ConcurrencyCalculator,)
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **_) -> np.ndarray:
+        return self._calcs[0].peek
+
+    def _agg(self, samples: np.ndarray) -> int:
+        return int(super()._agg(samples))

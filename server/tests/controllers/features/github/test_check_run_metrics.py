@@ -65,6 +65,8 @@ async def test_check_run_metrics_suite_counts(
     (CodeCheckMetricID.PRS_MERGED_WITH_FAILED_CHECKS_COUNT, 238),
     (CodeCheckMetricID.PRS_MERGED_WITH_FAILED_CHECKS_RATIO, 0.43933823529411764),
     (CodeCheckMetricID.ROBUST_SUITE_TIME, timedelta(0)),
+    (CodeCheckMetricID.CONCURRENCY, 1.0),
+    (CodeCheckMetricID.CONCURRENCY_MAX, 1),
 ])
 @with_defer
 async def test_check_run_metrics_blitz(metrics_calculator: MetricEntriesCalculator,

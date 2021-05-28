@@ -17,3 +17,5 @@ class CodeCheckMetricID(Model, metaclass=Enum):
     FLAKY_COMMIT_CHECKS_COUNT = "chk-flaky-commit-checks-count"
     PRS_MERGED_WITH_FAILED_CHECKS_COUNT = "chk-prs-merged-with-failed-checks-count"
     PRS_MERGED_WITH_FAILED_CHECKS_RATIO = "chk-prs-merged-with-failed-checks-ratio"
+    CONCURRENCY = "chk-concurrency"
+    CONCURRENCY_MAX = "chk-concurrency-max"

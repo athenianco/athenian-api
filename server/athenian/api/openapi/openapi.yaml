@@ -7642,6 +7642,8 @@ components:
         * `chk-flaky-commit-checks-count` - number of check suites triggered by the same commit but having different outcomes - both successful and failed.
         * `chk-prs-merged-with-failed-checks-count` - how many PRs were merged despite failing checks.
         * `chk-prs-merged-with-failed-checks-ratio` - ratio of PRs merged with failing checks to all merged PRs with checks.
+        * `chk-concurrency-max` - maximum number of check runs of the same type executing in parallel. We consider check runs executing in parallel if their time intervals overlap ≥ 50%.
+        * `chk-concurrency` - average number of check runs of the same type executing in parallel; we choose the check run type that corresponds to the maximum concurrency for each day. We consider check runs executing in parallel if their time intervals overlap ≥ 50%.
       enum:
       - chk-suites-count
       - chk-successful-suites-count
@@ -7656,6 +7658,8 @@ components:
       - chk-flaky-commit-checks-count
       - chk-prs-merged-with-failed-checks-count
       - chk-prs-merged-with-failed-checks-ratio
+      - chk-concurrency-max
+      - chk-concurrency
       example: chk-suites-count
       type: string
     CalculatedCodeCheckMetrics:
