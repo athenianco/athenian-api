@@ -589,20 +589,19 @@ class ConcurrencyCalculator(MetricCalculator[float]):
         started_ats = facts[CheckRun.started_at.key].values.astype(min_times.dtype, copy=False)
         completed_ats = facts[CheckRun.completed_at.key].values.astype(min_times.dtype, copy=False)
         have_completed = completed_ats == completed_ats
-        time_order = np.argsort(started_ats[have_completed])
-        crtypes = crtypes[have_completed][time_order]
-        time_order_started_ats = started_ats[have_completed][time_order]
-        time_order_completed_ats = completed_ats[have_completed][time_order]
+        crtypes = crtypes[have_completed]
+        time_order_started_ats = started_ats[have_completed]
+        time_order_completed_ats = completed_ats[have_completed]
         _, crtypes_counts = np.unique(crtypes, return_counts=True)
-        crtypes_order = np.argsort(crtypes, kind="stable")
+        crtypes_order = np.argsort(crtypes)
         crtype_order_started_ats = time_order_started_ats[crtypes_order].astype("datetime64[s]")
         crtype_order_completed_ats = time_order_completed_ats[crtypes_order].astype("datetime64[s]")  # noqa
         intersections = calculate_interval_intersections(
-            crtype_order_started_ats.view(np.int64),
-            crtype_order_completed_ats.view(np.int64),
+            crtype_order_started_ats.view(np.uint64),
+            crtype_order_completed_ats.view(np.uint64),
             np.cumsum(crtypes_counts),
         )
-        intersections = intersections[np.argsort(crtypes_order)][np.argsort(time_order)]
+        intersections = intersections[np.argsort(crtypes_order)]
         result = np.full((len(min_times), len(facts)), np.nan, dtype=float)
         result[:, have_completed] = intersections
         mask = (min_times[:, None] <= started_ats) & (started_ats < max_times[:, None])

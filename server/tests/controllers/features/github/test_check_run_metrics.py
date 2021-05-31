@@ -1,9 +1,12 @@
 from datetime import datetime, timedelta, timezone
 from typing import List
 
+import numpy as np
 import pytest
 
 from athenian.api.controllers.features.entries import MetricEntriesCalculator
+from athenian.api.controllers.features.github.check_run_metrics_accelerated import \
+    calculate_interval_intersections
 from athenian.api.controllers.miners.filters import JIRAFilter
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.web import CodeCheckMetricID
@@ -97,3 +100,66 @@ async def test_check_run_metrics_robust_quantiles(metrics_calculator: MetricEntr
         [0.8, 1], [["src-d/go-git"]], [], False, JIRAFilter.empty())
     assert metrics[0, 0, 0, 0][0][0].value == timedelta(seconds=2)
     assert metrics[0, 0, 0, 0][1][0].value == timedelta(seconds=2)
+
+
+def test_calculate_interval_intersections_smoke():
+    starts = np.array([
+        100,
+        200,
+        150,
+        175,
+        125,
+        50,
+        200,
+        300,
+        50,
+        0,
+        150,
+        175,
+        200,
+    ], dtype=np.uint64)
+    # 100 -> 200 ?
+
+    # 50 -> 150
+    # 150 -> 300
+    # 175 -> 225
+    # 125 -> 250
+
+    # 100..125: 2 * 25
+    # 125..150: 3 * 25
+    # 150..175: 3 * 25
+    # 175..200: 4 * 25
+
+    # (2 + 3 + 3 + 4) * 25 / 100 = 12 * 25 / 100 = 12 / 4 = 3
+    finishes = np.array([
+        200,
+        250,
+        300,
+        225,
+        250,
+        150,
+        300,
+        400,
+        250,
+        300,
+        350,
+        200,
+        450,
+    ], dtype=np.uint64)
+    borders = np.array([6, len(starts)])
+    result = calculate_interval_intersections(starts, finishes, borders)
+    assert result.tolist() == [
+        3.,  # <<< checked this
+        3.5,
+        2.6666666666666665,
+        4.,
+        3.4,
+        1.75,
+        4.5,
+        2.5,
+        3.125,
+        2.9166666666666665,
+        3.875,
+        4.,
+        3.,
+    ]
