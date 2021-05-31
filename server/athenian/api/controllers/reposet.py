@@ -242,10 +242,16 @@ async def _load_account_reposets(account: int,
                 .having(and_func(window_query.c.enabled))
             )
             repo_node_ids = await mdb_conn.fetch_all(query)
-            try:
-                repos = prefixer.resolve_repo_nodes(r[0] for r in repo_node_ids)
-            except KeyError as e:
-                log.warning("account_repos_log does not agree with api_repositories: %s", e)
+            repos = []
+            missing = []
+            for r in repo_node_ids:
+                try:
+                    repos.append(prefixer.repo_node_map[r[0]])
+                except KeyError:
+                    missing.append(r[0])
+            if missing:
+                log.error("account_repos_log does not agree with api_repositories: %s", missing)
+            if not repos:
                 raise_no_source_data()
             rs = RepositorySet(
                 name=RepositorySet.ALL, owner_id=account, items=repos,
