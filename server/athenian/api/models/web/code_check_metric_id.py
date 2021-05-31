@@ -19,3 +19,4 @@ class CodeCheckMetricID(Model, metaclass=Enum):
     PRS_MERGED_WITH_FAILED_CHECKS_RATIO = "chk-prs-merged-with-failed-checks-ratio"
     CONCURRENCY = "chk-concurrency"
     CONCURRENCY_MAX = "chk-concurrency-max"
+    ELAPSED_TIME_PER_CONCURRENCY = "chk-elapsed-time-per-concurrency"

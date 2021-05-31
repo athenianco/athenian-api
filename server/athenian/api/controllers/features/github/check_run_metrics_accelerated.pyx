@@ -24,7 +24,7 @@ def calculate_interval_intersections(starts: np.ndarray,
     starts -= time_offset
     finishes -= time_offset
     # there can be intervals of zero length, make them 1-second
-    finishes[starts == finishes] += 1
+    finishes[starts >= finishes] += 1
     group_lengths = np.diff(borders, prepend=0)
     max_intervals = group_lengths.max()
     series = np.arange(max_intervals, dtype=np.uint64)

@@ -1,5 +1,5 @@
 from datetime import timedelta
-from typing import Callable, Dict, List, Sequence, Tuple, Type
+from typing import Callable, Dict, List, Optional, Sequence, Tuple, Type
 import warnings
 
 import numpy as np
@@ -7,6 +7,7 @@ import pandas as pd
 
 from athenian.api.controllers.features.github.check_run_metrics_accelerated import \
     calculate_interval_intersections
+from athenian.api.controllers.features.histogram import calculate_histogram, Histogram, Scale
 from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
     BinnedHistogramCalculator, BinnedMetricCalculator, HistogramCalculatorEnsemble, \
@@ -647,3 +648,64 @@ class MaxConcurrencyCalculator(MaxMetricCalculator[int]):
 
     def _agg(self, samples: np.ndarray) -> int:
         return int(super()._agg(samples))
+
+
+@register_metric(CodeCheckMetricID.ELAPSED_TIME_PER_CONCURRENCY)
+class ElapsedTimePerConcurrencyCalculator(MetricCalculator[object]):
+    """Calculate the cumulative time spent on each concurrency level."""
+
+    dtype = np.dtype([("concurrency", float), ("duration", "timedelta64[s]")])
+    has_nan = True
+    deps = (ConcurrencyCalculator,)
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **_) -> np.ndarray:
+        result = np.zeros_like(self._calcs[0].peek, dtype=self.dtype)
+        result["concurrency"] = self._calcs[0].peek
+        result["duration"] = facts[CheckRun.completed_at.key].astype(min_times.dtype) - \
+            facts[CheckRun.started_at.key].astype(min_times.dtype)
+        result["duration"][result["concurrency"] != result["concurrency"]] = None
+        return result
+
+    def _value(self, samples: np.ndarray) -> Metric[object]:
+        return Metric(False, None, None, None)
+
+    def histogram(self,
+                  scale: Optional[Scale],
+                  bins: Optional[int],
+                  ticks: Optional[list],
+                  ) -> List[List[Histogram[timedelta]]]:
+        """
+        Sum elapsed time over the concurrency levels.
+
+        This is technically not a histogram, but the output format is exactly the same.
+        """
+        histograms = []
+        for group_samples in self.samples:
+            cut_values = self._calc_quantile_cut_values(np.concatenate(group_samples)["duration"])
+            histograms.append(group_histograms := [])
+            for samples in group_samples:
+                samples = self._cut_by_quantiles(samples, cut_values, field="duration")
+                concurrency_histogram = calculate_histogram(
+                    samples["concurrency"], scale, bins, ticks)
+                concurrency_levels = np.asarray(concurrency_histogram.ticks)
+                concurrency_levels[-1] = np.ceil(concurrency_levels[-1])
+                concurrency_levels[:-1] = np.floor(concurrency_levels[:-1])
+                concurrency_levels = np.unique(concurrency_levels.astype(int))
+                concurrency_map = np.digitize(samples["concurrency"], concurrency_levels) - 1
+                elapsed_times = np.sum(
+                    np.broadcast_to(samples["duration"][None, :],
+                                    (len(concurrency_levels) - 1, len(samples))),
+                    axis=1,
+                    where=concurrency_map == np.arange(len(concurrency_levels) - 1)[:, None])
+                group_histograms.append(Histogram(
+                    scale=concurrency_histogram.scale,
+                    bins=len(concurrency_levels) - 1,
+                    ticks=concurrency_levels.tolist(),
+                    frequencies=elapsed_times.tolist(),
+                    interquartile=concurrency_histogram.interquartile,
+                ))
+        return histograms
