@@ -3793,6 +3793,7 @@ components:
             - format: float
               type: number
             - $ref: '#/components/schemas/TimeDuration'
+            - type: object
           type: array
         confidence_mins:
           description: Confidence interval @ p=0.8, minimum. The same order as `metrics`.
@@ -3806,6 +3807,7 @@ components:
             - format: float
               type: number
             - $ref: '#/components/schemas/TimeDuration'
+            - nullable: true
           type: array
         confidence_maxs:
           description: Confidence interval @ p=0.8, maximum. The same order as `metrics`.
@@ -3819,12 +3821,17 @@ components:
             - format: float
               type: number
             - $ref: '#/components/schemas/TimeDuration'
+            - nullable: true
           type: array
         confidence_scores:
-          description: Confidence score from 0 (no idea) to 100 (very confident).
-            The same order as `metrics`.
+          description: Confidence score from 0 (random guess) to 100 (very confident).
+            The same order as `metrics`. May be `null` for exact metrics.
           items:
-            type: integer
+# {% if False %}
+            allOf:
+# {% else %}{{ "\n" }}            oneOf:{% endif %}
+            - type: integer
+            - nullable: true
           type: array
       required:
       - date
@@ -5873,8 +5880,13 @@ components:
         frequencies:
           description: Series of histogram bar heights aka Y axis.
           items:
-            minimum: 0
-            type: integer
+# {% if False %}
+            allOf:
+# {% else %}{{ "\n" }}            oneOf:{% endif %}
+            - minimum: 0
+              type: integer
+            - type: number
+            - $ref: '#/components/schemas/TimeDuration'
           type: array
         interquartile:
           $ref: '#/components/schemas/Interquartile'
@@ -7644,6 +7656,7 @@ components:
         * `chk-prs-merged-with-failed-checks-ratio` - ratio of PRs merged with failing checks to all merged PRs with checks.
         * `chk-concurrency-max` - maximum number of check runs of the same type executing in parallel. We consider check runs executing in parallel if their time intervals overlap ≥ 50%.
         * `chk-concurrency` - average number of check runs of the same type executing in parallel; we choose the check run type that corresponds to the maximum concurrency for each day. We consider check runs executing in parallel if their time intervals overlap ≥ 50%.
+        * `chk-elapsed-time-per-concurrency` - cumulative time spent on each concurrency level across check runs. Only allowed for histograms.
       enum:
       - chk-suites-count
       - chk-successful-suites-count
@@ -7660,6 +7673,7 @@ components:
       - chk-prs-merged-with-failed-checks-ratio
       - chk-concurrency-max
       - chk-concurrency
+      - chk-elapsed-time-per-concurrency
       example: chk-suites-count
       type: string
     CalculatedCodeCheckMetrics:

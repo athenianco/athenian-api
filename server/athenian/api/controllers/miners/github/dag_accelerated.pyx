@@ -3,11 +3,9 @@
 # distutils: language = c++
 
 cimport cython
-from cython.operator cimport dereference
 from libc.stdint cimport uint32_t, int64_t, uint64_t
 from libc.string cimport memset
 from libcpp.vector cimport vector
-from libcpp.unordered_map cimport pair, unordered_map
 import numpy as np
 from typing import Any, List, Tuple
 

@@ -446,3 +446,31 @@ async def test_calc_histogram_code_checks_split(client, headers):
          "for": {"repositories": ["github.com/src-d/go-git"]}, "check_runs": 6,
          "suites_ratio": 0.010250569476082005},
     ]
+
+
+async def test_calc_histogram_code_checks_elapsed_time_per_concurrency(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "histograms": [{
+            "metric": CodeCheckMetricID.ELAPSED_TIME_PER_CONCURRENCY,
+        }],
+        "for": [{
+            "repositories": ["github.com/src-d/go-git"],
+        }],
+    }
+    response = await client.request(
+        method="POST", path="/v1/histograms/code_checks", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + rbody
+    rbody = FriendlyJson.loads(rbody)
+    assert rbody == [{
+        "metric": "chk-elapsed-time-per-concurrency",
+        "scale": "linear",
+        "ticks": [0, 2],
+        "frequencies": ["223s"],
+        "interquartile": {"left": 1.0, "right": 1.0},
+        "for": {"repositories": ["github.com/src-d/go-git"]},
+    }]

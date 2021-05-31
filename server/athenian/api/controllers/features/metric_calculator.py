@@ -122,9 +122,10 @@ class MetricCalculator(Generic[T], ABC):
         else:
             gpeek = [peek[:, g] for g in groups]
             gnotnull = [notnull[:, g] for g in groups]
-            self._samples = [[p[nn].astype(self.dtype)
-                              for p, nn in zip(gp, gnn)]
-                             for gp, gnn in zip(gpeek, gnotnull)]
+            self._samples = np.full(len(groups) * len(peek), None, object)
+            self._samples[:] = [[p[nn].astype(self.dtype)
+                                 for p, nn in zip(gp, gnn)]
+                                for gp, gnn in zip(gpeek, gnotnull)]
 
     @property
     def values(self) -> List[List[Metric[T]]]:
@@ -143,13 +144,13 @@ class MetricCalculator(Generic[T], ABC):
         return self._peek
 
     @property
-    def samples(self) -> List[List[np.ndarray]]:
+    def samples(self) -> np.ndarray:
         """Return the last calculated samples, without None-s: groups x time intervals x facts."""
         return self._samples
 
     def reset(self) -> None:
         """Clear the current state of the calculator."""
-        self._samples = []  # type: List[List[np.ndarray]]
+        self._samples = np.empty((0, 0), dtype=object)
         self._peek = np.empty((0, 0), dtype=object)
         self._last_values = None
 
@@ -194,14 +195,17 @@ class MetricCalculator(Generic[T], ABC):
     def _cut_by_quantiles(self,
                           samples: np.ndarray,
                           cut_values: Optional[np.ndarray],
+                          field: Optional[str] = None,
                           ) -> np.ndarray:
         """Cut from the left and the right of the distribution by quantile cut values."""
         if len(samples) == 0 or cut_values is None:
             return samples
+        column = samples if field is None else samples[field]
         if self._quantiles[0] != 0:
-            samples = np.delete(samples, np.nonzero(samples < cut_values[0])[0])
+            samples = np.delete(samples, np.nonzero(column < cut_values[0])[0])
+        column = samples if field is None else samples[field]
         if self._quantiles[1] != 1:
-            samples = np.delete(samples, np.nonzero(samples > cut_values[1])[0])
+            samples = np.delete(samples, np.nonzero(column > cut_values[1])[0])
         return samples
 
 
@@ -380,7 +384,7 @@ class MetricCalculatorEnsemble:
                  facts: pd.DataFrame,
                  min_times: np.ndarray,
                  max_times: np.ndarray,
-                 groups: Optional[Sequence[Sequence[int]]],
+                 groups: Sequence[Sequence[int]],
                  **kwargs) -> None:
         """Invoke all the owned metric calculators on the same input."""
         groups_mask = np.zeros((len(groups), len(facts)), dtype=bool)

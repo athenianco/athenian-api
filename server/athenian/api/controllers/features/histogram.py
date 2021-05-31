@@ -1,6 +1,6 @@
 from datetime import timedelta
 from enum import IntEnum
-from typing import Generic, List, Optional, Tuple, TypeVar
+from typing import Any, Generic, List, Optional, Tuple, TypeVar
 
 import numpy as np
 
@@ -24,7 +24,7 @@ class Histogram(Generic[T]):
     scale: Scale
     bins: int
     ticks: List[T]
-    frequencies: List[int]
+    frequencies: List[Any]
     interquartile: Tuple[T, T]
 
 
