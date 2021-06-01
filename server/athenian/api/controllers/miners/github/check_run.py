@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from itertools import chain
 import logging
 import pickle
 from typing import Collection, Optional, Tuple
@@ -6,16 +7,16 @@ from typing import Collection, Optional, Tuple
 import aiomcache
 import numpy as np
 import pandas as pd
-from sqlalchemy import and_, func, select, union_all
+from sqlalchemy import and_, exists, func, select, union_all
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached
-from athenian.api.controllers.miners.filters import JIRAFilter
+from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
 from athenian.api.models.metadata.github import CheckRun, NodePullRequest, NodePullRequestCommit, \
-    NodeRepository
+    NodeRepository, PullRequestLabel
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import DatabaseLike
 
@@ -31,11 +32,12 @@ pull_request_merged_column = "pull_request_" + NodePullRequest.merged.key
     exptime=PullRequestMiner.CACHE_TTL,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda time_from, time_to, repositories, pushers, jira, **_:  # noqa
+    key=lambda time_from, time_to, repositories, pushers, labels, jira, **_:  # noqa
     (
         time_from.timestamp(), time_to.timestamp(),
         ",".join(sorted(repositories)),
         ",".join(sorted(pushers)),
+        labels,
         jira,
     ),
 )
@@ -43,6 +45,7 @@ async def mine_check_runs(time_from: datetime,
                           time_to: datetime,
                           repositories: Collection[str],
                           pushers: Collection[str],
+                          labels: LabelFilter,
                           jira: JIRAFilter,
                           meta_ids: Tuple[int, ...],
                           mdb: DatabaseLike,
@@ -61,6 +64,7 @@ async def mine_check_runs(time_from: datetime,
     :param time_to: Check runs must start earlier than this time.
     :param repositories: Look for check runs in these repository names.
     :param pushers: Check runs must link to the commits with the given pusher logins.
+    :param labels: Check runs must link to PRs marked with these labels.
     :param jira: Check runs must link to PRs satisfying this JIRA filter.
     :return: Pandas DataFrame with columns mapped from CheckRun model.
     """
@@ -76,6 +80,19 @@ async def mine_check_runs(time_from: datetime,
     ]
     if pushers:
         filters.append(CheckRun.author_login.in_(pushers))
+    if labels:
+        singles, multiples = LabelFilter.split(labels.include)
+        embedded_labels_query = not multiples and not labels.exclude
+        if not labels.exclude:
+            all_in_labels = set(singles + list(chain.from_iterable(multiples)))
+            filters.append(
+                exists().where(and_(
+                    PullRequestLabel.acc_id == CheckRun.acc_id,
+                    PullRequestLabel.pull_request_node_id == CheckRun.pull_request_node_id,
+                    func.lower(PullRequestLabel.name).in_(all_in_labels),
+                )))
+        else:
+            filters.append(CheckRun.pull_request_node_id.isnot(None))
     if not jira:
         query = select([CheckRun]).where(and_(*filters))
     else:
@@ -84,22 +101,44 @@ async def mine_check_runs(time_from: datetime,
             on=(CheckRun.pull_request_node_id, CheckRun.acc_id))
     df = await read_sql_query(query, mdb, columns=CheckRun)
 
+    pr_node_ids = df[CheckRun.pull_request_node_id.key].unique()
+
     # load check runs mapped to the mentioned PRs even if they are outside of the date range
     def filters():
         return [
             CheckRun.acc_id.in_(meta_ids),
-            CheckRun.pull_request_node_id.in_(df[CheckRun.pull_request_node_id.key].unique()),
+            CheckRun.pull_request_node_id.in_(pr_node_ids),
         ]
 
     query_before = select([CheckRun]).where(and_(*filters(), CheckRun.started_at < time_from))
     query_after = select([CheckRun]).where(and_(*filters(), CheckRun.started_at >= time_to))
-    extra_df = await read_sql_query(union_all(query_before, query_after), mdb, columns=CheckRun)
+    tasks = [
+        read_sql_query(union_all(query_before, query_after), mdb, columns=CheckRun),
+    ]
+    if labels and not embedded_labels_query:
+        tasks.append(read_sql_query(
+            select([PullRequestLabel.pull_request_node_id,
+                    func.lower(PullRequestLabel.name).label(PullRequestLabel.name.key)])
+            .where(and_(PullRequestLabel.pull_request_node_id.in_(pr_node_ids),
+                        PullRequestLabel.acc_id.in_(meta_ids))),
+            mdb, [PullRequestLabel.pull_request_node_id, PullRequestLabel.name],
+            index=PullRequestLabel.pull_request_node_id.key))
+    extra_df, *df_labels = await gather(*tasks)
     df = df.append(extra_df, ignore_index=True)
     del extra_df
 
-    check_run_node_ids = df[CheckRun.check_run_node_id.key].values.astype("S")
     pr_node_ids = df[CheckRun.pull_request_node_id.key].values.astype("U")
+    if labels and not embedded_labels_query:
+        df_labels = df_labels[0]
+        prs_left = PullRequestMiner.find_left_by_labels(
+            df_labels.index, df_labels[PullRequestLabel.name.key].values, labels)
+        indexes_left = np.nonzero(np.in1d(pr_node_ids, prs_left.values.astype("U")))[0]
+        if len(indexes_left) < len(df):
+            pr_node_ids = pr_node_ids[indexes_left]
+            df = df.take(indexes_left)
+            df.reset_index(drop=True, inplace=True)
 
+    check_run_node_ids = df[CheckRun.check_run_node_id.key].values.astype("S")
     unique_node_ids, node_id_counts = np.unique(check_run_node_ids, return_counts=True)
     assert (unique_node_ids != b"None").all()
     ambiguous_unique_check_run_indexes = np.nonzero(node_id_counts > 1)[0]

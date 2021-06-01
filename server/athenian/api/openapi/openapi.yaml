@@ -8,7 +8,7 @@ info:
   license:
     name: CC-BY-4.0
   title: '{{ title }}'
-  version: 1.4.0
+  version: 1.5.0
 servers:
 - description: '{{ server_description }} - {{ server_url }}'
   url: '{{ server_url }}/v1'
@@ -7624,7 +7624,7 @@ components:
       type: object
     ForSetCodeChecks:
       additionalProperties: false
-      description: Filter for `/metrics/code_checks`.
+      description: Filters for `/metrics/code_checks` and `/histograms/code_checks`.
       example:
         repositories:
         - github.com/athenianco/athenian-webapp
@@ -7651,6 +7651,16 @@ components:
             items:
               $ref: '#/components/schemas/DeveloperID'
             type: array
+          type: array
+        labels_include:
+          description: At least one of these labels must be present in the checked PRs.
+          items:
+            type: string
+          type: array
+        labels_exclude:
+          description: None of these labels must be present in each checked PR.
+          items:
+            type: string
           type: array
         jira:
           allOf:
@@ -7994,6 +8004,16 @@ components:
           $ref: '#/components/schemas/RepositorySet'
         triggered_by:
           $ref: '#/components/schemas/CommitPushers'
+        labels_include:
+          description: At least one of these labels must be present in the checked PRs.
+          items:
+            type: string
+          type: array
+        labels_exclude:
+          description: None of these labels must be present in each checked PR.
+          items:
+            type: string
+          type: array
         jira:
           allOf:
           - description: Analyze only those check runs that belong to PRs mapped to

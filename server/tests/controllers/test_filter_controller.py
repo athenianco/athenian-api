@@ -1987,21 +1987,26 @@ async def test_filter_check_runs_smoke(client, headers):
     assert nn_successes_timeline > 0
 
 
-async def test_filter_check_runs_triggered_by(client, headers):
+@pytest.mark.parametrize("filters, count", [
+    ({"labels_include": ["bug", "plumbing", "enhancement"]}, 4),
+    ({"triggered_by": ["github.com/mcuadros"]}, 7),
+    ({"jira": {"labels_include": ["bug", "onboarding", "performance"]}}, 5),
+])
+async def test_filter_check_runs_filters(client, headers, filters, count):
     body = {
         "account": 1,
         "date_from": "2018-01-12",
         "date_to": "2020-01-12",
         "timezone": 60,
         "in": ["{1}"],
-        "triggered_by": ["github.com/mcuadros"],
+        **filters,
     }
     response = await client.request(
         method="POST", path="/v1/filter/code_checks", headers=headers, json=body)
     response_text = (await response.read()).decode("utf-8")
     assert response.status == 200, response_text
     check_runs = FilteredCodeCheckRuns.from_dict(json.loads(response_text))
-    assert len(check_runs.items) == 7
+    assert len(check_runs.items) == count
 
 
 @pytest.mark.parametrize("account, date_to, repo, quantiles, status", [

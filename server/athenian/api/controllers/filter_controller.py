@@ -626,6 +626,7 @@ async def filter_code_checks(request: AthenianWebRequest, body: dict) -> web.Res
     )
     timeline, check_runs = await filter_check_runs(
         time_from, time_to, repos, {d.rsplit("/", 1)[1] for d in (filt.triggered_by or [])},
+        LabelFilter.from_iterables(filt.labels_include, filt.labels_exclude),
         JIRAFilter.from_web(filt.jira, jira_ids), filt.quantiles or [0, 1],
         meta_ids, request.mdb, request.cache)
     prefixer = await prefixer.load()

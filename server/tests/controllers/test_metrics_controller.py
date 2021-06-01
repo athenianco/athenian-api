@@ -1713,6 +1713,62 @@ async def test_code_check_metrics_jira(client, headers):
     }
 
 
+async def test_code_check_metrics_labels(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "for": [{
+            "repositories": ["github.com/src-d/go-git"],
+            "labels_include": ["bug", "plumbing", "enhancement"],
+        }, {
+            "repositories": ["github.com/src-d/go-git"],
+            "labels_include": ["bug", "plumbing", "enhancement"],
+            "labels_exclude": ["xxx"],
+        }, {
+            "repositories": ["github.com/src-d/go-git"],
+            "labels_exclude": ["bug"],
+        }],
+        "metrics": [CodeCheckMetricID.SUITES_COUNT],
+        "granularities": ["all"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/code_checks", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 200, rbody
+    rbody = json.loads(rbody)
+    model = CalculatedCodeCheckMetrics.from_dict(rbody)
+    md = model.to_dict()
+    md["calculated"].sort(key=lambda x: (x["for"].get("labels_include", []),
+                                         x["for"].get("labels_exclude", [])))
+    assert md == {
+        "calculated": [{"for": {"labels_exclude": ["bug"],
+                                "repositories": ["github.com/src-d/go-git"]},
+                        "granularity": "all",
+                        "values": [{"date": date(2018, 1, 12),
+                                    "values": [42]}]},
+                       {"for": {"labels_include": ["bug", "plumbing", "enhancement"],
+                                "repositories": ["github.com/src-d/go-git"]},
+                        "granularity": "all",
+                        "values": [{"date": date(2018, 1, 12),
+                                    "values": [21]}]},
+                       {"for": {"labels_include": ["bug", "plumbing", "enhancement"],
+                                "labels_exclude": ["xxx"],
+                                "repositories": ["github.com/src-d/go-git"]},
+                        "granularity": "all",
+                        "values": [{"date": date(2018, 1, 12),
+                                    "values": [21]}]},
+                       ],
+        "date_from": date(2018, 1, 12),
+        "date_to": date(2020, 3, 1),
+        "granularities": ["all"],
+        "metrics": ["chk-suites-count"],
+        "split_by_check_runs": None,
+        "timezone": None,
+    }
+
+
 async def test_code_check_metrics_split_by_check_runs(client, headers):
     body = {
         "account": 1,

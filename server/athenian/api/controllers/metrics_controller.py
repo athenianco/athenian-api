@@ -43,8 +43,8 @@ FilterDevs = Tuple[str, Tuple[List[Set[str]], List[str], ForSetDevelopers]]
 #                              repositories                  originals
 
 #                  service                      pusher groups
-FilterChecks = Tuple[str, Tuple[List[Set[str]], List[List[str]], JIRAFilter, ForSetCodeChecks]]
-#                               repositories                                     originals
+FilterChecks = Tuple[str, Tuple[List[Set[str]], List[List[str]], LabelFilter, JIRAFilter, ForSetCodeChecks]]  # noqa
+#                               repositories                                                  originals       # noqa
 
 
 @weight(10)
@@ -265,8 +265,9 @@ async def compile_filters_checks(for_sets: List[ForSetCodeChecks],
                         i, "commit_author_groups"
                         if i < len(for_set.pusher_groups or []) else "pushers")):
                     commit_author_groups.append(sorted(ca_group))
+            labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
             jira = await _compile_jira(for_set, account, request)
-            filters.append((service, (repogroups, commit_author_groups, jira, for_set)))
+            filters.append((service, (repogroups, commit_author_groups, labels, jira, for_set)))
     return filters
 
 
@@ -579,12 +580,12 @@ async def calc_metrics_code_checks(request: AthenianWebRequest, body: dict) -> w
         {s for s, _ in filters}, filt.account, meta_ids, request)
 
     @sentry_span
-    async def calculate_for_set_metrics(service, repos, pusher_groups, jira, for_set):
+    async def calculate_for_set_metrics(service, repos, pusher_groups, labels, jira, for_set):
         calculator = calculators[service]
         metric_values, group_suite_counts, suite_sizes = \
             await calculator.calc_check_run_metrics_line_github(
                 filt.metrics, time_intervals, filt.quantiles or (0, 1),
-                repos, pusher_groups, filt.split_by_check_runs, jira)
+                repos, pusher_groups, filt.split_by_check_runs, labels, jira)
         mrange = range(len(met.metrics))
         for pushers_group_index, pushers_group in enumerate(metric_values):
             for repos_group_index, repos_group in enumerate(pushers_group):
@@ -622,7 +623,7 @@ async def calc_metrics_code_checks(request: AthenianWebRequest, body: dict) -> w
                         met.calculated.append(cm)
 
     await gather(*(
-        calculate_for_set_metrics(service, repos, ca_groups, jira, for_set)
-        for service, (repos, ca_groups, jira, for_set) in filters
+        calculate_for_set_metrics(service, repos, ca_groups, labels, jira, for_set)
+        for service, (repos, ca_groups, labels, jira, for_set) in filters
     ))
     return model_response(met)

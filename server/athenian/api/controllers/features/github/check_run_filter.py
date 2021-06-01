@@ -9,7 +9,7 @@ import numpy as np
 from numpy.lib.nanfunctions import _remove_nan_1d
 
 from athenian.api.cache import cached
-from athenian.api.controllers.miners.filters import JIRAFilter
+from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.check_run import mine_check_runs
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.types import CodeCheckRunListItem, CodeCheckRunListStats
@@ -23,11 +23,12 @@ from athenian.api.typing_utils import DatabaseLike
     exptime=PullRequestMiner.CACHE_TTL,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda time_from, time_to, repositories, pushers, jira, quantiles, **_:  # noqa
+    key=lambda time_from, time_to, repositories, pushers, labels, jira, quantiles, **_:
     (
         time_from.timestamp(), time_to.timestamp(),
         ",".join(sorted(repositories)),
         ",".join(sorted(pushers)),
+        labels,
         jira,
         "%s,%s" % tuple(quantiles),
     ),
@@ -36,6 +37,7 @@ async def filter_check_runs(time_from: datetime,
                             time_to: datetime,
                             repositories: Collection[str],
                             pushers: Collection[str],
+                            labels: LabelFilter,
                             jira: JIRAFilter,
                             quantiles: Sequence[float],
                             meta_ids: Tuple[int, ...],
@@ -49,6 +51,7 @@ async def filter_check_runs(time_from: datetime,
     :param time_to: Check runs must launch ending with this time.
     :param repositories: Check runs must belong to these repositories.
     :param pushers: Check runs must be triggered by these developers.
+    :param labels: PR -> label filters. This effectively makes "total" and "prs" stats the same.
     :param jira: PR -> JIRA filters. This effectively makes "total" and "prs" stats the same.
     :param quantiles: Quantiles apply to the execution time distribution before calculating \
                       the means.
@@ -59,7 +62,7 @@ async def filter_check_runs(time_from: datetime,
              2. list of the mined check run type's information and statistics.
     """
     df_check_runs = await mine_check_runs(
-        time_from, time_to, repositories, pushers, jira, meta_ids, mdb, cache)
+        time_from, time_to, repositories, pushers, labels, jira, meta_ids, mdb, cache)
     timeline = _build_timeline(time_from, time_to)
     timeline_dates = [d.date() for d in timeline.tolist()]
     if df_check_runs.empty:

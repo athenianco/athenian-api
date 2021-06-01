@@ -361,6 +361,49 @@ async def test_calc_histogram_code_checks_smoke(client, headers):
     }]
 
 
+async def test_calc_histogram_code_checks_labels_jira(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "histograms": [{
+            "metric": CodeCheckMetricID.SUITES_PER_PR,
+            "ticks": [0, 1, 2, 3, 4, 5, 10, 50],
+        }],
+        "for": [{
+            "repositories": ["github.com/src-d/go-git"],
+            "labels_include": ["bug", "plumbing", "enhancement"],
+        }, {
+            "repositories": ["github.com/src-d/go-git"],
+            "jira": {
+                "labels_include": ["bug", "onboarding", "performance"],
+            },
+        }],
+    }
+    response = await client.request(
+        method="POST", path="/v1/histograms/code_checks", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + rbody
+    rbody = FriendlyJson.loads(rbody)
+    rbody.sort(key=lambda x: x["for"].get("labels_include", []))
+    assert rbody == [{
+        "metric": "chk-suites-per-pr", "scale": "linear",
+        "ticks": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 50.0],
+        "frequencies": [0, 12, 3, 3, 0, 2, 0],
+        "interquartile": {"left": 1.0, "right": 2.25},
+        "for": {"repositories": ["github.com/src-d/go-git"],
+                "jira": {"labels_include": ["bug", "onboarding", "performance"]}},
+    }, {
+        "metric": "chk-suites-per-pr", "scale": "linear",
+        "ticks": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 50.0],
+        "frequencies": [0, 4, 4, 1, 0, 1, 0],
+        "interquartile": {"left": 1.0, "right": 2.0},
+        "for": {"repositories": ["github.com/src-d/go-git"],
+                "labels_include": ["bug", "plumbing", "enhancement"]},
+    }]
+
+
 @pytest.mark.parametrize("metric, account, repo, status", [
     ("xxx", 1, _gg, 400),
     (CodeCheckMetricID.SUITES_COUNT, 1, _gg, 400),

@@ -362,13 +362,14 @@ class MetricEntriesCalculator:
         exptime=PullRequestMiner.CACHE_TTL,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda metrics, time_intervals, quantiles, repositories, pushers, jira, **_:
+        key=lambda metrics, time_intervals, quantiles, repositories, pushers, labels, jira, **_:
         (
             ",".join(sorted(metrics)),
             ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
             ",".join(str(q) for q in quantiles),
             ",".join(str(sorted(r)) for r in repositories),
             ";".join(",".join(g) for g in pushers),
+            labels,
             jira,
         ),
         cache=lambda self, **_: self._cache,
@@ -380,6 +381,7 @@ class MetricEntriesCalculator:
                                                  repositories: Sequence[Collection[str]],
                                                  pushers: List[List[str]],
                                                  split_by_check_runs: bool,
+                                                 labels: LabelFilter,
                                                  jira: JIRAFilter,
                                                  ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
@@ -393,7 +395,7 @@ class MetricEntriesCalculator:
         df_check_runs, groups, group_suite_counts, suite_sizes = \
             await self._mine_and_group_check_runs(
                 time_intervals[0][0], time_intervals[0][-1], repositories, pushers,
-                split_by_check_runs, jira)
+                split_by_check_runs, labels, jira)
         values = calc(df_check_runs, time_intervals, groups)
         return values, group_suite_counts, suite_sizes
 
@@ -402,13 +404,14 @@ class MetricEntriesCalculator:
         exptime=PullRequestMiner.CACHE_TTL,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda defs, date_from, date_to, quantiles, repositories, pushers, jira, **_:  # noqa
+        key=lambda defs, date_from, date_to, quantiles, repositories, pushers, labels, jira, **_:
         (
             ",".join("%s:%s" % (k, sorted(v)) for k, v in sorted(defs.items())),
             date_from.timestamp(), date_to.timestamp(),
             ",".join(str(q) for q in quantiles),
             ",".join(str(sorted(r)) for r in repositories),
             ";".join(",".join(g) for g in pushers),
+            labels,
             jira,
         ),
         cache=lambda self, **_: self._cache,
@@ -421,6 +424,7 @@ class MetricEntriesCalculator:
                                                     repositories: Sequence[Collection[str]],
                                                     pushers: List[List[str]],
                                                     split_by_check_runs: bool,
+                                                    labels: LabelFilter,
                                                     jira: JIRAFilter,
                                                     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
@@ -436,7 +440,7 @@ class MetricEntriesCalculator:
             raise ValueError("Unsupported metric") from e
         df_check_runs, groups, group_suite_counts, suite_sizes = \
             await self._mine_and_group_check_runs(
-                time_from, time_to, repositories, pushers, split_by_check_runs, jira)
+                time_from, time_to, repositories, pushers, split_by_check_runs, labels, jira)
         hists = calc(df_check_runs, [[time_from, time_to]], groups, defs)
         reshaped = np.full(hists.shape[:-1], None, object)
         reshaped_seq = reshaped.ravel()
@@ -455,6 +459,7 @@ class MetricEntriesCalculator:
                                          repositories: Sequence[Collection[str]],
                                          pushers: List[List[str]],
                                          split_by_check_runs: bool,
+                                         labels: LabelFilter,
                                          jira: JIRAFilter,
                                          ) -> Tuple[pd.DataFrame,
                                                     np.ndarray,   # groups
@@ -463,7 +468,7 @@ class MetricEntriesCalculator:
         all_repositories = set(chain.from_iterable(repositories))
         all_pushers = set(chain.from_iterable(pushers))
         df_check_runs = await mine_check_runs(
-            time_from, time_to, all_repositories, all_pushers, jira,
+            time_from, time_to, all_repositories, all_pushers, labels, jira,
             self._meta_ids, self._mdb, self._cache)
         repo_grouper = partial(group_by_repo, CheckRun.repository_full_name.key, repositories)
         commit_author_grouper = partial(group_check_runs_by_pushers, pushers)
