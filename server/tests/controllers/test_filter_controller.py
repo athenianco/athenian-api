@@ -351,8 +351,8 @@ def filter_prs_single_cache():
 @pytest.mark.parametrize("stage", sorted(PullRequestStage))
 @with_only_master_branch
 async def test_filter_prs_single_stage(
-        # do not remove "mdb", it is required by the decorators
-        client, headers, mdb, stage, app, filter_prs_single_cache):
+        # do not remove "mdb_rw", it is required by the decorators
+        client, headers, mdb_rw, stage, app, filter_prs_single_cache):
     app.app[CACHE_VAR_NAME] = filter_prs_single_cache
     body = {
         "date_from": "2015-10-13",
@@ -372,8 +372,8 @@ async def test_filter_prs_single_stage(
 @pytest.mark.parametrize("event", sorted(PullRequestEvent))
 @with_only_master_branch
 async def test_filter_prs_single_event(
-        # do not remove "mdb", it is required by the decorators
-        client, headers, mdb, event, app, filter_prs_single_cache):
+        # do not remove "mdb_rw", it is required by the decorators
+        client, headers, mdb_rw, event, app, filter_prs_single_cache):
     app.app[CACHE_VAR_NAME] = filter_prs_single_cache
     body = {
         "date_from": "2015-10-13",
@@ -391,7 +391,7 @@ async def test_filter_prs_single_event(
 
 @pytest.mark.filter_pull_requests
 @with_only_master_branch
-async def test_filter_prs_no_stages(client, headers, mdb):
+async def test_filter_prs_no_stages(client, headers, mdb_rw):
     body = {
         "date_from": "2015-10-13",
         "date_to": "2020-04-23",
@@ -419,7 +419,7 @@ async def test_filter_prs_no_stages(client, headers, mdb):
 
 @pytest.mark.filter_pull_requests
 @with_only_master_branch
-async def test_filter_prs_shot_updated(client, headers, mdb):
+async def test_filter_prs_shot_updated(client, headers, mdb_rw):
     body = {
         "date_from": "2016-10-13",
         "date_to": "2018-01-23",

@@ -1,5 +1,3 @@
-from random import random
-
 import pytest
 from sqlalchemy import delete, insert, select, update
 
@@ -42,8 +40,8 @@ async def test_extract_branches_cache(mdb, cache, branch_miner):
             ["src-d/go-git", "src-d/gitbase"], (6366825,), None, cache)
 
 
-@pytest.mark.flaky(reruns=5, reruns_delay=0.1 + random())
-async def test_extract_branches_main(mdb, branch_miner, with_preloading_enabled):
+async def test_extract_branches_main(mdb_rw, branch_miner, with_preloading_enabled):
+    mdb = mdb_rw
     await mdb.execute(update(Branch).where(Branch.branch_name == "master").values({
         Branch.is_default: False,
         Branch.branch_name: "main",
@@ -60,8 +58,8 @@ async def test_extract_branches_main(mdb, branch_miner, with_preloading_enabled)
         }))
 
 
-@pytest.mark.flaky(reruns=5, reruns_delay=0.1 + random())
-async def test_extract_branches_max_date(mdb, branch_miner, with_preloading_enabled):
+async def test_extract_branches_max_date(mdb_rw, branch_miner, with_preloading_enabled):
+    mdb = mdb_rw
     await mdb.execute(update(Branch).where(Branch.branch_name == "master").values({
         Branch.is_default: False,
         Branch.branch_name: "whatever_it_takes",
@@ -78,8 +76,8 @@ async def test_extract_branches_max_date(mdb, branch_miner, with_preloading_enab
         }))
 
 
-@pytest.mark.flaky(reruns=5, reruns_delay=0.1 + random())
-async def test_extract_branches_only_one(mdb, branch_miner, with_preloading_enabled):
+async def test_extract_branches_only_one(mdb_rw, branch_miner, with_preloading_enabled):
+    mdb = mdb_rw
     branches = await mdb.fetch_all(select([Branch]).where(Branch.branch_name != "master"))
     await mdb.execute(update(Branch).where(Branch.branch_name == "master").values({
         Branch.is_default: False,

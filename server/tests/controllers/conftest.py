@@ -188,7 +188,7 @@ async def fetch_dag(mdb, heads=None):
 
 def with_only_master_branch(func):
     async def wrapped_with_only_master_branch(**kwargs):
-        mdb = kwargs["mdb"]
+        mdb = kwargs["mdb_rw"]
         branches = await mdb.fetch_all(select([Branch]).where(Branch.branch_name != "master"))
         await mdb.execute(delete(Branch).where(Branch.branch_name != "master"))
         try:
