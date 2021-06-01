@@ -91,7 +91,7 @@ async def calc_histogram_code_checks(request: AthenianWebRequest, body: dict) ->
         {s for s, _ in filters}, filt.account, meta_ids, request)
     result = []
 
-    async def calculate_for_set_histograms(service, repos, pusher_groups, jira, for_set):
+    async def calculate_for_set_histograms(service, repos, pusher_groups, labels, jira, for_set):
         defs = defaultdict(list)
         for h in filt.histograms:
             defs[HistogramParameters(
@@ -104,7 +104,7 @@ async def calc_histogram_code_checks(request: AthenianWebRequest, body: dict) ->
             histograms, group_suite_counts, suite_sizes = \
                 await calculator.calc_check_run_histograms_line_github(
                     defs, time_from, time_to, filt.quantiles or (0, 1), repos, pusher_groups,
-                    filt.split_by_check_runs, jira)
+                    filt.split_by_check_runs, labels, jira)
         except ValueError as e:
             raise ResponseError(InvalidRequestError(pointer="?", detail=str(e))) from None
         for pusher_groups in histograms:
@@ -135,8 +135,8 @@ async def calc_histogram_code_checks(request: AthenianWebRequest, body: dict) ->
                             ))
 
     tasks = [
-        calculate_for_set_histograms(service, repos, withgroups, jira, for_set)
-        for service, (repos, withgroups, jira, for_set) in filters
+        calculate_for_set_histograms(service, repos, withgroups, labels, jira, for_set)
+        for service, (repos, withgroups, labels, jira, for_set) in filters
     ]
     await gather(*tasks)
     return model_response(result)

@@ -11,7 +11,7 @@ from athenian.api.controllers.features.github.check_run_metrics import \
 from athenian.api.controllers.features.github.check_run_metrics_accelerated import \
     calculate_interval_intersections
 from athenian.api.controllers.features.histogram import Histogram, Scale
-from athenian.api.controllers.miners.filters import JIRAFilter
+from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import CheckRun
 from athenian.api.models.web import CodeCheckMetricID
@@ -49,7 +49,8 @@ async def test_check_run_metrics_suite_counts(
         [CodeCheckMetricID.SUITES_COUNT, CodeCheckMetricID.SUCCESSFUL_SUITES_COUNT,
          CodeCheckMetricID.FAILED_SUITES_COUNT, CodeCheckMetricID.CANCELLED_SUITES_COUNT],
         [[datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc)]],
-        [0, 1], [["src-d/go-git"]], [], split_by_check_runs, JIRAFilter.empty(),
+        [0, 1], [["src-d/go-git"]], [], split_by_check_runs,
+        LabelFilter.empty(), JIRAFilter.empty(),
     ]
 
     def check(result):
@@ -84,7 +85,7 @@ async def test_check_run_metrics_blitz(metrics_calculator: MetricEntriesCalculat
     metrics, _, _ = await metrics_calculator.calc_check_run_metrics_line_github(
         [metric],
         [[datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc)]],
-        [0, 1], [["src-d/go-git"]], [], False, JIRAFilter.empty())
+        [0, 1], [["src-d/go-git"]], [], False, LabelFilter.empty(), JIRAFilter.empty())
     assert metrics[0, 0, 0, 0][0][0].value == value
 
 
@@ -93,7 +94,7 @@ async def test_check_run_metrics_robust_empty(metrics_calculator: MetricEntriesC
     metrics, _, _ = await metrics_calculator.calc_check_run_metrics_line_github(
         [CodeCheckMetricID.ROBUST_SUITE_TIME],
         [[datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2017, 6, 1, tzinfo=timezone.utc)]],
-        [0.8, 1], [["src-d/go-git"]], [], False, JIRAFilter.empty())
+        [0.8, 1], [["src-d/go-git"]], [], False, LabelFilter.empty(), JIRAFilter.empty())
     assert metrics[0, 0, 0, 0][0][0].value is None
 
 
@@ -103,7 +104,7 @@ async def test_check_run_metrics_robust_quantiles(metrics_calculator: MetricEntr
         [CodeCheckMetricID.ROBUST_SUITE_TIME],
         [[datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2017, 6, 1, tzinfo=timezone.utc),
          datetime(2020, 1, 1, tzinfo=timezone.utc)]],
-        [0.8, 1], [["src-d/go-git"]], [], False, JIRAFilter.empty())
+        [0.8, 1], [["src-d/go-git"]], [], False, LabelFilter.empty(), JIRAFilter.empty())
     assert metrics[0, 0, 0, 0][0][0].value == timedelta(seconds=2)
     assert metrics[0, 0, 0, 0][1][0].value == timedelta(seconds=2)
 

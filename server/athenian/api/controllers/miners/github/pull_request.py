@@ -877,30 +877,22 @@ class PullRequestMiner:
                 # needed to resolve rebased merge commits
                 if PullRequest.number not in selected_columns:
                     selected_columns.append(PullRequest.number)
+        if labels:
+            singles, multiples = LabelFilter.split(labels.include)
+            embedded_labels_query = not multiples and not labels.exclude
+            if not labels.exclude:
+                all_in_labels = set(singles + list(chain.from_iterable(multiples)))
+                filters.append(
+                    sql.exists().where(sql.and_(
+                        PullRequestLabel.acc_id == PullRequest.acc_id,
+                        PullRequestLabel.pull_request_node_id == PullRequest.node_id,
+                        sql.func.lower(PullRequestLabel.name).in_(all_in_labels),
+                    )))
         if not jira:
             query = sql.select(selected_columns).where(sql.and_(*filters))
         else:
             query = await generate_jira_prs_query(
                 filters, jira, mdb, cache, columns=selected_columns)
-        if (embedded_labels_query := labels and labels.include and not labels.exclude and
-                mdb.url.dialect in ("postgres", "postgresql")):
-            singles, multiples = LabelFilter.split(labels.include)
-            if multiples:
-                in_items = set(singles + list(chain.from_iterable(multiples)))
-                # we cannot be sure about multiples, but we do know that any PRs without any
-                # mentioned label are not suitable
-                embedded_labels_query = False
-            else:
-                in_items = singles
-            pr_node_id = sql.column("m.node_id", is_literal=True)
-            pr_acc_id = sql.column("m.acc_id", is_literal=True)
-            query = sql.select([sql.column("m.*", is_literal=True)])\
-                .distinct(pr_node_id) \
-                .select_from(sql.join(
-                    query.alias("m"), PullRequestLabel,
-                    sql.and_(pr_node_id == PullRequestLabel.pull_request_node_id,
-                             pr_acc_id == PullRequestLabel.acc_id))) \
-                .where(sql.func.lower(PullRequestLabel.name).in_(in_items))
         prs = await read_sql_query(query, mdb, columns, index=PullRequest.node_id.key)
         if remove_acc_id:
             del prs[PullRequest.acc_id.key]

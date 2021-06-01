@@ -1,19 +1,17 @@
 from typing import List, Optional
 
-from athenian.api.models.web.base_model_ import Model
-from athenian.api.models.web.for_set import RepositoryGroupsMixin
-from athenian.api.models.web.jira_filter import JIRAFilter
+from athenian.api.models.web.base_model_ import AllOf, Model
+from athenian.api.models.web.for_set import CommonPullRequestFilters, RepositoryGroupsMixin
 
 
-class ForSetCodeChecks(Model, RepositoryGroupsMixin):
-    """Filter for `/metrics/code_checks`."""
+class _ForSetCodeChecks(Model, RepositoryGroupsMixin):
+    """Filters for `/metrics/code_checks` and `/histograms/code_checks`."""
 
     openapi_types = {
         "repositories": List[str],
         "repogroups": Optional[List[List[int]]],
         "pushers": Optional[List[str]],
         "pusher_groups": Optional[List[List[str]]],
-        "jira": Optional[JIRAFilter],
     }
 
     attribute_map = {
@@ -21,8 +19,9 @@ class ForSetCodeChecks(Model, RepositoryGroupsMixin):
         "repogroups": "repogroups",
         "pushers": "pushers",
         "pusher_groups": "pusher_groups",
-        "jira": "jira",
     }
+
+    __enable_slots__ = False
 
     def __init__(
         self,
@@ -30,7 +29,6 @@ class ForSetCodeChecks(Model, RepositoryGroupsMixin):
         repogroups: Optional[List[List[int]]] = None,
         pushers: Optional[List[str]] = None,
         pusher_groups: Optional[List[List[str]]] = None,
-        jira: Optional[JIRAFilter] = None,
     ):
         """ForSetCodeChecks - a model defined in OpenAPI
 
@@ -38,13 +36,11 @@ class ForSetCodeChecks(Model, RepositoryGroupsMixin):
         :param repogroups: The repogroups of this ForSetCodeChecks.
         :param pushers: The pushers of this ForSetCodeChecks.
         :param pusher_groups: The pusher_groups of this ForSetCodeChecks.
-        :param jira: The jira of this ForSetCodeChecks.
         """
         self._repositories = repositories
         self._repogroups = repogroups
         self._pushers = pushers
         self._pusher_groups = pusher_groups
-        self._jira = jira
 
     @property
     def pushers(self) -> Optional[List[str]]:
@@ -90,22 +86,6 @@ class ForSetCodeChecks(Model, RepositoryGroupsMixin):
         """
         self._pusher_groups = pusher_groups
 
-    @property
-    def jira(self) -> Optional[JIRAFilter]:
-        """Gets the jira of this ForSetCodeChecks.
-
-        :return: The jira of this ForSetCodeChecks.
-        """
-        return self._jira
-
-    @jira.setter
-    def jira(self, jira: Optional[JIRAFilter]):
-        """Sets the jira of this ForSetCodeChecks.
-
-        :param jira: The jira of this ForSetCodeChecks.
-        """
-        self._jira = jira
-
     def select_pushers_group(self, index: int) -> "ForSetCodeChecks":
         """Change `pushers` to point at the specified `pushers_group`."""
         fs = self.copy()
@@ -119,6 +99,10 @@ class ForSetCodeChecks(Model, RepositoryGroupsMixin):
         fs.pushers = self.pusher_groups[index]
         fs.pusher_groups = None
         return fs
+
+
+ForSetCodeChecks = AllOf(_ForSetCodeChecks, CommonPullRequestFilters,
+                         name="ForSetCodeChecks", module=__name__)
 
 
 class _CalculatedCodeCheckCommon(Model):

@@ -3,7 +3,7 @@ from typing import List, Optional
 from athenian.api.models.web.base_model_ import AllOf, Model
 from athenian.api.models.web.common_filter_properties import CommonFilterProperties
 from athenian.api.models.web.common_metrics_properties import QuantilesMixin
-from athenian.api.models.web.jira_filter import JIRAFilter
+from athenian.api.models.web.for_set import CommonPullRequestFilters
 
 
 class _FilterCodeChecksRequest(Model, QuantilesMixin):
@@ -12,14 +12,12 @@ class _FilterCodeChecksRequest(Model, QuantilesMixin):
     openapi_types = {
         "in_": List[str],
         "triggered_by": Optional[List[str]],
-        "jira": Optional[JIRAFilter],
         "quantiles": Optional[List[float]],
     }
 
     attribute_map = {
         "in_": "in",
         "triggered_by": "triggered_by",
-        "jira": "jira",
         "quantiles": "quantiles",
     }
 
@@ -29,19 +27,16 @@ class _FilterCodeChecksRequest(Model, QuantilesMixin):
         self,
         in_: Optional[List[str]] = None,
         triggered_by: Optional[List[str]] = None,
-        jira: Optional[JIRAFilter] = None,
         quantiles: Optional[List[float]] = None,
     ):
         """FilterCodeChecksRequest - a model defined in OpenAPI
 
         :param in_: The in_ of this FilterCodeChecksRequest.
         :param triggered_by: The triggered_by of this FilterCodeChecksRequest.
-        :param jira: The jira of this FilterCodeChecksRequest.
         :param quantiles: The quantiles of this FilterCodeChecksRequest.
         """
         self._in_ = in_
         self._triggered_by = triggered_by
-        self._jira = jira
         self._quantiles = quantiles
 
     @property
@@ -91,24 +86,9 @@ class _FilterCodeChecksRequest(Model, QuantilesMixin):
         """
         self._triggered_by = triggered_by
 
-    @property
-    def jira(self) -> Optional[JIRAFilter]:
-        """Gets the jira of this FilterCodeChecksRequest.
-
-        :return: The jira of this FilterCodeChecksRequest.
-        """
-        return self._jira
-
-    @jira.setter
-    def jira(self, jira: Optional[JIRAFilter]):
-        """Sets the jira of this FilterCodeChecksRequest.
-
-        :param jira: The jira of this FilterCodeChecksRequest.
-        """
-        self._jira = jira
-
 
 FilterCodeChecksRequest = AllOf(_FilterCodeChecksRequest,
                                 CommonFilterProperties,
+                                CommonPullRequestFilters,
                                 name="FilterCodeChecksRequest",
                                 module=__name__)
