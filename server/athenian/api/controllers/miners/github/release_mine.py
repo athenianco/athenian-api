@@ -16,7 +16,7 @@ from sqlalchemy import and_, func, select, union_all
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached, CancelCache
-from athenian.api.controllers.miners.filters import JIRAFilter
+from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.commit import fetch_precomputed_commit_history_dags, \
     fetch_repository_commits, RELEASE_FETCH_COMMITS_COLUMNS
@@ -25,6 +25,7 @@ from athenian.api.controllers.miners.github.dag_accelerated import extract_subda
 from athenian.api.controllers.miners.github.precomputed_releases import \
     fetch_precomputed_releases_by_name, load_precomputed_release_facts, \
     store_precomputed_release_facts
+from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.github.release_load import \
     group_repos_by_release_match, ReleaseLoader
 from athenian.api.controllers.miners.github.release_match import \
@@ -38,7 +39,8 @@ from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
 from athenian.api.db import add_pdb_hits, add_pdb_misses
 from athenian.api.defer import defer
-from athenian.api.models.metadata.github import NodePullRequest, PullRequest, PushCommit, Release
+from athenian.api.models.metadata.github import NodePullRequest, PullRequest, PullRequestLabel, \
+    PushCommit, Release
 from athenian.api.tracing import sentry_span
 
 
@@ -59,10 +61,10 @@ def _reject_releases_without_pr_titles(result: Tuple[List[Tuple[Dict[str, Any], 
     exptime=60 * 60,  # 1 hour
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda repos, participants, time_from, time_to, jira, settings, **_: (
+    key=lambda repos, participants, time_from, time_to, labels, jira, settings, **_: (
         ",".join(sorted(repos)),
         ",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(participants.items())),
-        time_from, time_to, jira, settings),
+        time_from, time_to, labels, jira, settings),
     postprocess=_reject_releases_without_pr_titles,
 )
 async def mine_releases(repos: Iterable[str],
@@ -71,6 +73,7 @@ async def mine_releases(repos: Iterable[str],
                         default_branches: Dict[str, str],
                         time_from: datetime,
                         time_to: datetime,
+                        labels: LabelFilter,
                         jira: JIRAFilter,
                         settings: ReleaseSettings,
                         prefixer: PrefixerPromise,
@@ -118,8 +121,8 @@ async def mine_releases(repos: Iterable[str],
         releases_in_time_range, default_branches, settings, account, pdb)
     # uncomment this line to compute releases from scratch:
     # precomputed_facts = {}
-    if with_pr_titles:
-        pr_node_ids_for_pr_titles = [
+    if with_pr_titles or labels:
+        all_pr_node_ids = [
             f["prs_" + PullRequest.node_id.key] for f in precomputed_facts.values()
         ]
     add_pdb_hits(pdb, "release_facts", len(precomputed_facts))
@@ -247,8 +250,8 @@ async def mine_releases(repos: Iterable[str],
         prs_authors[prs_authors_nz] = \
             [prefixer.user_login_map[u] for u in prs_authors[prs_authors_nz]]
         prs_node_ids = prs_df[PullRequest.node_id.key].values.astype("S")
-        if with_pr_titles:
-            pr_node_ids_for_pr_titles.append(prs_node_ids)
+        if with_pr_titles or labels:
+            all_pr_node_ids.append(prs_node_ids)
         prs_numbers = prs_df[PullRequest.number.key].values
         prs_additions = prs_df[PullRequest.additions.key].values
         prs_deletions = prs_df[PullRequest.deletions.key].values
@@ -354,14 +357,23 @@ async def mine_releases(repos: Iterable[str],
                                       mentioned_authors])
         all_authors = [p[1] for p in np.char.split(np.unique(all_authors).astype("U"), "/", 1)]
         tasks.insert(0, mine_user_avatars(all_authors, True, meta_ids, mdb, cache))
+    if (with_pr_titles or labels) and all_pr_node_ids:
+        all_pr_node_ids = np.concatenate(all_pr_node_ids)
+        if all_pr_node_ids.dtype.char != "U":
+            all_pr_node_ids = all_pr_node_ids.astype("U")
     if with_pr_titles:
-        pr_node_ids_for_pr_titles = np.concatenate(pr_node_ids_for_pr_titles)
-        if pr_node_ids_for_pr_titles.dtype.char != "U":
-            pr_node_ids_for_pr_titles = pr_node_ids_for_pr_titles.astype("U")
         tasks.insert(0, mdb.fetch_all(
             select([NodePullRequest.id, NodePullRequest.title])
             .where(and_(NodePullRequest.acc_id.in_(meta_ids),
-                        NodePullRequest.id.in_any_values(pr_node_ids_for_pr_titles)))))
+                        NodePullRequest.id.in_any_values(all_pr_node_ids)))))
+    if labels:
+        tasks.insert(0, read_sql_query(
+            select([PullRequestLabel.pull_request_node_id,
+                    func.lower(PullRequestLabel.name).label(PullRequestLabel.name.key)])
+            .where(and_(PullRequestLabel.acc_id.in_(meta_ids),
+                        PullRequestLabel.pull_request_node_id.in_any_values(all_pr_node_ids))),
+            mdb, [PullRequestLabel.pull_request_node_id, PullRequestLabel.name],
+            index=PullRequestLabel.pull_request_node_id.key))
     mentioned_authors = set(mentioned_authors)
     *secondary, mined_releases = await gather(*tasks, op="mine missing releases")
     result.extend(mined_releases)
@@ -372,8 +384,10 @@ async def mine_releases(repos: Iterable[str],
             [p[1] for p in np.char.split(np.array(list(mentioned_authors), dtype="U"), "/", 1)])
     if participants:
         result = _filter_by_participants(result, participants)
+    if labels:
+        result = _filter_by_labels(result, secondary[0], labels)
     if with_pr_titles:
-        pr_title_map = {row[0].encode(): row[1] for row in secondary[0]}
+        pr_title_map = {row[0].encode(): row[1] for row in secondary[bool(labels)]}
         for _, facts in result:
             facts["prs_" + PullRequest.title.key] = [
                 pr_title_map.get(node) for node in facts["prs_" + PullRequest.node_id.key]
@@ -425,6 +439,8 @@ def _build_mined_releases(releases: pd.DataFrame,
 def _filter_by_participants(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
                             participants: ReleaseParticipants,
                             ) -> List[Tuple[Dict[str, Any], ReleaseFacts]]:
+    if not releases:
+        return releases
     participants = participants.copy()
     for k, v in participants.items():
         participants[k] = np.unique(v).astype("S")
@@ -470,6 +486,25 @@ def _filter_by_participants(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
     mask = np.full(len(releases), True)
     mask[missing_indexes] = False
     return [releases[i] for i in np.nonzero(mask)[0]]
+
+
+def _filter_by_labels(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
+                      labels_df: pd.DataFrame,
+                      labels_filter: LabelFilter,
+                      ) -> List[Tuple[Dict[str, Any], ReleaseFacts]]:
+    if not releases:
+        return releases
+    left = PullRequestMiner.find_left_by_labels(
+        labels_df.index, labels_df[PullRequestLabel.name.key].values, labels_filter,
+    ).values.astype("S")
+    if len(left) == 0:
+        return []
+    key = "prs_" + PullRequest.node_id.key
+    pr_node_ids = [r[1][key] for r in releases]
+    all_pr_node_ids = np.concatenate(pr_node_ids)
+    passed_prs = np.nonzero(np.in1d(all_pr_node_ids, left, assume_unique=True))[0]
+    indexes = np.unique(np.digitize(passed_prs, np.cumsum([len(x) for x in pr_node_ids])))
+    return [releases[i] for i in indexes]
 
 
 @sentry_span
@@ -582,8 +617,8 @@ async def mine_releases_by_name(names: Dict[str, Iterable[str]],
         time_from = missing_releases[Release.published_at.key].iloc[-1]
         time_to = missing_releases[Release.published_at.key].iloc[0] + timedelta(seconds=1)
         mined_result, mined_authors, _ = await mine_releases(
-            repos, {}, branches, default_branches, time_from, time_to, JIRAFilter.empty(),
-            settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache,
+            repos, {}, branches, default_branches, time_from, time_to, LabelFilter.empty(),
+            JIRAFilter.empty(), settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache,
             force_fresh=True, with_avatars=False, with_pr_titles=True)
         missing_releases_by_repo = defaultdict(set)
         for repo, name in zip(missing_releases[Release.repository_full_name.key].values,
@@ -762,9 +797,9 @@ async def diff_releases(borders: Dict[str, List[Tuple[str, str]]],
 
     tasks = [
         mine_releases(
-            repos, {}, branches, default_branches, time_from, time_to, JIRAFilter.empty(),
-            settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache, force_fresh=True,
-            with_pr_titles=True),
+            repos, {}, branches, default_branches, time_from, time_to, LabelFilter.empty(),
+            JIRAFilter.empty(), settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache,
+            force_fresh=True, with_pr_titles=True),
         fetch_dags(),
     ]
     (releases, avatars, _), dags = await gather(*tasks, op="mine_releases + dags")

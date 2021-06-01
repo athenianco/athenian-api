@@ -366,6 +366,7 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
         repos, meta_ids, request.mdb, request.cache)
     releases, avatars, _ = await mine_releases(
         repos, participants, branches, default_branches, time_from, time_to,
+        LabelFilter.from_iterables(filt.labels_include, filt.labels_exclude),
         JIRAFilter.from_web(filt.jira, jira_ids), settings, prefixer, filt.account, meta_ids,
         request.mdb, request.pdb, request.rdb, request.cache, with_pr_titles=True)
     return await _build_release_set_response(releases, avatars, jira_ids, meta_ids, request.mdb)

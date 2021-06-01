@@ -151,7 +151,7 @@ class PullRequestMiner:
         to_remove = set()
         if pr_blacklist is not None:
             to_remove.update(pr_blacklist[0])
-        to_remove.update(dfs.prs.index.take(np.where(
+        to_remove.update(dfs.prs.index.take(np.nonzero(
             np.in1d(dfs.prs[PullRequest.repository_full_name.key].values,
                     list(repositories), assume_unique=True, invert=True),
         )[0]))
@@ -919,9 +919,9 @@ class PullRequestMiner:
             .where(sql.and_(PullRequestLabel.pull_request_node_id.in_(prs.index),
                             PullRequestLabel.acc_id.in_(meta_ids))),
             mdb, lcols, index=PullRequestLabel.pull_request_node_id.key)
-        left = cls._find_left_by_labels(
+        left = cls.find_left_by_labels(
             df_labels.index, df_labels[PullRequestLabel.name.key].values, labels)
-        prs = prs.take(np.where(prs.index.isin(left))[0])
+        prs = prs.take(np.nonzero(prs.index.isin(left))[0])
         return prs
 
     @staticmethod
@@ -1071,31 +1071,32 @@ class PullRequestMiner:
             return pd.Index([])
         df_labels_index = dfs.labels.index.get_level_values(0)
         df_labels_names = dfs.labels[PullRequestLabel.name.key].values
-        left = cls._find_left_by_labels(df_labels_index, df_labels_names, labels)
+        left = cls.find_left_by_labels(df_labels_index, df_labels_names, labels)
         return dfs.prs.index.difference(left)
 
     @classmethod
-    def _find_left_by_labels(cls,
-                             df_labels_index: pd.Index,
-                             df_labels_names: Sequence[str],
-                             labels: LabelFilter) -> pd.Index:
+    def find_left_by_labels(cls,
+                            df_labels_index: pd.Index,
+                            df_labels_names: Sequence[str],
+                            labels: LabelFilter) -> pd.Index:
+        """Post-filter PRs by their loaded labels."""
         left_include = left_exclude = None
         if labels.include:
             singles, multiples = LabelFilter.split(labels.include)
             left_include = df_labels_index.take(
-                np.where(np.in1d(df_labels_names, singles))[0],
+                np.nonzero(np.in1d(df_labels_names, singles))[0],
             ).unique()
             for group in multiples:
                 passed = df_labels_index
                 for label in group:
                     passed = passed.intersection(
-                        df_labels_index.take(np.where(df_labels_names == label)))
+                        df_labels_index.take(np.nonzero(df_labels_names == label)[0]))
                     if passed.empty:
                         break
                 left_include = left_include.union(passed)
         if labels.exclude:
             left_exclude = df_labels_index.difference(df_labels_index.take(
-                np.where(np.in1d(df_labels_names, list(labels.exclude)))[0],
+                np.nonzero(np.in1d(df_labels_names, list(labels.exclude)))[0],
             ).unique())
         if labels.include:
             if labels.exclude:
@@ -1117,7 +1118,7 @@ class PullRequestMiner:
             df_labels_names = dfs.jiras[Issue.labels.key].values
             df_labels_index = pd.Index(np.repeat(jira_index, [len(v) for v in df_labels_names]))
             df_labels_names = list(pd.core.common.flatten(df_labels_names))
-            left.append(cls._find_left_by_labels(df_labels_index, df_labels_names, jira.labels))
+            left.append(cls.find_left_by_labels(df_labels_index, df_labels_names, jira.labels))
         if jira.epics:
             left.append(jira_index.take(np.where(
                 dfs.jiras["epic"].isin(jira.epics))[0]).unique())

@@ -2,7 +2,7 @@ from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import AllOf, Model
 from athenian.api.models.web.common_filter_properties import CommonFilterProperties
-from athenian.api.models.web.jira_filter import JIRAFilter
+from athenian.api.models.web.for_set import CommonPullRequestFilters
 from athenian.api.models.web.release_with import ReleaseWith
 
 
@@ -12,13 +12,11 @@ class _FilterReleasesRequest(Model):
     openapi_types = {
         "in_": List[str],
         "with_": Optional[ReleaseWith],
-        "jira": Optional[JIRAFilter],
     }
 
     attribute_map = {
         "in_": "in",
         "with_": "with",
-        "jira": "jira",
     }
 
     __enable_slots__ = False
@@ -27,17 +25,14 @@ class _FilterReleasesRequest(Model):
         self,
         in_: Optional[List[str]] = None,
         with_: Optional[ReleaseWith] = None,
-        jira: Optional[JIRAFilter] = None,
     ):
         """FilterReleasesRequest - a model defined in OpenAPI
 
         :param in_: The in of this FilterReleasesRequest.
         :param with_: The with of this FilterReleasesRequest.
-        :param jira: The jira of this FilterReleasesRequest.
         """
         self._in_ = in_
         self._with_ = with_
-        self._jira = jira
 
     @property
     def in_(self) -> List[str]:
@@ -75,22 +70,8 @@ class _FilterReleasesRequest(Model):
         """
         self._with_ = with_
 
-    @property
-    def jira(self) -> Optional[JIRAFilter]:
-        """Gets the jira of this FilterReleasesRequest.
 
-        :return: The jira of this FilterReleasesRequest.
-        """
-        return self._jira
-
-    @jira.setter
-    def jira(self, jira: Optional[JIRAFilter]):
-        """Sets the jira of this FilterReleasesRequest.
-
-        :param jira: The jira of this FilterReleasesRequest.
-        """
-        self._jira = jira
-
-
-FilterReleasesRequest = AllOf(_FilterReleasesRequest, CommonFilterProperties,
+FilterReleasesRequest = AllOf(_FilterReleasesRequest,
+                              CommonFilterProperties,
+                              CommonPullRequestFilters,
                               name="FilterReleasesRequest", module=__name__)

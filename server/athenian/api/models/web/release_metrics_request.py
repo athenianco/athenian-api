@@ -3,7 +3,7 @@ from typing import List, Optional
 from athenian.api.models.web.base_model_ import AllOf, Model
 from athenian.api.models.web.common_filter_properties import CommonFilterProperties
 from athenian.api.models.web.common_metrics_properties import CommonMetricsProperties
-from athenian.api.models.web.jira_filter import JIRAFilter
+from athenian.api.models.web.for_set import CommonPullRequestFilters
 from athenian.api.models.web.release_metric_id import ReleaseMetricID
 from athenian.api.models.web.release_with import ReleaseWith
 
@@ -15,14 +15,12 @@ class _ReleaseMetricsRequest(Model):
         "for_": List[List[str]],
         "with_": Optional[List[ReleaseWith]],
         "metrics": List[str],
-        "jira": Optional[JIRAFilter],
     }
 
     attribute_map = {
         "for_": "for",
         "with_": "with",
         "metrics": "metrics",
-        "jira": "jira",
     }
 
     __enable_slots__ = False
@@ -32,19 +30,16 @@ class _ReleaseMetricsRequest(Model):
         for_: Optional[List[List[str]]] = None,
         with_: Optional[List[ReleaseWith]] = None,
         metrics: Optional[List[str]] = None,
-        jira: Optional[JIRAFilter] = None,
     ):
         """ReleaseMetricsRequest - a model defined in OpenAPI
 
         :param for_: The for of this ReleaseMetricsRequest.
         :param with_: The with of this ReleaseMetricsRequest.
         :param metrics: The metrics of this ReleaseMetricsRequest.
-        :param jira: The jira of this ReleaseMetricsRequest.
         """
         self._for_ = for_
         self._with_ = with_
         self._metrics = metrics
-        self._jira = jira
 
     @property
     def for_(self) -> List[List]:
@@ -116,25 +111,10 @@ class _ReleaseMetricsRequest(Model):
 
         self._metrics = metrics
 
-    @property
-    def jira(self) -> Optional[JIRAFilter]:
-        """Gets the jira of this ReleaseMetricsRequest.
-
-        :return: The jira of this ReleaseMetricsRequest.
-        """
-        return self._jira
-
-    @jira.setter
-    def jira(self, jira: Optional[JIRAFilter]):
-        """Sets the jira of this ReleaseMetricsRequest.
-
-        :param jira: The jira of this ReleaseMetricsRequest.
-        """
-        self._jira = jira
-
 
 ReleaseMetricsRequest = AllOf(_ReleaseMetricsRequest,
                               CommonFilterProperties,
                               CommonMetricsProperties,
+                              CommonPullRequestFilters,
                               name="ReleaseMetricsRequest",
                               module=__name__)

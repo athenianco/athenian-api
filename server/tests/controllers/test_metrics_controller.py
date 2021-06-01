@@ -1584,6 +1584,38 @@ async def test_release_metrics_jira(client, headers):
     assert models[0].values[0].values == [22, 234]
 
 
+async def test_release_metrics_labels(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-01",
+        "date_to": "2020-03-01",
+        "for": [["{1}"]],
+        "metrics": [ReleaseMetricID.RELEASE_COUNT, ReleaseMetricID.RELEASE_PRS],
+        "labels_include": ["bug", "plumbing", "Enhancement"],
+        "granularities": ["all"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/releases", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 200, rbody
+    rbody = json.loads(rbody)
+    models = [CalculatedReleaseMetric.from_dict(i) for i in rbody]
+    assert len(models) == 1
+    assert models[0].values[0].values == [3, 36]
+    del body["labels_include"]
+
+    response = await client.request(
+        method="POST", path="/v1/metrics/releases", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 200, rbody
+    rbody = json.loads(rbody)
+    models = [CalculatedReleaseMetric.from_dict(i) for i in rbody]
+    assert len(models) == 1
+    assert models[0].values[0].values == [22, 234]
+
+
 async def test_release_metrics_participants_many_participants(client, headers):
     body = {
         "account": 1,

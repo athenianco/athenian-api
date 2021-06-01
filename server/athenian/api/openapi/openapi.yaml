@@ -3905,6 +3905,17 @@ components:
           $ref: '#/components/schemas/RepositorySet'
         with:
           $ref: '#/components/schemas/ReleaseWith'
+        labels_include:
+          description: At least one of these labels must be present in at least one
+            released PR.
+          items:
+            type: string
+          type: array
+        labels_exclude:
+          description: None of these labels must be present in each released PR.
+          items:
+            type: string
+          type: array
         jira:
           $ref: '#/components/schemas/JIRAFilter'
       required:
@@ -6468,6 +6479,17 @@ components:
           description: List of developer groups for which to calculate the metrics.
           items:
             $ref: '#/components/schemas/ReleaseWith'
+          type: array
+        labels_include:
+          description: At least one of these labels must be present in at least one
+            released PR.
+          items:
+            type: string
+          type: array
+        labels_exclude:
+          description: None of these labels must be present in each released PR.
+          items:
+            type: string
           type: array
         jira:
           $ref: '#/components/schemas/JIRAFilter'

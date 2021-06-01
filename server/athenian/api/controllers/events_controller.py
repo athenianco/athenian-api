@@ -207,7 +207,7 @@ async def clear_precomputed_events(request: AthenianWebRequest, body: dict) -> w
             Settings.from_account(model.account, sdb, mdb, cache, None)
             .list_release_matches(prefixed_repos))
         await mine_releases(
-            repos, {}, branches, default_branches, no_time_from, time_to,
+            repos, {}, branches, default_branches, no_time_from, time_to, LabelFilter.empty(),
             JIRAFilter.empty(), settings, prefixer, model.account, meta_ids, mdb, pdb, rdb, None,
             force_fresh=True)
         await wait_deferred()
