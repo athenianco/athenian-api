@@ -512,6 +512,7 @@ async def calc_metrics_releases(request: AthenianWebRequest, body: dict) -> web.
         calculator = calculators[service]
         release_metric_values, release_matches = await calculator.calc_release_metrics_line_github(
             filt.metrics, time_intervals, filt.quantiles or (0, 1), repos, participants,
+            LabelFilter.from_iterables(filt.labels_include, filt.labels_exclude),
             JIRAFilter.from_web(filt.jira, jira_ids), release_settings, prefixer)
         release_matches = {k: v.name for k, v in release_matches.items()}
         mrange = range(len(filt.metrics))

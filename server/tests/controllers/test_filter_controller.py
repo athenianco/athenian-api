@@ -1374,6 +1374,23 @@ async def test_filter_releases_by_jira(client, headers):
     assert len(releases.data) == 8
 
 
+@pytest.mark.filter_releases
+async def test_filter_releases_by_labels(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-01",
+        "date_to": "2020-10-22",
+        "in": ["{1}"],
+        "labels_include": ["Bug", "enhancement", "PLUMBING"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/releases", headers=headers, json=body)
+    response_text = (await response.read()).decode("utf-8")
+    assert response.status == 200, response_text
+    releases = ReleaseSet.from_dict(json.loads(response_text))
+    assert len(releases.data) == 3
+
+
 async def test_get_prs_smoke(client, headers):
     body = {
         "account": 1,
@@ -1850,8 +1867,9 @@ async def test_diff_releases_commits(
     time_from = datetime(year=2017, month=3, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2017, month=4, day=1, tzinfo=timezone.utc)
     releases, _, _ = await mine_releases(
-        ["src-d/go-git"], {}, branches, default_branches, time_from, time_to, JIRAFilter.empty(),
-        release_match_setting_branch, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
+        ["src-d/go-git"], {}, branches, default_branches, time_from, time_to,
+        LabelFilter.empty(), JIRAFilter.empty(), release_match_setting_branch, prefixer_promise,
+        1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
 
     response = await client.request(

@@ -3,7 +3,7 @@ from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import AllOf, Model
 from athenian.api.models.web.common_filter_properties import CommonFilterProperties
-from athenian.api.models.web.jira_filter import JIRAFilter
+from athenian.api.models.web.for_set import CommonPullRequestFilters
 from athenian.api.models.web.pull_request_event import PullRequestEvent
 from athenian.api.models.web.pull_request_stage import PullRequestStage
 from athenian.api.models.web.pull_request_with import PullRequestWith
@@ -17,10 +17,7 @@ class _FilterPullRequestsRequest(Model):
         "events": List[str],
         "stages": List[str],
         "with_": PullRequestWith,
-        "labels_include": List[str],
-        "labels_exclude": List[str],
         "exclude_inactive": bool,
-        "jira": JIRAFilter,
         "updated_from": Optional[date],
         "updated_to": Optional[date],
         "limit": int,
@@ -31,10 +28,7 @@ class _FilterPullRequestsRequest(Model):
         "events": "events",
         "stages": "stages",
         "with_": "with",
-        "labels_include": "labels_include",
-        "labels_exclude": "labels_exclude",
         "exclude_inactive": "exclude_inactive",
-        "jira": "jira",
         "updated_from": "updated_from",
         "updated_to": "updated_to",
         "limit": "limit",
@@ -48,10 +42,7 @@ class _FilterPullRequestsRequest(Model):
         events: Optional[List[str]] = None,
         stages: Optional[List[str]] = None,
         with_: Optional[PullRequestWith] = None,
-        labels_include: Optional[List[str]] = None,
-        labels_exclude: Optional[List[str]] = None,
         exclude_inactive: Optional[bool] = None,
-        jira: Optional[JIRAFilter] = None,
         updated_from: Optional[date] = None,
         updated_to: Optional[date] = None,
         limit: Optional[int] = None,
@@ -62,10 +53,7 @@ class _FilterPullRequestsRequest(Model):
         :param events: The events of this FilterPullRequestsRequest.
         :param stages: The stages of this FilterPullRequestsRequest.
         :param with_: The with_ of this FilterPullRequestsRequest.
-        :param labels_include: The labels_include of this FilterPullRequestsRequest.
-        :param labels_exclude: The labels_exclude of this FilterPullRequestsRequest.
         :param exclude_inactive: The exclude_inactive of this FilterPullRequestsRequest.
-        :param jira: The jira of this FilterPullRequestsRequest.
         :param updated_from: The updated_from of this FilterPullRequestsRequest.
         :param updated_to: The updated_to of this FilterPullRequestsRequest.
         :param limit: The limit of this FilterPullRequestsRequest.
@@ -74,10 +62,7 @@ class _FilterPullRequestsRequest(Model):
         self._events = events
         self._stages = stages
         self._with_ = with_
-        self._labels_include = labels_include
-        self._labels_exclude = labels_exclude
         self._exclude_inactive = exclude_inactive
-        self._jira = jira
         self._updated_from = updated_from
         self._updated_to = updated_to
         self._limit = limit
@@ -164,38 +149,6 @@ class _FilterPullRequestsRequest(Model):
         self._with_ = with_
 
     @property
-    def labels_include(self) -> Optional[List[str]]:
-        """Gets the labels_include of this FilterPullRequestsRequest.
-
-        :return: The labels_include of this FilterPullRequestsRequest.
-        """
-        return self._labels_include
-
-    @labels_include.setter
-    def labels_include(self, labels_include: List[str]):
-        """Sets the labels_include of this FilterPullRequestsRequest.
-
-        :param labels_include: The labels_include of this FilterPullRequestsRequest.
-        """
-        self._labels_include = labels_include
-
-    @property
-    def labels_exclude(self) -> Optional[List[str]]:
-        """Gets the labels_exclude of this FilterPullRequestsRequest.
-
-        :return: The labels_exclude of this FilterPullRequestsRequest.
-        """
-        return self._labels_exclude
-
-    @labels_exclude.setter
-    def labels_exclude(self, labels_exclude: List[str]):
-        """Sets the labels_exclude of this FilterPullRequestsRequest.
-
-        :param labels_exclude: The labels_exclude of this FilterPullRequestsRequest.
-        """
-        self._labels_exclude = labels_exclude
-
-    @property
     def exclude_inactive(self) -> bool:
         """Gets the exclude_inactive of this FilterPullRequestsRequest.
 
@@ -217,22 +170,6 @@ class _FilterPullRequestsRequest(Model):
             raise ValueError("Invalid value for `exclude_inactive`, must not be `None`")
 
         self._exclude_inactive = exclude_inactive
-
-    @property
-    def jira(self) -> Optional[JIRAFilter]:
-        """Gets the jira of this FilterPullRequestsRequest.
-
-        :return: The jira of this FilterPullRequestsRequest.
-        """
-        return self._jira
-
-    @jira.setter
-    def jira(self, jira: Optional[JIRAFilter]):
-        """Sets the jira of this FilterPullRequestsRequest.
-
-        :param jira: The jira of this FilterPullRequestsRequest.
-        """
-        self._jira = jira
 
     @property
     def updated_from(self) -> Optional[date]:
@@ -290,5 +227,7 @@ class _FilterPullRequestsRequest(Model):
         self._limit = limit
 
 
-FilterPullRequestsRequest = AllOf(_FilterPullRequestsRequest, CommonFilterProperties,
+FilterPullRequestsRequest = AllOf(_FilterPullRequestsRequest,
+                                  CommonFilterProperties,
+                                  CommonPullRequestFilters,
                                   name="FilterPullRequestsRequest", module=__name__)

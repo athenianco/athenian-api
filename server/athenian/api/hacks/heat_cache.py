@@ -189,8 +189,8 @@ def main():
                     repos, meta_ids, mdb, None)
                 releases, _, _ = await mine_releases(
                     repos, {}, branches, default_branches, no_time_from, time_to,
-                    JIRAFilter.empty(), settings, prefixer, reposet.owner_id, meta_ids,
-                    mdb, pdb, rdb, None, force_fresh=True)
+                    LabelFilter.empty(), JIRAFilter.empty(), settings, prefixer, reposet.owner_id,
+                    meta_ids, mdb, pdb, rdb, None, force_fresh=True)
                 branches_count = len(branches)
                 del branches
                 releases_by_tag = sum(

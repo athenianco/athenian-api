@@ -143,8 +143,8 @@ async def mine_all_releases(repos: Collection[str],
     """Extract everything we know about releases."""
     releases = (await mine_releases(
         repos, {}, branches, default_branches, datetime(1970, 1, 1, tzinfo=timezone.utc),
-        datetime.now(timezone.utc), JIRAFilter.empty(), settings, prefixer, account, meta_ids,
-        mdb, pdb, rdb, cache, with_avatars=False, with_pr_titles=True))[0]
+        datetime.now(timezone.utc), LabelFilter.empty(), JIRAFilter.empty(), settings, prefixer,
+        account, meta_ids, mdb, pdb, rdb, cache, with_avatars=False, with_pr_titles=True))[0]
     df_gen = pd.DataFrame.from_records([r[0] for r in releases])
     df_facts = df_from_structs([r[1] for r in releases])
     del df_facts[Release.repository_full_name.key]

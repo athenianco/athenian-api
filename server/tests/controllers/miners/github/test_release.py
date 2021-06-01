@@ -1202,8 +1202,9 @@ async def test_mine_releases_full_span(mdb, pdb, rdb, release_match_setting_tag,
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
     releases, avatars, matched_bys = await mine_releases(
-        ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
-        release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
+        ["src-d/go-git"], {}, None, {}, time_from, time_to, LabelFilter.empty(),
+        JIRAFilter.empty(), release_match_setting_tag, prefixer_promise,
+        1, (6366825,), mdb, pdb, rdb, None)
     assert len(releases) == 53
     assert len(avatars) == 124
     assert matched_bys == {"github.com/src-d/go-git": ReleaseMatch.tag}
@@ -1230,27 +1231,30 @@ async def test_mine_releases_precomputed_smoke(
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
     await mine_releases(
-        ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
-        release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
+        ["src-d/go-git"], {}, None, {}, time_from, time_to, LabelFilter.empty(),
+        JIRAFilter.empty(), release_match_setting_tag, prefixer_promise,
+        1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     releases, avatars, _ = await mine_releases(
-        ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
-        release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
+        ["src-d/go-git"], {}, None, {}, time_from, time_to, LabelFilter.empty(),
+        JIRAFilter.empty(), release_match_setting_tag, prefixer_promise,
+        1, (6366825,), mdb, pdb, rdb, None)
     assert len(releases) == 53
     assert len(avatars) == 124
     releases, avatars, _ = await mine_releases(
-        ["src-d/go-git"], {}, None, {}, time_to, time_to, JIRAFilter.empty(),
-        release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
+        ["src-d/go-git"], {}, None, {}, time_to, time_to, LabelFilter.empty(),
+        JIRAFilter.empty(), release_match_setting_tag, prefixer_promise,
+        1, (6366825,), mdb, pdb, rdb, None)
     assert len(releases) == 0
     releases, avatars, _ = await mine_releases(
-        ["src-d/go-git"], {}, branches, default_branches, time_from, time_to,
+        ["src-d/go-git"], {}, branches, default_branches, time_from, time_to, LabelFilter.empty(),
         JIRAFilter.empty(), release_match_setting_branch, prefixer_promise,
         1, (6366825,), mdb, pdb, rdb, None)
     assert len(releases) == 772
     assert len(avatars) == 131
     await wait_deferred()
     releases, avatars, _ = await mine_releases(
-        ["src-d/go-git"], {}, branches, default_branches, time_from, time_to,
+        ["src-d/go-git"], {}, branches, default_branches, time_from, time_to, LabelFilter.empty(),
         JIRAFilter.empty(), release_match_setting_branch, prefixer_promise,
         1, (6366825,), mdb, pdb, rdb, None)
     assert len(releases) == 772
@@ -1263,15 +1267,17 @@ async def test_mine_releases_precomputed_time_range(
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
     releases, avatars, _ = await mine_releases(
-        ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
-        release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
+        ["src-d/go-git"], {}, None, {}, time_from, time_to, LabelFilter.empty(),
+        JIRAFilter.empty(), release_match_setting_tag, prefixer_promise,
+        1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
 
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
     releases, avatars, _ = await mine_releases(
-        ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
-        release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
+        ["src-d/go-git"], {}, None, {}, time_from, time_to, LabelFilter.empty(),
+        JIRAFilter.empty(), release_match_setting_tag, prefixer_promise,
+        1, (6366825,), mdb, pdb, rdb, None)
     for _, f in releases:
         assert time_from <= f.published.item().replace(tzinfo=timezone.utc) < time_to
         for col in released_prs_columns:
@@ -1287,15 +1293,17 @@ async def test_mine_releases_precomputed_update(
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2018, month=11, day=1, tzinfo=timezone.utc)
     releases, avatars, _ = await mine_releases(
-        ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
-        release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
+        ["src-d/go-git"], {}, None, {}, time_from, time_to, LabelFilter.empty(),
+        JIRAFilter.empty(), release_match_setting_tag, prefixer_promise,
+        1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
 
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
     releases, avatars, _ = await mine_releases(
-        ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
-        release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
+        ["src-d/go-git"], {}, None, {}, time_from, time_to, LabelFilter.empty(),
+        JIRAFilter.empty(), release_match_setting_tag, prefixer_promise,
+        1, (6366825,), mdb, pdb, rdb, None)
     for _, f in releases:
         assert time_from <= f.published.item().replace(tzinfo=timezone.utc) < time_to
         assert len(getattr(f, "prs_" + PullRequest.number.key)) > 0
@@ -1310,35 +1318,53 @@ async def test_mine_releases_jira(
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=11, day=1, tzinfo=timezone.utc)
     releases, avatars, _ = await mine_releases(
-        ["src-d/go-git"], {}, None, {}, time_from, time_to,
+        ["src-d/go-git"], {}, None, {}, time_from, time_to, LabelFilter.empty(),
         JIRAFilter(1, ["10003", "10009"], LabelFilter({"bug", "onboarding", "performance"}, set()),
                    set(), set(), False),
         release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     assert len(releases) == 8
     releases, avatars, _ = await mine_releases(
-        ["src-d/go-git"], {}, None, {}, time_from, time_to,
+        ["src-d/go-git"], {}, None, {}, time_from, time_to, LabelFilter.empty(),
         JIRAFilter.empty(),
         release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     assert len(releases) == 22
     releases, avatars, _ = await mine_releases(
-        ["src-d/go-git"], {}, None, {}, time_from, time_to,
+        ["src-d/go-git"], {}, None, {}, time_from, time_to, LabelFilter.empty(),
         JIRAFilter(1, ["10003", "10009"], LabelFilter({"bug", "onboarding", "performance"}, set()),
                    set(), set(), False),
         release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
     assert len(releases) == 8
     await wait_deferred()
     releases, avatars, _ = await mine_releases(
-        ["src-d/go-git"], {}, None, {}, time_from, time_to,
+        ["src-d/go-git"], {}, None, {}, time_from, time_to, LabelFilter.empty(),
         JIRAFilter.empty(),
         release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
     assert len(releases) == 22
     releases, avatars, _ = await mine_releases(
-        ["src-d/go-git"], {}, None, {}, time_from, time_to,
+        ["src-d/go-git"], {}, None, {}, time_from, time_to, LabelFilter.empty(),
         JIRAFilter(1, ["10003", "10009"], LabelFilter.empty(), set(), set(), True),
         release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
     assert len(releases) == 15
+
+
+@with_defer
+async def test_mine_releases_labels(
+        mdb, pdb, rdb, release_match_setting_tag, prefixer_promise, cache):
+    time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2020, month=11, day=1, tzinfo=timezone.utc)
+    releases, _, _ = await mine_releases(
+        ["src-d/go-git"], {}, None, {}, time_from, time_to, LabelFilter.empty(),
+        JIRAFilter.empty(),
+        release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
+    await wait_deferred()
+    assert len(releases) == 22
+    releases, _, _ = await mine_releases(
+        ["src-d/go-git"], {}, None, {}, time_from, time_to,
+        LabelFilter({"bug", "enhancement", "plumbing"}, set()), JIRAFilter.empty(),
+        release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
+    assert len(releases) == 3
 
 
 @with_defer
@@ -1347,31 +1373,34 @@ async def test_mine_releases_cache(
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2018, month=11, day=1, tzinfo=timezone.utc)
     releases1, _, _ = await mine_releases(
-        ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
-        release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
+        ["src-d/go-git"], {}, None, {}, time_from, time_to, LabelFilter.empty(),
+        JIRAFilter.empty(), release_match_setting_tag, prefixer_promise,
+        1, (6366825,), mdb, pdb, rdb, cache)
     await wait_deferred()
     releases2, _, _ = await mine_releases(
-        ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
-        release_match_setting_tag, prefixer_promise, 1, (6366825,), None, None, None, cache)
+        ["src-d/go-git"], {}, None, {}, time_from, time_to, LabelFilter.empty(),
+        JIRAFilter.empty(), release_match_setting_tag, prefixer_promise,
+        1, (6366825,), None, None, None, cache)
     assert releases1 == releases2
     with pytest.raises(AssertionError):
         await mine_releases(
-            ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
-            release_match_setting_tag, prefixer_promise, 1, (6366825,), None, None, None, cache,
-            with_pr_titles=True)
+            ["src-d/go-git"], {}, None, {}, time_from, time_to, LabelFilter.empty(),
+            JIRAFilter.empty(), release_match_setting_tag, prefixer_promise,
+            1, (6366825,), None, None, None, cache, with_pr_titles=True)
     releases3, _, _ = await mine_releases(
-        ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
-        release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache,
-        with_pr_titles=True)
+        ["src-d/go-git"], {}, None, {}, time_from, time_to, LabelFilter.empty(),
+        JIRAFilter.empty(), release_match_setting_tag, prefixer_promise,
+        1, (6366825,), mdb, pdb, rdb, cache, with_pr_titles=True)
     await wait_deferred()
     releases4, _, _ = await mine_releases(
-        ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
-        release_match_setting_tag, prefixer_promise, 1, (6366825,), None, None, None, cache,
-        with_pr_titles=True)
+        ["src-d/go-git"], {}, None, {}, time_from, time_to, LabelFilter.empty(),
+        JIRAFilter.empty(), release_match_setting_tag, prefixer_promise,
+        1, (6366825,), None, None, None, cache, with_pr_titles=True)
     assert releases3 == releases4
     releases2, _, _ = await mine_releases(
-        ["src-d/go-git"], {}, None, {}, time_from, time_to, JIRAFilter.empty(),
-        release_match_setting_tag, prefixer_promise, 1, (6366825,), None, None, None, cache)
+        ["src-d/go-git"], {}, None, {}, time_from, time_to, LabelFilter.empty(),
+        JIRAFilter.empty(), release_match_setting_tag, prefixer_promise,
+        1, (6366825,), None, None, None, cache)
     assert releases3 == releases2
 
 
@@ -1536,8 +1565,9 @@ async def test_mine_releases_by_name(
     time_from = datetime(year=2017, month=3, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2017, month=4, day=1, tzinfo=timezone.utc)
     releases, _, _ = await mine_releases(
-        ["src-d/go-git"], {}, branches, default_branches, time_from, time_to, JIRAFilter.empty(),
-        release_match_setting_branch, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
+        ["src-d/go-git"], {}, branches, default_branches, time_from, time_to,
+        LabelFilter.empty(), JIRAFilter.empty(), release_match_setting_branch, prefixer_promise,
+        1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     assert len(releases) == 15
     names = {"36c78b9d1b1eea682703fb1cbb0f4f3144354389", "v4.0.0"}

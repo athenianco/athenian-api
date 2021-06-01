@@ -309,7 +309,7 @@ class MetricEntriesCalculator:
         exptime=PullRequestMiner.CACHE_TTL,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda metrics, time_intervals, quantiles, repositories, participants, jira, release_settings, **_:  # noqa
+        key=lambda metrics, time_intervals, quantiles, repositories, participants, labels, jira, release_settings, **_:  # noqa
         (
             ",".join(sorted(metrics)),
             ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
@@ -317,6 +317,7 @@ class MetricEntriesCalculator:
             ",".join(str(sorted(r)) for r in repositories),
             ";".join(",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(p.items()))
                      for p in participants),
+            labels,
             jira,
             release_settings,
         ),
@@ -328,6 +329,7 @@ class MetricEntriesCalculator:
                                                quantiles: Sequence[float],
                                                repositories: Sequence[Collection[str]],
                                                participants: List[ReleaseParticipants],
+                                               labels: LabelFilter,
                                                jira: JIRAFilter,
                                                release_settings: ReleaseSettings,
                                                prefixer: PrefixerPromise,
@@ -346,7 +348,7 @@ class MetricEntriesCalculator:
         all_participants = merge_release_participants(participants)
         releases, _, matched_bys = await mine_releases(
             all_repositories, all_participants, branches, default_branches, time_from, time_to,
-            jira, release_settings, prefixer, self._account, self._meta_ids,
+            labels, jira, release_settings, prefixer, self._account, self._meta_ids,
             self._mdb, self._pdb, self._rdb, self._cache)
         df_facts = df_from_structs([f for _, f in releases])
         repo_grouper = partial(group_by_repo, Release.repository_full_name.key, repositories)
