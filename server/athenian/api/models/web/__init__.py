@@ -1,4 +1,5 @@
 from athenian.api.models.web.account import Account
+from athenian.api.models.web.account_status import AccountStatus
 from athenian.api.models.web.account_user_change_request import AccountUserChangeRequest, \
     UserChangeStatus
 from athenian.api.models.web.base_model_ import AllOf, Enum, Model, Slots

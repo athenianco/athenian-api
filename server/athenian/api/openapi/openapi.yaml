@@ -8,7 +8,7 @@ info:
   license:
     name: CC-BY-4.0
   title: '{{ title }}'
-  version: 1.5.0
+  version: 1.6.0
 servers:
 - description: '{{ server_description }} - {{ server_url }}'
   url: '{{ server_url }}/v1'
@@ -3110,6 +3110,13 @@ components:
         email: bot@athenian.co
         picture: https://avatars0.githubusercontent.com/u/60340680?v=4
         updated: 2020-01-23T12:00:00Z
+        accounts:
+          1:
+            is_admin: true
+            expired: false
+          2:
+            is_admin: false
+            expired: false
       properties:
         id:
           description: Auth0 user identifier.
@@ -3135,12 +3142,8 @@ components:
           type: string
         accounts:
           additionalProperties:
-            type: boolean
-          description: Mapping from account IDs the user is a member of to their admin
-            statuses.
-          example:
-            1: true
-            2: false
+            $ref: '#/components/schemas/AccountStatus'
+          description: Mapping from user's account ID the membership status.
           type: object
         impersonated_by:
           description: Identifier of the god user who is acting on behalf of.
@@ -3149,6 +3152,23 @@ components:
       - id
       - login
       - native_id
+      type: object
+    AccountStatus:
+      additionalProperties: false
+      description: Status of the user's account membership.
+      example:
+        is_admin: true
+        expired: false
+      properties:
+        is_admin:
+          description: Indicates whether the user is an account administrator.
+          type: boolean
+        expired:
+          description: Indicates whether the account is disabled.
+          type: boolean
+      required:
+      - expired
+      - is_admin
       type: object
     InvitedUser:
       additionalProperties: false
@@ -3644,8 +3664,8 @@ components:
       type: array
     CalculatedPullRequestMetrics:
       additionalProperties: false
-      description: Response from `/metrics/pull_requests`. The dates start from `date_from` and
-        end earlier or equal to `date_to`.
+      description: Response from `/metrics/pull_requests`. The dates start from `date_from`
+        and end earlier or equal to `date_to`.
       example:
         metrics:
         - pr-lead-time
@@ -3954,7 +3974,8 @@ components:
         in:
           $ref: '#/components/schemas/RepositorySet'
         as:
-          description: Filter by contribution type. A `null` or an empty list select all.
+          description: Filter by contribution type. A `null` or an empty list select
+            all.
           items:
             enum:
             - author
@@ -5592,7 +5613,8 @@ components:
           description: Name of the issue type.
           type: string
         normalized_name:
-          description: Normalized name of the issue type. For example, "Sub-tásks" becomes "subtask".
+          description: Normalized name of the issue type. For example, "Sub-tásks"
+            becomes "subtask".
           type: string
         count:
           description: Number of issues that satisfy the filters and belong to this
@@ -7612,7 +7634,8 @@ components:
           description: Session account ID.
           type: integer
         split_by_check_runs:
-          description: Calculate metrics separately for each number of check runs in suite.
+          description: Calculate metrics separately for each number of check runs
+            in suite.
           type: boolean
       required:
       - account
@@ -7653,7 +7676,8 @@ components:
             type: array
           type: array
         labels_include:
-          description: At least one of these labels must be present in the checked PRs.
+          description: At least one of these labels must be present in the checked
+            PRs.
           items:
             type: string
           type: array
@@ -8005,7 +8029,8 @@ components:
         triggered_by:
           $ref: '#/components/schemas/CommitPushers'
         labels_include:
-          description: At least one of these labels must be present in the checked PRs.
+          description: At least one of these labels must be present in the checked
+            PRs.
           items:
             type: string
           type: array

@@ -1,14 +1,16 @@
-from datetime import datetime
+from datetime import datetime, timezone
 import struct
-from typing import List, Optional, Union
+from typing import Dict, List, Optional
 
-import databases
+import aiosqlite
 import dateutil.parser
-from sqlalchemy import select
+from sqlalchemy import join, select
 
 from athenian.api.controllers.ffx import encrypt
-from athenian.api.models.state.models import UserAccount
+from athenian.api.models.state.models import Account, UserAccount
+from athenian.api.models.web.account_status import AccountStatus
 from athenian.api.models.web.base_model_ import Model
+from athenian.api.typing_utils import DatabaseLike
 
 
 class User(Model):
@@ -22,7 +24,7 @@ class User(Model):
         "email": Optional[str],
         "picture": Optional[str],
         "updated": Optional[str],
-        "accounts": Optional[object],
+        "accounts": Optional[Dict[int, AccountStatus]],
         "impersonated_by": Optional[str],
     }
 
@@ -114,8 +116,7 @@ class User(Model):
         """Check whether the object is less than the other."""
         return self.id < other.id
 
-    async def load_accounts(
-            self, db: Union[databases.core.Connection, databases.Database]) -> "User":
+    async def load_accounts(self, db: DatabaseLike) -> "User":
         """
         Fetch the accounts membership from the database.
 
@@ -123,9 +124,21 @@ class User(Model):
         :return: self
         """
         accounts = await db.fetch_all(
-            select([UserAccount]).where(UserAccount.user_id == self.id))
-        self.accounts = {x[UserAccount.account_id.key]: x[UserAccount.is_admin.key]
-                         for x in accounts}
+            select([UserAccount, Account.expires_at])
+            .select_from(join(UserAccount, Account, UserAccount.account_id == Account.id))
+            .where(UserAccount.user_id == self.id))
+        try:
+            is_sqlite = db.url.dialect == "sqlite"
+        except AttributeError:
+            is_sqlite = isinstance(db.raw_connection, aiosqlite.Connection)
+        now = datetime.now(None if is_sqlite else timezone.utc)
+        self.accounts = {
+            x[UserAccount.account_id.key]: AccountStatus(
+                is_admin=x[UserAccount.is_admin.key],
+                expired=x[Account.expires_at.key] < now,
+            )
+            for x in accounts
+        }
         return self
 
     @property
@@ -278,7 +291,7 @@ class User(Model):
         self._updated = updated
 
     @property
-    def accounts(self) -> Optional[dict]:
+    def accounts(self) -> Optional[Dict[int, AccountStatus]]:
         """Gets the accounts of this User.
 
         Mapping between account IDs the user is a member of and is_admin flags.
@@ -288,7 +301,7 @@ class User(Model):
         return self._accounts
 
     @accounts.setter
-    def accounts(self, accounts: Optional[dict]):
+    def accounts(self, accounts: Optional[Dict[int, AccountStatus]]):
         """Sets the accounts of this User.
 
         Mapping between account IDs the user is a member of and is_admin flags.
