@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import random
 import shutil
+from sqlite3 import OperationalError
 import sys
 import tempfile
 import time
@@ -32,7 +33,7 @@ except ImportError:
             if not kwargs:
                 return args[0]
             return lambda fn: fn
-from sqlalchemy import create_engine, func
+from sqlalchemy import create_engine, delete, func, insert
 from sqlalchemy.ext.declarative import DeclarativeMeta
 from sqlalchemy.orm import sessionmaker
 import uvloop
@@ -58,7 +59,7 @@ from athenian.api.experiments.preloading.entries import PreloadedBranchMiner, \
 from athenian.api.faster_pandas import patch_pandas
 from athenian.api.metadata import __package__ as package
 from athenian.api.models import check_collation, metadata, persistentdata
-from athenian.api.models.metadata.github import Base as GithubBase, PullRequest, \
+from athenian.api.models.metadata.github import Account, Base as GithubBase, PullRequest, \
     ShadowBase as ShadowGithubBase
 from athenian.api.models.metadata.jira import Base as JiraBase
 from athenian.api.models.persistentdata.models import Base as PersistentdataBase
@@ -306,12 +307,13 @@ def with_preloading_enabled():
 
 
 @pytest.fixture(scope="function")
-async def with_preloading(sdb, mdb, pdb, rdb, with_preloading_enabled):
+async def with_preloading(sdb, mdb, mdb_rw, pdb, rdb, with_preloading_enabled):
     if not with_preloading_enabled:
         return False
 
     mc_preloader = MemoryCachePreloader()
-    await mc_preloader.preload(sdb=sdb, mdb=mdb, pdb=pdb, rdb=rdb)
+    await mc_preloader.preload(sdb=sdb, mdb=mdb_rw, pdb=pdb, rdb=rdb)
+    mdb.cache = mdb_rw.cache
     return True
 
 
@@ -352,11 +354,17 @@ def client(loop, aiohttp_client, app):
 
 @pytest.fixture(scope="module")
 def metadata_db(worker_id) -> str:
+    return _metadata_db(worker_id, False)
+
+
+def _metadata_db(worker_id: str, force_reset: bool) -> str:
     metadata.__version__ = metadata.__min_version__
     if override_mdb:
         conn_str = override_mdb % worker_id
     else:
         metadata_db_path = db_dir / ("mdb-%s.sqlite" % worker_id)
+        if force_reset:
+            metadata_db_path.unlink(missing_ok=True)
         conn_str = "sqlite:///%s" % metadata_db_path
     engine = create_engine(conn_str.rsplit("?", 1)[0])
     if engine.url.drivername == "postgresql":
@@ -479,6 +487,27 @@ async def _connect_to_db(addr, loop, request):
 @pytest.fixture(scope="function")
 async def mdb(metadata_db, loop, request):
     return await _connect_to_db(metadata_db, loop, request)
+
+
+@pytest.fixture(scope="function")
+async def mdb_rw(mdb, loop, worker_id, request):
+    if mdb.url.dialect != "sqlite":
+        return mdb
+    # check whether the database is locked
+    # IDK why it happens in the CI sometimes
+    try:
+        # a canary query
+        await mdb.execute(insert(Account).values({
+            Account.id: 777,
+            Account.owner_id: 1,
+            Account.owner_login: "xxx",
+        }))
+    except OperationalError:
+        metadata_db = _metadata_db(worker_id, True)
+        mdb = await _connect_to_db(metadata_db, loop, request)
+    finally:
+        await mdb.execute(delete(Account).where(Account.id == 777))
+    return mdb
 
 
 @pytest.fixture(scope="function")

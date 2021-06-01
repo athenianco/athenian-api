@@ -1,7 +1,6 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
 import math
-from random import random
 from typing import Sequence
 import uuid
 
@@ -1025,10 +1024,10 @@ async def test_store_open_pull_request_facts_smoke(
     assert len(loaded_facts) == 0
 
 
-@pytest.mark.flaky(reruns=5, reruns_delay=0.1 + random())
 @with_only_master_branch
 @with_defer
-async def test_rescan_prs_mark_force_push_dropped(mdb, pdb, default_branches, pr_samples):
+async def test_rescan_prs_mark_force_push_dropped(mdb_rw, pdb, default_branches, pr_samples):
+    mdb = mdb_rw
     samples, prs, settings = _gen_one_pr(pr_samples)
     prs[0].pr[PullRequest.node_id.key] = "MDExOlB1bGxSZXF1ZXN0NTc5NDcxODA="
 
