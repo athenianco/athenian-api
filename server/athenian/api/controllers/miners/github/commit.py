@@ -291,7 +291,7 @@ async def fetch_repository_commits(repos: Dict[str, DAG],
             if prune:
                 hashes, vertexes, edges = extract_subdag(hashes, vertexes, edges, repo_heads[repo])
             result[repo] = hashes, vertexes, edges
-        if pdb.url.dialect in ("postgres", "postgresql"):
+        if pdb.url.dialect == "postgresql":
             sql = postgres_insert(GitHubCommitHistory)
             sql = sql.on_conflict_do_update(
                 constraint=GitHubCommitHistory.__table__.primary_key,

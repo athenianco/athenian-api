@@ -7,7 +7,7 @@ import re
 import sys
 import threading
 import time
-from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
+from typing import Any, Callable, List, Mapping, Optional, Tuple, Union
 from urllib.parse import quote
 
 import aiohttp.web
@@ -16,6 +16,7 @@ import asyncpg
 import databases.core
 from databases.interfaces import ConnectionBackend, TransactionBackend
 import sentry_sdk
+from sqlalchemy.dialects.postgresql import hstore
 from sqlalchemy.sql import ClauseElement
 from sqlalchemy.sql.functions import ReturnTypeFromArgs
 
@@ -244,6 +245,13 @@ class ExecuteManyConnection(databases.core.Connection):
         compiled_query = compiled.string % sql_mapping
 
         processors = compiled._bind_processors
+        if isinstance(self.raw_connection, asyncpg.Connection):
+            # we should not process HSTORE, asyncpg will do it for us
+            removed = [key for key, val in processors.items()
+                       if val.__qualname__.startswith("HSTORE")]
+            for key in removed:
+                del processors[key]
+
         args = []
         for dikt in values:
             series = [None] * len(compiled_params)
@@ -255,29 +263,56 @@ class ExecuteManyConnection(databases.core.Connection):
 
 
 class ParallelDatabase(databases.Database):
-    """Override connection() to ignore the task context and spawn a new Connection every time."""
+    """
+    Override connection() to ignore the task context and spawn a new Connection every time.
+
+    Tweak the behavior on per-dialect basis.
+    """
 
     _serialization_lock = None
+
+    def __init__(
+        self,
+        url: Union[str, databases.DatabaseURL],
+        *,
+        force_rollback: bool = False,
+        **options: Any,
+    ):
+        """
+        Database constructor with blackjack and whores.
+
+        If running on Postgres, enable parsing HSTORE columns.
+        If running on SQLite, initialize the shared write serialization lock.
+        """
+        url = databases.DatabaseURL(url)
+        if url.dialect not in ("postgresql", "sqlite"):
+            raise ValueError("Dialect %s is not supported." % url.dialect)
+        if url.dialect == "postgresql":
+            options["init"] = self._register_hstore_codec
+            options["statement_cache_size"] = 0
+            self._ignore_hstore = False
+        super().__init__(url, force_rollback=force_rollback, **options)
+        if url.dialect == "sqlite":
+            self._serialization_lock = asyncio.Lock()
 
     def __str__(self):
         """Make Sentry debugging easier."""
         return "ParallelDatabase('%s', options=%s)" % (self.url, self.options)
-
-    async def connect(self) -> None:
-        """
-        Establish the connection pool.
-
-        If running on SQLite, initialize the shared write serialization lock.
-        """
-        await super().connect()
-        if self.url.dialect == "sqlite":
-            self._serialization_lock = asyncio.Lock()
 
     def connection(self) -> "databases.core.Connection":
         """Bypass self._connection_context."""
         connection = ExecuteManyConnection(self._backend)
         connection._serialization_lock = self._serialization_lock
         return connection
+
+    async def _register_hstore_codec(self, conn: asyncpg.Connection) -> None:
+        if self._ignore_hstore:
+            return
+        try:
+            await conn.set_builtin_type_codec("hstore", codec_name="pg_contrib.hstore")
+        except ValueError:
+            # no HSTORE is registered
+            self._ignore_hstore = True
 
 
 _sql_log = logging.getLogger("%s.sql" % metadata.__package__)
@@ -338,10 +373,55 @@ async def _asyncpg_executemany(self, query, args, timeout, **kwargs):
         return await self._executemany_original(query, args, timeout, **kwargs)
 
 
+asyncpg.Connection._introspect_types_cache = {}
+asyncpg.Connection._introspect_type_cache = {}
+
+
+class _FakeStatement:
+    name = ""
+
+
+async def _introspect_types_cached(self, typeoids, timeout):
+    cls = type(self)
+    if missing := [oid for oid in typeoids if oid not in cls._introspect_types_cache]:
+        rows, stmt = await self._introspect_types_original(missing, timeout)
+        assert stmt.name == ""
+        for row in rows:
+            cls._introspect_types_cache[row["oid"]] = row
+    return [cls._introspect_types_cache[oid] for oid in typeoids], _FakeStatement
+
+
+async def _introspect_type_cached(self, typename, schema):
+    cls = type(self)
+    try:
+        return cls._introspect_type_cache[typename]
+    except KeyError:
+        cls._introspect_type_cache[typename] = r = await self._introspect_type_original(
+            typename, schema)
+        return r
+
+
+asyncpg.Connection._introspect_types_original = asyncpg.Connection._introspect_types
+asyncpg.Connection._introspect_types = _introspect_types_cached
+asyncpg.Connection._introspect_type_original = asyncpg.Connection._introspect_type
+asyncpg.Connection._introspect_type = _introspect_type_cached
 asyncpg.Connection._execute_original = asyncpg.Connection._Connection__execute
 asyncpg.Connection._Connection__execute = _asyncpg_execute
 asyncpg.Connection._executemany_original = asyncpg.Connection._executemany
 asyncpg.Connection._executemany = _asyncpg_executemany
+
+
+hstore = sys.modules[hstore.__module__]
+_original_parse_hstore = hstore._parse_hstore
+
+
+def _universal_parse_hstore(hstore_str):
+    if isinstance(hstore_str, dict):
+        return hstore_str
+    return _original_parse_hstore(hstore_str)
+
+
+hstore._parse_hstore = _universal_parse_hstore
 
 
 class greatest(ReturnTypeFromArgs):  # noqa
@@ -397,16 +477,3 @@ def check_schema_versions(metadata_db: str,
     for t in checkers:
         t.join()
     return passed
-
-
-def compose_db_options(mdb: str, sdb: str, pdb: str, rdb: str) -> Dict[str, Dict[str, Any]]:
-    """Create the kwargs for each of the three databases.Database __init__-s."""
-    result = {"mdb_options": {},
-              "sdb_options": {},
-              "pdb_options": {},
-              "rdb_options": {}}
-    for url, dikt in zip((mdb, sdb, pdb, rdb), result.values()):
-        if databases.DatabaseURL(url).dialect in ("postgres", "postgresql"):
-            # enable PgBouncer
-            dikt["statement_cache_size"] = 0
-    return result

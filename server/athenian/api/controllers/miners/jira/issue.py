@@ -61,8 +61,7 @@ async def generate_jira_prs_query(filters: List[ClauseElement],
     if jira.labels:
         components = await _load_components(jira.labels, jira.account, mdb, cache)
         _append_label_filters(
-            jira.labels, components, mdb.url.dialect in ("postgres", "postgresql"), filters,
-            model=_issue)
+            jira.labels, components, mdb.url.dialect == "postgresql", filters, model=_issue)
     if jira.issue_types:
         filters.append(sql.func.lower(_issue.type).in_(jira.issue_types))
     if not jira.epics:
@@ -376,7 +375,7 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
                         cache: Optional[aiomcache.Client],
                         extra_columns: Iterable[InstrumentedAttribute] = (),
                         ) -> pd.DataFrame:
-    postgres = mdb.url.dialect in ("postgres", "postgresql")
+    postgres = mdb.url.dialect == "postgresql"
     columns = [
         Issue.id,
         Issue.type,
@@ -422,7 +421,7 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
     if labels:
         components = await _load_components(labels, ids[0], mdb, cache)
         _append_label_filters(
-            labels, components, mdb.url.dialect in ("postgres", "postgresql"), and_filters)
+            labels, components, mdb.url.dialect == "postgresql", and_filters)
     if reporters and (postgres or not commenters):
         or_filters.append(sql.func.lower(Issue.reporter_display_name).in_(reporters))
     if assignees and (postgres or not commenters):

@@ -20,8 +20,8 @@ from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import and_, desc, func, insert, select, update
 from tqdm import tqdm
 
-from athenian.api.__main__ import check_schema_versions, compose_db_options, create_memcached, \
-    create_slack, setup_context
+from athenian.api.__main__ import check_schema_versions, create_memcached, create_slack, \
+    setup_context
 from athenian.api.async_utils import gather
 from athenian.api.cache import CACHE_VAR_NAME, setup_cache_metrics
 from athenian.api.controllers.account import copy_teams_as_needed, generate_jira_invitation_link, \
@@ -76,20 +76,11 @@ def _parse_args():
 
 async def _connect_to_dbs(args: argparse.Namespace,
                           ) -> Tuple[Database, Database, Database, Database]:
-    db_opts = compose_db_options(
-        args.metadata_db, args.state_db, args.precomputed_db, args.persistentdata_db)
-    sdb = measure_db_overhead_and_retry(
-        ParallelDatabase(args.state_db, **db_opts["sdb_options"]))
-    await sdb.connect()
-    mdb = measure_db_overhead_and_retry(
-        ParallelDatabase(args.metadata_db, **db_opts["mdb_options"]))
-    await mdb.connect()
-    pdb = measure_db_overhead_and_retry(
-        ParallelDatabase(args.precomputed_db, **db_opts["pdb_options"]))
-    await pdb.connect()
-    rdb = measure_db_overhead_and_retry(
-        ParallelDatabase(args.persistentdata_db, **db_opts["rdb_options"]))
-    await rdb.connect()
+    sdb = measure_db_overhead_and_retry(ParallelDatabase(args.state_db))
+    mdb = measure_db_overhead_and_retry(ParallelDatabase(args.metadata_db))
+    pdb = measure_db_overhead_and_retry(ParallelDatabase(args.precomputed_db))
+    rdb = measure_db_overhead_and_retry(ParallelDatabase(args.persistentdata_db))
+    await gather(sdb.connect(), mdb.connect(), pdb.connect(), rdb.connect())
     pdb.metrics = {
         "hits": ContextVar("pdb_hits", default=defaultdict(int)),
         "misses": ContextVar("pdb_misses", default=defaultdict(int)),
@@ -271,7 +262,7 @@ def main():
         try:
             return await async_run()
         except Exception as e:
-            log.warning("unhandled error: %s: %s", type(e).__name__, e)
+            log.warning("unhandled error: %s: %s\n%s", type(e).__name__, e, traceback.format_exc())
             sentry_sdk.capture_exception(e)
             return_code = 1
 

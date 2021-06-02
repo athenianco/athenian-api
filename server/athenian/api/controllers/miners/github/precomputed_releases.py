@@ -106,7 +106,7 @@ async def store_precomputed_release_facts(releases: List[Tuple[Dict[str, Any], R
             published_at=facts.published.item().replace(tzinfo=timezone.utc),
             data=facts.data,
         ).create_defaults().explode(with_primary_keys=True))
-    if pdb.url.dialect in ("postgres", "postgresql"):
+    if pdb.url.dialect == "postgresql":
         sql = postgres_insert(GitHubReleaseFacts).on_conflict_do_nothing()
     else:
         sql = insert(GitHubReleaseFacts).prefix_with("OR IGNORE")

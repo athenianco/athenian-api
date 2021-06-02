@@ -417,7 +417,7 @@ class DonePRFactsLoader:
                  2. Map from repository name to ambiguous PR node IDs which are released by \
                  branch with tag_or_branch strategy and without tags on the time interval.
         """
-        postgres = pdb.url.dialect in ("postgres", "postgresql")
+        postgres = pdb.url.dialect == "postgresql"
         ghprt = GitHubDonePullRequestFacts
         selected = [ghprt.pr_node_id,
                     ghprt.repository_full_name,
@@ -528,34 +528,48 @@ class DonePRFactsLoader:
                                     postgres: bool) -> None:
         ghdprf = GitHubDonePullRequestFacts
         if postgres:
-            developer_filters_single = []
-            for col, pk in ((ghdprf.author, PRParticipationKind.AUTHOR),
-                            (ghdprf.merger, PRParticipationKind.MERGER),
-                            (ghdprf.releaser, PRParticipationKind.RELEASER)):
-                col_parts = participants.get(pk)
-                if not col_parts:
-                    continue
-                developer_filters_single.append(col.in_(col_parts))
+            dev_conds_single, dev_conds_multiple = cls._build_participants_conditions(participants)
+
+            developer_filters_single = [
+                col.in_(col_parts) for col, col_parts in dev_conds_single
+            ]
             # do not send the same array several times
             for f in developer_filters_single[1:]:
                 f.right = developer_filters_single[0].right
-            developer_filters_multiple = []
-            for col, pk in ((ghdprf.commenters, PRParticipationKind.COMMENTER),
-                            (ghdprf.reviewers, PRParticipationKind.REVIEWER),
-                            (ghdprf.commit_authors, PRParticipationKind.COMMIT_AUTHOR),
-                            (ghdprf.commit_committers, PRParticipationKind.COMMIT_COMMITTER)):
-                col_parts = participants.get(pk)
-                if not col_parts:
-                    continue
-                developer_filters_multiple.append(col.has_any(col_parts))
+
+            developer_filters_multiple = [
+                col.has_any(col_parts) for col, col_parts in dev_conds_multiple
+            ]
             # do not send the same array several times
             for f in developer_filters_multiple[1:]:
                 f.right = developer_filters_multiple[0].right
+
             filters.append(or_(*developer_filters_single, *developer_filters_multiple))
         else:
             selected.extend([
                 ghdprf.author, ghdprf.merger, ghdprf.releaser, ghdprf.reviewers, ghdprf.commenters,
                 ghdprf.commit_authors, ghdprf.commit_committers])
+
+    @classmethod
+    def _build_participants_conditions(cls, participants: PRParticipants) -> Tuple[list]:
+
+        def _build_conditions(roles):
+            return [
+                (c, cp) for c, cp in (
+                    (col, participants.get(pk)) for col, pk in roles
+                ) if cp
+            ]
+
+        ghdprf = GitHubDonePullRequestFacts
+        single_roles = ((ghdprf.author, PRParticipationKind.AUTHOR),
+                        (ghdprf.merger, PRParticipationKind.MERGER),
+                        (ghdprf.releaser, PRParticipationKind.RELEASER))
+        multiple_roles = ((ghdprf.commenters, PRParticipationKind.COMMENTER),
+                          (ghdprf.reviewers, PRParticipationKind.REVIEWER),
+                          (ghdprf.commit_authors, PRParticipationKind.COMMIT_AUTHOR),
+                          (ghdprf.commit_committers, PRParticipationKind.COMMIT_COMMITTER))
+
+        return _build_conditions(single_roles), _build_conditions(multiple_roles)
 
     @classmethod
     def _check_participants(cls, row: Mapping, participants: PRParticipants) -> bool:
@@ -662,19 +676,22 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
         ).create_defaults().explode(with_primary_keys=True))
     if not inserted:
         return
-    if pdb.url.dialect in ("postgres", "postgresql"):
+    if pdb.url.dialect == "postgresql":
         sql = postgres_insert(GitHubDonePullRequestFacts)
         sql = sql.on_conflict_do_update(
             constraint=GitHubDonePullRequestFacts.__table__.primary_key,
             set_={
-                GitHubDonePullRequestFacts.pr_done_at.key: sql.excluded.pr_done_at,
-                GitHubDonePullRequestFacts.updated_at.key: sql.excluded.updated_at,
-                GitHubDonePullRequestFacts.release_url.key: sql.excluded.release_url,
-                GitHubDonePullRequestFacts.release_node_id.key: sql.excluded.release_node_id,
-                GitHubDonePullRequestFacts.merger.key: sql.excluded.merger,
-                GitHubDonePullRequestFacts.releaser.key: sql.excluded.releaser,
-                GitHubDonePullRequestFacts.activity_days.key: sql.excluded.activity_days,
-                GitHubDonePullRequestFacts.data.key: sql.excluded.data,
+                col.key: getattr(sql.excluded, col.key)
+                for col in (
+                    GitHubDonePullRequestFacts.pr_done_at,
+                    GitHubDonePullRequestFacts.updated_at,
+                    GitHubDonePullRequestFacts.release_url,
+                    GitHubDonePullRequestFacts.release_node_id,
+                    GitHubDonePullRequestFacts.merger,
+                    GitHubDonePullRequestFacts.releaser,
+                    GitHubDonePullRequestFacts.activity_days,
+                    GitHubDonePullRequestFacts.data,
+                )
             },
         )
     elif pdb.url.dialect == "sqlite":
@@ -755,14 +772,3 @@ def _flatten_set(s: set) -> Optional[Any]:
         return None
     assert len(s) == 1
     return next(iter(s))
-
-
-# TODO: these have to be removed, these are here just for keeping backward-compatibility
-# without the need to re-write already all the places these functions are called
-load_precomputed_done_candidates = DonePRFactsLoader.load_precomputed_done_candidates
-load_precomputed_done_facts_all = DonePRFactsLoader.load_precomputed_done_facts_all
-load_precomputed_done_facts_filters = DonePRFactsLoader.load_precomputed_done_facts_filters
-load_precomputed_done_facts_ids = DonePRFactsLoader.load_precomputed_done_facts_ids
-load_precomputed_done_facts_reponums = DonePRFactsLoader.load_precomputed_done_facts_reponums
-load_precomputed_pr_releases = DonePRFactsLoader.load_precomputed_pr_releases
-load_precomputed_done_timestamp_filters = DonePRFactsLoader.load_precomputed_done_timestamp_filters

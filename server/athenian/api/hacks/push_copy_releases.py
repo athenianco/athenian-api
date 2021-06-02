@@ -11,13 +11,14 @@ from sqlalchemy import insert
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 
 import athenian
-from athenian.api.__main__ import check_schema_versions, compose_db_options, setup_context
+from athenian.api.__main__ import check_schema_versions, setup_context
+from athenian.api.async_utils import gather
 from athenian.api.controllers.account import get_metadata_account_ids
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.release_load import ReleaseLoader
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import Settings
-from athenian.api.db import ParallelDatabase
+from athenian.api.db import measure_db_overhead_and_retry, ParallelDatabase
 from athenian.api.defer import enable_defer
 from athenian.api.faster_pandas import patch_pandas
 from athenian.api.models.metadata import dereference_schemas as dereference_metadata_schemas
@@ -67,16 +68,11 @@ def main():
 
     async def async_run():
         enable_defer(False)
-        db_opts = compose_db_options(
-            args.metadata_db, args.state_db, args.precomputed_db, args.persistentdata_db)
-        sdb = ParallelDatabase(args.state_db, **db_opts["sdb_options"])
-        await sdb.connect()
-        mdb = ParallelDatabase(args.metadata_db, **db_opts["mdb_options"])
-        await mdb.connect()
-        pdb = ParallelDatabase(args.precomputed_db, **db_opts["pdb_options"])
-        await pdb.connect()
-        rdb = ParallelDatabase(args.persistentdata_db, **db_opts["rdb_options"])
-        await rdb.connect()
+        sdb = measure_db_overhead_and_retry(ParallelDatabase(args.state_db))
+        mdb = measure_db_overhead_and_retry(ParallelDatabase(args.metadata_db))
+        pdb = measure_db_overhead_and_retry(ParallelDatabase(args.precomputed_db))
+        rdb = measure_db_overhead_and_retry(ParallelDatabase(args.persistentdata_db))
+        await gather(sdb.connect(), mdb.connect(), pdb.connect(), rdb.connect())
         pdb.metrics = {
             "hits": ContextVar("pdb_hits", default=defaultdict(int)),
             "misses": ContextVar("pdb_misses", default=defaultdict(int)),
@@ -119,7 +115,7 @@ def main():
                 published_at=published_at,
                 cloned=True,
             ).create_defaults().explode(with_primary_keys=True))
-        if rdb.url.dialect in ("postgres", "postgresql"):
+        if rdb.url.dialect == "postgresql":
             sql = postgres_insert(ReleaseNotification).on_conflict_do_nothing()
         else:  # sqlite
             sql = insert(ReleaseNotification).prefix_with("OR IGNORE")

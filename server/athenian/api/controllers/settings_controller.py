@@ -170,7 +170,7 @@ async def set_jira_identities(request: AthenianWebRequest, body: dict) -> web.Re
                 delete(MappedJIRAIdentity)
                 .where(and_(MappedJIRAIdentity.account_id == request_model.account,
                             MappedJIRAIdentity.github_user_id.in_(cleared_github_ids))))
-            if sdb.url.dialect in ("postgres", "postgresql"):
+            if sdb.url.dialect == "postgresql":
                 sql = postgres_insert(MappedJIRAIdentity)
                 sql = sql.on_conflict_do_update(
                     constraint=MappedJIRAIdentity.__table__.primary_key,

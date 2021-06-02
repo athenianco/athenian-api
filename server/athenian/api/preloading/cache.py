@@ -17,7 +17,7 @@ from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.models.metadata.github import Branch, NodePullRequestJiraIssues, \
     PullRequest
 from athenian.api.models.precomputed.models import \
-    GitHubMergedPullRequestFacts, GitHubOpenPullRequestFacts, \
+    GitHubDonePullRequestFacts, GitHubMergedPullRequestFacts, GitHubOpenPullRequestFacts, \
     GitHubRelease as PrecomputedRelease, \
     GitHubReleaseMatchTimespan as PrecomputedGitHubReleaseMatchTimespan
 from athenian.api.models.state.models import AccountFeature, AccountGitHubAccount, Feature
@@ -367,6 +367,14 @@ class MemoryCachePreloader:
         self._log.info("Finished preloading DB tables in memory")
 
 
+def parse_sqlite_timestamps(col_series):
+    """Parse strings as timestamps because SQLite does not have a native TIMESTAMP column type."""
+    return [
+        [datetime.strptime(v, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+         for v in r] for r in col_series
+    ]
+
+
 class MCID(str, Enum):
     """Identifiers of the cached tables from metadata DB."""
 
@@ -380,6 +388,7 @@ class PCID(str, Enum):
 
     releases = PrecomputedRelease.__table__.fullname
     releases_match_timespan = PrecomputedGitHubReleaseMatchTimespan.__table__.fullname
+    done_pr_facts = GitHubDonePullRequestFacts.__table__.fullname
     open_pr_facts = GitHubOpenPullRequestFacts.__table__.fullname
     merged_pr_facts = GitHubMergedPullRequestFacts.__table__.fullname
 
@@ -537,10 +546,7 @@ def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[Instrumente
                 ],
                 "coerce_cols": {
                     GitHubOpenPullRequestFacts.activity_days: {
-                        "sqlite": lambda col_series: [
-                            [datetime.strptime(v, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-                             for v in r] for r in col_series
-                        ],
+                        "sqlite": parse_sqlite_timestamps,
                     },
                 },
             },
@@ -578,10 +584,51 @@ def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[Instrumente
                 ],
                 "coerce_cols": {
                     GitHubMergedPullRequestFacts.activity_days: {
-                        "sqlite": lambda col_series: [
-                            [datetime.strptime(v, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-                             for v in r] for r in col_series
-                        ],
+                        "sqlite": parse_sqlite_timestamps,
+                    },
+                },
+            },
+            PCID.done_pr_facts.value: {
+                "sharding": {
+                    "column": GitHubDonePullRequestFacts.acc_id,
+                    "key": "acc_id",
+                },
+                "filtering_clause": (
+                    GitHubDonePullRequestFacts.format_version ==
+                    GitHubDonePullRequestFacts.__table__.columns[
+                        GitHubDonePullRequestFacts.format_version.key].default.arg,
+                ),
+                "cols": [
+                    GitHubDonePullRequestFacts.acc_id,
+                    GitHubDonePullRequestFacts.repository_full_name,
+                    GitHubDonePullRequestFacts.pr_created_at,
+                    GitHubDonePullRequestFacts.pr_done_at,
+                    GitHubDonePullRequestFacts.author,
+                    GitHubDonePullRequestFacts.merger,
+                    GitHubDonePullRequestFacts.releaser,
+                    GitHubDonePullRequestFacts.commenters,
+                    GitHubDonePullRequestFacts.reviewers,
+                    GitHubDonePullRequestFacts.commit_authors,
+                    GitHubDonePullRequestFacts.commit_committers,
+                    GitHubDonePullRequestFacts.pr_node_id,
+                    GitHubDonePullRequestFacts.release_match,
+                    GitHubDonePullRequestFacts.activity_days,
+                    GitHubDonePullRequestFacts.data,
+                ],
+                "categorical_cols": [
+                    GitHubDonePullRequestFacts.acc_id,
+                    GitHubDonePullRequestFacts.repository_full_name,
+                    GitHubDonePullRequestFacts.author,
+                    GitHubDonePullRequestFacts.merger,
+                    GitHubDonePullRequestFacts.releaser,
+                    GitHubDonePullRequestFacts.release_match,
+                ],
+                "identifier_cols": [
+                    GitHubDonePullRequestFacts.pr_node_id,
+                ],
+                "coerce_cols": {
+                    GitHubDonePullRequestFacts.activity_days: {
+                        "sqlite": parse_sqlite_timestamps,
                     },
                 },
             },
