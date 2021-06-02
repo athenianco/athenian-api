@@ -238,15 +238,8 @@ class PreloadedDonePRFactsLoader(DonePRFactsLoader):
         with sentry_sdk.start_span(op="_load_precomputed_done_filters/triage"):
             result = {}
             ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
-
-            # TODO: this `to_dict` call can probably be removed. The reason why it's here
-            # is because `dump` values requires to be `dict`, but iterating over the numpy
-            # arrays and doing the following:
-            #
-            #     dump[pr_node_id] = dict(done_pr_facts.iloc[i])
-            #
-            # is super slow because of the `dict` conversion.
-            i = 0
+            # we cannot iterate with zip(column1, column2, ...) because the rest of the code
+            # expects dicts and to_dict() is faster than making individual dicts.
             for row in done_pr_facts.to_dict(orient="records"):
                 dump = triage_by_release_match(
                     row[model.repository_full_name.key],
@@ -259,7 +252,6 @@ class PreloadedDonePRFactsLoader(DonePRFactsLoader):
                 if dump is None:
                     continue
                 dump[row[model.pr_node_id.key]] = row
-                i += 1
 
         return cls._post_process_ambiguous_done_prs(result, ambiguous)
 
