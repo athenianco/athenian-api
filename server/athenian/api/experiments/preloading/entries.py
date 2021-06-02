@@ -48,8 +48,10 @@ from athenian.api.tracing import sentry_span
 
 def _build_activity_mask(model: Union[MetadataGitHubBase, PrecomputedGitHubBase],
                          df: pd.DataFrame, time_from: datetime, time_to: datetime):
+    activity_mask = np.zeros(len(df), bool)
+    if df.empty:
+        return activity_mask
     activity_days = np.concatenate(df[model.activity_days.key].values)
-    activity_mask = np.full(len(df[model.activity_days.key]), False)
     activity_days_in_range = (
         (time_from.replace(tzinfo=timezone.utc) <= activity_days) &
         (activity_days < time_to.replace(tzinfo=timezone.utc))
