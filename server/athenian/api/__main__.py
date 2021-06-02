@@ -32,7 +32,7 @@ import uvloop
 from athenian.api import metadata
 from athenian.api.auth import Auth0
 from athenian.api.connexion import AthenianApp
-from athenian.api.db import check_schema_versions, compose_db_options
+from athenian.api.db import check_schema_versions
 from athenian.api.faster_pandas import patch_pandas
 from athenian.api.kms import AthenianKMS
 from athenian.api.preloading.cache import MemoryCachePreloader
@@ -305,11 +305,6 @@ def main() -> Optional[AthenianApp]:
         sdb_conn=args.state_db,
         pdb_conn=args.precomputed_db,
         rdb_conn=args.persistentdata_db,
-        **compose_db_options(args.metadata_db,
-                             args.state_db,
-                             args.precomputed_db,
-                             args.persistentdata_db,
-                             ),
         ui=args.ui, auth0_cls=auth0_cls, kms_cls=kms_cls, cache=cache, slack=slack,
         client_max_size=int(os.getenv("ATHENIAN_MAX_CLIENT_SIZE", 256 * 1024)),
         max_load=float(os.getenv("ATHENIAN_MAX_LOAD", 12)))

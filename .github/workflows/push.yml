@@ -280,8 +280,8 @@ jobs:
         docker run --rm gcr.io/${{ secrets.GOOGLE_PROJECT }}/api --help
         docker build -t test --build-arg base=gcr.io/${{ secrets.GOOGLE_PROJECT }}/api server/tests
         run="docker run --network=host --rm -v $(pwd):/io -w /io --entrypoint python3 -e ATHENIAN_INVITATION_KEY=777 -e ATHENIAN_INVITATION_URL_PREFIX=https://app.athenian.co/i/ -e ATHENIAN_JIRA_INSTALLATION_URL_TEMPLATE=https://installation.athenian.co/jira/%s/atlassian-connect.json test -m coverage"
-        $run run -a -m athenian.api.models.state postgres://postgres:postgres@0.0.0.0:5432/state
-        $run run -a -m athenian.api.invite_admin postgres://postgres:postgres@0.0.0.0:5432/state
+        $run run -a -m athenian.api.models.state postgresql://postgres:postgres@0.0.0.0:5432/state
+        $run run -a -m athenian.api.invite_admin postgresql://postgres:postgres@0.0.0.0:5432/state
         $run run -a /usr/local/bin/alembic downgrade 34eafe9e7cd9
         $run combine
         $run xml

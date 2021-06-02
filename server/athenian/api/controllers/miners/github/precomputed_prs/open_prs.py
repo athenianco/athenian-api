@@ -85,7 +85,7 @@ class OpenPRFactsLoader:
         :param authors: Map from PR node IDs to their author logins.
         :return: Map from PR node IDs to their facts.
         """
-        postgres = pdb.url.dialect in ("postgres", "postgresql")
+        postgres = pdb.url.dialect == "postgresql"
         ghoprf = GitHubOpenPullRequestFacts
         selected = [ghoprf.pr_node_id, ghoprf.repository_full_name, ghoprf.data]
         default_version = ghoprf.__table__.columns[ghoprf.format_version.key].default.arg
@@ -159,7 +159,7 @@ async def store_open_pull_request_facts(
 
     Each passed PR must be open, we raise an assertion otherwise.
     """
-    postgres = pdb.url.dialect in ("postgres", "postgresql")
+    postgres = pdb.url.dialect == "postgresql"
     if not postgres:
         assert pdb.url.dialect == "sqlite"
     values = []

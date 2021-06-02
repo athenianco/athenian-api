@@ -7,7 +7,7 @@ import textwrap
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather
-from athenian.api.db import check_schema_versions, compose_db_options, ParallelDatabase
+from athenian.api.db import check_schema_versions, ParallelDatabase
 from athenian.api.preloading.cache import MemoryCachePreloader
 
 
@@ -55,18 +55,14 @@ def main():
         "pdb": args.precomputed_db,
         "rdb": args.persistentdata_db,
     }
-    db_options = compose_db_options(args.metadata_db,
-                                    args.state_db,
-                                    args.precomputed_db,
-                                    args.persistentdata_db)
 
-    return asyncio.run(_main(db_conns, db_options, args.detailed))
+    return asyncio.run(_main(db_conns, args.detailed))
 
 
-async def _main(db_conns: dict, db_options: dict, detailed: bool):
+async def _main(db_conns: dict, detailed: bool):
     tasks, dbs = [], {}
     for db_shortcut, db_conn in db_conns.items():
-        db = ParallelDatabase(db_conn, **db_options[f"{db_shortcut}_options"])
+        db = ParallelDatabase(db_conn)
         tasks.append(db.connect())
         dbs[db_shortcut] = db
 

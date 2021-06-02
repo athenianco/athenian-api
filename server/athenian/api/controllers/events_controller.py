@@ -139,7 +139,7 @@ async def notify_release(request: AthenianWebRequest, body: List[dict]) -> web.R
             url=n.url,
             published_at=n.published_at or datetime.now(timezone.utc),
         ).create_defaults().explode(with_primary_keys=True))
-    if rdb.url.dialect in ("postgres", "postgresql"):
+    if rdb.url.dialect == "postgresql":
         sql = postgres_insert(ReleaseNotification)
         sql = sql.on_conflict_do_update(
             constraint=ReleaseNotification.__table__.primary_key,

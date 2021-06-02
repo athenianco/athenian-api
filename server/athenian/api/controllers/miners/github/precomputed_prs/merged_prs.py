@@ -65,7 +65,7 @@ class MergedPRFactsLoader:
         log = logging.getLogger("%s.load_merged_unreleased_pull_request_facts" %
                                 metadata.__package__)
         ghmprf = GitHubMergedPullRequestFacts
-        postgres = pdb.url.dialect in ("postgres", "postgresql")
+        postgres = pdb.url.dialect == "postgresql"
         selected = [ghmprf.pr_node_id,
                     ghmprf.repository_full_name,
                     ghmprf.data,
@@ -207,7 +207,7 @@ async def update_unreleased_prs(merged_prs: pd.DataFrame,
     """
     assert time_to.tzinfo is not None
     time_to = min(time_to, datetime.now(timezone.utc))
-    postgres = pdb.url.dialect in ("postgres", "postgresql")
+    postgres = pdb.url.dialect == "postgresql"
     values = []
     if not released_prs.empty:
         release_times = dict(zip(released_prs.index.values,
@@ -292,7 +292,7 @@ async def store_merged_unreleased_pull_request_facts(
 
     Each passed PR must be merged and not released, we raise an assertion otherwise.
     """
-    postgres = pdb.url.dialect in ("postgres", "postgresql")
+    postgres = pdb.url.dialect == "postgresql"
     if not postgres:
         assert pdb.url.dialect == "sqlite"
     values = []
@@ -374,7 +374,7 @@ async def discover_inactive_merged_unreleased_prs(time_from: datetime,
                                                   cache: Optional[aiomcache.Client],
                                                   ) -> Tuple[List[str], List[str]]:
     """Discover PRs which were merged before `time_from` and still not released."""
-    postgres = pdb.url.dialect in ("postgres", "postgresql")
+    postgres = pdb.url.dialect == "postgresql"
     ghmprf = GitHubMergedPullRequestFacts
     ghdprf = GitHubDonePullRequestFacts
     selected = [ghmprf.pr_node_id,

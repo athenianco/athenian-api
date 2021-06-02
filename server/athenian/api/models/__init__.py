@@ -50,8 +50,7 @@ def compile_binary(binary, compiler, override_operator=None, **kw):
     if (operator is in_op or operator is notin_op) and right_len >= 10:
         left = compiler.process(binary.left, **kw)
         kw["literal_binds"] = True
-        use_any = getattr(binary, "any_values", False) and \
-            compiler.dialect.name in ("postgres", "postgresql")
+        use_any = getattr(binary, "any_values", False) and compiler.dialect.name == "postgresql"
         negate = use_any and operator is notin_op
         if use_any:
             # ANY(VALUES ...) seems to be performing the best among these three:
@@ -120,7 +119,7 @@ def check_alembic_schema_version(name: str, conn_str: str, log: logging.Logger) 
 def check_collation(conn_str: str) -> None:
     """Force the PostgreSQL collation to be "C"."""
     engine = create_engine(conn_str.split("?", 1)[0])
-    if engine.dialect.name not in ("postgres", "postgresql"):
+    if engine.dialect.name != "postgresql":
         return
     collation = engine.scalar(
         "select datcollate from pg_database where datname='%s';" % engine.url.database)

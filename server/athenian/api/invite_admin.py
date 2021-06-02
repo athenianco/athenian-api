@@ -45,7 +45,7 @@ def main(conn_str: str, force_new: bool = False) -> None:
         else:
             max_id = max_id[0]
         max_id += 1
-        if engine.url.drivername in ("postgres", "postgresql"):
+        if engine.url.drivername == "postgresql":
             session.execute("ALTER SEQUENCE accounts_id_seq RESTART WITH %d;" % max_id)
         elif engine.url.drivername == "sqlite":
             pass

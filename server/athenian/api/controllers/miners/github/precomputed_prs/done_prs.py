@@ -417,7 +417,7 @@ class DonePRFactsLoader:
                  2. Map from repository name to ambiguous PR node IDs which are released by \
                  branch with tag_or_branch strategy and without tags on the time interval.
         """
-        postgres = pdb.url.dialect in ("postgres", "postgresql")
+        postgres = pdb.url.dialect == "postgresql"
         ghprt = GitHubDonePullRequestFacts
         selected = [ghprt.pr_node_id,
                     ghprt.repository_full_name,
@@ -676,19 +676,22 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
         ).create_defaults().explode(with_primary_keys=True))
     if not inserted:
         return
-    if pdb.url.dialect in ("postgres", "postgresql"):
+    if pdb.url.dialect == "postgresql":
         sql = postgres_insert(GitHubDonePullRequestFacts)
         sql = sql.on_conflict_do_update(
             constraint=GitHubDonePullRequestFacts.__table__.primary_key,
             set_={
-                GitHubDonePullRequestFacts.pr_done_at.key: sql.excluded.pr_done_at,
-                GitHubDonePullRequestFacts.updated_at.key: sql.excluded.updated_at,
-                GitHubDonePullRequestFacts.release_url.key: sql.excluded.release_url,
-                GitHubDonePullRequestFacts.release_node_id.key: sql.excluded.release_node_id,
-                GitHubDonePullRequestFacts.merger.key: sql.excluded.merger,
-                GitHubDonePullRequestFacts.releaser.key: sql.excluded.releaser,
-                GitHubDonePullRequestFacts.activity_days.key: sql.excluded.activity_days,
-                GitHubDonePullRequestFacts.data.key: sql.excluded.data,
+                col.key: getattr(sql.excluded, col.key)
+                for col in (
+                    GitHubDonePullRequestFacts.pr_done_at,
+                    GitHubDonePullRequestFacts.updated_at,
+                    GitHubDonePullRequestFacts.release_url,
+                    GitHubDonePullRequestFacts.release_node_id,
+                    GitHubDonePullRequestFacts.merger,
+                    GitHubDonePullRequestFacts.releaser,
+                    GitHubDonePullRequestFacts.activity_days,
+                    GitHubDonePullRequestFacts.data,
+                )
             },
         )
     elif pdb.url.dialect == "sqlite":

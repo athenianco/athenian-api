@@ -755,7 +755,7 @@ async def test_discover_update_unreleased_prs_released(
 async def test_discover_update_unreleased_prs_exclude_inactive(
         mdb, pdb, rdb, dag, default_branches, release_match_setting_tag, release_loader,
         merged_prs_facts_loader, with_preloading_enabled):
-    postgres = pdb.url.dialect in ("postgres", "postgresql")
+    postgres = pdb.url.dialect == "postgresql"
     prs = await read_sql_query(
         select([PullRequest]).where(and_(PullRequest.number.in_(range(1000, 1010)),
                                          PullRequest.merged_at.isnot(None))),

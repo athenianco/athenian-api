@@ -367,6 +367,14 @@ class MemoryCachePreloader:
         self._log.info("Finished preloading DB tables in memory")
 
 
+def parse_sqlite_timestamps(col_series):
+    """Parse strings as timestamps because SQLite does not have a native TIMESTAMP column type."""
+    return [
+        [datetime.strptime(v, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+         for v in r] for r in col_series
+    ]
+
+
 class MCID(str, Enum):
     """Identifiers of the cached tables from metadata DB."""
 
@@ -538,10 +546,7 @@ def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[Instrumente
                 ],
                 "coerce_cols": {
                     GitHubOpenPullRequestFacts.activity_days: {
-                        "sqlite": lambda col_series: [
-                            [datetime.strptime(v, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-                             for v in r] for r in col_series
-                        ],
+                        "sqlite": parse_sqlite_timestamps,
                     },
                 },
             },
@@ -579,10 +584,7 @@ def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[Instrumente
                 ],
                 "coerce_cols": {
                     GitHubMergedPullRequestFacts.activity_days: {
-                        "sqlite": lambda col_series: [
-                            [datetime.strptime(v, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-                             for v in r] for r in col_series
-                        ],
+                        "sqlite": parse_sqlite_timestamps,
                     },
                 },
             },
@@ -626,10 +628,7 @@ def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[Instrumente
                 ],
                 "coerce_cols": {
                     GitHubDonePullRequestFacts.activity_days: {
-                        "sqlite": lambda col_series: [
-                            [datetime.strptime(v, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-                             for v in r] for r in col_series
-                        ],
+                        "sqlite": parse_sqlite_timestamps,
                     },
                 },
             },

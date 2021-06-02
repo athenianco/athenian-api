@@ -419,8 +419,6 @@ def _init_own_db_unchecked(letter: str,
             return conn_str
     engine = create_engine(conn_str.rsplit("?", 1)[0])
     driver = engine.url.drivername
-    if driver == "postgres":
-        driver = "postgresql"
     if letter in ("r", "p") and driver == "sqlite":
         if letter == "r":
             persistentdata.dereference_schemas()
