@@ -657,8 +657,8 @@ def match_groups_to_sql(match_groups: Dict[ReleaseMatch, Dict[str, Iterable[str]
     or_conditions, repos = match_groups_to_conditions(match_groups)
     or_items = [
         and_(
-            model.release_match == cond["release_match"],
-            model.repository_full_name.in_(cond["repository_full_name"]),
+            model.release_match == cond[PrecomputedRelease.release_match.key],
+            model.repository_full_name.in_(cond[PrecomputedRelease.repository_full_name.key]),
         ) for cond in or_conditions
     ]
 
@@ -686,8 +686,8 @@ def match_groups_to_conditions(
             continue
 
         or_conditions.extend({
-            "release_match": "".join([match.name, suffix, v]),
-            "repository_full_name": r,
+            PrecomputedRelease.release_match.key: "".join([match.name, suffix, v]),
+            PrecomputedRelease.repository_full_name.key: r,
         } for v, r in match_group.items())
         repos.extend(match_group.values())
 
