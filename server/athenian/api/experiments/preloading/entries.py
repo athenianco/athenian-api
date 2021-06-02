@@ -31,12 +31,10 @@ from athenian.api.controllers.miners.types import PRParticipants, PRParticipatio
     PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.models.metadata.github import Base as MetadataGitHubBase, \
-    Branch, NodePullRequestJiraIssues, \
-    PullRequest
+    Branch, NodePullRequestJiraIssues, PullRequest
 from athenian.api.models.precomputed.models import \
-    GitHubBase as PrecomputedGitHubBase, \
-    GitHubMergedPullRequestFacts, GitHubOpenPullRequestFacts, \
-    GitHubRelease as PrecomputedRelease, \
+    GitHubBase as PrecomputedGitHubBase, GitHubMergedPullRequestFacts, \
+    GitHubOpenPullRequestFacts, GitHubRelease as PrecomputedRelease, \
     GitHubReleaseMatchTimespan as PrecomputedGitHubReleaseMatchTimespan
 from athenian.api.preloading.cache import MCID, PCID
 from athenian.api.tracing import sentry_span
@@ -129,8 +127,9 @@ class PreloadedReleaseLoader(ReleaseLoader):
             match_groups: Dict[ReleaseMatch, Dict[str, Iterable[str]]]) -> pd.Series:
         or_conditions, _ = match_groups_to_conditions(match_groups)
         or_masks = [
-            (df[model.release_match.key] == cond["release_match"]) &
-            (df[model.repository_full_name.key].isin(cond["repository_full_name"]))
+            (df[model.release_match.key] == cond[PrecomputedRelease.release_match.key]) &
+            (df[model.repository_full_name.key].isin(
+                cond[PrecomputedRelease.repository_full_name.key]))
             for cond in or_conditions
         ]
 
@@ -371,12 +370,12 @@ class PreloadedPullRequestMiner(PullRequestMiner):
         updated_min: Optional[datetime] = None,
         updated_max: Optional[datetime] = None,
     ) -> pd.DataFrame:
-        # FIXME: prefer numpy operations rather than pandas for better performance
+        # FIXME(se7entyse7en): prefer numpy operations rather than pandas for better performance
         # See:
         #   - https://github.com/athenianco/athenian-api/pull/1337#discussion_r621071935
         #   - https://github.com/athenianco/athenian-api/pull/1337#discussion_r621073088
         if jira or labels:
-            # TODO: not supported yet, call original implementation
+            # TODO(se7entyse7en): not supported yet, call the original implementation
             return await super(PreloadedPullRequestMiner, cls)._fetch_prs_by_filters(
                 time_from,
                 time_to,
