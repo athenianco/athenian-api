@@ -13,9 +13,9 @@ from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.check_run import mine_check_runs
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.types import CodeCheckRunListItem, CodeCheckRunListStats
+from athenian.api.db import DatabaseLike
 from athenian.api.models.metadata.github import CheckRun
 from athenian.api.tracing import sentry_span
-from athenian.api.typing_utils import DatabaseLike
 
 
 @sentry_span

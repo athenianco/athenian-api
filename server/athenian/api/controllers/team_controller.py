@@ -15,13 +15,13 @@ from athenian.api.auth import disable_default_user
 from athenian.api.controllers.account import get_metadata_account_ids, get_user_account_status
 from athenian.api.controllers.jira import load_mapped_jira_users
 from athenian.api.controllers.miners.github.users import mine_users
+from athenian.api.db import DatabaseLike
 from athenian.api.models.metadata.github import User
 from athenian.api.models.state.models import Team
 from athenian.api.models.web import BadRequestError, Contributor, CreatedIdentifier, \
     DatabaseConflict, NotFoundError, Team as TeamListItem, TeamCreateRequest, TeamUpdateRequest
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
-from athenian.api.typing_utils import DatabaseLike
 
 
 @disable_default_user
@@ -102,7 +102,7 @@ async def list_teams(request: AthenianWebRequest, id: int) -> web.Response:
     account = id
     async with request.sdb.connection() as sdb_conn:
         await get_user_account_status(user, account, sdb_conn, request.cache)
-        teams = await sdb_conn.fetch_all(
+        teams = await sdb_conn.fetch_all_safe(
             select([Team]).where(Team.owner_id == account).order_by(Team.name))
         meta_ids = await get_metadata_account_ids(account, sdb_conn, request.cache)
     all_members = await _get_all_team_members(

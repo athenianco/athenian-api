@@ -7,10 +7,10 @@ import dateutil.parser
 from sqlalchemy import join, select
 
 from athenian.api.controllers.ffx import encrypt
+from athenian.api.db import DatabaseLike
 from athenian.api.models.state.models import Account, UserAccount
 from athenian.api.models.web.account_status import AccountStatus
 from athenian.api.models.web.base_model_ import Model
-from athenian.api.typing_utils import DatabaseLike
 
 
 class User(Model):

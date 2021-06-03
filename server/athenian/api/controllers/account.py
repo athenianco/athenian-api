@@ -14,13 +14,12 @@ from sqlalchemy import and_, func, insert, select
 from athenian.api import metadata
 from athenian.api.cache import cached, max_exptime
 from athenian.api.controllers.prefixer import Prefixer
+from athenian.api.db import DatabaseLike
 from athenian.api.models.metadata.github import Organization, Team as MetadataTeam, TeamMember
 from athenian.api.models.state.models import Account, AccountGitHubAccount, RepositorySet, \
     Team as StateTeam, UserAccount
 from athenian.api.models.web import NoSourceDataError, NotFoundError
 from athenian.api.response import ResponseError
-from athenian.api.typing_utils import DatabaseLike
-
 
 jira_url_template = os.getenv("ATHENIAN_JIRA_INSTALLATION_URL_TEMPLATE")
 

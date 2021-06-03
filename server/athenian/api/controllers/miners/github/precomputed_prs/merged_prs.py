@@ -400,10 +400,11 @@ async def discover_inactive_merged_unreleased_prs(time_from: datetime,
         ghdprf.pr_created_at < time_from,
     ), isouter=True)
     with sentry_sdk.start_span(op="load_inactive_merged_unreleased_prs/fetch"):
-        rows = await pdb.fetch_all(select(selected)
-                                   .select_from(body)
-                                   .where(and_(*filters))
-                                   .order_by(desc(GitHubMergedPullRequestFacts.merged_at)))
+        rows = await pdb.fetch_all(
+            select(selected)
+            .select_from(body)
+            .where(and_(*filters))
+            .order_by(desc(GitHubMergedPullRequestFacts.merged_at)))
     ambiguous = {ReleaseMatch.tag.name: set(), ReleaseMatch.branch.name: set()}
     node_ids = []
     repos = []

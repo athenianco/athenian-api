@@ -14,13 +14,13 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached, CancelCache, max_exptime
 from athenian.api.controllers.miners.github.contributors import load_organization_members
+from athenian.api.db import DatabaseLike
 from athenian.api.models.metadata.jira import Progress, Project, User as JIRAUser
 from athenian.api.models.state.models import AccountJiraInstallation, JIRAProjectSetting, \
     MappedJIRAIdentity
 from athenian.api.models.web import NoSourceDataError
 from athenian.api.response import ResponseError
 from athenian.api.tracing import sentry_span
-from athenian.api.typing_utils import DatabaseLike
 
 
 @sentry_span

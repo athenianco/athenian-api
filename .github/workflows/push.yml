@@ -160,18 +160,18 @@ jobs:
     - name: setup env
       working-directory: server
       run: |
-        echo 'AUTH0_AUDIENCE=${{ secrets.AUTH0_AUDIENCE }}
-              AUTH0_CLIENT_ID=${{ secrets.AUTH0_CLIENT_ID }}
-              AUTH0_CLIENT_SECRET=${{ secrets.AUTH0_CLIENT_SECRET }}
-              AUTH0_DOMAIN=${{ secrets.AUTH0_DOMAIN }}
-              GOOGLE_KMS_KEYNAME=${{ secrets.GOOGLE_KMS_KEYNAME }}
-              GOOGLE_KMS_KEYRING=${{ secrets.GOOGLE_KMS_KEYRING }}
-              GOOGLE_KMS_PROJECT=${{ secrets.GOOGLE_KMS_PROJECT }}
-              SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
-              SENTRY_ORG=${{ secrets.SENTRY_ORG }}
-              SENTRY_PROJECT=${{ secrets.SENTRY_PROJECT }}
-              SLACK_API_TOKEN=${{ secrets.SLACK_API_TOKEN }}
-              SLACK_CHANNEL=${{ secrets.SLACK_CHANNEL }}' >.env
+        echo 'AUTH0_AUDIENCE=${{ secrets.AUTH0_AUDIENCE }}' >>.env
+        echo 'AUTH0_CLIENT_ID=${{ secrets.AUTH0_CLIENT_ID }}' >>.env
+        echo 'AUTH0_CLIENT_SECRET=${{ secrets.AUTH0_CLIENT_SECRET }}' >>.env
+        echo 'AUTH0_DOMAIN=${{ secrets.AUTH0_DOMAIN }}' >>.env
+        echo 'GOOGLE_KMS_KEYNAME=${{ secrets.GOOGLE_KMS_KEYNAME }}' >>.env
+        echo 'GOOGLE_KMS_KEYRING=${{ secrets.GOOGLE_KMS_KEYRING }}' >>.env
+        echo 'GOOGLE_KMS_PROJECT=${{ secrets.GOOGLE_KMS_PROJECT }}' >>.env
+        echo 'SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}' >>.env
+        echo 'SENTRY_ORG=${{ secrets.SENTRY_ORG }}' >>.env
+        echo 'SENTRY_PROJECT=${{ secrets.SENTRY_PROJECT }}' >>.env
+        echo 'SLACK_API_TOKEN=${{ secrets.SLACK_API_TOKEN }}' >>.env
+        echo 'SLACK_CHANNEL="${{ secrets.SLACK_CHANNEL }}"' >>.env
     - name: test slim
       if: matrix.type == 'slim'
       working-directory: server

@@ -11,6 +11,7 @@ from athenian.api.async_utils import gather
 from athenian.api.cache import cached, max_exptime
 from athenian.api.controllers.account import get_account_organizations, get_user_account_status
 from athenian.api.controllers.jira import get_jira_id
+from athenian.api.db import DatabaseLike
 from athenian.api.models.metadata.jira import Installation as JIRAInstallation, \
     Project as JIRAProject
 from athenian.api.models.state.models import AccountFeature, Feature, FeatureComponent, God, \
@@ -20,7 +21,6 @@ from athenian.api.models.web import Account, AccountUserChangeRequest, Forbidden
     UserChangeStatus
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
-from athenian.api.typing_utils import DatabaseLike
 
 
 async def get_user(request: AthenianWebRequest) -> web.Response:
@@ -105,11 +105,11 @@ async def get_account_features(request: AthenianWebRequest, id: int) -> web.Resp
     """Return enabled product features for the account."""
     async with request.sdb.connection() as conn:
         await get_user_account_status(request.uid, id, conn, request.cache)
-        account_features = await conn.fetch_all(
+        account_features = await conn.fetch_all_safe(
             select([AccountFeature.feature_id, AccountFeature.parameters])
             .where(and_(AccountFeature.account_id == id, AccountFeature.enabled)))
         account_features = {row[0]: row[1] for row in account_features}
-        features = await conn.fetch_all(
+        features = await conn.fetch_all_safe(
             select([Feature.id, Feature.name, Feature.default_parameters])
             .where(and_(Feature.id.in_(account_features),
                         Feature.component == FeatureComponent.webapp,

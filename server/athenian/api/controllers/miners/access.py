@@ -2,7 +2,7 @@ from typing import Dict, Optional, Set, Tuple
 
 import aiomcache
 
-from athenian.api.typing_utils import DatabaseLike
+from athenian.api.db import DatabaseLike
 
 
 class AccessChecker:

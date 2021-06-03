@@ -243,6 +243,8 @@ def create_slack(log: logging.Logger) -> Optional[SlackWebClient]:
         return None
     slack_client = SlackWebClient(token=slack_token)
     general_channel = os.getenv("SLACK_CHANNEL", "#updates-installations")
+    if not general_channel:
+        raise ValueError("SLACK_CHANNEL may not be empty if SLACK_API_TOKEN exists")
     slack_client.jinja2 = jinja2.Environment(
         loader=jinja2.FileSystemLoader(Path(__file__).parent / "slack"),
         autoescape=False, trim_blocks=True, lstrip_blocks=True,

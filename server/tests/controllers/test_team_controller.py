@@ -146,7 +146,7 @@ async def test_create_team_same_members(client, headers, sdb, disable_default_us
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
 
-    teams = await sdb.fetch_all(select([Team]))
+    teams = await sdb.fetch_all_safe(select([Team]))
     assert len(teams) == 2
     assert teams[0][Team.members.key] == teams[1][Team.members.key]
     assert {t[Team.name.key] for t in teams} == {"Engineering 1", "Engineering 2"}
@@ -176,7 +176,7 @@ async def test_create_team_same_name(client, headers, sdb, disable_default_user)
         "status": 409,
     }
 
-    teams = await sdb.fetch_all(select([Team]))
+    teams = await sdb.fetch_all_safe(select([Team]))
     assert len(teams) == 1
     _test_same_team(teams[0], {
         "id": 1,
@@ -389,7 +389,7 @@ async def test_delete_team_smoke(client, headers, sdb, disable_default_user):
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
-    teams = await sdb.fetch_all(select([Team]))
+    teams = await sdb.fetch_all_safe(select([Team]))
     assert len(teams) == 1
     assert teams[0][Team.name.key] == "Test"
     assert teams[0][Team.parent_id.key] is None

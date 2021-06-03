@@ -7,8 +7,8 @@ from sqlalchemy import and_, select
 
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached
+from athenian.api.db import DatabaseLike
 from athenian.api.models.metadata.github import Repository, User
-from athenian.api.typing_utils import DatabaseLike
 
 
 class Prefixer:

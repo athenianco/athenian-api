@@ -5,7 +5,6 @@ import pickle
 from typing import Collection, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import aiomcache
-import asyncpg
 import databases
 import numpy as np
 import pandas as pd
@@ -21,13 +20,12 @@ from athenian.api.controllers.miners.github.branches import BranchMiner, load_br
 from athenian.api.controllers.miners.github.dag_accelerated import extract_first_parents, \
     extract_subdag, join_dags, partition_dag, searchsorted_inrange
 from athenian.api.controllers.miners.types import DAG as DAGStruct
-from athenian.api.db import add_pdb_hits, add_pdb_misses
+from athenian.api.db import add_pdb_hits, add_pdb_misses, DatabaseLike
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import Branch, NodeCommit, NodePullRequestCommit, \
     PushCommit, Release, User
 from athenian.api.models.precomputed.models import GitHubCommitHistory
 from athenian.api.tracing import sentry_span
-from athenian.api.typing_utils import DatabaseLike
 
 
 class FilterCommitsProperty(Enum):
@@ -517,10 +515,7 @@ async def _fetch_commit_history_edges(commit_ids: Iterable[str],
     FROM
         commit_history;
     """
-    async with mdb.connection() as conn:
-        if isinstance(conn.raw_connection, asyncpg.connection.Connection):
-            # this works much faster then iterate() / fetch_all()
-            async with conn._query_lock:
-                return await conn.raw_connection.fetch(query)
-        else:
-            return [tuple(r) for r in await conn.fetch_all(query)]
+    rows = await mdb.fetch_all(query)
+    if mdb.url.dialect == "sqlite":
+        rows = [tuple(r) for r in rows]
+    return rows

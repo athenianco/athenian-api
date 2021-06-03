@@ -12,7 +12,6 @@ import traceback
 from typing import Collection, Optional, Set, Tuple
 
 import aiomcache
-from databases import Database
 from flogging import flogging
 import numpy as np
 import sentry_sdk
@@ -75,7 +74,8 @@ def _parse_args():
 
 
 async def _connect_to_dbs(args: argparse.Namespace,
-                          ) -> Tuple[Database, Database, Database, Database]:
+                          ) -> Tuple[ParallelDatabase, ParallelDatabase,
+                                     ParallelDatabase, ParallelDatabase]:
     sdb = measure_db_overhead_and_retry(ParallelDatabase(args.state_db))
     mdb = measure_db_overhead_and_retry(ParallelDatabase(args.metadata_db))
     pdb = measure_db_overhead_and_retry(ParallelDatabase(args.precomputed_db))
@@ -139,8 +139,9 @@ def main():
             state = await load_account_state(account, log, sdb, mdb, cache, slack)
             if state is not None:
                 account_progress_settings[account] = state
-        reposets = await sdb.fetch_all(select([RepositorySet])
-                                       .where(RepositorySet.name == RepositorySet.ALL))
+        reposets = await sdb.fetch_all_safe(
+            select([RepositorySet])
+            .where(RepositorySet.name == RepositorySet.ALL))
         reposets = [RepositorySet(**r) for r in reposets]
         log.info("Heating %d reposets", len(reposets))
         for reposet in tqdm(reposets):
@@ -416,10 +417,11 @@ async def sync_labels(log: logging.Logger, mdb: ParallelDatabase, pdb: ParallelD
                         (all_merged, GitHubMergedPullRequestFacts)):
         for row in rows:
             if (pr_labels := actual_labels.get(row[0], {})) != row[1]:
-                tasks.append(pdb.execute(update(model)
-                                         .where(model.pr_node_id == row[0])
-                                         .values({model.labels: pr_labels,
-                                                  model.updated_at: datetime.now(timezone.utc)})))
+                tasks.append(pdb.execute(
+                    update(model)
+                    .where(model.pr_node_id == row[0])
+                    .values({model.labels: pr_labels,
+                             model.updated_at: datetime.now(timezone.utc)})))
     if not tasks:
         return 0
     log.info("Updating %d records", len(tasks))

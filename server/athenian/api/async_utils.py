@@ -2,7 +2,7 @@ import asyncio
 from datetime import datetime, timezone
 import logging
 import textwrap
-from typing import Any, Collection, Iterable, Mapping, Optional, Sequence, Tuple, Type, Union
+from typing import Any, Collection, Iterable, Optional, Sequence, Tuple, Type, Union
 
 import pandas as pd
 import sentry_sdk
@@ -11,10 +11,10 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import ClauseElement
 
 from athenian.api import metadata
+from athenian.api.db import DatabaseLike
 from athenian.api.models.metadata.github import Base as MetadataBase
 from athenian.api.models.state.models import Base as StateBase
 from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
-from athenian.api.typing_utils import DatabaseLike
 
 
 async def read_sql_query(sql: ClauseElement,
@@ -59,7 +59,7 @@ async def read_sql_query(sql: ClauseElement,
     return wrap_sql_query(data, columns, index)
 
 
-def wrap_sql_query(data: Iterable[Mapping],
+def wrap_sql_query(data: Iterable[Iterable[Any]],
                    columns: Union[Sequence[str], Sequence[InstrumentedAttribute],
                                   MetadataBase, StateBase],
                    index: Optional[Union[str, Sequence[str]]] = None,
@@ -73,8 +73,7 @@ def wrap_sql_query(data: Iterable[Mapping],
     else:
         dt_columns = _extract_datetime_columns(columns)
         columns = [(c.key if not isinstance(c, str) else c) for c in columns]
-    frame = pd.DataFrame.from_records((r.values() for r in data),
-                                      columns=columns, coerce_float=True)
+    frame = pd.DataFrame.from_records(data, columns=columns, coerce_float=True)
     if index is not None:
         frame.set_index(index, inplace=True)
     return postprocess_datetime(frame, columns=dt_columns)

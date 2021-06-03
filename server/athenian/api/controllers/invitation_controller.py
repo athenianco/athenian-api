@@ -27,13 +27,12 @@ from athenian.api.controllers.account import generate_jira_invitation_link, \
     get_metadata_account_ids, get_user_account_status, jira_url_template
 from athenian.api.controllers.ffx import decrypt, encrypt
 from athenian.api.controllers.reposet import load_account_reposets
+from athenian.api.db import DatabaseLike
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import Account as MetadataAccount, AccountRepository, \
     FetchProgress, NodeUser, OrganizationMember
 from athenian.api.models.state.models import Account, AccountFeature, Feature, FeatureComponent, \
-    Invitation, \
-    RepositorySet, \
-    UserAccount
+    Invitation, RepositorySet, UserAccount
 from athenian.api.models.web import BadRequestError, ForbiddenError, GenericError, \
     NoSourceDataError, NotFoundError, User
 from athenian.api.models.web.generic_error import DatabaseConflict, TooManyRequestsError
@@ -44,7 +43,6 @@ from athenian.api.models.web.invited_user import InvitedUser
 from athenian.api.models.web.table_fetching_progress import TableFetchingProgress
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
-from athenian.api.typing_utils import DatabaseLike
 
 
 admin_backdoor = (1 << 24) - 1
