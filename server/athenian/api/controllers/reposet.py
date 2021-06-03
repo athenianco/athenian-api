@@ -7,7 +7,7 @@ from typing import Callable, Coroutine, List, Mapping, Optional, Sequence, Set, 
 import aiomcache
 import asyncpg
 from asyncpg import UniqueViolationError
-import databases.core
+import databases
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import and_, func, insert, select
 from sqlalchemy.orm.attributes import InstrumentedAttribute
@@ -17,6 +17,7 @@ from athenian.api.async_utils import gather
 from athenian.api.controllers.account import get_metadata_account_ids, get_user_account_status
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.prefixer import Prefixer
+from athenian.api.db import DatabaseLike, FastConnection, ParallelDatabase
 from athenian.api.models.metadata.github import Account, AccountRepository, NodeUser
 from athenian.api.models.state.models import AccountGitHubAccount, RepositorySet, UserAccount
 from athenian.api.models.web import ForbiddenError, InvalidRequestError, NoSourceDataError, \
@@ -24,14 +25,13 @@ from athenian.api.models.web import ForbiddenError, InvalidRequestError, NoSourc
 from athenian.api.models.web.generic_error import DatabaseConflict
 from athenian.api.response import ResponseError
 from athenian.api.tracing import sentry_span
-from athenian.api.typing_utils import DatabaseLike
 
 
 async def resolve_reposet(repo: str,
                           pointer: str,
                           uid: str,
                           account: int,
-                          db: Union[databases.core.Connection, databases.Database],
+                          db: Union[FastConnection, ParallelDatabase],
                           cache: Optional[aiomcache.Client],
                           ) -> List[str]:
     """
@@ -171,16 +171,17 @@ async def load_account_reposets(account: int,
 async def _load_account_reposets(account: int,
                                  login: Callable[[], Coroutine[None, None, str]],
                                  fields: list,
-                                 sdb_conn: databases.core.Connection,
-                                 mdb_conn: databases.core.Connection,
+                                 sdb_conn: FastConnection,
+                                 mdb_conn: FastConnection,
                                  cache: Optional[aiomcache.Client],
                                  slack: Optional[SlackWebClient],
                                  ) -> List[Mapping]:
-    assert isinstance(sdb_conn, databases.core.Connection)
-    assert isinstance(mdb_conn, databases.core.Connection)
-    rss = await sdb_conn.fetch_all(select(fields)
-                                   .where(RepositorySet.owner_id == account)
-                                   .order_by(RepositorySet.created_at))
+    assert isinstance(sdb_conn, FastConnection)
+    assert isinstance(mdb_conn, FastConnection)
+    rss = await sdb_conn.fetch_all_safe(
+        select(fields)
+        .where(RepositorySet.owner_id == account)
+        .order_by(RepositorySet.created_at))
     if rss:
         return rss
 

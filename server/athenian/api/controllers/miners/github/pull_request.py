@@ -36,14 +36,13 @@ from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
 from athenian.api.controllers.miners.types import MinedPullRequest, nonemax, nonemin, \
     PRParticipants, PRParticipationKind, PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
-from athenian.api.db import add_pdb_misses
+from athenian.api.db import add_pdb_misses, DatabaseLike
 from athenian.api.defer import AllEvents, defer
 from athenian.api.models.metadata.github import Base, NodePullRequestJiraIssues, PullRequest, \
     PullRequestComment, PullRequestCommit, PullRequestLabel, PullRequestReview, \
     PullRequestReviewComment, PullRequestReviewRequest, PushCommit, Release
 from athenian.api.models.metadata.jira import Component, Issue
 from athenian.api.tracing import sentry_span
-from athenian.api.typing_utils import DatabaseLike
 
 
 @dataclass

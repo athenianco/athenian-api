@@ -5,7 +5,6 @@ from itertools import chain
 from typing import Any, Callable, Iterator, List, Mapping, NamedTuple, Optional, Tuple, Type, \
     TypeVar, Union
 
-import databases
 import numpy as np
 import xxhash
 
@@ -34,9 +33,6 @@ def is_optional(klass: type):
     """Determine whether klass is an Optional."""
     return is_union(klass) and \
         len(klass.__args__) == 2 and issubclass(klass.__args__[1], type(None))
-
-
-DatabaseLike = Union[databases.Database, databases.core.Connection]
 
 
 def wraps(wrapper, wrappee):

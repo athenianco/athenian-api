@@ -5,9 +5,9 @@ from sqlalchemy import and_, select
 
 from athenian.api.async_utils import gather
 from athenian.api.controllers.features.entries import make_calculator, MetricEntriesCalculator
+from athenian.api.db import DatabaseLike
 from athenian.api.models.state.models import AccountFeature, Feature, FeatureComponent
 from athenian.api.tracing import sentry_span
-from athenian.api.typing_utils import DatabaseLike
 
 
 @sentry_span
@@ -59,7 +59,7 @@ async def _get_calculator_for_account(
     if not feature_name_prefix:
         return _make_calculator()
 
-    all_metrics_variations_features = await sdb.fetch_all(
+    all_metrics_variations_features = await sdb.fetch_all_safe(
         select([Feature.id, Feature.name, Feature.default_parameters]).where(
             and_(
                 Feature.name.like(f"{feature_name_prefix}%"),

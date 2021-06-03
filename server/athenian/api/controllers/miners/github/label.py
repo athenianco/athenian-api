@@ -5,9 +5,10 @@ import aiomcache
 from sqlalchemy import and_, func, select
 
 from athenian.api.cache import cached
+from athenian.api.db import DatabaseLike
 from athenian.api.models.metadata.github import PullRequestLabel
 from athenian.api.tracing import sentry_span
-from athenian.api.typing_utils import DatabaseLike, dataclass
+from athenian.api.typing_utils import dataclass
 
 
 @dataclass(slots=True, frozen=True)

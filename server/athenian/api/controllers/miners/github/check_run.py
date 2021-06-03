@@ -15,10 +15,10 @@ from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
+from athenian.api.db import DatabaseLike
 from athenian.api.models.metadata.github import CheckRun, NodePullRequest, NodePullRequestCommit, \
     NodeRepository, PullRequestLabel
 from athenian.api.tracing import sentry_span
-from athenian.api.typing_utils import DatabaseLike
 
 
 check_suite_started_column = "check_suite_started"

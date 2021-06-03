@@ -2,8 +2,8 @@ from typing import Callable, Coroutine, Optional
 
 from aiohttp import web
 import aiomcache
-import databases
 
+from athenian.api.db import ParallelDatabase
 from athenian.api.models.web.user import User
 
 
@@ -25,10 +25,10 @@ class AthenianWebRequest(web.Request):
                            public and do not require any authentication.
     """
 
-    mdb: databases.Database
-    sdb: databases.Database
-    pdb: databases.Database
-    rdb: databases.Database
+    mdb: ParallelDatabase
+    sdb: ParallelDatabase
+    pdb: ParallelDatabase
+    rdb: ParallelDatabase
     cache: Optional[aiomcache.Client]  # can be None
     user: Callable[[], Coroutine[None, None, User]]
     uid: str

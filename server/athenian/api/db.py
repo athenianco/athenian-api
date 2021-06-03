@@ -18,6 +18,7 @@ from databases.interfaces import ConnectionBackend, TransactionBackend
 import sentry_sdk
 from sqlalchemy.dialects.postgresql import hstore
 from sqlalchemy.sql import ClauseElement
+from sqlalchemy.sql.ddl import DDLElement
 from sqlalchemy.sql.functions import ReturnTypeFromArgs
 
 from athenian.api import metadata
@@ -27,99 +28,6 @@ from athenian.api.models.metadata import check_schema_version as check_mdb_schem
 from athenian.api.slogging import log_multipart
 from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
 from athenian.api.typing_utils import wraps
-
-
-def measure_db_overhead_and_retry(db: databases.Database,
-                                  db_id: Optional[str] = None,
-                                  app: Optional[aiohttp.web.Application] = None,
-                                  ) -> databases.Database:
-    """
-    Instrument Database to measure the time spent inside DB i/o.
-
-    Also retry queries after connectivity errors.
-    """
-    log = logging.getLogger("%s.measure_db_overhead_and_retry" % metadata.__package__)
-    backend_connection = db._backend.connection  # type: Callable[[], ConnectionBackend]
-
-    def wrapped_backend_connection() -> ConnectionBackend:
-        connection = backend_connection()
-        connection._retry_lock = asyncio.Lock()
-
-        def measure_method_overhead_and_retry(func) -> callable:
-            async def wrapped_measure_method_overhead_and_retry(*args, **kwargs):
-                start_time = time.time()
-                wait_intervals = []
-                try:
-                    raw_connection = connection.raw_connection
-                    if (
-                        (isinstance(raw_connection, asyncpg.Connection) and
-                         raw_connection.is_in_transaction())
-                        or
-                        (isinstance(raw_connection, aiosqlite.Connection) and
-                         raw_connection.in_transaction)
-                    ):
-                        # it is pointless to retry, the transaction is already considered as failed
-                        wait_intervals = [None]
-                except AssertionError:
-                    pass  # Connection is not acquired
-                if not wait_intervals:
-                    wait_intervals = [0, 0.1, 0.5, 1.4, None]
-
-                async def execute():
-                    need_acquire = False
-                    for i, wait_time in enumerate(wait_intervals):
-                        try:
-                            if need_acquire:
-                                await connection.acquire()
-                            return await func(*args, **kwargs)
-                        except (OSError,
-                                asyncpg.PostgresConnectionError,
-                                asyncpg.OperatorInterventionError) as e:
-                            if wait_time is None:
-                                raise e from None
-                            log.warning("[%d] %s: %s", i + 1, type(e).__name__, e)
-                            if need_acquire := isinstance(e, asyncpg.PostgresConnectionError):
-                                try:
-                                    await connection.release()
-                                except Exception as e:
-                                    log.warning("connection.release() raised %s: %s",
-                                                type(e).__name__, e)
-                            await asyncio.sleep(wait_time)
-                        finally:
-                            if app is not None:
-                                elapsed = app["db_elapsed"].get()
-                                if elapsed is None:
-                                    log.warning("Cannot record the %s overhead", db_id)
-                                else:
-                                    delta = time.time() - start_time
-                                    elapsed[db_id] += delta
-                if db.url.dialect == "sqlite":
-                    return await execute()
-                async with connection._retry_lock:
-                    return await execute()
-
-            return wraps(wrapped_measure_method_overhead_and_retry, func)
-
-        connection.acquire = measure_method_overhead_and_retry(connection.acquire)
-        connection.fetch_all = measure_method_overhead_and_retry(connection.fetch_all)
-        connection.fetch_one = measure_method_overhead_and_retry(connection.fetch_one)
-        connection.execute = measure_method_overhead_and_retry(connection.execute)
-        connection.execute_many = measure_method_overhead_and_retry(connection.execute_many)
-
-        original_transaction = connection.transaction
-
-        def transaction() -> TransactionBackend:
-            t = original_transaction()
-            t.start = measure_method_overhead_and_retry(t.start)
-            t.commit = measure_method_overhead_and_retry(t.commit)
-            t.rollback = measure_method_overhead_and_retry(t.rollback)
-            return t
-
-        connection.transaction = transaction
-        return connection
-
-    db._backend.connection = wrapped_backend_connection
-    return db
 
 
 def add_pdb_metrics_context(app: aiohttp.web.Application) -> dict:
@@ -162,13 +70,30 @@ def add_pdb_misses(pdb: databases.Database, topic: str, value: int) -> None:
     pdb_metrics_logger.info("misses/%s: +%d", topic, value, stacklevel=2)
 
 
-class ExecuteManyConnection(databases.core.Connection):
+class FastConnection(databases.core.Connection):
     """Connection with a better execute_many()."""
 
     def __init__(self, backend: databases.core.DatabaseBackend) -> None:
-        """Initialize a new instance of ExecuteManyConnection."""
+        """Initialize a new instance of FastConnection."""
         super().__init__(backend)
         self._locked = False  # a poor man's recursive lock for SQLite
+
+    async def fetch_all(self,
+                        query: Union[ClauseElement, str],
+                        values: dict = None) -> List[Mapping]:
+        """Avoid re-wrapping the returned rows in PostgreSQL."""
+        if isinstance(self.raw_connection, asyncpg.Connection):
+            built_query = self._build_query(query, values)
+            sql, args = self._compile(built_query, None)
+            async with self._query_lock:
+                return await self.raw_connection.fetch(sql, *args)
+        return await super().fetch_all(query=query, values=values)
+
+    async def fetch_all_safe(self,
+                             query: Union[ClauseElement, str],
+                             values: dict = None) -> List[Mapping]:
+        """Call the original fetch_all()."""
+        return await super().fetch_all(query=query, values=values)
 
     async def execute_many(self,
                            query: Union[ClauseElement, str],
@@ -185,14 +110,20 @@ class ExecuteManyConnection(databases.core.Connection):
                       values: dict = None,
                       ) -> Any:
         """Invoke the parent's execute() with a write serialization lock on SQLite."""  # noqa
-        if not isinstance(self.raw_connection, asyncpg.Connection) and not self._locked:
-            async with self._serialization_lock:
-                self._locked = True
-                try:
-                    return await super().execute(query, values)
-                finally:
-                    self._locked = False
-        return await super().execute(query, values)
+        if not isinstance(self.raw_connection, asyncpg.Connection):
+            if not self._locked:
+                async with self._serialization_lock:
+                    self._locked = True
+                    try:
+                        return await super().execute(query, values)
+                    finally:
+                        self._locked = False
+            else:
+                return await super().execute(query, values)
+        built_query = self._build_query(query, values)
+        query, args = self._compile(built_query, None)
+        async with self._query_lock:
+            return await self.raw_connection.fetchval(query, *args)
 
     def transaction(self, *, force_rollback: bool = False, **kwargs: Any,
                     ) -> databases.core.Transaction:
@@ -232,33 +163,43 @@ class ExecuteManyConnection(databases.core.Connection):
                  query: ClauseElement,
                  values: Optional[List[Mapping]],
                  ) -> Tuple[str, List[list]]:
-        if values is None:
-            return self._connection._compile(query)
         compiled = query.compile(dialect=self._backend._dialect)
-        compiled_params = sorted(compiled.params.items())
+        if not isinstance(query, DDLElement):
+            compiled_params = sorted(compiled.params.items())
+            sql_mapping = {
+                key: "$" + str(i) for i, (key, _) in enumerate(compiled_params, start=1)
+            }
+            compiled_query = compiled.string % sql_mapping
 
-        sql_mapping = {}
-        param_mapping = {}
-        for i, (key, _) in enumerate(compiled_params):
-            sql_mapping[key] = "$" + str(i + 1)
-            param_mapping[key] = i
-        compiled_query = compiled.string % sql_mapping
-
-        processors = compiled._bind_processors
-        if isinstance(self.raw_connection, asyncpg.Connection):
-            # we should not process HSTORE, asyncpg will do it for us
-            removed = [key for key, val in processors.items()
-                       if val.__qualname__.startswith("HSTORE")]
-            for key in removed:
-                del processors[key]
-
-        args = []
-        for dikt in values:
-            series = [None] * len(compiled_params)
-            args.append(series)
-            for key, val in dikt.items():
-                series[param_mapping[key]] = processors[key](val) if key in processors else val
-
+            processors = compiled._bind_processors
+            if isinstance(self.raw_connection, asyncpg.Connection):
+                # we should not process HSTORE, asyncpg will do it for us
+                removed = [key for key, val in processors.items()
+                           if val.__qualname__.startswith("HSTORE")]
+                for key in removed:
+                    del processors[key]
+            args = []
+            if values is not None:
+                param_mapping = {key: i for i, (key, _) in enumerate(compiled_params)}
+                for dikt in values:
+                    series = [None] * len(compiled_params)
+                    args.append(series)
+                    for key, val in dikt.items():
+                        try:
+                            val = processors[key](val)
+                        except KeyError:
+                            pass
+                        series[param_mapping[key]] = val
+            else:
+                for key, val in compiled_params:
+                    try:
+                        val = processors[key](val)
+                    except KeyError:
+                        pass
+                    args.append(val)
+        else:
+            compiled_query = compiled.string
+            args = []
         return compiled_query, args
 
 
@@ -299,11 +240,18 @@ class ParallelDatabase(databases.Database):
         """Make Sentry debugging easier."""
         return "ParallelDatabase('%s', options=%s)" % (self.url, self.options)
 
-    def connection(self) -> "databases.core.Connection":
+    def connection(self) -> FastConnection:
         """Bypass self._connection_context."""
-        connection = ExecuteManyConnection(self._backend)
+        connection = FastConnection(self._backend)
         connection._serialization_lock = self._serialization_lock
         return connection
+
+    async def fetch_all_safe(self,
+                             query: Union[ClauseElement, str],
+                             values: dict = None) -> List[Mapping]:
+        """Call the original fetch_all()."""
+        async with self.connection() as connection:
+            return await connection.fetch_all_safe(query, values)
 
     async def _register_hstore_codec(self, conn: asyncpg.Connection) -> None:
         if self._ignore_hstore:
@@ -432,6 +380,99 @@ class least(ReturnTypeFromArgs):  # noqa
     """SQL LEAST function."""
 
 
+def measure_db_overhead_and_retry(db: Union[databases.Database, ParallelDatabase],
+                                  db_id: Optional[str] = None,
+                                  app: Optional[aiohttp.web.Application] = None,
+                                  ) -> Union[databases.Database, ParallelDatabase]:
+    """
+    Instrument Database to measure the time spent inside DB i/o.
+
+    Also retry queries after connectivity errors.
+    """
+    log = logging.getLogger("%s.measure_db_overhead_and_retry" % metadata.__package__)
+    backend_connection = db._backend.connection  # type: Callable[[], ConnectionBackend]
+
+    def wrapped_backend_connection() -> ConnectionBackend:
+        connection = backend_connection()
+        connection._retry_lock = asyncio.Lock()
+
+        def measure_method_overhead_and_retry(func) -> callable:
+            async def wrapped_measure_method_overhead_and_retry(*args, **kwargs):
+                start_time = time.time()
+                wait_intervals = []
+                try:
+                    raw_connection = connection.raw_connection
+                    if (
+                        (isinstance(raw_connection, asyncpg.Connection) and
+                         raw_connection.is_in_transaction())
+                        or
+                        (isinstance(raw_connection, aiosqlite.Connection) and
+                         raw_connection.in_transaction)
+                    ):
+                        # it is pointless to retry, the transaction is already considered as failed
+                        wait_intervals = [None]
+                except AssertionError:
+                    pass  # Connection is not acquired
+                if not wait_intervals:
+                    wait_intervals = [0, 0.1, 0.5, 1.4, None]
+
+                async def execute():
+                    need_acquire = False
+                    for i, wait_time in enumerate(wait_intervals):
+                        try:
+                            if need_acquire:
+                                await connection.acquire()
+                            return await func(*args, **kwargs)
+                        except (OSError,
+                                asyncpg.PostgresConnectionError,
+                                asyncpg.OperatorInterventionError) as e:
+                            if wait_time is None:
+                                raise e from None
+                            log.warning("[%d] %s: %s", i + 1, type(e).__name__, e)
+                            if need_acquire := isinstance(e, asyncpg.PostgresConnectionError):
+                                try:
+                                    await connection.release()
+                                except Exception as e:
+                                    log.warning("connection.release() raised %s: %s",
+                                                type(e).__name__, e)
+                            await asyncio.sleep(wait_time)
+                        finally:
+                            if app is not None:
+                                elapsed = app["db_elapsed"].get()
+                                if elapsed is None:
+                                    log.warning("Cannot record the %s overhead", db_id)
+                                else:
+                                    delta = time.time() - start_time
+                                    elapsed[db_id] += delta
+                if db.url.dialect == "sqlite":
+                    return await execute()
+                async with connection._retry_lock:
+                    return await execute()
+
+            return wraps(wrapped_measure_method_overhead_and_retry, func)
+
+        connection.acquire = measure_method_overhead_and_retry(connection.acquire)
+        connection.fetch_all = measure_method_overhead_and_retry(connection.fetch_all)
+        connection.fetch_one = measure_method_overhead_and_retry(connection.fetch_one)
+        connection.execute = measure_method_overhead_and_retry(connection.execute)
+        connection.execute_many = measure_method_overhead_and_retry(connection.execute_many)
+
+        original_transaction = connection.transaction
+
+        def transaction() -> TransactionBackend:
+            t = original_transaction()
+            t.start = measure_method_overhead_and_retry(t.start)
+            t.commit = measure_method_overhead_and_retry(t.commit)
+            t.rollback = measure_method_overhead_and_retry(t.rollback)
+            return t
+
+        connection.transaction = transaction
+        return connection
+
+    db._backend.connection = wrapped_backend_connection
+    return db
+
+
 def check_schema_versions(metadata_db: str,
                           state_db: str,
                           precomputed_db: str,
@@ -477,3 +518,6 @@ def check_schema_versions(metadata_db: str,
     for t in checkers:
         t.join()
     return passed
+
+
+DatabaseLike = Union[ParallelDatabase, FastConnection]

@@ -21,11 +21,11 @@ from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.precomputed_prs import triage_by_release_match
 from athenian.api.controllers.miners.types import PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
+from athenian.api.db import DatabaseLike
 from athenian.api.models.metadata.github import NodePullRequestJiraIssues, PullRequest
 from athenian.api.models.metadata.jira import AthenianIssue, Component, Epic, Issue, Status
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts
 from athenian.api.tracing import sentry_span
-from athenian.api.typing_utils import DatabaseLike
 
 
 async def generate_jira_prs_query(filters: List[ClauseElement],

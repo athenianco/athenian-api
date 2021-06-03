@@ -443,15 +443,7 @@ class DonePRFactsLoader:
         else:
             query = union_all(*(select(selected).where(and_(item, *filters)) for item in or_items))
         with sentry_sdk.start_span(op="_load_precomputed_done_filters/fetch"):
-            if postgres:
-                # performance trick to avoid re-wrapping results
-                # this gets too expensive on 10k+ items
-                async with pdb.connection() as conn:
-                    query, args, _ = conn._compile(query, None)
-                    async with conn._query_lock:
-                        rows = await conn.raw_connection.fetch(query, *args)
-            else:
-                rows = await pdb.fetch_all(query)
+            rows = await pdb.fetch_all(query)
         result = {}
         ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
         if labels and not postgres:
