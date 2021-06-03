@@ -18,8 +18,7 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached
 from athenian.api.controllers.miners.filters import LabelFilter
-from athenian.api.controllers.miners.github.branches import BranchMiner, \
-    load_branch_commit_dates
+from athenian.api.controllers.miners.github.branches import load_branch_commit_dates
 from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_COLUMNS, \
     fetch_precomputed_commit_history_dags, fetch_repository_commits
 from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_inrange
@@ -33,6 +32,7 @@ from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.types import MinedPullRequest, PRParticipants, \
     PRParticipationKind, PullRequestFacts
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, ReleaseSettings
+from athenian.api.db import ParallelDatabase
 from athenian.api.models.metadata.github import PullRequest, PullRequestLabel, Release
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts
 from athenian.api.tracing import sentry_span
@@ -702,10 +702,11 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
 
 @sentry_span
 async def delete_force_push_dropped_prs(repos: Iterable[str],
+                                        branches: pd.DataFrame,
                                         account: int,
                                         meta_ids: Tuple[int, ...],
-                                        mdb: databases.Database,
-                                        pdb: databases.Database,
+                                        mdb: ParallelDatabase,
+                                        pdb: ParallelDatabase,
                                         cache: Optional[aiomcache.Client],
                                         ) -> Collection[str]:
     """
@@ -714,22 +715,16 @@ async def delete_force_push_dropped_prs(repos: Iterable[str],
 
     We don't try to resolve rebased PRs here due to the intended use case.
     """
-    @sentry_span
-    async def fetch_branches():
-        branches, _ = await BranchMiner.extract_branches(repos, meta_ids, mdb, cache)
-        await load_branch_commit_dates(branches, meta_ids, mdb)
-        return branches
-
     ghdprf = GitHubDonePullRequestFacts
     tasks = [
         pdb.fetch_all(select([ghdprf.pr_node_id])
                       .where(and_(ghdprf.repository_full_name.in_(repos),
                                   ghdprf.acc_id == account,
                                   ghdprf.release_match.like("%|%")))),
-        fetch_branches(),
+        load_branch_commit_dates(branches, meta_ids, mdb),
         fetch_precomputed_commit_history_dags(repos, account, pdb, cache),
     ]
-    rows, branches, dags = await gather(*tasks, op="fetch prs + branches + dags")
+    rows, _, dags = await gather(*tasks, op="fetch prs + branches + dags")
     pr_node_ids = [r[0] for r in rows]
     del rows
     tasks = [

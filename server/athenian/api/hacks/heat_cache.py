@@ -183,8 +183,8 @@ def main():
                     repos, {}, branches, default_branches, no_time_from, time_to,
                     LabelFilter.empty(), JIRAFilter.empty(), settings, prefixer, reposet.owner_id,
                     meta_ids, mdb, pdb, rdb, None, force_fresh=True)
+                del default_branches
                 branches_count = len(branches)
-                del branches
                 releases_by_tag = sum(
                     1 for r in releases if r[1].matched_by == ReleaseMatch.tag)
                 releases_by_branch = sum(
@@ -194,7 +194,7 @@ def main():
                 if reposet.precomputed:
                     log.info("Scanning for force push dropped PRs")
                     await delete_force_push_dropped_prs(
-                        repos, reposet.owner_id, meta_ids, mdb, pdb, None)
+                        repos, branches, reposet.owner_id, meta_ids, mdb, pdb, None)
                 log.info("Extracting PR facts")
                 facts = await MetricEntriesCalculator(
                     reposet.owner_id,

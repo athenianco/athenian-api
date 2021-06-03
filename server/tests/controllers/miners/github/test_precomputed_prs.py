@@ -1046,7 +1046,8 @@ async def test_store_open_pull_request_facts_smoke(
 
 @with_only_master_branch
 @with_defer
-async def test_rescan_prs_mark_force_push_dropped(mdb_rw, pdb, default_branches, pr_samples):
+async def test_rescan_prs_mark_force_push_dropped(
+        mdb_rw, pdb, branches, default_branches, pr_samples):
     mdb = mdb_rw
     samples, prs, settings = _gen_one_pr(pr_samples)
     prs[0].pr[PullRequest.node_id.key] = "MDExOlB1bGxSZXF1ZXN0NTc5NDcxODA="
@@ -1064,7 +1065,7 @@ async def test_rescan_prs_mark_force_push_dropped(mdb_rw, pdb, default_branches,
     release_match = await pdb.fetch_val(select([GitHubDonePullRequestFacts.release_match]))
     assert release_match == "branch|master"
     node_ids = await delete_force_push_dropped_prs(
-        ["src-d/go-git"], 1, (6366825,), mdb, pdb, None)
+        ["src-d/go-git"], branches, 1, (6366825,), mdb, pdb, None)
     assert list(node_ids) == ["MDExOlB1bGxSZXF1ZXN0NTc5NDcxODA="]
     release_match = await pdb.fetch_val(select([GitHubDonePullRequestFacts.release_match]))
     assert release_match is None
