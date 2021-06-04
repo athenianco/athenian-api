@@ -101,7 +101,11 @@ def join_dags(hashes: np.ndarray,
               edges: np.ndarray,
               new_edges: List[Tuple[str, str, int]]) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     new_hashes = {k for k, v, _ in new_edges}.union(v for k, v, _ in new_edges)
-    new_hashes.discard("")  # initial commit virtual parents
+    if "" in new_hashes:
+        # temporary DB inconsistency, we should retry later
+        return hashes, vertexes, edges
+    the_end = "0" * 40
+    new_hashes.discard(the_end)  # initial commit virtual parents
     new_hashes = np.sort(np.fromiter(new_hashes, count=len(new_hashes), dtype="S40"))
     if len(hashes) > 0:
         found_matches = np.searchsorted(hashes, new_hashes)
@@ -123,7 +127,7 @@ def join_dags(hashes: np.ndarray,
     cdef vector[vector[Edge]] new_edges_lists = vector[vector[Edge]](len(new_hashes_map))
     new_edges_counter = 0
     for k, v, pos in new_edges:
-        if not v:
+        if v == the_end:
             # initial commit
             continue
         i = new_hashes_map.get(k.encode(), None)
