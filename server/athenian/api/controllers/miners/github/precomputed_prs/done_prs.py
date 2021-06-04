@@ -730,7 +730,8 @@ async def delete_force_push_dropped_prs(repos: Iterable[str],
     tasks = [
         mdb.fetch_all(select([PullRequest.merge_commit_sha, PullRequest.node_id])
                       .where(and_(PullRequest.node_id.in_(pr_node_ids),
-                                  PullRequest.acc_id.in_(meta_ids)))),
+                                  PullRequest.acc_id.in_(meta_ids)))
+                      .order_by(PullRequest.merge_commit_sha)),
         fetch_repository_commits(
             dags, branches, BRANCH_FETCH_COMMITS_COLUMNS, True, account, meta_ids,
             mdb, pdb, cache),
@@ -738,7 +739,7 @@ async def delete_force_push_dropped_prs(repos: Iterable[str],
     del pr_node_ids
     pr_merges, dags = await gather(*tasks, op="fetch merges + prune dags")
     accessible_hashes = np.sort(np.concatenate([dag[0] for dag in dags.values()]))
-    merge_hashes = np.sort(np.fromiter((r[0] for r in pr_merges), "S40", len(pr_merges)))
+    merge_hashes = np.fromiter((r[0] for r in pr_merges), "S40", len(pr_merges))
     found = searchsorted_inrange(accessible_hashes, merge_hashes)
     dead_indexes = np.nonzero(accessible_hashes[found] != merge_hashes)[0]
     dead_pr_node_ids = [None] * len(dead_indexes)
