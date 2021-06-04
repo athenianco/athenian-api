@@ -20,7 +20,7 @@ from athenian.api.controllers.miners.github.branches import BranchMiner, load_br
 from athenian.api.controllers.miners.github.dag_accelerated import extract_first_parents, \
     extract_subdag, join_dags, partition_dag, searchsorted_inrange
 from athenian.api.controllers.miners.types import DAG as DAGStruct
-from athenian.api.db import add_pdb_hits, add_pdb_misses, DatabaseLike
+from athenian.api.db import add_pdb_hits, add_pdb_misses, DatabaseLike, ParallelDatabase
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import Branch, NodeCommit, NodePullRequestCommit, \
     PushCommit, Release, User
@@ -457,7 +457,7 @@ async def _fetch_commit_history_dag(hashes: np.ndarray,
         new_edges = await _fetch_commit_history_edges(
             head_ids[:batch_size], stop_hashes, meta_ids, mdb)
         if not new_edges:
-            new_edges = [(h, "", 0) for h in np.sort(np.unique(head_hashes[:batch_size]))]
+            new_edges = [(h, "0" * 40, 0) for h in np.sort(np.unique(head_hashes[:batch_size]))]
         hashes, vertexes, edges = join_dags(hashes, vertexes, edges, new_edges)
         head_hashes = head_hashes[batch_size:]
         head_ids = head_ids[batch_size:]
@@ -473,8 +473,23 @@ async def _fetch_commit_history_dag(hashes: np.ndarray,
 async def _fetch_commit_history_edges(commit_ids: Iterable[str],
                                       stop_hashes: Iterable[str],
                                       meta_ids: Tuple[int, ...],
-                                      mdb: databases.Database) -> List[Tuple]:
-    # SQL credits: @dennwc
+                                      mdb: ParallelDatabase,
+                                      ) -> List[Tuple]:
+    """
+    Query metadata DB for the new commit DAG edges.
+
+    We recursively traverse github_node_commit_parents starting from `commit_ids`.
+    SQL credits: @dennwc.
+
+    We return nodes in the native DB order, that's the opposite of Git's parent-child.
+    CASE 0000000000000000000000000000000000000000 is required to distinguish between two options:
+    1. node ID is null => we've reached the DAG's end.
+    2. node ID is not null but the hash is null => we hit a temporary DB inconsistency.
+
+    We don't include the edges from the outside to the first parents (`commit_ids`). This means
+    that if some of `commit_ids` do not have children, there will be 0 edges with them.
+    """
+    assert isinstance(mdb, ParallelDatabase), "fetch_all() must be patched to avoid re-wrapping"
     quote = "`" if mdb.url.dialect == "sqlite" else ""
     if len(meta_ids) == 1:
         meta_id_sql = ("= %d" % meta_ids[0])
@@ -483,10 +498,10 @@ async def _fetch_commit_history_edges(commit_ids: Iterable[str],
     query = f"""
     WITH RECURSIVE commit_history AS (
         SELECT
-            p.child_id AS parent,
+            p.child_id,
             p.{quote}index{quote} AS parent_index,
-            pc.oid AS child_oid,
-            cc.oid AS parent_oid,
+            pc.oid AS parent_oid,
+            cc.oid AS child_oid,
             p.acc_id
         FROM
             github_node_commit_parents p
@@ -496,21 +511,22 @@ async def _fetch_commit_history_edges(commit_ids: Iterable[str],
             p.parent_id IN ('{"', '".join(commit_ids)}') AND p.acc_id {meta_id_sql}
         UNION
             SELECT
-                p.child_id AS parent,
+                p.child_id,
                 p.{quote}index{quote} AS parent_index,
-                pc.oid AS child_oid,
-                cc.oid AS parent_oid,
+                h.child_oid AS parent_oid,
+                cc.oid AS child_oid,
                 p.acc_id
             FROM
                 github_node_commit_parents p
-                    INNER JOIN commit_history h ON h.parent = p.parent_id AND p.acc_id = h.acc_id
-                    LEFT JOIN github_node_commit pc ON p.parent_id = pc.id AND p.acc_id = pc.acc_id
+                    INNER JOIN commit_history h ON p.parent_id = h.child_id AND p.acc_id = h.acc_id
                     LEFT JOIN github_node_commit cc ON p.child_id = cc.id AND p.acc_id = cc.acc_id
-            WHERE     pc.oid NOT IN ('{"', '".join(stop_hashes)}')
-                  AND p.parent_id NOT IN ('{"', '".join(commit_ids)}')
+            WHERE h.child_oid NOT IN ('{"', '".join(stop_hashes)}')
     ) SELECT
-        child_oid,
         parent_oid,
+        CASE
+            WHEN child_id IS NULL THEN '0000000000000000000000000000000000000000'
+            ELSE child_oid
+        END AS child_oid,
         parent_index
     FROM
         commit_history;
