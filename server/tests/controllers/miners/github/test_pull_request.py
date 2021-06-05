@@ -870,8 +870,6 @@ async def test_pr_miner_labels_unreleased(mdb, pdb, rdb, release_match_setting_t
 async def test_pr_miner_unreleased_facts(
         branches, default_branches, mdb, pdb, rdb, release_match_setting_tag,
         merged_prs_facts_loader, pr_miner, with_preloading_enabled):
-    if with_preloading_enabled:
-        pytest.xfail("Preloading does not like this test, Marvin please fix")
     date_from = date(year=2018, month=1, day=1)
     date_to = date(year=2020, month=4, day=1)
     time_from = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
