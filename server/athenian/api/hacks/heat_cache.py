@@ -133,7 +133,9 @@ def main():
 
         account_progress_settings = {}
         accounts = [r[0] for r in await sdb.fetch_all(
-            select([Account.id]).order_by(desc(Account.created_at)))]
+            select([Account.id])
+            .where(Account.expires_at > datetime.now(timezone.utc))
+            .order_by(desc(Account.created_at)))]
         log.info("Checking progress of %d accounts", len(accounts))
         for account in tqdm(accounts):
             state = await load_account_state(account, log, sdb, mdb, cache, slack)
@@ -141,7 +143,8 @@ def main():
                 account_progress_settings[account] = state
         reposets = await sdb.fetch_all_safe(
             select([RepositorySet])
-            .where(RepositorySet.name == RepositorySet.ALL))
+            .where(and_(RepositorySet.name == RepositorySet.ALL,
+                        RepositorySet.owner_id.in_(accounts))))
         reposets = [RepositorySet(**r) for r in reposets]
         log.info("Heating %d reposets", len(reposets))
         for reposet in tqdm(reposets):
