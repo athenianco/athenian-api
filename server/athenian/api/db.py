@@ -425,7 +425,8 @@ def measure_db_overhead_and_retry(db: Union[databases.Database, ParallelDatabase
                             return await func(*args, **kwargs)
                         except (OSError,
                                 asyncpg.PostgresConnectionError,
-                                asyncpg.OperatorInterventionError) as e:
+                                asyncpg.OperatorInterventionError,
+                                asyncpg.InsufficientResourcesError) as e:
                             if wait_time is None:
                                 raise e from None
                             log.warning("[%d] %s: %s", i + 1, type(e).__name__, e)
