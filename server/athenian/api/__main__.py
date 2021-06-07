@@ -214,12 +214,23 @@ def create_memcached(addr: str, log: logging.Logger) -> Optional[aiomcache.Clien
     client = aiomcache.Client(host, port)
 
     async def print_memcached_version():
-        try:
-            version = await client.version()
-        except Exception as e:
-            sentry_sdk.capture_exception(e)
-            log.error("memcached: %s: %s", type(e).__name__, e)
-            raise GracefulExit()
+        version = "N/A"
+        attempts = 3
+        for attempt in range(attempts):
+            try:
+                version = await client.version()
+            except Exception as e:
+                last_attempt = attempt >= attempts - 1
+                log.log(logging.CRITICAL if last_attempt else logging.WARNING,
+                        "[%d / %d] memcached: %s: %s",
+                        attempt + 1, attempts, type(e).__name__, e)
+                if last_attempt:
+                    sentry_sdk.capture_exception(e)
+                    raise GracefulExit()
+                else:
+                    await asyncio.sleep(1)
+            else:
+                break
         log.info("memcached: %s on %s", version.decode(), addr)
         delattr(client, "version_future")
 
