@@ -1,6 +1,10 @@
 name: Push
 
-on: push
+on:
+  push:
+    branches:
+    - master
+  pull_request:
 
 env:
   PIP_CACHE: |
@@ -162,7 +166,7 @@ jobs:
         echo 'AUTH0_DOMAIN=${{ secrets.AUTH0_DOMAIN }}' >>.env
         echo 'GOOGLE_KMS_KEYNAME=${{ secrets.GOOGLE_KMS_KEYNAME }}' >>.env
         echo 'GOOGLE_KMS_KEYRING=${{ secrets.GOOGLE_KMS_KEYRING }}' >>.env
-        echo 'GOOGLE_KMS_PROJECT=${{ secrets.GOOGLE_KMS_PROJECT }}' >>.env
+        echo 'GOOGLE_KMS_PROJECT=${{ secrets.GOOGLE_PROJECT }}' >>.env
         echo 'SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}' >>.env
         echo 'SENTRY_ORG=${{ secrets.SENTRY_ORG }}' >>.env
         echo 'SENTRY_PROJECT=${{ secrets.SENTRY_PROJECT }}' >>.env
