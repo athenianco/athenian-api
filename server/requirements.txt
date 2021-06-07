@@ -18,7 +18,7 @@ alembic==1.6.5
 mako==1.1.4
 pandas==1.1.5
 networkx==2.5.1
-python-jose[cryptography]==3.2.0
+python-jose[cryptography]==3.3.0
 python-dateutil==2.8.1
 pyffx==0.3.0
 aiomcache==0.6.0
