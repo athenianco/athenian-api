@@ -15,7 +15,7 @@ env:
 jobs:
   flake8:
     name: flake8 + semgrep
-    if: "!contains(github.event.head_commit.message, 'Bump version')"
+    if: "!contains(github.event.head_commit.message, 'Bump version') || github.event_name != 'push'"
     runs-on: ubuntu-20.04
     steps:
     - name: actions/checkout
@@ -44,7 +44,7 @@ jobs:
       run: semgrep --config p/r2c-security-audit --severity ERROR --disable-version-check --error
   custom_checks:
     name: custom checks
-    if: "!contains(github.event.head_commit.message, 'Bump version')"
+    if: "!contains(github.event.head_commit.message, 'Bump version') || github.event_name != 'push'"
     runs-on: ubuntu-20.04
     steps:
     - name: actions/checkout
@@ -81,7 +81,7 @@ jobs:
         (! grep -R 'athenian\.api\.models' athenian/api/models/state/versions)
   test:
     name: test
-    if: "!contains(github.event.head_commit.message, 'Bump version')"
+    if: "!contains(github.event.head_commit.message, 'Bump version') || github.event_name != 'push'"
     runs-on: ubuntu-20.04
     strategy:
       matrix:
@@ -249,7 +249,7 @@ jobs:
         token: ${{ secrets.CODECOV_TOKEN }}
   spec:
     name: OpenAPI in JS
-    if: "!contains(github.event.head_commit.message, 'Bump version')"
+    if: "!contains(github.event.head_commit.message, 'Bump version') || github.event_name != 'push'"
     runs-on: ubuntu-20.04
     steps:
     - name: actions/checkout
@@ -267,7 +267,7 @@ jobs:
         npm --prefix js-client test
   docker:
     name: docker
-    if: "!contains(github.event.head_commit.message, 'Bump version')"
+    if: "!contains(github.event.head_commit.message, 'Bump version') || github.event_name != 'push'"
     runs-on: ubuntu-20.04
     services:
       postgres:
@@ -331,7 +331,7 @@ jobs:
   bump_version:
     name: Bump the version
     needs: [flake8, custom_checks, test, docker, spec]
-    if: "!contains(github.event.head_commit.message, 'Bump version') && github.ref == 'refs/heads/master'"
+    if: "!contains(github.event.head_commit.message, 'Bump version') && github.ref == 'refs/heads/master' && github.event_name == 'push'"
     runs-on: ubuntu-20.04
     steps:
     - name: actions/checkout
@@ -352,7 +352,7 @@ jobs:
         token: ${{ secrets.GKWILLIE_TOKEN }}
   deploy:
     name: Deploy
-    if: "contains(github.event.head_commit.message, 'Bump version') && github.ref == 'refs/heads/master'"
+    if: "contains(github.event.head_commit.message, 'Bump version') && github.ref == 'refs/heads/master' && github.event_name == 'push'"
     runs-on: ubuntu-20.04
     steps:
     - name: actions/checkout
