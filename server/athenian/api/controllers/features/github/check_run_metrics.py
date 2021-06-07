@@ -18,6 +18,7 @@ from athenian.api.controllers.miners.github.check_run import check_suite_started
 from athenian.api.models.metadata.github import CheckRun
 from athenian.api.models.web import CodeCheckMetricID
 
+
 metric_calculators: Dict[str, Type[MetricCalculator]] = {}
 histogram_calculators: Dict[str, Type[MetricCalculator]] = {}
 register_metric = make_register_metric(metric_calculators, histogram_calculators)
@@ -471,7 +472,7 @@ class FlakyCommitChecksCounter(SumMetricCalculator[int]):
         )
 
         commits = facts[CheckRun.commit_node_id.key].values.astype("S")
-        check_run_names = facts[CheckRun.name.key].values.astype("S")
+        check_run_names = np.char.encode(facts[CheckRun.name.key].values.astype("U"), "UTF-8")
         commits_with_names = np.char.add(commits, check_run_names)
         _, first_encounters, unique_map = np.unique(
             commits_with_names, return_inverse=True, return_index=True)
@@ -510,7 +511,7 @@ class MergedPRsWithFailedChecksCounter(SumMetricCalculator[int]):
             CheckRun.status.key, CheckRun.conclusion.key, pull_request_merged_column]]
         df = df.sort_values(CheckRun.started_at.key, ascending=False)  # no inplace=True, yes
         pull_requests = df[CheckRun.pull_request_node_id.key].values.astype("S")
-        names = df[CheckRun.name.key].values.astype("S")
+        names = np.char.encode(df[CheckRun.name.key].values.astype("U"), "UTF-8")
         joint = np.char.add(pull_requests, names)
         _, first_encounters = np.unique(joint, return_index=True)
         statuses = df[CheckRun.status.key].values.astype("S")
@@ -584,7 +585,7 @@ class ConcurrencyCalculator(MetricCalculator[float]):
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
         repos = facts[CheckRun.repository_full_name.key].values.astype("S")
-        names = facts[CheckRun.name.key].values.astype("S")
+        names = np.char.encode(facts[CheckRun.name.key].values.astype("U"), "UTF-8")
         crtypes = np.char.add(np.char.add(repos, b"|"), names)
         del repos, names
         started_ats = facts[CheckRun.started_at.key].values.astype(min_times.dtype, copy=False)
