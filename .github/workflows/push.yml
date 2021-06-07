@@ -5,6 +5,7 @@ on:
     branches:
     - master
   pull_request:
+  pull_request_target:
 
 env:
   PIP_CACHE: |
@@ -20,6 +21,12 @@ jobs:
     steps:
     - name: actions/checkout
       uses: actions/checkout@v2
+      if: ${{ github.event_name != 'pull_request_target' || github.actor != 'dependabot[bot]' }}
+    - name: actions/checkout
+      uses: actions/checkout@v2
+      if: ${{ github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]' }}
+      with:
+        ref: ${{ github.event.pull_request.head.sha }}
     - name: actions/cache
       uses: actions/cache@v2
       with:
@@ -43,6 +50,12 @@ jobs:
     steps:
     - name: actions/checkout
       uses: actions/checkout@v2
+      if: ${{ github.event_name != 'pull_request_target' || github.actor != 'dependabot[bot]' }}
+    - name: actions/checkout
+      uses: actions/checkout@v2
+      if: ${{ github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]' }}
+      with:
+        ref: ${{ github.event.pull_request.head.sha }}
     - name: actions/cache
       uses: actions/cache@v2
       with:
@@ -106,6 +119,12 @@ jobs:
     steps:
     - name: actions/checkout
       uses: actions/checkout@v2
+      if: ${{ github.event_name != 'pull_request_target' || github.actor != 'dependabot[bot]' }}
+    - name: actions/checkout
+      uses: actions/checkout@v2
+      if: ${{ github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]' }}
+      with:
+        ref: ${{ github.event.pull_request.head.sha }}
     - name: actions/cache pip
       uses: actions/cache@v2
       with:
@@ -236,6 +255,12 @@ jobs:
     steps:
     - name: actions/checkout
       uses: actions/checkout@v2
+      if: ${{ github.event_name != 'pull_request_target' || github.actor != 'dependabot[bot]' }}
+    - name: actions/checkout
+      uses: actions/checkout@v2
+      if: ${{ github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]' }}
+      with:
+        ref: ${{ github.event.pull_request.head.sha }}
     - name: openapitools/openapi-generator-cli
       run: |
         docker run --rm -v `pwd`:/local --user `id -u`:`id -g` openapitools/openapi-generator-cli generate --input-spec=/local/spec/openapi.yaml --generator-name=javascript --output=/local/js-client
@@ -264,6 +289,12 @@ jobs:
     steps:
     - name: actions/checkout
       uses: actions/checkout@v2
+      if: ${{ github.event_name != 'pull_request_target' || github.actor != 'dependabot[bot]' }}
+    - name: actions/checkout
+      uses: actions/checkout@v2
+      if: ${{ github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]' }}
+      with:
+        ref: ${{ github.event.pull_request.head.sha }}
     - uses: satackey/action-docker-layer-caching@v0.0.11
       continue-on-error: true
     - name: setup postgres
