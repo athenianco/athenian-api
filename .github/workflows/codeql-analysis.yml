@@ -5,7 +5,6 @@ on:
     branches:
     - master
   pull_request:
-  pull_request_target:
 
 jobs:
   analyze:
@@ -26,12 +25,6 @@ jobs:
     steps:
     - name: actions/checkout
       uses: actions/checkout@v2
-      if: ${{ github.event_name != 'pull_request_target' || github.actor != 'dependabot[bot]' }}
-    - name: actions/checkout
-      uses: actions/checkout@v2
-      if: ${{ github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]' }}
-      with:
-        ref: ${{ github.event.pull_request.head.sha }}
 
     - name: Initialize CodeQL
       uses: github/codeql-action/init@v1
