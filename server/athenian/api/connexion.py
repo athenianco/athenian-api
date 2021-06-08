@@ -43,7 +43,7 @@ from athenian.api.controllers import invitation_controller
 from athenian.api.controllers.status_controller import setup_status
 from athenian.api.db import add_pdb_metrics_context, measure_db_overhead_and_retry, \
     ParallelDatabase
-from athenian.api.defer import enable_defer, launch_defer, wait_all_deferred, wait_deferred
+from athenian.api.defer import defer, enable_defer, launch_defer, wait_all_deferred, wait_deferred
 from athenian.api.kms import AthenianKMS
 from athenian.api.models.metadata import dereference_schemas as dereference_metadata_schemas
 from athenian.api.models.persistentdata import \
@@ -52,6 +52,7 @@ from athenian.api.models.precomputed.schema_monitor import schedule_pdb_schema_c
 from athenian.api.models.web import GenericError
 from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME, setup_prometheus
 from athenian.api.response import ResponseError
+from athenian.api.segment import SegmentClient
 from athenian.api.serialization import FriendlyJson
 from athenian.api.tracing import InfiniteString, MAX_SENTRY_STRING_LENGTH
 from athenian.precomputer.db import dereference_schemas as dereference_precomputed_schemas
@@ -202,7 +203,8 @@ class AthenianApp(connexion.AioHttpApp):
                  kms_cls: Callable[[], AthenianKMS] = AthenianKMS,
                  cache: Optional[aiomcache.Client] = None,
                  slack: Optional[SlackWebClient] = None,
-                 with_pdb_schema_checks: bool = True):
+                 with_pdb_schema_checks: bool = True,
+                 segment: Optional[SegmentClient] = None):
         """
         Initialize the underlying connexion -> aiohttp application.
 
@@ -224,6 +226,7 @@ class AthenianApp(connexion.AioHttpApp):
         :param cache: memcached client for caching auxiliary data.
         :param slack: Slack API client to post messages.
         :param with_pdb_schema_checks: Enable or disable periodic pdb schema version checks.
+        :param segment: User action tracker.
         """
         options = {"swagger_ui": ui}
         specification_dir = str(Path(__file__).parent / "openapi")
@@ -277,6 +280,7 @@ class AthenianApp(connexion.AioHttpApp):
 
             self.app.router.add_get("/", index_redirect)
         self._enable_cors()
+        self._segment = segment
 
         self._pdb_schema_task_box = []
         pdbctx = add_pdb_metrics_context(self.app)
@@ -419,6 +423,8 @@ class AthenianApp(connexion.AioHttpApp):
             self._report_ready_task.cancel()
             self._report_ready_task = None
         await self._auth0.close()
+        if self._segment is not None:
+            await self._segment.close()
         if self._kms is not None:
             await self._kms.close()
         for task in self._on_dbs_connected_callbacks:
@@ -474,11 +480,14 @@ class AthenianApp(connexion.AioHttpApp):
     @aiohttp.web.middleware
     async def postprocess_response(self, request: aiohttp.web.Request, handler,
                                    ) -> aiohttp.web.Response:
-        """Append X-Backend-Server HTTP header."""
+        """Append X-Backend-Server HTTP header, enable compression, etc."""
         response = await handler(request)  # type: aiohttp.web.Response
+        # request is now AthenianWebRequest
         response.headers.add("X-Backend-Server", self.server_name)
         if (uid := getattr(request, "uid", None)) is not None:
             response.headers.add("User", uid)
+            if self._segment is not None:
+                await defer(self._segment.submit(request), name=f"segment_{uid}_{request.path}")
         try:
             if len(response.body) > 1000:
                 response.enable_compression()

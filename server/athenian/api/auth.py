@@ -52,10 +52,16 @@ class Auth0:
     USERINFO_CACHE_TTL = 60  # seconds
     log = logging.getLogger("auth")
 
-    def __init__(self, domain=AUTH0_DOMAIN, audience=AUTH0_AUDIENCE, client_id=AUTH0_CLIENT_ID,
+    def __init__(self,
+                 domain=AUTH0_DOMAIN,
+                 audience=AUTH0_AUDIENCE,
+                 client_id=AUTH0_CLIENT_ID,
                  client_secret=AUTH0_CLIENT_SECRET, whitelist: Sequence[str] = tuple(),
-                 default_user=DEFAULT_USER, key=KEY,
-                 cache: Optional[aiomcache.Client] = None, lazy=False, force_user: str = ""):
+                 default_user=DEFAULT_USER,
+                 key=KEY,
+                 cache: Optional[aiomcache.Client] = None,
+                 lazy=False,
+                 force_user: str = ""):
         """
         Create a new Auth0 middleware.
 
