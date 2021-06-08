@@ -274,33 +274,6 @@ jobs:
       name: codecov
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
-  spec:
-    name: OpenAPI in JS
-    if: "!contains(github.event.head_commit.message, 'Bump version') || github.event_name != 'push'"
-    runs-on: ubuntu-20.04
-    steps:
-    - uses: tspascoal/get-user-teams-membership@v1
-      id: membership
-      with:
-        username: ${{ github.actor }}
-        team: 'team'
-        GITHUB_TOKEN: ${{ secrets.READ_ORG_TOKEN }}
-    - name: actions/checkout
-      uses: actions/checkout@v2
-      if: ${{ github.event_name != 'pull_request_target' }}
-      with:
-        submodules: true
-    - name: actions/checkout
-      uses: actions/checkout@v2
-      if: ${{ github.event_name == 'pull_request_target' && (github.actor == 'dependabot[bot]' || steps.membership.outputs.isTeamMember) }}
-      with:
-        ref: ${{ github.event.pull_request.head.sha }}
-        submodules: true
-    - name: openapitools/openapi-generator-cli
-      run: |
-        docker run --rm -v `pwd`:/local --user `id -u`:`id -g` openapitools/openapi-generator-cli generate --input-spec=/local/spec/openapi.yaml --generator-name=javascript --output=/local/js-client
-        npm --prefix js-client install
-        npm --prefix js-client test
   docker:
     name: docker
     if: "!contains(github.event.head_commit.message, 'Bump version') || github.event_name != 'push'"
@@ -375,7 +348,7 @@ jobs:
         (docker image ls -a | grep -v latest | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
   bump_version:
     name: Bump the version
-    needs: [flake8, custom_checks, test, docker, spec]
+    needs: [flake8, custom_checks, test, docker]
     if: "!contains(github.event.head_commit.message, 'Bump version') && github.ref == 'refs/heads/master' && github.event_name == 'push'"
     runs-on: ubuntu-20.04
     steps:
