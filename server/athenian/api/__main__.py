@@ -37,6 +37,7 @@ from athenian.api.faster_pandas import patch_pandas
 from athenian.api.kms import AthenianKMS
 from athenian.api.preloading.cache import MemoryCachePreloader
 from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME
+from athenian.api.segment import SegmentClient
 from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
 
 
@@ -68,6 +69,8 @@ def parse_args() -> argparse.Namespace:
   GOOGLE_KMS_KEYNAME       Name of the key in the keyring in Google Cloud Key Management Service
   GOOGLE_KMS_SERVICE_ACCOUNT_JSON (optional)
                            Path to the JSON file with Google Cloud credentions to access KMS
+  ATHENIAN_SEGMENT_KEY (optional)
+                           Enable user action tracking in Segment.
   """,  # noqa
                                      formatter_class=Formatter)
 
@@ -285,6 +288,13 @@ def create_slack(log: logging.Logger) -> Optional[SlackWebClient]:
     return slack_client
 
 
+def create_segment() -> Optional[SegmentClient]:
+    """Initialize the Segment client to track user actions."""
+    if key := os.getenv("ATHENIAN_SEGMENT_KEY"):
+        return SegmentClient(key)
+    return None
+
+
 PRELOADER_VAR_NAME = "mc_preloader"
 
 
@@ -320,7 +330,9 @@ def main() -> Optional[AthenianApp]:
         rdb_conn=args.persistentdata_db,
         ui=args.ui, auth0_cls=auth0_cls, kms_cls=kms_cls, cache=cache, slack=slack,
         client_max_size=int(os.getenv("ATHENIAN_MAX_CLIENT_SIZE", 256 * 1024)),
-        max_load=float(os.getenv("ATHENIAN_MAX_LOAD", 12)))
+        max_load=float(os.getenv("ATHENIAN_MAX_LOAD", 12)),
+        segment=create_segment(),
+    )
     if args.preload_dataframes:
         setup_preloading(app, log)
     app.run(host=args.host, port=args.port, print=lambda s: log.info("\n" + s))
