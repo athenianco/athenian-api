@@ -7,7 +7,7 @@ from libc.stdint cimport uint32_t, int64_t, uint64_t
 from libc.string cimport memset
 from libcpp.vector cimport vector
 import numpy as np
-from typing import Any, List, Tuple
+from typing import Any, List, Optional, Tuple
 
 
 def searchsorted_inrange(a: np.ndarray, v: Any, side="left", sorter=None):
@@ -99,10 +99,12 @@ cdef struct Edge:
 def join_dags(hashes: np.ndarray,
               vertexes: np.ndarray,
               edges: np.ndarray,
-              new_edges: List[Tuple[str, str, int]]) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+              new_edges: List[Tuple[str, Optional[str], int]],
+              ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     new_hashes = {k for k, v, _ in new_edges}.union(v for k, v, _ in new_edges)
-    if "" in new_hashes:
+    if "" in new_hashes or None in new_hashes:
         # temporary DB inconsistency, we should retry later
+        # we *must* check for both the empty string and None
         return hashes, vertexes, edges
     the_end = "0" * 40
     new_hashes.discard(the_end)  # initial commit virtual parents

@@ -18,14 +18,23 @@ jobs:
     if: "!contains(github.event.head_commit.message, 'Bump version') || github.event_name != 'push'"
     runs-on: ubuntu-20.04
     steps:
+    - uses: tspascoal/get-user-teams-membership@v1
+      id: membership
+      with:
+        username: ${{ github.actor }}
+        team: 'team'
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     - name: actions/checkout
       uses: actions/checkout@v2
-      if: ${{ github.event_name != 'pull_request_target' || github.actor != 'dependabot[bot]' }}
+      if: ${{ github.event_name != 'pull_request_target') }}
+      with:
+        submodules: true
     - name: actions/checkout
       uses: actions/checkout@v2
-      if: ${{ github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]' }}
+      if: ${{ github.event_name == 'pull_request_target' && (github.actor == 'dependabot[bot]' || steps.membership.outputs.isTeamMember) }}
       with:
         ref: ${{ github.event.pull_request.head.sha }}
+        submodules: true
     - name: actions/cache
       uses: actions/cache@v2
       with:
@@ -47,14 +56,23 @@ jobs:
     if: "!contains(github.event.head_commit.message, 'Bump version') || github.event_name != 'push'"
     runs-on: ubuntu-20.04
     steps:
+    - uses: tspascoal/get-user-teams-membership@v1
+      id: membership
+      with:
+        username: ${{ github.actor }}
+        team: 'team'
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     - name: actions/checkout
       uses: actions/checkout@v2
-      if: ${{ github.event_name != 'pull_request_target' || github.actor != 'dependabot[bot]' }}
+      if: ${{ github.event_name != 'pull_request_target' }}
+      with:
+        submodules: true
     - name: actions/checkout
       uses: actions/checkout@v2
-      if: ${{ github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]' }}
+      if: ${{ github.event_name == 'pull_request_target' && (github.actor == 'dependabot[bot]' || steps.membership.outputs.isTeamMember) }}
       with:
         ref: ${{ github.event.pull_request.head.sha }}
+        submodules: true
     - name: actions/cache
       uses: actions/cache@v2
       with:
@@ -116,14 +134,23 @@ jobs:
       PDB: sqlite:///tests/pdb-master.sqlite
       RDB: sqlite:///tests/rdb-master.sqlite
     steps:
+    - uses: tspascoal/get-user-teams-membership@v1
+      id: membership
+      with:
+        username: ${{ github.actor }}
+        team: 'team'
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     - name: actions/checkout
       uses: actions/checkout@v2
-      if: ${{ github.event_name != 'pull_request_target' || github.actor != 'dependabot[bot]' }}
+      if: ${{ github.event_name != 'pull_request_target' }}
+      with:
+        submodules: true
     - name: actions/checkout
       uses: actions/checkout@v2
-      if: ${{ github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]' }}
+      if: ${{ github.event_name == 'pull_request_target' && (github.actor == 'dependabot[bot]' || steps.membership.outputs.isTeamMember) }}
       with:
         ref: ${{ github.event.pull_request.head.sha }}
+        submodules: true
     - name: actions/cache pip
       uses: actions/cache@v2
       with:
@@ -252,14 +279,23 @@ jobs:
     if: "!contains(github.event.head_commit.message, 'Bump version') || github.event_name != 'push'"
     runs-on: ubuntu-20.04
     steps:
+    - uses: tspascoal/get-user-teams-membership@v1
+      id: membership
+      with:
+        username: ${{ github.actor }}
+        team: 'team'
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     - name: actions/checkout
       uses: actions/checkout@v2
-      if: ${{ github.event_name != 'pull_request_target' || github.actor != 'dependabot[bot]' }}
+      if: ${{ github.event_name != 'pull_request_target' }}
+      with:
+        submodules: true
     - name: actions/checkout
       uses: actions/checkout@v2
-      if: ${{ github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]' }}
+      if: ${{ github.event_name == 'pull_request_target' && (github.actor == 'dependabot[bot]' || steps.membership.outputs.isTeamMember) }}
       with:
         ref: ${{ github.event.pull_request.head.sha }}
+        submodules: true
     - name: openapitools/openapi-generator-cli
       run: |
         docker run --rm -v `pwd`:/local --user `id -u`:`id -g` openapitools/openapi-generator-cli generate --input-spec=/local/spec/openapi.yaml --generator-name=javascript --output=/local/js-client
@@ -286,14 +322,23 @@ jobs:
           --health-retries 10
           --health-start-period 2s
     steps:
+    - uses: tspascoal/get-user-teams-membership@v1
+      id: membership
+      with:
+        username: ${{ github.actor }}
+        team: 'team'
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     - name: actions/checkout
       uses: actions/checkout@v2
-      if: ${{ github.event_name != 'pull_request_target' || github.actor != 'dependabot[bot]' }}
+      if: ${{ github.event_name != 'pull_request_target' }}
+      with:
+        submodules: true
     - name: actions/checkout
       uses: actions/checkout@v2
-      if: ${{ github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]' }}
+      if: ${{ github.event_name == 'pull_request_target' && (github.actor == 'dependabot[bot]' || steps.membership.outputs.isTeamMember) }}
       with:
         ref: ${{ github.event.pull_request.head.sha }}
+        submodules: true
     - uses: satackey/action-docker-layer-caching@v0.0.11
       continue-on-error: true
     - name: setup postgres
@@ -339,6 +384,7 @@ jobs:
       with:
         fetch-depth: 100
         persist-credentials: false
+        submodules: true
     - name: current_version
       run: echo "current_version=$(grep '__version__' server/athenian/api/metadata.py | cut -d\" -f2)" >> $GITHUB_ENV
     - name: FragileTech/bump-version
@@ -357,6 +403,8 @@ jobs:
     steps:
     - name: actions/checkout
       uses: actions/checkout@v2
+      with:
+        submodules: true
     - name: install
       run: |
         curl -sL https://sentry.io/get-cli/ | bash
