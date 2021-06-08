@@ -18,12 +18,18 @@ jobs:
     if: "!contains(github.event.head_commit.message, 'Bump version') || github.event_name != 'push'"
     runs-on: ubuntu-20.04
     steps:
+    - uses: tspascoal/get-user-teams-membership@v1
+      id: membership
+      with:
+        username: ${{ github.actor }}
+        team: 'team'
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     - name: actions/checkout
       uses: actions/checkout@v2
-      if: ${{ github.event_name != 'pull_request_target' || github.actor != 'dependabot[bot]' }}
+      if: ${{ github.event_name != 'pull_request_target') }}
     - name: actions/checkout
       uses: actions/checkout@v2
-      if: ${{ github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]' }}
+      if: ${{ github.event_name == 'pull_request_target' && (github.actor == 'dependabot[bot]' || steps.membership.outputs.isTeamMember) }}
       with:
         ref: ${{ github.event.pull_request.head.sha }}
     - name: actions/cache
@@ -47,12 +53,18 @@ jobs:
     if: "!contains(github.event.head_commit.message, 'Bump version') || github.event_name != 'push'"
     runs-on: ubuntu-20.04
     steps:
+    - uses: tspascoal/get-user-teams-membership@v1
+      id: membership
+      with:
+        username: ${{ github.actor }}
+        team: 'team'
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     - name: actions/checkout
       uses: actions/checkout@v2
-      if: ${{ github.event_name != 'pull_request_target' || github.actor != 'dependabot[bot]' }}
+      if: ${{ github.event_name != 'pull_request_target' }}
     - name: actions/checkout
       uses: actions/checkout@v2
-      if: ${{ github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]' }}
+      if: ${{ github.event_name == 'pull_request_target' && (github.actor == 'dependabot[bot]' || steps.membership.outputs.isTeamMember) }}
       with:
         ref: ${{ github.event.pull_request.head.sha }}
     - name: actions/cache
@@ -116,12 +128,18 @@ jobs:
       PDB: sqlite:///tests/pdb-master.sqlite
       RDB: sqlite:///tests/rdb-master.sqlite
     steps:
+    - uses: tspascoal/get-user-teams-membership@v1
+      id: membership
+      with:
+        username: ${{ github.actor }}
+        team: 'team'
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     - name: actions/checkout
       uses: actions/checkout@v2
-      if: ${{ github.event_name != 'pull_request_target' || github.actor != 'dependabot[bot]' }}
+      if: ${{ github.event_name != 'pull_request_target' }}
     - name: actions/checkout
       uses: actions/checkout@v2
-      if: ${{ github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]' }}
+      if: ${{ github.event_name == 'pull_request_target' && (github.actor == 'dependabot[bot]' || steps.membership.outputs.isTeamMember) }}
       with:
         ref: ${{ github.event.pull_request.head.sha }}
     - name: actions/cache pip
@@ -252,12 +270,18 @@ jobs:
     if: "!contains(github.event.head_commit.message, 'Bump version') || github.event_name != 'push'"
     runs-on: ubuntu-20.04
     steps:
+    - uses: tspascoal/get-user-teams-membership@v1
+      id: membership
+      with:
+        username: ${{ github.actor }}
+        team: 'team'
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     - name: actions/checkout
       uses: actions/checkout@v2
-      if: ${{ github.event_name != 'pull_request_target' || github.actor != 'dependabot[bot]' }}
+      if: ${{ github.event_name != 'pull_request_target' }}
     - name: actions/checkout
       uses: actions/checkout@v2
-      if: ${{ github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]' }}
+      if: ${{ github.event_name == 'pull_request_target' && (github.actor == 'dependabot[bot]' || steps.membership.outputs.isTeamMember) }}
       with:
         ref: ${{ github.event.pull_request.head.sha }}
     - name: openapitools/openapi-generator-cli
@@ -286,12 +310,18 @@ jobs:
           --health-retries 10
           --health-start-period 2s
     steps:
+    - uses: tspascoal/get-user-teams-membership@v1
+      id: membership
+      with:
+        username: ${{ github.actor }}
+        team: 'team'
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     - name: actions/checkout
       uses: actions/checkout@v2
-      if: ${{ github.event_name != 'pull_request_target' || github.actor != 'dependabot[bot]' }}
+      if: ${{ github.event_name != 'pull_request_target' }}
     - name: actions/checkout
       uses: actions/checkout@v2
-      if: ${{ github.event_name == 'pull_request_target' && github.actor == 'dependabot[bot]' }}
+      if: ${{ github.event_name == 'pull_request_target' && (github.actor == 'dependabot[bot]' || steps.membership.outputs.isTeamMember) }}
       with:
         ref: ${{ github.event.pull_request.head.sha }}
     - uses: satackey/action-docker-layer-caching@v0.0.11
