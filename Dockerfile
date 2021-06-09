@@ -4,7 +4,7 @@ ENV BROWSER=/browser \
     LC_ALL=en_US.UTF-8 \
     SETUPTOOLS_USE_DISTUTILS=stdlib \
     DEBIAN_FRONTEND=noninteractive \
-    TZ=Europe/Madrid
+    TZ=Europe/Madrid \
     PYTHON_TARGET_VERSION="3.8.5 1~20.04.3"
 
 RUN echo '#!/bin/bash\n\
