@@ -6,7 +6,7 @@ import aiohttp
 
 from athenian.api import metadata
 from athenian.api.cache import cached, max_exptime
-from athenian.api.models.web import Model, User
+from athenian.api.models.web import Model
 from athenian.api.request import AthenianWebRequest
 
 
@@ -26,9 +26,23 @@ class SegmentClient:
         self._key = key
         self.log.info("Enabled tracking user actions")
 
-    async def identify(self, user: User) -> None:
-        """Submit user's personal information."""
-        assert user.impersonated_by is None
+    async def submit(self, request: AthenianWebRequest) -> None:
+        """Ensure that the user is identified and track another API call."""
+        if getattr(request, "god_id", request.uid) != request.uid or request.is_default_user:
+            return
+        await self._identify(request)
+        await self._track(request)
+
+    @cached(
+        exptime=max_exptime,
+        serialize=lambda _: b"\x01",
+        deserialize=lambda _: b"\x01",
+        key=lambda request, **_: (request.uid,),
+        cache=lambda request, **_: request.cache,
+        refresh_on_access=True,
+    )
+    async def _identify(self, request: AthenianWebRequest) -> None:
+        user = await request.user()
         data = {
             "userId": user.id,
             "traits": {
@@ -41,9 +55,7 @@ class SegmentClient:
         }
         await self._post(data, "identify")
 
-    async def track(self, request: AthenianWebRequest) -> None:
-        """Submit user's action."""
-        assert getattr(request, "god_id", None) is None
+    async def _track(self, request: AthenianWebRequest) -> None:
         data = {
             "userId": request.uid,
             "event": request.path,
@@ -55,24 +67,6 @@ class SegmentClient:
             **self._common_data(),
         }
         await self._post(data, "track")
-
-    async def submit(self, request: AthenianWebRequest) -> None:
-        """Ensure that the user is identified and track another action."""
-        # if getattr(request, "god_id", None) is not None or request.is_default_user:
-        #    return
-        await self._identify(request)
-        await self.track(request)
-
-    @cached(
-        exptime=max_exptime,
-        serialize=lambda _: b"\x01",
-        deserialize=lambda _: b"\x01",
-        key=lambda request, **_: (request.uid,),
-        cache=lambda request, **_: request.cache,
-        refresh_on_access=True,
-    )
-    async def _identify(self, request: AthenianWebRequest) -> None:
-        await self.identify(await request.user())
 
     @staticmethod
     def _common_data() -> Dict[str, Any]:

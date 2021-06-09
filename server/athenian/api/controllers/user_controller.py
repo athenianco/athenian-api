@@ -26,7 +26,7 @@ from athenian.api.response import model_response, ResponseError
 async def get_user(request: AthenianWebRequest) -> web.Response:
     """Return details about the current user."""
     user = await (await request.user()).load_accounts(request.sdb)
-    if (god_id := getattr(request, "god_id", None)) is not None:
+    if (god_id := getattr(request, "god_id", request.uid)) != request.uid:
         user.impersonated_by = god_id
     return model_response(user)
 
