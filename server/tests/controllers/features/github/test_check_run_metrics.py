@@ -29,13 +29,13 @@ def metrics_calculator_force_cache(cache):
 
 @pytest.mark.parametrize("split_by_check_runs, suite_freqs, suite_sizes, metrics", [
     (True, [[[983, 399, 495, 302, 7, 12]]], [1, 2, 3, 4, 5, 6],
-     [[983, 648, 319, 0],
-      [399, 55, 343, 0],
+     [[981, 648, 319, 0],
+      [398, 55, 343, 0],
       [495, 345, 150, 0],
       [302, 133, 169, 0],
       [7, 1, 6, 0],
       [12, 1, 11, 0]]),
-    (False, [[[0]]], [], [[2198, 1183, 998, 0]]),
+    (False, [[[0]]], [], [[2195, 1183, 998, 0]]),
 ])
 @with_defer
 async def test_check_run_metrics_suite_counts(

@@ -108,8 +108,12 @@ class SuitesCounter(SumMetricCalculator[int]):
         started = facts[check_suite_started_column].values.astype(min_times.dtype)
         _, first_encounters = np.unique(
             facts[CheckRun.check_suite_node_id.key].values.astype("S"), return_index=True)
+        statuses = facts[CheckRun.check_suite_status.key].values.astype("S")
+        incomplete = np.in1d(statuses, [b"COMPLETED", b"FAILURE", b"ERROR", b"SUCCESS"],
+                             invert=True)
         mask = np.zeros_like(started, dtype=bool)
         mask[first_encounters] = True
+        mask[incomplete] = False
         started[~mask] = None
         result[(min_times[:, None] <= started) & (started < max_times[:, None])] = 1
         return result
