@@ -25,12 +25,14 @@ def main():
     flogging.setup()
     log = logging.getLogger("time_by_lines")
     accs = []
+    node_ids = []
     facts = []
     log.info("Reading %s", sys.argv[1])
     with gzip.open(sys.argv[1]) as fin:
         for line in fin:
-            acc, data = line.strip().split(b",", 1)
+            acc, node_id, data = line.strip().split(b",", 2)
             accs.append(int(acc.decode()))
+            node_ids.append(node_id)
             facts.append(PullRequestFacts(bytes.fromhex(data[2:].decode())))
     log.info("Assembling the data frame")
     df = df_from_structs(facts)
@@ -48,6 +50,7 @@ def main():
     df = pd.DataFrame({
         "acc": accs,
         "size": df["size"],
+        "node_id": node_ids,
         "review_time": review_times.squeeze(),
         "lead_time": lead_times.squeeze(),
     })
