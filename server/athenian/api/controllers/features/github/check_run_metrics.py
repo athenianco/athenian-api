@@ -108,12 +108,15 @@ class SuitesCounter(SumMetricCalculator[int]):
         started = facts[check_suite_started_column].values.astype(min_times.dtype)
         _, first_encounters = np.unique(
             facts[CheckRun.check_suite_node_id.key].values.astype("S"), return_index=True)
+        conclusions = facts[CheckRun.check_suite_conclusion.key].values.astype("S")
+        skipped = conclusions == b"SKIPPED"
         statuses = facts[CheckRun.check_suite_status.key].values.astype("S")
         incomplete = np.in1d(statuses, [b"COMPLETED", b"FAILURE", b"ERROR", b"SUCCESS"],
                              invert=True)
+        excluded = incomplete | skipped
         mask = np.zeros_like(started, dtype=bool)
         mask[first_encounters] = True
-        mask[incomplete] = False
+        mask[excluded] = False
         started[~mask] = None
         result[(min_times[:, None] <= started) & (started < max_times[:, None])] = 1
         return result
@@ -181,7 +184,7 @@ class CancelledSuitesCounter(SuitesInStatusCounter):
     """Number of cancelled check suites metric."""
 
     statuses = {
-        b"COMPLETED": [b"CANCELLED", b"SKIPPED"],
+        b"COMPLETED": [b"CANCELLED"],
     }
 
 
