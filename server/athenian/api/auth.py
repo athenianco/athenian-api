@@ -287,8 +287,8 @@ class Auth0:
                     resp = await self._session.get(
                         "https://%s/api/v2/users?q=%s" % (self._domain, query),
                         headers={"Authorization": "Bearer " + token})
-                except aiohttp.ClientConnectorError as e:
-                    if isinstance(e.__cause__, OSError) and e.__cause__.errno in (-3, 101):
+                except aiohttp.ClientOSError as e:
+                    if isinstance(e.__cause__, OSError) and e.__cause__.errno in (-3, 101, 104):
                         self.log.warning("Auth0 Management API: %s", e)
                         # -3: Temporary failure in name resolution
                         # 101: Network is unreachable
