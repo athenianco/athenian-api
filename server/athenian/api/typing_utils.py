@@ -246,7 +246,9 @@ class NumpyStruct(Mapping[str, Any]):
                     if is_ascii:
                         nested_dtype = np.dtype("S")
                 value = np.asarray(value, nested_dtype)
-                if is_str:
+                if is_str and nan_mask.any():
+                    if not value.flags.writeable:
+                        value = value.copy()
                     value[nan_mask] = ""
                 extra_bytes.append(data := value.view(np.byte).data)
                 pointer = [offset, len(value)]
