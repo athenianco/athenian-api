@@ -20,6 +20,7 @@ jobs:
     steps:
     - uses: tspascoal/get-user-teams-membership@v1
       id: membership
+      if: ${{ github.actor != 'dependabot[bot]' }}
       with:
         username: ${{ github.actor }}
         team: 'team'
@@ -58,6 +59,7 @@ jobs:
     steps:
     - uses: tspascoal/get-user-teams-membership@v1
       id: membership
+      if: ${{ github.actor != 'dependabot[bot]' }}
       with:
         username: ${{ github.actor }}
         team: 'team'
@@ -136,6 +138,7 @@ jobs:
     steps:
     - uses: tspascoal/get-user-teams-membership@v1
       id: membership
+      if: ${{ github.actor != 'dependabot[bot]' }}
       with:
         username: ${{ github.actor }}
         team: 'team'
@@ -297,6 +300,7 @@ jobs:
     steps:
     - uses: tspascoal/get-user-teams-membership@v1
       id: membership
+      if: ${{ github.actor != 'dependabot[bot]' }}
       with:
         username: ${{ github.actor }}
         team: 'team'
