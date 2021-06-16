@@ -11,6 +11,7 @@ from athenian.api.async_utils import gather
 from athenian.api.cache import cached, max_exptime
 from athenian.api.controllers.account import get_account_organizations, get_user_account_status
 from athenian.api.controllers.jira import get_jira_id
+from athenian.api.controllers.user import load_user_accounts
 from athenian.api.db import DatabaseLike
 from athenian.api.models.metadata.jira import Installation as JIRAInstallation, \
     Project as JIRAProject
@@ -25,7 +26,8 @@ from athenian.api.response import model_response, ResponseError
 
 async def get_user(request: AthenianWebRequest) -> web.Response:
     """Return details about the current user."""
-    user = await (await request.user()).load_accounts(request.sdb)
+    user = await request.user()
+    user.accounts = await load_user_accounts(user.id, request.sdb, request.mdb, request.cache)
     if (god_id := getattr(request, "god_id", request.uid)) != request.uid:
         user.impersonated_by = god_id
     return model_response(user)
@@ -142,7 +144,8 @@ async def become_user(request: AthenianWebRequest, id: str = "") -> web.Response
         god = God(**god).refresh()
         god.mapped_id = id or None
         await conn.execute(update(God).where(God.user_id == user_id).values(god.explode()))
-    user = await (await request.app["auth"].get_user(id or user_id)).load_accounts(request.sdb)
+    user = await request.app["auth"].get_user(id or user_id)
+    user.accounts = await load_user_accounts(user.id, request.sdb, request.mdb, request.cache)
     return model_response(user)
 
 

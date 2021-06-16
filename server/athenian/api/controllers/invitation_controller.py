@@ -27,7 +27,8 @@ from athenian.api.controllers.account import generate_jira_invitation_link, \
     get_metadata_account_ids, get_user_account_status, jira_url_template
 from athenian.api.controllers.ffx import decrypt, encrypt
 from athenian.api.controllers.reposet import load_account_reposets
-from athenian.api.db import DatabaseLike
+from athenian.api.controllers.user import load_user_accounts
+from athenian.api.db import DatabaseLike, FastConnection, ParallelDatabase
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import Account as MetadataAccount, AccountRepository, \
     FetchProgress, NodeUser, OrganizationMember
@@ -141,7 +142,8 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
     async with sdb.connection() as conn:
         try:
             async with conn.transaction():
-                acc_id, user = await _accept_invitation(iid, salt, request, conn, sdb)
+                acc_id, user = await _accept_invitation(
+                    iid, salt, request, conn, sdb, request.mdb, request.cache)
         except (IntegrityConstraintViolationError, IntegrityError, OperationalError) as e:
             raise ResponseError(DatabaseConflict(detail=str(e)))
     return model_response(InvitedUser(account=acc_id, user=user))
@@ -150,8 +152,10 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
 async def _accept_invitation(iid: int,
                              salt: int,
                              request: AthenianWebRequest,
-                             sdb_conn: databases.core.Connection,
-                             sdb: databases.Database,
+                             sdb_transaction: FastConnection,
+                             sdb: ParallelDatabase,
+                             mdb: ParallelDatabase,
+                             cache: Optional[aiomcache.Client],
                              ) -> Tuple[int, User]:
     """
     We need both `sdb_conn` and `sdb` because `sdb` is required in the deferred code outside of
@@ -160,7 +164,7 @@ async def _accept_invitation(iid: int,
     in the code that defer()-s.
     """  # noqa: D
     log = logging.getLogger(metadata.__package__)
-    inv = await sdb_conn.fetch_one(
+    inv = await sdb_transaction.fetch_one(
         select([Invitation.account_id, Invitation.accepted, Invitation.is_active])
         .where(and_(Invitation.id == iid, Invitation.salt == salt)))
     if inv is None:
@@ -171,13 +175,13 @@ async def _accept_invitation(iid: int,
     is_admin = acc_id == admin_backdoor
     slack = request.app["slack"]  # type: SlackWebClient
     if is_admin:
-        other_accounts = await sdb_conn.fetch_all(
+        other_accounts = await sdb_transaction.fetch_all(
             select([UserAccount.account_id])
             .where(and_(UserAccount.user_id == request.uid,
                         UserAccount.is_admin)))
         if other_accounts:
             other_accounts = {row[0] for row in other_accounts}
-            installed_accounts = await sdb_conn.fetch_all(
+            installed_accounts = await sdb_transaction.fetch_all(
                 select([RepositorySet.owner_id])
                 .where(and_(RepositorySet.owner_id.in_(other_accounts),
                             RepositorySet.name == RepositorySet.ALL,
@@ -189,9 +193,9 @@ async def _accept_invitation(iid: int,
                     detail="You cannot accept new admin invitations until your account's "
                            "installation finishes."))
         # create a new account for the admin user
-        acc_id = await create_new_account(sdb_conn, request.app["auth"].key)
+        acc_id = await create_new_account(sdb_transaction, request.app["auth"].key)
         if acc_id >= admin_backdoor:
-            await sdb_conn.execute(delete(Account).where(Account.id == acc_id))
+            await sdb_transaction.execute(delete(Account).where(Account.id == acc_id))
             raise ResponseError(GenericError(
                 type="/errors/LockedError",
                 title=HTTPStatus.LOCKED.phrase,
@@ -209,16 +213,17 @@ async def _accept_invitation(iid: int,
             await defer(report_new_account_to_slack(), "report_new_account_to_slack")
         status = None
     else:
-        status = await sdb_conn.fetch_one(select([UserAccount.is_admin])
-                                          .where(and_(UserAccount.user_id == request.uid,
-                                                      UserAccount.account_id == acc_id)))
+        status = await sdb_transaction.fetch_one(
+            select([UserAccount.is_admin])
+            .where(and_(UserAccount.user_id == request.uid,
+                        UserAccount.account_id == acc_id)))
     user = None
     if status is None:
-        if is_admin or \
-                (user := await _check_user_org_membership(request, acc_id, sdb_conn, log)) is None:
+        if is_admin or (user := await _check_user_org_membership(
+                request, acc_id, sdb_transaction, log)) is None:
             user = await request.user()
         # create the user<>account record
-        await sdb_conn.execute(insert(UserAccount).values(UserAccount(
+        await sdb_transaction.execute(insert(UserAccount).values(UserAccount(
             user_id=request.uid,
             account_id=acc_id,
             is_admin=is_admin,
@@ -236,11 +241,12 @@ async def _accept_invitation(iid: int,
 
             await defer(report_new_user_to_slack(), "report_new_user_to_slack")
         values = {Invitation.accepted.key: inv[Invitation.accepted.key] + 1}
-        await sdb_conn.execute(update(Invitation).where(Invitation.id == iid).values(values))
+        await sdb_transaction.execute(update(Invitation)
+                                      .where(Invitation.id == iid).values(values))
     if user is None:
         user = await request.user()
-    full_user = await user.load_accounts(sdb_conn)
-    return acc_id, full_user
+    user.accounts = await load_user_accounts(user.id, sdb_transaction, mdb, cache)
+    return acc_id, user
 
 
 async def _check_user_org_membership(request: AthenianWebRequest,
