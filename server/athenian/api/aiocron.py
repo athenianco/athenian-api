@@ -134,6 +134,7 @@ class EarlyExpirationCron(Cron):
         return super(EarlyExpirationCron, self).get_next() - early_expiration
 
 
-def crontab(spec, func=None, args=(), start=True):
+def crontab(spec, func=None, args=(), start=True, max_early_expiration_seconds=0):
     """Entrypoint for using Cron utility."""
-    return Cron(spec, func=func, args=args, start=start)
+    return EarlyExpirationCron(spec, func=func, args=args, start=start,
+                               max_early_expiration_seconds=max_early_expiration_seconds)
