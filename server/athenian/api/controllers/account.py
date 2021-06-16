@@ -15,7 +15,8 @@ from athenian.api import metadata
 from athenian.api.cache import cached, max_exptime
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.db import DatabaseLike
-from athenian.api.models.metadata.github import Organization, Team as MetadataTeam, TeamMember
+from athenian.api.models.metadata.github import Organization, Team as MetadataTeam, \
+    TeamMember
 from athenian.api.models.state.models import Account, AccountGitHubAccount, RepositorySet, \
     Team as StateTeam, UserAccount
 from athenian.api.models.web import NoSourceDataError, NotFoundError
@@ -46,6 +47,21 @@ async def get_metadata_account_ids(account: int,
         raise ResponseError(NoSourceDataError(
             detail="The installation of account %d has not finished yet." % account))
     return tuple(r[0] for r in ids)
+
+
+async def get_metadata_account_ids_or_none(account: int,
+                                           sdb: DatabaseLike,
+                                           cache: Optional[aiomcache.Client],
+                                           ) -> Optional[Tuple[int, ...]]:
+    """
+    Fetch the metadata account IDs for the given API account ID.
+
+    Return None if nothing was found.
+    """
+    try:
+        return await get_metadata_account_ids(account, sdb, cache)
+    except ResponseError:
+        return None
 
 
 @cached(

@@ -1,14 +1,10 @@
-from datetime import datetime, timezone
+from datetime import datetime
 import struct
 from typing import Dict, List, Optional
 
-import aiosqlite
 import dateutil.parser
-from sqlalchemy import join, select
 
 from athenian.api.controllers.ffx import encrypt
-from athenian.api.db import DatabaseLike
-from athenian.api.models.state.models import Account, UserAccount
 from athenian.api.models.web.account_status import AccountStatus
 from athenian.api.models.web.base_model_ import Model
 
@@ -115,31 +111,6 @@ class User(Model):
     def __lt__(self, other: "User") -> bool:
         """Check whether the object is less than the other."""
         return self.id < other.id
-
-    async def load_accounts(self, db: DatabaseLike) -> "User":
-        """
-        Fetch the accounts membership from the database.
-
-        :param db: DB to query.
-        :return: self
-        """
-        accounts = await db.fetch_all(
-            select([UserAccount, Account.expires_at])
-            .select_from(join(UserAccount, Account, UserAccount.account_id == Account.id))
-            .where(UserAccount.user_id == self.id))
-        try:
-            is_sqlite = db.url.dialect == "sqlite"
-        except AttributeError:
-            is_sqlite = isinstance(db.raw_connection, aiosqlite.Connection)
-        now = datetime.now(None if is_sqlite else timezone.utc)
-        self.accounts = {
-            x[UserAccount.account_id.key]: AccountStatus(
-                is_admin=x[UserAccount.is_admin.key],
-                expired=x[Account.expires_at.key] < now,
-            )
-            for x in accounts
-        }
-        return self
 
     @property
     def id(self) -> str:
