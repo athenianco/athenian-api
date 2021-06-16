@@ -2,6 +2,7 @@
 import asyncio
 from datetime import datetime, timezone
 import functools
+import random
 import time
 
 from croniter.croniter import croniter
@@ -114,6 +115,23 @@ class Cron:
     def __repr__(self):
         """Return an unambiguous string representation of object."""
         return f"<Cron {self.spec} {self.func}>"
+
+
+class EarlyExpirationCron(Cron):
+    """Like Cron, but with probabilistic early expiration."""
+
+    def __init__(self, spec, func=None, args=(), start=False, max_early_expiration_seconds=0):
+        """Initialize an EarlyExpirationCron object.
+
+        A value of 0 for `max_early_expiration_seconds` makes it behave as `Cron`.
+        """
+        super(EarlyExpirationCron, self).__init__(spec, func=func, args=args, start=start)
+        self.max_early_expiration_seconds = max_early_expiration_seconds
+
+    def get_next(self):
+        """Return next iteration time related to loop time."""
+        early_expiration = random.random() * self.max_early_expiration_seconds
+        return super(EarlyExpirationCron, self).get_next() - early_expiration
 
 
 def crontab(spec, func=None, args=(), start=True):
