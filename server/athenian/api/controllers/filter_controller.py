@@ -220,7 +220,8 @@ def _bake_updated_min_max(filt: FilterPullRequestsRequest) -> Tuple[datetime, da
 
 def web_pr_from_struct(pr: PullRequestListItem,
                        prefixer: Prefixer,
-                       log: logging.Logger) -> WebPullRequest:
+                       log: logging.Logger,
+                       ) -> WebPullRequest:
     """Convert an intermediate PR representation to the web model."""
     props = dict(pr)
     del props["node_id"]
@@ -527,7 +528,8 @@ async def _build_github_prs_response(prs: List[PullRequestListItem],
                                      prefixer: Prefixer,
                                      meta_ids: Tuple[int, ...],
                                      mdb: databases.Database,
-                                     cache: Optional[aiomcache.Client]) -> web.Response:
+                                     cache: Optional[aiomcache.Client],
+                                     ) -> web.Response:
     log = logging.getLogger(f"{metadata.__package__}._build_github_prs_response")
     web_prs = sorted(web_pr_from_struct(pr, prefixer, log) for pr in prs)
     users = set(chain.from_iterable(chain.from_iterable(pr.participants.values()) for pr in prs))

@@ -109,9 +109,13 @@ class PullRequestJIRAIssueItem:
     type: str
 
 
-@dataclass(slots=True, frozen=True)
+@dataclass(slots=True, frozen=True, first_mutable="merged_with_failed_check_runs")
 class PullRequestListItem:
-    """General PR properties used to list PRs on the frontend."""
+    """
+    General PR properties used to list PRs on the frontend.
+
+    We have to declare `merged_with_failed_check_runs` mutable because it has to be set async.
+    """
 
     node_id: str
     repository: str
@@ -141,6 +145,7 @@ class PullRequestListItem:
     participants: PRParticipants
     labels: List[Label]
     jira: Optional[List[PullRequestJIRAIssueItem]]
+    merged_with_failed_check_runs: Optional[List[str]]
 
 
 @dataclass(slots=True, frozen=True)

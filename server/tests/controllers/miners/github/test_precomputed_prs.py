@@ -934,9 +934,10 @@ async def test_store_precomputed_done_none_assert(pdb, pr_samples):
 @with_defer
 async def test_store_merged_unreleased_pull_request_facts_smoke(
         mdb, pdb, rdb, default_branches, release_match_setting_tag):
-    prs, dfs, facts, matched_bys = await _fetch_pull_requests(
+    prs, dfs, facts, matched_bys, task = await _fetch_pull_requests(
         {"src-d/go-git": set(range(1000, 1010))},
         release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, None)
+    task.cancel()
     for pr in prs:
         if pr.pr[PullRequest.merged_at.key] is None:
             pr.pr[PullRequest.merged_at.key] = datetime.now(tz=timezone.utc)
@@ -988,9 +989,10 @@ async def test_store_merged_unreleased_pull_request_facts_smoke(
 async def test_store_open_pull_request_facts_smoke(
         mdb, pdb, rdb, release_match_setting_tag, open_prs_facts_loader,
         with_preloading_enabled):
-    prs, dfs, facts, _ = await _fetch_pull_requests(
+    prs, dfs, facts, _, task = await _fetch_pull_requests(
         {"src-d/go-git": set(range(1000, 1010))},
         release_match_setting_tag, 1, (6366825,), mdb, pdb, rdb, None)
+    task.cancel()
     with pytest.raises(AssertionError):
         await store_open_pull_request_facts(
             zip(prs, (facts[pr.pr[PullRequest.node_id.key]] for pr in prs)), 1, pdb)
