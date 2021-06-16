@@ -36,6 +36,7 @@ class PullRequest(Model):
         "review_comments": int,
         "reviews": int,
         "merged": datetime,
+        "merged_with_failed_check_runs": Optional[List[str]],
         "released": Optional[datetime],
         "release_url": Optional[str],
         "stage_timings": StageTimings,
@@ -66,6 +67,7 @@ class PullRequest(Model):
         "review_comments": "review_comments",
         "reviews": "reviews",
         "merged": "merged",
+        "merged_with_failed_check_runs": "merged_with_failed_check_runs",
         "released": "released",
         "release_url": "release_url",
         "stage_timings": "stage_timings",
@@ -97,6 +99,7 @@ class PullRequest(Model):
         review_comments: Optional[int] = None,
         reviews: Optional[int] = None,
         merged: Optional[datetime] = None,
+        merged_with_failed_check_runs: Optional[List[str]] = None,
         released: Optional[datetime] = None,
         release_url: Optional[str] = None,
         stage_timings: Optional[StageTimings] = None,
@@ -154,6 +157,7 @@ class PullRequest(Model):
         self._review_comments = review_comments
         self._reviews = reviews
         self._merged = merged
+        self._merged_with_failed_check_runs = merged_with_failed_check_runs
         self._released = released
         self._release_url = release_url
         self._stage_timings = stage_timings
@@ -545,6 +549,27 @@ class PullRequest(Model):
         :param merged: The merged of this PullRequest.
         """
         self._merged = merged
+
+    @property
+    def merged_with_failed_check_runs(self) -> Optional[List[str]]:
+        """Gets the merged_with_failed_check_runs of this PullRequest.
+
+        PR was merged with these failed check runs.
+
+        :return: The merged_with_failed_check_runs of this PullRequest.
+        """
+        return self._merged_with_failed_check_runs
+
+    @merged_with_failed_check_runs.setter
+    def merged_with_failed_check_runs(self, merged_with_failed_check_runs: Optional[List[str]]):
+        """Sets the merged_with_failed_check_runs of this PullRequest.
+
+        PR was merged with these failed check runs.
+
+        :param merged_with_failed_check_runs: The merged_with_failed_check_runs of this \
+                                              PullRequest.
+        """
+        self._merged_with_failed_check_runs = merged_with_failed_check_runs
 
     @property
     def released(self) -> datetime:

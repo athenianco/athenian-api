@@ -20,8 +20,7 @@ from athenian.api.models.persistentdata.models import ReleaseNotification
 from athenian.api.models.precomputed.models import GitHubRelease
 from athenian.api.models.state.models import AccountJiraInstallation, ReleaseSetting
 from athenian.api.models.web import CommitsList, FilteredCodeCheckRuns, FilteredLabel, \
-    PullRequestEvent, \
-    PullRequestParticipant, PullRequestSet, PullRequestStage, ReleaseSet
+    PullRequestEvent, PullRequestParticipant, PullRequestSet, PullRequestStage, ReleaseSet
 from athenian.api.models.web.diffed_releases import DiffedReleases
 from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME
 from athenian.api.typing_utils import wraps
@@ -647,6 +646,7 @@ async def validate_prs_response(response: ClientResponse,
     timings = defaultdict(lambda: tdz)
     if count is not None:
         assert len(prs.data) == count
+    failed_check_runs = defaultdict(int)
     for pr in prs.data:
         assert pr.title
         assert pr.repository == "github.com/src-d/go-git", str(pr)
@@ -885,6 +885,9 @@ async def validate_prs_response(response: ClientResponse,
             for role, p in parts.items():
                 passed |= bool(inverse_participants[role].intersection(set(p)))
             assert passed
+        if pr.merged_with_failed_check_runs:
+            for name in pr.merged_with_failed_check_runs:
+                failed_check_runs[name] += 1
         # we cannot cover all possible cases while keeping the test run time reasonable :(
 
     assert total_comments > 0
@@ -917,6 +920,11 @@ async def validate_prs_response(response: ClientResponse,
         assert total_force_push_dropped > 0
     for k, v in timings.items():
         assert v > tdz, k
+    if (not (events == {PullRequestEvent.REJECTED} and not stages)) and \
+            (not (not events and PullRequestStage.DONE not in stages)):
+        assert failed_check_runs
+        for key in failed_check_runs:
+            assert "/" in key
     return len(prs.data)
 
 

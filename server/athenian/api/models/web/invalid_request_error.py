@@ -1,4 +1,5 @@
 from http import HTTPStatus
+from typing import Optional
 
 from athenian.api.models.web.generic_error import GenericError
 
@@ -14,8 +15,8 @@ class InvalidRequestError(GenericError):
     def __init__(
         self,
         pointer: str,
-        detail: str = None,
-        instance: str = None,
+        detail: Optional[str] = None,
+        instance: Optional[str] = None,
     ):
         """InvalidRequestError - a model defined in OpenAPI
 

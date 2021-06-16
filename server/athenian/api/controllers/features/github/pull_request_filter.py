@@ -2,10 +2,10 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 import logging
 import pickle
-from typing import Callable, Dict, Generator, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Callable, Collection, Dict, Generator, Iterable, List, Optional, Sequence, \
+    Set, Tuple
 
 import aiomcache
-import databases
 import numpy as np
 import pandas as pd
 import sentry_sdk
@@ -15,6 +15,8 @@ from athenian.api import COROUTINE_YIELD_EVERY_ITER, list_with_yield, metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached, CancelCache
 from athenian.api.controllers.datetime_utils import coarsen_time_interval
+from athenian.api.controllers.features.github.check_run_metrics import \
+    MergedPRsWithFailedChecksCounter
 from athenian.api.controllers.features.github.pull_request_metrics import AllCounter, \
     MergingPendingCounter, MergingTimeCalculator, ReleasePendingCounter, ReleaseTimeCalculator, \
     ReviewPendingCounter, ReviewTimeCalculator, StagePendingDependencyCalculator, \
@@ -24,8 +26,10 @@ from athenian.api.controllers.features.metric_calculator import df_from_structs,
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import BranchMiner
+from athenian.api.controllers.miners.github.check_run import mine_check_runs
 from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_COLUMNS, \
     fetch_precomputed_commit_history_dags, fetch_repository_commits_no_branch_dates
+from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_inrange
 from athenian.api.controllers.miners.github.precomputed_prs import \
     DonePRFactsLoader, MergedPRFactsLoader, remove_ambiguous_prs, \
     store_merged_unreleased_pull_request_facts, store_open_pull_request_facts, \
@@ -38,9 +42,10 @@ from athenian.api.controllers.miners.types import Label, MinedPullRequest, PRPar
     PullRequestEvent, PullRequestFacts, PullRequestJIRAIssueItem, PullRequestListItem, \
     PullRequestStage
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
-from athenian.api.db import add_pdb_misses, set_pdb_hits, set_pdb_misses
+from athenian.api.db import add_pdb_misses, ParallelDatabase, set_pdb_hits, set_pdb_misses
 from athenian.api.defer import defer
-from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, PullRequestLabel, \
+from athenian.api.models.metadata.github import CheckRun, PullRequest, PullRequestCommit, \
+    PullRequestLabel, \
     PullRequestReview, PullRequestReviewComment, Release
 from athenian.api.models.metadata.jira import Issue
 from athenian.api.tracing import sentry_span
@@ -251,6 +256,7 @@ class PullRequestListMiner:
             review_comments=review_comments,
             reviews=reviews,
             merged=self._dt64_to_pydt(facts_now.merged),
+            merged_with_failed_check_runs=None,
             released=self._dt64_to_pydt(facts_now.released),
             release_url=pr.release[Release.url.key],
             events_now=events_now,
@@ -397,9 +403,9 @@ async def filter_pull_requests(events: Set[PullRequestEvent],
                                updated_max: Optional[datetime],
                                account: int,
                                meta_ids: Tuple[int, ...],
-                               mdb: databases.Database,
-                               pdb: databases.Database,
-                               rdb: databases.Database,
+                               mdb: ParallelDatabase,
+                               pdb: ParallelDatabase,
+                               rdb: ParallelDatabase,
                                cache: Optional[aiomcache.Client],
                                ) -> List[PullRequestListItem]:
     """Filter GitHub pull requests according to the specified criteria.
@@ -510,6 +516,57 @@ def _filter_by_jira_issue_types(prs: List[PullRequestListItem],
     return new_prs
 
 
+@sentry_span
+async def _load_failed_check_runs_for_prs(time_from: datetime,
+                                          time_to: datetime,
+                                          repos: Collection[str],
+                                          labels: LabelFilter,
+                                          jira: JIRAFilter,
+                                          meta_ids: Tuple[int, ...],
+                                          mdb: ParallelDatabase,
+                                          cache: Optional[aiomcache.Client],
+                                          ) -> Tuple[np.ndarray, List[np.ndarray]]:
+    df = await mine_check_runs(
+        time_from, time_to, repos, [], labels, jira, meta_ids, mdb, cache)
+    index, pull_requests, failure_mask = \
+        MergedPRsWithFailedChecksCounter.find_prs_merged_with_failed_check_runs(df)
+    check_run_names = df[CheckRun.name.key].values[index.values]
+    failed_check_run_names = check_run_names[failure_mask]
+    failed_pull_requests = pull_requests[failure_mask]
+    unique_prs, index, counts = np.unique(
+        failed_pull_requests, return_counts=True, return_inverse=True)
+    check_runs = np.split(failed_check_run_names[np.argsort(index)], np.cumsum(counts[:-1]))
+    return unique_prs, check_runs
+
+
+@sentry_span
+async def _append_merged_with_failed_check_runs(check_runs_task: Optional[asyncio.Task],
+                                                prs: List[PullRequestListItem],
+                                                ) -> None:
+    if check_runs_task is None:
+        return
+    await check_runs_task
+    failed_prs, check_run_names = check_runs_task.result()
+    if len(failed_prs):
+        node_ids = np.array([pr.node_id for pr in prs], dtype="S")
+        order = np.argsort(node_ids)
+        node_ids = node_ids[order]
+        order = np.argsort(order)
+        if len(node_ids) > len(failed_prs):
+            found = searchsorted_inrange(node_ids, failed_prs)
+            failed_indexes = np.flatnonzero(node_ids[found] == failed_prs)
+            pr_indexes = found[failed_indexes]
+            check_run_indexes = failed_indexes
+        else:
+            found = searchsorted_inrange(failed_prs, node_ids)
+            failed_indexes = np.flatnonzero(failed_prs[found] == node_ids)
+            pr_indexes = failed_indexes
+            check_run_indexes = found[failed_indexes]
+        for pr_index, check_run_index in zip(pr_indexes, check_run_indexes):
+            prs[order[pr_index]].merged_with_failed_check_runs = \
+                check_run_names[check_run_index].tolist()
+
+
 @cached(
     exptime=PullRequestMiner.CACHE_TTL,
     serialize=pickle.dumps,
@@ -542,9 +599,9 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
                                 updated_max: Optional[datetime],
                                 account: int,
                                 meta_ids: Tuple[int, ...],
-                                mdb: databases.Database,
-                                pdb: databases.Database,
-                                rdb: databases.Database,
+                                mdb: ParallelDatabase,
+                                pdb: ParallelDatabase,
+                                rdb: ParallelDatabase,
                                 cache: Optional[aiomcache.Client],
                                 ) -> Tuple[List[PullRequestListItem], LabelFilter, JIRAFilter]:
     assert isinstance(events, set)
@@ -556,6 +613,8 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
     date_from, date_to = coarsen_time_interval(time_from, time_to)
     if updated_min is not None:
         coarsen_time_interval(updated_min, updated_max)
+    check_runs_task = asyncio.create_task(_load_failed_check_runs_for_prs(
+        time_from, time_to, repos, labels, jira, meta_ids, mdb, cache))
     branches, default_branches = await BranchMiner.extract_branches(repos, meta_ids, mdb, cache)
     tasks = (
         PullRequestMiner.mine(
@@ -660,6 +719,7 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
         PullRequestListMiner(prs, pr_miner.dfs, facts, events, stages, time_from, time_to, True),
         "PullRequestListMiner.__iter__",
     )
+    await _append_merged_with_failed_check_runs(check_runs_task, prs)
 
     log.debug("return %d PRs", len(prs))
     return prs, labels, jira
@@ -680,9 +740,9 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
                               release_settings: ReleaseSettings,
                               account: int,
                               meta_ids: Tuple[int, ...],
-                              mdb: databases.Database,
-                              pdb: databases.Database,
-                              rdb: databases.Database,
+                              mdb: ParallelDatabase,
+                              pdb: ParallelDatabase,
+                              rdb: ParallelDatabase,
                               cache: Optional[aiomcache.Client],
                               ) -> List[PullRequestListItem]:
     """
@@ -690,28 +750,31 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
 
     :params prs: For each repository name without the prefix, there is a set of PR numbers to list.
     """
-    mined_prs, dfs, facts, _ = await _fetch_pull_requests(
+    mined_prs, dfs, facts, _, check_runs_task = await _fetch_pull_requests(
         prs, release_settings, account, meta_ids, mdb, pdb, rdb, cache)
     if not mined_prs:
         return []
     miner = PullRequestListMiner(
         mined_prs, dfs, facts, set(), set(),
         datetime(1970, 1, 1, tzinfo=timezone.utc), datetime.now(timezone.utc), False)
-    return await list_with_yield(miner, "PullRequestListMiner.__iter__")
+    prs = await list_with_yield(miner, "PullRequestListMiner.__iter__")
+    await _append_merged_with_failed_check_runs(check_runs_task, prs)
+    return prs
 
 
 async def _fetch_pull_requests(prs: Dict[str, Set[int]],
                                release_settings: ReleaseSettings,
                                account: int,
                                meta_ids: Tuple[int, ...],
-                               mdb: databases.Database,
-                               pdb: databases.Database,
-                               rdb: databases.Database,
+                               mdb: ParallelDatabase,
+                               pdb: ParallelDatabase,
+                               rdb: ParallelDatabase,
                                cache: Optional[aiomcache.Client],
                                ) -> Tuple[List[MinedPullRequest],
                                           PRDataFrames,
                                           Dict[str, PullRequestFacts],
-                                          Dict[str, ReleaseMatch]]:
+                                          Dict[str, ReleaseMatch],
+                                          Optional[asyncio.Task]]:
     branches, default_branches = await BranchMiner.extract_branches(prs, meta_ids, mdb, cache)
     filters = [and_(PullRequest.repository_full_name == repo,
                     PullRequest.number.in_(numbers),
@@ -725,9 +788,17 @@ async def _fetch_pull_requests(prs: Dict[str, Set[int]],
             prs, default_branches, release_settings, account, pdb),
     ]
     prs_df, (facts, ambiguous) = await gather(*tasks)
-    return await unwrap_pull_requests(
+    if (max_merged_at := prs_df[PullRequest.merged_at.key].max()) == max_merged_at:
+        check_runs_task = asyncio.create_task(_load_failed_check_runs_for_prs(
+            prs_df[PullRequest.created_at.key].min() - timedelta(hours=1),
+            max_merged_at + timedelta(days=1),
+            prs.keys(), LabelFilter.empty(), JIRAFilter.empty(), meta_ids, mdb, cache))
+    else:
+        check_runs_task = None
+    unwrapped = await unwrap_pull_requests(
         prs_df, facts, ambiguous, True, branches, default_branches, release_settings,
         account, meta_ids, mdb, pdb, rdb, cache)
+    return unwrapped + (check_runs_task,)
 
 
 async def unwrap_pull_requests(prs_df: pd.DataFrame,
@@ -739,9 +810,9 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
                                release_settings: ReleaseSettings,
                                account: int,
                                meta_ids: Tuple[int, ...],
-                               mdb: databases.Database,
-                               pdb: databases.Database,
-                               rdb: databases.Database,
+                               mdb: ParallelDatabase,
+                               pdb: ParallelDatabase,
+                               rdb: ParallelDatabase,
                                cache: Optional[aiomcache.Client],
                                resolve_rebased: bool = True,
                                ) -> Tuple[List[MinedPullRequest],

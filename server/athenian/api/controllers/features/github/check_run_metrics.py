@@ -507,11 +507,19 @@ class MergedPRsWithFailedChecksCounter(SumMetricCalculator[int]):
 
     dtype = int
 
-    def _analyze(self,
-                 facts: pd.DataFrame,
-                 min_times: np.ndarray,
-                 max_times: np.ndarray,
-                 **_) -> np.ndarray:
+    @staticmethod
+    def find_prs_merged_with_failed_check_runs(facts: pd.DataFrame,
+                                               ) -> Tuple[pd.Index, np.array, np.array]:
+        """
+        Compute the mask in the sorted facts that selects rows with PRs merged with a failing \
+        check run.
+
+        :return: 1. Index of the sorted dataframe. \
+                 2. Column with the pull request node IDs in the sorted dataframe. \
+                 3. Computed mask.
+        """
+        if facts.empty:
+            return pd.Int64Index([]), np.array([], dtype="S1"), np.array([], dtype=bool)
         df = facts[[
             CheckRun.pull_request_node_id.key, CheckRun.name.key, CheckRun.started_at.key,
             CheckRun.status.key, CheckRun.conclusion.key, pull_request_merged_column]]
@@ -529,11 +537,18 @@ class MergedPRsWithFailedChecksCounter(SumMetricCalculator[int]):
                 (conclusions == b"FAILURE") | (conclusions == b"STALE"))
              ) | (statuses == b"FAILURE") | (statuses == b"ERROR")
         ) & (pull_requests != b"None") & df[pull_request_merged_column].values
+        return df.index, pull_requests, failure_mask
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **_) -> np.ndarray:
+        index, pull_requests, failure_mask = self.find_prs_merged_with_failed_check_runs(facts)
         failing_pull_requests = pull_requests[failure_mask]
         _, failing_indexes = np.unique(failing_pull_requests, return_index=True)
         failing_indexes = np.nonzero(failure_mask)[0][failing_indexes]
-        failing_indexes = df.index.values[failing_indexes]
-
+        failing_indexes = index.values[failing_indexes]
         mask_pr_times = (
             (facts[pull_request_started_column].values < max_times[:, None])
             &
