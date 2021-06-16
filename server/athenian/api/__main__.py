@@ -105,6 +105,8 @@ def parse_args() -> argparse.Namespace:
                              "for example, 0.0.0.0:11211")
     parser.add_argument("--preload-dataframes", required=False, action="store_true",
                         help="Whether to preload DB tables in memory and refresh periodically.")
+    parser.add_argument("--preload-refresh-frequency", type=int, default=60, required=False,
+                        help="Frequency at which to refresh the preloaded tables in minutes.")
     parser.add_argument("--ui", action="store_true", help="Enable the REST UI.")
     parser.add_argument("--no-google-kms", action="store_true",
                         help="Skip Google Key Management Service initialization. Personal Access "
@@ -298,11 +300,13 @@ def create_segment() -> Optional[SegmentClient]:
 PRELOADER_VAR_NAME = "mc_preloader"
 
 
-def setup_preloading(app: AthenianApp, log: logging.Logger) -> None:
+def setup_preloading(app: AthenianApp, preload_refresh_frequency: int,
+                     log: logging.Logger) -> None:
     """Initialize the memory cache and schedule loading the DB tables."""
     log.info("Preloading DB tables to memory is enabled")
     app.app[PRELOADER_VAR_NAME] = mc_preloader = MemoryCachePreloader(
-        app.app[PROMETHEUS_REGISTRY_VAR_NAME])
+        preload_refresh_frequency,
+        prometheus_registry=app.app[PROMETHEUS_REGISTRY_VAR_NAME])
     app.on_dbs_connected(mc_preloader.preload)
 
 
@@ -334,7 +338,7 @@ def main() -> Optional[AthenianApp]:
         segment=create_segment(),
     )
     if args.preload_dataframes:
-        setup_preloading(app, log)
+        setup_preloading(app, args.preload_refresh_frequency, log)
     app.run(host=args.host, port=args.port, print=lambda s: log.info("\n" + s))
     return app
 
