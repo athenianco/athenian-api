@@ -12,6 +12,7 @@ import sqlalchemy as sa
 from sqlalchemy import select
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
+from athenian.api import aiocron
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.models.metadata.github import Branch, NodePullRequestJiraIssues, \
@@ -333,9 +334,16 @@ class MemoryCachePreloader:
     _log = logging.getLogger(f"{metadata.__package__}.MemoryCachePreloader")
 
     def __init__(self,
+                 refresh_frequency_minutes: int,
+                 max_early_refresh_minutes: Optional[int] = None,
                  prometheus_registry: Optional[prometheus_client.CollectorRegistry] = None,
                  debug_memory: Optional[bool] = None):
         """Initialize a `MemoryCachePreloader`."""
+        self._refresh_frequency_minutes = refresh_frequency_minutes
+        self._max_early_refresh_minutes = (
+            max_early_refresh_minutes or refresh_frequency_minutes // 5
+        )
+        self._refresh_jobs = []
         if debug_memory is None:
             self._debug_memory = self._log.isEnabledFor(logging.DEBUG)
         else:
@@ -365,6 +373,29 @@ class MemoryCachePreloader:
 
         await gather(*tasks)
         self._log.info("Finished preloading DB tables in memory")
+
+        self._log.debug("Scheduling refresh for preloaded DB tables in memory")
+        for db_name in get_memory_cache_options():
+            self._refresh_jobs.append(
+                aiocron.crontab(
+                    f"*/{self._refresh_frequency_minutes} * * * *",
+                    func=_refresh, args=(dbs[db_name], ),
+                    max_early_expiration_seconds=self._max_early_refresh_minutes),
+            )
+
+        self._log.info("Scheduled refresh for preloaded DB tables in memory each %d min",
+                       self._refresh_frequency_minutes)
+
+    async def stop(self) -> None:
+        """Stop the refreshing jobs."""
+        for j in self._refresh_jobs:
+            j.stop()
+
+        self._log.info("Refresh jobs for preloaded DB tables stopped")
+
+
+async def _refresh(db: databases.Database) -> None:
+    await db.cache.refresh()
 
 
 def parse_sqlite_timestamps(col_series):
