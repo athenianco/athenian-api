@@ -264,6 +264,16 @@ async def mine_check_runs(time_from: datetime,
     # exclude skipped checks from execution time calculation
     df.loc[df[CheckRun.conclusion.key] == "NEUTRAL", CheckRun.completed_at.key] = None
 
+    # ensure that the timestamps are in sync after pruning PRs
+    pr_ts_columns = [
+        pull_request_started_column,
+        pull_request_closed_column,
+        pull_request_merged_column,
+    ]
+    df.loc[df[CheckRun.pull_request_node_id.key].isnull(), pr_ts_columns] = None
+    for column in pr_ts_columns:
+        df.loc[df[column] == 0, column] = None
+
     # there can be checks that finished before starting 🤦‍
     # pd.DataFrame.max(axis=1) does not work correctly because of the NaT-s
     started_ats = df[CheckRun.started_at.key].values
