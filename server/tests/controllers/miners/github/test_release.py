@@ -387,6 +387,7 @@ async def test_map_releases_to_prs_future(
     assert len(releases) == 12
 
 
+@pytest.mark.flaky(reruns=5, reruns_delay=1)
 @with_defer
 async def test_map_prs_to_releases_smoke_metrics(branches, default_branches, dag, mdb, pdb, rdb,
                                                  release_loader):
