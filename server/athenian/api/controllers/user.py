@@ -3,13 +3,13 @@ from typing import Dict, Optional
 
 import aiomcache
 import aiosqlite
-from sqlalchemy import join, select
+from sqlalchemy import join, select, union_all
 
 from athenian.api.async_utils import gather
 from athenian.api.controllers.account import get_metadata_account_ids_or_none
 from athenian.api.controllers.jira import get_jira_installation_or_none
 from athenian.api.db import DatabaseLike
-from athenian.api.models.metadata.github import CheckRun
+from athenian.api.models.metadata.github import NodeCheckRun, NodeStatusContext
 from athenian.api.models.state.models import Account, UserAccount
 from athenian.api.models.web import AccountStatus
 
@@ -46,11 +46,26 @@ async def load_user_accounts(uid: str,
     ]
     results = await gather(*tasks, op="account_ids")
     jira_ids = results[:len(accounts)]
+    if is_sqlite:
+        def build_query(meta_ids):
+            return union_all(
+                select([NodeCheckRun.id])
+                .where(NodeCheckRun.acc_id.in_(meta_ids)),
+                select([NodeStatusContext.id])
+                .where(NodeStatusContext.acc_id.in_(meta_ids)),
+            ).limit(1)
+    else:
+        def build_query(meta_ids):
+            return union_all(
+                select([NodeCheckRun.id])
+                .where(NodeCheckRun.acc_id.in_(meta_ids))
+                .limit(1),
+                select([NodeStatusContext.id])
+                .where(NodeStatusContext.acc_id.in_(meta_ids))
+                .limit(1),
+            )
     tasks = [
-        mdb.fetch_val(select([CheckRun.check_run_node_id])
-                      .where(CheckRun.acc_id.in_(meta_ids))
-                      .limit(1))
-        if meta_ids is not None else _return_none()
+        mdb.fetch_val(build_query(meta_ids)) if meta_ids is not None else _return_none()
         for meta_ids in results[len(accounts):]
     ]
     check_runs = await gather(*tasks, op="check_runs")

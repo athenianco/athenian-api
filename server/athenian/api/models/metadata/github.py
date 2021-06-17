@@ -462,6 +462,16 @@ class TeamMember(Base,
     __tablename__ = "github_node_team_members"
 
 
+class NodeCheckRun(Base,
+                   IDMixinNG):
+    __tablename__ = "github_node_check_run"
+
+
+class NodeStatusContext(Base,
+                        IDMixinNG):
+    __tablename__ = "github_node_status_context"
+
+
 class CheckRunMixin(RepositoryMixin):
     __tablename__ = "api_check_runs"
 
