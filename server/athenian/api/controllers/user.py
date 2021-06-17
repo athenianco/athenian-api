@@ -14,6 +14,14 @@ from athenian.api.models.state.models import Account, UserAccount
 from athenian.api.models.web import AccountStatus
 
 
+# There are three GitHub user types:
+# 1. Regular.
+# 2. Bots.
+# 3. Mannequins.
+# GitHub creates (3) during the import.
+MANNEQUIN_PREFIX = "mannequin"
+
+
 async def load_user_accounts(uid: str,
                              sdb: DatabaseLike,
                              mdb: DatabaseLike,

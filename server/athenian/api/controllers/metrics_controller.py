@@ -23,6 +23,7 @@ from athenian.api.controllers.miners.types import PRParticipants, PRParticipatio
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.reposet import resolve_repos, resolve_reposet
 from athenian.api.controllers.settings import Settings
+from athenian.api.controllers.user import MANNEQUIN_PREFIX
 from athenian.api.models.web import CalculatedCodeCheckMetrics, CalculatedCodeCheckMetricsItem, \
     CalculatedDeveloperMetrics, CalculatedDeveloperMetricsItem, CalculatedLinearMetricValues, \
     CalculatedPullRequestMetrics, CalculatedPullRequestMetricsItem, CalculatedReleaseMetric, \
@@ -280,7 +281,7 @@ def _compile_dev_logins(developers: Iterable[str],
     for dev in developers:
         parts = dev.split("/")
         dev_prefix, dev_login = parts[0], parts[-1]
-        if dev_prefix != prefix:
+        if dev_prefix != prefix and dev_prefix != MANNEQUIN_PREFIX:
             raise ResponseError(InvalidRequestError(
                 detail='User prefix "%s" does not match with the repository prefix "%s"' % (
                     dev_prefix, prefix),
