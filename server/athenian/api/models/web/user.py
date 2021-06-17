@@ -265,7 +265,7 @@ class User(Model):
     def accounts(self) -> Optional[Dict[int, AccountStatus]]:
         """Gets the accounts of this User.
 
-        Mapping between account IDs the user is a member of and is_admin flags.
+        Mapping between account IDs the user is a member of and various flags.
 
         :return: The accounts of this User.
         """
@@ -275,7 +275,7 @@ class User(Model):
     def accounts(self, accounts: Optional[Dict[int, AccountStatus]]):
         """Sets the accounts of this User.
 
-        Mapping between account IDs the user is a member of and is_admin flags.
+        Mapping between account IDs the user is a member of and various flags.
 
         :param accounts: The accounts of this User.
         """
