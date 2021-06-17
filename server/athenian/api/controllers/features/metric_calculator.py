@@ -95,10 +95,10 @@ class MetricCalculator(Generic[T], ABC):
             return
         self._peek = peek = self._analyze(facts, min_times, max_times, **kwargs)
         assert isinstance(peek, np.ndarray), type(self)
-        assert peek.shape[:2] == (len(min_times), len(facts)), (peek.shape, type(self))
-        if len(peek.shape) > 2:
-            assert self.is_pure_dependency, "len(peek.shape) > 2 => no samples are possible"
+        if len(peek.shape) != 2:
+            assert self.is_pure_dependency, "len(peek.shape) != 2 => no samples are possible"
             return
+        assert peek.shape[:2] == (len(min_times), len(facts)), (peek.shape, type(self))
         if peek.dtype is np.dtype(object):
             # this is the slowest, avoid as much as possible
             notnull = peek != np.array(None)

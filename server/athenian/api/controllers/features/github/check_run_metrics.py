@@ -93,32 +93,74 @@ def make_check_runs_count_grouper(df: pd.DataFrame) -> Tuple[
     return group_check_runs_by_check_runs_count, suites, unique_run_counts
 
 
-@register_metric(CodeCheckMetricID.SUITES_COUNT)
-class SuitesCounter(SumMetricCalculator[int]):
-    """Number of executed check suites metric."""
+class FirstSuiteEncounters(MetricCalculator[float]):
+    """Calculate the number of executed check suites for each pull request."""
 
-    dtype = int
+    may_have_negative_values = False
+    dtype = float
+    has_nan = True
+    is_pure_dependency = True
+    complete_suite_statuses = [b"COMPLETED", b"FAILURE", b"ERROR", b"SUCCESS"]
 
     def _analyze(self,
                  facts: pd.DataFrame,
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
-        result = np.zeros((len(min_times), len(facts)), int)
-        started = facts[check_suite_started_column].values.astype(min_times.dtype)
-        _, first_encounters = np.unique(
+        _, first_suite_encounters = np.unique(
             facts[CheckRun.check_suite_node_id.key].values.astype("S"), return_index=True)
-        conclusions = facts[CheckRun.check_suite_conclusion.key].values.astype("S")
-        skipped = conclusions == b"SKIPPED"
-        statuses = facts[CheckRun.check_suite_status.key].values.astype("S")
-        incomplete = np.in1d(statuses, [b"COMPLETED", b"FAILURE", b"ERROR", b"SUCCESS"],
-                             invert=True)
-        excluded = incomplete | skipped
-        mask = np.zeros_like(started, dtype=bool)
-        mask[first_encounters] = True
-        mask[excluded] = False
-        started[~mask] = None
-        result[(min_times[:, None] <= started) & (started < max_times[:, None])] = 1
+        # ignore incomplete suites
+        completed = np.in1d(
+            facts[CheckRun.check_suite_status.key].values[first_suite_encounters].astype("S"),
+            self.complete_suite_statuses)
+        completed[
+            facts[CheckRun.check_suite_conclusion.key].values[first_suite_encounters].astype("S")
+            == b"SKIPPED"] = False
+        first_suite_encounters = first_suite_encounters[completed]
+        return first_suite_encounters
+
+    def _value(self, samples: np.ndarray) -> Metric[None]:
+        return Metric(False, None, None, None)
+
+
+@register_metric(CodeCheckMetricID.SUITES_COUNT)
+class SuitesCounter(SumMetricCalculator[int]):
+    """Number of executed check suites metric."""
+
+    dtype = int
+    deps = (FirstSuiteEncounters,)
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **_) -> np.ndarray:
+        first_suite_encounters = self._calcs[0].peek
+        result = np.full((len(min_times), len(facts)), 0, dtype=int)
+        result[:, first_suite_encounters] = 1
+        wrong_times = (
+            (facts[check_suite_started_column].values >= max_times[:, None])
+            |
+            (facts[check_suite_started_column].values < min_times[:, None])
+        )
+        result[wrong_times] = 0
+        return result
+
+
+@register_metric(CodeCheckMetricID.SUITES_IN_PRS_COUNT)
+class SuitesInPRsCounter(SumMetricCalculator[int]):
+    """Number of executed check suites in pull requests metric."""
+
+    dtype = int
+    deps = (SuitesCounter,)
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **_) -> np.ndarray:
+        result = self._calcs[0].peek.copy()
+        result[:, facts[CheckRun.pull_request_node_id.key].isnull()] = 0
         return result
 
 
@@ -374,44 +416,27 @@ class SuitesPerPRCounter(AverageMetricCalculator[float]):
     may_have_negative_values = False
     dtype = float
     has_nan = True
+    deps = (FirstSuiteEncounters,)
 
     def _analyze(self,
                  facts: pd.DataFrame,
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
-        unique_suites, first_suite_encounters = np.unique(
-            facts[CheckRun.check_suite_node_id.key].values.astype("S"), return_index=True)
-        """
-        # only completed
-        completed = np.in1d(
-            facts[CheckRun.check_suite_status.key].values[first_suite_encounters].astype("S"),
-            [b"COMPLETED", b"SUCCESS", b"FAILURE"])
-        first_suite_encounters = first_suite_encounters[completed]
-        """
+        first_suite_encounters = self._calcs[0].peek
+
         pull_requests = facts[CheckRun.pull_request_node_id.key].values.astype("S")
-        unique_prs, first_pr_encounters = np.unique(pull_requests, return_index=True)
-        none_mask = unique_prs == b"None"
-        none_pos = np.nonzero(none_mask)[0]
-        not_none_mask = ~none_mask
-        del none_mask
-        if len(none_pos):
-            first_pr_encounters = first_pr_encounters[not_none_mask]
-        unique_prs_alt, pr_suite_counts = np.unique(
-            pull_requests[first_suite_encounters], return_counts=True)
-        assert unique_prs.shape == unique_prs_alt.shape, \
-            f"invalid PR deduplication: {len(unique_prs)} vs. {len(unique_prs_alt)}"
-        del unique_prs_alt
-        del unique_prs
-        if len(none_pos):
-            pr_suite_counts = pr_suite_counts[not_none_mask]
+        _, first_pr_encounters, pr_suite_counts = np.unique(
+            pull_requests[first_suite_encounters], return_index=True, return_counts=True)
+        # we don't have to filter out b"None" because mask_pr_times is False for them
+
+        result = np.full((len(min_times), len(facts)), np.nan, dtype=np.float32)
+        result[:, first_suite_encounters[first_pr_encounters]] = pr_suite_counts
         mask_pr_times = (
             (facts[pull_request_started_column].values < max_times[:, None])
             &
             (facts[pull_request_closed_column].values >= min_times[:, None])
         )
-        result = np.full((len(min_times), len(facts)), np.nan, dtype=np.float32)
-        result[:, first_pr_encounters] = pr_suite_counts
         result[~mask_pr_times] = None
         return result
 
@@ -450,6 +475,7 @@ class PRsWithChecksCounter(SumMetricCalculator[int]):
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
         result = self._calcs[0].peek.copy()
+        result[result != result] = 0
         result[result > 0] = 1
         return result
 
@@ -532,11 +558,12 @@ class MergedPRsWithFailedChecksCounter(SumMetricCalculator[int]):
         conclusions = df[CheckRun.conclusion.key].values.astype("S")
         failure_mask = np.zeros_like(statuses, dtype=bool)
         failure_mask[first_encounters] = True
+        merged_timestamps = df[pull_request_merged_column].values
         failure_mask &= (
             ((statuses == b"COMPLETED") & (
                 (conclusions == b"FAILURE") | (conclusions == b"STALE"))
              ) | (statuses == b"FAILURE") | (statuses == b"ERROR")
-        ) & (pull_requests != b"None") & df[pull_request_merged_column].values
+        ) & (pull_requests != b"None") & (merged_timestamps == merged_timestamps)
         return df.index, pull_requests, failure_mask
 
     def _analyze(self,
@@ -572,7 +599,7 @@ class MergedPRsCounter(SumMetricCalculator[int]):
                  **_) -> np.ndarray:
         pull_requests = facts[CheckRun.pull_request_node_id.key].values.astype("S")
         merged = facts[pull_request_merged_column].values
-        pull_requests[~merged] = b"None"
+        pull_requests[merged != merged] = b"None"
         unique_prs, first_encounters = np.unique(pull_requests, return_index=True)
         first_encounters = first_encounters[unique_prs != b"None"]
         mask_pr_times = (
