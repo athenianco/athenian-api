@@ -1,12 +1,17 @@
 from datetime import datetime, timezone
+from itertools import chain
 import logging
 from typing import Any, Dict
 
 import aiohttp
+from sqlalchemy import distinct, func, select
 
 from athenian.api import metadata
+from athenian.api.async_utils import gather
 from athenian.api.cache import cached, max_exptime
-from athenian.api.models.web import Model
+from athenian.api.controllers.account import get_metadata_account_ids
+from athenian.api.models.metadata.github import NodeRepository
+from athenian.api.models.state.models import UserAccount
 from athenian.api.request import AthenianWebRequest
 
 
@@ -42,13 +47,32 @@ class SegmentClient:
         refresh_on_access=True,
     )
     async def _identify(self, request: AthenianWebRequest) -> None:
-        user = await request.user()
+        tasks = [
+            request.user(),
+            request.sdb.fetch_all(
+                select([UserAccount.account_id])
+                .where(UserAccount.user_id == request.uid)),
+        ]
+        user, accounts = await gather(*tasks)
+        accounts = [r[0] for r in accounts]
+        tasks = [get_metadata_account_ids(acc, request.sdb, request.cache)
+                 for acc in accounts]
+        meta_ids = list(chain.from_iterable(await gather(*tasks)))
+        orgs = await request.mdb.fetch_all(
+            # we could use SPLIT_PART but it does not work in SQLite
+            select([distinct(func.substr(
+                NodeRepository.name_with_owner, 1,  # SQL strings are 1-based
+                func.length(NodeRepository.name_with_owner) - func.length(NodeRepository.name) - 1,
+            ))])
+            .where(NodeRepository.acc_id.in_(meta_ids)))
+        orgs = [org[0] for org in orgs]
         data = {
             "userId": user.id,
             "traits": {
                 "name": user.name,
                 "email": user.email,
-                "accounts": Model.serialize(user.accounts),
+                "accounts": accounts,
+                "organizations": orgs,
                 "login": user.login,
             },
             **self._common_data(),

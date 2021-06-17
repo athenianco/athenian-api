@@ -362,6 +362,7 @@ class NodeRepository(Base,
     __tablename__ = "github_node_repository"
 
     name_with_owner = Column(Text, nullable=False)
+    name = Column(Text, nullable=False)
 
 
 class Branch(Base,
