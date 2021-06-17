@@ -309,6 +309,11 @@ def setup_preloading(app: AthenianApp, preload_refresh_frequency: int,
         prometheus_registry=app.app[PROMETHEUS_REGISTRY_VAR_NAME])
     app.on_dbs_connected(mc_preloader.preload)
 
+    async def shutdown(self, app: Optional[aiohttp.web.Application] = None) -> None:
+        await mc_preloader.stop()
+
+    app.app.on_shutdown.insert(0, shutdown)
+
 
 def main() -> Optional[AthenianApp]:
     """Server's entry point."""
