@@ -239,7 +239,8 @@ async def mine_check_runs(time_from: datetime,
             pr_commit_counts, on=CheckRun.pull_request_node_id.key)
         del ambiguous_df
         # heuristic: the PR with the least number of commits wins
-        passed = passed_df.groupby(CheckRun.check_run_node_id.key)["count"].idxmin().values
+        passed = passed_df.groupby(CheckRun.check_run_node_id.key)["count"] \
+            .idxmin().values.astype(int, copy=False)
         log.info("Disambiguation step 2 - commit counts: %d / %d", len(passed), len(passed_df))
         del passed_df
         # we may discard some check runs completely here, set pull_request_node_id to None for them
