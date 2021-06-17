@@ -311,7 +311,7 @@ async def with_preloading(sdb, mdb, mdb_rw, pdb, rdb, with_preloading_enabled):
     if not with_preloading_enabled:
         return False
 
-    mc_preloader = MemoryCachePreloader()
+    mc_preloader = MemoryCachePreloader(60)
     await mc_preloader.preload(sdb=sdb, mdb=mdb_rw, pdb=pdb, rdb=rdb)
     mdb.cache = mdb_rw.cache
     return True
@@ -333,7 +333,7 @@ async def app(metadata_db, state_db, precomputed_db, persistentdata_db, slack,
                       max_load=15,
                       with_pdb_schema_checks=False)
     if with_preloading_enabled:
-        app.on_dbs_connected(MemoryCachePreloader(None, False).preload)
+        app.on_dbs_connected(MemoryCachePreloader(60, None, False).preload)
     await app.ready()
     return app
 
