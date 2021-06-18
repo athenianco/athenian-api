@@ -21,7 +21,7 @@ from sqlalchemy.sql.elements import BinaryExpression
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
-from athenian.api.cache import cached, CancelCache
+from athenian.api.cache import cached, CancelCache, short_term_exptime
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_COLUMNS, \
     DAG, fetch_precomputed_commit_history_dags, fetch_repository_commits_no_branch_dates
@@ -69,7 +69,7 @@ class PullRequestMiner:
     """Load all the information related to Pull Requests from the metadata DB. Iterate over it \
     to access individual PR objects."""
 
-    CACHE_TTL = 5 * 60
+    CACHE_TTL = short_term_exptime
     log = logging.getLogger("%s.PullRequestMiner" % metadata.__package__)
     AuxiliaryMappers = namedtuple("AuxiliaryMappers", ["releases_to_prs", "prs_to_releases"])
     mappers = AuxiliaryMappers(

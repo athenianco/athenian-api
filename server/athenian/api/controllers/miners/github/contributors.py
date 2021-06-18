@@ -12,7 +12,7 @@ from sqlalchemy import and_, func, not_, select, union
 from sqlalchemy.sql.functions import coalesce
 
 from athenian.api.async_utils import gather
-from athenian.api.cache import cached
+from athenian.api.cache import cached, short_term_exptime
 from athenian.api.controllers.miners.github.bots import Bots
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.release_load import ReleaseLoader
@@ -26,7 +26,7 @@ from athenian.api.tracing import sentry_span
 
 @sentry_span
 @cached(
-    exptime=5 * 60,
+    exptime=short_term_exptime,
     serialize=marshal.dumps,
     deserialize=marshal.loads,
     key=lambda repos, time_from, time_to, with_stats, user_roles, release_settings, **_: (

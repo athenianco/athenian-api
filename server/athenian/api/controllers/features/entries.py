@@ -15,7 +15,7 @@ import sentry_sdk
 
 from athenian.api import COROUTINE_YIELD_EVERY_ITER
 from athenian.api.async_utils import gather
-from athenian.api.cache import cached, cached_methods, CancelCache
+from athenian.api.cache import cached, cached_methods, CancelCache, short_term_exptime
 from athenian.api.controllers.datetime_utils import coarsen_time_interval
 from athenian.api.controllers.features.code import CodeStats
 from athenian.api.controllers.features.github.check_run_metrics import \
@@ -227,7 +227,7 @@ class MetricEntriesCalculator:
 
     @sentry_span
     @cached(
-        exptime=PullRequestMiner.CACHE_TTL,
+        exptime=short_term_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
         key=lambda prop, time_intervals, repos, with_author, with_committer, only_default_branch, **kwargs:  # noqa
@@ -263,7 +263,7 @@ class MetricEntriesCalculator:
 
     @sentry_span
     @cached(
-        exptime=PullRequestMiner.CACHE_TTL,
+        exptime=short_term_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
         key=lambda devs, repositories, time_intervals, topics, labels, jira, release_settings, **_:  # noqa
@@ -318,7 +318,7 @@ class MetricEntriesCalculator:
 
     @sentry_span
     @cached(
-        exptime=PullRequestMiner.CACHE_TTL,
+        exptime=short_term_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
         key=lambda metrics, time_intervals, quantiles, repositories, participants, labels, jira, release_settings, **_:  # noqa
@@ -371,7 +371,7 @@ class MetricEntriesCalculator:
 
     @sentry_span
     @cached(
-        exptime=PullRequestMiner.CACHE_TTL,
+        exptime=short_term_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
         key=lambda metrics, time_intervals, quantiles, repositories, pushers, labels, jira, **_:

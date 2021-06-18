@@ -15,7 +15,7 @@ from sqlalchemy import and_, func, select, union_all
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
-from athenian.api.cache import cached, CancelCache
+from athenian.api.cache import cached, CancelCache, short_term_exptime
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.commit import fetch_precomputed_commit_history_dags, \
@@ -555,7 +555,7 @@ async def _load_prs_by_merge_commit_ids(commit_ids: Sequence[str],
 
 @sentry_span
 @cached(
-    exptime=5 * 60,  # 5 min
+    exptime=short_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda names, **_: ({k: sorted(v) for k, v in names.items()},),
@@ -776,7 +776,7 @@ async def _complete_commit_hashes(names: Dict[str, Set[str]],
 
 
 @cached(
-    exptime=5 * 60,  # 5 min
+    exptime=short_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda borders, **_: ({k: sorted(v) for k, v in borders.items()},),

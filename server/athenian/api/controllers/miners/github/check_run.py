@@ -11,7 +11,7 @@ from sqlalchemy import and_, exists, func, select, union_all
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
-from athenian.api.cache import cached
+from athenian.api.cache import cached, short_term_exptime
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
@@ -29,7 +29,7 @@ pull_request_merged_column = "pull_request_" + NodePullRequest.merged.key
 
 @sentry_span
 @cached(
-    exptime=PullRequestMiner.CACHE_TTL,
+    exptime=short_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda time_from, time_to, repositories, pushers, labels, jira, **_:  # noqa

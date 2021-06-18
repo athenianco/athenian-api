@@ -17,7 +17,7 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 from athenian.api import list_with_yield, metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.balancing import weight
-from athenian.api.cache import cached
+from athenian.api.cache import cached, short_term_exptime
 from athenian.api.controllers.account import get_account_repositories, get_metadata_account_ids
 from athenian.api.controllers.calculator_selector import get_quantile_stride_for_account
 from athenian.api.controllers.datetime_utils import split_to_time_intervals
@@ -125,7 +125,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
 
 @sentry_span
 @cached(
-    exptime=5 * 60,  # 5 min
+    exptime=short_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda return_, time_from, time_to, exclude_inactive, label_filter, priorities, reporters, assignees, commenters, default_branches, release_settings, **_: (  # noqa
@@ -345,7 +345,7 @@ async def _epic_flow(return_: Set[str],
 
 @sentry_span
 @cached(
-    exptime=5 * 60,  # 5 min
+    exptime=short_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda return_, time_from, time_to, exclude_inactive, label_filter, priorities, reporters, assignees, commenters, default_branches, release_settings, **_: (  # noqa
