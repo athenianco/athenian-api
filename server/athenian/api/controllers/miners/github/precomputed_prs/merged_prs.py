@@ -23,6 +23,7 @@ from athenian.api.controllers.miners.github.precomputed_prs.utils import \
     extract_release_match, labels_are_compatible, triage_by_release_match
 from athenian.api.controllers.miners.types import MinedPullRequest, PRParticipants, \
     PRParticipationKind, PullRequestFacts
+from athenian.api.controllers.prefixer import PrefixerPromise
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.db import add_pdb_hits, greatest
 from athenian.api.models.metadata.github import PullRequest, Release
@@ -44,6 +45,7 @@ class MergedPRFactsLoader:
             matched_bys: Dict[str, ReleaseMatch],
             default_branches: Dict[str, str],
             release_settings: ReleaseSettings,
+            prefixer: PrefixerPromise,
             account: int,
             pdb: databases.Database,
             time_from: Optional[datetime] = None,
@@ -111,6 +113,7 @@ class MergedPRFactsLoader:
             include_singles = set(include_singles)
             include_multiples = [set(m) for m in include_multiples]
         facts = {}
+        user_node_map_get = (await prefixer.load()).user_node_to_login.get
         for row in rows:
             if exclude_inactive and not postgres:
                 activity_days = {datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc)
@@ -133,8 +136,8 @@ class MergedPRFactsLoader:
             facts[node_id] = PullRequestFacts(
                 data=data,
                 repository_full_name=row[ghmprf.repository_full_name.key],
-                author=row[ghmprf.author.key],
-                merger=row[ghmprf.merger.key])
+                author=user_node_map_get(row[ghmprf.author.key]),
+                merger=user_node_map_get(row[ghmprf.merger.key]))
         return facts
 
     @classmethod
@@ -222,8 +225,8 @@ async def update_unreleased_prs(merged_prs: pd.DataFrame,
                 continue
             for node_id, merged_at, author, merger in zip(
                     repo_prs.index.values, repo_prs[PullRequest.merged_at.key],
-                    repo_prs[PullRequest.user_login.key].values,
-                    repo_prs[PullRequest.merged_by_login.key].values):
+                    repo_prs[PullRequest.user_node_id.key].values,
+                    repo_prs[PullRequest.merged_by.key].values):
                 try:
                     released_time = release_times[node_id]
                 except KeyError:
@@ -369,6 +372,7 @@ async def discover_inactive_merged_unreleased_prs(time_from: datetime,
                                                   labels: LabelFilter,
                                                   default_branches: Dict[str, str],
                                                   release_settings: ReleaseSettings,
+                                                  prefixer: PrefixerPromise,
                                                   account: int,
                                                   pdb: databases.Database,
                                                   cache: Optional[aiomcache.Client],
@@ -386,11 +390,13 @@ async def discover_inactive_merged_unreleased_prs(time_from: datetime,
         ghmprf.merged_at < time_from,
         ghmprf.acc_id == account,
     ]
+    user_login_to_node_get = None
     for role, col in ((PRParticipationKind.AUTHOR, ghmprf.author),
                       (PRParticipationKind.MERGER, ghmprf.merger)):
-        people = participants.get(role)
-        if people:
-            filters.append(col.in_(people))
+        if people := participants.get(role):
+            if user_login_to_node_get is None:
+                user_login_to_node_get = (await prefixer.load()).user_login_to_node.get
+            filters.append(col.in_([user_login_to_node_get(u) for u in people]))
     if labels:
         build_labels_filters(ghmprf, labels, filters, selected, postgres)
     body = join(ghmprf, ghdprf, and_(

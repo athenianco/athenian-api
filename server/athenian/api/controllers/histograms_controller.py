@@ -8,6 +8,7 @@ from athenian.api.controllers.account import get_metadata_account_ids
 from athenian.api.controllers.features.histogram import HistogramParameters, Scale
 from athenian.api.controllers.metrics_controller import compile_filters_checks, \
     compile_filters_prs, get_calculators_for_request
+from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import Settings
 from athenian.api.models.web import CalculatedCodeCheckHistogram, CalculatedPullRequestHistogram, \
     CodeCheckHistogramsRequest, ForSetCodeChecks, Interquartile, InvalidRequestError, \
@@ -25,6 +26,7 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
+    prefixer = Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
     filters, repos = await compile_filters_prs(filt.for_, request, filt.account, meta_ids)
     time_from, time_to = filt.resolve_time_from_and_to()
     release_settings, calculators = await gather(
@@ -46,7 +48,7 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
             histograms = await calculator.calc_pull_request_histograms_github(
                 defs, time_from, time_to, filt.quantiles or (0, 1), for_set.lines or [],
                 repos, withgroups, labels, jira, filt.exclude_inactive, release_settings,
-                filt.fresh)
+                prefixer, filt.fresh)
         except ValueError as e:
             raise ResponseError(InvalidRequestError(str(e))) from None
         for line_groups in histograms:

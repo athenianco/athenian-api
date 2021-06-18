@@ -48,7 +48,7 @@ async def get_contributors(request: AthenianWebRequest, id: int) -> web.Response
             account_id, [u[User.node_id.key] for u in users], sdb_conn, request.mdb, request.cache)
         prefixer = await prefixer.load()
         contributors = [
-            Contributor(login=prefixer.user_node_map[u[User.node_id.key]],
+            Contributor(login=prefixer.user_node_to_prefixed_login[u[User.node_id.key]],
                         name=u[User.name.key],
                         email="<classified>",  # u[User.email.key] TODO(vmarkovtsev): DEV-87
                         picture=u[User.avatar_url.key],

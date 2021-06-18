@@ -35,6 +35,7 @@ from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
 from athenian.api.controllers.miners.types import MinedPullRequest, nonemax, nonemin, \
     PRParticipants, PRParticipationKind, PullRequestFacts
+from athenian.api.controllers.prefixer import PrefixerPromise
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.db import add_pdb_misses, DatabaseLike
 from athenian.api.defer import AllEvents, defer
@@ -190,6 +191,7 @@ class PullRequestMiner:
                     updated_max: Optional[datetime],
                     pr_blacklist: Optional[Tuple[Collection[str], Dict[str, List[str]]]],
                     truncate: bool,
+                    prefixer: PrefixerPromise,
                     account: int,
                     meta_ids: Tuple[int, ...],
                     mdb: databases.Database,
@@ -237,7 +239,7 @@ class PullRequestMiner:
         if not exclude_inactive and (updated_min is None or updated_min <= time_from):
             tasks.append(cls._fetch_inactive_merged_unreleased_prs(
                 time_from, time_to, repositories, participants, labels, jira, default_branches,
-                release_settings, account, meta_ids, mdb, pdb, cache))
+                release_settings, prefixer, account, meta_ids, mdb, pdb, cache))
         else:
             async def dummy_unreleased():
                 return pd.DataFrame()
@@ -280,7 +282,7 @@ class PullRequestMiner:
             # bypass the useless inner caching by calling _mine_by_ids directly
             cls._mine_by_ids(
                 prs, unreleased.index, time_to, releases, matched_bys, branches,
-                default_branches, release_dags, release_settings, account, meta_ids,
+                default_branches, release_dags, release_settings, prefixer, account, meta_ids,
                 mdb, pdb, cache, truncate=truncate),
             OpenPRFactsLoader.load_open_pull_request_facts(prs, account, pdb),
         ]
@@ -335,6 +337,7 @@ class PullRequestMiner:
                           default_branches: Dict[str, str],
                           dags: Dict[str, DAG],
                           release_settings: ReleaseSettings,
+                          prefixer: PrefixerPromise,
                           account: int,
                           meta_ids: Tuple[int, ...],
                           mdb: databases.Database,
@@ -358,7 +361,7 @@ class PullRequestMiner:
         """
         return await cls._mine_by_ids(
             prs, unreleased, time_to, releases, matched_bys, branches, default_branches,
-            dags, release_settings, account, meta_ids, mdb, pdb, cache,
+            dags, release_settings, prefixer, account, meta_ids, mdb, pdb, cache,
             truncate=truncate, with_jira=with_jira)
 
     _deserialize_mine_by_ids_cache = staticmethod(_deserialize_mine_by_ids_cache)
@@ -375,6 +378,7 @@ class PullRequestMiner:
                            default_branches: Dict[str, str],
                            dags: Dict[str, DAG],
                            release_settings: ReleaseSettings,
+                           prefixer: PrefixerPromise,
                            account: int,
                            meta_ids: Tuple[int, ...],
                            mdb: databases.Database,
@@ -440,12 +444,12 @@ class PullRequestMiner:
             merged_prs = prs.take(np.where(merged_mask)[0])
             subtasks = [cls.mappers.prs_to_releases(
                 merged_prs, releases, matched_bys, branches, default_branches, time_to,
-                dags, release_settings, account, meta_ids, mdb, pdb, cache),
+                dags, release_settings, prefixer, account, meta_ids, mdb, pdb, cache),
                 MergedPRFactsLoader.load_merged_unreleased_pull_request_facts(
                     prs.take(np.where(~merged_mask)[0]),
                     nonemax(releases[Release.published_at.key].nonemax(), time_to),
                     LabelFilter.empty(), matched_bys, default_branches, release_settings,
-                    account, pdb)]
+                    prefixer, account, pdb)]
             df_facts, other_facts = await gather(*subtasks)
             nonlocal facts
             nonlocal unreleased_prs_event
@@ -565,6 +569,7 @@ class PullRequestMiner:
                    default_branches: Dict[str, str],
                    exclude_inactive: bool,
                    release_settings: ReleaseSettings,
+                   prefixer: PrefixerPromise,
                    account: int,
                    meta_ids: Tuple[int, ...],
                    mdb: databases.Database,
@@ -621,7 +626,7 @@ class PullRequestMiner:
         dfs, facts, _, _, _, _, matched_bys, event = await cls._mine(
             date_from, date_to, repositories, participants, labels, jira, branches,
             default_branches, exclude_inactive, release_settings, updated_min, updated_max,
-            pr_blacklist, truncate, account, meta_ids, mdb, pdb, rdb, cache)
+            pr_blacklist, truncate, prefixer, account, meta_ids, mdb, pdb, rdb, cache)
         cls._truncate_prs(dfs, time_from, time_to)
         return cls(dfs), facts, matched_bys, event
 
@@ -935,6 +940,7 @@ class PullRequestMiner:
             jira: JIRAFilter,
             default_branches: Dict[str, str],
             release_settings: ReleaseSettings,
+            prefixer: PrefixerPromise,
             account: int,
             meta_ids: Tuple[int, ...],
             mdb: databases.Database,
@@ -942,7 +948,7 @@ class PullRequestMiner:
             cache: Optional[aiomcache.Client]) -> pd.DataFrame:
         node_ids, _ = await discover_inactive_merged_unreleased_prs(
             time_from, time_to, repos, participants, labels, default_branches, release_settings,
-            account, pdb, cache)
+            prefixer, account, pdb, cache)
         if not jira:
             return await read_sql_query(sql.select([PullRequest])
                                         .where(PullRequest.node_id.in_(node_ids)),

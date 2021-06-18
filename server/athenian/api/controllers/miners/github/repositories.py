@@ -15,6 +15,7 @@ from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.precomputed_prs import \
     discover_inactive_merged_unreleased_prs
+from athenian.api.controllers.prefixer import PrefixerPromise
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.models.metadata.github import NodeCommit, NodeRepository, PullRequest, \
     PullRequestComment, PullRequestReview, PushCommit, Repository
@@ -40,6 +41,7 @@ async def mine_repositories(repos: Collection[str],
                             time_to: datetime,
                             exclude_inactive: bool,
                             release_settings: ReleaseSettings,
+                            prefixer: PrefixerPromise,
                             account: int,
                             meta_ids: Tuple[int, ...],
                             mdb: databases.Database,
@@ -99,7 +101,7 @@ async def mine_repositories(repos: Collection[str],
         _, default_branches = await BranchMiner.extract_branches(repos, meta_ids, mdb, cache)
         _, inactive_repos = await discover_inactive_merged_unreleased_prs(
             time_from, time_to, repos, {}, LabelFilter.empty(), default_branches,
-            release_settings, account, pdb, cache)
+            release_settings, prefixer, account, pdb, cache)
         return [(r,) for r in set(inactive_repos)]
 
     @sentry_span

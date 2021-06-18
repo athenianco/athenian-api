@@ -228,7 +228,7 @@ async def clear_precomputed_events(request: AthenianWebRequest, body: dict) -> w
             model.account, meta_ids, 0, mdb, pdb, rdb, None,
         ).calc_pull_request_facts_github(
             time_from, time_to, set(repos), {}, LabelFilter.empty(), JIRAFilter.empty(),
-            False, settings, True, False)
+            False, settings, prefixer, True, False)
         await wait_deferred()
     return web.Response(status=200)
 

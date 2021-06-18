@@ -30,6 +30,7 @@ from athenian.api.controllers.miners.github.released_pr import matched_by_column
     new_released_prs_df
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
 from athenian.api.controllers.miners.types import nonemax, PullRequestFacts
+from athenian.api.controllers.prefixer import PrefixerPromise
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
 from athenian.api.db import add_pdb_hits, add_pdb_misses
 from athenian.api.defer import defer
@@ -67,6 +68,7 @@ class PullRequestToReleaseMapper:
                                   time_to: datetime,
                                   dags: Dict[str, DAG],
                                   release_settings: ReleaseSettings,
+                                  prefixer: PrefixerPromise,
                                   account: int,
                                   meta_ids: Tuple[int, ...],
                                   mdb: databases.Database,
@@ -95,7 +97,7 @@ class PullRequestToReleaseMapper:
             MergedPRFactsLoader.load_merged_unreleased_pull_request_facts(
                 prs, nonemax(releases[Release.published_at.key].nonemax(), time_to),
                 LabelFilter.empty(), matched_bys, default_branches, release_settings,
-                account, pdb),
+                prefixer, account, pdb),
             DonePRFactsLoader.load_precomputed_pr_releases(
                 prs.index, time_to, matched_bys, default_branches, release_settings,
                 account, pdb, cache),

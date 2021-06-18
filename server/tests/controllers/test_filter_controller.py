@@ -65,13 +65,14 @@ async def test_filter_repositories_no_repos(client, headers):
 @pytest.mark.filter_repositories
 @with_defer
 async def test_filter_repositories_smoke(
-        metrics_calculator_factory, client, headers, mdb, pdb, rdb, release_match_setting_tag):
+        metrics_calculator_factory, client, headers, mdb, pdb, rdb, release_match_setting_tag,
+        prefixer_promise):
     metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(2017, 9, 15, tzinfo=timezone.utc)
     time_to = datetime(2017, 9, 18, tzinfo=timezone.utc)
     args = (time_from, time_to, {"src-d/go-git"}, {},
             LabelFilter.empty(), JIRAFilter.empty(),
-            False, release_match_setting_tag,
+            False, release_match_setting_tag, prefixer_promise,
             False, False)
     await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
     await wait_deferred()
@@ -96,13 +97,13 @@ async def test_filter_repositories_smoke(
 @pytest.mark.filter_repositories
 @with_defer
 async def test_filter_repositories_exclude_inactive_precomputed(
-        metrics_calculator_factory, client, headers, release_match_setting_tag):
+        metrics_calculator_factory, client, headers, release_match_setting_tag, prefixer_promise):
     metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(2017, 9, 15, tzinfo=timezone.utc)
     time_to = datetime(2017, 9, 18, tzinfo=timezone.utc)
     args = (time_from, time_to, {"src-d/go-git"}, {},
             LabelFilter.empty(), JIRAFilter.empty(),
-            False, release_match_setting_tag, False, False)
+            False, release_match_setting_tag, prefixer_promise, False, False)
     await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
     await wait_deferred()
     body = {

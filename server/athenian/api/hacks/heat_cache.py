@@ -219,6 +219,7 @@ def main():
                     JIRAFilter.empty(),
                     False,
                     settings,
+                    prefixer,
                     True,
                     False,
                 )

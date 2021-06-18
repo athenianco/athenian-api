@@ -229,7 +229,7 @@ async def mine_releases(repos: Iterable[str],
         commits_authors = commits_df[PushCommit.author_login.key].values
         commits_authors_nz = commits_authors.nonzero()[0]
         commits_authors[commits_authors_nz] = \
-            [prefixer.user_login_map[u] for u in commits_authors[commits_authors_nz]]
+            [prefixer.user_login_to_prefixed_login[u] for u in commits_authors[commits_authors_nz]]
 
         tasks = [_load_prs_by_merge_commit_ids(commit_ids, meta_ids, mdb)]
         if jira:
@@ -248,7 +248,7 @@ async def mine_releases(repos: Iterable[str],
         prs_authors = prs_df[PullRequest.user_login.key].values
         prs_authors_nz = prs_authors.nonzero()[0]
         prs_authors[prs_authors_nz] = \
-            [prefixer.user_login_map[u] for u in prs_authors[prs_authors_nz]]
+            [prefixer.user_login_to_prefixed_login[u] for u in prs_authors[prs_authors_nz]]
         prs_node_ids = prs_df[PullRequest.node_id.key].values.astype("S")
         if with_pr_titles or labels:
             all_pr_node_ids.append(prs_node_ids)
@@ -259,6 +259,7 @@ async def mine_releases(repos: Iterable[str],
     @sentry_span
     async def main_flow():
         data = []
+        user_login_to_prefixed_login_get = prefixer.user_login_to_prefixed_login.get
         for repo, (repo_releases, owned_hashes, parents) in repo_releases_analyzed.items():
             computed_release_info_by_commit = {}
             for i, (my_id, my_name, my_tag, my_url, my_author, my_published_at,
@@ -315,7 +316,7 @@ async def mine_releases(repos: Iterable[str],
                             my_published_at - repo_releases[Release.published_at.key]._ixs(parent)
                     else:
                         my_age = my_published_at - first_commit_dates[repo]
-                    if (my_author := prefixer.user_login_map.get(my_author)) is not None:
+                    if (my_author := user_login_to_prefixed_login_get(my_author)) is not None:
                         mentioned_authors.add(my_author)
                     computed_release_info_by_commit[my_commit] = (
                         my_age, my_additions, my_deletions, commits_count, my_prs,
@@ -429,7 +430,8 @@ def _build_mined_releases(releases: pd.DataFrame,
     mentioned_authors = np.concatenate([
         *(getattr(f, "prs_" + PullRequest.user_login.key) for f in precomputed_facts.values()),
         *(f.commit_authors for f in precomputed_facts.values()),
-        [prefixer.user_login_map.get(u, "")  # e.g. deleted users not necessarily become "ghost"-s
+        [prefixer.user_login_to_prefixed_login.get(u, "")
+         # e.g. deleted users not necessarily become "ghost"-s
          for u in release_authors[release_authors.nonzero()[0]]],
     ])
     mentioned_authors = np.unique(mentioned_authors[mentioned_authors.nonzero()[0]]).astype("U")

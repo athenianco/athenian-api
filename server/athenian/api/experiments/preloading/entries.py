@@ -33,6 +33,7 @@ from athenian.api.controllers.miners.github.release_match import ReleaseToPullRe
 from athenian.api.controllers.miners.jira.issue import PullRequestJiraMapper
 from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind, \
     PullRequestFacts
+from athenian.api.controllers.prefixer import PrefixerPromise
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.models.metadata.github import Base as MetadataGitHubBase, \
     Branch, NodePullRequestJiraIssues, PullRequest
@@ -286,6 +287,7 @@ class PreloadedMergedPRFactsLoader(MergedPRFactsLoader):
             matched_bys: Dict[str, ReleaseMatch],
             default_branches: Dict[str, str],
             release_settings: ReleaseSettings,
+            prefixer: PrefixerPromise,
             account: int,
             pdb: databases.Database,
             time_from: Optional[datetime] = None,
@@ -309,6 +311,7 @@ class PreloadedMergedPRFactsLoader(MergedPRFactsLoader):
                     matched_bys,
                     default_branches,
                     release_settings,
+                    prefixer,
                     account,
                     pdb,
                     time_from=time_from,
@@ -364,6 +367,7 @@ class PreloadedMergedPRFactsLoader(MergedPRFactsLoader):
         ])
 
         facts = {}
+        user_node_map_get = (await prefixer.load()).user_node_to_prefixed_login.get
         for node_id, data, repository_full_name, author, merger in zip(
                 merged_pr_facts[model.pr_node_id.key].values,
                 merged_pr_facts[model.data.key].values,
@@ -379,8 +383,10 @@ class PreloadedMergedPRFactsLoader(MergedPRFactsLoader):
                 log.warning("No precomputed facts for merged %s", node_id)
                 continue
             facts[node_id] = PullRequestFacts(
-                data=data, repository_full_name=repository_full_name,
-                author=author, merger=merger)
+                data=data,
+                repository_full_name=repository_full_name,
+                author=user_node_map_get(author),
+                merger=user_node_map_get(merger))
         return facts
 
 

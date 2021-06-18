@@ -46,7 +46,7 @@ def generate_repo_settings(prs: pd.DataFrame) -> ReleaseSettings:
 
 @with_defer
 async def test_map_prs_to_releases_cache(branches, default_branches, dag, mdb, pdb, rdb, cache,
-                                         release_loader):
+                                         release_loader, prefixer_promise):
     prs = await read_sql_query(select([PullRequest]).where(PullRequest.number == 1126),
                                mdb, PullRequest, index=PullRequest.node_id.key)
     prs["dead"] = False
@@ -60,7 +60,7 @@ async def test_map_prs_to_releases_cache(branches, default_branches, dag, mdb, p
     for i in range(2):
         released_prs, facts, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
             prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
-            1, (6366825,), mdb, pdb, cache)
+            prefixer_promise, 1, (6366825,), mdb, pdb, cache)
         await wait_deferred()
         assert isinstance(facts, dict)
         assert len(facts) == 0
@@ -72,7 +72,7 @@ async def test_map_prs_to_releases_cache(branches, default_branches, dag, mdb, p
         assert released_prs.iloc[0][Release.author.key] == "mcuadros"
     released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
         prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
-        1, (6366825,), mdb, pdb, None)
+        prefixer_promise, 1, (6366825,), mdb, pdb, None)
     # the PR was merged and released in the past, we must detect that
     assert len(released_prs) == 1
     assert released_prs.iloc[0][Release.url.key] == tag
@@ -80,7 +80,7 @@ async def test_map_prs_to_releases_cache(branches, default_branches, dag, mdb, p
 
 @with_defer
 async def test_map_prs_to_releases_pdb(branches, default_branches, dag, mdb, pdb, rdb,
-                                       release_loader):
+                                       release_loader, prefixer_promise):
     prs = await read_sql_query(select([PullRequest]).where(PullRequest.number.in_((1126, 1180))),
                                mdb, PullRequest, index=PullRequest.node_id.key)
     prs["dead"] = False
@@ -92,7 +92,7 @@ async def test_map_prs_to_releases_pdb(branches, default_branches, dag, mdb, pdb
         1, (6366825,), mdb, pdb, rdb, None)
     released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
         prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
-        1, (6366825,), mdb, pdb, None)
+        prefixer_promise, 1, (6366825,), mdb, pdb, None)
     await wait_deferred()
     assert len(released_prs) == 1
     dummy_mdb = Database("sqlite://", force_rollback=True)
@@ -106,7 +106,7 @@ async def test_map_prs_to_releases_pdb(branches, default_branches, dag, mdb, pdb
             await dummy_mdb.execute(CreateTable(table.__table__))
         released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
             prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
-            1, (6366825,), dummy_mdb, pdb, None)
+            prefixer_promise, 1, (6366825,), dummy_mdb, pdb, None)
         assert len(released_prs) == 1
     finally:
         if "." in prlt.name:
@@ -116,7 +116,7 @@ async def test_map_prs_to_releases_pdb(branches, default_branches, dag, mdb, pdb
 
 @with_defer
 async def test_map_prs_to_releases_empty(branches, default_branches, dag, mdb, pdb, rdb, cache,
-                                         release_loader):
+                                         release_loader, prefixer_promise):
     prs = await read_sql_query(select([PullRequest]).where(PullRequest.number == 1231),
                                mdb, PullRequest, index=PullRequest.node_id.key)
     prs["dead"] = False
@@ -129,13 +129,13 @@ async def test_map_prs_to_releases_empty(branches, default_branches, dag, mdb, p
     for i in range(2):
         released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
             prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
-            1, (6366825,), mdb, pdb, cache)
+            prefixer_promise, 1, (6366825,), mdb, pdb, cache)
         assert len(cache.mem) == 1, i
         assert released_prs.empty
     prs = prs.iloc[:0]
     released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
         prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
-        1, (6366825,), mdb, pdb, cache)
+        prefixer_promise, 1, (6366825,), mdb, pdb, cache)
     assert len(cache.mem) == 1
     assert released_prs.empty
 
@@ -143,7 +143,7 @@ async def test_map_prs_to_releases_empty(branches, default_branches, dag, mdb, p
 @with_defer
 async def test_map_prs_to_releases_precomputed_released(
         branches, default_branches, dag, mdb, pdb, rdb, release_match_setting_tag,
-        release_loader, pr_miner):
+        release_loader, pr_miner, prefixer_promise):
     time_to = datetime(year=2019, month=8, day=2, tzinfo=timezone.utc)
     time_from = time_to - timedelta(days=2)
 
@@ -159,6 +159,7 @@ async def test_map_prs_to_releases_precomputed_released(
         branches, default_branches,
         False,
         release_match_setting_tag,
+        prefixer_promise,
         1,
         (6366825,),
         mdb,
@@ -190,7 +191,7 @@ async def test_map_prs_to_releases_precomputed_released(
 
         released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
             prs, releases, matched_bys, branches, default_branches, time_to, dag,
-            release_match_setting_tag, 1, (6366825,), dummy_mdb, pdb, None)
+            release_match_setting_tag, prefixer_promise, 1, (6366825,), dummy_mdb, pdb, None)
         assert len(released_prs) == len(prs)
     finally:
         if "." in prlt.name:
@@ -391,8 +392,9 @@ async def test_map_releases_to_prs_future(
 
 @pytest.mark.flaky(reruns=2)
 @with_defer
-async def test_map_prs_to_releases_smoke_metrics(branches, default_branches, dag, mdb, pdb, rdb,
-                                                 release_loader, worker_id):
+async def test_map_prs_to_releases_smoke_metrics(
+        branches, default_branches, dag, mdb, pdb, rdb, release_loader, worker_id,
+        prefixer_promise):
     try:
         await mdb.fetch_val(select([func.count(PullRequestLabel.node_id)]))
     except OperationalError as e:
@@ -418,7 +420,7 @@ async def test_map_prs_to_releases_smoke_metrics(branches, default_branches, dag
         1, (6366825,), mdb, pdb, rdb, None)
     released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
         prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
-        1, (6366825,), mdb, pdb, None)
+        prefixer_promise, 1, (6366825,), mdb, pdb, None)
     assert set(released_prs[Release.url.key].unique()) == {
         "https://github.com/src-d/go-git/releases/tag/v4.0.0-rc10",
         "https://github.com/src-d/go-git/releases/tag/v4.0.0-rc11",

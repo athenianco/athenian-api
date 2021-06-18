@@ -41,6 +41,7 @@ from athenian.api.controllers.miners.github.release_match import load_commit_dag
 from athenian.api.controllers.miners.types import Label, MinedPullRequest, PRParticipants, \
     PullRequestEvent, PullRequestFacts, PullRequestJIRAIssueItem, PullRequestListItem, \
     PullRequestStage
+from athenian.api.controllers.prefixer import PrefixerPromise
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.db import add_pdb_misses, ParallelDatabase, set_pdb_hits, set_pdb_misses
 from athenian.api.defer import defer
@@ -402,6 +403,7 @@ async def filter_pull_requests(events: Set[PullRequestEvent],
                                release_settings: ReleaseSettings,
                                updated_min: Optional[datetime],
                                updated_max: Optional[datetime],
+                               prefixer: PrefixerPromise,
                                account: int,
                                meta_ids: Tuple[int, ...],
                                mdb: ParallelDatabase,
@@ -420,7 +422,7 @@ async def filter_pull_requests(events: Set[PullRequestEvent],
     prs, _, _ = await _filter_pull_requests(
         events, stages, time_from, time_to, repos, participants, labels, jira,
         exclude_inactive, release_settings, updated_min, updated_max,
-        account, meta_ids, mdb, pdb, rdb, cache)
+        prefixer, account, meta_ids, mdb, pdb, rdb, cache)
     return prs
 
 
@@ -598,6 +600,7 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
                                 release_settings: ReleaseSettings,
                                 updated_min: Optional[datetime],
                                 updated_max: Optional[datetime],
+                                prefixer: PrefixerPromise,
                                 account: int,
                                 meta_ids: Tuple[int, ...],
                                 mdb: ParallelDatabase,
@@ -621,7 +624,7 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
         PullRequestMiner.mine(
             date_from, date_to, time_from, time_to, repos, participants,
             labels, jira, branches, default_branches, exclude_inactive, release_settings,
-            account, meta_ids, mdb, pdb, rdb, cache,
+            prefixer, account, meta_ids, mdb, pdb, rdb, cache,
             truncate=False, updated_min=updated_min, updated_max=updated_max),
         DonePRFactsLoader.load_precomputed_done_facts_filters(
             time_from, time_to, repos, participants, labels, default_branches,
@@ -739,6 +742,7 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
 )
 async def fetch_pull_requests(prs: Dict[str, Set[int]],
                               release_settings: ReleaseSettings,
+                              prefixer: PrefixerPromise,
                               account: int,
                               meta_ids: Tuple[int, ...],
                               mdb: ParallelDatabase,
@@ -752,7 +756,7 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
     :params prs: For each repository name without the prefix, there is a set of PR numbers to list.
     """
     mined_prs, dfs, facts, _, check_runs_task = await _fetch_pull_requests(
-        prs, release_settings, account, meta_ids, mdb, pdb, rdb, cache)
+        prs, release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache)
     if not mined_prs:
         return []
     miner = PullRequestListMiner(
@@ -765,6 +769,7 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
 
 async def _fetch_pull_requests(prs: Dict[str, Set[int]],
                                release_settings: ReleaseSettings,
+                               prefixer: PrefixerPromise,
                                account: int,
                                meta_ids: Tuple[int, ...],
                                mdb: ParallelDatabase,
@@ -798,7 +803,7 @@ async def _fetch_pull_requests(prs: Dict[str, Set[int]],
         check_runs_task = None
     unwrapped = await unwrap_pull_requests(
         prs_df, facts, ambiguous, True, branches, default_branches, release_settings,
-        account, meta_ids, mdb, pdb, rdb, cache)
+        prefixer, account, meta_ids, mdb, pdb, rdb, cache)
     return unwrapped + (check_runs_task,)
 
 
@@ -809,6 +814,7 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
                                branches: pd.DataFrame,
                                default_branches: Dict[str, str],
                                release_settings: ReleaseSettings,
+                               prefixer: PrefixerPromise,
                                account: int,
                                meta_ids: Tuple[int, ...],
                                mdb: ParallelDatabase,
@@ -872,7 +878,7 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
             # not nonemax() here! we want NaT-s inside load_merged_unreleased_pull_request_facts
             MergedPRFactsLoader.load_merged_unreleased_pull_request_facts(
                 prs_df, releases[Release.published_at.key].max(), LabelFilter.empty(),
-                matched_bys, default_branches, release_settings, account, pdb),
+                matched_bys, default_branches, release_settings, prefixer, account, pdb),
         ]
         dags, unreleased = await gather(*tasks)
     else:
@@ -881,7 +887,7 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
             prs_df[PullRequest.repository_full_name.key].unique(), account, pdb, cache)
     dfs, _, _ = await PullRequestMiner.mine_by_ids(
         prs_df, unreleased, now, releases, matched_bys, branches, default_branches, dags,
-        release_settings, account, meta_ids, mdb, pdb, cache, with_jira=with_jira)
+        release_settings, prefixer, account, meta_ids, mdb, pdb, cache, with_jira=with_jira)
     prs = await list_with_yield(PullRequestMiner(dfs), "PullRequestMiner.__iter__")
     for k, v in unreleased.items():
         if k not in facts:

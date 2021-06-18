@@ -62,6 +62,7 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
+    prefixer = Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
     filters, repos = await compile_filters_prs(filt.for_, request, filt.account, meta_ids)
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
@@ -99,7 +100,7 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
         metric_values = await calculator.calc_pull_request_metrics_line_github(
             filt.metrics, time_intervals, filt.quantiles or (0, 1),
             for_set.lines or [], repos, withgroups, labels, jira,
-            filt.exclude_inactive, release_settings, filt.fresh)
+            filt.exclude_inactive, release_settings, prefixer, filt.fresh)
         mrange = range(len(met.metrics))
         for lines_group_index, lines_group in enumerate(metric_values):
             for repos_group_index, with_groups in enumerate(lines_group):

@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple, Type
 
 import aiomcache
 import databases
@@ -15,6 +15,7 @@ from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.github.release_load import ReleaseLoader
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
 from athenian.api.controllers.miners.types import PRParticipants, PullRequestFacts
+from athenian.api.controllers.prefixer import PrefixerPromise
 from athenian.api.controllers.settings import ReleaseSettings
 from athenian.api.db import add_pdb_hits, add_pdb_misses
 from athenian.api.models.metadata.github import PullRequest
@@ -31,7 +32,7 @@ class UnfreshPullRequestFactsFetcher:
     @classmethod
     @sentry_span
     async def fetch_pull_request_facts_unfresh(cls,
-                                               miner: PullRequestMiner,
+                                               miner: Type[PullRequestMiner],
                                                done_facts: Dict[str, PullRequestFacts],
                                                ambiguous: Dict[str, List[str]],
                                                time_from: datetime,
@@ -44,6 +45,7 @@ class UnfreshPullRequestFactsFetcher:
                                                branches: pd.DataFrame,
                                                default_branches: Dict[str, str],
                                                release_settings: ReleaseSettings,
+                                               prefixer: PrefixerPromise,
                                                account: int,
                                                meta_ids: Tuple[int, ...],
                                                mdb: databases.Database,
@@ -85,7 +87,7 @@ class UnfreshPullRequestFactsFetcher:
         if not exclude_inactive:
             tasks.append(cls._fetch_inactive_merged_unreleased_prs(
                 time_from, time_to, repositories, participants, labels, jira, default_branches,
-                release_settings, account, meta_ids, mdb, pdb, cache))
+                release_settings, prefixer, account, meta_ids, mdb, pdb, cache))
         else:
             async def dummy_inactive_prs():
                 return pd.DataFrame()
@@ -111,7 +113,7 @@ class UnfreshPullRequestFactsFetcher:
             cls.merged_prs_facts_loader.load_merged_unreleased_pull_request_facts(
                 merged_prs, min(time_to, datetime.now(timezone.utc) - timedelta(hours=1)),
                 LabelFilter.empty(), matched_bys,
-                default_branches, release_settings, account, pdb,
+                default_branches, release_settings, prefixer, account, pdb,
                 time_from=time_from, exclude_inactive=exclude_inactive),
         ]
         open_facts, merged_facts = await gather(*tasks)
@@ -145,6 +147,7 @@ class UnfreshPullRequestFactsFetcher:
                                                     jira: JIRAFilter,
                                                     default_branches: Dict[str, str],
                                                     release_settings: ReleaseSettings,
+                                                    prefixer: PrefixerPromise,
                                                     account: int,
                                                     meta_ids: Tuple[int, ...],
                                                     mdb: databases.Database,
@@ -153,7 +156,7 @@ class UnfreshPullRequestFactsFetcher:
                                                     ) -> pd.DataFrame:
         node_ids, repos = await discover_inactive_merged_unreleased_prs(
             time_from, time_to, repos, participants, labels, default_branches, release_settings,
-            account, pdb, cache)
+            prefixer, account, pdb, cache)
         if not jira:
             df = pd.DataFrame.from_dict({PullRequest.node_id.key: node_ids,
                                          PullRequest.repository_full_name.key: repos})
