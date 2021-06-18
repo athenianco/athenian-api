@@ -95,7 +95,7 @@ def main():
         log.info("Loading releases in %s", args.repos)
         releases, _ = await ReleaseLoader.load_releases(
             args.repos, branches, default_branches, now - timedelta(days=365 * 2), now,
-            settings, args.account, meta_ids, mdb, pdb, rdb, None)
+            settings, prefixer, args.account, meta_ids, mdb, pdb, rdb, None)
         inserted = []
         log.info("Pushing %d releases", len(releases))
         for name, sha, commit_id, published_at, url, author, repo_id in zip(

@@ -104,7 +104,7 @@ async def mine_releases(repos: Iterable[str],
     log = logging.getLogger("%s.mine_releases" % metadata.__package__)
     releases_in_time_range, matched_bys = await ReleaseLoader.load_releases(
         repos, branches, default_branches, time_from, time_to,
-        settings, account, meta_ids, mdb, pdb, rdb, cache, force_fresh=force_fresh)
+        settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache, force_fresh=force_fresh)
     # resolve ambiguous release match settings
     settings = settings.copy()
     for repo in repos:
@@ -147,7 +147,7 @@ async def mine_releases(repos: Iterable[str],
         )[0])
         _, releases, _, _ = await ReleaseToPullRequestMapper._find_releases_for_matching_prs(
             missing_repos, branches, default_branches, time_from, time_to, False,
-            settings, account, meta_ids, mdb, pdb, rdb, cache,
+            settings, prefixer.as_promise(), account, meta_ids, mdb, pdb, rdb, cache,
             releases_in_time_range=releases_in_time_range)
         tasks = [
             load_commit_dags(releases, account, meta_ids, mdb, pdb, cache),
@@ -576,7 +576,7 @@ async def mine_releases_by_name(names: Dict[str, Iterable[str]],
     log = logging.getLogger("%s.mine_releases_by_name" % metadata.__package__)
     names = {k: set(v) for k, v in names.items()}
     releases, _, branches, default_branches = await _load_releases_by_name(
-        names, log, settings, account, meta_ids, mdb, pdb, rdb, cache)
+        names, log, settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache)
     if releases.empty:
         return [], []
     settings_tags, settings_branches = {}, {}
@@ -656,6 +656,7 @@ async def mine_releases_by_name(names: Dict[str, Iterable[str]],
 async def _load_releases_by_name(names: Dict[str, Set[str]],
                                  log: logging.Logger,
                                  settings: ReleaseSettings,
+                                 prefixer: PrefixerPromise,
                                  account: int,
                                  meta_ids: Tuple[int, ...],
                                  mdb: databases.Database,
@@ -707,7 +708,7 @@ async def _load_releases_by_name(names: Dict[str, Set[str]],
                 break
         new_releases, _ = await ReleaseLoader.load_releases(
             missing, branches, default_branches, now - offset, now,
-            settings, account, meta_ids, mdb, pdb, rdb, cache, force_fresh=True)
+            settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache, force_fresh=True)
         new_releases_index = defaultdict(dict)
         for i, (repo, name) in enumerate(zip(new_releases[Release.repository_full_name.key].values,
                                              new_releases[Release.name.key].values)):
@@ -800,7 +801,7 @@ async def diff_releases(borders: Dict[str, List[Tuple[str, str]]],
         for old, new in pairs:
             names[repo].update((old, new))
     border_releases, names, branches, default_branches = await _load_releases_by_name(
-        names, log, settings, account, meta_ids, mdb, pdb, rdb, cache)
+        names, log, settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache)
     if border_releases.empty:
         return {}, []
     repos = border_releases[Release.repository_full_name.key].unique()

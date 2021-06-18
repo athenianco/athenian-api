@@ -227,8 +227,8 @@ class PullRequestMiner:
                 repositories, branches, default_branches, time_from, time_to,
                 participants.get(PRParticipationKind.AUTHOR, []),
                 participants.get(PRParticipationKind.MERGER, []),
-                jira, release_settings, updated_min, updated_max,
-                pdags, account, meta_ids, mdb, pdb, rdb, cache, pr_blacklist, None, truncate),
+                jira, release_settings, updated_min, updated_max, pdags, prefixer,
+                account, meta_ids, mdb, pdb, rdb, cache, pr_blacklist, None, truncate),
             cls.fetch_prs(
                 time_from, time_to, repositories, participants, labels, jira,
                 exclude_inactive, pr_blacklist, None, branches, pdags, account, meta_ids,
@@ -265,7 +265,7 @@ class PullRequestMiner:
                     missed_prs, branches, default_branches, time_from, time_to,
                     participants.get(PRParticipationKind.AUTHOR, []),
                     participants.get(PRParticipationKind.MERGER, []),
-                    jira, release_settings, updated_min, updated_max, pdags,
+                    jira, release_settings, updated_min, updated_max, pdags, prefixer,
                     account, meta_ids, mdb, pdb, rdb, cache, None, pr_whitelist, truncate),
                 cls.fetch_prs(
                     time_from, time_to, missed_prs, participants, labels, jira, exclude_inactive,
@@ -399,14 +399,15 @@ class PullRequestMiner:
             return await cls._read_filtered_models(
                 PullRequestReview, node_ids, time_to, meta_ids, mdb,
                 columns=[PullRequestReview.submitted_at, PullRequestReview.state,
-                         PullRequestReview.user_login],
+                         PullRequestReview.user_login, PullRequestReview.user_node_id],
                 created_at=truncate)
 
         @sentry_span
         async def fetch_review_comments():
             return await cls._read_filtered_models(
                 PullRequestReviewComment, node_ids, time_to, meta_ids, mdb,
-                columns=[PullRequestReviewComment.created_at, PullRequestReviewComment.user_login],
+                columns=[PullRequestReviewComment.created_at, PullRequestReviewComment.user_login,
+                         PullRequestReviewComment.user_node_id],
                 created_at=truncate)
 
         @sentry_span
@@ -420,7 +421,8 @@ class PullRequestMiner:
         async def fetch_comments():
             return await cls._read_filtered_models(
                 PullRequestComment, node_ids, time_to, meta_ids, mdb,
-                columns=[PullRequestComment.created_at, PullRequestComment.user_login],
+                columns=[PullRequestComment.created_at, PullRequestComment.user_login,
+                         PullRequestComment.user_node_id],
                 created_at=truncate)
 
         @sentry_span
@@ -428,7 +430,8 @@ class PullRequestMiner:
             return await cls._read_filtered_models(
                 PullRequestCommit, node_ids, time_to, meta_ids, mdb,
                 columns=[PullRequestCommit.authored_date, PullRequestCommit.committed_date,
-                         PullRequestCommit.author_login, PullRequestCommit.committer_login],
+                         PullRequestCommit.author_login, PullRequestCommit.committer_login,
+                         PullRequestCommit.author_user, PullRequestCommit.committer_user],
                 created_at=truncate)
 
         @sentry_span

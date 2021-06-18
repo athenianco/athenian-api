@@ -26,8 +26,7 @@ from athenian.api.controllers.miners.github.dag_accelerated import extract_subda
 from athenian.api.controllers.miners.github.precomputed_prs import \
     DonePRFactsLoader, MergedPRFactsLoader, update_unreleased_prs
 from athenian.api.controllers.miners.github.release_load import dummy_releases_df, ReleaseLoader
-from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
-    new_released_prs_df
+from athenian.api.controllers.miners.github.released_pr import new_released_prs_df, release_columns
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
 from athenian.api.controllers.miners.types import nonemax, PullRequestFacts
 from athenian.api.controllers.prefixer import PrefixerPromise
@@ -100,7 +99,7 @@ class PullRequestToReleaseMapper:
                 prefixer, account, pdb),
             DonePRFactsLoader.load_precomputed_pr_releases(
                 prs.index, time_to, matched_bys, default_branches, release_settings,
-                account, pdb, cache),
+                prefixer, account, pdb, cache),
         ]
         _, unreleased_prs, precomputed_pr_releases = await gather(*tasks)
         add_pdb_hits(pdb, "map_prs_to_releases/released", len(precomputed_pr_releases))
@@ -144,10 +143,6 @@ class PullRequestToReleaseMapper:
         releases = dict(list(releases.groupby(Release.repository_full_name.key, sort=False)))
 
         released_prs = []
-        release_columns = [
-            c.key for c in (Release.published_at, Release.author, Release.url,
-                            Release.id, Release.repository_full_name)
-        ] + [matched_by_column]
         log = logging.getLogger("%s.map_prs_to_releases" % metadata.__package__)
         for repo, repo_prs in prs.groupby(PullRequest.repository_full_name.key, sort=False):
             try:
@@ -192,7 +187,7 @@ class PullRequestToReleaseMapper:
     async def _find_dead_merged_prs(cls, prs: pd.DataFrame) -> pd.DataFrame:
         dead_indexes = np.nonzero(prs["dead"].values)[0]
         dead_prs = [
-            (pr_id, None, None, None, None, repo, ReleaseMatch.force_push_drop)
+            (pr_id, None, None, None, None, None, repo, ReleaseMatch.force_push_drop)
             for repo, pr_id in zip(
                 prs[PullRequest.repository_full_name.key].take(dead_indexes).values,
                 prs.index.take(dead_indexes).values)
@@ -237,6 +232,7 @@ class ReleaseToPullRequestMapper:
                                   updated_min: Optional[datetime],
                                   updated_max: Optional[datetime],
                                   pdags: Optional[Dict[str, DAG]],
+                                  prefixer: PrefixerPromise,
                                   account: int,
                                   meta_ids: Tuple[int, ...],
                                   mdb: databases.Database,
@@ -282,7 +278,7 @@ class ReleaseToPullRequestMapper:
         tasks = [
             cls._find_releases_for_matching_prs(
                 repos, branches, default_branches, time_from, time_to, not truncate,
-                release_settings, account, meta_ids, mdb, pdb, rdb, cache),
+                release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache),
             fetch_pdags(),
         ]
         (matched_bys, releases, releases_in_time_range, release_settings), pdags = await gather(
@@ -331,6 +327,7 @@ class ReleaseToPullRequestMapper:
                                               time_to: datetime,
                                               until_today: bool,
                                               release_settings: ReleaseSettings,
+                                              prefixer: PrefixerPromise,
                                               account: int,
                                               meta_ids: Tuple[int, ...],
                                               mdb: databases.Database,
@@ -358,7 +355,7 @@ class ReleaseToPullRequestMapper:
             # see ENG-710 and ENG-725
             releases_in_time_range, matched_bys = await cls.release_loader.load_releases(
                 repos, branches, default_branches, time_from, time_to,
-                release_settings, account, meta_ids, mdb, pdb, rdb, cache)
+                release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache)
         else:
             matched_bys = {}
         # these matching rules must be applied in the past to stay consistent
@@ -388,7 +385,8 @@ class ReleaseToPullRequestMapper:
             if today > time_to:
                 until_today_task = cls.release_loader.load_releases(
                     repos, branches, default_branches, time_to, today,
-                    consistent_release_settings, account, meta_ids, mdb, pdb, rdb, cache)
+                    consistent_release_settings, prefixer,
+                    account, meta_ids, mdb, pdb, rdb, cache)
         if until_today_task is None:
             until_today_task = dummy_load_releases_until_today()
 
@@ -412,12 +410,12 @@ class ReleaseToPullRequestMapper:
             until_today_task,
             cls.release_loader.load_releases(repos_matched_by_branch, branches, default_branches,
                                              branch_lookbehind_time_from, time_from,
-                                             consistent_release_settings, account, meta_ids,
-                                             mdb, pdb, rdb, cache),
+                                             consistent_release_settings, prefixer, account,
+                                             meta_ids, mdb, pdb, rdb, cache),
             cls.release_loader.load_releases(repos_matched_by_tag, branches, default_branches,
                                              tag_lookbehind_time_from, time_from,
-                                             consistent_release_settings, account, meta_ids,
-                                             mdb, pdb, rdb, cache),
+                                             consistent_release_settings, prefixer, account,
+                                             meta_ids, mdb, pdb, rdb, cache),
             cls._fetch_repository_first_commit_dates(repos_matched_by_branch, account, meta_ids,
                                                      mdb, pdb, cache),
         ]
@@ -444,7 +442,8 @@ class ReleaseToPullRequestMapper:
                     extra_releases, _ = await cls.release_loader.load_releases(
                         hard_repos, branches, default_branches,
                         branch_lookbehind_time_from - deeper_step, branch_lookbehind_time_from,
-                        consistent_release_settings, account, meta_ids, mdb, pdb, rdb, cache)
+                        consistent_release_settings, prefixer, account, meta_ids,
+                        mdb, pdb, rdb, cache)
                     releases_old_branches = releases_old_branches.append(extra_releases)
                     hard_repos -= set(extra_releases[Release.repository_full_name.key].unique())
                     del extra_releases

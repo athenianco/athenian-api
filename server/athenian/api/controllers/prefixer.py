@@ -139,8 +139,12 @@ class PrefixerPromise:
         if self._prefixer is None:
             assert self._task is not None
             await self._task
-            self._prefixer = self._task.result()
-            self._task = None
+            if self._task is None:
+                # race condition, but single-threaded => no need to take the lock
+                assert self._prefixer is not None
+            else:
+                self._prefixer = self._task.result()
+                self._task = None
         return self._prefixer
 
     def cancel(self):

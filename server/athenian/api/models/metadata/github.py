@@ -145,9 +145,11 @@ class PullRequestCommit(Base,
     sha = Column(Text, nullable=False)
     commit_node_id = Column(Text, nullable=False)
     author_login = Column(Text)
+    author_user = Column(Text)
     author_date = Column(Text, nullable=False)
     authored_date = Column(TIMESTAMP(timezone=True), nullable=False)
     committer_login = Column(Text)
+    committer_user = Column(Text)
     commit_date = Column(Text, nullable=False)
     committed_date = Column(TIMESTAMP(timezone=True), nullable=False)
     created_at = synonym("committed_date")
@@ -302,6 +304,7 @@ class Release(Base,
     __tablename__ = "api_releases"
 
     author = Column(Text, nullable=False)
+    author_node_id = Column(Text, nullable=False)
     name = Column(Text)
     published_at = Column(TIMESTAMP(timezone=True))
     tag = Column(Text)

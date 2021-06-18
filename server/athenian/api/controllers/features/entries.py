@@ -285,6 +285,7 @@ class MetricEntriesCalculator:
                                             labels: LabelFilter,
                                             jira: JIRAFilter,
                                             release_settings: ReleaseSettings,
+                                            prefixer: PrefixerPromise,
                                             ) -> Tuple[np.ndarray, List[DeveloperTopic]]:
         """
         Calculate the developer metrics on GitHub.
@@ -298,7 +299,7 @@ class MetricEntriesCalculator:
         time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
         mined_dfs = await mine_developer_activities(
             all_devs, all_repos, time_from, time_to, topics, labels, jira, release_settings,
-            self._account, self._meta_ids, self._mdb, self._pdb, self._rdb, self._cache)
+            prefixer, self._account, self._meta_ids, self._mdb, self._pdb, self._rdb, self._cache)
         topics_seq = []
         arrays = []
         repo_grouper = partial(group_by_repo, developer_repository_column, repositories)
@@ -577,8 +578,8 @@ class MetricEntriesCalculator:
             repositories, self._meta_ids, self._mdb, self._cache)
         precomputed_tasks = [
             self.done_prs_facts_loader.load_precomputed_done_facts_filters(
-                time_from, time_to, repositories, participants, labels,
-                default_branches, exclude_inactive, release_settings, self._account, self._pdb),
+                time_from, time_to, repositories, participants, labels, default_branches,
+                exclude_inactive, release_settings, prefixer, self._account, self._pdb),
         ]
         if exclude_inactive:
             precomputed_tasks.append(self.done_prs_facts_loader.load_precomputed_done_candidates(

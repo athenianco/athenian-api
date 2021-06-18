@@ -73,7 +73,7 @@ async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Re
         await Settings.from_request(request, filt.account).list_release_matches(repos)
     repos = [r.split("/", 1)[1] for r in repos]
     users = await mine_contributors(
-        repos, time_from, time_to, True, filt.as_ or [], release_settings,
+        repos, time_from, time_to, True, filt.as_ or [], release_settings, prefixer,
         filt.account, meta_ids, request.mdb, request.pdb, request.rdb, request.cache)
     mapped_jira = await load_mapped_jira_users(
         filt.account, [u[User.node_id.key] for u in users],

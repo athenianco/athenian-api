@@ -373,7 +373,8 @@ async def create_teams(account: int,
         account, sdb, mdb, None, None).list_release_matches(repos)
     contributors = await mine_contributors(
         {r.split("/", 1)[1] for r in repos}, None, None, False, [],
-        release_settings, account, meta_ids, mdb, pdb, rdb, None, force_fresh_releases=True)
+        release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, None,
+        force_fresh_releases=True)
     if bots := {u[User.login.key] for u in contributors}.intersection(all_bots):
         bots = (await prefixer.load()).prefix_user_logins(bots)
         await sdb.execute(insert(Team).values(

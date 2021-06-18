@@ -392,6 +392,7 @@ async def calc_metrics_developers(request: AthenianWebRequest, body: dict) -> we
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError("?", detail=str(e)))
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
+    prefixer = Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
     filters, all_repos = await _compile_filters_devs(
         filt.for_, request, filt.account, meta_ids)
     if filt.date_to < filt.date_from:
@@ -425,7 +426,7 @@ async def calc_metrics_developers(request: AthenianWebRequest, body: dict) -> we
             dev_groups = [[dev] for dev in devs]
         calculator = calculators[service]
         tasks.append(calculator.calc_developer_metrics_github(
-            dev_groups, repos, time_intervals, topics, labels, jira, release_settings))
+            dev_groups, repos, time_intervals, topics, labels, jira, release_settings, prefixer))
         for_sets.append(for_set)
     all_stats = await gather(*tasks)
     for (stats_metrics, stats_topics), for_set in zip(all_stats, for_sets):

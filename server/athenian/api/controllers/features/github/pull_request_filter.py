@@ -265,7 +265,7 @@ class PullRequestListMiner:
             events_time_machine=events_time_machine,
             stages_time_machine=stages_time_machine,
             stage_timings=stage_timings,
-            participants=pr.participants(),
+            participants=pr.participant_logins(),
             labels=labels,
             jira=jira,
         )
@@ -628,7 +628,7 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
             truncate=False, updated_min=updated_min, updated_max=updated_max),
         DonePRFactsLoader.load_precomputed_done_facts_filters(
             time_from, time_to, repos, participants, labels, default_branches,
-            exclude_inactive, release_settings, account, pdb),
+            exclude_inactive, release_settings, prefixer, account, pdb),
     )
     (pr_miner, unreleased_facts, matched_bys, unreleased_prs_event), (facts, ambiguous) = \
         await gather(*tasks)
@@ -791,7 +791,7 @@ async def _fetch_pull_requests(prs: Dict[str, Set[int]],
         read_sql_query(union_all(*queries) if len(queries) > 1 else queries[0],  # sqlite sucks
                        mdb, PullRequest, index=PullRequest.node_id.key),
         DonePRFactsLoader.load_precomputed_done_facts_reponums(
-            prs, default_branches, release_settings, account, pdb),
+            prs, default_branches, release_settings, prefixer, account, pdb),
     ]
     prs_df, (facts, ambiguous) = await gather(*tasks)
     if (max_merged_at := prs_df[PullRequest.merged_at.key].max()) == max_merged_at:
@@ -869,7 +869,8 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
             milestone_releases[Release.sha.key].notnull())[0])
         releases, matched_bys = await ReleaseLoader.load_releases(
             prs_df[PullRequest.repository_full_name.key].unique(), branches, default_branches,
-            rel_time_from, now, release_settings, account, meta_ids, mdb, pdb, rdb, cache)
+            rel_time_from, now, release_settings, prefixer,
+            account, meta_ids, mdb, pdb, rdb, cache)
         add_pdb_misses(pdb, "load_precomputed_done_facts_reponums/ambiguous",
                        remove_ambiguous_prs(facts, ambiguous, matched_bys))
         tasks = [

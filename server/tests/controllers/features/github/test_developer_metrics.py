@@ -8,7 +8,7 @@ from athenian.api.defer import with_defer
 
 @with_defer
 async def test_developer_metrics_smoke(
-        metrics_calculator_factory, pdb, mdb, rdb, release_match_setting_tag):
+        metrics_calculator_factory, pdb, mdb, rdb, release_match_setting_tag, prefixer_promise):
     metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     utc = timezone.utc
     requested_topics = {
@@ -36,7 +36,8 @@ async def test_developer_metrics_smoke(
         requested_topics,
         LabelFilter.empty(),
         JIRAFilter.empty(),
-        release_match_setting_tag)
+        release_match_setting_tag,
+        prefixer_promise)
     assert set(topics) == requested_topics
     metrics = metrics.swapaxes(1, 2)  # the test was written before the axes swap
     order = [

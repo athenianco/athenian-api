@@ -68,7 +68,7 @@ class UnfreshPullRequestFactsFetcher:
             # by definition
             cls.release_loader.load_releases(
                 repositories, branches, default_branches, time_from, time_to,
-                release_settings, account, meta_ids, mdb, pdb, rdb, cache),
+                release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache),
             miner.fetch_prs(
                 time_from, time_to, repositories, participants, labels, jira, exclude_inactive,
                 blacklist, None, branches, None, account, meta_ids, mdb, pdb, cache, columns=[

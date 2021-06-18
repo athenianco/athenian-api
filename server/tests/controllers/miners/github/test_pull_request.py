@@ -377,7 +377,7 @@ async def test_pr_miner_participant_filters(
     count = 0
     for pr in miner:
         count += 1
-        participants = pr.participants()
+        participants = pr.participant_logins()
         if len(pk) == 1:
             assert "mcuadros" in participants[pk[0]], str(pr.pr)
         else:
@@ -639,7 +639,7 @@ async def test_pr_mine_by_ids(branches, default_branches, dag, mdb, pdb, rdb, ca
     prs.set_index(PullRequest.node_id.key, inplace=True)
     releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"], branches, default_branches, time_from, time_to,
-        release_settings, 1, (6366825,), mdb, pdb, rdb, cache)
+        release_settings, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
     dfs1, _, _ = await pr_miner.mine_by_ids(
         prs,
         [],
