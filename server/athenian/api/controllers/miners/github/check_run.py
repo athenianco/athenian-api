@@ -193,10 +193,16 @@ async def mine_check_runs(time_from: datetime,
     df[check_suite_started_column] = df.groupby(
         CheckRun.check_suite_node_id.key, sort=False,
     )[CheckRun.started_at.key].transform("min")
-    check_runs_outside_pr_lifetime_indexes = np.nonzero(~df[check_suite_started_column].between(
-        df[pull_request_started_column],
-        df[pull_request_closed_column] + timedelta(hours=1),
-    ).values)[0]
+    try:
+        check_runs_outside_pr_lifetime_indexes = \
+            np.nonzero(~df[check_suite_started_column].between(
+                df[pull_request_started_column],
+                df[pull_request_closed_column] + timedelta(hours=1),
+            ).values)[0]
+    except TypeError:
+        # "Cannot compare tz-naive and tz-aware datetime-like objects"
+        # all the timestamps are NAT-s
+        check_runs_outside_pr_lifetime_indexes = np.arange(len(df))
     # check run must launch while the PR remains open
     df.loc[check_runs_outside_pr_lifetime_indexes, CheckRun.pull_request_node_id.key] = None
     old_df_len = len(df)
