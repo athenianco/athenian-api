@@ -710,6 +710,12 @@ def _compose_cache_key_participants(participants: List[PRParticipants]) -> str:
                     for p in participants)
 
 
+class CalculatorNotReadyException(Exception):
+    """Raised whenever a calculator is not ready."""
+
+    pass
+
+
 def make_calculator(
     account: int,
     meta_ids: Tuple[int, ...],
@@ -723,7 +729,13 @@ def make_calculator(
     """Get the metrics calculator according to the account's features."""
 
     def build_calculator(cls=MetricEntriesCalculator):
-        return cls(account, meta_ids, mdb, pdb, rdb, cache)
+        calculator = cls(account, meta_ids, mdb, pdb, rdb, cache)
+        if not calculator.is_ready_for(account, meta_ids):
+            log.error("Cannot make calculator for variation '%s'", variation)
+            raise CalculatorNotReadyException(
+                f"Calculator not ready for account '{account}' and "
+                f"meta ids '{meta_ids}'")
+        return calculator
 
     log = logging.getLogger(__name__)
     if not variation:

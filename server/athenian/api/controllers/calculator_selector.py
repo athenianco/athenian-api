@@ -4,7 +4,8 @@ import aiomcache
 from sqlalchemy import and_, select
 
 from athenian.api.async_utils import gather
-from athenian.api.controllers.features.entries import make_calculator, MetricEntriesCalculator
+from athenian.api.controllers.features.entries import CalculatorNotReadyException, \
+    make_calculator, MetricEntriesCalculator
 from athenian.api.db import DatabaseLike
 from athenian.api.models.state.models import AccountFeature, Feature, FeatureComponent
 from athenian.api.tracing import sentry_span
@@ -46,14 +47,23 @@ async def _get_calculator_for_account(
     base_module: Optional[str] = "athenian.api.experiments",
 ) -> MetricEntriesCalculator:
     def _make_calculator(variation=None):
+        assert service == "github", "we don't support others"
+
+        try:
+            calculator = make_calculator(
+                account_id, meta_ids, mdb, pdb, rdb, cache,
+                variation=variation, base_module=base_module,
+            )
+        except CalculatorNotReadyException:
+            variation = "default"
+            calculator = make_calculator(
+                account_id, meta_ids, mdb, pdb, rdb, cache,
+                variation=variation, base_module=base_module,
+            )
+
         if instrument is not None:
             instrument[service] = variation or "default"
-
-        assert service == "github", "we don't support others"
-        return make_calculator(
-            account_id, meta_ids, mdb, pdb, rdb, cache,
-            variation=variation, base_module=base_module,
-        )
+        return calculator
 
     feature_name_prefix = METRIC_ENTRIES_VARIATIONS_PREFIX.get(service)
     if not feature_name_prefix:
