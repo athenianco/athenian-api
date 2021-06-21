@@ -104,6 +104,13 @@ class CachedDataFrame:
             return pd.DataFrame(columns=self._columns)
         return pd.concat(self._sharded_dfs[sk] for sk in sorted(sharding_keys))
 
+    def get_shards(self) -> List[Union[int, str]]:
+        """Return the list of shards."""
+        if not self._sharded_dfs:
+            return []
+
+        return list(self._sharded_dfs.keys())
+
     async def refresh(self) -> "CachedDataFrame":
         """Refresh the DataFrame from the database."""
         query = select(self._cols)
