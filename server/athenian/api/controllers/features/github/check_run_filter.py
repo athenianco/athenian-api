@@ -73,7 +73,7 @@ async def filter_check_runs(time_from: datetime,
     del suite_statuses, completed
     df_check_runs.sort_values(CheckRun.started_at.key, inplace=True, ascending=False)
     repocol = df_check_runs[CheckRun.repository_full_name.key].values.astype("S")
-    crnamecol = df_check_runs[CheckRun.name.key].values.astype("S")
+    crnamecol = np.char.encode(df_check_runs[CheckRun.name.key].values.astype("U"), "UTF-8")
     group_keys = np.char.add(np.char.add(repocol, b"|"), crnamecol)
     unique_repo_crnames, first_encounters, inverse_cr_map, repo_crnames_counts = np.unique(
         group_keys, return_counts=True, return_index=True, return_inverse=True)
