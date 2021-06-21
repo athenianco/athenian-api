@@ -24,6 +24,8 @@ from athenian.api.models.metadata.github import CheckRun
     (datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
      ["src-d/go-git"], [], LabelFilter.empty(),
      JIRAFilter(1, ["10003", "10009"], LabelFilter.empty(), set(), {"task"}, False), 229),
+    (datetime(2015, 10, 10, tzinfo=timezone.utc), datetime(2015, 10, 23, tzinfo=timezone.utc),
+     ["src-d/go-git"], [], LabelFilter.empty(), JIRAFilter.empty(), 4),
 ])
 async def test_check_run_smoke(mdb, time_from, time_to, repositories, pushers, labels, jira, size):
     df = await mine_check_runs(

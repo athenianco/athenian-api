@@ -49,6 +49,8 @@ def patch_pandas():
     original_take = DatetimeLikeArrayMixin.take
 
     def fast_take(self, indices, allow_fill=False, fill_value=None):
+        if len(indices) and indices.min() < 0:
+            return original_take(self, indices, allow_fill=allow_fill, fill_value=fill_value)
         return original_take(self, indices, allow_fill=False)
 
     DatetimeLikeArrayMixin.take = fast_take
