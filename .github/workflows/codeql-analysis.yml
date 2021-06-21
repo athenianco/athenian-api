@@ -7,7 +7,7 @@ on:
 jobs:
   analyze:
     name: Analyze
-    if: "!contains(github.event.head_commit.message, 'Bump version') || github.event_name != 'push'"
+    if: "!contains(github.event.head_commit.message, 'Bump version') && (github.event_name != 'push' || github.actor != 'dependabot[bot]')"
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -34,7 +34,7 @@ jobs:
         # Prefix the list here with "+" to use these queries and those in the config file.
         # queries: ./path/to/local/query, your-org/your-repo/queries@main
 
-    # ℹ️ Command-line programs to run using the OS shell.
+    # Command-line programs to run using the OS shell.
     # 📚 https://git.io/JvXDl
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v1
