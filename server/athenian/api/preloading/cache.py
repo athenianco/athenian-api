@@ -280,6 +280,10 @@ class MemoryCache:
         """Return all the `CachedDataFrame`s."""
         return self._dfs
 
+    def is_shard_available(self, shard_key: Union[int, str]) -> bool:
+        """Return whether the data for the given shard are available."""
+        return all(shard_key in cdf.get_shards() for cdf in self._dfs.values())
+
     def memory_usage(
         self, total: bool = False, human: bool = False,
     ) -> Union[int, Dict]:
