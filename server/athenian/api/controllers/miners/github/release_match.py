@@ -113,9 +113,8 @@ class PullRequestToReleaseMapper:
             cls._map_prs_to_releases(merged_prs, dags, releases),
             cls._find_dead_merged_prs(merged_prs),
         ]
-        labels, dead_prs, missed_released_prs = await gather(*tasks)
-        # PRs may wrongly classified as dead although they are really released; remove
-        # the conflicts
+        labels, missed_released_prs, dead_prs = await gather(*tasks)
+        # PRs may wrongly classify as dead although they are really released; remove the conflicts
         dead_prs.drop(index=missed_released_prs.index, inplace=True, errors="ignore")
         add_pdb_misses(pdb, "map_prs_to_releases/released", len(missed_released_prs))
         add_pdb_misses(pdb, "map_prs_to_releases/dead", len(dead_prs))
