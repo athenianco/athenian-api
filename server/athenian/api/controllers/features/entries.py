@@ -93,6 +93,10 @@ class MetricEntriesCalculator:
         self._rdb = rdb
         self._cache = cache
 
+    def is_ready_for(self, account: int, meta_ids: Tuple[int, ...]) -> bool:
+        """Check whether the calculator is ready for the given account and meta ids."""
+        return True
+
     @sentry_span
     @cached(
         exptime=PullRequestMiner.CACHE_TTL,
