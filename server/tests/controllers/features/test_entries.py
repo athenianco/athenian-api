@@ -3,7 +3,8 @@ import sys
 import pytest
 
 from athenian.api.controllers.features.entries import \
-    make_calculator, MetricEntriesCalculator as OriginalMetricEntriesCalculator
+    CalculatorNotReadyException, make_calculator, \
+    MetricEntriesCalculator as OriginalMetricEntriesCalculator
 
 
 @pytest.fixture
@@ -22,6 +23,10 @@ class MetricEntriesCalculator:
     def __init__(self, *args) -> "MetricEntriesCalculator":
         """Create a `MetricEntriesCalculator`."""
         pass
+
+    def is_ready_for(self, account, meta_ids) -> bool:
+        """Check whether the calculator is ready for the given account and meta ids."""
+        return account == 1
 
 
 def test_get_calculator_no_variation(base_testing_module, mdb, pdb, rdb, cache):
@@ -56,3 +61,9 @@ def test_get_calculator_variation_found(
         variation="test_entries", base_module=base_testing_module,
     )
     assert isinstance(calc, MetricEntriesCalculator)
+
+    with pytest.raises(CalculatorNotReadyException):
+        make_calculator(
+            2, (1, ), mdb, pdb, rdb, cache,
+            variation="test_entries", base_module=base_testing_module,
+        )

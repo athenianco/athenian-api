@@ -27,6 +27,10 @@ class MetricEntriesCalculator:
         """Create a `MetricEntriesCalculator`."""
         pass
 
+    def is_ready_for(self, account, meta_ids) -> bool:
+        """Check whether the calculator is ready for the given account and meta ids."""
+        return account == 1
+
 
 async def test_get_calculator_for_user_no_global_feature(sdb, mdb, pdb, rdb, cache,
                                                          base_testing_module):
@@ -118,6 +122,12 @@ async def test_get_calculator_for_user_with_feature(
         base_module=base_testing_module,
     ))["github"]
     assert isinstance(calc, MetricEntriesCalculator)
+
+    calc = (await get_calculators_for_account(
+        ["github"], 2, (1, ), None, sdb, mdb, pdb, rdb, cache,
+        base_module=base_testing_module,
+    ))["github"]
+    assert isinstance(calc, OriginalMetricEntriesCalculator)
 
 
 async def test_get_calculator_for_user_with_feature_multiple_services(
