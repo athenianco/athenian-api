@@ -1,13 +1,14 @@
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 import pickle
+from sqlite3 import OperationalError
 
 from databases import Database
 import numpy as np
 import pandas as pd
 from pandas.testing import assert_frame_equal
 import pytest
-from sqlalchemy import delete, insert, select, sql
+from sqlalchemy import delete, func, insert, select, sql
 from sqlalchemy.schema import CreateTable
 
 from athenian.api.async_utils import read_sql_query
@@ -32,6 +33,7 @@ from athenian.api.models.metadata.github import Branch, NodeCommit, PullRequest,
 from athenian.api.models.persistentdata.models import ReleaseNotification
 from athenian.api.models.precomputed.models import GitHubCommitHistory, \
     GitHubRelease as PrecomputedRelease
+from tests.conftest import _metadata_db
 from tests.controllers.test_filter_controller import force_push_dropped_go_git_pr_numbers
 
 
@@ -387,10 +389,17 @@ async def test_map_releases_to_prs_future(
     assert len(releases) == 12
 
 
-@pytest.mark.flaky(reruns=5, reruns_delay=1)
+@pytest.mark.flaky(reruns=2)
 @with_defer
 async def test_map_prs_to_releases_smoke_metrics(branches, default_branches, dag, mdb, pdb, rdb,
-                                                 release_loader):
+                                                 release_loader, worker_id):
+    try:
+        await mdb.fetch_val(select([func.count(PullRequestLabel.node_id)]))
+    except OperationalError as e:
+        # this happens sometimes, we have to reset the DB and proceed to the second lap
+        await mdb.disconnect()
+        _metadata_db(worker_id, True)
+        raise e from None
     time_from = datetime(year=2015, month=10, day=13, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=1, day=24, tzinfo=timezone.utc)
     filters = [

@@ -14,8 +14,8 @@ echo "  $@"\n\
 echo\n' > /browser && \
     chmod +x /browser
 
-# matches our production
-ENV OPT="-fno-semantic-interposition -mabm -mno-pku -mno-sgx --param l1-cache-line-size=64 --param l1-cache-size=32 --param l2-cache-size=33792"
+# matches our production except -march=haswell, we have to downgrade -march because of GHA
+ENV OPT="-fno-semantic-interposition -march=haswell -mabm -maes -mno-pku -mno-sgx --param l1-cache-line-size=64 --param l1-cache-size=32 --param l2-cache-size=33792"
 
 # runtime environment
 RUN echo 'deb-src http://archive.ubuntu.com/ubuntu focal-updates main' >>/etc/apt/sources.list && \
@@ -31,12 +31,6 @@ RUN echo 'deb-src http://archive.ubuntu.com/ubuntu focal-updates main' >>/etc/ap
     apt-get -s build-dep python3.8 | grep "Inst " | cut -d" " -f2 | sort | tr '\n' ' ' >build_bloat && \
     DEBIAN_FRONTEND="noninteractive" TZ="Europe/Madrid" apt-get build-dep -y python3.8 && \
     wget -O - https://bootstrap.pypa.io/get-pip.py | python3 && \
-    pip3 install --no-cache-dir resolve-march-native && \
-    resolve-march-native && \
-    OPT="$OPT $(resolve-march-native --vertical | head -n1)" && \
-    pip3 uninstall -y resolve-march-native && \
-    echo $OPT && \
-    echo $OPT >/OPT && \
     cd python3.8* && \
     sed -i 's/__main__/__skip__/g' Tools/scripts/run_tests.py && \
     dch --bin-nmu -Dunstable "Optimized build" && \
@@ -94,7 +88,6 @@ library_dirs = /opt/intel/mkl/lib/intel64_lin\n\
 include_dirs = /opt/intel/mkl/include\n\
 mkl_libs = mkl_rt\n\
 lapack_libs = mkl_lapack95_lp64' >/root/.numpy-site.cfg && \
-    OPT=$(cat /OPT) && \
     sed -i "s/OPT/$OPT/g" /root/.numpy-site.cfg && \
     cat /root/.numpy-site.cfg && \
     apt-get update && \
