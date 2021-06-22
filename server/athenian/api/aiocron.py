@@ -32,7 +32,12 @@ class Cron:
         """Initialize a Cron object."""
         self.spec = spec
         if func is not None:
-            self.func = func if not args else functools.partial(func, *args)
+            if not args:
+                self.func = func
+            else:
+                partial_func = functools.partial(func, *args)
+                functools.update_wrapper(partial_func, func)
+                self.func = partial_func
         else:
             self.func = _null_callback
         self.cron = wrap_func(self.func)
