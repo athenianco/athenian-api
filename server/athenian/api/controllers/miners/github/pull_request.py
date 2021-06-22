@@ -1372,6 +1372,8 @@ class PullRequestFactsMiner:
         if last_commit_before_first_review_own and \
                 last_commit_before_first_review > first_review_request:
             first_review_request = last_commit_before_first_review or first_review_request
+        if closed and first_review_request and first_review_request > closed:
+            first_review_request = None
         review_submitted_ats = pr.reviews[PullRequestReview.submitted_at.key]
 
         if closed:
@@ -1392,46 +1394,47 @@ class PullRequestFactsMiner:
                 nonemin(external_comments_times.nonemax())
         if not first_review_request:
             assert not last_review, pr.pr[PullRequest.node_id.key]
-        if merged:
-            reviews_before_merge = \
-                pr.reviews[PullRequestReview.submitted_at.key].values <= merged.to_numpy()
-            if reviews_before_merge.all():
-                reviews_before_merge = pr.reviews
+        if closed:
+            min_merged_closed = nonemin(merged, closed).to_numpy()
+            reviews_before_close = \
+                pr.reviews[PullRequestReview.submitted_at.key].values <= min_merged_closed
+            if reviews_before_close.all():
+                reviews_before_close = pr.reviews
             else:
-                reviews_before_merge = pr.reviews.take(np.where(reviews_before_merge)[0])
-                reviews_before_merge.reset_index(drop=True, inplace=True)
+                reviews_before_close = pr.reviews.take(np.where(reviews_before_close)[0])
+                reviews_before_close.reset_index(drop=True, inplace=True)
         else:
-            reviews_before_merge = pr.reviews
+            reviews_before_close = pr.reviews
         # the most recent review for each reviewer
-        if reviews_before_merge.empty:
+        if reviews_before_close.empty:
             # express lane
             grouped_reviews = self.dummy_reviews
         else:
             review_logins = \
-                reviews_before_merge[PullRequestReview.user_login.key].values.astype("S")
+                reviews_before_close[PullRequestReview.user_login.key].values.astype("S")
             human_review_mask = np.in1d(review_logins, self._bots, invert=True)
             if not human_review_mask.all():
-                reviews_before_merge = reviews_before_merge.take(np.nonzero(human_review_mask)[0])
-                reviews_before_merge.reset_index(inplace=True, drop=True)
+                reviews_before_close = reviews_before_close.take(np.nonzero(human_review_mask)[0])
+                reviews_before_close.reset_index(inplace=True, drop=True)
                 review_logins = review_logins[human_review_mask]
             if len(np.unique(review_logins)) == 1:
                 # fast lane
-                grouped_reviews = reviews_before_merge._ixs(
-                    reviews_before_merge[PullRequestReview.submitted_at.key].values.argmax())
+                grouped_reviews = reviews_before_close._ixs(
+                    reviews_before_close[PullRequestReview.submitted_at.key].values.argmax())
             else:
                 # the most recent review for each reviewer
                 latest_review_ixs = [
                     ixs[0] for ixs in
-                    reviews_before_merge[[PullRequestReview.user_login.key,
+                    reviews_before_close[[PullRequestReview.user_login.key,
                                           PullRequestReview.submitted_at.key]]
-                    .take(np.where(reviews_before_merge[PullRequestReview.state.key] !=
+                    .take(np.where(reviews_before_close[PullRequestReview.state.key] !=
                                    ReviewResolution.COMMENTED.value)[0])
                     .sort_values([PullRequestReview.submitted_at.key], ascending=False)
                     .groupby(PullRequestReview.user_login.key, sort=False)
                     .grouper.groups.values()
                 ]
                 grouped_reviews = {
-                    k: reviews_before_merge[k].take(latest_review_ixs)
+                    k: reviews_before_close[k].take(latest_review_ixs)
                     for k in (PullRequestReview.state.key, PullRequestReview.submitted_at.key)}
         grouped_reviews_states = grouped_reviews[PullRequestReview.state.key]
         if isinstance(grouped_reviews_states, str):
@@ -1453,9 +1456,6 @@ class PullRequestFactsMiner:
                 approved = grouped_reviews[PullRequestReview.submitted_at.key].take(
                     np.where(grouped_reviews_states == ReviewResolution.APPROVED.value)[0],
                 ).nonemax()
-            if approved and closed:
-                # similar to last_review
-                approved = min(approved, closed)
         released = pr.release[Release.published_at.key]
         if released != released:
             released = None
@@ -1473,7 +1473,7 @@ class PullRequestFactsMiner:
         done = bool(released or force_push_dropped or (closed and not merged))
         work_began = nonemin(created, first_commit)
         ts_dtype = "datetime64[ns]"
-        reviews = np.sort(reviews_before_merge[PullRequestReview.submitted_at.key].values) \
+        reviews = np.sort(reviews_before_close[PullRequestReview.submitted_at.key].values) \
             .astype(ts_dtype)
         activity_days = np.concatenate([
             np.array([created, closed, released], dtype=ts_dtype),
