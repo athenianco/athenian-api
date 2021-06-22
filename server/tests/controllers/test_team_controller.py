@@ -51,6 +51,28 @@ async def test_create_team_smoke(client, headers, sdb, account, disable_default_
     })
 
 
+async def test_create_team_bot(client, headers, sdb, disable_default_user):
+    await sdb.execute(update(AccountGitHubAccount)
+                      .where(AccountGitHubAccount.id == 6366825)
+                      .values({AccountGitHubAccount.account_id: 1}))
+    body = TeamCreateRequest(1, "Engineering", ["github.com/apps/dependabot"]).to_dict()
+    response = await client.request(
+        method="POST", path="/v1/team/create", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + rbody
+    assert len(await sdb.fetch_all(select([Team]))) == 1
+    team = await sdb.fetch_one(select([Team]).where(Team.id == json.loads(rbody)["id"]))
+    _test_same_team(team, {
+        "id": 1,
+        "members": ["github.com/apps/dependabot"],
+        "members_count": 1,
+        "name": "Engineering",
+        "owner_id": 1,
+        "parent_id": None,
+    })
+
+
 @pytest.mark.parametrize("account", [3, 4], ids=["not a member", "invalid account"])
 async def test_create_team_wrong_account(client, headers, sdb, account, disable_default_user):
     body = TeamCreateRequest(account, "Engineering", ["github.com/se7entyse7en"]).to_dict()

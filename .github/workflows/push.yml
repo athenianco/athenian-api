@@ -328,6 +328,8 @@ jobs:
     - name: docker build
       run: |
         set -x
+        pip3 install --no-cache-dir py-cpuinfo && \
+        cpuinfo && \
         docker build --pull --cache-from gcr.io/${{ secrets.GOOGLE_PROJECT }}/api:latest --build-arg COMMIT=$GITHUB_SHA --build-arg GKWILLIE_TOKEN=${{ secrets.GKWILLIE_TOKEN }} -t gcr.io/${{ secrets.GOOGLE_PROJECT }}/api .
         docker run --rm gcr.io/${{ secrets.GOOGLE_PROJECT }}/api --help
         docker build -t test --build-arg base=gcr.io/${{ secrets.GOOGLE_PROJECT }}/api server/tests
