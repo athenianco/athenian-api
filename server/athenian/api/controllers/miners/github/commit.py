@@ -139,10 +139,10 @@ async def extract_commits(prop: FilterCommitsProperty,
     candidates_count = len(commits)
     if only_default_branch:
         commits = _take_commits_in_default_branches(commits, dags, branches, default_branches)
-        log.info("Removed force push dropped commits: %d / %d", len(commits), candidates_count)
+        log.info("Removed side branch commits: %d / %d", len(commits), candidates_count)
     else:
         commits = _remove_force_push_dropped(commits, dags)
-        log.info("Removed side branch commits: %d / %d", len(commits), candidates_count)
+        log.info("Removed force push dropped commits: %d / %d", len(commits), candidates_count)
     for number_prop in (PushCommit.additions, PushCommit.deletions, PushCommit.changed_files):
         try:
             number_col = commits[number_prop.key]

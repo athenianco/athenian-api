@@ -127,10 +127,7 @@ RUN apt-get update && \
 
 ADD server /server
 ADD README.md /
-RUN pip3 install --no-cache-dir py-cpuinfo && \
-    cpuinfo && \
-    pip3 uninstall -y py-cpuinfo && \
-    apt-get update && \
+RUN apt-get update && \
     apt-get install -y --no-install-suggests --no-install-recommends gcc g++ && \
     echo "Installing Python packages" && \
     pip3 install -e /server && \

@@ -169,9 +169,7 @@ async def _check_members(members: List[str],
     to_fetch = set()
     members = set(members)
     for m in members:
-        # very basic check
-        splitted = m.split("/", 1)
-        if len(splitted) == 2 and splitted[1]:
+        if len(splitted := m.rsplit("/", 1)) == 2:
             to_fetch.add(splitted[1])
 
     rows = await mdb.fetch_all(select([User.html_url])
