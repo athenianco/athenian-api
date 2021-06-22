@@ -94,14 +94,14 @@ class PreloadedReleaseLoader(ReleaseLoader):
                                           ) -> pd.DataFrame:
         model = PrecomputedRelease
         cached_df = pdb.cache.dfs[PCID.releases]
-        df = cached_df.df
+        df = cached_df.get_dfs((account, ))
         mask = (
             _match_groups_to_mask(model, df, match_groups)
             & (df[model.acc_id.key] == account)
             & (df[model.published_at.key] >= time_from)
             & (df[model.published_at.key] < time_to)
         )
-        releases = cached_df.filter(mask)
+        releases = cached_df.filter((account, ), mask)
         releases.sort_values(model.published_at.key, ascending=False, inplace=True)
         releases = remove_ambigous_precomputed_releases(releases, model.repository_full_name.key)
         if index is not None:
@@ -120,11 +120,11 @@ class PreloadedReleaseLoader(ReleaseLoader):
         """Find out the precomputed time intervals for each release match group of repositories."""
         model = PrecomputedGitHubReleaseMatchTimespan
         cached_df = pdb.cache.dfs[PCID.releases_match_timespan]
-        df = cached_df.df
+        df = cached_df.get_dfs((account, ))
         mask = (
             _match_groups_to_mask(model, df, match_groups) & (df[model.acc_id.key] == account)
         )
-        release_match_spans = cached_df.filter(mask)
+        release_match_spans = cached_df.filter((account, ), mask)
         spans = {}
         for time_from, time_to, release_match, repository_full_name in zip(
                 release_match_spans[model.time_from.key],
@@ -202,7 +202,7 @@ class PreloadedDonePRFactsLoader(DonePRFactsLoader):
 
         model = GitHubDonePullRequestFacts
         cached_df = pdb.cache.dfs[PCID.done_pr_facts]
-        df = cached_df.df
+        df = cached_df.get_dfs((account, ))
 
         with sentry_sdk.start_span(op="_load_precomputed_done_filters/mask_creation"):
             mask = df[model.acc_id.key] == account
@@ -233,8 +233,8 @@ class PreloadedDonePRFactsLoader(DonePRFactsLoader):
             mask &= _match_groups_to_mask(model, df, match_groups)
 
         done_pr_facts = cached_df.filter(
-            mask, columns=[model.pr_node_id.key, model.repository_full_name.key,
-                           model.release_match.key] + [c.key for c in columns],
+            (account, ), mask, columns=[model.pr_node_id.key, model.repository_full_name.key,
+                                        model.release_match.key] + [c.key for c in columns],
         )
 
         with sentry_sdk.start_span(op="_load_precomputed_done_filters/triage"):
@@ -325,7 +325,7 @@ class PreloadedMergedPRFactsLoader(MergedPRFactsLoader):
 
         model = GitHubMergedPullRequestFacts
         cached_df = pdb.cache.dfs[PCID.merged_pr_facts]
-        df = cached_df.df
+        df = cached_df.get_dfs((account, ))
 
         common_mask = (
             (df[model.checked_until.key] >= time_to) &
@@ -358,7 +358,7 @@ class PreloadedMergedPRFactsLoader(MergedPRFactsLoader):
             return {}
 
         mask = functools.reduce(operator.or_, or_masks)
-        merged_pr_facts = cached_df.filter(mask, columns=[
+        merged_pr_facts = cached_df.filter((account, ), mask, columns=[
             model.pr_node_id.key, model.repository_full_name.key, model.data.key,
             model.author.key, model.merger.key,
         ])
@@ -408,7 +408,7 @@ class PreloadedOpenPRFactsLoader(OpenPRFactsLoader):
         """
         model = GitHubOpenPullRequestFacts
         cached_df = pdb.cache.dfs[PCID.open_pr_facts]
-        df = cached_df.df
+        df = cached_df.get_dfs((account, ))
         mask = (
             (df[model.acc_id.key] == account)
             & df[model.pr_node_id.key].isin(pr.encode() for pr in prs)
@@ -417,7 +417,7 @@ class PreloadedOpenPRFactsLoader(OpenPRFactsLoader):
         if exclude_inactive:
             mask &= _build_activity_mask(model, df, time_from, time_to)
 
-        open_prs_facts = cached_df.filter(mask, columns=[
+        open_prs_facts = cached_df.filter((account, ), mask, columns=[
             model.pr_node_id.key, model.repository_full_name.key, model.data.key])
         if open_prs_facts.empty:
             return {}
@@ -455,7 +455,7 @@ class PreloadedBranchMiner(BranchMiner):
                                 mdb: databases.Database,
                                 ) -> Tuple[pd.DataFrame, Dict[str, str]]:
         model = Branch
-        df = mdb.cache.dfs[MCID.branches].df
+        df = mdb.cache.dfs[MCID.branches].get_dfs(meta_ids)
 
         mask = (
             df[model.repository_full_name.key].isin(repos)
@@ -463,7 +463,7 @@ class PreloadedBranchMiner(BranchMiner):
             & df[model.commit_sha.key].notna()
         )
 
-        return mdb.cache.dfs[MCID.branches].filter(mask)
+        return mdb.cache.dfs[MCID.branches].filter(meta_ids, mask)
 
 
 class PreloadedPullRequestMiner(PullRequestMiner):
@@ -527,7 +527,7 @@ class PreloadedPullRequestMiner(PullRequestMiner):
         assert (updated_min is None) == (updated_max is None)
 
         model = PullRequest
-        df = mdb.cache.dfs[MCID.prs].df
+        df = mdb.cache.dfs[MCID.prs].get_dfs(meta_ids)
 
         mask = (
             (~df[model.closed.key] | (df[model.closed_at.key] >= time_from))
@@ -586,7 +586,7 @@ class PreloadedPullRequestMiner(PullRequestMiner):
 
             selected_columns = [c.key for c in selected_columns]
 
-        prs = mdb.cache.dfs[MCID.prs].filter(mask, columns=selected_columns,
+        prs = mdb.cache.dfs[MCID.prs].filter(meta_ids, mask, columns=selected_columns,
                                              index=PullRequest.node_id.key)
 
         if remove_acc_id:
@@ -609,12 +609,12 @@ class PreloadedPullRequestJiraMapper(PullRequestJiraMapper):
         """Fetch the mapping from PR node IDs to JIRA issue IDs."""
         model = NodePullRequestJiraIssues
         cached_df = mdb.cache.dfs[MCID.jira_mapping]
-        df = cached_df.df
+        df = cached_df.get_dfs(meta_ids)
         mask = (
             df[model.node_id.key].isin([v.encode() for v in prs]) &
             df[model.node_acc.key].isin(meta_ids)
         )
-        mapping = cached_df.filter(mask)
+        mapping = cached_df.filter(meta_ids, mask)
         return dict(zip(mapping[model.node_id.key].values, mapping[model.jira_id.key].values))
 
 

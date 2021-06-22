@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from enum import Enum
 import logging
-from typing import Collection, Dict, List, Optional, Union
+from typing import Collection, Dict, Iterable, List, Optional, Union
 
 import databases
 import numpy as np
@@ -49,11 +49,11 @@ class CachedDataFrame:
         self,
         id_: str,
         db: databases.Database,
+        sharding: Dict,
         cols: Optional[List[sa.Column]] = None,
         categorical_cols: Optional[List[sa.Column]] = None,
         identifier_cols: Optional[List[sa.Column]] = None,
         filtering_clause: Optional[sa.sql.ClauseElement] = None,
-        sharding: Optional[Dict] = None,
         coerce_cols: Optional[Dict] = None,
         gauge: Optional[prometheus_client.Gauge] = None,
         debug_memory: Optional[bool] = False,
@@ -78,7 +78,8 @@ class CachedDataFrame:
         self._db = db
         self._debug_memory = debug_memory
         self._mem = {}
-        self._df = None
+        self._columns = None
+        self._sharded_dfs = {}
         self._metrics = {}
         self._gauge = gauge
 
@@ -86,12 +87,6 @@ class CachedDataFrame:
     def id_(self) -> str:
         """Return the id of the `CachedDataFrame`."""
         return self._id
-
-    @property
-    def df(self) -> pd.DataFrame:
-        """Return the wrapped `pandas.DataFrame`."""
-        assert self._df is not None, "Need to await refresh() at least once."
-        return self._df
 
     @property
     def filtering_clause(self) -> sa.sql.ClauseElement:
@@ -102,6 +97,13 @@ class CachedDataFrame:
     def filtering_clause(self, fc: sa.sql.ClauseElement):
         self._filtering_clause = fc
 
+    def get_dfs(self, sharding_keys: Iterable[Union[int, str]]) -> pd.DataFrame:
+        """Return the wrapped `pandas.DataFrame`."""
+        assert self._columns is not None, "Need to await refresh() at least once."
+        if not self._sharded_dfs:
+            return pd.DataFrame(columns=self._columns)
+        return pd.concat(self._sharded_dfs[sk] for sk in sorted(sharding_keys))
+
     async def refresh(self) -> "CachedDataFrame":
         """Refresh the DataFrame from the database."""
         query = select(self._cols)
@@ -109,17 +111,17 @@ class CachedDataFrame:
             query = query.where(self._filtering_clause)
 
         self._log.debug("Refreshing %s", self._id)
-        df = await read_sql_query(query, self._db, self._cols)
+        raw_full_df = await read_sql_query(query, self._db, self._cols)
 
         if self._debug_memory:
-            sizes = df.memory_usage(index=True, deep=True)
+            sizes = raw_full_df.memory_usage(index=True, deep=True)
             self._mem["raw"] = {"series": sizes, "total": sizes.sum()}
 
-        self._df = self._squeeze(self._coerce(df))
-        del df
+        squeezed_full_df = self._squeeze(self._coerce(raw_full_df))
+        del raw_full_df
 
         if self._debug_memory or self._gauge is not None:
-            sizes = self._df.memory_usage(index=True, deep=True)
+            sizes = squeezed_full_df.memory_usage(index=True, deep=True)
             for key, val in sizes.items():
                 self._gauge.labels(
                     metadata.__package__, metadata.__version__,
@@ -140,10 +142,15 @@ class CachedDataFrame:
                 * 100,
             }
 
+        self._columns = squeezed_full_df.columns.to_list()
+        self._sharded_dfs = dict(tuple(
+            squeezed_full_df.groupby(self._sharding["column"].name)))
+
         return self
 
     def filter(
         self,
+        sharding_keys: Iterable[Union[int, str]],
         mask: pd.Series,
         columns: Optional[Collection[str]] = None,
         index: Optional[str] = None,
@@ -158,7 +165,7 @@ class CachedDataFrame:
 
         """
         with sentry_sdk.start_span(op=f"CachedDataFrame.filter/{self._id}"):
-            df = self._df.take(np.flatnonzero(mask))
+            df = self.get_dfs(sharding_keys).take(np.flatnonzero(mask))
             if columns:
                 df = df[columns]
             if uncast:
@@ -182,7 +189,10 @@ class CachedDataFrame:
         self, total: bool = False, human: bool = False,
     ) -> Union[pd.Series, int, str]:
         """Return information about the memory usage."""
-        s = self._df.memory_usage(index=True, deep=True)
+        if not self._sharded_dfs:
+            s = [0]
+        else:
+            s = pd.concat(self._sharded_dfs.values()).memory_usage(index=True, deep=True)
         if total:
             size = sum(s)
             return size if not human else _humanize_size(size)
