@@ -49,7 +49,7 @@ from athenian.api.serialization import FriendlyJson
         (PullRequestMetricID.PR_WAIT_FIRST_REVIEW_TIME, 51),
         (PullRequestMetricID.PR_WAIT_FIRST_REVIEW_COUNT, 51),
         (PullRequestMetricID.PR_WAIT_FIRST_REVIEW_COUNT_Q, 51),
-        (PullRequestMetricID.PR_SIZE, 200),
+        (PullRequestMetricID.PR_SIZE, 51),
     ],
 )
 async def test_calc_metrics_prs_smoke(client, metric, count, headers, app, client_cache):
@@ -415,12 +415,30 @@ async def test_calc_metrics_prs_sizes(client, headers):
         method="POST", path="/v1/metrics/prs", headers=headers, json=body,
     )
     assert response.status == 200, response.text()
-    body = FriendlyJson.loads((await response.read()).decode("utf-8"))
-    values = [v["values"] for v in body["calculated"][0]["values"]]
+    rbody = FriendlyJson.loads((await response.read()).decode("utf-8"))
+    values = [v["values"] for v in rbody["calculated"][0]["values"]]
     assert values == [[296, 54]]
-    for ts in body["calculated"][0]["values"]:
+    for ts in rbody["calculated"][0]["values"]:
         for v, cmin, cmax in zip(ts["values"], ts["confidence_mins"], ts["confidence_maxs"]):
             assert cmin < v < cmax
+
+    body["quantiles"] = [0, 0.9]
+    response = await client.request(
+        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+    )
+    assert response.status == 200, response.text()
+    rbody = FriendlyJson.loads((await response.read()).decode("utf-8"))
+    values = [v["values"] for v in rbody["calculated"][0]["values"]]
+    assert values == [[98, 54]]
+
+    body["granularities"].append("month")
+    response = await client.request(
+        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+    )
+    assert response.status == 200, response.text()
+    rbody = FriendlyJson.loads((await response.read()).decode("utf-8"))
+    values = [v["values"] for v in rbody["calculated"][0]["values"]]
+    assert values == [[98, 54]]
 
 
 async def test_calc_metrics_prs_index_error(client, headers):
@@ -643,6 +661,7 @@ async def test_calc_metrics_prs_quantiles(client, headers):
     assert response.status == 200, "Response body is : " + rbody
     cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(rbody))
     wip1 = cm.calculated[0].values[0].values[0]
+
     body["quantiles"] = [0, 0.9]
     response = await client.request(
         method="POST", path="/v1/metrics/prs", headers=headers, json=body,
@@ -652,6 +671,13 @@ async def test_calc_metrics_prs_quantiles(client, headers):
     cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(rbody))
     wip2 = cm.calculated[0].values[0].values[0]
     assert int(wip1[:-1]) > int(wip2[:-1])
+
+    body["granularities"] = ["week", "month"]
+    response = await client.request(
+        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + rbody
 
 
 async def test_calc_metrics_prs_jira(client, headers):

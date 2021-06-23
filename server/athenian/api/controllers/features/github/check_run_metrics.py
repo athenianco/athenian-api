@@ -334,6 +334,7 @@ class RobustSuiteTimeCalculator(MetricCalculator[timedelta]):
                  facts: pd.DataFrame,
                  min_times: np.ndarray,
                  max_times: np.ndarray,
+                 representative_time_interval_indexes: Sequence[int],  # not used
                  groups: Sequence[Sequence[int]],
                  **kwargs) -> None:
         """Completely ignore the default boilerplate and calculate metrics from scratch."""

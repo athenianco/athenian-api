@@ -49,6 +49,7 @@ class MetricCalculator(Generic[T], ABC):
         self.reset()
         self._calcs = []
         self._quantiles = np.asarray(quantiles)
+        self._representative_time_interval_indexes = []
         for calc in deps:
             for cls in self.deps:
                 if isinstance(calc, cls):
@@ -61,6 +62,7 @@ class MetricCalculator(Generic[T], ABC):
                  facts: pd.DataFrame,
                  min_times: np.ndarray,
                  max_times: np.ndarray,
+                 representative_time_interval_indexes: Sequence[int],
                  groups: Sequence[Sequence[int]],
                  groups_mask: Optional[np.ndarray] = None,
                  **kwargs) -> None:
@@ -71,6 +73,10 @@ class MetricCalculator(Generic[T], ABC):
                           samples with both ends less than the minimum time.
         :param max_times: Endings of the considered time intervals. They are needed to discard \
                           samples with both ends greater than the maximum time.
+        :param representative_time_interval_indexes: Indexes of the time intervals that represent \
+            the whole population. This is required to correctly calculate the quantiles. \
+            We don't want to calculate the same stuff in each __call__() so require this to be \
+            precomputed outside by `find_representative_time_interval_indexes()`.
         :param groups: Series of group indexes to split the samples into.
         :param groups_mask: Alternative to `groups` that gives better performance. \
                             The len(groups) * len(facts) boolean array that chooses elements \
@@ -86,6 +92,8 @@ class MetricCalculator(Generic[T], ABC):
             assert np.datetime_data(min_times.dtype)[0] == "ns"
         except TypeError:
             raise AssertionError("min_times must be of datetime64[ns] dtype")
+        assert representative_time_interval_indexes
+        self._representative_time_interval_indexes = representative_time_interval_indexes
         groups = np.asarray(groups)
         assert 1 <= len(groups.shape) <= 2
         assert len(groups) > 0 or facts.empty
@@ -115,22 +123,62 @@ class MetricCalculator(Generic[T], ABC):
             flat_samples = np.broadcast_to(peek[None, :], notnull.shape)[group_sample_mask] \
                 .astype(self.dtype, copy=False).ravel()
             group_sample_lengths = np.sum(group_sample_mask, axis=-1)
-            grouped_samples = np.full(len(groups) * len(peek), None, object)
-            grouped_samples[:] = np.split(
+            self._samples = np.full(len(groups) * len(peek), None, object)
+            self._samples[:] = np.split(
                 flat_samples, np.cumsum(group_sample_lengths.ravel())[:-1])
-            self._samples = grouped_samples.reshape((len(groups), len(peek)))
         else:
             gpeek = [peek[:, g] for g in groups]
             gnotnull = [notnull[:, g] for g in groups]
             self._samples = np.full(len(groups) * len(peek), None, object)
-            self._samples[:] = [[p[nn].astype(self.dtype)
-                                 for p, nn in zip(gp, gnn)]
-                                for gp, gnn in zip(gpeek, gnotnull)]
+            self._samples[:] = [
+                p[nn].astype(self.dtype)
+                for gp, gnn in zip(gpeek, gnotnull)
+                for p, nn in zip(gp, gnn)
+            ]
+        self._samples = self._samples.reshape((len(groups), len(peek)))
+
+    @staticmethod
+    def find_representative_time_interval_indexes(min_times: np.ndarray,
+                                                  max_times: np.ndarray,
+                                                  ) -> List[int]:
+        """Find time interval indexes that cover the whole time range."""
+        argmin_min_time = np.flatnonzero(min_times == (min_min_time := min_times.min()))
+        argmax_max_time = np.flatnonzero(max_times == (max_max_time := max_times.max()))
+        fulls = np.intersect1d(argmin_min_time, argmax_max_time, assume_unique=True)
+        if len(fulls):
+            return [fulls[0]]
+        durations = max_times - min_times
+
+        def pick_longest(times: np.ndarray):
+            unique_times, counts = np.unique(times, return_counts=True)
+            order = np.argsort(times)
+            intervals = {}
+            pos = 0
+            for i, time in enumerate(unique_times):
+                next_pos = pos + counts[i]
+                indexes = order[pos:next_pos]
+                pos = next_pos
+                intervals[time] = indexes[durations[indexes].argmax()]
+            return intervals
+
+        interval_starts = pick_longest(min_times)
+        interval_finishes = pick_longest(max_times)
+        hops = [seed := durations.argmax()]
+        start = min_times[seed]
+        finish = max_times[seed]
+        while start > min_min_time or finish < max_max_time:
+            if start > min_min_time:
+                hops.append(next_hop := interval_finishes[start])
+                start = min_times[next_hop]
+            else:
+                hops.append(next_hop := interval_starts[finish])
+                finish = max_times[next_hop]
+        return sorted(hops)
 
     @property
     def values(self) -> List[List[Metric[T]]]:
         """
-        Return the current metric value.
+        Calculate the current metric values.
 
         :return: groups x times -> metric.
         """
@@ -173,9 +221,11 @@ class MetricCalculator(Generic[T], ABC):
         raise NotImplementedError
 
     def _values(self) -> List[List[Metric[T]]]:
+        assert self._representative_time_interval_indexes, "You must __call__() first."
         values = []
         for gs in self._samples:
-            quantiles = self._calc_quantile_cut_values(np.concatenate(gs))
+            quantiles = self._calc_quantile_cut_values(np.squeeze(np.concatenate(
+                gs[self._representative_time_interval_indexes])))
             values.append([self._value(self._cut_by_quantiles(s, quantiles))
                            for s in gs])
         return values
@@ -188,6 +238,7 @@ class MetricCalculator(Generic[T], ABC):
         quantiles."""
         if (self._quantiles[0] == 0 and self._quantiles[1] == 1) or len(samples) == 0:
             return None
+        assert len(samples.shape) == 1
         if as_dtype is not None:
             samples = samples.astype(as_dtype)
         return np.quantile(samples, self._quantiles, interpolation="nearest")
@@ -287,11 +338,14 @@ class Counter(MetricCalculator[int], ABC):
                  facts: pd.DataFrame,
                  min_times: np.ndarray,
                  max_times: np.ndarray,
+                 representative_time_interval_indexes: Sequence[int],
                  groups: Sequence[Sequence[int]],
                  **kwargs) -> None:
         """Reference the same peek and samples from the only dependency."""  # noqa
         self._peek = self._calcs[0].peek
         self._samples = self._calcs[0].samples
+        assert representative_time_interval_indexes
+        self._representative_time_interval_indexes = representative_time_interval_indexes
 
     def _analyze(self,
                  facts: pd.DataFrame,
@@ -344,6 +398,7 @@ class MetricCalculatorEnsemble:
         """Initialize a new instance of MetricCalculatorEnsemble class."""
         metric_classes = {class_mapping[m]: m for m in metrics}
         self._calcs, self._metrics = self._plan_classes(metric_classes, quantiles)
+        self._representative_time_interval_indexes = []
 
     def __getitem__(self, metric: str) -> MetricCalculator:
         """Return the owned calculator for the given metric."""
@@ -390,8 +445,11 @@ class MetricCalculatorEnsemble:
         groups_mask = np.zeros((len(groups), len(facts)), dtype=bool)
         for i, g in enumerate(groups):
             groups_mask[i, g] = True
+        representative_time_interval_indexes = \
+            MetricCalculator.find_representative_time_interval_indexes(min_times, max_times)
         for calc in self._calcs:
-            calc(facts, min_times, max_times, groups, groups_mask=groups_mask, **kwargs)
+            calc(facts, min_times, max_times, representative_time_interval_indexes, groups,
+                 groups_mask=groups_mask, **kwargs)
 
     def __bool__(self) -> bool:
         """Return True if there is at leat one calculator inside; otherwise, False."""

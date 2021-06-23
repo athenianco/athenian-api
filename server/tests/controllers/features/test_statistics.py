@@ -145,11 +145,13 @@ def test_metric_calculator(pr_samples, cls, negative, dtype):
                              len(min_times), axis=0)
 
     calc = LeadTimeCalculator(quantiles=(0, 0.99))
+    calc._representative_time_interval_indexes = [0]
     assert len(calc.values) == 0 and isinstance(calc.values, list)
     calc = LeadTimeCalculator(quantiles=(0, 1))
     calc(df_from_structs(pr_samples(100)),
          dt64arr(datetime.utcnow()),
          dt64arr(datetime.utcnow()),
+         [0],
          [np.arange(100)])
     m = calc.values[0][0]
     assert m.exists
@@ -162,7 +164,8 @@ def test_metric_calculator(pr_samples, cls, negative, dtype):
     calc.reset()
     assert len(calc.values) == 0
     calc.reset()
-    calc._samples = [[np.array([0], dtype=LeadTimeCalculator.dtype)]]
+    calc._samples = np.zeros((1, 1), dtype=object)
+    calc._samples[0, 0] = np.array([0], dtype=LeadTimeCalculator.dtype)
     m = calc.values[0][0]
     assert m.exists
     assert m.value == timedelta(0)
@@ -174,7 +177,9 @@ def test_metric_calculator(pr_samples, cls, negative, dtype):
 def test_average_metric_calculator_zeros_nonnegative():
     calc = DummyAverageMetricCalculator(quantiles=(0, 1))
     calc.may_have_negative_values = False
-    calc._samples = [[np.full(3, timedelta(0), "timedelta64[s]")]]
+    calc._samples = np.zeros((1, 1), dtype=object)
+    calc._samples[0, 0] = np.full(3, timedelta(0), "timedelta64[s]")
+    calc._representative_time_interval_indexes = [0]
     m = calc.values[0][0]
     assert m.exists
     assert m.value == timedelta(0)
