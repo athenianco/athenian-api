@@ -77,7 +77,7 @@ async def filter_check_runs(time_from: datetime,
     group_keys = np.char.add(np.char.add(repocol, b"|"), crnamecol)
     unique_repo_crnames, first_encounters, inverse_cr_map, repo_crnames_counts = np.unique(
         group_keys, return_counts=True, return_index=True, return_inverse=True)
-    unique_repo_crnames = np.char.partition(unique_repo_crnames, b"|").astype("U")
+    unique_repo_crnames = np.char.decode(np.char.partition(unique_repo_crnames, b"|"), "UTF-8")
     started_ats = df_check_runs[CheckRun.started_at.key].values
     last_execution_times = started_ats[first_encounters].astype("datetime64[s]")
     last_execution_urls = df_check_runs[CheckRun.url.key].values[first_encounters]
