@@ -224,8 +224,8 @@ class MetricCalculator(Generic[T], ABC):
         assert self._representative_time_interval_indexes, "You must __call__() first."
         values = []
         for gs in self._samples:
-            quantiles = self._calc_quantile_cut_values(np.squeeze(np.concatenate(
-                gs[self._representative_time_interval_indexes])))
+            quantiles = self._calc_quantile_cut_values(np.concatenate(
+                gs[self._representative_time_interval_indexes]).flatten())
             values.append([self._value(self._cut_by_quantiles(s, quantiles))
                            for s in gs])
         return values
