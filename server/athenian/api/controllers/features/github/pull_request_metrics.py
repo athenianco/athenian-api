@@ -740,7 +740,6 @@ class SizeCalculatorMixin(MetricCalculator[int]):
     """Calculate any aggregating statistic over PR sizes."""
 
     may_have_negative_values = False
-    deps = (AllCounter,)
     dtype = int
     nan = -1
 
@@ -755,7 +754,8 @@ class SizeCalculatorMixin(MetricCalculator[int]):
                  **kwargs) -> np.ndarray:
         sizes = np.repeat(facts[PullRequestFacts.f.size].values[None, :],
                           len(min_times), axis=0)
-        sizes[self._calcs[0].peek == 0] = -1
+        created = facts[PullRequestFacts.f.created].values
+        sizes[~((min_times[:, None] <= created) & (created < max_times[:, None]))] = -1
         return sizes
 
 
