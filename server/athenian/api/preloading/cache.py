@@ -253,7 +253,7 @@ class MemoryCache:
         sdb: databases.Database,
         db: databases.Database,
         options: Dict[str, Dict],
-        gauge: Optional[prometheus_client.Gauge],
+        gauges: Dict[str, prometheus_client.Gauge],
         debug_memory: Optional[bool],
     ):
         """Initialize a `MemoryCache`."""
@@ -264,7 +264,8 @@ class MemoryCache:
         self._debug_memory = debug_memory
         self._dfs = {
             id_: CachedDataFrame(
-                id_, **opts, db=self._db, gauge=gauge, debug_memory=self._debug_memory)
+                id_, **opts, db=self._db, gauge=gauges.get("memory"),
+                debug_memory=self._debug_memory)
             for id_, opts in self._options.items()
         }
 
@@ -358,14 +359,14 @@ class MemoryCachePreloader:
             self._debug_memory = self._log.isEnabledFor(logging.DEBUG)
         else:
             self._debug_memory = debug_memory
+
+        self._gauges = {}
         if prometheus_registry is not None:
-            self._gauge = prometheus_client.Gauge(
-                "memory_cache", "Consumed memory",
+            self._gauges["memory"] = prometheus_client.Gauge(
+                "memory_cache_consumed_memory", "Consumed memory by MemoryCaches",
                 ["app_name", "version", "db", "table", "column"],
                 registry=prometheus_registry,
             )
-        else:
-            self._gauge = None
 
     async def preload(self, **dbs: databases.Database) -> None:
         """
@@ -378,7 +379,7 @@ class MemoryCachePreloader:
         sdb = dbs["sdb"]
         for db_name, opts in get_memory_cache_options().items():
             db = dbs[db_name]
-            db.cache = mc = MemoryCache(sdb, db, opts, self._gauge, self._debug_memory)
+            db.cache = mc = MemoryCache(sdb, db, opts, self._gauges, self._debug_memory)
             tasks.append(mc.refresh())
 
         await gather(*tasks)
