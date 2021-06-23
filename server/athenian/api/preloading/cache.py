@@ -367,6 +367,12 @@ class MemoryCachePreloader:
                 ["app_name", "version", "db", "table", "column"],
                 registry=prometheus_registry,
             )
+            self._gauges["timing"] = prometheus_client.Gauge(
+                "memory_cache_preloading_refresh_time_seconds",
+                "Time required for refreshing the MemoryCaches",
+                ["app_name", "version", "db", "table"],
+                registry=prometheus_registry,
+            )
 
     async def preload(self, **dbs: databases.Database) -> None:
         """
