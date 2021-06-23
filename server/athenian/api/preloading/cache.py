@@ -262,6 +262,7 @@ class MemoryCache:
         self._db = db
         self._options = options
         self._debug_memory = debug_memory
+        self._gauge = gauges.get("timing")
         self._dfs = {
             id_: CachedDataFrame(
                 id_, **opts, db=self._db, gauge=gauges.get("memory"),
@@ -291,6 +292,8 @@ class MemoryCache:
 
     async def refresh(self, id_: Optional[str] = None) -> None:
         """Refresh the DataFrames from the database."""
+        start = datetime.utcnow()
+        table = id_ or "__all__"
         if id_:
             refreshed = 1
             df = self._dfs[id_]
@@ -305,9 +308,17 @@ class MemoryCache:
                 tasks.append(df.refresh())
 
             await gather(*tasks)
+
+        elapsed = (datetime.utcnow() - start).total_seconds()
+        if self._gauge is not None:
+            self._gauge.labels(
+                metadata.__package__, metadata.__version__,
+                self._db.url.database, table,
+            ).set(elapsed)
+
         memory_used = self.memory_usage(total=True, human=True)
-        self._log.info("Refreshed %d tables in %s, total memory: %s",
-                       refreshed, self._db.url.database, memory_used)
+        self._log.info("Refreshed %d tables in %s in %f seconds, total memory: %s",
+                       refreshed, self._db.url.database, elapsed, memory_used)
 
     async def _build_filtering_clause(
             self, id_: str, accounts: Optional[Dict[str, Collection[int]]] = None,
