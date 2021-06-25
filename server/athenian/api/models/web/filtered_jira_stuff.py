@@ -1,6 +1,6 @@
 from typing import List, Optional
 
-from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web.base_model_ import Model, VerbatimOptional
 from athenian.api.models.web.jira_epic import JIRAEpic
 from athenian.api.models.web.jira_issue import JIRAIssue
 from athenian.api.models.web.jira_issue_type import JIRAIssueType
@@ -15,13 +15,13 @@ class FilteredJIRAStuff(Model):
     mentioned users."""
 
     openapi_types = {
-        "epics": Optional[List[JIRAEpic]],
-        "issues": Optional[List[JIRAIssue]],
-        "labels": Optional[List[JIRALabel]],
-        "issue_types": Optional[List[JIRAIssueType]],
-        "priorities": Optional[List[JIRAPriority]],
-        "statuses": Optional[List[JIRAStatus]],
-        "users": Optional[List[JIRAUser]],
+        "epics": VerbatimOptional[List[JIRAEpic]],
+        "issues": VerbatimOptional[List[JIRAIssue]],
+        "labels": VerbatimOptional[List[JIRALabel]],
+        "issue_types": VerbatimOptional[List[JIRAIssueType]],
+        "priorities": VerbatimOptional[List[JIRAPriority]],
+        "statuses": VerbatimOptional[List[JIRAStatus]],
+        "users": VerbatimOptional[List[JIRAUser]],
     }
     attribute_map = {
         "epics": "epics",

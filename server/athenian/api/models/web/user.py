@@ -6,7 +6,7 @@ import dateutil.parser
 
 from athenian.api.controllers.ffx import encrypt
 from athenian.api.models.web.account_status import AccountStatus
-from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web.base_model_ import Model, VerbatimOptional
 
 
 class User(Model):
@@ -20,7 +20,7 @@ class User(Model):
         "email": Optional[str],
         "picture": Optional[str],
         "updated": Optional[str],
-        "accounts": Optional[Dict[int, AccountStatus]],
+        "accounts": VerbatimOptional[Dict[int, AccountStatus]],
         "impersonated_by": Optional[str],
     }
 
