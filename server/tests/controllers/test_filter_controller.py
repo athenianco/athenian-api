@@ -1986,6 +1986,8 @@ async def test_filter_check_runs_smoke(client, headers):
             nn_count_timeline += sum(1 for x in stats.count_timeline if x > 0)
             assert len(stats.successes_timeline) == len(timeline) - 1
             nn_successes_timeline += sum(1 for x in stats.successes_timeline if x > 0)
+            assert stats.count == sum(stats.count_timeline)
+            assert stats.successes == sum(stats.successes_timeline)
     assert nn_means > 0
     assert nn_medians > 0
     assert skips == 0  # indeed, go-git has no skips

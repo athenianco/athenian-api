@@ -112,6 +112,7 @@ async def filter_check_runs(time_from: datetime,
     elapsed_mask = elapseds == elapseds
     timeline_masks = (timeline[:-1, None] <= started_ats) & (started_ats < timeline[1:, None])
     timeline_elapseds = np.broadcast_to(elapseds[None, :], (len(timeline) - 1, len(elapseds)))
+    all_time_range = (timeline[0] <= started_ats) & (started_ats < timeline[-1])
 
     result = []
     with warnings.catch_warnings():
@@ -120,6 +121,8 @@ async def filter_check_runs(time_from: datetime,
         for i, ((repo, _, name), last_execution_time, last_execution_url) in enumerate(zip(
                 unique_repo_crnames, last_execution_times, last_execution_urls)):
             masks = {"total": inverse_cr_map == i, "prs": prs_inverse_cr_map == i}
+            for k, v in masks.items():
+                masks[k] = v & all_time_range
             result.append(CodeCheckRunListItem(
                 title=name,
                 repository=repo,
