@@ -38,11 +38,11 @@ async def test_filter_check_runs_monthly_quantiles(mdb):
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 17, 17, 16, 24, 48, 37, 34, 10, 5, 5, 15, 11,
                 57, 17, 9, 17, 10, 0, 3, 5, 4],
             mean_execution_time_timeline=td_list([
+                None, None, None, None, None, None, None, None, None, None,
                 None, None, None, None, None, None, None, None, None, None, None,
                 None, None, None, None, None, None, None, None, None, None, None,
                 None, None, None, None, None, None, None, None, None, None, None,
-                None, None, None, None, None, None, None, None, None, None, None,
-                None, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, None, 1, 1, 1]),
+                None, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, None, 1, 1, 1]),
             median_execution_time_timeline=td_list([
                 None, None, None, None, None, None, None, None, None, None,
                 None, None, None, None, None, None, None, None, None, None,
@@ -64,11 +64,11 @@ async def test_filter_check_runs_monthly_quantiles(mdb):
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9, 17, 12, 15, 38, 25, 30, 9, 5, 5, 14, 11,
                 48, 15, 9, 17, 10, 0, 3, 5, 4],
             mean_execution_time_timeline=td_list([
+                None, None, None, None, None, None, None, None, None, None,
                 None, None, None, None, None, None, None, None, None, None, None,
                 None, None, None, None, None, None, None, None, None, None, None,
                 None, None, None, None, None, None, None, None, None, None, None,
-                None, None, None, None, None, None, None, None, None, None, None,
-                None, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, None, 1, 1, 1]),
+                None, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, None, 1, 1, 1]),
             median_execution_time_timeline=td_list([
                 None, None, None, None, None, None, None, None, None, None,
                 None, None, None, None, None, None, None, None, None, None,
