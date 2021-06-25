@@ -104,6 +104,13 @@ class CachedDataFrame:
             return pd.DataFrame(columns=self._columns)
         return pd.concat(self._sharded_dfs[sk] for sk in sorted(sharding_keys))
 
+    def get_shards(self) -> List[Union[int, str]]:
+        """Return the list of shards."""
+        if not self._sharded_dfs:
+            return []
+
+        return list(self._sharded_dfs.keys())
+
     async def refresh(self) -> "CachedDataFrame":
         """Refresh the DataFrame from the database."""
         query = select(self._cols)
@@ -272,6 +279,10 @@ class MemoryCache:
     def dfs(self) -> Dict[str, CachedDataFrame]:
         """Return all the `CachedDataFrame`s."""
         return self._dfs
+
+    def is_shard_available(self, shard_key: Union[int, str]) -> bool:
+        """Return whether the data for the given shard are available."""
+        return all(shard_key in cdf.get_shards() for cdf in self._dfs.values())
 
     def memory_usage(
         self, total: bool = False, human: bool = False,
