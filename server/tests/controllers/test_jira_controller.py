@@ -616,7 +616,7 @@ async def test_filter_jira_issue_prs_comments(client, headers):
     for issue in model.issues:
         prs += bool(issue.prs)
         comments += issue.comments
-        for pr in issue.prs:
+        for pr in issue.prs or []:
             assert pr.number > 0
             assert not pr.jira
     assert prs == 6
@@ -930,11 +930,15 @@ async def test_jira_metrics_people(client, headers, assignees, reporters, commen
     assert len(body) == 1
     items = [CalculatedJIRAMetricValues.from_dict(i) for i in body]
     assert items[0].granularity == "all"
-    assert items[0].with_.to_dict() == {
+    with_ = {}
+    for key, val in {
         "assignees": assignees,
         "reporters": reporters,
         "commenters": commenters,
-    }
+    }.items():
+        if val:
+            with_[key] = val
+    assert items[0].with_.to_dict() == with_
     assert items[0].values[0].values == [count]
 
 

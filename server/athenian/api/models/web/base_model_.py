@@ -8,6 +8,35 @@ from athenian.api import serialization, typing_utils
 T = typing.TypeVar("T")
 
 
+OriginalSpecialForm = type(typing.Any)
+
+
+class _VerbatimOptional(OriginalSpecialForm, _root=True):
+    cache = {}
+
+    def __init__(self):
+        super().__init__("Optional", """
+        Alternative Optional that prevents coercing (), [], and {} attributes to null during
+        serialization.
+        """)
+
+    def __getitem__(self, parameters):
+        typeobj = super().__getitem__(parameters)
+        key = typeobj.__origin__.__reduce__()
+        try:
+            typeobj.__origin__ = self.cache[key]
+        except KeyError:
+            cloned_origin = self.cache[key] = OriginalSpecialForm.__new__(OriginalSpecialForm)
+            for attr in self.__slots__:
+                setattr(cloned_origin, attr, getattr(typeobj.__origin__, attr))
+            typeobj.__origin__ = cloned_origin
+        typeobj.__origin__.__verbatim__ = True
+        return typeobj
+
+
+VerbatimOptional = _VerbatimOptional()
+
+
 class Slots(ABCMeta):
     """Set __slots__ according to the declared `openapi_types`."""
 
@@ -73,8 +102,13 @@ class Model(metaclass=Slots):
 
         for attr_key, json_key in self.attribute_map.items():
             value = getattr(self, attr_key)
-            if value is None and typing_utils.is_optional(self.openapi_types[attr_key]):
-                continue
+            try:
+                if typing_utils.is_optional(type_ := self.openapi_types[attr_key]) and (
+                        value is None or (not getattr(type_.__origin__, "__verbatim__", False) and
+                                          len(value) == 0)):
+                    continue
+            except TypeError:
+                pass
             result[json_key] = self.serialize(value)
 
         return result

@@ -768,6 +768,7 @@ class RatioCalculator(WithoutQuantilesMixin, MetricCalculator[float]):
 
     dtype = float
     has_nan = True
+    zero_divided_by_zero_is_null = False
 
     def __init__(self, *deps: MetricCalculator, quantiles: Sequence[float]):
         """Initialize a new instance of RatioCalculator."""
@@ -782,6 +783,8 @@ class RatioCalculator(WithoutQuantilesMixin, MetricCalculator[float]):
                 self._opened.values, self._closed.values)):
             for j, (opened, closed) in enumerate(zip(opened_group, closed_group)):
                 if not closed.exists and not opened.exists:
+                    continue
+                if self.zero_divided_by_zero_is_null and opened.value == closed.value == 0:
                     continue
                 # Why +1? See ENG-866
                 val = ((opened.value or 0) + 1) / ((closed.value or 0) + 1)
