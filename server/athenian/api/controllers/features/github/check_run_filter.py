@@ -84,7 +84,8 @@ async def filter_check_runs(time_from: datetime,
 
     suitecol = df_check_runs[CheckRun.check_suite_node_id.key].values.astype("S")
     unique_suites, run_counts = np.unique(suitecol, return_counts=True)
-    suite_blocks = np.array(np.split(np.argsort(suitecol), np.cumsum(run_counts)[:-1]))
+    suite_blocks = np.array(np.split(np.argsort(suitecol), np.cumsum(run_counts)[:-1]),
+                            dtype=object)
     unique_run_counts, back_indexes, group_counts = np.unique(
         run_counts, return_inverse=True, return_counts=True)
     run_counts_order = np.argsort(back_indexes)
@@ -144,7 +145,9 @@ async def filter_check_runs(time_from: datetime,
                         successes_timeline=timeline_masks[:, success_mask & mask].astype(
                             bool).sum(axis=1).tolist(),
                         mean_execution_time_timeline=np.mean(
-                            timeline_elapseds, where=timeline_masks & qmask[None, :], axis=1,
+                            timeline_elapseds,
+                            where=timeline_masks & qmask[None, :] & elapsed_mask[None, :],
+                            axis=1,
                         ).tolist(),
                         # np.median does not have `where` in 1.20.1
                         median_execution_time_timeline=_nanmedian_last_axis(
