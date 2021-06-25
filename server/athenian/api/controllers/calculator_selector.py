@@ -1,4 +1,4 @@
-from typing import Dict, Iterable, Optional, Tuple
+from typing import Dict, Iterable, NamedTuple, Optional, Tuple
 
 import aiomcache
 from sqlalchemy import and_, select
@@ -9,6 +9,9 @@ from athenian.api.controllers.features.entries import CalculatorNotReadyExceptio
 from athenian.api.db import DatabaseLike
 from athenian.api.models.state.models import AccountFeature, Feature, FeatureComponent
 from athenian.api.tracing import sentry_span
+
+MetricVariationFeature = NamedTuple("MetricVariationFeature",
+                                    [("name", str), ("params", dict)])
 
 
 @sentry_span
@@ -65,9 +68,26 @@ async def _get_calculator_for_account(
             instrument[service] = variation or "default"
         return calculator
 
+    selected_metrics_variation = await _get_metrics_variation_for_account(
+        service, account_id, sdb)
+
+    if not selected_metrics_variation or (
+        selected_metrics_variation.params.get("god_only") and not god_id
+    ):
+        return _make_calculator()
+
+    variation = selected_metrics_variation.name
+    return _make_calculator(variation=variation)
+
+
+async def _get_metrics_variation_for_account(
+    service: str,
+    account_id: int,
+    sdb: DatabaseLike,
+) -> Optional[MetricVariationFeature]:
     feature_name_prefix = METRIC_ENTRIES_VARIATIONS_PREFIX.get(service)
     if not feature_name_prefix:
-        return _make_calculator()
+        return None
 
     all_metrics_variations_features = await sdb.fetch_all_safe(
         select([Feature.id, Feature.name, Feature.default_parameters]).where(
@@ -80,13 +100,13 @@ async def _get_calculator_for_account(
     )
 
     if not all_metrics_variations_features:
-        return _make_calculator()
+        return None
 
     all_metrics_variations_features = {
-        row[Feature.id.key]: {
-            "name": row[Feature.name.key][len(feature_name_prefix):],
-            "params": row[Feature.default_parameters.key] or {},
-        }
+        row[Feature.id.key]: MetricVariationFeature(
+            row[Feature.name.key][len(feature_name_prefix):],
+            row[Feature.default_parameters.key] or {},
+        )
         for row in all_metrics_variations_features
     }
 
@@ -101,21 +121,18 @@ async def _get_calculator_for_account(
     )
 
     if metrics_variation_feature is None:
-        return _make_calculator()
+        return None
 
     selected_metrics_variation = all_metrics_variations_features[
         metrics_variation_feature[0]
     ]
     metrics_variation_params = {
-        **selected_metrics_variation["params"],
+        **selected_metrics_variation.params,
         **(metrics_variation_feature[1] or {}),
     }
 
-    if metrics_variation_params.get("god_only") and not god_id:
-        return _make_calculator()
-
-    variation = selected_metrics_variation["name"]
-    return _make_calculator(variation=variation)
+    return MetricVariationFeature(selected_metrics_variation.name,
+                                  metrics_variation_params)
 
 
 METRIC_ENTRIES_VARIATIONS_PREFIX = {"github": "github_features_entries_"}
