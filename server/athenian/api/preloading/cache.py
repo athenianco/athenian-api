@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from enum import Enum
 import logging
-from typing import Collection, Dict, Iterable, List, Optional, Union
+from typing import Collection, Dict, Iterable, List, NamedTuple, Optional, Union
 
 import databases
 import numpy as np
@@ -25,6 +25,9 @@ from athenian.api.models.state.models import AccountFeature, AccountGitHubAccoun
 
 
 PRELOADING_FEATURE_FLAG_NAME = "github_features_entries_preloading"
+
+Gauges = NamedTuple("Gauges", [("memory", prometheus_client.Gauge),
+                               ("timing", prometheus_client.Gauge)])
 
 
 def _humanize_size(v):
@@ -253,7 +256,7 @@ class MemoryCache:
         sdb: databases.Database,
         db: databases.Database,
         options: Dict[str, Dict],
-        gauges: Dict[str, prometheus_client.Gauge],
+        gauges: Optional[Gauges],
         debug_memory: Optional[bool],
     ):
         """Initialize a `MemoryCache`."""
@@ -262,10 +265,10 @@ class MemoryCache:
         self._db = db
         self._options = options
         self._debug_memory = debug_memory
-        self._gauge = gauges.get("timing")
+        self._gauge = gauges.timing if gauges else None
         self._dfs = {
             id_: CachedDataFrame(
-                id_, **opts, db=self._db, gauge=gauges.get("memory"),
+                id_, **opts, db=self._db, gauge=gauges.memory if gauges else None,
                 debug_memory=self._debug_memory)
             for id_, opts in self._options.items()
         }
@@ -371,19 +374,23 @@ class MemoryCachePreloader:
         else:
             self._debug_memory = debug_memory
 
-        self._gauges = {}
         if prometheus_registry is not None:
-            self._gauges["memory"] = prometheus_client.Gauge(
+            memory_gauge = prometheus_client.Gauge(
                 "memory_cache_consumed_memory", "Consumed memory by MemoryCaches",
                 ["app_name", "version", "db", "table", "column"],
                 registry=prometheus_registry,
             )
-            self._gauges["timing"] = prometheus_client.Gauge(
+            timing_gauge = prometheus_client.Gauge(
                 "memory_cache_preloading_refresh_time_seconds",
                 "Time required for refreshing the MemoryCaches",
                 ["app_name", "version", "db", "table"],
                 registry=prometheus_registry,
             )
+            gauges = Gauges(memory_gauge, timing_gauge)
+        else:
+            gauges = None
+
+        self._gauges = gauges
 
     async def preload(self, **dbs: databases.Database) -> None:
         """
