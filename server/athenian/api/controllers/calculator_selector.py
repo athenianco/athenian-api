@@ -1,9 +1,11 @@
+import pickle
 from typing import Dict, Iterable, NamedTuple, Optional, Tuple
 
 import aiomcache
 from sqlalchemy import and_, select
 
 from athenian.api.async_utils import gather
+from athenian.api.cache import cached
 from athenian.api.controllers.features.entries import CalculatorNotReadyException, \
     make_calculator, MetricEntriesCalculator
 from athenian.api.db import DatabaseLike
@@ -69,7 +71,7 @@ async def _get_calculator_for_account(
         return calculator
 
     selected_metrics_variation = await _get_metrics_variation_for_account(
-        service, account_id, sdb)
+        service, account_id, sdb, cache=cache)
 
     if not selected_metrics_variation or (
         selected_metrics_variation.params.get("god_only") and not god_id
@@ -80,10 +82,17 @@ async def _get_calculator_for_account(
     return _make_calculator(variation=variation)
 
 
+@cached(
+    exptime=3600,
+    serialize=lambda raw_metric_variation: pickle.dumps(raw_metric_variation),
+    deserialize=lambda serialized_metric_variation: pickle.loads(serialized_metric_variation),
+    key=lambda service, account_id, **_: (service, account_id),
+)
 async def _get_metrics_variation_for_account(
     service: str,
     account_id: int,
     sdb: DatabaseLike,
+    cache: Optional[aiomcache.Client],
 ) -> Optional[MetricVariationFeature]:
     feature_name_prefix = METRIC_ENTRIES_VARIATIONS_PREFIX.get(service)
     if not feature_name_prefix:
