@@ -119,6 +119,7 @@ async def filter_check_runs(time_from: datetime,
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", "All-NaN slice encountered")
         warnings.filterwarnings("ignore", "Mean of empty slice")
+        warnings.filterwarnings("ignore", "divide by zero encountered in true_divide")
         for i, ((repo, _, name), last_execution_time, last_execution_url) in enumerate(zip(
                 unique_repo_crnames, last_execution_times, last_execution_urls)):
             masks = {"total": inverse_cr_map == i, "prs": prs_inverse_cr_map == i}

@@ -66,6 +66,7 @@ from athenian.api.models.persistentdata.models import Base as PersistentdataBase
 from athenian.api.models.precomputed.models import GitHubBase as PrecomputedBase
 from athenian.api.models.state.models import Base as StateBase
 from athenian.api.preloading.cache import MemoryCachePreloader
+from athenian.api.typing_utils import wraps
 from athenian.precomputer.db import dereference_schemas as dereference_precomputed_schemas
 from tests.sample_db_data import fill_metadata_session, fill_state_session
 
@@ -89,6 +90,18 @@ override_pdb = os.getenv("OVERRIDE_PDB")
 override_rdb = os.getenv("OVERRIDE_RDB")
 override_memcached = os.getenv("OVERRIDE_MEMCACHED")
 logging.getLogger("aiosqlite").setLevel(logging.CRITICAL)
+
+
+def numpy_seterr_divide_warn(func):
+    """Disable seterr(divide="raise") temporarily."""
+    async def wrapped_numpy_seterr_divide_warn(*args, **kwargs):
+        np.seterr(divide="warn")
+        try:
+            await func(*args, **kwargs)
+        finally:
+            np.seterr(divide="raise")
+
+    return wraps(wrapped_numpy_seterr_divide_warn, func)
 
 
 class FakeCache:
