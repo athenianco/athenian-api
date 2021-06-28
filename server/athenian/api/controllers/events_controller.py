@@ -34,7 +34,7 @@ SLACK_CHANNEL = os.getenv("ATHENIAN_EVENTS_SLACK_CHANNEL", "")
 
 
 @weight(0)
-async def notify_release(request: AthenianWebRequest, body: List[dict]) -> web.Response:
+async def notify_releases(request: AthenianWebRequest, body: List[dict]) -> web.Response:
     """Notify about new releases. The release settings must be set to "notification"."""
     # account is automatically checked at this point
     try:
@@ -217,3 +217,9 @@ async def clear_precomputed_events(request: AthenianWebRequest, body: dict) -> w
                 False, settings, True, False)
         await wait_deferred()
     return web.Response(status=200)
+
+
+@weight(0)
+async def notify_deployments(request: AthenianWebRequest, body: List[dict]) -> web.Response:
+    """Notify about new deployments."""
+    raise NotImplementedError
