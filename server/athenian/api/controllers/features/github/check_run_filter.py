@@ -101,8 +101,9 @@ async def filter_check_runs(time_from: datetime,
     statuscol = df_check_runs[CheckRun.status.key].values.astype("S")
     conclusioncol = df_check_runs[CheckRun.conclusion.key].values.astype("S")
     success_mask = (statuscol == b"SUCCESS") | (conclusioncol == b"SUCCESS")
-    skips_mask = conclusioncol == b"NEUTRAL"
-    success_or_skipped_mask = success_mask | skips_mask
+    skipped_mask = conclusioncol == b"SKIPPED"
+    neutral_mask = conclusioncol == b"NEUTRAL"
+    success_or_neutral_mask = success_mask | neutral_mask
     failure_mask = (statuscol == b"FAILURE") | (statuscol == b"ERROR") | \
         (conclusioncol == b"FAILURE") | (conclusioncol == b"STALE")
     commitscol = df_check_runs[CheckRun.commit_node_id.key].values.astype("S")
@@ -124,19 +125,20 @@ async def filter_check_runs(time_from: datetime,
                 unique_repo_crnames, last_execution_times, last_execution_urls)):
             masks = {"total": inverse_cr_map == i, "prs": prs_inverse_cr_map == i}
             for k, v in masks.items():
-                masks[k] = v & all_time_range
+                v_in_range = v & all_time_range
+                masks[k] = (v_in_range & ~skipped_mask, v_in_range & skipped_mask)
             result.append(CodeCheckRunListItem(
                 title=name,
                 repository=repo,
                 last_execution_time=last_execution_time.item().replace(tzinfo=timezone.utc),
                 last_execution_url=last_execution_url,
-                size_groups=np.unique(suite_size_map[masks["total"]]).tolist(),
+                size_groups=np.unique(suite_size_map[masks["total"][0]]).tolist(),
                 **{
                     f"{key}_stats": CodeCheckRunListStats(
                         count=mask.sum(),
                         successes=success_mask[mask].sum(),
                         skips=skips_mask[mask].sum(),
-                        flaky_count=len(np.intersect1d(commitscol[success_or_skipped_mask & mask],
+                        flaky_count=len(np.intersect1d(commitscol[success_or_neutral_mask & mask],
                                                        commitscol[failure_mask & mask])),
                         mean_execution_time=_val_or_none(np.mean(elapseds[elapsed_mask & (
                             qmask := _tighten_mask_by_quantiles(elapseds, mask, quantiles))])),
@@ -156,7 +158,7 @@ async def filter_check_runs(time_from: datetime,
                                      timeline_elapseds,
                                      np.timedelta64("NaT"))).tolist(),
                     )
-                    for key, mask in masks.items()
+                    for key, (mask, skips_mask) in masks.items()
                 },
             ))
     return timeline_dates, result
