@@ -768,7 +768,7 @@ class RatioCalculator(WithoutQuantilesMixin, MetricCalculator[float]):
 
     dtype = float
     has_nan = True
-    zero_divided_by_zero_is_null = False
+    value_offset = 0
 
     def __init__(self, *deps: MetricCalculator, quantiles: Sequence[float]):
         """Initialize a new instance of RatioCalculator."""
@@ -779,15 +779,15 @@ class RatioCalculator(WithoutQuantilesMixin, MetricCalculator[float]):
 
     def _values(self) -> List[List[Metric[float]]]:
         metrics = [[Metric(False, None, None, None)] * len(samples) for samples in self.samples]
+        offset = self.value_offset
         for i, (opened_group, closed_group) in enumerate(zip(
                 self._opened.values, self._closed.values)):
             for j, (opened, closed) in enumerate(zip(opened_group, closed_group)):
-                if not closed.exists and not opened.exists:
+                if (not closed.exists and not opened.exists) or \
+                        (opened.value == closed.value == 0 and offset == 0):
                     continue
-                if self.zero_divided_by_zero_is_null and opened.value == closed.value == 0:
-                    continue
-                # Why +1? See ENG-866
-                val = ((opened.value or 0) + 1) / ((closed.value or 0) + 1)
+                # offset may be 1, See ENG-866
+                val = ((opened.value or 0) + offset) / ((closed.value or 0) + offset)
                 metrics[i][j] = Metric(True, val, None, None)
         return metrics
 

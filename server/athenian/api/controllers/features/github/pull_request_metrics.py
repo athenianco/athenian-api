@@ -734,6 +734,7 @@ class FlowRatioCalculator(RatioCalculator):
     """Calculate PR flow ratio = opened / closed."""
 
     deps = (OpenedCalculator, ClosedCalculator)
+    value_offset = 1
 
 
 class SizeCalculatorMixin(MetricCalculator[int]):
