@@ -612,7 +612,7 @@ async def mine_releases_by_name(names: Dict[str, Iterable[str]],
     result, mentioned_authors, has_precomputed_facts = _build_mined_releases(
         releases, precomputed_facts, await prefixer.load())
     mentioned_authors = [p[1] for p in np.char.split(mentioned_authors, "/", 1)]
-    if not (missing_releases := releases.take(np.nonzero(~has_precomputed_facts)[0])).empty:
+    if not (missing_releases := releases.take(np.flatnonzero(~has_precomputed_facts))).empty:
         repos = missing_releases[Release.repository_full_name.key].unique()
         time_from = missing_releases[Release.published_at.key].iloc[-1]
         time_to = missing_releases[Release.published_at.key].iloc[0] + timedelta(seconds=1)
@@ -630,8 +630,24 @@ async def mine_releases_by_name(names: Dict[str, Iterable[str]],
                 result.append(r)
         # we don't know which are redundant, so include everyone without filtering
         mentioned_authors = np.unique(np.concatenate([mentioned_authors, mined_authors]))
-    # TODO: load PR titles for precomputed facts
-    avatars = await mine_user_avatars(mentioned_authors, True, meta_ids, mdb, cache)
+    tasks = [
+        mine_user_avatars(mentioned_authors, True, meta_ids, mdb, cache),
+    ]
+    if precomputed_facts:
+        pr_node_ids = np.concatenate([
+            f["prs_" + PullRequest.node_id.key] for f in precomputed_facts.values()
+        ]).astype("U")
+        tasks.append(mdb.fetch_all(
+            select([NodePullRequest.id, NodePullRequest.title])
+            .where(and_(NodePullRequest.acc_id.in_(meta_ids),
+                        NodePullRequest.id.in_any_values(pr_node_ids)))))
+    avatars, *opt = await gather(*tasks)
+    if precomputed_facts:
+        pr_title_map = {row[0].encode(): row[1] for row in opt[0]}
+        for _, facts in result:
+            facts["prs_" + PullRequest.title.key] = [
+                pr_title_map.get(node) for node in facts["prs_" + PullRequest.node_id.key]
+            ]
     return result, avatars
 
 

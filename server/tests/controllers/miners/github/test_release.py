@@ -1587,6 +1587,9 @@ async def test_mine_releases_by_name(
         1, (6366825,), mdb, pdb, rdb, cache)
     await wait_deferred()
     assert len(releases) == 2
+    for _, facts in releases:
+        assert len(facts["prs_" + PullRequest.title.key]) == \
+               len(facts["prs_" + PullRequest.node_id.key])
     releases_dict = {r[0][Release.name.key]: r for r in releases}
     assert releases_dict.keys() == names
     assert len(releases_dict["36c78b9d1b1eea682703fb1cbb0f4f3144354389"][1]
