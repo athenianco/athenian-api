@@ -630,6 +630,7 @@ async def mine_releases_by_name(names: Dict[str, Iterable[str]],
                 result.append(r)
         # we don't know which are redundant, so include everyone without filtering
         mentioned_authors = np.unique(np.concatenate([mentioned_authors, mined_authors]))
+    # TODO: load PR titles for precomputed facts
     avatars = await mine_user_avatars(mentioned_authors, True, meta_ids, mdb, cache)
     return result, avatars
 
