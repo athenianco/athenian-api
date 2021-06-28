@@ -47,7 +47,10 @@ def upgrade():
 def downgrade():
     name = "release_notifications"
     if postgres := (op.get_bind().dialect.name == "postgresql"):
+        schema_arg = {"schema": "athenian"}
+    else:
         name = "athenian." + name
-    op.drop_table(name)
+        schema_arg = {}
+    op.drop_table(name, **schema_arg)
     if postgres:
         op.execute("DROP SCHEMA athenian;")
