@@ -235,7 +235,6 @@ class SuiteSuccessRatioCalculator(RatioCalculator):
     """Ratio of successful check suites divided by the overall count."""
 
     deps = (SuccessfulSuitesCounter, SuitesCounter)
-    zero_divided_by_zero_is_null = True
 
 
 @register_metric(CodeCheckMetricID.SUITE_TIME)
@@ -620,7 +619,6 @@ class MergedPRsWithFailedChecksRatioCalculator(RatioCalculator):
     """Calculate the ratio of PRs merged with failing checks to all merged PRs with checks."""
 
     deps = (MergedPRsWithFailedChecksCounter, MergedPRsCounter)
-    zero_divided_by_zero_is_null = True
 
 
 class ConcurrencyCalculator(MetricCalculator[float]):

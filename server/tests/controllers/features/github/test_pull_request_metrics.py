@@ -524,9 +524,9 @@ async def test_calc_pull_request_metrics_line_jira_map(
         await metrics_calculator.calc_pull_request_metrics_line_github(*args)
     )[0][0][0][0][0]
     await wait_deferred()
-    assert metrics[0].value == 0.02527075812274368
-    assert metrics[1].value == 0.01195219123505976
-    assert metrics[2].value == 0.025
+    assert metrics[0].value == 0.021739130434782608
+    assert metrics[1].value == 0.008
+    assert metrics[2].value == 0.021505376344086023
 
 
 @with_defer
