@@ -5,11 +5,10 @@ from http import HTTPStatus
 import logging
 import marshal
 import os
-import pickle
 from random import randint
 from sqlite3 import IntegrityError, OperationalError
 import struct
-from typing import Callable, Coroutine, List, Optional, Tuple
+from typing import Callable, Coroutine, Optional, Tuple
 
 from aiohttp import web
 import aiomcache
@@ -22,20 +21,20 @@ from sqlalchemy import and_, delete, func, insert, select, update
 from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.auth import Auth0, disable_default_user
-from athenian.api.cache import cached, max_exptime
-from athenian.api.controllers.account import generate_jira_invitation_link, \
+from athenian.api.cache import cached
+from athenian.api.controllers.account import fetch_github_installation_progress, \
+    generate_jira_invitation_link, \
     get_metadata_account_ids, get_user_account_status, jira_url_template
 from athenian.api.controllers.ffx import decrypt, encrypt
 from athenian.api.controllers.reposet import load_account_reposets
 from athenian.api.controllers.user import load_user_accounts
 from athenian.api.db import DatabaseLike, FastConnection, ParallelDatabase
 from athenian.api.defer import defer
-from athenian.api.models.metadata.github import Account as MetadataAccount, AccountRepository, \
-    FetchProgress, NodeUser, OrganizationMember
+from athenian.api.models.metadata.github import NodeUser, OrganizationMember
 from athenian.api.models.state.models import Account, AccountFeature, Feature, FeatureComponent, \
     Invitation, RepositorySet, UserAccount
 from athenian.api.models.web import BadRequestError, ForbiddenError, GenericError, \
-    NoSourceDataError, NotFoundError, User
+    NotFoundError, User
 from athenian.api.models.web.generic_error import DatabaseConflict, TooManyRequestsError
 from athenian.api.models.web.installation_progress import InstallationProgress
 from athenian.api.models.web.invitation_check_result import InvitationCheckResult
@@ -370,127 +369,6 @@ async def check_invitation(request: AthenianWebRequest, body: dict) -> web.Respo
     return model_response(result)
 
 
-@cached(
-    exptime=24 * 3600,  # 1 day
-    serialize=lambda t: marshal.dumps(t),
-    deserialize=lambda buf: marshal.loads(buf),
-    key=lambda account, **_: (account,),
-)
-async def get_installation_event_ids(account: int,
-                                     sdb: DatabaseLike,
-                                     mdb: DatabaseLike,
-                                     cache: Optional[aiomcache.Client],
-                                     ) -> List[Tuple[int, str]]:
-    """Load the GitHub account and delivery event IDs for the given sdb account."""
-    meta_ids = await get_metadata_account_ids(account, sdb, cache)
-    rows = await mdb.fetch_all(
-        select([AccountRepository.acc_id, AccountRepository.event_id])
-        .where(AccountRepository.acc_id.in_(meta_ids))
-        .distinct())
-    if diff := set(meta_ids) - {r[0] for r in rows}:
-        raise ResponseError(NoSourceDataError(detail="Some installation%s missing: %s." %
-                                                     ("s are" if len(diff) > 1 else " is", diff)))
-    return [(r[0], r[1]) for r in rows]
-
-
-@cached(
-    exptime=max_exptime,
-    serialize=lambda s: s.encode(),
-    deserialize=lambda b: b.decode(),
-    key=lambda metadata_account_id, **_: (metadata_account_id,),
-    refresh_on_access=True,
-)
-async def get_installation_owner(metadata_account_id: int,
-                                 mdb_conn: databases.core.Connection,
-                                 cache: Optional[aiomcache.Client],
-                                 ) -> str:
-    """Load the native user ID who installed the app."""
-    user_login = await mdb_conn.fetch_val(
-        select([MetadataAccount.owner_login])
-        .where(MetadataAccount.id == metadata_account_id))
-    if user_login is None:
-        raise ResponseError(NoSourceDataError(detail="The installation has not started yet."))
-    return user_login
-
-
-@cached(exptime=5,  # matches the webapp poll interval
-        serialize=pickle.dumps,
-        deserialize=pickle.loads,
-        key=lambda account, **_: (account,))
-async def fetch_github_installation_progress(account: int,
-                                             sdb: DatabaseLike,
-                                             mdb: databases.Database,
-                                             cache: Optional[aiomcache.Client],
-                                             ) -> InstallationProgress:
-    """Load the GitHub installation progress for the specified account."""
-    log = logging.getLogger("%s.fetch_github_installation_progress" % metadata.__package__)
-    mdb_sqlite = mdb.url.dialect == "sqlite"
-    idle_threshold = timedelta(hours=3)
-    async with mdb.connection() as mdb_conn:
-        event_ids = await get_installation_event_ids(account, sdb, mdb_conn, cache)
-        owner = await get_installation_owner(event_ids[0][0], mdb_conn, cache)
-        # we don't cache this because the number of repos can dynamically change
-        models = []
-        for metadata_account_id, event_id in event_ids:
-            repositories = await mdb_conn.fetch_val(
-                select([func.count(AccountRepository.repo_node_id)])
-                .where(AccountRepository.acc_id == metadata_account_id))
-            rows = await mdb_conn.fetch_all(
-                select([FetchProgress])
-                .where(and_(FetchProgress.event_id == event_id,
-                            FetchProgress.acc_id == metadata_account_id)))
-            if not rows:
-                continue
-            tables = [TableFetchingProgress(fetched=r[FetchProgress.nodes_processed.key],
-                                            name=r[FetchProgress.node_type.key],
-                                            total=r[FetchProgress.nodes_total.key])
-                      for r in rows]
-            started_date = min(r[FetchProgress.created_at.key] for r in rows)
-            if mdb_sqlite:
-                started_date = started_date.replace(tzinfo=timezone.utc)
-            finished_date = max(r[FetchProgress.updated_at.key] for r in rows)
-            if mdb_sqlite:
-                finished_date = finished_date.replace(tzinfo=timezone.utc)
-            pending = sum(t.fetched < t.total for t in tables)
-            if datetime.now(tz=timezone.utc) - finished_date > idle_threshold:
-                for table in tables:
-                    table.total = table.fetched
-                if pending:
-                    log.info("Overriding the installation progress by the idle time threshold; "
-                             "there are %d pending tables, last update on %s",
-                             pending, finished_date)
-                    finished_date += idle_threshold  # don't fool the user
-            elif pending:
-                finished_date = None
-            model = InstallationProgress(started_date=started_date,
-                                         finished_date=finished_date,
-                                         owner=owner,
-                                         repositories=repositories,
-                                         tables=tables)
-            models.append(model)
-        if not models:
-            raise ResponseError(NoSourceDataError(
-                detail="No installation progress exists for account %d." % account))
-        tables = {}
-        finished_date = datetime(2020, 1, 1, tzinfo=timezone.utc)
-        for m in models:
-            for t in m.tables:
-                table = tables.setdefault(
-                    t.name, TableFetchingProgress(name=t.name, fetched=0, total=0))
-                table.fetched += t.fetched
-                table.total += t.total
-            if model.finished_date is None:
-                finished_date = None
-            elif finished_date is not None:
-                finished_date = max(finished_date, model.finished_date)
-        model = InstallationProgress(started_date=min(m.started_date for m in models),
-                                     finished_date=finished_date,
-                                     owner=owner,
-                                     repositories=sum(m.repositories for m in models),
-                                     tables=sorted(tables.values()))
-        return model
-
-
 async def _append_precomputed_progress(model: InstallationProgress,
                                        account: int,
                                        uid: str,
@@ -540,7 +418,8 @@ async def _notify_precomputed_failure(slack: Optional[SlackWebClient],
 async def eval_invitation_progress(request: AthenianWebRequest, id: int) -> web.Response:
     """Return the current Athenian GitHub app installation progress."""
     await get_user_account_status(request.uid, id, request.sdb, request.cache)
-    model = await fetch_github_installation_progress(id, request.sdb, request.mdb, request.cache)
+    async with request.mdb.connection() as mdb_conn:
+        model = await fetch_github_installation_progress(id, request.sdb, mdb_conn, request.cache)
 
     async def login_loader() -> str:
         return (await request.user()).login

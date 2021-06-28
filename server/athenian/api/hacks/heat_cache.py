@@ -23,10 +23,10 @@ from athenian.api.__main__ import check_schema_versions, create_memcached, creat
     setup_context
 from athenian.api.async_utils import gather
 from athenian.api.cache import CACHE_VAR_NAME, setup_cache_metrics
-from athenian.api.controllers.account import copy_teams_as_needed, generate_jira_invitation_link, \
-    get_metadata_account_ids
+from athenian.api.controllers.account import copy_teams_as_needed, \
+    fetch_github_installation_progress, generate_jira_invitation_link, \
+    get_metadata_account_ids, match_metadata_installation
 from athenian.api.controllers.features.entries import MetricEntriesCalculator
-from athenian.api.controllers.invitation_controller import fetch_github_installation_progress
 from athenian.api.controllers.jira import match_jira_identities
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import Bots
@@ -50,7 +50,7 @@ from athenian.api.models.persistentdata import \
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
     GitHubMergedPullRequestFacts
 from athenian.api.models.state.models import Account, RepositorySet, Team, UserAccount
-from athenian.api.models.web import InstallationProgress, NoSourceDataError, NotFoundError
+from athenian.api.models.web import InstallationProgress
 from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME
 from athenian.api.response import ResponseError
 from athenian.precomputer.db import dereference_schemas as dereference_precomputed_schemas
@@ -280,50 +280,67 @@ async def load_account_state(account: int,
                              mdb: ParallelDatabase,
                              cache: aiomcache.Client,
                              slack: Optional[SlackWebClient],
-                             recursive: bool = False,
                              ) -> Optional[InstallationProgress]:
     """Load the account's installation progress and the release settings."""
     try:
-        progress = await fetch_github_installation_progress(
-            account, sdb, mdb, cache)
-        await Settings.from_account(account, sdb, mdb, cache, None).list_release_matches()
+        await get_metadata_account_ids(account, sdb, cache)
+    except ResponseError:
+        # Load the login
+        auth0_id = await sdb.fetch_val(select([UserAccount.user_id]).where(and_(
+            UserAccount.account_id == account,
+        )).order_by(desc(UserAccount.is_admin)))
+        if auth0_id is None:
+            log.warning("There are no users in the account %d", account)
+            return None
+        try:
+            db_id = int(auth0_id.split("|")[-1])
+        except ValueError:
+            log.error("Unable to match user %s with metadata installations, "
+                      "you have to hack DB manually for account %d",
+                      auth0_id, account)
+            return None
+        login = await mdb.fetch_val(select([NodeUser.login]).where(NodeUser.database_id == db_id))
+        if login is None:
+            log.warning("Could not find the user login of %s", auth0_id)
+            return None
+        with sdb.connection() as sdb_conn:
+            async with sdb_conn.transaction():
+                if not await match_metadata_installation(account, login, sdb_conn, mdb, slack):
+                    log.warning("Did not match installations to account %d as %s",
+                                account, auth0_id)
+                    return None
+    try:
+        async with mdb.connection() as mdb_conn:
+            progress = await fetch_github_installation_progress(account, sdb, mdb_conn, cache)
     except ResponseError as e1:
         if e1.response.status != HTTPStatus.UNPROCESSABLE_ENTITY:
             sentry_sdk.capture_exception(e1)
-        elif recursive:
-            log.error("Recursive load_account_state() in account %d", account)
-        else:
-            async def load_login() -> str:
-                auth0_id = await sdb.fetch_val(select([UserAccount.user_id]).where(and_(
-                    UserAccount.account_id == account,
-                )).order_by(desc(UserAccount.is_admin)))
-                if auth0_id is None:
-                    raise ResponseError(NotFoundError(
-                        detail="There are no users in the account."))
-                db_id = int(auth0_id.split("|")[-1])
-                login = await mdb.fetch_val(select([NodeUser.login])
-                                            .where(NodeUser.database_id == db_id))
-                if login is None:
-                    raise ResponseError(NoSourceDataError(
-                        detail="Could not find the user login of %s." % auth0_id))
-                return login
-            try:
-                reposets = await load_account_reposets(
-                    account, load_login, [RepositorySet.name], sdb, mdb, cache, slack)
-            except ResponseError as e2:
-                log.warning("account %d: ResponseError: %s", account, e2.response)
-            except Exception as e:
-                sentry_sdk.capture_exception(e)
-            else:
-                if reposets:
-                    return await load_account_state(account, log, sdb, mdb, cache, slack, True)
-        log.warning("account %d: ResponseError: %s", account, e1.response)
+        log.warning("account %d: fetch_github_installation_progress ResponseError: %s",
+                    account, e1.response)
         return None
-    except Exception as e:
-        sentry_sdk.capture_exception(e)
-        log.warning("account %d: %s: %s", account, type(e).__name__, e)
+    except Exception as e2:
+        sentry_sdk.capture_exception(e2)
+        log.warning("account %d: fetch_github_installation_progress %s: %s",
+                    account, type(e2).__name__, e2)
         return None
-    return progress
+    if progress.finished_date is None:
+        return progress
+
+    async def load_login() -> str:
+        raise AssertionError("This should never be called at this point")
+
+    try:
+        reposets = await load_account_reposets(
+            account, load_login, [RepositorySet.name], sdb, mdb, cache, slack)
+    except ResponseError as e3:
+        log.warning("account %d: load_account_reposets ResponseError: %s",
+                    account, e3.response)
+    except Exception as e4:
+        sentry_sdk.capture_exception(e4)
+    else:
+        if reposets:
+            return progress
+    return None
 
 
 async def create_teams(account: int,
