@@ -14,12 +14,14 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather
-from athenian.api.controllers.account import get_metadata_account_ids, get_user_account_status
+from athenian.api.controllers.account import fetch_github_installation_progress, \
+    get_metadata_account_ids, get_user_account_status, match_metadata_installation
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.db import DatabaseLike, FastConnection, ParallelDatabase
-from athenian.api.models.metadata.github import Account, AccountRepository, NodeUser
-from athenian.api.models.state.models import AccountGitHubAccount, RepositorySet, UserAccount
+from athenian.api.defer import defer
+from athenian.api.models.metadata.github import AccountRepository
+from athenian.api.models.state.models import RepositorySet, UserAccount
 from athenian.api.models.web import ForbiddenError, InvalidRequestError, NoSourceDataError, \
     NotFoundError
 from athenian.api.models.web.generic_error import DatabaseConflict
@@ -205,24 +207,18 @@ async def _load_account_reposets(account: int,
             if isinstance(login, Exception):
                 raise ResponseError(ForbiddenError(detail=str(login)))
             if isinstance(prefixer_meta_ids, Exception):
-                meta_ids = {r[0] for r in await mdb_conn.fetch_all(
-                    select([NodeUser.acc_id]).where(NodeUser.login == login))}
-                if not meta_ids:
-                    raise_no_source_data()
-                owned_accounts = {r[0] for r in await sdb_conn.fetch_all(
-                    select([AccountGitHubAccount.id])
-                    .where(AccountGitHubAccount.id.in_(meta_ids)))}
-                meta_ids -= owned_accounts
-                if not meta_ids:
+                if not isinstance(prefixer_meta_ids, ResponseError):
+                    raise prefixer_meta_ids from None
+                if not (meta_ids := await match_metadata_installation(
+                        account, login, sdb_conn, mdb_conn, slack)):
                     raise_no_source_data()
                 prefixer = await Prefixer.load(meta_ids, mdb_conn, cache)
-                for acc_id in meta_ids:
-                    # we don't expect many installations for the same account so don't go parallel
-                    values = AccountGitHubAccount(id=acc_id, account_id=account).explode(
-                        with_primary_keys=True)
-                    await sdb_conn.execute(insert(AccountGitHubAccount).values(values))
             else:
                 prefixer, meta_ids = prefixer_meta_ids
+            progress = await fetch_github_installation_progress(
+                account, sdb_conn, mdb_conn, cache)
+            if progress.finished_date is None:
+                raise_no_source_data()
             ar = AccountRepository
             updated_col = (ar.updated_at == func.max(ar.updated_at).over(
                 partition_by=ar.repo_node_id,
@@ -258,24 +254,18 @@ async def _load_account_reposets(account: int,
                 name=RepositorySet.ALL, owner_id=account, items=repos,
             ).create_defaults()
             rs.id = await sdb_conn.execute(insert(RepositorySet).values(rs.explode()))
-            log.info(
-                "Created the first reposet %d for account %d with %d repos on behalf of %s",
-                rs.id, account, len(repos), login,
-            )
+            log.info("Created the first reposet %d for account %d with %d repos",
+                     rs.id, account, len(repos))
             if slack is not None:
-                metadata_accounts = [(r[0], r[1]) for r in await mdb_conn.fetch_all(
-                    select([Account.id, Account.owner_login]).where(Account.id.in_(meta_ids)))]
                 prefixes = {r.split("/", 2)[1] for r in repos}
-                await slack.post("new_installation.jinja2",
-                                 account=account,
-                                 repos=len(repos),
-                                 prefixes=prefixes,
-                                 all_reposet_name=RepositorySet.ALL,
-                                 reposet=rs.id,
-                                 metadata_accounts=metadata_accounts,
-                                 login=login,
-                                 )
-
+                await defer(slack.post("installation_goes_on.jinja2",
+                                       account=account,
+                                       repos=len(repos),
+                                       prefixes=prefixes,
+                                       all_reposet_name=RepositorySet.ALL,
+                                       reposet=rs.id,
+                                       ),
+                            "report_installation_goes_on")
             return [rs.explode(with_primary_keys=True)]
     except (UniqueViolationError, IntegrityError, OperationalError) as e:
         log.error("%s: %s", type(e).__name__, e)
