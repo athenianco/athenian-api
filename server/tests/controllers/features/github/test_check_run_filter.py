@@ -8,14 +8,12 @@ from athenian.api.controllers.features.github.check_run_filter import filter_che
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.types import CodeCheckRunListItem, CodeCheckRunListStats
 from athenian.api.defer import wait_deferred, with_defer
-from tests.conftest import numpy_seterr_divide_warn
 
 
 def td_list(items: List[Optional[int]]) -> List[timedelta]:
     return [(x if x is None else timedelta(seconds=x)) for x in items]
 
 
-@numpy_seterr_divide_warn
 async def test_filter_check_runs_monthly_quantiles(mdb):
     timeline, items = await filter_check_runs(
         datetime(2015, 1, 1), datetime(2020, 1, 1), ["src-d/go-git"], [],
@@ -82,7 +80,6 @@ async def test_filter_check_runs_monthly_quantiles(mdb):
     )
 
 
-@numpy_seterr_divide_warn
 async def test_filter_check_runs_daily(mdb):
     timeline, items = await filter_check_runs(
         datetime(2018, 2, 1), datetime(2018, 2, 12), ["src-d/go-git"], [],
@@ -100,7 +97,6 @@ async def test_filter_check_runs_empty(mdb):
 
 
 @with_defer
-@numpy_seterr_divide_warn
 async def test_filter_check_runs_cache(mdb, cache):
     timeline1, items1 = await filter_check_runs(
         datetime(2015, 1, 1), datetime(2020, 1, 1), ["src-d/go-git"], [],
