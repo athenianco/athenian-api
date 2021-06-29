@@ -631,6 +631,6 @@ class MetricEntriesCalculator(OriginalMetricEntriesCalculator):
     def is_ready_for(self, account: int, meta_ids: Tuple[int, ...]) -> bool:
         """Check whether the calculator is ready for the given account and meta ids."""
         return (
-            all(self._mdb.cache.is_shard_available(m_id) for m_id in meta_ids) and
-            self._pdb.cache.is_shard_available(account)
+            self._mdb.cache.is_account_loaded(account) and
+            self._pdb.cache.is_account_loaded(account)
         )
