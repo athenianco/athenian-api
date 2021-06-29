@@ -245,7 +245,8 @@ class Auth0:
                 if context.account is not None:
                     expires_at = await context.sdb.fetch_val(
                         select([Account.expires_at]).where(Account.id == context.account))
-                    if expires_at is None or expires_at < datetime.now(expires_at.tzinfo):
+                    if not getattr(context, "god_id", False) and (
+                            expires_at is None or expires_at < datetime.now(expires_at.tzinfo)):
                         self.log.warning("Attempt to use an expired account %d by user %s",
                                          context.account, context.uid)
                         raise Unauthorized("Your account has expired.")
