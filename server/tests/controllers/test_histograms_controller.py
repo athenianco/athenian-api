@@ -355,7 +355,7 @@ async def test_calc_histogram_code_checks_smoke(client, headers):
     assert rbody == [{
         "metric": "chk-suites-per-pr", "scale": "linear",
         "ticks": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 50.0, 62.0],
-        "frequencies": [0, 70, 135, 8, 14, 15, 4, 1],
+        "frequencies": [0, 69, 136, 8, 14, 15, 4, 1],
         "interquartile": {"left": 1.0, "right": 2.0},
         "for": {"repositories": ["github.com/src-d/go-git"]},
     }]
@@ -454,13 +454,13 @@ async def test_calc_histogram_code_checks_split(client, headers):
     assert rbody == [
         {"metric": "chk-suites-per-pr", "scale": "linear",
          "ticks": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 50.0],
-         "frequencies": [0, 2, 4, 2, 1, 0, 0],
+         "frequencies": [0, 1, 4, 2, 1, 0, 0],
          "interquartile": {"left": 2.0, "right": 3.0},
          "for": {"repositories": ["github.com/src-d/go-git"]}, "check_runs": 1,
          "suites_ratio": 0.28132118451025057},
         {"metric": "chk-suites-per-pr", "scale": "linear",
          "ticks": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 50.0],
-         "frequencies": [0, 4, 27, 0, 2, 2, 1],
+         "frequencies": [0, 4, 28, 0, 2, 2, 1],
          "interquartile": {"left": 2.0, "right": 2.0},
          "for": {"repositories": ["github.com/src-d/go-git"]}, "check_runs": 2,
          "suites_ratio": 0.13325740318906606},

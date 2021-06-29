@@ -100,7 +100,7 @@ class FirstSuiteEncounters(MetricCalculator[float]):
     dtype = float
     has_nan = True
     is_pure_dependency = True
-    complete_suite_statuses = [b"COMPLETED", b"FAILURE", b"ERROR", b"SUCCESS"]
+    complete_suite_statuses = [b"COMPLETED", b"FAILURE", b"SUCCESS", b"PENDING"]
 
     def _analyze(self,
                  facts: pd.DataFrame,
@@ -205,8 +205,9 @@ class SuccessfulSuitesCounter(SuitesInStatusCounter):
     """Number of successfully executed check suites metric."""
 
     statuses = {
-        b"COMPLETED": [b"SUCCESS"],
+        b"COMPLETED": [b"SUCCESS", b"NEUTRAL"],
         b"SUCCESS": [],
+        b"PENDING": [],
     }
 
 
@@ -215,9 +216,8 @@ class FailedSuitesCounter(SuitesInStatusCounter):
     """Number of failed check suites metric."""
 
     statuses = {
-        b"COMPLETED": [b"FAILURE", b"STALE"],
+        b"COMPLETED": [b"FAILURE", b"STALE", b"ACTION_REQUIRED"],
         b"FAILURE": [],
-        b"ERROR": [],
     }
 
 
@@ -259,7 +259,7 @@ class SuiteTimeCalculatorAnalysis(MetricCalculator[None]):
             first_encounters[completed]
         ].astype("S")
         sensibly_completed = np.nonzero(completed)[0][
-            np.in1d(conclusions, [b"SUCCESS", b"FAILURE", b"STALE"])]
+            np.in1d(conclusions, [b"CANCELLED", b"SKIPPED"], invert=True)]
         # first_encounters[sensibly_completed] gives the indexes of the completed suites
         first_encounters = first_encounters[sensibly_completed]
 
@@ -497,11 +497,11 @@ class FlakyCommitChecksCounter(SumMetricCalculator[int]):
         conclusions = facts[CheckRun.conclusion.key].values.astype("S")
         completed = statuses == b"COMPLETED"
         success_mask = (
-            (completed & ((conclusions == b"SUCCESS") | (conclusions == b"NEUTRAL"))) |
-            (statuses == b"SUCCESS")
+            (completed & (conclusions == b"SUCCESS")) |
+            (statuses == b"SUCCESS") | (statuses == b"PENDING")
         )
         failure_mask = (
-            (completed & ((conclusions == b"FAILURE") | (conclusions == b"STALE"))) |
+            (completed & np.in1d(conclusions, [b"FAILURE", b"STALE", b"ACTION_REQUIRED"])) |
             (statuses == b"FAILURE") | (statuses == b"ERROR")
         )
 
@@ -561,8 +561,8 @@ class MergedPRsWithFailedChecksCounter(SumMetricCalculator[int]):
         failure_mask[first_encounters] = True
         merged_timestamps = df[pull_request_merged_column].values
         failure_mask &= (
-            ((statuses == b"COMPLETED") & (
-                (conclusions == b"FAILURE") | (conclusions == b"STALE"))
+            ((statuses == b"COMPLETED") &
+             np.in1d(conclusions, [b"FAILURE", b"STALE", b"ACTION_REQUIRED"])
              ) | (statuses == b"FAILURE") | (statuses == b"ERROR")
         ) & (pull_requests != b"None") & (merged_timestamps == merged_timestamps)
         return df.index, pull_requests, failure_mask
