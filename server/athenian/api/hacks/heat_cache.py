@@ -303,7 +303,7 @@ async def load_account_state(account: int,
         if login is None:
             log.warning("Could not find the user login of %s", auth0_id)
             return None
-        with sdb.connection() as sdb_conn:
+        async with sdb.connection() as sdb_conn:
             async with sdb_conn.transaction():
                 if not await match_metadata_installation(account, login, sdb_conn, mdb, slack):
                     log.warning("Did not match installations to account %d as %s",
