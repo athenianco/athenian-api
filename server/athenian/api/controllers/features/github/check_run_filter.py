@@ -117,24 +117,26 @@ async def filter_check_runs(time_from: datetime,
     all_time_range = (timeline[0] <= started_ats) & (started_ats < timeline[-1])
 
     result = []
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", "All-NaN slice encountered")
-        warnings.filterwarnings("ignore", "Mean of empty slice")
-        warnings.filterwarnings("ignore", "divide by zero encountered in true_divide")
-        for i, ((repo, _, name), last_execution_time, last_execution_url) in enumerate(zip(
-                unique_repo_crnames, last_execution_times, last_execution_urls)):
-            masks = {"total": inverse_cr_map == i, "prs": prs_inverse_cr_map == i}
-            for k, v in masks.items():
-                v_in_range = v & all_time_range
-                masks[k] = (v_in_range & ~skipped_mask, v_in_range & skipped_mask)
-            result.append(CodeCheckRunListItem(
-                title=name,
-                repository=repo,
-                last_execution_time=last_execution_time.item().replace(tzinfo=timezone.utc),
-                last_execution_url=last_execution_url,
-                size_groups=np.unique(suite_size_map[masks["total"][0]]).tolist(),
-                **{
-                    f"{key}_stats": CodeCheckRunListStats(
+    # workaround https://github.com/numpy/numpy/issues/19379
+    np.seterr(divide="warn")
+    try:
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", "All-NaN slice encountered")
+            warnings.filterwarnings("ignore", "Mean of empty slice")
+            warnings.filterwarnings("ignore", "divide by zero encountered in true_divide")
+            for i, ((repo, _, name), last_execution_time, last_execution_url) in enumerate(zip(
+                    unique_repo_crnames, last_execution_times, last_execution_urls)):
+                masks = {"total": inverse_cr_map == i, "prs": prs_inverse_cr_map == i}
+                for k, v in masks.items():
+                    v_in_range = v & all_time_range
+                    masks[k] = (v_in_range & ~skipped_mask, v_in_range & skipped_mask)
+                result.append(CodeCheckRunListItem(
+                    title=name,
+                    repository=repo,
+                    last_execution_time=last_execution_time.item().replace(tzinfo=timezone.utc),
+                    last_execution_url=last_execution_url,
+                    size_groups=np.unique(suite_size_map[masks["total"][0]]).tolist(),
+                    **{f"{key}_stats": CodeCheckRunListStats(
                         count=mask.sum(),
                         successes=success_mask[mask].sum(),
                         skips=skips_mask[mask].sum(),
@@ -158,9 +160,11 @@ async def filter_check_runs(time_from: datetime,
                                      timeline_elapseds,
                                      np.timedelta64("NaT"))).tolist(),
                     )
-                    for key, (mask, skips_mask) in masks.items()
-                },
-            ))
+                        for key, (mask, skips_mask) in masks.items()
+                    },
+                ))
+    finally:
+        np.seterr(divide="raise")
     return timeline_dates, result
 
 

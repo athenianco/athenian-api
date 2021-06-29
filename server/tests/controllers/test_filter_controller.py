@@ -24,7 +24,7 @@ from athenian.api.models.web import CommitsList, FilteredCodeCheckRuns, Filtered
 from athenian.api.models.web.diffed_releases import DiffedReleases
 from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME
 from athenian.api.typing_utils import wraps
-from tests.conftest import FakeCache, numpy_seterr_divide_warn
+from tests.conftest import FakeCache
 from tests.controllers.conftest import with_only_master_branch
 
 
@@ -1927,7 +1927,6 @@ async def test_diff_releases_nasty_input(client, headers, account, repo, old, ne
             assert response_body["data"] == [[{"old": old, "new": new, "releases": []}]]
 
 
-@numpy_seterr_divide_warn
 async def test_filter_check_runs_smoke(client, headers):
     body = {
         "account": 1,
@@ -2003,7 +2002,6 @@ async def test_filter_check_runs_smoke(client, headers):
     ({"triggered_by": ["github.com/mcuadros"]}, 7),
     ({"jira": {"labels_include": ["bug", "onboarding", "performance"]}}, 5),
 ])
-@numpy_seterr_divide_warn
 async def test_filter_check_runs_filters(client, headers, filters, count):
     body = {
         "account": 1,
