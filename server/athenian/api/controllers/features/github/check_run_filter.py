@@ -143,7 +143,7 @@ async def filter_check_runs(time_from: datetime,
                     **{f"{key}_stats": CodeCheckRunListStats(
                         count=mask.sum(),
                         successes=success_mask[mask].sum(),
-                        skips=skips_mask[mask].sum(),
+                        skips=skips_mask.sum(),
                         flaky_count=len(np.intersect1d(commitscol[success_mask & mask],
                                                        commitscol[failure_mask & mask])),
                         mean_execution_time=_val_or_none(np.mean(elapseds[elapsed_mask & (
