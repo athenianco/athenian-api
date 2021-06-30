@@ -21,7 +21,8 @@ from athenian.api.controllers.settings import ReleaseMatch, Settings
 from athenian.api.defer import defer, wait_deferred
 from athenian.api.models.metadata.github import PushCommit, User
 from athenian.api.models.persistentdata.models import ReleaseNotification
-from athenian.api.models.web import BadRequestError, DeleteEventsCacheRequest, ForbiddenError, \
+from athenian.api.models.web import BadRequestError, DeleteEventsCacheRequest, \
+    DeploymentNotification as WebDeploymentNotification, ForbiddenError, \
     InvalidRequestError, ReleaseNotification as WebReleaseNotification
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError
@@ -222,4 +223,14 @@ async def clear_precomputed_events(request: AthenianWebRequest, body: dict) -> w
 @weight(0)
 async def notify_deployments(request: AthenianWebRequest, body: List[dict]) -> web.Response:
     """Notify about new deployments."""
+    # account is automatically checked at this point
+    WebDeploymentNotification
+    """
+    try:
+        notifications = [WebDeploymentNotification.from_dict(n) for n in body]
+    except ParseError as e:
+        raise ResponseError(BadRequestError("%s: %s" % (type(e).__name__, e)))
+    account = request.account
+    sdb, mdb, rdb = request.sdb, request.mdb, request.rdb
+    """
     raise NotImplementedError
