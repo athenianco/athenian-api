@@ -103,16 +103,15 @@ class CachedDataFrame:
     def get_dfs(self, sharding_keys: Iterable[Union[int, str]]) -> pd.DataFrame:
         """Return the wrapped `pandas.DataFrame`."""
         assert self._columns is not None, "Need to await refresh() at least once."
-        if not self._sharded_dfs:
+
+        def _build_empty_df():
             return pd.DataFrame(columns=self._columns)
-        return pd.concat(self._sharded_dfs[sk] for sk in sorted(sharding_keys))
 
-    def get_shards(self) -> List[Union[int, str]]:
-        """Return the list of shards."""
         if not self._sharded_dfs:
-            return []
+            return _build_empty_df()
 
-        return list(self._sharded_dfs.keys())
+        return pd.concat(self._sharded_dfs.get(sk, _build_empty_df())
+                         for sk in sorted(sharding_keys))
 
     async def refresh(self) -> "CachedDataFrame":
         """Refresh the DataFrame from the database."""
@@ -273,6 +272,7 @@ class MemoryCache:
         self._options = options
         self._debug_memory = debug_memory
         self._gauge = gauges.timing if gauges else None
+        self._enabled_accounts = {}
         self._dfs = {
             id_: CachedDataFrame(
                 id_, **opts, db=self._db, gauge=gauges.memory if gauges else None,
@@ -285,9 +285,13 @@ class MemoryCache:
         """Return all the `CachedDataFrame`s."""
         return self._dfs
 
-    def is_shard_available(self, shard_key: Union[int, str]) -> bool:
-        """Return whether the data for the given shard are available."""
-        return all(shard_key in cdf.get_shards() for cdf in self._dfs.values())
+    def is_account_loaded(self, acc_id: int) -> bool:
+        """Return whether the data for the given account is loaded."""
+        for enabled_accounts in self._enabled_accounts.values():
+            if acc_id not in enabled_accounts["acc_id"]:
+                return False
+
+        return True
 
     def memory_usage(
         self, total: bool = False, human: bool = False,
@@ -308,20 +312,24 @@ class MemoryCache:
         """Refresh the DataFrames from the database."""
         start = datetime.utcnow()
         table = id_ or "__all__"
+        accounts = await self._get_enabled_accounts()
         if id_:
             refreshed = 1
             df = self._dfs[id_]
-            df.filtering_clause = await self._build_filtering_clause(id_)
+            df.filtering_clause = await self._build_filtering_clause(id_, accounts)
             await df.refresh()
+            self._enabled_accounts[id_] = accounts
         else:
             tasks = []
             refreshed = len(self._dfs)
-            accounts = await self._get_enabled_accounts()
             for id_, df in self._dfs.items():
-                df.filtering_clause = await self._build_filtering_clause(id_, accounts=accounts)
+                df.filtering_clause = await self._build_filtering_clause(id_, accounts)
                 tasks.append(df.refresh())
 
             await gather(*tasks)
+
+            for id_ in self._dfs.keys():
+                self._enabled_accounts[id_] = accounts
 
         elapsed = (datetime.utcnow() - start).total_seconds()
         if self._gauge is not None:
@@ -335,11 +343,8 @@ class MemoryCache:
                        refreshed, self._db.url.database, elapsed, memory_used)
 
     async def _build_filtering_clause(
-            self, id_: str, accounts: Optional[Dict[str, Collection[int]]] = None,
+        self, id_: str, accounts: Dict[str, Collection[int]],
     ) -> sa.sql.ClauseElement:
-        if not accounts:
-            accounts = await self._get_enabled_accounts()
-
         opts = self._options[id_]
         sharding_opts = opts["sharding"]
         filtering_clause = sharding_opts["column"].in_(accounts[sharding_opts["key"]])

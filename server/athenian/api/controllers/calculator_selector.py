@@ -60,7 +60,7 @@ async def _get_calculator_for_account(
                 variation=variation, base_module=base_module,
             )
         except CalculatorNotReadyException:
-            variation = "default"
+            variation = None
             calculator = make_calculator(
                 account_id, meta_ids, mdb, pdb, rdb, cache,
                 variation=variation, base_module=base_module,
