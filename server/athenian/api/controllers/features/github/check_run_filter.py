@@ -100,12 +100,16 @@ async def filter_check_runs(time_from: datetime,
 
     statuscol = df_check_runs[CheckRun.status.key].values.astype("S")
     conclusioncol = df_check_runs[CheckRun.conclusion.key].values.astype("S")
-    success_mask = (statuscol == b"SUCCESS") | (conclusioncol == b"SUCCESS")
-    skipped_mask = conclusioncol == b"SKIPPED"
-    neutral_mask = conclusioncol == b"NEUTRAL"
-    success_or_neutral_mask = success_mask | neutral_mask
-    failure_mask = (statuscol == b"FAILURE") | (statuscol == b"ERROR") | \
-        (conclusioncol == b"FAILURE") | (conclusioncol == b"STALE")
+    check_suite_conclusions = df_check_runs[CheckRun.check_suite_conclusion.key].values.astype("S")
+    completed = statuscol == b"COMPLETED"
+    success_mask = (completed & (conclusioncol == b"SUCCESS")) | \
+                   (statuscol == b"SUCCESS") | \
+                   (statuscol == b"PENDING")
+    failure_mask = (
+        (completed & np.in1d(conclusioncol, [b"FAILURE", b"STALE", b"ACTION_REQUIRED"])) |
+        (statuscol == b"FAILURE") | (statuscol == b"ERROR")
+    )
+    skipped_mask = (check_suite_conclusions != b"NEUTRAL") & (conclusioncol == b"NEUTRAL")
     commitscol = df_check_runs[CheckRun.commit_node_id.key].values.astype("S")
 
     started_ats = started_ats.astype("datetime64[s]")
@@ -140,7 +144,7 @@ async def filter_check_runs(time_from: datetime,
                         count=mask.sum(),
                         successes=success_mask[mask].sum(),
                         skips=skips_mask[mask].sum(),
-                        flaky_count=len(np.intersect1d(commitscol[success_or_neutral_mask & mask],
+                        flaky_count=len(np.intersect1d(commitscol[success_mask & mask],
                                                        commitscol[failure_mask & mask])),
                         mean_execution_time=_val_or_none(np.mean(elapseds[elapsed_mask & (
                             qmask := _tighten_mask_by_quantiles(elapseds, mask, quantiles))])),

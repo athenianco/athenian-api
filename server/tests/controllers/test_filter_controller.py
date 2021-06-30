@@ -924,7 +924,7 @@ async def validate_prs_response(response: ClientResponse,
             (not (not events and PullRequestStage.DONE not in stages)):
         assert failed_check_runs
         for key in failed_check_runs:
-            assert "/" in key
+            assert "/" in key or key == "DCO"
     return len(prs.data)
 
 
