@@ -33,7 +33,7 @@ def _deserialize(
 
     if klass in (int, float, str, bool):
         return _deserialize_primitive(data, klass)
-    elif klass == object:
+    elif klass in (object, dict):
         return _deserialize_object(data)
     elif klass == datetime.date:
         return deserialize_date(data)

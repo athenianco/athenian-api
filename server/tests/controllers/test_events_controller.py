@@ -2,10 +2,12 @@ from datetime import datetime, timedelta, timezone
 
 from freezegun import freeze_time
 import pytest
-from sqlalchemy import insert, select, update
+from sqlalchemy import delete, insert, select, update
 
-from athenian.api.models.persistentdata.models import ReleaseNotification
-from athenian.api.models.state.models import UserToken
+from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
+    DeploymentNotification, \
+    ReleaseNotification
+from athenian.api.models.state.models import AccountGitHubAccount, UserToken
 from athenian.precomputer.db.models import GitHubDonePullRequestFacts, \
     GitHubMergedPullRequestFacts, GitHubReleaseFacts
 
@@ -18,7 +20,7 @@ async def token(sdb):
     return "AQAAAAAAAAA="  # unencrypted
 
 
-async def test_notify_release_smoke(client, headers, sdb, rdb, token, app):
+async def test_notify_release_smoke(client, headers, sdb, rdb, token):
     body = [{
         "commit": "8d20cc5",  # 8d20cc5916edf7cfa6a9c5ed069f0640dc823c12
         "repository": "github.com/src-d/go-git",
@@ -231,3 +233,288 @@ async def test_clear_precomputed_events_nasty_input(client, headers, body, statu
         method="POST", path="/v1/events/clear_cache", headers=headers, json=body,
     )
     assert response.status == status
+
+
+@pytest.mark.parametrize("ref, vhash", [
+    ("4.2.0", "3a43343c"),
+    ("v4.2.0", "3a43343c"),
+    ("1d28459504251497e0ce6132a0fadd5eb44ffd22", "2b9a7005"),
+    ("1d28459", "2b9a7005"),
+    ("xxx", "4e3a8b2d"),
+])
+@pytest.mark.parametrize("with_finish", [False, True])
+async def test_notify_deployment_smoke(client, headers, token, rdb, ref, vhash, with_finish):
+    body = [{
+        "components": [{
+            "repository": "github.com/src-d/go-git",
+            "reference": ref,
+        }],
+        "environment": "production",
+        "date_started": "2021-01-12T00:00:00Z",
+        "labels": {
+            "one": 1,
+            2: "two",
+        },
+    }]
+    if with_finish:
+        body[0]["date_finished"] = "2021-01-12T01:00:00Z"
+        body[0]["conclusion"] = "SUCCESS"
+    headers = headers.copy()
+    headers["X-API-Key"] = token
+    response = await client.request(
+        method="POST", path="/v1/events/deployments", headers=headers, json=body,
+    )
+    assert response.status == 200
+    assert (await response.read()).decode("utf-8") == ""
+    rows = await rdb.fetch_all(select([DeployedComponent]))
+    assert len(rows) == 1
+    row = dict(rows[0])
+    created_at = row[DeployedComponent.created_at.key]
+    assert isinstance(created_at, datetime)
+    del row[DeployedComponent.created_at.key]
+    if ref == "xxx":
+        commit = None
+    else:
+        commit = "MDY6Q29tbWl0NDQ3MzkwNDQ6MWQyODQ1OTUwNDI1MTQ5N2UwY2U2MTMyYTBmYWRkNWViNDRmZmQyMg=="
+    name = f"prod-{created_at.date()}-{vhash}"
+    assert row == {
+        "account_id": 1,
+        "deployment_name": name,
+        "repository_node_id": "MDEwOlJlcG9zaXRvcnk0NDczOTA0NA==",
+        "reference": ref,
+        "resolved_commit_node_id": commit,
+    }
+    rows = await rdb.fetch_all(select([DeployedLabel]))
+    assert len(rows) == 2
+    assert dict(rows[0]) == {
+        "account_id": 1,
+        "deployment_name": name,
+        "key": "one",
+        "value": 1,
+    }
+    assert dict(rows[1]) == {
+        "account_id": 1,
+        "deployment_name": name,
+        "key": "2",
+        "value": "two",
+    }
+    rows = await rdb.fetch_all(select([DeploymentNotification]))
+    assert len(rows) == 1
+    row = dict(rows[0])
+    created_at = row[DeploymentNotification.created_at.key]
+    assert isinstance(created_at, datetime)
+    del row[DeploymentNotification.created_at.key]
+    updated_at = row[DeploymentNotification.updated_at.key]
+    assert isinstance(updated_at, datetime)
+    del row[DeploymentNotification.updated_at.key]
+    tzinfo = timezone.utc if rdb.url.dialect == "postgresql" else None
+    assert row == {
+        "account_id": 1,
+        "name": name,
+        "conclusion": "SUCCESS" if with_finish else None,
+        "started_at": datetime(2021, 1, 12, 0, 0, tzinfo=tzinfo),
+        "finished_at": datetime(2021, 1, 12, 1, 0, tzinfo=tzinfo) if with_finish else None,
+        "url": None,
+        "environment": "production",
+    }
+
+
+@pytest.mark.parametrize("with_finish", [False, True])
+async def test_notify_deployment_set_name(client, headers, token, rdb, with_finish):
+    body = [{
+        "components": [{
+            "repository": "github.com/src-d/go-git",
+            "reference": "xxx",
+        }],
+        "environment": "production",
+        "date_started": "2021-01-12T00:00:00Z",
+        "name": "xxx-production",
+    }]
+    if with_finish:
+        body[0]["date_finished"] = "2021-01-12T01:00:00Z"
+        body[0]["conclusion"] = "CANCELLED"
+    headers = headers.copy()
+    headers["X-API-Key"] = token
+    response = await client.request(
+        method="POST", path="/v1/events/deployments", headers=headers, json=body,
+    )
+    assert response.status == 200
+    rows = await rdb.fetch_all(select([DeploymentNotification]))
+    assert len(rows) == 1
+    row = dict(rows[0])
+    del row[DeploymentNotification.created_at.key]
+    del row[DeploymentNotification.updated_at.key]
+    tzinfo = timezone.utc if rdb.url.dialect == "postgresql" else None
+    assert row == {
+        "account_id": 1,
+        "name": "xxx-production",
+        "conclusion": "CANCELLED" if with_finish else None,
+        "started_at": datetime(2021, 1, 12, 0, 0, tzinfo=tzinfo),
+        "finished_at": datetime(2021, 1, 12, 1, 0, tzinfo=tzinfo) if with_finish else None,
+        "url": None,
+        "environment": "production",
+    }
+
+
+@pytest.mark.parametrize("with_finish", [False, True])
+async def test_notify_deployment_set_finish(client, headers, token, rdb, with_finish):
+    body = [{
+        "components": [{
+            "repository": "github.com/src-d/go-git",
+            "reference": "xxx",
+        }],
+        "environment": "staging",
+        "date_started": "2021-01-12T00:00:00Z",
+        "labels": {
+            "one": 1,
+        },
+    }]
+    if with_finish:
+        body[0]["date_finished"] = "2021-01-12T01:00:00Z"
+        body[0]["conclusion"] = "SUCCESS"
+    headers = headers.copy()
+    headers["X-API-Key"] = token
+    response = await client.request(
+        method="POST", path="/v1/events/deployments", headers=headers, json=body,
+    )
+    assert response.status == 200
+    del body[0]["date_started"]
+    body[0]["date_finished"] = "2021-02-12T01:00:00Z"
+    body[0]["conclusion"] = "FAILURE"
+    body[0]["labels"] = {
+        "one": 2,
+    }
+    response = await client.request(
+        method="POST", path="/v1/events/deployments", headers=headers, json=body,
+    )
+    assert response.status == 200
+    rows = await rdb.fetch_all(select([DeploymentNotification]))
+    assert len(rows) == 1
+    row = dict(rows[0])
+    created_at = row[DeploymentNotification.created_at.key]
+    del row[DeploymentNotification.created_at.key]
+    del row[DeploymentNotification.updated_at.key]
+    name = f"stage-{created_at.date()}-4e3a8b2d"
+    tzinfo = timezone.utc if rdb.url.dialect == "postgresql" else None
+    assert row == {
+        "account_id": 1,
+        "name": name,
+        "conclusion": "FAILURE",
+        "started_at": datetime(2021, 1, 12, 0, 0, tzinfo=tzinfo),
+        "finished_at": datetime(2021, 2, 12, 1, 0, tzinfo=tzinfo),
+        "url": None,
+        "environment": "staging",
+    }
+    rows = await rdb.fetch_all(select([DeployedLabel]))
+    assert len(rows) == 1
+    assert dict(rows[0]) == {
+        "account_id": 1,
+        "deployment_name": name,
+        "key": "one",
+        "value": 2,
+    }
+
+
+@pytest.mark.parametrize("body, code", [
+    ({
+        "components": [{
+            "repository": "github.com/src-d/go-git",
+            "reference": "xxx",
+        }],
+        "environment": "production",
+        "date_started": "2021-01-12T00:00:00Z",
+        "date_finished": "2021-01-12T01:00:00Z",
+    }, 400),
+    ({
+        "components": [{
+            "repository": "github.com/src-d/go-git",
+            "reference": "xxx",
+        }],
+        "environment": "production",
+        "date_started": "2021-01-12T00:00:00Z",
+        "conclusion": "SUCCESS",
+    }, 400),
+    ({
+        "components": [{
+            "repository": "github.com/src-d/go-git",
+            "reference": "xxx",
+        }],
+        "environment": "production",
+        "date_started": "2021-01-12T00:00:00Z",
+        "date_finished": "2021-01-12T01:00:00Z",
+        "conclusion": "WHATEVER",
+    }, 400),
+    ({
+        "components": [{
+            "repository": "github.com/src-d/go-git",
+            "reference": "xxx",
+        }],
+        "environment": "production",
+    }, 400),
+    ({
+        "components": [],
+        "environment": "production",
+        "date_started": "2021-01-12T00:00:00Z",
+    }, 400),
+    ({
+        "components": [{
+            "repository": "github.com/src-d/go-git",
+            "reference": "xxx",
+        }],
+        "environment": "production",
+        "date_started": "2021-01-12T00:00:00Z",
+        "date_finished": "2021-01-11T01:00:00Z",
+        "conclusion": "SUCCESS",
+    }, 400),
+    ({
+        "components": [{
+            "repository": "github.com/athenianco/athenian-api",
+            "reference": "xxx",
+        }],
+        "environment": "production",
+        "date_started": "2021-01-12T00:00:00Z",
+    }, 403),
+    ({
+        "components": [{
+            "repository": "github.com",
+            "reference": "xxx",
+        }],
+        "environment": "production",
+        "date_started": "2021-01-12T00:00:00Z",
+    }, 400),
+])
+async def test_notify_deployment_nasty_input(client, headers, token, body, code):
+    headers = headers.copy()
+    headers["X-API-Key"] = token
+    response = await client.request(
+        method="POST", path="/v1/events/deployments", headers=headers, json=[body],
+    )
+    assert response.status == code
+
+
+async def test_notify_deployment_unauthorized(client, headers):
+    response = await client.request(
+        method="POST", path="/v1/events/deployments", headers=headers, json=[{
+            "components": [],
+            "environment": "production",
+            "date_started": "2021-01-12T00:00:00Z",
+        }],
+    )
+    assert response.status == 401
+
+
+async def test_notify_deployment_422(client, headers, token, sdb):
+    await sdb.execute(delete(AccountGitHubAccount))
+    headers = headers.copy()
+    headers["X-API-Key"] = token
+    response = await client.request(
+        method="POST", path="/v1/events/deployments", headers=headers, json=[{
+            "components": [{
+                "repository": "github.com/src-d/go-git",
+                "reference": "xxx",
+            }],
+            "environment": "production",
+            "date_started": "2021-01-12T00:00:00Z",
+        }],
+    )
+    assert response.status == 422

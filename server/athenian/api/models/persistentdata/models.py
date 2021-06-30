@@ -1,7 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, Boolean, Column, ForeignKeyConstraint, func, Integer, Text, \
-    TIMESTAMP
+from sqlalchemy import Boolean, Column, ForeignKeyConstraint, func, Integer, JSON, Text, TIMESTAMP
 
 from athenian.api.models import create_base
 
@@ -56,10 +55,9 @@ class DeploymentNotification(create_time_mixin(created_at=True, updated_at=True)
 
     __tablename__ = "deployment_notifications"
 
-    id = Column(BigInteger(), primary_key=True)  # deployment ID
+    name = Column(Text(), primary_key=True, nullable=False)
     conclusion = Column(Text())  # SUCCESS, FAILURE, CANCELLED
     environment = Column(Text(), nullable=False)  # production, staging, etc.; nothing's enforced
-    name = Column(Text(), nullable=False)  # arbitrary but must exist
     url = Column(Text())
     started_at = Column(TIMESTAMP(timezone=True), nullable=False)
     finished_at = Column(TIMESTAMP(timezone=True))  # is nullable to support 2-step notifications
@@ -71,15 +69,15 @@ class DeployedLabel(Base):
     __tablename__ = "deployed_labels"
     _table_args__ = [
         ForeignKeyConstraint(
-            ("account_id", "deployment_id"),
-            (DeploymentNotification.account_id, DeploymentNotification.id),
+            ("account_id", "deployment_name"),
+            (DeploymentNotification.account_id, DeploymentNotification.name),
             name="fk_deployed_labels_deployment",
         ),
     ]
 
-    deployment_id = Column("deployment_id", BigInteger(), primary_key=True)
+    deployment_name = Column(Text(), primary_key=True)
     key = Column(Text(), primary_key=True)
-    value = Column(Text())
+    value = Column(JSON())
 
 
 class DeployedComponent(create_time_mixin(created_at=True, updated_at=False), Base):
@@ -88,13 +86,13 @@ class DeployedComponent(create_time_mixin(created_at=True, updated_at=False), Ba
     __tablename__ = "deployed_components"
     _table_args__ = [
         ForeignKeyConstraint(
-            ("account_id", "deployment_id"),
-            (DeploymentNotification.account_id, DeploymentNotification.id),
+            ("account_id", "deployment_name"),
+            (DeploymentNotification.account_id, DeploymentNotification.name),
             name="fk_deployed_components_deployment",
         ),
     ]
 
-    deployment_id = Column("deployment_id", BigInteger(), primary_key=True)
+    deployment_name = Column(Text(), primary_key=True)
     repository_node_id = Column(Text(), primary_key=True)
     reference = Column(Text(), primary_key=True)  # tag, commit hash 7-char prefix or full
     resolved_commit_node_id = Column(Text())  # de-referenced commit node ID in metadata DB
