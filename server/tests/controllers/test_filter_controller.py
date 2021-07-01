@@ -1997,6 +1997,21 @@ async def test_filter_check_runs_smoke(client, headers):
     assert nn_successes_timeline > 0
 
 
+async def test_filter_check_runs_no_jira(client, headers, sdb):
+    await sdb.execute(delete(AccountJiraInstallation))
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-01-12",
+        "timezone": 60,
+        "in": ["{1}"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/code_checks", headers=headers, json=body)
+    response_text = (await response.read()).decode("utf-8")
+    assert response.status == 200, response_text
+
+
 @pytest.mark.parametrize("filters, count", [
     ({"labels_include": ["bug", "plumbing", "enhancement"]}, 4),
     ({"triggered_by": ["github.com/mcuadros"]}, 7),
