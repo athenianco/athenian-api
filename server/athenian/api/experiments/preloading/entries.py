@@ -26,7 +26,7 @@ from athenian.api.controllers.miners.github.precomputed_prs import \
 from athenian.api.controllers.miners.github.precomputed_prs.utils import extract_release_match
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.github.release_load import \
-    group_repos_by_release_match, match_groups_to_conditions, ReleaseLoader
+    group_repos_by_release_match, match_groups_to_conditions, MissingReleases, ReleaseLoader
 from athenian.api.controllers.miners.github.release_load import \
     remove_ambigous_precomputed_releases
 from athenian.api.controllers.miners.github.release_match import ReleaseToPullRequestMapper
@@ -165,6 +165,22 @@ class PreloadedReleaseLoader(ReleaseLoader):
 
         return (functools.reduce(operator.or_, or_masks) if or_masks
                 else np.ones(len(df), dtype=bool))
+
+    @classmethod
+    @sentry_span
+    def _find_missing_releases(cls,
+                               repos: Iterable[str],
+                               time_from: datetime,
+                               time_to: datetime,
+                               max_time_to: datetime,
+                               applied_matches: Dict[str, ReleaseMatch],
+                               spans: Dict[str, Dict[str, Tuple[datetime, datetime]]],
+                               pdb: databases.Database) -> MissingReleases:
+        missing_releases = super(PreloadedReleaseLoader, cls)._find_missing_releases(
+            repos, time_from, time_to, max_time_to, applied_matches, spans, pdb)
+        return MissingReleases(
+            missing_high=[], missing_low=[], missing_all=[],
+            ambiguous_branches_scanned=missing_releases.ambiguous_branches_scanned)
 
 
 class PreloadedReleaseToPullRequestMapper(ReleaseToPullRequestMapper):
