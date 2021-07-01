@@ -21,7 +21,7 @@ class DeploymentNotification(Model):
         "environment": str,
         "name": Optional[str],
         "url": Optional[str],
-        "date_started": datetime,
+        "date_started": Optional[datetime],
         "date_finished": Optional[datetime],
         "conclusion": Optional[DeploymentConclusion],
         "labels": dict,
@@ -74,6 +74,13 @@ class DeploymentNotification(Model):
         if (self.date_finished is None) != (self.conclusion is None):
             raise ResponseError(InvalidRequestError(
                 "`date_finished` and `conclusion` must either be both null or both non-null"))
+        if self.date_finished is not None and self.date_started is not None and \
+                self.date_finished < self.date_started:
+            raise ResponseError(InvalidRequestError(
+                "`date_finished` must be later than `date_started`"))
+        if self.date_started is None and self.date_finished is None:
+            raise ResponseError(InvalidRequestError(
+                "Either `date_started` or `date_finished` must be specified"))
 
     @property
     def components(self) -> List[DeployedComponent]:
@@ -146,6 +153,8 @@ class DeploymentNotification(Model):
 
         :param name: The name of this DeploymentNotification.
         """
+        if name is not None and not name:
+            raise ValueError("`name` must be either null or at least 1 character long")
         self._name = name
 
     @property
@@ -169,7 +178,7 @@ class DeploymentNotification(Model):
         self._url = url
 
     @property
-    def date_started(self) -> datetime:
+    def date_started(self) -> Optional[datetime]:
         """Gets the date_started of this DeploymentNotification.
 
         Timestamp of when the deployment procedure launched.
@@ -179,7 +188,7 @@ class DeploymentNotification(Model):
         return self._date_started
 
     @date_started.setter
-    def date_started(self, date_started: datetime):
+    def date_started(self, date_started: Optional[datetime]):
         """Sets the date_started of this DeploymentNotification.
 
         Timestamp of when the deployment procedure launched.

@@ -107,11 +107,11 @@ async def get_account_features(request: AthenianWebRequest, id: int) -> web.Resp
     """Return enabled product features for the account."""
     async with request.sdb.connection() as conn:
         await get_user_account_status(request.uid, id, conn, request.cache)
-        account_features = await conn.fetch_all_safe(
+        account_features = await conn.fetch_all(
             select([AccountFeature.feature_id, AccountFeature.parameters])
             .where(and_(AccountFeature.account_id == id, AccountFeature.enabled)))
         account_features = {row[0]: row[1] for row in account_features}
-        features = await conn.fetch_all_safe(
+        features = await conn.fetch_all(
             select([Feature.id, Feature.name, Feature.default_parameters])
             .where(and_(Feature.id.in_(account_features),
                         Feature.component == FeatureComponent.webapp,

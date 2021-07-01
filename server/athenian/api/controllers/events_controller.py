@@ -1,11 +1,14 @@
+from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
+from itertools import chain
 import os
 import re
-from typing import List
+from typing import Dict, Iterable, List, Mapping, Tuple
 
 from aiohttp import web
-from sqlalchemy import and_, delete, func, insert, select, union
+from sqlalchemy import and_, delete, func, insert, select, text, union, union_all, update
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
+from xxhash._xxhash import xxh32_hexdigest
 
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
@@ -18,17 +21,23 @@ from athenian.api.controllers.miners.github.release_mine import mine_releases
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.reposet import resolve_repos
 from athenian.api.controllers.settings import ReleaseMatch, Settings
+from athenian.api.db import FastConnection, ParallelDatabase
 from athenian.api.defer import defer, wait_deferred
-from athenian.api.models.metadata.github import PushCommit, User
-from athenian.api.models.persistentdata.models import ReleaseNotification
+from athenian.api.models.metadata.github import PushCommit, Release, User
+from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
+    DeploymentNotification, \
+    ReleaseNotification
 from athenian.api.models.web import BadRequestError, DeleteEventsCacheRequest, \
+    DeployedComponent as WebDeployedComponent, \
     DeploymentNotification as WebDeploymentNotification, ForbiddenError, \
     InvalidRequestError, ReleaseNotification as WebReleaseNotification
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError
 from athenian.api.serialization import ParseError
+from athenian.api.tracing import sentry_span
 from athenian.precomputer.db.models import GitHubDonePullRequestFacts, \
     GitHubMergedPullRequestFacts, GitHubReleaseFacts
+
 
 commit_hash_re = re.compile(r"[a-f0-9]{7}([a-f0-9]{33})?")
 SLACK_CHANNEL = os.getenv("ATHENIAN_EVENTS_SLACK_CHANNEL", "")
@@ -55,11 +64,11 @@ async def notify_releases(request: AthenianWebRequest, body: List[dict]) -> web.
     async def main_flow():
         repos = set()
         full_commits = set()
-        prefixed_commits = set()
+        prefixed_commits = defaultdict(set)
         unique_notifications = set()
         for i, n in enumerate(notifications):
             try:
-                repos.add(n.repository.split("/", 1)[1])
+                repos.add(repo := n.repository.split("/", 1)[1])
             except IndexError:
                 raise ResponseError(InvalidRequestError(
                     "[%d].repository" % i, detail="repository name is invalid: %s" % n.repository))
@@ -67,7 +76,7 @@ async def notify_releases(request: AthenianWebRequest, body: List[dict]) -> web.
                 raise ResponseError(InvalidRequestError(
                     "[%d].commit" % i, detail="invalid commit hash"))
             if len(n.commit) == 7:
-                prefixed_commits.add(n.commit)
+                prefixed_commits[repo].add(n.commit)
             else:
                 full_commits.add(n.commit)
             if (key := (n.commit, n.repository)) in unique_notifications:
@@ -88,9 +97,11 @@ async def notify_releases(request: AthenianWebRequest, body: List[dict]) -> web.
                 select([PushCommit.sha, PushCommit.node_id, PushCommit.repository_full_name])
                 .where(and_(PushCommit.acc_id.in_(meta_ids),
                             PushCommit.sha.in_(full_commits))),
-                select([PushCommit.sha, PushCommit.node_id, PushCommit.repository_full_name])
-                .where(and_(PushCommit.acc_id.in_(meta_ids),
-                            func.substr(PushCommit.sha, 1, 7).in_(prefixed_commits))),
+                *(select([PushCommit.sha, PushCommit.node_id, PushCommit.repository_full_name])
+                  .where(and_(PushCommit.acc_id.in_(meta_ids),
+                              PushCommit.repository_full_name == repo,
+                              func.substr(PushCommit.sha, 1, 7).in_(prefixes)))
+                  for repo, prefixes in prefixed_commits.items()),
             )),
             mdb.fetch_all(select([User.login, User.node_id])
                           .where(and_(User.acc_id.in_(meta_ids),
@@ -224,13 +235,266 @@ async def clear_precomputed_events(request: AthenianWebRequest, body: dict) -> w
 async def notify_deployments(request: AthenianWebRequest, body: List[dict]) -> web.Response:
     """Notify about new deployments."""
     # account is automatically checked at this point
-    WebDeploymentNotification
-    """
     try:
         notifications = [WebDeploymentNotification.from_dict(n) for n in body]
     except ParseError as e:
         raise ResponseError(BadRequestError("%s: %s" % (type(e).__name__, e)))
-    account = request.account
-    sdb, mdb, rdb = request.sdb, request.mdb, request.rdb
-    """
-    raise NotImplementedError
+    tasks = []
+    account, sdb, mdb, rdb, cache = \
+        request.account, request.sdb, request.mdb, request.rdb, request.cache
+    meta_ids = await get_metadata_account_ids(account, sdb, cache)
+    checker = await access_classes["github"](account, meta_ids, sdb, mdb, cache).load()
+    for i, notification in enumerate(notifications):
+        notification.validate_multipart()
+        try:
+            deployed_repos = {c.repository.split("/", 1)[1] for c in notification.components}
+        except IndexError:
+            raise ResponseError(BadRequestError(
+                f"[{i}].components contain unprefixed repository names")) from None
+        if denied_repos := await checker.check(deployed_repos):
+            raise ResponseError(ForbiddenError(
+                f"Access denied to some repositories in [{i}].components: {denied_repos}"))
+        if notification.name is None:
+            notification.name = _compose_name(notification)
+    repo_nodes = checker.installed_repos()
+    resolved = await _resolve_references(chain.from_iterable(n.components for n in notifications),
+                                         meta_ids, mdb)
+    for notification in notifications:
+        if notification.date_finished is None:
+            tasks.append(_notify_deployment_started(
+                notification, account, rdb, resolved, repo_nodes))
+        elif notification.date_started is None:
+            tasks.append(_notify_deployment_finished(notification, account, rdb))
+        else:
+            tasks.append(_notify_deployment_interval(
+                notification, account, rdb, resolved, repo_nodes))
+    await gather(*tasks)
+    return web.Response(status=200)
+
+
+def _normalize_reference(ref: str) -> str:
+    if len(ref) == 40:
+        ref = ref[:7]
+    if not ref.startswith("v"):
+        ref = "v" + ref
+    return ref
+
+
+def _compose_name(notification: WebDeploymentNotification) -> str:
+    components = sorted(notification.components, key=lambda c: c.repository)
+    text = "|".join(f"{c.repository}-{_normalize_reference(c.reference)}" for c in components)
+    chash = xxh32_hexdigest(text)
+    today = datetime.utcnow()
+    env = notification.environment
+    for key, repl in (("production", "prod"),
+                      ("staging", "stage"),
+                      ("development", "dev")):
+        env = env.replace(key, repl)
+    return "%s-%d-%02d-%02d-%s" % (env, today.year, today.month, today.day, chash)
+
+
+@sentry_span
+async def _resolve_references(components: Iterable[WebDeployedComponent],
+                              meta_ids: Tuple[int, ...],
+                              mdb: ParallelDatabase,
+                              ) -> Dict[str, Dict[str, str]]:
+    releases = defaultdict(set)
+    full_commits = set()
+    prefix_commits = defaultdict(set)
+    for c in components:
+        repo = c.repository.split("/", 1)[1]
+        if len(c.reference) == 7:
+            prefix_commits[repo].add(c.reference)
+        if len(c.reference) == 40:
+            full_commits.add(c.reference)
+        releases[repo].add(c.reference)
+        if c.reference.startswith("v"):
+            releases[repo].add(c.reference[1:])
+        else:
+            releases[repo].add("v" + c.reference)
+    queries = [
+        select([text("'commit_f'"),
+                PushCommit.sha, PushCommit.node_id, PushCommit.repository_full_name])
+        .where(and_(PushCommit.acc_id.in_(meta_ids),
+                    PushCommit.sha.in_(full_commits))),
+        *(select([text("'commit_p'"),
+                  PushCommit.sha, PushCommit.node_id, PushCommit.repository_full_name])
+          .where(and_(PushCommit.acc_id.in_(meta_ids),
+                      PushCommit.repository_full_name == repo,
+                      func.substr(PushCommit.sha, 1, 7).in_(prefixes)))
+          for repo, prefixes in prefix_commits.items()),
+        *(select([text("'release'"),
+                  Release.name, Release.commit_id, Release.repository_full_name])
+          .where(and_(Release.acc_id.in_(meta_ids),
+                      Release.repository_full_name == repo,
+                      Release.name.in_(names)))
+          for repo, names in releases.items()),
+    ]
+    rows = await mdb.fetch_all(union_all(*queries))
+    # order: first full commits, then commit prefixes, then releases
+    rows = sorted(rows, key=lambda row: row[0])
+    result = defaultdict(dict)
+    for row in rows:
+        type_id, ref, commit, repo = row[0], row[1], row[2], row[3]
+        if type_id == "commit_f":
+            result[repo][ref] = commit
+        elif type_id == "commit_p":
+            result[repo][ref[:7]] = commit
+        else:
+            result[repo][ref] = commit
+            if not ref.startswith("v"):
+                result[repo]["v" + ref] = commit
+            else:
+                result[repo][ref[1:]] = commit
+    return result
+
+
+@sentry_span
+async def _notify_deployment_started(notification: WebDeploymentNotification,
+                                     account: int,
+                                     rdb: ParallelDatabase,
+                                     resolved_refs: Mapping[str, Mapping[str, str]],
+                                     repo_nodes: Mapping[str, str],
+                                     ) -> None:
+    async with rdb.connection() as rdb_conn:
+        async with rdb_conn.transaction():
+            if rdb.url.dialect == "postgresql":
+                sql = postgres_insert(DeploymentNotification)
+                sql = sql.on_conflict_do_update(
+                    constraint=DeploymentNotification.__table__.primary_key,
+                    set_={
+                        col.key: getattr(sql.excluded, col.key)
+                        for col in (
+                            DeploymentNotification.started_at,
+                            DeploymentNotification.updated_at,
+                        )
+                    },
+                )
+            else:
+                sql = insert(DeploymentNotification).prefix_with("OR REPLACE")
+            await rdb_conn.execute(sql.values(
+                DeploymentNotification(
+                    account_id=account,
+                    environment=notification.environment,
+                    name=notification.name,
+                    url=notification.url,
+                    started_at=notification.date_started,
+                ).create_defaults().explode(with_primary_keys=True),
+            ))
+            await _write_deployed_components_and_labels(
+                notification, account, resolved_refs, repo_nodes, rdb_conn,
+            )
+
+
+async def _write_deployed_components_and_labels(notification: WebDeploymentNotification,
+                                                account: int,
+                                                resolved_refs: Mapping[str, Mapping[str, str]],
+                                                repo_nodes: Mapping[str, str],
+                                                rdb_conn: FastConnection,
+                                                ) -> None:
+    cvalues = [
+        DeployedComponent(
+            account_id=account,
+            deployment_name=notification.name,
+            repository_node_id=repo_nodes[(repo := c.repository.split("/", 1)[1])],
+            reference=c.reference,
+            resolved_commit_node_id=resolved_refs.get(repo, {}).get(c.reference),
+        ).create_defaults().explode(with_primary_keys=True)
+        for c in notification.components
+    ]
+    await rdb_conn.execute_many(insert(DeployedComponent), cvalues)
+    if notification.labels:
+        lvalues = [
+            DeployedLabel(
+                account_id=account,
+                deployment_name=notification.name,
+                key=str(key),
+                value=value,
+            ).create_defaults().explode(with_primary_keys=True)
+            for key, value in notification.labels.items()
+        ]
+        await rdb_conn.execute_many(insert(DeployedLabel), lvalues)
+
+
+@sentry_span
+async def _notify_deployment_finished(notification: WebDeploymentNotification,
+                                      account: int,
+                                      rdb: ParallelDatabase,
+                                      ) -> None:
+    async with rdb.connection() as rdb_conn:
+        async with rdb_conn.transaction():
+            await rdb_conn.execute(
+                update(DeploymentNotification)
+                .where(and_(DeploymentNotification.account_id == account,
+                            DeploymentNotification.name == notification.name))
+                .values({
+                    DeploymentNotification.conclusion: notification.conclusion,
+                    DeploymentNotification.finished_at: notification.date_finished,
+                    DeploymentNotification.updated_at: datetime.now(timezone.utc),
+                }))
+            if notification.labels:
+                lvalues = [
+                    DeployedLabel(
+                        account_id=account,
+                        deployment_name=notification.name,
+                        key=str(key),
+                        value=value,
+                    ).create_defaults().explode(with_primary_keys=True)
+                    for key, value in notification.labels.items()
+                ]
+                if rdb.url.dialect == "postgresql":
+                    sql = postgres_insert(DeployedLabel)
+                    sql = sql.on_conflict_do_update(
+                        constraint=DeployedLabel.__table__.primary_key,
+                        set_={
+                            col.key: getattr(sql.excluded, col.key)
+                            for col in (
+                                DeployedLabel.key,
+                                DeployedLabel.value,
+                            )
+                        },
+                    )
+                else:
+                    sql = insert(DeployedLabel).prefix_with("OR REPLACE")
+                await rdb_conn.execute_many(sql, lvalues)
+
+
+@sentry_span
+async def _notify_deployment_interval(notification: WebDeploymentNotification,
+                                      account: int,
+                                      rdb: ParallelDatabase,
+                                      resolved_refs: Mapping[str, Mapping[str, str]],
+                                      repo_nodes: Mapping[str, str],
+                                      ) -> None:
+    async with rdb.connection() as rdb_conn:
+        async with rdb_conn.transaction():
+            if rdb.url.dialect == "postgresql":
+                sql = postgres_insert(DeploymentNotification)
+                sql = sql.on_conflict_do_update(
+                    constraint=DeploymentNotification.__table__.primary_key,
+                    set_={
+                        col.key: getattr(sql.excluded, col.key)
+                        for col in (
+                            DeploymentNotification.started_at,
+                            DeploymentNotification.finished_at,
+                            DeploymentNotification.conclusion,
+                            DeploymentNotification.updated_at,
+                        )
+                    },
+                )
+            else:
+                sql = insert(DeploymentNotification).prefix_with("OR REPLACE")
+            await rdb_conn.execute(sql.values(
+                DeploymentNotification(
+                    account_id=account,
+                    conclusion=notification.conclusion,
+                    environment=notification.environment,
+                    name=notification.name,
+                    url=notification.url,
+                    started_at=notification.date_started,
+                    finished_at=notification.date_finished,
+                ).create_defaults().explode(with_primary_keys=True),
+            ))
+            await _write_deployed_components_and_labels(
+                notification, account, resolved_refs, repo_nodes, rdb_conn,
+            )

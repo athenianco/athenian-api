@@ -1,5 +1,6 @@
 import asyncio
 from contextvars import ContextVar
+import json
 import logging
 import os
 import pickle
@@ -83,17 +84,33 @@ class FastConnection(databases.core.Connection):
                         values: dict = None) -> List[Mapping]:
         """Avoid re-wrapping the returned rows in PostgreSQL."""
         if isinstance(self.raw_connection, asyncpg.Connection):
-            built_query = self._build_query(query, values)
-            sql, args = self._compile(built_query, None)
+            sql, args = self._compile(self._build_query(query, values), None)
             async with self._query_lock:
                 return await self.raw_connection.fetch(sql, *args)
         return await super().fetch_all(query=query, values=values)
 
-    async def fetch_all_safe(self,
-                             query: Union[ClauseElement, str],
-                             values: dict = None) -> List[Mapping]:
-        """Call the original fetch_all()."""
-        return await super().fetch_all(query=query, values=values)
+    async def fetch_one(self,
+                        query: Union[ClauseElement, str],
+                        values: dict = None,
+                        ) -> Optional[Mapping]:
+        """Avoid re-wrapping the returned row in PostgreSQL."""
+        if isinstance(self.raw_connection, asyncpg.Connection):
+            sql, args = self._compile(self._build_query(query, values), None)
+            async with self._query_lock:
+                return await self.raw_connection.fetchrow(sql, *args)
+        return await super().fetch_one(query=query, values=values)
+
+    async def fetch_val(self,
+                        query: Union[ClauseElement, str],
+                        values: dict = None,
+                        column: Any = 0,
+                        ) -> Any:
+        """Avoid re-wrapping the returned value in PostgreSQL."""
+        if isinstance(self.raw_connection, asyncpg.Connection):
+            sql, args = self._compile(self._build_query(query, values), None)
+            async with self._query_lock:
+                return await self.raw_connection.fetchval(sql, *args, column=column)
+        return await super().fetch_val(query=query, column=column)
 
     async def execute_many(self,
                            query: Union[ClauseElement, str],
@@ -173,9 +190,10 @@ class FastConnection(databases.core.Connection):
 
             processors = compiled._bind_processors
             if isinstance(self.raw_connection, asyncpg.Connection):
-                # we should not process HSTORE, asyncpg will do it for us
+                # we should not process HSTORE and JSON, asyncpg will do it for us
                 removed = [key for key, val in processors.items()
-                           if val.__qualname__.startswith("HSTORE")]
+                           if val.__qualname__.startswith("HSTORE") or
+                           val.__qualname__.startswith("JSON")]
                 for key in removed:
                     del processors[key]
             args = []
@@ -229,7 +247,7 @@ class ParallelDatabase(databases.Database):
         if url.dialect not in ("postgresql", "sqlite"):
             raise ValueError("Dialect %s is not supported." % url.dialect)
         if url.dialect == "postgresql":
-            options["init"] = self._register_hstore_codec
+            options["init"] = self._register_codecs
             options["statement_cache_size"] = 0
             self._ignore_hstore = False
         super().__init__(url, force_rollback=force_rollback, **options)
@@ -246,14 +264,9 @@ class ParallelDatabase(databases.Database):
         connection._serialization_lock = self._serialization_lock
         return connection
 
-    async def fetch_all_safe(self,
-                             query: Union[ClauseElement, str],
-                             values: dict = None) -> List[Mapping]:
-        """Call the original fetch_all()."""
-        async with self.connection() as connection:
-            return await connection.fetch_all_safe(query, values)
-
-    async def _register_hstore_codec(self, conn: asyncpg.Connection) -> None:
+    async def _register_codecs(self, conn: asyncpg.Connection) -> None:
+        await conn.set_type_codec(
+            "json", encoder=json.dumps, decoder=json.loads, schema="pg_catalog")
         if self._ignore_hstore:
             return
         try:

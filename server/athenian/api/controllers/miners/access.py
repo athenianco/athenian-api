@@ -32,7 +32,8 @@ class AccessChecker:
         self._installed_repos = {}
 
     def installed_repos(self) -> Dict[str, str]:
-        """Get the currently installed repository names *without* the service prefix."""
+        """Get the currently installed repository names *without* the service prefix mapped to \
+        node IDs."""
         return self._installed_repos
 
     async def load(self) -> "AccessChecker":
