@@ -188,6 +188,13 @@ def test_calculate_interval_intersections_smoke():
     ]
 
 
+def test_calculate_interval_intersections_empty():
+    empty = np.array([], dtype=np.uint64)
+    result = calculate_interval_intersections(empty, empty, np.array([6, len(ii_starts)]))
+    assert len(result) == 0
+    assert result.dtype == float
+
+
 def test_elapsed_time_per_concurrency_histogram():
     calc = CheckRunHistogramCalculatorEnsemble(CodeCheckMetricID.ELAPSED_TIME_PER_CONCURRENCY,
                                                quantiles=[0, 0.95])

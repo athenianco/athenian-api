@@ -19,6 +19,8 @@ def calculate_interval_intersections(starts: np.ndarray,
     assert len(starts) == len(finishes)
     assert starts.dtype == np.uint64
     assert finishes.dtype == np.uint64
+    if len(starts) == 0:
+        return np.array([], dtype=float)
     time_offset = starts.min()
     # require less bits for the timestamps
     starts -= time_offset
