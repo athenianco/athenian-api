@@ -624,7 +624,7 @@ async def filter_code_checks(request: AthenianWebRequest, body: dict) -> web.Res
         raise ResponseError(InvalidRequestError("?", detail=str(e)))
     (time_from, time_to, repos, meta_ids, prefixer), jira_ids = await gather(
         _common_filter_preprocess(filt, request, strip_prefix=True),
-        get_jira_installation(filt.account, request.sdb, request.mdb, request.cache),
+        get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
     )
     timeline, check_runs = await filter_check_runs(
         time_from, time_to, repos, {d.rsplit("/", 1)[1] for d in (filt.triggered_by or [])},
