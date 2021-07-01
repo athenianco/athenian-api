@@ -269,7 +269,7 @@ class SuiteTimeCalculatorAnalysis(MetricCalculator[None]):
         unique_run_counts, back_indexes, group_counts = np.unique(
             run_counts, return_inverse=True, return_counts=True)
         run_counts_order = np.argsort(back_indexes)
-        ordered_indexes = np.concatenate(suite_blocks[run_counts_order])
+        ordered_indexes = np.concatenate(suite_blocks[run_counts_order]).astype(int)
         groups = np.split(ordered_indexes, np.cumsum(group_counts * unique_run_counts)[:-1])
         run_finished = facts[CheckRun.completed_at.key].values.astype(min_times.dtype)
         suite_started_col = facts[check_suite_started_column].values
