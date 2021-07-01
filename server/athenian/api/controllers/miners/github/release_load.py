@@ -4,7 +4,7 @@ from itertools import chain
 import logging
 import pickle
 import re
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Dict, Iterable, List, NamedTuple, Optional, Sequence, Set, Tuple, Union
 
 import aiomcache
 import asyncpg
@@ -41,6 +41,15 @@ from athenian.api.tracing import sentry_span
 
 tag_by_branch_probe_lookaround = timedelta(weeks=4)
 unfresh_releases_threshold = 50
+
+
+class MissingReleases(NamedTuple):
+    """Missing releases."""
+
+    missing_high: List[Tuple[datetime, Tuple[str, ReleaseMatch]]]
+    missing_low: List[Tuple[datetime, Tuple[str, ReleaseMatch]]]
+    missing_all: List[Tuple[str, ReleaseMatch]]
+    ambiguous_branches_scanned: Set[str]
 
 
 class ReleaseLoader:
@@ -144,47 +153,10 @@ class ReleaseLoader:
                         applied_matches[repo] = ReleaseMatch.tag_or_branch
                 else:
                     applied_matches[repo] = ReleaseMatch(match)
-        missing_high = []
-        missing_low = []
-        missing_all = []
-        hits = 0
-        ambiguous_branches_scanned = set()
-        for repo in repos:
-            applied_match = applied_matches[repo]
-            if applied_match == ReleaseMatch.tag_or_branch:
-                matches = (ReleaseMatch.branch, ReleaseMatch.tag)
-                ambiguous_branches_scanned.add(repo)
-            elif applied_match == ReleaseMatch.event:
-                continue
-            else:
-                matches = (applied_match,)
-            for match in matches:
-                try:
-                    rt_from, rt_to = spans[repo][match]
-                except KeyError:
-                    missing_all.append((repo, match))
-                    continue
-                assert rt_from <= rt_to
-                my_time_from = time_from
-                my_time_to = time_to
-                if applied_match == ReleaseMatch.tag_or_branch and match == ReleaseMatch.tag:
-                    my_time_from -= tag_by_branch_probe_lookaround
-                    my_time_to += tag_by_branch_probe_lookaround
-                my_time_to = min(my_time_to, max_time_to)
-                missed = False
-                if my_time_from < rt_from <= my_time_to:
-                    missing_low.append((rt_from, (repo, match)))
-                    missed = True
-                if my_time_from <= rt_to < my_time_to:
-                    # DEV-990: ensure some gap to avoid failing when mdb lags
-                    missing_high.append((rt_to - timedelta(hours=1), (repo, match)))
-                    missed = True
-                if rt_from > my_time_to or rt_to < my_time_from:
-                    missing_all.append((repo, match))
-                    missed = True
-                if not missed:
-                    hits += 1
-        add_pdb_hits(pdb, "releases", hits)
+
+        missing_releases = cls._find_missing_releases(repos, time_from, time_to, max_time_to,
+                                                      applied_matches, spans, pdb)
+        missing_high, missing_low, missing_all, ambiguous_branches_scanned = missing_releases
         tasks = []
         if missing_high:
             missing_high.sort()
@@ -295,6 +267,62 @@ class ReleaseLoader:
                 times = tuple(t.replace(tzinfo=timezone.utc) for t in times)
             spans.setdefault(row[ghrts.repository_full_name.key], {})[release_match] = times
         return spans
+
+    @classmethod
+    @sentry_span
+    def _find_missing_releases(cls,
+                               repos: Iterable[str],
+                               time_from: datetime,
+                               time_to: datetime,
+                               max_time_to: datetime,
+                               applied_matches: Dict[str, ReleaseMatch],
+                               spans: Dict[str, Dict[str, Tuple[datetime, datetime]]],
+                               pdb: databases.Database) -> MissingReleases:
+        missing_high = []
+        missing_low = []
+        missing_all = []
+        hits = 0
+        ambiguous_branches_scanned = set()
+        for repo in repos:
+            applied_match = applied_matches[repo]
+            if applied_match == ReleaseMatch.tag_or_branch:
+                matches = (ReleaseMatch.branch, ReleaseMatch.tag)
+                ambiguous_branches_scanned.add(repo)
+            elif applied_match == ReleaseMatch.event:
+                continue
+            else:
+                matches = (applied_match,)
+            for match in matches:
+                try:
+                    rt_from, rt_to = spans[repo][match]
+                except KeyError:
+                    missing_all.append((repo, match))
+                    continue
+                assert rt_from <= rt_to
+                my_time_from = time_from
+                my_time_to = time_to
+                if applied_match == ReleaseMatch.tag_or_branch and match == ReleaseMatch.tag:
+                    my_time_from -= tag_by_branch_probe_lookaround
+                    my_time_to += tag_by_branch_probe_lookaround
+                my_time_to = min(my_time_to, max_time_to)
+                missed = False
+                if my_time_from < rt_from <= my_time_to:
+                    missing_low.append((rt_from, (repo, match)))
+                    missed = True
+                if my_time_from <= rt_to < my_time_to:
+                    # DEV-990: ensure some gap to avoid failing when mdb lags
+                    missing_high.append((rt_to - timedelta(hours=1), (repo, match)))
+                    missed = True
+                if rt_from > my_time_to or rt_to < my_time_from:
+                    missing_all.append((repo, match))
+                    missed = True
+                if not missed:
+                    hits += 1
+        add_pdb_hits(pdb, "releases", hits)
+
+        return MissingReleases(
+            missing_high=missing_high, missing_low=missing_low, missing_all=missing_all,
+            ambiguous_branches_scanned=ambiguous_branches_scanned)
 
     @classmethod
     @sentry_span
