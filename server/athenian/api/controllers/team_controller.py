@@ -102,7 +102,7 @@ async def list_teams(request: AthenianWebRequest, id: int) -> web.Response:
     account = id
     async with request.sdb.connection() as sdb_conn:
         await get_user_account_status(user, account, sdb_conn, request.cache)
-        teams = await sdb_conn.fetch_all_safe(
+        teams = await sdb_conn.fetch_all(
             select([Team]).where(Team.owner_id == account).order_by(Team.name))
         meta_ids = await get_metadata_account_ids(account, sdb_conn, request.cache)
     all_members = await _get_all_team_members(

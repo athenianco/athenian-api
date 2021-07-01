@@ -180,7 +180,7 @@ async def _load_account_reposets(account: int,
                                  ) -> List[Mapping]:
     assert isinstance(sdb_conn, FastConnection)
     assert isinstance(mdb_conn, FastConnection)
-    rss = await sdb_conn.fetch_all_safe(
+    rss = await sdb_conn.fetch_all(
         select(fields)
         .where(RepositorySet.owner_id == account)
         .order_by(RepositorySet.created_at))

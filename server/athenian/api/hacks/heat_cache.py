@@ -141,7 +141,7 @@ def main():
             state = await load_account_state(account, log, sdb, mdb, cache, slack)
             if state is not None:
                 account_progress_settings[account] = state
-        reposets = await sdb.fetch_all_safe(
+        reposets = await sdb.fetch_all(
             select([RepositorySet])
             .where(and_(RepositorySet.name == RepositorySet.ALL,
                         RepositorySet.owner_id.in_(accounts))))

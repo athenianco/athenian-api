@@ -98,7 +98,7 @@ async def _get_metrics_variation_for_account(
     if not feature_name_prefix:
         return None
 
-    all_metrics_variations_features = await sdb.fetch_all_safe(
+    all_metrics_variations_features = await sdb.fetch_all(
         select([Feature.id, Feature.name, Feature.default_parameters]).where(
             and_(
                 Feature.name.like(f"{feature_name_prefix}%"),
