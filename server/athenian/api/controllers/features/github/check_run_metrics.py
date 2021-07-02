@@ -434,9 +434,11 @@ class SuitesPerPRCounter(AverageMetricCalculator[float]):
         result = np.full((len(min_times), len(facts)), np.nan, dtype=np.float32)
         result[:, first_suite_encounters[first_pr_encounters]] = pr_suite_counts
         mask_pr_times = (
-            (facts[pull_request_started_column].values < max_times[:, None])
+            (facts[pull_request_started_column].values.astype(max_times.dtype, copy=False) <
+             max_times[:, None])
             &
-            (facts[pull_request_closed_column].values >= min_times[:, None])
+            (facts[pull_request_closed_column].values.astype(min_times.dtype, copy=False) >=
+             min_times[:, None])
         )
         result[~mask_pr_times] = None
         return result
