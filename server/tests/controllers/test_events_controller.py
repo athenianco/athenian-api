@@ -4,6 +4,7 @@ from freezegun import freeze_time
 import pytest
 from sqlalchemy import delete, insert, select, update
 
+from athenian.api.controllers.events_controller import resolve_deployed_component_references
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
     DeploymentNotification, \
     ReleaseNotification
@@ -518,3 +519,94 @@ async def test_notify_deployment_422(client, headers, token, sdb):
         }],
     )
     assert response.status == 422
+
+
+async def test_resolve_deployed_component_references_smoke(sdb, mdb, rdb):
+    async def execute_many(sql, values):
+        if rdb.url.dialect == "sqlite":
+            async with rdb.connection() as rdb_conn:
+                async with rdb_conn.transaction():
+                    await rdb_conn.execute_many(sql, values)
+        else:
+            await rdb.execute_many(sql, values)
+
+    await execute_many(insert(DeploymentNotification), [
+        DeploymentNotification(
+            account_id=1,
+            name="dead1",
+            started_at=datetime.now(timezone.utc) - timedelta(days=2),
+            environment="production",
+        ).create_defaults().explode(with_primary_keys=True),
+        DeploymentNotification(
+            account_id=1,
+            name="dead2",
+            started_at=datetime.now(timezone.utc) - timedelta(hours=1),
+            finished_at=datetime.now(timezone.utc),
+            conclusion="SUCCESS",
+            environment="production",
+        ).create_defaults().explode(with_primary_keys=True),
+        DeploymentNotification(
+            account_id=1,
+            name="alive",
+            started_at=datetime.now(timezone.utc) - timedelta(hours=1),
+            finished_at=datetime.now(timezone.utc),
+            conclusion="SUCCESS",
+            environment="production",
+        ).create_defaults().explode(with_primary_keys=True),
+    ])
+    commit = "MDY6Q29tbWl0NDQ3MzkwNDQ6MWQyODQ1OTUwNDI1MTQ5N2UwY2U2MTMyYTBmYWRkNWViNDRmZmQyMg=="
+    await execute_many(insert(DeployedComponent), [
+        DeployedComponent(
+            account_id=1,
+            deployment_name="dead1",
+            repository_node_id="MDEwOlJlcG9zaXRvcnk0NDczOTA0NA==",
+            reference="aaa",
+            resolved_commit_node_id=commit,
+            created_at=datetime.now(timezone.utc) - timedelta(days=2),
+        ).explode(with_primary_keys=True),
+        DeployedComponent(
+            account_id=1,
+            deployment_name="dead2",
+            repository_node_id="MDEwOlJlcG9zaXRvcnk0NDczOTA0NA==",
+            reference="bbb",
+            created_at=datetime.now(timezone.utc) - timedelta(days=2),
+        ).explode(with_primary_keys=True),
+        DeployedComponent(
+            account_id=1,
+            deployment_name="alive",
+            repository_node_id="MDEwOlJlcG9zaXRvcnk0NDczOTA0NA==",
+            reference="ccc",
+            resolved_commit_node_id=commit,
+            created_at=datetime.now(timezone.utc) - timedelta(days=2),
+        ).explode(with_primary_keys=True),
+    ])
+    await execute_many(insert(DeployedLabel), [
+        DeployedLabel(
+            account_id=1,
+            deployment_name="dead1",
+            key="one",
+            value="two",
+        ).create_defaults().explode(with_primary_keys=True),
+        DeployedLabel(
+            account_id=1,
+            deployment_name="dead2",
+            key="three",
+            value="four",
+        ).create_defaults().explode(with_primary_keys=True),
+        DeployedLabel(
+            account_id=1,
+            deployment_name="alive",
+            key="one",
+            value="two",
+        ).create_defaults().explode(with_primary_keys=True),
+    ])
+    await resolve_deployed_component_references(sdb, mdb, rdb, None)
+    rows = await rdb.fetch_all(select([DeploymentNotification.name]))
+    assert len(rows) == 1
+    assert rows[0][0] == "alive"
+    rows = await rdb.fetch_all(select([DeployedComponent.deployment_name]))
+    assert len(rows) == 1
+    assert rows[0][0] == "alive"
+    rows = await rdb.fetch_all(select([DeployedLabel.deployment_name]))
+    assert len(rows) == 1
+    assert rows[0][0] == "alive"

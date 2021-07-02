@@ -26,6 +26,7 @@ from athenian.api.cache import CACHE_VAR_NAME, setup_cache_metrics
 from athenian.api.controllers.account import copy_teams_as_needed, \
     fetch_github_installation_progress, generate_jira_invitation_link, \
     get_metadata_account_ids, match_metadata_installation
+from athenian.api.controllers.events_controller import resolve_deployed_component_references
 from athenian.api.controllers.features.entries import MetricEntriesCalculator
 from athenian.api.controllers.jira import match_jira_identities
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
@@ -127,6 +128,8 @@ def main():
 
         nonlocal return_code
         return_code = await sync_labels(log, mdb, pdb)
+        log.info("Resolving deployed references")
+        await resolve_deployed_component_references(sdb, mdb, rdb, cache)
 
         bots = await Bots()(mdb)
         log.info("Loaded %d bots", len(bots))

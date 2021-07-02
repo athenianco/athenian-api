@@ -117,7 +117,7 @@ class FastConnection(databases.core.Connection):
                            values: List[Mapping]) -> None:
         """Leverage executemany() if connected to PostgreSQL for better performance."""
         if not isinstance(self.raw_connection, asyncpg.Connection):
-            assert self._locked  # pgbouncer requires wrapping every execute_many in a transaction
+            assert self._locked  # sqlite requires wrapping every execute_many in a transaction
             return await super().execute_many(query, values)
         async with self._query_lock:
             return await self.raw_connection.executemany(*self._compile(query, values))
