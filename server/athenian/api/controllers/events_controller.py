@@ -3,10 +3,12 @@ from datetime import date, datetime, timedelta, timezone
 from itertools import chain
 import os
 import re
-from typing import Dict, Iterable, List, Mapping, Tuple
+from typing import Dict, Iterable, List, Mapping, Optional, Tuple
 
 from aiohttp import web
-from sqlalchemy import and_, delete, func, insert, select, text, union, union_all, update
+import aiomcache
+from sqlalchemy import and_, delete, exists, func, insert, not_, select, text, union, union_all, \
+    update
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from xxhash._xxhash import xxh32_hexdigest
 
@@ -28,7 +30,6 @@ from athenian.api.models.persistentdata.models import DeployedComponent, Deploye
     DeploymentNotification, \
     ReleaseNotification
 from athenian.api.models.web import BadRequestError, DeleteEventsCacheRequest, \
-    DeployedComponent as WebDeployedComponent, \
     DeploymentNotification as WebDeploymentNotification, ForbiddenError, \
     InvalidRequestError, ReleaseNotification as WebReleaseNotification
 from athenian.api.request import AthenianWebRequest
@@ -257,8 +258,11 @@ async def notify_deployments(request: AthenianWebRequest, body: List[dict]) -> w
         if notification.name is None:
             notification.name = _compose_name(notification)
     repo_nodes = checker.installed_repos()
-    resolved = await _resolve_references(chain.from_iterable(n.components for n in notifications),
-                                         meta_ids, mdb)
+    resolved = await _resolve_references(
+        chain.from_iterable(((c.repository, c.reference)
+                             for c in n.components)
+                            for n in notifications),
+        meta_ids, mdb, False)
     for notification in notifications:
         if notification.date_finished is None:
             tasks.append(_notify_deployment_started(
@@ -294,37 +298,47 @@ def _compose_name(notification: WebDeploymentNotification) -> str:
 
 
 @sentry_span
-async def _resolve_references(components: Iterable[WebDeployedComponent],
+async def _resolve_references(components: Iterable[Tuple[str, str]],
                               meta_ids: Tuple[int, ...],
                               mdb: ParallelDatabase,
+                              repository_node_ids: bool,
                               ) -> Dict[str, Dict[str, str]]:
     releases = defaultdict(set)
     full_commits = set()
     prefix_commits = defaultdict(set)
-    for c in components:
-        repo = c.repository.split("/", 1)[1]
-        if len(c.reference) == 7:
-            prefix_commits[repo].add(c.reference)
-        if len(c.reference) == 40:
-            full_commits.add(c.reference)
-        releases[repo].add(c.reference)
-        if c.reference.startswith("v"):
-            releases[repo].add(c.reference[1:])
+    for repository, reference in components:
+        repo = repository if repository_node_ids else repository.split("/", 1)[1]
+        if len(reference) == 7:
+            prefix_commits[repo].add(reference)
+        if len(reference) == 40:
+            full_commits.add(reference)
+        releases[repo].add(reference)
+        if reference.startswith("v"):
+            releases[repo].add(reference[1:])
         else:
-            releases[repo].add("v" + c.reference)
+            releases[repo].add("v" + reference)
     queries = [
         select([text("'commit_f'"),
-                PushCommit.sha, PushCommit.node_id, PushCommit.repository_full_name])
+                PushCommit.sha, PushCommit.node_id,
+                PushCommit.repository_node_id
+                if repository_node_ids else
+                PushCommit.repository_full_name])
         .where(and_(PushCommit.acc_id.in_(meta_ids),
                     PushCommit.sha.in_(full_commits))),
         *(select([text("'commit_p'"),
-                  PushCommit.sha, PushCommit.node_id, PushCommit.repository_full_name])
+                  PushCommit.sha, PushCommit.node_id,
+                  PushCommit.repository_node_id
+                  if repository_node_ids else
+                  PushCommit.repository_full_name])
           .where(and_(PushCommit.acc_id.in_(meta_ids),
                       PushCommit.repository_full_name == repo,
                       func.substr(PushCommit.sha, 1, 7).in_(prefixes)))
           for repo, prefixes in prefix_commits.items()),
         *(select([text("'release'"),
-                  Release.name, Release.commit_id, Release.repository_full_name])
+                  Release.name, Release.commit_id,
+                  Release.repository_node_id
+                  if repository_node_ids else
+                  Release.repository_full_name])
           .where(and_(Release.acc_id.in_(meta_ids),
                       Release.repository_full_name == repo,
                       Release.name.in_(names)))
@@ -498,3 +512,99 @@ async def _notify_deployment_interval(notification: WebDeploymentNotification,
             await _write_deployed_components_and_labels(
                 notification, account, resolved_refs, repo_nodes, rdb_conn,
             )
+
+
+async def resolve_deployed_component_references(sdb: ParallelDatabase,
+                                                mdb: ParallelDatabase,
+                                                rdb: ParallelDatabase,
+                                                cache: Optional[aiomcache.Client],
+                                                ) -> None:
+    """Resolve the missing deployed component references and remove stale deployments."""
+    async with rdb.connection() as rdb_conn:
+        async with rdb.transaction():
+            return await _resolve_deployed_component_references(sdb, mdb, rdb_conn, cache)
+
+
+async def _resolve_deployed_component_references(sdb: ParallelDatabase,
+                                                 mdb: ParallelDatabase,
+                                                 rdb: FastConnection,
+                                                 cache: Optional[aiomcache.Client],
+                                                 ) -> None:
+    await rdb.execute(delete(DeployedComponent).where(and_(
+        DeployedComponent.resolved_commit_node_id.is_(None),
+        DeployedComponent.created_at < datetime.now(timezone.utc) - timedelta(days=1),
+    )))
+    discarded_notifications = await rdb.fetch_all(union(
+        select([DeploymentNotification.account_id, DeploymentNotification.name])
+        .where(not_(exists().where(and_(
+            DeploymentNotification.account_id == DeployedComponent.account_id,
+            DeploymentNotification.name == DeployedComponent.deployment_name,
+        )))),
+        select([DeploymentNotification.account_id, DeploymentNotification.name])
+        .where(and_(
+            DeploymentNotification.finished_at.is_(None),
+            DeploymentNotification.started_at < datetime.now(timezone.utc) - timedelta(days=1),
+        )),
+    ))
+    discarded_by_account = defaultdict(list)
+    for row in discarded_notifications:
+        discarded_by_account[row[DeploymentNotification.account_id.key]].append(
+            row[DeploymentNotification.name.key])
+    del discarded_notifications
+    tasks = [
+        rdb.execute(delete(DeployedLabel).where(and_(
+            DeployedLabel.account_id == acc,
+            DeployedLabel.deployment_name.in_(discarded),
+        )))
+        for acc, discarded in discarded_by_account.items()
+    ] + [
+        rdb.execute(delete(DeployedComponent).where(and_(
+            DeployedComponent.account_id == acc,
+            DeployedComponent.deployment_name.in_(discarded),
+        )))
+        for acc, discarded in discarded_by_account.items()
+    ]
+    await gather(*tasks, op="resolve_deployed_component_references/delete/dependencies")
+    tasks = [
+        rdb.execute(delete(DeploymentNotification).where(and_(
+            DeploymentNotification.account_id == acc,
+            DeploymentNotification.name.in_(discarded),
+        )))
+        for acc, discarded in discarded_by_account.items()
+    ]
+    await gather(*tasks, op="resolve_deployed_component_references/delete/notifications")
+    unresolved = await rdb.fetch_all(
+        select([DeployedComponent.account_id,
+                DeployedComponent.repository_node_id,
+                DeployedComponent.reference])
+        .where(DeployedComponent.resolved_commit_node_id.is_(None)))
+    unresolved_by_account = defaultdict(list)
+    for row in unresolved:
+        unresolved_by_account[row[DeployedComponent.account_id.key]].append(row)
+    del unresolved
+    for account, unresolved in unresolved_by_account.items():
+        meta_ids = await get_metadata_account_ids(account, sdb, cache)
+        resolved = await _resolve_references(
+            [(r[DeployedComponent.repository_node_id.key], r[DeployedComponent.reference.key])
+             for r in unresolved],
+            meta_ids, mdb, True)
+        updated = set()
+        for row in unresolved:
+            repo = row[DeployedComponent.repository_node_id.key]
+            ref = row[DeployedComponent.reference.key]
+            try:
+                rr = resolved[repo][ref]
+            except KeyError:
+                continue
+            updated.add((repo, ref, rr))
+        tasks = [
+            rdb.execute(update(DeployedComponent).where(and_(
+                DeployedComponent.account_id == account,
+                DeployedComponent.repository_node_id == u[0],
+                DeployedComponent.reference == u[1],
+            )).values({
+                DeployedComponent.resolved_commit_node_id: u[2],
+            }))
+            for u in updated
+        ]
+        await gather(*tasks, op=f"resolve_deployed_component_references/update/{account}")
