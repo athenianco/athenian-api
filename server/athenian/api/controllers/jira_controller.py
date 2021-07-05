@@ -20,6 +20,7 @@ from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.balancing import weight
 from athenian.api.cache import cached
 from athenian.api.controllers.account import get_account_repositories, get_metadata_account_ids
+from athenian.api.controllers.calculator_selector import get_quantile_stride_for_account
 from athenian.api.controllers.datetime_utils import split_to_time_intervals
 from athenian.api.controllers.features.github.pull_request_filter import PullRequestListMiner, \
     unwrap_pull_requests
@@ -858,9 +859,11 @@ async def _calc_jira_entry(request: AthenianWebRequest,
 @weight(2.5)
 async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate metrics over JIRA issue activities."""
-    filt, time_intervals, issues, tzoffset, label_filter = await _calc_jira_entry(
-        request, body, JIRAMetricsRequest)
-    calc = JIRABinnedMetricCalculator(filt.metrics, filt.quantiles or [0, 1])
+    (filt, time_intervals, issues, tzoffset, label_filter), quantile_stride = await gather(
+        _calc_jira_entry(request, body, JIRAMetricsRequest),
+        get_quantile_stride_for_account(request.account, request.sdb),
+    )
+    calc = JIRABinnedMetricCalculator(filt.metrics, filt.quantiles or [0, 1], quantile_stride)
     label_splitter = _IssuesLabelSplitter(filt.group_by_jira_label, label_filter)
     groupers = partial(_split_issues_by_with, filt.with_), label_splitter
     groups = group_to_indexes(issues, *groupers)

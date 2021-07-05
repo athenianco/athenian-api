@@ -24,9 +24,16 @@ register_metric = make_register_metric(metric_calculators, histogram_calculators
 class PullRequestMetricCalculatorEnsemble(MetricCalculatorEnsemble):
     """MetricCalculatorEnsemble adapted for pull requests."""
 
-    def __init__(self, *metrics: str, quantiles: Sequence[float], exclude_inactive: bool = False):
+    def __init__(self,
+                 *metrics: str,
+                 quantiles: Sequence[float],
+                 quantile_stride: int,
+                 exclude_inactive: bool = False):
         """Initialize a new instance of PullRequestMetricCalculatorEnsemble class."""
-        super().__init__(*metrics, quantiles=quantiles, class_mapping=metric_calculators)
+        super().__init__(*metrics,
+                         quantiles=quantiles,
+                         quantile_stride=quantile_stride,
+                         class_mapping=metric_calculators)
         for calc in self._calcs:
             calc.exclude_inactive = exclude_inactive
 
@@ -417,7 +424,7 @@ class LeadCounterWithQuantiles(Counter):
 
 
 @register_metric(PullRequestMetricID.PR_CYCLE_TIME)
-class CycleTimeCalculator(WithoutQuantilesMixin, MetricCalculator[timedelta]):
+class CycleTimeCalculator(MetricCalculator[timedelta]):
     """Sum of PR_WIP_TIME, PR_REVIEW_TIME, PR_MERGE_TIME, and PR_RELEASE_TIME."""
 
     deps = (WorkInProgressTimeCalculator,
@@ -766,9 +773,7 @@ class SizeCalculator(SizeCalculatorMixin, AverageMetricCalculator[int]):
 
 
 @register_metric(PullRequestMetricID.PR_MEDIAN_SIZE)
-class MedianSizeCalculator(SizeCalculatorMixin,
-                           WithoutQuantilesMixin,
-                           MedianMetricCalculator[int]):
+class MedianSizeCalculator(SizeCalculatorMixin, MedianMetricCalculator[int]):
     """Median PR size."""
 
 
@@ -781,7 +786,7 @@ class PendingStage(IntEnum):
     RELEASE = 3
 
 
-class StagePendingDependencyCalculator(WithoutQuantilesMixin, SumMetricCalculator[int]):
+class StagePendingDependencyCalculator(SumMetricCalculator[int]):
     """Common dependency for stage-pending counters."""
 
     dtype = int
@@ -810,7 +815,7 @@ class StagePendingDependencyCalculator(WithoutQuantilesMixin, SumMetricCalculato
         return stage_masks
 
 
-class BaseStagePendingCounter(WithoutQuantilesMixin, SumMetricCalculator[int]):
+class BaseStagePendingCounter(SumMetricCalculator[int]):
     """Base stage-pending counter."""
 
     dtype = int

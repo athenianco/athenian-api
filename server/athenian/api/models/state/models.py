@@ -195,6 +195,7 @@ class Feature(create_time_mixin(updated_at=True), Base):
                       {"sqlite_autoincrement": True})
 
     USER_ORG_MEMBERSHIP_CHECK = "user_org_membership_check"
+    QUANTILE_STRIDE = "quantile_stride"
 
     id = Column(Integer(), primary_key=True)
     name = Column(String(128), nullable=False)

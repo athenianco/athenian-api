@@ -31,15 +31,14 @@ class MetricEntriesCalculator:
 
 def test_get_calculator_no_variation(base_testing_module, mdb, pdb, rdb, cache):
     calc = make_calculator(
-        1, (1, ), mdb, pdb, rdb, cache, base_module=base_testing_module,
+        None, 365, 1, (1, ), mdb, pdb, rdb, cache, base_module=base_testing_module,
     )
     assert isinstance(calc, OriginalMetricEntriesCalculator)
 
 
 def test_get_calculator_missing_module_no_error(mdb, pdb, rdb, cache):
     calc = make_calculator(
-        1, (1, ), mdb, pdb, rdb, cache,
-        variation="test_entries", base_module="missing_module",
+        "test_entries", 365, 1, (1, ), mdb, pdb, rdb, cache, base_module="missing_module",
     )
     assert isinstance(calc, OriginalMetricEntriesCalculator)
 
@@ -48,7 +47,7 @@ def test_get_calculator_missing_implementation_no_error(
     base_testing_module, mdb, pdb, rdb, cache,
 ):
     calc = make_calculator(
-        1, (1, ), mdb, pdb, rdb, cache, variation="api", base_module="athenian",
+        "api", 365, 1, (1, ), mdb, pdb, rdb, cache, base_module="athenian",
     )
     assert isinstance(calc, OriginalMetricEntriesCalculator)
 
@@ -57,13 +56,11 @@ def test_get_calculator_variation_found(
     base_testing_module, current_module, mdb, pdb, rdb, cache,
 ):
     calc = make_calculator(
-        1, (1, ), mdb, pdb, rdb, cache,
-        variation="test_entries", base_module=base_testing_module,
+        "test_entries", 365, 1, (1, ), mdb, pdb, rdb, cache, base_module=base_testing_module,
     )
     assert isinstance(calc, MetricEntriesCalculator)
 
     with pytest.raises(CalculatorNotReadyException):
         make_calculator(
-            2, (1, ), mdb, pdb, rdb, cache,
-            variation="test_entries", base_module=base_testing_module,
+            "test_entries", 365, 2, (1, ), mdb, pdb, rdb, cache, base_module=base_testing_module,
         )
