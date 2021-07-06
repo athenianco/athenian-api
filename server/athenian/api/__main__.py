@@ -137,6 +137,18 @@ def setup_context(log: logging.Logger) -> None:
     pandas.set_option("display.max_rows", 20)
     pandas.set_option("display.large_repr", "info")
     pandas.set_option("display.memory_usage", False)
+    info = pandas.io.formats.info.BaseInfo.info
+
+    def _short_info_df(self) -> None:
+        info(self)
+        text = self.buf.getvalue()
+        if len(text) > 512:
+            text = "\n".join(text.split("\n")[:3]).rstrip(":")
+        self.buf.seek(0)
+        self.buf.truncate(0)
+        self.buf.write(text)
+
+    pandas.io.formats.info.BaseInfo.info = _short_info_df
     numpy.set_printoptions(threshold=10, edgeitems=1)
     if (level := log.getEffectiveLevel()) >= logging.INFO:
         databases.core.logger.setLevel(level + 10)

@@ -89,7 +89,7 @@ async def filter_check_runs(time_from: datetime,
     unique_run_counts, back_indexes, group_counts = np.unique(
         run_counts, return_inverse=True, return_counts=True)
     run_counts_order = np.argsort(back_indexes)
-    ordered_indexes = np.concatenate(suite_blocks[run_counts_order])
+    ordered_indexes = np.concatenate(suite_blocks[run_counts_order]).astype(int, copy=False)
     suite_size_map = np.zeros(len(df_check_runs), dtype=int)
     suite_size_map[ordered_indexes] = np.repeat(
         unique_run_counts, group_counts * unique_run_counts)
