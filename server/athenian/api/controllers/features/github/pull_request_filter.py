@@ -314,12 +314,13 @@ class PullRequestListMiner:
         no_time_from = np.array([cls._no_time_from], dtype=dtype)
         now = np.array([now.replace(tzinfo=None)], dtype=dtype)
         stage_timings = {}
-        empty_group = [np.array([], dtype=int)]  # makes `samples` empty, we don't need them
+        # makes `samples` empty, we don't need them
+        empty_group_mask = np.zeros((1, len(df_facts)), dtype=bool)
         for dep in counter_deps:
-            dep(df_facts, no_time_from, now, [0], empty_group)
+            dep(df_facts, no_time_from, now, None, empty_group_mask)
         for k, calcs in calcs.items():
             time_calc, pending_counter = calcs["time"], calcs["pending_count"]
-            pending_counter(df_facts, no_time_from, now, [0], empty_group)
+            pending_counter(df_facts, no_time_from, now, None, empty_group_mask)
 
             kwargs = {
                 "override_event_time": now - np.timedelta64(timedelta(seconds=1)),  # < time_max
@@ -327,7 +328,7 @@ class PullRequestListMiner:
             }
             if k == "review":
                 kwargs["allow_unclosed"] = True
-            time_calc(df_facts, no_time_from, now, [0], empty_group, **kwargs)
+            time_calc(df_facts, no_time_from, now, None, empty_group_mask, **kwargs)
             stage_timings[k] = time_calc.peek[0]
         return stage_timings
 

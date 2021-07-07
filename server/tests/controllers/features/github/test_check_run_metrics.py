@@ -19,12 +19,12 @@ from athenian.api.models.web import CodeCheckMetricID
 
 @pytest.fixture(scope="function")
 def metrics_calculator(mdb, pdb, rdb, cache):
-    return MetricEntriesCalculator(1, (6366825,), mdb, pdb, rdb, cache)
+    return MetricEntriesCalculator(1, (6366825,), 28, mdb, pdb, rdb, cache)
 
 
 @pytest.fixture(scope="function")
 def metrics_calculator_force_cache(cache):
-    return MetricEntriesCalculator(1, (6366825,), None, None, None, cache)
+    return MetricEntriesCalculator(1, (6366825,), 28, None, None, None, cache)
 
 
 @pytest.mark.parametrize("split_by_check_runs, suite_freqs, suite_sizes, metrics", [
@@ -111,6 +111,7 @@ async def test_check_run_metrics_robust_empty(metrics_calculator: MetricEntriesC
 
 @with_defer
 async def test_check_run_metrics_robust_quantiles(metrics_calculator: MetricEntriesCalculator):
+    metrics_calculator._quantile_stride = 20 * 365
     metrics, _, _ = await metrics_calculator.calc_check_run_metrics_line_github(
         [CodeCheckMetricID.ROBUST_SUITE_TIME],
         [[datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2017, 6, 1, tzinfo=timezone.utc),

@@ -27,9 +27,15 @@ register_metric = make_register_metric(metric_calculators, histogram_calculators
 class CheckRunMetricCalculatorEnsemble(MetricCalculatorEnsemble):
     """MetricCalculatorEnsemble adapted for CI check runs."""
 
-    def __init__(self, *metrics: str, quantiles: Sequence[float]):
+    def __init__(self,
+                 *metrics: str,
+                 quantiles: Sequence[float],
+                 quantile_stride: int):
         """Initialize a new instance of CheckRunMetricCalculatorEnsemble class."""
-        super().__init__(*metrics, quantiles=quantiles, class_mapping=metric_calculators)
+        super().__init__(*metrics,
+                         quantiles=quantiles,
+                         class_mapping=metric_calculators,
+                         quantile_stride=quantile_stride)
 
 
 class CheckRunHistogramCalculatorEnsemble(HistogramCalculatorEnsemble):
@@ -237,13 +243,13 @@ class SuiteSuccessRatioCalculator(RatioCalculator):
     deps = (SuccessfulSuitesCounter, SuitesCounter)
 
 
-@register_metric(CodeCheckMetricID.SUITE_TIME)
 class SuiteTimeCalculatorAnalysis(MetricCalculator[None]):
     """Measure elapsed time and size of each check suite."""
 
     may_have_negative_values = False
     dtype = np.dtype([("elapsed", "timedelta64[s]"), ("size", int)])
     has_nan = True
+    is_pure_dependency = True
 
     def _analyze(self,
                  facts: pd.DataFrame,
@@ -334,32 +340,28 @@ class RobustSuiteTimeCalculator(MetricCalculator[timedelta]):
                  facts: pd.DataFrame,
                  min_times: np.ndarray,
                  max_times: np.ndarray,
-                 representative_time_interval_indexes: Sequence[int],  # not used
-                 groups: Sequence[Sequence[int]],
+                 quantiles_mounted_at: Optional[int],
+                 groups_mask: np.ndarray,
                  **kwargs) -> None:
         """Completely ignore the default boilerplate and calculate metrics from scratch."""
         structs = self._calcs[0].peek
-        meaningful = np.nonzero(np.bitwise_or.reduce(structs["size"]) > 0)[0]
         elapsed = structs["elapsed"]
+        meaningful_groups_mask = groups_mask & (structs["size"] > 0).any(axis=0)[None, :]
+        if self._quantiles != (0, 1):
+            discard_mask = self._calculate_discard_mask(
+                elapsed, quantiles_mounted_at, meaningful_groups_mask)
+            meaningful_groups_mask[discard_mask] = False
+            min_times = min_times[:quantiles_mounted_at]
+            max_times = max_times[:quantiles_mounted_at]
+            elapsed = elapsed[:quantiles_mounted_at]
+            structs = structs[:quantiles_mounted_at]
         sizes = structs["size"].astype("S")
         repos = facts[CheckRun.repository_node_id.key].values.astype("S")
         repos_sizes = np.char.add(repos, np.char.add(b"|", sizes))
         self._metrics = metrics = []
-        for group in groups:
-            effective = np.intersect1d(group, meaningful, assume_unique=True)
-            group_repos_sizes = repos_sizes[:, effective]
-            group_elapsed = elapsed[:, effective]
-            if (self._quantiles[0] != 0 or self._quantiles[1] != 1) and len(group_elapsed) > 0:
-                not_nat_ts, not_nat_facts = np.nonzero(group_elapsed == group_elapsed)
-                if len(not_nat_facts):
-                    not_nat_facts_unique, first_encounters = np.unique(
-                        not_nat_facts, return_index=True)
-                    quantiles = self._calc_quantile_cut_values(
-                        group_elapsed[not_nat_ts[first_encounters], not_nat_facts_unique])
-                    if self._quantiles[0] != 0:
-                        group_repos_sizes[group_elapsed < quantiles[0]] = b"|0"
-                    if self._quantiles[1] != 1:
-                        group_repos_sizes[group_elapsed > quantiles[1]] = b"|0"
+        for group_mask in meaningful_groups_mask:
+            group_repos_sizes = repos_sizes[:, group_mask]
+            group_elapsed = elapsed[:, group_mask]
             vocabulary, mapped_indexes = np.unique(group_repos_sizes, return_inverse=True)
             existing_vocabulary_indexes = np.nonzero(~np.char.endswith(vocabulary, b"|0"))[0]
             masks_by_reposize = (
@@ -761,10 +763,8 @@ class ElapsedTimePerConcurrencyCalculator(MetricCalculator[object]):
         """
         histograms = []
         for group_samples in self.samples:
-            cut_values = self._calc_quantile_cut_values(np.concatenate(group_samples)["duration"])
             histograms.append(group_histograms := [])
             for samples in group_samples:
-                samples = self._cut_by_quantiles(samples, cut_values, field="duration")
                 concurrency_histogram = calculate_histogram(
                     samples["concurrency"], scale, bins, ticks)
                 concurrency_levels = np.asarray(concurrency_histogram.ticks)
@@ -785,3 +785,10 @@ class ElapsedTimePerConcurrencyCalculator(MetricCalculator[object]):
                     interquartile=concurrency_histogram.interquartile,
                 ))
         return histograms
+
+    def _calculate_discard_mask(self,
+                                peek: np.ndarray,
+                                quantiles_mounted_at: int,
+                                groups_mask: np.ndarray,
+                                ) -> np.ndarray:
+        return super()._calculate_discard_mask(peek["duration"], quantiles_mounted_at, groups_mask)

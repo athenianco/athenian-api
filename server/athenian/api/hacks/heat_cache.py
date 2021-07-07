@@ -205,6 +205,7 @@ def main():
                 facts = await MetricEntriesCalculator(
                     reposet.owner_id,
                     meta_ids,
+                    0,
                     mdb,
                     pdb,
                     rdb,

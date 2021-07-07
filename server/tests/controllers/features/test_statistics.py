@@ -151,8 +151,8 @@ def test_metric_calculator(pr_samples, cls, negative, dtype):
     calc(df_from_structs(pr_samples(100)),
          dt64arr(datetime.utcnow()),
          dt64arr(datetime.utcnow()),
-         [0],
-         [np.arange(100)])
+         None,
+         np.array([[True] * 100]))
     m = calc.values[0][0]
     assert m.exists
     assert isinstance(m.value, timedelta)

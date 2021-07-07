@@ -429,7 +429,7 @@ async def test_calc_metrics_prs_sizes(client, headers):
     assert response.status == 200, response.text()
     rbody = FriendlyJson.loads((await response.read()).decode("utf-8"))
     values = [v["values"] for v in rbody["calculated"][0]["values"]]
-    assert values == [[98, 54]]
+    assert values == [[106, 54]]
 
     body["granularities"].append("month")
     response = await client.request(
@@ -438,7 +438,7 @@ async def test_calc_metrics_prs_sizes(client, headers):
     assert response.status == 200, response.text()
     rbody = FriendlyJson.loads((await response.read()).decode("utf-8"))
     values = [v["values"] for v in rbody["calculated"][0]["values"]]
-    assert values == [[98, 54]]
+    assert values == [[106, 54]]
 
 
 async def test_calc_metrics_prs_index_error(client, headers):
@@ -1553,7 +1553,7 @@ async def test_release_metrics_nasty_input(
 
 
 async def test_release_metrics_quantiles(client, headers):
-    for q, gt in ((0.95, "2093651s"), (1, "2687847s")):
+    for q, gt in ((0.95, "2390365s"), (1, "2687847s")):
         body = {
             "account": 1,
             "date_from": "2015-01-12",

@@ -4,6 +4,7 @@ from functools import reduce
 from itertools import chain
 from typing import Any, Callable, Collection, Dict, Generic, Iterable, List, Mapping, Optional, \
     Sequence, Tuple, Type, TypeVar
+import warnings
 
 import networkx as nx
 import numpy as np
@@ -41,15 +42,18 @@ class MetricCalculator(Generic[T], ABC):
     # artificial "NaN" value to compare against
     nan = None
 
-    # _analyze() may return arrays of shape longer than 2, `samples` are ignored
+    # _analyze() may return arrays of non-standard shape, `samples` are ignored
     is_pure_dependency = False
 
     def __init__(self, *deps: "MetricCalculator", quantiles: Sequence[float]):
         """Initialize a new `MetricCalculator` instance."""
         self.reset()
         self._calcs = []
-        self._quantiles = np.asarray(quantiles)
-        self._representative_time_interval_indexes = []
+        self._quantiles = tuple(quantiles)
+        assert len(self._quantiles) == 2
+        assert self._quantiles[0] >= 0
+        assert self._quantiles[1] <= 1
+        assert self._quantiles[0] <= self._quantiles[1]
         for calc in deps:
             for cls in self.deps:
                 if isinstance(calc, cls):
@@ -62,9 +66,8 @@ class MetricCalculator(Generic[T], ABC):
                  facts: pd.DataFrame,
                  min_times: np.ndarray,
                  max_times: np.ndarray,
-                 representative_time_interval_indexes: Sequence[int],
-                 groups: Sequence[Sequence[int]],
-                 groups_mask: Optional[np.ndarray] = None,
+                 quantiles_mounted_at: Optional[int],
+                 groups_mask: np.ndarray,
                  **kwargs) -> None:
         """Calculate the samples over the supplied facts.
 
@@ -73,13 +76,10 @@ class MetricCalculator(Generic[T], ABC):
                           samples with both ends less than the minimum time.
         :param max_times: Endings of the considered time intervals. They are needed to discard \
                           samples with both ends greater than the maximum time.
-        :param representative_time_interval_indexes: Indexes of the time intervals that represent \
-            the whole population. This is required to correctly calculate the quantiles. \
-            We don't want to calculate the same stuff in each __call__() so require this to be \
-            precomputed outside by `find_representative_time_interval_indexes()`.
-        :param groups: Series of group indexes to split the samples into.
-        :param groups_mask: Alternative to `groups` that gives better performance. \
-                            The len(groups) * len(facts) boolean array that chooses elements \
+        :param quantiles_mounted_at: Time intervals that represent the population split start
+            with this index. We calculate the quantiles separately for each such interval \
+            and independently discard the outliers.
+        :param groups_mask: len(groups) * len(facts) boolean array that chooses the elements \
                             of each group.
         """
         assert isinstance(facts, pd.DataFrame)
@@ -92,88 +92,42 @@ class MetricCalculator(Generic[T], ABC):
             assert np.datetime_data(min_times.dtype)[0] == "ns"
         except TypeError:
             raise AssertionError("min_times must be of datetime64[ns] dtype")
-        assert representative_time_interval_indexes
-        self._representative_time_interval_indexes = representative_time_interval_indexes
-        groups = np.asarray(groups)
-        assert 1 <= len(groups.shape) <= 2
-        assert len(groups) > 0 or facts.empty
+        if self._quantiles != (0, 1):
+            assert quantiles_mounted_at is not None
+        if quantiles_mounted_at is not None:
+            assert len(min_times) > quantiles_mounted_at
+
+        assert isinstance(groups_mask, np.ndarray)
+        assert len(groups_mask.shape) == 2
+        assert len(groups_mask) > 0 or facts.empty
         if facts.empty:
             self._peek = np.empty((len(min_times), 0), object)
-            self._samples = np.empty((len(groups), len(min_times), 0), self.dtype)
+            self._samples = np.empty((len(groups_mask), len(min_times), 0), self.dtype)
             return
+        assert groups_mask.shape[1] == len(facts)
         self._peek = peek = self._analyze(facts, min_times, max_times, **kwargs)
         assert isinstance(peek, np.ndarray), type(self)
-        if len(peek.shape) != 2:
-            assert self.is_pure_dependency, "len(peek.shape) != 2 => no samples are possible"
+        if self.is_pure_dependency:
             return
-        assert peek.shape[:2] == (len(min_times), len(facts)), (peek.shape, type(self))
-        if peek.dtype is np.dtype(object):
-            # this is the slowest, avoid as much as possible
-            notnull = peek != np.array(None)
-        elif self.has_nan:
-            notnull = peek == peek
-        elif self.nan is not None:
-            notnull = peek != self.nan
-        else:
-            notnull = peek != peek.dtype.type(0)
-
-        if groups_mask is not None:
-            notnull = np.broadcast_to(notnull[None, :], (len(groups_mask), *notnull.shape))
-            group_sample_mask = notnull & groups_mask[:, None, :]
-            flat_samples = np.broadcast_to(peek[None, :], notnull.shape)[group_sample_mask] \
-                .astype(self.dtype, copy=False).ravel()
-            group_sample_lengths = np.sum(group_sample_mask, axis=-1)
-            self._samples = np.full(len(groups) * len(peek), None, object)
-            self._samples[:] = np.split(
-                flat_samples, np.cumsum(group_sample_lengths.ravel())[:-1])
-        else:
-            gpeek = [peek[:, g] for g in groups]
-            gnotnull = [notnull[:, g] for g in groups]
-            self._samples = np.full(len(groups) * len(peek), None, object)
-            self._samples[:] = [
-                p[nn].astype(self.dtype)
-                for gp, gnn in zip(gpeek, gnotnull)
-                for p, nn in zip(gp, gnn)
-            ]
-        self._samples = self._samples.reshape((len(groups), len(peek)))
-
-    @staticmethod
-    def find_representative_time_interval_indexes(min_times: np.ndarray,
-                                                  max_times: np.ndarray,
-                                                  ) -> List[int]:
-        """Find time interval indexes that cover the whole time range."""
-        argmin_min_time = np.flatnonzero(min_times == (min_min_time := min_times.min()))
-        argmax_max_time = np.flatnonzero(max_times == (max_max_time := max_times.max()))
-        fulls = np.intersect1d(argmin_min_time, argmax_max_time, assume_unique=True)
-        if len(fulls):
-            return [fulls[0]]
-        durations = max_times - min_times
-
-        def pick_longest(times: np.ndarray):
-            unique_times, counts = np.unique(times, return_counts=True)
-            order = np.argsort(times)
-            intervals = {}
-            pos = 0
-            for i, time in enumerate(unique_times):
-                next_pos = pos + counts[i]
-                indexes = order[pos:next_pos]
-                pos = next_pos
-                intervals[time] = indexes[durations[indexes].argmax()]
-            return intervals
-
-        interval_starts = pick_longest(min_times)
-        interval_finishes = pick_longest(max_times)
-        hops = [seed := durations.argmax()]
-        start = min_times[seed]
-        finish = max_times[seed]
-        while start > min_min_time or finish < max_max_time:
-            if start > min_min_time:
-                hops.append(next_hop := interval_finishes[start])
-                start = min_times[next_hop]
-            else:
-                hops.append(next_hop := interval_starts[finish])
-                finish = max_times[next_hop]
-        return sorted(hops)
+        assert peek.shape == (len(min_times), len(facts)), (peek.shape, type(self))
+        if self._quantiles != (0, 1):
+            discard_mask = self._calculate_discard_mask(peek, quantiles_mounted_at, groups_mask)
+        if quantiles_mounted_at is not None:
+            peek = peek[:quantiles_mounted_at]
+        notnull = self._find_notnull(peek)
+        notnull = np.broadcast_to(notnull[None, :], (len(groups_mask), *notnull.shape))
+        self._grouped_notnull = group_sample_mask = notnull & groups_mask[:, None, :]
+        if self._quantiles != (0, 1):
+            group_sample_mask = group_sample_mask.copy()
+            discard_mask = np.broadcast_to(discard_mask[:, None, :], group_sample_mask.shape)
+            group_sample_mask[discard_mask] = False
+        flat_samples = np.broadcast_to(peek[None, :], notnull.shape)[group_sample_mask] \
+            .astype(self.dtype, copy=False).ravel()
+        group_sample_lengths = np.sum(group_sample_mask, axis=-1)
+        self._samples = np.full(len(groups_mask) * len(peek), None, object)
+        self._samples[:] = np.split(
+            flat_samples, np.cumsum(group_sample_lengths.ravel())[:-1])
+        self._samples = self._samples.reshape((len(groups_mask), len(peek)))
 
     @property
     def values(self) -> List[List[Metric[T]]]:
@@ -188,18 +142,35 @@ class MetricCalculator(Generic[T], ABC):
 
     @property
     def peek(self) -> np.ndarray:
-        """Return the last calculated samples, with None-s."""
+        """
+        Return the last calculated samples, with None-s.
+
+        The shape is time intervals x facts - that is, before grouping and discarding outliers.
+        """
         return self._peek
 
     @property
     def samples(self) -> np.ndarray:
-        """Return the last calculated samples, without None-s: groups x time intervals x facts."""
+        """Return the last calculated samples, without None-s: groups x time intervals x facts.
+
+        The quantiles are already applied.
+        """
         return self._samples
+
+    @property
+    def grouped_notnull(self) -> np.ndarray:
+        """Return the last calculated boolean mask of shape groups x time intervals x facts \
+        that selects not-None samples *before discarding outliers by quantiles*.
+
+        This mask is typically consumed by the counters that must ignore the quantiles.
+        """
+        return self._grouped_notnull
 
     def reset(self) -> None:
         """Clear the current state of the calculator."""
         self._samples = np.empty((0, 0), dtype=object)
         self._peek = np.empty((0, 0), dtype=object)
+        self._grouped_notnull = np.empty((0, 0, 0), dtype=bool)
         self._last_values = None
 
     @abstractmethod
@@ -221,43 +192,89 @@ class MetricCalculator(Generic[T], ABC):
         raise NotImplementedError
 
     def _values(self) -> List[List[Metric[T]]]:
-        assert self._representative_time_interval_indexes, "You must __call__() first."
-        values = []
-        for gs in self._samples:
-            quantiles = self._calc_quantile_cut_values(np.concatenate(
-                gs[self._representative_time_interval_indexes]).flatten())
-            values.append([self._value(self._cut_by_quantiles(s, quantiles))
-                           for s in gs])
-        return values
+        return [[self._value(s) for s in gs] for gs in self._samples]
 
-    def _calc_quantile_cut_values(self,
-                                  samples: np.ndarray,
-                                  as_dtype=None,
-                                  ) -> Optional[np.ndarray]:
-        """Calculate the quantile interval borders given the distribution and the desired \
-        quantiles."""
-        if (self._quantiles[0] == 0 and self._quantiles[1] == 1) or len(samples) == 0:
-            return None
-        assert len(samples.shape) == 1
-        if as_dtype is not None:
-            samples = samples.astype(as_dtype)
-        return np.quantile(samples, self._quantiles, interpolation="nearest")
+    @classmethod
+    def _find_notnull(cls, peek: np.ndarray) -> np.ndarray:
+        if peek.dtype is np.dtype(object):
+            # this is the slowest, avoid as much as possible
+            return peek != np.array(None)
+        if cls.has_nan:
+            return peek == peek
+        if cls.nan is not None:
+            return peek != cls.nan
+        return peek != peek.dtype.type(0)
 
-    def _cut_by_quantiles(self,
-                          samples: np.ndarray,
-                          cut_values: Optional[np.ndarray],
-                          field: Optional[str] = None,
-                          ) -> np.ndarray:
-        """Cut from the left and the right of the distribution by quantile cut values."""
-        if len(samples) == 0 or cut_values is None:
-            return samples
-        column = samples if field is None else samples[field]
-        if self._quantiles[0] != 0:
-            samples = np.delete(samples, np.nonzero(column < cut_values[0])[0])
-        column = samples if field is None else samples[field]
-        if self._quantiles[1] != 1:
-            samples = np.delete(samples, np.nonzero(column > cut_values[1])[0])
-        return samples
+    def _calculate_discard_mask(self,
+                                peek: np.ndarray,
+                                quantiles_mounted_at: int,
+                                groups_mask: np.ndarray,
+                                ) -> np.ndarray:
+        qnotnull = self._find_notnull(peek[quantiles_mounted_at:])
+        if peek.dtype != object:
+            dtype = peek.dtype
+        else:
+            dtype = self.dtype
+        qnotnull = np.broadcast_to(qnotnull[None, :], (len(groups_mask), *qnotnull.shape))
+        group_sample_mask = qnotnull & groups_mask[:, None, :]
+        flat_samples = np.broadcast_to(
+            peek[None, quantiles_mounted_at:], qnotnull.shape,
+        )[group_sample_mask].astype(dtype, copy=False).ravel()
+        group_sample_lengths = np.sum(group_sample_mask, axis=-1)
+        if self.has_nan:
+            max_len = group_sample_lengths.max()
+            surrogate_samples = np.full(
+                (*group_sample_lengths.shape, max_len), None, dtype)
+            flat_lengths = group_sample_lengths.ravel()
+            flat_mask = flat_lengths > 0
+            flat_lengths = flat_lengths[flat_mask]
+            flat_offsets = \
+                (np.arange(group_sample_lengths.size) * max_len)[flat_mask] + flat_lengths
+            flat_cumsum = flat_lengths.cumsum()
+            indexes = np.arange(flat_cumsum[-1]) + \
+                np.repeat(flat_offsets - flat_cumsum, flat_lengths)
+            surrogate_samples.ravel()[indexes] = flat_samples
+            with warnings.catch_warnings():
+                # this will happen if some groups are all NaN-s, that's normal
+                warnings.filterwarnings("ignore", "All-NaN slice encountered")
+                cut_values = np.moveaxis(np.nanquantile(
+                    surrogate_samples, self._quantiles, interpolation="nearest", axis=-1,
+                ).astype(dtype), 0, -1)
+        else:
+            pos = 0
+            cut_values = np.zeros((group_sample_lengths.size, 2), dtype=dtype)
+            for i, slen in enumerate(group_sample_lengths.ravel()):
+                if slen > 0:
+                    cut_values[i] = np.quantile(flat_samples[pos:pos + slen],
+                                                self._quantiles,
+                                                interpolation="nearest")
+                    pos += slen
+        cut_values = cut_values.reshape((*group_sample_lengths.shape, 2))
+        grouped_qpeek = np.broadcast_to(peek[None, quantiles_mounted_at:], qnotnull.shape)
+        group_qmask = np.broadcast_to(groups_mask[:, None, :], grouped_qpeek.shape)
+        if self._quantiles[0] > 0:
+            discard_left_mask = np.less(
+                grouped_qpeek, cut_values[:, :, 0][:, :, None], where=group_qmask,
+            ).any(axis=1)
+        if self._quantiles[1] < 1:
+            discard_right_mask = np.greater(
+                grouped_qpeek, cut_values[:, :, 1][:, :, None], where=group_qmask,
+            ).any(axis=1)
+        if self._quantiles[0] == 0:
+            discard_mask = discard_right_mask
+        elif self._quantiles[1] == 1:
+            discard_mask = discard_left_mask
+        else:
+            discard_mask = discard_left_mask | discard_right_mask
+        return discard_mask
+
+
+class WithoutQuantilesMixin:
+    """Ignore the quantiles."""
+
+    def __init__(self, *deps: "MetricCalculator", quantiles: Sequence[float]):
+        """Override the constructor to disable the quantiles."""
+        super().__init__(*deps, quantiles=(0, 1))
 
 
 class AverageMetricCalculator(MetricCalculator[T], ABC):
@@ -283,7 +300,7 @@ class AverageMetricCalculator(MetricCalculator[T], ABC):
         return Metric(True, *mean_confidence_interval(samples, self.may_have_negative_values))
 
 
-class MedianMetricCalculator(MetricCalculator[T], ABC):
+class MedianMetricCalculator(WithoutQuantilesMixin, MetricCalculator[T], ABC):
     """Median calculator."""
 
     def _value(self, samples: np.ndarray) -> Metric[T]:
@@ -292,7 +309,7 @@ class MedianMetricCalculator(MetricCalculator[T], ABC):
         return Metric(True, *median_confidence_interval(samples))
 
 
-class AggregationMetricCalculator(MetricCalculator[T], ABC):
+class AggregationMetricCalculator(WithoutQuantilesMixin, MetricCalculator[T], ABC):
     """Any simple array aggregation calculator."""
 
     def _value(self, samples: np.ndarray) -> Metric[T]:
@@ -325,27 +342,24 @@ class Counter(MetricCalculator[int], ABC):
 
     dtype = int
 
+    def __call__(self, *args, **kwargs) -> None:
+        """Copy by reference the same peek and samples from the only dependency."""
+        calc = self._calcs[0]
+        self._peek = calc.peek
+        self._grouped_notnull = calc.grouped_notnull
+        self._samples = calc.samples
+
+    def _values(self) -> List[List[Metric[T]]]:
+        if self._quantiles != (0, 1):
+            # if we've got the quantiles, report the lengths
+            return [[Metric(True, len(s), None, None) for s in gs]
+                    for gs in self._samples]
+        # otherwise, ignore the upstream quantiles
+        return [[Metric(True, s, None, None) for s in gs]
+                for gs in self.grouped_notnull.sum(axis=-1)]
+
     def _value(self, samples: np.ndarray) -> Metric[int]:
-        return Metric(True, len(samples), None, None)
-
-    def _calc_quantile_cut_values(self,
-                                  samples: np.ndarray,
-                                  as_dtype=None,
-                                  ) -> Optional[np.ndarray]:
-        return super()._calc_quantile_cut_values(samples, as_dtype or self.deps[0].dtype)
-
-    def __call__(self,
-                 facts: pd.DataFrame,
-                 min_times: np.ndarray,
-                 max_times: np.ndarray,
-                 representative_time_interval_indexes: Sequence[int],
-                 groups: Sequence[Sequence[int]],
-                 **kwargs) -> None:
-        """Reference the same peek and samples from the only dependency."""  # noqa
-        self._peek = self._calcs[0].peek
-        self._samples = self._calcs[0].samples
-        assert representative_time_interval_indexes
-        self._representative_time_interval_indexes = representative_time_interval_indexes
+        raise AssertionError("this must be never called")
 
     def _analyze(self,
                  facts: pd.DataFrame,
@@ -353,16 +367,6 @@ class Counter(MetricCalculator[int], ABC):
                  max_times: np.ndarray,
                  **kwargs) -> np.ndarray:
         raise AssertionError("this must be never called")
-
-
-class WithoutQuantilesMixin:
-    """Ignore the quantiles."""
-
-    def _calc_quantile_cut_values(self,
-                                  samples: np.ndarray,
-                                  as_dtype=None,
-                                  ) -> Optional[np.ndarray]:
-        return None
 
 
 class HistogramCalculator(MetricCalculator, ABC):
@@ -376,10 +380,8 @@ class HistogramCalculator(MetricCalculator, ABC):
         """Calculate the histogram over the current distribution."""
         histograms = []
         for group_samples in self.samples:
-            cut_values = self._calc_quantile_cut_values(np.concatenate(group_samples))
             histograms.append(group_histograms := [])
             for samples in group_samples:
-                samples = self._cut_by_quantiles(samples, cut_values)
                 if scale == Scale.LOG:
                     if (shift_log := getattr(self, "_shift_log", None)) is not None:
                         samples = shift_log(samples)
@@ -394,15 +396,25 @@ class MetricCalculatorEnsemble:
     def __init__(self,
                  *metrics: str,
                  class_mapping: Dict[str, Type[MetricCalculator]],
-                 quantiles: Sequence[float]):
+                 quantiles: Sequence[float],
+                 quantile_stride: int):
         """Initialize a new instance of MetricCalculatorEnsemble class."""
         metric_classes = {class_mapping[m]: m for m in metrics}
         self._calcs, self._metrics = self._plan_classes(metric_classes, quantiles)
-        self._representative_time_interval_indexes = []
+        self._quantiles = tuple(quantiles)
+        self._quantile_stride = quantile_stride
 
     def __getitem__(self, metric: str) -> MetricCalculator:
         """Return the owned calculator for the given metric."""
         return self._metrics[metric]
+
+    @staticmethod
+    def compose_groups_mask(groups: Sequence[Sequence[int]], len_facts: int) -> np.ndarray:
+        """Convert group indexes to group masks."""
+        groups_mask = np.zeros((len(groups), len_facts), dtype=bool)
+        for i, g in enumerate(groups):
+            groups_mask[i, g] = True
+        return groups_mask
 
     @staticmethod
     def _plan_classes(metric_classes: Dict[Type[MetricCalculator], str],
@@ -434,6 +446,28 @@ class MetricCalculatorEnsemble:
                 continue
         return calcs, metrics
 
+    @staticmethod
+    def compose_quantile_time_intervals(min_time: np.datetime64,
+                                        max_time: np.datetime64,
+                                        quantile_stride: int,
+                                        ) -> Tuple[np.ndarray, np.ndarray]:
+        """Calculate the additional time intervals needed to filter out the local outliers."""
+        zero = np.datetime64("2000-01-03")
+        min_qli = (min_time.astype("datetime64[D]") - zero) // np.timedelta64(quantile_stride, "D")
+        max_qli = (
+            ((max_time + np.timedelta64(23, "h")).astype("datetime64[D]") - zero) +
+            np.timedelta64(quantile_stride - 1, "D")
+        ) // np.timedelta64(quantile_stride, "D")
+        timeline = zero + (min_time - min_time.astype("datetime64[D]")) + \
+            (np.arange(min_qli, max_qli + 1, 1) * quantile_stride).astype("timedelta64[D]")
+        return timeline[:-1], timeline[1:]
+
+    def _compose_quantile_time_intervals(self,
+                                         min_time: np.datetime64,
+                                         max_time: np.datetime64,
+                                         ) -> Tuple[np.ndarray, np.ndarray]:
+        return self.compose_quantile_time_intervals(min_time, max_time, self._quantile_stride)
+
     @sentry_span
     def __call__(self,
                  facts: pd.DataFrame,
@@ -442,14 +476,16 @@ class MetricCalculatorEnsemble:
                  groups: Sequence[Sequence[int]],
                  **kwargs) -> None:
         """Invoke all the owned metric calculators on the same input."""
-        groups_mask = np.zeros((len(groups), len(facts)), dtype=bool)
-        for i, g in enumerate(groups):
-            groups_mask[i, g] = True
-        representative_time_interval_indexes = \
-            MetricCalculator.find_representative_time_interval_indexes(min_times, max_times)
+        groups_mask = self.compose_groups_mask(groups, len(facts))
+        if self._quantiles == (0, 1):
+            quantiles_mounted_at = None
+        else:
+            quantiles_mounted_at = len(min_times)
+            qmins, qmaxs = self._compose_quantile_time_intervals(min_times.min(), max_times.max())
+            min_times = np.concatenate([min_times, qmins])
+            max_times = np.concatenate([max_times, qmaxs])
         for calc in self._calcs:
-            calc(facts, min_times, max_times, representative_time_interval_indexes, groups,
-                 groups_mask=groups_mask, **kwargs)
+            calc(facts, min_times, max_times, quantiles_mounted_at, groups_mask, **kwargs)
 
     def __bool__(self) -> bool:
         """Return True if there is at leat one calculator inside; otherwise, False."""
@@ -471,6 +507,24 @@ class MetricCalculatorEnsemble:
 
 class HistogramCalculatorEnsemble(MetricCalculatorEnsemble):
     """Like MetricCalculatorEnsemble, but for histograms."""
+
+    def __init__(self,
+                 *metrics: str,
+                 class_mapping: Dict[str, Type[MetricCalculator]],
+                 quantiles: Sequence[float],
+                 quantile_stride: int = 0):
+        """Initialize a new instance of HistogramCalculatorEnsemble class."""
+        super().__init__(*metrics,
+                         class_mapping=class_mapping,
+                         quantiles=quantiles,
+                         quantile_stride=0)
+
+    def _compose_quantile_time_intervals(self,
+                                         min_time: np.datetime64,
+                                         max_time: np.datetime64,
+                                         ) -> Tuple[np.ndarray, np.ndarray]:
+        # matches the legacy outliers behavior - unstable, but suites histograms better
+        return np.array([min_time]), np.array([max_time])
 
     def histograms(self,
                    scale: Optional[Scale],
@@ -580,16 +634,22 @@ class BinnedEnsemblesCalculator(Generic[M]):
     def __init__(self,
                  metrics: Iterable[Sequence[str]],
                  quantiles: Sequence[float],
+                 quantile_stride: int,
                  **kwargs):
         """
-        Initialize a new instance of `BinnedMetricCalculator`.
+        Initialize a new instance of `BinnedEnsemblesCalculator`.
 
         :param metrics: Series of series of metric names. Each inner series becomes a separate \
                         ensemble.
         :param quantiles: Pair of quantiles, common for each metric.
         """
         self.ensembles = [
-            self.ensemble_class(*metrics, quantiles=quantiles, **kwargs) for metrics in metrics
+            self.ensemble_class(
+                *metrics,
+                quantiles=quantiles,
+                quantile_stride=quantile_stride,
+                **kwargs,
+            ) for metrics in metrics
         ]
         self._metrics = list(metrics)
 
@@ -689,14 +749,16 @@ class BinnedMetricCalculator(BinnedEnsemblesCalculator[Metric]):
     def __init__(self,
                  metrics: Sequence[str],
                  quantiles: Sequence[float],
+                 quantile_stride: int,
                  **kwargs):
         """
         Initialize a new instance of `BinnedMetricsCalculator`.
 
         :param metrics: Sequence of metric names to calculate in each bin.
         :param quantiles: Pair of quantiles, common for each metric.
+        :param quantile_stride: Size of the quantile locality in days.
         """
-        super().__init__([metrics], quantiles, **kwargs)
+        super().__init__([metrics], quantiles=quantiles, quantile_stride=quantile_stride, **kwargs)
 
     def __call__(self,
                  items: pd.DataFrame,
@@ -717,6 +779,20 @@ class BinnedMetricCalculator(BinnedEnsemblesCalculator[Metric]):
 
 class BinnedHistogramCalculator(BinnedEnsemblesCalculator[Histogram]):
     """Batched histograms calculation on sequential time intervals."""
+
+    def __init__(self,
+                 metrics: Iterable[Sequence[str]],
+                 quantiles: Sequence[float],
+                 **kwargs):
+        """Initialize a new instance of `BinnedHistogramCalculator`."""
+        self.ensembles = [
+            self.ensemble_class(
+                *metrics,
+                quantiles=quantiles,
+                **kwargs,
+            ) for metrics in metrics
+        ]
+        self._metrics = list(metrics)
 
     def _aggregate_ensembles(self, kwargs: Iterable[Mapping[str, Any]],
                              ) -> List[Dict[str, List[List[Histogram]]]]:

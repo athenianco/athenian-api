@@ -214,13 +214,13 @@ async def metrics_calculator_factory(mdb, pdb, rdb, cache):
 
     def build(account_id, meta_ids, with_cache=False, cache_only=False):
         if cache_only:
-            return MetricEntriesCalculator(account_id, meta_ids, None, None, None, cache)
+            return MetricEntriesCalculator(account_id, meta_ids, 28, None, None, None, cache)
         if with_cache:
             c = cache
         else:
             c = None
 
-        return MetricEntriesCalculator(account_id, meta_ids, mdb, pdb, rdb, c)
+        return MetricEntriesCalculator(account_id, meta_ids, 28, mdb, pdb, rdb, c)
 
     return build
 
@@ -230,13 +230,13 @@ async def metrics_calculator_factory_memcached(mdb, pdb, rdb, memcached):
 
     def build(account_id, meta_ids, with_cache=False, cache_only=False):
         if cache_only:
-            return MetricEntriesCalculator(account_id, meta_ids, None, None, None, memcached)
+            return MetricEntriesCalculator(account_id, meta_ids, 28, None, None, None, memcached)
         if with_cache:
             c = memcached
         else:
             c = None
 
-        return MetricEntriesCalculator(account_id, meta_ids, mdb, pdb, rdb, c)
+        return MetricEntriesCalculator(account_id, meta_ids, 28, mdb, pdb, rdb, c)
 
     return build
 

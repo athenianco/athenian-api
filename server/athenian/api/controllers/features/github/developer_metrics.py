@@ -31,9 +31,12 @@ def register_metric(topic: DeveloperTopic):
 class DeveloperMetricCalculatorEnsemble(MetricCalculatorEnsemble):
     """MetricCalculatorEnsemble adapted for developers."""
 
-    def __init__(self, *metrics: str, quantiles: Sequence[float]):
+    def __init__(self, *metrics: str, quantiles: Sequence[float], quantile_stride: int):
         """Initialize a new instance of ReleaseMetricCalculatorEnsemble class."""
-        super().__init__(*metrics, quantiles=quantiles, class_mapping=metric_calculators)
+        super().__init__(*metrics,
+                         quantiles=quantiles,
+                         quantile_stride=quantile_stride,
+                         class_mapping=metric_calculators)
 
 
 class DeveloperBinnedMetricCalculator(BinnedMetricCalculator):

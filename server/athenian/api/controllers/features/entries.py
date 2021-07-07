@@ -82,12 +82,18 @@ class MetricEntriesCalculator:
     done_prs_facts_loader = DonePRFactsLoader
     load_delta = 0
 
-    def __init__(self, account: int, meta_ids: Tuple[int, ...],
-                 mdb: Database, pdb: Database, rdb: Database,
+    def __init__(self,
+                 account: int,
+                 meta_ids: Tuple[int, ...],
+                 quantile_stride: int,
+                 mdb: Database,
+                 pdb: Database,
+                 rdb: Database,
                  cache: Optional[aiomcache.Client]):
         """Create a `MetricEntriesCalculator`."""
         self._account = account
         self._meta_ids = meta_ids
+        self._quantile_stride = quantile_stride
         self._mdb = mdb
         self._pdb = pdb
         self._rdb = rdb
@@ -137,8 +143,8 @@ class MetricEntriesCalculator:
         assert isinstance(repositories, (tuple, list))
         all_repositories, all_participants = \
             _merge_repositories_and_participants(repositories, participants)
-        calc = PullRequestBinnedMetricCalculator(metrics, quantiles,
-                                                 exclude_inactive=exclude_inactive)
+        calc = PullRequestBinnedMetricCalculator(
+            metrics, quantiles, self._quantile_stride, exclude_inactive=exclude_inactive)
         time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
         mined_facts = await self.calc_pull_request_facts_github(
             time_from, time_to, all_repositories, all_participants, labels, jira, exclude_inactive,
@@ -297,7 +303,7 @@ class MetricEntriesCalculator:
         developer_grouper = partial(group_actions_by_developers, devs)
         for mined_topics, mined_df in mined_dfs:
             topics_seq.extend(mined_topics)
-            calc = DeveloperBinnedMetricCalculator([t.value for t in mined_topics], (0, 1))
+            calc = DeveloperBinnedMetricCalculator([t.value for t in mined_topics], (0, 1), 0)
             groups = group_to_indexes(mined_df, repo_grouper, developer_grouper)
             arrays.append(calc(mined_df, time_intervals, groups))
         result = np.full(arrays[0].shape, None)
@@ -346,7 +352,7 @@ class MetricEntriesCalculator:
         """
         time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
         all_repositories = set(chain.from_iterable(repositories))
-        calc = ReleaseBinnedMetricCalculator(metrics, quantiles)
+        calc = ReleaseBinnedMetricCalculator(metrics, quantiles, self._quantile_stride)
         branches, default_branches = await self.branch_miner.extract_branches(
             all_repositories, self._meta_ids, self._mdb, self._cache)
         all_participants = merge_release_participants(participants)
@@ -395,7 +401,7 @@ class MetricEntriesCalculator:
                  2. how many suites in each check runs count group (meaningful only if split_by_check_runs=True).
                  3. suite sizes (meaningful only if split_by_check_runs=True).
         """  # noqa
-        calc = CheckRunBinnedMetricCalculator(metrics, quantiles)
+        calc = CheckRunBinnedMetricCalculator(metrics, quantiles, self._quantile_stride)
         df_check_runs, groups, group_suite_counts, suite_sizes = \
             await self._mine_and_group_check_runs(
                 time_intervals[0][0], time_intervals[0][-1], repositories, pushers,
@@ -717,19 +723,19 @@ class CalculatorNotReadyException(Exception):
 
 
 def make_calculator(
+    variation: Optional[str],
+    quantile_stride: int,
     account: int,
     meta_ids: Tuple[int, ...],
     mdb: Database,
     pdb: Database,
     rdb: Database,
     cache: Optional[aiomcache.Client],
-    variation: Optional[str] = None,
-    base_module: Optional[str] = "athenian.api.experiments",
+    base_module: Optional[str] = None,
 ) -> MetricEntriesCalculator:
     """Get the metrics calculator according to the account's features."""
-
-    def build_calculator(cls=MetricEntriesCalculator):
-        calculator = cls(account, meta_ids, mdb, pdb, rdb, cache)
+    def build_calculator(cls):
+        calculator = cls(account, meta_ids, quantile_stride, mdb, pdb, rdb, cache)
         if not calculator.is_ready_for(account, meta_ids):
             log.error("Cannot make calculator for variation '%s'", variation)
             raise CalculatorNotReadyException(
@@ -737,10 +743,12 @@ def make_calculator(
                 f"meta ids '{meta_ids}'")
         return calculator
 
+    default_cls = MetricEntriesCalculator
     log = logging.getLogger(__name__)
     if not variation:
-        return build_calculator()
+        return build_calculator(default_cls)
 
+    cls = default_cls
     try:
         mod = importlib.import_module(f"{base_module}.{variation}")
     except ModuleNotFoundError:
@@ -748,7 +756,6 @@ def make_calculator(
             "Invalid variation '%s' calculator, using the default implementation",
             variation,
         )
-        return build_calculator()
     else:
         try:
             cls = mod.MetricEntriesCalculator
@@ -758,6 +765,4 @@ def make_calculator(
                 "using the default implementation",
                 variation,
             )
-            return build_calculator()
-        else:
-            return build_calculator(cls=cls)
+    return build_calculator(cls)
