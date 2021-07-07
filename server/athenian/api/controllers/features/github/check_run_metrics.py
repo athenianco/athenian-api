@@ -483,6 +483,39 @@ class PRsWithChecksCounter(SumMetricCalculator[int]):
         return result
 
 
+def calculate_check_run_outcome_masks(check_run_statuses: np.ndarray,
+                                      check_run_conclusions: np.ndarray,
+                                      check_suite_conclusions: Optional[np.ndarray],
+                                      with_success: bool,
+                                      with_failure: bool,
+                                      with_skipped: bool,
+                                      ) -> List[np.ndarray]:
+    """Calculate the check run success and failure masks."""
+    completed = check_run_statuses == b"COMPLETED"
+    if with_success or with_skipped:
+        neutrals = (check_run_conclusions == b"NEUTRAL")
+    result = []
+    if with_success:
+        result.append(
+            (completed & (
+                (check_run_conclusions == b"SUCCESS") |
+                (check_suite_conclusions == b"NEUTRAL") & neutrals
+            )) |
+            (check_run_statuses == b"SUCCESS") |
+            (check_run_statuses == b"PENDING")  # noqa(C812)
+        )
+    if with_failure:
+        result.append(
+            (completed & np.in1d(check_run_conclusions,
+                                 [b"FAILURE", b"STALE", b"ACTION_REQUIRED"])) |
+            (check_run_statuses == b"FAILURE") |
+            (check_run_statuses == b"ERROR")  # noqa(C812)
+        )
+    if with_skipped:
+        result.append((check_suite_conclusions != b"NEUTRAL") & neutrals)
+    return result
+
+
 @register_metric(CodeCheckMetricID.FLAKY_COMMIT_CHECKS_COUNT)
 class FlakyCommitChecksCounter(SumMetricCalculator[int]):
     """Number of commits with both successful and failed check suites."""
@@ -497,16 +530,9 @@ class FlakyCommitChecksCounter(SumMetricCalculator[int]):
                  **_) -> np.ndarray:
         statuses = facts[CheckRun.status.key].values.astype("S")
         conclusions = facts[CheckRun.conclusion.key].values.astype("S")
-        completed = statuses == b"COMPLETED"
-        success_mask = (
-            (completed & (conclusions == b"SUCCESS")) |
-            (statuses == b"SUCCESS") | (statuses == b"PENDING")
-        )
-        failure_mask = (
-            (completed & np.in1d(conclusions, [b"FAILURE", b"STALE", b"ACTION_REQUIRED"])) |
-            (statuses == b"FAILURE") | (statuses == b"ERROR")
-        )
-
+        check_suite_conclusions = facts[CheckRun.check_suite_conclusion.key].values.astype("S")
+        success_mask, failure_mask = calculate_check_run_outcome_masks(
+            statuses, conclusions, check_suite_conclusions, True, True, False)
         commits = facts[CheckRun.commit_node_id.key].values.astype("S")
         check_run_names = np.char.encode(facts[CheckRun.name.key].values.astype("U"), "UTF-8")
         commits_with_names = np.char.add(commits, check_run_names)
@@ -563,9 +589,7 @@ class MergedPRsWithFailedChecksCounter(SumMetricCalculator[int]):
         failure_mask[first_encounters] = True
         merged_timestamps = df[pull_request_merged_column].values
         failure_mask &= (
-            ((statuses == b"COMPLETED") &
-             np.in1d(conclusions, [b"FAILURE", b"STALE", b"ACTION_REQUIRED"])
-             ) | (statuses == b"FAILURE") | (statuses == b"ERROR")
+            calculate_check_run_outcome_masks(statuses, conclusions, None, False, True, False)[0]
         ) & (pull_requests != b"None") & (merged_timestamps == merged_timestamps)
         return df.index, pull_requests, failure_mask
 

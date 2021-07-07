@@ -9,6 +9,8 @@ import numpy as np
 from numpy.lib.nanfunctions import _remove_nan_1d
 
 from athenian.api.cache import cached
+from athenian.api.controllers.features.github.check_run_metrics import \
+    calculate_check_run_outcome_masks
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.check_run import mine_check_runs
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
@@ -101,15 +103,8 @@ async def filter_check_runs(time_from: datetime,
     statuscol = df_check_runs[CheckRun.status.key].values.astype("S")
     conclusioncol = df_check_runs[CheckRun.conclusion.key].values.astype("S")
     check_suite_conclusions = df_check_runs[CheckRun.check_suite_conclusion.key].values.astype("S")
-    completed = statuscol == b"COMPLETED"
-    success_mask = (completed & (conclusioncol == b"SUCCESS")) | \
-                   (statuscol == b"SUCCESS") | \
-                   (statuscol == b"PENDING")
-    failure_mask = (
-        (completed & np.in1d(conclusioncol, [b"FAILURE", b"STALE", b"ACTION_REQUIRED"])) |
-        (statuscol == b"FAILURE") | (statuscol == b"ERROR")
-    )
-    skipped_mask = (check_suite_conclusions != b"NEUTRAL") & (conclusioncol == b"NEUTRAL")
+    success_mask, failure_mask, skipped_mask = calculate_check_run_outcome_masks(
+        statuscol, conclusioncol, check_suite_conclusions, True, True, True)
     commitscol = df_check_runs[CheckRun.commit_node_id.key].values.astype("S")
 
     started_ats = started_ats.astype("datetime64[s]")
