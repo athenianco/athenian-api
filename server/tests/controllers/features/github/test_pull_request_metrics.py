@@ -104,6 +104,20 @@ def test_pull_request_metrics_empty_input(pr_samples):
     assert not calc.values[0][0].exists
 
 
+@pytest.mark.parametrize("fill_val", [False, True])
+def test_pull_request_metrics_empty_group(pr_samples, fill_val):
+    calc = WorkInProgressTimeCalculator(quantiles=(0, 0.9))
+    df = df_from_structs(pr_samples(100))
+    time_to = datetime.utcnow()
+    time_from = time_to - timedelta(days=180)
+    time_from = np.concatenate([dt64arr_ns(time_from)] * 2)
+    time_to = np.concatenate([dt64arr_ns(time_to)] * 2)
+    calc(df, time_from, time_to, 1, np.full((1, len(df)), fill_val))
+    assert len(calc.values) == 1
+    assert len(calc.values[0]) == 1
+    assert calc.values[0][0].exists == fill_val
+
+
 @pytest.mark.parametrize("cls, peak_attr",
                          [(WorkInProgressTimeCalculator, "first_review_request"),
                           (ReviewTimeCalculator, "approved,last_review"),
