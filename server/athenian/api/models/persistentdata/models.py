@@ -56,11 +56,11 @@ class DeploymentNotification(create_time_mixin(created_at=True, updated_at=True)
     __tablename__ = "deployment_notifications"
 
     name = Column(Text(), primary_key=True, nullable=False)
-    conclusion = Column(Text())  # SUCCESS, FAILURE, CANCELLED
+    conclusion = Column(Text(), nullable=False)  # SUCCESS, FAILURE, CANCELLED
     environment = Column(Text(), nullable=False)  # production, staging, etc.; nothing's enforced
     url = Column(Text())
     started_at = Column(TIMESTAMP(timezone=True), nullable=False)
-    finished_at = Column(TIMESTAMP(timezone=True))  # is nullable to support 2-step notifications
+    finished_at = Column(TIMESTAMP(timezone=True), nullable=False)
 
 
 class DeployedLabel(Base):

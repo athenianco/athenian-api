@@ -9,21 +9,16 @@ from athenian.api.response import ResponseError
 
 
 class DeploymentNotification(Model):
-    """Push message about a deployment.
-
-    User can send either only `date_started`, only `date_finished`, or both together. Sending
-    `date_finished` requires `conclusion` to exist, too. We remove stale deployments that have
-    `date_started` but do not have `date_finished` after 24 hours.
-    """
+    """Push message about a deployment. We remove unresolved components after 24h."""
 
     openapi_types = {
         "components": List[DeployedComponent],
         "environment": str,
         "name": Optional[str],
         "url": Optional[str],
-        "date_started": Optional[datetime],
-        "date_finished": Optional[datetime],
-        "conclusion": Optional[DeploymentConclusion],
+        "date_started": datetime,
+        "date_finished": datetime,
+        "conclusion": str,
         "labels": dict,
     }
 
@@ -69,18 +64,11 @@ class DeploymentNotification(Model):
         self._conclusion = conclusion
         self._labels = labels
 
-    def validate_multipart(self) -> None:
+    def validate_timestamps(self) -> None:
         """Post-check the request data."""
-        if (self.date_finished is None) != (self.conclusion is None):
-            raise ResponseError(InvalidRequestError(
-                "`date_finished` and `conclusion` must either be both null or both non-null"))
-        if self.date_finished is not None and self.date_started is not None and \
-                self.date_finished < self.date_started:
+        if self.date_finished < self.date_started:
             raise ResponseError(InvalidRequestError(
                 "`date_finished` must be later than `date_started`"))
-        if self.date_started is None and self.date_finished is None:
-            raise ResponseError(InvalidRequestError(
-                "Either `date_started` or `date_finished` must be specified"))
 
     @property
     def components(self) -> List[DeployedComponent]:
@@ -178,7 +166,7 @@ class DeploymentNotification(Model):
         self._url = url
 
     @property
-    def date_started(self) -> Optional[datetime]:
+    def date_started(self) -> datetime:
         """Gets the date_started of this DeploymentNotification.
 
         Timestamp of when the deployment procedure launched.
@@ -188,17 +176,19 @@ class DeploymentNotification(Model):
         return self._date_started
 
     @date_started.setter
-    def date_started(self, date_started: Optional[datetime]):
+    def date_started(self, date_started: datetime):
         """Sets the date_started of this DeploymentNotification.
 
         Timestamp of when the deployment procedure launched.
 
         :param date_started: The date_started of this DeploymentNotification.
         """
+        if date_started is None:
+            raise ValueError("`date_started` may not be null")
         self._date_started = date_started
 
     @property
-    def date_finished(self) -> Optional[datetime]:
+    def date_finished(self) -> datetime:
         """Gets the date_finished of this DeploymentNotification.
 
         Timestamp of when the deployment procedure completed.
@@ -208,17 +198,19 @@ class DeploymentNotification(Model):
         return self._date_finished
 
     @date_finished.setter
-    def date_finished(self, date_finished: Optional[datetime]):
+    def date_finished(self, date_finished: datetime):
         """Sets the date_finished of this DeploymentNotification.
 
         Timestamp of when the deployment procedure completed.
 
         :param date_finished: The date_finished of this DeploymentNotification.
         """
+        if date_finished is None:
+            raise ValueError("`date_finished` may not be null")
         self._date_finished = date_finished
 
     @property
-    def conclusion(self) -> Optional[str]:
+    def conclusion(self) -> str:
         """Gets the conclusion of this DeploymentNotification.
 
         :return: The conclusion of this DeploymentNotification.
@@ -226,13 +218,14 @@ class DeploymentNotification(Model):
         return self._conclusion
 
     @conclusion.setter
-    def conclusion(self, conclusion: Optional[str]):
+    def conclusion(self, conclusion: str):
         """Sets the conclusion of this DeploymentNotification.
 
         :param conclusion: The conclusion of this DeploymentNotification.
         """
-        if conclusion is not None and conclusion not in DeploymentConclusion:
-            raise ValueError("Invalid value for `conclusion`, must not be `None`")
+        if conclusion not in DeploymentConclusion:
+            raise ValueError(
+                f"Invalid value for `conclusion`, must be one of {list(DeploymentConclusion)}")
         self._conclusion = conclusion
 
     @property

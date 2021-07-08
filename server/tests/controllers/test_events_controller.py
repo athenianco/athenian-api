@@ -237,14 +237,13 @@ async def test_clear_precomputed_events_nasty_input(client, headers, body, statu
 
 
 @pytest.mark.parametrize("ref, vhash", [
-    ("4.2.0", "3a43343c"),
-    ("v4.2.0", "3a43343c"),
-    ("1d28459504251497e0ce6132a0fadd5eb44ffd22", "2b9a7005"),
-    ("1d28459", "2b9a7005"),
-    ("xxx", "4e3a8b2d"),
+    ("4.2.0", "y9c5A0Df"),
+    ("v4.2.0", "y9c5A0Df"),
+    ("1d28459504251497e0ce6132a0fadd5eb44ffd22", "Cd34s0Jb"),
+    ("1d28459", "Cd34s0Jb"),
+    ("xxx", "u5VWde@k"),
 ])
-@pytest.mark.parametrize("with_finish", [False, True])
-async def test_notify_deployment_smoke(client, headers, token, rdb, ref, vhash, with_finish):
+async def test_notify_deployment_smoke(client, headers, token, rdb, ref, vhash):
     body = [{
         "components": [{
             "repository": "github.com/src-d/go-git",
@@ -252,14 +251,13 @@ async def test_notify_deployment_smoke(client, headers, token, rdb, ref, vhash, 
         }],
         "environment": "production",
         "date_started": "2021-01-12T00:00:00Z",
+        "date_finished": "2021-01-12T01:00:00Z",
+        "conclusion": "SUCCESS",
         "labels": {
             "one": 1,
             2: "two",
         },
     }]
-    if with_finish:
-        body[0]["date_finished"] = "2021-01-12T01:00:00Z"
-        body[0]["conclusion"] = "SUCCESS"
     headers = headers.copy()
     headers["X-API-Key"] = token
     response = await client.request(
@@ -277,7 +275,7 @@ async def test_notify_deployment_smoke(client, headers, token, rdb, ref, vhash, 
         commit = None
     else:
         commit = "MDY6Q29tbWl0NDQ3MzkwNDQ6MWQyODQ1OTUwNDI1MTQ5N2UwY2U2MTMyYTBmYWRkNWViNDRmZmQyMg=="
-    name = f"prod-{created_at.date()}-{vhash}"
+    name = f"prod-2021-01-12-{vhash}"
     assert row == {
         "account_id": 1,
         "deployment_name": name,
@@ -312,53 +310,15 @@ async def test_notify_deployment_smoke(client, headers, token, rdb, ref, vhash, 
     assert row == {
         "account_id": 1,
         "name": name,
-        "conclusion": "SUCCESS" if with_finish else None,
+        "conclusion": "SUCCESS",
         "started_at": datetime(2021, 1, 12, 0, 0, tzinfo=tzinfo),
-        "finished_at": datetime(2021, 1, 12, 1, 0, tzinfo=tzinfo) if with_finish else None,
+        "finished_at": datetime(2021, 1, 12, 1, 0, tzinfo=tzinfo),
         "url": None,
         "environment": "production",
     }
 
 
-@pytest.mark.parametrize("with_finish", [False, True])
-async def test_notify_deployment_set_name(client, headers, token, rdb, with_finish):
-    body = [{
-        "components": [{
-            "repository": "github.com/src-d/go-git",
-            "reference": "xxx",
-        }],
-        "environment": "production",
-        "date_started": "2021-01-12T00:00:00Z",
-        "name": "xxx-production",
-    }]
-    if with_finish:
-        body[0]["date_finished"] = "2021-01-12T01:00:00Z"
-        body[0]["conclusion"] = "CANCELLED"
-    headers = headers.copy()
-    headers["X-API-Key"] = token
-    response = await client.request(
-        method="POST", path="/v1/events/deployments", headers=headers, json=body,
-    )
-    assert response.status == 200
-    rows = await rdb.fetch_all(select([DeploymentNotification]))
-    assert len(rows) == 1
-    row = dict(rows[0])
-    del row[DeploymentNotification.created_at.key]
-    del row[DeploymentNotification.updated_at.key]
-    tzinfo = timezone.utc if rdb.url.dialect == "postgresql" else None
-    assert row == {
-        "account_id": 1,
-        "name": "xxx-production",
-        "conclusion": "CANCELLED" if with_finish else None,
-        "started_at": datetime(2021, 1, 12, 0, 0, tzinfo=tzinfo),
-        "finished_at": datetime(2021, 1, 12, 1, 0, tzinfo=tzinfo) if with_finish else None,
-        "url": None,
-        "environment": "production",
-    }
-
-
-@pytest.mark.parametrize("with_finish", [False, True])
-async def test_notify_deployment_set_finish(client, headers, token, rdb, with_finish):
+async def test_notify_deployment_duplicate(client, headers, token):
     body = [{
         "components": [{
             "repository": "github.com/src-d/go-git",
@@ -366,54 +326,22 @@ async def test_notify_deployment_set_finish(client, headers, token, rdb, with_fi
         }],
         "environment": "staging",
         "date_started": "2021-01-12T00:00:00Z",
+        "date_finished": "2021-01-12T00:01:00Z",
+        "conclusion": "FAILURE",
         "labels": {
             "one": 1,
         },
     }]
-    if with_finish:
-        body[0]["date_finished"] = "2021-01-12T01:00:00Z"
-        body[0]["conclusion"] = "SUCCESS"
     headers = headers.copy()
     headers["X-API-Key"] = token
     response = await client.request(
         method="POST", path="/v1/events/deployments", headers=headers, json=body,
     )
     assert response.status == 200
-    del body[0]["date_started"]
-    body[0]["date_finished"] = "2021-02-12T01:00:00Z"
-    body[0]["conclusion"] = "FAILURE"
-    body[0]["labels"] = {
-        "one": 2,
-    }
     response = await client.request(
         method="POST", path="/v1/events/deployments", headers=headers, json=body,
     )
-    assert response.status == 200
-    rows = await rdb.fetch_all(select([DeploymentNotification]))
-    assert len(rows) == 1
-    row = dict(rows[0])
-    created_at = row[DeploymentNotification.created_at.key]
-    del row[DeploymentNotification.created_at.key]
-    del row[DeploymentNotification.updated_at.key]
-    name = f"stage-{created_at.date()}-4e3a8b2d"
-    tzinfo = timezone.utc if rdb.url.dialect == "postgresql" else None
-    assert row == {
-        "account_id": 1,
-        "name": name,
-        "conclusion": "FAILURE",
-        "started_at": datetime(2021, 1, 12, 0, 0, tzinfo=tzinfo),
-        "finished_at": datetime(2021, 2, 12, 1, 0, tzinfo=tzinfo),
-        "url": None,
-        "environment": "staging",
-    }
-    rows = await rdb.fetch_all(select([DeployedLabel]))
-    assert len(rows) == 1
-    assert dict(rows[0]) == {
-        "account_id": 1,
-        "deployment_name": name,
-        "key": "one",
-        "value": 2,
-    }
+    assert response.status == 409
 
 
 @pytest.mark.parametrize("body, code", [
@@ -474,6 +402,8 @@ async def test_notify_deployment_set_finish(client, headers, token, rdb, with_fi
         }],
         "environment": "production",
         "date_started": "2021-01-12T00:00:00Z",
+        "date_finished": "2021-01-12T01:00:00Z",
+        "conclusion": "SUCCESS",
     }, 403),
     ({
         "components": [{
@@ -482,6 +412,8 @@ async def test_notify_deployment_set_finish(client, headers, token, rdb, with_fi
         }],
         "environment": "production",
         "date_started": "2021-01-12T00:00:00Z",
+        "date_finished": "2021-01-12T01:00:00Z",
+        "conclusion": "SUCCESS",
     }, 400),
 ])
 async def test_notify_deployment_nasty_input(client, headers, token, body, code):
@@ -516,6 +448,8 @@ async def test_notify_deployment_422(client, headers, token, sdb):
             }],
             "environment": "production",
             "date_started": "2021-01-12T00:00:00Z",
+            "date_finished": "2021-01-12T00:01:00Z",
+            "conclusion": "FAILURE",
         }],
     )
     assert response.status == 422
@@ -533,13 +467,7 @@ async def test_resolve_deployed_component_references_smoke(sdb, mdb, rdb):
     await execute_many(insert(DeploymentNotification), [
         DeploymentNotification(
             account_id=1,
-            name="dead1",
-            started_at=datetime.now(timezone.utc) - timedelta(days=2),
-            environment="production",
-        ).create_defaults().explode(with_primary_keys=True),
-        DeploymentNotification(
-            account_id=1,
-            name="dead2",
+            name="dead",
             started_at=datetime.now(timezone.utc) - timedelta(hours=1),
             finished_at=datetime.now(timezone.utc),
             conclusion="SUCCESS",
@@ -558,15 +486,7 @@ async def test_resolve_deployed_component_references_smoke(sdb, mdb, rdb):
     await execute_many(insert(DeployedComponent), [
         DeployedComponent(
             account_id=1,
-            deployment_name="dead1",
-            repository_node_id="MDEwOlJlcG9zaXRvcnk0NDczOTA0NA==",
-            reference="aaa",
-            resolved_commit_node_id=commit,
-            created_at=datetime.now(timezone.utc) - timedelta(days=2),
-        ).explode(with_primary_keys=True),
-        DeployedComponent(
-            account_id=1,
-            deployment_name="dead2",
+            deployment_name="dead",
             repository_node_id="MDEwOlJlcG9zaXRvcnk0NDczOTA0NA==",
             reference="bbb",
             created_at=datetime.now(timezone.utc) - timedelta(days=2),
@@ -583,13 +503,7 @@ async def test_resolve_deployed_component_references_smoke(sdb, mdb, rdb):
     await execute_many(insert(DeployedLabel), [
         DeployedLabel(
             account_id=1,
-            deployment_name="dead1",
-            key="one",
-            value="two",
-        ).create_defaults().explode(with_primary_keys=True),
-        DeployedLabel(
-            account_id=1,
-            deployment_name="dead2",
+            deployment_name="dead",
             key="three",
             value="four",
         ).create_defaults().explode(with_primary_keys=True),

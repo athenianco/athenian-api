@@ -3,14 +3,16 @@ from datetime import date, datetime, timedelta, timezone
 from itertools import chain
 import os
 import re
+import sqlite3
 from typing import Dict, Iterable, List, Mapping, Optional, Tuple
 
 from aiohttp import web
 import aiomcache
+import asyncpg
 from sqlalchemy import and_, delete, exists, func, insert, not_, select, text, union, union_all, \
     update
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
-from xxhash._xxhash import xxh32_hexdigest
+from xxhash._xxhash import xxh32_intdigest
 
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
@@ -29,7 +31,7 @@ from athenian.api.models.metadata.github import PushCommit, Release, User
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
     DeploymentNotification, \
     ReleaseNotification
-from athenian.api.models.web import BadRequestError, DeleteEventsCacheRequest, \
+from athenian.api.models.web import BadRequestError, DatabaseConflict, DeleteEventsCacheRequest, \
     DeploymentNotification as WebDeploymentNotification, ForbiddenError, \
     InvalidRequestError, ReleaseNotification as WebReleaseNotification
 from athenian.api.request import AthenianWebRequest
@@ -241,13 +243,12 @@ async def notify_deployments(request: AthenianWebRequest, body: List[dict]) -> w
         notifications = [WebDeploymentNotification.from_dict(n) for n in body]
     except ParseError as e:
         raise ResponseError(BadRequestError("%s: %s" % (type(e).__name__, e)))
-    tasks = []
     account, sdb, mdb, rdb, cache = \
         request.account, request.sdb, request.mdb, request.rdb, request.cache
     meta_ids = await get_metadata_account_ids(account, sdb, cache)
     checker = await access_classes["github"](account, meta_ids, sdb, mdb, cache).load()
     for i, notification in enumerate(notifications):
-        notification.validate_multipart()
+        notification.validate_timestamps()
         try:
             deployed_repos = {c.repository.split("/", 1)[1] for c in notification.components}
         except IndexError:
@@ -264,16 +265,14 @@ async def notify_deployments(request: AthenianWebRequest, body: List[dict]) -> w
                              for c in n.components)
                             for n in notifications),
         meta_ids, mdb, False)
-    for notification in notifications:
-        if notification.date_finished is None:
-            tasks.append(_notify_deployment_started(
-                notification, account, rdb, resolved, repo_nodes))
-        elif notification.date_started is None:
-            tasks.append(_notify_deployment_finished(notification, account, rdb))
-        else:
-            tasks.append(_notify_deployment_interval(
-                notification, account, rdb, resolved, repo_nodes))
-    await gather(*tasks)
+    tasks = [
+        _notify_deployment(notification, account, rdb, resolved, repo_nodes)
+        for notification in notifications
+    ]
+    try:
+        await gather(*tasks, op=f"_notify_deployment_interval({len(tasks)})")
+    except (sqlite3.IntegrityError, asyncpg.IntegrityConstraintViolationError):
+        raise ResponseError(DatabaseConflict("Specified deployment(s) already exist.")) from None
     return web.Response(status=200)
 
 
@@ -285,17 +284,30 @@ def _normalize_reference(ref: str) -> str:
     return ref
 
 
+b70chars = "".join(chr(i) for i in range(ord("a"), ord("z") + 1))
+b70chars = "0123456789" + b70chars + b70chars.upper() + "@#$%&/+="
+assert len(b70chars) == 70
+
+
 def _compose_name(notification: WebDeploymentNotification) -> str:
     components = sorted(notification.components, key=lambda c: c.repository)
     text = "|".join(f"{c.repository}-{_normalize_reference(c.reference)}" for c in components)
-    chash = xxh32_hexdigest(text)
-    today = datetime.utcnow()
+    chash = xxh32_intdigest(text)
+    ts = notification.date_started
+    secs = int((ts - ts.replace(hour=0, minute=0, second=0, microsecond=0)).total_seconds())
+    full_hash = (chash << 17) | secs  # 24 * 3600 requires 17 bits
+    str_hash = ""
+    chars = b70chars
+    for _ in range(8):  # 70^8 > 2^(32+17)
+        str_hash += chars[full_hash % len(chars)]
+        full_hash //= len(chars)
+    assert full_hash == 0
     env = notification.environment
     for key, repl in (("production", "prod"),
                       ("staging", "stage"),
                       ("development", "dev")):
         env = env.replace(key, repl)
-    return "%s-%d-%02d-%02d-%s" % (env, today.year, today.month, today.day, chash)
+    return "%s-%d-%02d-%02d-%s" % (env, ts.year, ts.month, ts.day, str_hash)
 
 
 @sentry_span
@@ -365,141 +377,15 @@ async def _resolve_references(components: Iterable[Tuple[str, str]],
 
 
 @sentry_span
-async def _notify_deployment_started(notification: WebDeploymentNotification,
-                                     account: int,
-                                     rdb: ParallelDatabase,
-                                     resolved_refs: Mapping[str, Mapping[str, str]],
-                                     repo_nodes: Mapping[str, str],
-                                     ) -> None:
+async def _notify_deployment(notification: WebDeploymentNotification,
+                             account: int,
+                             rdb: ParallelDatabase,
+                             resolved_refs: Mapping[str, Mapping[str, str]],
+                             repo_nodes: Mapping[str, str],
+                             ) -> None:
     async with rdb.connection() as rdb_conn:
         async with rdb_conn.transaction():
-            if rdb.url.dialect == "postgresql":
-                sql = postgres_insert(DeploymentNotification)
-                sql = sql.on_conflict_do_update(
-                    constraint=DeploymentNotification.__table__.primary_key,
-                    set_={
-                        col.key: getattr(sql.excluded, col.key)
-                        for col in (
-                            DeploymentNotification.started_at,
-                            DeploymentNotification.updated_at,
-                        )
-                    },
-                )
-            else:
-                sql = insert(DeploymentNotification).prefix_with("OR REPLACE")
-            await rdb_conn.execute(sql.values(
-                DeploymentNotification(
-                    account_id=account,
-                    environment=notification.environment,
-                    name=notification.name,
-                    url=notification.url,
-                    started_at=notification.date_started,
-                ).create_defaults().explode(with_primary_keys=True),
-            ))
-            await _write_deployed_components_and_labels(
-                notification, account, resolved_refs, repo_nodes, rdb_conn,
-            )
-
-
-async def _write_deployed_components_and_labels(notification: WebDeploymentNotification,
-                                                account: int,
-                                                resolved_refs: Mapping[str, Mapping[str, str]],
-                                                repo_nodes: Mapping[str, str],
-                                                rdb_conn: FastConnection,
-                                                ) -> None:
-    cvalues = [
-        DeployedComponent(
-            account_id=account,
-            deployment_name=notification.name,
-            repository_node_id=repo_nodes[(repo := c.repository.split("/", 1)[1])],
-            reference=c.reference,
-            resolved_commit_node_id=resolved_refs.get(repo, {}).get(c.reference),
-        ).create_defaults().explode(with_primary_keys=True)
-        for c in notification.components
-    ]
-    await rdb_conn.execute_many(insert(DeployedComponent), cvalues)
-    if notification.labels:
-        lvalues = [
-            DeployedLabel(
-                account_id=account,
-                deployment_name=notification.name,
-                key=str(key),
-                value=value,
-            ).create_defaults().explode(with_primary_keys=True)
-            for key, value in notification.labels.items()
-        ]
-        await rdb_conn.execute_many(insert(DeployedLabel), lvalues)
-
-
-@sentry_span
-async def _notify_deployment_finished(notification: WebDeploymentNotification,
-                                      account: int,
-                                      rdb: ParallelDatabase,
-                                      ) -> None:
-    async with rdb.connection() as rdb_conn:
-        async with rdb_conn.transaction():
-            await rdb_conn.execute(
-                update(DeploymentNotification)
-                .where(and_(DeploymentNotification.account_id == account,
-                            DeploymentNotification.name == notification.name))
-                .values({
-                    DeploymentNotification.conclusion: notification.conclusion,
-                    DeploymentNotification.finished_at: notification.date_finished,
-                    DeploymentNotification.updated_at: datetime.now(timezone.utc),
-                }))
-            if notification.labels:
-                lvalues = [
-                    DeployedLabel(
-                        account_id=account,
-                        deployment_name=notification.name,
-                        key=str(key),
-                        value=value,
-                    ).create_defaults().explode(with_primary_keys=True)
-                    for key, value in notification.labels.items()
-                ]
-                if rdb.url.dialect == "postgresql":
-                    sql = postgres_insert(DeployedLabel)
-                    sql = sql.on_conflict_do_update(
-                        constraint=DeployedLabel.__table__.primary_key,
-                        set_={
-                            col.key: getattr(sql.excluded, col.key)
-                            for col in (
-                                DeployedLabel.key,
-                                DeployedLabel.value,
-                            )
-                        },
-                    )
-                else:
-                    sql = insert(DeployedLabel).prefix_with("OR REPLACE")
-                await rdb_conn.execute_many(sql, lvalues)
-
-
-@sentry_span
-async def _notify_deployment_interval(notification: WebDeploymentNotification,
-                                      account: int,
-                                      rdb: ParallelDatabase,
-                                      resolved_refs: Mapping[str, Mapping[str, str]],
-                                      repo_nodes: Mapping[str, str],
-                                      ) -> None:
-    async with rdb.connection() as rdb_conn:
-        async with rdb_conn.transaction():
-            if rdb.url.dialect == "postgresql":
-                sql = postgres_insert(DeploymentNotification)
-                sql = sql.on_conflict_do_update(
-                    constraint=DeploymentNotification.__table__.primary_key,
-                    set_={
-                        col.key: getattr(sql.excluded, col.key)
-                        for col in (
-                            DeploymentNotification.started_at,
-                            DeploymentNotification.finished_at,
-                            DeploymentNotification.conclusion,
-                            DeploymentNotification.updated_at,
-                        )
-                    },
-                )
-            else:
-                sql = insert(DeploymentNotification).prefix_with("OR REPLACE")
-            await rdb_conn.execute(sql.values(
+            await rdb_conn.execute(insert(DeploymentNotification).values(
                 DeploymentNotification(
                     account_id=account,
                     conclusion=notification.conclusion,
@@ -510,9 +396,28 @@ async def _notify_deployment_interval(notification: WebDeploymentNotification,
                     finished_at=notification.date_finished,
                 ).create_defaults().explode(with_primary_keys=True),
             ))
-            await _write_deployed_components_and_labels(
-                notification, account, resolved_refs, repo_nodes, rdb_conn,
-            )
+            cvalues = [
+                DeployedComponent(
+                    account_id=account,
+                    deployment_name=notification.name,
+                    repository_node_id=repo_nodes[(repo := c.repository.split("/", 1)[1])],
+                    reference=c.reference,
+                    resolved_commit_node_id=resolved_refs.get(repo, {}).get(c.reference),
+                ).create_defaults().explode(with_primary_keys=True)
+                for c in notification.components
+            ]
+            await rdb_conn.execute_many(insert(DeployedComponent), cvalues)
+            if notification.labels:
+                lvalues = [
+                    DeployedLabel(
+                        account_id=account,
+                        deployment_name=notification.name,
+                        key=str(key),
+                        value=value,
+                    ).create_defaults().explode(with_primary_keys=True)
+                    for key, value in notification.labels.items()
+                ]
+                await rdb_conn.execute_many(insert(DeployedLabel), lvalues)
 
 
 async def resolve_deployed_component_references(sdb: ParallelDatabase,
@@ -535,18 +440,12 @@ async def _resolve_deployed_component_references(sdb: ParallelDatabase,
         DeployedComponent.resolved_commit_node_id.is_(None),
         DeployedComponent.created_at < datetime.now(timezone.utc) - timedelta(days=1),
     )))
-    discarded_notifications = await rdb.fetch_all(union(
+    discarded_notifications = await rdb.fetch_all(
         select([DeploymentNotification.account_id, DeploymentNotification.name])
         .where(not_(exists().where(and_(
             DeploymentNotification.account_id == DeployedComponent.account_id,
             DeploymentNotification.name == DeployedComponent.deployment_name,
-        )))),
-        select([DeploymentNotification.account_id, DeploymentNotification.name])
-        .where(and_(
-            DeploymentNotification.finished_at.is_(None),
-            DeploymentNotification.started_at < datetime.now(timezone.utc) - timedelta(days=1),
-        )),
-    ))
+        )))))
     discarded_by_account = defaultdict(list)
     for row in discarded_notifications:
         discarded_by_account[row[DeploymentNotification.account_id.key]].append(
