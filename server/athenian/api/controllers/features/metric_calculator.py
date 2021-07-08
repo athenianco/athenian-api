@@ -223,23 +223,26 @@ class MetricCalculator(Generic[T], ABC):
         group_sample_lengths = np.sum(group_sample_mask, axis=-1)
         if self.has_nan:
             max_len = group_sample_lengths.max()
-            surrogate_samples = np.full(
-                (*group_sample_lengths.shape, max_len), None, dtype)
-            flat_lengths = group_sample_lengths.ravel()
-            flat_mask = flat_lengths > 0
-            flat_lengths = flat_lengths[flat_mask]
-            flat_offsets = \
-                (np.arange(group_sample_lengths.size) * max_len)[flat_mask] + flat_lengths
-            flat_cumsum = flat_lengths.cumsum()
-            indexes = np.arange(flat_cumsum[-1]) + \
-                np.repeat(flat_offsets - flat_cumsum, flat_lengths)
-            surrogate_samples.ravel()[indexes] = flat_samples
-            with warnings.catch_warnings():
-                # this will happen if some groups are all NaN-s, that's normal
-                warnings.filterwarnings("ignore", "All-NaN slice encountered")
-                cut_values = np.moveaxis(np.nanquantile(
-                    surrogate_samples, self._quantiles, interpolation="nearest", axis=-1,
-                ).astype(dtype), 0, -1)
+            if max_len == 0:
+                cut_values = np.full((*group_sample_lengths.shape, 2), None, dtype)
+            else:
+                surrogate_samples = np.full(
+                    (*group_sample_lengths.shape, max_len), None, dtype)
+                flat_lengths = group_sample_lengths.ravel()
+                flat_mask = flat_lengths > 0
+                flat_lengths = flat_lengths[flat_mask]
+                flat_offsets = \
+                    (np.arange(group_sample_lengths.size) * max_len)[flat_mask] + flat_lengths
+                flat_cumsum = flat_lengths.cumsum()
+                indexes = np.arange(flat_cumsum[-1]) + \
+                    np.repeat(flat_offsets - flat_cumsum, flat_lengths)
+                surrogate_samples.ravel()[indexes] = flat_samples
+                with warnings.catch_warnings():
+                    # this will happen if some groups are all NaN-s, that's normal
+                    warnings.filterwarnings("ignore", "All-NaN slice encountered")
+                    cut_values = np.moveaxis(np.nanquantile(
+                        surrogate_samples, self._quantiles, interpolation="nearest", axis=-1,
+                    ).astype(dtype), 0, -1)
         else:
             pos = 0
             cut_values = np.zeros((group_sample_lengths.size, 2), dtype=dtype)
