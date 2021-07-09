@@ -42,7 +42,7 @@ async def mine_labels(repos: Set[str],
         .where(and_(PullRequestLabel.repository_full_name.in_(repos),
                     PullRequestLabel.acc_id.in_(meta_ids)))
         .group_by(PullRequestLabel.name))
-    result = [LabelDetails(name=row[PullRequestLabel.name.key], color=row["color"],
+    result = [LabelDetails(name=row[PullRequestLabel.name.name], color=row["color"],
                            description=row["description"], used_prs=row["used_prs"])
               for row in rows]
     result.sort(key=lambda label: label.used_prs, reverse=True)

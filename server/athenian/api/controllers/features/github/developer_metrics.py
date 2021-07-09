@@ -90,7 +90,7 @@ class DeveloperTopicSummator(SumMetricCalculator[int]):
 class CommitsPushedCounter(DeveloperTopicCounter):
     """Calculate "dev-commits-pushed" metric."""
 
-    timestamp_column = PushCommit.committed_date.key
+    timestamp_column = PushCommit.committed_date.name
 
 
 @register_metric(DeveloperTopic.lines_changed)
@@ -98,7 +98,7 @@ class LinesChangedCounter(DeveloperTopicSummator):
     """Calculate "dev-lines-changed" metric."""
 
     topic_column = developer_changed_lines_column
-    timestamp_column = PushCommit.committed_date.key
+    timestamp_column = PushCommit.committed_date.name
 
 
 @register_metric(DeveloperTopic.active)
@@ -125,7 +125,7 @@ class ActiveCounter(MetricCalculator[int]):
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **kwargs) -> np.array:
-        column = facts[PushCommit.committed_date.key].dt.floor(freq="D").values
+        column = facts[PushCommit.committed_date.name].dt.floor(freq="D").values
         column_in_range = (min_times[:, None] <= column) & (column < max_times[:, None])
         timestamps = np.repeat(column[None, :], len(min_times), axis=0)
         result = timestamps.view(int)
@@ -139,35 +139,35 @@ class ActiveCounter(MetricCalculator[int]):
 class PRsCreatedCounter(DeveloperTopicCounter):
     """Calculate "dev-prs-created" metric."""
 
-    timestamp_column = PullRequest.created_at.key
+    timestamp_column = PullRequest.created_at.name
 
 
 @register_metric(DeveloperTopic.prs_merged)
 class PRsMergedCounter(DeveloperTopicCounter):
     """Calculate "dev-prs-merged" metric."""
 
-    timestamp_column = PullRequest.merged_at.key
+    timestamp_column = PullRequest.merged_at.name
 
 
 @register_metric(DeveloperTopic.releases)
 class ReleasesCounter(DeveloperTopicCounter):
     """Calculate "dev-releases" metric."""
 
-    timestamp_column = Release.published_at.key
+    timestamp_column = Release.published_at.name
 
 
 @register_metric(DeveloperTopic.regular_pr_comments)
 class RegularPRCommentsCounter(DeveloperTopicCounter):
     """Calculate "dev-regular-pr-comments" metric."""
 
-    timestamp_column = PullRequestComment.created_at.key
+    timestamp_column = PullRequestComment.created_at.name
 
 
 @register_metric(DeveloperTopic.review_pr_comments)
 class ReviewPRCommentsCounter(DeveloperTopicCounter):
     """Calculate "dev-review-pr-comments" metric."""
 
-    timestamp_column = PullRequestReviewComment.created_at.key
+    timestamp_column = PullRequestReviewComment.created_at.name
 
 
 @register_metric(DeveloperTopic.pr_comments)
@@ -190,10 +190,10 @@ class PRReviewedCounter(SumMetricCalculator[int]):
                  max_times: np.ndarray,
                  **kwargs) -> np.array:
         result = np.zeros((len(min_times), len(facts)), self.dtype)
-        column = facts[PullRequestReview.submitted_at.key].values
+        column = facts[PullRequestReview.submitted_at.name].values
         column_in_range = (min_times[:, None] <= column) & (column < max_times[:, None])
         duplicated = facts.duplicated([
-            PullRequestReview.pull_request_node_id.key, developer_identity_column,
+            PullRequestReview.pull_request_node_id.name, developer_identity_column,
         ]).values
         column_in_range[np.repeat(duplicated[None, :], len(min_times), axis=0)] = False
         result[column_in_range] = 1
@@ -204,7 +204,7 @@ class PRReviewedCounter(SumMetricCalculator[int]):
 class ReviewsCounter(DeveloperTopicCounter):
     """Calculate "dev-reviews" metric."""
 
-    timestamp_column = PullRequestReview.submitted_at.key
+    timestamp_column = PullRequestReview.submitted_at.name
 
 
 class ReviewStatesCounter(SumMetricCalculator[int]):
@@ -220,9 +220,9 @@ class ReviewStatesCounter(SumMetricCalculator[int]):
                  max_times: np.ndarray,
                  **kwargs) -> np.array:
         result = np.zeros((len(min_times), len(facts)), self.dtype)
-        column = facts[PullRequestReview.submitted_at.key].values
+        column = facts[PullRequestReview.submitted_at.name].values
         column_in_range = (min_times[:, None] <= column) & (column < max_times[:, None])
-        wrong_state = facts[PullRequestReview.state.key].values != self.state.value
+        wrong_state = facts[PullRequestReview.state.name].values != self.state.value
         column_in_range[np.repeat(wrong_state[None, :], len(min_times), axis=0)] = False
         result[column_in_range] = 1
         return result

@@ -53,17 +53,17 @@ def main():
                                               GitHubUser.node_id.in_(user_ids))).all()
     bar.update(1)
     authors = mdb.query(PushCommit) \
-                 .options(load_only(PushCommit.author_user, PushCommit.author_name,
+                 .options(load_only(PushCommit.author_user_id, PushCommit.author_name,
                                     PushCommit.author_email)) \
                  .filter(and_(PushCommit.acc_id == meta_id,
-                              PushCommit.author_user.in_(user_ids))) \
+                              PushCommit.author_user_id.in_(user_ids))) \
                  .distinct().all()
     bar.update(1)
     committers = mdb.query(PushCommit) \
-                    .options(load_only(PushCommit.committer_user, PushCommit.committer_name,
+                    .options(load_only(PushCommit.committer_user_id, PushCommit.committer_name,
                                        PushCommit.committer_email)) \
                     .filter(and_(PushCommit.acc_id == meta_id,
-                                 PushCommit.committer_user.in_(user_ids))) \
+                                 PushCommit.committer_user_id.in_(user_ids))) \
                     .distinct().all()
     bar.update(1)
     signatures = defaultdict(set)

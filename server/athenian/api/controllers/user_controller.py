@@ -41,7 +41,7 @@ async def get_account_details(request: AthenianWebRequest, id: int) -> web.Respo
     if len(users) == 0:
         raise ResponseError(NotFoundError(detail="Account %d does not exist." % id))
     for user in users:
-        if user[UserAccount.user_id.key] == user_id:
+        if user[UserAccount.user_id.name] == user_id:
             break
     else:
         raise ResponseError(ForbiddenError(
@@ -49,8 +49,8 @@ async def get_account_details(request: AthenianWebRequest, id: int) -> web.Respo
     admins = []
     regulars = []
     for user in users:
-        role = admins if user[UserAccount.is_admin.key] else regulars
-        role.append(user[UserAccount.user_id.key])
+        role = admins if user[UserAccount.is_admin.name] else regulars
+        role.append(user[UserAccount.user_id.name])
     tasks = [
         request.app["auth"].get_users(regulars + admins),
         get_account_organizations(id, request.sdb, request.mdb, request.cache),
@@ -165,7 +165,7 @@ async def change_user(request: AthenianWebRequest, body: dict) -> web.Response:
         users = await request.sdb.fetch_all(
             select([UserAccount]).where(UserAccount.account_id == aucr.account))
         for user in users:
-            if user[UserAccount.user_id.key] == aucr.user:
+            if user[UserAccount.user_id.name] == aucr.user:
                 break
         else:
             return ResponseError(NotFoundError(
@@ -177,8 +177,8 @@ async def change_user(request: AthenianWebRequest, body: dict) -> web.Response:
             ).response
         admins = set()
         for user in users:
-            if user[UserAccount.is_admin.key]:
-                admins.add(user[UserAccount.user_id.key])
+            if user[UserAccount.is_admin.name]:
+                admins.add(user[UserAccount.user_id.name])
         if aucr.status == UserChangeStatus.REGULAR:
             if len(admins) == 1 and aucr.user in admins:
                 return ResponseError(ForbiddenError(

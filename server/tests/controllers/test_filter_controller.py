@@ -39,10 +39,10 @@ async def with_event_releases(sdb, rdb):
                        ).create_defaults().explode(with_primary_keys=True)))
     await rdb.execute(insert(ReleaseNotification).values(ReleaseNotification(
         account_id=1,
-        repository_node_id="MDEwOlJlcG9zaXRvcnk0NDczOTA0NA==",
+        repository_node_id=40550,
         commit_hash_prefix="8d20cc5",
         name="Pushed!",
-        author_node_id="MDQ6VXNlcjI3OTM1NTE=",
+        author_node_id=40020,
         url="www",
         published_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
     ).create_defaults().explode(with_primary_keys=True)))
@@ -151,16 +151,16 @@ async def test_filter_repositories_fuck_up(client, headers, sdb, pdb):
                        match=ReleaseMatch.branch.value,
                        ).create_defaults().explode(with_primary_keys=True)))
     await pdb.execute(insert(GitHubRelease).values(
-        GitHubRelease(node_id="1",
+        GitHubRelease(node_id=1,
                       acc_id=1,
                       release_match="branch|whatever",
                       repository_full_name="src-d/go-git",
-                      repository_node_id="repository_node_id",
+                      repository_node_id=222,
                       name="release",
                       published_at=datetime(2017, 1, 1, hour=12, tzinfo=timezone.utc),
                       url="url",
                       sha="sha",
-                      commit_id="commit_id").create_defaults().explode(with_primary_keys=True)))
+                      commit_id=111).create_defaults().explode(with_primary_keys=True)))
     body = {
         "date_from": "2017-01-01",
         "date_to": "2017-01-01",

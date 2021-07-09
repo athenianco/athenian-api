@@ -192,7 +192,7 @@ async def _epic_flow(return_: Set[str],
         release_settings, account, meta_ids, mdb, pdb, cache, extra_columns=extra_columns,
     )
     children_columns = {k: children_df[k].values for k in children_df.columns}
-    children_columns[Issue.id.key] = children_df.index.values
+    children_columns[Issue.id.name] = children_df.index.values
     epics = []
     issue_by_id = {}
     issue_type_ids = {}
@@ -202,22 +202,22 @@ async def _epic_flow(return_: Set[str],
         epic_work_began, epic_prs_released, epic_resolved, epic_reporter, epic_assignee, \
         epic_priority, epic_status, epic_prs, epic_comments, epic_url in zip(
             epics_df.index.values, *(epics_df[column].values for column in (
-            Issue.project_id.key,
-            Issue.key.key,
-            Issue.title.key,
-            Issue.created.key,
-            AthenianIssue.updated.key,
+            Issue.project_id.name,
+            Issue.key.name,
+            Issue.title.name,
+            Issue.created.name,
+            AthenianIssue.updated.name,
             ISSUE_PRS_BEGAN,
-            AthenianIssue.work_began.key,
+            AthenianIssue.work_began.name,
             ISSUE_PRS_RELEASED,
-            AthenianIssue.resolved.key,
-            Issue.reporter_display_name.key,
-            Issue.assignee_display_name.key,
-            Issue.priority_name.key,
-            Issue.status.key,
+            AthenianIssue.resolved.name,
+            Issue.reporter_display_name.name,
+            Issue.assignee_display_name.name,
+            Issue.priority_name.name,
+            Issue.status.name,
             ISSUE_PRS_COUNT,
-            Issue.comments_count.key,
-            Issue.url.key,
+            Issue.comments_count.name,
+            Issue.url.name,
             ))):
         work_began, resolved = resolve_work_began_and_resolved(
             epic_work_began, epic_prs_began, epic_resolved, epic_prs_released)
@@ -244,23 +244,23 @@ async def _epic_flow(return_: Set[str],
             child_work_began, child_prs_released, child_resolved, child_comments, child_reporter, \
             child_assignee, child_priority, child_status, child_prs, child_type, child_url \
             in zip(*(children_columns[column][children_indexes] for column in (
-                Issue.id.key,
-                Issue.key.key,
-                Issue.title.key,
-                Issue.created.key,
-                AthenianIssue.updated.key,
+                Issue.id.name,
+                Issue.key.name,
+                Issue.title.name,
+                Issue.created.name,
+                AthenianIssue.updated.name,
                 ISSUE_PRS_BEGAN,
-                AthenianIssue.work_began.key,
+                AthenianIssue.work_began.name,
                 ISSUE_PRS_RELEASED,
-                AthenianIssue.resolved.key,
-                Issue.comments_count.key,
-                Issue.reporter_display_name.key,
-                Issue.assignee_display_name.key,
-                Issue.priority_name.key,
-                Issue.status.key,
+                AthenianIssue.resolved.name,
+                Issue.comments_count.name,
+                Issue.reporter_display_name.name,
+                Issue.assignee_display_name.name,
+                Issue.priority_name.name,
+                Issue.status.name,
                 ISSUE_PRS_COUNT,
-                Issue.type_id.key,
-                Issue.url.key,
+                Issue.type_id.name,
+                Issue.url.name,
                 ))):  # noqa(E123)
             epic.prs += child_prs
             work_began, resolved = resolve_work_began_and_resolved(
@@ -310,19 +310,19 @@ async def _epic_flow(return_: Set[str],
             if epic.work_began is not None:
                 epic.lead_time = now - pd.to_datetime(epic.work_began)
     if JIRAFilterReturn.PRIORITIES in return_:
-        priority_ids = np.unique(np.concatenate([epics_df[Issue.priority_id.key].values,
-                                                 children_columns[Issue.priority_id.key]]))
+        priority_ids = np.unique(np.concatenate([epics_df[Issue.priority_id.name].values,
+                                                 children_columns[Issue.priority_id.name]]))
     else:
         priority_ids = []
     if JIRAFilterReturn.STATUSES in return_:
         # status IDs are account-wide unique
-        status_ids = np.unique(np.concatenate([epics_df[Issue.status_id.key].values,
-                                               children_columns[Issue.status_id.key]]))
+        status_ids = np.unique(np.concatenate([epics_df[Issue.status_id.name].values,
+                                               children_columns[Issue.status_id.name]]))
         status_project_map = defaultdict(set)
-        for status_id, project_id in chain(zip(epics_df[Issue.status_id.key].values,
-                                               epics_df[Issue.project_id.key].values),
-                                           zip(children_columns[Issue.status_id.key],
-                                               children_columns[Issue.project_id.key])):
+        for status_id, project_id in chain(zip(epics_df[Issue.status_id.name].values,
+                                               epics_df[Issue.project_id.name].values),
+                                           zip(children_columns[Issue.status_id.name],
+                                               children_columns[Issue.project_id.name])):
             status_project_map[status_id].add(project_id)
     else:
         status_ids = []
@@ -336,10 +336,10 @@ async def _epic_flow(return_: Set[str],
     ]
     _, priorities, statuses, types = await gather(*tasks, op="epic epilog")
     for row in subtask_task.result():
-        issue_by_id[row[Issue.parent_id.key]].subtasks = row["subtasks"]
+        issue_by_id[row[Issue.parent_id.name]].subtasks = row["subtasks"]
     for row in types:
-        name = row[IssueType.name.key]
-        for child in children_by_type[(row[IssueType.project_id.key], row[IssueType.id.key])]:
+        name = row[IssueType.name.name]
+        for child in children_by_type[(row[IssueType.project_id.name], row[IssueType.id.name])]:
             child.type = name
     return epics, priorities, statuses
 
@@ -432,27 +432,27 @@ async def _issue_flow(return_: Set[str],
         extra_columns=extra_columns)
     if JIRAFilterReturn.LABELS in return_:
         components = Counter(chain.from_iterable(
-            _nonzero(issues[Issue.components.key].values)))
+            _nonzero(issues[Issue.components.name].values)))
     else:
         components = None
     if JIRAFilterReturn.USERS in return_:
         people = np.unique(np.concatenate([
-            _nonzero(issues[Issue.reporter_id.key].values),
-            _nonzero(issues[Issue.assignee_id.key].values),
-            list(chain.from_iterable(_nonzero(issues[Issue.commenters_ids.key].values))),
+            _nonzero(issues[Issue.reporter_id.name].values),
+            _nonzero(issues[Issue.assignee_id.name].values),
+            list(chain.from_iterable(_nonzero(issues[Issue.commenters_ids.name].values))),
         ]))
         # we can leave None because `IN (null)` is always false
     else:
         people = None
     if JIRAFilterReturn.PRIORITIES in return_:
-        priorities = issues[Issue.priority_id.key].unique()
+        priorities = issues[Issue.priority_id.name].unique()
     else:
         priorities = []
     if JIRAFilterReturn.STATUSES in return_:
-        statuses = issues[Issue.status_id.key].unique()
+        statuses = issues[Issue.status_id.name].unique()
         status_project_map = defaultdict(set)
-        for status_id, project_id in zip(issues[Issue.status_id.key].values,
-                                         issues[Issue.project_id.key].values):
+        for status_id, project_id in zip(issues[Issue.status_id.name].values,
+                                         issues[Issue.project_id.name].values):
             status_project_map[status_id].add(project_id)
     else:
         statuses = []
@@ -460,8 +460,8 @@ async def _issue_flow(return_: Set[str],
     if JIRAFilterReturn.ISSUE_TYPES in return_ or JIRAFilterReturn.ISSUE_BODIES in return_:
         issue_type_counts = defaultdict(int)
         issue_type_projects = defaultdict(set)
-        for project_id, issue_type_id in zip(issues[Issue.project_id.key].values,
-                                             issues[Issue.type_id.key].values):
+        for project_id, issue_type_id in zip(issues[Issue.project_id.name].values,
+                                             issues[Issue.type_id.name].values):
             issue_type_projects[project_id].add(issue_type_id)
             issue_type_counts[(project_id, issue_type_id)] += 1
     else:
@@ -519,8 +519,8 @@ async def _issue_flow(return_: Set[str],
                 del labels[None]
             labels = {k: JIRALabel(title=k, kind="regular", issues_count=v)
                       for k, v in labels.items()}
-            for updated, issue_labels in zip(issues[Issue.updated.key],
-                                             issues[Issue.labels.key].values):
+            for updated, issue_labels in zip(issues[Issue.updated.name],
+                                             issues[Issue.labels.name].values):
                 for label in (issue_labels or ()):
                     try:
                         label = labels[label]  # type: JIRALabel
@@ -547,20 +547,20 @@ async def _issue_flow(return_: Set[str],
                 select([PullRequest]).where(and_(
                     PullRequest.acc_id.in_(meta_ids),
                     PullRequest.node_id.in_(pr_ids),
-                )).order_by(PullRequest.node_id.key),
-                mdb, PullRequest, index=PullRequest.node_id.key),
+                )).order_by(PullRequest.node_id.name),
+                mdb, PullRequest, index=PullRequest.node_id.name),
             DonePRFactsLoader.load_precomputed_done_facts_ids(
                 pr_ids, default_branches, release_settings, prefixer, account, pdb,
                 panic_on_missing_repositories=False),
         ]
         prs_df, (facts, ambiguous) = await gather(*tasks)
-        existing_mask = prs_df[PullRequest.repository_full_name.key].isin(
+        existing_mask = prs_df[PullRequest.repository_full_name.name].isin(
             release_settings.native).values
         if not existing_mask.all():
             prs_df = prs_df.take(np.nonzero(existing_mask)[0])
         related_branches = branches.take(np.nonzero(np.in1d(
-            branches[Branch.repository_full_name.key].values.astype("S"),
-            prs_df[PullRequest.repository_full_name.key].unique().astype("S")))[0])
+            branches[Branch.repository_full_name.name].values.astype("S"),
+            prs_df[PullRequest.repository_full_name.name].unique().astype("S")))[0])
         mined_prs, dfs, facts, _ = await unwrap_pull_requests(
             prs_df, facts, ambiguous, False, related_branches, default_branches, release_settings,
             prefixer, account, meta_ids, mdb, pdb, rdb, cache)
@@ -591,38 +591,38 @@ async def _issue_flow(return_: Set[str],
         for row in component_names
     }
     mapped_identities = {
-        r[MappedJIRAIdentity.jira_user_id.key]: r[MappedJIRAIdentity.github_user_id.key]
+        r[MappedJIRAIdentity.jira_user_id.name]: r[MappedJIRAIdentity.github_user_id.name]
         for r in mapped_identities
     }
-    users = [JIRAUser(avatar=row[User.avatar_url.key],
-                      name=row[User.display_name.key],
-                      type=normalize_user_type(row[User.type.key]),
-                      developer=mapped_identities.get(row[User.id.key]),
+    users = [JIRAUser(avatar=row[User.avatar_url.name],
+                      name=row[User.display_name.name],
+                      type=normalize_user_type(row[User.type.name]),
+                      developer=mapped_identities.get(row[User.id.name]),
                       )
              for row in users] or None
     if issue_types is not None:
         issue_types.sort(key=lambda row: (
-            row[IssueType.normalized_name.key],
-            issue_type_counts[(row[IssueType.project_id.key], row[IssueType.id.key])],
+            row[IssueType.normalized_name.name],
+            issue_type_counts[(row[IssueType.project_id.name], row[IssueType.id.name])],
         ))
     else:
         issue_types = []
     issue_type_names = {
-        (row[IssueType.project_id.key], row[IssueType.id.key]): row[IssueType.name.key]
+        (row[IssueType.project_id.name], row[IssueType.id.name]): row[IssueType.name.name]
         for row in issue_types
     }
     issue_types = [
-        JIRAIssueType(name=row[IssueType.name.key],
-                      image=row[IssueType.icon_url.key],
-                      count=issue_type_counts[(row[IssueType.project_id.key],
-                                               row[IssueType.id.key])],
-                      project=row[IssueType.project_id.key],
-                      is_subtask=row[IssueType.is_subtask.key],
-                      normalized_name=row[IssueType.normalized_name.key])
+        JIRAIssueType(name=row[IssueType.name.name],
+                      image=row[IssueType.icon_url.name],
+                      count=issue_type_counts[(row[IssueType.project_id.name],
+                                               row[IssueType.id.name])],
+                      project=row[IssueType.project_id.name],
+                      is_subtask=row[IssueType.is_subtask.name],
+                      normalized_name=row[IssueType.normalized_name.name])
         for row in issue_types] or None
     if JIRAFilterReturn.LABELS in return_:
-        for updated, issue_components in zip(issues[Issue.updated.key],
-                                             issues[Issue.components.key].values):
+        for updated, issue_components in zip(issues[Issue.updated.name],
+                                             issues[Issue.components.name].values):
             for component in (issue_components or ()):
                 try:
                     label = components[component]  # type: JIRALabel
@@ -644,23 +644,23 @@ async def _issue_flow(return_: Set[str],
             issue_assignee, issue_priority, issue_status, issue_prs, issue_type, issue_project, \
             issue_comments, issue_url in zip(*(
                 issues[column].values for column in (
-                Issue.key.key,
-                Issue.title.key,
-                Issue.created.key,
-                AthenianIssue.updated.key,
+                Issue.key.name,
+                Issue.title.name,
+                Issue.created.name,
+                AthenianIssue.updated.name,
                 ISSUE_PRS_BEGAN,
-                AthenianIssue.work_began.key,
+                AthenianIssue.work_began.name,
                 ISSUE_PRS_RELEASED,
-                AthenianIssue.resolved.key,
-                Issue.reporter_display_name.key,
-                Issue.assignee_display_name.key,
-                Issue.priority_name.key,
-                Issue.status.key,
+                AthenianIssue.resolved.name,
+                Issue.reporter_display_name.name,
+                Issue.assignee_display_name.name,
+                Issue.priority_name.name,
+                Issue.status.name,
                 ISSUE_PR_IDS,
-                Issue.type_id.key,
-                Issue.project_id.key,
-                Issue.comments_count.key,
-                Issue.url.key,
+                Issue.type_id.name,
+                Issue.project_id.name,
+                Issue.comments_count.name,
+                Issue.url.name,
                 ))):
             work_began, resolved = resolve_work_began_and_resolved(
                 issue_work_began, issue_prs_began, issue_resolved, issue_prs_released)
@@ -714,10 +714,10 @@ async def _fetch_priorities(priorities: Collection[str],
             Priority.acc_id == acc_id,
         ))
         .order_by(Priority.rank))
-    return [JIRAPriority(name=row[Priority.name.key],
-                         image=row[Priority.icon_url.key],
-                         rank=row[Priority.rank.key],
-                         color=row[Priority.status_color.key])
+    return [JIRAPriority(name=row[Priority.name.name],
+                         image=row[Priority.icon_url.name],
+                         rank=row[Priority.rank.name],
+                         color=row[Priority.status_color.name])
             for row in rows]
 
 
@@ -740,10 +740,10 @@ async def _fetch_statuses(statuses: Collection[str],
         ))
         .order_by(Status.name))
     # status IDs are account-wide unique
-    return [JIRAStatus(name=row[Status.name.key],
-                       stage=row[Status.category_name.key],
+    return [JIRAStatus(name=row[Status.name.name],
+                       stage=row[Status.category_name.name],
                        project=project)
-            for row in rows for project in status_project_map[row[Status.id.key]]]
+            for row in rows for project in status_project_map[row[Status.id.name]]]
 
 
 @sentry_span
@@ -967,7 +967,7 @@ class _IssuesLabelSplitter:
         else:
             # no include filter => append another group of issues with empty labels
             unique_labels = np.concatenate([unique_labels, [None]])
-            empty_labels_group = np.nonzero(~issues[Issue.labels.key].astype(bool).values)[0]
+            empty_labels_group = np.nonzero(~issues[Issue.labels.name].astype(bool).values)[0]
             groups = list(groups) + [empty_labels_group]
         if not isinstance(groups, list):
             groups = groups.tolist()

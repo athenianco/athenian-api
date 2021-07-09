@@ -231,7 +231,7 @@ async def _match_jira_identities(account: int,
     if existing_mapping:
         for row in existing_mapping:
             try:
-                del github_users[row[MappedJIRAIdentity.github_user_id.key]]
+                del github_users[row[MappedJIRAIdentity.github_user_id.name]]
             except KeyError:
                 continue
         log.info("Effective GitHub set size: %d", len(github_users))
@@ -240,12 +240,15 @@ async def _match_jira_identities(account: int,
         .where(and_(JIRAUser.acc_id == jira_id[0],
                     JIRAUser.type.in_(ALLOWED_USER_TYPES),
                     JIRAUser.display_name.isnot(None))))
-    jira_users = {row[JIRAUser.id.key]: [row[JIRAUser.display_name.key]] for row in jira_user_rows}
+    jira_users = {
+        row[JIRAUser.id.name]: [row[JIRAUser.display_name.name]]
+        for row in jira_user_rows
+    }
     log.info("JIRA set size: %d", len(jira_users))
     if existing_mapping:
         for row in existing_mapping:
             try:
-                del jira_users[row[MappedJIRAIdentity.jira_user_id.key]]
+                del jira_users[row[MappedJIRAIdentity.jira_user_id.name]]
             except KeyError:
                 continue
         log.info("Effective JIRA set size: %d", len(jira_users))

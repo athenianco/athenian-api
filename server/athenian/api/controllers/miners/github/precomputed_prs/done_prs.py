@@ -52,7 +52,7 @@ class DonePRFactsLoader:
                                                release_settings: ReleaseSettings,
                                                account: int,
                                                pdb: databases.Database,
-                                               ) -> Tuple[Set[str], Dict[str, List[str]]]:
+                                               ) -> Tuple[Set[str], Dict[str, List[int]]]:
         """
         Load the set of done PR identifiers and specifically ambiguous PR node IDs.
 
@@ -73,11 +73,11 @@ class DonePRFactsLoader:
         ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
         for row in rows:
             dump = triage_by_release_match(
-                row[ghprt.repository_full_name.key], row[ghprt.release_match.key],
+                row[ghprt.repository_full_name.name], row[ghprt.release_match.name],
                 release_settings, default_branches, result, ambiguous)
             if dump is None:
                 continue
-            dump[row[ghprt.pr_node_id.key]] = row
+            dump[row[ghprt.pr_node_id.name]] = row
         result, ambiguous = cls._post_process_ambiguous_done_prs(result, ambiguous)
         return set(result), ambiguous
 
@@ -95,8 +95,8 @@ class DonePRFactsLoader:
                                                   prefixer: PrefixerPromise,
                                                   account: int,
                                                   pdb: databases.Database,
-                                                  ) -> Tuple[Dict[str, PullRequestFacts],
-                                                             Dict[str, List[str]]]:
+                                                  ) -> Tuple[Dict[int, PullRequestFacts],
+                                                             Dict[str, List[int]]]:
         """
         Fetch precomputed done PR facts.
 
@@ -125,7 +125,7 @@ class DonePRFactsLoader:
                                               account: int,
                                               pdb: databases.Database,
                                               extra: Iterable[InstrumentedAttribute] = (),
-                                              ) -> Tuple[Dict[str, PullRequestFacts],
+                                              ) -> Tuple[Dict[int, PullRequestFacts],
                                                          Dict[str, Mapping[str, Any]]]:
         """
         Fetch all the precomputed done PR facts we have.
@@ -146,8 +146,8 @@ class DonePRFactsLoader:
         user_node_to_login_get = (await prefixer.load()).user_node_to_login.get
         for node_id, row in result.items():
             result[node_id] = PullRequestFacts(
-                data=row[ghdprf.data.key],
-                releaser=user_node_to_login_get(row[ghdprf.releaser.key]))
+                data=row[ghdprf.data.name],
+                releaser=user_node_to_login_get(row[ghdprf.releaser.name]))
             raw[node_id] = row
         return result, raw
 
@@ -166,7 +166,7 @@ class DonePRFactsLoader:
                                                       account: int,
                                                       pdb: databases.Database,
                                                       ) -> Tuple[Dict[str, datetime],
-                                                                 Dict[str, List[str]]]:
+                                                                 Dict[str, List[int]]]:
         """
         Fetch precomputed done PR "pr_done_at" timestamps.
 
@@ -179,7 +179,7 @@ class DonePRFactsLoader:
             labels, default_branches, exclude_inactive, release_settings, prefixer, account, pdb)
         sqlite = pdb.url.dialect == "sqlite"
         for node_id, row in result.items():
-            dt = row[GitHubDonePullRequestFacts.pr_done_at.key]
+            dt = row[GitHubDonePullRequestFacts.pr_done_at.name]
             if sqlite:
                 dt = dt.replace(tzinfo=timezone.utc)
             result[node_id] = dt
@@ -194,8 +194,8 @@ class DonePRFactsLoader:
                                                    prefixer: PrefixerPromise,
                                                    account: int,
                                                    pdb: databases.Database,
-                                                   ) -> Tuple[Dict[str, PullRequestFacts],
-                                                              Dict[str, List[str]]]:
+                                                   ) -> Tuple[Dict[int, PullRequestFacts],
+                                                              Dict[str, List[int]]]:
         """
         Load PullRequestFacts belonging to released or rejected PRs from the precomputed DB.
 
@@ -215,7 +215,7 @@ class DonePRFactsLoader:
                     ghprt.releaser,
                     ]
         format_version_filter = \
-            ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.key].default.arg
+            ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.name].default.arg
         if pdb.url.dialect == "sqlite":
             filters = [
                 format_version_filter,
@@ -249,26 +249,26 @@ class DonePRFactsLoader:
         user_node_to_login_get = (await prefixer.load()).user_node_to_login.get
         for row in rows:
             dump = triage_by_release_match(
-                row[ghprt.repository_full_name.key], row[ghprt.release_match.key],
+                row[ghprt.repository_full_name.name], row[ghprt.release_match.name],
                 release_settings, default_branches, result, ambiguous)
             if dump is None:
                 continue
-            dump[row[ghprt.pr_node_id.key]] = cls._done_pr_facts_from_row(
+            dump[row[ghprt.pr_node_id.name]] = cls._done_pr_facts_from_row(
                 row, user_node_to_login_get)
         return cls._post_process_ambiguous_done_prs(result, ambiguous)
 
     @classmethod
     @sentry_span
     async def load_precomputed_done_facts_ids(cls,
-                                              node_ids: Iterable[str],
+                                              node_ids: Iterable[int],
                                               default_branches: Dict[str, str],
                                               release_settings: ReleaseSettings,
                                               prefixer: PrefixerPromise,
                                               account: int,
                                               pdb: databases.Database,
                                               panic_on_missing_repositories: bool = True,
-                                              ) -> Tuple[Dict[str, PullRequestFacts],
-                                                         Dict[str, List[str]]]:
+                                              ) -> Tuple[Dict[int, PullRequestFacts],
+                                                         Dict[str, List[int]]]:
         """
         Load PullRequestFacts belonging to released or rejected PRs from the precomputed DB.
 
@@ -293,7 +293,7 @@ class DonePRFactsLoader:
                     ghprt.releaser,
                     ]
         filters = [
-            ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.key].default.arg,
+            ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.name].default.arg,
             ghprt.pr_node_id.in_(node_ids),
             ghprt.acc_id == account,
         ]
@@ -304,17 +304,17 @@ class DonePRFactsLoader:
         ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
         user_node_to_login_get = (await prefixer.load()).user_node_to_login.get
         for row in rows:
-            repo = row[ghprt.repository_full_name.key]
+            repo = row[ghprt.repository_full_name.name]
             if not panic_on_missing_repositories and repo not in release_settings.native:
                 log.warning("Discarding PR %s because repository %s is missing",
-                            row[ghprt.pr_node_id.key], repo)
+                            row[ghprt.pr_node_id.name], repo)
                 continue
             dump = triage_by_release_match(
-                repo, row[ghprt.release_match.key],
+                repo, row[ghprt.release_match.name],
                 release_settings, default_branches, result, ambiguous)
             if dump is None:
                 continue
-            dump[row[ghprt.pr_node_id.key]] = \
+            dump[row[ghprt.pr_node_id.name]] = \
                 cls._done_pr_facts_from_row(row, user_node_to_login_get)
         return cls._post_process_ambiguous_done_prs(result, ambiguous)
 
@@ -325,12 +325,12 @@ class DonePRFactsLoader:
         serialize=pickle.dumps,
         deserialize=pickle.loads,
         key=lambda prs, default_branches, release_settings, **_: (
-            ",".join(sorted(prs)), sorted(default_branches.items()), release_settings,
+            ",".join(map(str, sorted(prs))), sorted(default_branches.items()), release_settings,
         ),
         refresh_on_access=True,
     )
     async def load_precomputed_pr_releases(cls,
-                                           prs: Iterable[str],
+                                           prs: Iterable[int],
                                            time_to: datetime,
                                            matched_bys: Dict[str, ReleaseMatch],
                                            default_branches: Dict[str, str],
@@ -362,22 +362,22 @@ class DonePRFactsLoader:
         force_push_dropped = set()
         user_node_to_login_get = (await prefixer.load()).user_node_to_login.get
         for pr in prs:
-            repo = pr[ghprt.repository_full_name.key]
-            node_id = pr[ghprt.pr_node_id.key]
-            release_match = pr[ghprt.release_match.key]
-            author_node_id = pr[ghprt.releaser.key].rstrip()
+            repo = pr[ghprt.repository_full_name.name]
+            node_id = pr[ghprt.pr_node_id.name]
+            release_match = pr[ghprt.release_match.name]
+            author_node_id = pr[ghprt.releaser.name]
             if release_match in (ReleaseMatch.force_push_drop.name, ReleaseMatch.event.name):
                 if release_match == ReleaseMatch.force_push_drop.name:
                     if node_id in force_push_dropped:
                         continue
                     force_push_dropped.add(node_id)
                 records.append((node_id,
-                                pr[ghprt.pr_done_at.key].replace(tzinfo=utc),
+                                pr[ghprt.pr_done_at.name].replace(tzinfo=utc),
                                 user_node_to_login_get(author_node_id),
                                 author_node_id,
-                                pr[ghprt.release_url.key],
-                                pr[ghprt.release_node_id.key],
-                                pr[ghprt.repository_full_name.key],
+                                pr[ghprt.release_url.name],
+                                pr[ghprt.release_node_id.name],
+                                pr[ghprt.repository_full_name.name],
                                 ReleaseMatch[release_match]))
                 continue
             match_name, match_by = release_match.split("|", 1)
@@ -402,12 +402,12 @@ class DonePRFactsLoader:
                 raise AssertionError("Unsupported release match in the precomputed DB: " +
                                      match_name)
             records.append((node_id,
-                            pr[ghprt.pr_done_at.key].replace(tzinfo=utc),
+                            pr[ghprt.pr_done_at.name].replace(tzinfo=utc),
                             user_node_to_login_get(author_node_id),
                             author_node_id,
-                            pr[ghprt.release_url.key],
-                            pr[ghprt.release_node_id.key],
-                            pr[ghprt.repository_full_name.key],
+                            pr[ghprt.release_url.name],
+                            pr[ghprt.release_node_id.name],
+                            pr[ghprt.repository_full_name.name],
                             release_match))
         return new_released_prs_df(records)
 
@@ -426,8 +426,8 @@ class DonePRFactsLoader:
                                              prefixer: PrefixerPromise,
                                              account: int,
                                              pdb: databases.Database,
-                                             ) -> Tuple[Dict[str, Mapping[str, Any]],
-                                                        Dict[str, List[str]]]:
+                                             ) -> Tuple[Dict[int, Mapping[str, Any]],
+                                                        Dict[str, List[int]]]:
         """
         Load some data belonging to released or rejected PRs from the precomputed DB.
 
@@ -470,25 +470,27 @@ class DonePRFactsLoader:
             include_singles, include_multiples = LabelFilter.split(labels.include)
             include_singles = set(include_singles)
             include_multiples = [set(m) for m in include_multiples]
+        if len(participants) > 0 and not postgres:
+            user_node_to_login_get = (await prefixer.load()).user_node_to_login.get
         for row in rows:
-            repo, rm = row[ghprt.repository_full_name.key], row[ghprt.release_match.key]
+            repo, rm = row[ghprt.repository_full_name.name], row[ghprt.release_match.name]
             dump = triage_by_release_match(
                 repo, rm, release_settings, default_branches, result, ambiguous)
             if dump is None:
                 continue
             if not postgres:
-                if len(participants) > 0 and \
-                        not await cls._check_participants(row, participants, prefixer):
+                if len(participants) > 0 and not await cls._check_participants(
+                        row, participants, user_node_to_login_get):
                     continue
                 if labels and not labels_are_compatible(include_singles, include_multiples,
-                                                        labels.exclude, row[ghprt.labels.key]):
+                                                        labels.exclude, row[ghprt.labels.name]):
                     continue
                 if exclude_inactive:
                     activity_days = {datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-                                     for d in row[ghprt.activity_days.key]}
+                                     for d in row[ghprt.activity_days.name]}
                     if not activity_days.intersection(date_range):
                         continue
-            dump[row[ghprt.pr_node_id.key]] = row
+            dump[row[ghprt.pr_node_id.name]] = row
         return cls._post_process_ambiguous_done_prs(result, ambiguous)
 
     @classmethod
@@ -502,7 +504,7 @@ class DonePRFactsLoader:
         assert isinstance(time_to, (datetime, type(None)))
         ghprt = GitHubDonePullRequestFacts
         items = [
-            ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.key].default.arg,
+            ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.name].default.arg,
             ghprt.acc_id == account,
         ]
         if time_to is not None:
@@ -515,14 +517,14 @@ class DonePRFactsLoader:
 
     @classmethod
     def _post_process_ambiguous_done_prs(cls,
-                                         result: Dict[str, Mapping[str, Any]],
+                                         result: Dict[int, Mapping[str, Any]],
                                          ambiguous: Dict[ReleaseMatch,
-                                                         Dict[str, Mapping[str, Any]]],
-                                         ) -> Tuple[Dict[str, Mapping[str, Any]],
-                                                    Dict[str, List[str]]]:
+                                                         Dict[int, Mapping[str, Any]]],
+                                         ) -> Tuple[Dict[int, Mapping[str, Any]],
+                                                    Dict[str, List[int]]]:
         """Figure out what to do with uncertain `tag_or_branch` release matches."""
         result.update(ambiguous[ReleaseMatch.tag.name])
-        repokey = GitHubDonePullRequestFacts.repository_full_name.key
+        repokey = GitHubDonePullRequestFacts.repository_full_name.name
         # We've found PRs released by tag belonging to these repos.
         # This means that we are going to load tags in load_releases().
         confirmed_tag_repos = {obj[repokey] for obj in ambiguous[ReleaseMatch.tag.name].values()}
@@ -560,7 +562,7 @@ class DonePRFactsLoader:
             col_parts_dict.clear()
             developer_filters_multiple = []
             for i, (col, col_parts) in enumerate(dev_conds_multiple):
-                developer_filters_multiple.append(col.has_any(col_parts))
+                developer_filters_multiple.append(col.has_any([str(p) for p in col_parts]))
                 col_parts_dict[col_parts].append(i)
             # do not send the same array several times
             for group in col_parts_dict.values():
@@ -603,20 +605,19 @@ class DonePRFactsLoader:
     async def _check_participants(cls,
                                   row: Mapping,
                                   participants: PRParticipants,
-                                  prefixer: PrefixerPromise,
+                                  user_node_to_login_get: Callable[[int], str],
                                   ) -> bool:
-        user_node_to_login_get = (await prefixer.load()).user_node_to_login.get
         ghprt = GitHubDonePullRequestFacts
         for col, pk in ((ghprt.author, PRParticipationKind.AUTHOR),
                         (ghprt.merger, PRParticipationKind.MERGER),
                         (ghprt.releaser, PRParticipationKind.RELEASER)):
-            if user_node_to_login_get(row[col.key]) in participants.get(pk, set()):
+            if user_node_to_login_get(row[col.name]) in participants.get(pk, set()):
                 return True
         for col, pk in ((ghprt.reviewers, PRParticipationKind.REVIEWER),
                         (ghprt.commenters, PRParticipationKind.COMMENTER),
                         (ghprt.commit_authors, PRParticipationKind.COMMIT_AUTHOR),
                         (ghprt.commit_committers, PRParticipationKind.COMMIT_COMMITTER)):
-            devs = {user_node_to_login_get(u) for u in row[col.key]} - {None}
+            devs = {user_node_to_login_get(int(u)) for u in row[col.name]} - {None}
             if devs.intersection(participants.get(pk, set())):
                 return True
         return False
@@ -624,15 +625,15 @@ class DonePRFactsLoader:
     @classmethod
     def _done_pr_facts_from_row(cls,
                                 row: Mapping[str, Any],
-                                user_node_to_login_get: Callable[[str], str],
+                                user_node_to_login_get: Callable[[int], str],
                                 ) -> PullRequestFacts:
         ghdprf = GitHubDonePullRequestFacts
         return PullRequestFacts(
-            data=row[ghdprf.data.key],
-            repository_full_name=row[ghdprf.repository_full_name.key],
-            author=user_node_to_login_get(row[ghdprf.author.key]),
-            merger=user_node_to_login_get(row[ghdprf.merger.key]),
-            releaser=user_node_to_login_get(row[ghdprf.releaser.key]))
+            data=row[ghdprf.data.name],
+            repository_full_name=row[ghdprf.repository_full_name.name],
+            author=user_node_to_login_get(row[ghdprf.author.name]),
+            merger=user_node_to_login_get(row[ghdprf.merger.name]),
+            releaser=user_node_to_login_get(row[ghdprf.releaser.name]))
 
 
 @sentry_span
@@ -651,7 +652,7 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
         if facts is None:
             # ImpossiblePullRequest
             continue
-        pr_created = pr.pr[PullRequest.created_at.key]
+        pr_created = pr.pr[PullRequest.created_at.name]
         try:
             assert pr_created == facts.created
         except TypeError:
@@ -664,12 +665,12 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
             done_at = facts.released.item().replace(tzinfo=timezone.utc)
             if not facts.closed:
                 log.error("[DEV-508] PR %s (%s#%d) is released but not closed:\n%s",
-                          pr.pr[PullRequest.node_id.key],
-                          pr.pr[PullRequest.repository_full_name.key],
-                          pr.pr[PullRequest.number.key],
+                          pr.pr[PullRequest.node_id.name],
+                          pr.pr[PullRequest.repository_full_name.name],
+                          pr.pr[PullRequest.number.name],
                           facts)
                 continue
-        repo = pr.pr[PullRequest.repository_full_name.key]
+        repo = pr.pr[PullRequest.repository_full_name.name]
         if pr.release[matched_by_column] is not None:
             release_match = release_settings.native[repo]
             match = ReleaseMatch(pr.release[matched_by_column])
@@ -690,22 +691,24 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
         participants = pr.participant_nodes()
         inserted.append(GitHubDonePullRequestFacts(
             acc_id=account,
-            pr_node_id=pr.pr[PullRequest.node_id.key],
+            pr_node_id=pr.pr[PullRequest.node_id.name],
             release_match=release_match,
             repository_full_name=repo,
             pr_created_at=facts.created.item().replace(tzinfo=timezone.utc),
             pr_done_at=done_at,
-            number=pr.pr[PullRequest.number.key],
-            release_url=pr.release[Release.url.key],
-            release_node_id=pr.release[Release.node_id.key],
+            number=pr.pr[PullRequest.number.name],
+            release_url=pr.release[Release.url.name],
+            release_node_id=pr.release[Release.node_id.name],
             author=_flatten_set(participants[PRParticipationKind.AUTHOR]),
             merger=_flatten_set(participants[PRParticipationKind.MERGER]),
             releaser=_flatten_set(participants[PRParticipationKind.RELEASER]),
-            commenters={k: "" for k in participants[PRParticipationKind.COMMENTER]},
-            reviewers={k: "" for k in participants[PRParticipationKind.REVIEWER]},
-            commit_authors={k: "" for k in participants[PRParticipationKind.COMMIT_AUTHOR]},
-            commit_committers={k: "" for k in participants[PRParticipationKind.COMMIT_COMMITTER]},
-            labels={label: "" for label in pr.labels[PullRequestLabel.name.key].values},
+            commenters={str(k): "" for k in participants[PRParticipationKind.COMMENTER]},
+            reviewers={str(k): "" for k in participants[PRParticipationKind.REVIEWER]},
+            commit_authors={str(k): "" for k in participants[PRParticipationKind.COMMIT_AUTHOR]},
+            commit_committers={
+                str(k): "" for k in participants[PRParticipationKind.COMMIT_COMMITTER]
+            },
+            labels={label: "" for label in pr.labels[PullRequestLabel.name.name].values},
             activity_days=collect_activity_days(pr, facts, sqlite),
             data=facts.data,
         ).create_defaults().explode(with_primary_keys=True))
@@ -716,7 +719,7 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
         sql = sql.on_conflict_do_update(
             constraint=GitHubDonePullRequestFacts.__table__.primary_key,
             set_={
-                col.key: getattr(sql.excluded, col.key)
+                col.name: getattr(sql.excluded, col.name)
                 for col in (
                     GitHubDonePullRequestFacts.pr_done_at,
                     GitHubDonePullRequestFacts.updated_at,

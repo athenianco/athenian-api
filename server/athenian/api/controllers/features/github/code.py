@@ -21,7 +21,7 @@ def calc_code_stats(queried_commits: pd.DataFrame,
     :param time_intervals: Series of time boundaries, both ends inclusive.
     :return: List with the calculated stats of length (len(time_intervals) - 1).
     """
-    adkeys = [PushCommit.additions.key, PushCommit.deletions.key]
+    adkeys = [PushCommit.additions.name, PushCommit.deletions.name]
     time_intervals = [pd.Timestamp(d) for d in time_intervals]
     time_intervals[-1] += timedelta(days=1)  # pd.cut will not include the end otherwise
     all_stats = []
@@ -30,7 +30,7 @@ def calc_code_stats(queried_commits: pd.DataFrame,
             all_stats.append([0 for _ in time_intervals[1:]])
             all_stats.append([0 for _ in time_intervals[1:]])
             continue
-        cut = pd.cut(commits[PushCommit.committed_date.key], time_intervals, right=False)
+        cut = pd.cut(commits[PushCommit.committed_date.name], time_intervals, right=False)
         grouped = commits[adkeys].groupby(cut)
         all_stats.append(grouped.count()[adkeys[0]])
         ad_lines = grouped.sum()

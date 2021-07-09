@@ -1,6 +1,6 @@
 import asyncio
 from time import time
-from typing import Set
+from typing import Optional, Set
 
 import databases
 from sqlalchemy import select
@@ -16,7 +16,7 @@ class Bots:
         """Initialize a new instance of the Bots class."""
         self._bots = set()
         self._timestamp = time()
-        self._lock = asyncio.Lock()
+        self._lock = None  # type: Optional[asyncio.Lock]
 
     async def _fetch(self, mdb: databases.Database) -> None:
         self._bots = {r[0] for r in await mdb.fetch_all(select([Bot.login]))}
@@ -27,6 +27,9 @@ class Bots:
         if self._bots and time() - self._timestamp < middle_term_expire:
             # fast path to avoid acquiring the lock
             return self._bots
+        if self._lock is None:
+            # we don't run multi-threaded
+            self._lock = asyncio.Lock()
         async with self._lock:
             if not self._bots or time() - self._timestamp >= middle_term_expire:
                 await self._fetch(mdb)

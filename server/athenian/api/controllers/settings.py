@@ -177,14 +177,14 @@ class Settings:
             settings = []
             loaded = set()
             for row in rows:
-                repo = row[ReleaseSetting.repository.key]
+                repo = row[ReleaseSetting.repository.name]
                 loaded.add(repo)
                 settings.append((
                     repo,
                     ReleaseMatchSetting(
-                        branches=row[ReleaseSetting.branches.key],
-                        tags=row[ReleaseSetting.tags.key],
-                        match=ReleaseMatch(row[ReleaseSetting.match.key]),
+                        branches=row[ReleaseSetting.branches.name],
+                        tags=row[ReleaseSetting.tags.name],
+                        match=ReleaseMatch(row[ReleaseSetting.match.name]),
                     )))
             for repo in repos:
                 if repo not in loaded:

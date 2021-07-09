@@ -150,7 +150,7 @@ async def vadim_id_mapping(sdb):
     await sdb.execute(insert(MappedJIRAIdentity).values(
         MappedJIRAIdentity(
             account_id=1,
-            github_user_id="MDQ6VXNlcjI3OTM1NTE=",
+            github_user_id=40020,
             jira_user_id="5de5049e2c5dd20d0f9040c1",
             confidence=1.0,
         ).create_defaults().explode(with_primary_keys=True),
@@ -162,7 +162,7 @@ async def denys_id_mapping(sdb):
     await sdb.execute(insert(MappedJIRAIdentity).values(
         MappedJIRAIdentity(
             account_id=1,
-            github_user_id="MDQ6VXNlcjY3NjcyNA==",
+            github_user_id=40294,
             jira_user_id="5de4cff936b8050e29258600",
             confidence=1.0,
         ).create_defaults().explode(with_primary_keys=True),
@@ -180,7 +180,7 @@ class FakeFacts(PullRequestFacts):
 async def fetch_dag(mdb, heads=None):
     if heads is None:
         heads = [
-            "MDY6Q29tbWl0NDQ3MzkwNDQ6MTdkYmQ4ODY2MTZmODJiZTJhNTljMGQwMmZkOTNkM2Q2OWYyMzkyYw==",
+            2755363,
         ]
     edges = await _fetch_commit_history_edges(heads, [], (6366825,), mdb)
     return {"src-d/go-git": join_dags(*_empty_dag(), edges)}

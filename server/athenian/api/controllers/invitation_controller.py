@@ -70,8 +70,8 @@ async def gen_invitation(request: AthenianWebRequest, id: int) -> web.Response:
             select([Invitation.id, Invitation.salt])
             .where(and_(Invitation.is_active, Invitation.account_id == id)))
         if existing is not None:
-            invitation_id = existing[Invitation.id.key]
-            salt = existing[Invitation.salt.key]
+            invitation_id = existing[Invitation.id.name]
+            salt = existing[Invitation.salt.name]
         else:
             # create a new invitation
             salt = randint(0, (1 << 16) - 1)  # 0:65535 - 2 bytes
@@ -89,7 +89,7 @@ async def _check_admin_access(uid: str, account: int, sdb_conn: databases.core.C
     if status is None:
         raise ResponseError(NotFoundError(
             detail="User %s is not in the account %d" % (uid, account)))
-    if not status[UserAccount.is_admin.key]:
+    if not status[UserAccount.is_admin.name]:
         raise ResponseError(ForbiddenError(
             detail="User %s is not an admin of the account %d" % (uid, account)))
 
@@ -169,9 +169,9 @@ async def _accept_invitation(iid: int,
         .where(and_(Invitation.id == iid, Invitation.salt == salt)))
     if inv is None:
         raise ResponseError(NotFoundError(detail="Invitation was not found."))
-    if not inv[Invitation.is_active.key]:
+    if not inv[Invitation.is_active.name]:
         raise ResponseError(ForbiddenError(detail="This invitation is disabled."))
-    acc_id = inv[Invitation.account_id.key]
+    acc_id = inv[Invitation.account_id.name]
     is_admin = acc_id == admin_backdoor
     slack = request.app["slack"]  # type: SlackWebClient
     if is_admin:
@@ -240,7 +240,7 @@ async def _accept_invitation(iid: int,
                 await slack.post("new_user.jinja2", user=user, account=acc_id, prefixes=prefixes)
 
             await defer(report_new_user_to_slack(), "report_new_user_to_slack")
-        values = {Invitation.accepted.key: inv[Invitation.accepted.key] + 1}
+        values = {Invitation.accepted.name: inv[Invitation.accepted.name] + 1}
         await sdb_transaction.execute(update(Invitation)
                                       .where(Invitation.id == iid).values(values))
     if user is None:
@@ -259,8 +259,8 @@ async def _check_user_org_membership(request: AthenianWebRequest,
         .where(and_(Feature.name == Feature.USER_ORG_MEMBERSHIP_CHECK,
                     Feature.component == FeatureComponent.server)))
     if user_org_membership_check_row is not None:
-        user_org_membership_check_feature_id = user_org_membership_check_row[Feature.id.key]
-        global_enabled = user_org_membership_check_row[Feature.enabled.key]
+        user_org_membership_check_feature_id = user_org_membership_check_row[Feature.id.name]
+        global_enabled = user_org_membership_check_row[Feature.enabled.name]
         enabled = await sdb_conn.fetch_val(
             select([AccountFeature.enabled]).where(and_(
                 AccountFeature.account_id == acc_id,
@@ -363,10 +363,10 @@ async def check_invitation(request: AthenianWebRequest, body: dict) -> web.Respo
     if inv is None:
         return model_response(result)
     result.valid = True
-    result.active = inv[Invitation.is_active.key]
+    result.active = inv[Invitation.is_active.name]
     types = [InvitationCheckResult.INVITATION_TYPE_REGULAR,
              InvitationCheckResult.INVITATION_TYPE_ADMIN]
-    result.type = types[inv[Invitation.account_id.key] == admin_backdoor]
+    result.type = types[inv[Invitation.account_id.name] == admin_backdoor]
     return model_response(result)
 
 
@@ -392,9 +392,9 @@ async def _append_precomputed_progress(model: InstallationProgress,
     precomputed = False
     created = None
     for reposet in reposets:
-        if reposet[RepositorySet.name.key] == RepositorySet.ALL:
-            precomputed = reposet[RepositorySet.precomputed.key]
-            created = reposet[RepositorySet.created_at.key].replace(tzinfo=timezone.utc)
+        if reposet[RepositorySet.name.name] == RepositorySet.ALL:
+            precomputed = reposet[RepositorySet.precomputed.name]
+            created = reposet[RepositorySet.created_at.name].replace(tzinfo=timezone.utc)
             break
     if slack is not None and not precomputed and model.finished_date is not None \
             and datetime.now(timezone.utc) - model.finished_date > timedelta(hours=2) \

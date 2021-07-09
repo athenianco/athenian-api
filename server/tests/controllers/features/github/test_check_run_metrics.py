@@ -200,10 +200,10 @@ def test_elapsed_time_per_concurrency_histogram():
     calc = CheckRunHistogramCalculatorEnsemble(CodeCheckMetricID.ELAPSED_TIME_PER_CONCURRENCY,
                                                quantiles=[0, 0.95])
     facts = pd.DataFrame({
-        CheckRun.started_at.key: ii_starts.view("datetime64[s]").astype("datetime64[ns]"),
-        CheckRun.completed_at.key: ii_finishes.view("datetime64[s]").astype("datetime64[ns]"),
-        CheckRun.repository_full_name.key: "athenianco/athenian-api",
-        CheckRun.name.key: ["name1"] * 6 + ["name2"] * 7,
+        CheckRun.started_at.name: ii_starts.view("datetime64[s]").astype("datetime64[ns]"),
+        CheckRun.completed_at.name: ii_finishes.view("datetime64[s]").astype("datetime64[ns]"),
+        CheckRun.repository_full_name.name: "athenianco/athenian-api",
+        CheckRun.name.name: ["name1"] * 6 + ["name2"] * 7,
     })
     calc(facts,
          np.array([0], dtype="datetime64[s]").astype("datetime64[ns]"),

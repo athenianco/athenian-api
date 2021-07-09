@@ -122,7 +122,7 @@ async def test_get_everything_smoke(client, headers):
         "merge_commit_sha", "first_review_request_exact", "stage_time_release", "released",
         "stage_time_merge", "created_at", "user_login", "htmlurl", "approved", "closed_at",
         "changed_files", "last_commit_before_first_review", "force_push_dropped", "additions",
-        "work_began", "releaser", "merged_by", "user_node_id", "repository_full_name",
+        "work_began", "releaser", "merged_by_id", "user_node_id", "repository_full_name",
         "first_review_request", "last_review", "activity_days", "closed", "merge_commit_id",
         "head_ref", "jira_id", "merger", "done", "size", "reviews", "release_url",
         "release_node_id", "review_comments", "participants",

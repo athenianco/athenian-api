@@ -51,13 +51,13 @@ def collect_activity_days(pr: MinedPullRequest, facts: PullRequestFacts, sqlite:
     # if they are empty the column dtype is sometimes an object so .dt raises an exception
     if not pr.review_requests.empty:
         activity_days.update(
-            pr.review_requests[PullRequestReviewRequest.created_at.key].dt.date)
+            pr.review_requests[PullRequestReviewRequest.created_at.name].dt.date)
     if not pr.reviews.empty:
-        activity_days.update(pr.reviews[PullRequestReview.created_at.key].dt.date)
+        activity_days.update(pr.reviews[PullRequestReview.created_at.name].dt.date)
     if not pr.comments.empty:
-        activity_days.update(pr.comments[PullRequestComment.created_at.key].dt.date)
+        activity_days.update(pr.comments[PullRequestComment.created_at.name].dt.date)
     if not pr.commits.empty:
-        activity_days.update(pr.commits[PullRequestCommit.committed_date.key].dt.date)
+        activity_days.update(pr.commits[PullRequestCommit.committed_date.name].dt.date)
     if sqlite:
         activity_days = [d.strftime("%Y-%m-%d") for d in sorted(activity_days)]
     else:

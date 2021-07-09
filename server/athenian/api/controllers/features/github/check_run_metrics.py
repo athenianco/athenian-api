@@ -67,7 +67,7 @@ def group_check_runs_by_pushers(pushers: List[List[str]],
     indexes = []
     for group in pushers:
         group = np.unique(group).astype("S")
-        pushers = df[CheckRun.author_login.key].values.astype("S")
+        pushers = df[CheckRun.author_login.name].values.astype("S")
         included_indexes = np.nonzero(np.in1d(pushers, group))[0]
         indexes.append(included_indexes)
     return indexes
@@ -84,7 +84,7 @@ def make_check_runs_count_grouper(df: pd.DataFrame) -> Tuple[
              2. Check suite node IDs column. \
              3. Check suite sizes.
     """
-    suites = df[CheckRun.check_suite_node_id.key].values.astype("S")
+    suites = df[CheckRun.check_suite_node_id.name].values
     unique_suites, run_counts = np.unique(suites, return_counts=True)
     suite_blocks = np.array(np.split(np.argsort(suites), np.cumsum(run_counts)[:-1]))
     unique_run_counts, back_indexes, group_counts = np.unique(
@@ -114,16 +114,18 @@ class FirstSuiteEncounters(MetricCalculator[float]):
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
         _, first_suite_encounters = np.unique(
-            facts[CheckRun.check_suite_node_id.key].values.astype("S"), return_index=True)
+            facts[CheckRun.check_suite_node_id.name].values,
+            return_index=True)
         # ignore incomplete suites
         completed = np.in1d(
-            facts[CheckRun.check_suite_status.key].values[first_suite_encounters].astype("S"),
+            facts[CheckRun.check_suite_status.name].values[first_suite_encounters].astype("S"),
             self.complete_suite_statuses)
         completed[
-            facts[CheckRun.check_suite_conclusion.key].values[first_suite_encounters].astype("S")
+            facts[CheckRun.check_suite_conclusion.name].values[first_suite_encounters].astype("S")
             == b"SKIPPED"] = False
         first_suite_encounters = first_suite_encounters[completed]
-        return first_suite_encounters
+        order = np.argsort(facts[check_suite_started_column].values[first_suite_encounters])
+        return first_suite_encounters[order]
 
     def _value(self, samples: np.ndarray) -> Metric[None]:
         return Metric(False, None, None, None)
@@ -166,7 +168,7 @@ class SuitesInPRsCounter(SumMetricCalculator[int]):
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
         result = self._calcs[0].peek.copy()
-        result[:, facts[CheckRun.pull_request_node_id.key].isnull()] = 0
+        result[:, facts[CheckRun.pull_request_node_id.name] == 0] = 0
         return result
 
 
@@ -182,8 +184,8 @@ class SuitesInStatusCounter(SumMetricCalculator[int]):
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
         started = facts[check_suite_started_column].values.astype(min_times.dtype)
-        statuses = facts[CheckRun.check_suite_status.key].values.astype("S")
-        conclusions = facts[CheckRun.check_suite_conclusion.key].values.astype("S")
+        statuses = facts[CheckRun.check_suite_status.name].values.astype("S")
+        conclusions = facts[CheckRun.check_suite_conclusion.name].values.astype("S")
         relevant = np.zeros_like(started, dtype=bool)
         for status, status_conclusions in self.statuses.items():
             status_mask = statuses == status
@@ -196,7 +198,8 @@ class SuitesInStatusCounter(SumMetricCalculator[int]):
                 mask = status_mask
             relevant |= mask
         _, first_encounters = np.unique(
-            facts[CheckRun.check_suite_node_id.key].values.astype("S"), return_index=True)
+            facts[CheckRun.check_suite_node_id.name].values,
+            return_index=True)
         mask = np.zeros_like(relevant)
         mask[first_encounters] = True
         relevant[~mask] = False
@@ -257,11 +260,11 @@ class SuiteTimeCalculatorAnalysis(MetricCalculator[None]):
                  max_times: np.ndarray,
                  **kwargs) -> np.ndarray:
         unique_suites, first_encounters, inverse_indexes, run_counts = np.unique(
-            facts[CheckRun.check_suite_node_id.key].values.astype("S"),
+            facts[CheckRun.check_suite_node_id.name].values,
             return_index=True, return_inverse=True, return_counts=True)
-        statuses = facts[CheckRun.check_suite_status.key].values[first_encounters].astype("S")
+        statuses = facts[CheckRun.check_suite_status.name].values[first_encounters].astype("S")
         completed = statuses == b"COMPLETED"
-        conclusions = facts[CheckRun.check_suite_conclusion.key].values[
+        conclusions = facts[CheckRun.check_suite_conclusion.name].values[
             first_encounters[completed]
         ].astype("S")
         sensibly_completed = np.nonzero(completed)[0][
@@ -275,9 +278,9 @@ class SuiteTimeCalculatorAnalysis(MetricCalculator[None]):
         unique_run_counts, back_indexes, group_counts = np.unique(
             run_counts, return_inverse=True, return_counts=True)
         run_counts_order = np.argsort(back_indexes)
-        ordered_indexes = np.concatenate(suite_blocks[run_counts_order]).astype(int)
+        ordered_indexes = np.concatenate(suite_blocks[run_counts_order]).astype(int, copy=False)
         groups = np.split(ordered_indexes, np.cumsum(group_counts * unique_run_counts)[:-1])
-        run_finished = facts[CheckRun.completed_at.key].values.astype(min_times.dtype)
+        run_finished = facts[CheckRun.completed_at.name].values.astype(min_times.dtype)
         suite_started_col = facts[check_suite_started_column].values
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", "All-NaN slice encountered")
@@ -356,8 +359,8 @@ class RobustSuiteTimeCalculator(MetricCalculator[timedelta]):
             elapsed = elapsed[:quantiles_mounted_at]
             structs = structs[:quantiles_mounted_at]
         sizes = structs["size"].astype("S")
-        repos = facts[CheckRun.repository_node_id.key].values.astype("S")
-        repos_sizes = np.char.add(repos, np.char.add(b"|", sizes))
+        repos = facts[CheckRun.repository_node_id.name].values
+        repos_sizes = np.char.add(repos.byteswap().view("S8"), np.char.add(b"|", sizes))
         self._metrics = metrics = []
         for group_mask in meaningful_groups_mask:
             group_repos_sizes = repos_sizes[:, group_mask]
@@ -428,10 +431,10 @@ class SuitesPerPRCounter(AverageMetricCalculator[float]):
                  **_) -> np.ndarray:
         first_suite_encounters = self._calcs[0].peek
 
-        pull_requests = facts[CheckRun.pull_request_node_id.key].values.astype("S")
+        pull_requests = facts[CheckRun.pull_request_node_id.name].values
         _, first_pr_encounters, pr_suite_counts = np.unique(
             pull_requests[first_suite_encounters], return_index=True, return_counts=True)
-        # we don't have to filter out b"None" because mask_pr_times is False for them
+        # we don't have to filter out 0-s because mask_pr_times is False for them
 
         result = np.full((len(min_times), len(facts)), np.nan, dtype=np.float32)
         result[:, first_suite_encounters[first_pr_encounters]] = pr_suite_counts
@@ -460,8 +463,8 @@ class SuiteTimePerPRCalculator(AverageMetricCalculator[timedelta]):
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
-        pull_requests = facts[CheckRun.pull_request_node_id.key].values.astype("S")
-        no_prs_mask = pull_requests == b"None"
+        pull_requests = facts[CheckRun.pull_request_node_id.name].values
+        no_prs_mask = pull_requests == 0
         result = self._calcs[0].peek.copy()
         result[:, no_prs_mask] = None
         return result
@@ -530,19 +533,19 @@ class FlakyCommitChecksCounter(SumMetricCalculator[int]):
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
-        statuses = facts[CheckRun.status.key].values.astype("S")
-        conclusions = facts[CheckRun.conclusion.key].values.astype("S")
-        check_suite_conclusions = facts[CheckRun.check_suite_conclusion.key].values.astype("S")
+        statuses = facts[CheckRun.status.name].values.astype("S")
+        conclusions = facts[CheckRun.conclusion.name].values.astype("S")
+        check_suite_conclusions = facts[CheckRun.check_suite_conclusion.name].values.astype("S")
         success_mask, failure_mask = calculate_check_run_outcome_masks(
             statuses, conclusions, check_suite_conclusions, True, True, False)
-        commits = facts[CheckRun.commit_node_id.key].values.astype("S")
-        check_run_names = np.char.encode(facts[CheckRun.name.key].values.astype("U"), "UTF-8")
-        commits_with_names = np.char.add(commits, check_run_names)
+        commits = facts[CheckRun.commit_node_id.name].values
+        check_run_names = np.char.encode(facts[CheckRun.name.name].values.astype("U"), "UTF-8")
+        commits_with_names = np.char.add(commits.byteswap().view("S8"), check_run_names)
         _, unique_map = np.unique(commits_with_names, return_inverse=True)
         unique_flaky_indexes = np.intersect1d(unique_map[success_mask], unique_map[failure_mask])
         flaky_mask = np.in1d(unique_map, unique_flaky_indexes)
         # do not count the same check suite twice if there is more than one flaky check run
-        check_suites = facts[CheckRun.check_suite_node_id.key].values.astype("S")
+        check_suites = facts[CheckRun.check_suite_node_id.name].values
         flaky_check_suites = np.unique(check_suites[flaky_mask])
         unique_check_suites, first_encounters = np.unique(check_suites, return_index=True)
         flaky_indexes = first_encounters[np.in1d(
@@ -578,21 +581,21 @@ class MergedPRsWithFailedChecksCounter(SumMetricCalculator[int]):
         if facts.empty:
             return pd.Int64Index([]), np.array([], dtype="S1"), np.array([], dtype=bool)
         df = facts[[
-            CheckRun.pull_request_node_id.key, CheckRun.name.key, CheckRun.started_at.key,
-            CheckRun.status.key, CheckRun.conclusion.key, pull_request_merged_column]]
-        df = df.sort_values(CheckRun.started_at.key, ascending=False)  # no inplace=True, yes
-        pull_requests = df[CheckRun.pull_request_node_id.key].values.astype("S")
-        names = np.char.encode(df[CheckRun.name.key].values.astype("U"), "UTF-8")
-        joint = np.char.add(pull_requests, names)
+            CheckRun.pull_request_node_id.name, CheckRun.name.name, CheckRun.started_at.name,
+            CheckRun.status.name, CheckRun.conclusion.name, pull_request_merged_column]]
+        df = df.sort_values(CheckRun.started_at.name, ascending=False)  # no inplace=True, yes
+        pull_requests = df[CheckRun.pull_request_node_id.name].values
+        names = np.char.encode(df[CheckRun.name.name].values.astype("U"), "UTF-8")
+        joint = np.char.add(pull_requests.byteswap().view("S8"), names)
         _, first_encounters = np.unique(joint, return_index=True)
-        statuses = df[CheckRun.status.key].values.astype("S")
-        conclusions = df[CheckRun.conclusion.key].values.astype("S")
+        statuses = df[CheckRun.status.name].values.astype("S")
+        conclusions = df[CheckRun.conclusion.name].values.astype("S")
         failure_mask = np.zeros_like(statuses, dtype=bool)
         failure_mask[first_encounters] = True
         merged_timestamps = df[pull_request_merged_column].values
         failure_mask &= (
             calculate_check_run_outcome_masks(statuses, conclusions, None, False, True, False)[0]
-        ) & (pull_requests != b"None") & (merged_timestamps == merged_timestamps)
+        ) & (pull_requests != 0) & (merged_timestamps == merged_timestamps)
         return df.index, pull_requests, failure_mask
 
     def _analyze(self,
@@ -626,11 +629,11 @@ class MergedPRsCounter(SumMetricCalculator[int]):
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
-        pull_requests = facts[CheckRun.pull_request_node_id.key].values.astype("S")
+        pull_requests = facts[CheckRun.pull_request_node_id.name].values.copy()
         merged = facts[pull_request_merged_column].values
-        pull_requests[merged != merged] = b"None"
+        pull_requests[merged != merged] = 0
         unique_prs, first_encounters = np.unique(pull_requests, return_index=True)
-        first_encounters = first_encounters[unique_prs != b"None"]
+        first_encounters = first_encounters[unique_prs != 0]
         mask_pr_times = (
             (facts[pull_request_started_column].values < max_times[:, None])
             &
@@ -661,20 +664,24 @@ class ConcurrencyCalculator(MetricCalculator[float]):
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
-        repos = facts[CheckRun.repository_full_name.key].values.astype("S")
-        names = np.char.encode(facts[CheckRun.name.key].values.astype("U"), "UTF-8")
+        repos = facts[CheckRun.repository_full_name.name].values.astype("S")
+        names = np.char.encode(facts[CheckRun.name.name].values.astype("U"), "UTF-8")
         crtypes = np.char.add(np.char.add(repos, b"|"), names)
         del repos, names
-        started_ats = facts[CheckRun.started_at.key].values.astype(min_times.dtype, copy=False)
-        completed_ats = facts[CheckRun.completed_at.key].values.astype(min_times.dtype, copy=False)
+        started_ats = \
+            facts[CheckRun.started_at.name].values.astype(min_times.dtype, copy=False)
+        completed_ats = \
+            facts[CheckRun.completed_at.name].values.astype(min_times.dtype, copy=False)
         have_completed = completed_ats == completed_ats
         crtypes = crtypes[have_completed]
         time_order_started_ats = started_ats[have_completed]
         time_order_completed_ats = completed_ats[have_completed]
         _, crtypes_counts = np.unique(crtypes, return_counts=True)
         crtypes_order = np.argsort(crtypes)
-        crtype_order_started_ats = time_order_started_ats[crtypes_order].astype("datetime64[s]")
-        crtype_order_completed_ats = time_order_completed_ats[crtypes_order].astype("datetime64[s]")  # noqa
+        crtype_order_started_ats = \
+            time_order_started_ats[crtypes_order].astype("datetime64[s]")
+        crtype_order_completed_ats = \
+            time_order_completed_ats[crtypes_order].astype("datetime64[s]")
         intersections = calculate_interval_intersections(
             crtype_order_started_ats.view(np.uint64),
             crtype_order_completed_ats.view(np.uint64),
@@ -743,8 +750,8 @@ class ElapsedTimePerConcurrencyCalculator(MetricCalculator[object]):
                  **_) -> np.ndarray:
         result = np.zeros_like(self._calcs[0].peek, dtype=self.dtype)
         result["concurrency"] = self._calcs[0].peek
-        result["duration"] = facts[CheckRun.completed_at.key].astype(min_times.dtype) - \
-            facts[CheckRun.started_at.key].astype(min_times.dtype)
+        result["duration"] = facts[CheckRun.completed_at.name].astype(min_times.dtype) - \
+            facts[CheckRun.started_at.name].astype(min_times.dtype)
         result["duration"][result["concurrency"] != result["concurrency"]] = None
         return result
 
@@ -770,7 +777,7 @@ class ElapsedTimePerConcurrencyCalculator(MetricCalculator[object]):
                 concurrency_levels = np.asarray(concurrency_histogram.ticks)
                 concurrency_levels[-1] = np.ceil(concurrency_levels[-1])
                 concurrency_levels[:-1] = np.floor(concurrency_levels[:-1])
-                concurrency_levels = np.unique(concurrency_levels.astype(int))
+                concurrency_levels = np.unique(concurrency_levels.astype(int, copy=False))
                 concurrency_map = np.digitize(samples["concurrency"], concurrency_levels) - 1
                 elapsed_times = np.sum(
                     np.broadcast_to(samples["duration"][None, :],

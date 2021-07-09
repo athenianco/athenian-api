@@ -168,10 +168,10 @@ async def list_reposets(request: AthenianWebRequest, id: int) -> web.Response:
             id, login_loader, [RepositorySet], sdb_conn, request.mdb, request.cache,
             request.app["slack"])
     items = [RepositorySetListItem(
-        id=rs[RepositorySet.id.key],
-        name=rs[RepositorySet.name.key],
-        created=rs[RepositorySet.created_at.key].replace(tzinfo=timezone.utc),
-        updated=rs[RepositorySet.updated_at.key].replace(tzinfo=timezone.utc),
-        items_count=rs[RepositorySet.items_count.key],
+        id=rs[RepositorySet.id.name],
+        name=rs[RepositorySet.name.name],
+        created=rs[RepositorySet.created_at.name].replace(tzinfo=timezone.utc),
+        updated=rs[RepositorySet.updated_at.name].replace(tzinfo=timezone.utc),
+        items_count=rs[RepositorySet.items_count.name],
     ) for rs in rss]
     return model_response(items)

@@ -180,7 +180,7 @@ class PullRequestListMiner:
         We return None if the PR does not match.
         """
         facts_now = facts
-        pr_node_id = pr.pr[PullRequest.node_id.key]
+        pr_node_id = pr.pr[PullRequest.node_id.name]
         if self._with_time_machine:
             facts_time_machine = facts.truncate(self._time_to)
             events_time_machine, stages_time_machine = self._collect_events_and_stages(
@@ -198,18 +198,18 @@ class PullRequestListMiner:
             facts_now,
             {k: (pr_node_id in v) for k, v in hard_events_now.items()},
             self._no_time_from)
-        author = pr.pr[PullRequest.user_login.key]
-        external_reviews_mask = pr.reviews[PullRequestReview.user_login.key].values != author
+        author = pr.pr[PullRequest.user_login.name]
+        external_reviews_mask = pr.reviews[PullRequestReview.user_login.name].values != author
         external_review_times = \
-            pr.reviews[PullRequestReview.created_at.key].values[external_reviews_mask]
+            pr.reviews[PullRequestReview.created_at.name].values[external_reviews_mask]
         first_review = pd.Timestamp(external_review_times.min(), tz=timezone.utc) \
             if len(external_review_times) > 0 else None
         review_comments = (
-            pr.review_comments[PullRequestReviewComment.user_login.key].values != author
+            pr.review_comments[PullRequestReviewComment.user_login.name].values != author
         ).sum()
         delta_comments = len(pr.review_comments) - review_comments
         reviews = external_reviews_mask.sum()
-        updated_at = pr.pr[PullRequest.updated_at.key]
+        updated_at = pr.pr[PullRequest.updated_at.name]
         assert updated_at == updated_at
         if pr.labels.empty:
             labels = None
@@ -217,9 +217,9 @@ class PullRequestListMiner:
             labels = [
                 Label(name=name, description=description, color=color)
                 for name, description, color in zip(
-                    pr.labels[PullRequestLabel.name.key].values,
-                    pr.labels[PullRequestLabel.description.key].values,
-                    pr.labels[PullRequestLabel.color.key].values,
+                    pr.labels[PullRequestLabel.name.name].values,
+                    pr.labels[PullRequestLabel.description.name].values,
+                    pr.labels[PullRequestLabel.color.name].values,
                 )
             ]
         if pr.jiras.empty:
@@ -233,21 +233,21 @@ class PullRequestListMiner:
                                          type=itype)
                 for (key, title, epic, labels, itype) in zip(
                     pr.jiras.index.values,
-                    pr.jiras[Issue.title.key].values,
+                    pr.jiras[Issue.title.name].values,
                     pr.jiras["epic"].values,
-                    pr.jiras[Issue.labels.key].values,
-                    pr.jiras[Issue.type.key].values,
+                    pr.jiras[Issue.labels.name].values,
+                    pr.jiras[Issue.type.name].values,
                 )
             ]
         return PullRequestListItem(
             node_id=pr_node_id,
-            repository=pr.pr[PullRequest.repository_full_name.key],
-            number=pr.pr[PullRequest.number.key],
-            title=pr.pr[PullRequest.title.key],
-            size_added=pr.pr[PullRequest.additions.key],
-            size_removed=pr.pr[PullRequest.deletions.key],
-            files_changed=pr.pr[PullRequest.changed_files.key],
-            created=pr.pr[PullRequest.created_at.key],
+            repository=pr.pr[PullRequest.repository_full_name.name],
+            number=pr.pr[PullRequest.number.name],
+            title=pr.pr[PullRequest.title.name],
+            size_added=pr.pr[PullRequest.additions.name],
+            size_removed=pr.pr[PullRequest.deletions.name],
+            files_changed=pr.pr[PullRequest.changed_files.name],
+            created=pr.pr[PullRequest.created_at.name],
             updated=updated_at,
             closed=self._dt64_to_pydt(facts_now.closed),
             comments=len(pr.comments) + delta_comments,
@@ -260,7 +260,7 @@ class PullRequestListMiner:
             merged=self._dt64_to_pydt(facts_now.merged),
             merged_with_failed_check_runs=None,
             released=self._dt64_to_pydt(facts_now.released),
-            release_url=pr.release[Release.url.key],
+            release_url=pr.release[Release.url.name],
             events_now=events_now,
             stages_now=stages_now,
             events_time_machine=events_time_machine,
@@ -278,7 +278,7 @@ class PullRequestListMiner:
         stage_timings = self._calc_stage_timings()
         hard_events_time_machine, hard_events_now = self._calc_hard_events()
         facts = self._facts
-        node_id_key = PullRequest.node_id.key
+        node_id_key = PullRequest.node_id.name
         for i, pr in enumerate(self._prs):
             pr_stage_timings = {}
             for k in self._calcs:
@@ -295,7 +295,7 @@ class PullRequestListMiner:
         facts = self._facts
         if len(facts) == 0 or len(self._prs) == 0:
             return {k: [] for k in self._calcs}
-        node_id_key = PullRequest.node_id.key
+        node_id_key = PullRequest.node_id.name
         df_facts = df_from_structs(
             (facts[pr.pr[node_id_key]] for pr in self._prs), length=len(self._prs))
         return self.calc_stage_timings(df_facts, self._calcs, self._counter_deps)
@@ -344,28 +344,28 @@ class PullRequestListMiner:
         time_to = np.datetime64(self._time_to)
 
         index = dfs.commits.index.get_level_values(0).values
-        committed_date = dfs.commits[PullRequestCommit.committed_date.key].values
+        committed_date = dfs.commits[PullRequestCommit.committed_date.name].values
         events_now[PullRequestEvent.COMMITTED] = set(index[committed_date == committed_date])
         if self._with_time_machine:
             events_time_machine[PullRequestEvent.COMMITTED] = \
                 set(index[(committed_date >= time_from) & (committed_date < time_to)])
 
-        prr_ulk = PullRequestReview.user_login.key
-        prr_sak = PullRequestReview.submitted_at.key
+        prr_ulk = PullRequestReview.user_login.name
+        prr_sak = PullRequestReview.submitted_at.name
         reviews = dfs.reviews[[prr_ulk, prr_sak]].droplevel(1)
         original_reviews_index = reviews.index.values
-        reviews = reviews.join(dfs.prs[[PullRequest.user_login.key, PullRequest.closed_at.key]],
+        reviews = reviews.join(dfs.prs[[PullRequest.user_login.name, PullRequest.closed_at.name]],
                                rsuffix="_pr")
         index = reviews.index.values
         submitted_at = reviews[prr_sak].values
-        closed_at = reviews[PullRequest.closed_at.key].values
+        closed_at = reviews[PullRequest.closed_at.name].values
         not_closed_mask = closed_at != closed_at
         closed_at[not_closed_mask] = submitted_at[not_closed_mask]
         closed_at = closed_at.astype(submitted_at.dtype)
         mask = (
             (submitted_at <= closed_at)
             &
-            (reviews[prr_ulk].values != reviews[PullRequest.user_login.key + "_pr"].values)
+            (reviews[prr_ulk].values != reviews[PullRequest.user_login.name + "_pr"].values)
         )
         events_now[PullRequestEvent.REVIEWED] = set(index[mask])
         if self._with_time_machine:
@@ -374,7 +374,7 @@ class PullRequestListMiner:
 
         submitted_at = dfs.reviews[prr_sak].values
         # no need to check submitted_at <= closed_at because GitHub disallows that
-        mask = dfs.reviews[PullRequestReview.state.key].values == \
+        mask = dfs.reviews[PullRequestReview.state.name].values == \
             ReviewResolution.CHANGES_REQUESTED.value
         events_now[PullRequestEvent.CHANGES_REQUESTED] = set(original_reviews_index[mask])
         if self._with_time_machine:
@@ -534,7 +534,7 @@ async def _load_failed_check_runs_for_prs(time_from: datetime,
         time_from, time_to, repos, [], labels, jira, meta_ids, mdb, cache)
     index, pull_requests, failure_mask = \
         MergedPRsWithFailedChecksCounter.find_prs_merged_with_failed_check_runs(df)
-    check_run_names = df[CheckRun.name.key].values[index.values]
+    check_run_names = df[CheckRun.name.name].values[index.values]
     failed_check_run_names = check_run_names[failure_mask]
     failed_pull_requests = pull_requests[failure_mask]
     unique_prs, index, counts = np.unique(
@@ -552,7 +552,7 @@ async def _append_merged_with_failed_check_runs(check_runs_task: Optional[asynci
     await check_runs_task
     failed_prs, check_run_names = check_runs_task.result()
     if len(failed_prs):
-        node_ids = np.array([pr.node_id for pr in prs], dtype="S")
+        node_ids = np.fromiter((pr.node_id for pr in prs), int, len(prs))
         order = np.argsort(node_ids)
         node_ids = node_ids[order]
         order = np.argsort(order)
@@ -677,7 +677,7 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
             missed_merged_unreleased_facts_counter = 0
         bad_prs = []
         for i, pr in enumerate(prs):
-            node_id = pr.pr[PullRequest.node_id.key]
+            node_id = pr.pr[PullRequest.node_id.name]
             if node_id not in facts:
                 fact_evals += 1
                 if (fact_evals + 1) % COROUTINE_YIELD_EVERY_ITER == 0:
@@ -791,14 +791,14 @@ async def _fetch_pull_requests(prs: Dict[str, Set[int]],
     queries = [select([PullRequest]).where(f).order_by(PullRequest.node_id) for f in filters]
     tasks = [
         read_sql_query(union_all(*queries) if len(queries) > 1 else queries[0],  # sqlite sucks
-                       mdb, PullRequest, index=PullRequest.node_id.key),
+                       mdb, PullRequest, index=PullRequest.node_id.name),
         DonePRFactsLoader.load_precomputed_done_facts_reponums(
             prs, default_branches, release_settings, prefixer, account, pdb),
     ]
     prs_df, (facts, ambiguous) = await gather(*tasks)
-    if (max_merged_at := prs_df[PullRequest.merged_at.key].max()) == max_merged_at:
+    if (max_merged_at := prs_df[PullRequest.merged_at.name].max()) == max_merged_at:
         check_runs_task = asyncio.create_task(_load_failed_check_runs_for_prs(
-            prs_df[PullRequest.created_at.key].min() - timedelta(hours=1),
+            prs_df[PullRequest.created_at.name].min() - timedelta(hours=1),
             max_merged_at + timedelta(days=1),
             prs.keys(), LabelFilter.empty(), JIRAFilter.empty(), meta_ids, mdb, cache))
     else:
@@ -849,7 +849,7 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
         return [], PRDataFrames(*(pd.DataFrame() for _ in range(9))), {}, {}
     if resolve_rebased:
         dags = await fetch_precomputed_commit_history_dags(
-            prs_df[PullRequest.repository_full_name.key].unique(), account, pdb, cache)
+            prs_df[PullRequest.repository_full_name.name].unique(), account, pdb, cache)
         dags = await fetch_repository_commits_no_branch_dates(
             dags, branches, BRANCH_FETCH_COMMITS_COLUMNS, True, account, meta_ids, mdb, pdb, cache)
         prs_df = await PullRequestMiner.mark_dead_prs(
@@ -857,20 +857,20 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
     facts, ambiguous = precomputed_done_facts, precomputed_ambiguous_done_facts
     PullRequestMiner.adjust_pr_closed_merged_timestamps(prs_df)
     now = datetime.now(timezone.utc)
-    if rel_time_from := prs_df[PullRequest.merged_at.key].nonemin():
-        milestone_prs = prs_df[[PullRequest.merge_commit_sha.key,
-                                PullRequest.merge_commit_id.key,
-                                PullRequest.merged_at.key,
-                                PullRequest.repository_full_name.key]]
+    if rel_time_from := prs_df[PullRequest.merged_at.name].nonemin():
+        milestone_prs = prs_df[[PullRequest.merge_commit_sha.name,
+                                PullRequest.merge_commit_id.name,
+                                PullRequest.merged_at.name,
+                                PullRequest.repository_full_name.name]]
         milestone_prs.columns = [
-            Release.sha.key, Release.commit_id.key, Release.published_at.key,
-            Release.repository_full_name.key,
+            Release.sha.name, Release.commit_id.name, Release.published_at.name,
+            Release.repository_full_name.name,
         ]
         milestone_releases = dummy_releases_df().append(milestone_prs.reset_index(drop=True))
         milestone_releases = milestone_releases.take(np.where(
-            milestone_releases[Release.sha.key].notnull())[0])
+            milestone_releases[Release.sha.name].notnull())[0])
         releases, matched_bys = await ReleaseLoader.load_releases(
-            prs_df[PullRequest.repository_full_name.key].unique(), branches, default_branches,
+            prs_df[PullRequest.repository_full_name.name].unique(), branches, default_branches,
             rel_time_from, now, release_settings, prefixer,
             account, meta_ids, mdb, pdb, rdb, cache)
         add_pdb_misses(pdb, "load_precomputed_done_facts_reponums/ambiguous",
@@ -880,14 +880,14 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
                 releases.append(milestone_releases), account, meta_ids, mdb, pdb, cache),
             # not nonemax() here! we want NaT-s inside load_merged_unreleased_pull_request_facts
             MergedPRFactsLoader.load_merged_unreleased_pull_request_facts(
-                prs_df, releases[Release.published_at.key].max(), LabelFilter.empty(),
+                prs_df, releases[Release.published_at.name].max(), LabelFilter.empty(),
                 matched_bys, default_branches, release_settings, prefixer, account, pdb),
         ]
         dags, unreleased = await gather(*tasks)
     else:
         releases, matched_bys, unreleased = dummy_releases_df(), {}, {}
         dags = await fetch_precomputed_commit_history_dags(
-            prs_df[PullRequest.repository_full_name.key].unique(), account, pdb, cache)
+            prs_df[PullRequest.repository_full_name.name].unique(), account, pdb, cache)
     dfs, _, _ = await PullRequestMiner.mine_by_ids(
         prs_df, unreleased, now, releases, matched_bys, branches, default_branches, dags,
         release_settings, prefixer, account, meta_ids, mdb, pdb, cache, with_jira=with_jira)
@@ -902,7 +902,7 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
         facts_miner = PullRequestFactsMiner(await bots(mdb))
         pdb_misses = 0
         for pr in prs:
-            if (node_id := pr.pr[PullRequest.node_id.key]) not in facts:
+            if (node_id := pr.pr[PullRequest.node_id.name]) not in facts:
                 try:
                     facts[node_id] = facts_miner(pr)
                 except ImpossiblePullRequest:

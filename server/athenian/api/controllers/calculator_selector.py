@@ -110,9 +110,9 @@ async def _get_metrics_variation_for_account(
         return None
 
     all_metrics_variations_features = {
-        row[Feature.id.key]: MetricVariationFeature(
-            row[Feature.name.key][len(feature_name_prefix):],
-            row[Feature.default_parameters.key] or {},
+        row[Feature.id.name]: MetricVariationFeature(
+            row[Feature.name.name][len(feature_name_prefix):],
+            row[Feature.default_parameters.name] or {},
         )
         for row in all_metrics_variations_features
     }

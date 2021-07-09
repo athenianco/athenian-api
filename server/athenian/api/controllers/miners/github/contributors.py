@@ -77,7 +77,7 @@ async def mine_contributors(repos: Collection[str],
     @sentry_span
     async def fetch_author():
         ghdprf = GitHubDonePullRequestFacts
-        format_version = ghdprf.__table__.columns[ghdprf.format_version.key].default.arg
+        format_version = ghdprf.__table__.columns[ghdprf.format_version.name].default.arg
         if has_times:
             prs_opts = [
                 PullRequest.created_at.between(time_from, time_to),
@@ -125,21 +125,21 @@ async def mine_contributors(repos: Collection[str],
     async def fetch_commit_user():
         tasks = [
             mdb.fetch_all(
-                select([NodeCommit.author_user, func.count(NodeCommit.author_user)])
-                .where(and_(NodeCommit.repository.in_(repo_nodes),
+                select([NodeCommit.author_user_id, func.count(NodeCommit.author_user_id)])
+                .where(and_(NodeCommit.repository_id.in_(repo_nodes),
                             NodeCommit.acc_id.in_(meta_ids),
                             NodeCommit.committed_date.between(time_from, time_to)
                             if has_times else True,
-                            NodeCommit.author_user.isnot(None)))
-                .group_by(NodeCommit.author_user)),
+                            NodeCommit.author_user_id.isnot(None)))
+                .group_by(NodeCommit.author_user_id)),
             mdb.fetch_all(
-                select([NodeCommit.committer_user, func.count(NodeCommit.committer_user)])
-                .where(and_(NodeCommit.repository.in_(repo_nodes),
+                select([NodeCommit.committer_user_id, func.count(NodeCommit.committer_user_id)])
+                .where(and_(NodeCommit.repository_id.in_(repo_nodes),
                             NodeCommit.acc_id.in_(meta_ids),
                             NodeCommit.committed_date.between(time_from, time_to)
                             if has_times else True,
-                            NodeCommit.committer_user.isnot(None)))
-                .group_by(NodeCommit.committer_user)),
+                            NodeCommit.committer_user_id.isnot(None)))
+                .group_by(NodeCommit.committer_user_id)),
         ]
         authors, committers = await gather(*tasks)
         user_ids = set(r[0] for r in authors).union(r[0] for r in committers)
@@ -190,7 +190,7 @@ async def mine_contributors(repos: Collection[str],
             repos, branches, default_branches, rt_from, rt_to,
             release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache,
             force_fresh=force_fresh_releases)
-        counts = releases[Release.author.key].value_counts()
+        counts = releases[Release.author.name].value_counts()
         return {
             "releaser": zip(counts.index.values, counts.values),
         }
@@ -225,7 +225,7 @@ async def mine_contributors(repos: Collection[str],
     contribs = []
     for ud in user_details:
         c = dict(ud)
-        c["stats"] = stats[c[User.login.key]]
+        c["stats"] = stats[c[User.login.name]]
         if user_roles and sum(c["stats"].get(role, 0) for role in user_roles) == 0:
             continue
 
@@ -279,8 +279,8 @@ async def load_organization_members(account: int,
     bot_ids = set()
     new_user_rows = []
     for row in user_rows:
-        if row[User.login.key] in bots:
-            bot_ids.add(row[User.node_id.key])
+        if row[User.login.name] in bots:
+            bot_ids.add(row[User.node_id.name])
         else:
             new_user_rows.append(row)
     user_rows = new_user_rows
@@ -289,31 +289,31 @@ async def load_organization_members(account: int,
     if not user_ids:
         return {}, {}, {}
     signature_rows = await mdb.fetch_all(union(
-        select([PushCommit.author_user, PushCommit.author_name, PushCommit.author_email])
+        select([PushCommit.author_user_id, PushCommit.author_name, PushCommit.author_email])
         .where(and_(PushCommit.acc_id.in_(meta_ids),
-                    PushCommit.author_user.in_(user_ids)))
+                    PushCommit.author_user_id.in_(user_ids)))
         .distinct(),
-        select([PushCommit.committer_user, PushCommit.committer_name, PushCommit.author_email])
+        select([PushCommit.committer_user_id, PushCommit.committer_name, PushCommit.author_email])
         .where(and_(PushCommit.acc_id.in_(meta_ids),
-                    PushCommit.committer_user.in_(user_ids)))
+                    PushCommit.committer_user_id.in_(user_ids)))
         .distinct(),
     ))
     log.info("Loaded %d signatures", len(signature_rows))
     github_names = defaultdict(set)
     github_emails = defaultdict(set)
     for row in signature_rows:
-        node_id = row[PushCommit.author_user.key]
-        if name := row[PushCommit.author_name.key]:
+        node_id = row[PushCommit.author_user_id.name]
+        if name := row[PushCommit.author_name.name]:
             github_names[node_id].add(name)
-        if email := row[PushCommit.author_email.key]:
+        if email := row[PushCommit.author_email.name]:
             github_emails[node_id].add(email)
     github_prefixed_logins = {}
     for row in user_rows:
-        node_id = row[User.node_id.key]
-        github_prefixed_logins[node_id] = row[User.html_url.key].split("://", 1)[1]
-        if name := row[User.name.key]:
+        node_id = row[User.node_id.name]
+        github_prefixed_logins[node_id] = row[User.html_url.name].split("://", 1)[1]
+        if name := row[User.name.name]:
             github_names[node_id].add(name)
-        if email := row[User.email.key]:
+        if email := row[User.email.name]:
             github_emails[node_id].add(email)
     log.info("GitHub set size: %d", len(github_names))
     return github_names, github_emails, github_prefixed_logins

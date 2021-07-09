@@ -45,7 +45,7 @@ async def load_precomputed_release_facts(releases: pd.DataFrame,
                                          settings: ReleaseSettings,
                                          account: int,
                                          pdb: databases.Database,
-                                         ) -> Dict[str, ReleaseFacts]:
+                                         ) -> Dict[int, ReleaseFacts]:
     """
     Fetch precomputed facts about releases.
 
@@ -53,14 +53,24 @@ async def load_precomputed_release_facts(releases: pd.DataFrame,
     """
     if releases.empty:
         return {}
-    reverse_settings = reverse_release_settings(
-        releases[Release.repository_full_name.key].unique(), default_branches, settings)
+    reverse_settings = defaultdict(list)
+    for repo in releases[Release.repository_full_name.name].unique():
+        setting = settings.native[repo]
+        if setting.match == ReleaseMatch.tag:
+            value = setting.tags
+        elif setting.match == ReleaseMatch.branch:
+            value = setting.branches.replace(default_branch_alias, default_branches[repo])
+        elif setting.match == ReleaseMatch.event:
+            value = ""
+        else:
+            raise AssertionError("Ambiguous release settings for %s: %s" % (repo, setting))
+        reverse_settings[(setting.match, value)].append(repo)
     grouped_releases = defaultdict(list)
-    for rid, repo in zip(releases[Release.node_id.key].values,
-                         releases[Release.repository_full_name.key].values):
+    for rid, repo in zip(releases[Release.node_id.name].values,
+                         releases[Release.repository_full_name.name].values):
         grouped_releases[repo].append(rid)
     default_version = \
-        GitHubReleaseFacts.__table__.columns[GitHubReleaseFacts.format_version.key].default.arg
+        GitHubReleaseFacts.__table__.columns[GitHubReleaseFacts.format_version.name].default.arg
 
     queries = [
         select([GitHubReleaseFacts.id, GitHubReleaseFacts.data])
@@ -98,7 +108,7 @@ async def store_precomputed_release_facts(releases: List[Tuple[Dict[str, Any], R
     """Put the new release facts to the pdb."""
     values = []
     for dikt, facts in releases:
-        repo = dikt[Release.repository_full_name.key]
+        repo = dikt[Release.repository_full_name.name]
         setting = settings.prefixed[repo]
         repo = repo.split("/", 1)[1]
         if setting.match == ReleaseMatch.tag:
@@ -110,7 +120,7 @@ async def store_precomputed_release_facts(releases: List[Tuple[Dict[str, Any], R
         else:
             raise AssertionError("Ambiguous release settings for %s: %s" % (repo, setting))
         values.append(GitHubReleaseFacts(
-            id=dikt[Release.node_id.key],
+            id=dikt[Release.node_id.name],
             acc_id=account,
             release_match=compose_release_match(setting.match, value),
             repository_full_name=repo,
@@ -156,8 +166,9 @@ async def fetch_precomputed_releases_by_name(names: Dict[str, Iterable[str]],
             for k, v in names.items()))
     df = await read_sql_query(query, pdb, prel)
     df[matched_by_column] = None
-    df.loc[df[prel.release_match.key].str.startswith("branch|"), matched_by_column] = \
+    df.loc[df[prel.release_match.name].str.startswith("branch|"), matched_by_column] = \
         ReleaseMatch.branch
-    df.loc[df[prel.release_match.key].str.startswith("tag|"), matched_by_column] = ReleaseMatch.tag
-    df.drop(PrecomputedRelease.release_match.key, inplace=True, axis=1)
+    df.loc[df[prel.release_match.name].str.startswith("tag|"), matched_by_column] = \
+        ReleaseMatch.tag
+    df.drop(PrecomputedRelease.release_match.name, inplace=True, axis=1)
     return df

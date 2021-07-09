@@ -21,7 +21,7 @@ async def validate_settings(body, response, sdb, exhaustive: bool):
     assert repos[0].startswith("github.com/")
     df = await read_sql_query(
         select([ReleaseSetting]), sdb, ReleaseSetting,
-        index=[ReleaseSetting.repository.key, ReleaseSetting.account_id.key])
+        index=[ReleaseSetting.repository.name, ReleaseSetting.account_id.name])
     if exhaustive:
         assert len(df) == len(repos)
     for r in repos:
@@ -70,7 +70,7 @@ async def test_set_release_match_different_accounts(client, headers, sdb, disabl
     await sdb.execute(insert(AccountGitHubAccount).values(
         AccountGitHubAccount(id=6366825, account_id=2).explode(with_primary_keys=True)))
     await sdb.execute(update(UserAccount).where(UserAccount.account_id == 2).values(
-        {UserAccount.is_admin.key: True}))
+        {UserAccount.is_admin.name: True}))
     body2 = {
         "repositories": ["github.com/src-d/go-git"],
         "account": 2,
@@ -389,10 +389,10 @@ async def test_set_jira_identities_smoke(client, headers, sdb, denys_id_mapping)
     assert len(ids) == 16
     rows = await sdb.fetch_all(select([MappedJIRAIdentity]))
     assert len(rows) == 1
-    assert rows[0][MappedJIRAIdentity.account_id.key] == 1
-    assert rows[0][MappedJIRAIdentity.github_user_id.key] == "MDQ6VXNlcjY3NjcyNA=="
-    assert rows[0][MappedJIRAIdentity.jira_user_id.key] == "5de5049e2c5dd20d0f9040c1"
-    assert rows[0][MappedJIRAIdentity.confidence.key] == 1
+    assert rows[0][MappedJIRAIdentity.account_id.name] == 1
+    assert rows[0][MappedJIRAIdentity.github_user_id.name] == 40294
+    assert rows[0][MappedJIRAIdentity.jira_user_id.name] == "5de5049e2c5dd20d0f9040c1"
+    assert rows[0][MappedJIRAIdentity.confidence.name] == 1
 
 
 async def test_set_jira_identities_reset_cache(client, headers, denys_id_mapping, client_cache):

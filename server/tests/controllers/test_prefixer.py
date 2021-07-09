@@ -36,6 +36,5 @@ async def test_prefixer_sequences(mdb):
     prefixer = await Prefixer.load((6366825,), mdb, None)
     assert prefixer.prefix_user_logins(["vmarkovtsev"]) == ["github.com/vmarkovtsev"]
     assert prefixer.prefix_repo_names(["src-d/go-git"]) == ["github.com/src-d/go-git"]
-    assert prefixer.resolve_user_nodes(["MDQ6VXNlcjI3OTM1NTE="]) == ["github.com/vmarkovtsev"]
-    assert prefixer.resolve_repo_nodes(["MDEwOlJlcG9zaXRvcnk0NDczOTA0NA=="]) == \
-           ["github.com/src-d/go-git"]
+    assert prefixer.resolve_user_nodes([40020]) == ["github.com/vmarkovtsev"]
+    assert prefixer.resolve_repo_nodes([40550]) == ["github.com/src-d/go-git"]

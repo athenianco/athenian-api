@@ -294,14 +294,14 @@ async def create_teams(account: int,
                                    .where(and_(Team.name == Team.BOTS,
                                                Team.owner_id == account)))
     if bot_team is not None:
-        return num_teams, bot_team[Team.members_count.key]
+        return num_teams, bot_team[Team.members_count.name]
     release_settings = await Settings.from_account(
         account, sdb, mdb, None, None).list_release_matches(repos)
     contributors = await mine_contributors(
         {r.split("/", 1)[1] for r in repos}, None, None, False, [],
         release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, None,
         force_fresh_releases=True)
-    if bots := {u[User.login.key] for u in contributors}.intersection(all_bots):
+    if bots := {u[User.login.name] for u in contributors}.intersection(all_bots):
         bots = (await prefixer.load()).prefix_user_logins(bots)
         await sdb.execute(insert(Team).values(
             Team(id=account, name=Team.BOTS, owner_id=account, members=sorted(bots))
@@ -315,8 +315,8 @@ async def sync_labels(log: logging.Logger, mdb: ParallelDatabase, pdb: ParallelD
     tasks = []
     all_prs = await mdb.fetch_all(select([NodePullRequest.id, NodePullRequest.acc_id]))
     log.info("There are %d PRs in mdb", len(all_prs))
-    all_node_ids = np.array([pr[0] for pr in all_prs], dtype="S")
-    all_accounts = np.array([pr[1] for pr in all_prs], dtype=np.uint32)
+    all_node_ids = np.fromiter((pr[0] for pr in all_prs), int, len(all_prs))
+    all_accounts = np.fromiter((pr[1] for pr in all_prs), np.uint32, len(all_prs))
     del all_prs
     order = np.argsort(all_node_ids)
     all_node_ids = all_node_ids[order]
@@ -326,7 +326,7 @@ async def sync_labels(log: logging.Logger, mdb: ParallelDatabase, pdb: ParallelD
         select([GitHubDonePullRequestFacts.pr_node_id, GitHubDonePullRequestFacts.labels]))
     all_merged = await pdb.fetch_all(
         select([GitHubMergedPullRequestFacts.pr_node_id, GitHubMergedPullRequestFacts.labels]))
-    unique_prs = np.unique(np.array([pr[0] for pr in chain(all_pr_times, all_merged)], dtype="S"))
+    unique_prs = np.unique(np.array([pr[0] for pr in chain(all_pr_times, all_merged)]))
     found_account_indexes = searchsorted_inrange(all_node_ids, unique_prs)
     found_mask = all_node_ids[found_account_indexes] == unique_prs
     unique_prs = unique_prs[found_mask]
@@ -350,7 +350,7 @@ async def sync_labels(log: logging.Logger, mdb: ParallelDatabase, pdb: ParallelD
     for acc_id, node_ids in zip(unique_acc_ids, node_id_by_acc_id):
         tasks.append(mdb.fetch_all(
             select([PullRequestLabel.pull_request_node_id, func.lower(PullRequestLabel.name)])
-            .where(and_(PullRequestLabel.pull_request_node_id.in_(node_ids.astype("U")),
+            .where(and_(PullRequestLabel.pull_request_node_id.in_(node_ids),
                         PullRequestLabel.acc_id == int(acc_id)))))
     del unique_acc_ids
     del node_id_by_acc_id

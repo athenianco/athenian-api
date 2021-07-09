@@ -119,7 +119,7 @@ async def _retrieve_and_insert_new_prs(
     for lpr in latest_prs:
         lpr = dict(lpr)
         filters.append(and_(
-            PullRequest.repository_node_id == lpr[PullRequest.repository_node_id.key],
+            PullRequest.repository_node_id == lpr[PullRequest.repository_node_id.name],
             PullRequest.number > lpr["latest_pull_request"]),
         )
 
@@ -263,7 +263,7 @@ async def _get_outdated_aggregation_prs(
             ]).where(
                 PullRequest.node_id.in_(prs_node_ids),
             ),
-            mdb, [PullRequest.node_id.key, "last_event_update_timestamp"],
+            mdb, [PullRequest.node_id.name, "last_event_update_timestamp"],
         )
 
     unfresh_prs, release_settings = await gather(

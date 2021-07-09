@@ -11,18 +11,18 @@ from athenian.api.models.state.models import AccountJiraInstallation, MappedJIRA
 
 @with_defer
 async def test_load_mapped_jira_users_cache(sdb, mdb, cache):
-    mapping = await load_mapped_jira_users(1, ["MDQ6VXNlcjI3OTM1NTE="], sdb, mdb, cache)
+    mapping = await load_mapped_jira_users(1, [40020], sdb, mdb, cache)
     assert mapping == {}
     await sdb.execute(insert(MappedJIRAIdentity).values(MappedJIRAIdentity(
         account_id=1,
-        github_user_id="MDQ6VXNlcjI3OTM1NTE=",
+        github_user_id=40020,
         jira_user_id="5de5049e2c5dd20d0f9040c1",
     ).create_defaults().explode(with_primary_keys=True)))
-    mapping = await load_mapped_jira_users(1, ["MDQ6VXNlcjI3OTM1NTE="], sdb, mdb, cache)
+    mapping = await load_mapped_jira_users(1, [40020], sdb, mdb, cache)
     assert mapping == {}
     await load_jira_identity_mapping_sentinel.reset_cache(1, cache)
-    mapping = await load_mapped_jira_users(1, ["MDQ6VXNlcjI3OTM1NTE="], sdb, mdb, cache)
-    assert mapping == {"MDQ6VXNlcjI3OTM1NTE=": "Vadim Markovtsev"}
+    mapping = await load_mapped_jira_users(1, [40020], sdb, mdb, cache)
+    assert mapping == {40020: "Vadim Markovtsev"}
 
 
 async def test_load_mapped_jira_users_empty(sdb, mdb):
@@ -33,11 +33,11 @@ async def test_load_mapped_jira_users_empty(sdb, mdb):
 async def test_load_mapped_jira_users_no_jira(sdb, mdb):
     await sdb.execute(insert(MappedJIRAIdentity).values(MappedJIRAIdentity(
         account_id=1,
-        github_user_id="MDQ6VXNlcjI3OTM1NTE=",
+        github_user_id=40020,
         jira_user_id="5de5049e2c5dd20d0f9040c1",
     ).create_defaults().explode(with_primary_keys=True)))
     await sdb.execute(delete(AccountJiraInstallation))
-    mapping = await load_mapped_jira_users(1, ["MDQ6VXNlcjI3OTM1NTE="], sdb, mdb, None)
+    mapping = await load_mapped_jira_users(1, [40020], sdb, mdb, None)
     assert mapping == {}
 
 
@@ -51,12 +51,12 @@ async def test_match_jira_identities_from_scratch(sdb, mdb, slack):
     github_users = set()
     jira_users = set()
     for row in stored:
-        if row[MappedJIRAIdentity.github_user_id.key] != "MDQ6VXNlcjc0NTM2Ng==":
-            assert row[MappedJIRAIdentity.confidence.key] == 1
+        if row[MappedJIRAIdentity.github_user_id.name] != 58:
+            assert row[MappedJIRAIdentity.confidence.name] == 1
         else:
-            assert row[MappedJIRAIdentity.confidence.key] == 0.75
-        github_users.add(row[MappedJIRAIdentity.github_user_id.key])
-        jira_users.add(row[MappedJIRAIdentity.jira_user_id.key])
+            assert row[MappedJIRAIdentity.confidence.name] == 0.75
+        github_users.add(row[MappedJIRAIdentity.github_user_id.name])
+        jira_users.add(row[MappedJIRAIdentity.jira_user_id.name])
     assert len(github_users) == len(jira_users) == matched
 
 
@@ -64,7 +64,7 @@ async def test_match_jira_identities_incremental(sdb, mdb, slack):
     await sdb.execute(insert(MappedJIRAIdentity).values(
         MappedJIRAIdentity(
             account_id=1,
-            github_user_id="MDQ6VXNlcjY3NjcyNA==",
+            github_user_id=40294,
             jira_user_id="5de4cff936b8050e29258600",
             confidence=1.0,
         ).create_defaults().explode(with_primary_keys=True),
@@ -77,11 +77,11 @@ async def test_match_jira_identities_incremental(sdb, mdb, slack):
 
 @pytest.mark.flaky(reruns=3)
 async def test_match_jira_identities_incomplete_progress(sdb, mdb, slack):
-    await mdb.execute(update(Progress).values({Progress.current.key: 1}))
+    await mdb.execute(update(Progress).values({Progress.current.name: 1}))
     try:
         assert (await match_jira_identities(1, (6366825,), sdb, mdb, slack, None)) is None
     finally:
-        await mdb.execute(update(Progress).values({Progress.current.key: 10}))
+        await mdb.execute(update(Progress).values({Progress.current.name: 10}))
 
 
 @pytest.mark.parametrize("orig, norm", [

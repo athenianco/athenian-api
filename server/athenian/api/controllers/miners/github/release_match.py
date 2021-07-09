@@ -48,7 +48,7 @@ async def load_commit_dags(releases: pd.DataFrame,
                            ) -> Dict[str, DAG]:
     """Produce the commit history DAGs which should contain the specified releases."""
     pdags = await fetch_precomputed_commit_history_dags(
-        releases[Release.repository_full_name.key].unique(), account, pdb, cache)
+        releases[Release.repository_full_name.name].unique(), account, pdb, cache)
     return await fetch_repository_commits(
         pdags, releases, RELEASE_FETCH_COMMITS_COLUMNS, False, account, meta_ids, mdb, pdb, cache)
 
@@ -94,7 +94,7 @@ class PullRequestToReleaseMapper:
         tasks = [
             load_branch_commit_dates(branches, meta_ids, mdb),
             MergedPRFactsLoader.load_merged_unreleased_pull_request_facts(
-                prs, nonemax(releases[Release.published_at.key].nonemax(), time_to),
+                prs, nonemax(releases[Release.published_at.name].nonemax(), time_to),
                 LabelFilter.empty(), matched_bys, default_branches, release_settings,
                 prefixer, account, pdb),
             DonePRFactsLoader.load_precomputed_pr_releases(
@@ -140,30 +140,30 @@ class PullRequestToReleaseMapper:
                                    ) -> pd.DataFrame:
         if prs.empty:
             return new_released_prs_df()
-        releases = dict(list(releases.groupby(Release.repository_full_name.key, sort=False)))
+        releases = dict(list(releases.groupby(Release.repository_full_name.name, sort=False)))
 
         released_prs = []
         log = logging.getLogger("%s.map_prs_to_releases" % metadata.__package__)
-        for repo, repo_prs in prs.groupby(PullRequest.repository_full_name.key, sort=False):
+        for repo, repo_prs in prs.groupby(PullRequest.repository_full_name.name, sort=False):
             try:
                 repo_releases = releases[repo]
             except KeyError:
                 # no releases exist for this repo
                 continue
             repo_prs = repo_prs.take(
-                np.where(~repo_prs[PullRequest.merge_commit_sha.key].isnull())[0])
+                np.where(~repo_prs[PullRequest.merge_commit_sha.name].isnull())[0])
             hashes, vertexes, edges = dags[repo]
             if len(hashes) == 0:
                 log.error("very suspicious: empty DAG for %s\n%s", repo, repo_releases.to_csv())
             ownership = mark_dag_access(
-                hashes, vertexes, edges, repo_releases[Release.sha.key].values.astype("S40"))
+                hashes, vertexes, edges, repo_releases[Release.sha.name].values.astype("S40"))
             unmatched = np.where(ownership == len(repo_releases))[0]
             if len(unmatched) > 0:
                 hashes = np.delete(hashes, unmatched)
                 ownership = np.delete(ownership, unmatched)
             if len(hashes) == 0:
                 continue
-            merge_hashes = repo_prs[PullRequest.merge_commit_sha.key].values.astype("S40")
+            merge_hashes = repo_prs[PullRequest.merge_commit_sha.name].values.astype("S40")
             merges_found = searchsorted_inrange(hashes, merge_hashes)
             found_mask = hashes[merges_found] == merge_hashes
             found_releases = repo_releases[release_columns].take(
@@ -177,9 +177,9 @@ class PullRequestToReleaseMapper:
             released_prs = pd.concat(released_prs, copy=False)
         else:
             released_prs = new_released_prs_df()
-        released_prs[Release.published_at.key] = np.maximum(
-            released_prs[Release.published_at.key],
-            prs.loc[released_prs.index, PullRequest.merged_at.key])
+        released_prs[Release.published_at.name] = np.maximum(
+            released_prs[Release.published_at.name],
+            prs.loc[released_prs.index, PullRequest.merged_at.name])
         return postprocess_datetime(released_prs)
 
     @classmethod
@@ -189,7 +189,7 @@ class PullRequestToReleaseMapper:
         dead_prs = [
             (pr_id, None, None, None, None, None, repo, ReleaseMatch.force_push_drop)
             for repo, pr_id in zip(
-                prs[PullRequest.repository_full_name.key].take(dead_indexes).values,
+                prs[PullRequest.repository_full_name.name].take(dead_indexes).values,
                 prs.index.take(dead_indexes).values)
         ]
         return new_released_prs_df(dead_prs)
@@ -284,8 +284,8 @@ class ReleaseToPullRequestMapper:
         (matched_bys, releases, releases_in_time_range, release_settings), pdags = await gather(
             *tasks)
         # ensure that our DAGs contain all the mentioned releases
-        rpak = Release.published_at.key
-        rrfnk = Release.repository_full_name.key
+        rpak = Release.published_at.name
+        rrfnk = Release.repository_full_name.name
         dags = await fetch_repository_commits(
             pdags, releases, RELEASE_FETCH_COMMITS_COLUMNS, False, account, meta_ids,
             mdb, pdb, cache)
@@ -312,34 +312,34 @@ class ReleaseToPullRequestMapper:
                 updated_min, updated_max, pr_blacklist, pr_whitelist, meta_ids, mdb, cache)
         else:
             prs = pd.DataFrame(columns=[c.name for c in PullRequest.__table__.columns
-                                        if c.name != PullRequest.node_id.key])
-            prs.index = pd.Index([], name=PullRequest.node_id.key)
+                                        if c.name != PullRequest.node_id.name])
+            prs.index = pd.Index([], name=PullRequest.node_id.name)
         prs["dead"] = False
         return prs, releases_in_time_range, matched_bys, dags
 
     @classmethod
     @sentry_span
-    async def _find_releases_for_matching_prs(cls,
-                                              repos: Iterable[str],
-                                              branches: pd.DataFrame,
-                                              default_branches: Dict[str, str],
-                                              time_from: datetime,
-                                              time_to: datetime,
-                                              until_today: bool,
-                                              release_settings: ReleaseSettings,
-                                              prefixer: PrefixerPromise,
-                                              account: int,
-                                              meta_ids: Tuple[int, ...],
-                                              mdb: databases.Database,
-                                              pdb: databases.Database,
-                                              rdb: databases.Database,
-                                              cache: Optional[aiomcache.Client],
-                                              releases_in_time_range: Optional[
-                                                  pd.DataFrame] = None,
-                                              ) -> Tuple[Dict[str, ReleaseMatch],
-                                                         pd.DataFrame,
-                                                         pd.DataFrame,
-                                                         ReleaseSettings]:
+    async def _find_releases_for_matching_prs(
+            cls,
+            repos: Iterable[str],
+            branches: pd.DataFrame,
+            default_branches: Dict[str, str],
+            time_from: datetime,
+            time_to: datetime,
+            until_today: bool,
+            release_settings: ReleaseSettings,
+            prefixer: PrefixerPromise,
+            account: int,
+            meta_ids: Tuple[int, ...],
+            mdb: databases.Database,
+            pdb: databases.Database,
+            rdb: databases.Database,
+            cache: Optional[aiomcache.Client],
+            releases_in_time_range: Optional[pd.DataFrame] = None,
+    ) -> Tuple[Dict[str, ReleaseMatch],
+               pd.DataFrame,
+               pd.DataFrame,
+               ReleaseSettings]:
         """
         Load releases with sufficient history depth.
 
@@ -420,7 +420,7 @@ class ReleaseToPullRequestMapper:
         releases_old_branches = releases_old_branches[0]
         releases_old_tags = releases_old_tags[0]
         hard_repos = set(repos_matched_by_branch) - \
-            set(releases_old_branches[Release.repository_full_name.key].unique())
+            set(releases_old_branches[Release.repository_full_name.name].unique())
         if hard_repos:
             with sentry_sdk.start_span(op="_find_releases_for_matching_prs/hard_repos"):
                 repo_births = sorted((v, k) for k, v in repo_births.items() if k in hard_repos)
@@ -440,14 +440,14 @@ class ReleaseToPullRequestMapper:
                         consistent_release_settings, prefixer, account, meta_ids,
                         mdb, pdb, rdb, cache)
                     releases_old_branches = releases_old_branches.append(extra_releases)
-                    hard_repos -= set(extra_releases[Release.repository_full_name.key].unique())
+                    hard_repos -= set(extra_releases[Release.repository_full_name.name].unique())
                     del extra_releases
                     branch_lookbehind_time_from -= deeper_step
                     deeper_step *= 2
         releases = pd.concat([releases_today, releases_in_time_range,
                               releases_old_branches, releases_old_tags],
                              ignore_index=True, copy=False)
-        releases.sort_values(Release.published_at.key,
+        releases.sort_values(Release.published_at.name,
                              inplace=True, ascending=False, ignore_index=True)
         if not releases_today.empty:
             releases_in_time_range = pd.concat([releases_today, releases_in_time_range],
@@ -498,12 +498,12 @@ class ReleaseToPullRequestMapper:
             query = select([PullRequest]).where(and_(*filters))
         else:
             query = await generate_jira_prs_query(filters, jira, mdb, cache)
-        query = query.order_by(PullRequest.merge_commit_sha.key)
-        prs = await read_sql_query(query, mdb, PullRequest, index=PullRequest.node_id.key)
+        query = query.order_by(PullRequest.merge_commit_sha.name)
+        prs = await read_sql_query(query, mdb, PullRequest, index=PullRequest.node_id.name)
         if prs.empty:
             return prs
-        pr_commits = prs[PullRequest.merge_commit_sha.key].values.astype("S40")
-        pr_repos = prs[PullRequest.repository_full_name.key].values.astype("S")
+        pr_commits = prs[PullRequest.merge_commit_sha.name].values.astype("S40")
+        pr_repos = prs[PullRequest.repository_full_name.name].values.astype("S")
         indexes = np.searchsorted(commits, pr_commits)
         checked = np.nonzero(pr_repos == repos[indexes])[0]
         if len(checked) < len(prs):
@@ -538,11 +538,11 @@ class ReleaseToPullRequestMapper:
         if missing:
             computed = await mdb.fetch_all(
                 select([func.min(NodeRepository.name_with_owner)
-                        .label(PushCommit.repository_full_name.key),
+                        .label(PushCommit.repository_full_name.name),
                         func.min(NodeCommit.committed_date).label("min"),
                         NodeRepository.id])
                 .select_from(join(NodeCommit, NodeRepository,
-                                  and_(NodeCommit.repository == NodeRepository.id,
+                                  and_(NodeCommit.repository_id == NodeRepository.id,
                                        NodeCommit.acc_id == NodeRepository.acc_id)))
                 .where(and_(NodeRepository.name_with_owner.in_(missing),
                             NodeRepository.acc_id.in_(meta_ids)))
@@ -559,8 +559,8 @@ class ReleaseToPullRequestMapper:
                 ]
                 if mdb.url.dialect == "sqlite":
                     for v in values:
-                        v[GitHubRepository.first_commit.key] = \
-                            v[GitHubRepository.first_commit.key].replace(tzinfo=timezone.utc)
+                        v[GitHubRepository.first_commit.name] = \
+                            v[GitHubRepository.first_commit.name].replace(tzinfo=timezone.utc)
 
                 async def insert_repository():
                     async with pdb.connection() as pdb_conn:
@@ -587,15 +587,15 @@ class ReleaseToPullRequestMapper:
                                   dag: DAG,
                                   time_boundary: datetime,
                                   ) -> np.ndarray:
-        time_mask = releases[Release.published_at.key] >= time_boundary
+        time_mask = releases[Release.published_at.name] >= time_boundary
         new_releases = releases.take(np.where(time_mask)[0])
         assert not new_releases.empty, "you must check this before calling me"
         hashes, vertexes, edges = dag
         visited_hashes, _, _ = extract_subdag(
-            hashes, vertexes, edges, new_releases[Release.sha.key].values.astype("S40"))
+            hashes, vertexes, edges, new_releases[Release.sha.name].values.astype("S40"))
         # we need to traverse the DAG from *all* the previous releases because of release branches
         if not time_mask.all():
-            boundary_release_hashes = releases[Release.sha.key].values[~time_mask].astype("S40")
+            boundary_release_hashes = releases[Release.sha.name].values[~time_mask].astype("S40")
         else:
             boundary_release_hashes = []
         if len(boundary_release_hashes) == 0:

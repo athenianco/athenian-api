@@ -58,7 +58,7 @@ async def filter_epics(jira_ids: Tuple[int, List[str]],
 
         return (epics,
                 pd.DataFrame(columns=[
-                    Issue.priority_id.key, Issue.status_id.key, Issue.project_id.key]),
+                    Issue.priority_id.name, Issue.status_id.name, Issue.project_id.name]),
                 asyncio.create_task(noop()),
                 {})
     # discover the issues belonging to those epics
@@ -67,7 +67,7 @@ async def filter_epics(jira_ids: Tuple[int, List[str]],
         extra_columns.append(Issue.parent_id)
     children = await fetch_jira_issues(
         jira_ids, None, None, False, LabelFilter.empty(),
-        [], [], epics[Issue.key.key].values, [], [], [], False,
+        [], [], epics[Issue.key.name].values, [], [], [], False,
         default_branches, release_settings, account, meta_ids, mdb, pdb, cache,
         extra_columns=extra_columns)
     # plan to fetch the subtask counts, but not await it now
@@ -81,10 +81,10 @@ async def filter_epics(jira_ids: Tuple[int, List[str]],
         name="fetch JIRA subtask counts",
     )
     await asyncio.sleep(0)
-    empty_epic_ids_mask = children[Issue.epic_id.key].isnull()
-    children.loc[empty_epic_ids_mask, Issue.epic_id.key] = \
-        children[Issue.parent_id.key][empty_epic_ids_mask]
-    children_epic_ids = children[Issue.epic_id.key].values
+    empty_epic_ids_mask = children[Issue.epic_id.name].isnull()
+    children.loc[empty_epic_ids_mask, Issue.epic_id.name] = \
+        children[Issue.parent_id.name][empty_epic_ids_mask]
+    children_epic_ids = children[Issue.epic_id.name].values
     order = np.argsort(children_epic_ids)
     children_epic_ids = children_epic_ids[order]
     unique_children_epic_ids, counts = np.unique(children_epic_ids, return_counts=True)

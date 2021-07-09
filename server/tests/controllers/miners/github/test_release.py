@@ -41,7 +41,7 @@ from tests.controllers.test_filter_controller import force_push_dropped_go_git_p
 def generate_repo_settings(prs: pd.DataFrame) -> ReleaseSettings:
     return ReleaseSettings({
         "github.com/" + r: ReleaseMatchSetting(branches="", tags=".*", match=ReleaseMatch.tag)
-        for r in prs[PullRequest.repository_full_name.key]
+        for r in prs[PullRequest.repository_full_name.name]
     })
 
 
@@ -49,7 +49,7 @@ def generate_repo_settings(prs: pd.DataFrame) -> ReleaseSettings:
 async def test_map_prs_to_releases_cache(
         branches, default_branches, dag, mdb, pdb, rdb, cache, release_loader, prefixer_promise):
     prs = await read_sql_query(select([PullRequest]).where(PullRequest.number == 1126),
-                               mdb, PullRequest, index=PullRequest.node_id.key)
+                               mdb, PullRequest, index=PullRequest.node_id.name)
     prs["dead"] = False
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
     time_from = time_to - timedelta(days=5 * 365)
@@ -67,23 +67,23 @@ async def test_map_prs_to_releases_cache(
         assert len(facts) == 0
         assert len(cache.mem) > 0
         assert len(released_prs) == 1, str(i)
-        assert released_prs.iloc[0][Release.url.key] == tag
-        assert released_prs.iloc[0][Release.published_at.key] == \
+        assert released_prs.iloc[0][Release.url.name] == tag
+        assert released_prs.iloc[0][Release.published_at.name] == \
             pd.Timestamp("2019-06-18 22:57:34+0000", tzinfo=timezone.utc)
-        assert released_prs.iloc[0][Release.author.key] == "mcuadros"
+        assert released_prs.iloc[0][Release.author.name] == "mcuadros"
     released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
         prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
         prefixer_promise, 1, (6366825,), mdb, pdb, None)
     # the PR was merged and released in the past, we must detect that
     assert len(released_prs) == 1
-    assert released_prs.iloc[0][Release.url.key] == tag
+    assert released_prs.iloc[0][Release.url.name] == tag
 
 
 @with_defer
 async def test_map_prs_to_releases_pdb(branches, default_branches, dag, mdb, pdb, rdb,
                                        release_loader, prefixer_promise):
     prs = await read_sql_query(select([PullRequest]).where(PullRequest.number.in_((1126, 1180))),
-                               mdb, PullRequest, index=PullRequest.node_id.key)
+                               mdb, PullRequest, index=PullRequest.node_id.name)
     prs["dead"] = False
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
     time_from = time_to - timedelta(days=5 * 365)
@@ -101,8 +101,10 @@ async def test_map_prs_to_releases_pdb(branches, default_branches, dag, mdb, pdb
     try:
         prlt = PullRequestLabel.__table__
         if prlt.schema:
-            prlt.name = "%s.%s" % (prlt.schema, prlt.name)
-            prlt.schema = None
+            for table in (PullRequestLabel, NodeCommit):
+                table = table.__table__
+                table.name = "%s.%s" % (table.schema, table.name)
+                table.schema = None
         for table in (PullRequestLabel, NodeCommit):
             await dummy_mdb.execute(CreateTable(table.__table__))
         released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
@@ -111,7 +113,9 @@ async def test_map_prs_to_releases_pdb(branches, default_branches, dag, mdb, pdb
         assert len(released_prs) == 1
     finally:
         if "." in prlt.name:
-            prlt.schema, prlt.name = prlt.name.split(".")
+            for table in (PullRequestLabel, NodeCommit):
+                table = table.__table__
+                table.schema, table.name = table.name.split(".")
         await dummy_mdb.disconnect()
 
 
@@ -119,7 +123,7 @@ async def test_map_prs_to_releases_pdb(branches, default_branches, dag, mdb, pdb
 async def test_map_prs_to_releases_empty(branches, default_branches, dag, mdb, pdb, rdb, cache,
                                          release_loader, prefixer_promise):
     prs = await read_sql_query(select([PullRequest]).where(PullRequest.number == 1231),
-                               mdb, PullRequest, index=PullRequest.node_id.key)
+                               mdb, PullRequest, index=PullRequest.node_id.name)
     prs["dead"] = False
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
     time_from = time_to - timedelta(days=5 * 365)
@@ -169,9 +173,9 @@ async def test_map_prs_to_releases_precomputed_released(
         None,
     )
     facts_miner = PullRequestFactsMiner(await bots(mdb))
-    true_prs = [pr for pr in miner if pr.release[Release.published_at.key] is not None]
+    true_prs = [pr for pr in miner if pr.release[Release.published_at.name] is not None]
     facts = [facts_miner(pr) for pr in true_prs]
-    prs = pd.DataFrame([pr.pr for pr in true_prs]).set_index(PullRequest.node_id.key)
+    prs = pd.DataFrame([pr.pr for pr in true_prs]).set_index(PullRequest.node_id.name)
     releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"], branches, default_branches, time_from, time_to,
         release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
@@ -179,11 +183,13 @@ async def test_map_prs_to_releases_precomputed_released(
     await pdb.execute(delete(GitHubCommitHistory))
     dummy_mdb = Database("sqlite://", force_rollback=True)
     await dummy_mdb.connect()
+    prlt = PullRequestLabel.__table__
     try:
-        prlt = PullRequestLabel.__table__
         if prlt.schema:
-            prlt.name = "%s.%s" % (prlt.schema, prlt.name)
-            prlt.schema = None
+            for table in (PullRequestLabel, NodeCommit):
+                table = table.__table__
+                table.name = "%s.%s" % (table.schema, table.name)
+                table.schema = None
         for table in (PullRequestLabel, NodeCommit):
             await dummy_mdb.execute(CreateTable(table.__table__))
 
@@ -196,7 +202,9 @@ async def test_map_prs_to_releases_precomputed_released(
         assert len(released_prs) == len(prs)
     finally:
         if "." in prlt.name:
-            prlt.schema, prlt.name = prlt.name.split(".")
+            for table in (PullRequestLabel, NodeCommit):
+                table = table.__table__
+                table.schema, table.name = table.name.split(".")
         await dummy_mdb.disconnect()
 
 
@@ -213,7 +221,7 @@ async def test_map_releases_to_prs_early_merges(
         release_match_setting_tag, None, None, None,
         prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
     assert len(prs) == 60
-    assert (prs[PullRequest.merged_at.key] >
+    assert (prs[PullRequest.merged_at.name] >
             datetime(year=2017, month=9, day=4, tzinfo=timezone.utc)).all()
     assert isinstance(dag, dict)
     dag = dag["src-d/go-git"]
@@ -242,12 +250,12 @@ async def test_map_releases_to_prs_smoke(
         await wait_deferred()
         assert len(prs) == 7
         assert len(dag["src-d/go-git"][0]) == 1508
-        assert (prs[PullRequest.merged_at.key] < pd.Timestamp(
+        assert (prs[PullRequest.merged_at.name] < pd.Timestamp(
             "2019-07-31 00:00:00", tzinfo=timezone.utc)).all()
-        assert (prs[PullRequest.merged_at.key] > pd.Timestamp(
+        assert (prs[PullRequest.merged_at.name] > pd.Timestamp(
             "2019-06-19 00:00:00", tzinfo=timezone.utc)).all()
         assert len(releases) == 2
-        assert set(releases[Release.sha.key]) == {
+        assert set(releases[Release.sha.name]) == {
             "0d1a009cbb604db18be960db5f1525b99a55d727",
             "6241d0e70427cb0db4ca00182717af88f638268c",
         }
@@ -268,9 +276,9 @@ async def test_map_releases_to_prs_no_truncate(
         prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None, truncate=False)
     assert len(prs) == 8
     assert len(releases) == 5 + 7
-    assert releases[Release.published_at.key].is_monotonic_decreasing
+    assert releases[Release.published_at.name].is_monotonic_decreasing
     assert releases.index.is_monotonic
-    assert "v4.13.1" in releases[Release.tag.key].values
+    assert "v4.13.1" in releases[Release.tag.name].values
 
 
 @with_defer
@@ -288,7 +296,7 @@ async def test_map_releases_to_prs_empty(
     assert prs.empty
     assert len(cache.mem) == 3
     assert len(releases) == 2
-    assert set(releases[Release.sha.key]) == {
+    assert set(releases[Release.sha.name]) == {
         "0d1a009cbb604db18be960db5f1525b99a55d727",
         "6241d0e70427cb0db4ca00182717af88f638268c",
     }
@@ -320,14 +328,14 @@ async def test_map_releases_to_prs_blacklist(
         [], [], JIRAFilter.empty(), release_match_setting_tag, None, None, None,
         prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache,
         pr_blacklist=PullRequest.node_id.notin_([
-            "MDExOlB1bGxSZXF1ZXN0Mjk3Mzk1Mzcz", "MDExOlB1bGxSZXF1ZXN0Mjk5NjA3MDM2",
-            "MDExOlB1bGxSZXF1ZXN0MzAxODQyNDg2", "MDExOlB1bGxSZXF1ZXN0Mjg2ODczMDAw",
-            "MDExOlB1bGxSZXF1ZXN0Mjk0NTUyNTM0", "MDExOlB1bGxSZXF1ZXN0MzAyMTMwODA3",
-            "MDExOlB1bGxSZXF1ZXN0MzAyMTI2ODgx",
+            163378, 163380,
+            163395, 163375,
+            163377, 163397,
+            163396,
         ]))
     assert prs.empty
     assert len(releases) == 2
-    assert set(releases[Release.sha.key]) == {
+    assert set(releases[Release.sha.name]) == {
         "0d1a009cbb604db18be960db5f1525b99a55d727",
         "6241d0e70427cb0db4ca00182717af88f638268c",
     }
@@ -350,7 +358,7 @@ async def test_map_releases_to_prs_authors_mergers(
         None, None, None, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
     assert len(prs) == n
     assert len(releases) == 2
-    assert set(releases[Release.sha.key]) == {
+    assert set(releases[Release.sha.name]) == {
         "0d1a009cbb604db18be960db5f1525b99a55d727",
         "6241d0e70427cb0db4ca00182717af88f638268c",
     }
@@ -371,7 +379,7 @@ async def test_map_releases_to_prs_hard(
         prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
     assert len(prs) == 24
     assert len(releases) == 1
-    assert set(releases[Release.sha.key]) == {
+    assert set(releases[Release.sha.name]) == {
         "f9a30199e7083bdda8adad3a4fa2ec42d25c1fdb",
     }
     assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
@@ -414,7 +422,7 @@ async def test_map_prs_to_releases_smoke_metrics(
         PullRequest.user_login.in_(["mcuadros", "vmarkovtsev"]),
     ]
     prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
-                               mdb, PullRequest, index=PullRequest.node_id.key)
+                               mdb, PullRequest, index=PullRequest.node_id.name)
     prs["dead"] = False
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
     time_from = time_to - timedelta(days=5 * 365)
@@ -425,7 +433,7 @@ async def test_map_prs_to_releases_smoke_metrics(
     released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
         prs, releases, matched_bys, branches, default_branches, time_to, dag, settings,
         prefixer_promise, 1, (6366825,), mdb, pdb, None)
-    assert set(released_prs[Release.url.key].unique()) == {
+    assert set(released_prs[Release.url.name].unique()) == {
         "https://github.com/src-d/go-git/releases/tag/v4.0.0-rc10",
         "https://github.com/src-d/go-git/releases/tag/v4.0.0-rc11",
         "https://github.com/src-d/go-git/releases/tag/v4.0.0-rc13",
@@ -448,16 +456,16 @@ async def test_map_prs_to_releases_smoke_metrics(
 
 def check_branch_releases(releases: pd.DataFrame, n: int, time_from: datetime, time_to: datetime):
     assert len(releases) == n
-    assert "mcuadros" in set(releases[Release.author.key])
-    assert len(releases[Release.commit_id.key].unique()) == n
-    assert releases[Release.node_id.key].all()
-    assert all(len(n) == 40 for n in releases[Release.name.key])
-    assert releases[Release.published_at.key].between(time_from, time_to).all()
-    assert (releases[Release.repository_full_name.key] == "src-d/go-git").all()
-    assert all(len(n) == 40 for n in releases[Release.sha.key])
-    assert len(releases[Release.sha.key].unique()) == n
-    assert (~releases[Release.tag.key].values.astype(bool)).all()
-    assert releases[Release.url.key].str.startswith("http").all()
+    assert "mcuadros" in set(releases[Release.author.name])
+    assert len(releases[Release.commit_id.name].unique()) == n
+    assert releases[Release.node_id.name].all()
+    assert all(len(n) == 40 for n in releases[Release.name.name])
+    assert releases[Release.published_at.name].between(time_from, time_to).all()
+    assert (releases[Release.repository_full_name.name] == "src-d/go-git").all()
+    assert all(len(n) == 40 for n in releases[Release.sha.name])
+    assert len(releases[Release.sha.name].unique()) == n
+    assert (~releases[Release.tag.name].values.astype(bool)).all()
+    assert releases[Release.url.name].str.startswith("http").all()
 
 
 @pytest.mark.parametrize("branches_", ["{{default}}", "master", "m.*"])
@@ -619,7 +627,7 @@ async def test_map_releases_to_prs_branches(
         prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
     assert prs.empty
     assert len(releases) == 1
-    assert releases[Release.sha.key][0] == "5d7303c49ac984a9fec60523f2d5297682e16646"
+    assert releases[Release.sha.name][0] == "5d7303c49ac984a9fec60523f2d5297682e16646"
     assert matched_bys == {"src-d/go-git": ReleaseMatch.branch}
 
 
@@ -659,7 +667,7 @@ async def test_load_releases_empty(
         pdb,
         rdb,
         None,
-        index=Release.node_id.key)
+        index=Release.node_id.name)
     assert releases.empty
     if repos:
         assert matched_bys == {"src-d/gitbase": ReleaseMatch.branch}
@@ -706,10 +714,10 @@ async def test_load_releases_events_settings(
         branches, default_branches, mdb, pdb, rdb, release_loader, prefixer_promise):
     await rdb.execute(insert(ReleaseNotification).values(ReleaseNotification(
         account_id=1,
-        repository_node_id="MDEwOlJlcG9zaXRvcnk0NDczOTA0NA==",
+        repository_node_id=40550,
         commit_hash_prefix="8d20cc5",
         name="Pushed!",
-        author_node_id="MDQ6VXNlcjI3OTM1NTE=",
+        author_node_id=40020,
         url="www",
         published_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
     ).create_defaults().explode(with_primary_keys=True)))
@@ -727,7 +735,7 @@ async def test_load_releases_events_settings(
         pdb,
         rdb,
         None,
-        index=Release.node_id.key)
+        index=Release.node_id.name)
     await wait_deferred()
     assert len(releases) == 7
     assert (releases[matched_by_column] == ReleaseMatch.tag).all()
@@ -745,43 +753,44 @@ async def test_load_releases_events_settings(
         pdb,
         rdb,
         None,
-        index=Release.node_id.key)
+        index=Release.node_id.name)
     await wait_deferred()
     assert matched_bys == {"src-d/go-git": ReleaseMatch.event}
     assert (releases[matched_by_column] == ReleaseMatch.event).all()
     assert len(releases) == 1
     assert releases.iloc[0].to_dict() == {
-        Release.repository_full_name.key: "src-d/go-git",
-        Release.repository_node_id.key: "MDEwOlJlcG9zaXRvcnk0NDczOTA0NA==",
-        Release.author.key: "vmarkovtsev",
-        Release.author_node_id.key: "MDQ6VXNlcjI3OTM1NTE=",
-        Release.name.key: "Pushed!",
-        Release.published_at.key: pd.Timestamp("2020-01-01 00:00:00", tzinfo=timezone.utc),
-        Release.tag.key: None,
-        Release.url.key: "www",
-        Release.sha.key: "8d20cc5916edf7cfa6a9c5ed069f0640dc823c12",
-        Release.commit_id.key: "MDY6Q29tbWl0NDQ3MzkwNDQ6OGQyMGNjNTkxNmVkZjdjZmE2YTljNWVkMDY5ZjA2NDBkYzgyM2MxMg==",  # noqa
+        Release.repository_full_name.name: "src-d/go-git",
+        Release.repository_node_id.name: 40550,
+        Release.author.name: "vmarkovtsev",
+        Release.author_node_id.name: 40020,
+        Release.name.name: "Pushed!",
+        Release.published_at.name: pd.Timestamp("2020-01-01 00:00:00", tzinfo=timezone.utc),
+        Release.tag.name: None,
+        Release.url.name: "www",
+        Release.sha.name: "8d20cc5916edf7cfa6a9c5ed069f0640dc823c12",
+        Release.commit_id.name: 2756775,  # noqa
         matched_by_column: ReleaseMatch.event,
-        Release.node_id.key: "MDY6Q29tbWl0NDQ3MzkwNDQ6OGQyMGNjNTkxNmVkZjdjZmE2YTljNWVkMDY5ZjA2NDBkYzgyM2MxMg==",  # noqa
+        Release.node_id.name: 2756775,  # noqa
     }
     rows = await rdb.fetch_all(select([ReleaseNotification]))
     assert len(rows) == 1
     values = dict(rows[0])
-    assert values[ReleaseNotification.updated_at.key] > values[ReleaseNotification.created_at.key]
-    del values[ReleaseNotification.updated_at.key]
-    del values[ReleaseNotification.created_at.key]
+    assert \
+        values[ReleaseNotification.updated_at.name] > values[ReleaseNotification.created_at.name]
+    del values[ReleaseNotification.updated_at.name]
+    del values[ReleaseNotification.created_at.name]
     if rdb.url.dialect == "sqlite":
         tzinfo = None
     else:
         tzinfo = timezone.utc
     assert values == {
         "account_id": 1,
-        "repository_node_id": "MDEwOlJlcG9zaXRvcnk0NDczOTA0NA==",
+        "repository_node_id": 40550,
         "commit_hash_prefix": "8d20cc5",
         "resolved_commit_hash": "8d20cc5916edf7cfa6a9c5ed069f0640dc823c12",
-        "resolved_commit_node_id": "MDY6Q29tbWl0NDQ3MzkwNDQ6OGQyMGNjNTkxNmVkZjdjZmE2YTljNWVkMDY5ZjA2NDBkYzgyM2MxMg==",  # noqa
+        "resolved_commit_node_id": 2756775,  # noqa
         "name": "Pushed!",
-        "author_node_id": "MDQ6VXNlcjI3OTM1NTE=",
+        "author_node_id": 40020,
         "url": "www",
         "published_at": datetime(2020, 1, 1, tzinfo=tzinfo),
         "cloned": False,
@@ -793,10 +802,10 @@ async def test_load_releases_events_unresolved(
         branches, default_branches, mdb, pdb, rdb, release_loader, prefixer_promise):
     await rdb.execute(insert(ReleaseNotification).values(ReleaseNotification(
         account_id=1,
-        repository_node_id="MDEwOlJlcG9zaXRvcnk0NDczOTA0NA==",
+        repository_node_id=40550,
         commit_hash_prefix="whatever",
         name="Pushed!",
-        author_node_id="MDQ6VXNlcjI3OTM1NTE=",
+        author_node_id=40020,
         url="www",
         published_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
     ).create_defaults().explode(with_primary_keys=True)))
@@ -814,7 +823,7 @@ async def test_load_releases_events_unresolved(
         pdb,
         rdb,
         None,
-        index=Release.node_id.key)
+        index=Release.node_id.name)
     assert releases.empty
     assert matched_bys == {"src-d/go-git": ReleaseMatch.event}
 
@@ -826,11 +835,11 @@ async def test__fetch_repository_commits_smoke(mdb, pdb, prune):
         {"src-d/go-git": _empty_dag()},
         pd.DataFrame([
             ("d2a38b4a5965d529566566640519d03d2bd10f6c",
-             "MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",
+             2757677,
              525,
              "src-d/go-git"),
             ("31eae7b619d166c366bf5df4991f04ba8cebea0a",
-             "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ==",
+             2755667,
              611,
              "src-d/go-git")],
             columns=["1", "2", "3", "4"],
@@ -861,11 +870,11 @@ async def test__fetch_repository_commits_smoke(mdb, pdb, prune):
         dags,
         pd.DataFrame([
             ("d2a38b4a5965d529566566640519d03d2bd10f6c",
-             "MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",
+             2757677,
              525,
              "src-d/go-git"),
             ("31eae7b619d166c366bf5df4991f04ba8cebea0a",
-             "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ==",
+             2755667,
              611,
              "src-d/go-git")],
             columns=["1", "2", "3", "4"],
@@ -878,11 +887,11 @@ async def test__fetch_repository_commits_smoke(mdb, pdb, prune):
             dags,
             pd.DataFrame([
                 ("1353ccd6944ab41082099b79979ded3223db98ec",
-                 "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ==",  # noqa
+                 2755667,  # noqa
                  525,
                  "src-d/go-git"),
                 ("31eae7b619d166c366bf5df4991f04ba8cebea0a",
-                 "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ==",  # noqa
+                 2755667,  # noqa
                  611,
                  "src-d/go-git")],
                 columns=["1", "2", "3", "4"],
@@ -898,7 +907,7 @@ async def test__fetch_repository_commits_initial_commit(mdb, pdb, prune):
         {"src-d/go-git": _empty_dag()},
         pd.DataFrame([
             ("5d7303c49ac984a9fec60523f2d5297682e16646",
-             "MDY6Q29tbWl0NDQ3MzkwNDQ6NWQ3MzAzYzQ5YWM5ODRhOWZlYzYwNTIzZjJkNTI5NzY4MmUxNjY0Ng==",
+             2756216,
              525,
              "src-d/go-git")],
             columns=["1", "2", "3", "4"],
@@ -917,11 +926,11 @@ async def test__fetch_repository_commits_cache(mdb, pdb, cache):
         {"src-d/go-git": _empty_dag()},
         pd.DataFrame([
             ("d2a38b4a5965d529566566640519d03d2bd10f6c",
-             "MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",
+             2757677,
              525,
              "src-d/go-git"),
             ("31eae7b619d166c366bf5df4991f04ba8cebea0a",
-             "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ==",
+             2755667,
              611,
              "src-d/go-git")],
             columns=["1", "2", "3", "4"],
@@ -933,11 +942,11 @@ async def test__fetch_repository_commits_cache(mdb, pdb, cache):
         {"src-d/go-git": _empty_dag()},
         pd.DataFrame([
             ("d2a38b4a5965d529566566640519d03d2bd10f6c",
-             "MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",
+             2757677,
              525,
              "src-d/go-git"),
             ("31eae7b619d166c366bf5df4991f04ba8cebea0a",
-             "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ==",
+             2755667,
              611,
              "src-d/go-git")],
             columns=["1", "2", "3", "4"],
@@ -957,11 +966,11 @@ async def test__fetch_repository_commits_cache(mdb, pdb, cache):
             {"src-d/go-git": _empty_dag()},
             pd.DataFrame([
                 ("d2a38b4a5965d529566566640519d03d2bd10f6c",
-                 "MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",  # noqa
+                 2757677,  # noqa
                  525,
                  "src-d/go-git"),
                 ("31eae7b619d166c366bf5df4991f04ba8cebea0a",
-                 "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ==",  # noqa
+                 2755667,  # noqa
                  611,
                  "src-d/go-git")],
                 columns=["1", "2", "3", "4"],
@@ -976,11 +985,11 @@ async def test__fetch_repository_commits_many(mdb, pdb):
         {"src-d/go-git": _empty_dag()},
         pd.DataFrame([
             ("d2a38b4a5965d529566566640519d03d2bd10f6c",
-             "MDY6Q29tbWl0NDQ3MzkwNDQ6ZDJhMzhiNGE1OTY1ZDUyOTU2NjU2NjY0MDUxOWQwM2QyYmQxMGY2Yw==",
+             2757677,
              525,
              "src-d/go-git"),
             ("31eae7b619d166c366bf5df4991f04ba8cebea0a",
-             "MDY6Q29tbWl0NDQ3MzkwNDQ6MzFlYWU3YjYxOWQxNjZjMzY2YmY1ZGY0OTkxZjA0YmE4Y2ViZWEwYQ==",
+             2755667,
              611,
              "src-d/go-git")] * 50,
             columns=["1", "2", "3", "4"],
@@ -993,7 +1002,7 @@ async def test__fetch_repository_commits_many(mdb, pdb):
 @with_defer
 async def test__fetch_repository_commits_full(mdb, pdb, dag, cache, branch_miner):
     branches, _ = await branch_miner.extract_branches(dag, (6366825,), mdb, None)
-    commit_ids = branches[Branch.commit_id.key].values
+    commit_ids = branches[Branch.commit_id.name].values
     commit_dates = await mdb.fetch_all(select([NodeCommit.id, NodeCommit.committed_date])
                                        .where(NodeCommit.id.in_(commit_ids)))
     commit_dates = {r[0]: r[1] for r in commit_dates}
@@ -1001,14 +1010,14 @@ async def test__fetch_repository_commits_full(mdb, pdb, dag, cache, branch_miner
         commit_dates = {k: v.replace(tzinfo=timezone.utc) for k, v in commit_dates.items()}
     now = datetime.now(timezone.utc)
     branches[Branch.commit_date] = [commit_dates.get(commit_id, now) for commit_id in commit_ids]
-    cols = (Branch.commit_sha.key, Branch.commit_id.key, Branch.commit_date,
-            Branch.repository_full_name.key)
+    cols = (Branch.commit_sha.name, Branch.commit_id.name, Branch.commit_date,
+            Branch.repository_full_name.name)
     commits = await fetch_repository_commits(
         dag, branches, cols, False, 1, (6366825,), mdb, pdb, cache)
     await wait_deferred()
     assert len(commits) == 1
     assert len(commits["src-d/go-git"][0]) == 1919
-    branches = branches[branches[Branch.branch_name.key] == "master"]
+    branches = branches[branches[Branch.branch_name.name] == "master"]
     commits = await fetch_repository_commits(
         commits, branches, cols, False, 1, (6366825,), mdb, pdb, cache)
     await wait_deferred()
@@ -1025,12 +1034,12 @@ async def test__fetch_repository_commits_full(mdb, pdb, dag, cache, branch_miner
 async def test__find_dead_merged_prs_smoke(mdb):
     prs = await read_sql_query(
         select([PullRequest]).where(PullRequest.merged_at.isnot(None)),
-        mdb, PullRequest, index=PullRequest.node_id.key)
+        mdb, PullRequest, index=PullRequest.node_id.name)
     prs["dead"] = False
-    prs.loc[prs[PullRequest.number.key].isin(force_push_dropped_go_git_pr_numbers), "dead"] = True
+    prs.loc[prs[PullRequest.number.name].isin(force_push_dropped_go_git_pr_numbers), "dead"] = True
     dead_prs = await PullRequestToReleaseMapper._find_dead_merged_prs(prs)
     assert len(dead_prs) == len(force_push_dropped_go_git_pr_numbers)
-    assert dead_prs[Release.published_at.key].isnull().all()
+    assert dead_prs[Release.published_at.name].isnull().all()
     assert (dead_prs[matched_by_column] == ReleaseMatch.force_push_drop).all()
     dead_prs = await mdb.fetch_all(
         select([PullRequest.number]).where(PullRequest.node_id.in_(dead_prs.index)))
@@ -1160,7 +1169,7 @@ async def test__fetch_commit_history_dag_stops(mdb, dag):
     _, newhashes, newvertexes, newedges = await _fetch_commit_history_dag(
         subhashes, subvertexes, subedges,
         ["f6305131a06bd94ef39e444b60f773db75b054f6"],
-        ["MDY6Q29tbWl0NDQ3MzkwNDQ6MTdkYmQ4ODY2MTZmODJiZTJhNTljMGQwMmZkOTNkM2Q2OWYyMzkyYw=="],
+        [2755363],
         "src-d/go-git", (6366825,), mdb)
     assert (newhashes == hashes).all()
     assert (newvertexes == vertexes).all()
@@ -1188,8 +1197,8 @@ async def test_mark_dag_parents_smoke(
         rdb,
         None,
     )
-    release_hashes = releases[Release.sha.key].values.astype("S40")
-    release_dates = releases[Release.published_at.key].values
+    release_hashes = releases[Release.sha.name].values.astype("S40")
+    release_dates = releases[Release.published_at.name].values
     ownership = mark_dag_access(hashes, vertexes, edges, release_hashes)
     parents = mark_dag_parents(hashes, vertexes, edges, release_hashes, release_dates, ownership)
     assert (parents == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
@@ -1218,8 +1227,8 @@ async def test_mark_dag_parents_empty(
         rdb,
         None,
     )
-    release_hashes = releases[Release.sha.key].values
-    release_dates = releases[Release.published_at.key].values
+    release_hashes = releases[Release.sha.name].values
+    release_dates = releases[Release.published_at.name].values
     hashes = np.array([], dtype="S40")
     vertexes = np.array([0], dtype=np.uint32)
     edges = np.array([], dtype=np.uint32)
@@ -1240,16 +1249,16 @@ async def test_mine_releases_full_span(mdb, pdb, rdb, release_match_setting_tag,
     assert len(avatars) == 124
     assert matched_bys == {"github.com/src-d/go-git": ReleaseMatch.tag}
     for details, facts in releases:
-        assert details[Release.name.key]
-        assert details[Release.url.key]
-        assert details[Release.repository_full_name.key] == "github.com/src-d/go-git"
+        assert details[Release.name.name]
+        assert details[Release.url.name]
+        assert details[Release.repository_full_name.name] == "github.com/src-d/go-git"
         assert len(facts.commit_authors) > 0
         assert facts.age
         assert facts.publisher and facts.publisher.startswith("github.com/")
         assert facts.additions > 0
         assert facts.deletions > 0
         assert facts.commits_count > 0
-        assert len(facts["prs_" + PullRequest.number.key]) or \
+        assert len(facts["prs_" + PullRequest.number.name]) or \
             facts.published <= pd.Timestamp("2017-02-01 09:51:10")
         assert time_from < facts.published.item().replace(tzinfo=timezone.utc) < time_to
         assert facts.matched_by == ReleaseMatch.tag
@@ -1312,7 +1321,7 @@ async def test_mine_releases_precomputed_time_range(
     for _, f in releases:
         assert time_from <= f.published.item().replace(tzinfo=timezone.utc) < time_to
         for col in released_prs_columns:
-            assert len(f["prs_" + col.key]) > 0
+            assert len(f["prs_" + col.name]) > 0
         assert f.commits_count > 0
     assert len(releases) == 22
     assert len(avatars) == 93
@@ -1337,7 +1346,7 @@ async def test_mine_releases_precomputed_update(
         1, (6366825,), mdb, pdb, rdb, None)
     for _, f in releases:
         assert time_from <= f.published.item().replace(tzinfo=timezone.utc) < time_to
-        assert len(getattr(f, "prs_" + PullRequest.number.key)) > 0
+        assert len(getattr(f, "prs_" + PullRequest.number.name)) > 0
         assert f.commits_count > 0
     assert len(releases) == 22
     assert len(avatars) == 93
@@ -1448,8 +1457,8 @@ async def test_precomputed_releases_low_level(
         ["src-d/go-git"], branches, default_branches, time_from, time_to,
         settings, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
-    assert_array_equal(releases[Release.author.key].isnull().values,
-                       releases[Release.author_node_id.key].isnull().values)
+    assert_array_equal(releases[Release.author.name].isnull().values,
+                       releases[Release.author_node_id.name].isnull().values)
     if with_preloading_enabled:
         await pdb.cache.refresh()
     prels = await release_loader._fetch_precomputed_releases(
@@ -1613,13 +1622,13 @@ async def test_mine_releases_by_name(
     await wait_deferred()
     assert len(releases) == 2
     for _, facts in releases:
-        assert len(facts["prs_" + PullRequest.title.key]) == \
-               len(facts["prs_" + PullRequest.node_id.key])
-    releases_dict = {r[0][Release.name.key]: r for r in releases}
+        assert len(facts["prs_" + PullRequest.title.name]) == \
+               len(facts["prs_" + PullRequest.node_id.name])
+    releases_dict = {r[0][Release.name.name]: r for r in releases}
     assert releases_dict.keys() == names
     assert len(releases_dict["36c78b9d1b1eea682703fb1cbb0f4f3144354389"][1]
-               ["prs_" + PullRequest.number.key]) == 1
-    assert len(releases_dict["v4.0.0"][1]["prs_" + PullRequest.number.key]) == 62
+               ["prs_" + PullRequest.number.name]) == 1
+    assert len(releases_dict["v4.0.0"][1]["prs_" + PullRequest.number.name]) == 62
     releases2, _ = await mine_releases_by_name(
         {"src-d/go-git": names},
         release_match_setting_tag_or_branch, prefixer_promise,
@@ -1633,7 +1642,7 @@ https://athenianco.atlassian.net/browse/DEV-250
 async def test_map_prs_to_releases_miguel(
         mdb, pdb, rdb, release_match_setting_tag, cache, release_loader, prefixer_promise):
     miguel_pr = await read_sql_query(select([PullRequest]).where(PullRequest.number == 907),
-                                     mdb, PullRequest, index=PullRequest.node_id.key)
+                                     mdb, PullRequest, index=PullRequest.node_id.name)
     # https://github.com/src-d/go-git/pull/907
     assert len(miguel_pr) == 1
     time_from = datetime(2018, 1, 1, tzinfo=timezone.utc)

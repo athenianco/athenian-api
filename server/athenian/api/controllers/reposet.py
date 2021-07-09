@@ -90,7 +90,7 @@ async def fetch_reposet(
     rs = await sdb.fetch_one(select(columns).where(RepositorySet.id == id))
     if rs is None or len(rs) == 0:
         raise ResponseError(NotFoundError(detail="Repository set %d does not exist" % id))
-    account = rs[RepositorySet.owner_id.key]
+    account = rs[RepositorySet.owner_id.name]
     adm = await get_user_account_status(uid, account, sdb, cache)
     return RepositorySet(**rs), adm
 
@@ -120,7 +120,7 @@ async def resolve_repos(repositories: List[str],
     if not repositories:
         rss = await load_account_reposets(
             account, login, [RepositorySet.id], sdb, mdb, cache, slack)
-        repositories = ["{%d}" % rss[0][RepositorySet.id.key]]
+        repositories = ["{%d}" % rss[0][RepositorySet.id.name]]
     tasks = [get_metadata_account_ids(account, sdb, cache)] + [
         resolve_reposet(r, ".in[%d]" % i, uid, account, sdb, cache)
         for i, r in enumerate(repositories)]
@@ -237,10 +237,10 @@ async def _load_account_reposets(account: int,
                     raise_no_source_data()
             ar = AccountRepository
             updated_col = (ar.updated_at == func.max(ar.updated_at).over(
-                partition_by=ar.repo_node_id,
+                partition_by=ar.repo_graph_id,
             )).label("latest")
             window_query = (
-                select([ar.repo_node_id, ar.enabled, updated_col])
+                select([ar.repo_graph_id, ar.enabled, updated_col])
                 .where(ar.acc_id.in_(meta_ids))
             ).alias("w")
             if isinstance(sdb_conn.raw_connection, asyncpg.Connection):
@@ -248,10 +248,10 @@ async def _load_account_reposets(account: int,
             else:
                 and_func = func.max
             query = (
-                select([window_query.c.repo_node_id])
+                select([window_query.c.repo_graph_id])
                 .select_from(window_query)
                 .where(window_query.c.latest)
-                .group_by(window_query.c.repo_node_id)
+                .group_by(window_query.c.repo_graph_id)
                 .having(and_func(window_query.c.enabled))
             )
             repo_node_ids = await mdb_conn.fetch_all(query)

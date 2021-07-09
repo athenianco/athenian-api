@@ -381,7 +381,7 @@ class Auth0:
             if "X-Identity" in request.headers:
                 mapped_id = request.headers["X-Identity"]
             else:
-                mapped_id = god[God.mapped_id.key]
+                mapped_id = god[God.mapped_id.name]
             if mapped_id is not None:
                 request.uid = mapped_id
                 self.log.info("God mode: %s became %s", request.god_id, mapped_id)
@@ -461,8 +461,8 @@ class Auth0:
             select([UserToken]).where(UserToken.id == token_id))
         if token_obj is None:
             raise Unauthorized()
-        uid = token_obj[UserToken.user_id.key]
-        account = token_obj[UserToken.account_id.key]
+        uid = token_obj[UserToken.user_id.name]
+        account = token_obj[UserToken.account_id.name]
         return uid, account
 
 

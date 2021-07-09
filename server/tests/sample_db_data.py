@@ -98,28 +98,28 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
                             raise e from None
                 if table == "jira.issue":
                     kwargs["url"] = "https://athenianco.atlassian.net/browse/" + kwargs["key"]
-                if table == "github_node_repository":
+                if table == "github.node_repository":
                     kwargs["name"] = kwargs["name_with_owner"].split("/", 1)[1]
                 session.add(model(**kwargs))
                 if table == "github.api_pull_requests":
-                    session.add(NodePullRequest(id=kwargs["node_id"],
+                    session.add(NodePullRequest(graph_id=kwargs["node_id"],
                                                 acc_id=kwargs["acc_id"],
                                                 title=kwargs["title"],
-                                                author=kwargs["user_node_id"],
+                                                author_id=kwargs["user_node_id"],
                                                 merged=kwargs["merged"],
                                                 number=kwargs["number"],
                                                 repository=kwargs["repository_node_id"],
                                                 created_at=kwargs["created_at"],
                                                 closed_at=kwargs["closed_at"]))
                 elif table == "github.api_push_commits":
-                    session.add(NodeCommit(id=kwargs["node_id"],
+                    session.add(NodeCommit(graph_id=kwargs["node_id"],
                                            acc_id=kwargs["acc_id"],
                                            oid=kwargs["sha"],
                                            message=kwargs["message"],
-                                           repository=kwargs["repository_node_id"],
+                                           repository_id=kwargs["repository_node_id"],
                                            committed_date=kwargs["committed_date"],
-                                           committer_user=kwargs["committer_user"],
-                                           author_user=kwargs["author_user"],
+                                           committer_user_id=kwargs["committer_user_id"],
+                                           author_user_id=kwargs["author_user_id"],
                                            additions=kwargs["additions"],
                                            deletions=kwargs["deletions"],
                                            ))

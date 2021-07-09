@@ -74,7 +74,7 @@ def upgrade():
     session = Session(bind=op.get_bind())
     try:
         for obj in session.query(RepositorySet):
-            obj.touch(exclude={RepositorySet.items_checksum.key})
+            obj.touch(exclude={RepositorySet.items_checksum.name})
             session.flush()
         session.commit()
     except Exception as e:

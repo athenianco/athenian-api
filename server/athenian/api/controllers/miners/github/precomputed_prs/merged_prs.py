@@ -50,7 +50,7 @@ class MergedPRFactsLoader:
             pdb: databases.Database,
             time_from: Optional[datetime] = None,
             exclude_inactive: bool = False,
-    ) -> Dict[str, PullRequestFacts]:
+    ) -> Dict[int, PullRequestFacts]:
         """
         Load the mapping from PR node identifiers which we are sure are not released in one of \
         `releases` to the serialized facts.
@@ -74,7 +74,7 @@ class MergedPRFactsLoader:
                     ghmprf.author,
                     ghmprf.merger,
                     ]
-        default_version = ghmprf.__table__.columns[ghmprf.format_version.key].default.arg
+        default_version = ghmprf.__table__.columns[ghmprf.format_version.name].default.arg
         common_filters = [
             ghmprf.checked_until >= time_to,
             ghmprf.format_version == default_version,
@@ -86,14 +86,14 @@ class MergedPRFactsLoader:
             date_range = append_activity_days_filter(
                 time_from, time_to, selected, common_filters, ghmprf.activity_days, postgres)
         repos_by_match = defaultdict(list)
-        for repo in prs[PullRequest.repository_full_name.key].unique():
+        for repo in prs[PullRequest.repository_full_name.name].unique():
             if (release_match := extract_release_match(
                     repo, matched_bys, default_branches, release_settings)) is None:
                 # no new releases
                 continue
             repos_by_match[release_match].append(repo)
         queries = []
-        pr_repos = prs[PullRequest.repository_full_name.key].values.astype("S")
+        pr_repos = prs[PullRequest.repository_full_name.name].values.astype("S")
         pr_ids = prs.index.values
         for release_match, repos in repos_by_match.items():
             filters = [
@@ -117,11 +117,11 @@ class MergedPRFactsLoader:
         for row in rows:
             if exclude_inactive and not postgres:
                 activity_days = {datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-                                 for d in row[ghmprf.activity_days.key]}
+                                 for d in row[ghmprf.activity_days.name]}
                 if not activity_days.intersection(date_range):
                     continue
-            node_id = row[ghmprf.pr_node_id.key]
-            data = row[ghmprf.data.key]
+            node_id = row[ghmprf.pr_node_id.name]
+            data = row[ghmprf.data.name]
             if data is None:
                 # There are two known cases:
                 # 1. When we load all PRs without a blacklist (/filter/pull_requests) so some
@@ -131,23 +131,23 @@ class MergedPRFactsLoader:
                 log.warning("No precomputed facts for merged %s", node_id)
                 continue
             if labels and not labels_are_compatible(
-                    include_singles, include_multiples, labels.exclude, row[ghmprf.labels.key]):
+                    include_singles, include_multiples, labels.exclude, row[ghmprf.labels.name]):
                 continue
             facts[node_id] = PullRequestFacts(
                 data=data,
-                repository_full_name=row[ghmprf.repository_full_name.key],
-                author=user_node_map_get(row[ghmprf.author.key]),
-                merger=user_node_map_get(row[ghmprf.merger.key]))
+                repository_full_name=row[ghmprf.repository_full_name.name],
+                author=user_node_map_get(row[ghmprf.author.name]),
+                merger=user_node_map_get(row[ghmprf.merger.name]))
         return facts
 
     @classmethod
     @sentry_span
     async def load_merged_pull_request_facts_all(cls,
                                                  repos: Collection[str],
-                                                 pr_node_id_blacklist: Collection[str],
+                                                 pr_node_id_blacklist: Collection[int],
                                                  account: int,
                                                  pdb: databases.Database,
-                                                 ) -> Dict[str, PullRequestFacts]:
+                                                 ) -> Dict[int, PullRequestFacts]:
         """
         Load the precomputed merged PR facts through all the time.
 
@@ -161,7 +161,7 @@ class MergedPRFactsLoader:
             ghmprf.pr_node_id,
             ghmprf.data,
         ]
-        default_version = ghmprf.__table__.columns[ghmprf.format_version.key].default.arg
+        default_version = ghmprf.__table__.columns[ghmprf.format_version.name].default.arg
         filters = [
             ghmprf.pr_node_id.notin_(pr_node_id_blacklist),
             ghmprf.repository_full_name.in_(repos),
@@ -173,10 +173,10 @@ class MergedPRFactsLoader:
             rows = await pdb.fetch_all(query)
         facts = {}
         for row in rows:
-            if (node_id := row[ghmprf.pr_node_id.key]) in facts:
+            if (node_id := row[ghmprf.pr_node_id.name]) in facts:
                 # different release match settings, we don't care because the facts are the same
                 continue
-            data = row[ghmprf.data.key]
+            data = row[ghmprf.data.name]
             if data is None:
                 # There are two known cases:
                 # 1. When we load all PRs without a blacklist (/filter/pull_requests) so some
@@ -214,19 +214,20 @@ async def update_unreleased_prs(merged_prs: pd.DataFrame,
     values = []
     if not released_prs.empty:
         release_times = dict(zip(released_prs.index.values,
-                                 released_prs[Release.published_at.key] - timedelta(minutes=1)))
+                                 released_prs[Release.published_at.name] - timedelta(minutes=1)))
     else:
         release_times = {}
     with sentry_sdk.start_span(op="update_unreleased_prs/generate"):
-        for repo, repo_prs in merged_prs.groupby(PullRequest.repository_full_name.key, sort=False):
+        for repo, repo_prs in merged_prs.groupby(PullRequest.repository_full_name.name,
+                                                 sort=False):
             if (release_match := extract_release_match(
                     repo, matched_bys, default_branches, release_settings)) is None:
                 # no new releases
                 continue
             for node_id, merged_at, author, merger in zip(
-                    repo_prs.index.values, repo_prs[PullRequest.merged_at.key],
-                    repo_prs[PullRequest.user_node_id.key].values,
-                    repo_prs[PullRequest.merged_by.key].values):
+                    repo_prs.index.values, repo_prs[PullRequest.merged_at.name],
+                    repo_prs[PullRequest.user_node_id.name].values,
+                    repo_prs[PullRequest.merged_by_id.name].values):
                 try:
                     released_time = release_times[node_id]
                 except KeyError:
@@ -256,12 +257,12 @@ async def update_unreleased_prs(merged_prs: pd.DataFrame,
             sql = sql.on_conflict_do_update(
                 constraint=GitHubMergedPullRequestFacts.__table__.primary_key,
                 set_={
-                    GitHubMergedPullRequestFacts.checked_until.key: greatest(
+                    GitHubMergedPullRequestFacts.checked_until.name: greatest(
                         GitHubMergedPullRequestFacts.checked_until, sql.excluded.checked_until),
-                    GitHubMergedPullRequestFacts.labels.key:
+                    GitHubMergedPullRequestFacts.labels.name:
                         GitHubMergedPullRequestFacts.labels + sql.excluded.labels,
-                    GitHubMergedPullRequestFacts.updated_at.key: sql.excluded.updated_at,
-                    GitHubMergedPullRequestFacts.data.key: GitHubMergedPullRequestFacts.data,
+                    GitHubMergedPullRequestFacts.updated_at.name: sql.excluded.updated_at,
+                    GitHubMergedPullRequestFacts.data.name: GitHubMergedPullRequestFacts.data,
                 },
             )
         else:
@@ -302,14 +303,14 @@ async def store_merged_unreleased_pull_request_facts(
     dt = datetime(2000, 1, 1, tzinfo=timezone.utc)
     for pr, facts in merged_prs_and_facts:
         assert facts.merged and not facts.released
-        repo = pr.pr[PullRequest.repository_full_name.key]
+        repo = pr.pr[PullRequest.repository_full_name.name]
         if (release_match := extract_release_match(
                 repo, matched_bys, default_branches, release_settings)) is None:
             # no new releases
             continue
         values.append(GitHubMergedPullRequestFacts(
             acc_id=account,
-            pr_node_id=pr.pr[PullRequest.node_id.key],
+            pr_node_id=pr.pr[PullRequest.node_id.name],
             release_match=release_match,
             data=facts.data,
             activity_days=collect_activity_days(pr, facts, not postgres),
@@ -317,8 +318,8 @@ async def store_merged_unreleased_pull_request_facts(
             repository_full_name="",
             checked_until=dt,
             merged_at=dt,
-            author="",
-            merger="",
+            author=None,
+            merger=None,
             labels={},
         ).create_defaults().explode(with_primary_keys=True))
     await unreleased_prs_event.wait()
@@ -328,8 +329,8 @@ async def store_merged_unreleased_pull_request_facts(
         sql = sql.on_conflict_do_update(
             constraint=ghmprf.__table__.primary_key,
             set_={
-                ghmprf.data.key: sql.excluded.data,
-                ghmprf.activity_days.key: sql.excluded.activity_days,
+                ghmprf.data.name: sql.excluded.data,
+                ghmprf.activity_days.name: sql.excluded.activity_days,
             },
         )
         with sentry_sdk.start_span(op="store_merged_unreleased_pull_request_facts/execute"):
@@ -343,11 +344,11 @@ async def store_merged_unreleased_pull_request_facts(
     else:
         tasks = [
             pdb.execute(update(ghmprf).where(and_(
-                ghmprf.pr_node_id == v[ghmprf.pr_node_id.key],
-                ghmprf.release_match == v[ghmprf.release_match.key],
-                ghmprf.format_version == v[ghmprf.format_version.key],
-            )).values({ghmprf.data: v[ghmprf.data.key],
-                       ghmprf.activity_days: v[ghmprf.activity_days.key],
+                ghmprf.pr_node_id == v[ghmprf.pr_node_id.name],
+                ghmprf.release_match == v[ghmprf.release_match.name],
+                ghmprf.format_version == v[ghmprf.format_version.name],
+            )).values({ghmprf.data: v[ghmprf.data.name],
+                       ghmprf.activity_days: v[ghmprf.activity_days.name],
                        ghmprf.updated_at: datetime.now(timezone.utc)})) for v in values
         ]
         await gather(*tasks)
@@ -426,7 +427,7 @@ async def discover_inactive_merged_unreleased_prs(time_from: datetime,
         # we do not care about the exact release match
         if labels and not postgres and not labels_are_compatible(
                 include_singles, include_multiples, labels.exclude,
-                row[GitHubMergedPullRequestFacts.labels.key]):
+                row[GitHubMergedPullRequestFacts.labels.name]):
             continue
         node_ids.append(row[0])
         repos.append(row[1])

@@ -1,13 +1,18 @@
 from datetime import timezone
 from functools import lru_cache, wraps
+from typing import List, Optional
 
+import numpy as np
 from pandas import Series, set_option
 from pandas.core import algorithms
 from pandas.core.arrays import DatetimeArray, datetimes
 from pandas.core.arrays.datetimelike import DatetimeLikeArrayMixin
 from pandas.core.base import IndexOpsMixin
 from pandas.core.dtypes import common
+from pandas.core.dtypes.cast import maybe_cast_to_datetime
 from pandas.core.dtypes.dtypes import DatetimeTZDtype
+import pandas.core.internals.construction
+from pandas.core.internals.construction import DtypeObj, lib, Scalar
 
 
 def nan_to_none_return(func):
@@ -25,6 +30,23 @@ def nan_to_none_return(func):
 def patch_pandas():
     """Patch pandas internals to increase performance on small DataFrame-s."""
     set_option("mode.chained_assignment", "raise")
+    obj_dtype = np.dtype("O")
+
+    def _convert_object_array(
+            content: List[Scalar], coerce_float: bool = False, dtype: Optional[DtypeObj] = None,
+    ) -> List[Scalar]:
+        # safe=True avoids converting nullable integers to floats
+        def convert(arr):
+            if dtype != obj_dtype:
+                arr = lib.maybe_convert_objects(arr, try_float=coerce_float, safe=True)
+                arr = maybe_cast_to_datetime(arr, dtype)
+            return arr
+
+        arrays = [convert(arr) for arr in content]
+
+        return arrays
+
+    pandas.core.internals.construction._convert_object_array = _convert_object_array
     IndexOpsMixin.nonemin = nan_to_none_return(IndexOpsMixin.min)
     IndexOpsMixin.nonemax = nan_to_none_return(IndexOpsMixin.max)
 

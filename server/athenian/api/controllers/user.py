@@ -40,14 +40,14 @@ async def load_user_accounts(uid: str,
         is_sqlite = isinstance(sdb.raw_connection, aiosqlite.Connection)
     now = datetime.now(None if is_sqlite else timezone.utc)
     tasks = [
-        get_jira_installation_or_none(x[UserAccount.account_id.key], sdb, mdb, cache)
+        get_jira_installation_or_none(x[UserAccount.account_id.name], sdb, mdb, cache)
         for x in accounts
     ] + [
-        get_metadata_account_ids_or_empty(x[UserAccount.account_id.key], sdb, cache)
+        get_metadata_account_ids_or_empty(x[UserAccount.account_id.name], sdb, cache)
         for x in accounts
     ] + [
         rdb.fetch_val(select([func.count(DeploymentNotification.name)])
-                      .where(DeploymentNotification.account_id == x[UserAccount.account_id.key]))
+                      .where(DeploymentNotification.account_id == x[UserAccount.account_id.name]))
         for x in accounts
     ]
     results = await gather(*tasks, op="account_ids")
@@ -76,9 +76,9 @@ async def load_user_accounts(uid: str,
     ]
     check_runs = await gather(*tasks, op="check_runs")
     return {
-        x[UserAccount.account_id.key]: AccountStatus(
-            is_admin=x[UserAccount.is_admin.key],
-            expired=x[Account.expires_at.key] < now,
+        x[UserAccount.account_id.name]: AccountStatus(
+            is_admin=x[UserAccount.is_admin.name],
+            expired=x[Account.expires_at.name] < now,
             has_jira=jira_id is not None,
             has_ci=check_run is not None,
             has_deployments=deployments_count > 0,

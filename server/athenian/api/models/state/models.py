@@ -254,6 +254,6 @@ class MappedJIRAIdentity(create_time_mixin(created_at=True, updated_at=True), Ba
     account_id = Column(Integer(),
                         ForeignKey("accounts.id", name="fk_jira_identity_mapping_account"),
                         primary_key=True)
-    github_user_id = Column(Text(), primary_key=True)
+    github_user_id = Column(BigInteger(), primary_key=True)
     jira_user_id = Column(Text())
     confidence = Column(Float())
