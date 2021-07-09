@@ -102,7 +102,9 @@ class MetricCalculator(Generic[T], ABC):
         assert len(groups_mask) > 0 or facts.empty
         if facts.empty:
             self._peek = np.empty((len(min_times), 0), object)
-            self._samples = np.empty((len(groups_mask), len(min_times), 0), self.dtype)
+            self._grouped_notnull = np.empty((len(groups_mask), len(min_times), 0), dtype=bool)
+            self._samples = np.empty(
+                (len(groups_mask), quantiles_mounted_at or len(min_times), 0), self.dtype)
             return
         assert groups_mask.shape[1] == len(facts)
         self._peek = peek = self._analyze(facts, min_times, max_times, **kwargs)
