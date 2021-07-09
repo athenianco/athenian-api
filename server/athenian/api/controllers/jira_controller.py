@@ -21,6 +21,7 @@ from athenian.api.cache import cached, short_term_exptime
 from athenian.api.controllers.account import get_account_repositories, get_metadata_account_ids
 from athenian.api.controllers.calculator_selector import get_quantile_stride_for_account
 from athenian.api.controllers.datetime_utils import split_to_time_intervals
+from athenian.api.controllers.features.entries import MetricEntriesCalculator
 from athenian.api.controllers.features.github.pull_request_filter import PullRequestListMiner, \
     unwrap_pull_requests
 from athenian.api.controllers.features.histogram import HistogramParameters, Scale
@@ -816,11 +817,13 @@ async def _collect_ids(account: int,
 async def _calc_jira_entry(request: AthenianWebRequest,
                            body: dict,
                            model: Union[Type[JIRAMetricsRequest], Type[JIRAHistogramsRequest]],
+                           align_quantile_stride: bool,
                            ) -> Tuple[Union[JIRAMetricsRequest, JIRAHistogramsRequest],
                                       List[List[datetime]],
                                       pd.DataFrame,
                                       timedelta,
-                                      LabelFilter]:
+                                      LabelFilter,
+                                      int]:
     try:
         filt = model.from_dict(body)
     except ValueError as e:
@@ -841,9 +844,14 @@ async def _calc_jira_entry(request: AthenianWebRequest,
     commenters = list(set(chain.from_iterable(
         ([p.lower() for p in (g.commenters or [])]) for g in (filt.with_ or []))))
     label_filter = LabelFilter.from_iterables(filt.labels_include, filt.labels_exclude)
+    if align_quantile_stride and (filt.quantiles or [0, 1]) != [0, 1]:
+        stride = await get_quantile_stride_for_account(request.account, request.sdb)
+    else:
+        stride = 100500
+    time_from, time_to = MetricEntriesCalculator.align_time_min_max(time_intervals, stride)
     issues = await fetch_jira_issues(
         jira_ids,
-        time_intervals[0][0], time_intervals[0][-1], filt.exclude_inactive,
+        time_from, time_to, filt.exclude_inactive,
         label_filter,
         [p.lower() for p in (filt.priorities or [])],
         {normalize_issue_type(p) for p in (filt.types or [])},
@@ -853,16 +861,14 @@ async def _calc_jira_entry(request: AthenianWebRequest,
         filt.account, meta_ids, request.mdb, request.pdb, request.cache,
         extra_columns=participant_columns if len(filt.with_ or []) > 1 else (),
     )
-    return filt, time_intervals, issues, tzoffset, label_filter
+    return filt, time_intervals, issues, tzoffset, label_filter, stride
 
 
 @weight(2.5)
 async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate metrics over JIRA issue activities."""
-    (filt, time_intervals, issues, tzoffset, label_filter), quantile_stride = await gather(
-        _calc_jira_entry(request, body, JIRAMetricsRequest),
-        get_quantile_stride_for_account(request.account, request.sdb),
-    )
+    filt, time_intervals, issues, tzoffset, label_filter, quantile_stride = \
+        await _calc_jira_entry(request, body, JIRAMetricsRequest, True)
     calc = JIRABinnedMetricCalculator(filt.metrics, filt.quantiles or [0, 1], quantile_stride)
     label_splitter = _IssuesLabelSplitter(filt.group_by_jira_label, label_filter)
     groupers = partial(_split_issues_by_with, filt.with_), label_splitter
@@ -972,8 +978,8 @@ class _IssuesLabelSplitter:
 @weight(1.5)
 async def calc_histogram_jira(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate histograms over JIRA issue activities."""
-    filt, time_intervals, issues, _, _ = await _calc_jira_entry(
-        request, body, JIRAHistogramsRequest)
+    filt, time_intervals, issues, _, _, _ = await _calc_jira_entry(
+        request, body, JIRAHistogramsRequest, False)
     defs = defaultdict(list)
     for h in (filt.histograms or []):
         defs[HistogramParameters(
