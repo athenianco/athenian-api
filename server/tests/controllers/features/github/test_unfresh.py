@@ -7,14 +7,14 @@ from athenian.api.defer import wait_deferred, with_defer
 
 @with_defer
 async def test_fetch_pull_request_facts_unfresh_smoke(
-        metrics_calculator_factory, release_match_setting_tag, mdb, pdb, rdb):
+        metrics_calculator_factory, release_match_setting_tag, mdb, pdb, rdb, prefixer_promise):
     metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(2017, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
     facts_fresh = await metrics_calculator_no_cache.calc_pull_request_facts_github(
         time_from, time_to,
         {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
-        False, release_match_setting_tag, False, False,
+        False, release_match_setting_tag, prefixer_promise, False, False,
     )
     await wait_deferred()
     assert len(facts_fresh) == 230
@@ -26,7 +26,7 @@ async def test_fetch_pull_request_facts_unfresh_smoke(
         facts_unfresh = await metrics_calculator_no_cache.calc_pull_request_facts_github(
             time_from, time_to,
             {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
-            False, release_match_setting_tag, False, False,
+            False, release_match_setting_tag, prefixer_promise, False, False,
         )
         assert len(facts_unfresh) == 230
         for i, (fresh, unfresh) in enumerate(zip(sorted(facts_fresh), sorted(facts_unfresh))):
@@ -37,7 +37,7 @@ async def test_fetch_pull_request_facts_unfresh_smoke(
 
 @with_defer
 async def test_fetch_pull_request_facts_unfresh_labels(
-        metrics_calculator_factory, release_match_setting_tag, mdb, pdb, rdb):
+        metrics_calculator_factory, release_match_setting_tag, mdb, pdb, rdb, prefixer_promise):
     metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(2017, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
@@ -45,7 +45,7 @@ async def test_fetch_pull_request_facts_unfresh_labels(
     facts_fresh = await metrics_calculator_no_cache.calc_pull_request_facts_github(
         time_from, time_to,
         {"src-d/go-git"}, {}, label_filter, JIRAFilter.empty(),
-        False, release_match_setting_tag, False, False,
+        False, release_match_setting_tag, prefixer_promise, False, False,
     )
     await wait_deferred()
     assert len(facts_fresh) == 6
@@ -55,7 +55,7 @@ async def test_fetch_pull_request_facts_unfresh_labels(
         facts_unfresh = await metrics_calculator_no_cache.calc_pull_request_facts_github(
             time_from, time_to,
             {"src-d/go-git"}, {}, label_filter, JIRAFilter.empty(),
-            False, release_match_setting_tag, False, False,
+            False, release_match_setting_tag, prefixer_promise, False, False,
         )
         assert len(facts_unfresh) == 6
         for i, (fresh, unfresh) in enumerate(zip(sorted(facts_fresh), sorted(facts_unfresh))):
@@ -66,7 +66,7 @@ async def test_fetch_pull_request_facts_unfresh_labels(
 
 @with_defer
 async def test_fetch_pull_request_facts_unfresh_jira(
-        metrics_calculator_factory, release_match_setting_tag, mdb, pdb, rdb):
+        metrics_calculator_factory, release_match_setting_tag, mdb, pdb, rdb, prefixer_promise):
     metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(2017, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
@@ -74,7 +74,7 @@ async def test_fetch_pull_request_facts_unfresh_jira(
     facts_fresh = await metrics_calculator_no_cache.calc_pull_request_facts_github(
         time_from, time_to,
         {"src-d/go-git"}, {}, LabelFilter.empty(), jira_filter,
-        False, release_match_setting_tag, False, False,
+        False, release_match_setting_tag, prefixer_promise, False, False,
     )
     await wait_deferred()
     assert len(facts_fresh) == 36
@@ -84,7 +84,7 @@ async def test_fetch_pull_request_facts_unfresh_jira(
         facts_unfresh = await metrics_calculator_no_cache.calc_pull_request_facts_github(
             time_from, time_to,
             {"src-d/go-git"}, {}, LabelFilter.empty(), jira_filter,
-            False, release_match_setting_tag, False, False,
+            False, release_match_setting_tag, prefixer_promise, False, False,
         )
         assert len(facts_unfresh) == 36
         for i, (fresh, unfresh) in enumerate(zip(sorted(facts_fresh), sorted(facts_unfresh))):

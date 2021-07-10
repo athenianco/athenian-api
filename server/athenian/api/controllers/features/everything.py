@@ -55,7 +55,7 @@ async def mine_all_prs(repos: Collection[str],
     """Extract everything we know about pull requests."""
     ghdprf = GitHubDonePullRequestFacts
     done_facts, raw_done_rows = await DonePRFactsLoader.load_precomputed_done_facts_all(
-        repos, default_branches, settings, account, pdb,
+        repos, default_branches, settings, prefixer, account, pdb,
         extra=[ghdprf.release_url, ghdprf.release_node_id])
     merged_facts = await MergedPRFactsLoader.load_merged_pull_request_facts_all(
         repos, done_facts, account, pdb)
@@ -109,13 +109,13 @@ async def mine_all_developers(repos: Collection[str],
                               cache: Optional[aiomcache.Client]) -> Dict[str, pd.DataFrame]:
     """Extract everything we know about developers."""
     contributors = await mine_contributors(
-        repos, None, None, False, [], settings, account, meta_ids, mdb, pdb, rdb, cache)
+        repos, None, None, False, [], settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache)
     logins = [u[User.login.key] for u in contributors]
     mined_dfs, mapped_jira = await gather(
         mine_developer_activities(
             logins, repos, datetime(1970, 1, 1, tzinfo=timezone.utc), datetime.now(timezone.utc),
             set(DeveloperTopic), LabelFilter.empty(), JIRAFilter.empty(),
-            settings, account, meta_ids, mdb, pdb, rdb, cache),
+            settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache),
         load_mapped_jira_users(account, [u[User.node_id.key] for u in contributors],
                                sdb, mdb, cache),
     )

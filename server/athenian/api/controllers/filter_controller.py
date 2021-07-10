@@ -73,7 +73,7 @@ async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Re
         await Settings.from_request(request, filt.account).list_release_matches(repos)
     repos = [r.split("/", 1)[1] for r in repos]
     users = await mine_contributors(
-        repos, time_from, time_to, True, filt.as_ or [], release_settings,
+        repos, time_from, time_to, True, filt.as_ or [], release_settings, prefixer,
         filt.account, meta_ids, request.mdb, request.pdb, request.rdb, request.cache)
     mapped_jira = await load_mapped_jira_users(
         filt.account, [u[User.node_id.key] for u in users],
@@ -81,7 +81,7 @@ async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Re
     prefixer = await prefixer.load()
     model = [
         DeveloperSummary(
-            login=prefixer.user_node_map[u[User.node_id.key]],
+            login=prefixer.user_node_to_prefixed_login[u[User.node_id.key]],
             avatar=u[User.avatar_url.key],
             name=u[User.name.key],
             updates=DeveloperUpdates(**{
@@ -110,7 +110,7 @@ async def filter_repositories(request: AthenianWebRequest, body: dict) -> web.Re
         await Settings.from_request(request, filt.account).list_release_matches(repos)
     repos = [r.split("/", 1)[1] for r in repos]
     repos = await mine_repositories(
-        repos, time_from, time_to, filt.exclude_inactive, release_settings,
+        repos, time_from, time_to, filt.exclude_inactive, release_settings, prefixer,
         filt.account, meta_ids, request.mdb, request.pdb, request.cache)
     prefixer = await prefixer.load()
     repos = prefixer.prefix_repo_names(repos)
@@ -196,11 +196,11 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     time_from, time_to, repos, events, stages, participants, labels, jira, settings, prefixer, \
         meta_ids = await resolve_filter_prs_parameters(filt, request)
     updated_min, updated_max = _bake_updated_min_max(filt)
-    prs, prefixer = await gather(filter_pull_requests(
+    prs = await filter_pull_requests(
         events, stages, time_from, time_to, repos, participants, labels, jira,
         filt.exclude_inactive, settings, updated_min, updated_max,
-        filt.account, meta_ids, request.mdb, request.pdb, request.rdb, request.cache),
-        prefixer.load())
+        prefixer, filt.account, meta_ids, request.mdb, request.pdb, request.rdb, request.cache)
+    prefixer = await prefixer.load()  # no-op
     return await _build_github_prs_response(prs, prefixer, meta_ids, request.mdb, request.cache)
 
 
@@ -238,7 +238,7 @@ def web_pr_from_struct(pr: PullRequestListItem,
         pkweb = pk.name.lower()
         for pid in pids:
             try:
-                participants[prefixer.user_login_map[pid]].append(pkweb)
+                participants[prefixer.user_login_to_prefixed_login[pid]].append(pkweb)
             except KeyError:
                 log.error("Failed to resolve user %s", pid)
     props["participants"] = sorted(PullRequestParticipant(*p) for p in participants.items())
@@ -279,7 +279,7 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
     users = model.include.users
     utc = timezone.utc
     prefixer = await prefixer.load()
-    repo_name_map, user_login_map = prefixer.repo_name_map, prefixer.user_login_map
+    repo_name_map, user_login_map = prefixer.repo_name_map, prefixer.user_login_to_prefixed_login
     for author_login, committer_login, repository_full_name, sha, message, \
             additions, deletions, changed_files, author_name, author_email, authored_date, \
             committer_name, committer_email, committed_date, author_date, commit_date, \
@@ -477,12 +477,11 @@ async def get_prs(request: AthenianWebRequest, body: dict) -> web.Response:
         prs_by_repo.setdefault(p.repository, set()).update(p.numbers)
     settings, meta_ids, prs_by_repo = await _check_github_repos(
         request, body.account, prs_by_repo, ".prs")
-    prs, prefixer = await gather(
-        fetch_pull_requests(
-            prs_by_repo, settings, body.account, meta_ids,
-            request.mdb, request.pdb, request.rdb, request.cache),
-        Prefixer.load(meta_ids, request.mdb, request.cache),
-    )
+    prefixer = Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
+    prs = await fetch_pull_requests(
+        prs_by_repo, settings, prefixer, body.account, meta_ids,
+        request.mdb, request.pdb, request.rdb, request.cache)
+    prefixer = await prefixer.load()  # no-op
     return await _build_github_prs_response(prs, prefixer, meta_ids, request.mdb, request.cache)
 
 
@@ -535,7 +534,7 @@ async def _build_github_prs_response(prs: List[PullRequestListItem],
     users = set(chain.from_iterable(chain.from_iterable(pr.participants.values()) for pr in prs))
     avatars = await mine_user_avatars(users, False, meta_ids, mdb, cache)
     model = PullRequestSet(include=IncludedNativeUsers(users={
-        prefixer.user_login_map[login]: IncludedNativeUser(avatar=avatar)
+        prefixer.user_login_to_prefixed_login[login]: IncludedNativeUser(avatar=avatar)
         for login, avatar in avatars
     }), data=web_prs)
     return model_response(model)

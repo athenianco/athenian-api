@@ -8,12 +8,11 @@ from dateutil.rrule import MONTHLY, rrule
 import numpy as np
 from numpy.lib.nanfunctions import _remove_nan_1d
 
-from athenian.api.cache import cached
+from athenian.api.cache import cached, short_term_exptime
 from athenian.api.controllers.features.github.check_run_metrics import \
     calculate_check_run_outcome_masks
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.check_run import mine_check_runs
-from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.types import CodeCheckRunListItem, CodeCheckRunListStats
 from athenian.api.db import DatabaseLike
 from athenian.api.models.metadata.github import CheckRun
@@ -22,7 +21,7 @@ from athenian.api.tracing import sentry_span
 
 @sentry_span
 @cached(
-    exptime=PullRequestMiner.CACHE_TTL,
+    exptime=short_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda time_from, time_to, repositories, pushers, labels, jira, quantiles, **_:

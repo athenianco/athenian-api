@@ -25,6 +25,7 @@ from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_C
     fetch_repository_commits
 from athenian.api.controllers.miners.github.dag_accelerated import extract_first_parents
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
+from athenian.api.controllers.prefixer import PrefixerPromise
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
     ReleaseMatchSetting, ReleaseSettings
 from athenian.api.db import add_pdb_hits, add_pdb_misses, greatest, least
@@ -54,6 +55,7 @@ class ReleaseLoader:
                             time_from: datetime,
                             time_to: datetime,
                             settings: ReleaseSettings,
+                            prefixer: PrefixerPromise,
                             account: int,
                             meta_ids: Tuple[int, ...],
                             mdb: databases.Database,
@@ -96,7 +98,7 @@ class ReleaseLoader:
                 match_groups,
                 time_from - tag_by_branch_probe_lookaround,
                 time_to + tag_by_branch_probe_lookaround,
-                account, pdb, index=index),
+                prefixer, account, pdb, index=index),
             cls._fetch_release_events(event_repos, account, meta_ids, time_from, time_to, mdb,
                                       rdb),
         ]
@@ -341,6 +343,7 @@ class ReleaseLoader:
                                           match_groups: Dict[ReleaseMatch, Dict[str, List[str]]],
                                           time_from: datetime,
                                           time_to: datetime,
+                                          prefixer: PrefixerPromise,
                                           account: int,
                                           pdb: databases.Database,
                                           index: Optional[Union[str, Sequence[str]]] = None,
@@ -369,6 +372,9 @@ class ReleaseLoader:
             df.set_index(index, inplace=True)
         else:
             df.reset_index(drop=True, inplace=True)
+        df[Release.author_node_id.key] = df[Release.author.key]
+        user_node_to_login_get = (await prefixer.load()).user_node_to_login.get
+        df[Release.author.key] = [user_node_to_login_get(u) for u in df[Release.author.key].values]
         return df
 
     @classmethod
@@ -475,6 +481,7 @@ class ReleaseLoader:
             author = row[ReleaseNotification.author_node_id.key]
             releases.append({
                 Release.author.key: user_map.get(author, author),
+                Release.author_node_id.key: author,
                 Release.commit_id.key: commit_node_id,
                 Release.id.key: commit_node_id,
                 Release.name.key: row[ReleaseNotification.name.key],
@@ -570,7 +577,7 @@ class ReleaseLoader:
         columns = [Release.id.key,
                    Release.repository_full_name.key,
                    Release.repository_node_id.key,
-                   Release.author.key,
+                   Release.author_node_id.key,
                    Release.name.key,
                    Release.tag.key,
                    Release.url.key,
@@ -581,6 +588,8 @@ class ReleaseLoader:
         for row in zip(*(releases[c].values for c in columns[:-1]),
                        releases[Release.published_at.key]):
             obj = {columns[i]: v for i, v in enumerate(row)}
+            obj[Release.author.key] = obj[Release.author_node_id.key]
+            del obj[Release.author_node_id.key]
             obj[Release.acc_id.key] = account
             repo = row[1]
             if obj[matched_by_column] == ReleaseMatch.branch:
@@ -809,17 +818,20 @@ class ReleaseMatcher:
         first_shas = np.sort(np.concatenate(first_shas)).astype("U40")
         first_commits = await self._fetch_commits(first_shas, time_from, time_to)
         pseudo_releases = []
+        gh_merge = ((first_commits[PushCommit.committer_name.key] == "GitHub")
+                    & (first_commits[PushCommit.committer_email.key] == "noreply@github.com"))
+        first_commits[PushCommit.author_login.key].where(
+            gh_merge, first_commits.loc[~gh_merge, PushCommit.committer_login.key], inplace=True)
+        first_commits[PushCommit.author_user.key].where(
+            gh_merge, first_commits.loc[~gh_merge, PushCommit.committer_user.key], inplace=True)
         for repo in branches_matched:
             commits = first_commits.take(
-                np.where(first_commits[PushCommit.repository_full_name.key] == repo)[0])
+                np.flatnonzero(first_commits[PushCommit.repository_full_name.key].values == repo))
             if commits.empty:
                 continue
-            gh_merge = ((commits[PushCommit.committer_name.key] == "GitHub")
-                        & (commits[PushCommit.committer_email.key] == "noreply@github.com"))
-            commits[PushCommit.author_login.key].where(
-                gh_merge, commits.loc[~gh_merge, PushCommit.committer_login.key], inplace=True)
             pseudo_releases.append(pd.DataFrame({
                 Release.author.key: commits[PushCommit.author_login.key],
+                Release.author_node_id.key: commits[PushCommit.author_user.key],
                 Release.commit_id.key: commits[PushCommit.node_id.key],
                 Release.id.key: commits[PushCommit.node_id.key],
                 Release.name.key: commits[PushCommit.sha.key],

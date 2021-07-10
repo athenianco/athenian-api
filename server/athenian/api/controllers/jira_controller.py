@@ -9,7 +9,6 @@ from typing import Any, Collection, Dict, List, Mapping, Optional, Set, Tuple, T
 
 from aiohttp import web
 import aiomcache
-import databases
 import numpy as np
 import pandas as pd
 from sqlalchemy import and_, func, select, union_all
@@ -18,7 +17,7 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 from athenian.api import list_with_yield, metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.balancing import weight
-from athenian.api.cache import cached
+from athenian.api.cache import cached, short_term_exptime
 from athenian.api.controllers.account import get_account_repositories, get_metadata_account_ids
 from athenian.api.controllers.calculator_selector import get_quantile_stride_for_account
 from athenian.api.controllers.datetime_utils import split_to_time_intervals
@@ -39,6 +38,7 @@ from athenian.api.controllers.miners.jira.issue import fetch_jira_issues, ISSUE_
     ISSUE_PRS_BEGAN, ISSUE_PRS_COUNT, ISSUE_PRS_RELEASED, resolve_work_began_and_resolved
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import ReleaseSettings, Settings
+from athenian.api.db import ParallelDatabase
 from athenian.api.models.metadata.github import Branch, PullRequest
 from athenian.api.models.metadata.jira import AthenianIssue, Component, Issue, IssueType, \
     Priority, Status, User
@@ -125,7 +125,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
 
 @sentry_span
 @cached(
-    exptime=5 * 60,  # 5 min
+    exptime=short_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda return_, time_from, time_to, exclude_inactive, label_filter, priorities, reporters, assignees, commenters, default_branches, release_settings, **_: (  # noqa
@@ -158,8 +158,8 @@ async def _epic_flow(return_: Set[str],
                      release_settings: ReleaseSettings,
                      account: int,
                      meta_ids: Tuple[int, ...],
-                     mdb: databases.Database,
-                     pdb: databases.Database,
+                     mdb: ParallelDatabase,
+                     pdb: ParallelDatabase,
                      cache: Optional[aiomcache.Client],
                      ) -> Tuple[Optional[List[JIRAEpic]],
                                 Optional[List[JIRAPriority]],
@@ -345,7 +345,7 @@ async def _epic_flow(return_: Set[str],
 
 @sentry_span
 @cached(
-    exptime=5 * 60,  # 5 min
+    exptime=short_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda return_, time_from, time_to, exclude_inactive, label_filter, priorities, reporters, assignees, commenters, default_branches, release_settings, **_: (  # noqa
@@ -385,10 +385,10 @@ async def _issue_flow(return_: Set[str],
                       default_branches: Dict[str, str],
                       release_settings: ReleaseSettings,
                       meta_ids: Tuple[int, ...],
-                      sdb: databases.Database,
-                      mdb: databases.Database,
-                      pdb: databases.Database,
-                      rdb: databases.Database,
+                      sdb: ParallelDatabase,
+                      mdb: ParallelDatabase,
+                      pdb: ParallelDatabase,
+                      rdb: ParallelDatabase,
                       cache: Optional[aiomcache.Client],
                       ) -> Tuple[Optional[JIRAIssue],
                                  Optional[JIRALabel],
@@ -540,6 +540,7 @@ async def _issue_flow(return_: Set[str],
             return None
         if len(pr_ids) == 0:
             return {}
+        nonlocal prefixer
         tasks = [
             read_sql_query(
                 select([PullRequest]).where(and_(
@@ -548,7 +549,7 @@ async def _issue_flow(return_: Set[str],
                 )).order_by(PullRequest.node_id.key),
                 mdb, PullRequest, index=PullRequest.node_id.key),
             DonePRFactsLoader.load_precomputed_done_facts_ids(
-                pr_ids, default_branches, release_settings, account, pdb,
+                pr_ids, default_branches, release_settings, prefixer, account, pdb,
                 panic_on_missing_repositories=False),
         ]
         prs_df, (facts, ambiguous) = await gather(*tasks)
@@ -561,12 +562,11 @@ async def _issue_flow(return_: Set[str],
             prs_df[PullRequest.repository_full_name.key].unique().astype("S")))[0])
         mined_prs, dfs, facts, _ = await unwrap_pull_requests(
             prs_df, facts, ambiguous, False, related_branches, default_branches, release_settings,
-            account, meta_ids, mdb, pdb, rdb, cache)
+            prefixer, account, meta_ids, mdb, pdb, rdb, cache)
         miner = PullRequestListMiner(
             mined_prs, dfs, facts, set(), set(),
             datetime(1970, 1, 1, tzinfo=timezone.utc), datetime.now(timezone.utc), False)
         pr_list_items = await list_with_yield(miner, "PullRequestListMiner.__iter__")
-        nonlocal prefixer
         prefixer = await prefixer.load()
         if missing_repo_indexes := [i for i, pr in enumerate(pr_list_items)
                                     if pr.repository not in prefixer.repo_name_map]:
@@ -700,7 +700,7 @@ async def _issue_flow(return_: Set[str],
 async def _fetch_priorities(priorities: Collection[str],
                             acc_id: int,
                             return_: Set[str],
-                            mdb: databases.Database,
+                            mdb: ParallelDatabase,
                             ) -> Optional[List[JIRAPriority]]:
     if JIRAFilterReturn.PRIORITIES not in return_:
         return None
@@ -725,7 +725,7 @@ async def _fetch_statuses(statuses: Collection[str],
                           status_project_map: Dict[str, Set[str]],
                           acc_id: int,
                           return_: Set[str],
-                          mdb: databases.Database,
+                          mdb: ParallelDatabase,
                           ) -> Optional[List[JIRAStatus]]:
     if JIRAFilterReturn.STATUSES not in return_:
         return None
@@ -749,7 +749,7 @@ async def _fetch_statuses(statuses: Collection[str],
 async def _fetch_types(issue_type_projects: Mapping[str, Collection[str]],
                        acc_id: int,
                        return_: Set[str],
-                       mdb: databases.Database,
+                       mdb: ParallelDatabase,
                        columns: Optional[List[InstrumentedAttribute]] = None,
                        ) -> Optional[List[Mapping[str, Any]]]:
     if JIRAFilterReturn.ISSUE_TYPES not in return_ and \
@@ -789,8 +789,8 @@ def _nonzero(arr: np.ndarray) -> np.ndarray:
 
 async def _collect_ids(account: int,
                        request: AthenianWebRequest,
-                       sdb: databases.Database,
-                       mdb: databases.Database,
+                       sdb: ParallelDatabase,
+                       mdb: ParallelDatabase,
                        cache: Optional[aiomcache.Client],
                        ) -> Tuple[Tuple[int, ...],
                                   Tuple[int, List[str]],

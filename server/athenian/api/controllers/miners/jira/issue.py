@@ -16,7 +16,7 @@ from sqlalchemy.sql import ClauseElement
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
-from athenian.api.cache import cached
+from athenian.api.cache import cached, short_term_exptime
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.precomputed_prs import triage_by_release_match
 from athenian.api.controllers.miners.types import PullRequestFacts
@@ -165,7 +165,7 @@ ISSUE_PR_IDS = "pr_ids"
 
 @sentry_span
 @cached(
-    exptime=5 * 60,  # 5 minutes
+    exptime=short_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda installation_ids, time_from, time_to, exclude_inactive, labels, priorities, types, epics, reporters, assignees, commenters, **kwargs: (  # noqa

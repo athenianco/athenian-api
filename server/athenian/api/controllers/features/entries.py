@@ -15,7 +15,7 @@ import sentry_sdk
 
 from athenian.api import COROUTINE_YIELD_EVERY_ITER
 from athenian.api.async_utils import gather
-from athenian.api.cache import cached, cached_methods, CancelCache
+from athenian.api.cache import cached, cached_methods, CancelCache, short_term_exptime
 from athenian.api.controllers.datetime_utils import coarsen_time_interval
 from athenian.api.controllers.features.code import CodeStats
 from athenian.api.controllers.features.github.check_run_metrics import \
@@ -133,6 +133,7 @@ class MetricEntriesCalculator:
                                                     jira: JIRAFilter,
                                                     exclude_inactive: bool,
                                                     release_settings: ReleaseSettings,
+                                                    prefixer: PrefixerPromise,
                                                     fresh: bool,
                                                     ) -> np.ndarray:
         """
@@ -148,7 +149,7 @@ class MetricEntriesCalculator:
         time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
         mined_facts = await self.calc_pull_request_facts_github(
             time_from, time_to, all_repositories, all_participants, labels, jira, exclude_inactive,
-            release_settings, fresh, need_jira_mapping(metrics))
+            release_settings, prefixer, fresh, need_jira_mapping(metrics))
         df_facts = df_from_structs(mined_facts)
         lines_grouper = partial(group_by_lines, lines)
         repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.key, repositories)
@@ -187,6 +188,7 @@ class MetricEntriesCalculator:
                                                   jira: JIRAFilter,
                                                   exclude_inactive: bool,
                                                   release_settings: ReleaseSettings,
+                                                  prefixer: PrefixerPromise,
                                                   fresh: bool,
                                                   ) -> np.ndarray:
         """
@@ -202,7 +204,7 @@ class MetricEntriesCalculator:
             raise ValueError("Unsupported metric") from e
         mined_facts = await self.calc_pull_request_facts_github(
             time_from, time_to, all_repositories, all_participants, labels, jira,
-            exclude_inactive, release_settings,
+            exclude_inactive, release_settings, prefixer,
             fresh, False)
         df_facts = df_from_structs(mined_facts)
         lines_grouper = partial(group_by_lines, lines)
@@ -223,7 +225,7 @@ class MetricEntriesCalculator:
 
     @sentry_span
     @cached(
-        exptime=PullRequestMiner.CACHE_TTL,
+        exptime=short_term_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
         key=lambda prop, time_intervals, repos, with_author, with_committer, only_default_branch, **kwargs:  # noqa
@@ -259,7 +261,7 @@ class MetricEntriesCalculator:
 
     @sentry_span
     @cached(
-        exptime=PullRequestMiner.CACHE_TTL,
+        exptime=short_term_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
         key=lambda devs, repositories, time_intervals, topics, labels, jira, release_settings, **_:  # noqa
@@ -281,6 +283,7 @@ class MetricEntriesCalculator:
                                             labels: LabelFilter,
                                             jira: JIRAFilter,
                                             release_settings: ReleaseSettings,
+                                            prefixer: PrefixerPromise,
                                             ) -> Tuple[np.ndarray, List[DeveloperTopic]]:
         """
         Calculate the developer metrics on GitHub.
@@ -294,7 +297,7 @@ class MetricEntriesCalculator:
         time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
         mined_dfs = await mine_developer_activities(
             all_devs, all_repos, time_from, time_to, topics, labels, jira, release_settings,
-            self._account, self._meta_ids, self._mdb, self._pdb, self._rdb, self._cache)
+            prefixer, self._account, self._meta_ids, self._mdb, self._pdb, self._rdb, self._cache)
         topics_seq = []
         arrays = []
         repo_grouper = partial(group_by_repo, developer_repository_column, repositories)
@@ -314,7 +317,7 @@ class MetricEntriesCalculator:
 
     @sentry_span
     @cached(
-        exptime=PullRequestMiner.CACHE_TTL,
+        exptime=short_term_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
         key=lambda metrics, time_intervals, quantiles, repositories, participants, labels, jira, release_settings, **_:  # noqa
@@ -367,7 +370,7 @@ class MetricEntriesCalculator:
 
     @sentry_span
     @cached(
-        exptime=PullRequestMiner.CACHE_TTL,
+        exptime=short_term_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
         key=lambda metrics, time_intervals, quantiles, repositories, pushers, labels, jira, **_:
@@ -506,6 +509,7 @@ class MetricEntriesCalculator:
                                              jira: JIRAFilter,
                                              exclude_inactive: bool,
                                              release_settings: ReleaseSettings,
+                                             prefixer: PrefixerPromise,
                                              fresh: bool,
                                              with_jira_map: bool,
                                              ) -> List[PullRequestFacts]:
@@ -528,6 +532,7 @@ class MetricEntriesCalculator:
             jira,
             exclude_inactive,
             release_settings,
+            prefixer,
             fresh,
             with_jira_map,
         ))[0]
@@ -562,6 +567,7 @@ class MetricEntriesCalculator:
                                               jira: JIRAFilter,
                                               exclude_inactive: bool,
                                               release_settings: ReleaseSettings,
+                                              prefixer: PrefixerPromise,
                                               fresh: bool,
                                               with_jira_map: bool,
                                               ) -> Tuple[List[PullRequestFacts], bool]:
@@ -570,8 +576,8 @@ class MetricEntriesCalculator:
             repositories, self._meta_ids, self._mdb, self._cache)
         precomputed_tasks = [
             self.done_prs_facts_loader.load_precomputed_done_facts_filters(
-                time_from, time_to, repositories, participants, labels,
-                default_branches, exclude_inactive, release_settings, self._account, self._pdb),
+                time_from, time_to, repositories, participants, labels, default_branches,
+                exclude_inactive, release_settings, prefixer, self._account, self._pdb),
         ]
         if exclude_inactive:
             precomputed_tasks.append(self.done_prs_facts_loader.load_precomputed_done_candidates(
@@ -596,7 +602,7 @@ class MetricEntriesCalculator:
             facts = await self.unfresh_pr_facts_fetcher.fetch_pull_request_facts_unfresh(
                 self.pr_miner, precomputed_facts, ambiguous, time_from, time_to, repositories,
                 participants, labels, jira, exclude_inactive, branches,
-                default_branches, release_settings, self._account, self._meta_ids,
+                default_branches, release_settings, prefixer, self._account, self._meta_ids,
                 self._mdb, self._pdb, self._rdb, self._cache)
             if with_jira_map:
                 undone_jira_map_task = asyncio.create_task(
@@ -615,8 +621,8 @@ class MetricEntriesCalculator:
             self.pr_miner.mine(
                 date_from, date_to, time_from, time_to, repositories, participants,
                 labels, jira, branches, default_branches, exclude_inactive, release_settings,
-                self._account, self._meta_ids, self._mdb, self._pdb, self._rdb, self._cache,
-                pr_blacklist=blacklist),
+                prefixer, self._account, self._meta_ids, self._mdb, self._pdb, self._rdb,
+                self._cache, pr_blacklist=blacklist),
         ]
         if jira and precomputed_facts:
             tasks.append(self.pr_miner.filter_jira(

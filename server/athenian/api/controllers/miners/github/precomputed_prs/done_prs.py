@@ -2,7 +2,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 import logging
 import pickle
-from typing import Any, Collection, Dict, Iterable, List, Mapping, Optional, Set, Tuple
+from typing import Any, Callable, Collection, Dict, Iterable, List, Mapping, Optional, Set, Tuple
 
 import aiomcache
 import databases
@@ -31,6 +31,7 @@ from athenian.api.controllers.miners.github.released_pr import matched_by_column
     new_released_prs_df
 from athenian.api.controllers.miners.types import MinedPullRequest, PRParticipants, \
     PRParticipationKind, PullRequestFacts
+from athenian.api.controllers.prefixer import PrefixerPromise
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, ReleaseSettings
 from athenian.api.db import ParallelDatabase
 from athenian.api.models.metadata.github import PullRequest, PullRequestLabel, Release
@@ -91,6 +92,7 @@ class DonePRFactsLoader:
                                                   default_branches: Dict[str, str],
                                                   exclude_inactive: bool,
                                                   release_settings: ReleaseSettings,
+                                                  prefixer: PrefixerPromise,
                                                   account: int,
                                                   pdb: databases.Database,
                                                   ) -> Tuple[Dict[str, PullRequestFacts],
@@ -108,9 +110,10 @@ class DonePRFactsLoader:
         result, ambiguous = await cls._load_precomputed_done_filters(
             [ghdprf.data, ghdprf.author, ghdprf.merger, ghdprf.releaser],
             time_from, time_to, repos, participants, labels,
-            default_branches, exclude_inactive, release_settings, account, pdb)
+            default_branches, exclude_inactive, release_settings, prefixer, account, pdb)
+        user_node_to_login_get = (await prefixer.load()).user_node_to_login.get
         for node_id, row in result.items():
-            result[node_id] = cls._done_pr_facts_from_row(row)
+            result[node_id] = cls._done_pr_facts_from_row(row, user_node_to_login_get)
         return result, ambiguous
 
     @classmethod
@@ -118,6 +121,7 @@ class DonePRFactsLoader:
                                               repos: Collection[str],
                                               default_branches: Dict[str, str],
                                               release_settings: ReleaseSettings,
+                                              prefixer: PrefixerPromise,
                                               account: int,
                                               pdb: databases.Database,
                                               extra: Iterable[InstrumentedAttribute] = (),
@@ -137,12 +141,13 @@ class DonePRFactsLoader:
         result, _ = await cls._load_precomputed_done_filters(
             [ghdprf.data, ghdprf.releaser, *extra],
             None, None, repos, {}, LabelFilter.empty(),
-            default_branches, False, release_settings, account, pdb)
+            default_branches, False, release_settings, prefixer, account, pdb)
         raw = {}
+        user_node_to_login_get = (await prefixer.load()).user_node_to_login.get
         for node_id, row in result.items():
             result[node_id] = PullRequestFacts(
                 data=row[ghdprf.data.key],
-                releaser=row[ghdprf.releaser.key])
+                releaser=user_node_to_login_get(row[ghdprf.releaser.key]))
             raw[node_id] = row
         return result, raw
 
@@ -157,6 +162,7 @@ class DonePRFactsLoader:
                                                       default_branches: Dict[str, str],
                                                       exclude_inactive: bool,
                                                       release_settings: ReleaseSettings,
+                                                      prefixer: PrefixerPromise,
                                                       account: int,
                                                       pdb: databases.Database,
                                                       ) -> Tuple[Dict[str, datetime],
@@ -170,7 +176,7 @@ class DonePRFactsLoader:
         """
         result, ambiguous = await cls._load_precomputed_done_filters(
             [GitHubDonePullRequestFacts.pr_done_at], time_from, time_to, repos, participants,
-            labels, default_branches, exclude_inactive, release_settings, account, pdb)
+            labels, default_branches, exclude_inactive, release_settings, prefixer, account, pdb)
         sqlite = pdb.url.dialect == "sqlite"
         for node_id, row in result.items():
             dt = row[GitHubDonePullRequestFacts.pr_done_at.key]
@@ -185,6 +191,7 @@ class DonePRFactsLoader:
                                                    repos: Dict[str, Set[int]],
                                                    default_branches: Dict[str, str],
                                                    release_settings: ReleaseSettings,
+                                                   prefixer: PrefixerPromise,
                                                    account: int,
                                                    pdb: databases.Database,
                                                    ) -> Tuple[Dict[str, PullRequestFacts],
@@ -239,13 +246,15 @@ class DonePRFactsLoader:
             rows = await pdb.fetch_all(query)
         result = {}
         ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
+        user_node_to_login_get = (await prefixer.load()).user_node_to_login.get
         for row in rows:
             dump = triage_by_release_match(
                 row[ghprt.repository_full_name.key], row[ghprt.release_match.key],
                 release_settings, default_branches, result, ambiguous)
             if dump is None:
                 continue
-            dump[row[ghprt.pr_node_id.key]] = cls._done_pr_facts_from_row(row)
+            dump[row[ghprt.pr_node_id.key]] = cls._done_pr_facts_from_row(
+                row, user_node_to_login_get)
         return cls._post_process_ambiguous_done_prs(result, ambiguous)
 
     @classmethod
@@ -254,6 +263,7 @@ class DonePRFactsLoader:
                                               node_ids: Iterable[str],
                                               default_branches: Dict[str, str],
                                               release_settings: ReleaseSettings,
+                                              prefixer: PrefixerPromise,
                                               account: int,
                                               pdb: databases.Database,
                                               panic_on_missing_repositories: bool = True,
@@ -292,6 +302,7 @@ class DonePRFactsLoader:
             rows = await pdb.fetch_all(query)
         result = {}
         ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
+        user_node_to_login_get = (await prefixer.load()).user_node_to_login.get
         for row in rows:
             repo = row[ghprt.repository_full_name.key]
             if not panic_on_missing_repositories and repo not in release_settings.native:
@@ -303,7 +314,8 @@ class DonePRFactsLoader:
                 release_settings, default_branches, result, ambiguous)
             if dump is None:
                 continue
-            dump[row[ghprt.pr_node_id.key]] = cls._done_pr_facts_from_row(row)
+            dump[row[ghprt.pr_node_id.key]] = \
+                cls._done_pr_facts_from_row(row, user_node_to_login_get)
         return cls._post_process_ambiguous_done_prs(result, ambiguous)
 
     @classmethod
@@ -323,9 +335,11 @@ class DonePRFactsLoader:
                                            matched_bys: Dict[str, ReleaseMatch],
                                            default_branches: Dict[str, str],
                                            release_settings: ReleaseSettings,
+                                           prefixer: PrefixerPromise,
                                            account: int,
                                            pdb: databases.Database,
-                                           cache: Optional[aiomcache.Client]) -> pd.DataFrame:
+                                           cache: Optional[aiomcache.Client],
+                                           ) -> pd.DataFrame:
         """
         Load the releases mentioned in the specified PRs.
 
@@ -346,10 +360,12 @@ class DonePRFactsLoader:
         records = []
         utc = timezone.utc
         force_push_dropped = set()
+        user_node_to_login_get = (await prefixer.load()).user_node_to_login.get
         for pr in prs:
             repo = pr[ghprt.repository_full_name.key]
             node_id = pr[ghprt.pr_node_id.key]
             release_match = pr[ghprt.release_match.key]
+            author_node_id = pr[ghprt.releaser.key].rstrip()
             if release_match in (ReleaseMatch.force_push_drop.name, ReleaseMatch.event.name):
                 if release_match == ReleaseMatch.force_push_drop.name:
                     if node_id in force_push_dropped:
@@ -357,7 +373,8 @@ class DonePRFactsLoader:
                     force_push_dropped.add(node_id)
                 records.append((node_id,
                                 pr[ghprt.pr_done_at.key].replace(tzinfo=utc),
-                                pr[ghprt.releaser.key].rstrip(),
+                                user_node_to_login_get(author_node_id),
+                                author_node_id,
                                 pr[ghprt.release_url.key],
                                 pr[ghprt.release_node_id.key],
                                 pr[ghprt.repository_full_name.key],
@@ -386,7 +403,8 @@ class DonePRFactsLoader:
                                      match_name)
             records.append((node_id,
                             pr[ghprt.pr_done_at.key].replace(tzinfo=utc),
-                            pr[ghprt.releaser.key].rstrip(),
+                            user_node_to_login_get(author_node_id),
+                            author_node_id,
                             pr[ghprt.release_url.key],
                             pr[ghprt.release_node_id.key],
                             pr[ghprt.repository_full_name.key],
@@ -405,6 +423,7 @@ class DonePRFactsLoader:
                                              default_branches: Dict[str, str],
                                              exclude_inactive: bool,
                                              release_settings: ReleaseSettings,
+                                             prefixer: PrefixerPromise,
                                              account: int,
                                              pdb: databases.Database,
                                              ) -> Tuple[Dict[str, Mapping[str, Any]],
@@ -432,7 +451,8 @@ class DonePRFactsLoader:
         or_items, _ = match_groups_to_sql(match_groups, ghprt)
         filters = cls._create_common_filters(time_from, time_to, None, account)
         if len(participants) > 0:
-            cls._build_participants_filters(participants, filters, selected, postgres)
+            await cls._build_participants_filters(
+                participants, filters, selected, postgres, prefixer)
         if labels:
             build_labels_filters(GitHubDonePullRequestFacts, labels, filters, selected, postgres)
         if exclude_inactive:
@@ -443,6 +463,7 @@ class DonePRFactsLoader:
         else:
             query = union_all(*(select(selected).where(and_(item, *filters)) for item in or_items))
         with sentry_sdk.start_span(op="_load_precomputed_done_filters/fetch"):
+            print(query)
             rows = await pdb.fetch_all(query)
         result = {}
         ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
@@ -457,7 +478,8 @@ class DonePRFactsLoader:
             if dump is None:
                 continue
             if not postgres:
-                if len(participants) > 0 and not cls._check_participants(row, participants):
+                if len(participants) > 0 and \
+                        not await cls._check_participants(row, participants, prefixer):
                     continue
                 if labels and not labels_are_compatible(include_singles, include_multiples,
                                                         labels.exclude, row[ghprt.labels.key]):
@@ -513,28 +535,39 @@ class DonePRFactsLoader:
         return result, ambiguous_prs
 
     @classmethod
-    def _build_participants_filters(cls,
-                                    participants: PRParticipants,
-                                    filters: list,
-                                    selected: list,
-                                    postgres: bool) -> None:
+    async def _build_participants_filters(cls,
+                                          participants: PRParticipants,
+                                          filters: list,
+                                          selected: list,
+                                          postgres: bool,
+                                          prefixer: PrefixerPromise,
+                                          ) -> None:
         ghdprf = GitHubDonePullRequestFacts
         if postgres:
-            dev_conds_single, dev_conds_multiple = cls._build_participants_conditions(participants)
+            dev_conds_single, dev_conds_multiple = \
+                await cls._build_participants_conditions(participants, prefixer)
 
-            developer_filters_single = [
-                col.in_(col_parts) for col, col_parts in dev_conds_single
-            ]
+            col_parts_dict = defaultdict(list)
+            developer_filters_single = []
+            for i, (col, col_parts) in enumerate(dev_conds_single):
+                developer_filters_single.append(col.in_(col_parts))
+                col_parts_dict[col_parts].append(i)
             # do not send the same array several times
-            for f in developer_filters_single[1:]:
-                f.right = developer_filters_single[0].right
+            for group in col_parts_dict.values():
+                first_val = developer_filters_single[group[0]].right
+                for i in group[1:]:
+                    developer_filters_single[i].right = first_val
 
-            developer_filters_multiple = [
-                col.has_any(col_parts) for col, col_parts in dev_conds_multiple
-            ]
+            col_parts_dict.clear()
+            developer_filters_multiple = []
+            for i, (col, col_parts) in enumerate(dev_conds_multiple):
+                developer_filters_multiple.append(col.has_any(col_parts))
+                col_parts_dict[col_parts].append(i)
             # do not send the same array several times
-            for f in developer_filters_multiple[1:]:
-                f.right = developer_filters_multiple[0].right
+            for group in col_parts_dict.values():
+                first_val = developer_filters_multiple[group[0]].right
+                for i in group[1:]:
+                    developer_filters_multiple[i].right = first_val
 
             filters.append(or_(*developer_filters_single, *developer_filters_multiple))
         else:
@@ -543,13 +576,17 @@ class DonePRFactsLoader:
                 ghdprf.commit_authors, ghdprf.commit_committers])
 
     @classmethod
-    def _build_participants_conditions(cls, participants: PRParticipants) -> Tuple[list]:
+    async def _build_participants_conditions(cls,
+                                             participants: PRParticipants,
+                                             prefixer: PrefixerPromise,
+                                             ) -> Tuple[list, list]:
+        user_login_to_node_get = (await prefixer.load()).user_login_to_node.get
 
         def _build_conditions(roles):
             return [
-                (c, cp) for c, cp in (
-                    (col, participants.get(pk)) for col, pk in roles
-                ) if cp
+                (c, tuple(user_login_to_node_get(u) for u in pset))
+                for c, pset in ((col, participants.get(pk)) for col, pk in roles)
+                if pset
             ]
 
         ghdprf = GitHubDonePullRequestFacts
@@ -564,32 +601,39 @@ class DonePRFactsLoader:
         return _build_conditions(single_roles), _build_conditions(multiple_roles)
 
     @classmethod
-    def _check_participants(cls, row: Mapping, participants: PRParticipants) -> bool:
+    async def _check_participants(cls,
+                                  row: Mapping,
+                                  participants: PRParticipants,
+                                  prefixer: PrefixerPromise,
+                                  ) -> bool:
+        user_node_to_login_get = (await prefixer.load()).user_node_to_login.get
         ghprt = GitHubDonePullRequestFacts
         for col, pk in ((ghprt.author, PRParticipationKind.AUTHOR),
                         (ghprt.merger, PRParticipationKind.MERGER),
                         (ghprt.releaser, PRParticipationKind.RELEASER)):
-            dev = row[col.key]
-            if dev and dev in participants.get(pk, set()):
+            if user_node_to_login_get(row[col.key]) in participants.get(pk, set()):
                 return True
         for col, pk in ((ghprt.reviewers, PRParticipationKind.REVIEWER),
                         (ghprt.commenters, PRParticipationKind.COMMENTER),
                         (ghprt.commit_authors, PRParticipationKind.COMMIT_AUTHOR),
                         (ghprt.commit_committers, PRParticipationKind.COMMIT_COMMITTER)):
-            devs = set(row[col.key])
+            devs = {user_node_to_login_get(u) for u in row[col.key]} - {None}
             if devs.intersection(participants.get(pk, set())):
                 return True
         return False
 
     @classmethod
-    def _done_pr_facts_from_row(cls, row: Mapping[str, Any]) -> PullRequestFacts:
+    def _done_pr_facts_from_row(cls,
+                                row: Mapping[str, Any],
+                                user_node_to_login_get: Callable[[str], str],
+                                ) -> PullRequestFacts:
         ghdprf = GitHubDonePullRequestFacts
         return PullRequestFacts(
             data=row[ghdprf.data.key],
             repository_full_name=row[ghdprf.repository_full_name.key],
-            author=row[ghdprf.author.key],
-            merger=row[ghdprf.merger.key],
-            releaser=row[ghdprf.releaser.key])
+            author=user_node_to_login_get(row[ghdprf.author.key]),
+            merger=user_node_to_login_get(row[ghdprf.merger.key]),
+            releaser=user_node_to_login_get(row[ghdprf.releaser.key]))
 
 
 @sentry_span
@@ -644,7 +688,7 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
                 raise AssertionError("Unhandled release match strategy: " + match.name)
         else:
             release_match = ReleaseMatch.rejected.name
-        participants = pr.participants()
+        participants = pr.participant_nodes()
         inserted.append(GitHubDonePullRequestFacts(
             acc_id=account,
             pr_node_id=pr.pr[PullRequest.node_id.key],

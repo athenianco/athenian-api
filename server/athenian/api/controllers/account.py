@@ -220,7 +220,7 @@ async def copy_teams_as_needed(account: int,
     for row in member_rows:
         try:
             members[row[TeamMember.parent_id.key]].append(
-                prefixer.user_node_map[row[TeamMember.child_id.key]])
+                prefixer.user_node_to_prefixed_login[row[TeamMember.child_id.key]])
         except KeyError:
             log.error("Could not resolve user %s", row[TeamMember.child_id.key])
     db_ids = {}

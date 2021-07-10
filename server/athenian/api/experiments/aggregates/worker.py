@@ -337,7 +337,7 @@ def _eventify_prs(account: int, prs_data: List[PullRequestListItem],
         row["event_type"] = "created"
         row["timestamp"] = getattr(pr, row["event_type"])
         row["opened"] = 1
-        row["event_owners"] = pr.participants[PRParticipationKind.AUTHOR]
+        row["event_owners"] = pr.participant_logins[PRParticipationKind.AUTHOR]
         return row
 
     def enrich_review_requested_event(row, pr):
@@ -359,7 +359,7 @@ def _eventify_prs(account: int, prs_data: List[PullRequestListItem],
         row["timestamp"] = getattr(pr, row["event_type"])
         row["review_time"] = int(pr.stage_timings["review"].total_seconds())
         row["review_count"] = 1
-        row["event_owners"] = pr.participants[PRParticipationKind.REVIEWER]
+        row["event_owners"] = pr.participant_logins[PRParticipationKind.REVIEWER]
         return row
 
     def enrich_closed_event(row, pr):
@@ -374,7 +374,7 @@ def _eventify_prs(account: int, prs_data: List[PullRequestListItem],
         row["merging_time"] = int(pr.stage_timings["merge"].total_seconds())
         row["merging_count"] = 1
         row["merged"] = 1
-        row["event_owners"] = pr.participants[PRParticipationKind.MERGER]
+        row["event_owners"] = pr.participant_logins[PRParticipationKind.MERGER]
         return row
 
     def enrich_rejected_event(row, pr):
@@ -394,7 +394,7 @@ def _eventify_prs(account: int, prs_data: List[PullRequestListItem],
         row["lead_count"] = 1
         row["released"] = 1
         row["release_setting"] = str(releases_match_settings[pr.repository])
-        row["event_owners"] = pr.participants[PRParticipationKind.RELEASER]
+        row["event_owners"] = pr.participant_logins[PRParticipationKind.RELEASER]
         return row
 
     def eventify_pr(pr):

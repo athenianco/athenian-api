@@ -15,7 +15,7 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
-from athenian.api.cache import cached
+from athenian.api.cache import cached, short_term_exptime
 from athenian.api.controllers.miners.github.branches import BranchMiner, load_branch_commit_dates
 from athenian.api.controllers.miners.github.dag_accelerated import extract_first_parents, \
     extract_subdag, join_dags, partition_dag, searchsorted_inrange
@@ -41,7 +41,7 @@ DAG = Tuple[np.ndarray, np.ndarray, np.ndarray]
 
 @sentry_span
 @cached(
-    exptime=5 * 60,
+    exptime=short_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda prop, date_from, date_to, repos, with_author, with_committer, only_default_branch, **kwargs:  # noqa

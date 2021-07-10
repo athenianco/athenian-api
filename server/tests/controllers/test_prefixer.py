@@ -9,8 +9,9 @@ async def test_prefixer_load(mdb, cache):
     for i in range(2):
         prefixer = await Prefixer.load((6366825,), mdb if i == 0 else None, cache)
         await wait_deferred()
-        assert len(prefixer.user_node_map) == len(prefixer.user_login_map) == 930
-        assert "vmarkovtsev" in prefixer.user_login_map
+        assert len(prefixer.user_node_to_prefixed_login) == \
+               len(prefixer.user_login_to_prefixed_login) == 930
+        assert "vmarkovtsev" in prefixer.user_login_to_prefixed_login
         assert len(prefixer.repo_node_map) == 306
         assert len(prefixer.repo_name_map) == 292
         assert "src-d/go-git" in prefixer.repo_name_map
@@ -19,7 +20,7 @@ async def test_prefixer_load(mdb, cache):
 async def test_prefixer_schedule_load(mdb):
     prefixer = Prefixer.schedule_load((6366825,), mdb, None)
     prefixer = await prefixer.load()
-    assert prefixer.user_login_map
+    assert prefixer.user_login_to_prefixed_login
     promise = prefixer.as_promise()
     assert prefixer == await promise.load()
 

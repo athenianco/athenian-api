@@ -15,7 +15,7 @@ from sqlalchemy import and_, func, select, union_all
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
-from athenian.api.cache import cached, CancelCache
+from athenian.api.cache import cached, CancelCache, short_term_exptime
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.commit import fetch_precomputed_commit_history_dags, \
@@ -104,7 +104,7 @@ async def mine_releases(repos: Iterable[str],
     log = logging.getLogger("%s.mine_releases" % metadata.__package__)
     releases_in_time_range, matched_bys = await ReleaseLoader.load_releases(
         repos, branches, default_branches, time_from, time_to,
-        settings, account, meta_ids, mdb, pdb, rdb, cache, force_fresh=force_fresh)
+        settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache, force_fresh=force_fresh)
     # resolve ambiguous release match settings
     settings = settings.copy()
     for repo in repos:
@@ -147,7 +147,7 @@ async def mine_releases(repos: Iterable[str],
         )[0])
         _, releases, _, _ = await ReleaseToPullRequestMapper._find_releases_for_matching_prs(
             missing_repos, branches, default_branches, time_from, time_to, False,
-            settings, account, meta_ids, mdb, pdb, rdb, cache,
+            settings, prefixer.as_promise(), account, meta_ids, mdb, pdb, rdb, cache,
             releases_in_time_range=releases_in_time_range)
         tasks = [
             load_commit_dags(releases, account, meta_ids, mdb, pdb, cache),
@@ -229,7 +229,7 @@ async def mine_releases(repos: Iterable[str],
         commits_authors = commits_df[PushCommit.author_login.key].values
         commits_authors_nz = commits_authors.nonzero()[0]
         commits_authors[commits_authors_nz] = \
-            [prefixer.user_login_map[u] for u in commits_authors[commits_authors_nz]]
+            [prefixer.user_login_to_prefixed_login[u] for u in commits_authors[commits_authors_nz]]
 
         tasks = [_load_prs_by_merge_commit_ids(commit_ids, meta_ids, mdb)]
         if jira:
@@ -248,7 +248,7 @@ async def mine_releases(repos: Iterable[str],
         prs_authors = prs_df[PullRequest.user_login.key].values
         prs_authors_nz = prs_authors.nonzero()[0]
         prs_authors[prs_authors_nz] = \
-            [prefixer.user_login_map[u] for u in prs_authors[prs_authors_nz]]
+            [prefixer.user_login_to_prefixed_login[u] for u in prs_authors[prs_authors_nz]]
         prs_node_ids = prs_df[PullRequest.node_id.key].values.astype("S")
         if with_pr_titles or labels:
             all_pr_node_ids.append(prs_node_ids)
@@ -259,6 +259,7 @@ async def mine_releases(repos: Iterable[str],
     @sentry_span
     async def main_flow():
         data = []
+        user_login_to_prefixed_login_get = prefixer.user_login_to_prefixed_login.get
         for repo, (repo_releases, owned_hashes, parents) in repo_releases_analyzed.items():
             computed_release_info_by_commit = {}
             for i, (my_id, my_name, my_tag, my_url, my_author, my_published_at,
@@ -315,7 +316,7 @@ async def mine_releases(repos: Iterable[str],
                             my_published_at - repo_releases[Release.published_at.key]._ixs(parent)
                     else:
                         my_age = my_published_at - first_commit_dates[repo]
-                    if (my_author := prefixer.user_login_map.get(my_author)) is not None:
+                    if (my_author := user_login_to_prefixed_login_get(my_author)) is not None:
                         mentioned_authors.add(my_author)
                     computed_release_info_by_commit[my_commit] = (
                         my_age, my_additions, my_deletions, commits_count, my_prs,
@@ -429,7 +430,8 @@ def _build_mined_releases(releases: pd.DataFrame,
     mentioned_authors = np.concatenate([
         *(getattr(f, "prs_" + PullRequest.user_login.key) for f in precomputed_facts.values()),
         *(f.commit_authors for f in precomputed_facts.values()),
-        [prefixer.user_login_map.get(u, "")  # e.g. deleted users not necessarily become "ghost"-s
+        [prefixer.user_login_to_prefixed_login.get(u, "")
+         # e.g. deleted users not necessarily become "ghost"-s
          for u in release_authors[release_authors.nonzero()[0]]],
     ])
     mentioned_authors = np.unique(mentioned_authors[mentioned_authors.nonzero()[0]]).astype("U")
@@ -553,7 +555,7 @@ async def _load_prs_by_merge_commit_ids(commit_ids: Sequence[str],
 
 @sentry_span
 @cached(
-    exptime=5 * 60,  # 5 min
+    exptime=short_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda names, **_: ({k: sorted(v) for k, v in names.items()},),
@@ -574,7 +576,7 @@ async def mine_releases_by_name(names: Dict[str, Iterable[str]],
     log = logging.getLogger("%s.mine_releases_by_name" % metadata.__package__)
     names = {k: set(v) for k, v in names.items()}
     releases, _, branches, default_branches = await _load_releases_by_name(
-        names, log, settings, account, meta_ids, mdb, pdb, rdb, cache)
+        names, log, settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache)
     if releases.empty:
         return [], []
     settings_tags, settings_branches = {}, {}
@@ -654,6 +656,7 @@ async def mine_releases_by_name(names: Dict[str, Iterable[str]],
 async def _load_releases_by_name(names: Dict[str, Set[str]],
                                  log: logging.Logger,
                                  settings: ReleaseSettings,
+                                 prefixer: PrefixerPromise,
                                  account: int,
                                  meta_ids: Tuple[int, ...],
                                  mdb: databases.Database,
@@ -705,7 +708,7 @@ async def _load_releases_by_name(names: Dict[str, Set[str]],
                 break
         new_releases, _ = await ReleaseLoader.load_releases(
             missing, branches, default_branches, now - offset, now,
-            settings, account, meta_ids, mdb, pdb, rdb, cache, force_fresh=True)
+            settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache, force_fresh=True)
         new_releases_index = defaultdict(dict)
         for i, (repo, name) in enumerate(zip(new_releases[Release.repository_full_name.key].values,
                                              new_releases[Release.name.key].values)):
@@ -774,7 +777,7 @@ async def _complete_commit_hashes(names: Dict[str, Set[str]],
 
 
 @cached(
-    exptime=5 * 60,  # 5 min
+    exptime=short_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda borders, **_: ({k: sorted(v) for k, v in borders.items()},),
@@ -798,7 +801,7 @@ async def diff_releases(borders: Dict[str, List[Tuple[str, str]]],
         for old, new in pairs:
             names[repo].update((old, new))
     border_releases, names, branches, default_branches = await _load_releases_by_name(
-        names, log, settings, account, meta_ids, mdb, pdb, rdb, cache)
+        names, log, settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache)
     if border_releases.empty:
         return {}, []
     repos = border_releases[Release.repository_full_name.key].unique()

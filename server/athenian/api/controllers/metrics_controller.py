@@ -62,6 +62,7 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
+    prefixer = Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
     filters, repos = await compile_filters_prs(filt.for_, request, filt.account, meta_ids)
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
@@ -99,7 +100,7 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
         metric_values = await calculator.calc_pull_request_metrics_line_github(
             filt.metrics, time_intervals, filt.quantiles or (0, 1),
             for_set.lines or [], repos, withgroups, labels, jira,
-            filt.exclude_inactive, release_settings, filt.fresh)
+            filt.exclude_inactive, release_settings, prefixer, filt.fresh)
         mrange = range(len(met.metrics))
         for lines_group_index, lines_group in enumerate(metric_values):
             for repos_group_index, with_groups in enumerate(lines_group):
@@ -391,6 +392,7 @@ async def calc_metrics_developers(request: AthenianWebRequest, body: dict) -> we
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError("?", detail=str(e)))
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
+    prefixer = Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
     filters, all_repos = await _compile_filters_devs(
         filt.for_, request, filt.account, meta_ids)
     if filt.date_to < filt.date_from:
@@ -424,7 +426,7 @@ async def calc_metrics_developers(request: AthenianWebRequest, body: dict) -> we
             dev_groups = [[dev] for dev in devs]
         calculator = calculators[service]
         tasks.append(calculator.calc_developer_metrics_github(
-            dev_groups, repos, time_intervals, topics, labels, jira, release_settings))
+            dev_groups, repos, time_intervals, topics, labels, jira, release_settings, prefixer))
         for_sets.append(for_set)
     all_stats = await gather(*tasks)
     for (stats_metrics, stats_topics), for_set in zip(all_stats, for_sets):

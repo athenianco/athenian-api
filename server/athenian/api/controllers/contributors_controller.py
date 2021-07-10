@@ -42,13 +42,13 @@ async def get_contributors(request: AthenianWebRequest, id: int) -> web.Response
             await Settings.from_request(request, account_id).list_release_matches(repos)
         repos = [r.split("/", 1)[1] for r in repos]
         users = await mine_contributors(
-            repos, None, None, False, [], release_settings,
+            repos, None, None, False, [], release_settings, prefixer,
             account_id, meta_ids, request.mdb, request.pdb, request.rdb, request.cache)
         mapped_jira = await load_mapped_jira_users(
             account_id, [u[User.node_id.key] for u in users], sdb_conn, request.mdb, request.cache)
         prefixer = await prefixer.load()
         contributors = [
-            Contributor(login=prefixer.user_node_map[u[User.node_id.key]],
+            Contributor(login=prefixer.user_node_to_prefixed_login[u[User.node_id.key]],
                         name=u[User.name.key],
                         email="<classified>",  # u[User.email.key] TODO(vmarkovtsev): DEV-87
                         picture=u[User.avatar_url.key],

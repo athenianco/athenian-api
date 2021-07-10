@@ -33,9 +33,10 @@ from athenian.api.controllers.miners.github.release_match import ReleaseToPullRe
 from athenian.api.controllers.miners.jira.issue import PullRequestJiraMapper
 from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind, \
     PullRequestFacts
+from athenian.api.controllers.prefixer import PrefixerPromise
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.models.metadata.github import Base as MetadataGitHubBase, \
-    Branch, NodePullRequestJiraIssues, PullRequest
+    Branch, NodePullRequestJiraIssues, PullRequest, Release
 from athenian.api.models.precomputed.models import \
     GitHubBase as PrecomputedGitHubBase, \
     GitHubDonePullRequestFacts, \
@@ -88,6 +89,7 @@ class PreloadedReleaseLoader(ReleaseLoader):
                                           match_groups: Dict[ReleaseMatch, Dict[str, List[str]]],
                                           time_from: datetime,
                                           time_to: datetime,
+                                          prefixer: PrefixerPromise,
                                           account: int,
                                           pdb: databases.Database,
                                           index: Optional[Union[str, Sequence[str]]] = None,
@@ -108,6 +110,11 @@ class PreloadedReleaseLoader(ReleaseLoader):
             releases.set_index(index, inplace=True)
         else:
             releases.reset_index(drop=True, inplace=True)
+        user_node_to_login_get = (await prefixer.load()).user_node_to_login.get
+        releases[Release.author_node_id.key] = releases[model.author.key]
+        releases[model.author.key] = [
+            user_node_to_login_get(u) for u in releases[model.author.key].values
+        ]
         return releases
 
     @classmethod
@@ -181,6 +188,7 @@ class PreloadedDonePRFactsLoader(DonePRFactsLoader):
                                              default_branches: Dict[str, str],
                                              exclude_inactive: bool,
                                              release_settings: ReleaseSettings,
+                                             prefixer: PrefixerPromise,
                                              account: int,
                                              pdb: databases.Database,
                                              ) -> Tuple[Dict[str, Mapping[str, Any]],
@@ -198,7 +206,7 @@ class PreloadedDonePRFactsLoader(DonePRFactsLoader):
             return await super(PreloadedDonePRFactsLoader, cls)\
                 ._load_precomputed_done_filters(
                     columns, time_from, time_to, repos, participants, labels,
-                    default_branches, exclude_inactive, release_settings, account, pdb)
+                    default_branches, exclude_inactive, release_settings, prefixer, account, pdb)
 
         model = GitHubDonePullRequestFacts
         cached_df = pdb.cache.dfs[PCID.done_pr_facts]
@@ -214,7 +222,7 @@ class PreloadedDonePRFactsLoader(DonePRFactsLoader):
                 mask &= df[model.repository_full_name.key].isin(repos)
 
             if len(participants) > 0:
-                mask &= cls._build_participants_mask(df, participants)
+                mask &= await cls._build_participants_mask(df, participants, prefixer)
 
             if exclude_inactive:
                 with sentry_sdk.start_span(
@@ -258,8 +266,13 @@ class PreloadedDonePRFactsLoader(DonePRFactsLoader):
         return cls._post_process_ambiguous_done_prs(result, ambiguous)
 
     @classmethod
-    def _build_participants_mask(cls, df: pd.DataFrame, participants: PRParticipants) -> pd.Series:
-        dev_conds_single, dev_conds_multiple = cls._build_participants_conditions(participants)
+    async def _build_participants_mask(cls,
+                                       df: pd.DataFrame,
+                                       participants: PRParticipants,
+                                       prefixer: PrefixerPromise,
+                                       ) -> pd.Series:
+        dev_conds_single, dev_conds_multiple = \
+            await cls._build_participants_conditions(participants, prefixer)
         or_masks = []
         for col, value in dev_conds_single:
             or_masks.append(df[col.key].isin(value))
@@ -286,6 +299,7 @@ class PreloadedMergedPRFactsLoader(MergedPRFactsLoader):
             matched_bys: Dict[str, ReleaseMatch],
             default_branches: Dict[str, str],
             release_settings: ReleaseSettings,
+            prefixer: PrefixerPromise,
             account: int,
             pdb: databases.Database,
             time_from: Optional[datetime] = None,
@@ -309,6 +323,7 @@ class PreloadedMergedPRFactsLoader(MergedPRFactsLoader):
                     matched_bys,
                     default_branches,
                     release_settings,
+                    prefixer,
                     account,
                     pdb,
                     time_from=time_from,
@@ -364,6 +379,7 @@ class PreloadedMergedPRFactsLoader(MergedPRFactsLoader):
         ])
 
         facts = {}
+        user_node_map_get = (await prefixer.load()).user_node_to_prefixed_login.get
         for node_id, data, repository_full_name, author, merger in zip(
                 merged_pr_facts[model.pr_node_id.key].values,
                 merged_pr_facts[model.data.key].values,
@@ -379,8 +395,10 @@ class PreloadedMergedPRFactsLoader(MergedPRFactsLoader):
                 log.warning("No precomputed facts for merged %s", node_id)
                 continue
             facts[node_id] = PullRequestFacts(
-                data=data, repository_full_name=repository_full_name,
-                author=author, merger=merger)
+                data=data,
+                repository_full_name=repository_full_name,
+                author=user_node_map_get(author),
+                merger=user_node_map_get(merger))
         return facts
 
 

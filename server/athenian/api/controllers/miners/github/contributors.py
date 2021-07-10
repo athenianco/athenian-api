@@ -12,10 +12,11 @@ from sqlalchemy import and_, func, not_, select, union
 from sqlalchemy.sql.functions import coalesce
 
 from athenian.api.async_utils import gather
-from athenian.api.cache import cached
+from athenian.api.cache import cached, short_term_exptime
 from athenian.api.controllers.miners.github.bots import Bots
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.release_load import ReleaseLoader
+from athenian.api.controllers.prefixer import PrefixerPromise
 from athenian.api.controllers.settings import ReleaseSettings
 from athenian.api.models.metadata.github import NodeCommit, NodeRepository, OrganizationMember, \
     PullRequest, PullRequestComment, PullRequestReview, PushCommit, Release, User
@@ -26,7 +27,7 @@ from athenian.api.tracing import sentry_span
 
 @sentry_span
 @cached(
-    exptime=5 * 60,
+    exptime=short_term_exptime,
     serialize=marshal.dumps,
     deserialize=marshal.loads,
     key=lambda repos, time_from, time_to, with_stats, user_roles, release_settings, **_: (
@@ -42,6 +43,7 @@ async def mine_contributors(repos: Collection[str],
                             with_stats: bool,
                             user_roles: List[str],
                             release_settings: ReleaseSettings,
+                            prefixer: PrefixerPromise,
                             account: int,
                             meta_ids: Tuple[int, ...],
                             mdb: databases.Database,
@@ -184,7 +186,7 @@ async def mine_contributors(repos: Collection[str],
             rt_to = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
         releases, _ = await ReleaseLoader.load_releases(
             repos, branches, default_branches, rt_from, rt_to,
-            release_settings, account, meta_ids, mdb, pdb, rdb, cache,
+            release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache,
             force_fresh=force_fresh_releases)
         counts = releases[Release.author.key].value_counts()
         return {
