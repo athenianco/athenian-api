@@ -460,8 +460,7 @@ async def test_pr_list_miner_match_metrics_all_count_david_bug(
 
 @with_defer
 async def test_calc_pull_request_metrics_line_github_exclude_inactive(
-        metrics_calculator_factory, mdb, pdb, rdb, cache, release_match_setting_tag,
-        prefixer_promise):
+        metrics_calculator_factory, release_match_setting_tag, prefixer_promise):
     metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2017, month=1, day=12, tzinfo=timezone.utc)
@@ -499,6 +498,29 @@ async def test_calc_pull_request_metrics_line_github_exclude_inactive(
         await metrics_calculator.calc_pull_request_metrics_line_github(*args)
     )[0][0][0][0][0][0]
     assert metrics.value == 71
+
+
+@with_defer
+async def test_calc_pull_request_metrics_line_github_quantiles(
+        metrics_calculator_factory, release_match_setting_tag, prefixer_promise):
+    metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
+    date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
+    date_to = datetime(year=2017, month=1, day=12, tzinfo=timezone.utc)
+    args = [[PullRequestMetricID.PR_ALL_COUNT], [[date_from, date_to]], [0, 0.95], [],
+            [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(),
+            False, release_match_setting_tag, prefixer_promise, False]
+    metrics = (
+        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
+    )[0][0][0][0][0][0]
+    await wait_deferred()
+    assert metrics.value == 26
+    args[2] = [0, 1]
+    metrics = (
+        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
+    )[0][0][0][0][0][0]
+    await wait_deferred()
+    assert metrics.value == 26  # != 7 from the previous test!
+    # yes, see _fetch_inactive_merged_unreleased_prs
 
 
 @with_defer

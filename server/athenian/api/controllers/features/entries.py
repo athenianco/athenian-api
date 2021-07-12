@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import partial, reduce
 import importlib
 from itertools import chain
@@ -34,7 +34,7 @@ from athenian.api.controllers.features.github.unfresh_pull_request_metrics impor
     UnfreshPullRequestFactsFetcher
 from athenian.api.controllers.features.histogram import HistogramParameters
 from athenian.api.controllers.features.metric_calculator import df_from_structs, group_by_repo, \
-    group_to_indexes
+    group_to_indexes, MetricCalculatorEnsemble
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import BranchMiner
@@ -103,6 +103,33 @@ class MetricEntriesCalculator:
         """Check whether the calculator is ready for the given account and meta ids."""
         return True
 
+    @staticmethod
+    def align_time_min_max(time_intervals, stride: int) -> Tuple[datetime, datetime]:
+        """Widen the min and max timestamp so that it spans an integer number of several days."""
+        ts_arr = np.array(list(time_intervals
+                               if isinstance(time_intervals[0], datetime)
+                               else chain.from_iterable(time_intervals)),
+                          dtype="datetime64[s]")
+        if stride > 4 * 7:
+            return (
+                ts_arr.min().item().replace(tzinfo=timezone.utc),
+                ts_arr.max().item().replace(tzinfo=timezone.utc),
+            )
+        aligned_ts_min, aligned_ts_max = MetricCalculatorEnsemble.compose_quantile_time_intervals(
+            ts_arr.min(), ts_arr.max(), stride)
+        return (
+            aligned_ts_min[0].item().replace(tzinfo=timezone.utc),
+            aligned_ts_max[-1].item().replace(tzinfo=timezone.utc),
+        )
+
+    def _align_time_min_max(self,
+                            time_intervals,
+                            quantiles: Sequence[float],
+                            ) -> Tuple[datetime, datetime]:
+        if quantiles[0] == 0 and quantiles[1] == 1:
+            return self.align_time_min_max(time_intervals, 100500)
+        return self.align_time_min_max(time_intervals, self._quantile_stride)
+
     @sentry_span
     @cached(
         exptime=PullRequestMiner.CACHE_TTL,
@@ -146,7 +173,7 @@ class MetricEntriesCalculator:
             _merge_repositories_and_participants(repositories, participants)
         calc = PullRequestBinnedMetricCalculator(
             metrics, quantiles, self._quantile_stride, exclude_inactive=exclude_inactive)
-        time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
+        time_from, time_to = self._align_time_min_max(time_intervals, quantiles)
         mined_facts = await self.calc_pull_request_facts_github(
             time_from, time_to, all_repositories, all_participants, labels, jira, exclude_inactive,
             release_settings, prefixer, fresh, need_jira_mapping(metrics))
@@ -248,7 +275,7 @@ class MetricEntriesCalculator:
                                        only_default_branch: bool,
                                        ) -> List[CodeStats]:
         """Filter code pushed on GitHub according to the specified criteria."""
-        time_from, time_to = time_intervals[0], time_intervals[-1]
+        time_from, time_to = self.align_time_min_max(time_intervals, 100500)
         x_commits = await extract_commits(
             prop, time_from, time_to, repos, with_author, with_committer, only_default_branch,
             self.branch_miner(), self._account, self._meta_ids, self._mdb, self._pdb, self._cache)
@@ -294,7 +321,7 @@ class MetricEntriesCalculator:
         all_repos = set(chain.from_iterable(repositories))
         if not all_devs or not all_repos:
             return np.array([]), list(topics)
-        time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
+        time_from, time_to = self.align_time_min_max(time_intervals, 100500)
         mined_dfs = await mine_developer_activities(
             all_devs, all_repos, time_from, time_to, topics, labels, jira, release_settings,
             prefixer, self._account, self._meta_ids, self._mdb, self._pdb, self._rdb, self._cache)
@@ -351,7 +378,7 @@ class MetricEntriesCalculator:
         :return: 1. participants x repositories x granularities x time intervals x metrics.
                  2. matched_bys - map from repository names to applied release matches.
         """
-        time_from, time_to = time_intervals[0][0], time_intervals[0][-1]
+        time_from, time_to = self._align_time_min_max(time_intervals, quantiles)
         all_repositories = set(chain.from_iterable(repositories))
         calc = ReleaseBinnedMetricCalculator(metrics, quantiles, self._quantile_stride)
         branches, default_branches = await self.branch_miner.extract_branches(
@@ -403,10 +430,10 @@ class MetricEntriesCalculator:
                  3. suite sizes (meaningful only if split_by_check_runs=True).
         """  # noqa
         calc = CheckRunBinnedMetricCalculator(metrics, quantiles, self._quantile_stride)
+        time_from, time_to = self._align_time_min_max(time_intervals, quantiles)
         df_check_runs, groups, group_suite_counts, suite_sizes = \
             await self._mine_and_group_check_runs(
-                time_intervals[0][0], time_intervals[0][-1], repositories, pushers,
-                split_by_check_runs, labels, jira)
+                time_from, time_to, repositories, pushers, split_by_check_runs, labels, jira)
         values = calc(df_check_runs, time_intervals, groups)
         return values, group_suite_counts, suite_sizes
 

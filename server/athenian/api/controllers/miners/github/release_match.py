@@ -185,7 +185,7 @@ class PullRequestToReleaseMapper:
     @classmethod
     @sentry_span
     async def _find_dead_merged_prs(cls, prs: pd.DataFrame) -> pd.DataFrame:
-        dead_indexes = np.nonzero(prs["dead"].values)[0]
+        dead_indexes = np.flatnonzero(prs["dead"].values)
         dead_prs = [
             (pr_id, None, None, None, None, None, repo, ReleaseMatch.force_push_drop)
             for repo, pr_id in zip(
