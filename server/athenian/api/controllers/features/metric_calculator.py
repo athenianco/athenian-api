@@ -102,9 +102,9 @@ class MetricCalculator(Generic[T], ABC):
         assert len(groups_mask) > 0 or facts.empty
         if facts.empty:
             self._peek = np.empty((len(min_times), 0), object)
-            self._grouped_notnull = np.empty((len(groups_mask), len(min_times), 0), dtype=bool)
-            self._samples = np.empty(
-                (len(groups_mask), quantiles_mounted_at or len(min_times), 0), self.dtype)
+            ts_dim = quantiles_mounted_at or len(min_times)
+            self._grouped_notnull = np.empty((len(groups_mask), ts_dim, 0), dtype=bool)
+            self._samples = np.empty((len(groups_mask), ts_dim, 0), self.dtype)
             return
         assert groups_mask.shape[1] == len(facts)
         self._peek = peek = self._analyze(facts, min_times, max_times, **kwargs)
@@ -358,7 +358,7 @@ class Counter(MetricCalculator[int], ABC):
         if self._quantiles != (0, 1):
             # if we've got the quantiles, report the lengths
             return [[Metric(True, len(s), None, None) for s in gs]
-                    for gs in self._samples]
+                    for gs in self.samples]
         # otherwise, ignore the upstream quantiles
         return [[Metric(True, s, None, None) for s in gs]
                 for gs in self.grouped_notnull.sum(axis=-1)]
