@@ -684,6 +684,18 @@ def test_pull_request_metric_calculator_ensemble_accuracy(pr_samples):
         assert ensemble_metrics[PullRequestMetricID.PR_CLOSED] == closed.values
 
 
+def test_pull_request_metric_calculator_empty_facts(pr_samples):
+    binned = PullRequestBinnedMetricCalculator(
+        [PullRequestMetricID.PR_WIP_COUNT], quantiles=(0, 0.9), quantile_stride=210)
+    prs = df_from_structs(pr_samples(1)).iloc[:0]
+    time_to = datetime.now(timezone.utc)
+    time_from = time_to - timedelta(days=365)
+    groups = np.full((1, 1, 1), None, dtype=object)
+    groups.fill(np.empty(0, int))
+    metrics = binned(prs, [[time_from, time_to]], groups)
+    assert metrics[0][0][0][0][0][0].value == 0
+
+
 def test_pull_request_metric_calculator_ensemble_empty(pr_samples):
     ensemble = PullRequestMetricCalculatorEnsemble(quantiles=(0, 1), quantile_stride=73)
     time_from = datetime.utcnow() - timedelta(days=365)

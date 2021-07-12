@@ -463,7 +463,6 @@ class DonePRFactsLoader:
         else:
             query = union_all(*(select(selected).where(and_(item, *filters)) for item in or_items))
         with sentry_sdk.start_span(op="_load_precomputed_done_filters/fetch"):
-            print(query)
             rows = await pdb.fetch_all(query)
         result = {}
         ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
