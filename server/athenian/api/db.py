@@ -84,6 +84,7 @@ class FastConnection(databases.core.Connection):
                         values: dict = None) -> List[Mapping]:
         """Avoid re-wrapping the returned rows in PostgreSQL."""
         if isinstance(self.raw_connection, asyncpg.Connection):
+            assert self._registered_codecs[0]
             sql, args = self._compile(self._build_query(query, values), None)
             async with self._query_lock:
                 return await self.raw_connection.fetch(sql, *args)
@@ -95,6 +96,7 @@ class FastConnection(databases.core.Connection):
                         ) -> Optional[Mapping]:
         """Avoid re-wrapping the returned row in PostgreSQL."""
         if isinstance(self.raw_connection, asyncpg.Connection):
+            assert self._registered_codecs[0]
             sql, args = self._compile(self._build_query(query, values), None)
             async with self._query_lock:
                 return await self.raw_connection.fetchrow(sql, *args)
@@ -107,6 +109,7 @@ class FastConnection(databases.core.Connection):
                         ) -> Any:
         """Avoid re-wrapping the returned value in PostgreSQL."""
         if isinstance(self.raw_connection, asyncpg.Connection):
+            assert self._registered_codecs[0]
             sql, args = self._compile(self._build_query(query, values), None)
             async with self._query_lock:
                 return await self.raw_connection.fetchval(sql, *args, column=column)
@@ -119,6 +122,7 @@ class FastConnection(databases.core.Connection):
         if not isinstance(self.raw_connection, asyncpg.Connection):
             assert self._locked  # sqlite requires wrapping every execute_many in a transaction
             return await super().execute_many(query, values)
+        assert self._registered_codecs[0]
         async with self._query_lock:
             return await self.raw_connection.executemany(*self._compile(query, values))
 
@@ -137,6 +141,7 @@ class FastConnection(databases.core.Connection):
                         self._locked = False
             else:
                 return await super().execute(query, values)
+        assert self._registered_codecs[0]
         built_query = self._build_query(query, values)
         query, args = self._compile(built_query, None)
         async with self._query_lock:
@@ -228,13 +233,11 @@ class ParallelDatabase(databases.Database):
     Tweak the behavior on per-dialect basis.
     """
 
-    _serialization_lock = None
+    _serialization_lock = _registered_codecs = None
 
     def __init__(
         self,
         url: Union[str, databases.DatabaseURL],
-        *,
-        force_rollback: bool = False,
         **options: Any,
     ):
         """
@@ -250,31 +253,42 @@ class ParallelDatabase(databases.Database):
             options["init"] = self._register_codecs
             options["statement_cache_size"] = 0
             self._ignore_hstore = False
-        super().__init__(url, force_rollback=force_rollback, **options)
+            self._registered_codecs = [False]
+        super().__init__(url, force_rollback=False, **options)
         if url.dialect == "sqlite":
             self._serialization_lock = asyncio.Lock()
 
-    def __str__(self):
+    def __repr__(self) -> str:
         """Make Sentry debugging easier."""
-        return "ParallelDatabase('%s', options=%s)" % (self.url, self.options)
+        return "ParallelDatabase('%s', **%s)" % (self.url, self.options)
+
+    def __str__(self) -> str:
+        """Make Sentry debugging easier."""
+        return repr(self)
 
     def connection(self) -> FastConnection:
         """Bypass self._connection_context."""
         connection = FastConnection(self._backend)
         connection._serialization_lock = self._serialization_lock
+        connection._registered_codecs = self._registered_codecs
         return connection
 
     async def _register_codecs(self, conn: asyncpg.Connection) -> None:
-        await conn.set_type_codec(
-            "json", encoder=json.dumps, decoder=json.loads, schema="pg_catalog")
-        if self._ignore_hstore:
-            return
         try:
-            await conn.set_builtin_type_codec("hstore", codec_name="pg_contrib.hstore")
-        except ValueError:
-            # no HSTORE is registered
-            self._ignore_hstore = True
-            databases.core.logger.warning("no HSTORE is registered in %s", self.url)
+            await conn.set_type_codec(
+                "json", encoder=json.dumps, decoder=json.loads, schema="pg_catalog")
+            self._registered_codecs[0] = True
+            if self._ignore_hstore:
+                return
+            try:
+                await conn.set_builtin_type_codec("hstore", codec_name="pg_contrib.hstore")
+            except ValueError:
+                # no HSTORE is registered
+                self._ignore_hstore = True
+                databases.core.logger.warning("no HSTORE is registered in %s", self.url)
+        except Exception as e:
+            databases.core.logger.exception("Failed to register codecs in PostgreSQL connection.")
+            raise e from None
 
 
 _sql_log = logging.getLogger("%s.sql" % metadata.__package__)
