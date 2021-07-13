@@ -442,6 +442,7 @@ async def sync_labels(log: logging.Logger, mdb: ParallelDatabase, pdb: ParallelD
     for rows, model in ((all_pr_times, GitHubDonePullRequestFacts),
                         (all_merged, GitHubMergedPullRequestFacts)):
         for row in rows:
+            assert isinstance(row[1], dict)
             if (pr_labels := actual_labels.get(row[0], {})) != row[1]:
                 tasks.append(pdb.execute(
                     update(model)

@@ -10,6 +10,7 @@ import threading
 import time
 from typing import Any, Callable, List, Mapping, Optional, Tuple, Union
 from urllib.parse import quote
+import weakref
 
 import aiohttp.web
 import aiosqlite
@@ -84,7 +85,6 @@ class FastConnection(databases.core.Connection):
                         values: dict = None) -> List[Mapping]:
         """Avoid re-wrapping the returned rows in PostgreSQL."""
         if isinstance(self.raw_connection, asyncpg.Connection):
-            assert self._registered_codecs[0]
             sql, args = self._compile(self._build_query(query, values), None)
             async with self._query_lock:
                 return await self.raw_connection.fetch(sql, *args)
@@ -96,7 +96,6 @@ class FastConnection(databases.core.Connection):
                         ) -> Optional[Mapping]:
         """Avoid re-wrapping the returned row in PostgreSQL."""
         if isinstance(self.raw_connection, asyncpg.Connection):
-            assert self._registered_codecs[0]
             sql, args = self._compile(self._build_query(query, values), None)
             async with self._query_lock:
                 return await self.raw_connection.fetchrow(sql, *args)
@@ -109,7 +108,6 @@ class FastConnection(databases.core.Connection):
                         ) -> Any:
         """Avoid re-wrapping the returned value in PostgreSQL."""
         if isinstance(self.raw_connection, asyncpg.Connection):
-            assert self._registered_codecs[0]
             sql, args = self._compile(self._build_query(query, values), None)
             async with self._query_lock:
                 return await self.raw_connection.fetchval(sql, *args, column=column)
@@ -122,7 +120,6 @@ class FastConnection(databases.core.Connection):
         if not isinstance(self.raw_connection, asyncpg.Connection):
             assert self._locked  # sqlite requires wrapping every execute_many in a transaction
             return await super().execute_many(query, values)
-        assert self._registered_codecs[0]
         async with self._query_lock:
             return await self.raw_connection.executemany(*self._compile(query, values))
 
@@ -141,7 +138,6 @@ class FastConnection(databases.core.Connection):
                         self._locked = False
             else:
                 return await super().execute(query, values)
-        assert self._registered_codecs[0]
         built_query = self._build_query(query, values)
         query, args = self._compile(built_query, None)
         async with self._query_lock:
@@ -233,7 +229,10 @@ class ParallelDatabase(databases.Database):
     Tweak the behavior on per-dialect basis.
     """
 
-    _serialization_lock = _registered_codecs = None
+    _serialization_lock = None
+    # please report your naming disgust to the authors of asyncpg
+    _introspect_types_cache = {}
+    _introspect_type_cache = {}
 
     def __init__(
         self,
@@ -253,7 +252,8 @@ class ParallelDatabase(databases.Database):
             options["init"] = self._register_codecs
             options["statement_cache_size"] = 0
             self._ignore_hstore = False
-            self._registered_codecs = [False]
+            self._introspect_types_cache_db = {}
+            self._introspect_type_cache_db = {}
         super().__init__(url, force_rollback=False, **options)
         if url.dialect == "sqlite":
             self._serialization_lock = asyncio.Lock()
@@ -270,25 +270,27 @@ class ParallelDatabase(databases.Database):
         """Bypass self._connection_context."""
         connection = FastConnection(self._backend)
         connection._serialization_lock = self._serialization_lock
-        connection._registered_codecs = self._registered_codecs
         return connection
 
+    def _on_connection_close(self, conn: asyncpg.Connection):
+        del self._introspect_types_cache[weakref.ref(conn)]
+        del self._introspect_type_cache[weakref.ref(conn)]
+
     async def _register_codecs(self, conn: asyncpg.Connection) -> None:
+        # we have to maintain separate caches for each database because OID-s appear different
+        self._introspect_types_cache[weakref.ref(conn)] = self._introspect_types_cache_db
+        self._introspect_type_cache[weakref.ref(conn)] = self._introspect_type_cache_db
+        conn.add_termination_listener(self._on_connection_close)
+        await conn.set_type_codec(
+            "json", encoder=json.dumps, decoder=json.loads, schema="pg_catalog")
+        if self._ignore_hstore:
+            return
         try:
-            await conn.set_type_codec(
-                "json", encoder=json.dumps, decoder=json.loads, schema="pg_catalog")
-            self._registered_codecs[0] = True
-            if self._ignore_hstore:
-                return
-            try:
-                await conn.set_builtin_type_codec("hstore", codec_name="pg_contrib.hstore")
-            except ValueError:
-                # no HSTORE is registered
-                self._ignore_hstore = True
-                databases.core.logger.warning("no HSTORE is registered in %s", self.url)
-        except Exception as e:
-            databases.core.logger.exception("Failed to register codecs in PostgreSQL connection.")
-            raise e from None
+            await conn.set_builtin_type_codec("hstore", codec_name="pg_contrib.hstore")
+        except ValueError:
+            # no HSTORE is registered
+            self._ignore_hstore = True
+            databases.core.logger.warning("no HSTORE is registered in %s", self.url)
 
 
 _sql_log = logging.getLogger("%s.sql" % metadata.__package__)
@@ -349,30 +351,26 @@ async def _asyncpg_executemany(self, query, args, timeout, **kwargs):
         return await self._executemany_original(query, args, timeout, **kwargs)
 
 
-asyncpg.Connection._introspect_types_cache = {}
-asyncpg.Connection._introspect_type_cache = {}
-
-
 class _FakeStatement:
     name = ""
 
 
 async def _introspect_types_cached(self, typeoids, timeout):
-    cls = type(self)
-    if missing := [oid for oid in typeoids if oid not in cls._introspect_types_cache]:
+    introspect_types_cache = ParallelDatabase._introspect_types_cache[weakref.ref(self)]
+    if missing := [oid for oid in typeoids if oid not in introspect_types_cache]:
         rows, stmt = await self._introspect_types_original(missing, timeout)
         assert stmt.name == ""
         for row in rows:
-            cls._introspect_types_cache[row["oid"]] = row
-    return [cls._introspect_types_cache[oid] for oid in typeoids], _FakeStatement
+            introspect_types_cache[row["oid"]] = row
+    return [introspect_types_cache[oid] for oid in typeoids], _FakeStatement
 
 
 async def _introspect_type_cached(self, typename, schema):
-    cls = type(self)
+    introspect_type_cache = ParallelDatabase._introspect_type_cache[weakref.ref(self)]
     try:
-        return cls._introspect_type_cache[typename]
+        return introspect_type_cache[typename]
     except KeyError:
-        cls._introspect_type_cache[typename] = r = await self._introspect_type_original(
+        introspect_type_cache[typename] = r = await self._introspect_type_original(
             typename, schema)
         return r
 
