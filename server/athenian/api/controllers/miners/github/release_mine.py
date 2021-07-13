@@ -165,7 +165,7 @@ async def mine_releases(repos: Iterable[str],
             parents = mark_dag_parents(
                 hashes, vertexes, edges, release_hashes, release_timestamps, ownership)
             precomputed_mask = \
-                repo_releases[Release.id.key].isin(unfiltered_precomputed_facts).values
+                repo_releases[Release.node_id.key].isin(unfiltered_precomputed_facts).values
             out_of_range_mask = release_timestamps < np.array(time_from.replace(tzinfo=None),
                                                               dtype=release_timestamps.dtype)
             relevant = np.nonzero(~(precomputed_mask | out_of_range_mask))[0]
@@ -264,7 +264,7 @@ async def mine_releases(repos: Iterable[str],
             computed_release_info_by_commit = {}
             for i, (my_id, my_name, my_tag, my_url, my_author, my_published_at,
                     my_matched_by, my_commit) in \
-                    enumerate(zip(repo_releases[Release.id.key].values,
+                    enumerate(zip(repo_releases[Release.node_id.key].values,
                                   repo_releases[Release.name.key].values,
                                   repo_releases[Release.tag.key].values,
                                   repo_releases[Release.url.key].values,
@@ -327,7 +327,7 @@ async def mine_releases(repos: Iterable[str],
                         my_age, my_additions, my_deletions, commits_count, my_prs,
                         my_commit_authors,
                     ) = dupe
-                data.append(({Release.id.key: my_id,
+                data.append(({Release.node_id.key: my_id,
                               Release.name.key: my_name or my_tag,
                               Release.repository_full_name.key: prefixer.repo_name_map[repo],
                               Release.url.key: my_url,
@@ -407,16 +407,16 @@ def _build_mined_releases(releases: pd.DataFrame,
                           ) -> Tuple[List[Tuple[Dict[str, Any], ReleaseFacts]],
                                      np.ndarray,
                                      np.ndarray]:
-    has_precomputed_facts = releases[Release.id.key].isin(precomputed_facts).values
+    has_precomputed_facts = releases[Release.node_id.key].isin(precomputed_facts).values
     result = [
-        ({Release.id.key: my_id,
+        ({Release.node_id.key: my_id,
           Release.name.key: my_name or my_tag,
           Release.repository_full_name.key: prefixed_repo,
           Release.url.key: my_url,
           Release.sha.key: my_commit},
          _release_facts_with_repository_full_name(precomputed_facts[my_id], my_repo))
         for my_id, my_name, my_tag, my_repo, my_url, my_commit in zip(
-            releases[Release.id.key].values[has_precomputed_facts],
+            releases[Release.node_id.key].values[has_precomputed_facts],
             releases[Release.name.key].values[has_precomputed_facts],
             releases[Release.tag.key].values[has_precomputed_facts],
             releases[Release.repository_full_name.key].values[has_precomputed_facts],
@@ -727,7 +727,7 @@ async def _load_releases_by_name(names: Dict[str, Set[str]],
                                  inplace=True, ascending=False, ignore_index=True)
             if event_releases:
                 # we could load them twice
-                releases.drop_duplicates(subset=Release.id.key, inplace=True)
+                releases.drop_duplicates(subset=Release.node_id.key, inplace=True)
         if still_missing:
             log.warning("Some releases were not found: %s", still_missing)
     return releases, names, branches, default_branches

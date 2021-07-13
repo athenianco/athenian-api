@@ -10,7 +10,7 @@ release_columns = [
     Release.author.key,
     Release.author_node_id.key,
     Release.url.key,
-    Release.id.key,
+    Release.node_id.key,
     Release.repository_full_name.key,
     matched_by_column,
 ]

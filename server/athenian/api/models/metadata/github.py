@@ -298,7 +298,7 @@ class User(Base,
 
 class Release(Base,
               GitHubSchemaMixin,
-              IDMixinNG,
+              IDMixin,
               RepositoryMixin,
               ):
     __tablename__ = "api_releases"

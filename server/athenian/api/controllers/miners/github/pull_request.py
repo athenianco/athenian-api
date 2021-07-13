@@ -323,7 +323,7 @@ class PullRequestMiner:
         deserialize=_deserialize_mine_by_ids_cache,
         key=lambda prs, unreleased, releases, time_to, truncate=True, with_jira=True, **_: (
             ",".join(prs.index), ",".join(unreleased),
-            ",".join(releases[Release.id.key].values), time_to.timestamp(),
+            ",".join(releases[Release.node_id.key].values), time_to.timestamp(),
             truncate, with_jira,
         ),
     )
