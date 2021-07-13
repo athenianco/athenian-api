@@ -116,15 +116,18 @@ async def get_account_features(request: AthenianWebRequest, id: int) -> web.Resp
             .where(and_(Feature.id.in_(account_features),
                         Feature.component == FeatureComponent.webapp,
                         Feature.enabled)))
-        features = {row[0]: (row[1], row[2]) for row in features}
+        features = {row[0]: [row[1], row[2]] for row in features}
         for k, v in account_features.items():
             try:
                 fk = features[k]
             except KeyError:
                 continue
             if v is not None:
-                for pk, pv in v.items():
-                    fk[1][pk] = pv
+                if isinstance(v, dict):
+                    for pk, pv in v.items():
+                        fk[1][pk] = pv
+                else:
+                    fk[1] = v
         models = [ProductFeature(*v) for k, v in sorted(features.items())]
         return model_response(models)
 

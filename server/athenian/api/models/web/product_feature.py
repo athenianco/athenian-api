@@ -9,7 +9,7 @@ class ProductFeature(Model):
     openapi_types = {"name": str, "parameters": object}
     attribute_map = {"name": "name", "parameters": "parameters"}
 
-    def __init__(self, name: Optional[str] = None, parameters: Optional[dict] = None):
+    def __init__(self, name: Optional[str] = None, parameters: Optional[object] = None):
         """ProductFeature - a model defined in OpenAPI
 
         :param name: The name of this ProductFeature.
@@ -38,7 +38,7 @@ class ProductFeature(Model):
         self._name = name
 
     @property
-    def parameters(self) -> dict:
+    def parameters(self) -> object:
         """Gets the parameters of this ProductFeature.
 
         :return: The parameters of this ProductFeature.
@@ -46,7 +46,7 @@ class ProductFeature(Model):
         return self._parameters
 
     @parameters.setter
-    def parameters(self, parameters: dict):
+    def parameters(self, parameters: object):
         """Sets the parameters of this ProductFeature.
 
         :param parameters: The parameters of this ProductFeature.
