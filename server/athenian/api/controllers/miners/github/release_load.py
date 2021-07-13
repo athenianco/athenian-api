@@ -210,7 +210,7 @@ class ReleaseLoader:
             if index is not None:
                 releases = releases.take(np.where(~releases.index.duplicated())[0])
             else:
-                releases.drop_duplicates(Release.id.key, inplace=True, ignore_index=True)
+                releases.drop_duplicates(Release.node_id.key, inplace=True, ignore_index=True)
             releases.sort_values(Release.published_at.key,
                                  inplace=True, ascending=False, ignore_index=True)
         applied_matches = gather_applied_matches()
@@ -483,7 +483,7 @@ class ReleaseLoader:
                 Release.author.key: user_map.get(author, author),
                 Release.author_node_id.key: author,
                 Release.commit_id.key: commit_node_id,
-                Release.id.key: commit_node_id,
+                Release.node_id.key: commit_node_id,
                 Release.name.key: row[ReleaseNotification.name.key],
                 Release.published_at.key:
                     row[ReleaseNotification.published_at.key].replace(tzinfo=timezone.utc),
@@ -574,7 +574,7 @@ class ReleaseLoader:
         if not isinstance(releases.index, pd.RangeIndex):
             releases = releases.reset_index()
         inserted = []
-        columns = [Release.id.key,
+        columns = [Release.node_id.key,
                    Release.repository_full_name.key,
                    Release.repository_node_id.key,
                    Release.author_node_id.key,
@@ -756,7 +756,7 @@ class ReleaseMatcher:
         if (missing_sha := releases[Release.sha.key].isnull().values).any():
             raise ResponseError(NoSourceDataError(
                 detail="There are missing commit hashes for releases %s" %
-                       releases[Release.id.key].values[missing_sha].tolist()))
+                       releases[Release.node_id.key].values[missing_sha].tolist()))
         regexp_cache = {}
         matched = []
         for repo in repos:
@@ -833,7 +833,7 @@ class ReleaseMatcher:
                 Release.author.key: commits[PushCommit.author_login.key],
                 Release.author_node_id.key: commits[PushCommit.author_user.key],
                 Release.commit_id.key: commits[PushCommit.node_id.key],
-                Release.id.key: commits[PushCommit.node_id.key],
+                Release.node_id.key: commits[PushCommit.node_id.key],
                 Release.name.key: commits[PushCommit.sha.key],
                 Release.published_at.key: commits[PushCommit.committed_date.key],
                 Release.repository_full_name.key: repo,

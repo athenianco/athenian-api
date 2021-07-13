@@ -450,7 +450,7 @@ def check_branch_releases(releases: pd.DataFrame, n: int, time_from: datetime, t
     assert len(releases) == n
     assert "mcuadros" in set(releases[Release.author.key])
     assert len(releases[Release.commit_id.key].unique()) == n
-    assert releases[Release.id.key].all()
+    assert releases[Release.node_id.key].all()
     assert all(len(n) == 40 for n in releases[Release.name.key])
     assert releases[Release.published_at.key].between(time_from, time_to).all()
     assert (releases[Release.repository_full_name.key] == "src-d/go-git").all()
@@ -659,7 +659,7 @@ async def test_load_releases_empty(
         pdb,
         rdb,
         None,
-        index=Release.id.key)
+        index=Release.node_id.key)
     assert releases.empty
     if repos:
         assert matched_bys == {"src-d/gitbase": ReleaseMatch.branch}
@@ -727,7 +727,7 @@ async def test_load_releases_events_settings(
         pdb,
         rdb,
         None,
-        index=Release.id.key)
+        index=Release.node_id.key)
     await wait_deferred()
     assert len(releases) == 7
     assert (releases[matched_by_column] == ReleaseMatch.tag).all()
@@ -745,24 +745,24 @@ async def test_load_releases_events_settings(
         pdb,
         rdb,
         None,
-        index=Release.id.key)
+        index=Release.node_id.key)
     await wait_deferred()
     assert matched_bys == {"src-d/go-git": ReleaseMatch.event}
     assert (releases[matched_by_column] == ReleaseMatch.event).all()
     assert len(releases) == 1
     assert releases.iloc[0].to_dict() == {
-        "repository_full_name": "src-d/go-git",
-        "repository_node_id": "MDEwOlJlcG9zaXRvcnk0NDczOTA0NA==",
-        "author": "vmarkovtsev",
-        "author_node_id": "MDQ6VXNlcjI3OTM1NTE=",
-        "name": "Pushed!",
-        "published_at": pd.Timestamp("2020-01-01 00:00:00", tzinfo=timezone.utc),
-        "tag": None,
-        "url": "www",
-        "sha": "8d20cc5916edf7cfa6a9c5ed069f0640dc823c12",
-        "commit_id": "MDY6Q29tbWl0NDQ3MzkwNDQ6OGQyMGNjNTkxNmVkZjdjZmE2YTljNWVkMDY5ZjA2NDBkYzgyM2MxMg==",  # noqa
-        "matched_by": ReleaseMatch.event,
-        "id": "MDY6Q29tbWl0NDQ3MzkwNDQ6OGQyMGNjNTkxNmVkZjdjZmE2YTljNWVkMDY5ZjA2NDBkYzgyM2MxMg==",
+        Release.repository_full_name.key: "src-d/go-git",
+        Release.repository_node_id.key: "MDEwOlJlcG9zaXRvcnk0NDczOTA0NA==",
+        Release.author.key: "vmarkovtsev",
+        Release.author_node_id.key: "MDQ6VXNlcjI3OTM1NTE=",
+        Release.name.key: "Pushed!",
+        Release.published_at.key: pd.Timestamp("2020-01-01 00:00:00", tzinfo=timezone.utc),
+        Release.tag.key: None,
+        Release.url.key: "www",
+        Release.sha.key: "8d20cc5916edf7cfa6a9c5ed069f0640dc823c12",
+        Release.commit_id.key: "MDY6Q29tbWl0NDQ3MzkwNDQ6OGQyMGNjNTkxNmVkZjdjZmE2YTljNWVkMDY5ZjA2NDBkYzgyM2MxMg==",  # noqa
+        matched_by_column: ReleaseMatch.event,
+        Release.node_id.key: "MDY6Q29tbWl0NDQ3MzkwNDQ6OGQyMGNjNTkxNmVkZjdjZmE2YTljNWVkMDY5ZjA2NDBkYzgyM2MxMg==",  # noqa
     }
     rows = await rdb.fetch_all(select([ReleaseNotification]))
     assert len(rows) == 1
@@ -814,7 +814,7 @@ async def test_load_releases_events_unresolved(
         pdb,
         rdb,
         None,
-        index=Release.id.key)
+        index=Release.node_id.key)
     assert releases.empty
     assert matched_bys == {"src-d/go-git": ReleaseMatch.event}
 

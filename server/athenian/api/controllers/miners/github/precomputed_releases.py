@@ -46,7 +46,7 @@ async def load_precomputed_release_facts(releases: pd.DataFrame,
             raise AssertionError("Ambiguous release settings for %s: %s" % (repo, setting))
         reverse_settings[(setting.match, value)].append(repo)
     grouped_releases = defaultdict(list)
-    for rid, repo in zip(releases[Release.id.key].values,
+    for rid, repo in zip(releases[Release.node_id.key].values,
                          releases[Release.repository_full_name.key].values):
         grouped_releases[repo].append(rid)
     default_version = \
@@ -99,7 +99,7 @@ async def store_precomputed_release_facts(releases: List[Tuple[Dict[str, Any], R
         else:
             raise AssertionError("Ambiguous release settings for %s: %s" % (repo, setting))
         values.append(GitHubReleaseFacts(
-            id=dikt[Release.id.key],
+            id=dikt[Release.node_id.key],
             acc_id=account,
             release_match=_compose_release_match(setting.match, value),
             repository_full_name=repo,

@@ -149,7 +149,7 @@ async def mine_all_releases(repos: Collection[str],
     df_facts = df_from_structs([r[1] for r in releases])
     del df_facts[Release.repository_full_name.key]
     result = df_gen.join(df_facts)
-    result.set_index(Release.id.key, inplace=True)
+    result.set_index(Release.node_id.key, inplace=True)
     for col in ("commit_authors", "prs_user_login"):
         result[col] = [[s.decode() for s in subarr] for subarr in result[col].values]
     return {"": result}

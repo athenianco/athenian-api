@@ -66,7 +66,7 @@ async def test_load_store_precomputed_done_smoke(
                  Release.author.key: "mcarmonaa",
                  Release.author_node_id.key: "MDQ6VXNlcjE2OTA3NDQx",
                  Release.url.key: "https://release",
-                 Release.id.key: "MD%d" % i},
+                 Release.node_id.key: "MD%d" % i},
         comments=gen_dummy_df(s.first_comment_on_first_review),
         commits=pd.DataFrame.from_records(
             [["mcarmonaa", "mcarmonaa", "MDQ6VXNlcjE2OTA3NDQx", "MDQ6VXNlcjE2OTA3NDQx",
@@ -151,7 +151,7 @@ async def test_load_store_precomputed_done_filters(
                  Release.author_node_id.key:
                      ["MDQ6VXNlcjE1OTA2NzY0", "MDQ6VXNlcjE2OTA3NDQx"][i % 2],
                  Release.url.key: "https://release",
-                 Release.id.key: "MD%d" % i},
+                 Release.node_id.key: "MD%d" % i},
         comments=gen_dummy_df(s.first_comment_on_first_review),
         commits=pd.DataFrame.from_records(
             [["mcuadros", "mcuadros", "MDQ6VXNlcjE1NzMxMTQ=", "MDQ6VXNlcjE1NzMxMTQ=",
@@ -312,7 +312,7 @@ async def test_load_store_precomputed_done_exclude_inactive(
                  Release.author.key: "mcarmonaa",
                  Release.author_node_id.key: "MDQ6VXNlcjE2OTA3NDQx",
                  Release.url.key: "https://release",
-                 Release.id.key: "MDwhatever="},
+                 Release.node_id.key: "MDwhatever="},
         comments=gen_dummy_df(s.first_comment_on_first_review),
         commits=pd.DataFrame.from_records(
             [["mcuadros", "mcuadros", "MDQ6VXNlcjE1NzMxMTQ=", "MDQ6VXNlcjE1NzMxMTQ=",
@@ -383,7 +383,7 @@ async def test_load_precomputed_done_times_reponums_smoke(
                  Release.author_node_id.key:
                      ["MDQ6VXNlcjE1OTA2NzY0", "MDQ6VXNlcjE2OTA3NDQx"][i % 2],
                  Release.url.key: "https://release",
-                 Release.id.key: "MD%d" % i},
+                 Release.node_id.key: "MD%d" % i},
         comments=gen_dummy_df(s.first_comment_on_first_review),
         commits=pd.DataFrame.from_records(
             [["mcuadros", "mcuadros", "MDQ6VXNlcjE1NzMxMTQ=", "MDQ6VXNlcjE1NzMxMTQ=",
@@ -453,7 +453,7 @@ def _gen_one_pr(pr_samples):
                  Release.author.key: "mcarmonaa",
                  Release.author_node_id.key: "MDQ6VXNlcjE2OTA3NDQx",
                  Release.url.key: "https://release",
-                 Release.id.key: "MDwhatever="},
+                 Release.node_id.key: "MDwhatever="},
         comments=gen_dummy_df(s.first_comment_on_first_review),
         commits=pd.DataFrame.from_records(
             [["mcarmonaa", "mcarmonaa", "MDQ6VXNlcjE2OTA3NDQx", "MDQ6VXNlcjE2OTA3NDQx",
@@ -563,7 +563,8 @@ async def test_load_precomputed_pr_releases_smoke(
         await wait_deferred()
         for s, pr in zip(samples, prs):
             rpr = released_prs.loc[pr.pr[PullRequest.node_id.key]]
-            for col in (Release.author.key, Release.url.key, Release.id.key, matched_by_column):
+            for col in (Release.author.key, Release.url.key, Release.node_id.key,
+                        matched_by_column):
                 assert rpr[col] == pr.release[col], i
             assert rpr[Release.published_at.key].replace(tzinfo=None) == s.released, i
             assert rpr[Release.repository_full_name.key] == \
@@ -940,7 +941,7 @@ async def test_store_precomputed_done_none_assert(pdb, pr_samples):
         release={matched_by_column: settings.native["one"],
                  Release.author.key: "foo",
                  Release.url.key: "https://release",
-                 Release.id.key: "MDwhatever="},
+                 Release.node_id.key: "MDwhatever="},
         comments=gen_dummy_df(samples[0].first_comment_on_first_review),
         commits=pd.DataFrame.from_records(
             [["mcuadros", "mcuadros", samples[0].first_commit]],
