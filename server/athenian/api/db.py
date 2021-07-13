@@ -274,6 +274,7 @@ class ParallelDatabase(databases.Database):
         except ValueError:
             # no HSTORE is registered
             self._ignore_hstore = True
+            databases.core.logger.warning("no HSTORE is registered in %s", self.url)
 
 
 _sql_log = logging.getLogger("%s.sql" % metadata.__package__)
