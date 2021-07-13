@@ -143,8 +143,16 @@ def fill_state_session(session: sqlalchemy.orm.Session):
         owner_id=3,
         items=["github.com/athenianco/athenian-webapp", "github.com/athenianco/athenian-api"]))
     session.add(Invitation(salt=777, account_id=3, created_by="auth0|5e1f6e2e8bfa520ea5290741"))
-    session.add(Feature(id=1000, name="jira", component=FeatureComponent.webapp, enabled=True,
+    session.add(Feature(id=1000,
+                        name="jira",
+                        component=FeatureComponent.webapp,
+                        enabled=True,
                         default_parameters={"a": "b", "c": "d"}))
+    session.add(Feature(id=1001,
+                        name="bare_value",
+                        component=FeatureComponent.webapp,
+                        enabled=True,
+                        default_parameters=365))
     session.flush()
     feature = session.query(Feature).filter(and_(
         Feature.name == Feature.USER_ORG_MEMBERSHIP_CHECK,
@@ -156,6 +164,8 @@ def fill_state_session(session: sqlalchemy.orm.Session):
                             enabled=True))
     session.add(AccountFeature(account_id=1, feature_id=1000, enabled=True,
                                parameters={"a": "x"}))
+    session.add(AccountFeature(account_id=1, feature_id=1001, enabled=True,
+                               parameters=28))
     session.add(AccountJiraInstallation(id=1, account_id=1))
     if os.getenv("WITH_PRELOADING", "0") == "1":
         session.add(Feature(id=2000,

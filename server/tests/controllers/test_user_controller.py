@@ -124,9 +124,11 @@ async def test_get_account_features_smoke(client, headers):
     )
     body = json.loads((await response.read()).decode("utf-8"))
     models = [ProductFeature.from_dict(p) for p in body]
-    assert len(models) == 1
+    assert len(models) == 2
     assert models[0].name == "jira"
     assert models[0].parameters == {"a": "x", "c": "d"}
+    assert models[1].name == "bare_value"
+    assert models[1].parameters == 28
 
 
 @pytest.mark.parametrize("account, code", [[3, 404], [4, 404]])
