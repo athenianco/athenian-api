@@ -37,7 +37,7 @@ RUN echo 'deb-src http://archive.ubuntu.com/ubuntu focal-updates main' >>/etc/ap
     DEB_CFLAGS_SET="$OPT" DEB_LDFLAGS_SET="$OPT" dpkg-buildpackage -uc -b -j2 && \
     cd .. && \
     apt-get remove -y $(cat build_bloat) && \
-    rm -f libpython3.8-testsuite* python3.8-examples* python3.8-doc* idle-python3.8* python3.8-venv* && \
+    rm -f libpython3.8-testsuite* python3.8-examples* python3.8-doc* idle-python3.8* python3.8-venv* python3.8-full* && \
     apt-get remove -y dpkg-dev devscripts && \
     apt-get autoremove -y && \
     dpkg -i *.deb && \
