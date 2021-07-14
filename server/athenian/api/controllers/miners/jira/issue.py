@@ -235,11 +235,15 @@ async def fetch_jira_issues(installation_ids: Tuple[int, List[str]],
             log.error("JIRA issues are missing in jira.athenian_issue: %s",
                       ", ".join(issues[Issue.key.key].take(np.nonzero(missing_updated)[0])))
             issues = issues.take(np.nonzero(~missing_updated)[0])
+    if len(issues.index) > 100:
+        jira_id_cond = NodePullRequestJiraIssues.jira_id.in_any_values(issues.index)
+    else:
+        jira_id_cond = NodePullRequestJiraIssues.jira_id.in_(issues.index)
     pr_rows = await mdb.fetch_all(
         sql.select([NodePullRequestJiraIssues.node_id, NodePullRequestJiraIssues.jira_id])
         .where(sql.and_(NodePullRequestJiraIssues.jira_acc == installation_ids[0],
-                        NodePullRequestJiraIssues.jira_id.in_(issues.index),
-                        NodePullRequestJiraIssues.node_acc.in_(meta_ids))))
+                        NodePullRequestJiraIssues.node_acc.in_(meta_ids),
+                        jira_id_cond)))
     pr_to_issue = {r[0]: r[1] for r in pr_rows}
     # TODO(vmarkovtsev): load the "fresh" released PRs
     released_prs = await _fetch_released_prs(
