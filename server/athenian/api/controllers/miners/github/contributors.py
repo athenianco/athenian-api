@@ -98,11 +98,13 @@ async def mine_contributors(repos: Collection[str],
             mdb.fetch_all(union(*(select([PullRequest.user_login, PullRequest.node_id])
                                   .where(and_(*common_prs_where(), prs_opt))
                                   for prs_opt in prs_opts))),
+            prefixer.load(),
         ]
-        released, main = await gather(*tasks)
+        released, main, loaded_prefixer = await gather(*tasks)
+        user_node_to_login_get = loaded_prefixer.user_node_to_login.get
         return {
             "author": Counter(user for user, _ in set(chain(
-                ((r[0], r[1]) for r in released),
+                ((user_node_to_login_get(r[0]), r[1]) for r in released),
                 ((r[0], r[1]) for r in main)))
             ).items(),
         }
