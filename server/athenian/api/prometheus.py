@@ -78,8 +78,10 @@ def _after_response(request: web.Request,
         .observe(rdb_elapsed / elapsed)
     code = response.status if response is not None else 500
     if elapsed > elapsed_error_threshold:
-        logging.getLogger(f"{__package__}.instrument").error(
-            "%s took %ds -> HTTP %d", request.path, int(elapsed), code)
+        with sentry_sdk.push_scope() as scope:
+            scope.fingerprint = ["{{ default }}", request.path]
+            logging.getLogger(f"{__package__}.instrument").error(
+                "%s took %ds -> HTTP %d", request.path, int(elapsed), code)
     request.app["request_count"] \
         .labels(__package__, __version__, request.method, request.path, code) \
         .inc()
