@@ -6,7 +6,7 @@ import aiosqlite
 from sqlalchemy import join, select, union_all
 
 from athenian.api.async_utils import gather
-from athenian.api.controllers.account import get_metadata_account_ids_or_none
+from athenian.api.controllers.account import get_metadata_account_ids_or_empty
 from athenian.api.controllers.jira import get_jira_installation_or_none
 from athenian.api.db import DatabaseLike
 from athenian.api.models.metadata.github import NodeCheckRun, NodeStatusContext
@@ -41,7 +41,7 @@ async def load_user_accounts(uid: str,
         get_jira_installation_or_none(x[UserAccount.account_id.key], sdb, mdb, cache)
         for x in accounts
     ] + [
-        get_metadata_account_ids_or_none(x[UserAccount.account_id.key], sdb, cache)
+        get_metadata_account_ids_or_empty(x[UserAccount.account_id.key], sdb, cache)
         for x in accounts
     ]
     results = await gather(*tasks, op="account_ids")
@@ -65,7 +65,7 @@ async def load_user_accounts(uid: str,
                 .limit(1),
             )
     tasks = [
-        mdb.fetch_val(build_query(meta_ids)) if meta_ids is not None else _return_none()
+        mdb.fetch_val(build_query(meta_ids)) if meta_ids else _return_none()
         for meta_ids in results[len(accounts):]
     ]
     check_runs = await gather(*tasks, op="check_runs")

@@ -56,10 +56,10 @@ async def get_metadata_account_ids(account: int,
     return tuple(r[0] for r in ids)
 
 
-async def get_metadata_account_ids_or_none(account: int,
-                                           sdb: DatabaseLike,
-                                           cache: Optional[aiomcache.Client],
-                                           ) -> Optional[Tuple[int, ...]]:
+async def get_metadata_account_ids_or_empty(account: int,
+                                            sdb: DatabaseLike,
+                                            cache: Optional[aiomcache.Client],
+                                            ) -> Tuple[int, ...]:
     """
     Fetch the metadata account IDs for the given API account ID.
 
@@ -68,7 +68,7 @@ async def get_metadata_account_ids_or_none(account: int,
     try:
         return await get_metadata_account_ids(account, sdb, cache)
     except ResponseError:
-        return None
+        return ()
 
 
 async def match_metadata_installation(account: int,
