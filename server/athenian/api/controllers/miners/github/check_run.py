@@ -128,16 +128,6 @@ async def mine_check_runs(time_from: datetime,
     del extra_df
 
     pr_node_ids = df[CheckRun.pull_request_node_id.key].values.astype("U")
-    if labels and not embedded_labels_query:
-        df_labels = df_labels[0]
-        prs_left = PullRequestMiner.find_left_by_labels(
-            df_labels.index, df_labels[PullRequestLabel.name.key].values, labels)
-        indexes_left = np.nonzero(np.in1d(pr_node_ids, prs_left.values.astype("U")))[0]
-        if len(indexes_left) < len(df):
-            pr_node_ids = pr_node_ids[indexes_left]
-            df = df.take(indexes_left)
-            df.reset_index(drop=True, inplace=True)
-
     check_run_node_ids = df[CheckRun.check_run_node_id.key].values.astype("S")
     unique_node_ids, node_id_counts = np.unique(check_run_node_ids, return_counts=True)
     assert (unique_node_ids != b"None").all()
@@ -189,10 +179,9 @@ async def mine_check_runs(time_from: datetime,
         NodePullRequest.merged.key: pull_request_merged_column,
     }, inplace=True)
     df[pull_request_merged_column].fillna(False, inplace=True)
+
     # do not let different check runs belonging to the same suite map to different PRs
-    df[check_suite_started_column] = df.groupby(
-        CheckRun.check_suite_node_id.key, sort=False,
-    )[CheckRun.started_at.key].transform("min")
+    _calculate_check_suite_started(df)
     try:
         check_runs_outside_pr_lifetime_indexes = \
             np.nonzero(~df[check_suite_started_column].between(
@@ -267,6 +256,14 @@ async def mine_check_runs(time_from: datetime,
         df = df.take(first_encounters)
         df.reset_index(inplace=True, drop=True)
 
+    # deferred filter by labels so that we disambiguate PRs always the same way
+    if labels:
+        df = _filter_by_pr_labels(df, labels, embedded_labels_query, df_labels)
+
+    # "Re-run jobs" may produce duplicate check runs in the same check suite, split them
+    # in separate artificial check suites by enumerating in chronological order
+    _split_duplicate_check_runs(df)
+
     # exclude skipped checks from execution time calculation
     df.loc[df[CheckRun.conclusion.key] == "NEUTRAL", CheckRun.completed_at.key] = None
 
@@ -287,3 +284,59 @@ async def mine_check_runs(time_from: datetime,
         df[CheckRun.completed_at.key].fillna(pd.NaT).values, started_ats)
     df[CheckRun.completed_at.key] = df[CheckRun.completed_at.key].astype(started_ats.dtype)
     return df
+
+
+def _calculate_check_suite_started(df: pd.DataFrame) -> None:
+    df[check_suite_started_column] = df.groupby(
+        CheckRun.check_suite_node_id.name, sort=False,
+    )[CheckRun.started_at.name].transform("min")
+
+
+def _filter_by_pr_labels(df: pd.DataFrame,
+                         labels: LabelFilter,
+                         embedded_labels_query: bool,
+                         df_labels: Tuple[pd.DataFrame, ...],
+                         ) -> pd.DataFrame:
+    pr_node_ids = df[CheckRun.pull_request_node_id.key].values.astype("S")
+    if not embedded_labels_query:
+        df_labels = df_labels[0]
+        prs_left = PullRequestMiner.find_left_by_labels(
+            df_labels.index, df_labels[PullRequestLabel.name.key].values, labels)
+        indexes_left = np.nonzero(np.in1d(pr_node_ids, prs_left.values.astype("S")))[0]
+        if len(indexes_left) < len(df):
+            df = df.take(indexes_left)
+            df.reset_index(drop=True, inplace=True)
+    return df
+
+
+def _split_duplicate_check_runs(df: pd.DataFrame) -> None:
+    # DEV-2612 split older re-runs to artificial check suites
+    if df.empty:
+        return
+    df.sort_values(CheckRun.started_at.name, ignore_index=True, inplace=True)
+    dupe_index = df.groupby(
+        [CheckRun.check_suite_node_id.name, CheckRun.name.name], sort=False,
+    ).cumcount().values
+    # astype("S") mistakes x10 in the length for unknown reason
+    dupe_index = dupe_index.astype(f"S{len(str(dupe_index.max()))}")
+    check_suite_node_ids = df[CheckRun.check_suite_node_id.key].values.astype("S")
+    check_suite_node_ids = np.char.add(check_suite_node_ids, dupe_index)
+    df[CheckRun.check_suite_node_id.key] = check_suite_node_ids
+    check_run_conclusions = df[CheckRun.conclusion.name].values.astype("S")
+    check_suite_conclusions = df[CheckRun.check_suite_conclusion.name].values
+    successful = (
+        (check_suite_conclusions == "SUCCESS") | (check_suite_conclusions == "NEUTRAL")
+    )
+    # override the successful conclusion of the check suite if at least one check run's conclusion
+    # does not agree
+    changed = False
+    for c in ("TIMED_OUT", "CANCELLED", "FAILURE"):  # the order matters
+        mask = successful & np.in1d(
+            check_suite_node_ids,
+            np.unique(check_suite_node_ids[check_run_conclusions == c.encode()]),
+        )
+        if mask.any():
+            df.loc[mask, CheckRun.check_suite_conclusion.name] = c
+            changed = True
+    if changed:
+        _calculate_check_suite_started(df)
