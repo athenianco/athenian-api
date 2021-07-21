@@ -8,8 +8,8 @@ from sqlalchemy import distinct, func, select
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather
-from athenian.api.cache import cached, max_exptime
-from athenian.api.controllers.account import get_metadata_account_ids
+from athenian.api.cache import cached, CancelCache, max_exptime
+from athenian.api.controllers.account import get_metadata_account_ids_or_empty
 from athenian.api.models.metadata.github import NodeRepository
 from athenian.api.models.state.models import UserAccount
 from athenian.api.request import AthenianWebRequest
@@ -38,15 +38,21 @@ class SegmentClient:
         await self._identify(request)
         await self._track(request)
 
+    def _check_identify_full(result: bool, **_) -> bool:
+        if not result:
+            raise CancelCache()
+        return True
+
     @cached(
         exptime=max_exptime,
-        serialize=lambda _: b"\x01",
-        deserialize=lambda _: b"\x01",
+        serialize=lambda full: b"\x01" if full else b"\x00",
+        deserialize=lambda byte: byte != b"\x00",
+        postprocess=_check_identify_full,
         key=lambda request, **_: (request.uid,),
         cache=lambda request, **_: request.cache,
         refresh_on_access=True,
     )
-    async def _identify(self, request: AthenianWebRequest) -> None:
+    async def _identify(self, request: AthenianWebRequest) -> bool:
         tasks = [
             request.user(),
             request.sdb.fetch_all(
@@ -55,7 +61,7 @@ class SegmentClient:
         ]
         user, accounts = await gather(*tasks)
         accounts = [r[0] for r in accounts]
-        tasks = [get_metadata_account_ids(acc, request.sdb, request.cache)
+        tasks = [get_metadata_account_ids_or_empty(acc, request.sdb, request.cache)
                  for acc in accounts]
         meta_ids = list(chain.from_iterable(await gather(*tasks)))
         orgs = await request.mdb.fetch_all(
@@ -78,6 +84,9 @@ class SegmentClient:
             **self._common_data(),
         }
         await self._post(data, "identify")
+        return bool(meta_ids)
+
+    _check_identify_full = staticmethod(_check_identify_full)
 
     async def _track(self, request: AthenianWebRequest) -> None:
         data = {
