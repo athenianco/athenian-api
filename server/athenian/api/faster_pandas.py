@@ -1,8 +1,7 @@
 from datetime import timezone
-from functools import lru_cache, wraps
+from functools import lru_cache
 
 from pandas import Series, set_option
-from pandas.core import algorithms
 from pandas.core.arrays import DatetimeArray, datetimes
 from pandas.core.arrays.datetimelike import DatetimeLikeArrayMixin
 from pandas.core.base import IndexOpsMixin
@@ -12,9 +11,8 @@ from pandas.core.dtypes.dtypes import DatetimeTZDtype
 
 def nan_to_none_return(func):
     """Decorate to replace returned NaN-s with None-s."""
-    @wraps(func)
-    def wrapped_nan_to_none_return(*args, **kwargs):
-        r = func(*args, **kwargs)
+    def wrapped_nan_to_none_return(self, *args, **kwargs):
+        r = getattr(self, func)(*args, **kwargs)
         if r != r:
             return None
         return r
@@ -25,8 +23,8 @@ def nan_to_none_return(func):
 def patch_pandas():
     """Patch pandas internals to increase performance on small DataFrame-s."""
     set_option("mode.chained_assignment", "raise")
-    IndexOpsMixin.nonemin = nan_to_none_return(IndexOpsMixin.min)
-    IndexOpsMixin.nonemax = nan_to_none_return(IndexOpsMixin.max)
+    IndexOpsMixin.nonemin = nan_to_none_return("min")
+    IndexOpsMixin.nonemax = nan_to_none_return("max")
 
     common.pandas_dtype = lru_cache()(common.pandas_dtype)
     datetimes.pandas_dtype = common.pandas_dtype
@@ -48,10 +46,11 @@ def patch_pandas():
 
     original_take = DatetimeLikeArrayMixin.take
 
-    def fast_take(self, indices, allow_fill=False, fill_value=None):
+    def fast_take(self, indices, *, allow_fill=False, fill_value=None, axis: int = 0):
         if len(indices) and indices.min() < 0:
-            return original_take(self, indices, allow_fill=allow_fill, fill_value=fill_value)
-        return original_take(self, indices, allow_fill=False)
+            return original_take(
+                self, indices, allow_fill=allow_fill, fill_value=fill_value, axis=axis)
+        return original_take(self, indices, allow_fill=False, axis=axis)
 
     DatetimeLikeArrayMixin.take = fast_take
 
@@ -63,16 +62,6 @@ def patch_pandas():
         return original_tz_convert(self, tz)
 
     DatetimeArray.tz_convert = fast_tz_convert
-
-    original_get_take_nd_function = algorithms._get_take_nd_function
-    cached_get_take_nd_function = lru_cache()(algorithms._get_take_nd_function)
-
-    def _get_take_nd_function(ndim: int, arr_dtype, out_dtype, axis: int = 0, mask_info=None):
-        if mask_info is None or not mask_info[1]:
-            return cached_get_take_nd_function(ndim, arr_dtype, out_dtype, axis)
-        return original_get_take_nd_function(ndim, arr_dtype, out_dtype, axis, mask_info)
-
-    algorithms._get_take_nd_function = _get_take_nd_function
 
     datetimes._validate_dt64_dtype = lru_cache()(datetimes._validate_dt64_dtype)
 
