@@ -26,6 +26,7 @@ from asyncpg import InterfaceError, OperatorInterventionError, PostgresConnectio
 from connexion.apis import aiohttp_api
 from connexion.exceptions import ConnexionException
 import connexion.lifecycle
+import connexion.security
 from connexion.spec import OpenAPISpecification
 from flogging import flogging
 import prometheus_client
@@ -36,7 +37,7 @@ from werkzeug.exceptions import Unauthorized
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather
-from athenian.api.auth import Auth0
+from athenian.api.auth import AthenianAioHttpSecurityHandlerFactory, Auth0
 from athenian.api.balancing import extract_handler_weight
 from athenian.api.cache import CACHE_VAR_NAME, setup_cache_metrics
 from athenian.api.controllers import invitation_controller
@@ -97,6 +98,7 @@ class AthenianAioHttpApi(connexion.AioHttpApi):
     - Provide the server description from the original spec.
     - Log big request bodies so that we don't fear truncation in Sentry.
     - Apply AthenianConnexionRequest.
+    - Re-route the security checks to our own class.
     """
 
     def _spec_for_prefix(self, request) -> OpenAPISpecification:
@@ -110,6 +112,11 @@ class AthenianAioHttpApi(connexion.AioHttpApi):
         else:
             self.base_path = self.specification.base_path
         self._api_name = connexion.AioHttpApi.normalize_string(self.base_path)
+
+    def make_security_handler_factory(self, pass_context_arg_name):
+        """Return our own SecurityHandlerFactory to create all security check handlers."""
+        return AthenianAioHttpSecurityHandlerFactory(
+            self.options.as_dict()["auth"], pass_context_arg_name)
 
     async def get_request(self, req: aiohttp.web.Request) -> connexion.lifecycle.ConnexionRequest:
         """Override the parent's method to ensure that we can access the full request body in \
@@ -246,22 +253,25 @@ class AthenianApp(connexion.AioHttpApp):
             r"/memory/?$",
             r"/objgraph/?$",
         ], cache=cache)
-        with self._auth0:
-            self.add_api(
-                "openapi.yaml",
-                base_path="/v1",
-                arguments={
-                    "title": metadata.__description__,
-                    "server_url": self._auth0.audience.rstrip("/"),
-                    "server_description": os.getenv("SENTRY_ENV", "development"),
-                    "server_version": metadata.__version__,
-                    "commit": getattr(metadata, "__commit__", "N/A"),
-                    "build_date": getattr(metadata, "__date__", "N/A"),
-                },
-                pass_context_arg_name="request",
-                options={"middlewares": [
-                    self.i_will_survive, self.with_db, self.postprocess_response, self.manhole]},
-            )
+        self.add_api(
+            "openapi.yaml",
+            base_path="/v1",
+            arguments={
+                "title": metadata.__description__,
+                "server_url": self._auth0.audience.rstrip("/"),
+                "server_description": os.getenv("SENTRY_ENV", "development"),
+                "server_version": metadata.__version__,
+                "commit": getattr(metadata, "__commit__", "N/A"),
+                "build_date": getattr(metadata, "__date__", "N/A"),
+            },
+            pass_context_arg_name="request",
+            options={
+                "middlewares": [
+                    self.i_will_survive, self.with_db, self.postprocess_response, self.manhole,
+                ],
+                "auth": self._auth0,
+            },
+        )
         if kms_cls is not None:
             self.app["kms"] = self._kms = kms_cls()
         else:

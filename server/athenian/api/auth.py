@@ -8,16 +8,15 @@ import pickle
 from random import random
 import re
 import struct
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Coroutine, Dict, List, Optional, Sequence, Tuple
 import warnings
 
 import aiohttp.web
 from aiohttp.web_runner import GracefulExit
 import aiomcache
-from connexion.decorators.security import get_authorization_info
 from connexion.exceptions import AuthenticationProblem, OAuthProblem, Unauthorized
 from connexion.lifecycle import ConnexionRequest
-from connexion.operations import secure
+import connexion.security
 from connexion.utils import deep_get
 with warnings.catch_warnings():
     # this will suppress all warnings in this block
@@ -201,66 +200,6 @@ class Auth0:
         await session.close()
         if transports > 0:
             await all_is_lost.wait()
-
-    def __enter__(self):
-        """Monkey-patch connexion.operations.secure.verify_security()."""
-        self._verify_security = secure.verify_security
-
-        def verify_security(auth_funcs, required_scopes, function):
-            @functools.wraps(function)
-            async def wrapper(request: ConnexionRequest):
-                # we support two auth methods: JWT and apiKey
-                has_auth = "Authorization" in request.headers or "X-API-Key" in request.headers
-                if not has_auth or self.force_user:
-                    # to reach self._set_user, we have to hardcode "null" as a "magic" JWT
-                    request.headers = CIMultiDict(request.headers)
-                    request.headers["Authorization"] = "Bearer null"
-                # invoke security_controller.info_from_*Auth
-                token_info = get_authorization_info(auth_funcs, request, required_scopes)
-                # token_info = {"token": <token>, "method": "bearer" or "apikey"}
-                await self._set_user(context := request.context, **token_info)
-                # check whether the user may access the specified account
-                if isinstance(request.json, dict):
-                    if (account := request.json.get("account")) is not None:
-                        assert isinstance(account, int)
-                        with sentry_sdk.configure_scope() as scope:
-                            scope.set_tag("account", account)
-                        await get_user_account_status(
-                            context.uid, account, context.sdb, context.cache)
-                    elif (account := getattr(context, "account", None)) is not None:
-                        canonical = context.match_info.route.resource.canonical
-                        route_specs = context.app["route_spec"]
-                        if (spec := route_specs.get(canonical, None)) is not None:
-                            try:
-                                required = "account" in deep_get(spec, [
-                                    "requestBody", "content", "application/json", "schema",
-                                    "required",
-                                ])
-                            except KeyError:
-                                required = False
-                            if required:
-                                request.json["account"] = account
-                    context.account = account
-                # check whether the account is enabled
-                if context.account is not None:
-                    expires_at = await context.sdb.fetch_val(
-                        select([Account.expires_at]).where(Account.id == context.account))
-                    if not getattr(context, "god_id", False) and (
-                            expires_at is None or expires_at < datetime.now(expires_at.tzinfo)):
-                        self.log.warning("Attempt to use an expired account %d by user %s",
-                                         context.account, context.uid)
-                        raise Unauthorized("Your account has expired.")
-                # finish the auth processing and chain forward
-                return await function(request)
-            return wrapper
-
-        secure.verify_security = verify_security
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Revert the monkey-patch."""
-        secure.verify_security = self._verify_security
-        del self._verify_security
 
     async def get_user(self, user: str) -> Optional[User]:
         """Retrieve a user using Auth0 mgmt API by ID."""
@@ -525,6 +464,82 @@ class Auth0:
         uid = token_obj[UserToken.user_id.key]
         account = token_obj[UserToken.account_id.key]
         return uid, account
+
+
+class AthenianAioHttpSecurityHandlerFactory(connexion.security.AioHttpSecurityHandlerFactory):
+    """Override verify_security() to re-route the security affairs to our Auth0 class."""
+
+    def __init__(self, auth: Auth0, pass_context_arg_name):
+        """`auth` is supplied by AthenianAioHttpApi."""
+        super().__init__(pass_context_arg_name=pass_context_arg_name)
+        self.auth = auth
+
+    def verify_security(self, auth_funcs, required_scopes, function,
+                        ) -> Callable[[ConnexionRequest], Coroutine[None, None, Any]]:
+        """
+        Decorate the request pipeline to check the security, either JWT or APIKey.
+
+        If we don't see any authorization details, we assume the "default" user.
+        """
+        auth = self.auth  # type: Auth0
+
+        async def get_token_info(request: ConnexionRequest):
+            token_info = self.no_value
+            for func in auth_funcs:
+                token_info = func(request, required_scopes)
+                while asyncio.iscoroutine(token_info):
+                    token_info = await token_info
+                if token_info is not self.no_value:
+                    break
+            return token_info
+
+        @functools.wraps(function)
+        async def wrapper(request: ConnexionRequest):
+            token_info = self.no_value if auth.force_user else await get_token_info(request)
+            if token_info is self.no_value:
+                # "null" is the "magic" JWT that loads the default or forced user
+                request.headers = CIMultiDict(request.headers)
+                request.headers["Authorization"] = "Bearer null"
+                token_info = await get_token_info(request)
+            if token_info is self.no_value:
+                raise Unauthorized("The endpoint you are calling requires X-API-Key header.")
+            # token_info = {"token": <token>, "method": "bearer" or "apikey"}
+            await auth._set_user(context := request.context, **token_info)
+            # check whether the user may access the specified account
+            if isinstance(request.json, dict):
+                if (account := request.json.get("account")) is not None:
+                    assert isinstance(account, int)
+                    with sentry_sdk.configure_scope() as scope:
+                        scope.set_tag("account", account)
+                    await get_user_account_status(
+                        context.uid, account, context.sdb, context.cache)
+                elif (account := getattr(context, "account", None)) is not None:
+                    canonical = context.match_info.route.resource.canonical
+                    route_specs = context.app["route_spec"]
+                    if (spec := route_specs.get(canonical, None)) is not None:
+                        try:
+                            required = "account" in deep_get(spec, [
+                                "requestBody", "content", "application/json", "schema",
+                                "required",
+                            ])
+                        except KeyError:
+                            required = False
+                        if required:
+                            request.json["account"] = account
+                context.account = account
+            # check whether the account is enabled
+            if context.account is not None:
+                expires_at = await context.sdb.fetch_val(
+                    select([Account.expires_at]).where(Account.id == context.account))
+                if not getattr(context, "god_id", False) and (
+                        expires_at is None or expires_at < datetime.now(expires_at.tzinfo)):
+                    auth.log.warning("Attempt to use an expired account %d by user %s",
+                                     context.account, context.uid)
+                    raise Unauthorized("Your account has expired.")
+            # finish the auth processing and chain forward
+            return await function(request)
+
+        return wrapper
 
 
 def disable_default_user(func):
