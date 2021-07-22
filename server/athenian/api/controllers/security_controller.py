@@ -20,7 +20,7 @@ from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 
 
-def info_from_bearerAuth(token: str) -> Optional[Dict[str, Any]]:
+def info_from_bearerAuth(token: str, required_scopes) -> Optional[Dict[str, Any]]:
     """
     Check and retrieve authentication information from a Bearer token.
 
