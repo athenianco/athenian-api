@@ -146,7 +146,7 @@ def with_defer(func):
     async def wrapped_with_defer(*args, **kwargs):
         enable_defer(False)
         try:
-            await func(*args, **kwargs)
+            return await func(*args, **kwargs)
         finally:
             await wait_deferred()
 

@@ -46,13 +46,19 @@ from athenian.api.auth import Auth0, User
 from athenian.api.cache import CACHE_VAR_NAME, setup_cache_metrics
 from athenian.api.connexion import AthenianApp
 from athenian.api.controllers import account, invitation_controller
+from athenian.api.controllers.features.entries import MetricEntriesCalculator
+from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.precomputed_prs import DonePRFactsLoader, \
     MergedPRFactsLoader, OpenPRFactsLoader
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.github.release_load import ReleaseLoader
 from athenian.api.controllers.miners.github.release_match import ReleaseToPullRequestMapper
+from athenian.api.controllers.miners.jira.issue import JIRAFilter
+from athenian.api.controllers.prefixer import Prefixer
+from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
 from athenian.api.db import db_retry_intervals, measure_db_overhead_and_retry, ParallelDatabase
+from athenian.api.defer import enable_defer, wait_deferred
 from athenian.api.experiments.preloading.entries import PreloadedBranchMiner, \
     PreloadedDonePRFactsLoader, PreloadedMergedPRFactsLoader, PreloadedOpenPRFactsLoader, \
     PreloadedPullRequestMiner, PreloadedReleaseLoader, PreloadedReleaseToPullRequestMapper
@@ -79,6 +85,8 @@ patch_pandas()
 db_dir = Path(os.getenv("DB_DIR", os.path.dirname(__file__)))
 sdb_backup = tempfile.NamedTemporaryFile(prefix="athenian.api.state.", suffix=".sqlite")
 pdb_backup = tempfile.NamedTemporaryFile(prefix="athenian.api.precomputed.", suffix=".sqlite")
+fpdb_backup = tempfile.NamedTemporaryFile(
+    prefix="athenian.api.precomputed.", suffix=".filled.sqlite")
 rdb_backup = tempfile.NamedTemporaryFile(prefix="athenian.api.persistentdata.", suffix=".sqlite")
 assert Auth0.KEY == os.environ["ATHENIAN_INVITATION_KEY"], "athenian.api was imported before tests"
 invitation_controller.url_prefix = "https://app.athenian.co/i/"
@@ -87,6 +95,7 @@ account.jira_url_template = invitation_controller.jira_url_template = \
 override_mdb = os.getenv("OVERRIDE_MDB")
 override_sdb = os.getenv("OVERRIDE_SDB")
 override_pdb = os.getenv("OVERRIDE_PDB")
+override_fpdb = os.getenv("OVERRIDE_FPDB")
 override_rdb = os.getenv("OVERRIDE_RDB")
 override_memcached = os.getenv("OVERRIDE_MEMCACHED")
 logging.getLogger("aiosqlite").setLevel(logging.CRITICAL)
@@ -231,7 +240,7 @@ class FakeKMS:
         pass
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def eiso_user() -> User:
     return User(
         id="auth0|5e1f6e2e8bfa520ea5290741",
@@ -298,7 +307,7 @@ def headers() -> Dict[str, str]:
     }
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def slack():
     return create_slack(logging.getLogger("pytest"))
 
@@ -320,20 +329,22 @@ async def with_preloading(sdb, mdb, mdb_rw, pdb, rdb, with_preloading_enabled):
 
 
 @pytest.fixture(scope="function")
-async def app(metadata_db, state_db, precomputed_db, persistentdata_db, slack,
-              with_preloading_enabled) -> AthenianApp:
+async def app(metadata_db, state_db, precomputed_db, persistentdata_db, filled_precomputed_db,
+              slack, with_preloading_enabled) -> AthenianApp:
     logging.getLogger("connexion.operation").setLevel("WARNING")
-    app = AthenianApp(mdb_conn=metadata_db,
-                      sdb_conn=state_db,
-                      pdb_conn=precomputed_db,
-                      rdb_conn=persistentdata_db,
-                      ui=False,
-                      auth0_cls=TestAuth0,
-                      kms_cls=FakeKMS,
-                      slack=slack,
-                      client_max_size=256 * 1024,
-                      max_load=15,
-                      with_pdb_schema_checks=False)
+    app = AthenianApp(
+        mdb_conn=metadata_db,
+        sdb_conn=state_db,
+        pdb_conn=filled_precomputed_db if with_preloading_enabled else precomputed_db,
+        rdb_conn=persistentdata_db,
+        ui=False,
+        auth0_cls=TestAuth0,
+        kms_cls=FakeKMS,
+        slack=slack,
+        client_max_size=256 * 1024,
+        max_load=15,
+        with_pdb_schema_checks=False,
+    )
     if with_preloading_enabled:
         app.on_dbs_connected(MemoryCachePreloader(60, None, False).preload)
     await app.ready()
@@ -354,7 +365,7 @@ def client(loop, aiohttp_client, app):
     return loop.run_until_complete(aiohttp_client(app.app))
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def metadata_db(worker_id) -> str:
     return _metadata_db(worker_id, False)
 
@@ -394,7 +405,8 @@ def _metadata_db(worker_id: str, force_reset: bool) -> str:
 def _init_own_db(letter: str,
                  base: DeclarativeMeta,
                  worker_id: str,
-                 init_sql: Optional[dict] = None) -> str:
+                 init_sql: Optional[dict] = None,
+                 ) -> str:
     try:
         return _init_own_db_unchecked(letter, base, worker_id, init_sql)
     except Exception:
@@ -403,17 +415,18 @@ def _init_own_db(letter: str,
         sys.exit(1)
 
 
-def _init_own_db_unchecked(letter: str,
+def _init_own_db_unchecked(db_id: str,
                            base: DeclarativeMeta,
                            worker_id: str,
-                           init_sql: Optional[dict] = None) -> str:
-    override_db = globals()["override_%sdb" % letter]
-    backup_path = globals()["%sdb_backup" % letter].name
+                           init_sql: Optional[dict] = None,
+                           ) -> str:
+    override_db = globals()[f"override_{db_id}db"]
+    backup_path = globals()[f"{db_id}db_backup"].name
     if override_db:
         conn_str = override_db % worker_id
         db_path = None
     else:
-        db_path = db_dir / ("%sdb-%s.sqlite" % (letter, worker_id))
+        db_path = db_dir / f"{db_id}db-{worker_id}.sqlite"
         conn_str = "sqlite:///%s" % db_path
         if db_path.exists():
             db_path.unlink()
@@ -422,10 +435,10 @@ def _init_own_db_unchecked(letter: str,
             return conn_str
     engine = create_engine(conn_str.rsplit("?", 1)[0])
     driver = engine.url.drivername
-    if letter in ("r", "p") and driver == "sqlite":
-        if letter == "r":
+    if db_id[-1] in ("r", "p") and driver == "sqlite":
+        if db_id == "r":
             persistentdata.dereference_schemas()
-        if letter == "p":
+        if db_id[-1] == "p":
             dereference_precomputed_schemas()
     base.metadata.drop_all(engine)
     if init_sql:
@@ -436,14 +449,14 @@ def _init_own_db_unchecked(letter: str,
         else:
             engine.execute(init_sql)
     base.metadata.create_all(engine)
-    if letter == "s":
+    if db_id == "s":
         session = sessionmaker(bind=engine)()
         try:
             fill_state_session(session)
             session.commit()
         finally:
             session.close()
-    if letter == "r":
+    if db_id == "r":
         session = sessionmaker(bind=engine)()
         try:
             fill_persistentdata_session(session)
@@ -464,16 +477,63 @@ def state_db(worker_id) -> str:
 
 @pytest.fixture(scope="function")
 def persistentdata_db(worker_id) -> str:
+    return _persistentdata_db(worker_id)
+
+
+def _persistentdata_db(worker_id) -> str:
     return _init_own_db("r", PersistentdataBase, worker_id, {
         "postgresql": "create schema if not exists athenian;",
     })
 
 
+hstore_sql = {
+    "postgresql": "create extension if not exists hstore; create schema if not exists github;",
+}
+
+
 @pytest.fixture(scope="function")
 def precomputed_db(worker_id) -> str:
-    return _init_own_db("p", PrecomputedBase, worker_id, {
-        "postgresql": "create extension if not exists hstore; create schema if not exists github;",
-    })
+    return _init_own_db("p", PrecomputedBase, worker_id, hstore_sql)
+
+
+@pytest.fixture(scope="session")
+def filled_precomputed_db(metadata_db, worker_id, with_preloading_enabled) -> str:
+    if not with_preloading_enabled:
+        return ""
+    return asyncio.run(_fill_precomputed_db(metadata_db, worker_id))
+
+
+async def _fill_precomputed_db(metadata_db, worker_id) -> str:
+    enable_defer(False)
+    print("\npdb is initializing...", file=sys.stderr)
+    pdb_uri = _init_own_db("fp", PrecomputedBase, worker_id, hstore_sql)
+    pdb = measure_db_overhead_and_retry(ParallelDatabase(pdb_uri), None, None)
+    await pdb.connect()
+    _add_pdb_metrics(pdb)
+    mdb = measure_db_overhead_and_retry(ParallelDatabase(metadata_db), None, None)
+    await mdb.connect()
+    rdb_uri = _persistentdata_db(worker_id)
+    rdb = measure_db_overhead_and_retry(ParallelDatabase(rdb_uri), None, None)
+    await rdb.connect()
+    metrics_calculator = MetricEntriesCalculator(1, (6366825,), 28, mdb, pdb, rdb, None)
+    print("filling the pdb...", file=sys.stderr)
+    await metrics_calculator.calc_pull_request_facts_github(
+        datetime(2015, 1, 1, tzinfo=timezone.utc),
+        datetime.now(timezone.utc),
+        {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        False, ReleaseSettings({
+            "github.com/src-d/go-git": ReleaseMatchSetting(
+                branches="master", tags=".*", match=ReleaseMatch.tag_or_branch),
+        }),
+        Prefixer.schedule_load((6366825,), mdb, None),
+        True, False,
+    )
+    await wait_deferred()
+    await mdb.disconnect()
+    await pdb.disconnect()
+    await rdb.disconnect()
+    print("pdb is ready", file=sys.stderr)
+    return pdb_uri
 
 
 async def _connect_to_db(addr, loop, request):
@@ -523,13 +583,17 @@ async def sdb(state_db, loop, request):
     return await _connect_to_db(state_db, loop, request)
 
 
-@pytest.fixture(scope="function")
-async def pdb(precomputed_db, loop, request):
-    db = await _connect_to_db(precomputed_db, loop, request)
+def _add_pdb_metrics(db: ParallelDatabase):
     db.metrics = {
         "hits": ContextVar("pdb_hits", default=defaultdict(int)),
         "misses": ContextVar("pdb_misses", default=defaultdict(int)),
     }
+
+
+@pytest.fixture(scope="function")
+async def pdb(precomputed_db, loop, request):
+    db = await _connect_to_db(precomputed_db, loop, request)
+    _add_pdb_metrics(db)
     return db
 
 

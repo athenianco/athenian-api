@@ -25,7 +25,7 @@ def no_deprecation_warnings():
     warnings.filterwarnings("ignore", category=PendingDeprecationWarning)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def release_match_setting_tag_or_branch():
     return ReleaseSettings({
         "github.com/src-d/go-git": ReleaseMatchSetting(
@@ -33,7 +33,7 @@ def release_match_setting_tag_or_branch():
     })
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def release_match_setting_tag():
     return ReleaseSettings({
         "github.com/src-d/go-git": ReleaseMatchSetting(
@@ -41,7 +41,7 @@ def release_match_setting_tag():
     })
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def release_match_setting_branch():
     return ReleaseSettings({
         "github.com/src-d/go-git": ReleaseMatchSetting(
@@ -49,7 +49,7 @@ def release_match_setting_branch():
     })
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def default_branches():
     return {"src-d/go-git": "master",
             "src-d/gitbase": "master"}
