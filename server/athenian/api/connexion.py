@@ -99,6 +99,7 @@ class AthenianAioHttpApi(connexion.AioHttpApi):
     - Log big request bodies so that we don't fear truncation in Sentry.
     - Apply AthenianConnexionRequest.
     - Re-route the security checks to our own class.
+    - Serve custom CSS in Swagger UI.
     """
 
     def _spec_for_prefix(self, request) -> OpenAPISpecification:
@@ -135,6 +136,27 @@ class AthenianAioHttpApi(connexion.AioHttpApi):
         """Patch OpenAPIOperation to support allOf well."""
         self.specification.operation_cls = AthenianOperation
         super().add_paths(paths=paths)
+
+    def add_swagger_ui(self):
+        """Override the parent's method to serve custom CSS."""
+        console_ui_path = self.options.openapi_console_ui_path.strip().rstrip("/")
+        self.subapp.router.add_route(
+            "GET",
+            console_ui_path + "/swagger-ui-athenian.css",
+            self._get_swagger_css,
+        )
+        super().add_swagger_ui()
+
+    async def _get_swagger_css(self, request: aiohttp.web.Request) -> aiohttp.web.Response:
+        return aiohttp.web.Response(
+            status=200,
+            content_type="text/css",
+            body="""
+            .topbar {
+              display: none;
+            }
+            """,
+        )
 
 
 # Avoid DeprecationWarning on inheritance, because we know better than @asvetlov.
@@ -270,6 +292,16 @@ class AthenianApp(connexion.AioHttpApp):
                     self.i_will_survive, self.with_db, self.postprocess_response, self.manhole,
                 ],
                 "auth": self._auth0,
+                "swagger_ui_config": {
+                    "tagsSorter": "alpha",
+                    "persistAuthorization": True,
+                },
+                "swagger_ui_template_arguments": {
+                    "title": "Athenian API specification</title>"
+                             '<link rel="stylesheet" type="text/css" '
+                             'href="./swagger-ui-athenian.css" >',
+                    "validatorUrl": "null, filter: true",
+                },
             },
         )
         if kms_cls is not None:
@@ -663,6 +695,7 @@ class AthenianApp(connexion.AioHttpApp):
     def add_api(self, specification: str, **kwargs):
         """Load the API spec and add the defined routes."""
         api = super().add_api(specification, **kwargs)
+        api.subapp["aiohttp_jinja2_environment"].autoescape = False
         api.jsonifier.json = FriendlyJson
         for k, v in api.subapp.items():
             self.app[k] = v
