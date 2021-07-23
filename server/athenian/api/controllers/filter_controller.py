@@ -643,3 +643,12 @@ async def filter_code_checks(request: AthenianWebRequest, body: dict) -> web.Res
         ) for cr in check_runs
     ])
     return model_response(model)
+
+
+async def filter_deployments(request: AthenianWebRequest, body: dict) -> web.Response:
+    """
+    List the deployments that satisfy the provided filters.
+
+    We submit new deployments using `/events/deployments`.
+    """
+    raise NotImplementedError
