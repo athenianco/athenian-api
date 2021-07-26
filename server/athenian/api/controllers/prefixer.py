@@ -21,8 +21,10 @@ class Prefixer:
     """
 
     do_not_construct_me_directly: None
-    repo_node_map: Dict[str, str]
-    repo_name_map: Dict[str, str]
+    repo_node_to_prefixed_name: Dict[str, str]
+    repo_name_to_prefixed_name: Dict[str, str]
+    repo_node_to_name: Dict[str, str]  # FIXME: str -> int
+    repo_name_to_node: Dict[str, str]  # FIXME: str -> int
     user_node_to_prefixed_login: Dict[str, str]
     user_login_to_prefixed_login: Dict[str, str]
     user_node_to_login: Dict[str, str]
@@ -57,10 +59,16 @@ class Prefixer:
         def strip_proto(url: str) -> str:
             return url.split("://", 1)[1]
 
-        repo_node_map = {
+        repo_node_to_prefixed_name = {
             r[Repository.node_id.key]: strip_proto(r[Repository.html_url.key]) for r in repo_rows
         }
-        repo_name_map = {
+        repo_node_to_name = {
+            r[Repository.node_id.name]: r[Repository.full_name.name] for r in repo_rows
+        }
+        repo_name_to_node = {
+            r[Repository.full_name.name]: r[Repository.node_id.name] for r in repo_rows
+        }
+        repo_name_to_prefixed_name = {
             r[Repository.full_name.key]: strip_proto(r[Repository.html_url.key]) for r in repo_rows
         }
         user_node_to_prefixed_login = {
@@ -76,8 +84,10 @@ class Prefixer:
             r[User.login.key]: r[User.node_id.key] for r in user_rows
         }
         return Prefixer(None,
-                        repo_node_map=repo_node_map,
-                        repo_name_map=repo_name_map,
+                        repo_node_to_prefixed_name=repo_node_to_prefixed_name,
+                        repo_name_to_prefixed_name=repo_name_to_prefixed_name,
+                        repo_node_to_name=repo_node_to_name,
+                        repo_name_to_node=repo_name_to_node,
                         user_node_to_prefixed_login=user_node_to_prefixed_login,
                         user_login_to_prefixed_login=user_login_to_prefixed_login,
                         user_node_to_login=user_node_to_login,
@@ -101,11 +111,11 @@ class Prefixer:
 
     def resolve_repo_nodes(self, repo_node_ids: Iterable[str]) -> List[str]:
         """Lookup each repository node ID in repo_node_map."""
-        return [self.repo_node_map[node_id] for node_id in repo_node_ids]
+        return [self.repo_node_to_prefixed_name[node_id] for node_id in repo_node_ids]
 
     def prefix_repo_names(self, repo_names: Iterable[str]) -> List[str]:
         """Lookup each repository full name in repo_name_map."""
-        return [self.repo_name_map[name] for name in repo_names]
+        return [self.repo_name_to_prefixed_name[name] for name in repo_names]
 
     def resolve_user_nodes(self, user_node_ids: Iterable[str]) -> List[str]:
         """Lookup each user node ID in user_node_to_prefixed_login."""

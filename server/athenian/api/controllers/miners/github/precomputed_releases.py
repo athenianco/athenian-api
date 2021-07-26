@@ -19,6 +19,26 @@ from athenian.api.tracing import sentry_span
 from athenian.precomputer.db.models import GitHubRelease as PrecomputedRelease
 
 
+def reverse_release_settings(repos: Iterable[str],
+                             default_branches: Dict[str, str],
+                             settings: ReleaseSettings,
+                             ) -> Dict[Tuple[ReleaseMatch, str], List[str]]:
+    """Map distinct pairs (release match, tag/branch name) to the aggregated repositories."""
+    reverse_settings = defaultdict(list)
+    for repo in repos:
+        setting = settings.native[repo]
+        if setting.match == ReleaseMatch.tag:
+            value = setting.tags
+        elif setting.match == ReleaseMatch.branch:
+            value = setting.branches.replace(default_branch_alias, default_branches[repo])
+        elif setting.match == ReleaseMatch.event:
+            value = ""
+        else:
+            raise AssertionError("Ambiguous release settings for %s: %s" % (repo, setting))
+        reverse_settings[(setting.match, value)].append(repo)
+    return reverse_settings
+
+
 @sentry_span
 async def load_precomputed_release_facts(releases: pd.DataFrame,
                                          default_branches: Dict[str, str],
@@ -33,18 +53,8 @@ async def load_precomputed_release_facts(releases: pd.DataFrame,
     """
     if releases.empty:
         return {}
-    reverse_settings = defaultdict(list)
-    for repo in releases[Release.repository_full_name.key].unique():
-        setting = settings.native[repo]
-        if setting.match == ReleaseMatch.tag:
-            value = setting.tags
-        elif setting.match == ReleaseMatch.branch:
-            value = setting.branches.replace(default_branch_alias, default_branches[repo])
-        elif setting.match == ReleaseMatch.event:
-            value = ""
-        else:
-            raise AssertionError("Ambiguous release settings for %s: %s" % (repo, setting))
-        reverse_settings[(setting.match, value)].append(repo)
+    reverse_settings = reverse_release_settings(
+        releases[Release.repository_full_name.key].unique(), default_branches, settings)
     grouped_releases = defaultdict(list)
     for rid, repo in zip(releases[Release.node_id.key].values,
                          releases[Release.repository_full_name.key].values):
@@ -58,7 +68,7 @@ async def load_precomputed_release_facts(releases: pd.DataFrame,
                     GitHubReleaseFacts.acc_id == account,
                     GitHubReleaseFacts.id.in_(chain.from_iterable(
                         grouped_releases[i] for i in r if i in grouped_releases)),
-                    GitHubReleaseFacts.release_match == _compose_release_match(m, v)))
+                    GitHubReleaseFacts.release_match == compose_release_match(m, v)))
         for (m, v), r in reverse_settings.items()
     ]
     query = union_all(*queries)
@@ -68,7 +78,8 @@ async def load_precomputed_release_facts(releases: pd.DataFrame,
     return {r[0]: ReleaseFacts(r[1]) for r in rows}
 
 
-def _compose_release_match(match: ReleaseMatch, value: str) -> str:
+def compose_release_match(match: ReleaseMatch, value: str) -> str:
+    """Render DB `release_match` value."""
     if match == ReleaseMatch.tag:
         return "tag|" + value
     if match == ReleaseMatch.branch:
@@ -101,7 +112,7 @@ async def store_precomputed_release_facts(releases: List[Tuple[Dict[str, Any], R
         values.append(GitHubReleaseFacts(
             id=dikt[Release.node_id.key],
             acc_id=account,
-            release_match=_compose_release_match(setting.match, value),
+            release_match=compose_release_match(setting.match, value),
             repository_full_name=repo,
             published_at=facts.published.item().replace(tzinfo=timezone.utc),
             data=facts.data,

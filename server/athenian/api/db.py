@@ -5,6 +5,7 @@ import logging
 import os
 import pickle
 import re
+import sqlite3
 import sys
 import threading
 import time
@@ -28,7 +29,6 @@ from athenian.api.models import check_alembic_schema_version, check_collation, \
     DBSchemaMismatchError
 from athenian.api.models.metadata import check_schema_version as check_mdb_schema_version
 from athenian.api.slogging import log_multipart
-from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
 from athenian.api.typing_utils import wraps
 
 
@@ -333,6 +333,7 @@ async def _asyncpg_execute(self,
                            **kwargs):
     description = query = query.strip()
     if _log_sql_re.match(query) and not _testing:
+        from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
         if len(description) <= MAX_SENTRY_STRING_LENGTH and args:
             description += " | " + str(args)
         if len(description) > MAX_SENTRY_STRING_LENGTH:
@@ -461,7 +462,8 @@ def measure_db_overhead_and_retry(db: Union[databases.Database, ParallelDatabase
                         except (OSError,
                                 asyncpg.PostgresConnectionError,
                                 asyncpg.OperatorInterventionError,
-                                asyncpg.InsufficientResourcesError) as e:
+                                asyncpg.InsufficientResourcesError,
+                                sqlite3.OperationalError) as e:
                             if wait_time is None:
                                 raise e from None
                             log.warning("[%d] %s: %s", i + 1, type(e).__name__, e)

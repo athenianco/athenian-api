@@ -570,7 +570,7 @@ async def _issue_flow(return_: Set[str],
         pr_list_items = await list_with_yield(miner, "PullRequestListMiner.__iter__")
         prefixer = await prefixer.load()
         if missing_repo_indexes := [i for i, pr in enumerate(pr_list_items)
-                                    if pr.repository not in prefixer.repo_name_map]:
+                                    if pr.repository not in prefixer.repo_name_to_prefixed_name]:
             log.error("Discarded %d PRs because their repositories are gone: %s",
                       len(missing_repo_indexes),
                       {pr_list_items[i].repository for i in missing_repo_indexes})

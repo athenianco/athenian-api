@@ -12,9 +12,9 @@ async def test_prefixer_load(mdb, cache):
         assert len(prefixer.user_node_to_prefixed_login) == \
                len(prefixer.user_login_to_prefixed_login) == 930
         assert "vmarkovtsev" in prefixer.user_login_to_prefixed_login
-        assert len(prefixer.repo_node_map) == 306
-        assert len(prefixer.repo_name_map) == 292
-        assert "src-d/go-git" in prefixer.repo_name_map
+        assert len(prefixer.repo_node_to_prefixed_name) == 306
+        assert len(prefixer.repo_name_to_prefixed_name) == 292
+        assert "src-d/go-git" in prefixer.repo_name_to_prefixed_name
 
 
 async def test_prefixer_schedule_load(mdb):

@@ -22,7 +22,7 @@ from athenian.api.controllers.features.github.pull_request_metrics import AllCou
     ReviewPendingCounter, ReviewTimeCalculator, StagePendingDependencyCalculator, \
     WorkInProgressPendingCounter, WorkInProgressTimeCalculator
 from athenian.api.controllers.features.metric import Metric
-from athenian.api.controllers.features.metric_calculator import df_from_structs, MetricCalculator
+from athenian.api.controllers.features.metric_calculator import MetricCalculator
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import BranchMiner
@@ -50,6 +50,7 @@ from athenian.api.models.metadata.github import CheckRun, PullRequest, PullReque
     PullRequestReview, PullRequestReviewComment, Release
 from athenian.api.models.metadata.jira import Issue
 from athenian.api.tracing import sentry_span
+from athenian.api.typing_utils import df_from_structs
 
 
 class PullRequestListMiner:

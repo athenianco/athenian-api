@@ -10,7 +10,6 @@ from sqlalchemy import and_, select
 
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.controllers.features.github.pull_request_filter import PullRequestListMiner
-from athenian.api.controllers.features.metric_calculator import df_from_structs
 from athenian.api.controllers.jira import get_jira_installation, load_mapped_jira_users
 from athenian.api.controllers.jira_controller import participant_columns
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
@@ -27,6 +26,7 @@ from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
 from athenian.api.controllers.settings import ReleaseSettings
 from athenian.api.models.metadata.github import PullRequest, Release, User
 from athenian.api.response import ResponseError
+from athenian.api.typing_utils import df_from_structs
 from athenian.precomputer.db.models import GitHubDonePullRequestFacts
 
 

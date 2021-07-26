@@ -24,6 +24,7 @@ from athenian.api.typing_utils import serialize_mutable_fields_in_dataclasses, w
 pickle.dumps = functools.partial(pickle.dumps, protocol=-1)
 max_exptime = 30 * 24 * 3600  # 30 days according to the docs
 short_term_exptime = 5 * 60  # 5 minutes
+middle_term_expire = 60 * 60  # 1 hour
 
 
 class CancelCache(Exception):
@@ -92,8 +93,8 @@ def cached(exptime: Union[int, Callable[..., int]],
             if props is None:
                 return None
             assert isinstance(props, tuple), "key() must return a tuple in %s" % full_name
-            return gen_cache_key(
-                full_name + "|" + str(version) + "|" + "|".join(str(p) for p in props))
+            props = "|".join(str(p).replace("|", "/") for p in props)
+            return gen_cache_key(full_name + "|" + str(version) + "|" + props)
 
         # no functool.wraps() shit here! It discards the coroutine status and aiohttp notices that
         async def wrapped_cached(*args, **kwargs) -> Any:

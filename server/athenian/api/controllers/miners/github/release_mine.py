@@ -4,10 +4,9 @@ from datetime import datetime, timedelta, timezone
 import logging
 import pickle
 import re
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
 
 import aiomcache
-import databases
 import numpy as np
 import pandas as pd
 import sentry_sdk
@@ -31,13 +30,13 @@ from athenian.api.controllers.miners.github.release_load import \
 from athenian.api.controllers.miners.github.release_match import \
     load_commit_dags, ReleaseToPullRequestMapper
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
-from athenian.api.controllers.miners.github.users import mine_user_avatars
+from athenian.api.controllers.miners.github.user import mine_user_avatars
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
 from athenian.api.controllers.miners.types import released_prs_columns, ReleaseFacts, \
     ReleaseParticipants, ReleaseParticipationKind
 from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
-from athenian.api.db import add_pdb_hits, add_pdb_misses
+from athenian.api.db import add_pdb_hits, add_pdb_misses, ParallelDatabase
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import NodePullRequest, PullRequest, PullRequestLabel, \
     PushCommit, Release
@@ -79,9 +78,9 @@ async def mine_releases(repos: Iterable[str],
                         prefixer: PrefixerPromise,
                         account: int,
                         meta_ids: Tuple[int, ...],
-                        mdb: databases.Database,
-                        pdb: databases.Database,
-                        rdb: databases.Database,
+                        mdb: ParallelDatabase,
+                        pdb: ParallelDatabase,
+                        rdb: ParallelDatabase,
                         cache: Optional[aiomcache.Client],
                         force_fresh: bool = False,
                         with_avatars: bool = True,
@@ -105,16 +104,7 @@ async def mine_releases(repos: Iterable[str],
     releases_in_time_range, matched_bys = await ReleaseLoader.load_releases(
         repos, branches, default_branches, time_from, time_to,
         settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache, force_fresh=force_fresh)
-    # resolve ambiguous release match settings
-    settings = settings.copy()
-    for repo in repos:
-        setting = settings.native[repo]
-        match = ReleaseMatch(matched_bys.get(repo, setting.match))
-        settings.set_by_native(repo, ReleaseMatchSetting(
-            tags=setting.tags,
-            branches=setting.branches,
-            match=match,
-        ))
+    settings = ReleaseLoader.disambiguate_release_settings(settings, matched_bys)
     if releases_in_time_range.empty:
         return [], [], {r: v.match for r, v in settings.prefixed.items()}
     precomputed_facts = await load_precomputed_release_facts(
@@ -174,25 +164,15 @@ async def mine_releases(repos: Iterable[str],
             if len(removed := np.nonzero(np.in1d(ownership, relevant, invert=True))[0]) > 0:
                 hashes = np.delete(hashes, removed)
                 ownership = np.delete(ownership, removed)
-            order = np.argsort(ownership)
-            sorted_hashes = hashes[order]
-            sorted_ownership = ownership[order]
-            unique_owners, unique_owned_counts = np.unique(sorted_ownership, return_counts=True)
-            if len(unique_owned_counts) == 0:
-                grouped_owned_hashes = []
-            else:
-                grouped_owned_hashes = np.split(sorted_hashes, np.cumsum(unique_owned_counts)[:-1])
-            # fill the gaps for releases with 0 owned commits
-            if len(missing := np.setdiff1d(np.arange(len(repo_releases)), unique_owners,
-                                           assume_unique=True)):
+
+            def on_missing(missing: np.ndarray) -> None:
                 if len(really_missing := np.nonzero(np.in1d(
                         missing, relevant, assume_unique=True))[0]):
                     log.warning("%s has releases with 0 commits:\n%s",
                                 repo, repo_releases.take(really_missing))
-                empty = np.array([], dtype="S40")
-                for i in missing:
-                    grouped_owned_hashes.insert(i, empty)
-            assert len(grouped_owned_hashes) == len(repo_releases)
+
+            grouped_owned_hashes = group_hashes_by_ownership(
+                ownership, hashes, len(repo_releases), on_missing)
             all_hashes.append(hashes)
             repo_releases_analyzed[repo] = repo_releases, grouped_owned_hashes, parents
         commits_df_columns = [
@@ -329,7 +309,8 @@ async def mine_releases(repos: Iterable[str],
                     ) = dupe
                 data.append(({Release.node_id.key: my_id,
                               Release.name.key: my_name or my_tag,
-                              Release.repository_full_name.key: prefixer.repo_name_map[repo],
+                              Release.repository_full_name.key:
+                                  prefixer.repo_name_to_prefixed_name[repo],
                               Release.url.key: my_url,
                               Release.sha.key: my_commit},
                              ReleaseFacts.from_fields(published=my_published_at,
@@ -401,6 +382,31 @@ def _release_facts_with_repository_full_name(facts: ReleaseFacts, repo: str) -> 
     return facts
 
 
+def group_hashes_by_ownership(ownership: np.ndarray,
+                              hashes: np.ndarray,
+                              groups: int,
+                              on_missing: Optional[Callable[[np.ndarray], None]],
+                              ) -> List[np.ndarray]:
+    """Return owned commit hashes for each release according to the ownership analysis."""
+    order = np.argsort(ownership)
+    sorted_hashes = hashes[order]
+    sorted_ownership = ownership[order]
+    unique_owners, unique_owned_counts = np.unique(sorted_ownership, return_counts=True)
+    if len(unique_owned_counts) == 0:
+        grouped_owned_hashes = []
+    else:
+        grouped_owned_hashes = np.split(sorted_hashes, np.cumsum(unique_owned_counts)[:-1])
+    # fill the gaps for releases with 0 owned commits
+    if len(missing := np.setdiff1d(np.arange(groups), unique_owners, assume_unique=True)):
+        if on_missing is not None:
+            on_missing(missing)
+        empty = np.array([], dtype="S40")
+        for i in missing:
+            grouped_owned_hashes.insert(i, empty)
+    assert len(grouped_owned_hashes) == groups
+    return grouped_owned_hashes
+
+
 def _build_mined_releases(releases: pd.DataFrame,
                           precomputed_facts: Dict[str, ReleaseFacts],
                           prefixer: Prefixer,
@@ -424,7 +430,7 @@ def _build_mined_releases(releases: pd.DataFrame,
             releases[Release.sha.key].values[has_precomputed_facts],
         )
         # "gone" repositories, reposet-sync has not updated yet
-        if (prefixed_repo := prefixer.repo_name_map.get(my_repo)) is not None
+        if (prefixed_repo := prefixer.repo_name_to_prefixed_name.get(my_repo)) is not None
     ]
     release_authors = releases[Release.author.key].values
     mentioned_authors = np.concatenate([
@@ -513,7 +519,7 @@ def _filter_by_labels(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
 async def _filter_precomputed_release_facts_by_jira(precomputed_facts: Dict[str, ReleaseFacts],
                                                     jira: JIRAFilter,
                                                     meta_ids: Tuple[int, ...],
-                                                    mdb: databases.Database,
+                                                    mdb: ParallelDatabase,
                                                     cache: Optional[aiomcache.Client],
                                                     ) -> Dict[str, ReleaseFacts]:
     assert jira
@@ -542,7 +548,7 @@ async def _filter_precomputed_release_facts_by_jira(precomputed_facts: Dict[str,
 @sentry_span
 async def _load_prs_by_merge_commit_ids(commit_ids: Sequence[str],
                                         meta_ids: Tuple[int, ...],
-                                        mdb: databases.Database,
+                                        mdb: ParallelDatabase,
                                         ) -> pd.DataFrame:
     columns = [PullRequest.merge_commit_id, *released_prs_columns]
     return await read_sql_query(
@@ -565,9 +571,9 @@ async def mine_releases_by_name(names: Dict[str, Iterable[str]],
                                 prefixer: PrefixerPromise,
                                 account: int,
                                 meta_ids: Tuple[int, ...],
-                                mdb: databases.Database,
-                                pdb: databases.Database,
-                                rdb: databases.Database,
+                                mdb: ParallelDatabase,
+                                pdb: ParallelDatabase,
+                                rdb: ParallelDatabase,
                                 cache: Optional[aiomcache.Client],
                                 ) -> Tuple[List[Tuple[Dict[str, Any], ReleaseFacts]],
                                            List[Tuple[str, str]]]:
@@ -659,9 +665,9 @@ async def _load_releases_by_name(names: Dict[str, Set[str]],
                                  prefixer: PrefixerPromise,
                                  account: int,
                                  meta_ids: Tuple[int, ...],
-                                 mdb: databases.Database,
-                                 pdb: databases.Database,
-                                 rdb: databases.Database,
+                                 mdb: ParallelDatabase,
+                                 pdb: ParallelDatabase,
+                                 rdb: ParallelDatabase,
                                  cache: Optional[aiomcache.Client],
                                  ) -> Tuple[pd.DataFrame,
                                             Dict[str, Dict[str, str]],
@@ -739,7 +745,7 @@ commit_prefix_re = re.compile(r"[a-f0-9]{7}")
 @sentry_span
 async def _complete_commit_hashes(names: Dict[str, Set[str]],
                                   meta_ids: Tuple[int, ...],
-                                  mdb: databases.Database) -> Dict[str, Dict[str, str]]:
+                                  mdb: ParallelDatabase) -> Dict[str, Dict[str, str]]:
     candidates = defaultdict(list)
     for repo, strs in names.items():
         for name in strs:
@@ -787,9 +793,9 @@ async def diff_releases(borders: Dict[str, List[Tuple[str, str]]],
                         prefixer: PrefixerPromise,
                         account: int,
                         meta_ids: Tuple[int, ...],
-                        mdb: databases.Database,
-                        pdb: databases.Database,
-                        rdb: databases.Database,
+                        mdb: ParallelDatabase,
+                        pdb: ParallelDatabase,
+                        rdb: ParallelDatabase,
                         cache: Optional[aiomcache.Client],
                         ) -> Tuple[
         Dict[str, List[Tuple[str, str, List[Tuple[Dict[str, Any], ReleaseFacts]]]]],

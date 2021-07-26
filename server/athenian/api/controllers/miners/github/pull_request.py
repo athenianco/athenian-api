@@ -886,15 +886,21 @@ class PullRequestMiner:
                     selected_columns.append(PullRequest.number)
         if labels:
             singles, multiples = LabelFilter.split(labels.include)
-            embedded_labels_query = not multiples and not labels.exclude
-            if not labels.exclude:
-                all_in_labels = set(singles + list(chain.from_iterable(multiples)))
+            embedded_labels_query = not multiples
+            if all_in_labels := (set(singles + list(chain.from_iterable(multiples)))):
                 filters.append(
                     sql.exists().where(sql.and_(
                         PullRequestLabel.acc_id == PullRequest.acc_id,
                         PullRequestLabel.pull_request_node_id == PullRequest.node_id,
                         sql.func.lower(PullRequestLabel.name).in_(all_in_labels),
                     )))
+            if labels.exclude:
+                filters.append(
+                    sql.not_(sql.exists().where(sql.and_(
+                        PullRequestLabel.acc_id == PullRequest.acc_id,
+                        PullRequestLabel.pull_request_node_id == PullRequest.node_id,
+                        sql.func.lower(PullRequestLabel.name).in_(labels.exclude),
+                    ))))
         if not jira:
             query = sql.select(selected_columns).where(sql.and_(*filters))
         else:
