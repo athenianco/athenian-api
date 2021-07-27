@@ -51,64 +51,33 @@ async def _get_calculator_for_account(
     instrument: Optional[Dict[str, str]],
     base_module: Optional[str],
 ) -> MetricEntriesCalculator:
-    def _make_calculator(variation: Optional[str], quantile_stride: int):
+    def _make_calculator(variation: Optional[str]):
         assert service == "github", "we don't support others"
 
         try:
             calculator = make_calculator(
-                variation, quantile_stride, account_id, meta_ids, mdb, pdb, rdb, cache,
-                base_module=base_module,
+                variation, account_id, meta_ids, mdb, pdb, rdb, cache, base_module=base_module,
             )
         except CalculatorNotReadyException:
             variation = None
             calculator = make_calculator(
-                variation, quantile_stride, account_id, meta_ids, mdb, pdb, rdb, cache,
-                base_module=base_module,
+                variation, account_id, meta_ids, mdb, pdb, rdb, cache, base_module=base_module,
             )
 
         if instrument is not None:
             instrument[service] = variation or "default"
         return calculator
 
-    selected_metrics_variation, quantile_stride = await gather(
-        _get_metrics_variation_for_account(service, account_id, sdb, cache),
-        get_quantile_stride_for_account(account_id, sdb),
-    )
+    selected_metrics_variation = await _get_metrics_variation_for_account(
+        service, account_id, sdb, cache)
 
     if not selected_metrics_variation or (
         selected_metrics_variation.params.get("god_only") and not god_id
     ):
-        return _make_calculator(None, quantile_stride)
+        return _make_calculator(None)
 
     variation = selected_metrics_variation.name
-    return _make_calculator(variation, quantile_stride)
-
-
-async def get_quantile_stride_for_account(account: int, sdb: DatabaseLike) -> int:
-    """Load the configured quantile locality size for the account."""
-    feature_row = await sdb.fetch_one(
-        select([Feature.id, Feature.default_parameters]).where(
-            and_(
-                Feature.name == Feature.QUANTILE_STRIDE,
-                Feature.component == FeatureComponent.server,
-                Feature.enabled,
-            ),
-        ),
-    )
-    if feature_row is None:
-        return 2 * 365
-    feature_id, default_stride = feature_row[0], feature_row[1]
-
-    value = await sdb.fetch_val(
-        select([AccountFeature.parameters]).where(
-            and_(
-                AccountFeature.account_id == account,
-                AccountFeature.feature_id == feature_id,
-                AccountFeature.enabled,
-            ),
-        ),
-    )
-    return value or default_stride
+    return _make_calculator(variation)
 
 
 @cached(

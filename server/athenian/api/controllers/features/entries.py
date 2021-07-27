@@ -33,7 +33,8 @@ from athenian.api.controllers.features.github.release_metrics import \
 from athenian.api.controllers.features.github.unfresh_pull_request_metrics import \
     UnfreshPullRequestFactsFetcher
 from athenian.api.controllers.features.histogram import HistogramParameters
-from athenian.api.controllers.features.metric_calculator import df_from_structs, group_by_repo, \
+from athenian.api.controllers.features.metric_calculator import DEFAULT_QUANTILE_STRIDE, \
+    df_from_structs, group_by_repo, \
     group_to_indexes, MetricCalculatorEnsemble
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
@@ -755,7 +756,6 @@ class CalculatorNotReadyException(Exception):
 
 def make_calculator(
     variation: Optional[str],
-    quantile_stride: int,
     account: int,
     meta_ids: Tuple[int, ...],
     mdb: Database,
@@ -766,7 +766,7 @@ def make_calculator(
 ) -> MetricEntriesCalculator:
     """Get the metrics calculator according to the account's features."""
     def build_calculator(cls):
-        calculator = cls(account, meta_ids, quantile_stride, mdb, pdb, rdb, cache)
+        calculator = cls(account, meta_ids, DEFAULT_QUANTILE_STRIDE, mdb, pdb, rdb, cache)
         if not calculator.is_ready_for(account, meta_ids):
             log.error("Cannot make calculator for variation '%s'", variation)
             raise CalculatorNotReadyException(

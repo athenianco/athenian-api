@@ -21,6 +21,9 @@ from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_
 from athenian.api.tracing import sentry_span
 
 
+DEFAULT_QUANTILE_STRIDE = 14
+
+
 class MetricCalculator(Generic[T], ABC):
     """
     Arbitrary type T metric calculator, base abstract class.

@@ -19,7 +19,6 @@ from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.balancing import weight
 from athenian.api.cache import cached, short_term_exptime
 from athenian.api.controllers.account import get_account_repositories, get_metadata_account_ids
-from athenian.api.controllers.calculator_selector import get_quantile_stride_for_account
 from athenian.api.controllers.datetime_utils import split_to_time_intervals
 from athenian.api.controllers.features.entries import MetricEntriesCalculator
 from athenian.api.controllers.features.github.pull_request_filter import PullRequestListMiner, \
@@ -27,7 +26,8 @@ from athenian.api.controllers.features.github.pull_request_filter import PullReq
 from athenian.api.controllers.features.histogram import HistogramParameters, Scale
 from athenian.api.controllers.features.jira.issue_metrics import JIRABinnedHistogramCalculator, \
     JIRABinnedMetricCalculator
-from athenian.api.controllers.features.metric_calculator import group_to_indexes
+from athenian.api.controllers.features.metric_calculator import DEFAULT_QUANTILE_STRIDE, \
+    group_to_indexes
 from athenian.api.controllers.filter_controller import web_pr_from_struct
 from athenian.api.controllers.jira import get_jira_installation, normalize_issue_type, \
     normalize_user_type, resolve_projects
@@ -845,7 +845,7 @@ async def _calc_jira_entry(request: AthenianWebRequest,
         ([p.lower() for p in (g.commenters or [])]) for g in (filt.with_ or []))))
     label_filter = LabelFilter.from_iterables(filt.labels_include, filt.labels_exclude)
     if align_quantile_stride and (filt.quantiles or [0, 1]) != [0, 1]:
-        stride = await get_quantile_stride_for_account(request.account, request.sdb)
+        stride = DEFAULT_QUANTILE_STRIDE
     else:
         stride = 100500
     time_from, time_to = MetricEntriesCalculator.align_time_min_max(time_intervals, stride)

@@ -429,7 +429,7 @@ async def test_calc_metrics_prs_sizes(client, headers):
     assert response.status == 200, response.text()
     rbody = FriendlyJson.loads((await response.read()).decode("utf-8"))
     values = [v["values"] for v in rbody["calculated"][0]["values"]]
-    assert values == [[106, 54]]
+    assert values == [[177, 54]]
 
     body["granularities"].append("month")
     response = await client.request(
@@ -438,7 +438,7 @@ async def test_calc_metrics_prs_sizes(client, headers):
     assert response.status == 200, response.text()
     rbody = FriendlyJson.loads((await response.read()).decode("utf-8"))
     values = [v["values"] for v in rbody["calculated"][0]["values"]]
-    assert values == [[106, 54]]
+    assert values == [[177, 54]]
 
 
 async def test_calc_metrics_prs_index_error(client, headers):
@@ -662,7 +662,7 @@ async def test_calc_metrics_prs_quantiles(client, headers):
     cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(rbody))
     wip1 = cm.calculated[0].values[0].values[0]
 
-    body["quantiles"] = [0, 0.9]
+    body["quantiles"] = [0, 0.5]
     response = await client.request(
         method="POST", path="/v1/metrics/prs", headers=headers, json=body,
     )
@@ -670,7 +670,21 @@ async def test_calc_metrics_prs_quantiles(client, headers):
     assert response.status == 200, "Response body is : " + rbody
     cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(rbody))
     wip2 = cm.calculated[0].values[0].values[0]
-    assert int(wip1[:-1]) > int(wip2[:-1])
+    assert int(wip1[:-1]) < int(wip2[:-1])  # yes, not >, here is why:
+    # array([[['NaT', 'NaT', 'NaT'],
+    #         ['NaT', 'NaT', 'NaT'],
+    #         ['NaT', 'NaT', 'NaT'],
+    #         [496338, 'NaT', 'NaT'],
+    #         ['NaT', 'NaT', 'NaT'],
+    #         [250, 'NaT', 'NaT'],
+    #         ['NaT', 'NaT', 'NaT'],
+    #         [1191, 0, 293],
+    #         [3955, 'NaT', 'NaT'],
+    #         ['NaT', 'NaT', 'NaT'],
+    #         ['NaT', 'NaT', 'NaT'],
+    #         ['NaT', 'NaT', 'NaT'],
+    #         ['NaT', 'NaT', 'NaT']]], dtype='timedelta64[s]')
+    # We discard 1191 and the overall average becomes bigger.
 
     body["granularities"] = ["week", "month"]
     response = await client.request(
@@ -1552,28 +1566,28 @@ async def test_release_metrics_nasty_input(
     assert response.status == code, "Response body is : " + body
 
 
-async def test_release_metrics_quantiles(client, headers):
-    for q, gt in ((0.95, "2390365s"), (1, "2687847s")):
-        body = {
-            "account": 1,
-            "date_from": "2015-01-12",
-            "date_to": "2020-03-01",
-            "for": [["{1}"], ["github.com/src-d/go-git"]],
-            "metrics": [ReleaseMetricID.TAG_RELEASE_AGE],
-            "granularities": ["all"],
-            "quantiles": [0, q],
-        }
-        response = await client.request(
-            method="POST", path="/v1/metrics/releases", headers=headers, json=body,
-        )
-        rbody = (await response.read()).decode("utf-8")
-        assert response.status == 200, rbody
-        rbody = json.loads(rbody)
-        models = [CalculatedReleaseMetric.from_dict(i) for i in rbody]
-        assert len(models) == 2
-        assert models[0].values == models[1].values
-        model = models[0]
-        assert model.values[0].values == [gt]
+@pytest.mark.parametrize("q, value", ((0.95, "2687847s"), (1, "2687847s")))
+async def test_release_metrics_quantiles(client, headers, q, value):
+    body = {
+        "account": 1,
+        "date_from": "2015-01-12",
+        "date_to": "2020-03-01",
+        "for": [["{1}"], ["github.com/src-d/go-git"]],
+        "metrics": [ReleaseMetricID.TAG_RELEASE_AGE],
+        "granularities": ["all"],
+        "quantiles": [0, q],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/releases", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 200, rbody
+    rbody = json.loads(rbody)
+    models = [CalculatedReleaseMetric.from_dict(i) for i in rbody]
+    assert len(models) == 2
+    assert models[0].values == models[1].values
+    model = models[0]
+    assert model.values[0].values == [value]
 
 
 async def test_release_metrics_jira(client, headers):
