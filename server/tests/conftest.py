@@ -52,7 +52,7 @@ from athenian.api.controllers.miners.github.precomputed_prs import DonePRFactsLo
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.github.release_load import ReleaseLoader
 from athenian.api.controllers.miners.github.release_match import ReleaseToPullRequestMapper
-from athenian.api.db import measure_db_overhead_and_retry, ParallelDatabase
+from athenian.api.db import db_retry_intervals, measure_db_overhead_and_retry, ParallelDatabase
 from athenian.api.experiments.preloading.entries import PreloadedBranchMiner, \
     PreloadedDonePRFactsLoader, PreloadedMergedPRFactsLoader, PreloadedOpenPRFactsLoader, \
     PreloadedPullRequestMiner, PreloadedReleaseLoader, PreloadedReleaseToPullRequestMapper
@@ -89,6 +89,7 @@ override_pdb = os.getenv("OVERRIDE_PDB")
 override_rdb = os.getenv("OVERRIDE_RDB")
 override_memcached = os.getenv("OVERRIDE_MEMCACHED")
 logging.getLogger("aiosqlite").setLevel(logging.CRITICAL)
+db_retry_intervals.insert(-2, 5)  # reduce the probability of TooManyConnectionsError in Postgres
 
 
 class FakeCache:

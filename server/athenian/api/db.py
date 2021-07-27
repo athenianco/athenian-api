@@ -406,6 +406,9 @@ class least(ReturnTypeFromArgs):  # noqa
     """SQL LEAST function."""
 
 
+db_retry_intervals = [0, 0.1, 0.5, 1.4, None]
+
+
 def measure_db_overhead_and_retry(db: Union[databases.Database, ParallelDatabase],
                                   db_id: Optional[str] = None,
                                   app: Optional[aiohttp.web.Application] = None,
@@ -440,7 +443,7 @@ def measure_db_overhead_and_retry(db: Union[databases.Database, ParallelDatabase
                 except AssertionError:
                     pass  # Connection is not acquired
                 if not wait_intervals:
-                    wait_intervals = [0, 0.1, 0.5, 1.4, None]
+                    wait_intervals = db_retry_intervals
 
                 async def execute():
                     need_acquire = False
