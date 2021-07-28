@@ -618,7 +618,8 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
     if updated_min is not None:
         coarsen_time_interval(updated_min, updated_max)
     check_runs_task = asyncio.create_task(_load_failed_check_runs_for_prs(
-        time_from, time_to, repos, labels, jira, meta_ids, mdb, cache))
+        updated_min or time_from, updated_max or time_to,
+        repos, labels, jira, meta_ids, mdb, cache))
     branches, default_branches = await BranchMiner.extract_branches(repos, meta_ids, mdb, cache)
     tasks = (
         PullRequestMiner.mine(
