@@ -11,6 +11,7 @@ class AccountStatus(Model):
         "expired": bool,
         "has_ci": bool,
         "has_jira": bool,
+        "has_deployments": bool,
     }
 
     attribute_map = {
@@ -18,6 +19,7 @@ class AccountStatus(Model):
         "expired": "expired",
         "has_ci": "has_ci",
         "has_jira": "has_jira",
+        "has_deployments": "has_deployments",
     }
 
     def __init__(self,
@@ -25,6 +27,7 @@ class AccountStatus(Model):
                  expired: Optional[bool] = None,
                  has_ci: Optional[bool] = None,
                  has_jira: Optional[bool] = None,
+                 has_deployments: Optional[bool] = None,
                  ):
         """AccountStatus - a model defined in OpenAPI
 
@@ -32,11 +35,13 @@ class AccountStatus(Model):
         :param expired: The expired of this AccountStatus.
         :param has_ci: The has_ci of this AccountStatus.
         :param has_jira: The has_jira of this AccountStatus.
+        :param has_deployments: The has_deployments of this AccountStatus.
         """
         self._is_admin = is_admin
         self._expired = expired
         self._has_ci = has_ci
         self._has_jira = has_jira
+        self._has_deployments = has_deployments
 
     @property
     def is_admin(self) -> bool:
@@ -129,3 +134,26 @@ class AccountStatus(Model):
             raise ValueError("Invalid value for `has_jira`, must not be `None`")
 
         self._has_jira = has_jira
+
+    @property
+    def has_deployments(self) -> bool:
+        """Gets the has_deployments of this AccountStatus.
+
+        Indicates whether the account has submitted at least one deployment.
+
+        :return: The has_deployments of this AccountStatus.
+        """
+        return self._has_deployments
+
+    @has_deployments.setter
+    def has_deployments(self, has_deployments: bool):
+        """Sets the has_deployments of this AccountStatus.
+
+        Indicates whether the account has submitted at least one deployment.
+
+        :param has_deployments: The has_deployments of this AccountStatus.
+        """
+        if has_deployments is None:
+            raise ValueError("Invalid value for `has_deployments`, must not be `None`")
+
+        self._has_deployments = has_deployments

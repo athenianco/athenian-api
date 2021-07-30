@@ -67,7 +67,8 @@ from athenian.api.models.precomputed.models import GitHubBase as PrecomputedBase
 from athenian.api.models.state.models import Base as StateBase
 from athenian.api.preloading.cache import MemoryCachePreloader
 from athenian.precomputer.db import dereference_schemas as dereference_precomputed_schemas
-from tests.sample_db_data import fill_metadata_session, fill_state_session
+from tests.sample_db_data import fill_metadata_session, fill_persistentdata_session, \
+    fill_state_session
 
 
 if os.getenv("NEST_ASYNCIO"):
@@ -438,6 +439,13 @@ def _init_own_db_unchecked(letter: str,
         session = sessionmaker(bind=engine)()
         try:
             fill_state_session(session)
+            session.commit()
+        finally:
+            session.close()
+    if letter == "r":
+        session = sessionmaker(bind=engine)()
+        try:
+            fill_persistentdata_session(session)
             session.commit()
         finally:
             session.close()

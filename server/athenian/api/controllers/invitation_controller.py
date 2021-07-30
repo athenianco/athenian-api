@@ -142,7 +142,7 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
         try:
             async with conn.transaction():
                 acc_id, user = await _accept_invitation(
-                    iid, salt, request, conn, sdb, request.mdb, request.cache)
+                    iid, salt, request, conn, sdb, request.mdb, request.rdb, request.cache)
         except (IntegrityConstraintViolationError, IntegrityError, OperationalError) as e:
             raise ResponseError(DatabaseConflict(detail=str(e)))
     return model_response(InvitedUser(account=acc_id, user=user))
@@ -154,6 +154,7 @@ async def _accept_invitation(iid: int,
                              sdb_transaction: FastConnection,
                              sdb: ParallelDatabase,
                              mdb: ParallelDatabase,
+                             rdb: ParallelDatabase,
                              cache: Optional[aiomcache.Client],
                              ) -> Tuple[int, User]:
     """
@@ -244,7 +245,7 @@ async def _accept_invitation(iid: int,
                                       .where(Invitation.id == iid).values(values))
     if user is None:
         user = await request.user()
-    user.accounts = await load_user_accounts(user.id, sdb_transaction, mdb, cache)
+    user.accounts = await load_user_accounts(user.id, sdb_transaction, mdb, rdb, cache)
     return acc_id, user
 
 
