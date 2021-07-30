@@ -427,7 +427,7 @@ async def _issue_flow(return_: Set[str],
     issues = await fetch_jira_issues(
         jira_ids, time_from, time_to, exclude_inactive, label_filter,
         # priorities are already lower-cased and de-None-d
-        priorities, types, epics, reporters, assignees, commenters,
+        priorities, types, epics, reporters, assignees, commenters, False,
         default_branches, release_settings, account, meta_ids, mdb, pdb, cache,
         extra_columns=extra_columns)
     if JIRAFilterReturn.LABELS in return_:
@@ -856,7 +856,7 @@ async def _calc_jira_entry(request: AthenianWebRequest,
         [p.lower() for p in (filt.priorities or [])],
         {normalize_issue_type(p) for p in (filt.types or [])},
         filt.epics or [],
-        reporters, assignees, commenters,
+        reporters, assignees, commenters, False,
         default_branches, release_settings,
         filt.account, meta_ids, request.mdb, request.pdb, request.cache,
         extra_columns=participant_columns if len(filt.with_ or []) > 1 else (),

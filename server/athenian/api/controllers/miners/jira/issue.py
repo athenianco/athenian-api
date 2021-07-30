@@ -168,7 +168,7 @@ ISSUE_PR_IDS = "pr_ids"
     exptime=short_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda installation_ids, time_from, time_to, exclude_inactive, labels, priorities, types, epics, reporters, assignees, commenters, **kwargs: (  # noqa
+    key=lambda installation_ids, time_from, time_to, exclude_inactive, labels, priorities, types, epics, reporters, assignees, commenters, nested_assignees, **kwargs: (  # noqa
         installation_ids[0],
         ",".join(installation_ids[1]),
         time_from.timestamp() if time_from else "-",
@@ -181,6 +181,7 @@ ISSUE_PR_IDS = "pr_ids"
         ",".join(sorted(reporters)),
         ",".join(sorted((ass if ass is not None else "<None>") for ass in assignees)),
         ",".join(sorted(commenters)),
+        nested_assignees,
         ",".join(c.key for c in kwargs.get("extra_columns", ())),
     ),
 )
@@ -195,6 +196,7 @@ async def fetch_jira_issues(installation_ids: Tuple[int, List[str]],
                             reporters: Collection[str],
                             assignees: Collection[Optional[str]],
                             commenters: Collection[str],
+                            nested_assignees: bool,
                             default_branches: Dict[str, str],
                             release_settings: ReleaseSettings,
                             account: int,
@@ -222,12 +224,13 @@ async def fetch_jira_issues(installation_ids: Tuple[int, List[str]],
     :param reporters: List of lower-case issue reporters.
     :param assignees: List of lower-case issue assignees. None means unassigned.
     :param commenters: List of lower-case issue commenters.
+    :param nested_assignees: If filter by assignee, include all the children's.
     :param extra_columns: Additional `Issue` or `AthenianIssue` columns to fetch.
     """
     log = logging.getLogger("%s.jira" % metadata.__package__)
     issues = await _fetch_issues(
         installation_ids, time_from, time_to, exclude_inactive, labels, priorities, types, epics,
-        reporters, assignees, commenters, mdb, cache,
+        reporters, assignees, commenters, nested_assignees, mdb, cache,
         extra_columns=extra_columns)
     if not exclude_inactive:
         # DEV-1899: exclude and report issues with empty AthenianIssue
@@ -375,6 +378,7 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
                         reporters: Collection[str],
                         assignees: Collection[Optional[str]],
                         commenters: Collection[str],
+                        nested_assignees: bool,
                         mdb: databases.Database,
                         cache: Optional[aiomcache.Client],
                         extra_columns: Iterable[InstrumentedAttribute] = (),
@@ -428,21 +432,35 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
             labels, components, mdb.url.dialect == "postgresql", and_filters)
     if reporters and (postgres or not commenters):
         or_filters.append(sql.func.lower(Issue.reporter_display_name).in_(reporters))
-    if assignees and (postgres or not commenters):
+    if assignees and (postgres or (not commenters and not nested_assignees)):
         if None in assignees:
             # NULL IN (NULL) = false
             or_filters.append(Issue.assignee_display_name.is_(None))
-        or_filters.append(sql.func.lower(Issue.assignee_display_name).in_(assignees))
+        if nested_assignees:
+            or_filters.append(AthenianIssue.nested_assignee_display_names.has_any(assignees))
+        else:
+            or_filters.append(sql.func.lower(Issue.assignee_display_name).in_(assignees))
     if commenters:
         if postgres:
             or_filters.append(Issue.commenters_display_names.overlap(commenters))
         else:
-            if reporters and all(c.key != "reporter" for c in extra_columns):
-                columns.append(sql.func.lower(Issue.reporter_display_name).label("reporter"))
-            if assignees and all(c.key != "assignee" for c in extra_columns):
-                columns.append(sql.func.lower(Issue.assignee_display_name).label("assignee"))
+            if reporters:
+                columns.append(sql.func.lower(Issue.reporter_display_name).label("_reporter"))
+            if assignees:
+                columns.append(sql.func.lower(Issue.assignee_display_name).label("_assignee"))
+                if nested_assignees and all(
+                        c.name != AthenianIssue.nested_assignee_display_names.name
+                        for c in extra_columns):
+                    columns.append(AthenianIssue.nested_assignee_display_names)
             if all(c.key != "commenters" for c in extra_columns):
                 columns.append(Issue.commenters_display_names.label("commenters"))
+    if assignees and not postgres:
+        if nested_assignees and all(
+                c.name != AthenianIssue.nested_assignee_display_names.name
+                for c in columns):
+            columns.append(AthenianIssue.nested_assignee_display_names)
+        if None in assignees and all(c.name != "_assignee" for c in columns):
+            columns.append(sql.func.lower(Issue.assignee_display_name).label("_assignee"))
 
     def query_starts():
         seeds = [seed := sql.join(Issue, Status, sql.and_(Issue.status_id == Status.id,
@@ -494,17 +512,25 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
         df = pd.concat(await gather(*(read_sql_query(q, mdb, columns, index=Issue.id.key)
                                       for q in query)))
     df.sort_index(inplace=True)
-    if postgres or not commenters:
+    if postgres or (not commenters and (not nested_assignees or not assignees)):
         return df
     passed = np.full(len(df), False)
     if reporters:
-        passed |= df["reporter"].isin(reporters).values
+        passed |= df["_reporter"].isin(reporters).values
     if assignees:
-        passed |= df["assignee"].isin(assignees).values
-    # don't go hardcore vectorized here, we don't have to with SQLite
-    for i, issue_commenters in enumerate(df["commenters"].values):
-        if len(np.intersect1d(issue_commenters, commenters)):
-            passed[i] = True
+        if nested_assignees:
+            assignees = set(assignees)
+            passed |= df[AthenianIssue.nested_assignee_display_names.name].apply(
+                lambda obj: bool(obj.keys() & assignees)).values
+        else:
+            passed |= df["_assignee"].isin(assignees).values
+        if None in assignees:
+            passed |= df["_assignee"].isnull().values
+    if commenters:
+        # don't go hardcore vectorized here, we don't have to with SQLite
+        for i, issue_commenters in enumerate(df["commenters"].values):
+            if len(np.intersect1d(issue_commenters, commenters)):
+                passed[i] = True
     return df.take(np.nonzero(passed)[0])
 
 

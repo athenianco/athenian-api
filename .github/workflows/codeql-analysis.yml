@@ -2,12 +2,14 @@ name: "CodeQL"
 
 on:
   push:
+    branches:
+    - master
   pull_request:
 
 jobs:
   analyze:
     name: Analyze
-    if: "!contains(github.event.head_commit.message, 'Bump version') && (github.event_name != 'push' || github.actor != 'dependabot[bot]')"
+    if: "github.event_name != 'push' || github.actor != 'dependabot[bot]'"
     runs-on: ubuntu-latest
     permissions:
       actions: read

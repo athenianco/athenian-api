@@ -194,7 +194,7 @@ async def mine_all_jira_issues(repos: Collection[str],
     issues = await fetch_jira_issues(
         jira_ids,
         datetime(1970, 1, 1, tzinfo=timezone.utc), datetime.now(timezone.utc),
-        False, LabelFilter.empty(), [], set(), [], [], [], [],
+        False, LabelFilter.empty(), [], set(), [], [], [], [], False,
         default_branches, settings,
         account, meta_ids, mdb, pdb, cache,
         extra_columns=participant_columns,

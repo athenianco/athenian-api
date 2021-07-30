@@ -49,7 +49,7 @@ async def filter_epics(jira_ids: Tuple[int, List[str]],
     # filter the epics according to the passed filters
     epics = await fetch_jira_issues(
         jira_ids, time_from, time_to, exclude_inactive, labels,
-        priorities, ["epic"], [], reporters, assignees, commenters,
+        priorities, ["epic"], [], reporters, assignees, commenters, True,
         default_branches, release_settings, account, meta_ids, mdb, pdb, cache,
         extra_columns=extra_columns)
     if epics.empty:
@@ -67,7 +67,7 @@ async def filter_epics(jira_ids: Tuple[int, List[str]],
         extra_columns.append(Issue.parent_id)
     children = await fetch_jira_issues(
         jira_ids, None, None, False, LabelFilter.empty(),
-        [], [], epics[Issue.key.key].values, [], [], [],
+        [], [], epics[Issue.key.key].values, [], [], [], False,
         default_branches, release_settings, account, meta_ids, mdb, pdb, cache,
         extra_columns=extra_columns)
     # plan to fetch the subtask counts, but not await it now

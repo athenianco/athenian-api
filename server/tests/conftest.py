@@ -372,6 +372,7 @@ def _metadata_db(worker_id: str, force_reset: bool) -> str:
     if engine.url.drivername == "postgresql":
         engine.execute("CREATE SCHEMA IF NOT EXISTS github;")
         engine.execute("CREATE SCHEMA IF NOT EXISTS jira;")
+        engine.execute("create extension if not exists hstore;")
     else:
         metadata.dereference_schemas()
     ShadowGithubBase.metadata.create_all(engine)
