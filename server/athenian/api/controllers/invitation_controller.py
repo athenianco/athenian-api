@@ -377,10 +377,15 @@ async def _append_precomputed_progress(model: InstallationProgress,
                                        mdb: databases.Database,
                                        cache: Optional[aiomcache.Client],
                                        slack: Optional[SlackWebClient]) -> None:
-    reposets = await load_account_reposets(
-        account, login,
-        [RepositorySet.name, RepositorySet.precomputed, RepositorySet.created_at],
-        sdb, mdb, cache, slack)
+    try:
+        reposets = await load_account_reposets(
+            account, login,
+            [RepositorySet.name, RepositorySet.precomputed, RepositorySet.created_at],
+            sdb, mdb, cache, slack)
+    except ResponseError:
+        # not ready yet
+        model.finished_date = None
+        return
     precomputed = False
     created = None
     for reposet in reposets:
