@@ -16,6 +16,7 @@ from athenian.api.models.metadata import __min_version__
 from athenian.api.models.metadata.github import Base as GithubBase, NodePullRequest, PullRequest, \
     PushCommit, SchemaMigration, ShadowBase as ShadowGithubBase
 from athenian.api.models.metadata.jira import Base as JiraBase
+from athenian.api.models.persistentdata.models import DeployedComponent, DeploymentNotification
 from athenian.api.models.state.models import Account, AccountFeature, AccountGitHubAccount, \
     AccountJiraInstallation, Feature, FeatureComponent, Invitation, RepositorySet, UserAccount
 
@@ -173,3 +174,23 @@ def fill_state_session(session: sqlalchemy.orm.Session):
                             component=FeatureComponent.server, enabled=True))
         session.flush()
         session.add(AccountFeature(account_id=1, feature_id=2000, enabled=True))
+
+
+def fill_persistentdata_session(session: sqlalchemy.orm.Session):
+    session.add(DeploymentNotification(
+        account_id=1,
+        name="Dummy deployment",
+        conclusion="SUCCESS",
+        environment="production",
+        url=None,
+        started_at=datetime.datetime(2019, 11, 1, 12, 0, tzinfo=datetime.timezone.utc),
+        finished_at=datetime.datetime(2019, 11, 1, 12, 15, tzinfo=datetime.timezone.utc),
+    ))
+    session.flush()
+    session.add(DeployedComponent(
+        account_id=1,
+        deployment_name="Dummy deployment",
+        repository_node_id="MDEwOlJlcG9zaXRvcnk0NDczOTA0NA==",
+        reference="v4.13.1",
+        resolved_commit_node_id="MDY6Q29tbWl0NDQ3MzkwNDQ6MGQxYTAwOWNiYjYwNGRiMThiZTk2MGRiNWYxNTI1Yjk5YTU1ZDcyNw==",  # noqa
+    ))

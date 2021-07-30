@@ -57,7 +57,12 @@ async def test_empty_db_account_creation(client, headers, sdb, eiso, disable_def
             "email": "eiso@athenian.co",
             "picture": "https://s.gravatar.com/avatar/dfe23533b671f82d2932e713b0477c75?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fei.png", # noqa
             "accounts": {
-                "1": {"is_admin": True, "expired": False, "has_ci": False, "has_jira": False}},
+                "1": {"is_admin": True,
+                      "expired": False,
+                      "has_ci": False,
+                      "has_jira": False,
+                      "has_deployments": True,
+                      }},
         },
     }
     # the second is admin backdoor
@@ -153,9 +158,24 @@ async def test_accept_invitation_smoke(client, headers, sdb, disable_default_use
             "email": "vadim@athenian.co",
             "picture": "https://s.gravatar.com/avatar/d7fb46e4e35ecf7c22a1275dd5dbd303?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fva.png",  # noqa
             "accounts": {
-                "1": {"is_admin": True, "expired": False, "has_ci": False, "has_jira": True},
-                "2": {"is_admin": False, "expired": False, "has_ci": False, "has_jira": False},
-                "3": {"is_admin": False, "expired": False, "has_ci": True, "has_jira": False},
+                "1": {"is_admin": True,
+                      "expired": False,
+                      "has_ci": False,
+                      "has_jira": True,
+                      "has_deployments": True,
+                      },
+                "2": {"is_admin": False,
+                      "expired": False,
+                      "has_ci": False,
+                      "has_jira": False,
+                      "has_deployments": False,
+                      },
+                "3": {"is_admin": False,
+                      "expired": False,
+                      "has_ci": True,
+                      "has_jira": False,
+                      "has_deployments": False,
+                      },
             },
         },
     }
@@ -238,8 +258,18 @@ async def test_accept_invitation_noop(client, eiso, headers, disable_default_use
             "email": "eiso@athenian.co",
             "picture": "https://s.gravatar.com/avatar/dfe23533b671f82d2932e713b0477c75?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fei.png",  # noqa
             "accounts": {
-                "1": {"is_admin": False, "expired": False, "has_ci": True, "has_jira": True},
-                "3": {"is_admin": True, "expired": False, "has_ci": False, "has_jira": False},
+                "1": {"is_admin": False,
+                      "expired": False,
+                      "has_ci": True,
+                      "has_jira": True,
+                      "has_deployments": True,
+                      },
+                "3": {"is_admin": True,
+                      "expired": False,
+                      "has_ci": False,
+                      "has_jira": False,
+                      "has_deployments": False,
+                      },
             },
         },
     }
@@ -292,9 +322,24 @@ async def test_accept_invitation_admin(client, headers, sdb, disable_default_use
             "email": "vadim@athenian.co",
             "picture": "https://s.gravatar.com/avatar/d7fb46e4e35ecf7c22a1275dd5dbd303?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fva.png", # noqa
             "accounts": {
-                "1": {"is_admin": True, "expired": False, "has_ci": True, "has_jira": True},
-                "2": {"is_admin": False, "expired": False, "has_ci": False, "has_jira": False},
-                "4": {"is_admin": True, "expired": False, "has_ci": False, "has_jira": False}},
+                "1": {"is_admin": True,
+                      "expired": False,
+                      "has_ci": True,
+                      "has_jira": True,
+                      "has_deployments": True,
+                      },
+                "2": {"is_admin": False,
+                      "expired": False,
+                      "has_ci": False,
+                      "has_jira": False,
+                      "has_deployments": False,
+                      },
+                "4": {"is_admin": True,
+                      "expired": False,
+                      "has_ci": False,
+                      "has_jira": False,
+                      "has_deployments": False,
+                      }},
         },
     }
     accounts = await sdb.fetch_all(select([Account]))

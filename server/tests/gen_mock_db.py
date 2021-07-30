@@ -8,7 +8,7 @@ try:
     import pytest
 
     def fixture(*args, **kwargs):
-        if not kwargs:
+        if args and not kwargs:
             return args[0]
         return lambda fn: fn
 
@@ -17,9 +17,11 @@ except ImportError:
     pass
 
 from tests.conftest import db_dir, metadata_db
-from tests.sample_db_data import fill_state_session
+from tests.sample_db_data import fill_persistentdata_session, fill_state_session
 # this must go *after* tests to let tests.conftest check ATHENIAN_INVITATION_KEY
 from athenian.api.models import migrate  # noqa: I100
+from athenian.api.models.persistentdata import \
+    dereference_schemas as dereference_persistentdata_schemas
 
 
 def parse_args():
@@ -46,6 +48,16 @@ def main():
             session = sessionmaker(bind=engine)()
             try:
                 fill_state_session(session)
+                session.commit()
+            finally:
+                session.close()
+        if letter == "r":
+            engine = create_engine(conn_str)
+            if engine.name == "sqlite":
+                dereference_persistentdata_schemas()
+            session = sessionmaker(bind=engine)()
+            try:
+                fill_persistentdata_session(session)
                 session.commit()
             finally:
                 session.close()

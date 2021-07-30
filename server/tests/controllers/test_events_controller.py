@@ -21,6 +21,12 @@ async def token(sdb):
     return "AQAAAAAAAAA="  # unencrypted
 
 
+@pytest.fixture(scope="function")
+async def without_default_deployments(rdb):
+    await rdb.execute(delete(DeployedComponent))
+    await rdb.execute(delete(DeploymentNotification))
+
+
 async def test_notify_release_smoke(client, headers, sdb, rdb, token):
     body = [{
         "commit": "8d20cc5",  # 8d20cc5916edf7cfa6a9c5ed069f0640dc823c12
@@ -243,7 +249,8 @@ async def test_clear_precomputed_events_nasty_input(client, headers, body, statu
     ("1d28459", "Cd34s0Jb"),
     ("xxx", "u5VWde@k"),
 ])
-async def test_notify_deployment_smoke(client, headers, token, rdb, ref, vhash):
+async def test_notify_deployment_smoke(
+        client, headers, token, rdb, ref, vhash, without_default_deployments):
     body = [{
         "components": [{
             "repository": "github.com/src-d/go-git",
@@ -455,7 +462,8 @@ async def test_notify_deployment_422(client, headers, token, sdb):
     assert response.status == 422
 
 
-async def test_resolve_deployed_component_references_smoke(sdb, mdb, rdb):
+async def test_resolve_deployed_component_references_smoke(
+        sdb, mdb, rdb, without_default_deployments):
     async def execute_many(sql, values):
         if rdb.url.dialect == "sqlite":
             async with rdb.connection() as rdb_conn:
