@@ -27,7 +27,7 @@ async def test_prefixer_schedule_load(mdb):
 
 async def test_prefixer_schedule_cancel(mdb):
     prefixer = Prefixer.schedule_load((6366825,), mdb, None)
-    prefixer.cancel()
+    await prefixer.cancel()
     with pytest.raises(AssertionError):
         await prefixer.load()
 

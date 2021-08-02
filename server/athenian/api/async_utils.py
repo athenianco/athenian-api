@@ -140,7 +140,10 @@ def postprocess_integer(frame: pd.DataFrame, columns: Iterable[str]) -> pd.DataF
     :return: Fixed dataframe - the same instance as `frame`.
     """
     for col in columns:
-        frame[col] = frame[col].astype(int, copy=False)
+        try:
+            frame[col] = frame[col].astype(int, copy=False)
+        except TypeError as e:
+            raise ValueError(f"Column {col} is not all-integer") from e
     return frame
 
 

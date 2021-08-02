@@ -605,7 +605,7 @@ def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[Instrumente
                 "filtering_clause": (
                     GitHubOpenPullRequestFacts.format_version ==
                     GitHubOpenPullRequestFacts.__table__.columns[
-                        GitHubOpenPullRequestFacts.format_version.name].default.arg,
+                        GitHubOpenPullRequestFacts.format_version.key].default.arg,
                 ),
                 "cols": [
                     GitHubOpenPullRequestFacts.pr_node_id,
@@ -636,7 +636,7 @@ def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[Instrumente
                 "filtering_clause": (
                     GitHubMergedPullRequestFacts.format_version ==
                     GitHubMergedPullRequestFacts.__table__.columns[
-                        GitHubMergedPullRequestFacts.format_version.name].default.arg,
+                        GitHubMergedPullRequestFacts.format_version.key].default.arg,
                 ),
                 "cols": [
                     GitHubMergedPullRequestFacts.pr_node_id,
@@ -670,7 +670,7 @@ def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[Instrumente
                 "filtering_clause": (
                     GitHubDonePullRequestFacts.format_version ==
                     GitHubDonePullRequestFacts.__table__.columns[
-                        GitHubDonePullRequestFacts.format_version.name].default.arg,
+                        GitHubDonePullRequestFacts.format_version.key].default.arg,
                 ),
                 "cols": [
                     GitHubDonePullRequestFacts.acc_id,

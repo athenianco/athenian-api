@@ -651,8 +651,12 @@ _tsdt = pd.Timestamp(2000, 1, 1).to_numpy().dtype
 
 
 def _adjust_release_dtypes(df: pd.DataFrame) -> pd.DataFrame:
-    for ic in (Release.node_id.name, Release.author_node_id.name, Release.commit_id.name,
-               matched_by_column):
+    for ic, fillna in ((Release.node_id.name, False),
+                       (Release.author_node_id.name, True),
+                       (Release.commit_id.name, False),
+                       (matched_by_column, False)):
+        if fillna:
+            df[ic] = df[ic].fillna(0)
         try:
             df[ic] = df[ic].astype(int, copy=False)
         except KeyError:

@@ -295,7 +295,7 @@ async def mine_check_runs(time_from: datetime,
     df[CheckRun.completed_at.name] = df[CheckRun.completed_at.name].astype(started_ats.dtype)
     for col in (CheckRun.check_run_node_id, CheckRun.check_suite_node_id,
                 CheckRun.repository_node_id, CheckRun.commit_node_id):
-        assert df[col.name].dtype == int
+        assert df[col.name].dtype == int, col.name
     return df
 
 
@@ -310,12 +310,12 @@ def _filter_by_pr_labels(df: pd.DataFrame,
                          embedded_labels_query: bool,
                          df_labels: Tuple[pd.DataFrame, ...],
                          ) -> pd.DataFrame:
-    pr_node_ids = df[CheckRun.pull_request_node_id.key].values.astype("S")
+    pr_node_ids = df[CheckRun.pull_request_node_id.key].values
     if not embedded_labels_query:
         df_labels = df_labels[0]
         prs_left = PullRequestMiner.find_left_by_labels(
             df_labels.index, df_labels[PullRequestLabel.name.key].values, labels)
-        indexes_left = np.nonzero(np.in1d(pr_node_ids, prs_left.values.astype("S")))[0]
+        indexes_left = np.nonzero(np.in1d(pr_node_ids, prs_left.values))[0]
         if len(indexes_left) < len(df):
             df = df.take(indexes_left)
             df.reset_index(drop=True, inplace=True)
@@ -370,10 +370,7 @@ def _split_duplicate_check_runs(df: pd.DataFrame) -> None:
     dupe_index = df.groupby(
         [CheckRun.check_suite_node_id.name, CheckRun.name.name], sort=False,
     ).cumcount().values
-    # astype("S") mistakes x10 in the length for unknown reason
-    dupe_index = dupe_index.astype(f"S{len(str(dupe_index.max()))}")
-    check_suite_node_ids = df[CheckRun.check_suite_node_id.key].values.astype("S")
-    check_suite_node_ids = np.char.add(check_suite_node_ids, dupe_index)
+    check_suite_node_ids = (dupe_index << (64 - 8)) | df[CheckRun.check_suite_node_id.key].values
     df[CheckRun.check_suite_node_id.key] = check_suite_node_ids
     check_run_conclusions = df[CheckRun.conclusion.name].values.astype("S")
     check_suite_conclusions = df[CheckRun.check_suite_conclusion.name].values

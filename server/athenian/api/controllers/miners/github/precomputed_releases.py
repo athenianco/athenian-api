@@ -70,7 +70,7 @@ async def load_precomputed_release_facts(releases: pd.DataFrame,
                          releases[Release.repository_full_name.name].values):
         grouped_releases[repo].append(rid)
     default_version = \
-        GitHubReleaseFacts.__table__.columns[GitHubReleaseFacts.format_version.name].default.arg
+        GitHubReleaseFacts.__table__.columns[GitHubReleaseFacts.format_version.key].default.arg
 
     queries = [
         select([GitHubReleaseFacts.id, GitHubReleaseFacts.data])

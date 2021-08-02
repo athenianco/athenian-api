@@ -165,8 +165,12 @@ class PrefixerPromise:
                 self._task = None
         return self._prefixer
 
-    def cancel(self):
+    async def cancel(self):
         """Stop and delete the task to load the Prefixer."""
         if self._task is not None:
             self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
             self._task = None

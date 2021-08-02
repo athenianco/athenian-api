@@ -516,18 +516,20 @@ async def mdb_rw(mdb, loop, worker_id, request):
         return mdb
     # check whether the database is locked
     # IDK why it happens in the CI sometimes
-    try:
-        # a canary query
-        await mdb.execute(insert(Account).values({
-            Account.id: 777,
-            Account.owner_id: 1,
-            Account.owner_login: "xxx",
-        }))
-    except OperationalError:
-        metadata_db = _metadata_db(worker_id, True)
-        mdb = await _connect_to_db(metadata_db, loop, request)
-    finally:
-        await mdb.execute(delete(Account).where(Account.id == 777))
+    while True:
+        try:
+            # a canary query
+            await mdb.execute(insert(Account).values({
+                Account.id: 777,
+                Account.owner_id: 1,
+                Account.owner_login: "xxx",
+            }))
+            break
+        except OperationalError:
+            metadata_db = _metadata_db(worker_id, True)
+            mdb = await _connect_to_db(metadata_db, loop, request)
+        finally:
+            await mdb.execute(delete(Account).where(Account.id == 777))
     return mdb
 
 

@@ -74,7 +74,7 @@ class MergedPRFactsLoader:
                     ghmprf.author,
                     ghmprf.merger,
                     ]
-        default_version = ghmprf.__table__.columns[ghmprf.format_version.name].default.arg
+        default_version = ghmprf.__table__.columns[ghmprf.format_version.key].default.arg
         common_filters = [
             ghmprf.checked_until >= time_to,
             ghmprf.format_version == default_version,
@@ -161,7 +161,7 @@ class MergedPRFactsLoader:
             ghmprf.pr_node_id,
             ghmprf.data,
         ]
-        default_version = ghmprf.__table__.columns[ghmprf.format_version.name].default.arg
+        default_version = ghmprf.__table__.columns[ghmprf.format_version.key].default.arg
         filters = [
             ghmprf.pr_node_id.notin_(pr_node_id_blacklist),
             ghmprf.repository_full_name.in_(repos),

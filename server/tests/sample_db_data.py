@@ -108,7 +108,7 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
                                                 author_id=kwargs["user_node_id"],
                                                 merged=kwargs["merged"],
                                                 number=kwargs["number"],
-                                                repository=kwargs["repository_node_id"],
+                                                repository_id=kwargs["repository_node_id"],
                                                 created_at=kwargs["created_at"],
                                                 closed_at=kwargs["closed_at"]))
                 elif table == "github.api_push_commits":
@@ -216,7 +216,7 @@ def fill_persistentdata_session(session: sqlalchemy.orm.Session):
     session.add(DeployedComponent(
         account_id=1,
         deployment_name="Dummy deployment",
-        repository_node_id="MDEwOlJlcG9zaXRvcnk0NDczOTA0NA==",
+        repository_node_id=40550,
         reference="v4.13.1",
-        resolved_commit_node_id="MDY6Q29tbWl0NDQ3MzkwNDQ6MGQxYTAwOWNiYjYwNGRiMThiZTk2MGRiNWYxNTI1Yjk5YTU1ZDcyNw==",  # noqa
+        resolved_commit_node_id=2755244,
     ))

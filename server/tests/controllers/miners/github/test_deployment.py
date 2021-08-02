@@ -21,24 +21,15 @@ async def sample_deployments(rdb):
     await rdb.execute(delete(DeployedComponent))
     await rdb.execute(delete(DeploymentNotification))
     for year, month, day, conclusion, tag, commit in (
-        (2019, 11, 1, "SUCCESS", "v4.13.1",
-         "MDY6Q29tbWl0NDQ3MzkwNDQ6MGQxYTAwOWNiYjYwNGRiMThiZTk2MGRiNWYxNTI1Yjk5YTU1ZDcyNw=="),
-        (2018, 12, 1, "SUCCESS", "4.8.1",
-         "MDY6Q29tbWl0NDQ3MzkwNDQ6M2RiZmI4OWUwZjViY2UwMDA4NzI0ZTU0N2I5OTlmZTNhZjlmNjBkYg=="),
-        (2018, 12, 2, "SUCCESS", "4.8.1",
-         "MDY6Q29tbWl0NDQ3MzkwNDQ6M2RiZmI4OWUwZjViY2UwMDA4NzI0ZTU0N2I5OTlmZTNhZjlmNjBkYg=="),
-        (2018, 8, 1, "SUCCESS", "4.5.0",
-         "MDY6Q29tbWl0NDQ3MzkwNDQ6M2JkNWU4MmIyNTEyZDg1YmVjYWU5Njc3ZmEwNmI1YTk3M2ZkNGNmYg=="),
-        (2016, 12, 1, "SUCCESS", "3.2.0",
-         "MDY6Q29tbWl0NDQ3MzkwNDQ6MDJjMjI4NTg1ZTU0MzQxMzQ3OWVhMzZkM2EyYmJjODBhMDcwZWI5Mw=="),
-        (2018, 1, 12, "SUCCESS", "4.0.0",
-         "MDY6Q29tbWl0NDQ3MzkwNDQ6YmYzYjFmMWZiOWUwYTA0ZDBmODc1MTFhN2RlZDI1NjJiNDhhMTlkOA=="),
-        (2018, 1, 11, "FAILURE", "4.0.0",
-         "MDY6Q29tbWl0NDQ3MzkwNDQ6YmYzYjFmMWZiOWUwYTA0ZDBmODc1MTFhN2RlZDI1NjJiNDhhMTlkOA=="),
-        (2018, 1, 10, "FAILURE", "4.0.0",
-         "MDY6Q29tbWl0NDQ3MzkwNDQ6YmYzYjFmMWZiOWUwYTA0ZDBmODc1MTFhN2RlZDI1NjJiNDhhMTlkOA=="),
-        (2016, 7, 6, "SUCCESS", "3.1.0",
-         "MDY6Q29tbWl0NDQ3MzkwNDQ6NWU3M2YwMWNiMmUwMjdhOGYwMjgwMTYzNWI3OWQzYTliYzg2NjkxNA=="),
+        (2019, 11, 1, "SUCCESS", "v4.13.1", 2755244),
+        (2018, 12, 1, "SUCCESS", "4.8.1", 2755046),
+        (2018, 12, 2, "SUCCESS", "4.8.1", 2755046),
+        (2018, 8, 1, "SUCCESS", "4.5.0", 2755028),
+        (2016, 12, 1, "SUCCESS", "3.2.0", 2755108),
+        (2018, 1, 12, "SUCCESS", "4.0.0", 2757510),
+        (2018, 1, 11, "FAILURE", "4.0.0", 2757510),
+        (2018, 1, 10, "FAILURE", "4.0.0", 2757510),
+        (2016, 7, 6, "SUCCESS", "3.1.0", 2756224),
     ):
         for env in ("production", "staging", "canary"):
             name = "%s_%d_%02d_%02d" % (env, year, month, day)
@@ -55,7 +46,7 @@ async def sample_deployments(rdb):
             await rdb.execute(insert(DeployedComponent).values(dict(
                 account_id=1,
                 deployment_name=name,
-                repository_node_id="MDEwOlJlcG9zaXRvcnk0NDczOTA0NA==",
+                repository_node_id=40550,
                 reference=tag,
                 resolved_commit_node_id=commit,
                 created_at=datetime.now(timezone.utc),
@@ -140,7 +131,7 @@ async def test_mine_deployments_from_scratch(
     )
     await wait_deferred()
     deps, people = await mine_deployments(
-        ["MDEwOlJlcG9zaXRvcnk0NDczOTA0NA=="], {},
+        [40550], {},
         time_from, time_to,
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
@@ -161,3 +152,41 @@ async def test_mine_deployments_from_scratch(
     del pdeps["releases"]
     del sdeps["releases"]
     assert_frame_equal(pdeps, sdeps)
+
+
+@with_defer
+async def test_mine_deployments_no_releases(
+        release_match_setting_tag_or_branch, branches, default_branches,
+        prefixer_promise, mdb, pdb, rdb, cache):
+    time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
+    time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    deps, people = await mine_deployments(
+        [40550], {},
+        time_from, time_to,
+        ["production", "staging"],
+        [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        release_match_setting_tag_or_branch,
+        branches, default_branches, prefixer_promise,
+        1, (6366825,), mdb, pdb, rdb, cache)
+    assert len(deps) == 1
+    assert deps.iloc[0].name == "Dummy deployment"
+
+
+@with_defer
+async def test_mine_deployments_empty(
+        release_match_setting_tag_or_branch, branches, default_branches,
+        prefixer_promise, mdb, pdb, rdb, cache):
+    await rdb.execute(delete(DeployedLabel))
+    await rdb.execute(delete(DeployedComponent))
+    await rdb.execute(delete(DeploymentNotification))
+    time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
+    time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    deps, people = await mine_deployments(
+        [40550], {},
+        time_from, time_to,
+        ["production", "staging"],
+        [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        release_match_setting_tag_or_branch,
+        branches, default_branches, prefixer_promise,
+        1, (6366825,), mdb, pdb, rdb, cache)
+    assert len(deps) == 0

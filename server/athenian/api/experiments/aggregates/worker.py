@@ -393,7 +393,7 @@ def _eventify_prs(account: int, prs_data: List[PullRequestListItem],
                                for s in {"wip", "review", "merge", "release"})
         row["lead_count"] = 1
         row["released"] = 1
-        row["release_setting"] = str(releases_match_settings[pr.repository])
+        row["release_setting"] = str(releases_match_settings[pr.repository_id])
         row["event_owners"] = pr.participant_logins[PRParticipationKind.RELEASER]
         return row
 
@@ -401,7 +401,7 @@ def _eventify_prs(account: int, prs_data: List[PullRequestListItem],
         base_row = {
             "account": account,
             "init": pr.created,  # TODO: replace with first commit
-            "repository_full_name": pr.repository,
+            "repository_full_name": pr.repository_id,
             "number": pr.number,
             "size_added": pr.size_added,
             "size_removed": pr.size_removed,

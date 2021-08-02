@@ -38,6 +38,7 @@ def upgrade():
         op.execute("CREATE INDEX jira_identity_mapping_jira_user_id "
                    "ON jira_identity_mapping (account_id, jira_user_id) "
                    "INCLUDE(github_user_id);")
+    op.execute("UPDATE repository_sets SET precomputed = false;")
 
 
 def downgrade():
@@ -51,3 +52,4 @@ def downgrade():
                           "accounts",
                           ["account_id"],
                           ["id"])
+    op.execute("UPDATE repository_sets SET precomputed = false;")

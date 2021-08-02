@@ -77,7 +77,7 @@ async def mine_contributors(repos: Collection[str],
     @sentry_span
     async def fetch_author():
         ghdprf = GitHubDonePullRequestFacts
-        format_version = ghdprf.__table__.columns[ghdprf.format_version.name].default.arg
+        format_version = ghdprf.__table__.columns[ghdprf.format_version.key].default.arg
         if has_times:
             prs_opts = [
                 PullRequest.created_at.between(time_from, time_to),

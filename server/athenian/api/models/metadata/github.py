@@ -302,7 +302,7 @@ class Release(Base,
     __tablename__ = "api_releases"
 
     author = Column(Text, nullable=False)
-    author_node_id = Column(BigInteger, nullable=False)
+    author_node_id = Column(BigInteger)  # e.g., by a deleted user
     name = Column(Text)
     published_at = Column(TIMESTAMP(timezone=True))
     tag = Column(Text)
@@ -318,7 +318,7 @@ class NodeCommit(Base,
     __tablename__ = "node_commit"
 
     oid = Column(Text, nullable=False)
-    sha = synonym(oid)
+    sha = synonym("oid")
     repository_id = Column(BigInteger, nullable=False)
     message = Column(Text, nullable=False)
     committed_date = Column(TIMESTAMP(timezone=True))
@@ -348,7 +348,7 @@ class NodePullRequest(Base,
     author_id = Column(BigInteger)
     merged = Column(Boolean)
     number = Column(BigInteger, nullable=False)
-    repository = Column(Text, nullable=False)  # FIXME: str -> int
+    repository_id = Column(BigInteger, nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), nullable=False)
     closed_at = Column(TIMESTAMP(timezone=True))
 

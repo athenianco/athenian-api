@@ -35,7 +35,7 @@ class OpenPRFactsLoader:
         node_ids = prs.index.take(open_indexes)
         authors = dict(zip(node_ids, prs[PullRequest.user_login.name].values[open_indexes]))
         ghoprf = GitHubOpenPullRequestFacts
-        default_version = ghoprf.__table__.columns[ghoprf.format_version.name].default.arg
+        default_version = ghoprf.__table__.columns[ghoprf.format_version.key].default.arg
         selected = [
             ghoprf.pr_node_id,
             ghoprf.pr_updated_at,
@@ -88,7 +88,7 @@ class OpenPRFactsLoader:
         postgres = pdb.url.dialect == "postgresql"
         ghoprf = GitHubOpenPullRequestFacts
         selected = [ghoprf.pr_node_id, ghoprf.repository_full_name, ghoprf.data]
-        default_version = ghoprf.__table__.columns[ghoprf.format_version.name].default.arg
+        default_version = ghoprf.__table__.columns[ghoprf.format_version.key].default.arg
         filters = [
             ghoprf.pr_node_id.in_(prs),
             ghoprf.format_version == default_version,
@@ -134,7 +134,7 @@ class OpenPRFactsLoader:
             ghoprf.pr_node_id,
             ghoprf.data,
         ]
-        default_version = ghoprf.__table__.columns[ghoprf.format_version.name].default.arg
+        default_version = ghoprf.__table__.columns[ghoprf.format_version.key].default.arg
         filters = [
             ghoprf.pr_node_id.notin_(pr_node_id_blacklist),
             ghoprf.repository_full_name.in_(repos),

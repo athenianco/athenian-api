@@ -395,7 +395,7 @@ async def fetch_precomputed_commit_history_dags(
 ) -> Dict[str, DAG]:
     """Load commit DAGs from the pdb."""
     ghrc = GitHubCommitHistory
-    format_version = ghrc.__table__.columns[ghrc.format_version.name].default.arg
+    format_version = ghrc.__table__.columns[ghrc.format_version.key].default.arg
     with sentry_sdk.start_span(op="fetch_precomputed_commit_history_dags/pdb"):
         rows = await pdb.fetch_all(
             select([ghrc.repository_full_name, ghrc.dag])

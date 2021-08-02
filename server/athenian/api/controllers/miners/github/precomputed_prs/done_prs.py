@@ -215,7 +215,7 @@ class DonePRFactsLoader:
                     ghprt.releaser,
                     ]
         format_version_filter = \
-            ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.name].default.arg
+            ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.key].default.arg
         if pdb.url.dialect == "sqlite":
             filters = [
                 format_version_filter,
@@ -293,7 +293,7 @@ class DonePRFactsLoader:
                     ghprt.releaser,
                     ]
         filters = [
-            ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.name].default.arg,
+            ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.key].default.arg,
             ghprt.pr_node_id.in_(node_ids),
             ghprt.acc_id == account,
         ]
@@ -504,7 +504,7 @@ class DonePRFactsLoader:
         assert isinstance(time_to, (datetime, type(None)))
         ghprt = GitHubDonePullRequestFacts
         items = [
-            ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.name].default.arg,
+            ghprt.format_version == ghprt.__table__.columns[ghprt.format_version.key].default.arg,
             ghprt.acc_id == account,
         ]
         if time_to is not None:
