@@ -1,8 +1,10 @@
 import datetime
 from itertools import chain
+import json
 from lzma import LZMAFile
 import os
 from pathlib import Path
+from typing import Dict
 
 from sqlalchemy import and_
 from sqlalchemy.cprocessors import str_to_date, str_to_datetime
@@ -53,19 +55,25 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
                 columns = {}
                 for c in tables[table].columns:
                     if isinstance(c.type, Variant):
-                        pt = c.type.load_dialect_impl(session.bind.dialect).python_type
+                        try:
+                            pt = c.type.mapping.get("postgresql", c.type.impl).python_type
+                        except NotImplementedError:
+                            # HSTORE
+                            pt = None
+                            ctor = _parse_hstore
                     else:
                         pt = c.type.python_type
-                    if pt is datetime.date:
-                        ctor = str_to_date
-                    elif pt is datetime.datetime:
-                        ctor = str_to_datetime
-                    elif pt is bool:
-                        ctor = lambda x: x == "t" or x == "1"  # noqa:E731
-                    elif issubclass(pt, (list, dict)):
-                        ctor = lambda x: [s for s in x.strip("{}").split(",") if s]  # noqa
-                    else:
-                        ctor = lambda x: x  # noqa:E731
+                    if pt is not None:
+                        if pt is datetime.date:
+                            ctor = str_to_date
+                        elif pt is datetime.datetime:
+                            ctor = str_to_datetime
+                        elif pt is bool:
+                            ctor = lambda x: x == "t" or x == "1"  # noqa:E731
+                        elif issubclass(pt, (list, dict)):
+                            ctor = lambda x: [s for s in x.strip("{}").split(",") if s]  # noqa
+                        else:
+                            ctor = lambda x: x  # noqa:E731
                     columns[c.name] = ctor
                 keys = [p.strip(b'(),"').decode() for p in parts[1:-2]]
                 continue
@@ -107,6 +115,10 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
     commit_ids = {h: n for h, n in session.query(PushCommit.sha, PushCommit.node_id)}
     for pr in session.query(PullRequest).filter(PullRequest.merge_commit_sha.isnot(None)):
         pr.merge_commit_id = commit_ids[pr.merge_commit_sha]
+
+
+def _parse_hstore(x: str) -> Dict[str, str]:
+    return json.loads("{%s}" % x.strip("'").replace("=>", ":"))
 
 
 def fill_state_session(session: sqlalchemy.orm.Session):

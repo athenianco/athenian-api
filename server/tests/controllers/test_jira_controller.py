@@ -569,9 +569,9 @@ async def test_filter_jira_extended_filters(client, headers):
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     model = FilteredJIRAStuff.from_dict(json.loads(body))
-    assert len(model.epics) == 26
-    assert len(model.priorities) == 4  # two projects
-    assert len(model.statuses) == 5
+    assert len(model.epics) == 48, str(sorted(epic.id for epic in model.epics))
+    assert len(model.priorities) == 6  # two projects
+    assert len(model.statuses) == 7
 
 
 async def test_filter_jira_issue_types_filter(client, headers):

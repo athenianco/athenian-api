@@ -9,6 +9,7 @@ class AccountIDMixin:
 
 Base = declarative_base(cls=AccountIDMixin)
 Base.__table_args__ = {"schema": "jira"}
+HSTORE = postgresql.HSTORE().with_variant(JSON(), sqlite.dialect.name)
 
 
 class Epic(Base):
@@ -102,6 +103,7 @@ class AthenianIssue(Base):
     work_began = Column(TIMESTAMP(timezone=True))
     resolved = Column(TIMESTAMP(timezone=True))
     updated = Column(TIMESTAMP(timezone=True))
+    nested_assignee_display_names = Column(HSTORE, nullable=False)
 
 
 class Installation(Base):
