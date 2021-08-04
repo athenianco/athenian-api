@@ -32,8 +32,13 @@ def main() -> int:
                     table = model.__table__
                 except AttributeError:
                     continue
+                query = session.query(model)
                 try:
-                    session.query(model).first()
+                    query = query.filter(model.acc_id == 1)
+                except AttributeError:
+                    pass
+                try:
+                    query.first()
                 except Exception as e:
                     errors.append((model, traceback.format_exc()))
                     sentry_sdk.capture_exception(e)
