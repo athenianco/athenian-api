@@ -273,8 +273,14 @@ class ParallelDatabase(databases.Database):
         return connection
 
     def _on_connection_close(self, conn: asyncpg.Connection):
-        del self._introspect_types_cache[weakref.ref(conn)]
-        del self._introspect_type_cache[weakref.ref(conn)]
+        try:
+            del self._introspect_types_cache[weakref.ref(conn)]
+            del self._introspect_type_cache[weakref.ref(conn)]
+        except TypeError:
+            # conn is a PoolConnectionProxy and the DB is dying
+            log = logging.getLogger(
+                f"{metadata.__package__}.ParallelDatabase._on_connection_close")
+            log.warning("could not dispose type introspection caches for connection %s", conn)
 
     async def _register_codecs(self, conn: asyncpg.Connection) -> None:
         # we have to maintain separate caches for each database because OID-s appear different
