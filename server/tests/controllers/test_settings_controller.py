@@ -151,6 +151,7 @@ async def cleanup_gkwillie(sdb, with_accounts: bool):
 async def test_set_release_match_login_failure(
         client, headers, sdb, lazy_gkwillie, disable_default_user):
     await cleanup_gkwillie(sdb, False)
+    await sdb.execute(delete(AccountGitHubAccount))
     body = {
         "repositories": [],
         "account": 1,
