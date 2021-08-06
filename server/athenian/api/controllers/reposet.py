@@ -1,4 +1,5 @@
 import asyncio
+from http import HTTPStatus
 from itertools import chain
 import logging
 from sqlite3 import IntegrityError, OperationalError
@@ -8,8 +9,9 @@ import aiomcache
 import asyncpg
 from asyncpg import UniqueViolationError
 import databases
+import sentry_sdk
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
-from sqlalchemy import and_, func, insert, select
+from sqlalchemy import and_, desc, func, insert, select
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api import metadata
@@ -20,10 +22,10 @@ from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.db import DatabaseLike, FastConnection, ParallelDatabase
 from athenian.api.defer import defer
-from athenian.api.models.metadata.github import AccountRepository
+from athenian.api.models.metadata.github import AccountRepository, NodeUser
 from athenian.api.models.state.models import RepositorySet, UserAccount
-from athenian.api.models.web import ForbiddenError, InvalidRequestError, NoSourceDataError, \
-    NotFoundError
+from athenian.api.models.web import ForbiddenError, InstallationProgress, InvalidRequestError, \
+    NoSourceDataError, NotFoundError
 from athenian.api.models.web.generic_error import DatabaseConflict
 from athenian.api.response import ResponseError
 from athenian.api.tracing import sentry_span
@@ -204,11 +206,11 @@ async def _load_account_reposets(account: int,
 
             prefixer_meta_ids, login = await asyncio.gather(
                 load_prefixer(), login(), return_exceptions=True)
-            if isinstance(login, Exception):
-                raise ResponseError(ForbiddenError(detail=str(login)))
             if isinstance(prefixer_meta_ids, Exception):
                 if not isinstance(prefixer_meta_ids, ResponseError):
                     raise prefixer_meta_ids from None
+                if isinstance(login, Exception):
+                    raise ResponseError(ForbiddenError(detail=str(login)))
                 if not (meta_ids := await match_metadata_installation(
                         account, login, sdb_conn, mdb_conn, slack)):
                     raise_no_source_data()
@@ -271,3 +273,79 @@ async def _load_account_reposets(account: int,
         log.error("%s: %s", type(e).__name__, e)
         raise ResponseError(DatabaseConflict(
             detail="concurrent or duplicate initial reposet creation")) from None
+
+
+async def load_account_state(account: int,
+                             sdb: ParallelDatabase,
+                             mdb: ParallelDatabase,
+                             cache: Optional[aiomcache.Client],
+                             slack: Optional[SlackWebClient],
+                             log: Optional[logging.Logger] = None,
+                             ) -> Optional[InstallationProgress]:
+    """
+    Decide on the account's installation progress.
+
+    :return: If None, the account is not installed, otherwise the caller must analyze \
+             `InstallationProgress` to figure out whether it's 100% or not.
+    """
+    if log is None:
+        log = logging.getLogger(f"{metadata.__package__}.load_account_state")
+    try:
+        await get_metadata_account_ids(account, sdb, cache)
+    except ResponseError:
+        # Load the login
+        auth0_id = await sdb.fetch_val(select([UserAccount.user_id]).where(and_(
+            UserAccount.account_id == account,
+        )).order_by(desc(UserAccount.is_admin)))
+        if auth0_id is None:
+            log.warning("There are no users in the account %d", account)
+            return None
+        try:
+            db_id = int(auth0_id.split("|")[-1])
+        except ValueError:
+            log.error("Unable to match user %s with metadata installations, "
+                      "you have to hack DB manually for account %d",
+                      auth0_id, account)
+            return None
+        login = await mdb.fetch_val(select([NodeUser.login]).where(NodeUser.database_id == db_id))
+        if login is None:
+            log.warning("Could not find the user login of %s", auth0_id)
+            return None
+        async with sdb.connection() as sdb_conn:
+            async with sdb_conn.transaction():
+                if not await match_metadata_installation(account, login, sdb_conn, mdb, slack):
+                    log.warning("Did not match installations to account %d as %s",
+                                account, auth0_id)
+                    return None
+    try:
+        async with mdb.connection() as mdb_conn:
+            progress = await fetch_github_installation_progress(account, sdb, mdb_conn, cache)
+    except ResponseError as e1:
+        if e1.response.status != HTTPStatus.UNPROCESSABLE_ENTITY:
+            sentry_sdk.capture_exception(e1)
+        log.warning("account %d: fetch_github_installation_progress ResponseError: %s",
+                    account, e1.response)
+        return None
+    except Exception as e2:
+        sentry_sdk.capture_exception(e2)
+        log.warning("account %d: fetch_github_installation_progress %s: %s",
+                    account, type(e2).__name__, e2)
+        return None
+    if progress.finished_date is None:
+        return progress
+
+    async def load_login() -> str:
+        raise AssertionError("This should never be called at this point")
+
+    try:
+        reposets = await load_account_reposets(
+            account, load_login, [RepositorySet.name], sdb, mdb, cache, slack)
+    except ResponseError as e3:
+        log.warning("account %d: load_account_reposets ResponseError: %s",
+                    account, e3.response)
+    except Exception as e4:
+        sentry_sdk.capture_exception(e4)
+    else:
+        if reposets:
+            return progress
+    return None

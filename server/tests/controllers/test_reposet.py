@@ -3,7 +3,7 @@ from contextvars import ContextVar
 
 from sqlalchemy import delete
 
-from athenian.api.controllers.reposet import load_account_reposets
+from athenian.api.controllers.reposet import load_account_reposets, load_account_state
 from athenian.api.models.state.models import RepositorySet
 from athenian.api.response import ResponseError
 
@@ -27,3 +27,9 @@ async def test_load_account_reposets_transaction(sdb, mdb_rw):
     assert len(items) > 0
     for i in items[1:]:
         assert i == items[0]
+
+
+async def test_load_account_state_no_reposet(sdb, mdb):
+    await sdb.execute(delete(RepositorySet))
+    state = await load_account_state(1, sdb, mdb, None, None)
+    assert state is not None
