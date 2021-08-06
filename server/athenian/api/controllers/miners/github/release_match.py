@@ -30,7 +30,7 @@ from athenian.api.controllers.miners.github.released_pr import new_released_prs_
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
 from athenian.api.controllers.miners.types import nonemax, PullRequestFacts
 from athenian.api.controllers.prefixer import PrefixerPromise
-from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
+from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.db import add_pdb_hits, add_pdb_misses
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import NodeCommit, NodeRepository, PullRequest, \
@@ -359,17 +359,12 @@ class ReleaseToPullRequestMapper:
         else:
             matched_bys = {}
         # these matching rules must be applied in the past to stay consistent
-        consistent_release_settings = release_settings.copy()
+        consistent_release_settings = ReleaseLoader.disambiguate_release_settings(
+            release_settings, matched_bys)
         repos_matched_by_tag = []
         repos_matched_by_branch = []
         for repo in repos:
-            setting = release_settings.native[repo]
-            match = ReleaseMatch(matched_bys.setdefault(repo, setting.match))
-            consistent_release_settings.set_by_native(repo, ReleaseMatchSetting(
-                tags=setting.tags,
-                branches=setting.branches,
-                match=match,
-            ))
+            match = consistent_release_settings.native[repo].match
             if match in (ReleaseMatch.tag, ReleaseMatch.event):
                 repos_matched_by_tag.append(repo)
             elif match == ReleaseMatch.branch:

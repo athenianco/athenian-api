@@ -17,13 +17,13 @@ class PRParticipationKind(IntEnum):
     These values are written to the precomputed DB, so be careful with changing them.
     """
 
-    AUTHOR = 1
-    REVIEWER = 2
-    COMMENTER = 3
-    COMMIT_AUTHOR = 4
-    COMMIT_COMMITTER = 5
-    MERGER = 6
-    RELEASER = 7
+    AUTHOR = auto()
+    REVIEWER = auto()
+    COMMENTER = auto()
+    COMMIT_AUTHOR = auto()
+    COMMIT_COMMITTER = auto()
+    MERGER = auto()
+    RELEASER = auto()
 
 
 PRParticipants = Mapping[PRParticipationKind, Set[str]]
@@ -32,9 +32,9 @@ PRParticipants = Mapping[PRParticipationKind, Set[str]]
 class ReleaseParticipationKind(IntEnum):
     """Developer relationship with a release."""
 
-    PR_AUTHOR = 1
-    COMMIT_AUTHOR = 2
-    RELEASER = 3
+    PR_AUTHOR = auto()
+    COMMIT_AUTHOR = auto()
+    RELEASER = auto()
 
 
 ReleaseParticipants = Mapping[ReleaseParticipationKind, List[str]]
@@ -218,102 +218,6 @@ class MinedPullRequest:
     def _extract_people(df: pd.DataFrame, col: str) -> Set[str]:
         values = df[col].values
         return set(values[np.where(values)[0]])
-
-
-@dataclass(slots=True, frozen=True, eq=False, first_mutable="jira_id")
-class PullRequestFactsLegacy:
-    """Various PR event timestamps and other properties."""
-
-    created: pd.Timestamp
-    first_commit: Optional[pd.Timestamp]
-    work_began: pd.Timestamp
-    last_commit_before_first_review: Optional[pd.Timestamp]
-    last_commit: Optional[pd.Timestamp]
-    merged: Optional[pd.Timestamp]
-    closed: Optional[pd.Timestamp]
-    first_comment_on_first_review: Optional[pd.Timestamp]
-    first_review_request: Optional[pd.Timestamp]
-    first_review_request_exact: Optional[pd.Timestamp]
-    approved: Optional[pd.Timestamp]
-    last_review: Optional[pd.Timestamp]
-    released: Optional[pd.Timestamp]
-    done: bool
-    reviews: np.ndarray
-    activity_days: np.ndarray
-    size: int
-    force_push_dropped: bool
-    # Mutable optional fields go below.
-    jira_id: Optional[str] = None
-    repository_full_name: Optional[str] = None
-    author: Optional[str] = None
-    merger: Optional[str] = None
-    releaser: Optional[str] = None
-
-    def max_timestamp(self) -> pd.Timestamp:
-        """Find the maximum timestamp contained in the struct."""
-        if self.released is not None:
-            return self.released
-        if self.closed is not None:
-            return self.closed
-        return max(t for t in (self.created, self.first_commit, self.last_commit,
-                               self.first_review_request, self.last_review)
-                   if t is not None)
-
-    def truncate(self, dt: Union[pd.Timestamp, datetime]) -> "PullRequestFactsLegacy":
-        """Create a copy of the facts without timestamps bigger than or equal to `dt`."""
-        changed = []
-        for k, v in self.items():  # do not use dataclasses.asdict() - very slow
-            if isinstance(v, pd.Timestamp) and v >= dt:
-                changed.append(k)
-        if not changed:
-            return self
-        dikt = dict(self)
-        for k in changed:
-            dikt[k] = None
-        dikt["done"] = dikt["released"] or dikt["force_push_dropped"] or (
-            dikt["closed"] and not dikt["merged"])
-        return PullRequestFactsLegacy(**dikt)
-
-    def validate(self) -> None:
-        """Ensure that there are no NaNs."""
-        for k, v in self.items():  # do not use dataclasses.asdict() - very slow
-            if isinstance(v, np.ndarray):
-                assert (v == v).all(), k
-            else:
-                assert v == v, k
-
-    def __eq__(self, other) -> bool:
-        """Compare this object to another."""
-        if self is other:
-            return True
-
-        if self.__class__ is not other.__class__:
-            raise NotImplementedError(
-                f"Cannot compare {self.__class__} and {other.__class__}")
-
-        for k, v in self.items():
-            v_other = getattr(other, k)
-            if v is v_other:
-                continue
-
-            if isinstance(v, np.ndarray) and isinstance(v_other, np.ndarray):
-                if not np.array_equal(v, v_other):
-                    return False
-            elif v != v_other:
-                return False
-
-        return True
-
-    def __str__(self) -> str:
-        """Format for human-readability."""
-        # do not use dataclasses.asdict() - very slow
-        return "{\n\t%s\n}" % ",\n\t".join("%s: %s" % (k, v) for k, v in self.items())
-
-    def __lt__(self, other: "PullRequestFactsLegacy") -> bool:
-        """Order by `work_began`."""
-        if self.work_began != other.work_began:
-            return self.work_began < other.work_began
-        return self.created < other.created
 
 
 # avoid F821 in the annotations
@@ -512,3 +416,31 @@ class CodeCheckRunListItem:
     size_groups: List[int]
     total_stats: CodeCheckRunListStats
     prs_stats: CodeCheckRunListStats
+
+
+class DeploymentConclusion(IntEnum):
+    """Possible deployment outcomes."""
+
+    SUCCESS = auto()
+    FAILURE = auto()
+    CANCELLED = auto()
+
+
+@numpy_struct
+class DeploymentFacts:
+    """Various precomputed data about a deployment."""
+
+    class Immutable:
+        """
+        Immutable fields, we store them in `_data` and mirror in `_arr`.
+
+        We generate `dtype` from this spec.
+        """
+
+        pr_authors: [ascii]
+        commit_authors: [ascii]
+        prs: int
+        lines_prs: int
+        lines_overall: int
+        commits_prs: int
+        commits_overall: int

@@ -15,8 +15,8 @@ from athenian.api.controllers import invitation_controller
 from athenian.api.controllers.calculator_selector import METRIC_ENTRIES_VARIATIONS_PREFIX
 from athenian.api.controllers.invitation_controller import _generate_account_secret
 from athenian.api.models.metadata import __min_version__
-from athenian.api.models.metadata.github import Base as GithubBase, NodePullRequest, PullRequest, \
-    PushCommit, SchemaMigration, ShadowBase as ShadowGithubBase
+from athenian.api.models.metadata.github import Base as GithubBase, NodeCommit, NodePullRequest, \
+    PullRequest, PushCommit, SchemaMigration, ShadowBase as ShadowGithubBase
 from athenian.api.models.metadata.jira import Base as JiraBase
 from athenian.api.models.persistentdata.models import DeployedComponent, DeploymentNotification
 from athenian.api.models.state.models import Account, AccountFeature, AccountGitHubAccount, \
@@ -107,8 +107,22 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
                                                 title=kwargs["title"],
                                                 author=kwargs["user_node_id"],
                                                 merged=kwargs["merged"],
+                                                number=kwargs["number"],
+                                                repository=kwargs["repository_node_id"],
                                                 created_at=kwargs["created_at"],
                                                 closed_at=kwargs["closed_at"]))
+                elif table == "github.api_push_commits":
+                    session.add(NodeCommit(id=kwargs["node_id"],
+                                           acc_id=kwargs["acc_id"],
+                                           oid=kwargs["sha"],
+                                           message=kwargs["message"],
+                                           repository=kwargs["repository_node_id"],
+                                           committed_date=kwargs["committed_date"],
+                                           committer_user=kwargs["committer_user"],
+                                           author_user=kwargs["author_user"],
+                                           additions=kwargs["additions"],
+                                           deletions=kwargs["deletions"],
+                                           ))
     session.add(SchemaMigration(version=__min_version__, dirty=False))
     session.flush()
     # append missed merge commit IDs to PRs

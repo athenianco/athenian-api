@@ -8,9 +8,9 @@ import pandas as pd
 
 from athenian.api.controllers.features.github.pull_request_metrics import \
     PullRequestMetricCalculatorEnsemble
-from athenian.api.controllers.features.metric_calculator import df_from_structs
 from athenian.api.controllers.miners.types import PullRequestFacts
 from athenian.api.models.web import PullRequestMetricID
+from athenian.api.typing_utils import df_from_structs
 
 
 def main():

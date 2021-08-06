@@ -14,7 +14,7 @@ from athenian.api import metadata
 from athenian.api.auth import disable_default_user
 from athenian.api.controllers.account import get_metadata_account_ids, get_user_account_status
 from athenian.api.controllers.jira import load_mapped_jira_users
-from athenian.api.controllers.miners.github.users import mine_users
+from athenian.api.controllers.miners.github.user import mine_users
 from athenian.api.db import DatabaseLike
 from athenian.api.models.metadata.github import User
 from athenian.api.models.state.models import Team

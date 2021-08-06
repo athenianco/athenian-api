@@ -261,6 +261,22 @@ class ReleaseLoader:
         return releases, applied_matches
 
     @classmethod
+    def disambiguate_release_settings(cls,
+                                      settings: ReleaseSettings,
+                                      matched_bys: Dict[str, ReleaseMatch],
+                                      ) -> ReleaseSettings:
+        """Resolve "tag_or_branch" to either "tag" or "branch"."""
+        settings = settings.copy()
+        for repo, setting in settings.native.items():
+            match = ReleaseMatch(matched_bys.get(repo, setting.match))
+            settings.set_by_native(repo, ReleaseMatchSetting(
+                tags=setting.tags,
+                branches=setting.branches,
+                match=match,
+            ))
+        return settings
+
+    @classmethod
     @sentry_span
     async def fetch_precomputed_release_match_spans(
             cls,
@@ -663,11 +679,11 @@ def match_groups_to_sql(match_groups: Dict[ReleaseMatch, Dict[str, Iterable[str]
     :return: 1. List of the alternative SQL filters. \
              2. List of involved repository names for each SQL filter.
     """
-    or_conditions, repos = match_groups_to_conditions(match_groups)
+    or_conditions, repos = match_groups_to_conditions(match_groups, model)
     or_items = [
         and_(
-            model.release_match == cond[PrecomputedRelease.release_match.key],
-            model.repository_full_name.in_(cond[PrecomputedRelease.repository_full_name.key]),
+            model.release_match == cond[model.release_match.key],
+            model.repository_full_name.in_(cond[model.repository_full_name.key]),
         ) for cond in or_conditions
     ]
 
@@ -676,6 +692,7 @@ def match_groups_to_sql(match_groups: Dict[ReleaseMatch, Dict[str, Iterable[str]
 
 def match_groups_to_conditions(
     match_groups: Dict[ReleaseMatch, Dict[str, Iterable[str]]],
+    model,
 ) -> Tuple[List[List[dict]], List[Iterable[str]]]:
     """
     Convert the grouped release matches to a list of conditions.
@@ -695,8 +712,8 @@ def match_groups_to_conditions(
             continue
 
         or_conditions.extend({
-            PrecomputedRelease.release_match.key: "".join([match.name, suffix, v]),
-            PrecomputedRelease.repository_full_name.key: r,
+            model.release_match.key: "".join([match.name, suffix, v]),
+            model.repository_full_name.key: r,
         } for v, r in match_group.items())
         repos.extend(match_group.values())
 

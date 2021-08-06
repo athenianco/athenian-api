@@ -69,7 +69,7 @@ def _match_groups_to_mask(
         model: Union[MetadataGitHubBase, PrecomputedGitHubBase],
         df: pd.DataFrame,
         match_groups: Dict[ReleaseMatch, Dict[str, Iterable[str]]]) -> pd.Series:
-    or_conditions, _ = match_groups_to_conditions(match_groups)
+    or_conditions, _ = match_groups_to_conditions(match_groups, model)
     or_masks = [
         (df[model.release_match.key] == cond["release_match"]) &
         (df[model.repository_full_name.key].isin(cond["repository_full_name"]))
@@ -155,7 +155,7 @@ class PreloadedReleaseLoader(ReleaseLoader):
             model: Union[MetadataGitHubBase, PrecomputedGitHubBase],
             df: pd.DataFrame,
             match_groups: Dict[ReleaseMatch, Dict[str, Iterable[str]]]) -> pd.Series:
-        or_conditions, _ = match_groups_to_conditions(match_groups)
+        or_conditions, _ = match_groups_to_conditions(match_groups, model)
         or_masks = [
             (df[model.release_match.key] == cond[PrecomputedRelease.release_match.key]) &
             (df[model.repository_full_name.key].isin(

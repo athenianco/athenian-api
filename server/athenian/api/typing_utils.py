@@ -1,12 +1,18 @@
 from contextlib import contextmanager
 from contextvars import ContextVar
 import dataclasses
+from datetime import datetime, timedelta
 from itertools import chain
-from typing import Any, Callable, Iterator, List, Mapping, NamedTuple, Optional, Tuple, Type, \
+from typing import Any, Callable, Iterable, Iterator, List, Mapping, NamedTuple, Optional, Tuple, \
+    Type, \
     TypeVar, Union
 
 import numpy as np
+import pandas as pd
+from pandas._libs import tslib
 import xxhash
+
+from athenian.api.tracing import sentry_span
 
 
 def is_generic(klass: type):
@@ -401,3 +407,87 @@ def numpy_struct(cls):
     struct_cls.__module__ = cls.__module__
     cls.__name__ += "Origin"
     return struct_cls
+
+
+@sentry_span
+def df_from_structs(items: Iterable[NumpyStruct],
+                    length: Optional[int] = None,
+                    ) -> pd.DataFrame:
+    """
+    Combine several NumpyStruct-s to a Pandas DataFrame.
+
+    :param items: A collection, a generator, an iterator - all are accepted.
+    :param length: In case `items` does not support `len()`, specify the number of structs \
+                   for better performance.
+    :return: Pandas DataFrame with columns set to struct fields.
+    """
+    columns = {}
+    try:
+        if length is None:
+            length = len(items)
+    except TypeError:
+        # slower branch without pre-allocation
+        items_iter = iter(items)
+        try:
+            first_item = next(items_iter)
+        except StopIteration:
+            return pd.DataFrame()
+        assert isinstance(first_item, NumpyStruct)
+        dtype = first_item.dtype
+        nested_fields = first_item.nested_dtypes
+        coerced_datas = [first_item.coerced_data]
+        for k, v in first_item.items():
+            if k not in dtype.names or k in nested_fields:
+                columns[k] = [v]
+        for item in items_iter:
+            coerced_datas.append(item.coerced_data)
+            for k in columns:
+                columns[k].append(getattr(item, k))
+        table_array = np.frombuffer(b"".join(coerced_datas), dtype=dtype)
+        del coerced_datas
+    else:
+        items_iter = iter(items)
+        try:
+            first_item = next(items_iter)
+        except StopIteration:
+            return pd.DataFrame()
+        assert isinstance(first_item, NumpyStruct)
+        dtype = first_item.dtype
+        nested_fields = first_item.nested_dtypes
+        itemsize = dtype.itemsize
+        coerced_datas = bytearray(itemsize * length)
+        coerced_datas[:itemsize] = first_item.coerced_data
+        for k, v in first_item.items():
+            if k not in dtype.names or k in nested_fields:
+                columns[k] = column = [None] * length
+                column[0] = v
+        for i, item in enumerate(items_iter, 1):
+            coerced_datas[i * itemsize:(i + 1) * itemsize] = item.coerced_data
+            for k in columns:
+                columns[k][i] = item[k]
+        table_array = np.frombuffer(coerced_datas, dtype=dtype)
+        del coerced_datas
+    for field_name in dtype.names:
+        if field_name not in nested_fields:
+            columns[field_name] = table_array[field_name]
+    del table_array
+    column_types = {}
+    try:
+        for k, v in first_item.Optional.__annotations__.items():
+            if not isinstance(v, type) or not issubclass(v, (datetime, np.datetime64, float)):
+                # we can only unbox types that have a "NaN" value
+                v = object
+            column_types[k] = v
+    except AttributeError:
+        pass  # no Optional
+    for k, v in columns.items():
+        column_type = column_types.get(k, object)
+        if issubclass(column_type, datetime):
+            v = tslib.array_to_datetime(np.array(v, dtype=object), utc=True, errors="raise")[0]
+        elif issubclass(column_type, timedelta):
+            v = np.array(v, dtype="timedelta64[s]")
+        elif np.dtype(column_type) != np.dtype(object):
+            v = np.array(v, dtype=column_type)
+        columns[k] = v
+    df = pd.DataFrame.from_dict(columns)
+    return df

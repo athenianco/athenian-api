@@ -34,8 +34,7 @@ from athenian.api.controllers.features.github.unfresh_pull_request_metrics impor
     UnfreshPullRequestFactsFetcher
 from athenian.api.controllers.features.histogram import HistogramParameters
 from athenian.api.controllers.features.metric_calculator import DEFAULT_QUANTILE_STRIDE, \
-    df_from_structs, group_by_repo, \
-    group_to_indexes, MetricCalculatorEnsemble
+    group_by_repo, group_to_indexes, MetricCalculatorEnsemble
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import BranchMiner
@@ -58,6 +57,7 @@ from athenian.api.db import add_pdb_hits, add_pdb_misses
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import CheckRun, PullRequest, PushCommit, Release
 from athenian.api.tracing import sentry_span
+from athenian.api.typing_utils import df_from_structs
 
 
 unfresh_prs_threshold = 1000

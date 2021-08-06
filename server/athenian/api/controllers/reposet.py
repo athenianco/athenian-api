@@ -245,7 +245,7 @@ async def _load_account_reposets(account: int,
             missing = []
             for r in repo_node_ids:
                 try:
-                    repos.append(prefixer.repo_node_map[r[0]])
+                    repos.append(prefixer.repo_node_to_prefixed_name[r[0]])
                 except KeyError:
                     missing.append(r[0])
             if missing:

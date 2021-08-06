@@ -18,8 +18,8 @@ from athenian.api.controllers.features.github.pull_request_metrics import AllCou
     WorkInProgressCounter, WorkInProgressCounterWithQuantiles, WorkInProgressTimeCalculator
 from athenian.api.controllers.features.histogram import Scale
 from athenian.api.controllers.features.metric import Metric
-from athenian.api.controllers.features.metric_calculator import df_from_structs, \
-    MetricCalculator, MetricCalculatorEnsemble
+from athenian.api.controllers.features.metric_calculator import MetricCalculator, \
+    MetricCalculatorEnsemble
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.types import PullRequestFacts
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
@@ -27,6 +27,7 @@ from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.precomputed.models import GitHubMergedPullRequestFacts, \
     GitHubOpenPullRequestFacts
 from athenian.api.models.web import Granularity, PullRequestMetricID
+from athenian.api.typing_utils import df_from_structs
 from tests.conftest import has_memcached
 
 

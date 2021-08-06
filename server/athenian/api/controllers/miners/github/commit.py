@@ -2,20 +2,19 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 import logging
 import pickle
-from typing import Collection, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Collection, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
 
 import aiomcache
-import databases
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, desc, insert, outerjoin, select
+from sqlalchemy import and_, desc, insert, outerjoin, select, union_all
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
-from athenian.api.cache import cached, short_term_exptime
+from athenian.api.cache import cached, middle_term_expire, short_term_exptime
 from athenian.api.controllers.miners.github.branches import BranchMiner, load_branch_commit_dates
 from athenian.api.controllers.miners.github.dag_accelerated import extract_first_parents, \
     extract_subdag, join_dags, partition_dag, searchsorted_inrange
@@ -210,24 +209,28 @@ def _remove_force_push_dropped(commits: pd.DataFrame, dags: Dict[str, DAG]) -> p
 
 @sentry_span
 @cached(
-    exptime=60 * 60,  # 1 hour
+    exptime=middle_term_expire,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda repos, branches, columns, prune, **_: (
         ",".join(sorted(repos)),
-        ",".join(np.sort(branches[columns[0]].values)),
+        ",".join(np.sort(
+            branches[columns[0] if isinstance(columns[0], str) else columns[0].name].values)),
         prune,
     ),
     refresh_on_access=True,
 )
 async def fetch_repository_commits(repos: Dict[str, DAG],
                                    branches: pd.DataFrame,
-                                   columns: Tuple[str, str, str, str],
+                                   columns: Tuple[Union[str, InstrumentedAttribute],
+                                                  Union[str, InstrumentedAttribute],
+                                                  Union[str, InstrumentedAttribute],
+                                                  Union[str, InstrumentedAttribute]],
                                    prune: bool,
                                    account: int,
                                    meta_ids: Tuple[int, ...],
-                                   mdb: databases.Database,
-                                   pdb: databases.Database,
+                                   mdb: ParallelDatabase,
+                                   pdb: ParallelDatabase,
                                    cache: Optional[aiomcache.Client],
                                    ) -> Dict[str, DAG]:
     """
@@ -245,7 +248,7 @@ async def fetch_repository_commits(repos: Dict[str, DAG],
     """
     missed_counter = 0
     repo_heads = {}
-    sha_col, id_col, dt_col, repo_col = columns
+    sha_col, id_col, dt_col, repo_col = (c if isinstance(c, str) else c.name for c in columns)
     hash_to_id = dict(zip(branches[sha_col].values, branches[id_col].values))
     hash_to_dt = dict(zip(branches[sha_col].values, branches[dt_col].values))
     result = {}
@@ -317,11 +320,14 @@ async def fetch_repository_commits(repos: Dict[str, DAG],
 
 
 BRANCH_FETCH_COMMITS_COLUMNS = (
-    Branch.commit_sha.key, Branch.commit_id.key, Branch.commit_date,
-    Branch.repository_full_name.key)
+    Branch.commit_sha, Branch.commit_id, Branch.commit_date, Branch.repository_full_name,
+)
 RELEASE_FETCH_COMMITS_COLUMNS = (
-    Release.sha.key, Release.commit_id.key, Release.published_at.key,
-    Release.repository_full_name.key)
+    Release.sha, Release.commit_id, Release.published_at, Release.repository_full_name,
+)
+COMMIT_FETCH_COMMITS_COLUMNS = (
+    PushCommit.sha, PushCommit.node_id, PushCommit.committed_date, PushCommit.repository_full_name,
+)
 
 
 @sentry_span
@@ -332,8 +338,8 @@ async def fetch_repository_commits_no_branch_dates(
         prune: bool,
         account: int,
         meta_ids: Tuple[int, ...],
-        mdb: databases.Database,
-        pdb: databases.Database,
+        mdb: ParallelDatabase,
+        pdb: ParallelDatabase,
         cache: Optional[aiomcache.Client],
 ) -> Dict[str, DAG]:
     """
@@ -353,8 +359,8 @@ async def fetch_repository_commits_from_scratch(repos: Iterable[str],
                                                 prune: bool,
                                                 account: int,
                                                 meta_ids: Tuple[int, ...],
-                                                mdb: databases.Database,
-                                                pdb: databases.Database,
+                                                mdb: ParallelDatabase,
+                                                pdb: ParallelDatabase,
                                                 cache: Optional[aiomcache.Client],
                                                 ) -> Tuple[Dict[str, DAG],
                                                            pd.DataFrame,
@@ -384,7 +390,7 @@ async def fetch_repository_commits_from_scratch(repos: Iterable[str],
 async def fetch_precomputed_commit_history_dags(
         repos: Iterable[str],
         account: int,
-        pdb: databases.Database,
+        pdb: ParallelDatabase,
         cache: Optional[aiomcache.Client],
 ) -> Dict[str, DAG]:
     """Load commit DAGs from the pdb."""
@@ -421,7 +427,7 @@ async def _fetch_commit_history_dag(hashes: np.ndarray,
                                     head_ids: Sequence[str],
                                     repo: str,
                                     meta_ids: Tuple[int, ...],
-                                    mdb: databases.Database,
+                                    mdb: ParallelDatabase,
                                     ) -> Tuple[str, np.ndarray, np.ndarray, np.ndarray]:
     max_stop_heads = 25
     max_inner_partitions = 25
@@ -535,3 +541,55 @@ async def _fetch_commit_history_edges(commit_ids: Iterable[str],
     if mdb.url.dialect == "sqlite":
         rows = [tuple(r) for r in rows]
     return rows
+
+
+@sentry_span
+async def fetch_dags_with_commits(commits: Mapping[str, Sequence[str]],
+                                  prune: bool,
+                                  account: int,
+                                  meta_ids: Tuple[int, ...],
+                                  mdb: ParallelDatabase,
+                                  pdb: ParallelDatabase,
+                                  cache: Optional[aiomcache.Client],
+                                  ) -> Tuple[Dict[str, DAG], pd.DataFrame]:
+    """
+    Load full commit DAGs for the given commit node IDs mapped from repository names.
+
+    :param commits: repository name -> sequence of commit node IDs.
+    :return: 1. DAGs that contain the specified commits, by repository name. \
+             2. DataFrame with loaded commits.
+    """
+    commits, pdags = await gather(
+        _fetch_commits_for_dags(commits, meta_ids, mdb, cache),
+        fetch_precomputed_commit_history_dags(commits, account, pdb, cache),
+        op="fetch_dags_with_commits/prepare",
+    )
+    dags = await fetch_repository_commits(
+        pdags, commits, COMMIT_FETCH_COMMITS_COLUMNS, prune, account, meta_ids, mdb, pdb, cache)
+    return dags, commits
+
+
+@sentry_span
+@cached(
+    exptime=middle_term_expire,
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda commits, **_: (
+        ";".join("%s: %s" % (k, ",".join(map(str, sorted(v))))
+                 for k, v in sorted(commits.items())),
+    ),
+    refresh_on_access=True,
+)
+async def _fetch_commits_for_dags(commits: Mapping[str, Sequence[str]],
+                                  meta_ids: Tuple[int, ...],
+                                  mdb: ParallelDatabase,
+                                  cache: Optional[aiomcache.Client],
+                                  ) -> pd.DataFrame:
+    queries = [
+        select(COMMIT_FETCH_COMMITS_COLUMNS)
+        .where(and_(PushCommit.repository_full_name == repo,
+                    PushCommit.acc_id.in_(meta_ids),
+                    PushCommit.node_id.in_any_values(nodes)))
+        for repo, nodes in commits.items()
+    ]
+    return await read_sql_query(union_all(*queries), mdb, COMMIT_FETCH_COMMITS_COLUMNS)

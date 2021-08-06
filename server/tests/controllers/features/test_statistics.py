@@ -7,9 +7,10 @@ import pytest
 
 from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
-    df_from_structs, MedianMetricCalculator
+    MedianMetricCalculator
 from athenian.api.controllers.features.statistics import mean_confidence_interval, \
     median_confidence_interval
+from athenian.api.typing_utils import df_from_structs
 
 
 def dt64arr(dt: datetime) -> np.ndarray:

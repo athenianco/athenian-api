@@ -1,5 +1,5 @@
 # cython: language_level=3, boundscheck=False, nonecheck=False, optimize.unpack_method_calls=True
-# cython: warn.undeclared=True, warn.maybe_uninitialized=True
+# cython: warn.maybe_uninitialized=True
 # distutils: language = c++
 
 cimport cython
@@ -23,7 +23,7 @@ def extract_subdag(hashes: np.ndarray,
     assert len(vertexes) == len(hashes) + 1
     if len(hashes) == 0:
         return hashes, vertexes, edges
-    if len(hashes):
+    if len(heads):
         heads = np.sort(heads)
         existing_heads = searchsorted_inrange(hashes, heads)
         existing_heads = existing_heads[hashes[existing_heads] == heads].astype(np.uint32)
@@ -65,23 +65,24 @@ cdef uint32_t _extract_subdag(const uint32_t[:] vertexes,
                 if not left_vertexes_map[edge]:
                     boilerplate.push_back(edge)
     # write the vertex index mapping
-    cdef uint32_t left_count = 0
+    cdef uint32_t left_count = 0, edge_index, v
     for i in range(len(left_vertexes_map)):
         if left_vertexes_map[i]:
             left_vertexes_map[i] = left_count + 1  # disambiguate 0, become 1-based indexed
             left_count += 1
-    # rebuild the edges
-    cdef uint32_t edge_index = 0, v
-    for i in range(len(vertexes) - 1):
-        v = left_vertexes_map[i]
-        if v:
-            v -= 1  # become 0-based indexed again
-            left_vertexes[v] = edge_index
-            for j in range(vertexes[i], vertexes[i + 1]):
-                edge = edges[j]
-                left_edges[edge_index] = left_vertexes_map[edge] - 1
-                edge_index += 1
-    left_vertexes[left_count] = edge_index
+    if len(left_vertexes) > 0:
+        # rebuild the edges
+        edge_index = 0
+        for i in range(len(vertexes) - 1):
+            v = left_vertexes_map[i]
+            if v:
+                v -= 1  # become 0-based indexed again
+                left_vertexes[v] = edge_index
+                for j in range(vertexes[i], vertexes[i + 1]):
+                    edge = edges[j]
+                    left_edges[edge_index] = left_vertexes_map[edge] - 1
+                    edge_index += 1
+        left_vertexes[left_count] = edge_index
     # invert the vertex index mapping
     left_count = 0
     for i in range(len(left_vertexes_map)):
@@ -199,13 +200,13 @@ def mark_dag_access(hashes: np.ndarray,
     # we cannot sort heads because the order is important
     existing_heads = searchsorted_inrange(hashes, heads)
     missing_flag = len(heads)  # mark unmatched commits with this value
-    if len(hashes):
+    if len(heads):
         flags = np.nonzero(hashes[existing_heads] == heads)[0]
         heads = existing_heads[flags].astype(np.uint32)
     else:
         flags = np.array([], dtype=int)
         heads = np.array([], dtype=np.uint32)
-    marked = np.full(len(hashes), missing_flag, int)
+    marked = np.full(len(hashes), missing_flag, np.int64)
     _mark_dag_access(vertexes, edges, heads, flags, missing_flag, marked)
     return marked
 
@@ -247,11 +248,11 @@ def mark_dag_parents(hashes: np.ndarray,
     if len(hashes) == 0:
         return np.array([], dtype=int)
     # we cannot sort heads because the order is important
-    if len(hashes):
+    if len(heads):
         found_heads = searchsorted_inrange(hashes, heads)
         found_heads[hashes[found_heads] != heads] = len(vertexes)
     else:
-        found_heads = np.full(len(heads), len(vertexes), int)
+        found_heads = np.full(len(heads), len(vertexes), np.uint32)
     heads = found_heads.astype(np.uint32)
     timestamps = timestamps.view(np.uint64)
     parents = np.zeros_like(heads, dtype=np.int64)
@@ -389,3 +390,177 @@ cdef void _partition_dag(const uint32_t[:] vertexes,
                 edge = edges[j]
                 if visited[edge]:
                     borders[edge] = 1
+
+
+def extract_pr_commits(hashes: np.ndarray,
+                       vertexes: np.ndarray,
+                       edges: np.ndarray,
+                       pr_merges: np.ndarray) -> np.ndarray:
+    if len(hashes) == 0:
+        return [np.array([], dtype="S40") for _ in pr_merges]
+    order = np.argsort(pr_merges)
+    pr_merges = pr_merges[order]
+    found_pr_merges = searchsorted_inrange(hashes, pr_merges)
+    found_pr_merges[hashes[found_pr_merges] != pr_merges] = len(vertexes)
+    pr_merges = found_pr_merges.astype(np.uint32)[np.argsort(order)]
+    cdef vector[vector[uint32_t]] pr_commits = vector[vector[uint32_t]](len(pr_merges))
+    left_vertexes_map_first = np.zeros_like(vertexes, shape=len(hashes))
+    left_vertexes_map_last = np.zeros_like(vertexes, shape=len(hashes))
+    left_vertexes = left_edges = np.array([], dtype=np.uint32)
+    head = np.zeros(1, dtype=np.uint32)
+    _extract_pr_commits(
+        vertexes, edges, pr_merges, head, left_vertexes_map_first, left_vertexes_map_last,
+        left_vertexes, left_edges, &pr_commits)
+    result = np.zeros(len(pr_commits), dtype=object)
+    for i, pr_vertexes in enumerate(pr_commits):
+        result[i] = hashes[list(pr_vertexes)]
+    return result
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef void _extract_pr_commits(const uint32_t[:] vertexes,
+                              const uint32_t[:] edges,
+                              const uint32_t[:] pr_merges,
+                              uint32_t[:] head,
+                              uint32_t[:] left_vertexes_map_first,
+                              uint32_t[:] left_vertexes_map_last,
+                              uint32_t[:] left_vertexes_empty,
+                              uint32_t[:] left_edges_empty,
+                              vector[vector[uint32_t]] *pr_commits) nogil:
+    cdef int i
+    cdef uint32_t first, last, v, left_count_first, left_count_last, first_pos, last_pos, first_val, last_val
+    cdef uint32_t oob = len(vertexes)
+    cdef vector[uint32_t] *my_pr_commits
+    for i in range(len(pr_merges)):
+        v = pr_merges[i]
+        if v == oob:
+            continue
+        first = vertexes[v]
+        last = vertexes[v + 1]
+        if last - first != 2:
+            continue
+        head[0] = edges[last - 1]
+        left_vertexes_map_last[:] = 0
+        left_count_last = _extract_subdag(
+            vertexes, edges, head, left_vertexes_map_last, left_vertexes_empty, left_edges_empty)
+        if left_count_last == 0:
+            continue
+        head[0] = edges[first]
+        left_vertexes_map_first[:] = 0
+        left_count_first = _extract_subdag(
+            vertexes, edges, head, left_vertexes_map_first, left_vertexes_empty, left_edges_empty)
+        my_pr_commits = &pr_commits.at(i)
+        my_pr_commits.push_back(v)
+        first_pos = last_pos = 0
+        first_val = left_vertexes_map_first[0]
+        last_val = left_vertexes_map_last[0]
+        while first_pos < left_count_first or last_pos < left_count_last:
+            if first_val == last_val:
+                first_pos += 1
+                if first_pos < left_count_first:
+                    first_val = left_vertexes_map_first[first_pos]
+                last_pos += 1
+                if last_pos < left_count_last:
+                    last_val = left_vertexes_map_last[last_pos]
+                continue
+            if first_pos < left_count_first:
+                while first_val < last_val:
+                    first_pos += 1
+                    if first_pos < left_count_first:
+                        first_val = left_vertexes_map_first[first_pos]
+                    else:
+                        break
+            if last_pos < left_count_last:
+                while last_val < first_val or first_pos >= left_count_first:
+                    my_pr_commits.push_back(last_val)
+                    last_pos += 1
+                    if last_pos < left_count_last:
+                        last_val = left_vertexes_map_last[last_pos]
+                    else:
+                        break
+
+
+def extract_independent_ownership(hashes: np.ndarray,
+                                  vertexes: np.ndarray,
+                                  edges: np.ndarray,
+                                  heads: np.ndarray,
+                                  parents: np.ndarray) -> np.ndarray:
+    assert len(heads) == len(parents)
+    if len(hashes) == 0:
+        return [np.array([], dtype="S40") for _ in heads]
+    # we cannot sort heads because the order is important
+    if len(heads):
+        found_heads = searchsorted_inrange(hashes, heads)
+        found_heads[hashes[found_heads] != heads] = len(vertexes)
+        found_parents = searchsorted_inrange(hashes, parents)
+        found_parents[hashes[found_parents] != parents] = len(vertexes)
+    else:
+        found_heads = np.full(len(heads), len(vertexes), np.uint32)
+        found_parents = np.full(len(heads), len(vertexes), np.uint32)
+    heads = found_heads.astype(np.uint32)
+    parents = found_parents.astype(np.uint32)
+    cdef vector[vector[uint32_t]] found_commits = vector[vector[uint32_t]](len(heads))
+    left_vertexes_map = np.zeros_like(vertexes, shape=len(hashes))
+    left_vertexes = left_edges = np.array([], dtype=np.uint32)
+    single_slot = np.zeros(1, dtype=np.uint32)
+    _extract_independent_ownership(
+        vertexes, edges, heads, parents, single_slot, left_vertexes_map, left_vertexes, left_edges,
+        &found_commits)
+    result = np.zeros(len(found_commits), dtype=object)
+    for i, own_vertexes in enumerate(found_commits):
+        result[i] = hashes[list(own_vertexes)]
+    return result
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef void _extract_independent_ownership(const uint32_t[:] vertexes,
+                                         const uint32_t[:] edges,
+                                         const uint32_t[:] heads,
+                                         const uint32_t[:] parents,
+                                         uint32_t[:] single_slot,
+                                         uint32_t[:] left_vertexes_map,
+                                         uint32_t[:] left_vertexes,
+                                         uint32_t[:] left_edges,
+                                         vector[vector[uint32_t]] *result) nogil:
+    cdef int i
+    cdef uint32_t j, head, parent, count, peek, edge
+    cdef uint32_t oob = len(vertexes)
+    cdef vector[uint32_t] *head_result
+    cdef vector[uint32_t] boilerplate
+    boilerplate.reserve(max(1, len(edges) - len(vertexes) + 1))
+    cdef vector[char] visited_vertexes = vector[char](len(vertexes))
+    for i in range(len(heads)):
+        head = heads[i]
+        if head == oob:
+            continue
+        parent = parents[i]
+        head_result = &result.at(i)
+        if parent == oob:
+            single_slot[0] = head
+            left_vertexes_map[:] = 0
+            count = _extract_subdag(
+                vertexes, edges, single_slot, left_vertexes_map, left_vertexes, left_edges)
+            head_result.reserve(count)
+            for j in range(count):
+                head_result.push_back(left_vertexes_map[j])
+            continue
+        single_slot[0] = parent
+        left_vertexes_map[:] = 0
+        count = _extract_subdag(
+            vertexes, edges, single_slot, left_vertexes_map, left_vertexes, left_edges)
+        memset(visited_vertexes.data(), 0, visited_vertexes.size())
+        for j in range(count):
+            visited_vertexes[left_vertexes_map[j]] = 1
+        boilerplate.push_back(head)
+        while not boilerplate.empty():
+            peek = boilerplate.back()
+            boilerplate.pop_back()
+            if visited_vertexes[peek]:
+                continue
+            head_result.push_back(peek)
+            for j in range(vertexes[peek], vertexes[peek + 1]):
+                edge = edges[j]
+                if not visited_vertexes[edge]:
+                    boilerplate.push_back(edge)

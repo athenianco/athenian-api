@@ -321,9 +321,12 @@ class NodeCommit(Base,
     oid = Column(Text, nullable=False)
     sha = synonym(oid)
     repository = Column(Text, nullable=False)
+    message = Column(Text, nullable=False)
     committed_date = Column(TIMESTAMP(timezone=True))
     committer_user = Column(Text)
     author_user = Column(Text)
+    additions = Column(BigInteger, nullable=False)
+    deletions = Column(BigInteger, nullable=False)
 
 
 NodeCommit.sha.key = "oid"
@@ -346,6 +349,8 @@ class NodePullRequest(Base,
     title = Column(Text, nullable=False)
     author = Column(Text)
     merged = Column(Boolean)
+    number = Column(BigInteger, nullable=False)
+    repository = Column(Text, nullable=False)  # FIXME: str -> int
     created_at = Column(TIMESTAMP(timezone=True), nullable=False)
     closed_at = Column(TIMESTAMP(timezone=True))
 

@@ -30,8 +30,8 @@ from athenian.api.controllers.miners.github.contributors import mine_contributor
 from athenian.api.controllers.miners.github.label import mine_labels
 from athenian.api.controllers.miners.github.release_mine import \
     diff_releases as mine_diff_releases, mine_releases, mine_releases_by_name
-from athenian.api.controllers.miners.github.repositories import mine_repositories
-from athenian.api.controllers.miners.github.users import mine_user_avatars
+from athenian.api.controllers.miners.github.repository import mine_repositories
+from athenian.api.controllers.miners.github.user import mine_user_avatars
 from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind, \
     PullRequestEvent, PullRequestListItem, PullRequestStage, ReleaseFacts, ReleaseParticipationKind
 from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
@@ -225,7 +225,7 @@ def web_pr_from_struct(pr: PullRequestListItem,
     """Convert an intermediate PR representation to the web model."""
     props = dict(pr)
     del props["node_id"]
-    props["repository"] = prefixer.repo_name_map[props["repository"]]
+    props["repository"] = prefixer.repo_name_to_prefixed_name[props["repository"]]
     if pr.events_time_machine is not None:
         props["events_time_machine"] = sorted(p.name.lower() for p in pr.events_time_machine)
     if pr.stages_time_machine is not None:
@@ -279,7 +279,8 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
     users = model.include.users
     utc = timezone.utc
     prefixer = await prefixer.load()
-    repo_name_map, user_login_map = prefixer.repo_name_map, prefixer.user_login_to_prefixed_login
+    repo_name_map, user_login_map = \
+        prefixer.repo_name_to_prefixed_name, prefixer.user_login_to_prefixed_login
     for author_login, committer_login, repository_full_name, sha, message, \
             additions, deletions, changed_files, author_name, author_email, authored_date, \
             committer_name, committer_email, committed_date, author_date, commit_date, \
@@ -605,7 +606,7 @@ async def diff_releases(request: AthenianWebRequest, body: dict) -> web.Response
     ))
     prefixer = await prefixer.load()
     for repo, diffs in releases.items():
-        result.data[prefixer.repo_name_map[repo]] = repo_result = []
+        result.data[prefixer.repo_name_to_prefixed_name[repo]] = repo_result = []
         for diff in diffs:
             repo_result.append(ReleaseDiff(
                 old=diff[0], new=diff[1],
@@ -634,7 +635,7 @@ async def filter_code_checks(request: AthenianWebRequest, body: dict) -> web.Res
     model = FilteredCodeCheckRuns(timeline=timeline, items=[
         FilteredCodeCheckRun(
             title=cr.title,
-            repository=prefixer.repo_name_map[cr.repository],
+            repository=prefixer.repo_name_to_prefixed_name[cr.repository],
             last_execution_time=cr.last_execution_time,
             last_execution_url=cr.last_execution_url,
             size_groups=cr.size_groups,
