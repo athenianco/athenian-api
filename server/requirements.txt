@@ -9,7 +9,7 @@ databases[sqlite,asyncpg]==0.4.3
 psycopg2-binary==2.9.1
 xxhash==2.0.2
 # remember to change these versions in Dockerfile, too!
-numpy==1.21.1
+numpy==1.21.2
 scipy==1.7.1
 # end of remember to change in Dockerfile
 sentry-sdk[pure_eval]==1.3.1
