@@ -1337,9 +1337,17 @@ class PullRequestFactsMiner:
         # we don't need these indexes
         pr.comments.reset_index(inplace=True, drop=True)
         pr.reviews.reset_index(inplace=True, drop=True)
-        first_commit = pr.commits[PullRequestCommit.authored_date.key].nonemin()
-        # yes, first_commit uses authored_date while last_commit uses committed_date
-        last_commit = pr.commits[PullRequestCommit.committed_date.key].nonemax()
+        # first_commit usually points at min(authored_date)
+        # last_commit usually points at max(committed_date)
+        # but DEV-2734 has taught that authored_date may be greater than committed_date
+        first_commit = nonemin(
+            pr.commits[PullRequestCommit.authored_date.key].nonemin(),
+            pr.commits[PullRequestCommit.committed_date.key].nonemin(),
+        )
+        last_commit = nonemax(
+            pr.commits[PullRequestCommit.committed_date.key].nonemax(),
+            pr.commits[PullRequestCommit.authored_date.key].nonemax(),
+        )
         # convert to "S" dtype to enable sorting in np.in1d
         authored_comments = pr.comments[PullRequestReviewComment.user_login.key].values.astype("S")
         if (author_login := pr.pr[PullRequest.user_login.key]) is not None:
