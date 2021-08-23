@@ -176,6 +176,10 @@ class AthenianWebApplication(aiohttp.web.Application):
         return f"<AthenianWebApplication with {len(self.router)} routes, " \
                f"{len(self.middlewares)} middlewares, {len(self)} state properties>"
 
+    def __repr__(self) -> str:
+        """Override MutableMapping[str, Any]'s cringe."""
+        return str(self)
+
 
 class ServerCrashedError(GenericError):
     """HTTP 500."""
