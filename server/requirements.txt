@@ -22,7 +22,7 @@ python-jose[cryptography]==3.3.0
 python-dateutil==2.8.2
 pyffx==0.3.0
 aiomcache==0.6.0
-uvloop==0.15.3
+uvloop==0.16.0
 bootstrapped==0.0.2
 tqdm==4.62.1
 slack_sdk[optional]==3.8.0
