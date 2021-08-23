@@ -431,7 +431,13 @@ async def _fetch_commit_history_dag(hashes: np.ndarray,
                                     ) -> Tuple[str, np.ndarray, np.ndarray, np.ndarray]:
     max_stop_heads = 25
     max_inner_partitions = 25
-    # Find max `max_stop_heads` top-level most recent commit hashes.
+    # there can be duplicates, remove them
+    head_hashes = np.asarray(head_hashes)
+    head_ids = np.asarray(head_ids)
+    _, unique_indexes = np.unique(head_hashes, return_index=True)
+    head_hashes = head_hashes[unique_indexes]
+    head_ids = head_ids[unique_indexes]
+    # find max `max_stop_heads` top-level most recent commit hashes
     stop_heads = hashes[np.delete(np.arange(len(hashes)), np.unique(edges))]
     if len(stop_heads) > 0:
         if len(stop_heads) > max_stop_heads:
@@ -467,9 +473,9 @@ async def _fetch_commit_history_dag(hashes: np.ndarray,
         hashes, vertexes, edges = join_dags(hashes, vertexes, edges, new_edges)
         head_hashes = head_hashes[batch_size:]
         head_ids = head_ids[batch_size:]
-        if len(head_hashes) > 0:
-            collateral = np.where(
-                hashes[searchsorted_inrange(hashes, head_hashes)] == head_hashes)[0]
+        if len(head_hashes) > 0 and len(hashes) > 0:
+            collateral = np.flatnonzero(
+                hashes[searchsorted_inrange(hashes, head_hashes)] == head_hashes)
             if len(collateral) > 0:
                 head_hashes = np.delete(head_hashes, collateral)
                 head_ids = np.delete(head_ids, collateral)
