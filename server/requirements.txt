@@ -25,7 +25,7 @@ aiomcache==0.6.0
 uvloop==0.16.0
 bootstrapped==0.0.2
 tqdm==4.62.1
-slack_sdk[optional]==3.8.0
+slack_sdk[optional]==3.9.1
 gcloud-aio-kms==3.2.0
 # gcloud-aio-kms does not pin the exact versions of the following packages
 gcloud-aio-auth==3.6.1
