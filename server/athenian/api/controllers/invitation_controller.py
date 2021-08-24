@@ -43,7 +43,7 @@ from athenian.api.models.web.invited_user import InvitedUser
 from athenian.api.models.web.table_fetching_progress import TableFetchingProgress
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
-
+from athenian.api.tracing import sentry_span
 
 admin_backdoor = (1 << 24) - 1
 url_prefix = os.getenv("ATHENIAN_INVITATION_URL_PREFIX")
@@ -370,6 +370,7 @@ async def check_invitation(request: AthenianWebRequest, body: dict) -> web.Respo
     return model_response(result)
 
 
+@sentry_span
 async def _append_precomputed_progress(model: InstallationProgress,
                                        account: int,
                                        uid: str,
@@ -378,11 +379,12 @@ async def _append_precomputed_progress(model: InstallationProgress,
                                        mdb: databases.Database,
                                        cache: Optional[aiomcache.Client],
                                        slack: Optional[SlackWebClient]) -> None:
+    assert model.finished_date is not None
     try:
         reposets = await load_account_reposets(
             account, login,
             [RepositorySet.name, RepositorySet.precomputed, RepositorySet.created_at],
-            sdb, mdb, cache, slack)
+            sdb, mdb, cache, slack, check_progress=False)
     except ResponseError:
         # not ready yet
         model.finished_date = None
@@ -430,9 +432,10 @@ async def eval_invitation_progress(request: AthenianWebRequest, id: int) -> web.
     async def login_loader() -> str:
         return (await request.user()).login
 
-    await _append_precomputed_progress(
-        model, id, request.uid, login_loader, request.sdb, request.mdb,
-        request.cache, request.app["slack"])
+    if model.finished_date is not None:
+        await _append_precomputed_progress(
+            model, id, request.uid, login_loader, request.sdb, request.mdb,
+            request.cache, request.app["slack"])
     return model_response(model)
 
 
