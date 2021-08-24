@@ -146,6 +146,7 @@ async def load_account_reposets(account: int,
                                 mdb: DatabaseLike,
                                 cache: Optional[aiomcache.Client],
                                 slack: Optional[SlackWebClient],
+                                check_progress: bool = True,
                                 ) -> List[Mapping]:
     """
     Load the account's repository sets and create one if no exists.
@@ -156,15 +157,16 @@ async def load_account_reposets(account: int,
     :param account: Owner of the loaded reposets.
     :param login: Coroutine to load the contextual user's login.
     :param fields: Which columns to fetch for each RepositorySet.
+    :param check_progress: Check that we've already fetched all the repositories in mdb.
     :return: List of DB rows or __dict__-s representing the loaded RepositorySets.
     """
     async def nested(_sdb_conn):
         if isinstance(mdb, databases.Database):
             async with mdb.connection() as _mdb_conn:
                 return await _load_account_reposets(
-                    account, login, fields, _sdb_conn, _mdb_conn, cache, slack)
+                    account, login, fields, check_progress, _sdb_conn, _mdb_conn, cache, slack)
         return await _load_account_reposets(
-            account, login, fields, _sdb_conn, mdb, cache, slack)
+            account, login, fields, check_progress, _sdb_conn, mdb, cache, slack)
 
     if isinstance(sdb, databases.Database):
         async with sdb.connection() as _sdb_conn:
@@ -175,6 +177,7 @@ async def load_account_reposets(account: int,
 async def _load_account_reposets(account: int,
                                  login: Callable[[], Coroutine[None, None, str]],
                                  fields: list,
+                                 check_progress: bool,
                                  sdb_conn: FastConnection,
                                  mdb_conn: FastConnection,
                                  cache: Optional[aiomcache.Client],
@@ -217,10 +220,11 @@ async def _load_account_reposets(account: int,
                 prefixer = await Prefixer.load(meta_ids, mdb_conn, cache)
             else:
                 prefixer, meta_ids = prefixer_meta_ids
-            progress = await fetch_github_installation_progress(
-                account, sdb_conn, mdb_conn, cache)
-            if progress.finished_date is None:
-                raise_no_source_data()
+            if check_progress:
+                progress = await fetch_github_installation_progress(
+                    account, sdb_conn, mdb_conn, cache)
+                if progress.finished_date is None:
+                    raise_no_source_data()
             ar = AccountRepository
             updated_col = (ar.updated_at == func.max(ar.updated_at).over(
                 partition_by=ar.repo_node_id,
