@@ -26,7 +26,7 @@ from athenian.api.models.metadata.github import AccountRepository, NodeUser
 from athenian.api.models.state.models import RepositorySet, UserAccount
 from athenian.api.models.web import ForbiddenError, InstallationProgress, InvalidRequestError, \
     NoSourceDataError, NotFoundError
-from athenian.api.models.web.generic_error import DatabaseConflict
+from athenian.api.models.web.generic_error import BadRequestError, DatabaseConflict
 from athenian.api.response import ResponseError
 from athenian.api.tracing import sentry_span
 
@@ -126,12 +126,22 @@ async def resolve_repos(repositories: List[str],
         for i, r in enumerate(repositories)]
     task_results = await gather(*tasks, op="resolve_reposet-s + meta_ids")
     repos, meta_ids = set(chain.from_iterable(task_results[1:])), task_results[0]
-    checked_repos = {r.split("/", 1)[1] for r in repos}
+    checked_repos = set()
+    wrong_format = set()
+    for r in repos:
+        try:
+            checked_repos.add(r.split("/", 1)[1])
+        except IndexError:
+            wrong_format.add(r)
+    if wrong_format:
+        raise ResponseError(BadRequestError(
+            'The following repositories are malformed (missing "github.com/your_org/" prefix?): %s'
+            % wrong_format))
     checker = await access_classes["github"](account, meta_ids, sdb, mdb, cache).load()
     if denied := await checker.check(checked_repos):
         raise ResponseError(ForbiddenError(
-            detail="The following repositories are access denied for account %d: %s" %
-                   (account, denied),
+            detail='The following repositories are access denied for account %d (missing "'
+                   'github.com/" prefix?): %s' % (account, denied),
         ))
     if strip_prefix:
         repos = checked_repos
