@@ -511,10 +511,10 @@ async def _issue_flow(return_: Set[str],
     @sentry_span
     async def extract_labels():
         if JIRAFilterReturn.LABELS in return_:
-            label_iter = issues[Issue.labels.key].values
+            labels_column = _take_issue_labels(issues)
             if label_filter:
-                label_iter = (ils for ils in label_iter if label_filter.match(ils))
-            labels = Counter(chain.from_iterable(label_iter))
+                labels_column = (ils for ils in labels_column if label_filter.match(ils))
+            labels = Counter(chain.from_iterable(labels_column))
             if None in labels:
                 del labels[None]
             labels = {k: JIRALabel(title=k, kind="regular", issues_count=v)
@@ -922,6 +922,18 @@ def _split_issues_by_with(with_: Optional[List[JIRAFilterWith]],
     return result
 
 
+def _take_issue_labels(issues: pd.DataFrame) -> np.ndarray:
+    labels_column = issues[Issue.labels.key].values
+    if (none_count := (none_mask := np.equal(labels_column, None)).sum()) > 0:
+        logging.getLogger(f"{metadata.__package__}._take_issue_labels").error(
+            "Some issues have null labels: %s", issues.index.values[none_mask].tolist())
+        # https://github.com/numpy/numpy/issues/5972
+        lists = np.empty(none_count, object)
+        lists.fill([])
+        labels_column[none_mask] = lists
+    return labels_column
+
+
 class _IssuesLabelSplitter:
     def __init__(self, enabled: bool, label_filter: LabelFilter):
         self._labels = np.array([None], dtype=object)
@@ -935,7 +947,7 @@ class _IssuesLabelSplitter:
     def __call__(self, issues: pd.DataFrame) -> List[np.ndarray]:
         if not self.enabled or issues.empty:
             return [np.arange(len(issues))]
-        labels_column = issues[Issue.labels.key].tolist()
+        labels_column = _take_issue_labels(issues)
         rows_all_labels = np.repeat(np.arange(len(labels_column), dtype=int),
                                     [len(labels) for labels in labels_column])
         all_labels = np.concatenate(labels_column).astype("U")
