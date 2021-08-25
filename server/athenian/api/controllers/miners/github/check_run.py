@@ -260,6 +260,9 @@ async def mine_check_runs(time_from: datetime,
     if labels:
         df = _filter_by_pr_labels(df, labels, embedded_labels_query, df_labels)
 
+    # some status contexts represent the start and the finish events, join them together
+    _merge_status_contexts(df)
+
     # "Re-run jobs" may produce duplicate check runs in the same check suite, split them
     # in separate artificial check suites by enumerating in chronological order
     _split_duplicate_check_runs(df)
@@ -309,6 +312,46 @@ def _filter_by_pr_labels(df: pd.DataFrame,
     return df
 
 
+def _merge_status_contexts(df: pd.DataFrame) -> None:
+    if df.empty:
+        return
+    no_finish = np.flatnonzero(df[CheckRun.completed_at.name].isnull().values)
+    no_finish_urls = df[CheckRun.url.name].values[no_finish].astype("S")
+    no_finish_parents = df[CheckRun.check_suite_node_id.name].values[no_finish].astype("S")  # FIXME: str -> int  # noqa
+    no_finish_seeds = np.char.add(no_finish_parents, no_finish_urls)
+    _, first_encounters, indexes, counts = np.unique(
+        no_finish_seeds, return_index=True, return_inverse=True, return_counts=True)
+    masks = np.zeros((len(first_encounters), len(no_finish_seeds)), bool)
+    arr_y = np.repeat(np.arange(len(first_encounters)), counts)
+    arr_x = np.argsort(indexes)
+    masks[arr_y, arr_x] = True
+    timestamps = np.broadcast_to(df[CheckRun.started_at.name].values[no_finish][None, :],
+                                 masks.shape)
+    suite_starteds = np.broadcast_to(df[check_suite_started_column].values[no_finish][None, :],
+                                     masks.shape)
+    captured = np.flatnonzero(counts > 1)
+    mins = np.min(timestamps, where=masks, initial=timestamps[0].max(), axis=1)[captured]
+    suite_mins = np.min(suite_starteds, where=masks, initial=timestamps[0].max(), axis=1)[captured]
+    # 99% of the time this is true
+    mins = np.minimum(mins, suite_mins)
+    maxs = np.max(timestamps, where=masks, initial=timestamps[0].min(), axis=1)
+    argmaxs = np.argmax(np.equal(timestamps, maxs[:, None], where=masks), axis=1)[captured]
+    maxs = maxs[captured]
+    statuses = df[CheckRun.status.name].values[no_finish][argmaxs]
+    # we have to cast dtype here to prevent changing dtype in df to object
+    mins = pd.Series(mins).astype(df[CheckRun.started_at.name].dtype)
+    maxs = pd.Series(maxs).astype(df[CheckRun.started_at.name].dtype)
+    first_encounters = first_encounters[captured]
+    first_no_finish = no_finish[first_encounters]
+    df.loc[first_no_finish, CheckRun.started_at.name] = mins
+    df.loc[first_no_finish, CheckRun.completed_at.name] = maxs
+    df.loc[first_no_finish, CheckRun.status.name] = statuses
+    secondary = no_finish[np.setdiff1d(
+        np.flatnonzero(np.in1d(indexes, captured)), first_encounters, assume_unique=True)]
+    df.drop(index=secondary, inplace=True)
+    df.reset_index(inplace=True, drop=True)
+
+
 def _split_duplicate_check_runs(df: pd.DataFrame) -> None:
     # DEV-2612 split older re-runs to artificial check suites
     if df.empty:
@@ -340,3 +383,4 @@ def _split_duplicate_check_runs(df: pd.DataFrame) -> None:
             changed = True
     if changed:
         _calculate_check_suite_started(df)
+        df.reset_index(inplace=True, drop=True)

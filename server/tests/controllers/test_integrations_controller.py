@@ -133,7 +133,7 @@ async def test_get_everything_smoke(client, headers):
         "prs_additions", "prs_deletions", "prs_node_id", "prs_number", "prs_title", "prs_jira",
         "prs_user_login", "published", "publisher", "repository_full_name", "sha", "url",
     }
-    assert len(check_runs_df) == 4614
+    assert len(check_runs_df) == 4426
     assert set(check_runs_df) == {
         "acc_id", "additions", "author_login", "author_user", "authored_date", "changed_files",
         "check_run_node_id", "check_suite_conclusion", "check_suite_node_id", "check_suite_status",
