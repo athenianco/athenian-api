@@ -324,6 +324,7 @@ async def test_filter_contributors_with_empty_and_full_roles(client, headers):
                           (1, "2010-01-11", None, 400),
                           (1, "2020-01-32", None, 400),
                           (1, "2015-10-13", ["github.com/athenianco/athenian-api"], 403),
+                          (1, "2015-10-13", ["athenian-api"], 400),
                           ])
 async def test_filter_contributors_nasty_input(client, headers, account, date_to, in_, code):
     body = {
