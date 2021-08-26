@@ -327,13 +327,8 @@ def _merge_status_contexts(df: pd.DataFrame) -> None:
     masks[arr_y, arr_x] = True
     timestamps = np.broadcast_to(df[CheckRun.started_at.name].values[no_finish][None, :],
                                  masks.shape)
-    suite_starteds = np.broadcast_to(df[check_suite_started_column].values[no_finish][None, :],
-                                     masks.shape)
-    captured = np.flatnonzero(counts > 1)
+    captured = counts > 1
     mins = np.min(timestamps, where=masks, initial=timestamps[0].max(), axis=1)[captured]
-    suite_mins = np.min(suite_starteds, where=masks, initial=timestamps[0].max(), axis=1)[captured]
-    # 99% of the time this is true
-    mins = np.minimum(mins, suite_mins)
     maxs = np.max(timestamps, where=masks, initial=timestamps[0].min(), axis=1)
     argmaxs = np.argmax(np.equal(timestamps, maxs[:, None], where=masks), axis=1)[captured]
     maxs = maxs[captured]
@@ -347,7 +342,9 @@ def _merge_status_contexts(df: pd.DataFrame) -> None:
     df.loc[first_no_finish, CheckRun.completed_at.name] = maxs
     df.loc[first_no_finish, CheckRun.status.name] = statuses
     secondary = no_finish[np.setdiff1d(
-        np.flatnonzero(np.in1d(indexes, captured)), first_encounters, assume_unique=True)]
+        np.flatnonzero(np.in1d(indexes, np.flatnonzero(captured))),
+        first_encounters,
+        assume_unique=True)]
     df.drop(index=secondary, inplace=True)
     df.reset_index(inplace=True, drop=True)
 
