@@ -15,7 +15,7 @@ export DUMPS_DIR=/db_dumps
 
 dump() {
     echo "Dumping database $1..."
-    pg_dump --host ${POSTGRES_SOURCE_HOST} --port=${POSTGRES_SOURCE_PORT} --no-owner --username=${POSTGRES_SOURCE_USER} -Fc --dbname=$1 > ${DUMPS_DIR}/$1.dump
+    pg_dump --host ${POSTGRES_SOURCE_HOST} --port=${POSTGRES_SOURCE_PORT} --no-owner --username=${POSTGRES_SOURCE_USER} -Fc --dbname=$1 | grep -v -E 'CREATE EXTENSION.*pg_repack' > ${DUMPS_DIR}/$1.dump
     echo "Dump done."
 }
 
