@@ -9,15 +9,15 @@ from athenian.api.models.metadata.github import CheckRun
 
 @pytest.mark.parametrize("time_from, time_to, repositories, pushers, labels, jira, size", [
     (datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
-     ["src-d/go-git"], [], LabelFilter.empty(), JIRAFilter.empty(), 4581),
+     ["src-d/go-git"], [], LabelFilter.empty(), JIRAFilter.empty(), 4393),
     (datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
      ["src-d/hercules"], [], LabelFilter.empty(), JIRAFilter.empty(), 0),
     (datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2018, 1, 1, tzinfo=timezone.utc),
-     ["src-d/go-git"], [], LabelFilter.empty(), JIRAFilter.empty(), 2372),
+     ["src-d/go-git"], [], LabelFilter.empty(), JIRAFilter.empty(), 2184),
     (datetime(2018, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
      ["src-d/go-git"], [], LabelFilter.empty(), JIRAFilter.empty(), 2213),
     (datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
-     ["src-d/go-git"], ["mcuadros"], LabelFilter.empty(), JIRAFilter.empty(), 1642),
+     ["src-d/go-git"], ["mcuadros"], LabelFilter.empty(), JIRAFilter.empty(), 1575),
     (datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
      ["src-d/go-git"], [], LabelFilter({"bug", "plumbing", "enhancement"}, set()),
      JIRAFilter.empty(), 67),

@@ -28,13 +28,13 @@ def metrics_calculator_force_cache(cache):
 
 
 @pytest.mark.parametrize("split_by_check_runs, suite_freqs, suite_sizes, metrics", [
-    (True, [[[983, 399, 495, 302, 7, 12]]], [1, 2, 3, 4, 5, 6],
+    (True, [[[983, 454, 570, 172, 10, 9]]], [1, 2, 3, 4, 5, 6],
      [[982, 649, 333, 0, 591],
-      [399, 56, 343, 0, 188],
-      [495, 345, 150, 0, 314],
-      [302, 133, 169, 0, 194],
-      [7, 1, 6, 0, 4],
-      [12, 1, 11, 0, 10]]),
+      [454, 96, 358, 0, 214],
+      [570, 356, 214, 0, 346],
+      [172, 82, 90, 0, 136],
+      [10, 2, 8, 0, 5],
+      [9, 0, 9, 0, 9]]),
     (False, [[[0]]], [], [[2197, 1185, 1012, 0, 1301]]),
 ])
 @with_defer
@@ -73,8 +73,8 @@ async def test_check_run_metrics_suite_counts(
     (CodeCheckMetricID.SUCCESS_RATIO, 0.5393718707328174),
     (CodeCheckMetricID.PRS_WITH_CHECKS_COUNT, 661),
     (CodeCheckMetricID.FLAKY_COMMIT_CHECKS_COUNT, 0),
-    (CodeCheckMetricID.PRS_MERGED_WITH_FAILED_CHECKS_COUNT, 238),
-    (CodeCheckMetricID.PRS_MERGED_WITH_FAILED_CHECKS_RATIO, 0.43830570902394106),
+    (CodeCheckMetricID.PRS_MERGED_WITH_FAILED_CHECKS_COUNT, 235),
+    (CodeCheckMetricID.PRS_MERGED_WITH_FAILED_CHECKS_RATIO, 0.43278084714548803),
     (CodeCheckMetricID.ROBUST_SUITE_TIME, timedelta(0)),
     (CodeCheckMetricID.CONCURRENCY, 1.0),
     (CodeCheckMetricID.CONCURRENCY_MAX, 1),
