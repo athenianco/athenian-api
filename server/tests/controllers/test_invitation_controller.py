@@ -559,8 +559,8 @@ async def test_progress_errors(client, headers, account, code):
     assert response.status == code
 
 
-async def test_progress_idle(client, headers, mdb):
-    await mdb.execute(update(FetchProgress).values({
+async def test_progress_idle(client, headers, mdb_rw):
+    await mdb_rw.execute(update(FetchProgress).values({
         FetchProgress.nodes_total: FetchProgress.nodes_total * 2}))
     try:
         response = await client.request(
@@ -572,7 +572,7 @@ async def test_progress_idle(client, headers, mdb):
         idle_complete_progress["finished_date"] = "2020-03-10T17:46:29Z"
         assert body == idle_complete_progress
     finally:
-        await mdb.execute(update(FetchProgress).values({
+        await mdb_rw.execute(update(FetchProgress).values({
             FetchProgress.nodes_total: FetchProgress.nodes_total / 2}))
 
 
