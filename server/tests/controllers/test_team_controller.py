@@ -303,6 +303,35 @@ def _test_same_team(actual, expected, no_timings=True):
     assert actual == expected
 
 
+async def test_resync_teams_smoke(client, headers, sdb, disable_default_user):
+    response = await client.request(method="DELETE", path="/v1/teams/1", headers=headers)
+
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    teams = {t["name"]: TeamListItem.from_dict(t) for t in json.loads(body)}
+    actual_teams = await sdb.fetch_all(select([Team]).where(Team.owner_id == 1))
+    assert len(teams) == len(actual_teams)
+
+    assert teams.keys() == {
+        "team", "engineering", "business", "operations", "product", "admin", "automation",
+    }
+    assert [m.login for m in teams["product"].members] == ["github.com/eiso", "github.com/warenlg"]
+
+
+async def test_resync_teams_default_user(client, headers):
+    response = await client.request(method="DELETE", path="/v1/teams/1", headers=headers)
+
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 403, "Response body is : " + body
+
+
+async def test_resync_teams_wrong_user(client, headers, disable_default_user):
+    response = await client.request(method="DELETE", path="/v1/teams/3", headers=headers)
+
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 404, "Response body is : " + body
+
+
 async def test_update_team_smoke(client, headers, sdb, disable_default_user):
     await sdb.execute(insert(Team).values(Team(
         owner_id=1, name="Test", members=["github.com/vmarkovtsev"],

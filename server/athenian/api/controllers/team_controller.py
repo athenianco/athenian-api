@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from itertools import chain
 import logging
 from sqlite3 import IntegrityError, OperationalError
-from typing import Dict, Iterable, List, Mapping, Optional, Tuple, Union
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
 
 from aiohttp import web
 import aiomcache
@@ -11,8 +11,11 @@ import databases
 from sqlalchemy import and_, delete, insert, select, update
 
 from athenian.api import metadata
+from athenian.api.async_utils import gather
 from athenian.api.auth import disable_default_user
-from athenian.api.controllers.account import get_metadata_account_ids, get_user_account_status
+from athenian.api.balancing import weight
+from athenian.api.controllers.account import copy_teams_as_needed, get_metadata_account_ids, \
+    get_user_account_status
 from athenian.api.controllers.jira import load_mapped_jira_users
 from athenian.api.controllers.miners.github.user import mine_users
 from athenian.api.db import DatabaseLike
@@ -98,13 +101,22 @@ async def list_teams(request: AthenianWebRequest, id: int) -> web.Response:
 
     :param id: Numeric identifier of the account.
     """
-    user = request.uid
     account = id
     async with request.sdb.connection() as sdb_conn:
-        await get_user_account_status(user, account, sdb_conn, request.cache)
-        teams = await sdb_conn.fetch_all(
-            select([Team]).where(Team.owner_id == account).order_by(Team.name))
-        meta_ids = await get_metadata_account_ids(account, sdb_conn, request.cache)
+        await get_user_account_status(request.uid, account, sdb_conn, request.cache)
+        teams, meta_ids = await gather(
+            sdb_conn.fetch_all(
+                select([Team]).where(Team.owner_id == account).order_by(Team.name)),
+            get_metadata_account_ids(account, sdb_conn, request.cache),
+        )
+    return await _list_loaded_teams(teams, account, meta_ids, request)
+
+
+async def _list_loaded_teams(teams: List[Mapping[str, Any]],
+                             account: int,
+                             meta_ids: Tuple[int, ...],
+                             request: AthenianWebRequest,
+                             ) -> web.Response:
     all_members = await _get_all_team_members(
         teams, account, meta_ids, request.mdb, request.sdb, request.cache)
     items = [TeamListItem(id=t[Team.id.key],
@@ -235,3 +247,25 @@ async def _get_all_team_members(teams: Iterable[Mapping],
         logging.getLogger("%s._get_all_team_members" % metadata.__package__).error(
             "Some users are missing in %s: %s", meta_ids, missing)
     return all_contributors
+
+
+@disable_default_user
+@weight(0.5)
+async def resync_teams(request: AthenianWebRequest, id: int) -> web.Response:
+    """Delete all the teams belonging to the account and then clone from GitHub.
+
+    The "Bots" team will remain intact. The rest of the teams will be identical to what's
+    on GitHub.
+
+    :param id: Numeric identifier of the account.
+    """
+    account = id
+    async with request.sdb.connection() as sdb_conn:
+        await get_user_account_status(request.uid, account, sdb_conn, request.cache)
+        meta_ids = await get_metadata_account_ids(account, sdb_conn, request.cache)
+        async with sdb_conn.transaction():
+            await sdb_conn.execute(delete(Team).where(and_(Team.owner_id == account,
+                                                           Team.name != Team.BOTS)))
+            teams = await copy_teams_as_needed(
+                account, meta_ids, sdb_conn, request.mdb, request.cache)
+    return await _list_loaded_teams(teams, account, meta_ids, request)

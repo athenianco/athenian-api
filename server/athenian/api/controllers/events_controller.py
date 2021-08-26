@@ -15,6 +15,7 @@ from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from xxhash._xxhash import xxh32_intdigest
 
 from athenian.api.async_utils import gather
+from athenian.api.auth import disable_default_user
 from athenian.api.balancing import weight
 from athenian.api.controllers.account import get_metadata_account_ids
 from athenian.api.controllers.features.entries import MetricEntriesCalculator
@@ -46,6 +47,7 @@ commit_hash_re = re.compile(r"[a-f0-9]{7}([a-f0-9]{33})?")
 SLACK_CHANNEL = os.getenv("ATHENIAN_EVENTS_SLACK_CHANNEL", "")
 
 
+@disable_default_user
 @weight(0)
 async def notify_releases(request: AthenianWebRequest, body: List[dict]) -> web.Response:
     """Notify about new releases. The release settings must be set to "notification"."""
@@ -183,7 +185,8 @@ async def notify_releases(request: AthenianWebRequest, body: List[dict]) -> web.
     return web.Response(status=200)
 
 
-@weight(0)
+@disable_default_user
+@weight(10)
 async def clear_precomputed_events(request: AthenianWebRequest, body: dict) -> web.Response:
     """Reset the precomputed data related to the pushed events."""
     model = DeleteEventsCacheRequest.from_dict(body)
@@ -235,6 +238,7 @@ async def clear_precomputed_events(request: AthenianWebRequest, body: dict) -> w
     return web.Response(status=200)
 
 
+@disable_default_user
 @weight(0)
 async def notify_deployments(request: AthenianWebRequest, body: List[dict]) -> web.Response:
     """Notify about new deployments."""
