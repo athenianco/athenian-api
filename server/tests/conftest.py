@@ -66,6 +66,7 @@ from athenian.api.models.persistentdata.models import Base as PersistentdataBase
 from athenian.api.models.precomputed.models import GitHubBase as PrecomputedBase
 from athenian.api.models.state.models import Base as StateBase
 from athenian.api.preloading.cache import MemoryCachePreloader
+from athenian.api.request import AthenianWebRequest
 from athenian.precomputer.db import dereference_schemas as dereference_precomputed_schemas
 from tests.sample_db_data import fill_metadata_session, fill_persistentdata_session, \
     fill_state_session
@@ -274,6 +275,7 @@ async def lazy_gkwillie(app) -> User:
 @pytest.fixture(scope="function")
 def disable_default_user(app):
     _extract_token = app._auth0._extract_bearer_token
+    _extract_api_key = app._auth0._extract_api_key
     default_user_id = None
 
     async def hacked_extract_token(token: str):
@@ -286,7 +288,18 @@ def disable_default_user(app):
         app._auth0._default_user_id = "xxx"
         return r
 
+    async def hacked_extract_api_key(token: str, request: AthenianWebRequest):
+        nonlocal default_user_id
+        if default_user_id is None:
+            default_user_id = app._auth0._default_user_id
+        else:
+            app._auth0._default_user_id = default_user_id
+        r = await _extract_api_key(token, request)
+        app._auth0._default_user_id = "xxx"
+        return r
+
     app._auth0._extract_bearer_token = hacked_extract_token
+    app._auth0._extract_api_key = hacked_extract_api_key
 
 
 @pytest.fixture(scope="function")

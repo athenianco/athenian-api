@@ -133,7 +133,10 @@ class Model(metaclass=Slots):
     def __eq__(self, other):
         """Returns true if both objects are equal."""
         slots = self.__slots__
-        return {k: getattr(self, k) for k in slots} == {k: getattr(other, k) for k in slots}
+        try:
+            return {k: getattr(self, k) for k in slots} == {k: getattr(other, k) for k in slots}
+        except AttributeError:
+            return False
 
     def __ne__(self, other):
         """Returns true if both objects are not equal."""

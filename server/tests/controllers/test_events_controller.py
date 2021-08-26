@@ -27,7 +27,7 @@ async def without_default_deployments(rdb):
     await rdb.execute(delete(DeploymentNotification))
 
 
-async def test_notify_release_smoke(client, headers, sdb, rdb, token):
+async def test_notify_release_smoke(client, headers, sdb, rdb, token, disable_default_user):
     body = [{
         "commit": "8d20cc5",  # 8d20cc5916edf7cfa6a9c5ed069f0640dc823c12
         "repository": "github.com/src-d/go-git",
@@ -146,7 +146,8 @@ async def test_notify_release_smoke(client, headers, sdb, rdb, token):
         },
     ]),
 ])
-async def test_notify_release_nasty_input(client, headers, token, rdb, body, status):
+async def test_notify_release_nasty_input(
+        client, headers, token, rdb, body, status, disable_default_user):
     headers = headers.copy()
     headers["X-API-Key"] = token
     response = await client.request(
@@ -161,7 +162,7 @@ async def test_notify_release_nasty_input(client, headers, token, rdb, body, sta
         assert rows[0][ReleaseNotification.resolved_commit_node_id.key] is None
 
 
-async def test_notify_release_422(client, headers, sdb):
+async def test_notify_release_422(client, headers, sdb, disable_default_user):
     body = [{
         "commit": "8d20cc5",  # 8d20cc5916edf7cfa6a9c5ed069f0640dc823c12
         "repository": "github.com/src-d/go-git",
@@ -177,8 +178,24 @@ async def test_notify_release_422(client, headers, sdb):
     assert response.status == 422
 
 
+async def test_notify_release_default_user(client, headers, sdb):
+    body = [{
+        "commit": "8d20cc5",  # 8d20cc5916edf7cfa6a9c5ed069f0640dc823c12
+        "repository": "github.com/src-d/go-git",
+    }]
+    await sdb.execute(insert(UserToken).values(UserToken(
+        account_id=2, user_id="auth0|5e1f6dfb57bc640ea390557b", name="xxx",
+    ).create_defaults().explode()))
+    headers = headers.copy()
+    headers["X-API-Key"] = "AQAAAAAAAAA="  # unencrypted
+    response = await client.request(
+        method="POST", path="/v1/events/releases", headers=headers, json=body,
+    )
+    assert response.status == 403
+
+
 @freeze_time("2020-01-01")
-async def test_clear_precomputed_events_smoke(client, headers, pdb):
+async def test_clear_precomputed_events_smoke(client, headers, pdb, disable_default_user):
     await pdb.execute(insert(GitHubDonePullRequestFacts).values(GitHubDonePullRequestFacts(
         acc_id=1,
         release_match="event",
@@ -235,7 +252,8 @@ async def test_clear_precomputed_events_smoke(client, headers, pdb):
     (404, {"account": 3, "repositories": ["github.com/src-d/go-git"], "targets": []}),
     (403, {"account": 1, "repositories": ["github.com/athenianco/athenian-api"], "targets": []}),
 ])
-async def test_clear_precomputed_events_nasty_input(client, headers, body, status):
+async def test_clear_precomputed_events_nasty_input(
+        client, headers, body, status, disable_default_user):
     response = await client.request(
         method="POST", path="/v1/events/clear_cache", headers=headers, json=body,
     )
@@ -250,7 +268,9 @@ async def test_clear_precomputed_events_nasty_input(client, headers, body, statu
     ("xxx", "u5VWde@k"),
 ])
 async def test_notify_deployment_smoke(
-        client, headers, token, rdb, ref, vhash, without_default_deployments):
+        client, headers, token, rdb, ref, vhash, disable_default_user):
+    await rdb.execute(delete(DeploymentNotification))
+    await rdb.execute(delete(DeployedComponent))
     body = [{
         "components": [{
             "repository": "github.com/src-d/go-git",
@@ -325,7 +345,7 @@ async def test_notify_deployment_smoke(
     }
 
 
-async def test_notify_deployment_duplicate(client, headers, token):
+async def test_notify_deployment_duplicate(client, headers, token, disable_default_user):
     body = [{
         "components": [{
             "repository": "github.com/src-d/go-git",
@@ -423,7 +443,8 @@ async def test_notify_deployment_duplicate(client, headers, token):
         "conclusion": "SUCCESS",
     }, 400),
 ])
-async def test_notify_deployment_nasty_input(client, headers, token, body, code):
+async def test_notify_deployment_nasty_input(
+        client, headers, token, body, code, disable_default_user):
     headers = headers.copy()
     headers["X-API-Key"] = token
     response = await client.request(
@@ -443,7 +464,7 @@ async def test_notify_deployment_unauthorized(client, headers):
     assert response.status == 401
 
 
-async def test_notify_deployment_422(client, headers, token, sdb):
+async def test_notify_deployment_422(client, headers, token, sdb, disable_default_user):
     await sdb.execute(delete(AccountGitHubAccount))
     headers = headers.copy()
     headers["X-API-Key"] = token
@@ -460,6 +481,25 @@ async def test_notify_deployment_422(client, headers, token, sdb):
         }],
     )
     assert response.status == 422
+
+
+async def test_notify_deployment_default_user(client, headers, token, sdb):
+    await sdb.execute(delete(AccountGitHubAccount))
+    headers = headers.copy()
+    headers["X-API-Key"] = token
+    response = await client.request(
+        method="POST", path="/v1/events/deployments", headers=headers, json=[{
+            "components": [{
+                "repository": "github.com/src-d/go-git",
+                "reference": "xxx",
+            }],
+            "environment": "production",
+            "date_started": "2021-01-12T00:00:00Z",
+            "date_finished": "2021-01-12T00:01:00Z",
+            "conclusion": "FAILURE",
+        }],
+    )
+    assert response.status == 403
 
 
 async def test_resolve_deployed_component_references_smoke(

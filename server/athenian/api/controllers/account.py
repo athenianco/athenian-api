@@ -6,7 +6,7 @@ import os
 import pickle
 from sqlite3 import IntegrityError, OperationalError
 import struct
-from typing import Collection, List, Optional, Tuple
+from typing import Any, Collection, List, Mapping, Optional, Tuple
 
 import aiomcache
 import aiosqlite
@@ -177,11 +177,11 @@ async def copy_teams_as_needed(account: int,
                                sdb: DatabaseLike,
                                mdb: DatabaseLike,
                                cache: Optional[aiomcache.Client],
-                               ) -> List[str]:
+                               ) -> List[Mapping[str, Any]]:
     """
     Copy the teams from GitHub organization if none exist yet.
 
-    :return: List of created team names.
+    :return: List of created teams.
     """
     log = logging.getLogger("%s.create_teams_as_needed" % metadata.__package__)
     prefixer = Prefixer.schedule_load(meta_ids, mdb, cache)
@@ -236,16 +236,18 @@ async def copy_teams_as_needed(account: int,
                          parent_id=parent,
                          ).create_defaults().explode()
         try:
-            db_ids[node_id] = await sdb.execute(insert(StateTeam).values(team))
+            db_ids[node_id] = team[StateTeam.id.name] = \
+                await sdb.execute(insert(StateTeam).values(team))
         except (UniqueViolationError, IntegrityError, OperationalError) as e:
             log.error('Failed to create team "%s" in account %d: %s',
                       team[StateTeam.name.key], account, e)
             db_ids[node_id] = None
         else:
-            created_teams.append(team[StateTeam.name.key])
+            created_teams.append(team)
     team_names = [t[MetadataTeam.name.key] for t in team_rows]
     log.info("Created %d out of %d teams in account %d: %s",
-             len(created_teams), len(team_names), account, created_teams)
+             len(created_teams), len(team_names), account,
+             [t[StateTeam.name.name] for t in created_teams])
     return created_teams
 
 
