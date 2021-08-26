@@ -5,6 +5,7 @@ from typing import Set
 import databases
 from sqlalchemy import select
 
+from athenian.api.cache import middle_term_expire
 from athenian.api.models.metadata.github import Bot
 
 
@@ -23,11 +24,11 @@ class Bots:
 
     async def __call__(self, mdb: databases.Database) -> Set[str]:
         """Return the bot logins."""
-        if self._bots and time() - self._timestamp < 3600:
+        if self._bots and time() - self._timestamp < middle_term_expire:
             # fast path to avoid acquiring the lock
             return self._bots
         async with self._lock:
-            if not self._bots or time() - self._timestamp >= 3600:
+            if not self._bots or time() - self._timestamp >= middle_term_expire:
                 await self._fetch(mdb)
         return self._bots
 
