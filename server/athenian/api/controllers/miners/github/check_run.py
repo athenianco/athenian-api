@@ -328,8 +328,8 @@ def _merge_status_contexts(df: pd.DataFrame) -> None:
     timestamps = np.broadcast_to(df[CheckRun.started_at.name].values[no_finish][None, :],
                                  masks.shape)
     captured = counts > 1
-    mins = np.min(timestamps, where=masks, initial=timestamps[0].max(), axis=1)[captured]
-    maxs = np.max(timestamps, where=masks, initial=timestamps[0].min(), axis=1)
+    mins = np.min(timestamps, where=masks, initial=np.nanmax(timestamps[0]), axis=1)[captured]
+    maxs = np.max(timestamps, where=masks, initial=np.nanmin(timestamps[0]), axis=1)
     argmaxs = np.argmax(np.equal(timestamps, maxs[:, None], where=masks), axis=1)[captured]
     maxs = maxs[captured]
     statuses = df[CheckRun.status.name].values[no_finish][argmaxs]
@@ -338,6 +338,7 @@ def _merge_status_contexts(df: pd.DataFrame) -> None:
     maxs = pd.Series(maxs).astype(df[CheckRun.started_at.name].dtype)
     first_encounters = first_encounters[captured]
     first_no_finish = no_finish[first_encounters]
+    mins.index = maxs.index = first_no_finish
     df.loc[first_no_finish, CheckRun.started_at.name] = mins
     df.loc[first_no_finish, CheckRun.completed_at.name] = maxs
     df.loc[first_no_finish, CheckRun.status.name] = statuses
