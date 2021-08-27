@@ -4,7 +4,7 @@ import logging
 import marshal
 import os
 import pickle
-from sqlite3 import IntegrityError, OperationalError
+from sqlite3 import IntegrityError
 import struct
 from typing import Any, Collection, List, Mapping, Optional, Tuple
 
@@ -238,9 +238,9 @@ async def copy_teams_as_needed(account: int,
         try:
             db_ids[node_id] = team[StateTeam.id.name] = \
                 await sdb.execute(insert(StateTeam).values(team))
-        except (UniqueViolationError, IntegrityError, OperationalError) as e:
-            log.error('Failed to create team "%s" in account %d: %s',
-                      team[StateTeam.name.key], account, e)
+        except (UniqueViolationError, IntegrityError) as e:
+            log.warning('Failed to create team "%s" in account %d: %s',
+                        team[StateTeam.name.key], account, e)
             db_ids[node_id] = None
         else:
             created_teams.append(team)
