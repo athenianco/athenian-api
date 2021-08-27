@@ -111,3 +111,16 @@ else
 unittest:
 	cd server && PYTHONPATH=. pytest $(VERBOSITY) $(TEST)
 endif
+
+upload-symbols.sh:
+	wget https://optimyze.cloud/prodfiler-documentation/scripts/upload-symbols.sh
+	chmod +x upload-symbols.sh
+
+.PHONY: prodfiler-symbols
+prodfiler-symbols: upload-symbols.sh
+	for f in /usr/lib/x86_64-linux-gnu/libpython3.8.so.1.0 /usr/bin/python3.8 $$(ls -d /usr/lib/python3.8/lib-dynload/* | grep -v 38d); do \
+	  dbg=$$(eu-unstrip -n -e $$f | cut -d" " -f4); \
+	  if [ $$dbg != "-" ]; then \
+	    ./upload-symbols.sh -u vadim@athenian.co -d $$f -g $$dbg; \
+	  fi \
+	done
