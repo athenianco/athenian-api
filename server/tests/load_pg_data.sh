@@ -22,7 +22,13 @@ dump() {
 restore() {
     echo "Restoring database $1..."
     createdb -U ${POSTGRES_USER} --lc-collate='C.UTF-8' -T template0 $1
-    pg_restore -x -O -U ${POSTGRES_USER} -d $1 ${DUMPS_DIR}/$1.dump
+    file=${DUMPS_DIR}/$1.dump
+    mime_type=$(file -b -i $file | cut -d ' ' -f1 | rev | cut -c 2- | rev)
+    if [ $mime_type == "text/plain" ]; then
+        psql -U ${POSTGRES_USER} -d $1 -f $file
+    else
+        pg_restore -x -O -U ${POSTGRES_USER} -d $1 $file
+    fi
     echo "Restore done."
 }
 
