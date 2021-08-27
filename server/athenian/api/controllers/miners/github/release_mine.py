@@ -149,6 +149,9 @@ async def mine_releases(repos: Iterable[str],
         all_hashes = []
         for repo, repo_releases in releases.groupby(Release.repository_full_name.key, sort=False):
             hashes, vertexes, edges = dags[repo]
+            if len(hashes) == 0:
+                log.error("%s has an empty commit DAG, skipped from mining releases", repo)
+                continue
             release_hashes = repo_releases[Release.sha.key].values.astype("S40")
             release_timestamps = repo_releases[Release.published_at.key].values
             ownership = mark_dag_access(hashes, vertexes, edges, release_hashes)
@@ -168,8 +171,9 @@ async def mine_releases(repos: Iterable[str],
             def on_missing(missing: np.ndarray) -> None:
                 if len(really_missing := np.nonzero(np.in1d(
                         missing, relevant, assume_unique=True))[0]):
-                    log.warning("%s has releases with 0 commits:\n%s",
-                                repo, repo_releases.take(really_missing))
+                    log.warning("%s has %d / %d releases with 0 commits",
+                                repo, len(really_missing), len(repo_releases))
+                    log.debug("%s", repo_releases.take(really_missing))
 
             grouped_owned_hashes = group_hashes_by_ownership(
                 ownership, hashes, len(repo_releases), on_missing)
