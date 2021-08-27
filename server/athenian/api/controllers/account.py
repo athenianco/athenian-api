@@ -190,6 +190,7 @@ async def copy_teams_as_needed(account: int,
                                                StateTeam.name != StateTeam.BOTS)))
     if existing > 0:
         log.info("Found %d existing teams for account %d, no-op", existing, account)
+        return []
     orgs = [org.id for org in await get_account_organizations(account, sdb, mdb, cache)]
     team_rows = await mdb.fetch_all(select([MetadataTeam])
                                     .where(and_(MetadataTeam.organization.in_(orgs),

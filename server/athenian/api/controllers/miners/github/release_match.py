@@ -154,7 +154,7 @@ class PullRequestToReleaseMapper:
                 np.where(~repo_prs[PullRequest.merge_commit_sha.key].isnull())[0])
             hashes, vertexes, edges = dags[repo]
             if len(hashes) == 0:
-                log.error("Very suspicious: empty DAG for %s\n%s", repo, repo_releases.to_csv())
+                log.error("very suspicious: empty DAG for %s\n%s", repo, repo_releases.to_csv())
             ownership = mark_dag_access(
                 hashes, vertexes, edges, repo_releases[Release.sha.key].values.astype("S40"))
             unmatched = np.where(ownership == len(repo_releases))[0]
