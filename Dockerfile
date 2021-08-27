@@ -48,6 +48,17 @@ RUN echo 'deb-src http://archive.ubuntu.com/ubuntu focal-updates main' >>/etc/ap
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+ADD Makefile /
+
+RUN apt-get update && \
+    apt-get install -y --no-install-suggests --no-install-recommends curl binutils elfutils make && \
+    make prodfiler-symbols && \
+    apt-get purge -y curl binutils elfutils make && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    rm Makefile
+
 ENV MKL=2020.0-166
 
 # Intel MKL
