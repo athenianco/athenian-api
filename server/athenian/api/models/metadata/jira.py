@@ -34,7 +34,8 @@ class Issue(Base):
     type_id = Column(Text, nullable=False)
     status = Column(Text)
     status_id = Column(Text)
-    labels = Column(postgresql.ARRAY(Text).with_variant(JSON(), sqlite.dialect.name))
+    labels = Column(postgresql.ARRAY(Text).with_variant(JSON(), sqlite.dialect.name),
+                    nullable=False)
     components = Column(postgresql.ARRAY(Text).with_variant(JSON(), sqlite.dialect.name))
     epic_id = Column(Text)
     created = Column(TIMESTAMP(timezone=True), nullable=False)

@@ -316,6 +316,8 @@ def _merge_status_contexts(df: pd.DataFrame) -> None:
     if df.empty:
         return
     no_finish = np.flatnonzero(df[CheckRun.completed_at.name].isnull().values)
+    if len(no_finish) == 0:
+        return
     no_finish_urls = df[CheckRun.url.name].values[no_finish].astype("S")
     no_finish_parents = df[CheckRun.check_suite_node_id.name].values[no_finish].astype("S")  # FIXME: str -> int  # noqa
     no_finish_seeds = np.char.add(no_finish_parents, no_finish_urls)
