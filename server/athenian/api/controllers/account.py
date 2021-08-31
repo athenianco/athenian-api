@@ -193,7 +193,7 @@ async def copy_teams_as_needed(account: int,
         return []
     orgs = [org.id for org in await get_account_organizations(account, sdb, mdb, cache)]
     team_rows = await mdb.fetch_all(select([MetadataTeam])
-                                    .where(and_(MetadataTeam.organization.in_(orgs),
+                                    .where(and_(MetadataTeam.organization_id.in_(orgs),
                                                 MetadataTeam.acc_id.in_(meta_ids))))
     if not team_rows:
         log.warning("Found 0 metadata teams for account %d", account)
@@ -201,8 +201,8 @@ async def copy_teams_as_needed(account: int,
     # check for cycles - who knows?
     dig = nx.DiGraph()
     for row in team_rows:
-        team_id = row[MetadataTeam.id.key]
-        if (parent_id := row[MetadataTeam.parent_team.key]) is not None:
+        team_id = row[MetadataTeam.id.name]
+        if (parent_id := row[MetadataTeam.parent_team_id.name]) is not None:
             dig.add_edge(team_id, parent_id)
         else:
             dig.add_node(team_id)
@@ -213,7 +213,7 @@ async def copy_teams_as_needed(account: int,
     else:
         log.error("Found a metadata parent-child team reference cycle: %s", cycle)
         return []
-    teams = {t[MetadataTeam.id.key]: t for t in team_rows}
+    teams = {t[MetadataTeam.id.name]: t for t in team_rows}
     member_rows = await mdb.fetch_all(
         select([TeamMember.parent_id, TeamMember.child_id])
         .where(and_(TeamMember.parent_id.in_(teams), TeamMember.acc_id.in_(meta_ids))))
@@ -221,19 +221,19 @@ async def copy_teams_as_needed(account: int,
     prefixer = await prefixer.load()
     for row in member_rows:
         try:
-            members[row[TeamMember.parent_id.key]].append(
-                prefixer.user_node_to_prefixed_login[row[TeamMember.child_id.key]])
+            members[row[TeamMember.parent_id.name]].append(
+                prefixer.user_node_to_prefixed_login[row[TeamMember.child_id.name]])
         except KeyError:
-            log.error("Could not resolve user %s", row[TeamMember.child_id.key])
+            log.error("Could not resolve user %s", row[TeamMember.child_id.name])
     db_ids = {}
     created_teams = []
     for node_id in reversed(list(nx.topological_sort(dig))):
         team = teams[node_id]
-        if (parent := teams.get(team[MetadataTeam.parent_team.key])) is not None:
-            parent = db_ids[parent[MetadataTeam.id.key]]
+        if (parent := teams.get(team[MetadataTeam.parent_team_id.name])) is not None:
+            parent = db_ids[parent[MetadataTeam.id.name]]
         team = StateTeam(owner_id=account,
-                         name=team[MetadataTeam.name.key],
-                         members=sorted(members.get(team[MetadataTeam.id.key], [])),
+                         name=team[MetadataTeam.name.name],
+                         members=sorted(members.get(team[MetadataTeam.id.name], [])),
                          parent_id=parent,
                          ).create_defaults().explode()
         try:
@@ -241,11 +241,11 @@ async def copy_teams_as_needed(account: int,
                 await sdb.execute(insert(StateTeam).values(team))
         except (UniqueViolationError, IntegrityError) as e:
             log.warning('Failed to create team "%s" in account %d: %s',
-                        team[StateTeam.name.key], account, e)
+                        team[StateTeam.name.name], account, e)
             db_ids[node_id] = None
         else:
             created_teams.append(team)
-    team_names = [t[MetadataTeam.name.key] for t in team_rows]
+    team_names = [t[MetadataTeam.name.name] for t in team_rows]
     log.info("Created %d out of %d teams in account %d: %s",
              len(created_teams), len(team_names), account,
              [t[StateTeam.name.name] for t in created_teams])
@@ -322,7 +322,7 @@ async def fetch_github_installation_progress(account: int,
     models = []
     for metadata_account_id, event_id in event_ids:
         repositories = await mdb_conn.fetch_val(
-            select([func.count(AccountRepository.repo_node_id)])
+            select([func.count(AccountRepository.repo_graph_id)])
             .where(AccountRepository.acc_id == metadata_account_id))
         rows = await mdb_conn.fetch_all(
             select([FetchProgress])
@@ -330,14 +330,14 @@ async def fetch_github_installation_progress(account: int,
                         FetchProgress.acc_id == metadata_account_id)))
         if not rows:
             continue
-        tables = [TableFetchingProgress(fetched=r[FetchProgress.nodes_processed.key],
-                                        name=r[FetchProgress.node_type.key],
-                                        total=r[FetchProgress.nodes_total.key])
+        tables = [TableFetchingProgress(fetched=r[FetchProgress.nodes_processed.name],
+                                        name=r[FetchProgress.node_type.name],
+                                        total=r[FetchProgress.nodes_total.name])
                   for r in rows]
-        started_date = min(r[FetchProgress.created_at.key] for r in rows)
+        started_date = min(r[FetchProgress.created_at.name] for r in rows)
         if mdb_sqlite:
             started_date = started_date.replace(tzinfo=timezone.utc)
-        finished_date = max(r[FetchProgress.updated_at.key] for r in rows)
+        finished_date = max(r[FetchProgress.updated_at.name] for r in rows)
         if mdb_sqlite:
             finished_date = finished_date.replace(tzinfo=timezone.utc)
         pending = sum(t.fetched < t.total for t in tables)

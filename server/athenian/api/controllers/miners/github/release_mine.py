@@ -50,7 +50,7 @@ def _reject_releases_without_pr_titles(result: Tuple[List[Tuple[Dict[str, Any], 
                                        **_) -> Tuple[List[Tuple[Dict[str, Any], ReleaseFacts]],
                                                      Union[List[Tuple[str, str]], np.ndarray],
                                                      Dict[str, ReleaseMatch]]:
-    if with_pr_titles and any(r[1]["prs_" + PullRequest.title.key] is None for r in result[0]):
+    if with_pr_titles and any(r[1]["prs_" + PullRequest.title.name] is None for r in result[0]):
         raise CancelCache()
     return result
 
@@ -113,7 +113,7 @@ async def mine_releases(repos: Iterable[str],
     # precomputed_facts = {}
     if with_pr_titles or labels:
         all_pr_node_ids = [
-            f["prs_" + PullRequest.node_id.key] for f in precomputed_facts.values()
+            f["prs_" + PullRequest.node_id.name] for f in precomputed_facts.values()
         ]
     add_pdb_hits(pdb, "release_facts", len(precomputed_facts))
     missed_releases_count = len(releases_in_time_range) - len(precomputed_facts)
@@ -126,14 +126,14 @@ async def mine_releases(repos: Iterable[str],
     result, mentioned_authors, has_precomputed_facts = _build_mined_releases(
         releases_in_time_range, precomputed_facts, prefixer)
 
-    missing_repos = releases_in_time_range[Release.repository_full_name.key].take(
+    missing_repos = releases_in_time_range[Release.repository_full_name.name].take(
         np.where(~has_precomputed_facts)[0]).unique()
     commits_authors = prs_authors = []
     commits_authors_nz = prs_authors_nz = slice(0)
     repo_releases_analyzed = {}
     if missed_releases_count > 0:
         releases_in_time_range = releases_in_time_range.take(np.where(
-            releases_in_time_range[Release.repository_full_name.key].isin(missing_repos).values,
+            releases_in_time_range[Release.repository_full_name.name].isin(missing_repos).values,
         )[0])
         _, releases, _, _ = await ReleaseToPullRequestMapper._find_releases_for_matching_prs(
             missing_repos, branches, default_branches, time_from, time_to, False,
@@ -147,18 +147,18 @@ async def mine_releases(repos: Iterable[str],
         dags, first_commit_dates = await gather(*tasks, op="mine_releases/commits")
 
         all_hashes = []
-        for repo, repo_releases in releases.groupby(Release.repository_full_name.key, sort=False):
+        for repo, repo_releases in releases.groupby(Release.repository_full_name.name, sort=False):
             hashes, vertexes, edges = dags[repo]
             if len(hashes) == 0:
                 log.error("%s has an empty commit DAG, skipped from mining releases", repo)
                 continue
-            release_hashes = repo_releases[Release.sha.key].values.astype("S40")
-            release_timestamps = repo_releases[Release.published_at.key].values
+            release_hashes = repo_releases[Release.sha.name].values.astype("S40")
+            release_timestamps = repo_releases[Release.published_at.name].values
             ownership = mark_dag_access(hashes, vertexes, edges, release_hashes)
             parents = mark_dag_parents(
                 hashes, vertexes, edges, release_hashes, release_timestamps, ownership)
             precomputed_mask = \
-                repo_releases[Release.node_id.key].isin(unfiltered_precomputed_facts).values
+                repo_releases[Release.node_id.name].isin(unfiltered_precomputed_facts).values
             out_of_range_mask = release_timestamps < np.array(time_from.replace(tzinfo=None),
                                                               dtype=release_timestamps.dtype)
             relevant = np.nonzero(~(precomputed_mask | out_of_range_mask))[0]
@@ -193,11 +193,11 @@ async def mine_releases(repos: Iterable[str],
                 select(commits_df_columns)
                 .where(and_(PushCommit.sha.in_(all_hashes), PushCommit.acc_id.in_(meta_ids)))
                 .order_by(PushCommit.sha),
-                mdb, commits_df_columns, index=PushCommit.sha.key)
+                mdb, commits_df_columns, index=PushCommit.sha.name)
         commits_index = commits_df.index.values.astype("S40")
-        commit_ids = commits_df[PushCommit.node_id.key].values
-        commits_additions = commits_df[PushCommit.additions.key].values
-        commits_deletions = commits_df[PushCommit.deletions.key].values
+        commit_ids = commits_df[PushCommit.node_id.name].values
+        commits_additions = commits_df[PushCommit.additions.name].values
+        commits_deletions = commits_df[PushCommit.deletions.name].values
         add_nans = commits_additions != commits_additions
         del_nans = commits_deletions != commits_deletions
         if (nans := (add_nans & del_nans)).any():
@@ -210,7 +210,7 @@ async def mine_releases(repos: Iterable[str],
         if (del_nans & ~nans).any():
             log.error("null commit deletions for %s", commit_ids[del_nans])
             commits_deletions[del_nans] = 0
-        commits_authors = commits_df[PushCommit.author_login.key].values
+        commits_authors = commits_df[PushCommit.author_login.name].values
         commits_authors_nz = commits_authors.nonzero()[0]
         commits_authors[commits_authors_nz] = \
             [prefixer.user_login_to_prefixed_login[u] for u in commits_authors[commits_authors_nz]]
@@ -225,20 +225,19 @@ async def mine_releases(repos: Iterable[str],
         prs_df, *rest = await gather(*tasks,
                                      op="mine_releases/fetch_pull_requests",
                                      description=str(len(commit_ids)))
-        commit_ids = commit_ids.astype("S")
         if jira:
-            filtered_prs_commit_ids = np.unique(np.array([r[0] for r in rest[0]], dtype="S"))
-        prs_commit_ids = prs_df[PullRequest.merge_commit_id.key].values.astype("S")
-        prs_authors = prs_df[PullRequest.user_login.key].values
+            filtered_prs_commit_ids = np.unique(np.array([r[0] for r in rest[0]]))
+        prs_commit_ids = prs_df[PullRequest.merge_commit_id.name].values
+        prs_authors = prs_df[PullRequest.user_login.name].values
         prs_authors_nz = prs_authors.nonzero()[0]
         prs_authors[prs_authors_nz] = \
             [prefixer.user_login_to_prefixed_login[u] for u in prs_authors[prs_authors_nz]]
-        prs_node_ids = prs_df[PullRequest.node_id.key].values.astype("S")
+        prs_node_ids = prs_df[PullRequest.node_id.name].values
         if with_pr_titles or labels:
             all_pr_node_ids.append(prs_node_ids)
-        prs_numbers = prs_df[PullRequest.number.key].values
-        prs_additions = prs_df[PullRequest.additions.key].values
-        prs_deletions = prs_df[PullRequest.deletions.key].values
+        prs_numbers = prs_df[PullRequest.number.name].values
+        prs_additions = prs_df[PullRequest.additions.name].values
+        prs_deletions = prs_df[PullRequest.deletions.name].values
 
     @sentry_span
     async def main_flow():
@@ -248,14 +247,14 @@ async def mine_releases(repos: Iterable[str],
             computed_release_info_by_commit = {}
             for i, (my_id, my_name, my_tag, my_url, my_author, my_published_at,
                     my_matched_by, my_commit) in \
-                    enumerate(zip(repo_releases[Release.node_id.key].values,
-                                  repo_releases[Release.name.key].values,
-                                  repo_releases[Release.tag.key].values,
-                                  repo_releases[Release.url.key].values,
-                                  repo_releases[Release.author.key].values,
-                                  repo_releases[Release.published_at.key],  # no values
+                    enumerate(zip(repo_releases[Release.node_id.name].values,
+                                  repo_releases[Release.name.name].values,
+                                  repo_releases[Release.tag.name].values,
+                                  repo_releases[Release.url.name].values,
+                                  repo_releases[Release.author.name].values,
+                                  repo_releases[Release.published_at.name],  # no values
                                   repo_releases[matched_by_column].values,
-                                  repo_releases[Release.sha.key].values)):
+                                  repo_releases[Release.sha.name].values)):
                 if my_published_at < time_from or my_id in unfiltered_precomputed_facts:
                     continue
                 dupe = computed_release_info_by_commit.get(my_commit)
@@ -284,7 +283,7 @@ async def mine_releases(repos: Iterable[str],
                     my_prs_authors = prs_authors[my_prs_indexes]
                     mentioned_authors.update(my_prs_authors[my_prs_authors.nonzero()[0]])
                     my_prs = dict(zip(
-                        ["prs_" + c.key for c in released_prs_columns],
+                        ["prs_" + c.name for c in released_prs_columns],
                         [prs_node_ids[my_prs_indexes],
                          prs_numbers[my_prs_indexes],
                          prs_additions[my_prs_indexes],
@@ -297,7 +296,7 @@ async def mine_releases(repos: Iterable[str],
                     parent = parents[i]
                     if parent < len(repo_releases):
                         my_age = \
-                            my_published_at - repo_releases[Release.published_at.key]._ixs(parent)
+                            my_published_at - repo_releases[Release.published_at.name]._ixs(parent)
                     else:
                         my_age = my_published_at - first_commit_dates[repo]
                     if (my_author := user_login_to_prefixed_login_get(my_author)) is not None:
@@ -311,12 +310,12 @@ async def mine_releases(repos: Iterable[str],
                         my_age, my_additions, my_deletions, commits_count, my_prs,
                         my_commit_authors,
                     ) = dupe
-                data.append(({Release.node_id.key: my_id,
-                              Release.name.key: my_name or my_tag,
-                              Release.repository_full_name.key:
+                data.append(({Release.node_id.name: my_id,
+                              Release.name.name: my_name or my_tag,
+                              Release.repository_full_name.name:
                                   prefixer.repo_name_to_prefixed_name[repo],
-                              Release.url.key: my_url,
-                              Release.sha.key: my_commit},
+                              Release.url.name: my_url,
+                              Release.sha.name: my_commit},
                              ReleaseFacts.from_fields(published=my_published_at,
                                                       publisher=my_author,
                                                       matched_by=ReleaseMatch(my_matched_by),
@@ -345,8 +344,6 @@ async def mine_releases(repos: Iterable[str],
         tasks.insert(0, mine_user_avatars(all_authors, True, meta_ids, mdb, cache))
     if (with_pr_titles or labels) and all_pr_node_ids:
         all_pr_node_ids = np.concatenate(all_pr_node_ids)
-        if all_pr_node_ids.dtype.char != "U":
-            all_pr_node_ids = all_pr_node_ids.astype("U")
     if with_pr_titles:
         tasks.insert(0, mdb.fetch_all(
             select([NodePullRequest.id, NodePullRequest.title])
@@ -355,11 +352,11 @@ async def mine_releases(repos: Iterable[str],
     if labels:
         tasks.insert(0, read_sql_query(
             select([PullRequestLabel.pull_request_node_id,
-                    func.lower(PullRequestLabel.name).label(PullRequestLabel.name.key)])
+                    func.lower(PullRequestLabel.name).label(PullRequestLabel.name.name)])
             .where(and_(PullRequestLabel.acc_id.in_(meta_ids),
                         PullRequestLabel.pull_request_node_id.in_any_values(all_pr_node_ids))),
             mdb, [PullRequestLabel.pull_request_node_id, PullRequestLabel.name],
-            index=PullRequestLabel.pull_request_node_id.key))
+            index=PullRequestLabel.pull_request_node_id.name))
     mentioned_authors = set(mentioned_authors)
     *secondary, mined_releases = await gather(*tasks, op="mine missing releases")
     result.extend(mined_releases)
@@ -373,10 +370,10 @@ async def mine_releases(repos: Iterable[str],
     if labels:
         result = _filter_by_labels(result, secondary[0], labels)
     if with_pr_titles:
-        pr_title_map = {row[0].encode(): row[1] for row in secondary[bool(labels)]}
+        pr_title_map = {row[0]: row[1] for row in secondary[bool(labels)]}
         for _, facts in result:
-            facts["prs_" + PullRequest.title.key] = [
-                pr_title_map.get(node) for node in facts["prs_" + PullRequest.node_id.key]
+            facts["prs_" + PullRequest.title.name] = [
+                pr_title_map.get(node) for node in facts["prs_" + PullRequest.node_id.name]
             ]
     return result, avatars, {r: v.match for r, v in settings.prefixed.items()}
 
@@ -412,33 +409,33 @@ def group_hashes_by_ownership(ownership: np.ndarray,
 
 
 def _build_mined_releases(releases: pd.DataFrame,
-                          precomputed_facts: Dict[str, ReleaseFacts],
+                          precomputed_facts: Dict[int, ReleaseFacts],
                           prefixer: Prefixer,
                           ) -> Tuple[List[Tuple[Dict[str, Any], ReleaseFacts]],
                                      np.ndarray,
                                      np.ndarray]:
-    has_precomputed_facts = releases[Release.node_id.key].isin(precomputed_facts).values
+    has_precomputed_facts = releases[Release.node_id.name].isin(precomputed_facts).values
     result = [
-        ({Release.node_id.key: my_id,
-          Release.name.key: my_name or my_tag,
-          Release.repository_full_name.key: prefixed_repo,
-          Release.url.key: my_url,
-          Release.sha.key: my_commit},
+        ({Release.node_id.name: my_id,
+          Release.name.name: my_name or my_tag,
+          Release.repository_full_name.name: prefixed_repo,
+          Release.url.name: my_url,
+          Release.sha.name: my_commit},
          _release_facts_with_repository_full_name(precomputed_facts[my_id], my_repo))
         for my_id, my_name, my_tag, my_repo, my_url, my_commit in zip(
-            releases[Release.node_id.key].values[has_precomputed_facts],
-            releases[Release.name.key].values[has_precomputed_facts],
-            releases[Release.tag.key].values[has_precomputed_facts],
-            releases[Release.repository_full_name.key].values[has_precomputed_facts],
-            releases[Release.url.key].values[has_precomputed_facts],
-            releases[Release.sha.key].values[has_precomputed_facts],
+            releases[Release.node_id.name].values[has_precomputed_facts],
+            releases[Release.name.name].values[has_precomputed_facts],
+            releases[Release.tag.name].values[has_precomputed_facts],
+            releases[Release.repository_full_name.name].values[has_precomputed_facts],
+            releases[Release.url.name].values[has_precomputed_facts],
+            releases[Release.sha.name].values[has_precomputed_facts],
         )
         # "gone" repositories, reposet-sync has not updated yet
         if (prefixed_repo := prefixer.repo_name_to_prefixed_name.get(my_repo)) is not None
     ]
-    release_authors = releases[Release.author.key].values
+    release_authors = releases[Release.author.name].values
     mentioned_authors = np.concatenate([
-        *(getattr(f, "prs_" + PullRequest.user_login.key) for f in precomputed_facts.values()),
+        *(getattr(f, "prs_" + PullRequest.user_login.name) for f in precomputed_facts.values()),
         *(f.commit_authors for f in precomputed_facts.values()),
         [prefixer.user_login_to_prefixed_login.get(u, "")
          # e.g. deleted users not necessarily become "ghost"-s
@@ -455,13 +452,13 @@ def _filter_by_participants(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
         return releases
     participants = participants.copy()
     for k, v in participants.items():
-        participants[k] = np.unique(v).astype("S")
+        participants[k] = np.unique(v).astype("S", copy=False)
     if ReleaseParticipationKind.COMMIT_AUTHOR in participants:
         commit_authors = [r[1].commit_authors for r in releases]
         lengths = np.asarray([len(ca) for ca in commit_authors])
         offsets = np.zeros(len(lengths) + 1, dtype=int)
         np.cumsum(lengths, out=offsets[1:])
-        commit_authors = np.concatenate(commit_authors).astype("S")
+        commit_authors = np.concatenate(commit_authors).astype("S", copy=False)
         included_indexes = np.nonzero(np.in1d(
             commit_authors, participants[ReleaseParticipationKind.COMMIT_AUTHOR]))[0]
         passed_indexes = np.unique(np.searchsorted(offsets, included_indexes, side="right") - 1)
@@ -481,12 +478,12 @@ def _filter_by_participants(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
     if len(missing_indexes) == 0:
         return releases
     if ReleaseParticipationKind.PR_AUTHOR in participants:
-        pr_authors = [getattr(releases[i][1], "prs_" + PullRequest.user_login.key)
+        pr_authors = [getattr(releases[i][1], "prs_" + PullRequest.user_login.name)
                       for i in missing_indexes]
         lengths = np.asarray([len(pra) for pra in pr_authors])
         offsets = np.zeros(len(lengths) + 1, dtype=int)
         np.cumsum(lengths, out=offsets[1:])
-        pr_authors = np.concatenate(pr_authors).astype("S")
+        pr_authors = np.concatenate(pr_authors).astype("S", copy=False)
         included_indexes = np.nonzero(np.in1d(
             pr_authors, participants[ReleaseParticipationKind.PR_AUTHOR]))[0]
         passed_indexes = np.unique(np.searchsorted(offsets, included_indexes, side="right") - 1)
@@ -507,11 +504,11 @@ def _filter_by_labels(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
     if not releases:
         return releases
     left = PullRequestMiner.find_left_by_labels(
-        labels_df.index, labels_df[PullRequestLabel.name.key].values, labels_filter,
-    ).values.astype("S")
+        labels_df.index, labels_df[PullRequestLabel.name.name].values, labels_filter,
+    ).values
     if len(left) == 0:
         return []
-    key = "prs_" + PullRequest.node_id.key
+    key = "prs_" + PullRequest.node_id.name
     pr_node_ids = [r[1][key] for r in releases]
     all_pr_node_ids = np.concatenate(pr_node_ids)
     passed_prs = np.nonzero(np.in1d(all_pr_node_ids, left, assume_unique=True))[0]
@@ -520,14 +517,14 @@ def _filter_by_labels(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
 
 
 @sentry_span
-async def _filter_precomputed_release_facts_by_jira(precomputed_facts: Dict[str, ReleaseFacts],
+async def _filter_precomputed_release_facts_by_jira(precomputed_facts: Dict[int, ReleaseFacts],
                                                     jira: JIRAFilter,
                                                     meta_ids: Tuple[int, ...],
                                                     mdb: ParallelDatabase,
                                                     cache: Optional[aiomcache.Client],
-                                                    ) -> Dict[str, ReleaseFacts]:
+                                                    ) -> Dict[int, ReleaseFacts]:
     assert jira
-    pr_ids = [getattr(f, "prs_" + PullRequest.node_id.key) for f in precomputed_facts.values()]
+    pr_ids = [getattr(f, "prs_" + PullRequest.node_id.name) for f in precomputed_facts.values()]
     if not pr_ids:
         return {}
     lengths = [len(ids) for ids in pr_ids]
@@ -536,15 +533,15 @@ async def _filter_precomputed_release_facts_by_jira(precomputed_facts: Dict[str,
         return {}
     # we could run the following in parallel with the rest, but
     # "the rest" is a no-op in most of the cases thanks to preheating
-    pr_ids = pr_ids.astype("S")
     query = await generate_jira_prs_query(
-        [PullRequest.node_id.in_(pr_ids.astype("U")), PullRequest.acc_id.in_(meta_ids)],
+        [PullRequest.node_id.in_(pr_ids), PullRequest.acc_id.in_(meta_ids)],
         jira, mdb, cache, columns=[PullRequest.node_id])
     release_ids = np.repeat(list(precomputed_facts), lengths)
     order = np.argsort(pr_ids)
     pr_ids = pr_ids[order]
     release_ids = release_ids[order]
-    matching_pr_ids = np.sort(np.array([r[0] for r in await mdb.fetch_all(query)], dtype="S"))
+    rows = await mdb.fetch_all(query)
+    matching_pr_ids = np.sort(np.fromiter((r[0] for r in rows), int, len(rows)))
     release_ids = np.unique(release_ids[np.searchsorted(pr_ids, matching_pr_ids)])
     return {k: precomputed_facts[k] for k in release_ids}
 
@@ -625,20 +622,20 @@ async def mine_releases_by_name(names: Dict[str, Iterable[str]],
         releases, precomputed_facts, await prefixer.load())
     mentioned_authors = [p[1] for p in np.char.split(mentioned_authors, "/", 1)]
     if not (missing_releases := releases.take(np.flatnonzero(~has_precomputed_facts))).empty:
-        repos = missing_releases[Release.repository_full_name.key].unique()
-        time_from = missing_releases[Release.published_at.key].iloc[-1]
-        time_to = missing_releases[Release.published_at.key].iloc[0] + timedelta(seconds=1)
+        repos = missing_releases[Release.repository_full_name.name].unique()
+        time_from = missing_releases[Release.published_at.name].iloc[-1]
+        time_to = missing_releases[Release.published_at.name].iloc[0] + timedelta(seconds=1)
         mined_result, mined_authors, _ = await mine_releases(
             repos, {}, branches, default_branches, time_from, time_to, LabelFilter.empty(),
             JIRAFilter.empty(), settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache,
             force_fresh=True, with_avatars=False, with_pr_titles=True)
         missing_releases_by_repo = defaultdict(set)
-        for repo, name in zip(missing_releases[Release.repository_full_name.key].values,
-                              missing_releases[Release.name.key].values):
+        for repo, name in zip(missing_releases[Release.repository_full_name.name].values,
+                              missing_releases[Release.name.name].values):
             missing_releases_by_repo[repo].add(name)
         for r in mined_result:
-            if r[0][Release.name.key] in missing_releases_by_repo[
-                    r[0][Release.repository_full_name.key].split("/", 1)[1]]:
+            if r[0][Release.name.name] in missing_releases_by_repo[
+                    r[0][Release.repository_full_name.name].split("/", 1)[1]]:
                 result.append(r)
         # we don't know which are redundant, so include everyone without filtering
         mentioned_authors = np.unique(np.concatenate([mentioned_authors, mined_authors]))
@@ -647,18 +644,18 @@ async def mine_releases_by_name(names: Dict[str, Iterable[str]],
     ]
     if precomputed_facts:
         pr_node_ids = np.concatenate([
-            f["prs_" + PullRequest.node_id.key] for f in precomputed_facts.values()
-        ]).astype("U")
+            f["prs_" + PullRequest.node_id.name] for f in precomputed_facts.values()
+        ])
         tasks.append(mdb.fetch_all(
             select([NodePullRequest.id, NodePullRequest.title])
             .where(and_(NodePullRequest.acc_id.in_(meta_ids),
                         NodePullRequest.id.in_any_values(pr_node_ids)))))
     avatars, *opt = await gather(*tasks)
     if precomputed_facts:
-        pr_title_map = {row[0].encode(): row[1] for row in opt[0]}
+        pr_title_map = {row[0]: row[1] for row in opt[0]}
         for _, facts in result:
-            facts["prs_" + PullRequest.title.key] = [
-                pr_title_map.get(node) for node in facts["prs_" + PullRequest.node_id.key]
+            facts["prs_" + PullRequest.title.name] = [
+                pr_title_map.get(node) for node in facts["prs_" + PullRequest.node_id.name]
             ]
     return result, avatars
 
@@ -684,8 +681,8 @@ async def _load_releases_by_name(names: Dict[str, Set[str]],
     ]
     (branches, default_branches), releases = await gather(*tasks)
     prenames = defaultdict(set)
-    for repo, name in zip(releases[Release.repository_full_name.key].values,
-                          releases[Release.name.key].values):
+    for repo, name in zip(releases[Release.repository_full_name.name].values,
+                          releases[Release.name.name].values):
         prenames[repo].add(name)
     missing = {}
     for repo, repo_names in names.items():
@@ -720,8 +717,9 @@ async def _load_releases_by_name(names: Dict[str, Set[str]],
             missing, branches, default_branches, now - offset, now,
             settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache, force_fresh=True)
         new_releases_index = defaultdict(dict)
-        for i, (repo, name) in enumerate(zip(new_releases[Release.repository_full_name.key].values,
-                                             new_releases[Release.name.key].values)):
+        for i, (repo, name) in enumerate(zip(
+                new_releases[Release.repository_full_name.name].values,
+                new_releases[Release.name.name].values)):
             new_releases_index[repo][name] = i
         matching_indexes = []
         still_missing = defaultdict(list)
@@ -733,11 +731,11 @@ async def _load_releases_by_name(names: Dict[str, Set[str]],
                     still_missing[repo].append(name)
         if matching_indexes:
             releases = releases.append(new_releases.take(matching_indexes), ignore_index=True)
-            releases.sort_values(Release.published_at.key,
+            releases.sort_values(Release.published_at.name,
                                  inplace=True, ascending=False, ignore_index=True)
             if event_releases:
                 # we could load them twice
-                releases.drop_duplicates(subset=Release.node_id.key, inplace=True)
+                releases.drop_duplicates(subset=Release.node_id.name, inplace=True)
         if still_missing:
             log.warning("Some releases were not found: %s", still_missing)
     return releases, names, branches, default_branches
@@ -772,8 +770,8 @@ async def _complete_commit_hashes(names: Dict[str, Set[str]],
     renames = defaultdict(dict)
     renames_reversed = defaultdict(set)
     for row in rows:
-        repo = row[PushCommit.repository_full_name.key]
-        sha = row[PushCommit.sha.key]
+        repo = row[PushCommit.repository_full_name.name]
+        sha = row[PushCommit.sha.name]
         prefix = sha[:7]
         renames[repo][sha] = prefix
         renames_reversed[repo].add(prefix)
@@ -814,9 +812,9 @@ async def diff_releases(borders: Dict[str, List[Tuple[str, str]]],
         names, log, settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache)
     if border_releases.empty:
         return {}, []
-    repos = border_releases[Release.repository_full_name.key].unique()
-    time_from = border_releases[Release.published_at.key].min()
-    time_to = border_releases[Release.published_at.key].max() + timedelta(seconds=1)
+    repos = border_releases[Release.repository_full_name.name].unique()
+    time_from = border_releases[Release.published_at.name].min()
+    time_to = border_releases[Release.published_at.name].max() + timedelta(seconds=1)
 
     async def fetch_dags():
         nonlocal border_releases
@@ -836,7 +834,7 @@ async def diff_releases(borders: Dict[str, List[Tuple[str, str]]],
     del border_releases
     releases_by_repo = defaultdict(list)
     for r in releases:
-        releases_by_repo[r[0][Release.repository_full_name.key]].append(r)
+        releases_by_repo[r[0][Release.repository_full_name.name]].append(r)
     del releases
     result = {}
     for repo, repo_releases in releases_by_repo.items():
@@ -845,7 +843,7 @@ async def diff_releases(borders: Dict[str, List[Tuple[str, str]]],
         pairs = borders[repo]
         result[repo] = repo_result = []
         repo_releases = sorted(repo_releases, key=lambda r: r[1].published)
-        index = {r[0][Release.name.key]: i for i, r in enumerate(repo_releases)}
+        index = {r[0][Release.name.name]: i for i, r in enumerate(repo_releases)}
         for old, new in pairs:
             try:
                 start = index[repo_names[old]]
@@ -856,14 +854,14 @@ async def diff_releases(borders: Dict[str, List[Tuple[str, str]]],
             if start > finish:
                 log.warning("Release pair old %s is later than new %s for %s", old, new, repo)
                 continue
-            start_sha, finish_sha = (repo_releases[x][0][Release.sha.key].encode()
+            start_sha, finish_sha = (repo_releases[x][0][Release.sha.name].encode()
                                      for x in (start, finish))
             hashes, _, _ = extract_subdag(*dags[repo], np.array([finish_sha]))
             if hashes[searchsorted_inrange(hashes, np.array([start_sha]))] == start_sha:
                 diff = []
                 for i in range(start + 1, finish + 1):
                     r = repo_releases[i]
-                    sha = r[0][Release.sha.key].encode()
+                    sha = r[0][Release.sha.name].encode()
                     if hashes[searchsorted_inrange(hashes, np.array([sha]))] == sha:
                         diff.append(r)
                 repo_result.append((old, new, diff))

@@ -98,12 +98,12 @@ class UnfreshPullRequestFactsFetcher:
         add_pdb_misses(pdb, "load_precomputed_done_facts_filters/ambiguous",
                        remove_ambiguous_prs(done_facts, ambiguous, matched_bys))
         unreleased_pr_node_ids = unreleased_prs.index.values
-        merged_mask = unreleased_prs[PullRequest.merged_at.key].notnull().values
+        merged_mask = unreleased_prs[PullRequest.merged_at.name].notnull().values
         open_prs = unreleased_pr_node_ids[~merged_mask]
         open_pr_authors = dict(zip(
-            open_prs, unreleased_prs[PullRequest.user_login.key].values[~merged_mask]))
+            open_prs, unreleased_prs[PullRequest.user_login.name].values[~merged_mask]))
         merged_prs = \
-            unreleased_prs[[PullRequest.repository_full_name.key]].take(np.where(merged_mask)[0])
+            unreleased_prs[[PullRequest.repository_full_name.name]].take(np.where(merged_mask)[0])
         if not inactive_merged_prs.empty:
             merged_prs = pd.concat([merged_prs, inactive_merged_prs])
         tasks = [
@@ -158,12 +158,12 @@ class UnfreshPullRequestFactsFetcher:
             time_from, time_to, repos, participants, labels, default_branches, release_settings,
             prefixer, account, pdb, cache)
         if not jira:
-            df = pd.DataFrame.from_dict({PullRequest.node_id.key: node_ids,
-                                         PullRequest.repository_full_name.key: repos})
-            df.set_index(PullRequest.node_id.key, inplace=True)
+            df = pd.DataFrame.from_dict({PullRequest.node_id.name: node_ids,
+                                         PullRequest.repository_full_name.name: repos})
+            df.set_index(PullRequest.node_id.name, inplace=True)
             return df
         columns = [PullRequest.node_id, PullRequest.repository_full_name]
         query = await generate_jira_prs_query(
             [PullRequest.node_id.in_(node_ids), PullRequest.acc_id.in_(meta_ids)],
             jira, mdb, cache, columns=columns)
-        return await read_sql_query(query, mdb, columns, index=PullRequest.node_id.key)
+        return await read_sql_query(query, mdb, columns, index=PullRequest.node_id.name)

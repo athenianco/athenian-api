@@ -71,18 +71,18 @@ async def mine_all_prs(repos: Collection[str],
         read_sql_query(select([PullRequest]).where(and_(
             PullRequest.acc_id.in_(meta_ids),
             PullRequest.node_id.in_(facts),
-        )), mdb, PullRequest, index=PullRequest.node_id.key),
+        )), mdb, PullRequest, index=PullRequest.node_id.name),
         PullRequestJiraMapper.append_pr_jira_mapping(facts, meta_ids, mdb),
     ]
     df_prs, _ = await gather(*tasks, op="fetch raw data")
     df_facts = df_from_structs(facts.values())
-    dummy = {ghdprf.release_url.key: None, ghdprf.release_node_id.key: None}
-    for col in (ghdprf.release_url.key, ghdprf.release_node_id.key):
+    dummy = {ghdprf.release_url.name: None, ghdprf.release_node_id.name: None}
+    for col in (ghdprf.release_url.name, ghdprf.release_node_id.name):
         df_facts[col] = [raw_done_rows.get(k, dummy)[col] for k in facts]
     del raw_done_rows
-    df_facts[PullRequest.node_id.key] = list(facts)
+    df_facts[PullRequest.node_id.name] = list(facts)
     del facts
-    df_facts.set_index(PullRequest.node_id.key, inplace=True)
+    df_facts.set_index(PullRequest.node_id.name, inplace=True)
     if not df_facts.empty:
         stage_timings = PullRequestListMiner.calc_stage_timings(
             df_facts, *PullRequestListMiner.create_stage_calcs())
@@ -110,19 +110,19 @@ async def mine_all_developers(repos: Collection[str],
     """Extract everything we know about developers."""
     contributors = await mine_contributors(
         repos, None, None, False, [], settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache)
-    logins = [u[User.login.key] for u in contributors]
+    logins = [u[User.login.name] for u in contributors]
     mined_dfs, mapped_jira = await gather(
         mine_developer_activities(
             logins, repos, datetime(1970, 1, 1, tzinfo=timezone.utc), datetime.now(timezone.utc),
             set(DeveloperTopic), LabelFilter.empty(), JIRAFilter.empty(),
             settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache),
-        load_mapped_jira_users(account, [u[User.node_id.key] for u in contributors],
+        load_mapped_jira_users(account, [u[User.node_id.name] for u in contributors],
                                sdb, mdb, cache),
     )
     return {
         "_jira_mapping": pd.DataFrame({
             "login": logins,
-            "jira_user": [mapped_jira.get(u[User.node_id.key]) for u in contributors],
+            "jira_user": [mapped_jira.get(u[User.node_id.name]) for u in contributors],
         }),
         **{"_" + "_".join(t.name.replace("dev-", "") for t in sorted(k)): v for k, v in mined_dfs},
     }
@@ -147,9 +147,9 @@ async def mine_all_releases(repos: Collection[str],
         account, meta_ids, mdb, pdb, rdb, cache, with_avatars=False, with_pr_titles=True))[0]
     df_gen = pd.DataFrame.from_records([r[0] for r in releases])
     df_facts = df_from_structs([r[1] for r in releases])
-    del df_facts[Release.repository_full_name.key]
+    del df_facts[Release.repository_full_name.name]
     result = df_gen.join(df_facts)
-    result.set_index(Release.node_id.key, inplace=True)
+    result.set_index(Release.node_id.name, inplace=True)
     for col in ("commit_authors", "prs_user_login"):
         result[col] = [[s.decode() for s in subarr] for subarr in result[col].values]
     return {"": result}

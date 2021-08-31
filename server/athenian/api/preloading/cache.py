@@ -180,13 +180,13 @@ class CachedDataFrame:
             if uncast:
                 for col in self._identifier_cols:
                     try:
-                        df[col.key] = df[col.key].values.astype("U")
+                        df[col.name] = df[col.name].values.astype("U")
                     except KeyError:
                         continue
 
                 for col in self._categorical_cols:
                     try:
-                        df[col.key] = df[col.key].astype("object").replace({np.nan: None})
+                        df[col.name] = df[col.name].astype("object").replace({np.nan: None})
                     except KeyError:
                         continue
             if index:
@@ -216,7 +216,7 @@ class CachedDataFrame:
             else:
                 coerce_func = coerce_opts
 
-            df[col.key] = coerce_func(df[col.key])
+            df[col.name] = coerce_func(df[col.name])
 
         return df
 
@@ -496,7 +496,7 @@ def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[Instrumente
                     PullRequest.merge_commit_sha,
                     PullRequest.merged_at,
                     PullRequest.merged_by_login,
-                    PullRequest.merged_by,
+                    PullRequest.merged_by_id,
                     PullRequest.repository_full_name,
                     PullRequest.updated_at,
                     PullRequest.user_login,
@@ -507,14 +507,10 @@ def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[Instrumente
                 "categorical_cols": [
                     PullRequest.acc_id,
                     PullRequest.merged_by_login,
-                    PullRequest.merged_by,
                     PullRequest.repository_full_name,
                     PullRequest.user_login,
-                    PullRequest.user_node_id,
                 ],
                 "identifier_cols": [
-                    PullRequest.node_id,
-                    PullRequest.merge_commit_id,
                     PullRequest.merge_commit_sha,
                 ],
             },
@@ -532,7 +528,7 @@ def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[Instrumente
                     NodePullRequestJiraIssues.node_acc,
                     NodePullRequestJiraIssues.jira_id,
                 ],
-                "identifier_cols": [NodePullRequestJiraIssues.node_id],
+                "identifier_cols": [],
             },
             MCID.branches.value: {
                 "sharding": {
@@ -553,7 +549,6 @@ def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[Instrumente
                 ],
                 "identifier_cols": [
                     Branch.commit_sha,
-                    Branch.commit_id,
                 ],
             },
         },
@@ -578,11 +573,8 @@ def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[Instrumente
                     PrecomputedRelease.acc_id,
                     PrecomputedRelease.repository_full_name,
                     PrecomputedRelease.release_match,
-                    PrecomputedRelease.author,
                 ],
                 "identifier_cols": [
-                    PrecomputedRelease.node_id,
-                    PrecomputedRelease.commit_id,
                     PrecomputedRelease.sha,
                     PrecomputedRelease.url,
                 ],
@@ -629,9 +621,7 @@ def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[Instrumente
                     GitHubOpenPullRequestFacts.repository_full_name,
                     GitHubOpenPullRequestFacts.acc_id,
                 ],
-                "identifier_cols": [
-                    GitHubOpenPullRequestFacts.pr_node_id,
-                ],
+                "identifier_cols": [],
                 "coerce_cols": {
                     GitHubOpenPullRequestFacts.activity_days: {
                         "sqlite": parse_sqlite_timestamps,
@@ -662,14 +652,10 @@ def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[Instrumente
                 ],
                 "categorical_cols": [
                     GitHubMergedPullRequestFacts.repository_full_name,
-                    GitHubMergedPullRequestFacts.author,
-                    GitHubMergedPullRequestFacts.merger,
                     GitHubMergedPullRequestFacts.acc_id,
                     GitHubMergedPullRequestFacts.release_match,
                 ],
-                "identifier_cols": [
-                    GitHubMergedPullRequestFacts.pr_node_id,
-                ],
+                "identifier_cols": [],
                 "coerce_cols": {
                     GitHubMergedPullRequestFacts.activity_days: {
                         "sqlite": parse_sqlite_timestamps,
@@ -706,14 +692,9 @@ def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[Instrumente
                 "categorical_cols": [
                     GitHubDonePullRequestFacts.acc_id,
                     GitHubDonePullRequestFacts.repository_full_name,
-                    GitHubDonePullRequestFacts.author,
-                    GitHubDonePullRequestFacts.merger,
-                    GitHubDonePullRequestFacts.releaser,
                     GitHubDonePullRequestFacts.release_match,
                 ],
-                "identifier_cols": [
-                    GitHubDonePullRequestFacts.pr_node_id,
-                ],
+                "identifier_cols": [],
                 "coerce_cols": {
                     GitHubDonePullRequestFacts.activity_days: {
                         "sqlite": parse_sqlite_timestamps,

@@ -2,7 +2,6 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 import math
 from typing import Sequence
-import uuid
 
 import pandas as pd
 import pytest
@@ -24,14 +23,13 @@ from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting,
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import Branch, PullRequest, PullRequestCommit, Release
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
-    GitHubMergedPullRequestFacts, \
-    GitHubOpenPullRequestFacts
+    GitHubMergedPullRequestFacts, GitHubOpenPullRequestFacts
 from tests.controllers.conftest import FakeFacts, with_only_master_branch
 
 
 def gen_dummy_df(dt: datetime) -> pd.DataFrame:
     return pd.DataFrame.from_records(
-        [["vmarkovtsev", "MDQ6VXNlcjI3OTM1NTE=", dt, dt]],
+        [["vmarkovtsev", 40020, dt, dt]],
         columns=["user_login", "user_node_id", "created_at", "submitted_at"])
 
 
@@ -54,29 +52,29 @@ async def test_load_store_precomputed_done_smoke(
         for i, k in enumerate(names)})
     default_branches = {k: "master" for k in names}
     prs = [MinedPullRequest(
-        pr={PullRequest.created_at.key: s.created,
-            PullRequest.repository_full_name.key: names[i % len(names)],
-            PullRequest.user_login.key: "vmarkovtsev",
-            PullRequest.user_node_id.key: "MDQ6VXNlcjI3OTM1NTE=",
-            PullRequest.merged_by_login.key: "mcuadros",
-            PullRequest.merged_by.key: "MDQ6VXNlcjE1NzMxMTQ=",
-            PullRequest.number.key: i + 1,
-            PullRequest.node_id.key: uuid.uuid4().hex},
+        pr={PullRequest.created_at.name: s.created,
+            PullRequest.repository_full_name.name: names[i % len(names)],
+            PullRequest.user_login.name: "vmarkovtsev",
+            PullRequest.user_node_id.name: 40020,
+            PullRequest.merged_by_login.name: "mcuadros",
+            PullRequest.merged_by_id.name: 39789,
+            PullRequest.number.name: i + 1,
+            PullRequest.node_id.name: i + 100500},
         release={matched_by_column: settings.native[names[i % len(names)]].match % 2,
-                 Release.author.key: "mcarmonaa",
-                 Release.author_node_id.key: "MDQ6VXNlcjE2OTA3NDQx",
-                 Release.url.key: "https://release",
-                 Release.node_id.key: "MD%d" % i},
+                 Release.author.name: "mcarmonaa",
+                 Release.author_node_id.name: 39818,
+                 Release.url.name: "https://release",
+                 Release.node_id.name: i},
         comments=gen_dummy_df(s.first_comment_on_first_review),
         commits=pd.DataFrame.from_records(
-            [["mcarmonaa", "mcarmonaa", "MDQ6VXNlcjE2OTA3NDQx", "MDQ6VXNlcjE2OTA3NDQx",
+            [["mcarmonaa", "mcarmonaa", 39818, 39818,
               s.first_commit]],
             columns=[
-                PullRequestCommit.committer_login.key,
-                PullRequestCommit.author_login.key,
-                PullRequestCommit.committer_user.key,
-                PullRequestCommit.author_user.key,
-                PullRequestCommit.committed_date.key,
+                PullRequestCommit.committer_login.name,
+                PullRequestCommit.author_login.name,
+                PullRequestCommit.committer_user_id.name,
+                PullRequestCommit.author_user_id.name,
+                PullRequestCommit.committed_date.name,
             ],
         ),
         reviews=gen_dummy_df(s.first_comment_on_first_review),
@@ -114,10 +112,10 @@ async def test_load_store_precomputed_done_smoke(
         time_from, time_to, names, {}, LabelFilter.empty(), default_branches,
         False, settings, prefixer_promise, 1, pdb)
     assert len(loaded_prs) == n
-    true_prs = {prs[i].pr[PullRequest.node_id.key]: samples[i] for _, i in released_ats[-n:]}
+    true_prs = {prs[i].pr[PullRequest.node_id.name]: samples[i] for _, i in released_ats[-n:]}
     for i, s in enumerate(samples[-10:-5]):
         if s.closed.item().replace(tzinfo=timezone.utc) >= time_from:
-            true_prs[prs[-10 + i].pr[PullRequest.node_id.key]] = s
+            true_prs[prs[-10 + i].pr[PullRequest.node_id.name]] = s
     diff_keys = set(loaded_prs) - set(true_prs)
     assert not diff_keys
     for k, load_value in loaded_prs.items():
@@ -138,30 +136,28 @@ async def test_load_store_precomputed_done_filters(
         for i, k in enumerate(names)})
     default_branches = {k: "master" for k in names}
     prs = [MinedPullRequest(
-        pr={PullRequest.created_at.key: s.created,
-            PullRequest.repository_full_name.key: names[i % len(names)],
-            PullRequest.user_login.key: ["vmarkovtsev", "marnovo"][i % 2],
-            PullRequest.user_node_id.key: ["MDQ6VXNlcjI3OTM1NTE=", "MDQ6VXNlcjE1OTA2NzY0"][i % 2],
-            PullRequest.merged_by_login.key: "mcuadros",
-            PullRequest.merged_by.key: "MDQ6VXNlcjE1NzMxMTQ=",
-            PullRequest.number.key: i + 1,
-            PullRequest.node_id.key: uuid.uuid4().hex},
+        pr={PullRequest.created_at.name: s.created,
+            PullRequest.repository_full_name.name: names[i % len(names)],
+            PullRequest.user_login.name: ["vmarkovtsev", "marnovo"][i % 2],
+            PullRequest.user_node_id.name: [40020, 39792][i % 2],
+            PullRequest.merged_by_login.name: "mcuadros",
+            PullRequest.merged_by_id.name: 39789,
+            PullRequest.number.name: i + 1,
+            PullRequest.node_id.name: i + 100500},
         release={matched_by_column: settings.native[names[i % len(names)]].match % 2,
-                 Release.author.key: ["marnovo", "mcarmonaa"][i % 2],
-                 Release.author_node_id.key:
-                     ["MDQ6VXNlcjE1OTA2NzY0", "MDQ6VXNlcjE2OTA3NDQx"][i % 2],
-                 Release.url.key: "https://release",
-                 Release.node_id.key: "MD%d" % i},
+                 Release.author.name: ["marnovo", "mcarmonaa"][i % 2],
+                 Release.author_node_id.name: [39792, 39818][i % 2],
+                 Release.url.name: "https://release",
+                 Release.node_id.name: i},
         comments=gen_dummy_df(s.first_comment_on_first_review),
         commits=pd.DataFrame.from_records(
-            [["mcuadros", "mcuadros", "MDQ6VXNlcjE1NzMxMTQ=", "MDQ6VXNlcjE1NzMxMTQ=",
-              s.first_commit]],
+            [["mcuadros", "mcuadros", 39789, 39789, s.first_commit]],
             columns=[
-                PullRequestCommit.committer_login.key,
-                PullRequestCommit.author_login.key,
-                PullRequestCommit.committer_user.key,
-                PullRequestCommit.author_user.key,
-                PullRequestCommit.committed_date.key,
+                PullRequestCommit.committer_login.name,
+                PullRequestCommit.author_login.name,
+                PullRequestCommit.committer_user_id.name,
+                PullRequestCommit.author_user_id.name,
+                PullRequestCommit.committed_date.name,
             ],
         ),
         reviews=gen_dummy_df(s.first_comment_on_first_review),
@@ -191,12 +187,12 @@ async def test_load_store_precomputed_done_filters(
     loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_filters(
         time_from, time_to, ["one"], {}, LabelFilter.empty(), default_branches,
         False, settings, prefixer_promise, 1, pdb)
-    assert set(loaded_prs) == {pr.pr[PullRequest.node_id.key] for pr in prs[::3]}
+    assert set(loaded_prs) == {pr.pr[PullRequest.node_id.name] for pr in prs[::3]}
     loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_filters(
         time_from, time_to, names, {PRParticipationKind.AUTHOR: {"marnovo"},
                                     PRParticipationKind.RELEASER: {"mcarmonaa"}},
         LabelFilter.empty(), default_branches, False, settings, prefixer_promise, 1, pdb)
-    assert set(loaded_prs) == {pr.pr[PullRequest.node_id.key] for pr in prs[1::2]}
+    assert set(loaded_prs) == {pr.pr[PullRequest.node_id.name] for pr in prs[1::2]}
     loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_filters(
         time_from, time_to, names, {PRParticipationKind.COMMIT_AUTHOR: {"mcuadros"}},
         LabelFilter.empty(), default_branches, False, settings, prefixer_promise, 1, pdb)
@@ -300,29 +296,29 @@ async def test_load_store_precomputed_done_exclude_inactive(
         "github.com/one": ReleaseMatchSetting("{{default}}", ".*", ReleaseMatch.tag),
     })
     prs = [MinedPullRequest(
-        pr={PullRequest.created_at.key: s.created,
-            PullRequest.repository_full_name.key: "one",
-            PullRequest.user_login.key: "vmarkovtsev",
-            PullRequest.user_node_id.key: "MDQ6VXNlcjI3OTM1NTE=",
-            PullRequest.merged_by_login.key: "mcuadros",
-            PullRequest.merged_by.key: "MDQ6VXNlcjE1NzMxMTQ=",
-            PullRequest.number.key: 777,
-            PullRequest.node_id.key: uuid.uuid4().hex},
+        pr={PullRequest.created_at.name: s.created,
+            PullRequest.repository_full_name.name: "one",
+            PullRequest.user_login.name: "vmarkovtsev",
+            PullRequest.user_node_id.name: 40020,
+            PullRequest.merged_by_login.name: "mcuadros",
+            PullRequest.merged_by_id.name: 39789,
+            PullRequest.number.name: 777,
+            PullRequest.node_id.name: i + 100500},
         release={matched_by_column: settings.native["one"].match,
-                 Release.author.key: "mcarmonaa",
-                 Release.author_node_id.key: "MDQ6VXNlcjE2OTA3NDQx",
-                 Release.url.key: "https://release",
-                 Release.node_id.key: "MDwhatever="},
+                 Release.author.name: "mcarmonaa",
+                 Release.author_node_id.name: 39818,
+                 Release.url.name: "https://release",
+                 Release.node_id.name: 777},
         comments=gen_dummy_df(s.first_comment_on_first_review),
         commits=pd.DataFrame.from_records(
-            [["mcuadros", "mcuadros", "MDQ6VXNlcjE1NzMxMTQ=", "MDQ6VXNlcjE1NzMxMTQ=",
+            [["mcuadros", "mcuadros", 39789, 39789,
               s.first_comment_on_first_review]],
             columns=[
-                PullRequestCommit.committer_login.key,
-                PullRequestCommit.author_login.key,
-                PullRequestCommit.committer_user.key,
-                PullRequestCommit.author_user.key,
-                PullRequestCommit.committed_date.key,
+                PullRequestCommit.committer_login.name,
+                PullRequestCommit.author_login.name,
+                PullRequestCommit.committer_user_id.name,
+                PullRequestCommit.author_user_id.name,
+                PullRequestCommit.committed_date.name,
             ],
         ),
         reviews=gen_dummy_df(s.first_comment_on_first_review),
@@ -330,7 +326,7 @@ async def test_load_store_precomputed_done_exclude_inactive(
         review_requests=gen_dummy_df(s.first_comment_on_first_review),
         labels=pd.DataFrame.from_records([["bug"]], columns=["name"]),
         jiras=pd.DataFrame(),
-    ) for s in samples]
+    ) for i, s in enumerate(samples)]
 
     def with_mutables(s):
         s.repository_full_name = "one"
@@ -350,14 +346,14 @@ async def test_load_store_precomputed_done_exclude_inactive(
         time_from, time_to, ["one"], {}, LabelFilter.empty(), default_branches,
         True, settings, prefixer_promise, 1, pdb)
     assert len(loaded_prs) == 1
-    assert loaded_prs[prs[0].pr[PullRequest.node_id.key]] == with_mutables(samples[0])
+    assert loaded_prs[prs[0].pr[PullRequest.node_id.name]] == with_mutables(samples[0])
     time_from = samples[1].created.item().replace(tzinfo=timezone.utc) - timedelta(days=1)
     time_to = samples[1].created.item().replace(tzinfo=timezone.utc) + timedelta(seconds=1)
     loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_filters(
         time_from, time_to, ["one"], {}, LabelFilter.empty(), default_branches,
         True, settings, prefixer_promise, 1, pdb)
     assert len(loaded_prs) == 1
-    assert loaded_prs[prs[1].pr[PullRequest.node_id.key]] == with_mutables(samples[1])
+    assert loaded_prs[prs[1].pr[PullRequest.node_id.name]] == with_mutables(samples[1])
 
 
 async def test_load_precomputed_done_times_reponums_smoke(
@@ -370,30 +366,30 @@ async def test_load_precomputed_done_times_reponums_smoke(
     })
     default_branches = {k: "master" for k in names}
     prs = [MinedPullRequest(
-        pr={PullRequest.created_at.key: s.created,
-            PullRequest.repository_full_name.key: names[i % len(names)],
-            PullRequest.user_login.key: ["vmarkovtsev", "marnovo"][i % 2],
-            PullRequest.user_node_id.key: ["MDQ6VXNlcjI3OTM1NTE=", "MDQ6VXNlcjE1OTA2NzY0"][i % 2],
-            PullRequest.merged_by_login.key: "mcuadros",
-            PullRequest.merged_by.key: "MDQ6VXNlcjE1NzMxMTQ=",
-            PullRequest.number.key: i + 1,
-            PullRequest.node_id.key: uuid.uuid4().hex},
+        pr={PullRequest.created_at.name: s.created,
+            PullRequest.repository_full_name.name: names[i % len(names)],
+            PullRequest.user_login.name: ["vmarkovtsev", "marnovo"][i % 2],
+            PullRequest.user_node_id.name: [40020, 39792][i % 2],
+            PullRequest.merged_by_login.name: "mcuadros",
+            PullRequest.merged_by_id.name: 39789,
+            PullRequest.number.name: i + 1,
+            PullRequest.node_id.name: i + 100500},
         release={matched_by_column: settings.native[names[i % len(names)]].match % 2,
-                 Release.author.key: ["marnovo", "mcarmonaa"][i % 2],
-                 Release.author_node_id.key:
-                     ["MDQ6VXNlcjE1OTA2NzY0", "MDQ6VXNlcjE2OTA3NDQx"][i % 2],
-                 Release.url.key: "https://release",
-                 Release.node_id.key: "MD%d" % i},
+                 Release.author.name: ["marnovo", "mcarmonaa"][i % 2],
+                 Release.author_node_id.name:
+                     [39792, 39818][i % 2],
+                 Release.url.name: "https://release",
+                 Release.node_id.name: i},
         comments=gen_dummy_df(s.first_comment_on_first_review),
         commits=pd.DataFrame.from_records(
-            [["mcuadros", "mcuadros", "MDQ6VXNlcjE1NzMxMTQ=", "MDQ6VXNlcjE1NzMxMTQ=",
+            [["mcuadros", "mcuadros", 39789, 39789,
               s.first_commit]],
             columns=[
-                PullRequestCommit.committer_login.key,
-                PullRequestCommit.author_login.key,
-                PullRequestCommit.committer_user.key,
-                PullRequestCommit.author_user.key,
-                PullRequestCommit.committed_date.key,
+                PullRequestCommit.committer_login.name,
+                PullRequestCommit.author_login.name,
+                PullRequestCommit.committer_user_id.name,
+                PullRequestCommit.author_user_id.name,
+                PullRequestCommit.committed_date.name,
             ],
         ),
         reviews=gen_dummy_df(s.first_comment_on_first_review),
@@ -413,15 +409,15 @@ async def test_load_precomputed_done_times_reponums_smoke(
     await store_precomputed_done_facts(
         prs, [with_mutables(s, i) for i, s in enumerate(samples)],
         default_branches, settings, 1, pdb)
-    query1 = {"one": {pr.pr[PullRequest.number.key] for pr in prs
-                      if pr.pr[PullRequest.repository_full_name.key] == "one"}}
+    query1 = {"one": {pr.pr[PullRequest.number.name] for pr in prs
+                      if pr.pr[PullRequest.repository_full_name.name] == "one"}}
     assert len(query1["one"]) == 4
     new_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_reponums(
         query1, default_branches, settings, prefixer_promise, 1, pdb)
     assert new_prs == {
-        pr.pr[PullRequest.node_id.key]: s
+        pr.pr[PullRequest.node_id.name]: s
         for pr, s in zip(prs, samples)
-        if pr.pr[PullRequest.repository_full_name.key] == "one"
+        if pr.pr[PullRequest.repository_full_name.name] == "one"
     }
     query2 = {"one": set()}
     new_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_reponums(
@@ -441,29 +437,29 @@ def _gen_one_pr(pr_samples):
             "{{default}}", ".*", ReleaseMatch.tag_or_branch),
     })
     prs = [MinedPullRequest(
-        pr={PullRequest.created_at.key: s.created,
-            PullRequest.repository_full_name.key: "src-d/go-git",
-            PullRequest.user_login.key: "vmarkovtsev",
-            PullRequest.user_node_id.key: "MDQ6VXNlcjI3OTM1NTE=",
-            PullRequest.merged_by_login.key: "mcuadros",
-            PullRequest.merged_by.key: "MDQ6VXNlcjE1NzMxMTQ=",
-            PullRequest.number.key: 777,
-            PullRequest.node_id.key: uuid.uuid4().hex},
+        pr={PullRequest.created_at.name: s.created,
+            PullRequest.repository_full_name.name: "src-d/go-git",
+            PullRequest.user_login.name: "vmarkovtsev",
+            PullRequest.user_node_id.name: 40020,
+            PullRequest.merged_by_login.name: "mcuadros",
+            PullRequest.merged_by_id.name: 39789,
+            PullRequest.number.name: 777,
+            PullRequest.node_id.name: 100500},
         release={matched_by_column: ReleaseMatch.branch,
-                 Release.author.key: "mcarmonaa",
-                 Release.author_node_id.key: "MDQ6VXNlcjE2OTA3NDQx",
-                 Release.url.key: "https://release",
-                 Release.node_id.key: "MDwhatever="},
+                 Release.author.name: "mcarmonaa",
+                 Release.author_node_id.name: 39818,
+                 Release.url.name: "https://release",
+                 Release.node_id.name: 777},
         comments=gen_dummy_df(s.first_comment_on_first_review),
         commits=pd.DataFrame.from_records(
-            [["mcarmonaa", "mcarmonaa", "MDQ6VXNlcjE2OTA3NDQx", "MDQ6VXNlcjE2OTA3NDQx",
+            [["mcarmonaa", "mcarmonaa", 39818, 39818,
               s.first_commit]],
             columns=[
-                PullRequestCommit.committer_login.key,
-                PullRequestCommit.author_login.key,
-                PullRequestCommit.committer_user.key,
-                PullRequestCommit.author_user.key,
-                PullRequestCommit.committed_date.key,
+                PullRequestCommit.committer_login.name,
+                PullRequestCommit.author_login.name,
+                PullRequestCommit.committer_user_id.name,
+                PullRequestCommit.author_user_id.name,
+                PullRequestCommit.committed_date.name,
             ],
         ),
         reviews=gen_dummy_df(s.first_comment_on_first_review),
@@ -500,7 +496,7 @@ async def test_load_precomputed_done_candidates_smoke(pr_samples, default_branch
     assert len(loaded_prs) == 0
     loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_candidates(
         time_from, time_to, ["src-d/go-git"], default_branches, settings, 1, pdb)
-    assert loaded_prs == {prs[0].pr[PullRequest.node_id.key]}
+    assert loaded_prs == {prs[0].pr[PullRequest.node_id.name]}
     loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_candidates(
         time_from, time_from, ["src-d/go-git"],
         default_branches, settings, 1, pdb)
@@ -555,20 +551,20 @@ async def test_load_precomputed_pr_releases_smoke(
         default_branches, settings, 1, pdb)
     for i in range(2):
         released_prs = await done_prs_facts_loader.load_precomputed_pr_releases(
-            [pr.pr[PullRequest.node_id.key] for pr in prs],
+            [pr.pr[PullRequest.node_id.name] for pr in prs],
             max(s.released.item().replace(tzinfo=timezone.utc) for s in samples) +
             timedelta(days=1),
-            {pr.pr[PullRequest.repository_full_name.key]: ReleaseMatch.branch for pr in prs},
+            {pr.pr[PullRequest.repository_full_name.name]: ReleaseMatch.branch for pr in prs},
             default_branches, settings, prefixer_promise, 1, pdb if i == 0 else None, cache)
         await wait_deferred()
         for s, pr in zip(samples, prs):
-            rpr = released_prs.loc[pr.pr[PullRequest.node_id.key]]
-            for col in (Release.author.key, Release.url.key, Release.node_id.key,
+            rpr = released_prs.loc[pr.pr[PullRequest.node_id.name]]
+            for col in (Release.author.name, Release.url.name, Release.node_id.name,
                         matched_by_column):
                 assert rpr[col] == pr.release[col], i
-            assert rpr[Release.published_at.key].replace(tzinfo=None) == s.released, i
-            assert rpr[Release.repository_full_name.key] == \
-                pr.pr[PullRequest.repository_full_name.key], i
+            assert rpr[Release.published_at.name].replace(tzinfo=None) == s.released, i
+            assert rpr[Release.repository_full_name.name] == \
+                pr.pr[PullRequest.repository_full_name.name], i
 
 
 async def test_load_precomputed_pr_releases_time_to(
@@ -586,9 +582,9 @@ async def test_load_precomputed_pr_releases_time_to(
         prs, [with_mutables(s) for s in samples],
         default_branches, settings, 1, pdb)
     released_prs = await done_prs_facts_loader.load_precomputed_pr_releases(
-        [pr.pr[PullRequest.node_id.key] for pr in prs],
+        [pr.pr[PullRequest.node_id.name] for pr in prs],
         min(s.released.item().replace(tzinfo=timezone.utc) for s in samples),
-        {pr.pr[PullRequest.repository_full_name.key]: ReleaseMatch.branch for pr in prs},
+        {pr.pr[PullRequest.repository_full_name.name]: ReleaseMatch.branch for pr in prs},
         default_branches, settings, prefixer_promise, 1, pdb, None)
     assert released_prs.empty
 
@@ -608,15 +604,15 @@ async def test_load_precomputed_pr_releases_release_mismatch(
         prs, [with_mutables(s) for s in samples],
         default_branches, settings, 1, pdb)
     released_prs = await done_prs_facts_loader.load_precomputed_pr_releases(
-        [pr.pr[PullRequest.node_id.key] for pr in prs],
+        [pr.pr[PullRequest.node_id.name] for pr in prs],
         max(s.released.item().replace(tzinfo=timezone.utc) for s in samples) + timedelta(days=1),
-        {pr.pr[PullRequest.repository_full_name.key]: ReleaseMatch.tag for pr in prs},
+        {pr.pr[PullRequest.repository_full_name.name]: ReleaseMatch.tag for pr in prs},
         default_branches, settings, prefixer_promise, 1, pdb, None)
     assert released_prs.empty
     released_prs = await done_prs_facts_loader.load_precomputed_pr_releases(
-        [pr.pr[PullRequest.node_id.key] for pr in prs],
+        [pr.pr[PullRequest.node_id.name] for pr in prs],
         max(s.released.item().replace(tzinfo=timezone.utc) for s in samples) + timedelta(days=1),
-        {pr.pr[PullRequest.repository_full_name.key]: ReleaseMatch.branch for pr in prs},
+        {pr.pr[PullRequest.repository_full_name.name]: ReleaseMatch.branch for pr in prs},
         {"src-d/go-git": "vmarkovtsev"}, settings, prefixer_promise, 1, pdb, None)
     assert released_prs.empty
 
@@ -634,15 +630,15 @@ async def test_load_precomputed_pr_releases_tag(
         prs, [with_repository_full_name(s) for s in samples],
         default_branches, settings, 1, pdb)
     released_prs = await done_prs_facts_loader.load_precomputed_pr_releases(
-        [pr.pr[PullRequest.node_id.key] for pr in prs],
+        [pr.pr[PullRequest.node_id.name] for pr in prs],
         max(s.released.item().replace(tzinfo=timezone.utc) for s in samples) + timedelta(days=1),
-        {pr.pr[PullRequest.repository_full_name.key]: ReleaseMatch.tag for pr in prs},
+        {pr.pr[PullRequest.repository_full_name.name]: ReleaseMatch.tag for pr in prs},
         {}, settings, prefixer_promise, 1, pdb, None)
     assert len(released_prs) == len(prs)
     released_prs = await done_prs_facts_loader.load_precomputed_pr_releases(
-        [pr.pr[PullRequest.node_id.key] for pr in prs],
+        [pr.pr[PullRequest.node_id.name] for pr in prs],
         max(s.released.item().replace(tzinfo=timezone.utc) for s in samples) + timedelta(days=1),
-        {pr.pr[PullRequest.repository_full_name.key]: ReleaseMatch.tag for pr in prs},
+        {pr.pr[PullRequest.repository_full_name.name]: ReleaseMatch.tag for pr in prs},
         {}, ReleaseSettings({"github.com/src-d/go-git": ReleaseMatchSetting(
             tags="v.*", branches="", match=ReleaseMatch.tag),
         }), prefixer_promise, 1, pdb, None)
@@ -656,8 +652,8 @@ async def test_discover_update_unreleased_prs_smoke(
     prs = await read_sql_query(
         select([PullRequest]).where(and_(PullRequest.number.in_(range(1000, 1010)),
                                          PullRequest.merged_at.isnot(None))),
-        mdb, PullRequest, index=PullRequest.node_id.key)
-    prs[prs[PullRequest.merged_at.key].isnull()] = datetime.now(tz=timezone.utc)
+        mdb, PullRequest, index=PullRequest.node_id.name)
+    prs[prs[PullRequest.merged_at.name].isnull()] = datetime.now(tz=timezone.utc)
     utc = timezone.utc
     releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"], None, default_branches,
@@ -747,9 +743,9 @@ async def test_discover_update_unreleased_prs_released(
     prs = await read_sql_query(
         select([PullRequest]).where(and_(PullRequest.number.in_(range(1000, 1010)),
                                          PullRequest.merged_at.isnot(None))),
-        mdb, PullRequest, index=PullRequest.node_id.key)
+        mdb, PullRequest, index=PullRequest.node_id.name)
     prs["dead"] = False
-    prs[prs[PullRequest.merged_at.key].isnull()] = datetime.now(tz=timezone.utc)
+    prs[prs[PullRequest.merged_at.name].isnull()] = datetime.now(tz=timezone.utc)
     utc = timezone.utc
     time_from = datetime(2018, 10, 1, tzinfo=utc)
     time_to = datetime(2018, 12, 1, tzinfo=utc)
@@ -760,8 +756,8 @@ async def test_discover_update_unreleased_prs_released(
         release_match_setting_tag,
         prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
     released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
-        prs, releases, matched_bys, pd.DataFrame(columns=[Branch.commit_id.key]), {}, time_to, dag,
-        release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, None)
+        prs, releases, matched_bys, pd.DataFrame(columns=[Branch.commit_id.name]), {}, time_to,
+        dag, release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, None)
     await wait_deferred()
     if with_preloading_enabled:
         await pdb.cache.refresh()
@@ -780,7 +776,7 @@ async def test_discover_update_unreleased_prs_released(
         prs, time_to, LabelFilter.empty(), matched_bys, default_branches,
         release_match_setting_tag, prefixer_promise, 1, pdb)
     assert len(unreleased_prs) == 1
-    assert next(iter(unreleased_prs.keys())) == "MDExOlB1bGxSZXF1ZXN0MjI2NTg3NjE1"
+    assert next(iter(unreleased_prs.keys())) == 163287
     unreleased_prs = await merged_prs_facts_loader.load_merged_unreleased_pull_request_facts(
         prs, datetime(2018, 11, 1, tzinfo=utc), LabelFilter.empty(),
         matched_bys, default_branches, release_match_setting_tag, prefixer_promise, 1, pdb)
@@ -795,9 +791,9 @@ async def test_discover_update_unreleased_prs_exclude_inactive(
     prs = await read_sql_query(
         select([PullRequest]).where(and_(PullRequest.number.in_(range(1000, 1010)),
                                          PullRequest.merged_at.isnot(None))),
-        mdb, PullRequest, index=PullRequest.node_id.key)
+        mdb, PullRequest, index=PullRequest.node_id.name)
     prs["dead"] = False
-    prs[prs[PullRequest.merged_at.key].isnull()] = datetime.now(tz=timezone.utc)
+    prs[prs[PullRequest.merged_at.name].isnull()] = datetime.now(tz=timezone.utc)
     utc = timezone.utc
     time_from = datetime(2018, 10, 1, tzinfo=utc)
     time_to = datetime(2018, 12, 1, tzinfo=utc)
@@ -808,8 +804,8 @@ async def test_discover_update_unreleased_prs_exclude_inactive(
         release_match_setting_tag,
         prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
     released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
-        prs, releases, matched_bys, pd.DataFrame(columns=[Branch.commit_id.key]), {}, time_to, dag,
-        release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, None)
+        prs, releases, matched_bys, pd.DataFrame(columns=[Branch.commit_id.name]), {}, time_to,
+        dag, release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, None)
     await wait_deferred()
     if with_preloading_enabled:
         await pdb.cache.refresh()
@@ -862,8 +858,8 @@ async def test_discover_old_merged_unreleased_prs_smoke(
     assert len(unreleased_prs) == 11
     unreleased_prs = await read_sql_query(
         select([PullRequest]).where(PullRequest.node_id.in_(unreleased_prs)),
-        mdb, PullRequest, index=PullRequest.node_id.key)
-    assert (unreleased_prs[PullRequest.merged_at.key] >
+        mdb, PullRequest, index=PullRequest.node_id.name)
+    assert (unreleased_prs[PullRequest.merged_at.name] >
             datetime(2018, 10, 17, tzinfo=timezone.utc)).all()
     unreleased_prs = (await discover_inactive_merged_unreleased_prs(
         unreleased_time_from, unreleased_time_to, {"src-d/go-git"},
@@ -872,14 +868,14 @@ async def test_discover_old_merged_unreleased_prs_smoke(
     assert len(unreleased_prs) == 11
     unreleased_prs = await read_sql_query(
         select([PullRequest]).where(PullRequest.node_id.in_(unreleased_prs)),
-        mdb, PullRequest, index=PullRequest.node_id.key)
+        mdb, PullRequest, index=PullRequest.node_id.name)
     releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"], None, None, metrics_time_from, unreleased_time_to,
         release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
     await wait_deferred()
     unreleased_prs["dead"] = False
     released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
-        unreleased_prs, releases, matched_bys, pd.DataFrame(columns=[Branch.commit_id.key]), {},
+        unreleased_prs, releases, matched_bys, pd.DataFrame(columns=[Branch.commit_id.name]), {},
         unreleased_time_to, dag, release_match_setting_tag,
         prefixer_promise, 1, (6366825,), mdb, pdb, cache)
     await wait_deferred()
@@ -911,18 +907,18 @@ async def test_discover_old_merged_unreleased_prs_labels(
         unreleased_time_from, unreleased_time_to, {"src-d/go-git"},
         {}, LabelFilter({"bug", "plumbing"}, set()), {}, release_match_setting_tag,
         prefixer_promise, 1, pdb, cache))[0]
-    assert unreleased_prs == ["MDExOlB1bGxSZXF1ZXN0MjE2MTA0NzY1",
-                              "MDExOlB1bGxSZXF1ZXN0MjEzODQ1NDUx"]
+    assert unreleased_prs == [163253,
+                              163272]
     unreleased_prs = (await discover_inactive_merged_unreleased_prs(
         unreleased_time_from, unreleased_time_to, {"src-d/go-git"},
         {}, LabelFilter({"enhancement"}, set()), {}, release_match_setting_tag,
         prefixer_promise, 1, pdb, cache))[0]
-    assert unreleased_prs == ["MDExOlB1bGxSZXF1ZXN0MjEzODQwMDc3"]
+    assert unreleased_prs == [163273]
     unreleased_prs = (await discover_inactive_merged_unreleased_prs(
         unreleased_time_from, unreleased_time_to, {"src-d/go-git"},
         {}, LabelFilter({"bug"}, {"ssh"}), {}, release_match_setting_tag,
         prefixer_promise, 1, pdb, cache))[0]
-    assert unreleased_prs == ["MDExOlB1bGxSZXF1ZXN0MjE2MTA0NzY1"]
+    assert unreleased_prs == [163253]
 
 
 async def test_store_precomputed_done_none_assert(pdb, pr_samples):
@@ -932,23 +928,23 @@ async def test_store_precomputed_done_none_assert(pdb, pr_samples):
     })
     default_branches = {"one": "master"}
     prs = [MinedPullRequest(
-        pr={PullRequest.created_at.key: samples[0].merged,
-            PullRequest.repository_full_name.key: "one",
-            PullRequest.user_login.key: "vmarkovtsev",
-            PullRequest.merged_by_login.key: "mcuadros",
-            PullRequest.number.key: 1,
-            PullRequest.node_id.key: uuid.uuid4().hex},
+        pr={PullRequest.created_at.name: samples[0].merged,
+            PullRequest.repository_full_name.name: "one",
+            PullRequest.user_login.name: "vmarkovtsev",
+            PullRequest.merged_by_login.name: "mcuadros",
+            PullRequest.number.name: 1,
+            PullRequest.node_id.name: 100500},
         release={matched_by_column: settings.native["one"],
-                 Release.author.key: "foo",
-                 Release.url.key: "https://release",
-                 Release.node_id.key: "MDwhatever="},
+                 Release.author.name: "foo",
+                 Release.url.name: "https://release",
+                 Release.node_id.name: 777},
         comments=gen_dummy_df(samples[0].first_comment_on_first_review),
         commits=pd.DataFrame.from_records(
             [["mcuadros", "mcuadros", samples[0].first_commit]],
             columns=[
-                PullRequestCommit.committer_login.key,
-                PullRequestCommit.author_login.key,
-                PullRequestCommit.committed_date.key,
+                PullRequestCommit.committer_login.name,
+                PullRequestCommit.author_login.name,
+                PullRequestCommit.committed_date.name,
             ],
         ),
         reviews=gen_dummy_df(samples[0].first_comment_on_first_review),
@@ -977,9 +973,9 @@ async def test_store_merged_unreleased_pull_request_facts_smoke(
         release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
     task.cancel()
     for pr in prs:
-        if pr.pr[PullRequest.merged_at.key] is None:
-            pr.pr[PullRequest.merged_at.key] = datetime.now(tz=timezone.utc)
-    dfs.prs.loc[dfs.prs[PullRequest.merged_at.key].isnull(), PullRequest.merged_at.key] = \
+        if pr.pr[PullRequest.merged_at.name] is None:
+            pr.pr[PullRequest.merged_at.name] = datetime.now(tz=timezone.utc)
+    dfs.prs.loc[dfs.prs[PullRequest.merged_at.name].isnull(), PullRequest.merged_at.name] = \
         datetime.now(tz=timezone.utc)
     event = asyncio.Event()
     await update_unreleased_prs(
@@ -987,7 +983,7 @@ async def test_store_merged_unreleased_pull_request_facts_smoke(
         matched_bys, default_branches, release_match_setting_tag, 1, pdb, event)
     samples_good, samples_bad = [], []
     for pr in prs:
-        f = facts[pr.pr[PullRequest.node_id.key]]
+        f = facts[pr.pr[PullRequest.node_id.name]]
         fields = dict(f)
         if f.merged is None:
             fields["merged"] = datetime.now(tz=timezone.utc)
@@ -1004,20 +1000,20 @@ async def test_store_merged_unreleased_pull_request_facts_smoke(
     await store_merged_unreleased_pull_request_facts(
         zip(prs, samples_good), matched_bys, default_branches, release_match_setting_tag,
         1, pdb, event)
-    true_dict = {pr.pr[PullRequest.node_id.key]: s for pr, s in zip(prs, samples_good)}
+    true_dict = {pr.pr[PullRequest.node_id.name]: s for pr, s in zip(prs, samples_good)}
     ghmprf = GitHubMergedPullRequestFacts
     rows = await pdb.fetch_all(select([ghmprf]))
     assert len(rows) == 10
     for row in rows:
-        assert isinstance(row[ghmprf.activity_days.key], list)
-        assert len(row[ghmprf.activity_days.key]) > 0
+        assert isinstance(row[ghmprf.activity_days.name], list)
+        assert len(row[ghmprf.activity_days.name]) > 0
 
     new_dict = {
-        r[ghmprf.pr_node_id.key]: PullRequestFacts(
-            data=r[ghmprf.data.key],
+        r[ghmprf.pr_node_id.name]: PullRequestFacts(
+            data=r[ghmprf.data.name],
             repository_full_name="src-d/go-git",
-            author=r[ghmprf.author.key],
-            merger=r[ghmprf.merger.key])
+            author=r[ghmprf.author.name],
+            merger=r[ghmprf.merger.name])
         for r in rows
     }
     assert true_dict == new_dict
@@ -1033,13 +1029,13 @@ async def test_store_open_pull_request_facts_smoke(
     task.cancel()
     with pytest.raises(AssertionError):
         await store_open_pull_request_facts(
-            zip(prs, (facts[pr.pr[PullRequest.node_id.key]] for pr in prs)), 1, pdb)
+            zip(prs, (facts[pr.pr[PullRequest.node_id.name]] for pr in prs)), 1, pdb)
     samples = []
     true_dict = {}
     authors = {}
     for pr in prs:
-        authors[pr.pr[PullRequest.node_id.key]] = pr.pr[PullRequest.user_login.key]
-        f = facts[pr.pr[PullRequest.node_id.key]]
+        authors[pr.pr[PullRequest.node_id.name]] = pr.pr[PullRequest.user_login.name]
+        f = facts[pr.pr[PullRequest.node_id.name]]
         fields = dict(f)
         fields.update({
             "closed": None,
@@ -1050,8 +1046,8 @@ async def test_store_open_pull_request_facts_smoke(
         fields["closed"] = None
         f = PullRequestFacts.from_fields(**fields)
         samples.append(f)
-        true_dict[pr.pr[PullRequest.node_id.key]] = f
-    dfs.prs[PullRequest.closed_at.key] = None
+        true_dict[pr.pr[PullRequest.node_id.name]] = f
+    dfs.prs[PullRequest.closed_at.name] = None
     await store_open_pull_request_facts(zip(prs, samples), 1, pdb)
     if with_preloading_enabled:
         await pdb.cache.refresh()
@@ -1060,12 +1056,12 @@ async def test_store_open_pull_request_facts_smoke(
     assert len(rows) == 10
     new_dict = {}
     for row in rows:
-        assert isinstance(row[ghoprf.activity_days.key], list)
-        assert len(row[ghoprf.activity_days.key]) > 0
-        new_dict[row[ghoprf.pr_node_id.key]] = PullRequestFacts(
-            data=row[ghoprf.data.key],
+        assert isinstance(row[ghoprf.activity_days.name], list)
+        assert len(row[ghoprf.activity_days.name]) > 0
+        new_dict[row[ghoprf.pr_node_id.name]] = PullRequestFacts(
+            data=row[ghoprf.data.name],
             repository_full_name="src-d/go-git",
-            author=authors[row[ghoprf.pr_node_id.key]])
+            author=authors[row[ghoprf.pr_node_id.name]])
     assert true_dict == new_dict
 
     loaded_facts = await open_prs_facts_loader.load_open_pull_request_facts(dfs.prs, 1, pdb)
@@ -1090,7 +1086,7 @@ async def test_rescan_prs_mark_force_push_dropped(
         mdb_rw, pdb, branches, default_branches, pr_samples):
     mdb = mdb_rw
     samples, prs, settings = _gen_one_pr(pr_samples)
-    prs[0].pr[PullRequest.node_id.key] = "MDExOlB1bGxSZXF1ZXN0NTc5NDcxODA="
+    prs[0].pr[PullRequest.node_id.name] = 163437
 
     def with_mutables(s):
         s.repository_full_name = "src-d/go-git"
@@ -1106,7 +1102,7 @@ async def test_rescan_prs_mark_force_push_dropped(
     assert release_match == "branch|master"
     node_ids = await delete_force_push_dropped_prs(
         ["src-d/go-git"], branches, 1, (6366825,), mdb, pdb, None)
-    assert list(node_ids) == ["MDExOlB1bGxSZXF1ZXN0NTc5NDcxODA="]
+    assert list(node_ids) == [163437]
     release_match = await pdb.fetch_val(select([GitHubDonePullRequestFacts.release_match]))
     assert release_match is None
 
@@ -1125,6 +1121,7 @@ async def test_load_precomputed_done_facts_ids(
     sfacts = [with_mutables(s) for s in sfacts]
     await store_precomputed_done_facts(prs, sfacts, default_branches, settings, 1, pdb)
     pfacts, ambiguous = await done_prs_facts_loader.load_precomputed_done_facts_ids(
-        [prs[0].pr[PullRequest.node_id.key]], default_branches, settings, prefixer_promise, 1, pdb)
+        [prs[0].pr[PullRequest.node_id.name]],
+        default_branches, settings, prefixer_promise, 1, pdb)
     assert sfacts == list(pfacts.values())
     assert len(ambiguous["src-d/go-git"]) == 1

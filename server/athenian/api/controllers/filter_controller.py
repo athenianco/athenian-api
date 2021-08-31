@@ -76,20 +76,20 @@ async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Re
         repos, time_from, time_to, True, filt.as_ or [], release_settings, prefixer,
         filt.account, meta_ids, request.mdb, request.pdb, request.rdb, request.cache)
     mapped_jira = await load_mapped_jira_users(
-        filt.account, [u[User.node_id.key] for u in users],
+        filt.account, [u[User.node_id.name] for u in users],
         request.sdb, request.mdb, request.cache)
     prefixer = await prefixer.load()
     model = [
         DeveloperSummary(
-            login=prefixer.user_node_to_prefixed_login[u[User.node_id.key]],
-            avatar=u[User.avatar_url.key],
-            name=u[User.name.key],
+            login=prefixer.user_node_to_prefixed_login[u[User.node_id.name]],
+            avatar=u[User.avatar_url.name],
+            name=u[User.name.name],
             updates=DeveloperUpdates(**{
                 k: v for k, v in u["stats"].items()
                 # TODO(se7entyse7en): make `DeveloperUpdates` support all the stats we can get instead of doing this filtering. See also `mine_contributors`.  # noqa
                 if k in DeveloperUpdates.openapi_types
             }),
-            jira_user=mapped_jira.get(u[User.node_id.key]),
+            jira_user=mapped_jira.get(u[User.node_id.name]),
         )
         for u in sorted(users, key=operator.itemgetter("login"))
     ]
@@ -285,24 +285,24 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
             additions, deletions, changed_files, author_name, author_email, authored_date, \
             committer_name, committer_email, committed_date, author_date, commit_date, \
             author_avatar_url, committer_avatar_url in zip(
-            commits[PushCommit.author_login.key].values,
-            commits[PushCommit.committer_login.key].values,
-            commits[PushCommit.repository_full_name.key].values,
-            commits[PushCommit.sha.key].values,
-            commits[PushCommit.message.key].values,
-            commits[PushCommit.additions.key].values,
-            commits[PushCommit.deletions.key].values,
-            commits[PushCommit.changed_files.key].values,
-            commits[PushCommit.author_name.key].values,
-            commits[PushCommit.author_email.key].values,
-            commits[PushCommit.authored_date.key],
-            commits[PushCommit.committer_name.key].values,
-            commits[PushCommit.committer_email.key].values,
-            commits[PushCommit.committed_date.key],
-            commits[PushCommit.author_date.key],
-            commits[PushCommit.commit_date.key],
-            commits[PushCommit.author_avatar_url.key],
-            commits[PushCommit.committer_avatar_url.key]):
+            commits[PushCommit.author_login.name].values,
+            commits[PushCommit.committer_login.name].values,
+            commits[PushCommit.repository_full_name.name].values,
+            commits[PushCommit.sha.name].values,
+            commits[PushCommit.message.name].values,
+            commits[PushCommit.additions.name].values,
+            commits[PushCommit.deletions.name].values,
+            commits[PushCommit.changed_files.name].values,
+            commits[PushCommit.author_name.name].values,
+            commits[PushCommit.author_email.name].values,
+            commits[PushCommit.authored_date.name],
+            commits[PushCommit.committer_name.name].values,
+            commits[PushCommit.committer_email.name].values,
+            commits[PushCommit.committed_date.name],
+            commits[PushCommit.author_date.name],
+            commits[PushCommit.commit_date.name],
+            commits[PushCommit.author_avatar_url.name],
+            commits[PushCommit.committer_avatar_url.name]):
         obj = Commit(
             repository=repo_name_map[repository_full_name],
             hash=sha,
@@ -380,15 +380,15 @@ async def _load_jira_issues(jira_ids: Optional[Tuple[int, List[str]]],
                             mdb: databases.Database) -> Dict[str, LinkedJIRAIssue]:
     if jira_ids is None:
         for (_, facts) in releases:
-            facts.prs_jira = np.full(len(facts["prs_" + PullRequest.node_id.key]), None)
+            facts.prs_jira = np.full(len(facts["prs_" + PullRequest.node_id.name]), None)
         return {}
 
     pr_to_ix = {}
     for ri, (_, facts) in enumerate(releases):
-        node_ids = facts["prs_" + PullRequest.node_id.key]
+        node_ids = facts["prs_" + PullRequest.node_id.name]
         facts.prs_jira = [[] for _ in range(len(node_ids))]
         for pri, node_id in enumerate(node_ids):
-            pr_to_ix[node_id.decode()] = ri, pri
+            pr_to_ix[node_id] = ri, pri
     regiss = aliased(Issue, name="regular")
     epiciss = aliased(Epic, name="epic")
     prmap = aliased(NodePullRequestJiraIssues, name="m")
@@ -435,9 +435,9 @@ async def _build_release_set_response(releases: List[Tuple[Dict[str, Any], Relea
 
 def _filtered_release_from_tuple(t: Tuple[Dict[str, Any], ReleaseFacts]) -> FilteredRelease:
     details, facts = t
-    return FilteredRelease(name=details[Release.name.key],
-                           repository=details[Release.repository_full_name.key],
-                           url=details[Release.url.key],
+    return FilteredRelease(name=details[Release.name.name],
+                           repository=details[Release.repository_full_name.name],
+                           url=details[Release.url.name],
                            publisher=facts.publisher,
                            published=facts.published.item().replace(tzinfo=timezone.utc),
                            age=facts.age,
@@ -459,11 +459,11 @@ def _extract_release_prs(facts: ReleaseFacts) -> List[ReleasedPullRequest]:
             jira=jira or None,
         )
         for number, title, adds, dels, author, jira in zip(
-            facts["prs_" + PullRequest.number.key],
-            facts["prs_" + PullRequest.title.key],
-            facts["prs_" + PullRequest.additions.key],
-            facts["prs_" + PullRequest.deletions.key],
-            facts["prs_" + PullRequest.user_login.key],
+            facts["prs_" + PullRequest.number.name],
+            facts["prs_" + PullRequest.title.name],
+            facts["prs_" + PullRequest.additions.name],
+            facts["prs_" + PullRequest.deletions.name],
+            facts["prs_" + PullRequest.user_login.name],
             facts.prs_jira,
         )
     ]

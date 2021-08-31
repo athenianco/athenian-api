@@ -82,15 +82,15 @@ async def get_team(request: AthenianWebRequest, id: int) -> web.Response:
         team = await sdb_conn.fetch_one(select([Team]).where(Team.id == id))
         if team is None:
             return ResponseError(NotFoundError("Team %d was not found." % id)).response
-        account = team[Team.owner_id.key]
+        account = team[Team.owner_id.name]
         await get_user_account_status(user, account, sdb_conn, request.cache)
         meta_ids = await get_metadata_account_ids(account, sdb_conn, request.cache)
     members = await _get_all_team_members(
         [team], account, meta_ids, request.mdb, request.sdb, request.cache)
-    model = TeamListItem(id=team[Team.id.key],
-                         name=team[Team.name.key],
-                         parent=team[Team.parent_id.key],
-                         members=sorted((members[m] for m in team[Team.members.key]
+    model = TeamListItem(id=team[Team.id.name],
+                         name=team[Team.name.name],
+                         parent=team[Team.parent_id.name],
+                         members=sorted((members[m] for m in team[Team.members.name]
                                          if m in members),
                                         key=lambda u: u.login))
     return model_response(model)
@@ -119,10 +119,10 @@ async def _list_loaded_teams(teams: List[Mapping[str, Any]],
                              ) -> web.Response:
     all_members = await _get_all_team_members(
         teams, account, meta_ids, request.mdb, request.sdb, request.cache)
-    items = [TeamListItem(id=t[Team.id.key],
-                          name=t[Team.name.key],
-                          parent=t[Team.parent_id.key],
-                          members=[all_members[m] for m in t[Team.members.key]
+    items = [TeamListItem(id=t[Team.id.name],
+                          name=t[Team.name.name],
+                          parent=t[Team.parent_id.name],
+                          members=[all_members[m] for m in t[Team.members.name]
                                    if m in all_members])
              for t in teams]
     return model_response(items)
@@ -220,13 +220,13 @@ async def _get_all_team_members(teams: Iterable[Mapping],
                                 mdb: databases.Database,
                                 sdb: databases.Database,
                                 cache: Optional[aiomcache.Client]) -> Dict[str, Contributor]:
-    all_members_prefixed = set(chain.from_iterable([t[Team.members.key] for t in teams]))
+    all_members_prefixed = set(chain.from_iterable([t[Team.members.name] for t in teams]))
     all_members = {m.rsplit("/", 1)[1]: m for m in all_members_prefixed}
     user_by_login = {
-        u[User.login.key]: u for u in await mine_users(all_members, meta_ids, mdb, cache)
+        u[User.login.name]: u for u in await mine_users(all_members, meta_ids, mdb, cache)
     }
     mapped_jira = await load_mapped_jira_users(
-        account, [u[User.node_id.key] for u in user_by_login.values()], sdb, mdb, cache)
+        account, [u[User.node_id.name] for u in user_by_login.values()], sdb, mdb, cache)
     all_contributors = {}
     for m in all_members:
         try:
@@ -235,12 +235,12 @@ async def _get_all_team_members(teams: Iterable[Mapping],
             login = all_members[m]
             c = Contributor(login=login)
         else:
-            login = ud[User.html_url.key].split("://", 1)[1]
+            login = ud[User.html_url.name].split("://", 1)[1]
             c = Contributor(login=login,
-                            name=ud[User.name.key],
-                            email=ud[User.email.key],
-                            picture=ud[User.avatar_url.key],
-                            jira_user=mapped_jira.get(ud[User.node_id.key]))
+                            name=ud[User.name.name],
+                            email=ud[User.email.name],
+                            picture=ud[User.avatar_url.name],
+                            jira_user=mapped_jira.get(ud[User.node_id.name]))
         all_contributors[login] = c
 
     if missing := all_members_prefixed - all_contributors.keys():

@@ -6,7 +6,7 @@ from typing import Any, Collection, Iterable, Optional, Sequence, Tuple, Type, U
 
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import Column, DateTime
+from sqlalchemy import Column, DateTime, Integer
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import ClauseElement
 
@@ -69,14 +69,18 @@ def wrap_sql_query(data: Iterable[Iterable[Any]],
         columns[0]
     except TypeError:
         dt_columns = _extract_datetime_columns(columns.__table__.columns)
+        i_columns = _extract_integer_columns(columns.__table__.columns)
         columns = [c.name for c in columns.__table__.columns]
     else:
         dt_columns = _extract_datetime_columns(columns)
-        columns = [(c.key if not isinstance(c, str) else c) for c in columns]
+        i_columns = _extract_integer_columns(columns)
+        columns = [(c.name if not isinstance(c, str) else c) for c in columns]
     frame = pd.DataFrame.from_records(data, columns=columns, coerce_float=True)
+    postprocess_datetime(frame, columns=dt_columns)
+    postprocess_integer(frame, columns=i_columns)
     if index is not None:
         frame.set_index(index, inplace=True)
-    return postprocess_datetime(frame, columns=dt_columns)
+    return frame
 
 
 def _extract_datetime_columns(columns: Iterable[Union[Column, str]]) -> Collection[str]:
@@ -89,8 +93,19 @@ def _extract_datetime_columns(columns: Iterable[Union[Column, str]]) -> Collecti
     ]
 
 
+def _extract_integer_columns(columns: Iterable[Union[Column, str]]) -> Collection[str]:
+    return [
+        c.name for c in columns
+        if not isinstance(c, str) and (
+            isinstance(c.type, Integer) or
+            (isinstance(c.type, type) and issubclass(c.type, Integer))
+        ) and not getattr(c, "nullable", False)
+    ]
+
+
 def postprocess_datetime(frame: pd.DataFrame,
-                         columns: Optional[Iterable[str]] = None) -> pd.DataFrame:
+                         columns: Optional[Iterable[str]] = None,
+                         ) -> pd.DataFrame:
     """Ensure *inplace* that all the timestamps inside the dataframe are valid UTC or NaT.
 
     :return: Fixed dataframe - the same instance as `frame`.
@@ -116,6 +131,19 @@ def postprocess_datetime(frame: pd.DataFrame,
             frame[col] = fc.dt.tz_localize(timezone.utc)
         except (AttributeError, TypeError):
             continue
+    return frame
+
+
+def postprocess_integer(frame: pd.DataFrame, columns: Iterable[str]) -> pd.DataFrame:
+    """Ensure *inplace* that all the integers inside the dataframe are not objects.
+
+    :return: Fixed dataframe - the same instance as `frame`.
+    """
+    for col in columns:
+        try:
+            frame[col] = frame[col].astype(int, copy=False)
+        except TypeError as e:
+            raise ValueError(f"Column {col} is not all-integer") from e
     return frame
 
 

@@ -18,6 +18,7 @@ import aiosqlite
 import asyncpg
 import databases.core
 from databases.interfaces import ConnectionBackend, TransactionBackend
+import numpy as np
 import sentry_sdk
 from sqlalchemy.dialects.postgresql import hstore
 from sqlalchemy.sql import ClauseElement
@@ -559,3 +560,7 @@ def check_schema_versions(metadata_db: str,
 
 
 DatabaseLike = Union[ParallelDatabase, FastConnection]
+
+# https://stackoverflow.com/questions/49456158/integer-in-python-pandas-becomes-blob-binary-in-sqlite  # noqa
+for dtype in (np.uint32, np.int32, np.uint64, np.int64):
+    sqlite3.register_adapter(dtype, lambda val: int(val))

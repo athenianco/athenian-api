@@ -6,12 +6,12 @@ from athenian.api.models.metadata.github import Release
 matched_by_column = "matched_by"
 index_name = "pull_request_node_id"
 release_columns = [
-    Release.published_at.key,
-    Release.author.key,
-    Release.author_node_id.key,
-    Release.url.key,
-    Release.node_id.key,
-    Release.repository_full_name.key,
+    Release.published_at.name,
+    Release.author.name,
+    Release.author_node_id.name,
+    Release.url.name,
+    Release.node_id.name,
+    Release.repository_full_name.name,
     matched_by_column,
 ]
 

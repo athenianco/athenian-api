@@ -12,8 +12,7 @@ from athenian.api.controllers.invitation_controller import admin_backdoor, decod
 from athenian.api.models.metadata.github import FetchProgress
 from athenian.api.models.state.models import Account, AccountFeature, AccountGitHubAccount, \
     AccountJiraInstallation, Feature, FeatureComponent, God, Invitation, ReleaseSetting, \
-    RepositorySet, UserAccount, \
-    UserToken
+    RepositorySet, UserAccount, UserToken
 
 
 async def clean_state(sdb: databases.Database) -> int:
@@ -90,14 +89,14 @@ async def test_gen_invitation_new(client, headers, sdb, app):
         select([Invitation])
         .where(and_(Invitation.id == iid, Invitation.salt == salt)))
     assert inv is not None
-    assert inv[Invitation.is_active.key]
-    assert inv[Invitation.accepted.key] == 0
-    assert inv[Invitation.account_id.key] == 1
-    assert inv[Invitation.created_by.key] == "auth0|5e1f6dfb57bc640ea390557b"
+    assert inv[Invitation.is_active.name]
+    assert inv[Invitation.accepted.name] == 0
+    assert inv[Invitation.account_id.name] == 1
+    assert inv[Invitation.created_by.name] == "auth0|5e1f6dfb57bc640ea390557b"
     try:
-        assert inv[Invitation.created_at.key] > datetime.now(timezone.utc) - timedelta(minutes=1)
+        assert inv[Invitation.created_at.name] > datetime.now(timezone.utc) - timedelta(minutes=1)
     except TypeError:
-        assert inv[Invitation.created_at.key] > datetime.utcnow() - timedelta(minutes=1)
+        assert inv[Invitation.created_at.name] > datetime.utcnow() - timedelta(minutes=1)
 
 
 async def test_gen_invitation_no_admin(client, headers):
@@ -346,9 +345,9 @@ async def test_accept_invitation_admin(client, headers, sdb, disable_default_use
     num_accounts_after = len(accounts)
     assert num_accounts_after == num_accounts_before + 1
     for row in accounts:
-        if row[Account.id.key] == 4:
-            assert row[Account.secret_salt.key] not in (None, 0)
-            secret = row[Account.secret.key]
+        if row[Account.id.name] == 4:
+            assert row[Account.secret_salt.name] not in (None, 0)
+            secret = row[Account.secret.name]
             assert isinstance(secret, str)
             assert len(secret) == 8
             assert secret != Account.missing_secret

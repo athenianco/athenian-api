@@ -180,7 +180,7 @@ class MetricEntriesCalculator:
             release_settings, prefixer, fresh, need_jira_mapping(metrics))
         df_facts = df_from_structs(mined_facts)
         lines_grouper = partial(group_by_lines, lines)
-        repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.key, repositories)
+        repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.name, repositories)
         with_grouper = partial(group_prs_by_participants, participants)
         groups = group_to_indexes(df_facts, lines_grouper, repo_grouper, with_grouper)
         return calc(df_facts, time_intervals, groups)
@@ -236,7 +236,7 @@ class MetricEntriesCalculator:
             fresh, False)
         df_facts = df_from_structs(mined_facts)
         lines_grouper = partial(group_by_lines, lines)
-        repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.key, repositories)
+        repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.name, repositories)
         with_grouper = partial(group_prs_by_participants, participants)
         groups = group_to_indexes(df_facts, lines_grouper, repo_grouper, with_grouper)
         hists = calc(df_facts, [[time_from, time_to]], groups, defs)
@@ -390,7 +390,7 @@ class MetricEntriesCalculator:
             labels, jira, release_settings, prefixer, self._account, self._meta_ids,
             self._mdb, self._pdb, self._rdb, self._cache)
         df_facts = df_from_structs([f for _, f in releases])
-        repo_grouper = partial(group_by_repo, Release.repository_full_name.key, repositories)
+        repo_grouper = partial(group_by_repo, Release.repository_full_name.name, repositories)
         participant_grouper = partial(group_releases_by_participants, participants)
         groups = group_to_indexes(df_facts, participant_grouper, repo_grouper)
         values = calc(df_facts, time_intervals, groups)
@@ -509,7 +509,7 @@ class MetricEntriesCalculator:
         df_check_runs = await mine_check_runs(
             time_from, time_to, all_repositories, all_pushers, labels, jira,
             self._meta_ids, self._mdb, self._cache)
-        repo_grouper = partial(group_by_repo, CheckRun.repository_full_name.key, repositories)
+        repo_grouper = partial(group_by_repo, CheckRun.repository_full_name.name, repositories)
         commit_author_grouper = partial(group_check_runs_by_pushers, pushers)
         if split_by_check_runs:
             check_runs_grouper, suite_node_ids, suite_sizes = make_check_runs_count_grouper(
@@ -720,7 +720,7 @@ class MetricEntriesCalculator:
             _, _, new_jira_map = await gather(
                 done_jira_map_task, precomputed_unreleased_jira_map_task, new_jira_map_task)
             for pr, facts in zip(mined_prs, mined_facts):
-                facts.jira_id = new_jira_map.get(pr.pr[PullRequest.node_id.key])
+                facts.jira_id = new_jira_map.get(pr.pr[PullRequest.node_id.name])
         all_facts = list(chain(precomputed_facts.values(), mined_facts))
         return all_facts, with_jira_map
 

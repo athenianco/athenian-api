@@ -47,10 +47,10 @@ async def paginate_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     else:
         other_prs, _ = await tasks[0]
     if done_ats:
-        updateds = np.concatenate([other_prs[PullRequest.updated_at.key].values,
+        updateds = np.concatenate([other_prs[PullRequest.updated_at.name].values,
                                    np.asarray(list(done_ats.values()))]).astype("datetime64[ns]")
     elif len(other_prs) > 0:
-        updateds = other_prs[PullRequest.updated_at.key].values
+        updateds = other_prs[PullRequest.updated_at.name].values
     else:
         updateds = np.array([time_from, filt.request.date_to], dtype="datetime64[ns]")
     updateds = np.sort(updateds.astype("datetime64[D]"))

@@ -759,8 +759,8 @@ async def test_calc_pull_request_facts_github_unreleased_precomputed(
     unreleased_facts = await pdb.fetch_all(select([GitHubMergedPullRequestFacts]))
     assert len(unreleased_facts) == 2
     for row in unreleased_facts:
-        assert row[GitHubMergedPullRequestFacts.data.key] is not None, \
-            row[GitHubMergedPullRequestFacts.pr_node_id.key]
+        assert row[GitHubMergedPullRequestFacts.data.name] is not None, \
+            row[GitHubMergedPullRequestFacts.pr_node_id.name]
     facts2 = await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
     assert set(facts1) == set(facts2)
 

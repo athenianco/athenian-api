@@ -86,7 +86,7 @@ class PullRequestMiner:
         """Return the bound dataframes with PR information."""
         return self._dfs
 
-    def drop(self, node_ids: Collection[str]) -> pd.Index:
+    def drop(self, node_ids: Collection[int]) -> pd.Index:
         """
         Remove PRs from the given collection of PR node IDs in-place.
 
@@ -131,7 +131,7 @@ class PullRequestMiner:
             participants: PRParticipants,
             labels: LabelFilter,
             jira: JIRAFilter,
-            pr_blacklist: Optional[Tuple[Collection[str], Dict[str, List[str]]]],
+            pr_blacklist: Optional[Tuple[Collection[int], Dict[str, List[int]]]],
             truncate: bool,
             **_) -> Tuple[PRDataFrames,
                           Dict[str, Tuple[str, PullRequestFacts]],
@@ -152,7 +152,7 @@ class PullRequestMiner:
         if pr_blacklist is not None:
             to_remove.update(pr_blacklist[0])
         to_remove.update(dfs.prs.index.take(np.nonzero(
-            np.in1d(dfs.prs[PullRequest.repository_full_name.key].values,
+            np.in1d(dfs.prs[PullRequest.repository_full_name.name].values,
                     list(repositories), assume_unique=True, invert=True),
         )[0]))
         time_to = None if truncate else pd.Timestamp(date_to, tzinfo=timezone.utc)
@@ -172,7 +172,8 @@ class PullRequestMiner:
             date_from.toordinal(), date_to.toordinal(), exclude_inactive, release_settings,
             updated_min.timestamp() if updated_min is not None else None,
             updated_max.timestamp() if updated_max is not None else None,
-            ",".join(sorted(pr_blacklist[0]) if pr_blacklist is not None else []), truncate,
+            ",".join(map(str, sorted(pr_blacklist[0]) if pr_blacklist is not None else [])),
+            truncate,
         ),
         postprocess=_postprocess_cached_prs,
     )
@@ -189,7 +190,7 @@ class PullRequestMiner:
                     release_settings: ReleaseSettings,
                     updated_min: Optional[datetime],
                     updated_max: Optional[datetime],
-                    pr_blacklist: Optional[Tuple[Collection[str], Dict[str, List[str]]]],
+                    pr_blacklist: Optional[Tuple[Collection[int], Dict[str, List[int]]]],
                     truncate: bool,
                     prefixer: PrefixerPromise,
                     account: int,
@@ -322,9 +323,12 @@ class PullRequestMiner:
         serialize=lambda r: pickle.dumps(r[:-1]),
         deserialize=_deserialize_mine_by_ids_cache,
         key=lambda prs, unreleased, releases, time_to, truncate=True, with_jira=True, **_: (
-            ",".join(prs.index), ",".join(unreleased),
-            ",".join(releases[Release.node_id.key].values), time_to.timestamp(),
-            truncate, with_jira,
+            ",".join(map(str, prs.index.values)),
+            ",".join(unreleased),
+            ",".join(map(str, releases[Release.node_id.name].values)),
+            time_to.timestamp(),
+            truncate,
+            with_jira,
         ),
     )
     async def mine_by_ids(cls,
@@ -431,18 +435,18 @@ class PullRequestMiner:
                 PullRequestCommit, node_ids, time_to, meta_ids, mdb,
                 columns=[PullRequestCommit.authored_date, PullRequestCommit.committed_date,
                          PullRequestCommit.author_login, PullRequestCommit.committer_login,
-                         PullRequestCommit.author_user, PullRequestCommit.committer_user],
+                         PullRequestCommit.author_user_id, PullRequestCommit.committer_user_id],
                 created_at=truncate)
 
         @sentry_span
         async def map_releases():
             if truncate:
-                merged_mask = (prs[PullRequest.merged_at.key] < time_to).values
+                merged_mask = (prs[PullRequest.merged_at.name] < time_to).values
                 nonlocal merged_unreleased_indexes
                 merged_unreleased_indexes = \
-                    np.nonzero((prs[PullRequest.merged_at.key] >= time_to).values)[0]
+                    np.nonzero((prs[PullRequest.merged_at.name] >= time_to).values)[0]
             else:
-                merged_mask = prs[PullRequest.merged_at.key].notnull()
+                merged_mask = prs[PullRequest.merged_at.name].notnull()
             merged_mask &= ~prs.index.isin(unreleased)
             merged_prs = prs.take(np.where(merged_mask)[0])
             subtasks = [cls.mappers.prs_to_releases(
@@ -450,7 +454,7 @@ class PullRequestMiner:
                 dags, release_settings, prefixer, account, meta_ids, mdb, pdb, cache),
                 MergedPRFactsLoader.load_merged_unreleased_pull_request_facts(
                     prs.take(np.where(~merged_mask)[0]),
-                    nonemax(releases[Release.published_at.key].nonemax(), time_to),
+                    nonemax(releases[Release.published_at.name].nonemax(), time_to),
                     LabelFilter.empty(), matched_bys, default_branches, release_settings,
                     prefixer, account, pdb)]
             df_facts, other_facts = await gather(*subtasks)
@@ -464,7 +468,7 @@ class PullRequestMiner:
         async def fetch_labels():
             return await cls._read_filtered_models(
                 PullRequestLabel, node_ids, time_to, meta_ids, mdb,
-                columns=[sql.func.lower(PullRequestLabel.name).label(PullRequestLabel.name.key),
+                columns=[sql.func.lower(PullRequestLabel.name).label(PullRequestLabel.name.name),
                          PullRequestLabel.description,
                          PullRequestLabel.color],
                 created_at=False)
@@ -480,8 +484,9 @@ class PullRequestMiner:
                 _issue.acc_id, _issue_epic.key.label("epic"),
             ]
             if not with_jira:
-                return pd.DataFrame(columns=[col.key for col in selected]).set_index(
-                    [PullRequest.node_id.key, _issue.key.key])
+                df = pd.DataFrame(columns=[col.name for col in selected])
+                df[PullRequest.node_id.name] = df[PullRequest.node_id.name].astype(int)
+                return df.set_index([PullRequest.node_id.name, _issue.key.name])
             df = await read_sql_query(
                 sql.select(selected).select_from(sql.join(
                     PullRequest, sql.join(
@@ -495,31 +500,31 @@ class PullRequestMiner:
                 )).where(sql.and_(PullRequest.node_id.in_(node_ids),
                                   PullRequest.acc_id.in_(meta_ids),
                                   _issue.is_deleted.is_(False))),
-                mdb, columns=selected, index=[PullRequest.node_id.key, _issue.key.key])
+                mdb, columns=selected, index=[PullRequest.node_id.name, _issue.key.name])
             if df.empty:
-                df.drop([Issue.acc_id.key, Issue.components.key], inplace=True, axis=1)
+                df.drop([Issue.acc_id.name, Issue.components.name], inplace=True, axis=1)
                 return df
-            components = df[[Issue.acc_id.key, Issue.components.key]] \
-                .groupby(Issue.acc_id.key, sort=False).aggregate(lambda s: set(flatten(s)))
+            components = df[[Issue.acc_id.name, Issue.components.name]] \
+                .groupby(Issue.acc_id.name, sort=False).aggregate(lambda s: set(flatten(s)))
             rows = await mdb.fetch_all(
                 sql.select([Component.acc_id, Component.id, Component.name])
                 .where(sql.or_(*(sql.and_(Component.id.in_(vals),
                                           Component.acc_id == int(acc))
                                  for acc, vals in zip(components.index.values,
-                                                      components[Issue.components.key].values)))))
+                                                      components[Issue.components.name].values)))))
             cmap = {}
             for r in rows:
                 cmap.setdefault(r[0], {})[r[1]] = r[2].lower()
-            df[Issue.labels.key] = (
-                df[Issue.labels.key].apply(lambda i: [s.lower() for s in (i or [])])
+            df[Issue.labels.name] = (
+                df[Issue.labels.name].apply(lambda i: [s.lower() for s in (i or [])])
                 +
-                df[[Issue.acc_id.key, Issue.components.key]]
-                .apply(lambda row: ([cmap[row[Issue.acc_id.key]][c]
-                                    for c in row[Issue.components.key]]
-                                    if row[Issue.components.key] is not None else []),
+                df[[Issue.acc_id.name, Issue.components.name]]
+                .apply(lambda row: ([cmap[row[Issue.acc_id.name]][c]
+                                    for c in row[Issue.components.name]]
+                                    if row[Issue.components.name] is not None else []),
                        axis=1)
             )
-            df.drop([Issue.acc_id.key, Issue.components.key], inplace=True, axis=1)
+            df.drop([Issue.acc_id.name, Issue.components.name], inplace=True, axis=1)
             return df
 
         # the order is important: it provides the best performance
@@ -542,7 +547,7 @@ class PullRequestMiner:
                 merged_unreleased_prs.index.values.astype("S")))[0]
             labels = {}
             for k, v in zip(dfs.labels.index.values[label_matches],
-                            dfs.labels[PullRequestLabel.name.key].take(label_matches).values):
+                            dfs.labels[PullRequestLabel.name.name].take(label_matches).values):
                 try:
                     labels[k].append(v)
                 except KeyError:
@@ -581,7 +586,7 @@ class PullRequestMiner:
                    cache: Optional[aiomcache.Client],
                    updated_min: Optional[datetime] = None,
                    updated_max: Optional[datetime] = None,
-                   pr_blacklist: Optional[Tuple[Collection[str], Dict[str, List[str]]]] = None,
+                   pr_blacklist: Optional[Tuple[Collection[int], Dict[str, List[int]]]] = None,
                    truncate: bool = True,
                    ) -> Tuple["PullRequestMiner",
                               Dict[str, Tuple[str, PullRequestFacts]],
@@ -712,25 +717,25 @@ class PullRequestMiner:
         if branches.empty:
             return prs
         merged_prs = prs.take(np.nonzero((
-            prs[PullRequest.merged_at.key] <= datetime.now(timezone.utc) - timedelta(hours=1)
+            prs[PullRequest.merged_at.name] <= datetime.now(timezone.utc) - timedelta(hours=1)
         ).values)[0])
         # timedelta(hours=1) must match the `exptime` of `fetch_repository_commits()`
         # commits DAGs are cached and may be not fully up to date, so otherwise some PRs may
         # appear as wrongly force push dropped; see also: DEV-554
         if merged_prs.empty:
             return prs
-        pr_numbers = merged_prs[PullRequest.number.key].values
+        pr_numbers = merged_prs[PullRequest.number.name].values
         pr_node_ids = merged_prs.index.values
-        pr_repos = merged_prs[PullRequest.repository_full_name.key].values
+        pr_repos = merged_prs[PullRequest.repository_full_name.name].values
         repo_order = np.argsort(pr_repos)
         unique_pr_repos, pr_repo_counts = np.unique(pr_repos, return_counts=True)
         pr_merge_hashes = \
-            merged_prs[PullRequest.merge_commit_sha.key].values.astype("S40")[repo_order]
+            merged_prs[PullRequest.merge_commit_sha.name].values.astype("S40")[repo_order]
         pos = 0
         queries = []
         dead = []
         acc_id_cond = PushCommit.acc_id.in_(meta_ids)
-        min_commit_date = merged_prs[PullRequest.merged_at.key].min()
+        min_commit_date = merged_prs[PullRequest.merged_at.name].min()
         committed_date_cond = PushCommit.committed_date >= min_commit_date
         substr = sql.func.substr(PushCommit.message, 1, 32)
         sqlite = mdb.url.dialect == "sqlite"
@@ -760,7 +765,7 @@ class PullRequestMiner:
                     sql.select([PushCommit.node_id.label("commit_node_id"),
                                 PushCommit.sha.label("sha"),
                                 sql.literal_column("'" + repo + "'").label("repo"),
-                                sql.literal_column("'" + pr_node_id + "'").label("pr_node_id"),
+                                sql.literal_column(str(pr_node_id)).label("pr_node_id"),
                                 PushCommit.committed_date,
                                 PushCommit.pushed_date])
                     .where(sql.and_(acc_id_cond,
@@ -807,16 +812,16 @@ class PullRequestMiner:
             return prs
         # take the commit that was committed the latest; if there are multiple, prefer the one
         # with pushed_date = null
-        resolved.sort_values([PushCommit.committed_date.key, PushCommit.pushed_date.key],
+        resolved.sort_values([PushCommit.committed_date.name, PushCommit.pushed_date.name],
                              ascending=False, inplace=True, na_position="first")
         resolved.drop_duplicates("pr_node_id", inplace=True)
         # patch the commit IDs and the hashes
         alive_node_ids = resolved["pr_node_id"]
         if columns is PullRequest or PullRequest.merge_commit_id in columns:
-            prs.loc[alive_node_ids, PullRequest.merge_commit_id.key] = \
+            prs.loc[alive_node_ids, PullRequest.merge_commit_id.name] = \
                 resolved["commit_node_id"].values
         if columns is PullRequest or PullRequest.merge_commit_sha in columns:
-            prs.loc[alive_node_ids, PullRequest.merge_commit_sha.key] = resolved["sha"].values
+            prs.loc[alive_node_ids, PullRequest.merge_commit_sha.name] = resolved["sha"].values
         prs.loc[alive_node_ids, "dead"] = False
         return prs
 
@@ -906,16 +911,16 @@ class PullRequestMiner:
         else:
             query = await generate_jira_prs_query(
                 filters, jira, mdb, cache, columns=selected_columns)
-        prs = await read_sql_query(query, mdb, columns, index=PullRequest.node_id.key)
+        prs = await read_sql_query(query, mdb, columns, index=PullRequest.node_id.name)
         if remove_acc_id:
-            del prs[PullRequest.acc_id.key]
-        if PullRequest.closed.key in prs:
+            del prs[PullRequest.acc_id.name]
+        if PullRequest.closed.name in prs:
             cls.adjust_pr_closed_merged_timestamps(prs)
         if not labels or embedded_labels_query:
             return prs
         lcols = [
             PullRequestLabel.pull_request_node_id,
-            sql.func.lower(PullRequestLabel.name).label(PullRequestLabel.name.key),
+            sql.func.lower(PullRequestLabel.name).label(PullRequestLabel.name.name),
             PullRequestLabel.description,
             PullRequestLabel.color,
         ]
@@ -923,19 +928,19 @@ class PullRequestMiner:
             sql.select(lcols)
             .where(sql.and_(PullRequestLabel.pull_request_node_id.in_(prs.index),
                             PullRequestLabel.acc_id.in_(meta_ids))),
-            mdb, lcols, index=PullRequestLabel.pull_request_node_id.key)
+            mdb, lcols, index=PullRequestLabel.pull_request_node_id.name)
         left = cls.find_left_by_labels(
-            df_labels.index, df_labels[PullRequestLabel.name.key].values, labels)
+            df_labels.index, df_labels[PullRequestLabel.name.name].values, labels)
         prs = prs.take(np.nonzero(prs.index.isin(left))[0])
         return prs
 
     @staticmethod
     def adjust_pr_closed_merged_timestamps(prs_df: pd.DataFrame) -> None:
         """Force set `closed_at` and `merged_at` to NULL if not `closed`. Remove `closed`."""
-        not_closed = ~prs_df[PullRequest.closed.key].values
-        prs_df.loc[not_closed, PullRequest.closed_at.key] = pd.NaT
-        prs_df.loc[not_closed, PullRequest.merged_at.key] = pd.NaT
-        prs_df.drop(columns=PullRequest.closed.key, inplace=True)
+        not_closed = ~prs_df[PullRequest.closed.name].values
+        prs_df.loc[not_closed, PullRequest.closed_at.name] = pd.NaT
+        prs_df.loc[not_closed, PullRequest.merged_at.name] = pd.NaT
+        prs_df.drop(columns=PullRequest.closed.name, inplace=True)
 
     @classmethod
     @sentry_span
@@ -961,13 +966,13 @@ class PullRequestMiner:
         if not jira:
             return await read_sql_query(sql.select([PullRequest])
                                         .where(PullRequest.node_id.in_(node_ids)),
-                                        mdb, PullRequest, index=PullRequest.node_id.key)
+                                        mdb, PullRequest, index=PullRequest.node_id.name)
         return await cls.filter_jira(node_ids, jira, meta_ids, mdb, cache)
 
     @classmethod
     @sentry_span
     async def filter_jira(cls,
-                          pr_node_ids: Iterable[str],
+                          pr_node_ids: Iterable[int],
                           jira: JIRAFilter,
                           meta_ids: Tuple[int, ...],
                           mdb: databases.Database,
@@ -977,7 +982,7 @@ class PullRequestMiner:
         assert jira
         filters = [PullRequest.node_id.in_(pr_node_ids)]
         query = await generate_jira_prs_query(filters, jira, mdb, cache, columns=columns)
-        return await read_sql_query(query, mdb, columns, index=PullRequest.node_id.key)
+        return await read_sql_query(query, mdb, columns, index=PullRequest.node_id.name)
 
     @staticmethod
     def _check_participants_compatibility(cached_participants: PRParticipants,
@@ -994,13 +999,13 @@ class PullRequestMiner:
     @classmethod
     @sentry_span
     def _remove_spurious_prs(cls, time_from: datetime, dfs: PRDataFrames) -> None:
-        old_releases = np.where(dfs.releases[Release.published_at.key] < time_from)[0]
+        old_releases = np.where(dfs.releases[Release.published_at.name] < time_from)[0]
         if len(old_releases) == 0:
             return
         cls._drop(dfs, dfs.releases.index[old_releases])
 
     @classmethod
-    def _drop(cls, dfs: PRDataFrames, pr_ids: Collection[str]) -> None:
+    def _drop(cls, dfs: PRDataFrames, pr_ids: Collection[int]) -> None:
         if len(pr_ids) == 0:
             return
         for df in dfs:
@@ -1025,7 +1030,7 @@ class PullRequestMiner:
                                  ("review_requests", PullRequestReviewRequest.created_at),
                                  ("comments", PullRequestComment.created_at)):
                 df = getattr(dfs, df_name)
-                setattr(dfs, df_name, df.take(np.where(df[col.key] < time_to)[0]))
+                setattr(dfs, df_name, df.take(np.where(df[col.name] < time_to)[0]))
         passed = []
         dict_iter = (
             (dfs.prs, PullRequest.user_login, None, PRParticipationKind.AUTHOR),
@@ -1036,14 +1041,14 @@ class PullRequestMiner:
             col_parts = participants.get(pk)
             if not col_parts:
                 continue
-            mask = df[part_col.key].isin(col_parts)
+            mask = df[part_col.name].isin(col_parts)
             if time_to is not None and date_col is not None:
-                mask &= df[date_col.key] < time_to
+                mask &= df[date_col.name] < time_to
             passed.append(df.index.take(np.where(mask)[0]))
         reviewers = participants.get(PRParticipationKind.REVIEWER)
         if reviewers:
-            ulkr = PullRequestReview.user_login.key
-            ulkp = PullRequest.user_login.key
+            ulkr = PullRequestReview.user_login.name
+            ulkp = PullRequest.user_login.name
             user_logins = pd.merge(dfs.reviews[ulkr].droplevel(1), dfs.prs[ulkp],
                                    left_index=True, right_index=True, how="left", copy=False)
             ulkr += "_x"
@@ -1059,7 +1064,7 @@ class PullRequestMiner:
             if not col_parts:
                 continue
             passed.append(df.index.get_level_values(0).take(np.where(
-                df[col.key].isin(col_parts))[0]).unique())
+                df[col.name].isin(col_parts))[0]).unique())
         while len(passed) > 1:
             new_passed = []
             for i in range(0, len(passed), 2):
@@ -1076,7 +1081,7 @@ class PullRequestMiner:
         if not labels:
             return pd.Index([])
         df_labels_index = dfs.labels.index.get_level_values(0)
-        df_labels_names = dfs.labels[PullRequestLabel.name.key].values
+        df_labels_names = dfs.labels[PullRequestLabel.name.name].values
         left = cls.find_left_by_labels(df_labels_index, df_labels_names, labels)
         if not labels.include:
             return df_labels_index.difference(left)
@@ -1123,7 +1128,7 @@ class PullRequestMiner:
         left = []
         jira_index = dfs.jiras.index.get_level_values(0)
         if jira.labels:
-            df_labels_names = dfs.jiras[Issue.labels.key].values
+            df_labels_names = dfs.jiras[Issue.labels.name].values
             df_labels_index = pd.Index(np.repeat(jira_index, [len(v) for v in df_labels_names]))
             df_labels_names = list(pd.core.common.flatten(df_labels_names))
             # if jira.labels.include is empty, we effectively drop all unmapped PRs
@@ -1134,7 +1139,7 @@ class PullRequestMiner:
                 dfs.jiras["epic"].isin(jira.epics))[0]).unique())
         if jira.issue_types:
             left.append(dfs.jiras.index.get_level_values(0).take(np.where(
-                dfs.jiras[Issue.type.key].str.lower().isin(jira.issue_types))[0]).unique())
+                dfs.jiras[Issue.type.name].str.lower().isin(jira.issue_types))[0]).unique())
         result = left[0]
         for other in left[1:]:
             result = result.intersection(other)
@@ -1147,13 +1152,13 @@ class PullRequestMiner:
                                time_from: datetime,
                                time_to: datetime) -> pd.Index:
         activities = [
-            dfs.prs[PullRequest.created_at.key],
-            dfs.prs[PullRequest.closed_at.key],
-            dfs.commits[PullRequestCommit.committed_date.key],
-            dfs.review_requests[PullRequestReviewRequest.created_at.key],
-            dfs.reviews[PullRequestReview.created_at.key],
-            dfs.comments[PullRequestComment.created_at.key],
-            dfs.releases[Release.published_at.key],
+            dfs.prs[PullRequest.created_at.name],
+            dfs.prs[PullRequest.closed_at.name],
+            dfs.commits[PullRequestCommit.committed_date.name],
+            dfs.review_requests[PullRequestReviewRequest.created_at.name],
+            dfs.reviews[PullRequestReview.created_at.name],
+            dfs.comments[PullRequestComment.created_at.name],
+            dfs.releases[Release.published_at.name],
         ]
         for df in activities:
             if df.index.nlevels > 1:
@@ -1167,7 +1172,7 @@ class PullRequestMiner:
 
     @staticmethod
     async def _read_filtered_models(model_cls: Base,
-                                    node_ids: Collection[str],
+                                    node_ids: Collection[int],
                                     time_to: datetime,
                                     meta_ids: Tuple[int, ...],
                                     mdb: DatabaseLike,
@@ -1184,7 +1189,7 @@ class PullRequestMiner:
             sql.select(columns or [model_cls]).where(sql.and_(*filters)),
             con=mdb,
             columns=columns or model_cls,
-            index=[model_cls.pull_request_node_id.key, model_cls.node_id.key])
+            index=[model_cls.pull_request_node_id.name, model_cls.node_id.name])
         return df
 
     @classmethod
@@ -1201,14 +1206,14 @@ class PullRequestMiner:
         """
         # filter out PRs which were released before `time_from`
         unreleased = dfs.releases.index.take(np.where(
-            dfs.releases[Release.published_at.key] < time_from)[0])
+            dfs.releases[Release.published_at.name] < time_from)[0])
         # closed but not merged in `[date_from, time_from]`
         unrejected = dfs.prs.index.take(np.where(
-            (dfs.prs[PullRequest.closed_at.key] < time_from) &
-            dfs.prs[PullRequest.merged_at.key].isnull())[0])
+            (dfs.prs[PullRequest.closed_at.name] < time_from) &
+            dfs.prs[PullRequest.merged_at.name].isnull())[0])
         # created in `[time_to, date_to]`
         uncreated = dfs.prs.index.take(np.where(
-            dfs.prs[PullRequest.created_at.key] >= time_to)[0])
+            dfs.prs[PullRequest.created_at.name] >= time_to)[0])
         to_remove = unreleased.union(unrejected.union(uncreated))
         cls._drop(dfs, to_remove)
 
@@ -1229,17 +1234,21 @@ class PullRequestMiner:
             # our very own groupby() allows us to call take() with reduced overhead
             node_ids = df.index.get_level_values(0).values
             if df.index.nlevels > 1:
-                # this is not really required but it makes iteration deterministic
-                order_keys = (node_ids + df.index.get_level_values(1).values).astype("S")
-                node_ids = node_ids.astype("S")
+                # adding the second level is not really required but makes iteration deterministic
+                second_level = df.index.get_level_values(1).values
+                node_ids_bytes = node_ids.byteswap().view("S8")
+                if second_level.dtype == int:
+                    order_keys = np.char.add(node_ids_bytes, second_level.byteswap().view("S8"))
+                else:
+                    order_keys = np.char.add(node_ids_bytes, second_level.astype("S", copy=False))
             else:
-                order_keys = node_ids = node_ids.astype("S")
+                order_keys = node_ids
             node_ids_order = np.argsort(order_keys)
             node_ids = node_ids[node_ids_order]
             node_ids_unique_counts = np.unique(node_ids, return_counts=True)[1]
             node_ids_group_counts = np.zeros(len(node_ids_unique_counts) + 1, dtype=int)
             np.cumsum(node_ids_unique_counts, out=node_ids_group_counts[1:])
-            keys = node_ids[node_ids_group_counts[:-1]].astype("U")
+            keys = node_ids[node_ids_group_counts[:-1]]
             groups = np.split(node_ids_order, node_ids_group_counts[1:-1])
             grouped_df_iters.append(iter(zip(keys, groups)))
             if plural:
@@ -1255,7 +1264,7 @@ class PullRequestMiner:
                 except StopIteration:
                     grouped_df_states.append((None, None))
             empty_df_cache = {}
-            pr_columns = [PullRequest.node_id.key]
+            pr_columns = [PullRequest.node_id.name]
             pr_columns.extend(self._dfs.prs.columns)
             if not self._dfs.prs.index.is_monotonic_increasing:
                 raise IndexError("PRs index must be pre-sorted ascending: "
@@ -1308,8 +1317,8 @@ class PullRequestFactsMiner:
 
     log = logging.getLogger("%s.PullRequestFactsMiner" % metadata.__package__)
     dummy_reviews = pd.Series(["INVALID", pd.NaT],
-                              index=[PullRequestReview.state.key,
-                                     PullRequestReview.submitted_at.key])
+                              index=[PullRequestReview.state.name,
+                                     PullRequestReview.submitted_at.name])
 
     def __init__(self, bots: Set[str]):
         """Require the set of bots to be preloaded."""
@@ -1322,20 +1331,20 @@ class PullRequestFactsMiner:
         May raise ImpossiblePullRequest if the PR has an "impossible" state like
         created after closed.
         """
-        created = pr.pr[PullRequest.created_at.key]
+        created = pr.pr[PullRequest.created_at.name]
         if created != created:
             raise ImpossiblePullRequest()
-        merged = pr.pr[PullRequest.merged_at.key]
+        merged = pr.pr[PullRequest.merged_at.name]
         if merged != merged:
             merged = None
-        closed = pr.pr[PullRequest.closed_at.key]
+        closed = pr.pr[PullRequest.closed_at.name]
         if closed != closed:
             closed = None
         if merged and not closed:
             self.log.error("[DEV-508] PR %s (%s#%d) is merged at %s but not closed",
-                           pr.pr[PullRequest.node_id.key],
-                           pr.pr[PullRequest.repository_full_name.key],
-                           pr.pr[PullRequest.number.key],
+                           pr.pr[PullRequest.node_id.name],
+                           pr.pr[PullRequest.repository_full_name.name],
+                           pr.pr[PullRequest.number.name],
                            merged)
             closed = merged
         # we don't need these indexes
@@ -1345,29 +1354,30 @@ class PullRequestFactsMiner:
         # last_commit usually points at max(committed_date)
         # but DEV-2734 has taught that authored_date may be greater than committed_date
         first_commit = nonemin(
-            pr.commits[PullRequestCommit.authored_date.key].nonemin(),
-            pr.commits[PullRequestCommit.committed_date.key].nonemin(),
+            pr.commits[PullRequestCommit.authored_date.name].nonemin(),
+            pr.commits[PullRequestCommit.committed_date.name].nonemin(),
         )
         last_commit = nonemax(
-            pr.commits[PullRequestCommit.committed_date.key].nonemax(),
-            pr.commits[PullRequestCommit.authored_date.key].nonemax(),
+            pr.commits[PullRequestCommit.committed_date.name].nonemax(),
+            pr.commits[PullRequestCommit.authored_date.name].nonemax(),
         )
         # convert to "S" dtype to enable sorting in np.in1d
-        authored_comments = pr.comments[PullRequestReviewComment.user_login.key].values.astype("S")
-        if (author_login := pr.pr[PullRequest.user_login.key]) is not None:
+        authored_comments = \
+            pr.comments[PullRequestReviewComment.user_login.name].values.astype("S")
+        if (author_login := pr.pr[PullRequest.user_login.name]) is not None:
             author_login = author_login.encode()
-        external_comments_times = pr.comments[PullRequestComment.created_at.key].take(
+        external_comments_times = pr.comments[PullRequestComment.created_at.name].take(
             np.where((authored_comments != author_login) &
                      np.in1d(authored_comments, self._bots, invert=True))[0])
         first_comment = nonemin(
-            pr.review_comments[PullRequestReviewComment.created_at.key].nonemin(),
-            pr.reviews[PullRequestReview.submitted_at.key].nonemin(),
+            pr.review_comments[PullRequestReviewComment.created_at.name].nonemin(),
+            pr.reviews[PullRequestReview.submitted_at.name].nonemin(),
             external_comments_times.nonemin())
         if closed and first_comment and first_comment > closed:
             first_comment = None
         first_comment_on_first_review = first_comment or merged
         if first_comment_on_first_review:
-            committed_dates = pr.commits[PullRequestCommit.committed_date.key]
+            committed_dates = pr.commits[PullRequestCommit.committed_date.name]
             last_commit_before_first_review = committed_dates.take(np.where(
                 committed_dates <= first_comment_on_first_review)[0]).nonemax()
             if not (last_commit_before_first_review_own := bool(last_commit_before_first_review)):
@@ -1383,7 +1393,7 @@ class PullRequestFactsMiner:
             last_commit_before_first_review_own = False
             first_review_request_backup = None
         first_review_request_exact = \
-            pr.review_requests[PullRequestReviewRequest.created_at.key].nonemin()
+            pr.review_requests[PullRequestReviewRequest.created_at.name].nonemin()
         if first_review_request_exact and first_review_request_exact < created:
             # DEV-1610: there are lags possible
             first_review_request_exact = created
@@ -1401,7 +1411,7 @@ class PullRequestFactsMiner:
             first_review_request = last_commit_before_first_review or first_review_request
         if closed and first_review_request and first_review_request > closed:
             first_review_request = None
-        review_submitted_ats = pr.reviews[PullRequestReview.submitted_at.key]
+        review_submitted_ats = pr.reviews[PullRequestReview.submitted_at.name]
 
         if closed:
             # it is possible to approve/reject after closing the PR
@@ -1420,11 +1430,11 @@ class PullRequestFactsMiner:
             last_review = review_submitted_ats.nonemax() or \
                 nonemin(external_comments_times.nonemax())
         if not first_review_request:
-            assert not last_review, pr.pr[PullRequest.node_id.key]
+            assert not last_review, pr.pr[PullRequest.node_id.name]
         if closed:
             min_merged_closed = nonemin(merged, closed).to_numpy()
             reviews_before_close = \
-                pr.reviews[PullRequestReview.submitted_at.key].values <= min_merged_closed
+                pr.reviews[PullRequestReview.submitted_at.name].values <= min_merged_closed
             if reviews_before_close.all():
                 reviews_before_close = pr.reviews
             else:
@@ -1438,7 +1448,7 @@ class PullRequestFactsMiner:
             grouped_reviews = self.dummy_reviews
         else:
             review_logins = \
-                reviews_before_close[PullRequestReview.user_login.key].values.astype("S")
+                reviews_before_close[PullRequestReview.user_login.name].values.astype("S")
             human_review_mask = np.in1d(review_logins, self._bots, invert=True)
             if not human_review_mask.all():
                 reviews_before_close = reviews_before_close.take(np.nonzero(human_review_mask)[0])
@@ -1447,23 +1457,23 @@ class PullRequestFactsMiner:
             if len(np.unique(review_logins)) == 1:
                 # fast lane
                 grouped_reviews = reviews_before_close._ixs(
-                    reviews_before_close[PullRequestReview.submitted_at.key].values.argmax())
+                    reviews_before_close[PullRequestReview.submitted_at.name].values.argmax())
             else:
                 # the most recent review for each reviewer
                 latest_review_ixs = [
                     ixs[0] for ixs in
-                    reviews_before_close[[PullRequestReview.user_login.key,
-                                          PullRequestReview.submitted_at.key]]
-                    .take(np.where(reviews_before_close[PullRequestReview.state.key] !=
+                    reviews_before_close[[PullRequestReview.user_login.name,
+                                          PullRequestReview.submitted_at.name]]
+                    .take(np.where(reviews_before_close[PullRequestReview.state.name] !=
                                    ReviewResolution.COMMENTED.value)[0])
-                    .sort_values([PullRequestReview.submitted_at.key], ascending=False)
-                    .groupby(PullRequestReview.user_login.key, sort=False)
+                    .sort_values([PullRequestReview.submitted_at.name], ascending=False)
+                    .groupby(PullRequestReview.user_login.name, sort=False)
                     .grouper.groups.values()
                 ]
                 grouped_reviews = {
                     k: reviews_before_close[k].take(latest_review_ixs)
-                    for k in (PullRequestReview.state.key, PullRequestReview.submitted_at.key)}
-        grouped_reviews_states = grouped_reviews[PullRequestReview.state.key]
+                    for k in (PullRequestReview.state.name, PullRequestReview.submitted_at.name)}
+        grouped_reviews_states = grouped_reviews[PullRequestReview.state.name]
         if isinstance(grouped_reviews_states, str):
             changes_requested = grouped_reviews_states == ReviewResolution.CHANGES_REQUESTED.value
         else:
@@ -1476,23 +1486,23 @@ class PullRequestFactsMiner:
         else:
             if isinstance(grouped_reviews_states, str):
                 if grouped_reviews_states == ReviewResolution.APPROVED.value:
-                    approved = grouped_reviews[PullRequestReview.submitted_at.key]
+                    approved = grouped_reviews[PullRequestReview.submitted_at.name]
                 else:
                     approved = None
             else:
-                approved = grouped_reviews[PullRequestReview.submitted_at.key].take(
+                approved = grouped_reviews[PullRequestReview.submitted_at.name].take(
                     np.where(grouped_reviews_states == ReviewResolution.APPROVED.value)[0],
                 ).nonemax()
-        released = pr.release[Release.published_at.key]
+        released = pr.release[Release.published_at.name]
         if released != released:
             released = None
-        additions = pr.pr[PullRequest.additions.key]
-        deletions = pr.pr[PullRequest.deletions.key]
+        additions = pr.pr[PullRequest.additions.name]
+        deletions = pr.pr[PullRequest.deletions.name]
         if additions is None or deletions is None:
             self.log.error("NULL in PR additions or deletions: %s (%s#%d): +%s -%s",
-                           pr.pr[PullRequest.node_id.key],
-                           pr.pr[PullRequest.repository_full_name.key],
-                           pr.pr[PullRequest.number.key],
+                           pr.pr[PullRequest.node_id.name],
+                           pr.pr[PullRequest.repository_full_name.name],
+                           pr.pr[PullRequest.number.name],
                            additions, deletions)
             raise ImpossiblePullRequest()
         size = additions + deletions
@@ -1500,31 +1510,31 @@ class PullRequestFactsMiner:
         done = bool(released or force_push_dropped or (closed and not merged))
         work_began = nonemin(created, first_commit)
         ts_dtype = "datetime64[ns]"
-        reviews = np.sort(reviews_before_close[PullRequestReview.submitted_at.key].values) \
+        reviews = np.sort(reviews_before_close[PullRequestReview.submitted_at.name].values) \
             .astype(ts_dtype)
         activity_days = np.concatenate([
             np.array([created, closed, released], dtype=ts_dtype),
-            pr.commits[PullRequestCommit.committed_date.key].values,
-            pr.review_requests[PullRequestReviewRequest.created_at.key].values,
-            pr.reviews[PullRequestReview.created_at.key].values,
-            pr.comments[PullRequestComment.created_at.key].values,
+            pr.commits[PullRequestCommit.committed_date.name].values,
+            pr.review_requests[PullRequestReviewRequest.created_at.name].values,
+            pr.reviews[PullRequestReview.created_at.name].values,
+            pr.comments[PullRequestComment.created_at.name].values,
         ]).astype(ts_dtype).astype("datetime64[D]")
         activity_days = \
             np.unique(activity_days[activity_days == activity_days]).astype(ts_dtype)
         review_comment_authors = \
-            pr.review_comments[PullRequestReviewComment.user_login.key].values.astype("S")
+            pr.review_comments[PullRequestReviewComment.user_login.name].values.astype("S")
         if len(review_comment_authors) > 0:
             human_review_comments = np.in1d(review_comment_authors, self._bots, invert=True).sum()
         else:
             human_review_comments = 0
         participants = len(np.setdiff1d(np.unique(np.concatenate([
-            np.array([pr.pr[PullRequest.user_login.key], pr.pr[PullRequest.merged_by_login.key]],
+            np.array([pr.pr[PullRequest.user_login.name], pr.pr[PullRequest.merged_by_login.name]],
                      dtype="S"),
-            pr.commits[PullRequestCommit.author_login.key].values.astype("S"),
-            pr.commits[PullRequestCommit.committer_login.key].values.astype("S"),
+            pr.commits[PullRequestCommit.author_login.name].values.astype("S"),
+            pr.commits[PullRequestCommit.committer_login.name].values.astype("S"),
             review_comment_authors,
-            pr.comments[PullRequestComment.user_login.key].values.astype("S"),
-            pr.reviews[PullRequestReview.user_login.key].values.astype("S"),
+            pr.comments[PullRequestComment.user_login.name].values.astype("S"),
+            pr.reviews[PullRequestReview.user_login.name].values.astype("S"),
         ])), self._bots, assume_unique=True))
         facts = PullRequestFacts.from_fields(
             created=created,
@@ -1545,14 +1555,14 @@ class PullRequestFactsMiner:
             activity_days=activity_days,
             size=size,
             force_push_dropped=force_push_dropped,
-            repository_full_name=pr.pr[PullRequest.repository_full_name.key],
-            author=pr.pr[PullRequest.user_login.key],
-            merger=pr.pr[PullRequest.merged_by_login.key],
-            releaser=pr.release[Release.author.key],
+            repository_full_name=pr.pr[PullRequest.repository_full_name.name],
+            author=pr.pr[PullRequest.user_login.name],
+            merger=pr.pr[PullRequest.merged_by_login.name],
+            releaser=pr.release[Release.author.name],
             review_comments=human_review_comments,
             participants=participants,
         )
-        self._validate(facts, pr.pr[PullRequest.htmlurl.key])
+        self._validate(facts, pr.pr[PullRequest.htmlurl.name])
         return facts
 
     def _validate(self, facts: PullRequestFacts, url: str) -> None:

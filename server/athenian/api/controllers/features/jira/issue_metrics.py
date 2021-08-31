@@ -61,7 +61,7 @@ class RaisedCounter(SumMetricCalculator[int]):
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
         result = np.zeros((len(min_times), len(facts)), self.dtype)
-        created = facts[Issue.created.key].values
+        created = facts[Issue.created.name].values
         result[(min_times[:, None] <= created) & (created < max_times[:, None])] = 1
         return result
 
@@ -78,7 +78,7 @@ class ResolvedCounter(SumMetricCalculator[int]):
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
         result = np.zeros((len(min_times), len(facts)), self.dtype)
-        resolved = facts[AthenianIssue.resolved.key].values.astype(min_times.dtype)
+        resolved = facts[AthenianIssue.resolved.name].values.astype(min_times.dtype)
         prs_began = facts[ISSUE_PRS_BEGAN].values.astype(min_times.dtype)
         have_prs_mask = prs_began == prs_began
         released = facts[ISSUE_PRS_RELEASED].values.astype(min_times.dtype)[have_prs_mask]
@@ -99,8 +99,8 @@ class OpenCounter(SumMetricCalculator[int]):
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
         result = np.zeros((len(min_times), len(facts)), self.dtype)
-        created = facts[Issue.created.key].values
-        resolved = facts[AthenianIssue.resolved.key].values.astype(min_times.dtype)
+        created = facts[Issue.created.name].values
+        resolved = facts[AthenianIssue.resolved.name].values.astype(min_times.dtype)
         prs_began = facts[ISSUE_PRS_BEGAN].values.astype(min_times.dtype)
         have_prs_mask = prs_began == prs_began
         released = facts[ISSUE_PRS_RELEASED].values.astype(min_times.dtype)[have_prs_mask]
@@ -143,9 +143,9 @@ class LifeTimeCalculator(AverageMetricCalculator[timedelta]):
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), None, self.dtype)
-        created = facts[Issue.created.key].values
+        created = facts[Issue.created.name].values
         prs_began = facts[ISSUE_PRS_BEGAN].values.astype(min_times.dtype)
-        resolved = facts[Issue.resolved.key].values.astype(min_times.dtype)
+        resolved = facts[Issue.resolved.name].values.astype(min_times.dtype)
         released = facts[ISSUE_PRS_RELEASED].values.astype(min_times.dtype)
         focus_mask = (min_times[:, None] <= resolved) & (resolved < max_times[:, None])
         life_times = np.maximum(released, resolved) - np.fmin(created, prs_began)
@@ -179,9 +179,9 @@ class LeadTimeCalculator(AverageMetricCalculator[timedelta]):
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), None, self.dtype)
-        work_began = facts[AthenianIssue.work_began.key].values.astype(min_times.dtype)
+        work_began = facts[AthenianIssue.work_began.name].values.astype(min_times.dtype)
         prs_began = facts[ISSUE_PRS_BEGAN].values.astype(min_times.dtype)
-        resolved = facts[Issue.resolved.key].values.astype(min_times.dtype)
+        resolved = facts[Issue.resolved.name].values.astype(min_times.dtype)
         released = facts[ISSUE_PRS_RELEASED].values.astype(min_times.dtype)
         focus_mask = (min_times[:, None] <= resolved) & (resolved < max_times[:, None])
         lead_times = np.maximum(released, resolved) - np.fmin(work_began, prs_began)
@@ -214,13 +214,13 @@ class AcknowledgeTimeCalculator(AverageMetricCalculator[timedelta]):
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), None, self.dtype)
-        work_began = facts[AthenianIssue.work_began.key].values.astype(min_times.dtype)
+        work_began = facts[AthenianIssue.work_began.name].values.astype(min_times.dtype)
         prs_began = facts[ISSUE_PRS_BEGAN].values.astype(min_times.dtype)
         acknowledged = np.fmin(work_began, prs_began)
-        statuses = facts[Status.category_name.key].values
+        statuses = facts[Status.category_name.name].values
         acknowledged[(statuses != Status.CATEGORY_IN_PROGRESS) &
                      (statuses != Status.CATEGORY_DONE)] = None
-        created = facts[Issue.created.key].values.astype(min_times.dtype)
+        created = facts[Issue.created.name].values.astype(min_times.dtype)
         ack_times = acknowledged - created
         ack_times = np.maximum(ack_times, ack_times.dtype.type(0))
         focus_mask = (min_times[:, None] <= acknowledged) & (acknowledged < max_times[:, None])

@@ -182,7 +182,7 @@ ISSUE_PR_IDS = "pr_ids"
         ",".join(sorted((ass if ass is not None else "<None>") for ass in assignees)),
         ",".join(sorted(commenters)),
         nested_assignees,
-        ",".join(c.key for c in kwargs.get("extra_columns", ())),
+        ",".join(c.name for c in kwargs.get("extra_columns", ())),
     ),
 )
 async def fetch_jira_issues(installation_ids: Tuple[int, List[str]],
@@ -234,11 +234,11 @@ async def fetch_jira_issues(installation_ids: Tuple[int, List[str]],
         extra_columns=extra_columns)
     if not exclude_inactive:
         # DEV-1899: exclude and report issues with empty AthenianIssue
-        if (missing_updated := issues[AthenianIssue.updated.key].isnull().values).any():
+        if (missing_updated := issues[AthenianIssue.updated.name].isnull().values).any():
             log.error("JIRA issues are missing in jira.athenian_issue: %s",
-                      ", ".join(issues[Issue.key.key].take(np.nonzero(missing_updated)[0])))
+                      ", ".join(issues[Issue.key.name].take(np.nonzero(missing_updated)[0])))
             issues = issues.take(np.nonzero(~missing_updated)[0])
-    if len(issues.index) > 100:
+    if len(issues.index) >= 20:
         jira_id_cond = NodePullRequestJiraIssues.jira_id.in_any_values(issues.index)
     else:
         jira_id_cond = NodePullRequestJiraIssues.jira_id.in_(issues.index)
@@ -267,14 +267,14 @@ async def fetch_jira_issues(installation_ids: Tuple[int, List[str]],
             prs_count[issue_to_index[issue]] = count
         ghdprf = GitHubDonePullRequestFacts
         for pr_node_id, row in released_prs.items():
-            pr_created_at = row[ghdprf.pr_created_at.key]
+            pr_created_at = row[ghdprf.pr_created_at.name]
             i = issue_to_index[pr_to_issue[pr_node_id]]
             dt = work_began[i]
             if dt != dt:
                 work_began[i] = pr_created_at
             else:
                 work_began[i] = min(dt, np.datetime64(pr_created_at))
-            pr_released_at = row[ghdprf.pr_done_at.key]
+            pr_released_at = row[ghdprf.pr_done_at.name]
             dt = released[i]
             if dt != dt:
                 released[i] = pr_released_at
@@ -288,9 +288,9 @@ async def fetch_jira_issues(installation_ids: Tuple[int, List[str]],
             _fetch_pr_created_ats_and_repos(unreleased_prs, meta_ids, mdb), released_flow(),
             op="released and unreleased")
         for row in pr_created_ats_and_repos:
-            pr_created_at = row[PullRequest.created_at.key]
-            repo = row[PullRequest.repository_full_name.key]
-            i = issue_to_index[pr_to_issue[row[PullRequest.node_id.key]]]
+            pr_created_at = row[PullRequest.created_at.name]
+            repo = row[PullRequest.repository_full_name.name]
+            i = issue_to_index[pr_to_issue[row[PullRequest.node_id.name]]]
             dt = work_began[i]
             if dt != dt:
                 work_began[i] = pr_created_at
@@ -310,7 +310,7 @@ async def fetch_jira_issues(installation_ids: Tuple[int, List[str]],
 
 
 @sentry_span
-async def _fetch_pr_created_ats_and_repos(pr_node_ids: Iterable[str],
+async def _fetch_pr_created_ats_and_repos(pr_node_ids: Iterable[int],
                                           meta_ids: Tuple[int, ...],
                                           mdb: databases.Database,
                                           ) -> List[Mapping[str, Union[str, datetime]]]:
@@ -321,7 +321,7 @@ async def _fetch_pr_created_ats_and_repos(pr_node_ids: Iterable[str],
 
 
 @sentry_span
-async def _fetch_released_prs(pr_node_ids: Iterable[str],
+async def _fetch_released_prs(pr_node_ids: Iterable[int],
                               default_branches: Dict[str, str],
                               release_settings: ReleaseSettings,
                               account: int,
@@ -339,9 +339,9 @@ async def _fetch_released_prs(pr_node_ids: Iterable[str],
     released_by_repo = defaultdict(lambda: defaultdict(dict))
     for r in released_rows:
         released_by_repo[
-            r[ghdprf.repository_full_name.key]][
-            r[ghdprf.release_match.key]][
-            r[ghdprf.pr_node_id.key]] = r
+            r[ghdprf.repository_full_name.name]][
+            r[ghdprf.release_match.name]][
+            r[ghdprf.pr_node_id.name]] = r
     released_prs = {}
     ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
     for repo, matches in released_by_repo.items():
@@ -422,7 +422,7 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
         epics_parent = aliased(Epic, name="epics_parent")
         epics_self = aliased(Epic, name="epics_self")
         for alias in (epics_major, epics_parent, epics_self):
-            and_filters.append(alias.key.is_(None))
+            and_filters.append(alias.name.is_(None))
     elif len(epics):
         and_filters.append(Epic.key.in_(epics))
     or_filters = []
@@ -452,7 +452,7 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
                         c.name != AthenianIssue.nested_assignee_display_names.name
                         for c in extra_columns):
                     columns.append(AthenianIssue.nested_assignee_display_names)
-            if all(c.key != "commenters" for c in extra_columns):
+            if all(c.name != "commenters" for c in extra_columns):
                 columns.append(Issue.commenters_display_names.label("commenters"))
     if assignees and not postgres:
         if nested_assignees and all(
@@ -506,10 +506,10 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
             query = query[0]
         else:
             query = sql.union(*query)
-        df = await read_sql_query(query, mdb, columns, index=Issue.id.key)
+        df = await read_sql_query(query, mdb, columns, index=Issue.id.name)
     else:
         # SQLite does not allow to use parameters multiple times
-        df = pd.concat(await gather(*(read_sql_query(q, mdb, columns, index=Issue.id.key)
+        df = pd.concat(await gather(*(read_sql_query(q, mdb, columns, index=Issue.id.name)
                                       for q in query)))
     df.sort_index(inplace=True)
     if postgres or (not commenters and (not nested_assignees or not assignees)):
@@ -550,12 +550,13 @@ class PullRequestJiraMapper:
     @classmethod
     @sentry_span
     async def load_pr_jira_mapping(cls,
-                                   prs: Collection[str],
+                                   prs: Collection[int],
                                    meta_ids: Tuple[int, ...],
-                                   mdb: DatabaseLike) -> Dict[str, str]:
+                                   mdb: DatabaseLike,
+                                   ) -> Dict[str, str]:
         """Fetch the mapping from PR node IDs to JIRA issue IDs."""
         nprji = NodePullRequestJiraIssues
-        if len(prs) >= 100:
+        if len(prs) >= 20:
             node_id_cond = nprji.node_id.in_any_values(prs)
         else:
             node_id_cond = nprji.node_id.in_(prs)

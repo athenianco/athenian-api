@@ -117,7 +117,7 @@ class PullRequestListItem:
     We have to declare `merged_with_failed_check_runs` mutable because it has to be set async.
     """
 
-    node_id: str
+    node_id: int
     repository: str
     number: int
     title: str
@@ -170,19 +170,19 @@ class MinedPullRequest:
 
     def participant_logins(self) -> PRParticipants:
         """Collect unique developer logins that are mentioned in this pull request."""
-        author = self.pr[PullRequest.user_login.key]
-        merger = self.pr[PullRequest.merged_by_login.key]
-        releaser = self.release[Release.author.key]
+        author = self.pr[PullRequest.user_login.name]
+        merger = self.pr[PullRequest.merged_by_login.name]
+        releaser = self.release[Release.author.name]
         participants = {
             PRParticipationKind.AUTHOR: {author} if author else set(),
             PRParticipationKind.REVIEWER: self._extract_people(
-                self.reviews, PullRequestReview.user_login.key),
+                self.reviews, PullRequestReview.user_login.name),
             PRParticipationKind.COMMENTER: self._extract_people(
-                self.comments, PullRequestComment.user_login.key),
+                self.comments, PullRequestComment.user_login.name),
             PRParticipationKind.COMMIT_COMMITTER: self._extract_people(
-                self.commits, PullRequestCommit.committer_login.key),
+                self.commits, PullRequestCommit.committer_login.name),
             PRParticipationKind.COMMIT_AUTHOR: self._extract_people(
-                self.commits, PullRequestCommit.author_login.key),
+                self.commits, PullRequestCommit.author_login.name),
             PRParticipationKind.MERGER: {merger} if merger else set(),
             PRParticipationKind.RELEASER: {releaser} if releaser else set(),
         }
@@ -193,19 +193,19 @@ class MinedPullRequest:
 
     def participant_nodes(self) -> PRParticipants:
         """Collect unique developer node IDs that are mentioned in this pull request."""
-        author = self.pr[PullRequest.user_node_id.key]
-        merger = self.pr[PullRequest.merged_by.key]
-        releaser = self.release[Release.author_node_id.key]
+        author = self.pr[PullRequest.user_node_id.name]
+        merger = self.pr[PullRequest.merged_by_id.name]
+        releaser = self.release[Release.author_node_id.name]
         participants = {
             PRParticipationKind.AUTHOR: {author} if author else set(),
             PRParticipationKind.REVIEWER: self._extract_people(
-                self.reviews, PullRequestReview.user_node_id.key),
+                self.reviews, PullRequestReview.user_node_id.name),
             PRParticipationKind.COMMENTER: self._extract_people(
-                self.comments, PullRequestComment.user_node_id.key),
+                self.comments, PullRequestComment.user_node_id.name),
             PRParticipationKind.COMMIT_COMMITTER: self._extract_people(
-                self.commits, PullRequestCommit.committer_user.key),
+                self.commits, PullRequestCommit.committer_user_id.name),
             PRParticipationKind.COMMIT_AUTHOR: self._extract_people(
-                self.commits, PullRequestCommit.author_user.key),
+                self.commits, PullRequestCommit.author_user_id.name),
             PRParticipationKind.MERGER: {merger} if merger else set(),
             PRParticipationKind.RELEASER: {releaser} if releaser else set(),
         }
@@ -217,7 +217,7 @@ class MinedPullRequest:
     @staticmethod
     def _extract_people(df: pd.DataFrame, col: str) -> Set[str]:
         values = df[col].values
-        return set(values[np.where(values)[0]])
+        return set(np.unique(values[np.flatnonzero(values)]).tolist())
 
 
 # avoid F821 in the annotations
@@ -334,7 +334,7 @@ def _add_prs_annotations(cls):
         sa.BigInteger: int,
     }
     for col in released_prs_columns:
-        cls.__annotations__["prs_" + col.key] = [col_types_map[type(col.type)]]
+        cls.__annotations__["prs_" + col.name] = [col_types_map[type(col.type)]]
     return cls
 
 

@@ -99,10 +99,10 @@ def main():
         inserted = []
         log.info("Pushing %d releases", len(releases))
         for name, sha, commit_id, published_at, url, author, repo_id in zip(
-                releases[Release.name.key].values, releases[Release.sha.key].values,
-                releases[Release.commit_id.key].values, releases[Release.published_at.key],
-                releases[Release.url.key].values, releases[Release.author.key].values,
-                releases[Release.repository_node_id.key].values):
+                releases[Release.name.name].values, releases[Release.sha.name].values,
+                releases[Release.commit_id.name].values, releases[Release.published_at.name],
+                releases[Release.url.name].values, releases[Release.author.name].values,
+                releases[Release.repository_node_id.name].values):
             inserted.append(ReleaseNotification(
                 account_id=args.account,
                 repository_node_id=repo_id,

@@ -170,8 +170,8 @@ async def test_create_team_same_members(client, headers, sdb, disable_default_us
 
     teams = await sdb.fetch_all(select([Team]))
     assert len(teams) == 2
-    assert teams[0][Team.members.key] == teams[1][Team.members.key]
-    assert {t[Team.name.key] for t in teams} == {"Engineering 1", "Engineering 2"}
+    assert teams[0][Team.members.name] == teams[1][Team.members.name]
+    assert {t[Team.name.name] for t in teams} == {"Engineering 1", "Engineering 2"}
 
 
 async def test_create_team_same_name(client, headers, sdb, disable_default_user):
@@ -349,9 +349,9 @@ async def test_update_team_smoke(client, headers, sdb, disable_default_user):
     rbody = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + rbody
     team = await sdb.fetch_one(select([Team]).where(Team.id == 2))
-    assert team[Team.name.key] == "Dream"
-    assert team[Team.members.key] == ["github.com/warenlg"]
-    assert team[Team.parent_id.key] == 1
+    assert team[Team.name.name] == "Dream"
+    assert team[Team.members.name] == ["github.com/warenlg"]
+    assert team[Team.parent_id.name] == 1
 
 
 async def test_update_team_default_user(client, headers, sdb):
@@ -442,8 +442,8 @@ async def test_delete_team_smoke(client, headers, sdb, disable_default_user):
     assert response.status == 200, "Response body is : " + body
     teams = await sdb.fetch_all(select([Team]))
     assert len(teams) == 1
-    assert teams[0][Team.name.key] == "Test"
-    assert teams[0][Team.parent_id.key] is None
+    assert teams[0][Team.name.name] == "Test"
+    assert teams[0][Team.parent_id.name] is None
 
 
 async def test_delete_team_default_user(client, headers, sdb):

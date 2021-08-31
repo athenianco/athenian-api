@@ -6,13 +6,13 @@ from typing import Dict, Iterable, Optional, Tuple
 import aiomcache
 import numpy as np
 import pandas as pd
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
 
 from athenian.api import metadata
 from athenian.api.async_utils import read_sql_query
 from athenian.api.cache import cached, cached_methods
 from athenian.api.db import DatabaseLike
-from athenian.api.models.metadata.github import Branch, NodeCommit, Repository
+from athenian.api.models.metadata.github import Branch, NodeCommit, NodeRepositoryRef, Repository
 from athenian.api.tracing import sentry_span
 
 
@@ -39,9 +39,9 @@ class BranchMiner:
         log = logging.getLogger("%s.extract_default_branches" % metadata.__package__)
         default_branches = {}
         ambiguous_defaults = {}
-        for repo, repo_branches in branches.groupby(Branch.repository_full_name.key, sort=False):
-            default_indexes = np.where(repo_branches[Branch.is_default.key].values)[0]
-            branch_names = repo_branches[Branch.branch_name.key]  # type: pd.Series
+        for repo, repo_branches in branches.groupby(Branch.repository_full_name.name, sort=False):
+            default_indexes = np.where(repo_branches[Branch.is_default.name].values)[0]
+            branch_names = repo_branches[Branch.branch_name.name]  # type: pd.Series
             if len(default_indexes) > 0:
                 default_branch = branch_names._ixs(default_indexes[0])
             else:
@@ -62,7 +62,7 @@ class BranchMiner:
                     repo, len(branch_names), default_branch)
             default_branches[repo] = default_branch
         if ambiguous_defaults:
-            commit_ids = np.concatenate([rb[Branch.commit_id.key].values
+            commit_ids = np.concatenate([rb[Branch.commit_id.name].values
                                          for rb in ambiguous_defaults.values()])
             committed_dates = await mdb.fetch_all(
                 select([NodeCommit.id, NodeCommit.committed_date])
@@ -71,8 +71,8 @@ class BranchMiner:
             committed_dates = {r[0]: r[1] for r in committed_dates}
             for repo, repo_branches in ambiguous_defaults.items():
                 default_branch = max_date = None
-                for name, commit_id in zip(repo_branches[Branch.branch_name.key].values,
-                                           repo_branches[Branch.commit_id.key].values):
+                for name, commit_id in zip(repo_branches[Branch.branch_name.name].values,
+                                           repo_branches[Branch.commit_id.name].values):
                     if (commit_date := committed_dates.get(commit_id)) is None:
                         continue
                     if max_date is None or max_date < commit_date:
@@ -95,16 +95,11 @@ class BranchMiner:
                     default_branches[repo] = "master"
                 log.error("some repositories do not exist: %s", deleted_repos)
             if existing_zero_branch_repos:
-                sql = """
-                    SELECT parent_id, COUNT(child_id) AS numrefs
-                    FROM github_node_repository_refs
-                    WHERE parent_id IN (%s) AND acc_id %s
-                    GROUP BY parent_id;
-                """ % (", ".join("'%s'" % n for n in existing_zero_branch_repos),
-                       ("= %d" % meta_ids[0])
-                       if len(meta_ids) == 1
-                       else ("IN (%s)" % ", ".join(str(i) for i in meta_ids)))
-                rows = await mdb.fetch_all(sql)
+                rows = await mdb.fetch_all(
+                    select([NodeRepositoryRef.parent_id, func.count(NodeRepositoryRef.child_id)])
+                    .where(and_(NodeRepositoryRef.acc_id.in_(meta_ids),
+                                NodeRepositoryRef.parent_id.in_(existing_zero_branch_repos)))
+                    .group_by(NodeRepositoryRef.parent_id))
                 refs = {r["parent_id"]: r["numrefs"] for r in rows}
                 reported_repos = set()
                 for node_id, full_name in existing_zero_branch_repos.items():
@@ -120,7 +115,7 @@ class BranchMiner:
                                 repos: Iterable[str],
                                 meta_ids: Tuple[int, ...],
                                 mdb: DatabaseLike,
-                                ) -> Tuple[pd.DataFrame, Dict[str, str]]:
+                                ) -> pd.DataFrame:
         return await read_sql_query(
             select([Branch]).where(and_(Branch.repository_full_name.in_(repos),
                                         Branch.acc_id.in_(meta_ids),
@@ -138,7 +133,7 @@ async def load_branch_commit_dates(branches: pd.DataFrame,
     if branches.empty:
         branches[Branch.commit_date] = []
         return
-    branch_commit_ids = branches[Branch.commit_id.key].values
+    branch_commit_ids = branches[Branch.commit_id.name].values
     rows = await mdb.fetch_all(
         select([NodeCommit.id, NodeCommit.committed_date])
         .where(and_(NodeCommit.id.in_(branch_commit_ids),

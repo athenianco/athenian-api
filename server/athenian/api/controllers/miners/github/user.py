@@ -56,5 +56,5 @@ async def mine_user_avatars(logins: Iterable[str],
                                .where(and_(User.login.in_(logins),
                                            User.acc_id.in_(meta_ids))))
     if not with_prefix:
-        return [(u[User.login.key], u[User.avatar_url.key]) for u in rows]
-    return [(u[User.html_url.key].split("://", 1)[1], u[User.avatar_url.key]) for u in rows]
+        return [(u[User.login.name], u[User.avatar_url.name]) for u in rows]
+    return [(u[User.html_url.name].split("://", 1)[1], u[User.avatar_url.name]) for u in rows]

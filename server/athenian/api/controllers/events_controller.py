@@ -115,12 +115,12 @@ async def notify_releases(request: AthenianWebRequest, body: List[dict]) -> web.
         resolved_prefixed_commits = {}
         resolved_full_commits = {}
         for row in commit_rows:
-            commit, repo = row[PushCommit.sha.key], row[PushCommit.repository_full_name.key]
+            commit, repo = row[PushCommit.sha.name], row[PushCommit.repository_full_name.name]
             resolved_prefixed_commits[(commit[:7], repo)] = \
                 resolved_full_commits[(commit, repo)] = row
         resolved_users = {}
         for row in user_rows:
-            resolved_users[row[User.login.key]] = row[User.node_id.key]
+            resolved_users[row[User.login.name]] = row[User.node_id.name]
         return (resolved_full_commits,
                 resolved_prefixed_commits,
                 checker.installed_repos(),
@@ -144,13 +144,13 @@ async def notify_releases(request: AthenianWebRequest, body: List[dict]) -> web.
         repos.add(repo := n.repository.split("/", 1)[1])
         resolved_commits = (
             resolved_full_commits if len(n.commit) == 40 else resolved_prefixed_commits
-        ).get((n.commit, repo), {PushCommit.sha.key: None, PushCommit.node_id.key: None})
+        ).get((n.commit, repo), {PushCommit.sha.name: None, PushCommit.node_id.name: None})
         inserted.append(ReleaseNotification(
             account_id=account,
             repository_node_id=installed_repos[repo],
-            commit_hash_prefix=resolved_commits[PushCommit.sha.key] or n.commit,
-            resolved_commit_hash=resolved_commits[PushCommit.sha.key],
-            resolved_commit_node_id=resolved_commits[PushCommit.node_id.key],
+            commit_hash_prefix=resolved_commits[PushCommit.sha.name] or n.commit,
+            resolved_commit_hash=resolved_commits[PushCommit.sha.name],
+            resolved_commit_node_id=resolved_commits[PushCommit.node_id.name],
             name=n.name,
             author_node_id=resolved_users.get(author),
             url=n.url,
@@ -161,10 +161,10 @@ async def notify_releases(request: AthenianWebRequest, body: List[dict]) -> web.
         sql = sql.on_conflict_do_update(
             constraint=ReleaseNotification.__table__.primary_key,
             set_={
-                ReleaseNotification.name.key: sql.excluded.name,
-                ReleaseNotification.author_node_id.key: sql.excluded.author_node_id,
-                ReleaseNotification.url.key: sql.excluded.url,
-                ReleaseNotification.published_at.key: sql.excluded.published_at,
+                ReleaseNotification.name.name: sql.excluded.name,
+                ReleaseNotification.author_node_id.name: sql.excluded.author_node_id,
+                ReleaseNotification.url.name: sql.excluded.url,
+                ReleaseNotification.published_at.name: sql.excluded.published_at,
             },
         )
     else:  # sqlite
@@ -452,8 +452,8 @@ async def _resolve_deployed_component_references(sdb: ParallelDatabase,
         )))))
     discarded_by_account = defaultdict(list)
     for row in discarded_notifications:
-        discarded_by_account[row[DeploymentNotification.account_id.key]].append(
-            row[DeploymentNotification.name.key])
+        discarded_by_account[row[DeploymentNotification.account_id.name]].append(
+            row[DeploymentNotification.name.name])
     del discarded_notifications
     tasks = [
         rdb.execute(delete(DeployedLabel).where(and_(
@@ -484,18 +484,18 @@ async def _resolve_deployed_component_references(sdb: ParallelDatabase,
         .where(DeployedComponent.resolved_commit_node_id.is_(None)))
     unresolved_by_account = defaultdict(list)
     for row in unresolved:
-        unresolved_by_account[row[DeployedComponent.account_id.key]].append(row)
+        unresolved_by_account[row[DeployedComponent.account_id.name]].append(row)
     del unresolved
     for account, unresolved in unresolved_by_account.items():
         meta_ids = await get_metadata_account_ids(account, sdb, cache)
         resolved = await _resolve_references(
-            [(r[DeployedComponent.repository_node_id.key], r[DeployedComponent.reference.key])
+            [(r[DeployedComponent.repository_node_id.name], r[DeployedComponent.reference.name])
              for r in unresolved],
             meta_ids, mdb, True)
         updated = set()
         for row in unresolved:
-            repo = row[DeployedComponent.repository_node_id.key]
-            ref = row[DeployedComponent.reference.key]
+            repo = row[DeployedComponent.repository_node_id.name]
+            ref = row[DeployedComponent.reference.name]
             try:
                 rr = resolved[repo][ref]
             except KeyError:

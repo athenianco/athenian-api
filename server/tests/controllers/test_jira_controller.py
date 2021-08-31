@@ -667,16 +667,16 @@ async def test_filter_jira_issue_disabled(client, headers, mdb):
 async def test_filter_jira_deleted_repositories(client, headers, mdb):
     # DEV-2082
     await mdb.execute(insert(NodePullRequestJiraIssues).values(dict(
-        node_id="tmp",
+        node_id=1234,
         node_acc=6366825,
         jira_acc=1,
         jira_id="12541",
     )))
     await mdb.execute(insert(PullRequest).values(dict(
-        node_id="tmp",
+        node_id=1234,
         acc_id=6366825,
         repository_full_name="athenianco/athenian-api",
-        repository_node_id="whatever",
+        repository_node_id=4321,
         base_ref="base_ref",
         head_ref="head_ref",
         number=100500,
@@ -702,9 +702,9 @@ async def test_filter_jira_deleted_repositories(client, headers, mdb):
         assert prs == 1
     finally:
         await mdb.execute(delete(NodePullRequestJiraIssues)
-                          .where(NodePullRequestJiraIssues.node_id == "tmp"))
+                          .where(NodePullRequestJiraIssues.node_id == 1234))
         await mdb.execute(delete(PullRequest)
-                          .where(PullRequest.node_id == "tmp"))
+                          .where(PullRequest.node_id == 1234))
 
 
 @pytest.mark.parametrize("account, date_to, tz, status", [

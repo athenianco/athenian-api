@@ -70,7 +70,7 @@ def group_releases_by_participants(participants: List[ReleaseParticipants],
             indexes.append(np.arange(len(df)))
             continue
         if ReleaseParticipationKind.PR_AUTHOR in group:
-            pr_authors = df["prs_" + PullRequest.user_login.key].values[missing_indexes]
+            pr_authors = df["prs_" + PullRequest.user_login.name].values[missing_indexes]
             lengths = np.asarray([len(pra) for pra in pr_authors])
             offsets = np.zeros(len(lengths) + 1, dtype=int)
             np.cumsum(lengths, out=offsets[1:])
@@ -185,7 +185,7 @@ class ReleasePRsMixin:
     nan = -1
 
     def _extract(self, facts: pd.DataFrame) -> np.ndarray:
-        return np.array([len(arr) for arr in facts["prs_" + PullRequest.number.key]])
+        return np.array([len(arr) for arr in facts["prs_" + PullRequest.number.name]])
 
 
 class ReleaseCommitsMixin:

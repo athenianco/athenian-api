@@ -84,7 +84,7 @@ async def _mine_commits(repo_ids: np.ndarray,
                         rdb: databases.Database,
                         cache: Optional[aiomcache.Client],
                         ) -> pd.DataFrame:
-    columns = [PushCommit.author_user.label(developer_identity_column),
+    columns = [PushCommit.author_user_id.label(developer_identity_column),
                PushCommit.repository_node_id.label(developer_repository_column),
                PushCommit.committed_date]
     if DeveloperTopic.lines_changed in topics:
@@ -92,7 +92,7 @@ async def _mine_commits(repo_ids: np.ndarray,
             (PushCommit.additions + PushCommit.deletions).label(developer_changed_lines_column))
     query = select(columns).where(and_(
         PushCommit.committed_date.between(time_from, time_to),
-        PushCommit.author_user.in_(dev_ids),
+        PushCommit.author_user_id.in_(dev_ids),
         PushCommit.repository_node_id.in_(repo_ids),
         PushCommit.acc_id.in_(meta_ids),
     ))
@@ -152,7 +152,7 @@ async def _mine_prs(attr_user: InstrumentedAttribute,
             filters, jira, mdb, cache, columns=selected)
     else:
         query = select(selected).where(and_(*filters))
-    return await read_sql_query(query, mdb, [c.key for c in selected])
+    return await read_sql_query(query, mdb, [c.name for c in selected])
 
 
 async def _mine_prs_created(*args, **kwargs) -> pd.DataFrame:
@@ -160,7 +160,7 @@ async def _mine_prs_created(*args, **kwargs) -> pd.DataFrame:
 
 
 async def _mine_prs_merged(*args, **kwargs) -> pd.DataFrame:
-    return await _mine_prs(PullRequest.merged_by, PullRequest.merged_at, *args, **kwargs)
+    return await _mine_prs(PullRequest.merged_by_id, PullRequest.merged_at, *args, **kwargs)
 
 
 async def _mine_releases(repo_ids: np.ndarray,
@@ -186,13 +186,13 @@ async def _mine_releases(repo_ids: np.ndarray,
     releases, _ = await ReleaseLoader.load_releases(
         repo_names, branches, default_branches, time_from, time_to,
         release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache)
-    release_authors = releases[Release.author.key].values.astype("U")
+    release_authors = releases[Release.author.name].values.astype("U")
     matched_devs_mask = np.in1d(release_authors, dev_names)
     return pd.DataFrame({
         developer_identity_column + _dereferenced_suffix: release_authors[matched_devs_mask],
         developer_repository_column + _dereferenced_suffix:
-            releases[Release.repository_full_name.key].values[matched_devs_mask],
-        Release.published_at.key: releases[Release.published_at.key].values[matched_devs_mask],
+            releases[Release.repository_full_name.name].values[matched_devs_mask],
+        Release.published_at.name: releases[Release.published_at.name].values[matched_devs_mask],
     })
 
 
@@ -310,7 +310,7 @@ async def _mine_pr_comments(model: Union[Type[PullRequestComment], Type[PullRequ
             on=(model.pull_request_node_id, model.acc_id))
     else:
         query = select(selected).where(and_(*filters))
-    return await read_sql_query(query, mdb, [c.key for c in selected])
+    return await read_sql_query(query, mdb, [c.name for c in selected])
 
 
 async def _mine_pr_comments_regular(*args, **kwargs) -> pd.DataFrame:
@@ -427,8 +427,8 @@ async def _fetch_node_ids(devs: Collection[str],
                       .order_by(User.node_id)),
     ]
     repo_id_rows, dev_id_rows = await gather(*tasks)
-    repo_ids = np.array([r[0] for r in repo_id_rows], dtype="U")
+    repo_ids = np.fromiter((r[0] for r in repo_id_rows), int, len(repo_id_rows))
     repo_names = np.array([r[1] for r in repo_id_rows], dtype="U")
-    dev_ids = np.array([r[0] for r in dev_id_rows], dtype="U")
+    dev_ids = np.fromiter((r[0] for r in dev_id_rows), int, len(dev_id_rows))
     dev_names = np.array([r[1] for r in dev_id_rows], dtype="U")
     return repo_ids, repo_names, dev_ids, dev_names

@@ -50,7 +50,7 @@ DAG = Tuple[np.ndarray, np.ndarray, np.ndarray]
         ",".join(sorted(repos)),
         ",".join(sorted(with_author)) if with_author else "",
         ",".join(sorted(with_committer)) if with_committer else "",
-        "" if kwargs.get("columns") is None else ",".join(c.key for c in kwargs["columns"]),
+        "" if kwargs.get("columns") is None else ",".join(c.name for c in kwargs["columns"]),
         only_default_branch,
     ),
 )
@@ -99,7 +99,7 @@ async def extract_commits(prop: FilterCommitsProperty,
                 author_ids.append(user_ids[u])
             except KeyError:
                 continue
-        sql_filters.append(PushCommit.author_user.in_(author_ids))
+        sql_filters.append(PushCommit.author_user_id.in_(author_ids))
     if with_committer:
         committer_ids = []
         for u in with_committer:
@@ -107,7 +107,7 @@ async def extract_commits(prop: FilterCommitsProperty,
                 committer_ids.append(user_ids[u])
             except KeyError:
                 continue
-        sql_filters.append(PushCommit.committer_user.in_(committer_ids))
+        sql_filters.append(PushCommit.committer_user_id.in_(committer_ids))
     if columns is None:
         cols_query, cols_df = [PushCommit], PushCommit
     else:
@@ -123,9 +123,9 @@ async def extract_commits(prop: FilterCommitsProperty,
             select(cols_query)
             .select_from(outerjoin(
                 PushCommit, NodePullRequestCommit,
-                and_(PushCommit.node_id == NodePullRequestCommit.commit,
+                and_(PushCommit.node_id == NodePullRequestCommit.commit_id,
                      PushCommit.acc_id == NodePullRequestCommit.acc_id)))
-            .where(and_(NodePullRequestCommit.commit.is_(None), *sql_filters)),
+            .where(and_(NodePullRequestCommit.commit_id.is_(None), *sql_filters)),
             mdb, cols_df)
     else:
         raise AssertionError('Unsupported primary commit filter "%s"' % prop)
@@ -144,12 +144,12 @@ async def extract_commits(prop: FilterCommitsProperty,
         log.info("Removed force push dropped commits: %d / %d", len(commits), candidates_count)
     for number_prop in (PushCommit.additions, PushCommit.deletions, PushCommit.changed_files):
         try:
-            number_col = commits[number_prop.key]
+            number_col = commits[number_prop.name]
         except KeyError:
             continue
-        nans = commits[PushCommit.node_id.key].take(np.where(number_col.isna())[0])
+        nans = commits[PushCommit.node_id.name].take(np.where(number_col.isna())[0])
         if not nans.empty:
-            log.error("[DEV-546] Commits have NULL in %s: %s", number_prop.key, ", ".join(nans))
+            log.error("[DEV-546] Commits have NULL in %s: %s", number_prop.name, ", ".join(nans))
     return commits
 
 
@@ -160,24 +160,24 @@ def _take_commits_in_default_branches(commits: pd.DataFrame,
                                       ) -> pd.DataFrame:
     if commits.empty:
         return commits
-    branch_repos = branches[Branch.repository_full_name.key].values.astype("U")
-    branch_names = branches[Branch.branch_name.key].values.astype("U")
+    branch_repos = branches[Branch.repository_full_name.name].values.astype("U")
+    branch_names = branches[Branch.branch_name.name].values.astype("U")
     branch_repos_names = np.char.add(np.char.add(branch_repos, "|"), branch_names)
     default_repos_names = np.array([f"{k}|{v}" for k, v in default_branches.items()], dtype="U")
     default_mask = np.in1d(branch_repos_names, default_repos_names, assume_unique=True)
     branch_repos = branch_repos[default_mask]
-    branch_hashes = branches[Branch.commit_sha.key].values[default_mask].astype("S")
+    branch_hashes = branches[Branch.commit_sha.name].values[default_mask].astype("S")
     repos_order = np.argsort(branch_repos)
     branch_repos = branch_repos[repos_order]
     branch_hashes = branch_hashes[repos_order]
 
     commit_repos, commit_repo_indexes = np.unique(
-        commits[PushCommit.repository_full_name.key].values.astype("U"), return_inverse=True)
+        commits[PushCommit.repository_full_name.name].values.astype("U"), return_inverse=True)
     commit_repos_in_branches_mask = np.in1d(commit_repos, branch_repos, assume_unique=True)
     branch_repos_in_commits_mask = np.in1d(branch_repos, commit_repos, assume_unique=True)
     branch_repos = branch_repos[branch_repos_in_commits_mask]
     branch_hashes = branch_hashes[branch_repos_in_commits_mask]
-    commit_hashes = commits[PushCommit.sha.key].values.astype("S")
+    commit_hashes = commits[PushCommit.sha.name].values.astype("S")
 
     accessible_indexes = []
     for repo, head_sha, commit_repo_index in zip(
@@ -195,8 +195,8 @@ def _remove_force_push_dropped(commits: pd.DataFrame, dags: Dict[str, DAG]) -> p
     if commits.empty:
         return commits
     repos_order, indexes = np.unique(
-        commits[PushCommit.repository_full_name.key].values.astype("U"), return_inverse=True)
-    hashes = commits[PushCommit.sha.key].values.astype("S")
+        commits[PushCommit.repository_full_name.name].values.astype("U"), return_inverse=True)
+    hashes = commits[PushCommit.sha.name].values.astype("S")
     accessible_indexes = []
     for i, repo in enumerate(repos_order):
         repo_indexes = np.nonzero(indexes == i)[0]
@@ -296,8 +296,8 @@ async def fetch_repository_commits(repos: Dict[str, DAG],
             sql = postgres_insert(GitHubCommitHistory)
             sql = sql.on_conflict_do_update(
                 constraint=GitHubCommitHistory.__table__.primary_key,
-                set_={GitHubCommitHistory.dag.key: sql.excluded.dag,
-                      GitHubCommitHistory.updated_at.key: sql.excluded.updated_at})
+                set_={GitHubCommitHistory.dag.name: sql.excluded.dag,
+                      GitHubCommitHistory.updated_at.name: sql.excluded.updated_at})
         elif pdb.url.dialect == "sqlite":
             sql = insert(GitHubCommitHistory).prefix_with("OR REPLACE")
         else:
@@ -395,17 +395,18 @@ async def fetch_precomputed_commit_history_dags(
 ) -> Dict[str, DAG]:
     """Load commit DAGs from the pdb."""
     ghrc = GitHubCommitHistory
+    format_version = ghrc.__table__.columns[ghrc.format_version.key].default.arg
     with sentry_sdk.start_span(op="fetch_precomputed_commit_history_dags/pdb"):
         rows = await pdb.fetch_all(
             select([ghrc.repository_full_name, ghrc.dag])
             .where(and_(
-                ghrc.format_version == ghrc.__table__.columns[ghrc.format_version.key].default.arg,
+                ghrc.format_version == format_version,
                 ghrc.repository_full_name.in_(repos),
                 ghrc.acc_id == account,
             )))
     dags = {
-        row[ghrc.repository_full_name.key]: (
-            (dag := DAGStruct(row[ghrc.dag.key])).hashes, dag.vertexes, dag.edges,
+        row[ghrc.repository_full_name.name]: (
+            (dag := DAGStruct(row[ghrc.dag.name])).hashes, dag.vertexes, dag.edges,
         )
         for row in rows
     }
@@ -424,7 +425,7 @@ async def _fetch_commit_history_dag(hashes: np.ndarray,
                                     vertexes: np.ndarray,
                                     edges: np.ndarray,
                                     head_hashes: Sequence[str],
-                                    head_ids: Sequence[str],
+                                    head_ids: Sequence[int],
                                     repo: str,
                                     meta_ids: Tuple[int, ...],
                                     mdb: ParallelDatabase,
@@ -482,7 +483,7 @@ async def _fetch_commit_history_dag(hashes: np.ndarray,
     return repo, hashes, vertexes, edges
 
 
-async def _fetch_commit_history_edges(commit_ids: Iterable[str],
+async def _fetch_commit_history_edges(commit_ids: Iterable[int],
                                       stop_hashes: Iterable[str],
                                       meta_ids: Tuple[int, ...],
                                       mdb: ParallelDatabase,
@@ -490,8 +491,8 @@ async def _fetch_commit_history_edges(commit_ids: Iterable[str],
     """
     Query metadata DB for the new commit DAG edges.
 
-    We recursively traverse github_node_commit_parents starting from `commit_ids`.
-    SQL credits: @dennwc.
+    We recursively traverse github.node_commit_edge_parents starting from `commit_ids`.
+    Initial SQL credits: @dennwc.
 
     We return nodes in the native DB order, that's the opposite of Git's parent-child.
     CASE 0000000000000000000000000000000000000000 is required to distinguish between two options:
@@ -502,7 +503,8 @@ async def _fetch_commit_history_edges(commit_ids: Iterable[str],
     that if some of `commit_ids` do not have children, there will be 0 edges with them.
     """
     assert isinstance(mdb, ParallelDatabase), "fetch_all() must be patched to avoid re-wrapping"
-    quote = "`" if mdb.url.dialect == "sqlite" else ""
+    rq = "`" if mdb.url.dialect == "sqlite" else ""
+    tq = '"' if mdb.url.dialect == "sqlite" else ""
     if len(meta_ids) == 1:
         meta_id_sql = ("= %d" % meta_ids[0])
     else:
@@ -511,27 +513,27 @@ async def _fetch_commit_history_edges(commit_ids: Iterable[str],
     WITH RECURSIVE commit_history AS (
         SELECT
             p.child_id,
-            p.{quote}index{quote} AS parent_index,
+            p.{rq}index{rq} AS parent_index,
             pc.oid AS parent_oid,
             cc.oid AS child_oid,
             p.acc_id
         FROM
-            github_node_commit_parents p
-                LEFT JOIN github_node_commit pc ON p.parent_id = pc.id AND p.acc_id = pc.acc_id
-                LEFT JOIN github_node_commit cc ON p.child_id = cc.id AND p.acc_id = cc.acc_id
+            {tq}github.node_commit_edge_parents{tq} p
+                LEFT JOIN {tq}github.node_commit{tq} pc ON p.parent_id = pc.graph_id AND p.acc_id = pc.acc_id
+                LEFT JOIN {tq}github.node_commit{tq} cc ON p.child_id = cc.graph_id AND p.acc_id = cc.acc_id
         WHERE
-            p.parent_id IN ('{"', '".join(commit_ids)}') AND p.acc_id {meta_id_sql}
+            p.parent_id IN ({", ".join(map(str, commit_ids))}) AND p.acc_id {meta_id_sql}
         UNION
             SELECT
                 p.child_id,
-                p.{quote}index{quote} AS parent_index,
+                p.{rq}index{rq} AS parent_index,
                 h.child_oid AS parent_oid,
                 cc.oid AS child_oid,
                 p.acc_id
             FROM
-                github_node_commit_parents p
+                {tq}github.node_commit_edge_parents{tq} p
                     INNER JOIN commit_history h ON p.parent_id = h.child_id AND p.acc_id = h.acc_id
-                    LEFT JOIN github_node_commit cc ON p.child_id = cc.id AND p.acc_id = cc.acc_id
+                    LEFT JOIN {tq}github.node_commit{tq} cc ON p.child_id = cc.graph_id AND p.acc_id = cc.acc_id
             WHERE h.child_oid NOT IN ('{"', '".join(stop_hashes)}')
     ) SELECT
         parent_oid,
@@ -542,7 +544,7 @@ async def _fetch_commit_history_edges(commit_ids: Iterable[str],
         parent_index
     FROM
         commit_history;
-    """
+    """  # noqa
     rows = await mdb.fetch_all(query)
     if mdb.url.dialect == "sqlite":
         rows = [tuple(r) for r in rows]

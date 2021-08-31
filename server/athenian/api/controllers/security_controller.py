@@ -104,11 +104,11 @@ async def list_tokens(request: AthenianWebRequest, id: int) -> web.Response:
                         UserToken.account_id == id)))
         model = []
         for row in rows:
-            last_used = row[UserToken.last_used_at.key]
+            last_used = row[UserToken.last_used_at.name]
             if sqlite:
                 last_used = last_used.replace(tzinfo=timezone.utc)
-            model.append(ListedToken(id=row[UserToken.id.key],
-                                     name=row[UserToken.name.key],
+            model.append(ListedToken(id=row[UserToken.id.name],
+                                     name=row[UserToken.name.name],
                                      last_used=last_used))
     return model_response(model)
 
@@ -121,11 +121,11 @@ async def _check_token_access(request: AthenianWebRequest,
         raise ResponseError(NotFoundError(detail="Token %d was not found" % id))
     try:
         await get_user_account_status(
-            request.uid, token[UserToken.account_id.key], conn, request.cache)
+            request.uid, token[UserToken.account_id.name], conn, request.cache)
     except ResponseError:
         # do not leak the account number
         raise ResponseError(NotFoundError(detail="Token %d was not found" % id)) from None
-    if token[UserToken.user_id.key] != request.uid:
+    if token[UserToken.user_id.name] != request.uid:
         raise ResponseError(ForbiddenError(detail="Token %d belongs to a different user" % id))
 
 
