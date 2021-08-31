@@ -1078,6 +1078,8 @@ class PullRequestMiner:
         df_labels_index = dfs.labels.index.get_level_values(0)
         df_labels_names = dfs.labels[PullRequestLabel.name.key].values
         left = cls.find_left_by_labels(df_labels_index, df_labels_names, labels)
+        if not labels.include:
+            return df_labels_index.difference(left)
         return dfs.prs.index.difference(left)
 
     @classmethod
@@ -1124,6 +1126,8 @@ class PullRequestMiner:
             df_labels_names = dfs.jiras[Issue.labels.key].values
             df_labels_index = pd.Index(np.repeat(jira_index, [len(v) for v in df_labels_names]))
             df_labels_names = list(pd.core.common.flatten(df_labels_names))
+            # if jira.labels.include is empty, we effectively drop all unmapped PRs
+            # that is the desired behavior
             left.append(cls.find_left_by_labels(df_labels_index, df_labels_names, jira.labels))
         if jira.epics:
             left.append(jira_index.take(np.where(
