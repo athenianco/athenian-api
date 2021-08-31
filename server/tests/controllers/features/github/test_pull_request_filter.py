@@ -240,6 +240,35 @@ async def test_pr_list_miner_filter_labels_cache_postprocess(
 
 
 @with_defer
+async def test_pr_list_miner_filter_labels_cache_exclude(
+        mdb, pdb, rdb, release_match_setting_tag, cache, prefixer_promise):
+    time_from = datetime(2018, 9, 1, tzinfo=timezone.utc)
+    time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
+    prs1 = await filter_pull_requests(
+        set(), set(), time_from, time_to, {"src-d/go-git"}, {},
+        LabelFilter(set(), {"bug"}), JIRAFilter.empty(), False,
+        release_match_setting_tag, None, None,
+        prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
+    await wait_deferred()
+    assert len(prs1) == 71
+
+    prs2 = await filter_pull_requests(
+        set(), set(), time_from, time_to, {"src-d/go-git"}, {},
+        LabelFilter.empty(), JIRAFilter.empty(), False, release_match_setting_tag,
+        None, None, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
+    await wait_deferred()
+    assert len(prs2) == 74
+
+    prs3 = await filter_pull_requests(
+        set(), set(), time_from, time_to, {"src-d/go-git"}, {},
+        LabelFilter(set(), {"bug"}), JIRAFilter.empty(), False,
+        release_match_setting_tag, None, None,
+        prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
+    await wait_deferred()
+    assert len(prs3) == 71
+
+
+@with_defer
 async def test_pr_list_miner_filter_labels_pdb(
         metrics_calculator_factory, mdb, pdb, rdb, release_match_setting_tag, prefixer_promise):
     metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
