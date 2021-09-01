@@ -4,6 +4,7 @@ on:
   push:
     branches:
     - master
+    - legacy
   pull_request_target:
 
 env:
@@ -367,7 +368,7 @@ jobs:
   bump_version:
     name: Bump the version
     needs: [flake8, custom_checks, test, docker]
-    if: "!contains(github.event.head_commit.message, 'Bump version') && github.ref == 'refs/heads/master' && github.event_name == 'push'"
+    if: "!contains(github.event.head_commit.message, 'Bump version') && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/legacy') && github.event_name == 'push'"
     runs-on: ubuntu-20.04
     steps:
     - name: actions/checkout
@@ -389,7 +390,7 @@ jobs:
         token: ${{ secrets.GKWILLIE_TOKEN }}
   deploy:
     name: Deploy
-    if: "contains(github.event.head_commit.message, 'Bump version') && github.ref == 'refs/heads/master' && github.event_name == 'push'"
+    if: "contains(github.event.head_commit.message, 'Bump version') && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/legacy') && github.event_name == 'push'"
     runs-on: ubuntu-20.04
     steps:
     - name: actions/checkout
@@ -439,7 +440,7 @@ jobs:
         GOOGLE_CREDENTIALS=${{ secrets.GOOGLE_CREDENTIALS }} \
         GOOGLE_PROJECT=${{ secrets.GOOGLE_PROJECT }} \
         GOOGLE_PUBSUB_TOPIC=${{ secrets.GOOGLE_PUBSUB_TOPIC }} \
-        make pubsub-publish
+        if [ $GITHUB_REF == "refs/heads/master" ]; then make pubsub-publish; fi \
         docker tag $IMAGE gcr.io/${{ secrets.GOOGLE_PROJECT }}/api
         IMAGE=gcr.io/${{ secrets.GOOGLE_PROJECT }}/api make docker-push
         godotenv -s sentry-cli releases finalize $current_version

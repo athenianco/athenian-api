@@ -783,8 +783,13 @@ async def delete_force_push_dropped_prs(repos: Iterable[str],
     pr_merges, dags = await gather(*tasks, op="fetch merges + prune dags")
     accessible_hashes = np.sort(np.concatenate([dag[0] for dag in dags.values()]))
     merge_hashes = np.fromiter((r[0] for r in pr_merges), "S40", len(pr_merges))
-    found = searchsorted_inrange(accessible_hashes, merge_hashes)
-    dead_indexes = np.nonzero(accessible_hashes[found] != merge_hashes)[0]
+    if len(accessible_hashes) > 0:
+        found = searchsorted_inrange(accessible_hashes, merge_hashes)
+        dead_indexes = np.nonzero(accessible_hashes[found] != merge_hashes)[0]
+    else:
+        log = logging.getLogger(f"{metadata.__package__}.delete_force_push_dropped_prs")
+        log.error("all these repositories have empty commit DAGs: %s", sorted(dags))
+        dead_indexes = np.arange(len(merge_hashes))
     dead_pr_node_ids = [None] * len(dead_indexes)
     for i, dead_index in enumerate(dead_indexes):
         dead_pr_node_ids[i] = pr_merges[dead_index][1]
