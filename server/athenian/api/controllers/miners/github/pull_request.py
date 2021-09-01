@@ -324,7 +324,7 @@ class PullRequestMiner:
         deserialize=_deserialize_mine_by_ids_cache,
         key=lambda prs, unreleased, releases, time_to, truncate=True, with_jira=True, **_: (
             ",".join(map(str, prs.index.values)),
-            ",".join(unreleased),
+            ",".join(map(str, unreleased)),
             ",".join(map(str, releases[Release.node_id.name].values)),
             time_to.timestamp(),
             truncate,
@@ -333,7 +333,7 @@ class PullRequestMiner:
     )
     async def mine_by_ids(cls,
                           prs: pd.DataFrame,
-                          unreleased: Collection[str],
+                          unreleased: Collection[int],
                           time_to: datetime,
                           releases: pd.DataFrame,
                           matched_bys: Dict[str, ReleaseMatch],
@@ -374,7 +374,7 @@ class PullRequestMiner:
     @sentry_span
     async def _mine_by_ids(cls,
                            prs: pd.DataFrame,
-                           unreleased: Collection[str],
+                           unreleased: Collection[int],
                            time_to: datetime,
                            releases: pd.DataFrame,
                            matched_bys: Dict[str, ReleaseMatch],
