@@ -440,7 +440,6 @@ jobs:
         GOOGLE_CREDENTIALS=${{ secrets.GOOGLE_CREDENTIALS }} \
         GOOGLE_PROJECT=${{ secrets.GOOGLE_PROJECT }} \
         GOOGLE_PUBSUB_TOPIC=${{ secrets.GOOGLE_PUBSUB_TOPIC }} \
-        if [ $GITHUB_REF == "refs/heads/master" ]; then make pubsub-publish; fi \
         docker tag $IMAGE gcr.io/${{ secrets.GOOGLE_PROJECT }}/api
         IMAGE=gcr.io/${{ secrets.GOOGLE_PROJECT }}/api make docker-push
         godotenv -s sentry-cli releases finalize $current_version
