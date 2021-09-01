@@ -6,11 +6,10 @@ import pickle
 from typing import Any, Collection, Dict, Iterable, List, Optional, Tuple
 
 import aiomcache
-import databases
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, func, insert, join, or_, select
+from sqlalchemy import and_, func, join, or_, select
 from sqlalchemy.sql.elements import BinaryExpression
 
 from athenian.api import metadata
@@ -31,7 +30,7 @@ from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
 from athenian.api.controllers.miners.types import nonemax, PullRequestFacts
 from athenian.api.controllers.prefixer import PrefixerPromise
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
-from athenian.api.db import add_pdb_hits, add_pdb_misses
+from athenian.api.db import add_pdb_hits, add_pdb_misses, insert_or_ignore, ParallelDatabase
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import NodeCommit, NodeRepository, PullRequest, \
     PullRequestLabel, PushCommit, Release
@@ -42,8 +41,8 @@ from athenian.api.tracing import sentry_span
 async def load_commit_dags(releases: pd.DataFrame,
                            account: int,
                            meta_ids: Tuple[int, ...],
-                           mdb: databases.Database,
-                           pdb: databases.Database,
+                           mdb: ParallelDatabase,
+                           pdb: ParallelDatabase,
                            cache: Optional[aiomcache.Client],
                            ) -> Dict[str, DAG]:
     """Produce the commit history DAGs which should contain the specified releases."""
@@ -70,8 +69,8 @@ class PullRequestToReleaseMapper:
                                   prefixer: PrefixerPromise,
                                   account: int,
                                   meta_ids: Tuple[int, ...],
-                                  mdb: databases.Database,
-                                  pdb: databases.Database,
+                                  mdb: ParallelDatabase,
+                                  pdb: ParallelDatabase,
                                   cache: Optional[aiomcache.Client],
                                   ) -> Tuple[pd.DataFrame,
                                              Dict[str, Tuple[str, PullRequestFacts]],
@@ -84,8 +83,8 @@ class PullRequestToReleaseMapper:
                  3. Synchronization for updating the pdb table with merged unreleased PRs.
         """
         assert isinstance(time_to, datetime)
-        assert isinstance(mdb, databases.Database)
-        assert isinstance(pdb, databases.Database)
+        assert isinstance(mdb, ParallelDatabase)
+        assert isinstance(pdb, ParallelDatabase)
         pr_releases = new_released_prs_df()
         unreleased_prs_event = asyncio.Event()
         if prs.empty:
@@ -199,7 +198,7 @@ class PullRequestToReleaseMapper:
     async def _fetch_labels(cls,
                             node_ids: Iterable[str],
                             meta_ids: Tuple[int, ...],
-                            mdb: databases.Database,
+                            mdb: ParallelDatabase,
                             ) -> Dict[str, List[str]]:
         rows = await mdb.fetch_all(
             select([PullRequestLabel.pull_request_node_id, func.lower(PullRequestLabel.name)])
@@ -235,9 +234,9 @@ class ReleaseToPullRequestMapper:
                                   prefixer: PrefixerPromise,
                                   account: int,
                                   meta_ids: Tuple[int, ...],
-                                  mdb: databases.Database,
-                                  pdb: databases.Database,
-                                  rdb: databases.Database,
+                                  mdb: ParallelDatabase,
+                                  pdb: ParallelDatabase,
+                                  rdb: ParallelDatabase,
                                   cache: Optional[aiomcache.Client],
                                   pr_blacklist: Optional[BinaryExpression] = None,
                                   pr_whitelist: Optional[BinaryExpression] = None,
@@ -264,8 +263,8 @@ class ReleaseToPullRequestMapper:
         """
         assert isinstance(time_from, datetime)
         assert isinstance(time_to, datetime)
-        assert isinstance(mdb, databases.Database)
-        assert isinstance(pdb, databases.Database)
+        assert isinstance(mdb, ParallelDatabase)
+        assert isinstance(pdb, ParallelDatabase)
         assert isinstance(pr_blacklist, (BinaryExpression, type(None)))
         assert isinstance(pr_whitelist, (BinaryExpression, type(None)))
         assert (updated_min is None) == (updated_max is None)
@@ -331,9 +330,9 @@ class ReleaseToPullRequestMapper:
             prefixer: PrefixerPromise,
             account: int,
             meta_ids: Tuple[int, ...],
-            mdb: databases.Database,
-            pdb: databases.Database,
-            rdb: databases.Database,
+            mdb: ParallelDatabase,
+            pdb: ParallelDatabase,
+            rdb: ParallelDatabase,
             cache: Optional[aiomcache.Client],
             releases_in_time_range: Optional[pd.DataFrame] = None,
     ) -> Tuple[Dict[str, ReleaseMatch],
@@ -468,7 +467,7 @@ class ReleaseToPullRequestMapper:
                                      pr_blacklist: Optional[BinaryExpression],
                                      pr_whitelist: Optional[BinaryExpression],
                                      meta_ids: Tuple[int, ...],
-                                     mdb: databases.Database,
+                                     mdb: ParallelDatabase,
                                      cache: Optional[aiomcache.Client],
                                      ) -> pd.DataFrame:
         assert len(commits) == len(repos)
@@ -523,8 +522,8 @@ class ReleaseToPullRequestMapper:
                                                    repos: Iterable[str],
                                                    account: int,
                                                    meta_ids: Tuple[int, ...],
-                                                   mdb: databases.Database,
-                                                   pdb: databases.Database,
+                                                   mdb: ParallelDatabase,
+                                                   pdb: ParallelDatabase,
                                                    cache: Optional[aiomcache.Client],
                                                    ) -> Dict[str, datetime]:
         rows = await pdb.fetch_all(
@@ -561,19 +560,9 @@ class ReleaseToPullRequestMapper:
                     for v in values:
                         v[GitHubRepository.first_commit.name] = \
                             v[GitHubRepository.first_commit.name].replace(tzinfo=timezone.utc)
-
-                async def insert_repository():
-                    async with pdb.connection() as pdb_conn:
-                        async with pdb_conn.transaction():
-                            try:
-                                await pdb_conn.execute_many(insert(GitHubRepository), values)
-                            except Exception as e:
-                                log = logging.getLogger(
-                                    "%s._fetch_repository_first_commit_dates" %
-                                    metadata.__package__)
-                                log.warning("Failed to store %d rows: %s: %s",
-                                            len(values), type(e).__name__, e)
-                await defer(insert_repository(), "insert_repository")
+                await defer(insert_or_ignore(
+                    GitHubRepository, values, "_fetch_repository_first_commit_dates", pdb,
+                ), "insert_repository_first_commit_dates")
                 rows.extend(computed)
         result = {r[0]: r[1] for r in rows}
         if mdb.url.dialect == "sqlite" or pdb.url.dialect == "sqlite":

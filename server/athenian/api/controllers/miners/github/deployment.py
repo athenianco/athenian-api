@@ -12,8 +12,7 @@ import aiomcache
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, distinct, exists, func, insert, join, not_, or_, select, union_all
-from sqlalchemy.dialects.postgresql import insert as postgres_insert
+from sqlalchemy import and_, distinct, exists, func, join, not_, or_, select, union_all
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
@@ -32,7 +31,7 @@ from athenian.api.controllers.miners.types import DeploymentConclusion, Deployme
     ReleaseFacts, ReleaseParticipants, ReleaseParticipationKind
 from athenian.api.controllers.prefixer import PrefixerPromise
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
-from athenian.api.db import add_pdb_hits, add_pdb_misses, ParallelDatabase
+from athenian.api.db import add_pdb_hits, add_pdb_misses, insert_or_ignore, ParallelDatabase
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import NodeCommit, NodePullRequest, \
     NodePullRequestCommit, PullRequest, PullRequestLabel, PushCommit, Release
@@ -437,7 +436,7 @@ async def _submit_deployment_facts(facts: pd.DataFrame,
             joined["releases"].values,
         )
     ]
-    await _insert_or_ignore(GitHubDeploymentFacts, values, "_submit_deployment_facts", pdb)
+    await insert_or_ignore(GitHubDeploymentFacts, values, "_submit_deployment_facts", pdb)
 
 
 CommitRelationship = NamedTuple("CommitRelationship", [
@@ -568,25 +567,6 @@ async def _map_releases_to_deployments(
         releases, prefixer.as_promise(), default_branches, settings, account, pdb)
 
 
-async def _insert_or_ignore(model,
-                            values: List[Mapping[str, Any]],
-                            caller: str,
-                            pdb: ParallelDatabase) -> None:
-    if pdb.url.dialect == "postgresql":
-        sql = postgres_insert(model).on_conflict_do_nothing()
-    elif pdb.url.dialect == "sqlite":
-        sql = insert(model).prefix_with("OR IGNORE")
-    else:
-        raise AssertionError(f"Unsupported database dialect: {pdb.url.dialect}")
-    with sentry_sdk.start_span(op=f"{caller}/execute_many"):
-        if pdb.url.dialect == "sqlite":
-            async with pdb.connection() as pdb_conn:
-                async with pdb_conn.transaction():
-                    await pdb_conn.execute_many(sql, values)
-        else:
-            await pdb.execute_many(sql, values)
-
-
 @sentry_span
 async def _submit_deployed_commits(
         deployed_commits_per_repo_per_env: Dict[str, Dict[str, DeployedCommitDetails]],
@@ -602,7 +582,7 @@ async def _submit_deployed_commits(
         for details in repos.values()
         for deployment_name, commit_id in zip(details.deployments, details.ids)
     ]
-    await _insert_or_ignore(GitHubCommitDeployment, values, "_submit_deployed_commits", pdb)
+    await insert_or_ignore(GitHubCommitDeployment, values, "_submit_deployed_commits", pdb)
 
 
 @sentry_span
@@ -618,7 +598,7 @@ async def _submit_deployed_prs(
         ).explode(with_primary_keys=True)
         for (deployment_name, pr) in values
     ]
-    await _insert_or_ignore(GitHubPullRequestDeployment, values, "_submit_deployed_prs", pdb)
+    await insert_or_ignore(GitHubPullRequestDeployment, values, "_submit_deployed_prs", pdb)
 
 
 @sentry_span
@@ -639,7 +619,7 @@ async def _submit_deployed_releases(releases: pd.DataFrame,
             releases[PrecomputedRelease.release_match.name].values,
         )
     ]
-    await _insert_or_ignore(GitHubReleaseDeployment, values, "_submit_deployed_releases", pdb)
+    await insert_or_ignore(GitHubReleaseDeployment, values, "_submit_deployed_releases", pdb)
 
 
 @sentry_span

@@ -20,7 +20,8 @@ import databases.core
 from databases.interfaces import ConnectionBackend, TransactionBackend
 import numpy as np
 import sentry_sdk
-from sqlalchemy.dialects.postgresql import hstore
+from sqlalchemy import insert
+from sqlalchemy.dialects.postgresql import hstore, insert as postgres_insert
 from sqlalchemy.sql import ClauseElement
 from sqlalchemy.sql.ddl import DDLElement
 from sqlalchemy.sql.functions import ReturnTypeFromArgs
@@ -255,7 +256,7 @@ class ParallelDatabase(databases.Database):
             self._ignore_hstore = False
             self._introspect_types_cache_db = {}
             self._introspect_type_cache_db = {}
-        super().__init__(url, force_rollback=False, **options)
+        super().__init__(url, force_rollback=options.pop("force_rollback", False), **options)
         if url.dialect == "sqlite":
             self._serialization_lock = asyncio.Lock()
 
@@ -267,8 +268,11 @@ class ParallelDatabase(databases.Database):
         """Make Sentry debugging easier."""
         return repr(self)
 
-    def connection(self) -> FastConnection:
+    def connection(self) -> Union[FastConnection, databases.core.Connection]:
         """Bypass self._connection_context."""
+        if self.url.database == "":
+            # SQLite in-memory
+            return super().connection()
         connection = FastConnection(self._backend)
         connection._serialization_lock = self._serialization_lock
         return connection
@@ -564,3 +568,23 @@ DatabaseLike = Union[ParallelDatabase, FastConnection]
 # https://stackoverflow.com/questions/49456158/integer-in-python-pandas-becomes-blob-binary-in-sqlite  # noqa
 for dtype in (np.uint32, np.int32, np.uint64, np.int64):
     sqlite3.register_adapter(dtype, lambda val: int(val))
+
+
+async def insert_or_ignore(model,
+                           values: List[Mapping[str, Any]],
+                           caller: str,
+                           db: ParallelDatabase) -> None:
+    """Insert records to the table corresponding to the `model`. Ignore PK collisions."""
+    if db.url.dialect == "postgresql":
+        sql = postgres_insert(model).on_conflict_do_nothing()
+    elif db.url.dialect == "sqlite":
+        sql = insert(model).prefix_with("OR IGNORE")
+    else:
+        raise AssertionError(f"Unsupported database dialect: {db.url.dialect}")
+    with sentry_sdk.start_span(op=f"{caller}/execute_many"):
+        if db.url.dialect == "sqlite":
+            async with db.connection() as pdb_conn:
+                async with pdb_conn.transaction():
+                    await pdb_conn.execute_many(sql, values)
+        else:
+            await db.execute_many(sql, values)
