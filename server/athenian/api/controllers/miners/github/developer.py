@@ -1,12 +1,13 @@
 from datetime import datetime, timedelta
 from enum import Enum
+from itertools import chain
 from typing import Collection, FrozenSet, List, Optional, Set, Tuple, Type, Union
 
 import aiomcache
 import databases
 import numpy as np
 import pandas as pd
-from sqlalchemy import and_, func, join, or_, select
+from sqlalchemy import and_, exists, func, not_, select
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api.async_utils import gather, read_sql_query
@@ -64,6 +65,30 @@ class DeveloperStats:
     regular_pr_comments: int = 0
     review_pr_comments: int = 0
     active: int = 0
+
+
+def _filter_by_labels(other_model_acc_id: InstrumentedAttribute,
+                      other_model_pull_request_node_id: InstrumentedAttribute,
+                      labels: LabelFilter,
+                      filters: list) -> bool:
+    singles, multiples = LabelFilter.split(labels.include)
+    embedded_labels_query = not multiples
+    if all_in_labels := (set(singles + list(chain.from_iterable(multiples)))):
+        filters.append(
+            exists().where(and_(
+                PullRequestLabel.acc_id == other_model_acc_id,
+                PullRequestLabel.pull_request_node_id == other_model_pull_request_node_id,
+                func.lower(PullRequestLabel.name).in_(all_in_labels),
+            )))
+    if labels.exclude:
+        filters.append(
+            not_(exists().where(and_(
+                PullRequestLabel.acc_id == other_model_acc_id,
+                PullRequestLabel.pull_request_node_id == other_model_pull_request_node_id,
+                func.lower(PullRequestLabel.name).in_(labels.exclude),
+            ))))
+    assert embedded_labels_query, "TODO: we don't support label combinations yet"
+    return embedded_labels_query
 
 
 async def _mine_commits(repo_ids: np.ndarray,
@@ -129,24 +154,12 @@ async def _mine_prs(attr_user: InstrumentedAttribute,
         PullRequest.acc_id.in_(meta_ids),
     ]
     if labels:
-        filters.extend([
-            PullRequestLabel.acc_id.in_(meta_ids) if labels.include else True,
-            func.lower(PullRequestLabel.name).in_(labels.include) if labels.include else True,
-            or_(func.lower(PullRequestLabel.name).notin_(labels.exclude),
-                PullRequestLabel.name.is_(None),
-                PullRequestLabel.acc_id.notin_(meta_ids)) if labels.exclude else True,
-        ])
-        seed = join(
-            PullRequest, PullRequestLabel,
-            and_(PullRequest.node_id == PullRequestLabel.pull_request_node_id,
-                 PullRequest.acc_id == PullRequestLabel.acc_id),
-            isouter=not labels.include,
-        )
+        _filter_by_labels(PullRequest.acc_id, PullRequest.node_id, labels, filters)
         if jira:
             query = await generate_jira_prs_query(
-                filters, jira, mdb, cache, columns=selected, seed=seed)
+                filters, jira, mdb, cache, columns=selected, seed=PullRequest)
         else:
-            query = select(selected).select_from(seed).where(and_(*filters))
+            query = select(selected).where(and_(*filters))
     elif jira:
         query = await generate_jira_prs_query(
             filters, jira, mdb, cache, columns=selected)
@@ -228,24 +241,14 @@ async def _mine_reviews(repo_ids: np.ndarray,
         PullRequestReview.repository_node_id.in_(repo_ids),
     ]
     if labels:
-        filters.extend([
-            PullRequestLabel.acc_id.in_(meta_ids),
-            func.lower(PullRequestLabel.name).in_(labels.include) if labels.include else True,
-            or_(func.lower(PullRequestLabel.name).notin_(labels.exclude),
-                PullRequestLabel.name.is_(None)) if labels.exclude else True,
-        ])
-        seed = join(
-            PullRequestReview, PullRequestLabel,
-            and_(PullRequestReview.pull_request_node_id == PullRequestLabel.pull_request_node_id,
-                 PullRequestReview.acc_id == PullRequestLabel.acc_id),
-            isouter=not labels.include,
-        )
+        _filter_by_labels(PullRequestReview.acc_id, PullRequestReview.pull_request_node_id,
+                          labels, filters)
         if jira:
             query = await generate_jira_prs_query(
-                filters, jira, mdb, cache, columns=selected, seed=seed,
+                filters, jira, mdb, cache, columns=selected, seed=PullRequestReview,
                 on=(PullRequestReview.pull_request_node_id, PullRequestReview.acc_id))
         else:
-            query = select(selected).select_from(seed).where(and_(*filters))
+            query = select(selected).where(and_(*filters))
     elif jira:
         query = await generate_jira_prs_query(
             filters, jira, mdb, cache, columns=selected, seed=PullRequestReview,
@@ -280,30 +283,17 @@ async def _mine_pr_comments(model: Union[Type[PullRequestComment], Type[PullRequ
     filters = [
         model.acc_id.in_(meta_ids),
         model.created_at.between(time_from, time_to),
-        model.user_node_id.in_(dev_ids),
+        model.user_node_id.in_(dev_ids.tolist()),
         model.repository_node_id.in_(repo_ids),
     ]
     if labels:
-        filters.extend([
-            PullRequestLabel.acc_id.in_(meta_ids),
-            func.lower(PullRequestLabel.name).in_(labels.include) if labels.include else True,
-            or_(func.lower(PullRequestLabel.name).notin_(labels.exclude),
-                PullRequestLabel.name.is_(None)) if labels.exclude else True,
-        ])
-        seed = join(
-            model, PullRequestLabel,
-            and_(model.pull_request_node_id ==
-                 PullRequestLabel.pull_request_node_id,
-                 model.acc_id == PullRequestLabel.acc_id),
-            isouter=not labels.include,
-        )
+        _filter_by_labels(model.acc_id, model.pull_request_node_id, labels, filters)
         if jira:
             query = await generate_jira_prs_query(
-                filters, jira, mdb, cache, columns=selected, seed=seed,
-                on=(model.pull_request_node_id,
-                    model.acc_id))
+                filters, jira, mdb, cache, columns=selected, seed=model,
+                on=(model.pull_request_node_id, model.acc_id))
         else:
-            query = select(selected).select_from(seed).where(and_(*filters))
+            query = select(selected).where(and_(*filters))
     elif jira:
         query = await generate_jira_prs_query(
             filters, jira, mdb, cache, columns=selected, seed=model,
