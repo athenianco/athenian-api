@@ -96,11 +96,12 @@ class BranchMiner:
                 log.error("some repositories do not exist: %s", deleted_repos)
             if existing_zero_branch_repos:
                 rows = await mdb.fetch_all(
-                    select([NodeRepositoryRef.parent_id, func.count(NodeRepositoryRef.child_id)])
+                    select([NodeRepositoryRef.parent_id,
+                            func.count(NodeRepositoryRef.child_id).label("numrefs")])
                     .where(and_(NodeRepositoryRef.acc_id.in_(meta_ids),
                                 NodeRepositoryRef.parent_id.in_(existing_zero_branch_repos)))
                     .group_by(NodeRepositoryRef.parent_id))
-                refs = {r["parent_id"]: r["numrefs"] for r in rows}
+                refs = {r[NodeRepositoryRef.parent_id.name]: r["numrefs"] for r in rows}
                 reported_repos = set()
                 for node_id, full_name in existing_zero_branch_repos.items():
                     if full_name not in reported_repos:
