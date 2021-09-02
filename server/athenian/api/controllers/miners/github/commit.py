@@ -187,7 +187,8 @@ def _take_commits_in_default_branches(commits: pd.DataFrame,
         default_branch_hashes = extract_subdag(*dags[repo], np.array([head_sha]))[0]
         accessible_indexes.append(
             repo_indexes[np.in1d(repo_hashes, default_branch_hashes, assume_unique=True)])
-    accessible_indexes = np.sort(np.concatenate(accessible_indexes))
+    if accessible_indexes:
+        accessible_indexes = np.sort(np.concatenate(accessible_indexes))
     return commits.take(accessible_indexes)
 
 

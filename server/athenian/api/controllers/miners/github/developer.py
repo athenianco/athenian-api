@@ -283,7 +283,7 @@ async def _mine_pr_comments(model: Union[Type[PullRequestComment], Type[PullRequ
     filters = [
         model.acc_id.in_(meta_ids),
         model.created_at.between(time_from, time_to),
-        model.user_node_id.in_(dev_ids.tolist()),
+        model.user_node_id.in_(dev_ids),
         model.repository_node_id.in_(repo_ids),
     ]
     if labels:
