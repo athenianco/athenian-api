@@ -100,6 +100,8 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
                     kwargs["url"] = "https://athenianco.atlassian.net/browse/" + kwargs["key"]
                 if table == "github.node_repository":
                     kwargs["name"] = kwargs["name_with_owner"].split("/", 1)[1]
+                if table == "github.api_check_runs":
+                    kwargs["committed_date_hack"] = kwargs["committed_date"]
                 session.add(model(**kwargs))
                 if table == "github.api_pull_requests":
                     session.add(NodePullRequest(graph_id=kwargs["node_id"],

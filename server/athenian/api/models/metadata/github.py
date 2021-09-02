@@ -497,6 +497,7 @@ class CheckRunMixin(RepositoryMixin):
     author_login = Column(Text)
     authored_date = Column(TIMESTAMP(timezone=True), nullable=False)
     committed_date = Column(TIMESTAMP(timezone=True), nullable=False)
+    committed_date_hack = Column(TIMESTAMP(timezone=True), nullable=False)
     additions = Column(BigInteger, nullable=False)
     deletions = Column(BigInteger, nullable=False)
     changed_files = Column(BigInteger, nullable=False)
