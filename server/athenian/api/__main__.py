@@ -81,7 +81,9 @@ def parse_args() -> argparse.Namespace:
         return None
 
     flogging.add_logging_args(parser, level_from_msg=level_from_msg)
-    parser.add_argument("--host", default="0.0.0.0", help="HTTP server host.")
+    parser.add_argument("--host", default=[],
+                        help="HTTP server host. May be specified multiple times.",
+                        action="append")
     parser.add_argument("--port", type=int, default=8080, help="HTTP server port.")
     parser.add_argument("--metadata-db",
                         default="postgresql://postgres:postgres@0.0.0.0:5432/metadata",
