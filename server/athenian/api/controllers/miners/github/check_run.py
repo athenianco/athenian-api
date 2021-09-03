@@ -76,6 +76,8 @@ async def mine_check_runs(time_from: datetime,
     filters = [
         CheckRun.acc_id.in_(meta_ids),
         CheckRun.started_at.between(time_from, time_to),
+        CheckRun.committed_date_hack.between(
+            time_from - timedelta(days=14), time_to + timedelta(days=1)),
         CheckRun.repository_node_id.in_(repo_nodes),
     ]
     if pushers:
@@ -95,11 +97,22 @@ async def mine_check_runs(time_from: datetime,
             filters.append(CheckRun.pull_request_node_id.isnot(None))
     if not jira:
         query = select([CheckRun]).where(and_(*filters))
+        set_join_collapse_limit = mdb.url.dialect == "postgresql"
     else:
         query = await generate_jira_prs_query(
             filters, jira, mdb, cache, columns=CheckRun.__table__.columns, seed=CheckRun,
             on=(CheckRun.pull_request_node_id, CheckRun.acc_id))
-    df = await read_sql_query(query, mdb, columns=CheckRun)
+        set_join_collapse_limit = False
+    async with mdb.connection() as mdb_conn:
+        if set_join_collapse_limit:
+            transaction = mdb_conn.transaction()
+            await transaction.start()
+            await mdb_conn.execute("set join_collapse_limit=1")
+        try:
+            df = await read_sql_query(query, mdb_conn, columns=CheckRun)
+        finally:
+            if set_join_collapse_limit:
+                await transaction.rollback()
 
     pr_node_ids = df[CheckRun.pull_request_node_id.key].unique()
 
@@ -110,8 +123,12 @@ async def mine_check_runs(time_from: datetime,
             CheckRun.pull_request_node_id.in_(pr_node_ids),
         ]
 
-    query_before = select([CheckRun]).where(and_(*filters(), CheckRun.started_at < time_from))
-    query_after = select([CheckRun]).where(and_(*filters(), CheckRun.started_at >= time_to))
+    query_before = select([CheckRun]).where(and_(*filters(), CheckRun.started_at.between(
+        time_from - timedelta(days=90), time_from - timedelta(seconds=1),
+    )))
+    query_after = select([CheckRun]).where(and_(*filters(), CheckRun.started_at.between(
+        time_to + timedelta(seconds=1), time_to + timedelta(days=90),
+    )))
     tasks = [
         read_sql_query(union_all(query_before, query_after), mdb, columns=CheckRun),
     ]
@@ -125,6 +142,7 @@ async def mine_check_runs(time_from: datetime,
             index=PullRequestLabel.pull_request_node_id.key))
     extra_df, *df_labels = await gather(*tasks)
     df = df.append(extra_df, ignore_index=True)
+    del df[CheckRun.committed_date_hack.name]
     del extra_df
 
     pr_node_ids = df[CheckRun.pull_request_node_id.key].values.astype("U")
@@ -286,6 +304,7 @@ async def mine_check_runs(time_from: datetime,
     df[CheckRun.completed_at.key] = np.maximum(
         df[CheckRun.completed_at.key].fillna(pd.NaT).values, started_ats)
     df[CheckRun.completed_at.key] = df[CheckRun.completed_at.key].astype(started_ats.dtype)
+
     return df
 
 
