@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 import pandas as pd
@@ -16,7 +16,9 @@ def td_list(items: List[Optional[int]]) -> List[timedelta]:
 
 async def test_filter_check_runs_monthly_quantiles(mdb):
     timeline, items = await filter_check_runs(
-        datetime(2015, 1, 1), datetime(2020, 1, 1), ["src-d/go-git"], [],
+        datetime(2015, 1, 1, tzinfo=timezone.utc),
+        datetime(2020, 1, 1, tzinfo=timezone.utc),
+        ["src-d/go-git"], [],
         LabelFilter.empty(), JIRAFilter.empty(), [0, 0.95], (6366825,), mdb, None)
     assert len(timeline) == len(set(timeline)) == 61
     assert len(items) == 9
@@ -82,7 +84,8 @@ async def test_filter_check_runs_monthly_quantiles(mdb):
 
 async def test_filter_check_runs_daily(mdb):
     timeline, items = await filter_check_runs(
-        datetime(2018, 2, 1), datetime(2018, 2, 12), ["src-d/go-git"], [],
+        datetime(2018, 2, 1, tzinfo=timezone.utc), datetime(2018, 2, 12, tzinfo=timezone.utc),
+        ["src-d/go-git"], [],
         LabelFilter.empty(), JIRAFilter.empty(), [0, 1], (6366825,), mdb, None)
     assert len(timeline) == len(set(timeline)) == 12
     assert len(items) == 7
@@ -90,7 +93,8 @@ async def test_filter_check_runs_daily(mdb):
 
 async def test_filter_check_runs_empty(mdb):
     timeline, items = await filter_check_runs(
-        datetime(2018, 2, 1), datetime(2018, 2, 12), ["src-d/go-git"], ["xxx"],
+        datetime(2018, 2, 1, tzinfo=timezone.utc), datetime(2018, 2, 12, tzinfo=timezone.utc),
+        ["src-d/go-git"], ["xxx"],
         LabelFilter.empty(), JIRAFilter.empty(), [0, 1], (6366825,), mdb, None)
     assert len(timeline) == len(set(timeline)) == 12
     assert len(items) == 0
@@ -99,19 +103,23 @@ async def test_filter_check_runs_empty(mdb):
 @with_defer
 async def test_filter_check_runs_cache(mdb, cache):
     timeline1, items1 = await filter_check_runs(
-        datetime(2015, 1, 1), datetime(2020, 1, 1), ["src-d/go-git"], [],
+        datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
+        ["src-d/go-git"], [],
         LabelFilter.empty(), JIRAFilter.empty(), [0, 0.95], (6366825,), mdb, cache)
     await wait_deferred()
     timeline2, items2 = await filter_check_runs(
-        datetime(2015, 1, 1), datetime(2020, 1, 1), ["src-d/go-git"], [],
+        datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
+        ["src-d/go-git"], [],
         LabelFilter.empty(), JIRAFilter.empty(), [0, 0.95], (6366825,), None, cache)
     assert timeline1 == timeline2
     assert items1 == items2
     timeline2, items2 = await filter_check_runs(
-        datetime(2015, 1, 1), datetime(2020, 1, 1), ["src-d/go-git"], [],
+        datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
+        ["src-d/go-git"], [],
         LabelFilter.empty(), JIRAFilter.empty(), [0, 0.05], (6366825,), None, cache)
     assert items1 != items2
     with pytest.raises(Exception):
         await filter_check_runs(
-            datetime(2015, 1, 1), datetime(2020, 1, 2), ["src-d/go-git"], [],
+            datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 2, tzinfo=timezone.utc),
+            ["src-d/go-git"], [],
             LabelFilter.empty(), JIRAFilter.empty(), [0, 0.95], (6366825,), None, cache)
