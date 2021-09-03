@@ -15,7 +15,8 @@ from athenian.api.controllers import invitation_controller
 from athenian.api.controllers.calculator_selector import METRIC_ENTRIES_VARIATIONS_PREFIX
 from athenian.api.controllers.invitation_controller import _generate_account_secret
 from athenian.api.models.metadata import __min_version__
-from athenian.api.models.metadata.github import Base as GithubBase, NodeCommit, NodePullRequest, \
+from athenian.api.models.metadata.github import Base as GithubBase, CheckRunByPR, NodeCommit, \
+    NodePullRequest, \
     PullRequest, PushCommit, SchemaMigration, ShadowBase as ShadowGithubBase
 from athenian.api.models.metadata.jira import Base as JiraBase
 from athenian.api.models.persistentdata.models import DeployedComponent, DeploymentNotification
@@ -100,8 +101,6 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
                     kwargs["url"] = "https://athenianco.atlassian.net/browse/" + kwargs["key"]
                 if table == "github_node_repository":
                     kwargs["name"] = kwargs["name_with_owner"].split("/", 1)[1]
-                if table == "github.api_check_runs":
-                    kwargs["committed_date_hack"] = kwargs["committed_date"]
                 session.add(model(**kwargs))
                 if table == "github.api_pull_requests":
                     session.add(NodePullRequest(id=kwargs["node_id"],
@@ -125,6 +124,11 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
                                            additions=kwargs["additions"],
                                            deletions=kwargs["deletions"],
                                            ))
+                elif table == "github.api_check_runs":
+                    del kwargs["committed_date_hack"]
+                    del kwargs["pull_request_created_at"]
+                    del kwargs["pull_request_closed_at"]
+                    session.add(CheckRunByPR(**kwargs))
     session.add(SchemaMigration(version=__min_version__, dirty=False))
     session.flush()
     # append missed merge commit IDs to PRs

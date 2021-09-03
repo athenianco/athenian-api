@@ -13,6 +13,8 @@ from sqlalchemy.sql import ClauseElement
 from athenian.api import metadata
 from athenian.api.db import DatabaseLike
 from athenian.api.models.metadata.github import Base as MetadataBase
+from athenian.api.models.persistentdata.models import Base as PerdataBase
+from athenian.api.models.precomputed.models import GitHubBase as PrecomputedBase
 from athenian.api.models.state.models import Base as StateBase
 from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
 
@@ -20,7 +22,7 @@ from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
 async def read_sql_query(sql: ClauseElement,
                          con: DatabaseLike,
                          columns: Union[Sequence[str], Sequence[InstrumentedAttribute],
-                                        MetadataBase, StateBase],
+                                        MetadataBase, PerdataBase, PrecomputedBase, StateBase],
                          index: Optional[Union[str, Sequence[str]]] = None,
                          ) -> pd.DataFrame:
     """Read SQL query into a DataFrame.
