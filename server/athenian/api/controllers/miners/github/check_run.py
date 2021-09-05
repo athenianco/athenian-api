@@ -114,13 +114,42 @@ async def mine_check_runs(time_from: datetime,
     df, df_labels = await _append_pull_request_check_runs_outside(
         df, time_from, time_to, labels, embedded_labels_query, meta_ids, mdb)
 
+    # the same check runs / suites may attach to different PRs, fix that
+    df = await _disambiguate_pull_requests(df, log, meta_ids, mdb)
+
+    # deferred filter by labels so that we disambiguate PRs always the same way
+    if labels:
+        df = _filter_by_pr_labels(df, labels, embedded_labels_query, df_labels)
+
+    # some status contexts represent the start and the finish events, join them together
+    df_len = len(df)
+    _merge_status_contexts(df)
+    log.info("merged %d / %d", df_len - len(df), df_len)
+
+    # "Re-run jobs" may produce duplicate check runs in the same check suite, split them
+    # in separate artificial check suites by enumerating in chronological order
+    df_len = len(df)
+    _split_duplicate_check_runs(df)
+    log.info("split %d / %d", len(df) - df_len, df_len)
+
+    _postprocess_check_runs(df)
+
+    return df
+
+
+@sentry_span
+async def _disambiguate_pull_requests(df: pd.DataFrame,
+                                      log: logging.Logger,
+                                      meta_ids: Tuple[int, ...],
+                                      mdb: ParallelDatabase,
+                                      ) -> pd.DataFrame:
     pr_node_ids = df[CheckRun.pull_request_node_id.key].values.astype("U")
     check_run_node_ids = df[CheckRun.check_run_node_id.key].values.astype("S")
     unique_node_ids, node_id_counts = np.unique(check_run_node_ids, return_counts=True)
     assert (unique_node_ids != b"None").all()
     ambiguous_unique_check_run_indexes = np.nonzero(node_id_counts > 1)[0]
     if len(ambiguous_unique_check_run_indexes):
-        log.debug("Must disambiguate %d check runs", len(ambiguous_unique_check_run_indexes))
+        log.debug("must disambiguate %d check runs", len(ambiguous_unique_check_run_indexes))
         # another groupby() replacement for speed
         # we determine check runs belonging to the same commit with multiple pull requests
         node_ids_order = np.argsort(check_run_node_ids)
@@ -184,7 +213,7 @@ async def mine_check_runs(time_from: datetime,
     old_df_len = len(df)
     df.drop_duplicates([CheckRun.check_run_node_id.key, CheckRun.pull_request_node_id.key],
                        inplace=True, ignore_index=True)
-    log.info("Rejecting check runs by PR lifetimes: %d / %d", len(df), old_df_len)
+    log.info("rejecting check runs by PR lifetimes: %d / %d", len(df), old_df_len)
 
     if len(ambiguous_unique_check_run_indexes):
         # second lap
@@ -198,7 +227,7 @@ async def mine_check_runs(time_from: datetime,
             groups = np.array(np.split(node_ids_order, node_ids_group_counts[:-1]), dtype=object)
             groups = groups[ambiguous_unique_check_run_indexes]
             ambiguous_indexes = np.concatenate(groups)
-            log.info("Must disambiguate %d check runs", len(ambiguous_indexes))
+            log.info("must disambiguate %d check runs", len(ambiguous_indexes))
             ambiguous_pr_node_ids = pr_node_ids[ambiguous_indexes].astype("U")
     if len(ambiguous_unique_check_run_indexes):
         ambiguous_check_run_node_ids = check_run_node_ids[ambiguous_indexes].astype("U")
@@ -216,20 +245,20 @@ async def mine_check_runs(time_from: datetime,
         passed = np.nonzero((
             ambiguous_df[NodePullRequest.author.key] == ambiguous_df[CheckRun.author_user.key]
         ).values)[0]
-        log.info("Disambiguation step 1 - authors: %d / %d", len(passed), len(ambiguous_df))
+        log.info("disambiguation step 1 - authors: %d / %d", len(passed), len(ambiguous_df))
         passed_df = ambiguous_df.take(passed).join(
             pr_commit_counts, on=CheckRun.pull_request_node_id.key)
         del ambiguous_df
         # heuristic: the PR with the least number of commits wins
         passed = passed_df.groupby(CheckRun.check_run_node_id.key)["count"] \
             .idxmin().values.astype(int, copy=False)
-        log.info("Disambiguation step 2 - commit counts: %d / %d", len(passed), len(passed_df))
+        log.info("disambiguation step 2 - commit counts: %d / %d", len(passed), len(passed_df))
         del passed_df
         # we may discard some check runs completely here, set pull_request_node_id to None for them
         passed_mask = np.zeros_like(ambiguous_indexes, dtype=bool)
         passed_mask[passed] = True
         reset_indexes = ambiguous_indexes[~passed_mask]
-        log.info("Disambiguated null-s: %d / %d", len(reset_indexes), len(ambiguous_indexes))
+        log.info("disambiguated null-s: %d / %d", len(reset_indexes), len(ambiguous_indexes))
         df.loc[reset_indexes, CheckRun.pull_request_node_id.key] = None
         # there can be check runs mapped to both a PR and None; remove None-s
         pr_node_ids[reset_indexes] = b"None"
@@ -239,23 +268,17 @@ async def mine_check_runs(time_from: datetime,
         _, first_encounters = np.unique(check_run_node_ids[order], return_index=True)
         first_encounters = order[first_encounters]
         # first_encounters either map to a PR or to the only None for each check run
-        log.info("Final size: %d / %d", len(first_encounters), len(df))
+        log.info("final size: %d / %d", len(first_encounters), len(df))
         df = df.take(first_encounters)
         df.reset_index(inplace=True, drop=True)
 
-    # deferred filter by labels so that we disambiguate PRs always the same way
-    if labels:
-        df = _filter_by_pr_labels(df, labels, embedded_labels_query, df_labels)
+    return df
 
-    # some status contexts represent the start and the finish events, join them together
-    _merge_status_contexts(df)
 
-    # "Re-run jobs" may produce duplicate check runs in the same check suite, split them
-    # in separate artificial check suites by enumerating in chronological order
-    _split_duplicate_check_runs(df)
-
+@sentry_span
+def _postprocess_check_runs(df: pd.DataFrame) -> None:
     # exclude skipped checks from execution time calculation
-    df.loc[df[CheckRun.conclusion.key] == "NEUTRAL", CheckRun.completed_at.key] = None
+    df.loc[df[CheckRun.conclusion.name] == "NEUTRAL", CheckRun.completed_at.name] = None
 
     # ensure that the timestamps are in sync after pruning PRs
     pr_ts_columns = [
@@ -263,18 +286,16 @@ async def mine_check_runs(time_from: datetime,
         pull_request_closed_column,
         pull_request_merged_column,
     ]
-    df.loc[df[CheckRun.pull_request_node_id.key].isnull(), pr_ts_columns] = None
+    df.loc[df[CheckRun.pull_request_node_id.name].isnull(), pr_ts_columns] = None
     for column in pr_ts_columns:
         df.loc[df[column] == 0, column] = None
 
     # there can be checks that finished before starting 🤦‍
     # pd.DataFrame.max(axis=1) does not work correctly because of the NaT-s
-    started_ats = df[CheckRun.started_at.key].values
-    df[CheckRun.completed_at.key] = np.maximum(
-        df[CheckRun.completed_at.key].fillna(pd.NaT).values, started_ats)
-    df[CheckRun.completed_at.key] = df[CheckRun.completed_at.key].astype(started_ats.dtype)
-
-    return df
+    started_ats = df[CheckRun.started_at.name].values
+    df[CheckRun.completed_at.name] = np.maximum(
+        df[CheckRun.completed_at.name].fillna(pd.NaT).values, started_ats)
+    df[CheckRun.completed_at.name] = df[CheckRun.completed_at.name].astype(started_ats.dtype)
 
 
 @sentry_span
@@ -349,6 +370,7 @@ def _calculate_check_suite_started(df: pd.DataFrame) -> None:
     )[CheckRun.started_at.name].transform("min")
 
 
+@sentry_span
 def _filter_by_pr_labels(df: pd.DataFrame,
                          labels: LabelFilter,
                          embedded_labels_query: bool,
@@ -366,6 +388,7 @@ def _filter_by_pr_labels(df: pd.DataFrame,
     return df
 
 
+@sentry_span
 def _merge_status_contexts(df: pd.DataFrame) -> None:
     if df.empty:
         return
@@ -377,23 +400,28 @@ def _merge_status_contexts(df: pd.DataFrame) -> None:
     no_finish_seeds = np.char.add(no_finish_parents, no_finish_urls)
     _, first_encounters, indexes, counts = np.unique(
         no_finish_seeds, return_index=True, return_inverse=True, return_counts=True)
-    masks = np.zeros((len(first_encounters), len(no_finish_seeds)), bool)
-    arr_y = np.repeat(np.arange(len(first_encounters)), counts)
-    arr_x = np.argsort(indexes)
-    masks[arr_y, arr_x] = True
-    timestamps = np.broadcast_to(df[CheckRun.started_at.name].values[no_finish][None, :],
-                                 masks.shape)
+    indexes_original = np.argsort(indexes)
+    # give more priority to completed runs
+    timestamps = df[CheckRun.started_at.name].values[no_finish[indexes_original]] + (
+        (df[CheckRun.status.name].values[no_finish[indexes_original]] != "PENDING") *
+        np.array([1], dtype="timedelta64[us]")
+    )
     captured = counts > 1
-    mins = np.min(timestamps, where=masks, initial=np.nanmax(timestamps[0]), axis=1)[captured]
-    maxs = np.max(timestamps, where=masks, initial=np.nanmin(timestamps[0]), axis=1)
-    argmaxs = np.argmax(np.equal(timestamps, maxs[:, None], where=masks), axis=1)[captured]
+    offsets = np.zeros(len(counts), dtype=int)
+    np.cumsum(counts[:-1], out=offsets[1:])
+    mins = np.minimum.reduceat(timestamps, offsets)[captured]
+    maxs = np.maximum.reduceat(timestamps, offsets)
+    matched_maxs = np.repeat(np.arange(len(counts)), counts) * \
+        (timestamps == np.repeat(maxs, counts))
+    argmaxs = indexes_original[np.unique(matched_maxs, return_index=True)[1][captured]]
     maxs = maxs[captured]
-    statuses = df[CheckRun.status.name].values[no_finish][argmaxs]
+    statuses = df[CheckRun.status.name].values[no_finish[argmaxs]]
     # we have to cast dtype here to prevent changing dtype in df to object
     mins = pd.Series(mins).astype(df[CheckRun.started_at.name].dtype)
     maxs = pd.Series(maxs).astype(df[CheckRun.started_at.name].dtype)
     first_encounters = first_encounters[captured]
     first_no_finish = no_finish[first_encounters]
+    # df.loc requires a matching index
     mins.index = maxs.index = first_no_finish
     df.loc[first_no_finish, CheckRun.started_at.name] = mins
     df.loc[first_no_finish, CheckRun.completed_at.name] = maxs
@@ -406,6 +434,7 @@ def _merge_status_contexts(df: pd.DataFrame) -> None:
     df.reset_index(inplace=True, drop=True)
 
 
+@sentry_span
 def _split_duplicate_check_runs(df: pd.DataFrame) -> None:
     # DEV-2612 split older re-runs to artificial check suites
     if df.empty:
