@@ -135,7 +135,7 @@ async def test_get_everything_smoke(client, headers):
     }
     assert len(check_runs_df) == 4426
     assert set(check_runs_df) == {
-        "acc_id", "additions", "author_login", "author_user", "authored_date", "changed_files",
+        "acc_id", "additions", "author_login", "author_user_id", "authored_date", "changed_files",
         "check_run_node_id", "check_suite_conclusion", "check_suite_node_id", "check_suite_status",
         "commit_node_id", "committed_date", "completed_at", "conclusion", "deletions", "name",
         "pull_request_node_id", "repository_full_name", "repository_node_id", "sha", "started_at",

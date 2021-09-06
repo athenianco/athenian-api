@@ -493,7 +493,7 @@ class CommonCheckRunMixin(RepositoryMixin):
     acc_id = Column(BigInteger)
     commit_node_id = Column(BigInteger, nullable=False)
     sha = Column(Text, nullable=False)
-    author_user = Column(BigInteger)
+    author_user_id = Column(BigInteger)
     author_login = Column(Text)
     authored_date = Column(TIMESTAMP(timezone=True), nullable=False)
     committed_date = Column(TIMESTAMP(timezone=True), nullable=False)
