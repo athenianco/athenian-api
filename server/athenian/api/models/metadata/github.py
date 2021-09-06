@@ -487,7 +487,7 @@ class NodeStatusContext(Base,
     __tablename__ = "node_statuscontext"
 
 
-class CheckRunMixin(RepositoryMixin):
+class CommonCheckRunMixin(RepositoryMixin):
     __tablename__ = "api_check_runs"
 
     acc_id = Column(BigInteger)
@@ -513,6 +513,18 @@ class CheckRunMixin(RepositoryMixin):
     check_suite_status = Column(Text, nullable=False)
 
 
+class CheckRunMixin(CommonCheckRunMixin):
+    __tablename__ = "api_check_runs"
+
+    committed_date_hack = Column(TIMESTAMP(timezone=True), nullable=False)
+    pull_request_created_at = Column(TIMESTAMP(timezone=True))
+    pull_request_closed_at = Column(TIMESTAMP(timezone=True))
+
+
+class CheckRunByPRMixin(CommonCheckRunMixin):
+    __tablename__ = "api_check_runs_by_pr"
+
+
 class CheckRun(CheckRunMixin, Base):
     # pull_request_node_id may be null so we cannot include it in the real PK
     # yet several records may differ only by pull_request_node_id
@@ -529,5 +541,21 @@ class _CheckRun(CheckRunMixin, ShadowBase):
 
     __table_args__ = (UniqueConstraint("acc_id", "check_run_node_id", "pull_request_node_id",
                                        name="uc_check_run_pk_surrogate"),
+                      {"schema": "github"})
+    shadow_id = Column(Integer, primary_key=True)
+
+
+class CheckRunByPR(CheckRunByPRMixin, Base):
+    # pull_request_node_id may be null so we cannot include it in the real PK
+    # yet several records may differ only by pull_request_node_id
+    __table_args__ = (PrimaryKeyConstraint("acc_id", "check_run_node_id", "pull_request_node_id"),
+                      {"schema": "github"})
+
+
+class _CheckRunByPR(CheckRunByPRMixin, ShadowBase):
+    """Hidden version of "CheckRun" used in DDL-s."""
+
+    __table_args__ = (UniqueConstraint("acc_id", "check_run_node_id", "pull_request_node_id",
+                                       name="uc_check_run_by_pr_pk_surrogate"),
                       {"schema": "github"})
     shadow_id = Column(Integer, primary_key=True)

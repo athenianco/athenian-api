@@ -2,12 +2,13 @@ from datetime import datetime, timedelta, timezone
 from itertools import chain
 import logging
 import pickle
-from typing import Collection, Optional, Tuple
+from typing import Collection, Optional, Tuple, Type, Union
 
 import aiomcache
 import numpy as np
 import pandas as pd
 from sqlalchemy import and_, exists, func, select, union_all
+from sqlalchemy.sql import ClauseElement
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
@@ -15,8 +16,9 @@ from athenian.api.cache import cached, short_term_exptime
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
-from athenian.api.db import DatabaseLike
-from athenian.api.models.metadata.github import CheckRun, NodePullRequest, NodePullRequestCommit, \
+from athenian.api.db import DatabaseLike, ParallelDatabase
+from athenian.api.models.metadata.github import CheckRun, CheckRunByPR, NodePullRequest, \
+    NodePullRequestCommit, \
     NodeRepository, PullRequestLabel
 from athenian.api.tracing import sentry_span
 
@@ -69,6 +71,8 @@ async def mine_check_runs(time_from: datetime,
     :return: Pandas DataFrame with columns mapped from CheckRun model.
     """
     log = logging.getLogger(f"{metadata.__package__}.mine_check_runs")
+    assert time_from.tzinfo is not None
+    assert time_to.tzinfo is not None
     repo_nodes = [r[0] for r in await mdb.fetch_all(
         select([NodeRepository.id])
         .where(and_(NodeRepository.acc_id.in_(meta_ids),
@@ -76,6 +80,8 @@ async def mine_check_runs(time_from: datetime,
     filters = [
         CheckRun.acc_id.in_(meta_ids),
         CheckRun.started_at.between(time_from, time_to),
+        CheckRun.committed_date_hack.between(
+            time_from - timedelta(days=14), time_to + timedelta(days=1)),
         CheckRun.repository_node_id.in_(repo_nodes),
     ]
     if pushers:
@@ -93,39 +99,20 @@ async def mine_check_runs(time_from: datetime,
                 )))
         else:
             filters.append(CheckRun.pull_request_node_id.isnot(None))
+    else:
+        embedded_labels_query = False
     if not jira:
         query = select([CheckRun]).where(and_(*filters))
+        set_join_collapse_limit = mdb.url.dialect == "postgresql"
     else:
         query = await generate_jira_prs_query(
             filters, jira, mdb, cache, columns=CheckRun.__table__.columns, seed=CheckRun,
             on=(CheckRun.pull_request_node_id, CheckRun.acc_id))
-    df = await read_sql_query(query, mdb, columns=CheckRun)
-
-    pr_node_ids = df[CheckRun.pull_request_node_id.name].unique()
-
-    # load check runs mapped to the mentioned PRs even if they are outside of the date range
-    def filters():
-        return [
-            CheckRun.acc_id.in_(meta_ids),
-            CheckRun.pull_request_node_id.in_(pr_node_ids),
-        ]
-
-    query_before = select([CheckRun]).where(and_(*filters(), CheckRun.started_at < time_from))
-    query_after = select([CheckRun]).where(and_(*filters(), CheckRun.started_at >= time_to))
-    tasks = [
-        read_sql_query(union_all(query_before, query_after), mdb, columns=CheckRun),
-    ]
-    if labels and not embedded_labels_query:
-        tasks.append(read_sql_query(
-            select([PullRequestLabel.pull_request_node_id,
-                    func.lower(PullRequestLabel.name).label(PullRequestLabel.name.name)])
-            .where(and_(PullRequestLabel.pull_request_node_id.in_(pr_node_ids),
-                        PullRequestLabel.acc_id.in_(meta_ids))),
-            mdb, [PullRequestLabel.pull_request_node_id, PullRequestLabel.name],
-            index=PullRequestLabel.pull_request_node_id.name))
-    extra_df, *df_labels = await gather(*tasks)
-    df = df.append(extra_df, ignore_index=True)
-    del extra_df
+        set_join_collapse_limit = False
+    df = await _read_sql_query_with_join_collapse(query, CheckRun, set_join_collapse_limit, mdb)
+    # add check runs mapped to the mentioned PRs even if they are outside of the date range
+    df, df_labels = await _append_pull_request_check_runs_outside(
+        df, time_from, time_to, labels, embedded_labels_query, meta_ids, mdb)
 
     pr_node_ids = df[CheckRun.pull_request_node_id.name].values
     check_run_node_ids = df[CheckRun.check_run_node_id.name].values
@@ -296,7 +283,74 @@ async def mine_check_runs(time_from: datetime,
     for col in (CheckRun.check_run_node_id, CheckRun.check_suite_node_id,
                 CheckRun.repository_node_id, CheckRun.commit_node_id):
         assert df[col.name].dtype == int, col.name
+
     return df
+
+
+@sentry_span
+async def _append_pull_request_check_runs_outside(df: pd.DataFrame,
+                                                  time_from: datetime,
+                                                  time_to: datetime,
+                                                  labels: LabelFilter,
+                                                  embedded_labels_query: bool,
+                                                  meta_ids: Tuple[int, ...],
+                                                  mdb: ParallelDatabase,
+                                                  ) -> [pd.DataFrame, Tuple[pd.DataFrame, ...]]:
+    pr_node_ids = df[CheckRun.pull_request_node_id.name]
+    prs_from_the_past = pr_node_ids[(
+        df[CheckRun.pull_request_created_at.name] < (time_from + timedelta(days=1))
+    ).values].unique()
+    prs_to_the_future = pr_node_ids[(
+        df[CheckRun.pull_request_closed_at.name].isnull() |
+        (df[CheckRun.pull_request_closed_at.name] > (time_to - timedelta(days=1)))
+    ).values].unique()
+    query_before = select([CheckRunByPR]).where(and_(
+        CheckRunByPR.acc_id.in_(meta_ids),
+        CheckRunByPR.pull_request_node_id.in_(prs_from_the_past),
+        CheckRunByPR.started_at.between(
+            time_from - timedelta(days=90), time_from - timedelta(seconds=1),
+        )))
+    query_after = select([CheckRunByPR]).where(and_(
+        CheckRunByPR.acc_id.in_(meta_ids),
+        CheckRunByPR.pull_request_node_id.in_(prs_to_the_future),
+        CheckRunByPR.started_at.between(
+            time_to + timedelta(seconds=1), time_to + timedelta(days=90),
+        )))
+    tasks = [
+        _read_sql_query_with_join_collapse(
+            union_all(query_before, query_after), CheckRunByPR, True, mdb),
+    ]
+    if labels and not embedded_labels_query:
+        tasks.append(read_sql_query(
+            select([PullRequestLabel.pull_request_node_id,
+                    func.lower(PullRequestLabel.name).label(PullRequestLabel.name.name)])
+            .where(and_(PullRequestLabel.pull_request_node_id.in_(pr_node_ids.unique()),
+                        PullRequestLabel.acc_id.in_(meta_ids))),
+            mdb, [PullRequestLabel.pull_request_node_id, PullRequestLabel.name],
+            index=PullRequestLabel.pull_request_node_id.name))
+    extra_df, *df_labels = await gather(*tasks)
+    del df[CheckRun.committed_date_hack.name]
+    del df[CheckRun.pull_request_created_at.name]
+    del df[CheckRun.pull_request_closed_at.name]
+    return df.append(extra_df, ignore_index=True), df_labels
+
+
+async def _read_sql_query_with_join_collapse(query: ClauseElement,
+                                             columns: Union[Type[CheckRun], Type[CheckRunByPR]],
+                                             set_join_collapse_limit: bool,
+                                             mdb: ParallelDatabase,
+                                             ) -> pd.DataFrame:
+    set_join_collapse_limit &= mdb.url.dialect == "postgresql"
+    async with mdb.connection() as mdb_conn:
+        if set_join_collapse_limit:
+            transaction = mdb_conn.transaction()
+            await transaction.start()
+            await mdb_conn.execute("set join_collapse_limit=1")
+        try:
+            return await read_sql_query(query, mdb_conn, columns=columns)
+        finally:
+            if set_join_collapse_limit:
+                await transaction.rollback()
 
 
 def _calculate_check_suite_started(df: pd.DataFrame) -> None:

@@ -13,7 +13,7 @@ from athenian.api.models.metadata.github import CheckRun
     (datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
      ["src-d/hercules"], [], LabelFilter.empty(), JIRAFilter.empty(), 0),
     (datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2018, 1, 1, tzinfo=timezone.utc),
-     ["src-d/go-git"], [], LabelFilter.empty(), JIRAFilter.empty(), 2184),
+     ["src-d/go-git"], [], LabelFilter.empty(), JIRAFilter.empty(), 2183),
     (datetime(2018, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
      ["src-d/go-git"], [], LabelFilter.empty(), JIRAFilter.empty(), 2213),
     (datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
@@ -32,5 +32,6 @@ async def test_check_run_smoke(mdb, time_from, time_to, repositories, pushers, l
         time_from, time_to, repositories, pushers, labels, jira, (6366825,), mdb, None)
     assert len(df) == size
     for col in CheckRun.__table__.columns:
-        assert col.name in df.columns
+        if col.name != CheckRun.committed_date_hack.name:
+            assert col.name in df.columns
     assert len(df[CheckRun.check_run_node_id.name].unique()) == len(df)
