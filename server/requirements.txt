@@ -5,7 +5,7 @@ aiohttp_cors==0.7.0
 swagger-ui-bundle==0.0.8
 sqlalchemy==1.3.23
 asyncpg==0.24.0
-databases[sqlite,asyncpg]==0.4.3
+databases[sqlite,asyncpg]==0.5.1
 psycopg2-binary==2.9.1
 xxhash==2.0.2
 # remember to change these versions in Dockerfile, too!
