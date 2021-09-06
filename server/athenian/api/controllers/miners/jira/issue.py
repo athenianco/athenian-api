@@ -435,7 +435,7 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
     if assignees and (postgres or (not commenters and not nested_assignees)):
         if None in assignees:
             # NULL IN (NULL) = false
-            or_filters.append(Issue.assignee_display_name.is_(None))
+            or_filters.append(sql.func.lower(Issue.assignee_display_name).is_(None))
         if nested_assignees:
             or_filters.append(AthenianIssue.nested_assignee_display_names.has_any(assignees))
         else:
