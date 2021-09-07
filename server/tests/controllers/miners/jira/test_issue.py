@@ -24,8 +24,8 @@ async def test_fetch_jira_issues_releases(
             LabelFilter.empty(), [], [], [], [], [], [], False,
             default_branches, release_match_setting_tag, 1, (6366825,), mdb, pdb, cache]
     issues = await fetch_jira_issues(*args)
-    assert issues[ISSUE_PRS_BEGAN].notnull().sum() == 56
-    assert issues[ISSUE_PRS_RELEASED].notnull().sum() == 55
+    assert issues[ISSUE_PRS_BEGAN].notnull().sum() == 55  # 56 without cleaning
+    assert issues[ISSUE_PRS_RELEASED].notnull().sum() == 54  # 55 without cleaning
     assert (issues[ISSUE_PRS_RELEASED][issues[ISSUE_PRS_RELEASED].notnull()] >
             issues[ISSUE_PRS_BEGAN][issues[ISSUE_PRS_RELEASED].notnull()]).all()
     await wait_deferred()
@@ -53,7 +53,7 @@ async def test_fetch_jira_issues_none_assignee(
             LabelFilter.empty(), [], [], [], [], ["vadim markovtsev", None], [], False,
             default_branches, release_match_setting_tag, 1, (6366825,), mdb, pdb, cache]
     issues = await fetch_jira_issues(*args)
-    assert len(issues) == 730
+    assert len(issues) == 716  # 730 without cleaning
     await wait_deferred()
     cached_issues = await fetch_jira_issues(*args)
     assert_frame_equal(issues, cached_issues)
