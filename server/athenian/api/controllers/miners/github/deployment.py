@@ -41,8 +41,7 @@ from athenian.api.models.precomputed.models import GitHubRelease as PrecomputedR
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
 from athenian.precomputer.db.models import GitHubCommitDeployment, GitHubDeploymentFacts, \
-    GitHubPullRequestDeployment, \
-    GitHubReleaseDeployment
+    GitHubPullRequestDeployment, GitHubReleaseDeployment
 
 
 @sentry_span
@@ -409,6 +408,7 @@ async def _submit_deployment_facts(facts: pd.DataFrame,
     values = [
         GitHubDeploymentFacts(
             acc_id=account,
+            deployment_name=name,
             release_matches=json.dumps(dict(zip(
                 subreleases[PrecomputedRelease.repository_full_name.name].values,
                 subreleases[PrecomputedRelease.release_match.name].values,

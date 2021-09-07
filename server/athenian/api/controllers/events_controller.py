@@ -4,12 +4,14 @@ from itertools import chain
 import os
 import re
 import sqlite3
-from typing import Dict, Iterable, List, Mapping, Optional, Tuple
+from typing import Collection, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from aiohttp import web
 import aiomcache
 import asyncpg
-from sqlalchemy import and_, delete, exists, func, insert, not_, select, text, union, union_all, \
+import pandas as pd
+from sqlalchemy import and_, delete, distinct, exists, func, insert, not_, select, text, union, \
+    union_all, \
     update
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from xxhash._xxhash import xxh32_intdigest
@@ -22,10 +24,11 @@ from athenian.api.controllers.features.entries import MetricEntriesCalculator
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import BranchMiner
+from athenian.api.controllers.miners.github.deployment import mine_deployments
 from athenian.api.controllers.miners.github.release_mine import mine_releases
-from athenian.api.controllers.prefixer import Prefixer
+from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
 from athenian.api.controllers.reposet import resolve_repos
-from athenian.api.controllers.settings import ReleaseMatch, Settings
+from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings, Settings
 from athenian.api.db import FastConnection, ParallelDatabase
 from athenian.api.defer import defer, wait_deferred
 from athenian.api.models.metadata.github import PushCommit, Release, User
@@ -39,8 +42,10 @@ from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError
 from athenian.api.serialization import ParseError
 from athenian.api.tracing import sentry_span
-from athenian.precomputer.db.models import GitHubDonePullRequestFacts, \
-    GitHubMergedPullRequestFacts, GitHubReleaseFacts
+from athenian.precomputer.db.models import GitHubCommitDeployment, GitHubDeploymentFacts, \
+    GitHubDonePullRequestFacts, \
+    GitHubMergedPullRequestFacts, GitHubPullRequestDeployment, GitHubReleaseDeployment, \
+    GitHubReleaseFacts
 
 
 commit_hash_re = re.compile(r"[a-f0-9]{7}([a-f0-9]{33})?")
@@ -185,6 +190,97 @@ async def notify_releases(request: AthenianWebRequest, body: List[dict]) -> web.
     return web.Response(status=200)
 
 
+@sentry_span
+async def _drop_precomputed_deployments(account: int,
+                                        repos: Collection[str],
+                                        prefixer: PrefixerPromise,
+                                        release_settings: ReleaseSettings,
+                                        branches: pd.DataFrame,
+                                        default_branches: Dict[str, str],
+                                        request: AthenianWebRequest,
+                                        meta_ids: Tuple[int, ...],
+                                        ) -> None:
+    pdb, rdb = request.pdb, request.rdb
+    prefixer = await prefixer.load()
+    repo_node_ids = [prefixer.repo_name_to_node[r] for r in repos]
+    deployments_to_kill = await rdb.fetch_all(
+        select([distinct(DeployedComponent.deployment_name)])
+        .where(and_(DeployedComponent.account_id == account,
+                    DeployedComponent.repository_node_id.in_(repo_node_ids))))
+    deployments_to_kill = [r[0] for r in deployments_to_kill]
+    await gather(
+        pdb.execute(delete(GitHubDeploymentFacts).where(and_(
+            GitHubDeploymentFacts.acc_id == account,
+            GitHubDeploymentFacts.deployment_name.in_(deployments_to_kill),
+        ))),
+        pdb.execute(delete(GitHubReleaseDeployment).where(and_(
+            GitHubReleaseDeployment.acc_id == account,
+            GitHubReleaseDeployment.deployment_name.in_(deployments_to_kill),
+        ))),
+        pdb.execute(delete(GitHubPullRequestDeployment).where(and_(
+            GitHubPullRequestDeployment.acc_id == account,
+            GitHubPullRequestDeployment.deployment_name.in_(deployments_to_kill),
+        ))),
+        pdb.execute(delete(GitHubCommitDeployment).where(and_(
+            GitHubCommitDeployment.acc_id == account,
+            GitHubCommitDeployment.deployment_name.in_(deployments_to_kill),
+        ))),
+        op="remove %d deployments from pdb" % len(deployments_to_kill),
+    )
+    today = datetime.now(timezone.utc)
+    await mine_deployments(
+        repo_node_ids, {}, today - timedelta(days=730), today, [], [], {}, {}, LabelFilter.empty(),
+        JIRAFilter.empty(), release_settings, branches, default_branches, prefixer.as_promise(),
+        account, meta_ids, request.mdb, pdb, rdb, None)
+
+
+@sentry_span
+async def _drop_precomputed_event_releases(account: int,
+                                           repos: Collection[str],
+                                           prefixer: PrefixerPromise,
+                                           release_settings: ReleaseSettings,
+                                           branches: pd.DataFrame,
+                                           default_branches: Dict[str, str],
+                                           request: AthenianWebRequest,
+                                           meta_ids: Tuple[int, ...],
+                                           ) -> None:
+    pdb = request.pdb
+    await gather(*(
+        pdb.execute(delete(table).where(and_(
+            table.release_match == ReleaseMatch.event.name,
+            table.repository_full_name.in_(repos),
+            table.acc_id == account,
+        )))
+        for table in (GitHubDonePullRequestFacts,
+                      GitHubMergedPullRequestFacts,
+                      GitHubReleaseFacts)
+    ), op="delete precomputed releases")
+
+    # preheat these repos
+    mdb, pdb, rdb = request.mdb, request.pdb, request.rdb
+    time_to = datetime.combine(date.today() + timedelta(days=1),
+                               datetime.min.time(),
+                               tzinfo=timezone.utc)
+    no_time_from = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    time_from = time_to - timedelta(days=365 * 2)
+    await mine_releases(
+        repos, {}, branches, default_branches, no_time_from, time_to, LabelFilter.empty(),
+        JIRAFilter.empty(), release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, None,
+        force_fresh=True)
+    await wait_deferred()
+    await MetricEntriesCalculator(
+        account, meta_ids, 0, mdb, pdb, rdb, None,
+    ).calc_pull_request_facts_github(
+        time_from, time_to, set(repos), {}, LabelFilter.empty(), JIRAFilter.empty(),
+        False, release_settings, prefixer, True, False)
+
+
+droppers = {
+    "release": _drop_precomputed_event_releases,
+    "deployment": _drop_precomputed_deployments,
+}
+
+
 @disable_default_user
 @weight(10)
 async def clear_precomputed_events(request: AthenianWebRequest, body: dict) -> web.Response:
@@ -197,44 +293,19 @@ async def clear_precomputed_events(request: AthenianWebRequest, body: dict) -> w
     prefixed_repos, meta_ids = await resolve_repos(
         model.repositories, model.account, request.uid, login_loader,
         request.sdb, request.mdb, request.cache, request.app["slack"], strip_prefix=False)
-    prefixer = Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
     repos = [r.split("/", 1)[1] for r in prefixed_repos]
-    pdb = request.pdb
-    if "release" in model.targets:
-        await gather(*(
-            pdb.execute(delete(table).where(and_(
-                table.release_match == ReleaseMatch.event.name,
-                table.repository_full_name.in_(repos),
-                table.acc_id == model.account,
-            )))
-            for table in (GitHubDonePullRequestFacts,
-                          GitHubMergedPullRequestFacts,
-                          GitHubReleaseFacts)
-        ), op="delete precomputed releases")
-
-        # preheat these repos
-        sdb, mdb, pdb, rdb, cache = \
-            request.sdb, request.mdb, request.pdb, request.rdb, request.cache
-        time_to = datetime.combine(date.today() + timedelta(days=1),
-                                   datetime.min.time(),
-                                   tzinfo=timezone.utc)
-        no_time_from = datetime(1970, 1, 1, tzinfo=timezone.utc)
-        time_from = time_to - timedelta(days=365 * 2)
-        (branches, default_branches), settings = await gather(
-            BranchMiner.extract_branches(repos, meta_ids, mdb, cache),
-            Settings.from_account(model.account, sdb, mdb, cache, None)
-            .list_release_matches(prefixed_repos))
-        await mine_releases(
-            repos, {}, branches, default_branches, no_time_from, time_to, LabelFilter.empty(),
-            JIRAFilter.empty(), settings, prefixer, model.account, meta_ids, mdb, pdb, rdb, None,
-            force_fresh=True)
-        await wait_deferred()
-        await MetricEntriesCalculator(
-            model.account, meta_ids, 0, mdb, pdb, rdb, None,
-        ).calc_pull_request_facts_github(
-            time_from, time_to, set(repos), {}, LabelFilter.empty(), JIRAFilter.empty(),
-            False, settings, prefixer, True, False)
-        await wait_deferred()
+    (branches, default_branches), release_settings = await gather(
+        BranchMiner.extract_branches(repos, meta_ids, request.mdb, request.cache),
+        Settings.from_account(model.account, request.sdb, request.mdb, request.cache, None)
+        .list_release_matches(prefixed_repos))
+    prefixer = Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
+    tasks = [
+        droppers[t](model.account, repos, prefixer, release_settings, branches, default_branches,
+                    request, meta_ids)
+        for t in model.targets
+    ]
+    await gather(*tasks, op="clear_precomputed_events/gather drops")
+    await wait_deferred()
     return web.Response(status=200)
 
 
