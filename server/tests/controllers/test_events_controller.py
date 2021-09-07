@@ -9,7 +9,7 @@ from athenian.api.models.persistentdata.models import DeployedComponent, Deploye
     DeploymentNotification, \
     ReleaseNotification
 from athenian.api.models.state.models import AccountGitHubAccount, UserToken
-from athenian.precomputer.db.models import GitHubDonePullRequestFacts, \
+from athenian.precomputer.db.models import GitHubDeploymentFacts, GitHubDonePullRequestFacts, \
     GitHubMergedPullRequestFacts, GitHubReleaseFacts
 
 
@@ -195,7 +195,7 @@ async def test_notify_release_default_user(client, headers, sdb):
 
 
 @freeze_time("2020-01-01")
-async def test_clear_precomputed_events_smoke(client, headers, pdb, disable_default_user):
+async def test_clear_precomputed_event_releases_smoke(client, headers, pdb, disable_default_user):
     await pdb.execute(insert(GitHubDonePullRequestFacts).values(GitHubDonePullRequestFacts(
         acc_id=1,
         release_match="event",
@@ -243,6 +243,31 @@ async def test_clear_precomputed_events_smoke(client, headers, pdb, disable_defa
                      (GitHubMergedPullRequestFacts, 245),
                      (GitHubReleaseFacts, 53)):
         assert len(await pdb.fetch_all(select([table]))) == n, table
+
+
+@freeze_time("2020-01-01")
+async def test_clear_precomputed_deployments_smoke(client, headers, pdb, disable_default_user):
+    await pdb.execute(insert(GitHubDeploymentFacts).values(GitHubDeploymentFacts(
+        acc_id=1,
+        deployment_name="Dummy deployment",
+        release_matches="abracadabra",
+        format_version=1,
+        data=b"0",
+    ).explode(with_primary_keys=True)))
+    body = {
+        "account": 1,
+        "repositories": ["{1}"],
+        "targets": ["deployment"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/events/clear_cache", headers=headers, json=body,
+    )
+    assert response.status == 200
+    rows = await pdb.fetch_all(select([GitHubDeploymentFacts]))
+    assert len(rows) == 1
+    row = rows[0]
+    assert row[GitHubDeploymentFacts.deployment_name.name] == "Dummy deployment"
+    assert len(row[GitHubDeploymentFacts.data.name]) > 1
 
 
 @pytest.mark.parametrize("status, body", [

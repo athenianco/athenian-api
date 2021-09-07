@@ -100,12 +100,12 @@ class DeleteEventsCacheRequest(Model):
 
         :param targets: The targets of this DeleteEventsCacheRequest.
         """
-        allowed_values = {"release"}
+        allowed_values = {"release", "deployment"}
         if not set(targets).issubset(set(allowed_values)):
             raise ValueError(
                 "Invalid values for `targets` [%s], must be a subset of [%s]" % (
-                    ", ".join(map(str, set(targets) - set(allowed_values))),
-                    ", ".join(map(str, allowed_values)),
+                    ", ".join(set(targets) - set(allowed_values)),
+                    ", ".join(allowed_values),
                 ))
 
         self._targets = targets
