@@ -511,6 +511,7 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
         # SQLite does not allow to use parameters multiple times
         df = pd.concat(await gather(*(read_sql_query(q, mdb, columns, index=Issue.id.key)
                                       for q in query)))
+    df = _validate_and_clean_issues(df, ids[0])
     df.sort_index(inplace=True)
     if postgres or (not commenters and (not nested_assignees or not assignees)):
         return df
@@ -532,6 +533,34 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
             if len(np.intersect1d(issue_commenters, commenters)):
                 passed[i] = True
     return df.take(np.nonzero(passed)[0])
+
+
+def _validate_and_clean_issues(df: pd.DataFrame, acc_id: int) -> pd.DataFrame:
+    in_progress = df[Status.category_name.name].values == Status.CATEGORY_IN_PROGRESS
+    done = df[Status.category_name.name].values == Status.CATEGORY_DONE
+    no_work_began = df[AthenianIssue.work_began.name].isnull().values
+    no_resolved = df[AthenianIssue.resolved.name].isnull().values
+    in_progress_no_work_began = in_progress & no_work_began
+    done_no_work_began = done & no_work_began
+    done_no_resolved = done & no_resolved
+    invalid = in_progress_no_work_began | done_no_work_began | done_no_resolved
+    if not invalid.any():
+        return df
+    log = logging.getLogger(f"{metadata.__package__}.validate_and_clean_issues")
+    issue_ids = df.index.values
+    if in_progress_no_work_began.any():
+        log.error("account %d has issues in progress but their `work_began` is null: %s",
+                  acc_id, issue_ids[in_progress_no_work_began].tolist())
+    if done_no_work_began.any():
+        log.error("account %d has issues done but their `work_began` is null: %s",
+                  acc_id, issue_ids[done_no_work_began].tolist())
+    if done_no_resolved.any():
+        log.error("account %d has issues done but their `resolved` is null: %s",
+                  acc_id, issue_ids[done_no_resolved].tolist())
+    old_len = len(df)
+    df = df.take(np.flatnonzero(~invalid))
+    log.warning("cleaned JIRA issues %d / %d", len(df), old_len)
+    return df
 
 
 class PullRequestJiraMapper:
