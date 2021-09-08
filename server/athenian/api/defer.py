@@ -38,7 +38,7 @@ def enable_defer(explicit_launch: bool) -> None:
         launch_defer(0, "enable_defer")
 
 
-def launch_defer(delay: float, name: str) -> None:
+def launch_defer(delay: float, name: str, force_transaction: bool = False) -> None:
     """Allow the deferred coroutines to execute after a certain delay (in seconds)."""
     try:
         launch_event = _defer_launch_event.get()  # type: Event
@@ -66,7 +66,7 @@ def launch_defer(delay: float, name: str) -> None:
 
     def launch():
         _log.debug("launching %d deferred tasks %r", deferred_count_ptr[0], launch_event)
-        if deferred_count_ptr[0] > 0 or not explicit_launch:
+        if deferred_count_ptr[0] > 0 or not explicit_launch or force_transaction:
             transaction_ptr[0] = transaction()
         launch_event.set()
 
@@ -81,13 +81,18 @@ def launch_defer(delay: float, name: str) -> None:
         ensure_future(delayer())
 
 
-def launch_defer_from_request(delay: float, request: web.Request) -> None:
+def launch_defer_from_request(delay: float,
+                              request: web.Request,
+                              force_transaction: bool = False,
+                              ) -> None:
     """
     Allow the deferred coroutines to execute after a certain delay (in seconds).
 
     We set the name to the method and the path of the HTTP request.
     """
-    return launch_defer(delay, "%s %s" % (request.method, request.path))
+    return launch_defer(delay,
+                        "%s %s" % (request.method, request.path),
+                        force_transaction=force_transaction)
 
 
 async def defer(coroutine: Coroutine, name: str) -> None:
@@ -111,7 +116,11 @@ async def defer(coroutine: Coroutine, name: str) -> None:
         current_task().set_name("defer " + name)
         transaction = transaction_ptr[0]  # type: Transaction
         try:
-            with transaction.start_child(op=name):
+            if transaction is not None:
+                with transaction.start_child(op=name):
+                    await coroutine
+            else:
+                _log.error("empty Sentry transaction in a deferred task")
                 await coroutine
         except (asyncpg.DeadlockDetectedError, asyncpg.InterfaceError) as e:
             # 1. Our DB transaction lost, but that's fine for a deferred task.
@@ -131,7 +140,8 @@ async def defer(coroutine: Coroutine, name: str) -> None:
             if value == 0:
                 sync.set()
                 if explicit_launch:
-                    transaction.finish()
+                    if transaction is not None:
+                        transaction.finish()
                     launch_event.clear()
 
     ensure_future(shield(wrapped_defer()))
