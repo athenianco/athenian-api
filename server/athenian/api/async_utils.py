@@ -4,6 +4,7 @@ import logging
 import textwrap
 from typing import Any, Collection, Iterable, Optional, Sequence, Tuple, Type, Union
 
+import numpy as np
 import pandas as pd
 import sentry_sdk
 from sqlalchemy import Column, DateTime, Integer
@@ -78,8 +79,8 @@ def wrap_sql_query(data: Iterable[Iterable[Any]],
         i_columns = _extract_integer_columns(columns)
         columns = [(c.name if not isinstance(c, str) else c) for c in columns]
     frame = pd.DataFrame.from_records(data, columns=columns, coerce_float=True)
-    postprocess_datetime(frame, columns=dt_columns)
-    postprocess_integer(frame, columns=i_columns)
+    frame = postprocess_datetime(frame, columns=dt_columns)
+    frame = postprocess_integer(frame, columns=i_columns)
     if index is not None:
         frame.set_index(index, inplace=True)
     return frame
@@ -95,9 +96,10 @@ def _extract_datetime_columns(columns: Iterable[Union[Column, str]]) -> Collecti
     ]
 
 
-def _extract_integer_columns(columns: Iterable[Union[Column, str]]) -> Collection[str]:
+def _extract_integer_columns(columns: Iterable[Union[Column, str]],
+                             ) -> Collection[Tuple[str, bool]]:
     return [
-        c.name for c in columns
+        (c.name, getattr(c, "info", {}).get("erase_nulls", False)) for c in columns
         if not isinstance(c, str) and (
             isinstance(c.type, Integer) or
             (isinstance(c.type, type) and issubclass(c.type, Integer))
@@ -136,16 +138,33 @@ def postprocess_datetime(frame: pd.DataFrame,
     return frame
 
 
-def postprocess_integer(frame: pd.DataFrame, columns: Iterable[str]) -> pd.DataFrame:
+def postprocess_integer(frame: pd.DataFrame, columns: Iterable[Tuple[str, int]]) -> pd.DataFrame:
     """Ensure *inplace* that all the integers inside the dataframe are not objects.
 
-    :return: Fixed dataframe - the same instance as `frame`.
+    :return: Fixed dataframe, a potentially different instance.
     """
-    for col in columns:
-        try:
-            frame[col] = frame[col].astype(int, copy=False)
-        except TypeError as e:
-            raise ValueError(f"Column {col} is not all-integer") from e
+    dirty_index = False
+    log = None
+    for col, erase_null in columns:
+        while True:
+            try:
+                frame[col] = frame[col].astype(int, copy=False)
+                break
+            except TypeError as e:
+                nulls = frame[col].isnull().values
+                if not nulls.any():
+                    raise ValueError(f"Column {col} is not all-integer") from e
+                if not erase_null:
+                    raise ValueError(f"Column {col} is not all-integer\n"
+                                     f"{frame.loc[nulls].to_dict('records')}") from e
+                if log is None:
+                    log = logging.getLogger(f"{metadata.__package__}.read_sql_query")
+                log.error("fetched nulls instead of integers in %s: %s",
+                          col, frame.loc[nulls].to_dict("records"))
+                frame = frame.take(np.flatnonzero(~nulls))
+                dirty_index = True
+    if dirty_index:
+        frame.reset_index(drop=True, inplace=True)
     return frame
 
 
