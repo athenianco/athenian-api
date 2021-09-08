@@ -44,7 +44,8 @@ from athenian.api.controllers import invitation_controller
 from athenian.api.controllers.status_controller import setup_status
 from athenian.api.db import add_pdb_metrics_context, measure_db_overhead_and_retry, \
     ParallelDatabase
-from athenian.api.defer import defer, enable_defer, launch_defer, wait_all_deferred, wait_deferred
+from athenian.api.defer import defer, enable_defer, launch_defer_from_request, wait_all_deferred, \
+    wait_deferred
 from athenian.api.kms import AthenianKMS
 from athenian.api.models.metadata import dereference_schemas as dereference_metadata_schemas
 from athenian.api.models.persistentdata import \
@@ -52,6 +53,7 @@ from athenian.api.models.persistentdata import \
 from athenian.api.models.precomputed.schema_monitor import schedule_pdb_schema_check
 from athenian.api.models.web import GenericError
 from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME, setup_prometheus
+from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError
 from athenian.api.segment import SegmentClient
 from athenian.api.serialization import FriendlyJson
@@ -527,8 +529,17 @@ class AthenianApp(connexion.AioHttpApp):
     async def postprocess_response(self, request: aiohttp.web.Request, handler,
                                    ) -> aiohttp.web.Response:
         """Append X-Backend-Server HTTP header, enable compression, etc."""
-        response = await handler(request)  # type: aiohttp.web.Response
-        # request is now AthenianWebRequest
+        try:
+            response = await handler(request)  # type: aiohttp.web.Response
+            return await self._postprocess_response(request, response)
+        except ResponseError as e:
+            await self._postprocess_response(request, e.response)
+            raise e from None
+
+    async def _postprocess_response(self,
+                                    request: AthenianWebRequest,
+                                    response: aiohttp.web.Response,
+                                    ) -> aiohttp.web.Response:
         response.headers.add("X-Backend-Server", self.server_name)
         if (uid := getattr(request, "uid", None)) is not None:
             response.headers.add("User", uid)
@@ -618,8 +629,7 @@ class AthenianApp(connexion.AioHttpApp):
             else:
                 # execute the deferred coroutines in 100ms to not interfere with serving
                 # the parallel requests, but only if not shutting down, otherwise, immediately
-                launch_defer(0.1 * (1 - self._shutting_down),
-                             "%s %s" % (request.method, request.path))
+                launch_defer_from_request(0.1 * (1 - self._shutting_down), request)
             self._requests -= 1
             self._load -= load + custom_load_delta
             if self._requests == 0 and self._shutting_down:
