@@ -3,6 +3,7 @@ from contextvars import ContextVar
 import logging
 from typing import Coroutine, List
 
+from aiohttp import web
 import asyncpg
 from sentry_sdk import Hub, start_transaction
 from sentry_sdk.tracing import Transaction
@@ -39,10 +40,17 @@ def enable_defer(explicit_launch: bool) -> None:
 
 def launch_defer(delay: float, name: str) -> None:
     """Allow the deferred coroutines to execute after a certain delay (in seconds)."""
-    transaction_ptr = _defer_transaction.get()  # type: List[Transaction]
-    deferred_count_ptr = _defer_counter.get()
-    launch_event = _defer_launch_event.get()  # type: Event
-    explicit_launch = _defer_explicit.get()
+    try:
+        launch_event = _defer_launch_event.get()  # type: Event
+        if launch_event.is_set():
+            return
+        transaction_ptr = _defer_transaction.get()  # type: List[Transaction]
+        deferred_count_ptr = _defer_counter.get()
+        explicit_launch = _defer_explicit.get()
+    except LookupError:
+        log = logging.getLogger(f"{metadata.__package__}.launch_defer")
+        log.exception(f"{name}\nPossible reason: called wait_deferred() in an endpoint.")
+        return
 
     if (parent := Hub.current.scope.transaction) is None:
         def transaction():
@@ -71,6 +79,15 @@ def launch_defer(delay: float, name: str) -> None:
             launch()
 
         ensure_future(delayer())
+
+
+def launch_defer_from_request(delay: float, request: web.Request) -> None:
+    """
+    Allow the deferred coroutines to execute after a certain delay (in seconds).
+
+    We set the name to the method and the path of the HTTP request.
+    """
+    return launch_defer(delay, "%s %s" % (request.method, request.path))
 
 
 async def defer(coroutine: Coroutine, name: str) -> None:
@@ -122,6 +139,9 @@ async def defer(coroutine: Coroutine, name: str) -> None:
 
 async def wait_deferred() -> None:
     """Wait for the deferred coroutines in the current context to finish."""
+    launch_event = _defer_launch_event.get()  # type: Event
+    if not launch_event.is_set():
+        _log.warning("called wait_deferred() before launch_defer(), can deadlock")
     sync = _defer_sync.get()
     counter = _defer_counter.get()
     if (value := counter[0]) > 0:
