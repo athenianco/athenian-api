@@ -1,20 +1,22 @@
+from datetime import timezone
 import logging
 from typing import Optional
 
 from aiohttp import web
-from sqlalchemy import and_, delete, insert, select
+from sqlalchemy import and_, delete, func, insert, select
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.auth import disable_default_user
+from athenian.api.balancing import weight
 from athenian.api.controllers.account import get_metadata_account_ids, get_user_account_status
 from athenian.api.controllers.jira import ALLOWED_USER_TYPES, get_jira_id, \
     load_jira_identity_mapping_sentinel
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.settings import ReleaseMatch, Settings
 from athenian.api.models.metadata.github import User as GitHubUser
-from athenian.api.models.metadata.jira import Project, User as JIRAUser
+from athenian.api.models.metadata.jira import Issue, Project, User as JIRAUser
 from athenian.api.models.state.models import JIRAProjectSetting, MappedJIRAIdentity
 from athenian.api.models.web import ForbiddenError, InvalidRequestError, JIRAProject, \
     JIRAProjectsRequest, MappedJIRAIdentity as WebMappedJIRAIdentity, ReleaseMatchRequest, \
@@ -53,29 +55,53 @@ async def set_release_match(request: AthenianWebRequest, body: dict) -> web.Resp
     return web.json_response(sorted(repos))
 
 
+@weight(0.5)
 async def get_jira_projects(request: AthenianWebRequest,
                             id: int,
                             jira_id: Optional[int] = None) -> web.Response:
     """List the current enabled JIRA project settings."""
+    mdb, sdb = request.mdb, request.sdb
     if jira_id is None:
-        await get_user_account_status(request.uid, id, request.sdb, request.cache)
-        jira_id = await get_jira_id(id, request.sdb, request.cache)
-    projects = await request.mdb.fetch_all(
-        select([Project.key, Project.name, Project.avatar_url])
-        .where(and_(Project.acc_id == jira_id,
-                    Project.is_deleted.is_(False)))
-        .order_by(Project.key))
+        await get_user_account_status(request.uid, id, sdb, request.cache)
+        jira_id = await get_jira_id(id, sdb, request.cache)
+    projects, stats = await gather(
+        mdb.fetch_all(
+            select([Project.key, Project.id, Project.name, Project.avatar_url])
+            .where(and_(Project.acc_id == jira_id,
+                        Project.is_deleted.is_(False)))
+            .order_by(Project.key)),
+        mdb.fetch_all(
+            select([Issue.project_id,
+                    func.count(Issue.id).label("issues_count"),
+                    func.max(Issue.updated).label("last_update")])
+            .where(Issue.acc_id == jira_id)
+            .group_by(Issue.project_id),
+        ),
+        op="get_jira_projects/mdb",
+    )
+    stats = {
+        r[Issue.project_id.name]: (r["issues_count"], r["last_update"])
+        for r in stats
+    }
     keys = [r[Project.key.name] for r in projects]
-    settings = await request.sdb.fetch_all(
+    settings = await sdb.fetch_all(
         select([JIRAProjectSetting.key, JIRAProjectSetting.enabled])
         .where(and_(JIRAProjectSetting.account_id == id,
                     JIRAProjectSetting.key.in_(keys))))
     settings = {r[0]: r[1] for r in settings}
-    models = [JIRAProject(name=r[Project.name.name],
-                          key=r[Project.key.name],
-                          avatar_url=r[Project.avatar_url.name],
-                          enabled=settings.get(r[Project.key.name], True))
-              for r in projects]
+    models = [
+        JIRAProject(name=r[Project.name.name],
+                    key=r[Project.key.name],
+                    avatar_url=r[Project.avatar_url.name],
+                    enabled=settings.get(r[Project.key.name], True),
+                    issues_count=(rs := stats.get(r[Project.id.name], (0, None)))[0],
+                    last_update=rs[1])
+        for r in projects
+    ]
+    if mdb.url.dialect == "sqlite":
+        for m in models:
+            if m.last_update is not None:
+                m.last_update = m.last_update.replace(tzinfo=timezone.utc)
     return model_response(models)
 
 
