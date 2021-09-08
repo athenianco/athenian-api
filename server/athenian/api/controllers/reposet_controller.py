@@ -163,10 +163,9 @@ async def list_reposets(request: AthenianWebRequest, id: int) -> web.Response:
     async def login_loader() -> str:
         return (await request.user()).login
 
-    async with request.sdb.connection() as sdb_conn:
-        rss = await load_account_reposets(
-            id, login_loader, [RepositorySet], sdb_conn, request.mdb, request.cache,
-            request.app["slack"])
+    rss = await load_account_reposets(
+        id, login_loader, [RepositorySet], request.sdb, request.mdb, request.cache,
+        request.app["slack"])
     items = [RepositorySetListItem(
         id=rs[RepositorySet.id.key],
         name=rs[RepositorySet.name.key],

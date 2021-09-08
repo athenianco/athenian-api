@@ -375,8 +375,8 @@ async def _append_precomputed_progress(model: InstallationProgress,
                                        account: int,
                                        uid: str,
                                        login: Callable[[], Coroutine[None, None, str]],
-                                       sdb: DatabaseLike,
-                                       mdb: databases.Database,
+                                       sdb: ParallelDatabase,
+                                       mdb: ParallelDatabase,
                                        cache: Optional[aiomcache.Client],
                                        slack: Optional[SlackWebClient]) -> None:
     assert model.finished_date is not None

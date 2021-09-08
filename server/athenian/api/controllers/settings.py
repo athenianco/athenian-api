@@ -4,13 +4,13 @@ import re
 from typing import Any, Callable, Collection, Coroutine, Dict, List, Optional, Set
 
 import aiomcache
-import databases
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import and_, delete, insert, select
 from sqlalchemy.sql import Select
 
 from athenian.api.controllers.account import get_account_repositories
 from athenian.api.controllers.reposet import resolve_repos
+from athenian.api.db import ParallelDatabase
 from athenian.api.models.state.models import ReleaseSetting
 from athenian.api.models.web import InvalidRequestError, ReleaseMatchStrategy
 from athenian.api.request import AthenianWebRequest
@@ -107,17 +107,17 @@ class Settings:
                  account: int,
                  user_id: Optional[str],
                  login: Optional[Callable[[], Coroutine[None, None, str]]],
-                 sdb: databases.Database,
-                 mdb: databases.Database,
+                 sdb: ParallelDatabase,
+                 mdb: ParallelDatabase,
                  cache: Optional[aiomcache.Client],
                  slack: Optional[SlackWebClient]):
         """Initialize a new instance of Settings class."""
         self._account = account
         self._user_id = user_id
         self._login = login
-        assert isinstance(sdb, databases.Database)
+        assert isinstance(sdb, ParallelDatabase)
         self._sdb = sdb
-        assert isinstance(mdb, databases.Database)
+        assert isinstance(mdb, ParallelDatabase)
         self._mdb = mdb
         self._cache = cache
         self._slack = slack
@@ -125,8 +125,8 @@ class Settings:
     @classmethod
     def from_account(cls,
                      account: int,
-                     sdb: databases.Database,
-                     mdb: databases.Database,
+                     sdb: ParallelDatabase,
+                     mdb: ParallelDatabase,
                      cache: Optional[aiomcache.Client],
                      slack: Optional[SlackWebClient]):
         """Create a new Settings class instance in readonly mode given the account ID."""
@@ -224,10 +224,11 @@ class Settings:
             branches = default_branch_alias
         if not tags:
             tags = ".*"
+
+        repos, _ = await resolve_repos(
+            repos, self._account, self._user_id, self._login,
+            self._sdb, self._mdb, self._cache, self._slack, strip_prefix=False)
         async with self._sdb.connection() as conn:
-            repos, _ = await resolve_repos(
-                repos, self._account, self._user_id, self._login,
-                conn, self._mdb, self._cache, self._slack, strip_prefix=False)
             values = [ReleaseSetting(repository=r,
                                      account_id=self._account,
                                      branches=branches,

@@ -19,7 +19,7 @@ from sqlalchemy import and_, func, insert, select
 from athenian.api import metadata
 from athenian.api.cache import cached, max_exptime
 from athenian.api.controllers.prefixer import Prefixer
-from athenian.api.db import DatabaseLike, FastConnection
+from athenian.api.db import DatabaseLike, FastConnection, ParallelDatabase
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import Account as MetadataAccount, AccountRepository, \
     FetchProgress, NodeUser, Organization, Team as MetadataTeam, TeamMember
@@ -74,7 +74,8 @@ async def get_metadata_account_ids_or_empty(account: int,
 async def match_metadata_installation(account: int,
                                       login: str,
                                       sdb_conn: FastConnection,
-                                      mdb: DatabaseLike,
+                                      mdb_conn: FastConnection,
+                                      mdb: ParallelDatabase,
                                       slack: Optional[SlackWebClient],
                                       ) -> Collection[int]:
     """Discover new metadata installations for the given state DB account.
@@ -82,7 +83,7 @@ async def match_metadata_installation(account: int,
     sdb_conn must be in a transaction!
     """
     log = logging.getLogger(f"{metadata.__package__}.match_metadata_installation")
-    meta_ids = {r[0] for r in await mdb.fetch_all(
+    meta_ids = {r[0] for r in await mdb_conn.fetch_all(
         select([NodeUser.acc_id]).where(NodeUser.login == login))}
     if not meta_ids:
         log.warning("account %d: no installations found for %s", account, login)
