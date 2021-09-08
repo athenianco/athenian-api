@@ -27,6 +27,8 @@ def test_migrations(worker_id):
                     model.__name__, model.__tablename__
                 except AttributeError:
                     continue
+                if model.__table__.info.get("test", False):
+                    continue
                 session.query(model).first()
         finally:
             session.close()

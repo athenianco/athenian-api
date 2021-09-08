@@ -491,7 +491,7 @@ class CommonCheckRunMixin(RepositoryMixin):
     __tablename__ = "api_check_runs"
 
     acc_id = Column(BigInteger)
-    commit_node_id = Column(BigInteger, nullable=False)
+    commit_node_id = Column(BigInteger, nullable=False, info={"erase_nulls": True})
     sha = Column(Text, nullable=False)
     author_user_id = Column(BigInteger)
     author_login = Column(Text)
@@ -503,7 +503,7 @@ class CommonCheckRunMixin(RepositoryMixin):
     pull_request_node_id = Column(BigInteger)
     started_at = Column(TIMESTAMP(timezone=True), nullable=False)
     completed_at = Column(TIMESTAMP(timezone=True))
-    check_suite_node_id = Column(BigInteger, nullable=False)
+    check_suite_node_id = Column(BigInteger, nullable=False, info={"erase_nulls": True})
     check_run_node_id = Column(BigInteger, nullable=False)
     conclusion = Column(Text)
     check_suite_conclusion = Column(Text)
