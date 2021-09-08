@@ -285,7 +285,7 @@ droppers = {
 @weight(10)
 async def clear_precomputed_events(request: AthenianWebRequest, body: dict) -> web.Response:
     """Reset the precomputed data related to the pushed events."""
-    launch_defer_from_request(0, request)  # DEV-2798
+    launch_defer_from_request(0, request, force_transaction=True)  # DEV-2798
     model = DeleteEventsCacheRequest.from_dict(body)
 
     async def login_loader() -> str:
