@@ -27,7 +27,7 @@ from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.reposet import resolve_repos
 from athenian.api.controllers.settings import ReleaseMatch, Settings
 from athenian.api.db import FastConnection, ParallelDatabase
-from athenian.api.defer import defer, wait_deferred
+from athenian.api.defer import defer, launch_defer_from_request, wait_deferred
 from athenian.api.models.metadata.github import PushCommit, Release, User
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
     DeploymentNotification, \
@@ -189,6 +189,7 @@ async def notify_releases(request: AthenianWebRequest, body: List[dict]) -> web.
 @weight(10)
 async def clear_precomputed_events(request: AthenianWebRequest, body: dict) -> web.Response:
     """Reset the precomputed data related to the pushed events."""
+    launch_defer_from_request(0, request)  # DEV-2798
     model = DeleteEventsCacheRequest.from_dict(body)
 
     async def login_loader() -> str:

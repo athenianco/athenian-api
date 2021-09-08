@@ -139,8 +139,11 @@ async def resolve_repos(repositories: List[str],
             % wrong_format))
     checker = await access_classes["github"](account, meta_ids, sdb, mdb, cache).load()
     if denied := await checker.check(checked_repos):
+        log = logging.getLogger(f"{metadata.__package__}.resolve_repos")
+        log.warning("access denied account %d%s: user sent %s we've got %s",
+                    account, meta_ids, denied, list(checker.installed_repos()))
         raise ResponseError(ForbiddenError(
-            detail='The following repositories are access denied for account %d (missing "'
+            detail='the following repositories are access denied for account %d (missing "'
                    'github.com/" prefix?): %s' % (account, denied),
         ))
     if strip_prefix:
