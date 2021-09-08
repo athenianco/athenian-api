@@ -8,7 +8,6 @@ from typing import Callable, Coroutine, List, Mapping, Optional, Sequence, Set, 
 import aiomcache
 import asyncpg
 from asyncpg import UniqueViolationError
-import databases
 import sentry_sdk
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import and_, desc, func, insert, select
@@ -100,8 +99,8 @@ async def resolve_repos(repositories: List[str],
                         account: int,
                         uid: str,
                         login: Callable[[], Coroutine[None, None, str]],
-                        sdb: DatabaseLike,
-                        mdb: DatabaseLike,
+                        sdb: ParallelDatabase,
+                        mdb: ParallelDatabase,
                         cache: Optional[aiomcache.Client],
                         slack: Optional[SlackWebClient],
                         strip_prefix=True,
@@ -155,8 +154,8 @@ async def resolve_repos(repositories: List[str],
 async def load_account_reposets(account: int,
                                 login: Callable[[], Coroutine[None, None, str]],
                                 fields: list,
-                                sdb: DatabaseLike,
-                                mdb: DatabaseLike,
+                                sdb: ParallelDatabase,
+                                mdb: ParallelDatabase,
                                 cache: Optional[aiomcache.Client],
                                 slack: Optional[SlackWebClient],
                                 check_progress: bool = True,
@@ -173,18 +172,12 @@ async def load_account_reposets(account: int,
     :param check_progress: Check that we've already fetched all the repositories in mdb.
     :return: List of DB rows or __dict__-s representing the loaded RepositorySets.
     """
-    async def nested(_sdb_conn):
-        if isinstance(mdb, databases.Database):
-            async with mdb.connection() as _mdb_conn:
-                return await _load_account_reposets(
-                    account, login, fields, check_progress, _sdb_conn, _mdb_conn, cache, slack)
-        return await _load_account_reposets(
-            account, login, fields, check_progress, _sdb_conn, mdb, cache, slack)
-
-    if isinstance(sdb, databases.Database):
-        async with sdb.connection() as _sdb_conn:
-            return await nested(_sdb_conn)
-    return await nested(sdb)
+    assert isinstance(sdb, ParallelDatabase)
+    assert isinstance(mdb, ParallelDatabase)
+    async with sdb.connection() as sdb_conn:
+        async with mdb.connection() as mdb_conn:
+            return await _load_account_reposets(
+                account, login, fields, check_progress, sdb_conn, mdb_conn, mdb, cache, slack)
 
 
 async def _load_account_reposets(account: int,
@@ -193,6 +186,7 @@ async def _load_account_reposets(account: int,
                                  check_progress: bool,
                                  sdb_conn: FastConnection,
                                  mdb_conn: FastConnection,
+                                 mdb: ParallelDatabase,
                                  cache: Optional[aiomcache.Client],
                                  slack: Optional[SlackWebClient],
                                  ) -> List[Mapping]:
@@ -228,7 +222,7 @@ async def _load_account_reposets(account: int,
                 if isinstance(login, Exception):
                     raise ResponseError(ForbiddenError(detail=str(login)))
                 if not (meta_ids := await match_metadata_installation(
-                        account, login, sdb_conn, mdb_conn, slack)):
+                        account, login, sdb_conn, mdb_conn, mdb, slack)):
                     raise_no_source_data()
                 prefixer = await Prefixer.load(meta_ids, mdb_conn, cache)
             else:
@@ -238,6 +232,7 @@ async def _load_account_reposets(account: int,
                     account, sdb_conn, mdb_conn, cache)
                 if progress.finished_date is None:
                     raise_no_source_data()
+        async with sdb_conn.transaction():
             ar = AccountRepository
             updated_col = (ar.updated_at == func.max(ar.updated_at).over(
                 partition_by=ar.repo_graph_id,
@@ -275,17 +270,17 @@ async def _load_account_reposets(account: int,
             rs.id = await sdb_conn.execute(insert(RepositorySet).values(rs.explode()))
             log.info("Created the first reposet %d for account %d with %d repos",
                      rs.id, account, len(repos))
-            if slack is not None:
-                prefixes = {r.split("/", 2)[1] for r in repos}
-                await defer(slack.post("installation_goes_on.jinja2",
-                                       account=account,
-                                       repos=len(repos),
-                                       prefixes=prefixes,
-                                       all_reposet_name=RepositorySet.ALL,
-                                       reposet=rs.id,
-                                       ),
-                            "report_installation_goes_on")
-            return [rs.explode(with_primary_keys=True)]
+        if slack is not None:
+            prefixes = {r.split("/", 2)[1] for r in repos}
+            await defer(slack.post("installation_goes_on.jinja2",
+                                   account=account,
+                                   repos=len(repos),
+                                   prefixes=prefixes,
+                                   all_reposet_name=RepositorySet.ALL,
+                                   reposet=rs.id,
+                                   ),
+                        "report_installation_goes_on")
+        return [rs.explode(with_primary_keys=True)]
     except (UniqueViolationError, IntegrityError, OperationalError) as e:
         log.error("%s: %s", type(e).__name__, e)
         raise ResponseError(DatabaseConflict(
@@ -330,7 +325,8 @@ async def load_account_state(account: int,
             return None
         async with sdb.connection() as sdb_conn:
             async with sdb_conn.transaction():
-                if not await match_metadata_installation(account, login, sdb_conn, mdb, slack):
+                if not await match_metadata_installation(
+                        account, login, sdb_conn, mdb, mdb, slack):
                     log.warning("Did not match installations to account %d as %s",
                                 account, auth0_id)
                     return None
