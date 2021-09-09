@@ -10,6 +10,7 @@ import aiomcache
 import databases
 from dateutil.parser import parse as parse_datetime
 import numpy as np
+import pandas as pd
 from sqlalchemy import and_, join, outerjoin, select
 from sqlalchemy.orm import aliased
 
@@ -27,27 +28,32 @@ from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
 from athenian.api.controllers.miners.github.contributors import mine_contributors
+from athenian.api.controllers.miners.github.deployment import mine_deployments
 from athenian.api.controllers.miners.github.label import mine_labels
 from athenian.api.controllers.miners.github.release_mine import \
     diff_releases as mine_diff_releases, mine_releases, mine_releases_by_name
 from athenian.api.controllers.miners.github.repository import mine_repositories
 from athenian.api.controllers.miners.github.user import mine_user_avatars
-from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind, \
-    PullRequestEvent, PullRequestListItem, PullRequestStage, ReleaseFacts, ReleaseParticipationKind
+from athenian.api.controllers.miners.types import DeploymentConclusion, PRParticipants, \
+    PRParticipationKind, PullRequestEvent, PullRequestListItem, PullRequestStage, ReleaseFacts, \
+    ReleaseParticipants, ReleaseParticipationKind
 from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
 from athenian.api.controllers.reposet import resolve_repos
 from athenian.api.controllers.settings import ReleaseSettings, Settings
-from athenian.api.models.metadata.github import NodePullRequestJiraIssues, PullRequest, \
-    PushCommit, Release, User
+from athenian.api.models.metadata.github import NodePullRequestJiraIssues, NodeRepository, \
+    PullRequest, PushCommit, Release, User
 from athenian.api.models.metadata.jira import Epic, Issue
+from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
+    DeploymentNotification
 from athenian.api.models.web import BadRequestError, Commit, CommitSignature, CommitsList, \
-    DeveloperSummary, DeveloperUpdates, FilterCommitsRequest, FilterContributorsRequest, \
-    FilterDeploymentsRequest, FilteredLabel, FilteredRelease, FilterLabelsRequest, \
-    FilterPullRequestsRequest, \
-    FilterReleasesRequest, FilterRepositoriesRequest, ForbiddenError, GetPullRequestsRequest, \
-    GetReleasesRequest, IncludedNativeUser, IncludedNativeUsers, InvalidRequestError, \
-    LinkedJIRAIssue, PullRequest as WebPullRequest, PullRequestLabel, PullRequestParticipant, \
-    PullRequestSet, ReleasedPullRequest, ReleaseSet, ReleaseSetInclude, StageTimings
+    DeployedComponent as WebDeployedComponent, DeveloperSummary, DeveloperUpdates, \
+    FilterCommitsRequest, FilterContributorsRequest, FilterDeploymentsRequest, \
+    FilteredDeployment, FilteredLabel, FilteredRelease, FilterLabelsRequest, \
+    FilterPullRequestsRequest, FilterReleasesRequest, FilterRepositoriesRequest, ForbiddenError, \
+    GetPullRequestsRequest, GetReleasesRequest, IncludedNativeUser, IncludedNativeUsers, \
+    InvalidRequestError, LinkedJIRAIssue, PullRequest as WebPullRequest, PullRequestLabel, \
+    PullRequestParticipant, PullRequestSet, ReleasedPullRequest, ReleaseSet, ReleaseSetInclude, \
+    ReleaseWith, StageTimings
 from athenian.api.models.web.code_check_run_statistics import CodeCheckRunStatistics
 from athenian.api.models.web.diff_releases_request import DiffReleasesRequest
 from athenian.api.models.web.diffed_releases import DiffedReleases
@@ -122,7 +128,8 @@ async def _common_filter_preprocess(filt: Union[FilterReleasesRequest,
                                                 FilterRepositoriesRequest,
                                                 FilterPullRequestsRequest,
                                                 FilterCommitsRequest,
-                                                FilterCodeChecksRequest],
+                                                FilterCodeChecksRequest,
+                                                FilterDeploymentsRequest],
                                     request: AthenianWebRequest,
                                     strip_prefix=True,
                                     ) -> Tuple[datetime,
@@ -343,7 +350,7 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
     return model_response(model)
 
 
-@weight(0.5)
+@weight(1)
 async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Response:
     """Find releases that were published in the given time fram in the given repositories."""
     try:
@@ -353,26 +360,40 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
         raise ResponseError(InvalidRequestError("?", detail=str(e)))
     time_from, time_to, repos, meta_ids, prefixer = await _common_filter_preprocess(
         filt, request, strip_prefix=False)
-    participants = {
-        rpk: getattr(filt.with_, attr) or []
+    stripped_repos = [r.split("/", 1)[1] for r in repos]
+    release_settings, jira_ids, (branches, default_branches) = await gather(
+        Settings.from_request(request, filt.account).list_release_matches(repos),
+        get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
+        BranchMiner.extract_branches(stripped_repos, meta_ids, request.mdb, request.cache),
+    )
+    releases, avatars, _ = await mine_releases(
+        repos=stripped_repos,
+        participants=_extract_release_participants(filt.with_),
+        branches=branches,
+        default_branches=default_branches,
+        time_from=time_from,
+        time_to=time_to,
+        labels=LabelFilter.from_iterables(filt.labels_include, filt.labels_exclude),
+        jira=JIRAFilter.from_web(filt.jira, jira_ids),
+        settings=release_settings,
+        prefixer=prefixer,
+        account=filt.account,
+        meta_ids=meta_ids,
+        mdb=request.mdb,
+        pdb=request.pdb,
+        rdb=request.rdb,
+        cache=request.cache,
+        with_pr_titles=True)
+    return await _build_release_set_response(releases, avatars, jira_ids, meta_ids, request.mdb)
+
+
+def _extract_release_participants(filt_with: ReleaseWith) -> ReleaseParticipants:
+    return {
+        rpk: getattr(filt_with, attr) or []
         for attr, rpk in (("releaser", ReleaseParticipationKind.RELEASER),
                           ("pr_author", ReleaseParticipationKind.PR_AUTHOR),
                           ("commit_author", ReleaseParticipationKind.COMMIT_AUTHOR))
-    } if filt.with_ is not None else {}
-    tasks = [
-        Settings.from_request(request, filt.account).list_release_matches(repos),
-        get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
-    ]
-    settings, jira_ids = await gather(*tasks)
-    repos = [r.split("/", 1)[1] for r in repos]
-    branches, default_branches = await BranchMiner.extract_branches(
-        repos, meta_ids, request.mdb, request.cache)
-    releases, avatars, _ = await mine_releases(
-        repos, participants, branches, default_branches, time_from, time_to,
-        LabelFilter.from_iterables(filt.labels_include, filt.labels_exclude),
-        JIRAFilter.from_web(filt.jira, jira_ids), settings, prefixer, filt.account, meta_ids,
-        request.mdb, request.pdb, request.rdb, request.cache, with_pr_titles=True)
-    return await _build_release_set_response(releases, avatars, jira_ids, meta_ids, request.mdb)
+    } if filt_with is not None else {}
 
 
 async def _load_jira_issues(jira_ids: Optional[Tuple[int, List[str]]],
@@ -653,10 +674,143 @@ async def filter_deployments(request: AthenianWebRequest, body: dict) -> web.Res
 
     We submit new deployments using `/events/deployments`.
     """
+    raise NotImplementedError
     try:
         filt = FilterDeploymentsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError("?", detail=str(e)))
-    _ = filt
-    raise NotImplementedError
+    (time_from, time_to, repos, meta_ids, prefixer), jira_ids = await gather(
+        _common_filter_preprocess(filt, request, strip_prefix=False),
+        get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
+    )
+    stripped_repos = [r.split("/", 1)[1] for r in repos]
+    repo_node_rows, release_settings, (branches, default_branches) = await gather(
+        await request.mdb.fetch_all(
+            select([NodeRepository.node_id])
+            .where(and_(NodeRepository.acc_id.in_(meta_ids),
+                        NodeRepository.name_with_owner.in_(stripped_repos)))),
+        Settings.from_request(request, filt.account).list_release_matches(repos),
+        BranchMiner.extract_branches(stripped_repos, meta_ids, request.mdb, request.cache),
+    )
+    deployments, people = await mine_deployments(
+        repo_node_ids=[r[0] for r in repo_node_rows],
+        participants=_extract_release_participants(filt.with_),
+        time_from=time_from,
+        time_to=time_to,
+        environments=filt.environments or [],
+        conclusions=[DeploymentConclusion[c] for c in (filt.conclusions or [])],
+        with_labels=filt.with_labels or {},
+        without_labels=filt.without_labels or {},
+        pr_labels=LabelFilter.from_iterables(filt.pr_labels_include, filt.pr_labels_exclude),
+        jira=JIRAFilter.from_web(filt.jira, jira_ids),
+        settings=release_settings,
+        branches=branches,
+        default_branches=default_branches,
+        prefixer=prefixer,
+        account=filt.account,
+        meta_ids=meta_ids,
+        mdb=request.mdb,
+        pdb=request.pdb,
+        rdb=request.rdb,
+        cache=request.cache,
+    )
+    web_models = await _build_deployments_response(deployments, await prefixer.load())
+    return model_response(web_models)
+
+
+async def _build_deployments_response(df: pd.DataFrame,
+                                      prefixer: Prefixer,
+                                      ) -> [FilteredDeployment]:
+    if df.empty:
+        return []
+    repo_node_to_prefixed_name = prefixer.repo_node_to_prefixed_name
+    user_node_to_prefixed_login = prefixer.user_node_to_prefixed_login
+    return [
+        FilteredDeployment(
+            name=name,
+            environment=environment,
+            url=url,
+            date_started=started_at,
+            date_finished=finished_at,
+            conclusion=conclusion,
+            components=[
+                WebDeployedComponent(repository=repo_node_to_prefixed_name[repo_node_id],
+                                     reference=ref)
+                for repo_node_id, ref in zip(
+                    components_df[DeployedComponent.repository_node_id.name].values,
+                    components_df[DeployedComponent.reference.name].values)
+            ],
+            labels={
+                key: val for key, val in zip(
+                    labels_df[DeployedLabel.key.name].values,
+                    labels_df[DeployedLabel.value.name].values)
+            },
+            releases=ReleaseSet(include=ReleaseSetInclude(
+                jira=None,  # await _load_jira_issues(jira_ids, releases, meta_ids, mdb),
+                data=[
+                    FilteredRelease(
+                        name=rel_name,
+                        repository=rel_repo,
+                        url=rel_url,
+                        publisher=rel_author,
+                        published=rel_date,
+                        age=rel_age,
+                        added_lines=rel_additions,
+                        deleted_lines=rel_deletions,
+                        commits=rel_commits_count,
+                        commit_authors=[
+                            user_node_to_prefixed_login[u]
+                            for u in rel_commit_authors
+                        ],
+                        prs=[
+                            ReleasedPullRequest(
+                                number=pr_number,
+                                title=pr_title,
+                                additions=pr_adds,
+                                deletions=pr_dels,
+                                author=user_node_to_prefixed_login[pr_author],
+                                jira=pr_jira or None,
+                            )
+                            for pr_number, pr_title, pr_adds, pr_dels, pr_author, pr_jira in zip(
+                                pr_numbers, pr_titles, pr_additions, pr_deletions,
+                                pr_user_node_ids, pr_jiras,
+                            )
+                        ],
+                    )
+                    for rel_name, rel_repo, rel_url, rel_author, rel_date, rel_age, rel_additions,
+                    rel_deletions, rel_commits_count, rel_commit_authors,
+                    pr_numbers, pr_titles, pr_additions, pr_deletions, pr_user_node_ids,
+                    pr_jiras
+                    in zip(releases_df[Release.name.name].values,
+                           releases_df[Release.repository_full_name.name].values,
+                           releases_df[Release.url.name].values,
+                           releases_df[Release.author.name].values,
+                           releases_df[Release.published_at.name].values,
+                           releases_df[ReleaseFacts.f.age].values,
+                           releases_df[ReleaseFacts.f.additions].values,
+                           releases_df[ReleaseFacts.f.deletions].values,
+                           releases_df[ReleaseFacts.f.commits_count].values,
+                           releases_df[ReleaseFacts.f.commit_authors].values,
+                           releases_df["prs_" + PullRequest.number.name],
+                           releases_df["prs_" + PullRequest.title.name],
+                           releases_df["prs_" + PullRequest.additions.name],
+                           releases_df["prs_" + PullRequest.deletions.name],
+                           releases_df["prs_" + PullRequest.user_node_id.name],
+                           releases_df["prs_jira"])
+                ],
+            )),
+        )
+        for name, environment, components_df, url, started_at, finished_at, conclusion,
+        labels_df, releases_df in zip(
+            df[DeploymentNotification.name.name].values,
+            df[DeploymentNotification.environment.name].values,
+            df["components"].values,
+            df[DeploymentNotification.url.name].values,
+            df[DeploymentNotification.started_at.name].values,
+            df[DeploymentNotification.finished_at.name].values,
+            df[DeploymentNotification.conclusion.name].values,
+            df["labels"].values,
+            df["releases"].values,
+        )
+    ]
