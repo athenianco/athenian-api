@@ -8,7 +8,7 @@ from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.response import ResponseError
 
 
-class DeploymentNotification(Model):
+class DeploymentNotificationUnsealed(Model):
     """Push message about a deployment. We remove unresolved components after 24h."""
 
     openapi_types = {
@@ -32,6 +32,8 @@ class DeploymentNotification(Model):
         "conclusion": "conclusion",
         "labels": "labels",
     }
+
+    __enable_slots__ = False
 
     def __init__(
         self,
@@ -247,3 +249,9 @@ class DeploymentNotification(Model):
         :param labels: The labels of this DeploymentNotification.
         """
         self._labels = labels
+
+
+class DeploymentNotification(DeploymentNotificationUnsealed):
+    """Push message about a deployment. We remove unresolved components after 24h."""
+
+    __enable_slots__ = True

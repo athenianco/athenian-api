@@ -42,7 +42,8 @@ from athenian.api.models.metadata.github import NodePullRequestJiraIssues, PullR
 from athenian.api.models.metadata.jira import Epic, Issue
 from athenian.api.models.web import BadRequestError, Commit, CommitSignature, CommitsList, \
     DeveloperSummary, DeveloperUpdates, FilterCommitsRequest, FilterContributorsRequest, \
-    FilteredLabel, FilteredRelease, FilterLabelsRequest, FilterPullRequestsRequest, \
+    FilterDeploymentsRequest, FilteredLabel, FilteredRelease, FilterLabelsRequest, \
+    FilterPullRequestsRequest, \
     FilterReleasesRequest, FilterRepositoriesRequest, ForbiddenError, GetPullRequestsRequest, \
     GetReleasesRequest, IncludedNativeUser, IncludedNativeUsers, InvalidRequestError, \
     LinkedJIRAIssue, PullRequest as WebPullRequest, PullRequestLabel, PullRequestParticipant, \
@@ -652,4 +653,10 @@ async def filter_deployments(request: AthenianWebRequest, body: dict) -> web.Res
 
     We submit new deployments using `/events/deployments`.
     """
+    try:
+        filt = FilterDeploymentsRequest.from_dict(body)
+    except ValueError as e:
+        # for example, passing a date with day=32
+        raise ResponseError(InvalidRequestError("?", detail=str(e)))
+    _ = filt
     raise NotImplementedError

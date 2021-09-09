@@ -40,8 +40,12 @@ from athenian.api.models.web.created_identifier import CreatedIdentifier
 from athenian.api.models.web.created_token import CreatedToken
 from athenian.api.models.web.delete_events_cache_request import DeleteEventsCacheRequest
 from athenian.api.models.web.deployed_component import DeployedComponent
+from athenian.api.models.web.deployment_analysis import DeploymentAnalysis, \
+    DeploymentAnalysisUnsealed
+from athenian.api.models.web.deployment_analysis_code import DeploymentAnalysisCode
 from athenian.api.models.web.deployment_conclusion import DeploymentConclusion
-from athenian.api.models.web.deployment_notification import DeploymentNotification
+from athenian.api.models.web.deployment_notification import DeploymentNotification, \
+    DeploymentNotificationUnsealed
 from athenian.api.models.web.developer_metric_id import DeveloperMetricID
 from athenian.api.models.web.developer_metrics_request import DeveloperMetricsRequest
 from athenian.api.models.web.developer_summary import DeveloperSummary
@@ -51,6 +55,7 @@ from athenian.api.models.web.diffed_releases import DiffedReleases
 from athenian.api.models.web.filter_code_checks_request import FilterCodeChecksRequest
 from athenian.api.models.web.filter_commits_request import FilterCommitsRequest
 from athenian.api.models.web.filter_contributors_request import FilterContributorsRequest
+from athenian.api.models.web.filter_deployments_request import FilterDeploymentsRequest
 from athenian.api.models.web.filter_jira_common import FilterJIRACommon
 from athenian.api.models.web.filter_jira_stuff import FilterJIRAStuff, FilterJIRAStuffSpecials
 from athenian.api.models.web.filter_labels_request import FilterLabelsRequest
@@ -59,11 +64,12 @@ from athenian.api.models.web.filter_releases_request import FilterReleasesReques
 from athenian.api.models.web.filter_repositories_request import FilterRepositoriesRequest
 from athenian.api.models.web.filtered_code_check_run import FilteredCodeCheckRun
 from athenian.api.models.web.filtered_code_check_runs import FilteredCodeCheckRuns
+from athenian.api.models.web.filtered_deployment import FilteredDeployment
 from athenian.api.models.web.filtered_jira_stuff import FilteredJIRAStuff
 from athenian.api.models.web.filtered_label import FilteredLabel
 from athenian.api.models.web.filtered_release import FilteredRelease
 from athenian.api.models.web.for_set import CommonPullRequestFilters, ForSet, \
-    RepositoryGroupsMixin
+    make_common_pull_request_filters, RepositoryGroupsMixin
 from athenian.api.models.web.for_set_code_checks import ForSetCodeChecks
 from athenian.api.models.web.for_set_developers import ForSetDevelopers
 from athenian.api.models.web.generic_error import BadRequestError, DatabaseConflict, \
