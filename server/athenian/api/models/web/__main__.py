@@ -27,7 +27,7 @@ def main():
                 continue
         if not imports:
             continue
-        imports.sort()
+        imports.sort(key=str.casefold)
         line = "from %s import %s" % (ip, ", ".join(imports))
         lines = textwrap.wrap(line, width=97, subsequent_indent="    ", break_long_words=False)
         all_imports.append(" \\\n".join(lines) + "\n")

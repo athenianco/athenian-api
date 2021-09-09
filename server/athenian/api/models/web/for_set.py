@@ -1,4 +1,4 @@
-from typing import List, Optional, TypeVar
+from typing import List, Optional, Type, TypeVar
 
 from athenian.api.models.web.base_model_ import AllOf, Model
 from athenian.api.models.web.jira_filter import JIRAFilter
@@ -86,86 +86,98 @@ class RepositoryGroupsMixin:
         return fs
 
 
-class CommonPullRequestFilters(Model):
-    """A few filters that are specific to filtering PR-related entities."""
+def make_common_pull_request_filters(prefix_labels: str) -> Type[Model]:
+    """Generate CommonPullRequestFilters class with the specified label properties name prefix."""
 
-    openapi_types = {
-        "labels_include": Optional[List[str]],
-        "labels_exclude": Optional[List[str]],
-        "jira": Optional[JIRAFilter],
-    }
+    class CommonPullRequestFilters(Model):
+        """A few filters that are specific to filtering PR-related entities."""
 
-    attribute_map = {
-        "labels_include": "labels_include",
-        "labels_exclude": "labels_exclude",
-        "jira": "jira",
-    }
+        openapi_types = {
+            prefix_labels + "labels_include": Optional[List[str]],
+            prefix_labels + "labels_exclude": Optional[List[str]],
+            "jira": Optional[JIRAFilter],
+        }
 
-    __enable_slots__ = False
+        attribute_map = {
+            prefix_labels + "labels_include": prefix_labels + "labels_include",
+            prefix_labels + "labels_exclude": prefix_labels + "labels_exclude",
+            "jira": "jira",
+        }
 
-    def __init__(
-        self,
-        labels_include: Optional[List[str]] = None,
-        labels_exclude: Optional[List[str]] = None,
-        jira: Optional[JIRAFilter] = None,
-    ):
-        """Initialize a new instance of CommonPullRequestFilters.
+        __enable_slots__ = False
 
-        :param labels_include: The labels_include of this CommonPullRequestFilters.
-        :param labels_exclude: The labels_exclude of this CommonPullRequestFilters.
-        :param jira: The jira of this CommonPullRequestFilters.
-        """
-        self._labels_include = labels_include
-        self._labels_exclude = labels_exclude
-        self._jira = jira
+        def __init__(self, **kwargs):
+            """Will be overwritten later."""
+            setattr(self, li_name := f"_{prefix_labels}labels_include", kwargs.get(li_name[1:]))
+            setattr(self, le_name := f"_{prefix_labels}labels_exclude", kwargs.get(le_name[1:]))
+            self._jira = kwargs.get("jira")
 
-    @property
-    def labels_include(self) -> Optional[List[str]]:
-        """Gets the labels_include of this CommonPullRequestFilters.
+        def _get_labels_include(self) -> Optional[List[str]]:
+            """Gets the labels_include of this CommonPullRequestFilters.
 
-        :return: The labels_include of this CommonPullRequestFilters.
-        """
-        return self._labels_include
+            :return: The labels_include of this CommonPullRequestFilters.
+            """
+            return getattr(self, f"_{prefix_labels}labels_include")
 
-    @labels_include.setter
-    def labels_include(self, labels_include: Optional[List[str]]):
-        """Sets the labels_include of this CommonPullRequestFilters.
+        def _set_labels_include(self, labels_include: Optional[List[str]]):
+            """Sets the labels_include of this CommonPullRequestFilters.
 
-        :param labels_include: The labels_include of this CommonPullRequestFilters.
-        """
-        self._labels_include = labels_include
+            :param labels_include: The labels_include of this CommonPullRequestFilters.
+            """
+            setattr(self, f"_{prefix_labels}labels_include", labels_include)
 
-    @property
-    def labels_exclude(self) -> Optional[List[str]]:
-        """Gets the labels_exclude of this CommonPullRequestFilters.
+        def _get_labels_exclude(self) -> Optional[List[str]]:
+            """Gets the labels_exclude of this CommonPullRequestFilters.
 
-        :return: The labels_exclude of this CommonPullRequestFilters.
-        """
-        return self._labels_exclude
+            :return: The labels_exclude of this CommonPullRequestFilters.
+            """
+            return getattr(self, f"_{prefix_labels}labels_exclude")
 
-    @labels_exclude.setter
-    def labels_exclude(self, labels_exclude: Optional[List[str]]):
-        """Sets the labels_exclude of this CommonPullRequestFilters.
+        def _set_labels_exclude(self, labels_exclude: Optional[List[str]]):
+            """Sets the labels_exclude of this CommonPullRequestFilters.
 
-        :param labels_exclude: The labels_exclude of this CommonPullRequestFilters.
-        """
-        self._labels_exclude = labels_exclude
+            :param labels_exclude: The labels_exclude of this CommonPullRequestFilters.
+            """
+            setattr(self, f"_{prefix_labels}labels_exclude", labels_exclude)
 
-    @property
-    def jira(self) -> Optional[JIRAFilter]:
-        """Gets the jira of this CommonPullRequestFilters.
+        @property
+        def jira(self) -> Optional[JIRAFilter]:
+            """Gets the jira of this CommonPullRequestFilters.
 
-        :return: The jira of this CommonPullRequestFilters.
-        """
-        return self._jira
+            :return: The jira of this CommonPullRequestFilters.
+            """
+            return self._jira
 
-    @jira.setter
-    def jira(self, jira: Optional[JIRAFilter]):
-        """Sets the jira of this CommonPullRequestFilters.
+        @jira.setter
+        def jira(self, jira: Optional[JIRAFilter]):
+            """Sets the jira of this CommonPullRequestFilters.
 
-        :param jira: The jira of this CommonPullRequestFilters.
-        """
-        self._jira = jira
+            :param jira: The jira of this CommonPullRequestFilters.
+            """
+            self._jira = jira
+
+    # we cannot do this at once because it crashes the ast module
+    CommonPullRequestFilters.__init__.__doc__ = f"""
+    Initialize a new instance of CommonPullRequestFilters.
+
+    :param {prefix_labels}labels_include: The labels_include of this CommonPullRequestFilters.
+    :param {prefix_labels}labels_exclude: The labels_exclude of this CommonPullRequestFilters.
+    :param jira: The jira of this CommonPullRequestFilters.
+    """
+
+    setattr(CommonPullRequestFilters, prefix_labels + "labels_include", property(
+        CommonPullRequestFilters._get_labels_include,
+        CommonPullRequestFilters._set_labels_include,
+    ))
+    setattr(CommonPullRequestFilters, prefix_labels + "labels_exclude", property(
+        CommonPullRequestFilters._get_labels_exclude,
+        CommonPullRequestFilters._set_labels_exclude,
+    ))
+
+    return CommonPullRequestFilters
+
+
+CommonPullRequestFilters = make_common_pull_request_filters("")
 
 
 class _ForSet(Model, RepositoryGroupsMixin):
