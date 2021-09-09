@@ -34,7 +34,11 @@ class BranchMiner:
                                mdb: DatabaseLike,
                                cache: Optional[aiomcache.Client],
                                ) -> Tuple[pd.DataFrame, Dict[str, str]]:
-        """Fetch branches in the given repositories and extract the default branch names."""
+        """
+        Fetch branches in the given repositories and extract the default branch names.
+
+        `repos` must *not* be prefixed!
+        """
         branches = await cls._extract_branches(repos, meta_ids, mdb)
         log = logging.getLogger("%s.extract_default_branches" % metadata.__package__)
         default_branches = {}

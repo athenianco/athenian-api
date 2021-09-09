@@ -92,14 +92,18 @@ async def mine_deployments(repo_node_ids: Collection[int],
     notifications, _, _ = await _fetch_deployment_candidates(
         repo_node_ids, time_from, time_to, environments, conclusions, with_labels, without_labels,
         account, rdb, cache)
+    notifications, components = await _fetch_components_and_prune_unresolved(
+        notifications, account, rdb)
     if notifications.empty:
         return pd.DataFrame(), np.array([], dtype="U")
+    labels = asyncio.create_task(_fetch_grouped_labels(notifications.index.values, account, rdb),
+                                 name="_fetch_grouped_labels(%d)" % len(notifications))
     repo_names, settings = await _finalize_release_settings(
         notifications, time_from, time_to, settings, branches, default_branches, prefixer,
         account, meta_ids, mdb, pdb, rdb, cache)
     releases = asyncio.create_task(_fetch_precomputed_deployed_releases(
         notifications, repo_names, settings, default_branches, prefixer, account, pdb),
-        name="_fetch_precomputed_deployed_releases")
+        name="_fetch_precomputed_deployed_releases(%d)" % len(notifications))
     facts = await _fetch_precomputed_deployment_facts(
         notifications.index.values, settings, account, pdb)
     add_pdb_hits(pdb, "deployments", len(facts))
@@ -109,7 +113,7 @@ async def mine_deployments(repo_node_ids: Collection[int],
             notifications.index.values.astype("U"), facts.index.values.astype("U"),
             assume_unique=True, invert=True))
         missed_facts, missed_releases, missed_mentioned_authors = await _compute_deployment_facts(
-            notifications.take(missed_indexes), settings, default_branches, prefixer,
+            notifications.take(missed_indexes), components, settings, default_branches, prefixer,
             account, meta_ids, mdb, pdb, rdb, cache)
         if not missed_facts.empty:
             facts = pd.concat([facts, missed_facts])
@@ -120,6 +124,7 @@ async def mine_deployments(repo_node_ids: Collection[int],
     if pr_labels or jira:
         facts = await _filter_by_prs(
             facts, pr_labels, jira, account, meta_ids, mdb, pdb, cache)
+    components = _group_components(components)
     await releases
     releases, mentioned_authors = releases.result()
     if not missed_releases.empty:
@@ -131,7 +136,9 @@ async def mine_deployments(repo_node_ids: Collection[int],
         else:
             releases = missed_releases
             mentioned_authors = missed_mentioned_authors
-    joined = facts.join([notifications] + ([releases] if not releases.empty else []))
+    await labels
+    joined = facts.join([notifications, components, labels.result()] +
+                        ([releases] if not releases.empty else []))
     joined = _adjust_empty_releases(joined)
     return joined, mentioned_authors
 
@@ -254,6 +261,18 @@ async def _postprocess_deployed_releases(releases: pd.DataFrame,
     return grouped_releases, mentioned_authors
 
 
+def _group_components(df: pd.DataFrame) -> pd.DataFrame:
+    groups = list(df.groupby(DeployedComponent.deployment_name.name, sort=False))
+    grouped_components = pd.DataFrame({
+        "deployment_name": [g[0] for g in groups],
+        "components": [g[1] for g in groups],
+    })
+    for df in grouped_components["components"].values:
+        df.reset_index(drop=True, inplace=True)
+    grouped_components.set_index("deployment_name", drop=True, inplace=True)
+    return grouped_components
+
+
 @sentry_span
 async def _filter_by_participants(df: pd.DataFrame,
                                   participants: ReleaseParticipants,
@@ -347,6 +366,7 @@ async def _filter_by_prs(df: pd.DataFrame,
 
 @sentry_span
 async def _compute_deployment_facts(notifications: pd.DataFrame,
+                                    components: pd.DataFrame,
                                     settings: ReleaseSettings,
                                     default_branches: Dict[str, str],
                                     prefixer: PrefixerPromise,
@@ -357,8 +377,8 @@ async def _compute_deployment_facts(notifications: pd.DataFrame,
                                     rdb: ParallelDatabase,
                                     cache: Optional[aiomcache.Client],
                                     ) -> Tuple[pd.DataFrame, pd.DataFrame, np.ndarray]:
-    notifications, components = await _fetch_components_and_prune_unresolved(
-        notifications, account, rdb)
+    components = components.take(np.flatnonzero(np.in1d(
+        components.index.values.astype("U"), notifications.index.values.astype("U"))))
     commit_relationship, dags, deployed_commits_df, tainted_envs = \
         await _resolve_commit_relationship(
             notifications, components, prefixer, account, meta_ids, mdb, pdb, rdb, cache)
@@ -1175,3 +1195,22 @@ async def _fetch_deployment_candidates(repo_node_ids: Collection[int],
     del notifications[DeploymentNotification.created_at.name]
     del notifications[DeploymentNotification.updated_at.name]
     return notifications, environments, conclusions
+
+
+async def _fetch_grouped_labels(names: Collection[str],
+                                account: int,
+                                rdb: ParallelDatabase,
+                                ) -> pd.DataFrame:
+    df = await read_sql_query(select([DeployedLabel])
+                              .where(and_(DeployedLabel.account_id.name == account,
+                                          DeployedLabel.deployment_name.in_any_values(names))),
+                              rdb, DeployedLabel, index=DeployedLabel.deployment_name.name)
+    groups = list(df.groupby(DeployedLabel.deployment_name.name, sort=False))
+    grouped_labels = pd.DataFrame({
+        "deployment_name": [g[0] for g in groups],
+        "labels": [g[1] for g in groups],
+    })
+    for df in grouped_labels["labels"].values:
+        df.reset_index(drop=True, inplace=True)
+    grouped_labels.set_index("deployment_name", drop=True, inplace=True)
+    return grouped_labels

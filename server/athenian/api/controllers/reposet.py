@@ -34,7 +34,7 @@ async def resolve_reposet(repo: str,
                           pointer: str,
                           uid: str,
                           account: int,
-                          db: Union[FastConnection, ParallelDatabase],
+                          sdb: Union[FastConnection, ParallelDatabase],
                           cache: Optional[aiomcache.Client],
                           ) -> List[str]:
     """
@@ -57,7 +57,7 @@ async def resolve_reposet(repo: str,
             detail="repository set identifier is invalid: %s" % repo,
             pointer=pointer,
         ))
-    rs, _ = await fetch_reposet(set_id, [RepositorySet.items], uid, db, cache)
+    rs, _ = await fetch_reposet(set_id, [RepositorySet.items], uid, sdb, cache)
     if rs.owner_id != account:
         raise ResponseError(ForbiddenError(
             detail="User %s is not allowed to reference reposet %d in this query" %

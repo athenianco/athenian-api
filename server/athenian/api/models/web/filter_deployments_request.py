@@ -14,7 +14,7 @@ class _FilterDeploymentsRequest(Model):
         "_in": List[str],
         "_with": ReleaseWith,
         "environments": List[str],
-        "conclusions": List[DeploymentConclusion],
+        "conclusions": List[str],
         "with_labels": object,
         "without_labels": object,
     }
@@ -35,7 +35,7 @@ class _FilterDeploymentsRequest(Model):
         _in: Optional[List[str]] = None,
         _with: Optional[ReleaseWith] = None,
         environments: Optional[List[str]] = None,
-        conclusions: Optional[List[DeploymentConclusion]] = None,
+        conclusions: Optional[List[str]] = None,
         with_labels: Optional[Dict[str, Any]] = None,
         without_labels: Optional[Dict[str, Any]] = None,
     ):
@@ -114,7 +114,7 @@ class _FilterDeploymentsRequest(Model):
         self._environments = environments
 
     @property
-    def conclusions(self) -> List[DeploymentConclusion]:
+    def conclusions(self) -> Optional[List[str]]:
         """Gets the conclusions of this FilterDeploymentsRequest.
 
         Deployments must execute with any of these conclusions.
@@ -124,13 +124,18 @@ class _FilterDeploymentsRequest(Model):
         return self._conclusions
 
     @conclusions.setter
-    def conclusions(self, conclusions: List[DeploymentConclusion]):
+    def conclusions(self, conclusions: Optional[List[str]]):
         """Sets the conclusions of this FilterDeploymentsRequest.
 
         Deployments must execute with any of these conclusions.
 
         :param conclusions: The conclusions of this FilterDeploymentsRequest.
         """
+        if conclusions is not None:
+            for value in conclusions:
+                if value not in DeploymentConclusion:
+                    raise ValueError(
+                        f'Value "{value}" must be one of {list(DeploymentConclusion)}')
         self._conclusions = conclusions
 
     @property
