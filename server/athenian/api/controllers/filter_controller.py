@@ -33,11 +33,11 @@ from athenian.api.controllers.miners.github.label import mine_labels
 from athenian.api.controllers.miners.github.release_mine import \
     diff_releases as mine_diff_releases, mine_releases, mine_releases_by_name
 from athenian.api.controllers.miners.github.repository import mine_repositories
-from athenian.api.controllers.miners.github.user import mine_user_avatars
+from athenian.api.controllers.miners.github.user import mine_user_avatars, UserAvatarKeys
 from athenian.api.controllers.miners.types import DeploymentConclusion, PRParticipants, \
-    PRParticipationKind, PullRequestEvent, PullRequestListItem, PullRequestStage, ReleaseFacts, \
-    ReleaseParticipants, ReleaseParticipationKind
+    PRParticipationKind, PullRequestEvent, PullRequestListItem, PullRequestStage, ReleaseFacts
 from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
+from athenian.api.controllers.release import extract_release_participants
 from athenian.api.controllers.reposet import resolve_repos
 from athenian.api.controllers.settings import ReleaseSettings, Settings
 from athenian.api.models.metadata.github import NodePullRequestJiraIssues, NodeRepository, \
@@ -53,7 +53,7 @@ from athenian.api.models.web import BadRequestError, Commit, CommitSignature, Co
     GetPullRequestsRequest, GetReleasesRequest, IncludedNativeUser, IncludedNativeUsers, \
     InvalidRequestError, LinkedJIRAIssue, PullRequest as WebPullRequest, PullRequestLabel, \
     PullRequestParticipant, PullRequestSet, ReleasedPullRequest, ReleaseSet, ReleaseSetInclude, \
-    ReleaseWith, StageTimings
+    StageTimings
 from athenian.api.models.web.code_check_run_statistics import CodeCheckRunStatistics
 from athenian.api.models.web.diff_releases_request import DiffReleasesRequest
 from athenian.api.models.web.diffed_releases import DiffedReleases
@@ -361,14 +361,15 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
     time_from, time_to, repos, meta_ids, prefixer = await _common_filter_preprocess(
         filt, request, strip_prefix=False)
     stripped_repos = [r.split("/", 1)[1] for r in repos]
-    release_settings, jira_ids, (branches, default_branches) = await gather(
+    release_settings, jira_ids, (branches, default_branches), participants = await gather(
         Settings.from_request(request, filt.account).list_release_matches(repos),
         get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
         BranchMiner.extract_branches(stripped_repos, meta_ids, request.mdb, request.cache),
+        extract_release_participants(filt.with_, meta_ids, request.mdb),
     )
     releases, avatars, _ = await mine_releases(
         repos=stripped_repos,
-        participants=_extract_release_participants(filt.with_),
+        participants=participants,
         branches=branches,
         default_branches=default_branches,
         time_from=time_from,
@@ -384,16 +385,10 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
         rdb=request.rdb,
         cache=request.cache,
         with_pr_titles=True)
-    return await _build_release_set_response(releases, avatars, jira_ids, meta_ids, request.mdb)
-
-
-def _extract_release_participants(filt_with: ReleaseWith) -> ReleaseParticipants:
-    return {
-        rpk: getattr(filt_with, attr) or []
-        for attr, rpk in (("releaser", ReleaseParticipationKind.RELEASER),
-                          ("pr_author", ReleaseParticipationKind.PR_AUTHOR),
-                          ("commit_author", ReleaseParticipationKind.COMMIT_AUTHOR))
-    } if filt_with is not None else {}
+    prefixer = await prefixer.load()
+    avatars = [(prefixer.user_node_to_prefixed_login[u], url) for u, url in avatars]
+    return await _build_release_set_response(
+        releases, avatars, prefixer, jira_ids, meta_ids, request.mdb)
 
 
 async def _load_jira_issues(jira_ids: Optional[Tuple[int, List[str]]],
@@ -442,12 +437,13 @@ async def _load_jira_issues(jira_ids: Optional[Tuple[int, List[str]]],
 
 async def _build_release_set_response(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
                                       avatars: List[Tuple[str, str]],
+                                      prefixer: Prefixer,
                                       jira_ids: Optional[Tuple[int, List[str]]],
                                       meta_ids: Tuple[int, ...],
                                       mdb: databases.Database,
                                       ) -> web.Response:
     issues = await _load_jira_issues(jira_ids, releases, meta_ids, mdb)
-    data = [_filtered_release_from_tuple(t) for t in releases]
+    data = [_filtered_release_from_tuple(t, prefixer) for t in releases]
     model = ReleaseSet(data=data, include=ReleaseSetInclude(
         users={u: IncludedNativeUser(avatar=a) for u, a in avatars},
         jira=issues,
@@ -455,29 +451,35 @@ async def _build_release_set_response(releases: List[Tuple[Dict[str, Any], Relea
     return model_response(model)
 
 
-def _filtered_release_from_tuple(t: Tuple[Dict[str, Any], ReleaseFacts]) -> FilteredRelease:
+def _filtered_release_from_tuple(t: Tuple[Dict[str, Any], ReleaseFacts],
+                                 prefixer: Prefixer,
+                                 ) -> FilteredRelease:
     details, facts = t
-    return FilteredRelease(name=details[Release.name.name],
-                           repository=details[Release.repository_full_name.name],
-                           url=details[Release.url.name],
-                           publisher=facts.publisher,
-                           published=facts.published.item().replace(tzinfo=timezone.utc),
-                           age=facts.age,
-                           added_lines=facts.additions,
-                           deleted_lines=facts.deletions,
-                           commits=facts.commits_count,
-                           commit_authors=[u.decode() for u in facts.commit_authors],
-                           prs=_extract_release_prs(facts))
+    user_node_to_prefixed_login = prefixer.user_node_to_prefixed_login
+    return FilteredRelease(
+        name=details[Release.name.name],
+        repository=details[Release.repository_full_name.name],
+        url=details[Release.url.name],
+        publisher=user_node_to_prefixed_login.get(facts.publisher),
+        published=facts.published.item().replace(tzinfo=timezone.utc),
+        age=facts.age,
+        added_lines=facts.additions,
+        deleted_lines=facts.deletions,
+        commits=facts.commits_count,
+        commit_authors=sorted(user_node_to_prefixed_login.get(u) for u in facts.commit_authors),
+        prs=_extract_release_prs(facts, prefixer),
+    )
 
 
-def _extract_release_prs(facts: ReleaseFacts) -> List[ReleasedPullRequest]:
+def _extract_release_prs(facts: ReleaseFacts, prefixer: Prefixer) -> List[ReleasedPullRequest]:
+    user_node_to_prefixed_login = prefixer.user_node_to_prefixed_login
     return [
         ReleasedPullRequest(
             number=number,
             title=title,
             additions=adds,
             deletions=dels,
-            author=author.decode() or None,
+            author=user_node_to_prefixed_login.get(author),
             jira=jira or None,
         )
         for number, title, adds, dels, author, jira in zip(
@@ -485,7 +487,7 @@ def _extract_release_prs(facts: ReleaseFacts) -> List[ReleasedPullRequest]:
             facts["prs_" + PullRequest.title.name],
             facts["prs_" + PullRequest.additions.name],
             facts["prs_" + PullRequest.deletions.name],
-            facts["prs_" + PullRequest.user_login.name],
+            facts["prs_" + PullRequest.user_node_id.name],
             facts.prs_jira,
         )
     ]
@@ -555,10 +557,9 @@ async def _build_github_prs_response(prs: List[PullRequestListItem],
     log = logging.getLogger(f"{metadata.__package__}._build_github_prs_response")
     web_prs = sorted(web_pr_from_struct(pr, prefixer, log) for pr in prs)
     users = set(chain.from_iterable(chain.from_iterable(pr.participants.values()) for pr in prs))
-    avatars = await mine_user_avatars(users, False, meta_ids, mdb, cache)
+    avatars = await mine_user_avatars(users, UserAvatarKeys.PREFIXED_LOGIN, meta_ids, mdb, cache)
     model = PullRequestSet(include=IncludedNativeUsers(users={
-        prefixer.user_login_to_prefixed_login[login]: IncludedNativeUser(avatar=avatar)
-        for login, avatar in avatars
+        login: IncludedNativeUser(avatar=avatar) for login, avatar in avatars
     }), data=web_prs)
     return model_response(model)
 
@@ -597,7 +598,8 @@ async def get_releases(request: AthenianWebRequest, body: dict) -> web.Response:
     releases, avatars = await mine_releases_by_name(
         releases_by_repo, settings, prefixer, body.account, meta_ids,
         request.mdb, request.pdb, request.rdb, request.cache)
-    return await _build_release_set_response(releases, avatars, jira_ids, meta_ids, request.mdb)
+    return await _build_release_set_response(
+        releases, avatars, await prefixer.load(), jira_ids, meta_ids, request.mdb)
 
 
 @weight(1)
@@ -632,7 +634,7 @@ async def diff_releases(request: AthenianWebRequest, body: dict) -> web.Response
         for diff in diffs:
             repo_result.append(ReleaseDiff(
                 old=diff[0], new=diff[1],
-                releases=[_filtered_release_from_tuple(t) for t in diff[2]]))
+                releases=[_filtered_release_from_tuple(t, prefixer) for t in diff[2]]))
     return model_response(result)
 
 
@@ -685,17 +687,18 @@ async def filter_deployments(request: AthenianWebRequest, body: dict) -> web.Res
         get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
     )
     stripped_repos = [r.split("/", 1)[1] for r in repos]
-    repo_node_rows, release_settings, (branches, default_branches) = await gather(
+    repo_node_rows, release_settings, (branches, default_branches), participants = await gather(
         await request.mdb.fetch_all(
             select([NodeRepository.node_id])
             .where(and_(NodeRepository.acc_id.in_(meta_ids),
                         NodeRepository.name_with_owner.in_(stripped_repos)))),
         Settings.from_request(request, filt.account).list_release_matches(repos),
         BranchMiner.extract_branches(stripped_repos, meta_ids, request.mdb, request.cache),
+        extract_release_participants(filt.with_, meta_ids, request.mdb),
     )
     deployments, people = await mine_deployments(
         repo_node_ids=[r[0] for r in repo_node_rows],
-        participants=_extract_release_participants(filt.with_),
+        participants=participants,
         time_from=time_from,
         time_to=time_to,
         environments=filt.environments or [],

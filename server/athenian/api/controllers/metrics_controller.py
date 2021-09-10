@@ -18,9 +18,9 @@ from athenian.api.controllers.miners.access_classes import access_classes, Acces
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.commit import FilterCommitsProperty
 from athenian.api.controllers.miners.github.developer import DeveloperTopic
-from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind, \
-    ReleaseParticipationKind
+from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind
 from athenian.api.controllers.prefixer import Prefixer
+from athenian.api.controllers.release import extract_release_participants
 from athenian.api.controllers.reposet import resolve_repos, resolve_reposet
 from athenian.api.controllers.settings import Settings
 from athenian.api.controllers.user import MANNEQUIN_PREFIX
@@ -501,18 +501,14 @@ async def calc_metrics_releases(request: AthenianWebRequest, body: dict) -> web.
         Settings.from_request(request, filt.account).list_release_matches(repos),
         get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
         get_calculators_for_request(grouped_repos.keys(), filt.account, meta_ids, request),
+        *(extract_release_participants(with_, meta_ids, request.mdb)
+          for with_ in (filt.with_ or [])),
     ]
-    release_settings, jira_ids, calculators = await gather(*tasks)
+    release_settings, jira_ids, calculators, *participants = await gather(*tasks)
     met = []
 
     @sentry_span
     async def calculate_for_set_metrics(service, repos, for_sets):
-        participants = [{
-            rpk: getattr(with_, attr) or []
-            for attr, rpk in (("releaser", ReleaseParticipationKind.RELEASER),
-                              ("pr_author", ReleaseParticipationKind.PR_AUTHOR),
-                              ("commit_author", ReleaseParticipationKind.COMMIT_AUTHOR))
-        } for with_ in (filt.with_ or [])]
         calculator = calculators[service]
         release_metric_values, release_matches = await calculator.calc_release_metrics_line_github(
             filt.metrics, time_intervals, filt.quantiles or (0, 1), repos, participants,

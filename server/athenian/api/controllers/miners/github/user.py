@@ -1,6 +1,7 @@
+from enum import auto, IntEnum
 import marshal
 import pickle
-from typing import Any, Collection, Iterable, List, Mapping, Optional, Tuple
+from typing import Any, Collection, Iterable, List, Mapping, Optional, Tuple, Union
 
 import aiomcache
 import databases
@@ -35,26 +36,51 @@ async def mine_users(logins: Collection[str],
     return [dict(row) for row in rows]
 
 
+class UserAvatarKeys(IntEnum):
+    """User avatar identifier kind."""
+
+    LOGIN = auto()
+    PREFIXED_LOGIN = auto()
+    NODE = auto()
+
+
+@sentry_span
+async def mine_user_avatars(logins: Iterable[str],
+                            keys: UserAvatarKeys,
+                            meta_ids: Tuple[int, ...],
+                            mdb: databases.Database,
+                            cache: Optional[aiomcache.Client],
+                            ) -> List[Tuple[Union[str, int], str]]:
+    """Fetch the user profile picture URL for each login."""
+    tuples = await _mine_user_avatars(logins, meta_ids, mdb, cache)
+    return [(
+        node
+        if keys == UserAvatarKeys.NODE
+        else (
+            prefixed_login
+            if keys == UserAvatarKeys.PREFIXED_LOGIN
+            else prefixed_login.rsplit("/", 1)[1]
+        ),
+        avatar,
+    ) for node, prefixed_login, avatar in tuples]
+
+
 @sentry_span
 @cached(
     exptime=60 * 60,
     serialize=marshal.dumps,
     deserialize=marshal.loads,
-    key=lambda logins, with_prefix, **_: (",".join(sorted(logins)), with_prefix),
+    key=lambda logins, **_: (",".join(sorted(logins)),),
 )
-async def mine_user_avatars(logins: Iterable[str],
-                            with_prefix: bool,
-                            meta_ids: Tuple[int, ...],
-                            mdb: databases.Database,
-                            cache: Optional[aiomcache.Client],
-                            ) -> List[Tuple[str, str]]:
-    """Fetch the user profile picture URL for each login."""
-    selected = [User.login, User.avatar_url]
-    if with_prefix:
-        selected.append(User.html_url)
-    rows = await mdb.fetch_all(select(selected)
+async def _mine_user_avatars(logins: Iterable[str],
+                             meta_ids: Tuple[int, ...],
+                             mdb: databases.Database,
+                             cache: Optional[aiomcache.Client],
+                             ) -> List[Tuple[int, str, str]]:
+    rows = await mdb.fetch_all(select([User.node_id, User.html_url, User.avatar_url])
                                .where(and_(User.login.in_(logins),
                                            User.acc_id.in_(meta_ids))))
-    if not with_prefix:
-        return [(u[User.login.name], u[User.avatar_url.name]) for u in rows]
-    return [(u[User.html_url.name].split("://", 1)[1], u[User.avatar_url.name]) for u in rows]
+    return [(u[User.node_id.name],
+             u[User.html_url.name].split("://", 1)[1],
+             u[User.avatar_url.name])
+            for u in rows]

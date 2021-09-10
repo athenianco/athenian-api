@@ -21,11 +21,11 @@ class Prefixer:
     """
 
     do_not_construct_me_directly: None
-    repo_node_to_prefixed_name: Dict[str, str]
+    repo_node_to_prefixed_name: Dict[int, str]
     repo_name_to_prefixed_name: Dict[str, str]
     repo_node_to_name: Dict[int, str]
     repo_name_to_node: Dict[str, int]
-    user_node_to_prefixed_login: Dict[str, str]
+    user_node_to_prefixed_login: Dict[int, str]
     user_login_to_prefixed_login: Dict[str, str]
     user_node_to_login: Dict[int, str]
     user_login_to_node: Dict[str, int]
