@@ -150,8 +150,10 @@ async def mine_all_releases(repos: Collection[str],
     del df_facts[Release.repository_full_name.name]
     result = df_gen.join(df_facts)
     result.set_index(Release.node_id.name, inplace=True)
-    for col in ("commit_authors", "prs_user_login"):
-        result[col] = [[s.decode() for s in subarr] for subarr in result[col].values]
+    user_node_to_login = (await prefixer.load()).user_node_to_login.get
+    for col in ("commit_authors", "prs_user_node_id"):
+        result[col] = [[user_node_to_login(u) for u in subarr]
+                       for subarr in result[col].values]
     return {"": result}
 
 

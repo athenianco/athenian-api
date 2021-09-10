@@ -236,20 +236,13 @@ async def _postprocess_deployed_releases(releases: pd.DataFrame,
         del release_facts_df[col]
     releases.set_index(Release.node_id.name, drop=True, inplace=True)
     releases = release_facts_df.join(releases)
-    user_node_to_prefixed_login_get = prefixer.user_node_to_prefixed_login.get
-    mentioned_authors = np.concatenate([
-        np.concatenate(
-            release_facts_df["prs_" + PullRequest.user_login.name].values),
-        np.concatenate(
-            release_facts_df[ReleaseFacts.f.commit_authors].values),
-        np.array([
-            user_node_to_prefixed_login_get(u, "")
-            for u in releases[Release.author_node_id.name].values
-        ], dtype="S"),
-    ])
-    mentioned_authors = np.unique(mentioned_authors[mentioned_authors.nonzero()[0]]).astype("U")
-    mentioned_authors = np.array([p[1] for p in np.char.split(mentioned_authors, "/", 1)],
-                                 dtype="U")
+    mentioned_authors = np.unique(np.concatenate([
+        *release_facts_df["prs_" + PullRequest.user_node_id.name].values,
+        *release_facts_df[ReleaseFacts.f.commit_authors].values,
+        releases[Release.author_node_id.name].values,
+    ]))
+    if len(mentioned_authors) and mentioned_authors[0] == 0:
+        mentioned_authors = mentioned_authors[1:]
     groups = list(releases.groupby("deployment_name", sort=False))
     grouped_releases = pd.DataFrame({
         "deployment_name": [g[0] for g in groups],

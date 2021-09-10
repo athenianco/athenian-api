@@ -4,7 +4,6 @@ from typing import Any, Dict, List, Mapping, Optional, Set, Union
 
 import numpy as np
 import pandas as pd
-import sqlalchemy as sa
 
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
     PullRequestCommit, PullRequestReview, Release
@@ -37,7 +36,7 @@ class ReleaseParticipationKind(IntEnum):
     RELEASER = auto()
 
 
-ReleaseParticipants = Mapping[ReleaseParticipationKind, List[str]]
+ReleaseParticipants = Mapping[ReleaseParticipationKind, List[int]]
 
 
 class Property(IntEnum):
@@ -324,17 +323,13 @@ released_prs_columns = [
     PullRequest.number,
     PullRequest.additions,
     PullRequest.deletions,
-    PullRequest.user_login,
+    PullRequest.user_node_id,
 ]
 
 
 def _add_prs_annotations(cls):
-    col_types_map = {
-        sa.Text: ascii,
-        sa.BigInteger: int,
-    }
     for col in released_prs_columns:
-        cls.__annotations__["prs_" + col.name] = [col_types_map[type(col.type)]]
+        cls.__annotations__["prs_" + col.name] = [int]
     return cls
 
 
@@ -351,13 +346,13 @@ class ReleaseFacts:
         """
 
         published: "datetime64[s]"
-        publisher: "ascii[39]"
+        publisher: int
         matched_by: np.int8
         age: "timedelta64[s]"
         additions: int
         deletions: int
         commits_count: int
-        commit_authors: [ascii]
+        commit_authors: [int]
 
     class Optional:
         """Mutable fields that are None by default. We do not serialize them."""
