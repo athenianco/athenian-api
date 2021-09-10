@@ -432,10 +432,13 @@ class DeploymentFacts:
         We generate `dtype` from this spec.
         """
 
-        pr_authors: [ascii]
-        commit_authors: [ascii]
-        prs: int
-        lines_prs: int
-        lines_overall: int
-        commits_prs: int
-        commits_overall: int
+        pr_authors: [int]
+        commit_authors: [int]
+        release_authors: [int]
+        repositories: [int]
+        prs: [int]
+        prs_offsets: [np.int32]
+        lines_prs: [int]
+        lines_overall: [int]
+        commits_prs: [np.int32]
+        commits_overall: [np.int32]

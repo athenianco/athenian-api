@@ -1,13 +1,12 @@
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from itertools import chain
+from itertools import chain, repeat
 import logging
 import operator
-from typing import Any, Dict, List, Mapping, Optional, Set, Tuple, Union
+from typing import Any, Collection, Dict, List, Mapping, Optional, Set, Tuple, Union
 
 from aiohttp import web
 import aiomcache
-import databases
 from dateutil.parser import parse as parse_datetime
 import numpy as np
 import pandas as pd
@@ -34,20 +33,22 @@ from athenian.api.controllers.miners.github.release_mine import \
     diff_releases as mine_diff_releases, mine_releases, mine_releases_by_name
 from athenian.api.controllers.miners.github.repository import mine_repositories
 from athenian.api.controllers.miners.github.user import mine_user_avatars, UserAvatarKeys
-from athenian.api.controllers.miners.types import DeploymentConclusion, PRParticipants, \
+from athenian.api.controllers.miners.types import DeploymentConclusion, DeploymentFacts, \
+    PRParticipants, \
     PRParticipationKind, PullRequestEvent, PullRequestListItem, PullRequestStage, ReleaseFacts
 from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
 from athenian.api.controllers.release import extract_release_participants
 from athenian.api.controllers.reposet import resolve_repos
 from athenian.api.controllers.settings import ReleaseSettings, Settings
+from athenian.api.db import ParallelDatabase
 from athenian.api.models.metadata.github import NodePullRequestJiraIssues, NodeRepository, \
     PullRequest, PushCommit, Release, User
 from athenian.api.models.metadata.jira import Epic, Issue
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
     DeploymentNotification
 from athenian.api.models.web import BadRequestError, Commit, CommitSignature, CommitsList, \
-    DeployedComponent as WebDeployedComponent, DeveloperSummary, DeveloperUpdates, \
-    FilterCommitsRequest, FilterContributorsRequest, FilterDeploymentsRequest, \
+    DeployedComponent as WebDeployedComponent, DeploymentAnalysisCode, DeveloperSummary, \
+    DeveloperUpdates, FilterCommitsRequest, FilterContributorsRequest, FilterDeploymentsRequest, \
     FilteredDeployment, FilteredLabel, FilteredRelease, FilterLabelsRequest, \
     FilterPullRequestsRequest, FilterReleasesRequest, FilterRepositoriesRequest, ForbiddenError, \
     GetPullRequestsRequest, GetReleasesRequest, IncludedNativeUser, IncludedNativeUsers, \
@@ -60,6 +61,7 @@ from athenian.api.models.web.diffed_releases import DiffedReleases
 from athenian.api.models.web.filter_code_checks_request import FilterCodeChecksRequest
 from athenian.api.models.web.filtered_code_check_run import FilteredCodeCheckRun
 from athenian.api.models.web.filtered_code_check_runs import FilteredCodeCheckRuns
+from athenian.api.models.web.filtered_deployments import FilteredDeployments
 from athenian.api.models.web.release_diff import ReleaseDiff
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
@@ -391,10 +393,10 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
         releases, avatars, prefixer, jira_ids, meta_ids, request.mdb)
 
 
-async def _load_jira_issues(jira_ids: Optional[Tuple[int, List[str]]],
-                            releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
-                            meta_ids: Tuple[int, ...],
-                            mdb: databases.Database) -> Dict[str, LinkedJIRAIssue]:
+async def _load_jira_issues_for_releases(jira_ids: Optional[Tuple[int, List[str]]],
+                                         releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
+                                         meta_ids: Tuple[int, ...],
+                                         mdb: ParallelDatabase) -> Dict[str, LinkedJIRAIssue]:
     if jira_ids is None:
         for (_, facts) in releases:
             facts.prs_jira = np.full(len(facts["prs_" + PullRequest.node_id.name]), None)
@@ -406,25 +408,7 @@ async def _load_jira_issues(jira_ids: Optional[Tuple[int, List[str]]],
         facts.prs_jira = [[] for _ in range(len(node_ids))]
         for pri, node_id in enumerate(node_ids):
             pr_to_ix[node_id] = ri, pri
-    regiss = aliased(Issue, name="regular")
-    epiciss = aliased(Epic, name="epic")
-    prmap = aliased(NodePullRequestJiraIssues, name="m")
-    rows = await mdb.fetch_all(
-        select([prmap.node_id.label("node_id"),
-                regiss.key.label("key"),
-                regiss.title.label("title"),
-                regiss.labels.label("labels"),
-                regiss.type.label("type"),
-                epiciss.key.label("epic")])
-        .select_from(outerjoin(
-            join(regiss, prmap, and_(regiss.id == prmap.jira_id,
-                                     regiss.acc_id == prmap.jira_acc)),
-            epiciss, and_(epiciss.id == regiss.epic_id,
-                          epiciss.acc_id == regiss.acc_id)))
-        .where(and_(prmap.node_id.in_(pr_to_ix),
-                    prmap.node_acc.in_(meta_ids),
-                    regiss.project_id.in_(jira_ids[1]),
-                    regiss.is_deleted.is_(False))))
+    rows = await _fetch_jira_issues(pr_to_ix, meta_ids, jira_ids, mdb)
     issues = {}
     for r in rows:
         key = r["key"]
@@ -440,9 +424,9 @@ async def _build_release_set_response(releases: List[Tuple[Dict[str, Any], Relea
                                       prefixer: Prefixer,
                                       jira_ids: Optional[Tuple[int, List[str]]],
                                       meta_ids: Tuple[int, ...],
-                                      mdb: databases.Database,
+                                      mdb: ParallelDatabase,
                                       ) -> web.Response:
-    issues = await _load_jira_issues(jira_ids, releases, meta_ids, mdb)
+    issues = await _load_jira_issues_for_releases(jira_ids, releases, meta_ids, mdb)
     data = [_filtered_release_from_tuple(t, prefixer) for t in releases]
     model = ReleaseSet(data=data, include=ReleaseSetInclude(
         users={u: IncludedNativeUser(avatar=a) for u, a in avatars},
@@ -551,7 +535,7 @@ async def _check_github_repos(request: AthenianWebRequest,
 async def _build_github_prs_response(prs: List[PullRequestListItem],
                                      prefixer: Prefixer,
                                      meta_ids: Tuple[int, ...],
-                                     mdb: databases.Database,
+                                     mdb: ParallelDatabase,
                                      cache: Optional[aiomcache.Client],
                                      ) -> web.Response:
     log = logging.getLogger(f"{metadata.__package__}._build_github_prs_response")
@@ -620,7 +604,7 @@ async def diff_releases(request: AthenianWebRequest, body: dict) -> web.Response
     releases, avatars = await mine_diff_releases(
         borders, settings, prefixer, body.account, meta_ids,
         request.mdb, request.pdb, request.rdb, request.cache)
-    issues = await _load_jira_issues(
+    issues = await _load_jira_issues_for_releases(
         jira_ids, list(chain.from_iterable(chain.from_iterable(r[-1] for r in rr)
                                            for rr in releases.values())),
         meta_ids, request.mdb)
@@ -676,7 +660,6 @@ async def filter_deployments(request: AthenianWebRequest, body: dict) -> web.Res
 
     We submit new deployments using `/events/deployments`.
     """
-    raise NotImplementedError
     try:
         filt = FilterDeploymentsRequest.from_dict(body)
     except ValueError as e:
@@ -688,7 +671,7 @@ async def filter_deployments(request: AthenianWebRequest, body: dict) -> web.Res
     )
     stripped_repos = [r.split("/", 1)[1] for r in repos]
     repo_node_rows, release_settings, (branches, default_branches), participants = await gather(
-        await request.mdb.fetch_all(
+        request.mdb.fetch_all(
             select([NodeRepository.node_id])
             .where(and_(NodeRepository.acc_id.in_(meta_ids),
                         NodeRepository.name_with_owner.in_(stripped_repos)))),
@@ -718,18 +701,118 @@ async def filter_deployments(request: AthenianWebRequest, body: dict) -> web.Res
         rdb=request.rdb,
         cache=request.cache,
     )
-    web_models = await _build_deployments_response(deployments, await prefixer.load())
-    return model_response(web_models)
+    prefixer = await prefixer.load()
+    user_node_to_login = prefixer.user_node_to_login.get
+    avatars, issues = await gather(
+        mine_user_avatars([user_node_to_login(u) for u in people], UserAvatarKeys.PREFIXED_LOGIN,
+                          meta_ids, request.mdb, request.cache),
+        _load_jira_issues_for_deployments(jira_ids, deployments, meta_ids, request.mdb),
+    )
+    model = await _build_deployments_response(deployments, avatars, issues, prefixer)
+    return model_response(model)
+
+
+async def _fetch_jira_issues(pr_nodes: Collection[int],
+                             meta_ids: Tuple[int, ...],
+                             jira_ids: Tuple[int, List[str]],
+                             mdb: ParallelDatabase,
+                             ) -> List[Mapping[str, Any]]:
+    regiss = aliased(Issue, name="regular")
+    epiciss = aliased(Epic, name="epic")
+    prmap = aliased(NodePullRequestJiraIssues, name="m")
+    return await mdb.fetch_all(
+        select([prmap.node_id.label("node_id"),
+                regiss.key.label("key"),
+                regiss.title.label("title"),
+                regiss.labels.label("labels"),
+                regiss.type.label("type"),
+                epiciss.key.label("epic")])
+        .select_from(outerjoin(
+            join(regiss, prmap, and_(regiss.id == prmap.jira_id,
+                                     regiss.acc_id == prmap.jira_acc)),
+            epiciss, and_(epiciss.id == regiss.epic_id,
+                          epiciss.acc_id == regiss.acc_id)))
+        .where(and_(prmap.node_id.in_(pr_nodes),
+                    prmap.node_acc.in_(meta_ids),
+                    regiss.project_id.in_(jira_ids[1]),
+                    regiss.is_deleted.is_(False))))
+
+
+async def _load_jira_issues_for_deployments(jira_ids: Optional[Tuple[int, List[str]]],
+                                            deployments: pd.DataFrame,
+                                            meta_ids: Tuple[int, ...],
+                                            mdb: ParallelDatabase) -> Dict[str, LinkedJIRAIssue]:
+    if jira_ids is None or deployments.empty:
+        if not deployments.empty:
+            empty_jira = np.empty(len(deployments), dtype=object)
+            for i, repos in enumerate(deployments[DeploymentFacts.f.repositories].values):
+                empty_jira[i] = [[]] * len(repos)
+            deployments["jira"] = empty_jira
+            for releases in deployments["releases"].values:
+                releases["prs_jira"] = np.full(len(releases), repeat(None))
+        return {}
+
+    pr_to_ix = defaultdict(list)
+    jira_col = np.empty(len(deployments), dtype=object)
+    for di, (prs, prs_offsets) in enumerate(zip(
+            deployments[DeploymentFacts.f.prs].values,
+            deployments[DeploymentFacts.f.prs_offsets].values)):
+        jira_col[di] = np.empty(len(prs_offsets) + 1, dtype=object)
+        prs = np.split(prs, prs_offsets)
+        for ri, node_ids in enumerate(prs):
+            for node_id in node_ids:
+                pr_to_ix[node_id].append((di, ri))
+    deployments["jira"] = jira_col
+    for di, releases in enumerate(deployments["releases"].values):
+        if releases.empty:
+            continue
+        releases["prs_jira"] = [[] for _ in range(len(releases))]
+        for ri, (node_ids, prs_jira) in enumerate(zip(releases["prs_" + PullRequest.node_id.name],
+                                                      releases["prs_jira"])):
+            prs_jira.extend([] for _ in range(len(node_ids)))
+            for pri, node_id in enumerate(node_ids):
+                pr_to_ix[node_id].append((di, ri, pri))
+
+    rows = await _fetch_jira_issues(pr_to_ix, meta_ids, jira_ids, mdb)
+    issues = {}
+    release_keys = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    overall_keys = defaultdict(lambda: defaultdict(list))
+    for r in rows:
+        key = r["key"]
+        issues[key] = LinkedJIRAIssue(
+            id=key, title=r["title"], epic=r["epic"], labels=r["labels"], type=r["type"])
+        for addr in pr_to_ix[r["node_id"]]:
+            if len(addr) == 3:
+                di, ri, pri = addr
+                release_keys[di][ri][pri].append(key)
+            else:
+                di, ri = addr
+                overall_keys[di][ri].append(key)
+    overall_col = deployments["jira"].values
+    for di, repos in overall_keys.items():
+        for ri, keys in repos.items():
+            overall_col[di][ri] = np.array(keys, dtype="S")
+    releases_col = deployments["releases"].values
+    for di, releases_jira in release_keys.items():
+        releases = releases_col[di]["prs_jira"].values
+        for ri, prs_jira in releases_jira.items():
+            prs = releases[ri]
+            for pri, release_keys in prs_jira.items():
+                prs[pri] = np.array(release_keys, dtype="S")
+
+    return issues
 
 
 async def _build_deployments_response(df: pd.DataFrame,
+                                      people: List[Tuple[str, str]],
+                                      issues: Dict[str, LinkedJIRAIssue],
                                       prefixer: Prefixer,
                                       ) -> [FilteredDeployment]:
     if df.empty:
         return []
     repo_node_to_prefixed_name = prefixer.repo_node_to_prefixed_name
     user_node_to_prefixed_login = prefixer.user_node_to_prefixed_login
-    return [
+    return FilteredDeployments(deployments=[
         FilteredDeployment(
             name=name,
             environment=environment,
@@ -748,65 +831,75 @@ async def _build_deployments_response(df: pd.DataFrame,
                 key: val for key, val in zip(
                     labels_df[DeployedLabel.key.name].values,
                     labels_df[DeployedLabel.value.name].values)
-            },
-            releases=ReleaseSet(include=ReleaseSetInclude(
-                jira=None,  # await _load_jira_issues(jira_ids, releases, meta_ids, mdb),
-                data=[
-                    FilteredRelease(
-                        name=rel_name,
-                        repository=rel_repo,
-                        url=rel_url,
-                        publisher=rel_author,
-                        published=rel_date,
-                        age=rel_age,
-                        added_lines=rel_additions,
-                        deleted_lines=rel_deletions,
-                        commits=rel_commits_count,
-                        commit_authors=[
-                            user_node_to_prefixed_login[u]
-                            for u in rel_commit_authors
-                        ],
-                        prs=[
-                            ReleasedPullRequest(
-                                number=pr_number,
-                                title=pr_title,
-                                additions=pr_adds,
-                                deletions=pr_dels,
-                                author=user_node_to_prefixed_login[pr_author],
-                                jira=pr_jira or None,
-                            )
-                            for pr_number, pr_title, pr_adds, pr_dels, pr_author, pr_jira in zip(
-                                pr_numbers, pr_titles, pr_additions, pr_deletions,
-                                pr_user_node_ids, pr_jiras,
-                            )
-                        ],
-                    )
-                    for rel_name, rel_repo, rel_url, rel_author, rel_date, rel_age, rel_additions,
-                    rel_deletions, rel_commits_count, rel_commit_authors,
-                    pr_numbers, pr_titles, pr_additions, pr_deletions, pr_user_node_ids,
-                    pr_jiras
-                    in zip(releases_df[Release.name.name].values,
-                           releases_df[Release.repository_full_name.name].values,
-                           releases_df[Release.url.name].values,
-                           releases_df[Release.author.name].values,
-                           releases_df[Release.published_at.name].values,
-                           releases_df[ReleaseFacts.f.age].values,
-                           releases_df[ReleaseFacts.f.additions].values,
-                           releases_df[ReleaseFacts.f.deletions].values,
-                           releases_df[ReleaseFacts.f.commits_count].values,
-                           releases_df[ReleaseFacts.f.commit_authors].values,
-                           releases_df["prs_" + PullRequest.number.name],
-                           releases_df["prs_" + PullRequest.title.name],
-                           releases_df["prs_" + PullRequest.additions.name],
-                           releases_df["prs_" + PullRequest.deletions.name],
-                           releases_df["prs_" + PullRequest.user_node_id.name],
-                           releases_df["prs_jira"])
-                ],
-            )),
+            } if not labels_df.empty else None,
+            code=DeploymentAnalysisCode(
+                prs=dict(zip(resolved_repos := [
+                    repo_node_to_prefixed_name.get(r, f"unidentified_{i}")
+                    for i, r in enumerate(repos)
+                ], np.diff(prs_offsets, prepend=0, append=len(prs)))),
+                lines_prs=dict(zip(resolved_repos, lines_prs)),
+                lines_overall=dict(zip(resolved_repos, lines_overall)),
+                commits_prs=dict(zip(resolved_repos, commits_prs)),
+                commits_overall=dict(zip(resolved_repos, commits_overall)),
+                jira={r: keys.astype("U") for r, keys in zip(resolved_repos, jira) if len(keys)},
+            ),
+            releases=[
+                FilteredRelease(
+                    name=rel_name,
+                    repository=rel_repo,
+                    url=rel_url,
+                    publisher=rel_author,
+                    published=rel_date,
+                    age=rel_age,
+                    added_lines=rel_additions,
+                    deleted_lines=rel_deletions,
+                    commits=rel_commits_count,
+                    commit_authors=[
+                        user_node_to_prefixed_login[u]
+                        for u in rel_commit_authors
+                    ],
+                    prs=[
+                        ReleasedPullRequest(
+                            number=pr_number,
+                            title=pr_title,
+                            additions=pr_adds,
+                            deletions=pr_dels,
+                            author=user_node_to_prefixed_login[pr_author],
+                            jira=pr_jira.astype("U") or None,
+                        )
+                        for pr_number, pr_title, pr_adds, pr_dels, pr_author, pr_jira in zip(
+                            pr_numbers, pr_titles, pr_additions, pr_deletions,
+                            pr_user_node_ids, pr_jiras,
+                        )
+                    ],
+                )
+                for rel_name, rel_repo, rel_url, rel_author, rel_date, rel_age, rel_additions,
+                rel_deletions, rel_commits_count, rel_commit_authors,
+                pr_numbers, pr_titles, pr_additions, pr_deletions, pr_user_node_ids,
+                pr_jiras
+                in zip(releases_df[Release.name.name].values,
+                       releases_df[Release.repository_full_name.name].values,
+                       releases_df[Release.url.name].values,
+                       releases_df[Release.author.name].values,
+                       releases_df[Release.published_at.name].values,
+                       releases_df[ReleaseFacts.f.age].values,
+                       releases_df[ReleaseFacts.f.additions].values,
+                       releases_df[ReleaseFacts.f.deletions].values,
+                       releases_df[ReleaseFacts.f.commits_count].values,
+                       releases_df[ReleaseFacts.f.commit_authors].values,
+                       releases_df["prs_" + PullRequest.number.name],
+                       releases_df["prs_" + PullRequest.title.name],
+                       releases_df["prs_" + PullRequest.additions.name],
+                       releases_df["prs_" + PullRequest.deletions.name],
+                       releases_df["prs_" + PullRequest.user_node_id.name],
+                       releases_df["prs_jira"])
+            ] if not releases_df.empty else None,
         )
         for name, environment, components_df, url, started_at, finished_at, conclusion,
-        labels_df, releases_df in zip(
-            df[DeploymentNotification.name.name].values,
+        labels_df, releases_df, repos, prs, prs_offsets, lines_prs, lines_overall,
+        commits_prs, commits_overall, jira
+        in zip(
+            df.index.values,
             df[DeploymentNotification.environment.name].values,
             df["components"].values,
             df[DeploymentNotification.url.name].values,
@@ -815,5 +908,16 @@ async def _build_deployments_response(df: pd.DataFrame,
             df[DeploymentNotification.conclusion.name].values,
             df["labels"].values,
             df["releases"].values,
+            df[DeploymentFacts.f.repositories].values,
+            df[DeploymentFacts.f.prs].values,
+            df[DeploymentFacts.f.prs_offsets].values,
+            df[DeploymentFacts.f.lines_prs].values,
+            df[DeploymentFacts.f.lines_overall].values,
+            df[DeploymentFacts.f.commits_prs].values,
+            df[DeploymentFacts.f.commits_overall].values,
+            df["jira"],
         )
-    ]
+    ], include=ReleaseSetInclude(
+        users={u: IncludedNativeUser(avatar=a) for u, a in people},
+        jira=issues,
+    ))

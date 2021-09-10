@@ -16,8 +16,7 @@ from athenian.api.controllers.calculator_selector import METRIC_ENTRIES_VARIATIO
 from athenian.api.controllers.invitation_controller import _generate_account_secret
 from athenian.api.models.metadata import __min_version__
 from athenian.api.models.metadata.github import Base as GithubBase, CheckRunByPR, NodeCommit, \
-    NodePullRequest, \
-    PullRequest, PushCommit, SchemaMigration, ShadowBase as ShadowGithubBase
+    NodePullRequest, PullRequest, PushCommit, SchemaMigration, ShadowBase as ShadowGithubBase
 from athenian.api.models.metadata.jira import Base as JiraBase
 from athenian.api.models.persistentdata.models import DeployedComponent, DeploymentNotification
 from athenian.api.models.state.models import Account, AccountFeature, AccountGitHubAccount, \
@@ -119,6 +118,7 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
                                            message=kwargs["message"],
                                            repository_id=kwargs["repository_node_id"],
                                            committed_date=kwargs["committed_date"],
+                                           pushed_date=kwargs["pushed_date"],
                                            committer_user_id=kwargs["committer_user_id"],
                                            author_user_id=kwargs["author_user_id"],
                                            additions=kwargs["additions"],

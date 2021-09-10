@@ -1,4 +1,4 @@
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from athenian.api.models.web.base_model_ import Model
 
@@ -12,6 +12,7 @@ class DeploymentAnalysisCode(Model):
         "lines_overall": Dict[str, int],
         "commits_prs": Dict[str, int],
         "commits_overall": Dict[str, int],
+        "jira": Optional[Dict[str, List[str]]],
     }
 
     attribute_map = {
@@ -20,6 +21,7 @@ class DeploymentAnalysisCode(Model):
         "lines_overall": "lines_overall",
         "commits_prs": "commits_prs",
         "commits_overall": "commits_overall",
+        "jira": "jira",
     }
 
     def __init__(
@@ -29,6 +31,7 @@ class DeploymentAnalysisCode(Model):
         lines_overall: Optional[Dict[str, int]] = None,
         commits_prs: Optional[Dict[str, int]] = None,
         commits_overall: Optional[Dict[str, int]] = None,
+        jira: Optional[Dict[str, List[str]]] = None,
     ):
         """DeploymentAnalysisCode - a model defined in OpenAPI
 
@@ -37,12 +40,14 @@ class DeploymentAnalysisCode(Model):
         :param lines_overall: The lines_overall of this DeploymentAnalysisCode.
         :param commits_prs: The commits_prs of this DeploymentAnalysisCode.
         :param commits_overall: The commits_overall of this DeploymentAnalysisCode.
+        :param jira: The jira of this DeploymentAnalysisCode.
         """
         self._prs = prs
         self._lines_prs = lines_prs
         self._lines_overall = lines_overall
         self._commits_prs = commits_prs
         self._commits_overall = commits_overall
+        self._jira = jira
 
     @property
     def prs(self) -> Dict[str, int]:
@@ -158,3 +163,23 @@ class DeploymentAnalysisCode(Model):
             raise ValueError("Invalid value for `commits_overall`, must not be `None`")
 
         self._commits_overall = commits_overall
+
+    @property
+    def jira(self) -> Optional[Dict[str, List[str]]]:
+        """Gets the jira of this DeploymentAnalysisCode.
+
+        Number of deployed commits per repository.
+
+        :return: The jira of this DeploymentAnalysisCode.
+        """
+        return self._jira
+
+    @jira.setter
+    def jira(self, jira: Optional[Dict[str, List[str]]]):
+        """Sets the jira of this DeploymentAnalysisCode.
+
+        Number of deployed commits per repository.
+
+        :param jira: The jira of this DeploymentAnalysisCode.
+        """
+        self._jira = jira

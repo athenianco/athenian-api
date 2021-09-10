@@ -112,35 +112,46 @@ async def mine_deployments(repo_node_ids: Collection[int],
         missed_indexes = np.flatnonzero(np.in1d(
             notifications.index.values.astype("U"), facts.index.values.astype("U"),
             assume_unique=True, invert=True))
-        missed_facts, missed_releases, missed_mentioned_authors = await _compute_deployment_facts(
+        missed_facts, missed_releases = await _compute_deployment_facts(
             notifications.take(missed_indexes), components, settings, default_branches, prefixer,
             account, meta_ids, mdb, pdb, rdb, cache)
         if not missed_facts.empty:
             facts = pd.concat([facts, missed_facts])
     else:
-        missed_releases = missed_mentioned_authors = pd.DataFrame()
+        missed_releases = pd.DataFrame()
     if participants:
         facts = await _filter_by_participants(facts, participants, prefixer)
     if pr_labels or jira:
-        facts = await _filter_by_prs(
-            facts, pr_labels, jira, account, meta_ids, mdb, pdb, cache)
+        facts = await _filter_by_prs(facts, pr_labels, jira, meta_ids, mdb, cache)
     components = _group_components(components)
     await releases
-    releases, mentioned_authors = releases.result()
+    releases = releases.result()
     if not missed_releases.empty:
         if not releases.empty:
             # there is a minuscule chance that some releases are duplicated here, we ignore it
             releases = pd.concat([releases, missed_releases])
-            mentioned_authors = np.unique(np.concatenate(
-                [mentioned_authors, missed_mentioned_authors]))
         else:
             releases = missed_releases
-            mentioned_authors = missed_mentioned_authors
     await labels
     joined = facts.join([notifications, components, labels.result()] +
                         ([releases] if not releases.empty else []))
     joined = _adjust_empty_releases(joined)
-    return joined, mentioned_authors
+    joined["labels"] = joined["labels"].astype(object, copy=False)
+    no_labels = joined["labels"].isnull().values
+    subst = np.empty(no_labels.sum(), dtype=object)
+    subst.fill(pd.DataFrame())
+    joined["labels"].values[no_labels] = subst
+    return joined, _extract_mentioned_people(joined)
+
+
+@sentry_span
+def _extract_mentioned_people(df: pd.DataFrame) -> np.ndarray:
+    return np.unique(np.concatenate([
+        *df[DeploymentFacts.f.pr_authors].values,
+        *df[DeploymentFacts.f.commit_authors].values,
+        *((rdf[Release.author_node_id.name].values if not rdf.empty else [])
+          for rdf in df["releases"].values),
+    ]))
 
 
 @sentry_span
@@ -186,7 +197,7 @@ async def _fetch_precomputed_deployed_releases(notifications: pd.DataFrame,
                                                prefixer: PrefixerPromise,
                                                account: int,
                                                pdb: ParallelDatabase,
-                                               ) -> Tuple[pd.DataFrame, np.ndarray]:
+                                               ) -> pd.DataFrame:
     assert repo_names
     reverse_settings = reverse_release_settings(repo_names, default_branches, settings)
     releases = await read_sql_query(union_all(*(
@@ -214,9 +225,9 @@ async def _postprocess_deployed_releases(releases: pd.DataFrame,
                                          settings: ReleaseSettings,
                                          account: int,
                                          pdb: ParallelDatabase,
-                                         ) -> Tuple[pd.DataFrame, np.ndarray]:
+                                         ) -> pd.DataFrame:
     if releases.empty:
-        return pd.DataFrame(), np.array([], dtype="U1")
+        return pd.DataFrame()
     releases.sort_values(PrecomputedRelease.published_at.name, ascending=False, inplace=True)
     prefixer = await prefixer.load()
     user_node_to_login_get = prefixer.user_node_to_login.get
@@ -226,7 +237,7 @@ async def _postprocess_deployed_releases(releases: pd.DataFrame,
     release_facts = await load_precomputed_release_facts(
         releases, default_branches, settings, account, pdb)
     if not release_facts:
-        return pd.DataFrame(), np.array([], dtype="U1")
+        return pd.DataFrame()
     release_facts_df = df_from_structs(release_facts.values())
     release_facts_df.index = release_facts.keys()
     del release_facts
@@ -235,13 +246,6 @@ async def _postprocess_deployed_releases(releases: pd.DataFrame,
         del release_facts_df[col]
     releases.set_index(Release.node_id.name, drop=True, inplace=True)
     releases = release_facts_df.join(releases)
-    mentioned_authors = np.unique(np.concatenate([
-        *release_facts_df["prs_" + PullRequest.user_node_id.name].values,
-        *release_facts_df[ReleaseFacts.f.commit_authors].values,
-        releases[Release.author_node_id.name].values,
-    ]))
-    if len(mentioned_authors) and mentioned_authors[0] == 0:
-        mentioned_authors = mentioned_authors[1:]
     groups = list(releases.groupby("deployment_name", sort=False))
     grouped_releases = pd.DataFrame({
         "deployment_name": [g[0] for g in groups],
@@ -250,7 +254,7 @@ async def _postprocess_deployed_releases(releases: pd.DataFrame,
     for df in grouped_releases["releases"].values:
         del df["deployment_name"]
     grouped_releases.set_index("deployment_name", drop=True, inplace=True)
-    return grouped_releases, mentioned_authors
+    return grouped_releases
 
 
 def _group_components(df: pd.DataFrame) -> pd.DataFrame:
@@ -280,7 +284,7 @@ async def _filter_by_participants(df: pd.DataFrame,
                                                      DeploymentFacts.f.release_authors]):
         if pkind not in participants:
             continue
-        people = np.array(participants[pkind], dtype="S")
+        people = np.array(participants[pkind])
         values = df[col].values
         offsets = np.zeros(len(values) + 1, dtype=int)
         np.cumsum(np.array([len(v) for v in values]), out=offsets[1:])
@@ -293,22 +297,19 @@ async def _filter_by_participants(df: pd.DataFrame,
 async def _filter_by_prs(df: pd.DataFrame,
                          labels: LabelFilter,
                          jira: JIRAFilter,
-                         account: int,
                          meta_ids: Tuple[int, ...],
                          mdb: ParallelDatabase,
-                         pdb: ParallelDatabase,
                          cache: Optional[aiomcache.Client],
                          ) -> pd.DataFrame:
-    with sentry_sdk.start_span(op="_filter_by_prs/ids"):
-        rows = await pdb.fetch_all(
-            select([GitHubPullRequestDeployment])
-            .where(and_(GitHubPullRequestDeployment.acc_id == account,
-                        GitHubPullRequestDeployment.deployment_name.in_any_values(df.index.values),
-                        )))
-    pr_node_ids = [r[GitHubPullRequestDeployment.pr_node_id.name] for r in rows]
+    pr_node_ids = np.concatenate(df[DeploymentFacts.f.prs].values)
+    unique_pr_node_ids = np.unique(pr_node_ids)
+    steps = np.array([len(arr) for arr in df[DeploymentFacts.f.prs].values], dtype=int)
+    offsets = np.zeros(len(steps), dtype=int)
+    np.cumsum(steps[:-1], out=offsets[1:])
+    del steps
     filters = [
         PullRequest.acc_id.in_(meta_ids),
-        PullRequest.node_id.in_any_values(pr_node_ids),
+        PullRequest.node_id.in_any_values(unique_pr_node_ids),
     ]
     tasks = []
     if labels:
@@ -321,7 +322,8 @@ async def _filter_by_prs(df: pd.DataFrame,
             tasks.append(read_sql_query(
                 select(label_columns)
                 .where(and_(PullRequestLabel.acc_id.in_(meta_ids),
-                            PullRequestLabel.pull_request_node_id.in_any_values(pr_node_ids))),
+                            PullRequestLabel.pull_request_node_id.in_any_values(
+                                unique_pr_node_ids))),
                 mdb, label_columns, index=PullRequestLabel.pull_request_node_id.name))
         if all_in_labels := (set(singles + list(chain.from_iterable(multiples)))):
             filters.append(
@@ -350,10 +352,11 @@ async def _filter_by_prs(df: pd.DataFrame,
         left = PullRequestMiner.find_left_by_labels(
             label_df.index, label_df[PullRequestLabel.name.name].values, labels)
         prs = prs[np.in1d(prs, left.values.astype("S"), assume_unique=True)]
-    indexes = np.flatnonzero(np.in1d(np.array(pr_node_ids, dtype="S"), prs, assume_unique=True))
-    names = [rows[i][GitHubPullRequestDeployment.deployment_name.name] for i in indexes]
-    return df.take(np.flatnonzero(np.in1d(
-        df.index.values.astype("U"), np.array(names, dtype="U"), assume_unique=True)))
+    indexes = np.flatnonzero(np.in1d(
+        np.array(pr_node_ids, dtype="S"), prs,
+        assume_unique=len(pr_node_ids) == len(unique_pr_node_ids)))
+    passed = np.searchsorted(offsets, indexes)
+    return df.take(passed)
 
 
 @sentry_span
@@ -368,7 +371,7 @@ async def _compute_deployment_facts(notifications: pd.DataFrame,
                                     pdb: ParallelDatabase,
                                     rdb: ParallelDatabase,
                                     cache: Optional[aiomcache.Client],
-                                    ) -> Tuple[pd.DataFrame, pd.DataFrame, np.ndarray]:
+                                    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     components = components.take(np.flatnonzero(np.in1d(
         components.index.values.astype("U"), notifications.index.values.astype("U"))))
     commit_relationship, dags, deployed_commits_df, tainted_envs = \
@@ -385,16 +388,17 @@ async def _compute_deployment_facts(notifications: pd.DataFrame,
     await defer(
         _submit_deployed_commits(deployed_commits_per_repo_per_env, account, pdb),
         "_submit_deployed_commits")
-    facts, (releases, mentioned_authors) = await gather(
-        _generate_deployment_facts(
-            deployed_commits_per_repo_per_env, all_mentioned_hashes, dags, prefixer,
-            account, meta_ids, mdb, pdb),
+    commit_stats, releases = await gather(
+        _fetch_commit_stats(all_mentioned_hashes, dags, prefixer, meta_ids, mdb),
         _map_releases_to_deployments(
             deployed_commits_per_repo_per_env, prefixer, settings, default_branches, account, pdb),
     )
-    await defer(_submit_deployment_facts(facts, releases, account, settings, pdb),
+    facts = await _generate_deployment_facts(
+        deployed_commits_per_repo_per_env, all_mentioned_hashes, commit_stats, releases,
+        account, pdb)
+    await defer(_submit_deployment_facts(facts, releases, account, pdb),
                 "_submit_deployment_facts")
-    return facts, releases, mentioned_authors
+    return facts, releases
 
 
 def _adjust_empty_releases(joined: pd.DataFrame) -> pd.DataFrame:
@@ -414,7 +418,6 @@ def _adjust_empty_releases(joined: pd.DataFrame) -> pd.DataFrame:
 async def _submit_deployment_facts(facts: pd.DataFrame,
                                    releases: pd.DataFrame,
                                    account: int,
-                                   settings: ReleaseSettings,
                                    pdb: ParallelDatabase) -> None:
     joined = _adjust_empty_releases(facts.join(releases))
     values = [
@@ -424,27 +427,34 @@ async def _submit_deployment_facts(facts: pd.DataFrame,
             release_matches=json.dumps(dict(zip(
                 subreleases[PrecomputedRelease.repository_full_name.name].values,
                 subreleases[PrecomputedRelease.release_match.name].values,
-            ))),
+            ))) if not subreleases.empty else "{}",
             data=DeploymentFacts.from_fields(
                 pr_authors=pr_authors,
                 commit_authors=commit_authors,
+                release_authors=release_authors,
+                repositories=repos,
                 lines_prs=lines_prs,
                 lines_overall=lines_overall,
                 commits_prs=commits_prs,
                 commits_overall=commits_overall,
                 prs=prs,
+                prs_offsets=prs_offsets,
             ).data,
         ).create_defaults().explode(with_primary_keys=True)
-        for name, pr_authors, commit_authors, lines_prs, lines_overall, commits_prs,
-        commits_overall, prs, subreleases in zip(
+        for name, pr_authors, commit_authors, release_authors,
+        repos, lines_prs, lines_overall, commits_prs, commits_overall, prs, prs_offsets,
+        subreleases in zip(
             joined.index.values,
             joined[DeploymentFacts.f.pr_authors].values,
             joined[DeploymentFacts.f.commit_authors].values,
+            joined[DeploymentFacts.f.release_authors].values,
+            joined[DeploymentFacts.f.repositories].values,
             joined[DeploymentFacts.f.lines_prs].values,
             joined[DeploymentFacts.f.lines_overall].values,
             joined[DeploymentFacts.f.commits_prs].values,
             joined[DeploymentFacts.f.commits_overall].values,
             joined[DeploymentFacts.f.prs].values,
+            joined[DeploymentFacts.f.prs_offsets].values,
             joined["releases"].values,
         )
     ]
@@ -474,41 +484,92 @@ DeployedCommitStats = NamedTuple("DeployedCommitStats", [
 ])
 
 
+RepositoryDeploymentFacts = NamedTuple("RepositoryDeploymentFacts", [
+    ("pr_authors", np.ndarray),
+    ("commit_authors", np.ndarray),
+    ("release_authors", set),
+    ("prs", np.ndarray),
+    ("lines_prs", int),
+    ("lines_overall", int),
+    ("commits_prs", int),
+    ("commits_overall", int),
+])
+
+
 async def _generate_deployment_facts(
         deployed_commits_per_repo_per_env: Dict[str, Dict[str, DeployedCommitDetails]],
         all_mentioned_hashes: np.ndarray,
-        dags: Dict[str, DAG],
-        prefixer: PrefixerPromise,
+        commit_stats: DeployedCommitStats,
+        releases: pd.DataFrame,
         account: int,
-        meta_ids: Tuple[int, ...],
-        mdb: ParallelDatabase,
         pdb: ParallelDatabase,
 ) -> pd.DataFrame:
-    commit_stats = await _fetch_commit_stats(all_mentioned_hashes, dags, prefixer, meta_ids, mdb)
-    deployment_names = []
-    facts = []
     pr_inserts = []
+    all_releases_authors = defaultdict(set)
+    if not releases.empty:
+        for name, subdf in zip(releases.index.values, releases["releases"].values):
+            all_releases_authors[name].update(subdf[Release.author_node_id.name].values)
+    facts_per_repo_per_deployment = defaultdict(dict)
     for repos in deployed_commits_per_repo_per_env.values():
-        for details in repos.values():
+        for repo, details in repos.items():
             for deployment_name, deployed_shas in zip(details.deployments, details.shas):
                 indexes = np.searchsorted(all_mentioned_hashes, deployed_shas)
                 deployed_lines = commit_stats.lines[indexes]
                 in_prs = commit_stats.pull_requests[indexes] != 0
                 prs = np.unique(commit_stats.pull_requests[indexes][in_prs])
-                deployment_names.append(deployment_name)
                 pr_authors = np.unique(commit_stats.pr_authors[indexes])
                 commit_authors = np.unique(commit_stats.commit_authors[indexes])
-                facts.append(DeploymentFacts.from_fields(
+                facts_per_repo_per_deployment[deployment_name][repo] = RepositoryDeploymentFacts(
                     pr_authors=pr_authors[pr_authors != 0],
                     commit_authors=commit_authors[commit_authors != 0],
+                    release_authors=all_releases_authors.get(deployment_name, []),
                     lines_prs=deployed_lines[in_prs].sum(),
                     lines_overall=deployed_lines.sum(),
                     commits_prs=in_prs.sum(),
                     commits_overall=len(deployed_lines),
-                    prs=len(prs),
-                ))
+                    prs=prs,
+                )
                 for pr in prs:
-                    pr_inserts.append((deployment_name, pr))
+                    pr_inserts.append((deployment_name, repo, pr))
+    facts = []
+    deployment_names = []
+    for deployment_name, repos in facts_per_repo_per_deployment.items():
+        deployment_names.append(deployment_name)
+        repo_index = []
+        pr_authors = []
+        commit_authors = []
+        release_authors = set()
+        lines_prs = []
+        lines_overall = []
+        commits_prs = []
+        commits_overall = []
+        prs = []
+        for repo, rf in sorted(repos.items()):
+            repo_index.append(repo)
+            pr_authors.append(rf.pr_authors)
+            commit_authors.append(rf.commit_authors)
+            release_authors.update(rf.release_authors)
+            lines_prs.append(rf.lines_prs)
+            lines_overall.append(rf.lines_overall)
+            commits_prs.append(rf.commits_prs)
+            commits_overall.append(rf.commits_overall)
+            prs.append(rf.prs)
+        prs_offsets = np.cumsum([len(arr) for arr in prs], dtype=np.int32)[:-1]
+        pr_authors = np.unique(np.concatenate(pr_authors))
+        commit_authors = np.unique(np.concatenate(commit_authors))
+        release_authors = np.array(list(release_authors), dtype=int)
+        facts.append(DeploymentFacts.from_fields(
+            pr_authors=pr_authors,
+            commit_authors=commit_authors,
+            release_authors=release_authors,
+            repositories=repo_index,
+            lines_prs=lines_prs,
+            lines_overall=lines_overall,
+            commits_prs=commits_prs,
+            commits_overall=commits_overall,
+            prs=np.concatenate(prs) if prs else [],
+            prs_offsets=prs_offsets,
+        ))
     await defer(_submit_deployed_prs(pr_inserts, account, pdb), "_submit_deployed_prs")
     facts = df_from_structs(facts)
     facts.index = deployment_names
@@ -523,7 +584,7 @@ async def _map_releases_to_deployments(
         default_branches: Dict[str, str],
         account: int,
         pdb: ParallelDatabase,
-) -> Tuple[pd.DataFrame, np.ndarray]:
+) -> pd.DataFrame:
     prefixer = await prefixer.load()
     repo_node_to_name_get = prefixer.repo_node_to_name.get
     repo_names = {repo_node_to_name_get(r)
@@ -561,8 +622,7 @@ async def _map_releases_to_deployments(
                     compose_release_match(match_id, match_value),
                     PrecomputedRelease.commit_id.in_any_values(commit_ids)))
         for (match_id, match_value), commit_ids in commits_by_reverse_key.items()
-    )),
-        pdb, PrecomputedRelease)
+    )), pdb, PrecomputedRelease)
     release_commit_ids = releases[PrecomputedRelease.commit_id.name].values
     positions = np.searchsorted(all_commit_ids, release_commit_ids)
     lengths = unique_commit_id_counts[np.searchsorted(offsets, positions)]
@@ -599,7 +659,7 @@ async def _submit_deployed_commits(
 
 @sentry_span
 async def _submit_deployed_prs(
-        values: Tuple[str, int],
+        values: Tuple[str, int, int],
         account: int,
         pdb: ParallelDatabase) -> None:
     values = [
@@ -607,8 +667,9 @@ async def _submit_deployed_prs(
             acc_id=account,
             deployment_name=deployment_name,
             pull_request_id=pr,
+            repository_id=repo,
         ).explode(with_primary_keys=True)
-        for (deployment_name, pr) in values
+        for (deployment_name, repo, pr) in values
     ]
     await insert_or_ignore(GitHubPullRequestDeployment, values, "_submit_deployed_prs", pdb)
 
@@ -659,7 +720,10 @@ async def _fetch_commit_stats(all_mentioned_hashes: np.ndarray,
         ), isouter=True))
         .where(and_(NodeCommit.acc_id.in_(meta_ids),
                     NodeCommit.sha.in_any_values(all_mentioned_hashes.astype("U"))))
-        .order_by(NodeCommit.sha, NodePullRequest.created_at))
+        .order_by(NodeCommit.sha,
+                  func.coalesce(NodePullRequest.created_at,
+                                NodeCommit.pushed_date,
+                                datetime(3000, 1, 1, 0, 0, 0, tzinfo=timezone.utc))))
     shas = np.fromiter((r[NodeCommit.sha.name] for r in commit_rows),
                        dtype="U40", count=len(commit_rows))
     # choose the oldest PR for each commit thanks to the previously sorted rows
@@ -1061,20 +1125,24 @@ async def _fetch_precomputed_deployment_facts(names: Collection[str],
                                               ) -> pd.DataFrame:
     format_version = GitHubDeploymentFacts.__table__.columns[
         GitHubDeploymentFacts.format_version.key].default.arg
-    rows = await pdb.fetch_all(
+    dep_rows = await pdb.fetch_all(
         select([GitHubDeploymentFacts.deployment_name,
                 GitHubDeploymentFacts.release_matches,
                 GitHubDeploymentFacts.data])
         .where(and_(GitHubDeploymentFacts.acc_id == account,
                     GitHubDeploymentFacts.format_version == format_version,
                     GitHubDeploymentFacts.deployment_name.in_any_values(names))))
-    if not rows:
+    if not dep_rows:
         return pd.DataFrame(columns=DeploymentFacts.f)
-    facts = df_from_structs([
-        DeploymentFacts(r[GitHubDeploymentFacts.data.name])
-        for r in rows
-        if _settings_are_compatible(r[GitHubDeploymentFacts.release_matches.name], settings)])
-    facts.index = [r[GitHubDeploymentFacts.deployment_name.name] for r in rows]
+    index = []
+    structs = []
+    for row in dep_rows:
+        if not _settings_are_compatible(row[GitHubDeploymentFacts.release_matches.name], settings):
+            continue
+        index.append(row[GitHubDeploymentFacts.deployment_name.name])
+        structs.append(DeploymentFacts(row[GitHubDeploymentFacts.data.name]))
+    facts = df_from_structs(structs)
+    facts.index = index
     return facts
 
 

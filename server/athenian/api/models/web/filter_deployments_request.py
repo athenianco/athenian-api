@@ -11,8 +11,8 @@ class _FilterDeploymentsRequest(Model):
     """Filters to select the deployments in `/filter/deployments`."""
 
     openapi_types = {
-        "_in": List[str],
-        "_with": ReleaseWith,
+        "in_": List[str],
+        "with_": ReleaseWith,
         "environments": List[str],
         "conclusions": List[str],
         "with_labels": object,
@@ -20,8 +20,8 @@ class _FilterDeploymentsRequest(Model):
     }
 
     attribute_map = {
-        "_in": "in",
-        "_with": "with",
+        "in_": "in",
+        "with_": "with",
         "environments": "environments",
         "conclusions": "conclusions",
         "with_labels": "with_labels",
@@ -32,8 +32,8 @@ class _FilterDeploymentsRequest(Model):
 
     def __init__(
         self,
-        _in: Optional[List[str]] = None,
-        _with: Optional[ReleaseWith] = None,
+        in_: Optional[List[str]] = None,
+        with_: Optional[ReleaseWith] = None,
         environments: Optional[List[str]] = None,
         conclusions: Optional[List[str]] = None,
         with_labels: Optional[Dict[str, Any]] = None,
@@ -41,57 +41,57 @@ class _FilterDeploymentsRequest(Model):
     ):
         """FilterDeploymentsRequest - a model defined in OpenAPI
 
-        :param _in: The _in of this FilterDeploymentsRequest.
-        :param _with: The _with of this FilterDeploymentsRequest.
+        :param in_: The in_ of this FilterDeploymentsRequest.
+        :param with_: The with_ of this FilterDeploymentsRequest.
         :param environments: The environments of this FilterDeploymentsRequest.
         :param conclusions: The conclusions of this FilterDeploymentsRequest.
         :param with_labels: The with_labels of this FilterDeploymentsRequest.
         :param without_labels: The without_labels of this FilterDeploymentsRequest.
         """
-        self.__in = _in
-        self.__with = _with
+        self._in_ = in_
+        self._with_ = with_
         self._environments = environments
         self._conclusions = conclusions
         self._with_labels = with_labels
         self._without_labels = without_labels
 
     @property
-    def _in(self) -> List[str]:
-        """Gets the _in of this FilterDeploymentsRequest.
+    def in_(self) -> List[str]:
+        """Gets the in_ of this FilterDeploymentsRequest.
 
         Set of repositories. An empty list raises a bad response 400. Duplicates are automatically
         ignored.
 
-        :return: The _in of this FilterDeploymentsRequest.
+        :return: The in_ of this FilterDeploymentsRequest.
         """
-        return self.__in
+        return self._in_
 
-    @_in.setter
-    def _in(self, _in: List[str]):
-        """Sets the _in of this FilterDeploymentsRequest.
+    @in_.setter
+    def in_(self, in_: List[str]):
+        """Sets the in_ of this FilterDeploymentsRequest.
 
         Set of repositories. An empty list raises a bad response 400. Duplicates are automatically
         ignored.
 
-        :param _in: The _in of this FilterDeploymentsRequest.
+        :param in_: The in_ of this FilterDeploymentsRequest.
         """
-        self.__in = _in
+        self._in_ = in_
 
     @property
-    def _with(self) -> ReleaseWith:
-        """Gets the _with of this FilterDeploymentsRequest.
+    def with_(self) -> ReleaseWith:
+        """Gets the with_ of this FilterDeploymentsRequest.
 
-        :return: The _with of this FilterDeploymentsRequest.
+        :return: The with_ of this FilterDeploymentsRequest.
         """
-        return self.__with
+        return self._with_
 
-    @_with.setter
-    def _with(self, _with: ReleaseWith):
-        """Sets the _with of this FilterDeploymentsRequest.
+    @with_.setter
+    def with_(self, with_: ReleaseWith):
+        """Sets the with_ of this FilterDeploymentsRequest.
 
-        :param _with: The _with of this FilterDeploymentsRequest.
+        :param with_: The with_ of this FilterDeploymentsRequest.
         """
-        self.__with = _with
+        self._with_ = with_
 
     @property
     def environments(self) -> List[str]:
