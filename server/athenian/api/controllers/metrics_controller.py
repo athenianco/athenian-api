@@ -62,7 +62,7 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
-    prefixer = Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
+    prefixer = await Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
     filters, repos = await compile_filters_prs(filt.for_, request, filt.account, meta_ids)
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
@@ -392,7 +392,7 @@ async def calc_metrics_developers(request: AthenianWebRequest, body: dict) -> we
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError("?", detail=str(e)))
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
-    prefixer = Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
+    prefixer = await Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
     filters, all_repos = await _compile_filters_devs(
         filt.for_, request, filt.account, meta_ids)
     if filt.date_to < filt.date_from:
@@ -486,7 +486,7 @@ async def calc_metrics_releases(request: AthenianWebRequest, body: dict) -> web.
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
-    prefixer = Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
+    prefixer = await Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
     filters, repos = await _compile_repos_releases(request, filt.for_, filt.account, meta_ids)
     grouped_for_sets = defaultdict(list)
     grouped_repos = defaultdict(list)
@@ -501,8 +501,8 @@ async def calc_metrics_releases(request: AthenianWebRequest, body: dict) -> web.
         Settings.from_request(request, filt.account).list_release_matches(repos),
         get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
         get_calculators_for_request(grouped_repos.keys(), filt.account, meta_ids, request),
-        *(extract_release_participants(with_, meta_ids, request.mdb)
-          for with_ in (filt.with_ or [])),
+        *(extract_release_participants(with_, meta_ids, request.mdb, position=i)
+          for i, with_ in enumerate(filt.with_ or [])),
     ]
     release_settings, jira_ids, calculators, *participants = await gather(*tasks)
     met = []

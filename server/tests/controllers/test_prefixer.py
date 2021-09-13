@@ -17,16 +17,18 @@ async def test_prefixer_load(mdb, cache):
         assert "src-d/go-git" in prefixer.repo_name_to_prefixed_name
 
 
+@with_defer
 async def test_prefixer_schedule_load(mdb):
-    prefixer = Prefixer.schedule_load((6366825,), mdb, None)
+    prefixer = await Prefixer.schedule_load((6366825,), mdb, None)
     prefixer = await prefixer.load()
     assert prefixer.user_login_to_prefixed_login
     promise = prefixer.as_promise()
     assert prefixer == await promise.load()
 
 
+@with_defer
 async def test_prefixer_schedule_cancel(mdb):
-    prefixer = Prefixer.schedule_load((6366825,), mdb, None)
+    prefixer = await Prefixer.schedule_load((6366825,), mdb, None)
     await prefixer.cancel()
     with pytest.raises(AssertionError):
         await prefixer.load()

@@ -50,6 +50,7 @@ async def test_match_metadata_installation(sdb, mdb, slack):
     assert meta_ids == {6366825}
 
 
+@with_defer
 async def test_copy_teams_as_needed(sdb, mdb):
     created_teams = await copy_teams_as_needed(1, (6366825,), sdb, mdb, None)
     loaded_teams = {t[Team.name.name]: t for t in await sdb.fetch_all(select([Team]))}

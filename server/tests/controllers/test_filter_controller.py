@@ -1275,11 +1275,11 @@ async def test_filter_releases_by_tag(client, headers):
 
 
 @pytest.mark.filter_releases
-async def test_filter_releases_by_branch_no_jira(client, headers, client_cache, app, sdb, mdb):
-    backup = await mdb.fetch_all(select([Release]))
+async def test_filter_releases_by_branch_no_jira(client, headers, client_cache, app, sdb, mdb_rw):
+    backup = await mdb_rw.fetch_all(select([Release]))
     backup = [dict(r) for r in backup]
     await sdb.execute(delete(AccountJiraInstallation))
-    await mdb.execute(delete(Release))
+    await mdb_rw.execute(delete(Release))
     try:
         body = {
             "account": 1,
@@ -1294,7 +1294,7 @@ async def test_filter_releases_by_branch_no_jira(client, headers, client_cache, 
         releases = ReleaseSet.from_dict(json.loads(response_text))
         assert len(releases.data) == 188
     finally:
-        await mdb.execute(insert(Release).values(backup))
+        await mdb_rw.execute(insert(Release).values(backup))
 
 
 @pytest.mark.filter_releases

@@ -157,7 +157,7 @@ async def _common_filter_preprocess(filt: Union[FilterReleasesRequest,
         filt.in_, filt.account, request.uid, login_loader,
         request.sdb, request.mdb, request.cache, request.app["slack"],
         strip_prefix=strip_prefix)
-    prefixer = Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
+    prefixer = await Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
     return time_from, time_to, repos, meta_ids, prefixer
 
 
@@ -502,7 +502,7 @@ async def get_prs(request: AthenianWebRequest, body: dict) -> web.Response:
         prs_by_repo.setdefault(p.repository, set()).update(p.numbers)
     settings, meta_ids, prs_by_repo = await _check_github_repos(
         request, body.account, prs_by_repo, ".prs")
-    prefixer = Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
+    prefixer = await Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
     prs = await fetch_pull_requests(
         prs_by_repo, settings, prefixer, body.account, meta_ids,
         request.mdb, request.pdb, request.rdb, request.cache)
@@ -594,7 +594,7 @@ async def get_releases(request: AthenianWebRequest, body: dict) -> web.Response:
         )
     except KeyError:
         return model_response(ReleaseSet())
-    prefixer = Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
+    prefixer = await Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
     releases, avatars = await mine_releases_by_name(
         releases_by_repo, settings, prefixer, body.account, meta_ids,
         request.mdb, request.pdb, request.rdb, request.cache)
@@ -616,7 +616,7 @@ async def diff_releases(request: AthenianWebRequest, body: dict) -> web.Response
         )
     except KeyError:
         return model_response(ReleaseSet())
-    prefixer = Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
+    prefixer = await Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
     releases, avatars = await mine_diff_releases(
         borders, settings, prefixer, body.account, meta_ids,
         request.mdb, request.pdb, request.rdb, request.cache)

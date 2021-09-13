@@ -331,7 +331,8 @@ async def test_filter_jira_epics_no_time(client, headers):
 
 
 @pytest.mark.parametrize("ikey", ("DEV-162", "DEV-163"))
-async def test_filter_jira_epics_deleted(client, headers, ikey, mdb):
+async def test_filter_jira_epics_deleted(client, headers, ikey, mdb_rw):
+    mdb = mdb_rw
     await mdb.execute(update(Issue).where(Issue.key == ikey).values({Issue.is_deleted: True}))
     try:
         body = {
@@ -638,8 +639,9 @@ async def test_filter_jira_issue_only_flying(client, headers):
     assert len(model.issues) == 199
 
 
-async def test_filter_jira_issue_disabled(client, headers, mdb):
+async def test_filter_jira_issue_disabled(client, headers, mdb_rw):
     ikey = "ENG-303"
+    mdb = mdb_rw
     await mdb.execute(update(Issue).where(Issue.key == ikey).values({Issue.is_deleted: True}))
     try:
         body = {
@@ -661,8 +663,9 @@ async def test_filter_jira_issue_disabled(client, headers, mdb):
         await mdb.execute(update(Issue).where(Issue.key == ikey).values({Issue.is_deleted: False}))
 
 
-async def test_filter_jira_deleted_repositories(client, headers, mdb):
+async def test_filter_jira_deleted_repositories(client, headers, mdb_rw):
     # DEV-2082
+    mdb = mdb_rw
     await mdb.execute(insert(NodePullRequestJiraIssues).values(dict(
         node_id=1234,
         node_acc=6366825,

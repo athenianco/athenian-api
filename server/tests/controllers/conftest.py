@@ -15,6 +15,7 @@ from athenian.api.controllers.miners.types import nonemin, PullRequestFacts
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
     ReleaseMatchSetting, ReleaseSettings
+from athenian.api.defer import with_defer
 from athenian.api.models.metadata.github import Branch
 from athenian.api.models.state.models import JIRAProjectSetting, MappedJIRAIdentity
 from athenian.api.typing_utils import wraps
@@ -67,8 +68,9 @@ async def branches(mdb, branch_miner):
 
 
 @pytest.fixture(scope="function")
+@with_defer
 async def prefixer_promise(mdb, request, loop):
-    promise = Prefixer.schedule_load((6366825,), mdb, None)
+    promise = await Prefixer.schedule_load((6366825,), mdb, None)
 
     def cancel():
         loop.run_until_complete(promise.cancel())

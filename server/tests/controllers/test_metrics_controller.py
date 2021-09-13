@@ -1566,6 +1566,24 @@ async def test_release_metrics_nasty_input(
     assert response.status == code, "Response body is : " + body
 
 
+@pytest.mark.parametrize("devid", ["whatever", ""])
+async def test_release_metrics_participants_invalid(client, headers, devid):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "for": [["github.com/src-d/go-git"]],
+        "with": [{"releaser": [devid]}],
+        "metrics": [ReleaseMetricID.RELEASE_COUNT],
+        "granularities": ["all"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/releases", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 400, rbody
+
+
 @pytest.mark.parametrize("q, value", ((0.95, "2687847s"), (1, "2687847s")))
 async def test_release_metrics_quantiles(client, headers, q, value):
     body = {

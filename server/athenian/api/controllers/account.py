@@ -185,7 +185,7 @@ async def copy_teams_as_needed(account: int,
     :return: List of created teams.
     """
     log = logging.getLogger("%s.create_teams_as_needed" % metadata.__package__)
-    prefixer = Prefixer.schedule_load(meta_ids, mdb, cache)
+    prefixer = await Prefixer.schedule_load(meta_ids, mdb, cache)
     existing = await sdb.fetch_val(select([func.count(StateTeam.id)])
                                    .where(and_(StateTeam.owner_id == account,
                                                StateTeam.name != StateTeam.BOTS)))

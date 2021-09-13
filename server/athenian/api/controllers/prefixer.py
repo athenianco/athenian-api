@@ -8,6 +8,7 @@ from sqlalchemy import and_, select
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached, short_term_exptime
 from athenian.api.db import DatabaseLike
+from athenian.api.defer import defer
 from athenian.api.models.metadata.github import Repository, User
 from athenian.api.typing_utils import dataclass
 
@@ -102,13 +103,15 @@ class Prefixer:
                         user_login_to_node=user_login_to_node)
 
     @staticmethod
-    def schedule_load(meta_ids: Tuple[int, ...],
-                      mdb: DatabaseLike,
-                      cache: Optional[aiomcache.Client],
-                      ) -> "PrefixerPromise":
+    async def schedule_load(meta_ids: Tuple[int, ...],
+                            mdb: DatabaseLike,
+                            cache: Optional[aiomcache.Client],
+                            ) -> "PrefixerPromise":
         """Postponse the Prefixer initialization so that it can load asynchronously in \
         the background."""
-        task = asyncio.create_task(Prefixer.load(meta_ids, mdb, cache))
+        task = asyncio.create_task(Prefixer.load(meta_ids, mdb, cache), name="Prefixer.load")
+        # we must do this because if we raise an exception later, this task must still be awaited
+        await defer(task, name="Prefixer.load")
         return PrefixerPromise(None, task=task)
 
     def as_promise(self) -> "PrefixerPromise":
@@ -139,7 +142,7 @@ class PrefixerPromise:
     Lazy loading wrapper around Prefixer.
 
     Usage:
-        >>> promise = Prefixer.schedule_load(meta_ids, mdb)
+        >>> promise = await Prefixer.schedule_load(meta_ids, mdb)
         >>> # ...
         >>> prefixer = await promise.load()
     """

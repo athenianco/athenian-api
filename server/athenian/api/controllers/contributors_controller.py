@@ -37,7 +37,7 @@ async def get_contributors(request: AthenianWebRequest, id: int) -> web.Response
             get_metadata_account_ids(id, request.sdb, request.cache),
         ]
         repos, meta_ids = await gather(*tasks)
-        prefixer = Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
+        prefixer = await Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
         release_settings = \
             await Settings.from_request(request, account_id).list_release_matches(repos)
         repos = [r.split("/", 1)[1] for r in repos]
