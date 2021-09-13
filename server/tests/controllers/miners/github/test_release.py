@@ -1473,7 +1473,7 @@ async def test_precomputed_releases_low_level(
         # defined in `athenian.api.preloading.cache`.
         # Once it will happen, this test will fail and we can just temove this `if` branch.
         missing_prels_columns = [
-            PrecomputedRelease.repository_node_id, PrecomputedRelease.author,
+            PrecomputedRelease.repository_node_id, PrecomputedRelease.author_node_id,
             Release.author_node_id, PrecomputedRelease.name, PrecomputedRelease.tag,
             PrecomputedRelease.url, PrecomputedRelease.sha, PrecomputedRelease.commit_id,
         ]
@@ -1511,10 +1511,11 @@ async def test_precomputed_releases_ambiguous(
         # to other endpoints, these columns will be needed and they'll be added in the options
         # defined in `athenian.api.preloading.cache`.
         # Once it will happen, this test will fail and we can just temove this `if` branch.
-        missing_prels_columns = [PrecomputedRelease.repository_node_id, PrecomputedRelease.author,
-                                 PrecomputedRelease.name, PrecomputedRelease.tag,
-                                 PrecomputedRelease.url, PrecomputedRelease.sha,
-                                 PrecomputedRelease.commit_id]
+        missing_prels_columns = [
+            PrecomputedRelease.repository_node_id, PrecomputedRelease.author_node_id,
+            PrecomputedRelease.name, PrecomputedRelease.tag, PrecomputedRelease.url,
+            PrecomputedRelease.sha, PrecomputedRelease.commit_id,
+        ]
         assert all(col not in prels.columns for col in missing_prels_columns)
         cols = set(releases_tag.columns).intersection(prels.columns)
         releases_tag, prels = releases_tag[cols], prels[cols]

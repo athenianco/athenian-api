@@ -218,7 +218,6 @@ async def _postprocess_deployed_releases(releases: pd.DataFrame,
     if releases.empty:
         return pd.DataFrame(), np.array([], dtype="U1")
     releases.sort_values(PrecomputedRelease.published_at.name, ascending=False, inplace=True)
-    releases[Release.author_node_id.name] = releases[PrecomputedRelease.author.name]
     prefixer = await prefixer.load()
     user_node_to_login_get = prefixer.user_node_to_login.get
     releases[Release.author.name] = [
