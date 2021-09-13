@@ -413,7 +413,7 @@ async def _issue_flow(return_: Set[str],
         Issue.comments_count,
     ]
     if JIRAFilterReturn.ISSUE_BODIES in return_:
-        prefixer = Prefixer.schedule_load(meta_ids, mdb, cache)
+        prefixer = await Prefixer.schedule_load(meta_ids, mdb, cache)
         extra_columns.extend([
             Issue.key,
             Issue.title,

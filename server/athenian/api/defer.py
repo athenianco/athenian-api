@@ -1,7 +1,7 @@
 from asyncio import current_task, ensure_future, Event, shield, sleep, wait
 from contextvars import ContextVar
 import logging
-from typing import Coroutine, List
+from typing import Awaitable, Coroutine, List
 
 from aiohttp import web
 import asyncpg
@@ -96,15 +96,16 @@ def launch_defer_from_request(delay: float,
                         force_transaction=force_transaction)
 
 
-async def defer(coroutine: Coroutine, name: str) -> None:
+async def defer(coroutine: Awaitable, name: str) -> None:
     """Schedule coroutine in parallel with the main control flow and return immediately."""
-    for key, val in coroutine.cr_frame.f_locals.items():
-        try:
-            assert not isinstance(val, databases.core.Connection), \
-                f"{key} must not be visible to {coroutine.__qualname__}"
-        except AssertionError as e:
-            coroutine.close()
-            raise e from None
+    if isinstance(coroutine, Coroutine):
+        for key, val in coroutine.cr_frame.f_locals.items():
+            try:
+                assert not isinstance(val, databases.core.Connection), \
+                    f"{key} must not be visible to {coroutine.__qualname__}"
+            except AssertionError as e:
+                coroutine.close()
+                raise e from None
     sync = _defer_sync.get()  # type: Event
     sync.clear()
     counter_ptr = _defer_counter.get()  # type: List[int]
@@ -184,7 +185,7 @@ def with_defer(func):
     async def wrapped_with_defer(*args, **kwargs):
         enable_defer(False)
         try:
-            await func(*args, **kwargs)
+            return await func(*args, **kwargs)
         finally:
             await wait_deferred()
 

@@ -6,16 +6,29 @@ from sqlalchemy import and_, select
 from athenian.api.controllers.miners.types import ReleaseParticipants, ReleaseParticipationKind
 from athenian.api.db import ParallelDatabase
 from athenian.api.models.metadata.github import User
-from athenian.api.models.web import ReleaseWith
+from athenian.api.models.web import InvalidRequestError, ReleaseWith
+from athenian.api.response import ResponseError
 
 
 async def extract_release_participants(filt_with: Optional[ReleaseWith],
                                        meta_ids: Tuple[int, ...],
                                        mdb: ParallelDatabase,
+                                       position: int = None,
                                        ) -> ReleaseParticipants:
     """Resolve and deduplicate people mentioned in releases."""
     if filt_with is None:
         return {}
+    if position is None:
+        position = ""
+    else:
+        position = f"[{position}]"
+    for role in ("releaser", "pr_author", "commit_author"):
+        for i, u in enumerate(getattr(filt_with, role) or []):
+            if "/" not in u:
+                raise ResponseError(InvalidRequestError(
+                    detail=f'Invalid developer ID: "{u}". Are you missing a "github.com/" prefix?',
+                    pointer=f".with{position}.{role}[{i}]",
+                ))
     everybody = [
         u.rsplit("/", 1)[1]
         for u in set(chain(filt_with.releaser or [],

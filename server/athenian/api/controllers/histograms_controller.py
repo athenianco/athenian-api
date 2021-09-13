@@ -26,7 +26,7 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
-    prefixer = Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
+    prefixer = await Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
     filters, repos = await compile_filters_prs(filt.for_, request, filt.account, meta_ids)
     time_from, time_to = filt.resolve_time_from_and_to()
     release_settings, calculators = await gather(

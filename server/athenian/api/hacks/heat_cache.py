@@ -157,7 +157,7 @@ def main():
                             reposet.owner_id, reposet.id)
                 continue
             meta_ids = await get_metadata_account_ids(reposet.owner_id, sdb, cache)
-            prefixer = Prefixer.schedule_load(meta_ids, mdb, cache)
+            prefixer = await Prefixer.schedule_load(meta_ids, mdb, cache)
             if not reposet.precomputed:
                 log.info("Considering account %d as brand new, creating the Bots team",
                          reposet.owner_id)

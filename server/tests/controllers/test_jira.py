@@ -76,12 +76,12 @@ async def test_match_jira_identities_incremental(sdb, mdb, slack):
 
 
 @pytest.mark.flaky(reruns=3)
-async def test_match_jira_identities_incomplete_progress(sdb, mdb, slack):
-    await mdb.execute(update(Progress).values({Progress.current.name: 1}))
+async def test_match_jira_identities_incomplete_progress(sdb, mdb_rw, slack):
+    await mdb_rw.execute(update(Progress).values({Progress.current.name: 1}))
     try:
-        assert (await match_jira_identities(1, (6366825,), sdb, mdb, slack, None)) is None
+        assert (await match_jira_identities(1, (6366825,), sdb, mdb_rw, slack, None)) is None
     finally:
-        await mdb.execute(update(Progress).values({Progress.current.name: 10}))
+        await mdb_rw.execute(update(Progress).values({Progress.current.name: 10}))
 
 
 @pytest.mark.parametrize("orig, norm", [

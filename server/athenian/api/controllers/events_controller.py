@@ -299,7 +299,7 @@ async def clear_precomputed_events(request: AthenianWebRequest, body: dict) -> w
         BranchMiner.extract_branches(repos, meta_ids, request.mdb, request.cache),
         Settings.from_account(model.account, request.sdb, request.mdb, request.cache, None)
         .list_release_matches(prefixed_repos))
-    prefixer = Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
+    prefixer = await Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
     tasks = [
         droppers[t](model.account, repos, prefixer, release_settings, branches, default_branches,
                     request, meta_ids)
