@@ -392,10 +392,9 @@ class ReleaseLoader:
             df.set_index(index, inplace=True)
         else:
             df.reset_index(drop=True, inplace=True)
-        df[Release.author_node_id.name] = df[Release.author.name]
         user_node_to_login_get = (await prefixer.load()).user_node_to_login.get
         df[Release.author.name] = [
-            user_node_to_login_get(u) for u in df[Release.author.name].values
+            user_node_to_login_get(u) for u in df[Release.author_node_id.name].values
         ]
         return df
 
@@ -612,8 +611,6 @@ class ReleaseLoader:
         for row in zip(*(releases[c].values for c in columns[:-1]),
                        releases[Release.published_at.name]):
             obj = {columns[i]: v for i, v in enumerate(row)}
-            obj[Release.author.name] = obj[Release.author_node_id.name]
-            del obj[Release.author_node_id.name]
             obj[Release.acc_id.name] = account
             repo = row[1]
             if obj[matched_by_column] == ReleaseMatch.branch:

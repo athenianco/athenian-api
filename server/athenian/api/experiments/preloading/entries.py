@@ -38,8 +38,7 @@ from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.models.metadata.github import Base as MetadataGitHubBase, \
     Branch, NodePullRequestJiraIssues, PullRequest, Release
 from athenian.api.models.precomputed.models import \
-    GitHubBase as PrecomputedGitHubBase, \
-    GitHubDonePullRequestFacts, \
+    GitHubBase as PrecomputedGitHubBase, GitHubDonePullRequestFacts, \
     GitHubMergedPullRequestFacts, GitHubOpenPullRequestFacts, \
     GitHubRelease as PrecomputedRelease, \
     GitHubReleaseMatchTimespan as PrecomputedGitHubReleaseMatchTimespan
@@ -111,9 +110,8 @@ class PreloadedReleaseLoader(ReleaseLoader):
         else:
             releases.reset_index(drop=True, inplace=True)
         user_node_to_login_get = (await prefixer.load()).user_node_to_login.get
-        releases[Release.author_node_id.name] = releases[model.author.name]
-        releases[model.author.name] = [
-            user_node_to_login_get(u) for u in releases[model.author.name].values
+        releases[Release.author.name] = [
+            user_node_to_login_get(u) for u in releases[model.author_node_id.name].values
         ]
         return releases
 
