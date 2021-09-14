@@ -31,31 +31,34 @@ def _deserialize(
     if data is None:
         return None
 
-    if klass in (int, float, str, bool):
-        return _deserialize_primitive(data, klass)
-    elif klass in (object, dict):
-        return _deserialize_object(data)
-    elif klass == datetime.date:
-        return deserialize_date(data)
-    elif klass == datetime.datetime:
-        return deserialize_datetime(data)
-    elif klass == datetime.timedelta:
-        return deserialize_timedelta(data)
-    elif typing_utils.is_generic(klass):
-        if typing_utils.is_list(klass):
-            return _deserialize_list(data, klass.__args__[0])
-        if typing_utils.is_dict(klass):
-            return _deserialize_dict(data, klass.__args__[1])
-        if typing_utils.is_optional(klass):
-            return _deserialize(data, klass.__args__[0])
-        if typing_utils.is_union(klass):
-            for arg in klass.__args__:
-                try:
-                    return _deserialize(data, arg)
-                except (ValueError, TypeError):
-                    continue
-    else:
-        return deserialize_model(data, klass)
+    try:
+        if klass in (int, float, str, bool):
+            return _deserialize_primitive(data, klass)
+        elif klass in (object, dict):
+            return _deserialize_object(data)
+        elif klass == datetime.date:
+            return deserialize_date(data)
+        elif klass == datetime.datetime:
+            return deserialize_datetime(data)
+        elif klass == datetime.timedelta:
+            return deserialize_timedelta(data)
+        elif typing_utils.is_generic(klass):
+            if typing_utils.is_list(klass):
+                return _deserialize_list(data, klass.__args__[0])
+            if typing_utils.is_dict(klass):
+                return _deserialize_dict(data, klass.__args__[1])
+            if typing_utils.is_optional(klass):
+                return _deserialize(data, klass.__args__[0])
+            if typing_utils.is_union(klass):
+                for arg in klass.__args__:
+                    try:
+                        return _deserialize(data, arg)
+                    except (ValueError, TypeError):
+                        continue
+        else:
+            return deserialize_model(data, klass)
+    except Exception as e:
+        raise ParseError(f"Failed to parse {data} as {klass}") from e
 
 
 def _deserialize_primitive(data, klass: Class) -> Union[Class, int, float, str, bool]:
@@ -87,10 +90,7 @@ def deserialize_date(string: str) -> datetime.date:
     :param string: str.
     :return: date.
     """
-    try:
-        return parse_datetime(string, ignoretz=True).date()
-    except Exception as e:
-        raise ParseError(string) from e
+    return parse_datetime(string, ignoretz=True).date()
 
 
 def deserialize_datetime(string: str) -> datetime.datetime:
@@ -101,10 +101,7 @@ def deserialize_datetime(string: str) -> datetime.datetime:
     :param string: str.
     :return: datetime.
     """
-    try:
-        return parse_datetime(string)
-    except Exception as e:
-        raise ParseError(string) from e
+    return parse_datetime(string)
 
 
 def deserialize_timedelta(string: str) -> datetime.timedelta:
@@ -116,11 +113,8 @@ def deserialize_timedelta(string: str) -> datetime.timedelta:
     :return: datetime.
     """
     if not string.endswith("s"):
-        raise ParseError("Unsupported timedelta format: " + string)
-    try:
-        return datetime.timedelta(seconds=int(string[:-1]))
-    except Exception as e:
-        raise ParseError(string) from e
+        raise ValueError("Unsupported timedelta format: " + string)
+    return datetime.timedelta(seconds=int(string[:-1]))
 
 
 def deserialize_model(data: Union[dict, list], klass: Class) -> T:
@@ -183,8 +177,8 @@ class FriendlyJson:
 
     loads = staticmethod(json.loads)
 
-    @staticmethod
-    def serialize(obj):
+    @classmethod
+    def serialize(klass, obj):
         """Format timedeltas and dates according to https://athenianco.atlassian.net/browse/ENG-125"""  # noqa
         if isinstance(obj, (datetime.timedelta, np.timedelta64)):
             if isinstance(obj, np.timedelta64):
@@ -204,6 +198,8 @@ class FriendlyJson:
             return int(obj)
         if isinstance(obj, np.floating):
             return float(obj)
+        if isinstance(obj, np.ndarray):
+            return klass.serialize(obj.tolist())
         try:
             assert obj == obj, "%s: %s" % (type(obj), obj)
         except ValueError as e:

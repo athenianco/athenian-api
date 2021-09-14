@@ -252,6 +252,7 @@ class NumpyStruct(Mapping[str, Any]):
                     if is_ascii:
                         nested_dtype = np.dtype("S")
                 value = np.asarray(value, nested_dtype)
+                assert len(value.shape) == 1, "we don't support arrays of more than 1 dimension"
                 if is_str and nan_mask.any():
                     if not value.flags.writeable:
                         value = value.copy()

@@ -22,6 +22,7 @@ from athenian.api.models.state.models import AccountJiraInstallation, ReleaseSet
 from athenian.api.models.web import CommitsList, FilteredCodeCheckRuns, FilteredLabel, \
     PullRequestEvent, PullRequestParticipant, PullRequestSet, PullRequestStage, ReleaseSet
 from athenian.api.models.web.diffed_releases import DiffedReleases
+from athenian.api.models.web.filtered_deployments import FilteredDeployments
 from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME
 from athenian.api.typing_utils import wraps
 from tests.conftest import FakeCache
@@ -2056,3 +2057,19 @@ async def test_filter_check_runs_nasty_input(
         method="POST", path="/v1/filter/code_checks", headers=headers, json=body)
     response_text = (await response.read()).decode("utf-8")
     assert response.status == status, response_text
+
+
+async def test_filter_deployments_smoke(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-01-12",
+        "timezone": 60,
+        "in": ["{1}"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/deployments", headers=headers, json=body)
+    response_text = (await response.read()).decode("utf-8")
+    assert response.status == 200, response_text
+    deps = FilteredDeployments.from_dict(json.loads(response_text))
+    assert len(deps.include.users) == 119

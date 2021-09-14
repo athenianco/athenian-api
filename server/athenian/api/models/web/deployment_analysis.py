@@ -1,14 +1,17 @@
-from typing import Optional
+from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.deployment_analysis_code import DeploymentAnalysisCode
-from athenian.api.models.web.release_set import ReleaseSet
+from athenian.api.models.web.filtered_release import FilteredRelease
 
 
 class DeploymentAnalysisUnsealed(Model):
-    """Result the analysis of the deployment."""
+    """Statistics and contents of the deployment."""
 
-    openapi_types = {"code": DeploymentAnalysisCode, "releases": ReleaseSet}
+    openapi_types = {
+        "code": DeploymentAnalysisCode,
+        "releases": Optional[List[FilteredRelease]],
+    }
 
     attribute_map = {"code": "code", "releases": "releases"}
 
@@ -16,7 +19,7 @@ class DeploymentAnalysisUnsealed(Model):
 
     def __init__(self,
                  code: Optional[DeploymentAnalysisCode] = None,
-                 releases: Optional[ReleaseSet] = None):
+                 releases: Optional[List[FilteredRelease]] = None):
         """DeploymentAnalysis - a model defined in OpenAPI
 
         :param code: The code of this DeploymentAnalysis.
@@ -45,7 +48,7 @@ class DeploymentAnalysisUnsealed(Model):
         self._code = code
 
     @property
-    def releases(self) -> ReleaseSet:
+    def releases(self) -> List[FilteredRelease]:
         """Gets the releases of this DeploymentAnalysis.
 
         :return: The releases of this DeploymentAnalysis.
@@ -53,7 +56,7 @@ class DeploymentAnalysisUnsealed(Model):
         return self._releases
 
     @releases.setter
-    def releases(self, releases: ReleaseSet):
+    def releases(self, releases: List[FilteredRelease]):
         """Sets the releases of this DeploymentAnalysis.
 
         :param releases: The releases of this DeploymentAnalysis.

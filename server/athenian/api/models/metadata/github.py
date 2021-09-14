@@ -321,6 +321,7 @@ class NodeCommit(Base,
     sha = synonym("oid")
     repository_id = Column(BigInteger, nullable=False)
     message = Column(Text, nullable=False)
+    pushed_date = Column(TIMESTAMP(timezone=True))
     committed_date = Column(TIMESTAMP(timezone=True))
     committer_user_id = Column(BigInteger)
     author_user_id = Column(BigInteger)
