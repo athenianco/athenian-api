@@ -19,7 +19,7 @@ class DeploymentNotificationUnsealed(Model):
         "date_started": datetime,
         "date_finished": datetime,
         "conclusion": str,
-        "labels": dict,
+        "labels": Optional[dict],
     }
 
     attribute_map = {

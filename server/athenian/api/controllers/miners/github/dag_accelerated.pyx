@@ -3,11 +3,11 @@
 # distutils: language = c++
 
 cimport cython
-from libc.stdint cimport uint32_t, int64_t, uint64_t
+from libc.stdint cimport int8_t, uint32_t, int64_t, uint64_t
 from libc.string cimport memset
 from libcpp.vector cimport vector
 import numpy as np
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional, Sequence, Tuple
 
 
 def searchsorted_inrange(a: np.ndarray, v: Any, side="left", sorter=None):
@@ -64,7 +64,7 @@ cdef uint32_t _extract_subdag(const uint32_t[:] vertexes,
                 edge = edges[j]
                 if not left_vertexes_map[edge]:
                     boilerplate.push_back(edge)
-    # write the vertex index mapping
+    # compress the vertex index mapping
     cdef uint32_t left_count = 0, edge_index, v
     for i in range(len(left_vertexes_map)):
         if left_vertexes_map[i]:
@@ -395,7 +395,7 @@ cdef void _partition_dag(const uint32_t[:] vertexes,
 def extract_pr_commits(hashes: np.ndarray,
                        vertexes: np.ndarray,
                        edges: np.ndarray,
-                       pr_merges: np.ndarray) -> np.ndarray:
+                       pr_merges: np.ndarray) -> Sequence[np.ndarray]:
     if len(hashes) == 0:
         return [np.array([], dtype="S40") for _ in pr_merges]
     order = np.argsort(pr_merges)
@@ -404,13 +404,8 @@ def extract_pr_commits(hashes: np.ndarray,
     found_pr_merges[hashes[found_pr_merges] != pr_merges] = len(vertexes)
     pr_merges = found_pr_merges.astype(np.uint32)[np.argsort(order)]
     cdef vector[vector[uint32_t]] pr_commits = vector[vector[uint32_t]](len(pr_merges))
-    left_vertexes_map_first = np.zeros_like(vertexes, shape=len(hashes))
-    left_vertexes_map_last = np.zeros_like(vertexes, shape=len(hashes))
-    left_vertexes = left_edges = np.array([], dtype=np.uint32)
-    head = np.zeros(1, dtype=np.uint32)
-    _extract_pr_commits(
-        vertexes, edges, pr_merges, head, left_vertexes_map_first, left_vertexes_map_last,
-        left_vertexes, left_edges, &pr_commits)
+    left_vertexes_map = np.zeros(len(hashes), dtype=np.int8)
+    _extract_pr_commits(vertexes, edges, pr_merges, left_vertexes_map, &pr_commits)
     result = np.zeros(len(pr_commits), dtype=object)
     for i, pr_vertexes in enumerate(pr_commits):
         result[i] = hashes[list(pr_vertexes)]
@@ -422,63 +417,53 @@ def extract_pr_commits(hashes: np.ndarray,
 cdef void _extract_pr_commits(const uint32_t[:] vertexes,
                               const uint32_t[:] edges,
                               const uint32_t[:] pr_merges,
-                              uint32_t[:] head,
-                              uint32_t[:] left_vertexes_map_first,
-                              uint32_t[:] left_vertexes_map_last,
-                              uint32_t[:] left_vertexes_empty,
-                              uint32_t[:] left_edges_empty,
+                              int8_t[:] left_vertexes_map,
                               vector[vector[uint32_t]] *pr_commits) nogil:
     cdef int i
-    cdef uint32_t first, last, v, left_count_first, left_count_last, first_pos, last_pos, first_val, last_val
+    cdef uint32_t first, last, v, j, edge, peek
     cdef uint32_t oob = len(vertexes)
     cdef vector[uint32_t] *my_pr_commits
+    cdef vector[uint32_t] boilerplate
+    boilerplate.reserve(max(1, len(edges) - len(vertexes) + 1))
     for i in range(len(pr_merges)):
         v = pr_merges[i]
         if v == oob:
             continue
         first = vertexes[v]
         last = vertexes[v + 1]
-        if last - first != 2:
+        if last - first != 2:  # we don't support octopus
             continue
-        head[0] = edges[last - 1]
-        left_vertexes_map_last[:] = 0
-        left_count_last = _extract_subdag(
-            vertexes, edges, head, left_vertexes_map_last, left_vertexes_empty, left_edges_empty)
-        if left_count_last == 0:
-            continue
-        head[0] = edges[first]
-        left_vertexes_map_first[:] = 0
-        left_count_first = _extract_subdag(
-            vertexes, edges, head, left_vertexes_map_first, left_vertexes_empty, left_edges_empty)
-        my_pr_commits = &pr_commits.at(i)
-        my_pr_commits.push_back(v)
-        first_pos = last_pos = 0
-        first_val = left_vertexes_map_first[0]
-        last_val = left_vertexes_map_last[0]
-        while first_pos < left_count_first or last_pos < left_count_last:
-            if first_val == last_val:
-                first_pos += 1
-                if first_pos < left_count_first:
-                    first_val = left_vertexes_map_first[first_pos]
-                last_pos += 1
-                if last_pos < left_count_last:
-                    last_val = left_vertexes_map_last[last_pos]
+
+        # extract the full sub-DAG of the main branch
+        left_vertexes_map[:] = 0
+        boilerplate.clear()
+        boilerplate.push_back(edges[first])
+        while not boilerplate.empty():
+            peek = boilerplate.back()
+            boilerplate.pop_back()
+            if left_vertexes_map[peek]:
                 continue
-            if first_pos < left_count_first:
-                while first_val < last_val:
-                    first_pos += 1
-                    if first_pos < left_count_first:
-                        first_val = left_vertexes_map_first[first_pos]
-                    else:
-                        break
-            if last_pos < left_count_last:
-                while last_val < first_val or first_pos >= left_count_first:
-                    my_pr_commits.push_back(last_val)
-                    last_pos += 1
-                    if last_pos < left_count_last:
-                        last_val = left_vertexes_map_last[last_pos]
-                    else:
-                        break
+            left_vertexes_map[peek] = 1
+            for j in range(vertexes[peek], vertexes[peek + 1]):
+                edge = edges[j]
+                if not left_vertexes_map[edge]:
+                    boilerplate.push_back(edge)
+
+        # traverse the DAG starting from the side edge, stop on any vertex in the main sub-DAG
+        my_pr_commits = &pr_commits.at(i)
+        my_pr_commits.push_back(v)  # include the merge commit in the PR
+        boilerplate.push_back(edges[last - 1])
+        while not boilerplate.empty():
+            peek = boilerplate.back()
+            boilerplate.pop_back()
+            if left_vertexes_map[peek]:
+                continue
+            left_vertexes_map[peek] = 1
+            my_pr_commits.push_back(peek)
+            for j in range(vertexes[peek], vertexes[peek + 1]):
+                edge = edges[j]
+                if not left_vertexes_map[edge]:
+                    boilerplate.push_back(edge)
 
 
 def extract_independent_ownership(hashes: np.ndarray,

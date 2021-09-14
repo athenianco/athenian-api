@@ -841,7 +841,8 @@ async def _build_deployments_response(df: pd.DataFrame,
                 lines_overall=dict(zip(resolved_repos, lines_overall)),
                 commits_prs=dict(zip(resolved_repos, commits_prs)),
                 commits_overall=dict(zip(resolved_repos, commits_overall)),
-                jira={r: keys.astype("U") for r, keys in zip(resolved_repos, jira) if len(keys)},
+                jira={r: keys.astype("U") for r, keys in zip(resolved_repos, jira)
+                      if keys is not None},
             ),
             releases=[
                 FilteredRelease(
@@ -887,12 +888,12 @@ async def _build_deployments_response(df: pd.DataFrame,
                        releases_df[ReleaseFacts.f.deletions].values,
                        releases_df[ReleaseFacts.f.commits_count].values,
                        releases_df[ReleaseFacts.f.commit_authors].values,
-                       releases_df["prs_" + PullRequest.number.name],
-                       releases_df["prs_" + PullRequest.title.name],
-                       releases_df["prs_" + PullRequest.additions.name],
-                       releases_df["prs_" + PullRequest.deletions.name],
-                       releases_df["prs_" + PullRequest.user_node_id.name],
-                       releases_df["prs_jira"])
+                       releases_df["prs_" + PullRequest.number.name].values,
+                       releases_df["prs_" + PullRequest.title.name].values,
+                       releases_df["prs_" + PullRequest.additions.name].values,
+                       releases_df["prs_" + PullRequest.deletions.name].values,
+                       releases_df["prs_" + PullRequest.user_node_id.name].values,
+                       releases_df["prs_jira"].values)
             ] if not releases_df.empty else None,
         )
         for name, environment, components_df, url, started_at, finished_at, conclusion,
@@ -915,7 +916,7 @@ async def _build_deployments_response(df: pd.DataFrame,
             df[DeploymentFacts.f.lines_overall].values,
             df[DeploymentFacts.f.commits_prs].values,
             df[DeploymentFacts.f.commits_overall].values,
-            df["jira"],
+            df["jira"].values,
         )
     ], include=ReleaseSetInclude(
         users={u: IncludedNativeUser(avatar=a) for u, a in people},

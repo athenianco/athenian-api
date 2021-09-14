@@ -400,6 +400,9 @@ def group_hashes_by_ownership(ownership: np.ndarray,
         grouped_owned_hashes = []
     else:
         grouped_owned_hashes = np.split(sorted_hashes, np.cumsum(unique_owned_counts)[:-1])
+        if unique_owners[-1] == groups:
+            grouped_owned_hashes = grouped_owned_hashes[:-1]
+            unique_owners = unique_owners[:-1]
     # fill the gaps for releases with 0 owned commits
     if len(missing := np.setdiff1d(np.arange(groups), unique_owners, assume_unique=True)):
         if on_missing is not None:

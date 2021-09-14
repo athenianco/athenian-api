@@ -1,4 +1,6 @@
 from datetime import datetime, timezone
+from pathlib import Path
+import pickle
 
 import numpy as np
 from pandas.testing import assert_frame_equal
@@ -53,7 +55,7 @@ async def sample_deployments(rdb):
             )))
 
 
-async def test_extract_pr_commits(dag):
+async def test_extract_pr_commits_smoke(dag):
     dag = dag["src-d/go-git"]
     pr_commits = extract_pr_commits(*dag, np.array([
         b"e20d3347d26f0b7193502e2ad7386d7c504b0cde",
@@ -72,6 +74,12 @@ async def test_extract_pr_commits(dag):
     }
     assert pr_commits[2].tolist() == []
     assert extract_pr_commits(*dag, np.array([], dtype="S40")).tolist() == []
+
+
+async def test_extract_pr_commits_fixture():
+    with Path(__file__).with_name("extract_pr_commits.pickle").open("rb") as fin:
+        args = pickle.load(fin)
+    extract_pr_commits(*args)
 
 
 async def test_extract_independent_ownership(dag):
