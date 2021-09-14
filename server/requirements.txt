@@ -17,7 +17,7 @@ prometheus_client==0.8.0
 alembic==1.7.1
 mako==1.1.5
 pandas==1.1.5
-networkx==2.6.2
+networkx==2.6.3
 python-jose[cryptography]==3.3.0
 python-dateutil==2.8.2
 pyffx==0.3.0
@@ -25,7 +25,7 @@ aiomcache==0.6.0
 uvloop==0.16.0
 bootstrapped==0.0.2
 tqdm==4.62.2
-slack_sdk[optional]==3.10.1
+slack_sdk[optional]==3.11.0
 gcloud-aio-kms==3.2.0
 # gcloud-aio-kms does not pin the exact versions of the following packages
 gcloud-aio-auth==3.6.1
