@@ -317,6 +317,7 @@ async def fetch_github_installation_progress(account: int,
     assert isinstance(mdb_conn, FastConnection)
     mdb_sqlite = isinstance(mdb_conn.raw_connection, aiosqlite.Connection)
     idle_threshold = timedelta(hours=3)
+    calm_threshold = timedelta(hours=1, minutes=30)
     event_ids = await get_installation_event_ids(account, sdb, mdb_conn, cache)
     owner = await get_installation_owner(event_ids[0][0], mdb_conn, cache)
     # we don't cache this because the number of repos can dynamically change
@@ -342,16 +343,23 @@ async def fetch_github_installation_progress(account: int,
         if mdb_sqlite:
             finished_date = finished_date.replace(tzinfo=timezone.utc)
         pending = sum(t.fetched < t.total for t in tables)
-        if datetime.now(tz=timezone.utc) - finished_date > idle_threshold:
+        now = datetime.now(tz=timezone.utc)
+        if now - finished_date > idle_threshold:
             for table in tables:
                 table.total = table.fetched
             if pending:
-                log.info("Overriding the installation progress by the idle time threshold; "
+                log.info("Overriding the installation progress of %d by the idle time threshold; "
                          "there are %d pending tables, last update on %s",
-                         pending, finished_date)
+                         account, pending, finished_date)
                 finished_date += idle_threshold  # don't fool the user
         elif pending:
             finished_date = None
+        elif now - finished_date < calm_threshold:
+            log.warning("Account %d's installation is calming, postponed until %s",
+                        account, finished_date + calm_threshold)
+            finished_date = None
+        else:
+            finished_date += calm_threshold  # don't fool the user
         model = InstallationProgress(started_date=started_date,
                                      finished_date=finished_date,
                                      owner=owner,
