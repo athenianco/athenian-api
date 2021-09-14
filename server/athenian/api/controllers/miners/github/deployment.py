@@ -927,7 +927,7 @@ async def _resolve_commit_relationship(
     joined = components.join(notifications)
     started_ats = joined[DeploymentNotification.started_at.name].values
     commit_ids = joined[DeployedComponent.resolved_commit_node_id.name].values
-    deployment_names = joined.index.values
+    deployment_names = joined.index.values.astype("U")
     commits_per_repo_per_env = defaultdict(dict)
     for (env, repo), indexes in joined.groupby(
             [DeploymentNotification.environment.name, DeployedComponent.repository_node_id.name],
@@ -1010,9 +1010,10 @@ async def _resolve_commit_relationship(
                 if sha not in root_shas:  # because it can
                     commit_ids = np.concatenate([root_ids_per_repo[env][repo], [cid]])
                     commit_shas = np.concatenate([root_shas, [sha]])
-                    commit_dates = np.concatenate([root_dates_per_repo[env][repo], [cts]])
+                    commit_dates = np.concatenate([root_dates_per_repo[env][repo],
+                                                   np.array([cts], dtype="datetime64[s]")])
                     deployment_names = np.concatenate(
-                        [root_deployment_names_per_repo[env][repo], ""])
+                        [root_deployment_names_per_repo[env][repo], np.array([""], dtype="U")])
                     ownership = mark_dag_access(*dag, commit_shas)
                     parents = mark_dag_parents(*dag, commit_shas, commit_dates, ownership)
                     root_mask = parents >= len(parents)
