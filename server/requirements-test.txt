@@ -6,7 +6,7 @@ pytest-benchmark==3.4.1
 pytest-rerunfailures==10.1
 pytest-xdist==2.3.0
 filelock==3.0.12
-faker==8.12.1
+faker==8.13.2
 freezegun==1.1.0
 nest_asyncio==1.5.1
 codecov==2.1.12
