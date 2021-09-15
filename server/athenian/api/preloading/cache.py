@@ -564,6 +564,7 @@ def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[Instrumente
                     PrecomputedRelease.sha,
                     PrecomputedRelease.release_match,
                     PrecomputedRelease.repository_full_name,
+                    PrecomputedRelease.repository_node_id,
                     PrecomputedRelease.published_at,
                     PrecomputedRelease.acc_id,
                     PrecomputedRelease.author_node_id,
@@ -572,6 +573,7 @@ def get_memory_cache_options() -> Dict[str, Dict[str, Dict[str, List[Instrumente
                 "categorical_cols": [
                     PrecomputedRelease.acc_id,
                     PrecomputedRelease.repository_full_name,
+                    PrecomputedRelease.repository_node_id,
                     PrecomputedRelease.release_match,
                 ],
                 "identifier_cols": [

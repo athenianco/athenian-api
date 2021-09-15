@@ -2073,3 +2073,17 @@ async def test_filter_deployments_smoke(client, headers):
     assert response.status == 200, response_text
     deps = FilteredDeployments.from_dict(json.loads(response_text))
     assert len(deps.include.users) == 119
+    assert len(deps.include.jira) == 14
+    deps = deps.deployments
+    assert len(deps) == 1
+    assert deps[0].code.to_dict() == {
+        "commits_overall": {"github.com/src-d/go-git": 1508},
+        "commits_prs": {"github.com/src-d/go-git": 1119},
+        "jira": {"github.com/src-d/go-git": [
+            "DEV-139", "DEV-261", "DEV-594", "DEV-618", "DEV-626", "DEV-627", "DEV-644",
+            "DEV-651", "DEV-676", "DEV-685", "DEV-685", "DEV-724", "DEV-724", "DEV-726",
+            "DEV-732", "DEV-770"]},
+        "lines_overall": {"github.com/src-d/go-git": 258545},
+        "lines_prs": {"github.com/src-d/go-git": 153966},
+        "prs": {"github.com/src-d/go-git": 314},
+    }

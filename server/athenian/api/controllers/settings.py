@@ -48,6 +48,16 @@ class ReleaseMatchSetting:
         return 'ReleaseMatchSetting(branches="%s", tags="%s", match=Match["%s"])' % (
             self.branches, self.tags, self.match.name)
 
+    def as_db(self) -> str:
+        """Render database `release_match` value. Works only for specific match types."""
+        if self.match == ReleaseMatch.tag:
+            return "tag|" + self.tags
+        if self.match == ReleaseMatch.branch:
+            return "branch|" + self.branches
+        if self.match == ReleaseMatch.event:
+            return ReleaseMatch.event.name
+        raise AssertionError("Impossible release match: %s" % self.match)
+
     def __lt__(self, other: "ReleaseMatchSetting") -> bool:
         """Implement self < other to become sortable."""
         if self.match != other.match:

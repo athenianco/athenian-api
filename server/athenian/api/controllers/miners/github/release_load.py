@@ -41,6 +41,7 @@ from athenian.api.tracing import sentry_span
 
 tag_by_branch_probe_lookaround = timedelta(weeks=4)
 unfresh_releases_threshold = 50
+unfresh_releases_lag = timedelta(hours=1)
 
 
 class ReleaseLoader:
@@ -87,7 +88,7 @@ class ReleaseLoader:
             repos, default_branches, settings)
         if repos_count == 0:
             log.warning("no repositories")
-            return dummy_releases_df(), {}
+            return dummy_releases_df(index), {}
         # the order is critically important! first fetch the spans, then the releases
         # because when the update transaction commits, we can be otherwise half-way through
         # strictly speaking, there is still no guarantee with our order, but it is enough for
@@ -99,8 +100,8 @@ class ReleaseLoader:
                 time_from - tag_by_branch_probe_lookaround,
                 time_to + tag_by_branch_probe_lookaround,
                 prefixer, account, pdb, index=index),
-            cls._fetch_release_events(event_repos, account, meta_ids, time_from, time_to, mdb,
-                                      rdb),
+            cls._fetch_release_events(
+                event_repos, account, meta_ids, time_from, time_to, mdb, rdb, index=index),
         ]
         spans, releases, event_releases = await gather(*tasks)
 
@@ -123,7 +124,7 @@ class ReleaseLoader:
             max_time_to = datetime.now(timezone.utc).replace(minute=0, second=0)
             if repos_count > unfresh_releases_threshold:
                 log.warning("Activated the unfresh mode for a set of %d repositories", repos_count)
-                max_time_to -= timedelta(hours=1)
+                max_time_to -= unfresh_releases_lag
         settings = settings.copy()
         for full_repo, setting in settings.prefixed.items():
             repo = full_repo.split("/", 1)[1]
@@ -212,7 +213,7 @@ class ReleaseLoader:
             else:
                 releases.drop_duplicates(Release.node_id.name, inplace=True, ignore_index=True)
             releases.sort_values(Release.published_at.name,
-                                 inplace=True, ascending=False, ignore_index=True)
+                                 inplace=True, ascending=False, ignore_index=index is None)
         applied_matches = gather_applied_matches()
         for r in repos:
             if r in applied_matches:
@@ -261,7 +262,7 @@ class ReleaseLoader:
             # append the pushed releases
             releases = pd.concat([releases, event_releases], copy=False)
             releases.sort_values(Release.published_at.name,
-                                 inplace=True, ascending=False, ignore_index=True)
+                                 inplace=True, ascending=False, ignore_index=index is None)
         return releases, applied_matches
 
     @classmethod
@@ -387,7 +388,7 @@ class ReleaseLoader:
                 .order_by(desc(prel.published_at))
                 for item in or_items))
         df = await read_sql_query(query, pdb, prel)
-        df = remove_ambigous_precomputed_releases(df, prel.repository_full_name.name)
+        df = set_matched_by_from_release_match(df, True, prel.repository_node_id.name)
         if index is not None:
             df.set_index(index, inplace=True)
         else:
@@ -408,10 +409,11 @@ class ReleaseLoader:
                                     time_to: datetime,
                                     mdb: ParallelDatabase,
                                     rdb: ParallelDatabase,
+                                    index: Optional[Union[str, Sequence[str]]] = None,
                                     ) -> pd.DataFrame:
         """Load pushed releases from persistentdata DB."""
         if len(repos) == 0:
-            return dummy_releases_df()
+            return dummy_releases_df(index)
         release_rows = await mdb.fetch_all(
             select([Repository.node_id, Repository.full_name])
             .where(and_(
@@ -532,8 +534,11 @@ class ReleaseLoader:
             await defer(update_pushed_release_commits(),
                         "update_pushed_release_commits(%d)" % len(updated))
         if not releases:
-            return dummy_releases_df()
-        return _adjust_release_dtypes(pd.DataFrame(releases))
+            return dummy_releases_df(index)
+        df = _adjust_release_dtypes(pd.DataFrame(releases))
+        if index:
+            df.set_index(index, inplace=True)
+        return df
 
     @classmethod
     @sentry_span
@@ -636,12 +641,15 @@ class ReleaseLoader:
                 await pdb.execute_many(sql, inserted)
 
 
-def dummy_releases_df() -> pd.DataFrame:
+def dummy_releases_df(index: Optional[Union[str, Sequence[str]]] = None) -> pd.DataFrame:
     """Create an empty releases DataFrame."""
     df = pd.DataFrame(columns=[
         c.name for c in Release.__table__.columns if c.name != Release.acc_id.name
     ] + [matched_by_column])
-    return _adjust_release_dtypes(df)
+    df = _adjust_release_dtypes(df)
+    if index:
+        df.set_index(index, inplace=True)
+    return df
 
 
 _tsdt = pd.Timestamp(2000, 1, 1).to_numpy().dtype
@@ -743,20 +751,34 @@ def match_groups_to_conditions(
     return or_conditions, repos
 
 
-def remove_ambigous_precomputed_releases(df: pd.DataFrame, repo_column: str) -> pd.DataFrame:
-    """Deal with "tag_or_branch" precomputed releases."""
-    matched_by_tag_mask = df[PrecomputedRelease.release_match.name].str.startswith("tag|")
-    matched_by_branch_mask = df[PrecomputedRelease.release_match.name].str.startswith("branch|")
-    repos = df[repo_column].values
-    ambiguous_repos = np.intersect1d(repos[matched_by_tag_mask], repos[matched_by_branch_mask])
-    if len(ambiguous_repos):
-        matched_by_branch_mask[np.in1d(repos, ambiguous_repos)] = False
-    df[matched_by_column] = None
+def set_matched_by_from_release_match(df: pd.DataFrame,
+                                      remove_ambiguous_tag_or_branch: bool,
+                                      repo_column: Optional[str] = None,
+                                      ) -> pd.DataFrame:
+    """
+    Set `matched_by_column` from `PrecomputedRelease.release_match` column. Drop the latter.
+
+    :param df: DataFrame of Release-compatible models.
+    :param remove_ambiguous_tag_or_branch: Indicates whether to remove ambiguous \
+                                           "tag_or_branch" precomputed releases.
+    :param repo_column: Required if `remove_ambiguous_tag_or_branch` is True.
+    """
+    release_matches = df[PrecomputedRelease.release_match.name].values.astype("S")
+    matched_by_tag_mask = np.char.startswith(release_matches, b"tag|")
+    matched_by_branch_mask = np.char.startswith(release_matches, b"branch|")
+    matched_by_event_mask = release_matches == b"event|"
+    if remove_ambiguous_tag_or_branch:
+        assert repo_column is not None
+        repos = df[repo_column].values
+        ambiguous_repos = np.intersect1d(repos[matched_by_tag_mask], repos[matched_by_branch_mask])
+        if len(ambiguous_repos):
+            matched_by_branch_mask[np.in1d(repos, ambiguous_repos)] = False
+    df[matched_by_column] = ReleaseMatch.rejected
     df.loc[matched_by_tag_mask, matched_by_column] = ReleaseMatch.tag
     df.loc[matched_by_branch_mask, matched_by_column] = ReleaseMatch.branch
+    df.loc[matched_by_event_mask, matched_by_column] = ReleaseMatch.event
     df.drop(PrecomputedRelease.release_match.name, inplace=True, axis=1)
-    df = df.take(np.where(~df[matched_by_column].isnull())[0])
-    df[matched_by_column] = df[matched_by_column].astype(int)
+    df = df.take(np.flatnonzero(df[matched_by_column].values != ReleaseMatch.rejected))
     return df
 
 

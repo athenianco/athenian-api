@@ -3,6 +3,7 @@ from pathlib import Path
 import pickle
 
 import numpy as np
+import pandas as pd
 from pandas.testing import assert_frame_equal
 import pytest
 from sqlalchemy import delete, insert
@@ -157,13 +158,15 @@ async def test_mine_deployments_from_scratch(
     sdeps.reset_index(drop=True, inplace=True)
     for pdf, sdf in zip(pdeps["releases"].values, sdeps["releases"].values):
         assert_frame_equal(pdf, sdf)
+    for df in pdeps["releases"].values:
+        assert len(df) == 1
     del pdeps["releases"]
     del sdeps["releases"]
     assert_frame_equal(pdeps, sdeps)
 
 
 @with_defer
-async def test_mine_deployments_no_releases(
+async def test_mine_deployments_no_release_facts(
         release_match_setting_tag_or_branch, branches, default_branches,
         prefixer_promise, mdb, pdb, rdb, cache):
     time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
@@ -178,6 +181,106 @@ async def test_mine_deployments_no_releases(
         1, (6366825,), mdb, pdb, rdb, cache)
     assert len(deps) == 1
     assert deps.iloc[0].name == "Dummy deployment"
+    obj = deps["releases"].iloc[0].to_dict()
+    commit_authors = obj["commit_authors"]
+    del obj["commit_authors"]
+    assert obj == {
+        "additions": {41475: 2},
+        "age": {41475: pd.Timedelta("1 days 01:44:14")},
+        "author": {41475: "mcuadros"},
+        "author_node_id": {41475: 39789},
+        "commit_id": {41475: 2755244},
+        "commits_count": {41475: 2},
+        "deletions": {41475: 2},
+        "matched_by": {41475: 1},
+        "name": {41475: "v4.13.1"},
+        "prs_additions": {41475: np.array([1])},
+        "prs_deletions": {41475: np.array([1])},
+        "prs_jira": {41475: None},
+        "prs_node_id": {41475: np.array([163398])},
+        "prs_number": {41475: np.array([1203])},
+        "prs_title": {41475: ["worktree: force convert to int64 to support 32bit os. "
+                              "Fix #1202"]},
+        "prs_user_node_id": {41475: np.array([40187])},
+        "published_at": {41475: pd.Timestamp("2019-08-01 15:25:42+0000", tz="UTC")},
+        "repository_full_name": {41475: "src-d/go-git"},
+        "repository_node_id": {41475: 40550},
+        "sha": {41475: "0d1a009cbb604db18be960db5f1525b99a55d727"},
+        "tag": {41475: "v4.13.1"},
+        "url": {41475: "https://github.com/src-d/go-git/releases/tag/v4.13.1"},
+    }
+    assert (commit_authors[41475] == np.array([39789, 40187])).all()
+
+
+@with_defer
+async def test_mine_deployments_precomputed_dummy(
+        release_match_setting_tag_or_branch, branches, default_branches,
+        prefixer_promise, mdb, pdb, rdb):
+    time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
+    time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    deps1, people1 = await mine_deployments(
+        [40550], {},
+        time_from, time_to,
+        ["production", "staging"],
+        [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        release_match_setting_tag_or_branch,
+        branches, default_branches, prefixer_promise,
+        1, (6366825,), mdb, pdb, rdb, None)
+    await wait_deferred()
+    deps2, people2 = await mine_deployments(
+        [40550], {},
+        time_from, time_to,
+        ["production", "staging"],
+        [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        release_match_setting_tag_or_branch,
+        branches, default_branches, prefixer_promise,
+        1, (6366825,), mdb, pdb, rdb, None)
+    assert len(deps1) == len(deps2) == 1
+    assert deps1.index.tolist() == deps2.index.tolist()
+    assert (rel1 := deps1["releases"].iloc[0]).columns.tolist() == \
+           (rel2 := deps2["releases"].iloc[0]).columns.tolist()
+    assert len(rel1) == len(rel2)
+    assert rel1.index == rel2.index
+    del deps1["releases"]
+    del deps2["releases"]
+    assert_frame_equal(deps1, deps2)
+    assert (people1 == people2).all()
+
+
+@with_defer
+async def test_mine_deployments_precomputed_sample(
+        sample_deployments, release_match_setting_tag_or_branch, branches, default_branches,
+        prefixer_promise, mdb, pdb, rdb):
+    time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
+    time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    deps1, people1 = await mine_deployments(
+        [40550], {},
+        time_from, time_to,
+        ["production", "staging"],
+        [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        release_match_setting_tag_or_branch,
+        branches, default_branches, prefixer_promise,
+        1, (6366825,), mdb, pdb, rdb, None)
+    await wait_deferred()
+    deps2, people2 = await mine_deployments(
+        [40550], {},
+        time_from, time_to,
+        ["production", "staging"],
+        [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        release_match_setting_tag_or_branch,
+        branches, default_branches, prefixer_promise,
+        1, (6366825,), mdb, pdb, rdb, None)
+    assert len(deps1) == len(deps2) == 2 * 9
+    assert deps1.index.tolist() == deps2.index.tolist()
+    for i in range(18):
+        assert (rel1 := deps1["releases"].iloc[i]).columns.tolist() == \
+               (rel2 := deps2["releases"].iloc[i]).columns.tolist(), i
+        assert len(rel1) == len(rel2) == 1
+        assert rel1.index == rel2.index
+    del deps1["releases"]
+    del deps2["releases"]
+    assert_frame_equal(deps1, deps2)
+    assert (people1 == people2).all()
 
 
 @with_defer

@@ -791,14 +791,14 @@ async def _load_jira_issues_for_deployments(jira_ids: Optional[Tuple[int, List[s
     overall_col = deployments["jira"].values
     for di, repos in overall_keys.items():
         for ri, keys in repos.items():
-            overall_col[di][ri] = np.array(keys, dtype="S")
+            overall_col[di][ri] = np.sort(np.array(keys, dtype="S"))
     releases_col = deployments["releases"].values
     for di, releases_jira in release_keys.items():
         releases = releases_col[di]["prs_jira"].values
         for ri, prs_jira in releases_jira.items():
             prs = releases[ri]
             for pri, release_keys in prs_jira.items():
-                prs[pri] = np.array(release_keys, dtype="S")
+                prs[pri] = np.sort(np.array(release_keys, dtype="S"))
 
     return issues
 
@@ -866,7 +866,7 @@ async def _build_deployments_response(df: pd.DataFrame,
                             additions=pr_adds,
                             deletions=pr_dels,
                             author=user_node_to_prefixed_login[pr_author],
-                            jira=pr_jira.astype("U") or None,
+                            jira=pr_jira.astype("U") if pr_jira else None,
                         )
                         for pr_number, pr_title, pr_adds, pr_dels, pr_author, pr_jira in zip(
                             pr_numbers, pr_titles, pr_additions, pr_deletions,
