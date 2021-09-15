@@ -28,7 +28,7 @@ from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.github.release_load import \
     group_repos_by_release_match, match_groups_to_conditions, ReleaseLoader
 from athenian.api.controllers.miners.github.release_load import \
-    remove_ambigous_precomputed_releases
+    set_matched_by_from_release_match
 from athenian.api.controllers.miners.github.release_match import ReleaseToPullRequestMapper
 from athenian.api.controllers.miners.jira.issue import PullRequestJiraMapper
 from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind, \
@@ -104,7 +104,7 @@ class PreloadedReleaseLoader(ReleaseLoader):
         )
         releases = cached_df.filter((account, ), mask)
         releases.sort_values(model.published_at.name, ascending=False, inplace=True)
-        releases = remove_ambigous_precomputed_releases(releases, model.repository_full_name.name)
+        releases = set_matched_by_from_release_match(releases, True, model.repository_node_id.name)
         if index is not None:
             releases.set_index(index, inplace=True)
         else:
@@ -113,6 +113,8 @@ class PreloadedReleaseLoader(ReleaseLoader):
         releases[Release.author.name] = [
             user_node_to_login_get(u) for u in releases[model.author_node_id.name].values
         ]
+        releases[Release.repository_node_id.name] = \
+            releases[Release.repository_node_id.name].astype(int, copy=False)
         return releases
 
     @classmethod

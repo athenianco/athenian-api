@@ -758,6 +758,7 @@ async def test_load_releases_events_settings(
     assert matched_bys == {"src-d/go-git": ReleaseMatch.event}
     assert (releases[matched_by_column] == ReleaseMatch.event).all()
     assert len(releases) == 1
+    assert releases.index[0] == 2756775
     assert releases.iloc[0].to_dict() == {
         Release.repository_full_name.name: "src-d/go-git",
         Release.repository_node_id.name: 40550,
@@ -768,9 +769,8 @@ async def test_load_releases_events_settings(
         Release.tag.name: None,
         Release.url.name: "www",
         Release.sha.name: "8d20cc5916edf7cfa6a9c5ed069f0640dc823c12",
-        Release.commit_id.name: 2756775,  # noqa
+        Release.commit_id.name: 2756775,
         matched_by_column: ReleaseMatch.event,
-        Release.node_id.name: 2756775,  # noqa
     }
     rows = await rdb.fetch_all(select([ReleaseNotification]))
     assert len(rows) == 1
@@ -1473,8 +1473,8 @@ async def test_precomputed_releases_low_level(
         # defined in `athenian.api.preloading.cache`.
         # Once it will happen, this test will fail and we can just temove this `if` branch.
         missing_prels_columns = [
-            PrecomputedRelease.repository_node_id, PrecomputedRelease.author_node_id,
-            Release.author_node_id, PrecomputedRelease.name, PrecomputedRelease.tag,
+            PrecomputedRelease.author_node_id, Release.author_node_id,
+            PrecomputedRelease.name, PrecomputedRelease.tag,
             PrecomputedRelease.url, PrecomputedRelease.sha, PrecomputedRelease.commit_id,
         ]
         assert all(col not in prels.columns for col in missing_prels_columns)

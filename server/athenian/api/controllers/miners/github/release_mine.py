@@ -125,7 +125,7 @@ async def mine_releases(repos: Iterable[str],
             precomputed_facts, jira, meta_ids, mdb, cache)
     prefixer = await prefixer.load()
     result, mentioned_authors, has_precomputed_facts = _build_mined_releases(
-        releases_in_time_range, precomputed_facts, prefixer)
+        releases_in_time_range, precomputed_facts, prefixer, True)
 
     missing_repos = releases_in_time_range[Release.repository_full_name.name].take(
         np.where(~has_precomputed_facts)[0]).unique()
@@ -417,10 +417,15 @@ def group_hashes_by_ownership(ownership: np.ndarray,
 def _build_mined_releases(releases: pd.DataFrame,
                           precomputed_facts: Dict[int, ReleaseFacts],
                           prefixer: Prefixer,
+                          with_avatars: bool,
                           ) -> Tuple[List[Tuple[Dict[str, Any], ReleaseFacts]],
-                                     np.ndarray,
+                                     Optional[np.ndarray],
                                      np.ndarray]:
     has_precomputed_facts = releases[Release.node_id.name].isin(precomputed_facts).values
+    _, unique_releases = np.unique(releases[Release.node_id.name].values, return_index=True)
+    mask = np.zeros(len(releases), dtype=bool)
+    mask[unique_releases] = True
+    mask &= has_precomputed_facts
     result = [
         ({Release.node_id.name: my_id,
           Release.name.name: my_name or my_tag,
@@ -429,16 +434,18 @@ def _build_mined_releases(releases: pd.DataFrame,
           Release.sha.name: my_commit},
          _release_facts_with_repository_full_name(precomputed_facts[my_id], my_repo))
         for my_id, my_name, my_tag, my_repo, my_url, my_commit in zip(
-            releases[Release.node_id.name].values[has_precomputed_facts],
-            releases[Release.name.name].values[has_precomputed_facts],
-            releases[Release.tag.name].values[has_precomputed_facts],
-            releases[Release.repository_full_name.name].values[has_precomputed_facts],
-            releases[Release.url.name].values[has_precomputed_facts],
-            releases[Release.sha.name].values[has_precomputed_facts],
+            releases[Release.node_id.name].values[mask],
+            releases[Release.name.name].values[mask],
+            releases[Release.tag.name].values[mask],
+            releases[Release.repository_full_name.name].values[mask],
+            releases[Release.url.name].values[mask],
+            releases[Release.sha.name].values[mask],
         )
         # "gone" repositories, reposet-sync has not updated yet
         if (prefixed_repo := prefixer.repo_name_to_prefixed_name.get(my_repo)) is not None
     ]
+    if not with_avatars:
+        return result, None, has_precomputed_facts
     mentioned_authors = np.concatenate([
         *(getattr(f, "prs_" + PullRequest.user_node_id.name) for f in precomputed_facts.values()),
         *(f.commit_authors for f in precomputed_facts.values()),
@@ -591,6 +598,26 @@ async def mine_releases_by_name(names: Dict[str, Iterable[str]],
         names, log, settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache)
     if releases.empty:
         return [], []
+    return await mine_releases_by_ids(releases, branches, default_branches, settings, prefixer,
+                                      account, meta_ids, mdb, pdb, rdb, cache, with_avatars=True)
+
+
+async def mine_releases_by_ids(releases: pd.DataFrame,
+                               branches: pd.DataFrame,
+                               default_branches: Dict[str, str],
+                               settings: ReleaseSettings,
+                               prefixer: PrefixerPromise,
+                               account: int,
+                               meta_ids: Tuple[int, ...],
+                               mdb: ParallelDatabase,
+                               pdb: ParallelDatabase,
+                               rdb: ParallelDatabase,
+                               cache: Optional[aiomcache.Client],
+                               *, with_avatars: bool,
+                               ) -> Union[Tuple[List[Tuple[Dict[str, Any], ReleaseFacts]],
+                                                List[Tuple[str, str]]],
+                                          List[Tuple[Dict[str, Any], ReleaseFacts]]]:
+    """Collect details about releases in the DataFrame (`load_releases()`-like)."""
     settings_tags, settings_branches = {}, {}
     for k, v in settings.prefixed.items():
         if v.match == ReleaseMatch.tag_or_branch:
@@ -625,7 +652,7 @@ async def mine_releases_by_name(names: Dict[str, Iterable[str]],
     add_pdb_misses(pdb, "release_facts", len(releases) - len(precomputed_facts))
     prefixer = await prefixer.load()
     result, mentioned_authors, has_precomputed_facts = _build_mined_releases(
-        releases, precomputed_facts, prefixer)
+        releases, precomputed_facts, prefixer, with_avatars=with_avatars)
     if not (missing_releases := releases.take(np.flatnonzero(~has_precomputed_facts))).empty:
         repos = missing_releases[Release.repository_full_name.name].unique()
         time_from = missing_releases[Release.published_at.name].iloc[-1]
@@ -636,18 +663,24 @@ async def mine_releases_by_name(names: Dict[str, Iterable[str]],
             account, meta_ids, mdb, pdb, rdb, cache,
             force_fresh=True, with_avatars=False, with_pr_titles=True)
         missing_releases_by_repo = defaultdict(set)
-        for repo, name in zip(missing_releases[Release.repository_full_name.name].values,
-                              missing_releases[Release.name.name].values):
-            missing_releases_by_repo[repo].add(name)
+        for repo, rid in zip(missing_releases[Release.repository_full_name.name].values,
+                             missing_releases[Release.node_id.name].values):
+            missing_releases_by_repo[repo].add(rid)
         for r in mined_result:
-            if r[0][Release.name.name] in missing_releases_by_repo[
+            if r[0][Release.node_id.name] in missing_releases_by_repo[
                     r[0][Release.repository_full_name.name].split("/", 1)[1]]:
                 result.append(r)
-        # we don't know which are redundant, so include everyone without filtering
-        mentioned_authors = np.union1d(mentioned_authors, mined_authors)
+        if with_avatars:
+            # we don't know which are redundant, so include everyone without filtering
+            mentioned_authors = np.union1d(mentioned_authors, mined_authors)
+
+    async def dummy_avatars():
+        return None
+
     tasks = [
         mine_user_avatars([prefixer.user_node_to_login[a] for a in mentioned_authors],
-                          UserAvatarKeys.PREFIXED_LOGIN, meta_ids, mdb, cache),
+                          UserAvatarKeys.PREFIXED_LOGIN, meta_ids, mdb, cache)
+        if with_avatars else dummy_avatars(),
     ]
     if precomputed_facts:
         pr_node_ids = np.concatenate([
@@ -664,7 +697,9 @@ async def mine_releases_by_name(names: Dict[str, Iterable[str]],
             facts["prs_" + PullRequest.title.name] = [
                 pr_title_map.get(node) for node in facts["prs_" + PullRequest.node_id.name]
             ]
-    return result, avatars
+    if with_avatars:
+        return result, avatars
+    return result
 
 
 async def _load_releases_by_name(names: Dict[str, Set[str]],

@@ -65,10 +65,10 @@ async def load_precomputed_release_facts(releases: pd.DataFrame,
         else:
             raise AssertionError("Ambiguous release settings for %s: %s" % (repo, setting))
         reverse_settings[(setting.match, value)].append(repo)
-    grouped_releases = defaultdict(list)
+    grouped_releases = defaultdict(set)
     for rid, repo in zip(releases[Release.node_id.name].values,
                          releases[Release.repository_full_name.name].values):
-        grouped_releases[repo].append(rid)
+        grouped_releases[repo].add(rid)
     default_version = \
         GitHubReleaseFacts.__table__.columns[GitHubReleaseFacts.format_version.key].default.arg
 
