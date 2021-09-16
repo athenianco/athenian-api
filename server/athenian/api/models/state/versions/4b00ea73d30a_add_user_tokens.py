@@ -36,6 +36,7 @@ def upgrade():
         sa.ForeignKeyConstraint(("account_id", "user_id"),
                                 ("user_accounts.account_id", "user_accounts.user_id"),
                                 name="fk_account_tokens_user"),
+        sqlite_autoincrement=True,
     )
 
 

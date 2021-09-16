@@ -279,3 +279,23 @@ async def get_jira_identities(request: AthenianWebRequest,
             confidence=0,
         ))
     return model_response(sorted(models, key=lambda m: (m.developer_id or "", m.jira_name)))
+
+
+async def get_work_type(request: AthenianWebRequest, body: dict) -> web.Response:
+    """Fetch the definition of the work type given the name."""
+    raise NotImplementedError
+
+
+async def set_work_type(request: AthenianWebRequest, body: dict) -> web.Response:
+    """Create or update a work type - a rule set to group PRs, releases, etc. together."""
+    raise NotImplementedError
+
+
+async def delete_work_type(request: AthenianWebRequest, body: dict) -> web.Response:
+    """Remove the work type given the name."""
+    raise NotImplementedError
+
+
+async def list_work_types(request: AthenianWebRequest, id: int) -> web.Response:
+    """List the current work types - rule sets to group PRs, releases, etc. together."""
+    raise NotImplementedError

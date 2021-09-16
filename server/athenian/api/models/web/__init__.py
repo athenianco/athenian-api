@@ -159,3 +159,7 @@ from athenian.api.models.web.team_create_request import TeamCreateRequest
 from athenian.api.models.web.team_update_request import TeamUpdateRequest
 from athenian.api.models.web.user import User
 from athenian.api.models.web.versions import Versions
+from athenian.api.models.web.work_type import WorkType
+from athenian.api.models.web.work_type_get_request import WorkTypeGetRequest
+from athenian.api.models.web.work_type_put_request import WorkTypePutRequest
+from athenian.api.models.web.work_type_rule import WorkTypeRule

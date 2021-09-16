@@ -44,6 +44,7 @@ def upgrade():
             nullable=False,
         ),
         sa.UniqueConstraint("name", "component", name="uc_feature_name_component"),
+        sqlite_autoincrement=True,
     )
     op.create_table(
         "account_features",
