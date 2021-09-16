@@ -17,10 +17,11 @@ from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.settings import ReleaseMatch, Settings
 from athenian.api.models.metadata.github import User as GitHubUser
 from athenian.api.models.metadata.jira import Issue, Project, User as JIRAUser
-from athenian.api.models.state.models import JIRAProjectSetting, MappedJIRAIdentity
+from athenian.api.models.state.models import JIRAProjectSetting, MappedJIRAIdentity, WorkType
 from athenian.api.models.web import ForbiddenError, InvalidRequestError, JIRAProject, \
-    JIRAProjectsRequest, MappedJIRAIdentity as WebMappedJIRAIdentity, ReleaseMatchRequest, \
-    ReleaseMatchSetting, SetMappedJIRAIdentitiesRequest
+    JIRAProjectsRequest, MappedJIRAIdentity as WebMappedJIRAIdentity, NotFoundError, \
+    ReleaseMatchRequest, ReleaseMatchSetting, SetMappedJIRAIdentitiesRequest, \
+    WorkType as WebWorkType, WorkTypeGetRequest, WorkTypePutRequest, WorkTypeRule
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 
@@ -283,19 +284,74 @@ async def get_jira_identities(request: AthenianWebRequest,
 
 async def get_work_type(request: AthenianWebRequest, body: dict) -> web.Response:
     """Fetch the definition of the work type given the name."""
-    raise NotImplementedError
+    model = WorkTypeGetRequest.from_dict(body)
+    row = await request.sdb.fetch_one(select([WorkType]).where(and_(
+        WorkType.account_id == model.account,
+        WorkType.name == model.name,
+    )))
+    if row is None:
+        raise ResponseError(NotFoundError(f'Work type "{model.name}" does not exist.'))
+    model = WebWorkType(
+        name=row[WorkType.name.name],
+        color=row[WorkType.color.name],
+        rules=[WorkTypeRule(name, args) for name, args in row[WorkType.rules.name]],
+    )
+    return model_response(model)
 
 
 async def set_work_type(request: AthenianWebRequest, body: dict) -> web.Response:
     """Create or update a work type - a rule set to group PRs, releases, etc. together."""
-    raise NotImplementedError
+    model = WorkTypePutRequest.from_dict(body)
+    sdb = request.sdb
+    if sdb.url.dialect == "postgresql":
+        sql = postgres_insert(WorkType)
+        sql = sql.on_conflict_do_update(
+            constraint="uc_work_type",
+            set_={
+                col.name: getattr(sql.excluded, col.name)
+                for col in (
+                    WorkType.color,
+                    WorkType.rules,
+                    WorkType.updated_at,
+                )
+            },
+        )
+    else:
+        sql = insert(WorkType).prefix_with("OR REPLACE")
+    await sdb.execute(sql.values(WorkType(
+        account_id=model.account,
+        name=model.work_type.name,
+        color=model.work_type.color,
+        rules=[(r.name, r.body) for r in model.work_type.rules],
+    ).create_defaults().explode()))
+    return model_response(model.work_type)
 
 
 async def delete_work_type(request: AthenianWebRequest, body: dict) -> web.Response:
     """Remove the work type given the name."""
-    raise NotImplementedError
+    model = WorkTypeGetRequest.from_dict(body)
+    row = await request.sdb.fetch_one(select([WorkType]).where(and_(
+        WorkType.account_id == model.account,
+        WorkType.name == model.name,
+    )))
+    if row is None:
+        raise ResponseError(NotFoundError(f'Work type "{model.name}" does not exist.'))
+    await request.sdb.execute(delete(WorkType).where(and_(
+        WorkType.account_id == model.account,
+        WorkType.name == model.name,
+    )))
+    return web.Response()
 
 
 async def list_work_types(request: AthenianWebRequest, id: int) -> web.Response:
     """List the current work types - rule sets to group PRs, releases, etc. together."""
-    raise NotImplementedError
+    account = id
+    async with request.sdb.connection() as sdb_conn:
+        await get_user_account_status(request.uid, account, sdb_conn, request.cache)
+        rows = await sdb_conn.fetch_all(select([WorkType]).where(WorkType.account_id == account))
+    models = [WebWorkType(
+        name=row[WorkType.name.name],
+        color=row[WorkType.color.name],
+        rules=[WorkTypeRule(name, args) for name, args in row[WorkType.rules.name]],
+    ) for row in rows]
+    return model_response(models)
