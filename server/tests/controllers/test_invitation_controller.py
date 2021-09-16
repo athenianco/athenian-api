@@ -12,7 +12,7 @@ from athenian.api.controllers.invitation_controller import admin_backdoor, decod
 from athenian.api.models.metadata.github import FetchProgress
 from athenian.api.models.state.models import Account, AccountFeature, AccountGitHubAccount, \
     AccountJiraInstallation, Feature, FeatureComponent, God, Invitation, ReleaseSetting, \
-    RepositorySet, UserAccount, UserToken
+    RepositorySet, UserAccount, UserToken, WorkType
 
 
 async def clean_state(sdb: databases.Database) -> int:
@@ -24,6 +24,7 @@ async def clean_state(sdb: databases.Database) -> int:
     await sdb.execute(delete(UserToken))
     await sdb.execute(delete(ReleaseSetting))
     await sdb.execute(delete(AccountJiraInstallation))
+    await sdb.execute(delete(WorkType))
     await sdb.execute(delete(Account).where(Account.id != admin_backdoor))
     if sdb.url.dialect != "sqlite":
         await sdb.execute("ALTER SEQUENCE accounts_id_seq RESTART;")

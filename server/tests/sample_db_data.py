@@ -20,7 +20,8 @@ from athenian.api.models.metadata.github import Base as GithubBase, CheckRunByPR
 from athenian.api.models.metadata.jira import Base as JiraBase
 from athenian.api.models.persistentdata.models import DeployedComponent, DeploymentNotification
 from athenian.api.models.state.models import Account, AccountFeature, AccountGitHubAccount, \
-    AccountJiraInstallation, Feature, FeatureComponent, Invitation, RepositorySet, UserAccount
+    AccountJiraInstallation, Feature, FeatureComponent, Invitation, RepositorySet, UserAccount, \
+    WorkType
 
 
 def fill_metadata_session(session: sqlalchemy.orm.Session):
@@ -200,6 +201,8 @@ def fill_state_session(session: sqlalchemy.orm.Session):
     session.add(AccountFeature(account_id=1, feature_id=1001, enabled=True,
                                parameters=28))
     session.add(AccountJiraInstallation(id=1, account_id=1))
+    session.add(WorkType(account_id=1, name="Bug Fixing", color="FF0000", rules=[[
+        "pull_request/label_include", ["bug", "fix"]]]))
     if os.getenv("WITH_PRELOADING", "0") == "1":
         session.add(Feature(id=2000,
                             name=f"{METRIC_ENTRIES_VARIATIONS_PREFIX['github']}preloading",

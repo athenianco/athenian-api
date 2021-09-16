@@ -3,15 +3,15 @@ import json
 
 from aiohttp.web_runner import GracefulExit
 import pytest
-from sqlalchemy import delete, insert, select, update
+from sqlalchemy import and_, delete, insert, select, update
 
 from athenian.api import auth
 from athenian.api.async_utils import read_sql_query
 from athenian.api.models.metadata.github import NodeUser
 from athenian.api.models.state.models import AccountGitHubAccount, MappedJIRAIdentity, \
-    ReleaseSetting, RepositorySet, UserAccount
+    ReleaseSetting, RepositorySet, UserAccount, WorkType
 from athenian.api.models.web import JIRAProject, MappedJIRAIdentity as WebMappedJIRAIdentity, \
-    ReleaseMatchSetting, ReleaseMatchStrategy
+    ReleaseMatchSetting, ReleaseMatchStrategy, WorkType as WebWorkType
 from athenian.api.serialization import FriendlyJson
 
 
@@ -488,3 +488,222 @@ async def test_set_jira_identities_nasty_input(client, headers, account, github,
     response = await client.request(
         method="PATCH", path="/v1/settings/jira/identities", json=body, headers=headers)
     assert response.status == code
+
+
+async def test_get_work_type_smoke(client, headers):
+    body = {
+        "account": 1,
+        "name": "Bug Fixing",
+    }
+    response = await client.request(
+        method="POST", path="/v1/settings/work_type/get", json=body, headers=headers)
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    wt = WebWorkType.from_dict(FriendlyJson.loads(body))
+    assert wt.to_dict() == {
+        "color": "FF0000",
+        "name": "Bug Fixing",
+        "rules": [{"body": ["bug", "fix"], "name": "pull_request/label_include"}],
+    }
+
+
+@pytest.mark.parametrize("body, status", [
+    ({"account": 2, "name": "Bug Fixing"}, 404),
+    ({"account": 3, "name": "Bug Fixing"}, 404),
+    ({"account": 1, "name": "Bug Making"}, 404),
+    ({"account": 1, "name": ""}, 400),
+    ({"account": 1}, 400),
+])
+async def test_get_work_type_nasty_input(client, headers, body, status):
+    response = await client.request(
+        method="POST", path="/v1/settings/work_type/get", json=body, headers=headers)
+    body = (await response.read()).decode("utf-8")
+    assert response.status == status, "Response body is : " + body
+
+
+async def test_delete_work_type_smoke(client, headers, sdb):
+    body = {
+        "account": 1,
+        "name": "Bug Fixing",
+    }
+    response = await client.request(
+        method="POST", path="/v1/settings/work_type/delete", json=body, headers=headers)
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    assert body == ""
+    row = await sdb.fetch_one(select([WorkType]).where(and_(
+        WorkType.account_id == 1,
+        WorkType.name == "Bug Fixing",
+    )))
+    assert row is None
+
+
+@pytest.mark.parametrize("body, status", [
+    ({"account": 2, "name": "Bug Fixing"}, 404),
+    ({"account": 3, "name": "Bug Fixing"}, 404),
+    ({"account": 1, "name": "Bug Making"}, 404),
+    ({"account": 1, "name": ""}, 400),
+    ({"account": 1}, 400),
+])
+async def test_delete_work_type_nasty_input(client, headers, body, status, sdb):
+    response = await client.request(
+        method="POST", path="/v1/settings/work_type/delete", json=body, headers=headers)
+    body = (await response.read()).decode("utf-8")
+    assert response.status == status, "Response body is : " + body
+    row = await sdb.fetch_one(select([WorkType]).where(and_(
+        WorkType.account_id == 1,
+        WorkType.name == "Bug Fixing",
+    )))
+    assert row is not None
+
+
+async def test_list_work_types_smoke(client, headers):
+    response = await client.request(
+        method="GET", path="/v1/settings/work_types/1", headers=headers)
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    models = [WebWorkType.from_dict(i) for i in FriendlyJson.loads(body)]
+    assert len(models) == 1
+    assert models[0].to_dict() == {
+        "color": "FF0000",
+        "name": "Bug Fixing",
+        "rules": [{"body": ["bug", "fix"], "name": "pull_request/label_include"}],
+    }
+
+
+@pytest.mark.parametrize("acc, status", [(2, 200), (3, 404)])
+async def test_list_work_types_nasty_input(client, headers, acc, status):
+    response = await client.request(
+        method="GET", path=f"/v1/settings/work_types/{acc}", headers=headers)
+    body = (await response.read()).decode("utf-8")
+    assert response.status == status, "Response body is : " + body
+    if status == 200:
+        assert body == "[]"
+
+
+async def test_set_work_type_create(client, headers, sdb):
+    body = {
+        "account": 1,
+        "work_type": {
+            "name": "Bug Making",
+            "color": "00ff00",
+            "rules": [{
+                "name": "xxx",
+                "body": {"arg": 777},
+            }],
+        },
+    }
+    response = await client.request(
+        method="PUT", path="/v1/settings/work_type", json=body, headers=headers)
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    wt1 = WebWorkType.from_dict(FriendlyJson.loads(body))
+    assert wt1.to_dict() == {
+        "color": "00ff00",
+        "name": "Bug Making",
+        "rules": [{"body": {"arg": 777}, "name": "xxx"}],
+    }
+    row = await sdb.fetch_one(select([WorkType.name, WorkType.color, WorkType.rules]).where(and_(
+        WorkType.account_id == 1,
+        WorkType.name == "Bug Making",
+    )))
+    assert dict(row) == {
+        "color": "00ff00",
+        "name": "Bug Making",
+        "rules": [["xxx", {"arg": 777}]],
+    }
+
+
+async def test_set_work_type_update(client, headers, sdb):
+    body = {
+        "account": 1,
+        "work_type": {
+            "name": "Bug Fixing",
+            "color": "00ff00",
+            "rules": [{
+                "name": "xxx",
+                "body": {"arg": 777},
+            }],
+        },
+    }
+    response = await client.request(
+        method="PUT", path="/v1/settings/work_type", json=body, headers=headers)
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    wt1 = WebWorkType.from_dict(FriendlyJson.loads(body))
+    assert wt1.to_dict() == {
+        "color": "00ff00",
+        "name": "Bug Fixing",
+        "rules": [{"body": {"arg": 777}, "name": "xxx"}],
+    }
+    rows = await sdb.fetch_all(select([WorkType.name, WorkType.color, WorkType.rules]).where(and_(
+        WorkType.account_id == 1,
+        WorkType.name == "Bug Fixing",
+    )))
+    assert len(rows) == 1
+    assert dict(rows[0]) == {
+        "color": "00ff00",
+        "name": "Bug Fixing",
+        "rules": [["xxx", {"arg": 777}]],
+    }
+
+
+@pytest.mark.parametrize("acc, name, color, status", [
+    (3, "Bug Fixing", {"color": "00FF00"}, 404),
+    (1, "", {"color": "00FF00"}, 400),
+    (1, "Bug Fixing", {}, 400),
+])
+async def test_set_work_type_nasty_input(client, headers, sdb, acc, name, color, status):
+    body = {
+        "account": acc,
+        "work_type": {
+            "name": name,
+            **color,
+            "rules": [{
+                "name": "xxx",
+                "body": {"arg": 777},
+            }],
+        },
+    }
+    response = await client.request(
+        method="PUT", path="/v1/settings/work_type", json=body, headers=headers)
+    body = (await response.read()).decode("utf-8")
+    assert response.status == status, "Response body is : " + body
+    rows = await sdb.fetch_all(select([WorkType.name, WorkType.color, WorkType.rules]).where(and_(
+        WorkType.name == "Bug Fixing",
+    )))
+    assert len(rows) == 1
+    assert dict(rows[0]) == {
+        "color": "FF0000",
+        "name": "Bug Fixing",
+        "rules": [["pull_request/label_include", ["bug", "fix"]]],
+    }
+
+
+async def test_set_work_type_empty_rules(client, headers, sdb):
+    body = {
+        "account": 2,
+        "work_type": {
+            "name": "Bug Fixing",
+            "color": "0000ee",
+            "rules": [],
+        },
+    }
+    response = await client.request(
+        method="PUT", path="/v1/settings/work_type", json=body, headers=headers)
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    rows = await sdb.fetch_all(
+        select([WorkType.account_id, WorkType.name, WorkType.color, WorkType.rules])
+        .where(and_(
+            WorkType.name == "Bug Fixing",
+        )))
+    assert len(rows) == 2
+    rows = [row for row in rows if row[WorkType.account_id.name] == 2]
+    assert len(rows) == 1
+    assert dict(rows[0]) == {
+        "account_id": 2,
+        "color": "0000ee",
+        "name": "Bug Fixing",
+        "rules": [],
+    }
