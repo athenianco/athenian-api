@@ -540,6 +540,8 @@ class MetricEntriesCalculator:
                                              prefixer: PrefixerPromise,
                                              fresh: bool,
                                              with_jira_map: bool,
+                                             branches: Optional[pd.DataFrame] = None,
+                                             default_branches: Optional[Dict[str, str]] = None,
                                              ) -> List[PullRequestFacts]:
         """
         Calculate facts about pull request on GitHub.
@@ -563,6 +565,8 @@ class MetricEntriesCalculator:
             prefixer,
             fresh,
             with_jira_map,
+            branches=branches,
+            default_branches=default_branches,
         ))[0]
 
     @sentry_span
@@ -598,10 +602,13 @@ class MetricEntriesCalculator:
                                               prefixer: PrefixerPromise,
                                               fresh: bool,
                                               with_jira_map: bool,
+                                              branches: Optional[pd.DataFrame],
+                                              default_branches: Optional[Dict[str, str]],
                                               ) -> Tuple[List[PullRequestFacts], bool]:
         assert isinstance(repositories, set)
-        branches, default_branches = await self.branch_miner.extract_branches(
-            repositories, self._meta_ids, self._mdb, self._cache)
+        if branches is None or default_branches is None:
+            branches, default_branches = await self.branch_miner.extract_branches(
+                repositories, self._meta_ids, self._mdb, self._cache)
         precomputed_tasks = [
             self.done_prs_facts_loader.load_precomputed_done_facts_filters(
                 time_from, time_to, repositories, participants, labels, default_branches,

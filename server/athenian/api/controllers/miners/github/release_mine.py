@@ -327,6 +327,7 @@ async def mine_releases(repos: Iterable[str],
                 store_precomputed_release_facts(
                     data, default_branches, settings, account, pdb),
                 "store_precomputed_release_facts(%d)" % len(data))
+        log.info("mined %d new releases", len(data))
         return data
 
     tasks = [main_flow()]

@@ -31,6 +31,7 @@ from athenian.api.controllers.miners.github.bots import Bots
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.contributors import mine_contributors
 from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_inrange
+from athenian.api.controllers.miners.github.deployment import mine_deployments
 from athenian.api.controllers.miners.github.precomputed_prs import \
     delete_force_push_dropped_prs
 from athenian.api.controllers.miners.github.release_mine import mine_releases
@@ -177,14 +178,14 @@ def main():
             log.info("Heating reposet %d of account %d (%d repos)",
                      reposet.id, reposet.owner_id, len(repos))
             try:
-                log.info("Mining all the releases")
+                log.info("Mining the releases")
                 branches, default_branches = await BranchMiner.extract_branches(
                     repos, meta_ids, mdb, None)
                 releases, _, _ = await mine_releases(
                     repos, {}, branches, default_branches, no_time_from, time_to,
                     LabelFilter.empty(), JIRAFilter.empty(), settings, prefixer, reposet.owner_id,
                     meta_ids, mdb, pdb, rdb, None, force_fresh=True)
-                del default_branches
+                await wait_deferred()
                 branches_count = len(branches)
                 releases_by_tag = sum(
                     1 for r in releases if r[1].matched_by == ReleaseMatch.tag)
@@ -217,6 +218,8 @@ def main():
                     prefixer,
                     True,
                     False,
+                    branches=branches,
+                    default_branches=default_branches,
                 )
                 if not reposet.precomputed and slack is not None:
                     prs = len(facts)
@@ -224,6 +227,15 @@ def main():
                     prs_merged = sum((not f.done and f.merged is not None) for f in facts)
                     prs_open = sum((f.closed is None) for f in facts)
                 del facts  # free some memory
+                log.info("Mining deployments")
+                prefixer = await prefixer.load()
+                repo_nodes = [prefixer.repo_name_to_node[r] for r in repos
+                              if r in prefixer.repo_name_to_node]
+                await mine_deployments(
+                    repo_nodes, {}, no_time_from, time_to, [], [], {}, {}, LabelFilter.empty(),
+                    JIRAFilter.empty(), settings, branches, default_branches,
+                    prefixer.as_promise(), reposet.owner_id, meta_ids, mdb, pdb, rdb,
+                    None)  # yes, disable the cache
                 if not reposet.precomputed:
                     if slack is not None:
                         jira_link = await generate_jira_invitation_link(reposet.owner_id, sdb)
