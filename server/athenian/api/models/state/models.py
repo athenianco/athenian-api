@@ -257,3 +257,19 @@ class MappedJIRAIdentity(create_time_mixin(created_at=True, updated_at=True), Ba
     github_user_id = Column(BigInteger(), primary_key=True)
     jira_user_id = Column(Text())
     confidence = Column(Float())
+
+
+class WorkType(create_time_mixin(created_at=True, updated_at=True), Base):
+    """Work type - a set of rules to group the PRs, releases, etc."""
+
+    __tablename__ = "work_types"
+    __table_args__ = (UniqueConstraint("account_id", "name", name="uc_work_type"),
+                      {"sqlite_autoincrement": True})
+
+    id = Column(BigInteger().with_variant(Integer(), "sqlite"), primary_key=True)
+    account_id = Column(Integer(),
+                        ForeignKey("accounts.id", name="fk_work_type_account"),
+                        nullable=False)
+    name = Column(Text(), nullable=False)
+    color = Column(String(6), nullable=False)
+    rules = Column(JSON, nullable=False)
