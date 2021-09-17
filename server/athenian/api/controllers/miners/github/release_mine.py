@@ -336,7 +336,15 @@ async def mine_releases(repos: Iterable[str],
             commits_authors[commits_authors_nz],
             prs_authors[prs_authors_nz],
             mentioned_authors]))
-        all_authors = [prefixer.user_node_to_login[u] for u in all_authors]
+        user_node_to_login = prefixer.user_node_to_login
+        all_author_logins = []
+        for u in all_authors:
+            try:
+                all_author_logins.append(user_node_to_login[u])
+            except KeyError:
+                log.error("Missing user node in metadata for account %d / %s: %d",
+                          account, meta_ids, u)
+        all_authors = all_author_logins
         tasks.insert(0, mine_user_avatars(all_authors, UserAvatarKeys.NODE, meta_ids, mdb, cache))
     if (with_pr_titles or labels) and all_pr_node_ids:
         all_pr_node_ids = np.concatenate(all_pr_node_ids)
