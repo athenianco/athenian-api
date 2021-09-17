@@ -18,7 +18,10 @@ def main():
         "FROM jira_identity_mapping_old").fetchall()
     node_ids = defaultdict(set)
     for row in jira_rows:
-        node_ids[meta_ids[row[1]]].add(row[0])
+        try:
+            node_ids[meta_ids[row[1]]].add(row[0])
+        except KeyError:
+            continue
     print(f"Mapping {sum(len(n) for n in node_ids.values())} IDs to new format "
           f"in {len(node_ids)} batches", file=sys.stderr)
     metadata_engine = create_engine(metadata_uri)
@@ -33,7 +36,7 @@ def main():
     values = []
     for row in jira_rows:
         try:
-            values.append((mapping[row[1]][row[0]], *row[1:]))
+            values.append((mapping[meta_ids[row[1]]][row[0]], *row[1:]))
         except KeyError:
             print(f"Failed to map {row[1]}/{row[0]}")
     sql = ", ".join("(%d, %d, %r, %f, '%s', '%s')" % v for v in values)
