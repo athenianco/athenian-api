@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Optional
 
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.linked_jira_issue import LinkedJIRAIssue
@@ -7,11 +7,11 @@ from athenian.api.models.web.linked_jira_issue import LinkedJIRAIssue
 class _IncludedJIRAIssues(Model):
     """Mentioned JIRA issues."""
 
-    openapi_types = {"jira": Dict[str, LinkedJIRAIssue]}
+    openapi_types = {"jira": Optional[Dict[str, LinkedJIRAIssue]]}
     attribute_map = {"jira": "jira"}
     __enable_slots__ = False
 
-    def __init__(self, jira: Dict[str, LinkedJIRAIssue] = None):
+    def __init__(self, jira: Optional[Dict[str, LinkedJIRAIssue]] = None):
         """IncludedJIRAIssues - a model defined in OpenAPI
 
         :param jira: The jira of this IncludedJIRAIssues.
@@ -19,7 +19,7 @@ class _IncludedJIRAIssues(Model):
         self._jira = jira
 
     @property
-    def jira(self) -> Dict[str, LinkedJIRAIssue]:
+    def jira(self) -> Optional[Dict[str, LinkedJIRAIssue]]:
         """Gets the jira of this IncludedJIRAIssues.
 
         Mapping JIRA issue ID -> details.
@@ -29,16 +29,13 @@ class _IncludedJIRAIssues(Model):
         return self._jira
 
     @jira.setter
-    def jira(self, jira: Dict[str, LinkedJIRAIssue]):
+    def jira(self, jira: Optional[Dict[str, LinkedJIRAIssue]]):
         """Sets the jira of this IncludedJIRAIssues.
 
         Mapping JIRA issue ID -> details.
 
         :param jira: The jira of this IncludedJIRAIssues.
         """
-        if jira is None:
-            raise ValueError("Invalid value for `jira`, must not be `None`")
-
         self._jira = jira
 
 
