@@ -12,6 +12,7 @@ from sqlalchemy import delete, insert, select
 
 from athenian.api.cache import CACHE_VAR_NAME, setup_cache_metrics
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.controllers.miners.github.deployment import mine_deployments
 from athenian.api.controllers.miners.github.release_mine import mine_releases
 from athenian.api.controllers.settings import ReleaseMatch
 from athenian.api.defer import wait_deferred, with_defer
@@ -19,7 +20,9 @@ from athenian.api.models.metadata.github import Release
 from athenian.api.models.persistentdata.models import ReleaseNotification
 from athenian.api.models.precomputed.models import GitHubRelease
 from athenian.api.models.state.models import AccountJiraInstallation, ReleaseSetting
-from athenian.api.models.web import CommitsList, FilteredCodeCheckRuns, FilteredLabel, \
+from athenian.api.models.web import CommitsList, DeployedComponent, DeploymentNotification, \
+    FilteredCodeCheckRuns, \
+    FilteredLabel, \
     PullRequestEvent, PullRequestParticipant, PullRequestSet, PullRequestStage, ReleaseSet
 from athenian.api.models.web.diffed_releases import DiffedReleases
 from athenian.api.models.web.filtered_deployments import FilteredDeployments
@@ -1028,6 +1031,38 @@ async def test_filter_prs_exclude_inactive(client, headers):
     assert len(prs.data) == 6
 
 
+@pytest.mark.filter_pull_requests
+@with_defer
+async def test_filter_prs_deployments(
+        client, headers, mdb, pdb, rdb, release_match_setting_tag, branches, default_branches,
+        prefixer_promise):
+    time_from = datetime(year=2019, month=6, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2019, month=12, day=1, tzinfo=timezone.utc)
+    await mine_deployments(
+        [40550], {},
+        time_from, time_to,
+        ["production", "staging"],
+        [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        release_match_setting_tag,
+        branches, default_branches, prefixer_promise,
+        1, (6366825,), mdb, pdb, rdb, None)
+    await wait_deferred()
+    body = {
+        "date_from": "2019-06-13",
+        "date_to": "2019-12-01",
+        "account": 1,
+        "in": [],
+        "stages": [PullRequestStage.DONE],
+        "exclude_inactive": False,
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
+    text = (await response.read()).decode("utf-8")
+    assert response.status == 200, text
+    prs = PullRequestSet.from_dict(json.loads(text))
+    validate_pr_deployments(prs)
+
+
 def _test_cached_mdb_pdb(func):
     async def wrapped_test_cached_mdb(**kwargs):
         await func(**kwargs)
@@ -1440,6 +1475,64 @@ async def test_get_prs_nasty_input(client, headers, account, repo, numbers, stat
         method="POST", path="/v1/get/pull_requests", headers=headers, json=body)
     response_body = json.loads((await response.read()).decode("utf-8"))
     assert response.status == status, response_body
+
+
+@with_defer
+async def test_get_prs_deployments(
+        client, headers, mdb, pdb, rdb, release_match_setting_tag, branches, default_branches,
+        prefixer_promise):
+    time_from = datetime(year=2019, month=6, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2019, month=12, day=1, tzinfo=timezone.utc)
+    await mine_deployments(
+        [40550], {},
+        time_from, time_to,
+        ["production", "staging"],
+        [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        release_match_setting_tag,
+        branches, default_branches, prefixer_promise,
+        1, (6366825,), mdb, pdb, rdb, None)
+    await wait_deferred()
+    body = {
+        "account": 1,
+        "prs": [
+            {
+                "repository": "github.com/src-d/go-git",
+                "numbers": [1160, 1179],
+            },
+        ],
+    }
+    response = await client.request(
+        method="POST", path="/v1/get/pull_requests", headers=headers, json=body)
+    response_body = json.loads((await response.read()).decode("utf-8"))
+    assert response.status == 200, response_body
+    prs = PullRequestSet.from_dict(response_body)
+    validate_pr_deployments(prs)
+
+
+def validate_pr_deployments(prs: PullRequestSet) -> None:
+    prs_have_deps = False
+    for pr in prs.data:
+        if pr.deployments is not None:
+            assert len(pr.deployments) == 1 and pr.deployments[0] == "Dummy deployment", pr
+            prs_have_deps = True
+    assert prs_have_deps
+    assert prs.include.deployments == {
+        "Dummy deployment": DeploymentNotification(
+            components=[
+                DeployedComponent(
+                    repository="github.com/src-d/go-git",
+                    reference="v4.13.1 (0d1a009cbb604db18be960db5f1525b99a55d727)",
+                ),
+            ],
+            environment="production",
+            name="Dummy deployment",
+            url=None,
+            date_started=datetime(2019, 11, 1, 12, 0, tzinfo=timezone.utc),
+            date_finished=datetime(2019, 11, 1, 12, 15, tzinfo=timezone.utc),
+            conclusion="SUCCESS",
+            labels=None,
+        ),
+    }
 
 
 @pytest.mark.filter_labels
@@ -2087,3 +2180,25 @@ async def test_filter_deployments_smoke(client, headers):
         "lines_prs": {"github.com/src-d/go-git": 153966},
         "prs": {"github.com/src-d/go-git": 314},
     }
+
+
+@pytest.mark.parametrize("account, date_from, date_to, repos, status", [
+    (1, "2018-01-12", "2020-01-12", ["github.com/athenianco/athenian-api"], 403),
+    (3, "2018-01-12", "2020-01-12", ["github.com/src-d/go-git"], 404),
+    (1, "2020-01-12", "2018-01-12", ["github.com/src-d/go-git"], 400),
+    (1, "2018-01-12", "2020-01-12", None, 400),
+    (2, "2018-01-12", "2020-01-12", [], 422),
+    (None, "2018-01-12", "2020-01-12", ["github.com/src-d/go-git"], 400),
+])
+async def test_filter_deployments_nasty_input(
+        client, headers, account, date_from, date_to, repos, status):
+    body = {
+        "account": account,
+        "date_from": date_from,
+        "date_to": date_to,
+        "in": repos,
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/deployments", headers=headers, json=body)
+    response_text = (await response.read()).decode("utf-8")
+    assert response.status == status, response_text

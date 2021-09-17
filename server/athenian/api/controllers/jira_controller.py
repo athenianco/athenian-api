@@ -561,9 +561,9 @@ async def _issue_flow(return_: Set[str],
         related_branches = branches.take(np.nonzero(np.in1d(
             branches[Branch.repository_full_name.name].values.astype("S"),
             prs_df[PullRequest.repository_full_name.name].unique().astype("S")))[0])
-        mined_prs, dfs, facts, _ = await unwrap_pull_requests(
+        mined_prs, dfs, facts, _, _ = await unwrap_pull_requests(
             prs_df, facts, ambiguous, False, related_branches, default_branches, release_settings,
-            prefixer, account, meta_ids, mdb, pdb, rdb, cache)
+            prefixer, account, meta_ids, mdb, pdb, rdb, cache, with_deployments=False)
         miner = PullRequestListMiner(
             mined_prs, dfs, facts, set(), set(),
             datetime(1970, 1, 1, tzinfo=timezone.utc), datetime.now(timezone.utc), False)

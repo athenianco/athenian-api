@@ -33,9 +33,9 @@ from athenian.api.controllers.miners.github.release_mine import \
     diff_releases as mine_diff_releases, mine_releases, mine_releases_by_name
 from athenian.api.controllers.miners.github.repository import mine_repositories
 from athenian.api.controllers.miners.github.user import mine_user_avatars, UserAvatarKeys
-from athenian.api.controllers.miners.types import DeploymentConclusion, DeploymentFacts, \
-    PRParticipants, \
-    PRParticipationKind, PullRequestEvent, PullRequestListItem, PullRequestStage, ReleaseFacts
+from athenian.api.controllers.miners.types import Deployment, DeploymentConclusion, \
+    DeploymentFacts, PRParticipants, PRParticipationKind, PullRequestEvent, PullRequestListItem, \
+    PullRequestStage, ReleaseFacts
 from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
 from athenian.api.controllers.release import extract_release_participants
 from athenian.api.controllers.reposet import resolve_repos
@@ -47,14 +47,15 @@ from athenian.api.models.metadata.jira import Epic, Issue
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
     DeploymentNotification
 from athenian.api.models.web import BadRequestError, Commit, CommitSignature, CommitsList, \
-    DeployedComponent as WebDeployedComponent, DeploymentAnalysisCode, DeveloperSummary, \
+    DeployedComponent as WebDeployedComponent, DeploymentAnalysisCode, \
+    DeploymentNotification as WebDeploymentNotification, DeveloperSummary, \
     DeveloperUpdates, FilterCommitsRequest, FilterContributorsRequest, FilterDeploymentsRequest, \
     FilteredDeployment, FilteredLabel, FilteredRelease, FilterLabelsRequest, \
     FilterPullRequestsRequest, FilterReleasesRequest, FilterRepositoriesRequest, ForbiddenError, \
     GetPullRequestsRequest, GetReleasesRequest, IncludedNativeUser, IncludedNativeUsers, \
     InvalidRequestError, LinkedJIRAIssue, PullRequest as WebPullRequest, PullRequestLabel, \
-    PullRequestParticipant, PullRequestSet, ReleasedPullRequest, ReleaseSet, ReleaseSetInclude, \
-    StageTimings
+    PullRequestParticipant, PullRequestSet, PullRequestSetInclude, ReleasedPullRequest, \
+    ReleaseSet, ReleaseSetInclude, StageTimings
 from athenian.api.models.web.code_check_run_statistics import CodeCheckRunStatistics
 from athenian.api.models.web.diff_releases_request import DiffReleasesRequest
 from athenian.api.models.web.diffed_releases import DiffedReleases
@@ -206,12 +207,13 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     time_from, time_to, repos, events, stages, participants, labels, jira, settings, prefixer, \
         meta_ids = await resolve_filter_prs_parameters(filt, request)
     updated_min, updated_max = _bake_updated_min_max(filt)
-    prs = await filter_pull_requests(
+    prs, deployments = await filter_pull_requests(
         events, stages, time_from, time_to, repos, participants, labels, jira,
         filt.exclude_inactive, settings, updated_min, updated_max,
         prefixer, filt.account, meta_ids, request.mdb, request.pdb, request.rdb, request.cache)
     prefixer = await prefixer.load()  # no-op
-    return await _build_github_prs_response(prs, prefixer, meta_ids, request.mdb, request.cache)
+    return await _build_github_prs_response(
+        prs, deployments, prefixer, meta_ids, request.mdb, request.cache)
 
 
 def _bake_updated_min_max(filt: FilterPullRequestsRequest) -> Tuple[datetime, datetime]:
@@ -487,11 +489,12 @@ async def get_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     settings, meta_ids, prs_by_repo = await _check_github_repos(
         request, body.account, prs_by_repo, ".prs")
     prefixer = await Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
-    prs = await fetch_pull_requests(
+    prs, deployments = await fetch_pull_requests(
         prs_by_repo, settings, prefixer, body.account, meta_ids,
         request.mdb, request.pdb, request.rdb, request.cache)
     prefixer = await prefixer.load()  # no-op
-    return await _build_github_prs_response(prs, prefixer, meta_ids, request.mdb, request.cache)
+    return await _build_github_prs_response(
+        prs, deployments, prefixer, meta_ids, request.mdb, request.cache)
 
 
 async def _check_github_repos(request: AthenianWebRequest,
@@ -533,18 +536,42 @@ async def _check_github_repos(request: AthenianWebRequest,
 
 @sentry_span
 async def _build_github_prs_response(prs: List[PullRequestListItem],
+                                     deployments: Dict[str, Deployment],
                                      prefixer: Prefixer,
                                      meta_ids: Tuple[int, ...],
                                      mdb: ParallelDatabase,
                                      cache: Optional[aiomcache.Client],
                                      ) -> web.Response:
     log = logging.getLogger(f"{metadata.__package__}._build_github_prs_response")
+    repo_node_to_prefixed_name = prefixer.repo_node_to_prefixed_name.get
     web_prs = sorted(web_pr_from_struct(pr, prefixer, log) for pr in prs)
     users = set(chain.from_iterable(chain.from_iterable(pr.participants.values()) for pr in prs))
     avatars = await mine_user_avatars(users, UserAvatarKeys.PREFIXED_LOGIN, meta_ids, mdb, cache)
-    model = PullRequestSet(include=IncludedNativeUsers(users={
-        login: IncludedNativeUser(avatar=avatar) for login, avatar in avatars
-    }), data=web_prs)
+    model = PullRequestSet(include=PullRequestSetInclude(
+        users={
+            login: IncludedNativeUser(avatar=avatar) for login, avatar in avatars
+        },
+        deployments={
+            key: WebDeploymentNotification(
+                name=val.name,
+                environment=val.environment,
+                conclusion=val.conclusion,
+                url=val.url,
+                date_started=val.started_at,
+                date_finished=val.finished_at,
+                components=[
+                    WebDeployedComponent(
+                        repository=repo_node_to_prefixed_name(c.repository_id),
+                        reference=f"{c.reference} ({c.sha})"
+                        if not c.sha.startswith(c.reference) else c.sha,
+                    )
+                    for c in val.components
+                ],
+                labels=val.labels,
+            )
+            for key, val in sorted(deployments.items())
+        } or None,
+    ), data=web_prs)
     return model_response(model)
 
 

@@ -1,4 +1,5 @@
 import asyncio
+from dataclasses import fields
 from datetime import datetime, timedelta, timezone
 import logging
 import pickle
@@ -30,6 +31,7 @@ from athenian.api.controllers.miners.github.check_run import mine_check_runs
 from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_COLUMNS, \
     fetch_precomputed_commit_history_dags, fetch_repository_commits_no_branch_dates
 from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_inrange
+from athenian.api.controllers.miners.github.deployment import load_included_deployments
 from athenian.api.controllers.miners.github.precomputed_prs import \
     DonePRFactsLoader, MergedPRFactsLoader, remove_ambiguous_prs, \
     store_merged_unreleased_pull_request_facts, store_open_pull_request_facts, \
@@ -38,16 +40,15 @@ from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRe
     PRDataFrames, PullRequestFactsMiner, PullRequestMiner, ReviewResolution
 from athenian.api.controllers.miners.github.release_load import dummy_releases_df, ReleaseLoader
 from athenian.api.controllers.miners.github.release_match import load_commit_dags
-from athenian.api.controllers.miners.types import Label, MinedPullRequest, PRParticipants, \
-    PullRequestEvent, PullRequestFacts, PullRequestJIRAIssueItem, PullRequestListItem, \
-    PullRequestStage
+from athenian.api.controllers.miners.types import Deployment, Label, MinedPullRequest, \
+    PRParticipants, PullRequestEvent, PullRequestFacts, PullRequestJIRAIssueItem, \
+    PullRequestListItem, PullRequestStage
 from athenian.api.controllers.prefixer import PrefixerPromise
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.db import add_pdb_misses, ParallelDatabase, set_pdb_hits, set_pdb_misses
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import CheckRun, PullRequest, PullRequestCommit, \
-    PullRequestLabel, \
-    PullRequestReview, PullRequestReviewComment, Release
+    PullRequestLabel, PullRequestReview, PullRequestReviewComment, Release
 from athenian.api.models.metadata.jira import Issue
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
@@ -239,6 +240,7 @@ class PullRequestListMiner:
                     pr.jiras[Issue.type.name].values,
                 )
             ]
+        deployments = np.sort(pr.deployments.index.values) if len(pr.deployments.index) else None
         return PullRequestListItem(
             node_id=pr_node_id,
             repository=pr.pr[PullRequest.repository_full_name.name],
@@ -269,6 +271,7 @@ class PullRequestListMiner:
             participants=pr.participant_logins(),
             labels=labels,
             jira=jira,
+            deployments=deployments,
         )
 
     def __iter__(self) -> Generator[PullRequestListItem, None, None]:
@@ -411,7 +414,7 @@ async def filter_pull_requests(events: Set[PullRequestEvent],
                                pdb: ParallelDatabase,
                                rdb: ParallelDatabase,
                                cache: Optional[aiomcache.Client],
-                               ) -> List[PullRequestListItem]:
+                               ) -> Tuple[List[PullRequestListItem], Dict[str, Deployment]]:
     """Filter GitHub pull requests according to the specified criteria.
 
     We call _filter_pull_requests() to ignore all but the first result. We've got
@@ -419,17 +422,22 @@ async def filter_pull_requests(events: Set[PullRequestEvent],
     post-load dependencies.
 
     :param repos: List of repository names without the service prefix.
+    :param updated_min: The real time_from since when we fetch PRs.
+    :param updated_max: The real time_to until when we fetch PRs.
     """
-    prs, _, _ = await _filter_pull_requests(
+    prs, deployments, _, _ = await _filter_pull_requests(
         events, stages, time_from, time_to, repos, participants, labels, jira,
         exclude_inactive, release_settings, updated_min, updated_max,
         prefixer, account, meta_ids, mdb, pdb, rdb, cache)
-    return prs
+    return prs, deployments
 
 
-def _postprocess_filtered_prs(result: Tuple[List[PullRequestListItem], LabelFilter, JIRAFilter],
+def _postprocess_filtered_prs(result: Tuple[List[PullRequestListItem],
+                                            Dict[str, Deployment],
+                                            LabelFilter,
+                                            JIRAFilter],
                               labels: LabelFilter, jira: JIRAFilter, **_):
-    prs, cached_labels, cached_jira = result
+    prs, deployments, cached_labels, cached_jira = result
     if (not cached_labels.compatible_with(labels) or
             not cached_jira.compatible_with(jira)):
         raise CancelCache()
@@ -442,7 +450,13 @@ def _postprocess_filtered_prs(result: Tuple[List[PullRequestListItem], LabelFilt
             prs = _filter_by_jira_epics(prs, jira.epics)
         if jira.issue_types:
             prs = _filter_by_jira_issue_types(prs, jira.issue_types)
-    return prs, labels, jira
+    left_deployments = [pr.deployments for pr in prs if pr.deployments]
+    if left_deployments:
+        left_deployments = np.unique(np.concatenate(left_deployments))
+        deployments = {k: deployments[k] for k in left_deployments if k in deployments}
+    else:
+        deployments = {}
+    return prs, deployments, labels, jira
 
 
 def _extract_pr_labels(pr: PullRequestListItem) -> Optional[Set[str]]:
@@ -608,7 +622,10 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
                                 pdb: ParallelDatabase,
                                 rdb: ParallelDatabase,
                                 cache: Optional[aiomcache.Client],
-                                ) -> Tuple[List[PullRequestListItem], LabelFilter, JIRAFilter]:
+                                ) -> Tuple[List[PullRequestListItem],
+                                           Dict[str, Deployment],
+                                           LabelFilter,
+                                           JIRAFilter]:
     assert isinstance(events, set)
     assert isinstance(stages, set)
     assert isinstance(repos, set)
@@ -641,6 +658,10 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
     facts.update(unreleased_facts)
     del unreleased_facts
 
+    deployment_names = pr_miner.dfs.deployments.index.get_level_values(1).unique()
+    deployments = asyncio.create_task(load_included_deployments(
+        deployment_names, account, meta_ids, mdb, rdb, cache),
+        name=f"load_included_deployments({len(deployment_names)})")
     prs = await list_with_yield(pr_miner, "PullRequestMiner.__iter__")
 
     with sentry_sdk.start_span(op="PullRequestFactsMiner.__call__"):
@@ -726,9 +747,9 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
         "PullRequestListMiner.__iter__",
     )
     await _append_merged_with_failed_check_runs(check_runs_task, prs)
-
+    await deployments
     log.debug("return %d PRs", len(prs))
-    return prs, labels, jira
+    return prs, deployments.result(), labels, jira
 
 
 @sentry_span
@@ -751,22 +772,23 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
                               pdb: ParallelDatabase,
                               rdb: ParallelDatabase,
                               cache: Optional[aiomcache.Client],
-                              ) -> List[PullRequestListItem]:
+                              ) -> Tuple[List[PullRequestListItem], Dict[str, Deployment]]:
     """
     List GitHub pull requests by repository and numbers.
 
     :params prs: For each repository name without the prefix, there is a set of PR numbers to list.
     """
-    mined_prs, dfs, facts, _, check_runs_task = await _fetch_pull_requests(
+    mined_prs, dfs, facts, _, deployments_task, check_runs_task = await _fetch_pull_requests(
         prs, release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache)
     if not mined_prs:
-        return []
+        return [], {}
     miner = PullRequestListMiner(
         mined_prs, dfs, facts, set(), set(),
         datetime(1970, 1, 1, tzinfo=timezone.utc), datetime.now(timezone.utc), False)
     prs = await list_with_yield(miner, "PullRequestListMiner.__iter__")
     await _append_merged_with_failed_check_runs(check_runs_task, prs)
-    return prs
+    await deployments_task
+    return prs, deployments_task.result()
 
 
 async def _fetch_pull_requests(prs: Dict[str, Set[int]],
@@ -782,6 +804,7 @@ async def _fetch_pull_requests(prs: Dict[str, Set[int]],
                                           PRDataFrames,
                                           Dict[str, PullRequestFacts],
                                           Dict[str, ReleaseMatch],
+                                          asyncio.Task,
                                           Optional[asyncio.Task]]:
     branches, default_branches = await BranchMiner.extract_branches(prs, meta_ids, mdb, cache)
     filters = [and_(PullRequest.repository_full_name == repo,
@@ -824,10 +847,12 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
                                rdb: ParallelDatabase,
                                cache: Optional[aiomcache.Client],
                                resolve_rebased: bool = True,
+                               with_deployments: bool = True,
                                ) -> Tuple[List[MinedPullRequest],
                                           PRDataFrames,
                                           Dict[str, PullRequestFacts],
-                                          Dict[str, ReleaseMatch]]:
+                                          Dict[str, ReleaseMatch],
+                                          Optional[asyncio.Task]]:
     """
     Fetch all the missing information about PRs in a dataframe.
 
@@ -846,7 +871,16 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
     :return: Everything that's necessary for PullRequestListMiner.
     """
     if prs_df.empty:
-        return [], PRDataFrames(*(pd.DataFrame() for _ in range(9))), {}, {}
+        async def noop():
+            return {}
+
+        return (
+            [],
+            PRDataFrames(*(pd.DataFrame() for _ in fields(PRDataFrames))),
+            {},
+            {},
+            asyncio.create_task(noop(), name="noop") if with_deployments else None,
+        )
     if resolve_rebased:
         dags = await fetch_precomputed_commit_history_dags(
             prs_df[PullRequest.repository_full_name.name].unique(), account, pdb, cache)
@@ -891,6 +925,13 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
     dfs, _, _ = await PullRequestMiner.mine_by_ids(
         prs_df, unreleased, now, releases, matched_bys, branches, default_branches, dags,
         release_settings, prefixer, account, meta_ids, mdb, pdb, cache, with_jira=with_jira)
+    if with_deployments:
+        deployment_names = dfs.deployments.index.get_level_values(1).unique()
+        deployments = asyncio.create_task(load_included_deployments(
+            deployment_names, account, meta_ids, mdb, rdb, cache),
+            name=f"load_included_deployments({len(deployment_names)})")
+    else:
+        deployments = None
     prs = await list_with_yield(PullRequestMiner(dfs), "PullRequestMiner.__iter__")
     for k, v in unreleased.items():
         if k not in facts:
@@ -913,4 +954,4 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
 
     set_pdb_hits(pdb, "fetch_pull_requests/facts", len(filtered_prs) - pdb_misses)
     set_pdb_misses(pdb, "fetch_pull_requests/facts", pdb_misses)
-    return filtered_prs, dfs, facts, matched_bys
+    return filtered_prs, dfs, facts, matched_bys, deployments

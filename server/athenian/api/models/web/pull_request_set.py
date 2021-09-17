@@ -1,15 +1,20 @@
 from typing import List, Optional
 
-from athenian.api.models.web.base_model_ import Model
-from athenian.api.models.web.included_native_users import IncludedNativeUsers
+from athenian.api.models.web.base_model_ import AllOf, Model
+from athenian.api.models.web.included_deployments import _IncludedDeployments
+from athenian.api.models.web.included_native_users import _IncludedNativeUsers
 from athenian.api.models.web.pull_request import PullRequest
+
+
+PullRequestSetInclude = AllOf(_IncludedNativeUsers, _IncludedDeployments,
+                              name="PullRequestSetInclude", module=__name__)
 
 
 class PullRequestSet(Model):
     """List of pull requests together with the participant profile pictures."""
 
     openapi_types = {
-        "include": IncludedNativeUsers,
+        "include": PullRequestSetInclude,
         "data": List[PullRequest],
     }
 
@@ -17,7 +22,7 @@ class PullRequestSet(Model):
 
     def __init__(
         self,
-        include: Optional[IncludedNativeUsers] = None,
+        include: Optional[PullRequestSetInclude] = None,
         data: Optional[List[PullRequest]] = None,
     ):
         """PullRequestSet - a model defined in OpenAPI
@@ -29,7 +34,7 @@ class PullRequestSet(Model):
         self._data = data
 
     @property
-    def include(self) -> IncludedNativeUsers:
+    def include(self) -> PullRequestSetInclude:
         """Gets the include of this PullRequestSet.
 
         :return: The include of this PullRequestSet.
@@ -37,7 +42,7 @@ class PullRequestSet(Model):
         return self._include
 
     @include.setter
-    def include(self, include: IncludedNativeUsers):
+    def include(self, include: PullRequestSetInclude):
         """Sets the include of this PullRequestSet.
 
         :param include: The include of this PullRequestSet.

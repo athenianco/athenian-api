@@ -80,6 +80,7 @@ from athenian.api.models.web.get_releases_request import GetReleasesRequest
 from athenian.api.models.web.granularity import Granularity, GranularityMixin
 from athenian.api.models.web.histogram_definition import HistogramDefinition
 from athenian.api.models.web.histogram_scale import HistogramScale
+from athenian.api.models.web.included_deployments import IncludedDeployments
 from athenian.api.models.web.included_jira_issues import IncludedJIRAIssues
 from athenian.api.models.web.included_native_user import IncludedNativeUser
 from athenian.api.models.web.included_native_users import IncludedNativeUsers
@@ -131,7 +132,7 @@ from athenian.api.models.web.pull_request_metrics_request import PullRequestMetr
 from athenian.api.models.web.pull_request_numbers import PullRequestNumbers
 from athenian.api.models.web.pull_request_pagination_plan import PullRequestPaginationPlan
 from athenian.api.models.web.pull_request_participant import PullRequestParticipant
-from athenian.api.models.web.pull_request_set import PullRequestSet
+from athenian.api.models.web.pull_request_set import PullRequestSet, PullRequestSetInclude
 from athenian.api.models.web.pull_request_stage import PullRequestStage
 from athenian.api.models.web.pull_request_with import PullRequestWith
 from athenian.api.models.web.quantiles import validate_quantiles
