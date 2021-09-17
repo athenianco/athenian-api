@@ -279,14 +279,14 @@ def _compile_dev_logins(developers: Iterable[str],
                         unique: bool = True) -> Union[List[str], Set[str]]:
     devs = []
     prefix = prefix.rstrip("/")
-    for dev in developers:
+    for i, dev in enumerate(developers):
         parts = dev.split("/")
         dev_prefix, dev_login = parts[0], parts[-1]
         if dev_prefix != prefix and dev_prefix != MANNEQUIN_PREFIX:
             raise ResponseError(InvalidRequestError(
-                detail='User prefix "%s" does not match with the repository prefix "%s"' % (
-                    dev_prefix, prefix),
-                pointer=pointer,
+                detail='User "%s" has prefix "%s" that does not match with the repository prefix '
+                       '"%s"' % (dev, dev_prefix, prefix),
+                pointer=pointer + "[%d]" % i,
             ))
         devs.append(dev_login)
     if unique:

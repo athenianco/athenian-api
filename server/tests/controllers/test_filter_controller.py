@@ -1891,7 +1891,7 @@ async def test_diff_releases_commits(
 
     assert len(dr.data["github.com/src-d/go-git"]) == 1
     assert len(dr.include.users) == 8
-    assert len(dr.include.jira) == 0
+    assert dr.include.jira is None
     assert {r.name for r in dr.data["github.com/src-d/go-git"][0].releases} == {
         "047a795df6d5a0d5dd0782297cea918e4a4a6e10", "199317f082082fb8f168ad40a5cae134acfe4a16",
         "31a249d0d5b71bc0f374d3297247d89808263a8b", "36c78b9d1b1eea682703fb1cbb0f4f3144354389",
