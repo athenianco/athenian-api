@@ -33,7 +33,7 @@ except ImportError:
             if not kwargs:
                 return args[0]
             return lambda fn: fn
-from sqlalchemy import create_engine, delete, func, insert
+from sqlalchemy import create_engine, delete, func, insert, select
 from sqlalchemy.ext.declarative import DeclarativeMeta
 from sqlalchemy.orm import sessionmaker
 import uvloop
@@ -59,8 +59,8 @@ from athenian.api.experiments.preloading.entries import PreloadedBranchMiner, \
 from athenian.api.faster_pandas import patch_pandas
 from athenian.api.metadata import __package__ as package
 from athenian.api.models import check_collation, metadata, persistentdata
-from athenian.api.models.metadata.github import Account, Base as GithubBase, PullRequest, \
-    ShadowBase as ShadowGithubBase
+from athenian.api.models.metadata.github import Account, Base as GithubBase, NodeCommit, \
+    PullRequest, ShadowBase as ShadowGithubBase
 from athenian.api.models.metadata.jira import Base as JiraBase
 from athenian.api.models.persistentdata.models import Base as PersistentdataBase
 from athenian.api.models.precomputed.models import GitHubBase as PrecomputedBase
@@ -506,8 +506,25 @@ async def _connect_to_db(addr, loop, request):
 
 
 @pytest.fixture(scope="function")
-async def mdb(metadata_db, loop, request):
+async def _mdb(metadata_db, loop, request):
     return await _connect_to_db(metadata_db, loop, request)
+
+
+@pytest.fixture(scope="function")
+async def mdb(_mdb, worker_id, loop, request):
+    if _mdb.url.dialect != "sqlite":
+        return _mdb
+    # check whether the database is sane
+    # IDK why it happens in the CI sometimes
+    while True:
+        try:
+            # a canary query
+            await _mdb.fetch_val(select([func.count(NodeCommit.graph_id)]))
+            break
+        except OperationalError:
+            metadata_db = _metadata_db(worker_id, True)
+            _mdb = await _connect_to_db(metadata_db, loop, request)
+    return _mdb
 
 
 @pytest.fixture(scope="function")

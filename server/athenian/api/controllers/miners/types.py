@@ -145,6 +145,7 @@ class PullRequestListItem:
     labels: List[Label]
     jira: Optional[List[PullRequestJIRAIssueItem]]
     merged_with_failed_check_runs: Optional[List[str]]
+    deployments: Optional[List[str]]
 
 
 @dataclass(slots=True, frozen=True)
@@ -166,6 +167,7 @@ class MinedPullRequest:
     release: Dict[str, Any]
     labels: pd.DataFrame
     jiras: pd.DataFrame
+    deployments: pd.DataFrame
 
     def participant_logins(self) -> PRParticipants:
         """Collect unique developer logins that are mentioned in this pull request."""
@@ -419,6 +421,29 @@ class DeploymentConclusion(IntEnum):
     SUCCESS = auto()
     FAILURE = auto()
     CANCELLED = auto()
+
+
+@dataclass(slots=True, frozen=True)
+class DeployedComponent:
+    """Deployed repository reference."""
+
+    repository_id: int
+    reference: str
+    sha: str
+
+
+@dataclass(slots=True, frozen=True)
+class Deployment:
+    """Lightweight deployment information used in includes."""
+
+    name: str
+    conclusion: DeploymentConclusion
+    environment: str
+    url: Optional[str]
+    started_at: datetime
+    finished_at: datetime
+    components: List[DeployedComponent]
+    labels: Optional[Dict[str, Any]]
 
 
 @numpy_struct

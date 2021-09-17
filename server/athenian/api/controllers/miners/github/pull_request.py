@@ -10,7 +10,6 @@ from typing import Collection, Dict, Generator, Iterable, Iterator, List, Option
     Set, Tuple
 
 import aiomcache
-import databases
 import numpy as np
 import pandas as pd
 from pandas.core.common import flatten
@@ -37,12 +36,13 @@ from athenian.api.controllers.miners.types import MinedPullRequest, nonemax, non
     PRParticipants, PRParticipationKind, PullRequestFacts
 from athenian.api.controllers.prefixer import PrefixerPromise
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
-from athenian.api.db import add_pdb_misses, DatabaseLike
+from athenian.api.db import add_pdb_misses, DatabaseLike, ParallelDatabase
 from athenian.api.defer import AllEvents, defer
-from athenian.api.models.metadata.github import Base, NodePullRequestJiraIssues, PullRequest, \
-    PullRequestComment, PullRequestCommit, PullRequestLabel, PullRequestReview, \
+from athenian.api.models.metadata.github import Base, NodePullRequestJiraIssues, \
+    PullRequest, PullRequestComment, PullRequestCommit, PullRequestLabel, PullRequestReview, \
     PullRequestReviewComment, PullRequestReviewRequest, PushCommit, Release
 from athenian.api.models.metadata.jira import Component, Issue
+from athenian.api.models.precomputed.models import GitHubPullRequestDeployment
 from athenian.api.tracing import sentry_span
 
 
@@ -59,6 +59,7 @@ class PRDataFrames:
     review_requests: pd.DataFrame
     comments: pd.DataFrame
     labels: pd.DataFrame
+    deployments: pd.DataFrame
 
     def __iter__(self) -> Iterator[pd.DataFrame]:
         """Iterate the contained dataframes."""
@@ -195,9 +196,9 @@ class PullRequestMiner:
                     prefixer: PrefixerPromise,
                     account: int,
                     meta_ids: Tuple[int, ...],
-                    mdb: databases.Database,
-                    pdb: databases.Database,
-                    rdb: databases.Database,
+                    mdb: ParallelDatabase,
+                    pdb: ParallelDatabase,
+                    rdb: ParallelDatabase,
                     cache: Optional[aiomcache.Client],
                     ) -> Tuple[PRDataFrames,
                                Dict[str, Tuple[str, PullRequestFacts]],
@@ -210,9 +211,9 @@ class PullRequestMiner:
         assert isinstance(date_from, date) and not isinstance(date_from, datetime)
         assert isinstance(date_to, date) and not isinstance(date_to, datetime)
         assert isinstance(repositories, set)
-        assert isinstance(mdb, databases.Database)
-        assert isinstance(pdb, databases.Database)
-        assert isinstance(rdb, databases.Database)
+        assert isinstance(mdb, ParallelDatabase)
+        assert isinstance(pdb, ParallelDatabase)
+        assert isinstance(rdb, ParallelDatabase)
         assert (updated_min is None) == (updated_max is None)
         time_from, time_to = (pd.Timestamp(t, tzinfo=timezone.utc) for t in (date_from, date_to))
         if pr_blacklist is not None:
@@ -344,8 +345,8 @@ class PullRequestMiner:
                           prefixer: PrefixerPromise,
                           account: int,
                           meta_ids: Tuple[int, ...],
-                          mdb: databases.Database,
-                          pdb: databases.Database,
+                          mdb: ParallelDatabase,
+                          pdb: ParallelDatabase,
                           cache: Optional[aiomcache.Client],
                           truncate: bool = True,
                           with_jira: bool = True,
@@ -385,8 +386,8 @@ class PullRequestMiner:
                            prefixer: PrefixerPromise,
                            account: int,
                            meta_ids: Tuple[int, ...],
-                           mdb: databases.Database,
-                           pdb: databases.Database,
+                           mdb: ParallelDatabase,
+                           pdb: ParallelDatabase,
                            cache: Optional[aiomcache.Client],
                            truncate: bool = True,
                            with_jira: bool = True,
@@ -527,6 +528,18 @@ class PullRequestMiner:
             df.drop([Issue.acc_id.name, Issue.components.name], inplace=True, axis=1)
             return df
 
+        @sentry_span
+        async def fetch_deployments():
+            ghprd = GitHubPullRequestDeployment
+            cols = [ghprd.pull_request_id, ghprd.deployment_name]
+            return await read_sql_query(
+                sql.select(cols)
+                .where(sql.and_(ghprd.acc_id == account,
+                                ghprd.pull_request_id.in_any_values(node_ids))),
+                con=pdb,
+                columns=cols,
+                index=[ghprd.pull_request_id.name, ghprd.deployment_name.name])
+
         # the order is important: it provides the best performance
         # we launch coroutines from the heaviest to the lightest
         dfs = await gather(
@@ -537,7 +550,8 @@ class PullRequestMiner:
             fetch_review_comments(),
             fetch_review_requests(),
             fetch_comments(),
-            fetch_labels())
+            fetch_labels(),
+            fetch_deployments())
         dfs = PRDataFrames(prs, *dfs)
         if len(merged_unreleased_indexes):
             # if we truncate and there are PRs merged after `time_to`
@@ -580,9 +594,9 @@ class PullRequestMiner:
                    prefixer: PrefixerPromise,
                    account: int,
                    meta_ids: Tuple[int, ...],
-                   mdb: databases.Database,
-                   pdb: databases.Database,
-                   rdb: databases.Database,
+                   mdb: ParallelDatabase,
+                   pdb: ParallelDatabase,
+                   rdb: ParallelDatabase,
                    cache: Optional[aiomcache.Client],
                    updated_min: Optional[datetime] = None,
                    updated_max: Optional[datetime] = None,
@@ -654,8 +668,8 @@ class PullRequestMiner:
                         dags: Optional[Dict[str, DAG]],
                         account: int,
                         meta_ids: Tuple[int, ...],
-                        mdb: databases.Database,
-                        pdb: databases.Database,
+                        mdb: ParallelDatabase,
+                        pdb: ParallelDatabase,
                         cache: Optional[aiomcache.Client],
                         columns=PullRequest,
                         updated_min: Optional[datetime] = None,
@@ -674,8 +688,8 @@ class PullRequestMiner:
         :return: pandas DataFrame with the PRs indexed by node_id; \
                  commit DAGs that contain the branch heads.
         """
-        assert isinstance(mdb, databases.Database)
-        assert isinstance(pdb, databases.Database)
+        assert isinstance(mdb, ParallelDatabase)
+        assert isinstance(pdb, ParallelDatabase)
         pr_list_coro = cls._fetch_prs_by_filters(
             time_from, time_to, repositories, participants, labels, jira, exclude_inactive,
             pr_blacklist, pr_whitelist, meta_ids, mdb, cache, columns=columns,
@@ -704,7 +718,7 @@ class PullRequestMiner:
                             branches: pd.DataFrame,
                             dags: Dict[str, DAG],
                             meta_ids: Tuple[int, ...],
-                            mdb: databases.Database,
+                            mdb: ParallelDatabase,
                             columns=PullRequest,
                             ) -> pd.DataFrame:
         """
@@ -838,7 +852,7 @@ class PullRequestMiner:
                                     pr_blacklist: Optional[BinaryExpression],
                                     pr_whitelist: Optional[BinaryExpression],
                                     meta_ids: Tuple[int, ...],
-                                    mdb: databases.Database,
+                                    mdb: ParallelDatabase,
                                     cache: Optional[aiomcache.Client],
                                     columns=PullRequest,
                                     updated_min: Optional[datetime] = None,
@@ -957,8 +971,8 @@ class PullRequestMiner:
             prefixer: PrefixerPromise,
             account: int,
             meta_ids: Tuple[int, ...],
-            mdb: databases.Database,
-            pdb: databases.Database,
+            mdb: ParallelDatabase,
+            pdb: ParallelDatabase,
             cache: Optional[aiomcache.Client]) -> pd.DataFrame:
         node_ids, _ = await discover_inactive_merged_unreleased_prs(
             time_from, time_to, repos, participants, labels, default_branches, release_settings,
@@ -975,7 +989,7 @@ class PullRequestMiner:
                           pr_node_ids: Iterable[int],
                           jira: JIRAFilter,
                           meta_ids: Tuple[int, ...],
-                          mdb: databases.Database,
+                          mdb: ParallelDatabase,
                           cache: Optional[aiomcache.Client],
                           columns=PullRequest) -> pd.DataFrame:
         """Filter PRs by JIRA properties."""
