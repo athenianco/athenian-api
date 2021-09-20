@@ -17,7 +17,8 @@ from tests.conftest import has_memcached
                                       ("1", []),
                                       ("%s", [""]),
                                       ("xxx %s %d yyy", ["y", 2]),
-                                      ("x" * 100500, [])])
+                                      ("x" * 100500, []),
+                                      ("%s", [])])
 def test_gen_cache_key_formats(fmt, args):
     key = gen_cache_key(fmt, *args)
     assert key
