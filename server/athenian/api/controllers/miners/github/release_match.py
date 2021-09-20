@@ -400,14 +400,16 @@ class ReleaseToPullRequestMapper:
         branch_lookbehind_time_from = time_from - timedelta(days=5 * 7)
         # find tag releases not older than 2 years before `time_from`
         tag_lookbehind_time_from = time_from - timedelta(days=2 * 365)
+        # look for releases up till this date
+        most_recent_time = time_from - timedelta(seconds=1)
         tasks = [
             until_today_task,
             cls.release_loader.load_releases(repos_matched_by_branch, branches, default_branches,
-                                             branch_lookbehind_time_from, time_from,
+                                             branch_lookbehind_time_from, most_recent_time,
                                              consistent_release_settings, prefixer, account,
                                              meta_ids, mdb, pdb, rdb, cache),
             cls.release_loader.load_releases(repos_matched_by_tag, branches, default_branches,
-                                             tag_lookbehind_time_from, time_from,
+                                             tag_lookbehind_time_from, most_recent_time,
                                              consistent_release_settings, prefixer, account,
                                              meta_ids, mdb, pdb, rdb, cache),
             cls._fetch_repository_first_commit_dates(repos_matched_by_branch, account, meta_ids,

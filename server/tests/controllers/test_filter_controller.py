@@ -2152,6 +2152,7 @@ async def test_filter_check_runs_nasty_input(
     assert response.status == status, response_text
 
 
+@pytest.mark.skip
 async def test_filter_deployments_smoke(client, headers):
     body = {
         "account": 1,
