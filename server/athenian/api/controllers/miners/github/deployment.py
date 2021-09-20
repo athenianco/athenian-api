@@ -263,6 +263,7 @@ async def _postprocess_deployed_releases(releases: pd.DataFrame,
     release_facts_df = df_from_structs([f for _, f in release_facts])
     release_facts_df.index = pd.Index([r[Release.node_id.name] for r, _ in release_facts],
                                       name=Release.node_id.name)
+    assert release_facts_df.index.is_unique
     del release_facts
     for col in (ReleaseFacts.f.publisher, ReleaseFacts.f.published, ReleaseFacts.f.matched_by,
                 ReleaseFacts.f.repository_full_name):
@@ -410,7 +411,7 @@ async def _compute_deployment_facts(notifications: pd.DataFrame,
         deployed_commits_per_repo_per_env, all_mentioned_hashes = await _extract_deployed_commits(
             notifications, components, deployed_commits_df, commit_relationship, dags, prefixer)
     await defer(
-        _submit_deployed_commits(deployed_commits_per_repo_per_env, account, pdb),
+        _submit_deployed_commits(deployed_commits_per_repo_per_env, account, meta_ids, mdb, pdb),
         "_submit_deployed_commits")
     min_release_time_from = deployed_commits_df[PushCommit.committed_date.name].min()
     max_release_time_to = notifications[DeploymentNotification.finished_at.name].max()
@@ -498,7 +499,6 @@ CommitRelationship = NamedTuple("CommitRelationship", [
 
 DeployedCommitDetails = NamedTuple("DeployedCommitDetails", [
     ("shas", np.ndarray),
-    ("ids", np.ndarray),
     ("deployments", np.ndarray),
 ])
 
@@ -631,23 +631,27 @@ async def _map_releases_to_deployments(
         for repo in repos:
             reverse_settings_ptr[repo_name_to_node_get(repo)] = key
     commits_by_reverse_key = {}
-    all_commit_ids = []
+    all_commit_shas = []
     all_deployment_names = []
     for repos in deployed_commits_per_repo_per_env.values():
         for repo, details in repos.items():
-            commits_by_reverse_key.setdefault(reverse_settings_ptr[repo], []).append(details.ids)
-            all_commit_ids.append(details.ids)
-            all_deployment_names.append(details.deployments)
-    all_commit_ids = np.concatenate(all_commit_ids)
-    all_deployment_names = np.concatenate(all_deployment_names).astype("U")
-    order = np.argsort(all_commit_ids)
-    all_commit_ids = all_commit_ids[order]
+            all_repo_shas = np.concatenate(details.shas)
+            commits_by_reverse_key.setdefault(reverse_settings_ptr[repo], []).append(
+                all_repo_shas.astype("U40"))
+            all_commit_shas.append(all_repo_shas)
+            all_deployment_names.append(np.repeat(
+                details.deployments, [len(shas) for shas in details.shas]))
+    all_commit_shas = np.concatenate(all_commit_shas)
+    all_deployment_names = np.concatenate(all_deployment_names)
+    order = np.argsort(all_commit_shas)
+    all_commit_shas = all_commit_shas[order]
     all_deployment_names = all_deployment_names[order]
-    _, unique_commit_id_counts = np.unique(all_commit_ids, return_counts=True)
-    offsets = np.zeros(len(unique_commit_id_counts) + 1, dtype=int)
-    np.cumsum(unique_commit_id_counts, out=offsets[1:])
+    assert all_commit_shas.shape == all_deployment_names.shape
+    _, unique_commit_sha_counts = np.unique(all_commit_shas, return_counts=True)
+    offsets = np.zeros(len(unique_commit_sha_counts) + 1, dtype=int)
+    np.cumsum(unique_commit_sha_counts, out=offsets[1:])
     for key, val in commits_by_reverse_key.items():
-        commits_by_reverse_key[key] = np.concatenate(val)
+        commits_by_reverse_key[key] = np.unique(np.concatenate(val))
 
     releases = await read_sql_query(union_all(*(
         select([PrecomputedRelease])
@@ -655,8 +659,8 @@ async def _map_releases_to_deployments(
                     PrecomputedRelease.release_match ==
                     compose_release_match(match_id, match_value),
                     PrecomputedRelease.published_at < max_release_time_to,
-                    PrecomputedRelease.commit_id.in_any_values(commit_ids)))
-        for (match_id, match_value), commit_ids in commits_by_reverse_key.items()
+                    PrecomputedRelease.sha.in_any_values(commit_shas)))
+        for (match_id, match_value), commit_shas in commits_by_reverse_key.items()
     )), pdb, PrecomputedRelease, index=PrecomputedRelease.node_id.name)
     releases = set_matched_by_from_release_match(releases, remove_ambiguous_tag_or_branch=False)
     if releases.empty:
@@ -671,11 +675,11 @@ async def _map_releases_to_deployments(
     if not extra_releases.empty:
         releases = pd.concat([releases, extra_releases])
     releases.reset_index(inplace=True)
-    release_commit_ids = releases[PrecomputedRelease.commit_id.name].values
-    positions = searchsorted_inrange(all_commit_ids, release_commit_ids)
-    positions[all_commit_ids[positions] != release_commit_ids] = len(all_commit_ids)
-    unique_commit_id_counts = np.concatenate([unique_commit_id_counts, [0]])
-    lengths = unique_commit_id_counts[np.searchsorted(offsets, positions)]
+    release_commit_shas = releases[Release.sha.name].values.astype("S40")
+    positions = searchsorted_inrange(all_commit_shas, release_commit_shas)
+    positions[all_commit_shas[positions] != release_commit_shas] = len(all_commit_shas)
+    unique_commit_sha_counts = np.concatenate([unique_commit_sha_counts, [0]])
+    lengths = unique_commit_sha_counts[np.searchsorted(offsets, positions)]
     deployment_names = all_deployment_names[np.repeat(positions + lengths - lengths.cumsum(),
                                                       lengths) + np.arange(lengths.sum())]
     col_vals = {
@@ -695,16 +699,30 @@ async def _map_releases_to_deployments(
 async def _submit_deployed_commits(
         deployed_commits_per_repo_per_env: Dict[str, Dict[str, DeployedCommitDetails]],
         account: int,
+        meta_ids: Tuple[int, ...],
+        mdb: ParallelDatabase,
         pdb: ParallelDatabase) -> None:
+    all_shas = []
+    for repos in deployed_commits_per_repo_per_env.values():
+        for details in repos.values():
+            all_shas.extend(details.shas)
+    all_shas = np.unique(np.concatenate(all_shas).astype("U40"))
+    rows = await mdb.fetch_all(select([NodeCommit.graph_id, NodeCommit.sha])
+                               .where(and_(NodeCommit.acc_id.in_(meta_ids),
+                                           NodeCommit.sha.in_any_values(all_shas))))
+    sha_to_id = {row[1]: row[0] for row in rows}
+    del rows
     values = [
         GitHubCommitDeployment(
             acc_id=account,
             deployment_name=deployment_name,
-            commit_id=commit_id,
+            commit_id=sha_to_id[sha],
         ).explode(with_primary_keys=True)
         for repos in deployed_commits_per_repo_per_env.values()
         for details in repos.values()
-        for deployment_name, commit_id in zip(details.deployments, details.ids)
+        for deployment_name, shas in zip(details.deployments, details.shas)
+        for sha in shas
+        if sha in sha_to_id
     ]
     await insert_or_ignore(GitHubCommitDeployment, values, "_submit_deployed_commits", pdb)
 
@@ -772,7 +790,7 @@ async def _fetch_commit_stats(all_mentioned_hashes: np.ndarray,
             NodePullRequest.merged,
         ), isouter=True))
         .where(and_(NodeCommit.acc_id.in_(meta_ids),
-                    NodeCommit.sha.in_any_values(all_mentioned_hashes.astype("U"))))
+                    NodeCommit.sha.in_any_values(all_mentioned_hashes.astype("U40"))))
         .order_by(NodeCommit.sha,
                   func.coalesce(NodePullRequest.created_at,
                                 NodeCommit.pushed_date,
@@ -809,7 +827,7 @@ async def _fetch_commit_stats(all_mentioned_hashes: np.ndarray,
         pr_authors = full_pr_authors
         prs = full_prs
 
-    not_pr_commits = all_mentioned_hashes[prs == 0].astype("U")
+    not_pr_commits = all_mentioned_hashes[prs == 0].astype("U40")
     if len(not_pr_commits) == 0:
         return DeployedCommitStats(
             pull_requests=prs,
@@ -886,7 +904,7 @@ async def _extract_deployed_commits(
     joined = notifications.join(components)
     commits = joined[DeployedComponent.resolved_commit_node_id.name].values
     conclusions = joined[DeploymentNotification.conclusion.name].values.astype("S9")
-    deployment_names = joined.index.values
+    deployment_names = joined.index.values.astype("U")
     repo_node_to_name_get = (await prefixer.load()).repo_node_to_name.get
     deployed_commits_per_repo_per_env = defaultdict(dict)
     all_mentioned_hashes = []
@@ -898,7 +916,6 @@ async def _extract_deployed_commits(
         grouped_deployment_names = deployment_names[indexes]
         grouped_conclusions = conclusions[indexes]
         deployed_shas = commit_shas_in_df[np.searchsorted(commit_ids_in_df, deployed_commits)]
-
         successful = grouped_conclusions == b"SUCCESS"
         successful_deployed_shas = deployed_shas[successful]
         extra_shas = []
@@ -922,7 +939,7 @@ async def _extract_deployed_commits(
             *dag, deployed_shas[unsuccessful], unsuccessful_parents)
 
         deployed_commits_per_repo_per_env[env][repo] = DeployedCommitDetails(
-            grouped_deployed_shas, deployed_commits, grouped_deployment_names,
+            grouped_deployed_shas, grouped_deployment_names,
         )
         all_mentioned_hashes.extend(grouped_deployed_shas)
     all_mentioned_hashes = np.unique(np.concatenate(all_mentioned_hashes)).astype("U40")

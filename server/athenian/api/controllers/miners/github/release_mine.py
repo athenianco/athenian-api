@@ -631,7 +631,7 @@ async def mine_releases_by_ids(releases: pd.DataFrame,
                                                 List[Tuple[str, str]]],
                                           List[Tuple[Dict[str, Any], ReleaseFacts]]]:
     """Collect details about releases in the DataFrame (`load_releases()`-like)."""
-    settings_tags, settings_branches = {}, {}
+    settings_tags, settings_branches, settings_events = {}, {}, {}
     for k, v in settings.prefixed.items():
         if v.match == ReleaseMatch.tag_or_branch:
             settings_tags[k] = ReleaseMatchSetting(
@@ -648,19 +648,31 @@ async def mine_releases_by_ids(releases: pd.DataFrame,
             settings_tags[k] = v
         elif v.match == ReleaseMatch.branch:
             settings_branches[k] = v
+        elif v.match == ReleaseMatch.event:
+            settings_events[k] = v
         else:
             raise AssertionError("Unsupported ReleaseMatch: %s" % v.match)
     tag_releases = releases.take(np.nonzero(
         releases[matched_by_column].values == ReleaseMatch.tag)[0])
     branch_releases = releases.take(np.nonzero(
         releases[matched_by_column].values == ReleaseMatch.branch)[0])
-    precomputed_facts_tags, precomputed_facts_branches = await gather(
+    event_releases = releases.take(np.nonzero(
+        releases[matched_by_column].values == ReleaseMatch.event)[0])
+    precomputed_facts_tags, precomputed_facts_branches, precomputed_facts_events = await gather(
         load_precomputed_release_facts(
             tag_releases, default_branches, ReleaseSettings(settings_tags), account, pdb),
         load_precomputed_release_facts(
             branch_releases, default_branches, ReleaseSettings(settings_branches), account, pdb),
+        load_precomputed_release_facts(
+            event_releases, default_branches, ReleaseSettings(settings_events), account, pdb),
     )
-    precomputed_facts = {**precomputed_facts_tags, **precomputed_facts_branches}
+    del settings_tags, settings_branches, settings_events
+    del tag_releases, branch_releases, event_releases
+    precomputed_facts = {
+        **precomputed_facts_tags,
+        **precomputed_facts_branches,
+        **precomputed_facts_events,
+    }
     add_pdb_hits(pdb, "release_facts", len(precomputed_facts))
     add_pdb_misses(pdb, "release_facts", len(releases) - len(precomputed_facts))
     prefixer = await prefixer.load()
