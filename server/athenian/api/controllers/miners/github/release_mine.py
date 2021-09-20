@@ -192,9 +192,11 @@ async def mine_releases(repos: Iterable[str],
                                    description=str(len(all_hashes))):
             commits_df = await read_sql_query(
                 select(commits_df_columns)
-                .where(and_(PushCommit.sha.in_(all_hashes), PushCommit.acc_id.in_(meta_ids)))
+                .where(and_(PushCommit.sha.in_any_values(all_hashes),
+                            PushCommit.acc_id.in_(meta_ids)))
                 .order_by(PushCommit.sha),
                 mdb, commits_df_columns, index=PushCommit.sha.name)
+        log.info("Loaded %d commits", len(commits_df))
         commits_index = commits_df.index.values.astype("S40")
         commit_ids = commits_df[PushCommit.node_id.name].values
         commits_additions = commits_df[PushCommit.additions.name].values
@@ -238,6 +240,8 @@ async def mine_releases(repos: Iterable[str],
     @sentry_span
     async def main_flow():
         data = []
+        if repo_releases_analyzed:
+            log.info("Processing %d repos", len(repo_releases_analyzed))
         for repo, (repo_releases, owned_hashes, parents) in repo_releases_analyzed.items():
             computed_release_info_by_commit = {}
             for i, (my_id, my_name, my_tag, my_url, my_author, my_published_at,
