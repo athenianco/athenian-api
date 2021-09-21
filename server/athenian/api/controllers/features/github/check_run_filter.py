@@ -63,7 +63,7 @@ async def filter_check_runs(time_from: datetime,
              2. list of the mined check run type's information and statistics.
     """
     df_check_runs = await mine_check_runs(
-        time_from, time_to, repositories, pushers, labels, jira, meta_ids, mdb, cache)
+        time_from, time_to, repositories, pushers, labels, jira, False, meta_ids, mdb, cache)
     timeline = _build_timeline(time_from, time_to)
     timeline_dates = [d.date() for d in timeline.tolist()]
     if df_check_runs.empty:
