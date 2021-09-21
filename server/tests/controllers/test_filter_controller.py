@@ -2152,7 +2152,6 @@ async def test_filter_check_runs_nasty_input(
     assert response.status == status, response_text
 
 
-@pytest.mark.skip
 async def test_filter_deployments_smoke(client, headers):
     body = {
         "account": 1,
@@ -2167,7 +2166,7 @@ async def test_filter_deployments_smoke(client, headers):
     assert response.status == 200, response_text
     deps = FilteredDeployments.from_dict(json.loads(response_text))
     assert len(deps.include.users) == 119
-    assert len(deps.include.jira) == 14
+    assert len(deps.include.jira) == 42
     deps = deps.deployments
     assert len(deps) == 1
     assert deps[0].code.to_dict() == {

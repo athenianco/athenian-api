@@ -450,7 +450,8 @@ def _postprocess_filtered_prs(result: Tuple[List[PullRequestListItem],
             prs = _filter_by_jira_epics(prs, jira.epics)
         if jira.issue_types:
             prs = _filter_by_jira_issue_types(prs, jira.issue_types)
-    left_deployments = [pr.deployments for pr in prs if pr.deployments]
+    left_deployments = [pr.deployments for pr in prs
+                        if pr.deployments is not None and len(pr.deployments)]
     if left_deployments:
         left_deployments = np.unique(np.concatenate(left_deployments))
         deployments = {k: deployments[k] for k in left_deployments if k in deployments}
