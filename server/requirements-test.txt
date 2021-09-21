@@ -4,7 +4,7 @@ pytest-aiohttp==0.3.0
 pytest-cov==2.12.1
 pytest-benchmark==3.4.1
 pytest-rerunfailures==10.2
-pytest-xdist==2.3.0
+pytest-xdist==2.4.0
 filelock==3.0.12
 faker==8.13.2
 freezegun==1.1.0
