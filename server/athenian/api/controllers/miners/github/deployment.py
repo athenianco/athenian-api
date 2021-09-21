@@ -12,7 +12,8 @@ import aiomcache
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, distinct, exists, func, join, not_, or_, select, union_all
+from sqlalchemy import and_, distinct, exists, func, join, literal_column, not_, or_, select, \
+    union_all
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
@@ -113,12 +114,22 @@ async def mine_deployments(repo_node_ids: Collection[int],
     add_pdb_hits(pdb, "deployments", len(facts))
     add_pdb_misses(pdb, "deployments", misses := (len(notifications) - len(facts)))
     if misses > 0:
+        if conclusions or with_labels or without_labels:
+            # we have to look broader so that we compute the commit ownership correctly
+            full_notifications, _, _ = await _fetch_deployment_candidates(
+                repo_node_ids, time_from, time_to, environments, [], {}, {}, account, rdb, cache)
+            full_notifications, full_components = await _fetch_components_and_prune_unresolved(
+                notifications, account, rdb)
+            full_facts = await _fetch_precomputed_deployment_facts(
+                full_notifications.index.values, settings, account, pdb)
+        else:
+            full_notifications, full_components, full_facts = notifications, components, facts
         missed_indexes = np.flatnonzero(np.in1d(
-            notifications.index.values.astype("U"), facts.index.values.astype("U"),
+            full_notifications.index.values.astype("U"), full_facts.index.values.astype("U"),
             assume_unique=True, invert=True))
         missed_facts, missed_releases = await _compute_deployment_facts(
-            notifications.take(missed_indexes), components, settings, branches, default_branches,
-            prefixer, account, meta_ids, mdb, pdb, rdb, cache)
+            full_notifications.take(missed_indexes), full_components, settings, branches,
+            default_branches, prefixer, account, meta_ids, mdb, pdb, rdb, cache)
         if not missed_facts.empty:
             facts = pd.concat([facts, missed_facts])
     else:
@@ -137,8 +148,8 @@ async def mine_deployments(repo_node_ids: Collection[int],
         else:
             releases = missed_releases
     await labels
-    joined = facts.join([notifications, components, labels.result()] +
-                        ([releases] if not releases.empty else []))
+    joined = notifications.join([components, facts, labels.result()] +
+                                ([releases] if not releases.empty else []))
     joined = _adjust_empty_releases(joined)
     joined["labels"] = joined["labels"].astype(object, copy=False)
     no_labels = joined["labels"].isnull().values
@@ -413,12 +424,11 @@ async def _compute_deployment_facts(notifications: pd.DataFrame,
     await defer(
         _submit_deployed_commits(deployed_commits_per_repo_per_env, account, meta_ids, mdb, pdb),
         "_submit_deployed_commits")
-    min_release_time_from = deployed_commits_df[PushCommit.committed_date.name].min()
     max_release_time_to = notifications[DeploymentNotification.finished_at.name].max()
     commit_stats, releases = await gather(
         _fetch_commit_stats(all_mentioned_hashes, dags, prefixer, meta_ids, mdb),
         _map_releases_to_deployments(
-            deployed_commits_per_repo_per_env, min_release_time_from, max_release_time_to,
+            deployed_commits_per_repo_per_env, max_release_time_to,
             prefixer, settings, branches, default_branches,
             account, meta_ids, mdb, pdb, rdb, cache),
     )
@@ -606,7 +616,6 @@ async def _generate_deployment_facts(
 @sentry_span
 async def _map_releases_to_deployments(
         deployed_commits_per_repo_per_env: Dict[str, Dict[int, DeployedCommitDetails]],
-        min_release_time_from: datetime,
         max_release_time_to: datetime,
         prefixer: PrefixerPromise,
         settings: ReleaseSettings,
@@ -664,7 +673,18 @@ async def _map_releases_to_deployments(
     )), pdb, PrecomputedRelease, index=PrecomputedRelease.node_id.name)
     releases = set_matched_by_from_release_match(releases, remove_ambiguous_tag_or_branch=False)
     if releases.empty:
-        time_from = min_release_time_from
+        time_from = await pdb.fetch_val(
+            select([func.min(literal_column("max_published_at"))])
+            .select_from(union_all(*(
+                select([func.max(PrecomputedRelease.published_at).label("max_published_at")])
+                .where(and_(PrecomputedRelease.acc_id == account,
+                            PrecomputedRelease.release_match ==
+                            compose_release_match(match_id, match_value),
+                            PrecomputedRelease.published_at < max_release_time_to))
+                for (match_id, match_value), commit_shas in commits_by_reverse_key.items()))
+                .alias("P")))
+        if time_from is None:
+            time_from = max_release_time_to - timedelta(days=10 * 365)
     else:
         time_from = releases[Release.published_at.name].max() + timedelta(seconds=1)
     extra_releases, _ = await ReleaseLoader.load_releases(

@@ -553,7 +553,7 @@ async def _fetch_commit_history_edges(commit_ids: Iterable[int],
 
 
 @sentry_span
-async def fetch_dags_with_commits(commits: Mapping[str, Sequence[str]],
+async def fetch_dags_with_commits(commits: Mapping[str, Sequence[int]],
                                   prune: bool,
                                   account: int,
                                   meta_ids: Tuple[int, ...],
@@ -566,7 +566,7 @@ async def fetch_dags_with_commits(commits: Mapping[str, Sequence[str]],
 
     :param commits: repository name -> sequence of commit node IDs.
     :return: 1. DAGs that contain the specified commits, by repository name. \
-             2. DataFrame with loaded commits.
+             2. DataFrame with loaded `commits` - *not with all the commits in the DAGs*.
     """
     commits, pdags = await gather(
         _fetch_commits_for_dags(commits, meta_ids, mdb, cache),

@@ -145,7 +145,7 @@ class PullRequestListItem:
     labels: List[Label]
     jira: Optional[List[PullRequestJIRAIssueItem]]
     merged_with_failed_check_runs: Optional[List[str]]
-    deployments: Optional[List[str]]
+    deployments: Optional[np.ndarray]
 
 
 @dataclass(slots=True, frozen=True)
