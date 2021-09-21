@@ -4,7 +4,7 @@ from itertools import chain
 import os
 import re
 import sqlite3
-from typing import Collection, Dict, Iterable, List, Mapping, Optional, Tuple
+from typing import Collection, Dict, Iterable, List, Mapping, Optional, Tuple, Union
 
 from aiohttp import web
 import aiomcache
@@ -387,7 +387,7 @@ def _compose_name(notification: WebDeploymentNotification) -> str:
 
 
 @sentry_span
-async def _resolve_references(components: Iterable[Tuple[str, str]],
+async def _resolve_references(components: Iterable[Tuple[Union[int, str], str]],
                               meta_ids: Tuple[int, ...],
                               mdb: ParallelDatabase,
                               repository_node_ids: bool,
@@ -429,7 +429,9 @@ async def _resolve_references(components: Iterable[Tuple[str, str]],
                   if repository_node_ids else
                   Release.repository_full_name])
           .where(and_(Release.acc_id.in_(meta_ids),
-                      Release.repository_full_name == repo,
+                      (Release.repository_node_id == repo)
+                      if repository_node_ids else
+                      (Release.repository_full_name == repo),
                       Release.name.in_(names)))
           for repo, names in releases.items()),
     ]

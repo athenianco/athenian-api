@@ -527,8 +527,9 @@ async def test_notify_deployment_default_user(client, headers, token, sdb):
     assert response.status == 403
 
 
+@pytest.mark.parametrize("unresolved", [False, True])
 async def test_resolve_deployed_component_references_smoke(
-        sdb, mdb, rdb, without_default_deployments):
+        sdb, mdb, rdb, without_default_deployments, unresolved):
     async def execute_many(sql, values):
         if rdb.url.dialect == "sqlite":
             async with rdb.connection() as rdb_conn:
@@ -562,7 +563,8 @@ async def test_resolve_deployed_component_references_smoke(
             deployment_name="dead",
             repository_node_id=40550,
             reference="bbb",
-            created_at=datetime.now(timezone.utc) - timedelta(days=2),
+            created_at=datetime.now(timezone.utc) -
+            (timedelta(hours=3) if unresolved else timedelta(days=2)),
         ).explode(with_primary_keys=True),
         DeployedComponent(
             account_id=1,
@@ -588,12 +590,15 @@ async def test_resolve_deployed_component_references_smoke(
         ).create_defaults().explode(with_primary_keys=True),
     ])
     await resolve_deployed_component_references(sdb, mdb, rdb, None)
-    rows = await rdb.fetch_all(select([DeploymentNotification.name]))
-    assert len(rows) == 1
+    rows = await rdb.fetch_all(select([DeploymentNotification.name])
+                               .order_by(DeploymentNotification.name))
+    assert len(rows) == 1 + unresolved
     assert rows[0][0] == "alive"
-    rows = await rdb.fetch_all(select([DeployedComponent.deployment_name]))
-    assert len(rows) == 1
+    rows = await rdb.fetch_all(select([DeployedComponent.deployment_name])
+                               .order_by(DeployedComponent.deployment_name))
+    assert len(rows) == 1 + unresolved
     assert rows[0][0] == "alive"
-    rows = await rdb.fetch_all(select([DeployedLabel.deployment_name]))
-    assert len(rows) == 1
+    rows = await rdb.fetch_all(select([DeployedLabel.deployment_name])
+                               .order_by(DeployedLabel.deployment_name))
+    assert len(rows) == 1 + unresolved
     assert rows[0][0] == "alive"
