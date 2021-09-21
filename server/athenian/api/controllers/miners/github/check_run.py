@@ -12,7 +12,7 @@ from sqlalchemy.sql import ClauseElement
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
-from athenian.api.cache import cached, short_term_exptime
+from athenian.api.cache import cached, CancelCache, short_term_exptime
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
@@ -29,26 +29,13 @@ pull_request_closed_column = "pull_request_" + NodePullRequest.closed_at.name
 pull_request_merged_column = "pull_request_" + NodePullRequest.merged.name
 
 
-@sentry_span
-@cached(
-    exptime=short_term_exptime,
-    serialize=pickle.dumps,
-    deserialize=pickle.loads,
-    key=lambda time_from, time_to, repositories, pushers, labels, jira, **_:  # noqa
-    (
-        time_from.timestamp(), time_to.timestamp(),
-        ",".join(sorted(repositories)),
-        ",".join(sorted(pushers)),
-        labels,
-        jira,
-    ),
-)
 async def mine_check_runs(time_from: datetime,
                           time_to: datetime,
                           repositories: Collection[str],
                           pushers: Collection[str],
                           labels: LabelFilter,
                           jira: JIRAFilter,
+                          only_prs: bool,
                           meta_ids: Tuple[int, ...],
                           mdb: DatabaseLike,
                           cache: Optional[aiomcache.Client],
@@ -70,6 +57,49 @@ async def mine_check_runs(time_from: datetime,
     :param jira: Check runs must link to PRs satisfying this JIRA filter.
     :return: Pandas DataFrame with columns mapped from CheckRun model.
     """
+    df, _ = await _mine_check_runs(
+        time_from, time_to, repositories, pushers, labels, jira, only_prs, meta_ids, mdb, cache)
+    return df
+
+
+def _postprocess_only_prs(result: Tuple[pd.DataFrame, bool],
+                          only_prs: bool,
+                          **_) -> Tuple[pd.DataFrame, bool]:
+    df, cached_only_prs = result
+    if cached_only_prs and not only_prs:
+        raise CancelCache()
+    if only_prs:
+        df = df.take(np.flatnonzero(df[CheckRun.pull_request_node_id.name].values != 0))
+        df.reset_index(inplace=True, drop=True)
+    return df, only_prs
+
+
+@sentry_span
+@cached(
+    exptime=short_term_exptime,
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda time_from, time_to, repositories, pushers, labels, jira, **_:
+    (
+        time_from.timestamp(), time_to.timestamp(),
+        ",".join(sorted(repositories)),
+        ",".join(sorted(pushers)),
+        labels,
+        jira,
+    ),
+    postprocess=_postprocess_only_prs,
+)
+async def _mine_check_runs(time_from: datetime,
+                           time_to: datetime,
+                           repositories: Collection[str],
+                           pushers: Collection[str],
+                           labels: LabelFilter,
+                           jira: JIRAFilter,
+                           only_prs: bool,
+                           meta_ids: Tuple[int, ...],
+                           mdb: DatabaseLike,
+                           cache: Optional[aiomcache.Client],
+                           ) -> Tuple[pd.DataFrame, bool]:
     log = logging.getLogger(f"{metadata.__package__}.mine_check_runs")
     assert time_from.tzinfo is not None
     assert time_to.tzinfo is not None
@@ -84,6 +114,8 @@ async def mine_check_runs(time_from: datetime,
             time_from - timedelta(days=14), time_to + timedelta(days=1)),
         CheckRun.repository_node_id.in_(repo_nodes),
     ]
+    if only_prs:
+        filters.append(CheckRun.pull_request_node_id.isnot(None))
     if pushers:
         filters.append(CheckRun.author_login.in_(pushers))
     if labels:
@@ -111,6 +143,8 @@ async def mine_check_runs(time_from: datetime,
         set_join_collapse_limit = False
     df = await _read_sql_query_with_join_collapse(query, CheckRun, set_join_collapse_limit, mdb)
     # add check runs mapped to the mentioned PRs even if they are outside of the date range
+    # if only_prs is True, we should in theory load check runs mapped to both a PR and not a PR
+    # however, the number of such cases in our DB is 0
     df, df_labels = await _append_pull_request_check_runs_outside(
         df, time_from, time_to, labels, embedded_labels_query, meta_ids, mdb)
 
@@ -134,7 +168,7 @@ async def mine_check_runs(time_from: datetime,
 
     _postprocess_check_runs(df)
 
-    return df
+    return df, only_prs
 
 
 @sentry_span
@@ -340,9 +374,9 @@ async def _append_pull_request_check_runs_outside(df: pd.DataFrame,
         CheckRunByPR.started_at.between(
             time_to + timedelta(seconds=1), time_to + timedelta(days=90),
         )))
+    pr_sql = union_all(query_before, query_after)
     tasks = [
-        _read_sql_query_with_join_collapse(
-            union_all(query_before, query_after), CheckRunByPR, True, mdb),
+        _read_sql_query_with_join_collapse(pr_sql, CheckRunByPR, True, mdb),
     ]
     if labels and not embedded_labels_query:
         tasks.append(read_sql_query(
@@ -353,10 +387,13 @@ async def _append_pull_request_check_runs_outside(df: pd.DataFrame,
             mdb, [PullRequestLabel.pull_request_node_id, PullRequestLabel.name],
             index=PullRequestLabel.pull_request_node_id.name))
     extra_df, *df_labels = await gather(*tasks)
-    del df[CheckRun.committed_date_hack.name]
-    del df[CheckRun.pull_request_created_at.name]
-    del df[CheckRun.pull_request_closed_at.name]
-    return df.append(extra_df, ignore_index=True), df_labels
+    for col in (CheckRun.committed_date_hack,
+                CheckRun.pull_request_created_at,
+                CheckRun.pull_request_closed_at):
+        del df[col.name]
+    if not extra_df.empty:
+        df = df.append(extra_df, ignore_index=True)
+    return df, df_labels
 
 
 async def _read_sql_query_with_join_collapse(query: ClauseElement,
