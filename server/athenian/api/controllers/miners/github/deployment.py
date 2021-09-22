@@ -17,7 +17,7 @@ from sqlalchemy import and_, distinct, exists, func, join, literal_column, not_,
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
-from athenian.api.cache import cached, CancelCache, middle_term_expire, short_term_exptime
+from athenian.api.cache import cached, CancelCache, short_term_exptime
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.commit import DAG, fetch_dags_with_commits
 from athenian.api.controllers.miners.github.dag_accelerated import extract_independent_ownership, \
@@ -30,9 +30,8 @@ from athenian.api.controllers.miners.github.release_load import ReleaseLoader, \
 from athenian.api.controllers.miners.github.release_mine import group_hashes_by_ownership, \
     mine_releases_by_ids
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
-from athenian.api.controllers.miners.types import DeployedComponent as DeployedComponentDC, \
-    Deployment, DeploymentConclusion, DeploymentFacts, ReleaseFacts, ReleaseParticipants, \
-    ReleaseParticipationKind
+from athenian.api.controllers.miners.types import DeploymentConclusion, DeploymentFacts, \
+    ReleaseFacts, ReleaseParticipants, ReleaseParticipationKind
 from athenian.api.controllers.prefixer import PrefixerPromise
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.db import add_pdb_hits, add_pdb_misses, insert_or_ignore, ParallelDatabase
@@ -1365,76 +1364,3 @@ async def _fetch_grouped_labels(names: Collection[str],
         df.reset_index(drop=True, inplace=True)
     grouped_labels.set_index("deployment_name", drop=True, inplace=True)
     return grouped_labels
-
-
-@sentry_span
-@cached(
-    serialize=pickle.dumps,
-    deserialize=pickle.loads,
-    key=lambda names, **_: (",".join(sorted(names)),),
-    exptime=middle_term_expire,
-    refresh_on_access=True,
-)
-async def load_included_deployments(names: Collection[str],
-                                    account: int,
-                                    meta_ids: Tuple[int, ...],
-                                    mdb: ParallelDatabase,
-                                    rdb: ParallelDatabase,
-                                    cache: Optional[aiomcache.Client],
-                                    ) -> Dict[str, Deployment]:
-    """
-    Fetch brief details about the deployments.
-
-    Compared to `mine_deployments()`, this is much more lightweight and is intended for `include`.
-    """
-    notifications, components, labels = await gather(
-        rdb.fetch_all(
-            select([DeploymentNotification])
-            .where(and_(DeploymentNotification.account_id == account,
-                        DeploymentNotification.name.in_any_values(names)))),
-        rdb.fetch_all(
-            select([DeployedComponent])
-            .where(and_(DeployedComponent.account_id == account,
-                        DeployedComponent.deployment_name.in_any_values(names)))),
-        rdb.fetch_all(
-            select([DeployedLabel])
-            .where(and_(DeployedLabel.account_id == account,
-                        DeployedLabel.deployment_name.in_any_values(names)))),
-    )
-    commit_ids = {c[DeployedComponent.resolved_commit_node_id.name] for c in components} \
-        - {None}
-    hashes = await mdb.fetch_all(
-        select([NodeCommit.sha, NodeCommit.graph_id])
-        .where(and_(NodeCommit.acc_id.in_(meta_ids),
-                    NodeCommit.graph_id.in_any_values(commit_ids))))
-    hashes = {r[NodeCommit.graph_id.name]: r[NodeCommit.sha.name] for r in hashes}
-    comps_by_dep = {}
-    for row in components:
-        comps_by_dep.setdefault(row[DeployedComponent.deployment_name.name], []).append(
-            DeployedComponentDC(
-                repository_id=row[DeployedComponent.repository_node_id.name],
-                reference=row[DeployedComponent.reference.name],
-                sha=hashes.get(row[DeployedComponent.resolved_commit_node_id.name])))
-    labels_by_dep = {}
-    for row in labels:
-        labels_by_dep.setdefault(
-            row[DeployedLabel.deployment_name.name], {},
-        )[row[DeployedLabel.key.name]] = row[DeployedLabel.value.name]
-    if rdb.url.dialect == "sqlite":
-        notifications = [dict(r) for r in notifications]
-        for row in notifications:
-            for col in (DeploymentNotification.started_at, DeploymentNotification.finished_at):
-                row[col.name] = row[col.name].replace(tzinfo=timezone.utc)
-    return {
-        (name := row[DeploymentNotification.name.name]): Deployment(
-            name=name,
-            conclusion=row[DeploymentNotification.conclusion.name],
-            environment=row[DeploymentNotification.environment.name],
-            url=row[DeploymentNotification.url.name],
-            started_at=row[DeploymentNotification.started_at.name],
-            finished_at=row[DeploymentNotification.finished_at.name],
-            components=comps_by_dep.get(name, []),
-            labels=labels_by_dep.get(name, None),
-        )
-        for row in notifications
-    }

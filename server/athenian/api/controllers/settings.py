@@ -108,6 +108,10 @@ class ReleaseSettings:
         self._map_prefixed[name_with_prefix] = \
             self._map_native[name_with_prefix.split("/", 1)[1]] = value
 
+    def select(self, repos: Collection[str]) -> "ReleaseSettings":
+        """Reduce the settings to the specified repositories only."""
+        return ReleaseSettings({self._coherence[r]: self._map_native[r] for r in repos})
+
 
 class Settings:
     """User's settings."""

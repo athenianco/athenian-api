@@ -385,10 +385,10 @@ class MetricEntriesCalculator:
         branches, default_branches = await self.branch_miner.extract_branches(
             all_repositories, self._meta_ids, self._mdb, self._cache)
         all_participants = merge_release_participants(participants)
-        releases, _, matched_bys = await mine_releases(
+        releases, _, matched_bys, _ = await mine_releases(
             all_repositories, all_participants, branches, default_branches, time_from, time_to,
             labels, jira, release_settings, prefixer, self._account, self._meta_ids,
-            self._mdb, self._pdb, self._rdb, self._cache)
+            self._mdb, self._pdb, self._rdb, self._cache, with_avatars=False, with_pr_titles=False)
         df_facts = df_from_structs([f for _, f in releases])
         repo_grouper = partial(group_by_repo, Release.repository_full_name.name, repositories)
         participant_grouper = partial(group_releases_by_participants, participants)

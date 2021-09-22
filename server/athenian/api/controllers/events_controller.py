@@ -266,7 +266,7 @@ async def _drop_precomputed_event_releases(account: int,
     await mine_releases(
         repos, {}, branches, default_branches, no_time_from, time_to, LabelFilter.empty(),
         JIRAFilter.empty(), release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, None,
-        force_fresh=True)
+        force_fresh=True, with_avatars=False, with_deployments=False, with_pr_titles=False)
     await wait_deferred()
     await MetricEntriesCalculator(
         account, meta_ids, 0, mdb, pdb, rdb, None,

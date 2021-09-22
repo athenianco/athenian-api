@@ -4,7 +4,6 @@ from itertools import chain
 from typing import Collection, Dict, Optional, Set, Tuple
 
 import aiomcache
-import databases
 import pandas as pd
 from sqlalchemy import and_, select
 
@@ -16,6 +15,7 @@ from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.check_run import mine_check_runs
 from athenian.api.controllers.miners.github.contributors import mine_contributors
+from athenian.api.controllers.miners.github.deployment_light import append_pr_deployment_mapping
 from athenian.api.controllers.miners.github.developer import DeveloperTopic, \
     mine_developer_activities
 from athenian.api.controllers.miners.github.precomputed_prs import \
@@ -24,6 +24,7 @@ from athenian.api.controllers.miners.github.release_mine import mine_releases
 from athenian.api.controllers.miners.jira.issue import fetch_jira_issues, PullRequestJiraMapper
 from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
 from athenian.api.controllers.settings import ReleaseSettings
+from athenian.api.db import ParallelDatabase
 from athenian.api.models.metadata.github import PullRequest, Release, User
 from athenian.api.response import ResponseError
 from athenian.api.typing_utils import df_from_structs
@@ -47,10 +48,10 @@ async def mine_all_prs(repos: Collection[str],
                        prefixer: PrefixerPromise,
                        account: int,
                        meta_ids: Tuple[int, ...],
-                       sdb: databases.Database,
-                       mdb: databases.Database,
-                       pdb: databases.Database,
-                       rdb: databases.Database,
+                       sdb: ParallelDatabase,
+                       mdb: ParallelDatabase,
+                       pdb: ParallelDatabase,
+                       rdb: ParallelDatabase,
                        cache: Optional[aiomcache.Client]) -> Dict[str, pd.DataFrame]:
     """Extract everything we know about pull requests."""
     ghdprf = GitHubDonePullRequestFacts
@@ -73,8 +74,9 @@ async def mine_all_prs(repos: Collection[str],
             PullRequest.node_id.in_(facts),
         )), mdb, PullRequest, index=PullRequest.node_id.name),
         PullRequestJiraMapper.append_pr_jira_mapping(facts, meta_ids, mdb),
+        append_pr_deployment_mapping(facts, account, pdb),
     ]
-    df_prs, _ = await gather(*tasks, op="fetch raw data")
+    df_prs, *_ = await gather(*tasks, op="fetch raw data")
     df_facts = df_from_structs(facts.values())
     dummy = {ghdprf.release_url.name: None, ghdprf.release_node_id.name: None}
     for col in (ghdprf.release_url.name, ghdprf.release_node_id.name):
@@ -102,10 +104,10 @@ async def mine_all_developers(repos: Collection[str],
                               prefixer: PrefixerPromise,
                               account: int,
                               meta_ids: Tuple[int, ...],
-                              sdb: databases.Database,
-                              mdb: databases.Database,
-                              pdb: databases.Database,
-                              rdb: databases.Database,
+                              sdb: ParallelDatabase,
+                              mdb: ParallelDatabase,
+                              pdb: ParallelDatabase,
+                              rdb: ParallelDatabase,
                               cache: Optional[aiomcache.Client]) -> Dict[str, pd.DataFrame]:
     """Extract everything we know about developers."""
     contributors = await mine_contributors(
@@ -135,10 +137,10 @@ async def mine_all_releases(repos: Collection[str],
                             prefixer: PrefixerPromise,
                             account: int,
                             meta_ids: Tuple[int, ...],
-                            sdb: databases.Database,
-                            mdb: databases.Database,
-                            pdb: databases.Database,
-                            rdb: databases.Database,
+                            sdb: ParallelDatabase,
+                            mdb: ParallelDatabase,
+                            pdb: ParallelDatabase,
+                            rdb: ParallelDatabase,
                             cache: Optional[aiomcache.Client]) -> Dict[str, pd.DataFrame]:
     """Extract everything we know about releases."""
     releases = (await mine_releases(
@@ -164,10 +166,10 @@ async def mine_all_check_runs(repos: Collection[str],
                               prefixer: PrefixerPromise,
                               account: int,
                               meta_ids: Tuple[int, ...],
-                              sdb: databases.Database,
-                              mdb: databases.Database,
-                              pdb: databases.Database,
-                              rdb: databases.Database,
+                              sdb: ParallelDatabase,
+                              mdb: ParallelDatabase,
+                              pdb: ParallelDatabase,
+                              rdb: ParallelDatabase,
                               cache: Optional[aiomcache.Client]) -> Dict[str, pd.DataFrame]:
     """Extract everything we know about CI check runs."""
     df = await mine_check_runs(
@@ -183,10 +185,10 @@ async def mine_all_jira_issues(repos: Collection[str],
                                prefixer: PrefixerPromise,
                                account: int,
                                meta_ids: Tuple[int, ...],
-                               sdb: databases.Database,
-                               mdb: databases.Database,
-                               pdb: databases.Database,
-                               rdb: databases.Database,
+                               sdb: ParallelDatabase,
+                               mdb: ParallelDatabase,
+                               pdb: ParallelDatabase,
+                               rdb: ParallelDatabase,
                                cache: Optional[aiomcache.Client]) -> Dict[str, pd.DataFrame]:
     """Extract everything we know about JIRA issues."""
     try:
@@ -217,10 +219,10 @@ async def mine_everything(topics: Set[MineTopic],
                           settings: ReleaseSettings,
                           account: int,
                           meta_ids: Tuple[int, ...],
-                          sdb: databases.Database,
-                          mdb: databases.Database,
-                          pdb: databases.Database,
-                          rdb: databases.Database,
+                          sdb: ParallelDatabase,
+                          mdb: ParallelDatabase,
+                          pdb: ParallelDatabase,
+                          rdb: ParallelDatabase,
                           cache: Optional[aiomcache.Client],
                           ) -> Dict[MineTopic, Dict[str, pd.DataFrame]]:
     """Mine all the specified data topics."""

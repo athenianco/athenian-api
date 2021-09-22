@@ -17,7 +17,7 @@ from athenian.api.controllers.miners.github.release_mine import mine_releases
 from athenian.api.controllers.settings import ReleaseMatch
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import Release
-from athenian.api.models.persistentdata.models import ReleaseNotification
+from athenian.api.models.persistentdata.models import DeployedLabel, ReleaseNotification
 from athenian.api.models.precomputed.models import GitHubRelease
 from athenian.api.models.state.models import AccountJiraInstallation, ReleaseSetting
 from athenian.api.models.web import CommitsList, DeployedComponent, DeploymentNotification, \
@@ -1437,6 +1437,54 @@ async def test_filter_releases_by_labels(client, headers):
     assert len(releases.data) == 3
 
 
+@pytest.mark.filter_releases
+@with_defer
+async def test_filter_releases_deployments(
+        client, headers, release_match_setting_tag_or_branch, prefixer_promise, branches,
+        default_branches, mdb, pdb, rdb):
+    await rdb.execute(insert(DeployedLabel).values(DeployedLabel(
+        account_id=1,
+        deployment_name="Dummy deployment",
+        key="xxx",
+        value=["yyy"],
+    ).explode(with_primary_keys=True)))
+    await mine_deployments(
+        [40550], {},
+        datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
+        ["production", "staging"],
+        [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        release_match_setting_tag_or_branch,
+        branches, default_branches, prefixer_promise,
+        1, (6366825,), mdb, pdb, rdb, None)
+    await wait_deferred()
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-01-12",
+        "timezone": 60,
+        "in": ["{1}"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/releases", headers=headers, json=body)
+    response_text = (await response.read()).decode("utf-8")
+    assert response.status == 200, response_text
+    releases = ReleaseSet.from_dict(json.loads(response_text))
+    assert releases.include.deployments == {
+        "Dummy deployment": DeploymentNotification(
+            components=[
+                DeployedComponent(
+                    repository="github.com/src-d/go-git",
+                    reference="v4.13.1 (0d1a009cbb604db18be960db5f1525b99a55d727)"),
+            ],
+            environment="production", name="Dummy deployment", url=None,
+            date_started=datetime(2019, 11, 1, 12, 0, tzinfo=timezone.utc),
+            date_finished=datetime(2019, 11, 1, 12, 15, tzinfo=timezone.utc),
+            conclusion="SUCCESS",
+            labels={"xxx": ["yyy"]}),
+    }
+    assert releases.data[0].deployments == ["Dummy deployment"]
+
+
 async def test_get_prs_smoke(client, headers):
     body = {
         "account": 1,
@@ -1970,10 +2018,10 @@ async def test_diff_releases_commits(
 
     time_from = datetime(year=2017, month=3, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2017, month=4, day=1, tzinfo=timezone.utc)
-    releases, _, _ = await mine_releases(
+    releases, _, _, _ = await mine_releases(
         ["src-d/go-git"], {}, branches, default_branches, time_from, time_to,
         LabelFilter.empty(), JIRAFilter.empty(), release_match_setting_branch, prefixer_promise,
-        1, (6366825,), mdb, pdb, rdb, None)
+        1, (6366825,), mdb, pdb, rdb, None, with_deployments=False, with_pr_titles=False)
     await wait_deferred()
 
     response = await client.request(

@@ -568,7 +568,7 @@ class PullRequestJiraMapper:
 
     @classmethod
     async def append_pr_jira_mapping(cls,
-                                     prs: Dict[str, PullRequestFacts],
+                                     prs: Dict[int, PullRequestFacts],
                                      meta_ids: Tuple[int, ...],
                                      mdb: DatabaseLike) -> None:
         """Load and insert "jira_id" to the PR facts."""
