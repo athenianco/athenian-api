@@ -45,18 +45,21 @@ def create_collection_mixin(name: str, with_checksum: bool) -> type:
     return CollectionMixin
 
 
-def create_time_mixin(created_at: bool = False, updated_at: bool = False) -> type:
+def create_time_mixin(created_at: bool = False,
+                      updated_at: bool = False,
+                      nullable: bool = False,
+                      ) -> type:
     """Create the mixin accorinding to the required columns."""
     created_at_ = created_at
     updated_at_ = updated_at
 
     class TimeMixin:
         if created_at_:
-            created_at = Column(TIMESTAMP(timezone=True), nullable=False,
+            created_at = Column(TIMESTAMP(timezone=True), nullable=nullable,
                                 default=lambda: datetime.now(timezone.utc),
                                 server_default=func.now())
         if updated_at_:
-            updated_at = Column(TIMESTAMP(timezone=True), nullable=False,
+            updated_at = Column(TIMESTAMP(timezone=True), nullable=nullable,
                                 default=lambda: datetime.now(timezone.utc),
                                 server_default=func.now(),
                                 onupdate=lambda ctx: datetime.now(timezone.utc))
@@ -123,7 +126,7 @@ class Team(create_time_mixin(created_at=True, updated_at=True),
     parent_id = Column(Integer(), ForeignKey("teams.id", name="fk_team_parent"))
 
 
-class AccountGitHubAccount(Base):
+class AccountGitHubAccount(create_time_mixin(created_at=True, nullable=True), Base):
     """Mapping API account -> metadata account, one-to-many."""
 
     __tablename__ = "account_github_accounts"
@@ -133,7 +136,7 @@ class AccountGitHubAccount(Base):
                         nullable=False)
 
 
-class AccountJiraInstallation(Base):
+class AccountJiraInstallation(create_time_mixin(created_at=True, nullable=True), Base):
     """Mapping account -> installation_id, one-to-many."""
 
     __tablename__ = "account_jira_installations"

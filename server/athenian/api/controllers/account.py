@@ -97,7 +97,8 @@ async def match_metadata_installation(account: int,
                     account, login, len(owned_accounts))
         return ()
     inserted = [
-        AccountGitHubAccount(id=acc_id, account_id=account).explode(with_primary_keys=True)
+        AccountGitHubAccount(id=acc_id, account_id=account)
+        .create_defaults().explode(with_primary_keys=True)
         for acc_id in meta_ids
     ]
     await sdb_conn.execute_many(insert(AccountGitHubAccount), inserted)
