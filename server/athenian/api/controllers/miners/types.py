@@ -266,6 +266,7 @@ class PullRequestFacts:
         author: str
         merger: str
         releaser: str
+        deployments: List[str]
 
     def max_timestamp(self) -> pd.Timestamp:
         """Find the maximum timestamp contained in the struct."""
@@ -362,6 +363,7 @@ class ReleaseFacts:
         repository_full_name: str
         prs_title: List[str]
         prs_jira: np.ndarray
+        deployments: Optional[np.ndarray]
 
     def max_timestamp(self) -> datetime:
         """Find the maximum timestamp contained in the struct."""

@@ -181,10 +181,11 @@ def main():
                 log.info("Mining the releases")
                 branches, default_branches = await BranchMiner.extract_branches(
                     repos, meta_ids, mdb, None)
-                releases, _, _ = await mine_releases(
+                releases, _, _, _ = await mine_releases(
                     repos, {}, branches, default_branches, no_time_from, time_to,
                     LabelFilter.empty(), JIRAFilter.empty(), settings, prefixer, reposet.owner_id,
-                    meta_ids, mdb, pdb, rdb, None, force_fresh=True)
+                    meta_ids, mdb, pdb, rdb, None,
+                    force_fresh=True, with_pr_titles=False, with_deployments=False)
                 await wait_deferred()
                 branches_count = len(branches)
                 releases_by_tag = sum(

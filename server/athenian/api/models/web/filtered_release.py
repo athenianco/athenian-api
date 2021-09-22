@@ -20,6 +20,7 @@ class FilteredRelease(Model):
         "publisher": str,
         "commit_authors": List[str],
         "prs": List[ReleasedPullRequest],
+        "deployments": Optional[List[str]],
     }
 
     attribute_map = {
@@ -34,6 +35,7 @@ class FilteredRelease(Model):
         "publisher": "publisher",
         "commit_authors": "commit_authors",
         "prs": "prs",
+        "deployments": "deployments",
     }
 
     def __init__(
@@ -49,6 +51,7 @@ class FilteredRelease(Model):
         publisher: Optional[str] = None,
         commit_authors: Optional[List[str]] = None,
         prs: Optional[List[ReleasedPullRequest]] = None,
+        deployments: Optional[List[str]] = None,
     ):
         """FilteredRelease - a model defined in OpenAPI
 
@@ -62,6 +65,7 @@ class FilteredRelease(Model):
         :param commits: The commits of this FilteredRelease.
         :param publisher: The publisher of this FilteredRelease.
         :param commit_authors: The publisher of this FilteredRelease.
+        :param deployments: The deployments of this FilteredRelease.
         """
         self._name = name
         self._repository = repository
@@ -74,6 +78,7 @@ class FilteredRelease(Model):
         self._publisher = publisher
         self._commit_authors = commit_authors
         self._prs = prs
+        self._deployments = deployments
 
     @property
     def name(self) -> str:
@@ -327,3 +332,23 @@ class FilteredRelease(Model):
             raise ValueError("Invalid value for `prs`, must not be `None`")
 
         self._prs = prs
+
+    @property
+    def deployments(self) -> Optional[List[str]]:
+        """Gets the deployments of this FilteredRelease.
+
+        Deployments with this release.
+
+        :return: The deployments of this FilteredRelease.
+        """
+        return self._deployments
+
+    @deployments.setter
+    def deployments(self, deployments: Optional[List[str]]):
+        """Sets the deployments of this FilteredRelease.
+
+        Deployments with this release.
+
+        :param deployments: The deployments of this FilteredRelease.
+        """
+        self._deployments = deployments

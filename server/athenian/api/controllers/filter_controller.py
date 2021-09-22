@@ -371,7 +371,7 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
         BranchMiner.extract_branches(stripped_repos, meta_ids, request.mdb, request.cache),
         extract_release_participants(filt.with_, meta_ids, request.mdb),
     )
-    releases, avatars, _ = await mine_releases(
+    releases, avatars, _, deployments = await mine_releases(
         repos=stripped_repos,
         participants=participants,
         branches=branches,
@@ -392,7 +392,7 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
     prefixer = await prefixer.load()
     avatars = [(prefixer.user_node_to_prefixed_login[u], url) for u, url in avatars]
     return await _build_release_set_response(
-        releases, avatars, prefixer, jira_ids, meta_ids, request.mdb)
+        releases, avatars, deployments, prefixer, jira_ids, meta_ids, request.mdb)
 
 
 async def _load_jira_issues_for_releases(jira_ids: Optional[Tuple[int, List[str]]],
@@ -423,16 +423,22 @@ async def _load_jira_issues_for_releases(jira_ids: Optional[Tuple[int, List[str]
 
 async def _build_release_set_response(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
                                       avatars: List[Tuple[str, str]],
+                                      deployments: Dict[str, Deployment],
                                       prefixer: Prefixer,
                                       jira_ids: Optional[Tuple[int, List[str]]],
                                       meta_ids: Tuple[int, ...],
                                       mdb: ParallelDatabase,
                                       ) -> web.Response:
     issues = await _load_jira_issues_for_releases(jira_ids, releases, meta_ids, mdb)
+    repo_node_to_prefixed_name = prefixer.repo_node_to_prefixed_name.get
     data = [_filtered_release_from_tuple(t, prefixer) for t in releases]
     model = ReleaseSet(data=data, include=ReleaseSetInclude(
         users={u: IncludedNativeUser(avatar=a) for u, a in avatars},
         jira=issues,
+        deployments={
+            key: _webify_deployment(val, repo_node_to_prefixed_name)
+            for key, val in sorted(deployments.items())
+        } or None,
     ))
     return model_response(model)
 
@@ -454,6 +460,7 @@ def _filtered_release_from_tuple(t: Tuple[Dict[str, Any], ReleaseFacts],
         commits=facts.commits_count,
         commit_authors=sorted(user_node_to_prefixed_login.get(u) for u in facts.commit_authors),
         prs=_extract_release_prs(facts, prefixer),
+        deployments=facts.deployments,
     )
 
 
@@ -534,6 +541,26 @@ async def _check_github_repos(request: AthenianWebRequest,
     return settings, meta_ids, repos
 
 
+def _webify_deployment(val: Deployment, repo_node_to_prefixed_name) -> WebDeploymentNotification:
+    return WebDeploymentNotification(
+        name=val.name,
+        environment=val.environment,
+        conclusion=val.conclusion,
+        url=val.url,
+        date_started=val.started_at,
+        date_finished=val.finished_at,
+        components=[
+            WebDeployedComponent(
+                repository=repo_node_to_prefixed_name(c.repository_id),
+                reference=f"{c.reference} ({c.sha})"
+                if not c.sha.startswith(c.reference) else c.sha,
+            )
+            for c in val.components
+        ],
+        labels=val.labels,
+    )
+
+
 @sentry_span
 async def _build_github_prs_response(prs: List[PullRequestListItem],
                                      deployments: Dict[str, Deployment],
@@ -552,23 +579,7 @@ async def _build_github_prs_response(prs: List[PullRequestListItem],
             login: IncludedNativeUser(avatar=avatar) for login, avatar in avatars
         },
         deployments={
-            key: WebDeploymentNotification(
-                name=val.name,
-                environment=val.environment,
-                conclusion=val.conclusion,
-                url=val.url,
-                date_started=val.started_at,
-                date_finished=val.finished_at,
-                components=[
-                    WebDeployedComponent(
-                        repository=repo_node_to_prefixed_name(c.repository_id),
-                        reference=f"{c.reference} ({c.sha})"
-                        if not c.sha.startswith(c.reference) else c.sha,
-                    )
-                    for c in val.components
-                ],
-                labels=val.labels,
-            )
+            key: _webify_deployment(val, repo_node_to_prefixed_name)
             for key, val in sorted(deployments.items())
         } or None,
     ), data=web_prs)
@@ -606,11 +617,11 @@ async def get_releases(request: AthenianWebRequest, body: dict) -> web.Response:
     except KeyError:
         return model_response(ReleaseSet())
     prefixer = await Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
-    releases, avatars = await mine_releases_by_name(
+    releases, avatars, deployments = await mine_releases_by_name(
         releases_by_repo, settings, prefixer, body.account, meta_ids,
         request.mdb, request.pdb, request.rdb, request.cache)
     return await _build_release_set_response(
-        releases, avatars, await prefixer.load(), jira_ids, meta_ids, request.mdb)
+        releases, avatars, deployments, await prefixer.load(), jira_ids, meta_ids, request.mdb)
 
 
 @weight(1)

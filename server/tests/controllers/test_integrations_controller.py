@@ -125,13 +125,14 @@ async def test_get_everything_smoke(client, headers):
         "work_began", "releaser", "merged_by_id", "user_node_id", "repository_full_name",
         "first_review_request", "last_review", "activity_days", "closed", "merge_commit_id",
         "head_ref", "jira_id", "merger", "done", "size", "reviews", "release_url",
-        "release_node_id", "review_comments", "participants",
+        "release_node_id", "review_comments", "participants", "deployments",
     }
     assert len(releases_df) == 53
     assert set(releases_df) == {
         "additions", "age", "commit_authors", "commits_count", "deletions", "matched_by", "name",
         "prs_additions", "prs_deletions", "prs_node_id", "prs_number", "prs_title", "prs_jira",
         "prs_user_node_id", "published", "publisher", "repository_full_name", "sha", "url",
+        "deployments",
     }
     assert len(check_runs_df) == 4426
     assert set(check_runs_df) == {

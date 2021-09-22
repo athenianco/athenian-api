@@ -21,9 +21,10 @@ from athenian.api.controllers.miners.github.commit import fetch_precomputed_comm
     fetch_repository_commits, RELEASE_FETCH_COMMITS_COLUMNS
 from athenian.api.controllers.miners.github.dag_accelerated import extract_subdag, \
     mark_dag_access, mark_dag_parents, searchsorted_inrange
+from athenian.api.controllers.miners.github.deployment_light import load_included_deployments
 from athenian.api.controllers.miners.github.precomputed_releases import \
-    fetch_precomputed_releases_by_name, load_precomputed_release_facts, \
-    store_precomputed_release_facts
+    compose_release_match, fetch_precomputed_releases_by_name, load_precomputed_release_facts, \
+    reverse_release_settings, store_precomputed_release_facts
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.github.release_load import \
     group_repos_by_release_match, ReleaseLoader
@@ -32,7 +33,7 @@ from athenian.api.controllers.miners.github.release_match import \
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.github.user import mine_user_avatars, UserAvatarKeys
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
-from athenian.api.controllers.miners.types import released_prs_columns, ReleaseFacts, \
+from athenian.api.controllers.miners.types import Deployment, released_prs_columns, ReleaseFacts, \
     ReleaseParticipants, ReleaseParticipationKind
 from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
@@ -41,31 +42,9 @@ from athenian.api.defer import defer
 from athenian.api.models.metadata.github import NodePullRequest, PullRequest, PullRequestLabel, \
     PushCommit, Release
 from athenian.api.tracing import sentry_span
+from athenian.precomputer.db.models import GitHubReleaseDeployment
 
 
-def _reject_releases_without_pr_titles(result: Tuple[List[Tuple[Dict[str, Any], ReleaseFacts]],
-                                                     Union[List[Tuple[str, str]], np.ndarray],
-                                                     Dict[str, ReleaseMatch]],
-                                       with_pr_titles: bool = False,
-                                       **_) -> Tuple[List[Tuple[Dict[str, Any], ReleaseFacts]],
-                                                     Union[List[Tuple[str, str]], np.ndarray],
-                                                     Dict[str, ReleaseMatch]]:
-    if with_pr_titles and any(r[1]["prs_" + PullRequest.title.name] is None for r in result[0]):
-        raise CancelCache()
-    return result
-
-
-@sentry_span
-@cached(
-    exptime=60 * 60,  # 1 hour
-    serialize=pickle.dumps,
-    deserialize=pickle.loads,
-    key=lambda repos, participants, time_from, time_to, labels, jira, settings, **_: (
-        ",".join(sorted(repos)),
-        ",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(participants.items())),
-        time_from, time_to, labels, jira, settings),
-    postprocess=_reject_releases_without_pr_titles,
-)
 async def mine_releases(repos: Iterable[str],
                         participants: ReleaseParticipants,
                         branches: pd.DataFrame,
@@ -85,9 +64,11 @@ async def mine_releases(repos: Iterable[str],
                         force_fresh: bool = False,
                         with_avatars: bool = True,
                         with_pr_titles: bool = False,
+                        with_deployments: bool = True,
                         ) -> Tuple[List[Tuple[Dict[str, Any], ReleaseFacts]],
                                    Union[List[Tuple[int, str]], List[int]],
-                                   Dict[str, ReleaseMatch]]:
+                                   Dict[str, ReleaseMatch],
+                                   Dict[str, Deployment]]:
     """Collect details about each release published between `time_from` and `time_to` and \
     calculate various statistics.
 
@@ -95,19 +76,100 @@ async def mine_releases(repos: Iterable[str],
     :param force_fresh: Ensure that we load the most up to date releases, no matter the state of \
                         the pdb is.
     :param with_avatars: Indicates whether to return the fetched user avatars or just an array of \
-                         unique mentioned logins.
+                         unique mentioned user node IDs.
     :param with_pr_titles: Indicates whether released PR titles must be fetched.
+    :param with_deployments: Indicates whether we must load the deployments to which the filtered
+                             releases belong.
     :return: 1. List of releases (general info, computed facts). \
              2. User avatars if `with_avatars` else *only newly mined* mentioned people nodes. \
              3. Release matched_by-s.
+             4. Deployments that mention the returned releases. Empty if not `with_deployments`.
     """
+    result = await _mine_releases(
+        repos, participants, branches, default_branches, time_from, time_to, labels, jira,
+        settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache,
+        force_fresh, with_avatars, with_pr_titles, with_deployments)
+    return result[:-3]
+
+
+def _triage_flags(result: Tuple[List[Tuple[Dict[str, Any], ReleaseFacts]],
+                                Union[List[Tuple[int, str]], List[int]],
+                                Dict[str, ReleaseMatch],
+                                Dict[str, Deployment],
+                                bool, bool, bool],
+                  with_avatars: bool = True,
+                  with_pr_titles: bool = False,
+                  with_deployments: bool = True,
+                  **_) -> Tuple[List[Tuple[Dict[str, Any], ReleaseFacts]],
+                                Union[List[Tuple[int, str]], List[int]],
+                                Dict[str, ReleaseMatch],
+                                Dict[str, Deployment],
+                                bool, bool, bool]:
+    (main, avatars, matches, deps,
+     cached_with_avatars, cached_with_pr_titles, cached_with_deployments,
+     ) = result
+    if with_pr_titles and not cached_with_pr_titles:
+        raise CancelCache()
+    if with_avatars and not cached_with_avatars:
+        raise CancelCache()
+    if not with_avatars and cached_with_avatars:
+        avatars = [p[0] for p in avatars]
+    if with_deployments and not cached_with_deployments:
+        raise CancelCache()
+    return main, avatars, matches, deps, with_avatars, with_pr_titles, with_deployments
+
+
+@sentry_span
+@cached(
+    exptime=60 * 60,  # 1 hour
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda repos, participants, time_from, time_to, labels, jira, settings, **_: (
+        ",".join(sorted(repos)),
+        ",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(participants.items())),
+        time_from, time_to, labels, jira, settings),
+    postprocess=_triage_flags,
+)
+async def _mine_releases(repos: Iterable[str],
+                         participants: ReleaseParticipants,
+                         branches: pd.DataFrame,
+                         default_branches: Dict[str, str],
+                         time_from: datetime,
+                         time_to: datetime,
+                         labels: LabelFilter,
+                         jira: JIRAFilter,
+                         settings: ReleaseSettings,
+                         prefixer: PrefixerPromise,
+                         account: int,
+                         meta_ids: Tuple[int, ...],
+                         mdb: ParallelDatabase,
+                         pdb: ParallelDatabase,
+                         rdb: ParallelDatabase,
+                         cache: Optional[aiomcache.Client],
+                         force_fresh: bool,
+                         with_avatars: bool,
+                         with_pr_titles: bool,
+                         with_deployments: bool,
+                         ) -> Tuple[List[Tuple[Dict[str, Any], ReleaseFacts]],
+                                    Union[List[Tuple[int, str]], List[int]],
+                                    Dict[str, ReleaseMatch],
+                                    Dict[str, Deployment],
+                                    bool, bool, bool]:
     log = logging.getLogger("%s.mine_releases" % metadata.__package__)
     releases_in_time_range, matched_bys = await ReleaseLoader.load_releases(
         repos, branches, default_branches, time_from, time_to,
         settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache, force_fresh=force_fresh)
     settings = ReleaseLoader.disambiguate_release_settings(settings, matched_bys)
     if releases_in_time_range.empty:
-        return [], [], {r: v.match for r, v in settings.prefixed.items()}
+        return (
+            [], [], {r: v.match for r, v in settings.prefixed.items()}, {},
+            with_avatars, with_pr_titles, with_deployments,
+        )
+    if with_deployments:
+        deployments = asyncio.create_task(
+            _load_release_deployments(releases_in_time_range, default_branches, settings,
+                                      account, meta_ids, mdb, pdb, rdb, cache),
+            name="_load_release_deployments(%d)" % len(releases_in_time_range))
     precomputed_facts = await load_precomputed_release_facts(
         releases_in_time_range, default_branches, settings, account, pdb)
     # uncomment this line to compute releases from scratch:
@@ -382,7 +444,17 @@ async def mine_releases(repos: Iterable[str],
             facts["prs_" + PullRequest.title.name] = [
                 pr_title_map.get(node) for node in facts["prs_" + PullRequest.node_id.name]
             ]
-    return result, avatars, {r: v.match for r, v in settings.prefixed.items()}
+    if with_deployments:
+        await deployments
+        depmap, deployments = deployments.result()
+        for rd, facts in result:
+            facts.deployments = depmap.get(rd[Release.node_id.name])
+    else:
+        deployments = {}
+    return (
+        result, avatars, {r: v.match for r, v in settings.prefixed.items()}, deployments,
+        with_avatars, with_pr_titles, with_deployments,
+    )
 
 
 def _release_facts_with_repository_full_name(facts: ReleaseFacts, repo: str) -> ReleaseFacts:
@@ -602,7 +674,8 @@ async def mine_releases_by_name(names: Dict[str, Iterable[str]],
                                 rdb: ParallelDatabase,
                                 cache: Optional[aiomcache.Client],
                                 ) -> Tuple[List[Tuple[Dict[str, Any], ReleaseFacts]],
-                                           List[Tuple[str, str]]]:
+                                           List[Tuple[str, str]],
+                                           Dict[str, Deployment]]:
     """Collect details about each release specified by the mapping from repository names to \
     release names."""
     log = logging.getLogger("%s.mine_releases_by_name" % metadata.__package__)
@@ -610,9 +683,64 @@ async def mine_releases_by_name(names: Dict[str, Iterable[str]],
     releases, _, branches, default_branches = await _load_releases_by_name(
         names, log, settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache)
     if releases.empty:
-        return [], []
-    return await mine_releases_by_ids(releases, branches, default_branches, settings, prefixer,
-                                      account, meta_ids, mdb, pdb, rdb, cache, with_avatars=True)
+        return [], [], {}
+    settings = settings.select(releases[Release.repository_full_name.name].unique())
+    tasks = [
+        mine_releases_by_ids(releases, branches, default_branches, settings, prefixer,
+                             account, meta_ids, mdb, pdb, rdb, cache, with_avatars=True),
+    ]
+    tag_or_branch = [k for k, v in settings.native.items()
+                     if v.match == ReleaseMatch.tag_or_branch]
+    if not tag_or_branch:
+        tasks.append(_load_release_deployments(releases, default_branches, settings,
+                                               account, meta_ids, mdb, pdb, rdb, cache))
+    else:
+        tag_releases = releases[
+            (releases[matched_by_column] == ReleaseMatch.tag) &
+            (releases[Release.repository_full_name.name].isin(tag_or_branch))
+        ]
+        branch_releases = releases[
+            (releases[matched_by_column] == ReleaseMatch.branch) &
+            (releases[Release.repository_full_name.name].isin(tag_or_branch))
+        ]
+        if tag_releases.empty or branch_releases.empty:
+            if tag_releases.empty:
+                settings = ReleaseLoader.disambiguate_release_settings(
+                    settings.select(tag_or_branch),
+                    {r: ReleaseMatch.branch for r in tag_or_branch})
+            else:
+                settings = ReleaseLoader.disambiguate_release_settings(
+                    settings.select(tag_or_branch),
+                    {r: ReleaseMatch.tag for r in tag_or_branch})
+            tasks.append(_load_release_deployments(releases, default_branches, settings,
+                                                   account, meta_ids, mdb, pdb, rdb, cache))
+        else:
+            remainder = releases.loc[~releases.index.isin(
+                tag_releases.index.append(branch_releases.index))]
+            tasks.append(_load_release_deployments(remainder, default_branches, settings,
+                                                   account, meta_ids, mdb, pdb, rdb, cache))
+            tag_settings = ReleaseLoader.disambiguate_release_settings(
+                settings.select(tag_or_branch), {r: ReleaseMatch.tag for r in tag_or_branch})
+            tasks.append(_load_release_deployments(
+                tag_releases, default_branches, tag_settings, account, meta_ids,
+                mdb, pdb, rdb, cache))
+            branch_settings = ReleaseLoader.disambiguate_release_settings(
+                settings.select(tag_or_branch), {r: ReleaseMatch.branch for r in tag_or_branch})
+            tasks.append(_load_release_deployments(
+                branch_releases, default_branches, branch_settings, account, meta_ids,
+                mdb, pdb, rdb, cache))
+    (releases, avatars), *deployments = await gather(*tasks)
+    if len(deployments) == 1:
+        full_depmap, full_deployments = deployments[0]
+    else:
+        full_depmap = {}
+        full_deployments = {}
+        for depmap, deps in deployments:
+            full_depmap.update(depmap)
+            full_deployments.update(deps)
+    for rd, facts in releases:
+        facts.deployments = full_depmap.get(rd[Release.node_id.name])
+    return releases, avatars, full_deployments
 
 
 async def mine_releases_by_ids(releases: pd.DataFrame,
@@ -682,11 +810,11 @@ async def mine_releases_by_ids(releases: pd.DataFrame,
         repos = missing_releases[Release.repository_full_name.name].unique()
         time_from = missing_releases[Release.published_at.name].iloc[-1]
         time_to = missing_releases[Release.published_at.name].iloc[0] + timedelta(seconds=1)
-        mined_result, mined_authors, _ = await mine_releases(
+        mined_result, mined_authors, _, _ = await mine_releases(
             repos, {}, branches, default_branches, time_from, time_to, LabelFilter.empty(),
             JIRAFilter.empty(), settings, prefixer.as_promise(),
             account, meta_ids, mdb, pdb, rdb, cache,
-            force_fresh=True, with_avatars=False, with_pr_titles=True)
+            force_fresh=True, with_avatars=False, with_pr_titles=True, with_deployments=False)
         missing_releases_by_repo = defaultdict(set)
         for repo, rid in zip(missing_releases[Release.repository_full_name.name].values,
                              missing_releases[Release.node_id.name].values):
@@ -897,7 +1025,7 @@ async def diff_releases(borders: Dict[str, List[Tuple[str, str]]],
             force_fresh=True, with_pr_titles=True),
         fetch_dags(),
     ]
-    (releases, avatars, _), dags = await gather(*tasks, op="mine_releases + dags")
+    (releases, avatars, _, _), dags = await gather(*tasks, op="mine_releases + dags")
     del border_releases
     releases_by_repo = defaultdict(list)
     for r in releases:
@@ -936,3 +1064,44 @@ async def diff_releases(borders: Dict[str, List[Tuple[str, str]]],
                 log.warning("Release pair's old %s is not in the sub-DAG of %s for %s",
                             old, new, repo)
     return result, avatars if any(any(d for _, _, d in v) for v in result.values()) else {}
+
+
+@sentry_span
+async def _load_release_deployments(releases_in_time_range: pd.DataFrame,
+                                    default_branches: Dict[str, str],
+                                    settings: ReleaseSettings,
+                                    account: int,
+                                    meta_ids: Tuple[int, ...],
+                                    mdb: ParallelDatabase,
+                                    pdb: ParallelDatabase,
+                                    rdb: ParallelDatabase,
+                                    cache: Optional[aiomcache.Client],
+                                    ) -> Tuple[Dict[int, np.ndarray], Dict[str, Deployment]]:
+    if releases_in_time_range.empty:
+        return {}, {}
+    ghrd = GitHubReleaseDeployment
+    reverse_settings = reverse_release_settings(
+        releases_in_time_range[Release.repository_full_name.name].unique(),
+        default_branches, settings)
+    release_ids = releases_in_time_range[Release.node_id.name].values
+    repo_names = releases_in_time_range[Release.repository_full_name.name].values.astype(
+        "U", copy=False)
+    cols = [ghrd.deployment_name, ghrd.release_id]
+    depmap = await read_sql_query(union_all(*(
+        select(cols)
+        .where(and_(ghrd.acc_id == account,
+                    ghrd.release_match == compose_release_match(m, v),
+                    ghrd.release_id.in_(release_ids[np.in1d(
+                        repo_names, np.array(repos_group, dtype=repo_names.dtype))])))
+        for (m, v), repos_group in reverse_settings.items()
+    )), pdb, cols)
+    release_ids = depmap[ghrd.release_id.name].values
+    dep_names = depmap[ghrd.deployment_name.name].values
+    order = np.argsort(release_ids)
+    dep_names = dep_names[order]
+    unique_release_ids, counts = np.unique(release_ids, return_counts=True)
+    dep_name_groups = np.split(dep_names, np.cumsum(counts[:-1]))
+    depmap = dict(zip(unique_release_ids, dep_name_groups))
+    deployments = await load_included_deployments(
+        np.unique(dep_names), account, meta_ids, mdb, rdb, cache)
+    return depmap, deployments

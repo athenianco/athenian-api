@@ -12,8 +12,10 @@ from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.dag_accelerated import extract_independent_ownership, \
     extract_pr_commits
 from athenian.api.controllers.miners.github.deployment import mine_deployments
-from athenian.api.controllers.miners.github.release_mine import mine_releases
-from athenian.api.controllers.miners.types import DeploymentFacts
+from athenian.api.controllers.miners.github.release_mine import mine_releases, \
+    mine_releases_by_name
+from athenian.api.controllers.miners.types import DeployedComponent as DeployedComponentStruct, \
+    Deployment, DeploymentFacts
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import Release
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
@@ -139,6 +141,7 @@ async def test_mine_deployments_from_scratch(
         ["src-d/go-git"], {}, branches, default_branches, time_from, time_to,
         LabelFilter.empty(), JIRAFilter.empty(), release_match_setting_tag_or_branch,
         prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None, with_avatars=False,
+        with_pr_titles=False, with_deployments=False,
     )
     await wait_deferred()
     deps, people = await mine_deployments(
@@ -1239,6 +1242,18 @@ async def test_mine_deployments_no_release_facts(
             41499: "mcuadros", 41498: "mcuadros", 41497: "mcuadros", 41490: "mcuadros",
             41488: "mcuadros", 41487: "mcuadros", 41486: "mcuadros", 41494: "mcuadros",
             41493: "mcuadros", 41492: "mcuadros", 41491: "mcuadros"},
+        "deployments": {
+            41467: None, 41468: None, 41469: None, 41470: None, 41471: None,
+            41472: None, 41473: None, 41474: None, 41475: None, 41476: None,
+            41477: None, 41478: None, 41479: None, 41480: None, 41481: None,
+            41482: None, 41483: None, 41484: None, 41485: None, 41486: None,
+            41487: None, 41488: None, 41490: None, 41491: None, 41492: None,
+            41493: None, 41494: None, 41495: None, 41496: None, 41497: None,
+            41498: None, 41499: None, 41500: None, 41501: None, 41502: None,
+            41503: None, 41505: None, 41506: None, 41507: None, 41508: None,
+            41509: None, 41510: None, 41511: None, 41512: None, 41513: None,
+            41514: None, 41515: None, 41516: None, 41517: None, 41518: None,
+            41519: None},
     }
 
 
@@ -1357,6 +1372,7 @@ async def test_mine_deployments_event_releases(
             ["src-d/go-git"], {}, branches, default_branches, time_from, time_to,
             LabelFilter.empty(), JIRAFilter.empty(), release_match_setting_event,
             prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None, with_avatars=False,
+            with_pr_titles=False, with_deployments=False,
         )
         await wait_deferred()
     deps, people = await mine_deployments(
@@ -1376,3 +1392,67 @@ async def test_mine_deployments_event_releases(
         assert len(set(df.iloc[0]["prs_node_id"])) == 380
         assert df.iloc[0][Release.name.name] == "Pushed!"
         assert df.iloc[0][Release.sha.name] == "1edb992dbc419a0767b1cf3a524b0d35529799f5"
+
+
+@pytest.fixture(scope="function")
+@with_defer
+async def precomputed_deployments(
+    release_match_setting_tag_or_branch, prefixer_promise, branches, default_branches,
+    mdb, pdb, rdb,
+):
+    await mine_deployments(
+        [40550], {},
+        datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
+        ["production", "staging"],
+        [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        release_match_setting_tag_or_branch,
+        branches, default_branches, prefixer_promise,
+        1, (6366825,), mdb, pdb, rdb, None)
+
+
+proper_deployments = {
+    "Dummy deployment": Deployment(
+        name="Dummy deployment",
+        conclusion="SUCCESS",
+        environment="production",
+        url=None,
+        started_at=datetime(2019, 11, 1, 12, 0, tzinfo=timezone.utc),
+        finished_at=datetime(2019, 11, 1, 12, 15, tzinfo=timezone.utc),
+        components=[
+            DeployedComponentStruct(
+                repository_id=40550,
+                reference="v4.13.1",
+                sha="0d1a009cbb604db18be960db5f1525b99a55d727"),
+        ],
+        labels=None),
+}
+
+
+@with_defer
+async def test_mine_release_by_name_deployments(
+        release_match_setting_tag_or_branch, prefixer_promise, precomputed_deployments,
+        mdb, pdb, rdb):
+    names = {"36c78b9d1b1eea682703fb1cbb0f4f3144354389", "v4.0.0"}
+    releases, _, deps = await mine_releases_by_name(
+        {"src-d/go-git": names},
+        release_match_setting_tag_or_branch, prefixer_promise,
+        1, (6366825,), mdb, pdb, rdb, None)
+    assert deps == proper_deployments
+    assert releases[0][1].deployments == ["Dummy deployment"]
+
+
+@with_defer
+async def test_mine_releases_deployments(
+        release_match_setting_tag_or_branch, prefixer_promise, precomputed_deployments,
+        branches, default_branches, mdb, pdb, rdb):
+    releases, _, _, deps = await mine_releases(
+        ["src-d/go-git"], {}, branches, default_branches,
+        datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
+        LabelFilter.empty(), JIRAFilter.empty(), release_match_setting_tag_or_branch,
+        prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None,
+        with_avatars=False, with_pr_titles=False, with_deployments=True)
+    assert deps == proper_deployments
+    ndeps = 0
+    for _, f in releases:
+        ndeps += f.deployments is not None and f.deployments[0] == "Dummy deployment"
+    assert ndeps == 51
