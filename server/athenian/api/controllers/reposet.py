@@ -227,12 +227,13 @@ async def _load_account_reposets(account: int,
                 prefixer = await Prefixer.load(meta_ids, mdb_conn, cache)
             else:
                 prefixer, meta_ids = prefixer_meta_ids
+
+        async with sdb_conn.transaction():
             if check_progress:
                 progress = await fetch_github_installation_progress(
                     account, sdb_conn, mdb_conn, cache)
                 if progress.finished_date is None:
                     raise_no_source_data()
-        async with sdb_conn.transaction():
             ar = AccountRepository
             updated_col = (ar.updated_at == func.max(ar.updated_at).over(
                 partition_by=ar.repo_graph_id,
