@@ -17,6 +17,7 @@ from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch
     ReleaseMatchSetting, ReleaseSettings
 from athenian.api.defer import with_defer
 from athenian.api.models.metadata.github import Branch
+from athenian.api.models.persistentdata.models import DeployedLabel
 from athenian.api.models.state.models import JIRAProjectSetting, MappedJIRAIdentity
 from athenian.api.typing_utils import wraps
 
@@ -92,6 +93,16 @@ async def disabled_dev(sdb):
     await sdb.execute(insert(JIRAProjectSetting).values(
         JIRAProjectSetting(account_id=1, key="DEV", enabled=False)
         .create_defaults().explode(with_primary_keys=True)))
+
+
+@pytest.fixture(scope="function")
+async def dummy_deployment_label(rdb):
+    await rdb.execute(insert(DeployedLabel).values(DeployedLabel(
+        account_id=1,
+        deployment_name="Dummy deployment",
+        key="xxx",
+        value=["yyy"],
+    ).explode(with_primary_keys=True)))
 
 
 @pytest.fixture

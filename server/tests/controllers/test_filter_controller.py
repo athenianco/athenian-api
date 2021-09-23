@@ -17,13 +17,12 @@ from athenian.api.controllers.miners.github.release_mine import mine_releases
 from athenian.api.controllers.settings import ReleaseMatch
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import Release
-from athenian.api.models.persistentdata.models import DeployedLabel, ReleaseNotification
+from athenian.api.models.persistentdata.models import ReleaseNotification
 from athenian.api.models.precomputed.models import GitHubRelease
 from athenian.api.models.state.models import AccountJiraInstallation, ReleaseSetting
 from athenian.api.models.web import CommitsList, DeployedComponent, DeploymentNotification, \
-    FilteredCodeCheckRuns, \
-    FilteredLabel, \
-    PullRequestEvent, PullRequestParticipant, PullRequestSet, PullRequestStage, ReleaseSet
+    FilteredCodeCheckRuns, FilteredLabel, PullRequestEvent, PullRequestParticipant, \
+    PullRequestSet, PullRequestStage, ReleaseSet
 from athenian.api.models.web.diffed_releases import DiffedReleases
 from athenian.api.models.web.filtered_deployments import FilteredDeployments
 from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME
@@ -1441,13 +1440,7 @@ async def test_filter_releases_by_labels(client, headers):
 @with_defer
 async def test_filter_releases_deployments(
         client, headers, release_match_setting_tag_or_branch, prefixer_promise, branches,
-        default_branches, mdb, pdb, rdb):
-    await rdb.execute(insert(DeployedLabel).values(DeployedLabel(
-        account_id=1,
-        deployment_name="Dummy deployment",
-        key="xxx",
-        value=["yyy"],
-    ).explode(with_primary_keys=True)))
+        default_branches, mdb, pdb, rdb, dummy_deployment_label):
     await mine_deployments(
         [40550], {},
         datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),

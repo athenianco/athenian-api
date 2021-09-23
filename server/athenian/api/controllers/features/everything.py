@@ -1,11 +1,12 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from itertools import chain
+import json
 from typing import Collection, Dict, Optional, Set, Tuple
 
 import aiomcache
 import pandas as pd
-from sqlalchemy import and_, select
+from sqlalchemy import and_, distinct, select
 
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.controllers.features.github.pull_request_filter import PullRequestListMiner
@@ -15,6 +16,7 @@ from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.check_run import mine_check_runs
 from athenian.api.controllers.miners.github.contributors import mine_contributors
+from athenian.api.controllers.miners.github.deployment import mine_deployments
 from athenian.api.controllers.miners.github.deployment_light import append_pr_deployment_mapping
 from athenian.api.controllers.miners.github.developer import DeveloperTopic, \
     mine_developer_activities
@@ -26,7 +28,9 @@ from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
 from athenian.api.controllers.settings import ReleaseSettings
 from athenian.api.db import ParallelDatabase
 from athenian.api.models.metadata.github import PullRequest, Release, User
+from athenian.api.models.persistentdata.models import DeploymentNotification
 from athenian.api.response import ResponseError
+from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
 from athenian.precomputer.db.models import GitHubDonePullRequestFacts
 
@@ -39,8 +43,10 @@ class MineTopic(Enum):
     releases = "releases"
     check_runs = "check_runs"
     jira_issues = "jira_issues"
+    deployments = "deployments"
 
 
+@sentry_span
 async def mine_all_prs(repos: Collection[str],
                        branches: pd.DataFrame,
                        default_branches: Dict[str, str],
@@ -97,6 +103,7 @@ async def mine_all_prs(repos: Collection[str],
     return {"": df_prs.join(df_facts)}
 
 
+@sentry_span
 async def mine_all_developers(repos: Collection[str],
                               branches: pd.DataFrame,
                               default_branches: Dict[str, str],
@@ -130,6 +137,7 @@ async def mine_all_developers(repos: Collection[str],
     }
 
 
+@sentry_span
 async def mine_all_releases(repos: Collection[str],
                             branches: pd.DataFrame,
                             default_branches: Dict[str, str],
@@ -159,6 +167,7 @@ async def mine_all_releases(repos: Collection[str],
     return {"": result}
 
 
+@sentry_span
 async def mine_all_check_runs(repos: Collection[str],
                               branches: pd.DataFrame,
                               default_branches: Dict[str, str],
@@ -178,6 +187,7 @@ async def mine_all_check_runs(repos: Collection[str],
     return {"": df}
 
 
+@sentry_span
 async def mine_all_jira_issues(repos: Collection[str],
                                branches: pd.DataFrame,
                                default_branches: Dict[str, str],
@@ -206,12 +216,57 @@ async def mine_all_jira_issues(repos: Collection[str],
     return {"": issues}
 
 
+@sentry_span
+async def mine_all_deployments(repos: Collection[str],
+                               branches: pd.DataFrame,
+                               default_branches: Dict[str, str],
+                               settings: ReleaseSettings,
+                               prefixer: PrefixerPromise,
+                               account: int,
+                               meta_ids: Tuple[int, ...],
+                               sdb: ParallelDatabase,
+                               mdb: ParallelDatabase,
+                               pdb: ParallelDatabase,
+                               rdb: ParallelDatabase,
+                               cache: Optional[aiomcache.Client]) -> Dict[str, pd.DataFrame]:
+    """Extract everything we know about deployments."""
+    repo_name_to_node = (await prefixer.load()).repo_name_to_node
+    now = datetime.now(timezone.utc)
+    envs = await rdb.fetch_all(select([distinct(DeploymentNotification.environment)])
+                               .where(DeploymentNotification.account_id == account))
+    envs = [r[0] for r in envs]
+    deps, _ = await mine_deployments(
+        [repo_name_to_node[r] for r in repos if r in repo_name_to_node], {},
+        now - timedelta(days=365 * 10), now,
+        envs, [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        settings, branches, default_branches, prefixer,
+        account, meta_ids, mdb, pdb, rdb, cache)
+    split_cols = ["releases", "components", "labels"]
+    for name, *dfs in zip(deps.index.values, *(deps[col].values for col in split_cols)):
+        for df in dfs:
+            df["deployment_name"] = name
+            try:
+                del df["account_id"]
+            except KeyError:
+                pass
+    result = {"": deps}
+    for col in split_cols:
+        df = pd.concat(deps[col].values)
+        del deps[col]
+        if not df.empty:
+            if col == "labels":
+                df["value"] = [json.dumps(v) for v in df["value"].values]
+            result["_" + col] = df
+    return result
+
+
 miners = {
     MineTopic.prs: mine_all_prs,
     MineTopic.releases: mine_all_releases,
     MineTopic.developers: mine_all_developers,
     MineTopic.check_runs: mine_all_check_runs,
     MineTopic.jira_issues: mine_all_jira_issues,
+    MineTopic.deployments: mine_all_deployments,
 }
 
 

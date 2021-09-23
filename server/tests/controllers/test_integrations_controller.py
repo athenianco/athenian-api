@@ -59,7 +59,7 @@ async def test_match_identities_nasty_input(client, headers, body, code):
     assert response.status == code, "Response body is : " + rbody
 
 
-async def test_get_everything_smoke(client, headers):
+async def test_get_everything_smoke(client, headers, dummy_deployment_label):
     # preheat
     body = {
         "for": [
@@ -114,6 +114,14 @@ async def test_get_everything_smoke(client, headers):
             check_runs_df = pd.read_parquet(checkf)
         with zipf.open("jira_issues.parquet") as jiraf:
             jira_issues_df = pd.read_parquet(jiraf)
+        with zipf.open("deployments.parquet") as depsf:
+            deps_df = pd.read_parquet(depsf)
+        with zipf.open("deployments_components.parquet") as depscompsf:
+            depscomps_df = pd.read_parquet(depscompsf)
+        with zipf.open("deployments_releases.parquet") as depsrelsf:
+            depsrels_df = pd.read_parquet(depsrelsf)
+        with zipf.open("deployments_labels.parquet") as depslblsf:
+            depslbls_df = pd.read_parquet(depslblsf)
     assert len(prs_df) == 679
     assert set(prs_df) == {
         "first_comment_on_first_review", "merged_by_login", "first_commit", "stage_time_review",
@@ -149,6 +157,27 @@ async def test_get_everything_smoke(client, headers):
         "priority_name", "prs_began", "prs_count", "prs_released", "reporter", "resolved",
         "status", "type", "updated", "work_began",
     }
+    assert len(deps_df) == 1
+    assert set(deps_df.columns) == {
+        "commit_authors", "commits_overall", "commits_prs", "conclusion", "environment",
+        "finished_at", "lines_overall", "lines_prs", "pr_authors", "prs", "prs_offsets",
+        "release_authors", "repositories", "started_at", "url",
+    }
+    assert len(depscomps_df) == 1
+    assert set(depscomps_df.columns) == {
+        "repository_node_id", "reference", "resolved_commit_node_id", "deployment_name",
+    }
+    assert len(depsrels_df) == 51
+    assert set(depsrels_df.columns) == {
+        "commit_authors", "prs_node_id", "prs_number", "prs_additions",
+        "prs_deletions", "prs_user_node_id", "prs_title", "prs_jira",
+        "deployments", "age", "additions", "deletions", "commits_count",
+        "repository_full_name", "repository_node_id", "author_node_id", "name",
+        "published_at", "tag", "url", "sha", "commit_id", "matched_by",
+        "author", "deployment_name",
+    }
+    assert len(depslbls_df) == 1
+    assert set(depslbls_df.columns) == {"deployment_name", "key", "value"}
 
 
 @pytest.mark.parametrize("query, code", [
