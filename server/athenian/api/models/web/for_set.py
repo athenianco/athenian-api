@@ -189,6 +189,7 @@ class _ForSet(Model, RepositoryGroupsMixin):
         "with_": Optional[PullRequestWith],
         "withgroups": Optional[List[PullRequestWith]],
         "lines": Optional[List[int]],
+        "environments": Optional[List[str]],
     }
 
     attribute_map = {
@@ -197,6 +198,7 @@ class _ForSet(Model, RepositoryGroupsMixin):
         "with_": "with",
         "withgroups": "withgroups",
         "lines": "lines",
+        "environments": "environments",
     }
 
     __enable_slots__ = False
@@ -208,6 +210,7 @@ class _ForSet(Model, RepositoryGroupsMixin):
         with_: Optional[PullRequestWith] = None,
         withgroups: Optional[List[PullRequestWith]] = None,
         lines: Optional[List[int]] = None,
+        environments: Optional[List[str]] = None,
     ):
         """ForSet - a model defined in OpenAPI
 
@@ -216,12 +219,14 @@ class _ForSet(Model, RepositoryGroupsMixin):
         :param with_: The with of this ForSet.
         :param withgroups: The withgroups of this ForSet.
         :param lines: The lines of this ForSet.
+        :param environments: The environments of this ForSet.
         """
         self._repositories = repositories
         self._repogroups = repogroups
         self._with_ = with_
         self._withgroups = withgroups
         self._lines = lines
+        self._environments = environments
 
     @property
     def with_(self) -> Optional[PullRequestWith]:
@@ -286,6 +291,22 @@ class _ForSet(Model, RepositoryGroupsMixin):
                 if val >= lines[i + 1]:
                     raise ValueError("`lines` must monotonically increase")
         self._lines = lines
+
+    @property
+    def environments(self) -> Optional[List[int]]:
+        """Gets the environments of this ForSet.
+
+        :return: The environments of this ForSet.
+        """
+        return self._environments
+
+    @environments.setter
+    def environments(self, environments: Optional[List[int]]):
+        """Sets the environments of this ForSet.
+
+        :param environments: The environments of this ForSet.
+        """
+        self._environments = environments
 
     def select_lines(self, index: int) -> "ForSet":
         """Change `lines` to point at the specified line range."""

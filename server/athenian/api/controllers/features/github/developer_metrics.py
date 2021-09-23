@@ -3,7 +3,7 @@ from typing import Collection, Dict, List, Sequence, Type, TypeVar
 import numpy as np
 import pandas as pd
 
-from athenian.api.controllers.features.metric import Metric
+from athenian.api.controllers.features.metric import Metric, MetricInt
 from athenian.api.controllers.features.metric_calculator import BinnedMetricCalculator, \
     MetricCalculator, MetricCalculatorEnsemble, SumMetricCalculator
 from athenian.api.controllers.miners.github.developer import developer_changed_lines_column, \
@@ -49,7 +49,7 @@ class DeveloperTopicCounter(SumMetricCalculator[int]):
     """Count all `topic` events in each time interval."""
 
     may_have_negative_values = False
-    dtype = int
+    metric = MetricInt
     timestamp_column: str
 
     def _analyze(self,
@@ -57,7 +57,7 @@ class DeveloperTopicCounter(SumMetricCalculator[int]):
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **kwargs) -> np.array:
-        result = np.zeros((len(min_times), len(facts)), self.dtype)
+        result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         column = facts[self.timestamp_column].values
         column_in_range = (min_times[:, None] <= column) & (column < max_times[:, None])
         result[column_in_range] = 1
@@ -68,7 +68,7 @@ class DeveloperTopicSummator(SumMetricCalculator[int]):
     """Sum all `topic` events in each time interval."""
 
     may_have_negative_values = False
-    dtype = int
+    metric = MetricInt
     topic_column: str
     timestamp_column: str
 
@@ -77,7 +77,7 @@ class DeveloperTopicSummator(SumMetricCalculator[int]):
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **kwargs) -> np.array:
-        result = np.zeros((len(min_times), len(facts)), self.dtype)
+        result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         topic_column = facts[self.topic_column].values
         ts_column = facts[self.timestamp_column].values
         column_in_range = (min_times[:, None] <= ts_column) & (ts_column < max_times[:, None])
@@ -108,7 +108,7 @@ class ActiveCounter(MetricCalculator[int]):
     ACTIVITY_DAYS_THRESHOLD_DENSITY = 0.2
 
     may_have_negative_values = False
-    dtype = int
+    metric = MetricInt
 
     def _value(self, samples: np.ndarray) -> Metric[int]:
         if len(samples) > 0:
@@ -117,8 +117,9 @@ class ActiveCounter(MetricCalculator[int]):
         else:
             days = 1
             active = 0
+        assert days > 0
         value = int(active / days > self.ACTIVITY_DAYS_THRESHOLD_DENSITY)
-        return Metric(True, value, None, None)
+        return self.metric.from_fields(True, value, None, None)
 
     def _analyze(self,
                  facts: pd.DataFrame,
@@ -131,7 +132,7 @@ class ActiveCounter(MetricCalculator[int]):
         result = timestamps.view(int)
         lengths = (max_times - min_times).astype("timedelta64[D]").view(int)
         result += lengths[:, None]
-        result[~column_in_range] = 0
+        result[~column_in_range] = self.nan
         return result
 
 
@@ -182,20 +183,20 @@ class PRReviewedCounter(SumMetricCalculator[int]):
     """Calculate "dev-prs-reviewed" metric."""
 
     may_have_negative_values = False
-    dtype = int
+    metric = MetricInt
 
     def _analyze(self,
                  facts: pd.DataFrame,
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **kwargs) -> np.array:
-        result = np.zeros((len(min_times), len(facts)), self.dtype)
+        result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         column = facts[PullRequestReview.submitted_at.name].values
         column_in_range = (min_times[:, None] <= column) & (column < max_times[:, None])
         duplicated = facts.duplicated([
             PullRequestReview.pull_request_node_id.name, developer_identity_column,
         ]).values
-        column_in_range[np.repeat(duplicated[None, :], len(min_times), axis=0)] = False
+        column_in_range[np.broadcast_to(duplicated[None, :], result.shape)] = False
         result[column_in_range] = 1
         return result
 
@@ -211,7 +212,7 @@ class ReviewStatesCounter(SumMetricCalculator[int]):
     """Count reviews with the specified outcome in `state`."""
 
     may_have_negative_values = False
-    dtype = int
+    metric = MetricInt
     state = None
 
     def _analyze(self,
@@ -219,11 +220,11 @@ class ReviewStatesCounter(SumMetricCalculator[int]):
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **kwargs) -> np.array:
-        result = np.zeros((len(min_times), len(facts)), self.dtype)
+        result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         column = facts[PullRequestReview.submitted_at.name].values
         column_in_range = (min_times[:, None] <= column) & (column < max_times[:, None])
         wrong_state = facts[PullRequestReview.state.name].values != self.state.value
-        column_in_range[np.repeat(wrong_state[None, :], len(min_times), axis=0)] = False
+        column_in_range[np.broadcast_to(wrong_state[None, :], result.shape)] = False
         result[column_in_range] = 1
         return result
 

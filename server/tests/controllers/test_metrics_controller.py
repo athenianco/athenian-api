@@ -2,6 +2,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 import json
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -222,6 +223,7 @@ async def test_calc_metrics_prs_empty_devs_tight_date(client, devs, date_from, h
             "repositories": [
                 "github.com/src-d/go-git",
             ],
+            "environments": ["production"],
         }],
         "granularities": ["month"],
         "exclude_inactive": False,
@@ -498,7 +500,8 @@ async def test_calc_metrics_prs_ratio_flow(client, headers):
         if flow is None:
             assert closed is None
             continue
-        assert flow == (opened + 1) / (closed + 1), "%.3f != %d / %d" % (flow, opened, closed)
+        assert flow == np.float32((opened + 1) / (closed + 1)), \
+            "%.3f != %d / %d" % (flow, opened, closed)
 
 
 async def test_calc_metrics_prs_exclude_inactive_full_span(client, headers):

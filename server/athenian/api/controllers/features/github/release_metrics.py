@@ -5,6 +5,7 @@ from typing import Dict, Generic, List, Sequence, Type, TypeVar
 import numpy as np
 import pandas as pd
 
+from athenian.api.controllers.features.metric import MetricInt, MetricTimeDelta
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
     BinnedMetricCalculator, make_register_metric, MetricCalculator, MetricCalculatorEnsemble, \
     SumMetricCalculator
@@ -170,30 +171,28 @@ class ReleaseCounterMixin:
     """Count the number of matched releases."""
 
     may_have_negative_values = False
-    dtype = int
-    nan = -1
+    metric = MetricInt
 
     def _extract(self, facts: pd.DataFrame) -> np.ndarray:
-        return np.full(len(facts), 1)
+        return np.full(len(facts), 1, self.dtype)
 
 
 class ReleasePRsMixin:
     """Extract the number of PRs belonging to the matched release."""
 
     may_have_negative_values = False
-    dtype = int
-    nan = -1
+    metric = MetricInt
 
     def _extract(self, facts: pd.DataFrame) -> np.ndarray:
-        return np.array([len(arr) for arr in facts["prs_" + PullRequest.number.name]])
+        return np.array([len(arr) for arr in facts["prs_" + PullRequest.number.name]],
+                        dtype=self.dtype)
 
 
 class ReleaseCommitsMixin:
     """Extract the number of commits belonging to the matched release."""
 
     may_have_negative_values = False
-    dtype = int
-    nan = -1
+    metric = MetricInt
 
     def _extract(self, facts: pd.DataFrame) -> np.ndarray:
         return facts[ReleaseFacts.f.commits_count].values
@@ -203,8 +202,7 @@ class ReleaseLinesMixin:
     """Extract the sum of added + deleted lines in the commits belonging to the matched release."""
 
     may_have_negative_values = False
-    dtype = int
-    nan = -1
+    metric = MetricInt
 
     def _extract(self, facts: pd.DataFrame) -> np.ndarray:
         return (facts[ReleaseFacts.f.additions].values +
@@ -215,8 +213,7 @@ class ReleaseAgeMixin:
     """Extract the age of the matched release."""
 
     may_have_negative_values = False
-    dtype = "timedelta64[s]"
-    has_nan = True
+    metric = MetricTimeDelta
 
     def _extract(self, facts: pd.DataFrame) -> np.ndarray:
         return facts[ReleaseFacts.f.age].values.astype(self.dtype).view(int)

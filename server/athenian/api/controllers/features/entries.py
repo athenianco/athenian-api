@@ -8,12 +8,11 @@ import pickle
 from typing import Collection, Dict, List, Optional, Sequence, Set, Tuple
 
 import aiomcache
-from databases import Database
 import numpy as np
 import pandas as pd
 import sentry_sdk
 
-from athenian.api import COROUTINE_YIELD_EVERY_ITER
+from athenian.api import COROUTINE_YIELD_EVERY_ITER, metadata
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached, cached_methods, CancelCache, short_term_exptime
 from athenian.api.controllers.datetime_utils import coarsen_time_interval
@@ -53,7 +52,7 @@ from athenian.api.controllers.miners.types import PRParticipants, PRParticipatio
     PullRequestFacts, ReleaseParticipants
 from athenian.api.controllers.prefixer import PrefixerPromise
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
-from athenian.api.db import add_pdb_hits, add_pdb_misses
+from athenian.api.db import add_pdb_hits, add_pdb_misses, ParallelDatabase
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import CheckRun, PullRequest, PushCommit, Release
 from athenian.api.tracing import sentry_span
@@ -82,14 +81,15 @@ class MetricEntriesCalculator:
     pr_jira_mapper = PullRequestJiraMapper
     done_prs_facts_loader = DonePRFactsLoader
     load_delta = 0
+    _log = logging.getLogger(f"{metadata.__package__}.MetricEntriesCalculator")
 
     def __init__(self,
                  account: int,
                  meta_ids: Tuple[int, ...],
                  quantile_stride: int,
-                 mdb: Database,
-                 pdb: Database,
-                 rdb: Database,
+                 mdb: ParallelDatabase,
+                 pdb: ParallelDatabase,
+                 rdb: ParallelDatabase,
                  cache: Optional[aiomcache.Client]):
         """Create a `MetricEntriesCalculator`."""
         self._account = account
@@ -136,7 +136,7 @@ class MetricEntriesCalculator:
         exptime=PullRequestMiner.CACHE_TTL,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda metrics, time_intervals, quantiles, lines, repositories, participants, labels, jira, exclude_inactive, release_settings, **_:  # noqa
+        key=lambda metrics, time_intervals, quantiles, lines, repositories, participants, labels, jira, environments, exclude_inactive, release_settings, **_:  # noqa
         (
             ",".join(sorted(metrics)),
             ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
@@ -145,6 +145,7 @@ class MetricEntriesCalculator:
             _compose_cache_key_repositories(repositories),
             _compose_cache_key_participants(participants),
             labels, jira,
+            ",".join(sorted(environments)),
             exclude_inactive,
             release_settings,
         ),
@@ -155,6 +156,7 @@ class MetricEntriesCalculator:
                                                     time_intervals: Sequence[Sequence[datetime]],
                                                     quantiles: Sequence[float],
                                                     lines: Sequence[int],
+                                                    environments: Sequence[str],
                                                     repositories: Sequence[Collection[str]],
                                                     participants: List[PRParticipants],
                                                     labels: LabelFilter,
@@ -173,7 +175,8 @@ class MetricEntriesCalculator:
         all_repositories, all_participants = \
             _merge_repositories_and_participants(repositories, participants)
         calc = PullRequestBinnedMetricCalculator(
-            metrics, quantiles, self._quantile_stride, exclude_inactive=exclude_inactive)
+            metrics, quantiles, self._quantile_stride, exclude_inactive=exclude_inactive,
+            environments=environments)
         time_from, time_to = self._align_time_min_max(time_intervals, quantiles)
         mined_facts = await self.calc_pull_request_facts_github(
             time_from, time_to, all_repositories, all_participants, labels, jira, exclude_inactive,
@@ -190,7 +193,7 @@ class MetricEntriesCalculator:
         exptime=PullRequestMiner.CACHE_TTL,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda defs, time_from, time_to, quantiles, lines, repositories, participants, labels, jira, exclude_inactive, release_settings, **_:  # noqa
+        key=lambda defs, time_from, time_to, quantiles, lines, repositories, participants, labels, jira, environment, exclude_inactive, release_settings, **_:  # noqa
         (
             ",".join("%s:%s" % (k, sorted(v)) for k, v in sorted(defs.items())),
             time_from, time_to,
@@ -199,6 +202,7 @@ class MetricEntriesCalculator:
             _compose_cache_key_repositories(repositories),
             _compose_cache_key_participants(participants),
             labels, jira,
+            environment,
             exclude_inactive,
             release_settings,
         ),
@@ -210,6 +214,7 @@ class MetricEntriesCalculator:
                                                   time_to: datetime,
                                                   quantiles: Sequence[float],
                                                   lines: Sequence[int],
+                                                  environment: Optional[str],
                                                   repositories: Sequence[Collection[str]],
                                                   participants: List[PRParticipants],
                                                   labels: LabelFilter,
@@ -227,7 +232,8 @@ class MetricEntriesCalculator:
         all_repositories, all_participants = \
             _merge_repositories_and_participants(repositories, participants)
         try:
-            calc = PullRequestBinnedHistogramCalculator(defs.values(), quantiles)
+            calc = PullRequestBinnedHistogramCalculator(
+                defs.values(), quantiles, environments=[environment])
         except KeyError as e:
             raise ValueError("Unsupported metric") from e
         mined_facts = await self.calc_pull_request_facts_github(
@@ -621,11 +627,6 @@ class MetricEntriesCalculator:
             (precomputed_facts, _), blacklist = await gather(*precomputed_tasks)
         else:
             (precomputed_facts, _) = blacklist = await precomputed_tasks[0]
-        if with_jira_map:
-            # schedule loading the PR->JIRA mapping
-            done_jira_map_task = asyncio.create_task(
-                self.pr_jira_mapper.append_pr_jira_mapping(
-                    precomputed_facts, self._meta_ids, self._mdb))
         ambiguous = blacklist[1]
         add_pdb_hits(self._pdb, "load_precomputed_done_facts_filters", len(precomputed_facts))
 
@@ -635,19 +636,26 @@ class MetricEntriesCalculator:
                 len(participants.get(prpk.AUTHOR, [])) > unfresh_participants_threshold) and \
                 not fresh and not (participants.keys() - {prpk.AUTHOR, prpk.MERGER}):
             facts = await self.unfresh_pr_facts_fetcher.fetch_pull_request_facts_unfresh(
-                self.pr_miner, precomputed_facts, ambiguous, time_from, time_to, repositories,
-                participants, labels, jira, exclude_inactive, branches,
-                default_branches, release_settings, prefixer, self._account, self._meta_ids,
+                self.pr_miner, precomputed_facts, ambiguous,
+                time_from, time_to, repositories, participants, labels, jira,
+                self.pr_jira_mapper if with_jira_map else None,
+                exclude_inactive, branches, default_branches, release_settings, prefixer,
+                self._account, self._meta_ids,
                 self._mdb, self._pdb, self._rdb, self._cache)
-            if with_jira_map:
-                undone_jira_map_task = asyncio.create_task(
-                    self.pr_jira_mapper.append_pr_jira_mapping(
-                        {k: v for k, v in facts.items() if k not in precomputed_facts},
-                        self._meta_ids, self._mdb))
-            if with_jira_map:
-                await gather(done_jira_map_task, undone_jira_map_task)
             return list(facts.values()), with_jira_map
 
+        if with_jira_map:
+            # schedule loading the PR->JIRA mapping
+            done_jira_map_task = asyncio.create_task(
+                self.pr_jira_mapper.load_pr_jira_mapping(
+                    precomputed_facts, self._meta_ids, self._mdb),
+                name="load_pr_jira_mapping/done",
+            )
+        done_deployments_task = asyncio.create_task(
+            self.pr_miner.fetch_pr_deployments(
+                precomputed_facts, self._account, self._pdb, self._rdb),
+            name="fetch_pr_deployments/done",
+        )
         add_pdb_misses(self._pdb, "fresh", 1)
         date_from, date_to = coarsen_time_interval(time_from, time_to)
         # the adjacent out-of-range pieces [date_from, time_from] and [time_to, date_to]
@@ -668,21 +676,16 @@ class MetricEntriesCalculator:
             precomputed_facts = {k: precomputed_facts[k] for k in filtered.index.values}
         else:
             miner, unreleased_facts, matched_bys, unreleased_prs_event = await tasks[0]
+        new_deps = miner.dfs.deployments.copy()
+        new_jira = miner.dfs.jiras.index.copy()
         precomputed_unreleased_prs = miner.drop(unreleased_facts)
-        if with_jira_map:
-            precomputed_unreleased_jira_map_task = asyncio.create_task(
-                self.pr_jira_mapper.append_pr_jira_mapping(
-                    unreleased_facts, self._meta_ids, self._mdb))
-            new_jira_map_task = self.pr_jira_mapper.load_pr_jira_mapping(
-                miner.dfs.prs.index, self._meta_ids, self._mdb)
-        await asyncio.sleep(0)
         remove_ambiguous_prs(precomputed_facts, ambiguous, matched_bys)
         add_pdb_hits(self._pdb, "precomputed_unreleased_facts", len(precomputed_unreleased_prs))
         for node_id in precomputed_unreleased_prs.values:
             precomputed_facts[node_id] = unreleased_facts[node_id]
         facts_miner = PullRequestFactsMiner(await bots(self._mdb))
         mined_prs = []
-        mined_facts = []
+        mined_facts = {}
         open_pr_facts = []
         merged_unreleased_pr_facts = []
         done_count = 0
@@ -696,7 +699,7 @@ class MetricEntriesCalculator:
                 except ImpossiblePullRequest:
                     continue
                 mined_prs.append(pr)
-                mined_facts.append(facts)
+                mined_facts[pr.pr[PullRequest.node_id.name]] = facts
                 if facts.done:
                     done_count += 1
                 elif not facts.closed:
@@ -713,7 +716,7 @@ class MetricEntriesCalculator:
             # also, we dump all the `mined_facts`, the called function will figure out who's
             # released
             await defer(store_precomputed_done_facts(
-                mined_prs, mined_facts, default_branches, release_settings, self._account,
+                mined_prs, mined_facts.values(), default_branches, release_settings, self._account,
                 self._pdb), "store_precomputed_done_facts(%d/%d)" % (done_count, len(miner)))
         if len(open_pr_facts) > 0:
             await defer(store_open_pull_request_facts(open_pr_facts, self._account, self._pdb),
@@ -723,12 +726,26 @@ class MetricEntriesCalculator:
                 merged_unreleased_pr_facts, matched_bys, default_branches, release_settings,
                 self._account, self._pdb, unreleased_prs_event),
                 "store_merged_unreleased_pull_request_facts(%d)" % len(merged_unreleased_pr_facts))
+        tasks = [done_deployments_task]
         if with_jira_map:
-            _, _, new_jira_map = await gather(
-                done_jira_map_task, precomputed_unreleased_jira_map_task, new_jira_map_task)
-            for pr, facts in zip(mined_prs, mined_facts):
-                facts.jira_id = new_jira_map.get(pr.pr[PullRequest.node_id.name])
-        all_facts = list(chain(precomputed_facts.values(), mined_facts))
+            tasks.append(done_jira_map_task)
+        done_deps, *done_jira_map = await gather(*tasks)
+        if with_jira_map:
+            for pr, jira in done_jira_map[0].items():
+                precomputed_facts[pr].jira_ids = jira
+            for pr, jira_key in zip(new_jira.get_level_values(0).values,
+                                    new_jira.get_level_values(1).values):
+                try:
+                    f = precomputed_facts[pr]
+                except KeyError:
+                    continue
+                if f.jira_ids is None:
+                    f.jira_ids = [jira_key]
+                else:
+                    f.jira_ids.append(jira_key)
+        self.unfresh_pr_facts_fetcher.append_deployments(
+            precomputed_facts, pd.concat([done_deps, new_deps]), self._log)
+        all_facts = list(chain(precomputed_facts.values(), mined_facts.values()))
         return all_facts, with_jira_map
 
 
@@ -765,9 +782,9 @@ def make_calculator(
     variation: Optional[str],
     account: int,
     meta_ids: Tuple[int, ...],
-    mdb: Database,
-    pdb: Database,
-    rdb: Database,
+    mdb: ParallelDatabase,
+    pdb: ParallelDatabase,
+    rdb: ParallelDatabase,
     cache: Optional[aiomcache.Client],
     base_module: Optional[str] = None,
 ) -> MetricEntriesCalculator:

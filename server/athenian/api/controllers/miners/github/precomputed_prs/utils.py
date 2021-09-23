@@ -164,8 +164,8 @@ def triage_by_release_match(repo: str,
     return dump
 
 
-def remove_ambiguous_prs(prs: Dict[str, Any],
-                         ambiguous: Dict[str, List[str]],
+def remove_ambiguous_prs(prs: Dict[int, Any],
+                         ambiguous: Dict[str, List[int]],
                          matched_bys: Dict[str, ReleaseMatch]) -> int:
     """
     Delete PRs from `prs` which are released by branch while the effective match is by tag.

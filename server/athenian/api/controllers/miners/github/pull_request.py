@@ -42,6 +42,7 @@ from athenian.api.models.metadata.github import Base, NodePullRequestJiraIssues,
     PullRequest, PullRequestComment, PullRequestCommit, PullRequestLabel, PullRequestReview, \
     PullRequestReviewComment, PullRequestReviewRequest, PushCommit, Release
 from athenian.api.models.metadata.jira import Component, Issue
+from athenian.api.models.persistentdata.models import DeploymentNotification
 from athenian.api.models.precomputed.models import GitHubPullRequestDeployment
 from athenian.api.tracing import sentry_span
 
@@ -285,7 +286,7 @@ class PullRequestMiner:
             cls._mine_by_ids(
                 prs, unreleased.index, time_to, releases, matched_bys, branches,
                 default_branches, release_dags, release_settings, prefixer, account, meta_ids,
-                mdb, pdb, cache, truncate=truncate),
+                mdb, pdb, rdb, cache, truncate=truncate),
             OpenPRFactsLoader.load_open_pull_request_facts(prs, account, pdb),
         ]
         (dfs, unreleased_facts, unreleased_prs_event), open_facts = await gather(
@@ -347,6 +348,7 @@ class PullRequestMiner:
                           meta_ids: Tuple[int, ...],
                           mdb: ParallelDatabase,
                           pdb: ParallelDatabase,
+                          rdb: ParallelDatabase,
                           cache: Optional[aiomcache.Client],
                           truncate: bool = True,
                           with_jira: bool = True,
@@ -366,7 +368,7 @@ class PullRequestMiner:
         """
         return await cls._mine_by_ids(
             prs, unreleased, time_to, releases, matched_bys, branches, default_branches,
-            dags, release_settings, prefixer, account, meta_ids, mdb, pdb, cache,
+            dags, release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache,
             truncate=truncate, with_jira=with_jira)
 
     _deserialize_mine_by_ids_cache = staticmethod(_deserialize_mine_by_ids_cache)
@@ -388,6 +390,7 @@ class PullRequestMiner:
                            meta_ids: Tuple[int, ...],
                            mdb: ParallelDatabase,
                            pdb: ParallelDatabase,
+                           rdb: ParallelDatabase,
                            cache: Optional[aiomcache.Client],
                            truncate: bool = True,
                            with_jira: bool = True,
@@ -528,18 +531,6 @@ class PullRequestMiner:
             df.drop([Issue.acc_id.name, Issue.components.name], inplace=True, axis=1)
             return df
 
-        @sentry_span
-        async def fetch_deployments():
-            ghprd = GitHubPullRequestDeployment
-            cols = [ghprd.pull_request_id, ghprd.deployment_name]
-            return await read_sql_query(
-                sql.select(cols)
-                .where(sql.and_(ghprd.acc_id == account,
-                                ghprd.pull_request_id.in_any_values(node_ids))),
-                con=pdb,
-                columns=cols,
-                index=[ghprd.pull_request_id.name, ghprd.deployment_name.name])
-
         # the order is important: it provides the best performance
         # we launch coroutines from the heaviest to the lightest
         dfs = await gather(
@@ -551,7 +542,8 @@ class PullRequestMiner:
             fetch_review_requests(),
             fetch_comments(),
             fetch_labels(),
-            fetch_deployments())
+            cls.fetch_pr_deployments(node_ids, account, pdb, rdb),
+        )
         dfs = PRDataFrames(prs, *dfs)
         if len(merged_unreleased_indexes):
             # if we truncate and there are PRs merged after `time_to`
@@ -997,6 +989,37 @@ class PullRequestMiner:
         filters = [PullRequest.node_id.in_(pr_node_ids)]
         query = await generate_jira_prs_query(filters, jira, mdb, cache, columns=columns)
         return await read_sql_query(query, mdb, columns, index=PullRequest.node_id.name)
+
+    @classmethod
+    @sentry_span
+    async def fetch_pr_deployments(cls,
+                                   pr_node_ids: Iterable[int],
+                                   account: int,
+                                   pdb: ParallelDatabase,
+                                   rdb: ParallelDatabase,
+                                   ) -> pd.DataFrame:
+        """Load the deployments for each PR node ID."""
+        ghprd = GitHubPullRequestDeployment
+        cols = [ghprd.pull_request_id, ghprd.deployment_name]
+        df = await read_sql_query(
+            sql.select(cols)
+            .where(sql.and_(ghprd.acc_id == account,
+                            ghprd.pull_request_id.in_any_values(pr_node_ids))),
+            con=pdb, columns=cols, index=ghprd.deployment_name.name)
+        cols = [DeploymentNotification.name,
+                DeploymentNotification.environment,
+                DeploymentNotification.finished_at]
+        details = await read_sql_query(
+            sql.select(cols)
+            .where(sql.and_(DeploymentNotification.account_id == account,
+                            DeploymentNotification.name.in_(df.index.values))),
+            con=rdb, columns=cols, index=DeploymentNotification.name.name,
+        )
+        details.index.name = ghprd.deployment_name.name
+        df = df.join(details)
+        df.reset_index(inplace=True)
+        df.set_index([ghprd.pull_request_id.name, ghprd.deployment_name.name], inplace=True)
+        return df
 
     @staticmethod
     def _check_participants_compatibility(cached_participants: PRParticipants,
@@ -1550,6 +1573,9 @@ class PullRequestFactsMiner:
             pr.comments[PullRequestComment.user_login.name].values.astype("S"),
             pr.reviews[PullRequestReview.user_login.name].values.astype("S"),
         ])), self._bots, assume_unique=True))
+        environments = pr.deployments[DeploymentNotification.environment.name].values.astype("U")
+        deployed = pr.deployments[DeploymentNotification.finished_at.name].values.astype(
+            "datetime64[s]")
         facts = PullRequestFacts.from_fields(
             created=created,
             first_commit=first_commit,
@@ -1575,6 +1601,10 @@ class PullRequestFactsMiner:
             releaser=pr.release[Release.author.name],
             review_comments=human_review_comments,
             participants=participants,
+            jira_ids=pr.jiras.index.values.tolist(),
+            deployments=pr.deployments.index.values,
+            environments=environments,
+            deployed=deployed,
         )
         self._validate(facts, pr.pr[PullRequest.htmlurl.name])
         return facts

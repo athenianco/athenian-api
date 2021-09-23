@@ -69,12 +69,12 @@ async def test_check_run_metrics_suite_counts(
 @pytest.mark.parametrize("metric, value", [
     (CodeCheckMetricID.SUITE_TIME, timedelta(0)),
     (CodeCheckMetricID.SUITE_TIME_PER_PR, timedelta(0)),
-    (CodeCheckMetricID.SUITES_PER_PR, 1.9682299546142208),
-    (CodeCheckMetricID.SUCCESS_RATIO, 0.5393718707328174),
+    (CodeCheckMetricID.SUITES_PER_PR, 1.9682300090789795),
+    (CodeCheckMetricID.SUCCESS_RATIO, 0.5393718481063843),
     (CodeCheckMetricID.PRS_WITH_CHECKS_COUNT, 661),
     (CodeCheckMetricID.FLAKY_COMMIT_CHECKS_COUNT, 0),
     (CodeCheckMetricID.PRS_MERGED_WITH_FAILED_CHECKS_COUNT, 234),
-    (CodeCheckMetricID.PRS_MERGED_WITH_FAILED_CHECKS_RATIO, 0.430939226519337),
+    (CodeCheckMetricID.PRS_MERGED_WITH_FAILED_CHECKS_RATIO, 0.4309392273426056),
     (CodeCheckMetricID.ROBUST_SUITE_TIME, timedelta(0)),
     (CodeCheckMetricID.CONCURRENCY, 1.0),
     (CodeCheckMetricID.CONCURRENCY_MAX, 1),
@@ -222,6 +222,6 @@ def test_elapsed_time_per_concurrency_histogram():
                     timedelta(seconds=925),
                     timedelta(seconds=175),
                 ],
-                interquartile=(2.9166666666666665, 3.90625)),
+                interquartile=(2.9166666865348816, 3.90625)),
         ]],
     }

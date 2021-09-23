@@ -1,9 +1,10 @@
 from abc import ABC, abstractmethod
+from collections import defaultdict
 from datetime import datetime, timedelta
 from functools import reduce
 from itertools import chain
 from typing import Any, Callable, Collection, Dict, Generic, Iterable, List, Mapping, Optional, \
-    Sequence, Tuple, Type, TypeVar
+    Sequence, Tuple, Type, TypeVar, Union
 import warnings
 
 import networkx as nx
@@ -12,7 +13,8 @@ import pandas as pd
 import sentry_sdk
 
 from athenian.api.controllers.features.histogram import calculate_histogram, Histogram, Scale
-from athenian.api.controllers.features.metric import Metric, T
+from athenian.api.controllers.features.metric import Metric, MetricFloat, MetricInt, MultiMetric, \
+    NumpyMetric, T
 from athenian.api.controllers.features.statistics import mean_confidence_interval, \
     median_confidence_interval
 from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_inrange
@@ -32,32 +34,52 @@ class MetricCalculator(Generic[T], ABC):
     """
 
     # Types of dependencies - upstream MetricCalculator-s.
-    deps = tuple()
+    deps: Tuple[Type["MetricCalculator"], ...] = tuple()
 
-    # numpy data type of the metric value
-    dtype = None
-
-    # dtype may behave like NaN
-    has_nan = False
-
-    # artificial "NaN" value to compare against
-    nan = None
+    # specific Metric class
+    metric: Type[NumpyMetric] = None
 
     # _analyze() may return arrays of non-standard shape, `samples` are ignored
     is_pure_dependency = False
 
-    def __init__(self, *deps: "MetricCalculator", quantiles: Sequence[float]):
+    @property
+    def dtype(self) -> np.dtype:
+        """Return the metric value's dtype."""
+        return self.metric.dtype["value"]
+
+    @property
+    def nan(self) -> Any:
+        """Return the metric's Not-a-Number-like value."""
+        return self.metric.nan
+
+    @property
+    def has_nan(self) -> bool:
+        """Return the value indicating whether the metric has a native Not-a-Number-like."""
+        nan = self.metric.nan
+        return nan != nan
+
+    def __init__(self,
+                 *deps: Union["MetricCalculator",
+                              Tuple["MetricCalculator"],
+                              List["MetricCalculator"]],
+                 quantiles: Sequence[float]):
         """Initialize a new `MetricCalculator` instance."""
         self.reset()
-        self._calcs = []
+        self._calcs: List[Union[MetricCalculator, List[MetricCalculator]]] = []
         self._quantiles = tuple(quantiles)
         assert len(self._quantiles) == 2
         assert self._quantiles[0] >= 0
         assert self._quantiles[1] <= 1
         assert self._quantiles[0] <= self._quantiles[1]
         for calc in deps:
+            if isinstance(calc, (list, tuple)):
+                example = calc[0]
+                if len(calc) == 1:
+                    calc = example
+            else:
+                example = calc
             for cls in self.deps:
-                if isinstance(calc, cls):
+                if isinstance(example, cls):
                     self._calcs.append(calc)
                     break
             else:
@@ -146,7 +168,7 @@ class MetricCalculator(Generic[T], ABC):
     @property
     def peek(self) -> np.ndarray:
         """
-        Return the last calculated samples, with None-s.
+        Return the last calculated samples, with None-s: time intervals x facts.
 
         The shape is time intervals x facts - that is, before grouping and discarding outliers.
         """
@@ -176,6 +198,10 @@ class MetricCalculator(Generic[T], ABC):
         self._grouped_notnull = np.empty((0, 0, 0), dtype=bool)
         self._last_values = None
 
+    def split(self) -> List["MetricCalculator"]:
+        """Clone yourself depending on the previously set external keyword arguments."""
+        return [self]
+
     @abstractmethod
     def _analyze(self,
                  facts: pd.DataFrame,
@@ -202,10 +228,11 @@ class MetricCalculator(Generic[T], ABC):
         if peek.dtype is np.dtype(object):
             # this is the slowest, avoid as much as possible
             return peek != np.array(None)
-        if cls.has_nan:
+        nan = cls.metric.nan
+        if nan != nan:
             return peek == peek
-        if cls.nan is not None:
-            return peek != cls.nan
+        if nan is not None:
+            return peek != nan
         return peek != peek.dtype.type(0)
 
     def _calculate_discard_mask(self,
@@ -290,7 +317,7 @@ class AverageMetricCalculator(MetricCalculator[T], ABC):
 
     def _value(self, samples: np.ndarray) -> Metric[T]:
         if len(samples) == 0:
-            return Metric(False, None, None, None)
+            return self.metric.from_fields(False, None, None, None)
         assert self.may_have_negative_values is not None
         if not self.may_have_negative_values:
             zero = samples.dtype.type(0)
@@ -303,7 +330,8 @@ class AverageMetricCalculator(MetricCalculator[T], ABC):
                     samples = samples[samples >= zero]
                 else:
                     raise e from None
-        return Metric(True, *mean_confidence_interval(samples, self.may_have_negative_values))
+        return self.metric.from_fields(
+            True, *mean_confidence_interval(samples, self.may_have_negative_values))
 
 
 class MedianMetricCalculator(WithoutQuantilesMixin, MetricCalculator[T], ABC):
@@ -311,8 +339,8 @@ class MedianMetricCalculator(WithoutQuantilesMixin, MetricCalculator[T], ABC):
 
     def _value(self, samples: np.ndarray) -> Metric[T]:
         if len(samples) == 0:
-            return Metric(False, None, None, None)
-        return Metric(True, *median_confidence_interval(samples))
+            return self.metric.from_fields(False, None, None, None)
+        return self.metric.from_fields(True, *median_confidence_interval(samples))
 
 
 class AggregationMetricCalculator(WithoutQuantilesMixin, MetricCalculator[T], ABC):
@@ -320,9 +348,8 @@ class AggregationMetricCalculator(WithoutQuantilesMixin, MetricCalculator[T], AB
 
     def _value(self, samples: np.ndarray) -> Metric[T]:
         exists = len(samples) > 0
-        return Metric(True,
-                      self._agg(samples) if exists else np.dtype(self.dtype).type(),
-                      None, None)
+        return self.metric.from_fields(
+            True, self._agg(samples) if exists else np.dtype(self.dtype).type(), None, None)
 
     @abstractmethod
     def _agg(self, samples: np.ndarray) -> T:
@@ -346,7 +373,7 @@ class MaxMetricCalculator(AggregationMetricCalculator[T], ABC):
 class Counter(MetricCalculator[int], ABC):
     """Count the number of PRs that were used to calculate the specified metric."""
 
-    dtype = int
+    metric = MetricInt
 
     def __call__(self, *args, **kwargs) -> None:
         """Copy by reference the same peek and samples from the only dependency."""
@@ -358,10 +385,10 @@ class Counter(MetricCalculator[int], ABC):
     def _values(self) -> List[List[Metric[T]]]:
         if self._quantiles != (0, 1):
             # if we've got the quantiles, report the lengths
-            return [[Metric(True, len(s), None, None) for s in gs]
+            return [[self.metric.from_fields(True, len(s), None, None) for s in gs]
                     for gs in self.samples]
         # otherwise, ignore the upstream quantiles
-        return [[Metric(True, s, None, None) for s in gs]
+        return [[self.metric.from_fields(True, s, None, None) for s in gs]
                 for gs in self.grouped_notnull.sum(axis=-1)]
 
     def _value(self, samples: np.ndarray) -> Metric[int]:
@@ -403,14 +430,17 @@ class MetricCalculatorEnsemble:
                  *metrics: str,
                  class_mapping: Dict[str, Type[MetricCalculator]],
                  quantiles: Sequence[float],
-                 quantile_stride: int):
+                 quantile_stride: int,
+                 **kwargs):
         """Initialize a new instance of MetricCalculatorEnsemble class."""
-        metric_classes = {class_mapping[m]: m for m in metrics}
-        self._calcs, self._metrics = self._plan_classes(metric_classes, quantiles)
+        metric_classes = defaultdict(list)
+        for m in metrics:
+            metric_classes[class_mapping[m]].append(m)
+        self._calcs, self._metrics = self._plan_classes(metric_classes, quantiles, **kwargs)
         self._quantiles = tuple(quantiles)
         self._quantile_stride = quantile_stride
 
-    def __getitem__(self, metric: str) -> MetricCalculator:
+    def __getitem__(self, metric: str) -> List[MetricCalculator]:
         """Return the owned calculator for the given metric."""
         return self._metrics[metric]
 
@@ -423,10 +453,11 @@ class MetricCalculatorEnsemble:
         return groups_mask
 
     @staticmethod
-    def _plan_classes(metric_classes: Dict[Type[MetricCalculator], str],
+    def _plan_classes(metric_classes: Dict[Type[MetricCalculator], List[str]],
                       quantiles: Sequence[float],
+                      **kwargs,
                       ) -> Tuple[List[MetricCalculator],
-                                 Dict[str, MetricCalculator]]:
+                                 Dict[str, List[MetricCalculator]]]:
         dig = nx.DiGraph()
         required_classes = list(metric_classes)
         while required_classes:
@@ -442,12 +473,15 @@ class MetricCalculatorEnsemble:
         metrics = {}
         cls_instances = {}
         for cls in reversed(list(nx.topological_sort(dig))):
-            calc = cls(*[cls_instances[dep] for dep in cls.deps],
+            calc = cls(*(cls_instances[dep] for dep in cls.deps),
                        quantiles=quantiles)
-            calcs.append(calc)
-            cls_instances[cls] = calc
+            for key, val in kwargs.items():
+                setattr(calc, key, val)
+            calcs.extend(clones := calc.split())
+            cls_instances[cls] = clones
             try:
-                metrics[metric_classes[cls]] = calc
+                for metric in metric_classes[cls]:
+                    metrics[metric] = clones
             except KeyError:
                 continue
         return calcs, metrics
@@ -504,7 +538,15 @@ class MetricCalculatorEnsemble:
 
         :return: Mapping from metric name to corresponding metric values (groups x times).
         """
-        return {k: v.values for k, v in self._metrics.items()}
+        result = {}
+        for metric, calcs in self._metrics.items():
+            values = [calc.values for calc in calcs]
+            if len(values) == 1:
+                values = values[0]
+            else:
+                values = [[MultiMetric(*vt) for vt in zip(*vg)] for vg in zip(*values)]
+            result[metric] = values
+        return result
 
     def reset(self) -> None:
         """Clear the states of all the contained calculators."""
@@ -518,12 +560,14 @@ class HistogramCalculatorEnsemble(MetricCalculatorEnsemble):
                  *metrics: str,
                  class_mapping: Dict[str, Type[MetricCalculator]],
                  quantiles: Sequence[float],
-                 quantile_stride: int = 0):
+                 quantile_stride: int = 0,
+                 **kwargs):
         """Initialize a new instance of HistogramCalculatorEnsemble class."""
         super().__init__(*metrics,
                          class_mapping=class_mapping,
                          quantiles=quantiles,
-                         quantile_stride=0)
+                         quantile_stride=0,
+                         **kwargs)
 
     def _compose_quantile_time_intervals(self,
                                          min_time: np.datetime64,
@@ -538,7 +582,7 @@ class HistogramCalculatorEnsemble(MetricCalculatorEnsemble):
                    ticks: Optional[list],
                    ) -> Dict[str, Histogram]:
         """Calculate the current histograms."""
-        return {k: v.histogram(scale, bins, ticks) for k, v in self._metrics.items()}
+        return {k: v[0].histogram(scale, bins, ticks) for k, v in self._metrics.items()}
 
 
 M = TypeVar("M", Metric, Histogram)
@@ -767,8 +811,7 @@ def group_by_repo(repository_full_name_column_name: str,
 class RatioCalculator(WithoutQuantilesMixin, MetricCalculator[float]):
     """Calculate the ratio of two counts from the dependencies."""
 
-    dtype = float
-    has_nan = True
+    metric = MetricFloat
     value_offset = 0
 
     def __init__(self, *deps: MetricCalculator, quantiles: Sequence[float]):
@@ -779,7 +822,8 @@ class RatioCalculator(WithoutQuantilesMixin, MetricCalculator[float]):
         self._opened, self._closed = self._calcs
 
     def _values(self) -> List[List[Metric[float]]]:
-        metrics = [[Metric(False, None, None, None)] * len(samples) for samples in self.samples]
+        metrics = [[self.metric.from_fields(False, None, None, None)] * len(samples)
+                   for samples in self.samples]
         offset = self.value_offset
         for i, (opened_group, closed_group) in enumerate(zip(
                 self._opened.values, self._closed.values)):
@@ -789,7 +833,7 @@ class RatioCalculator(WithoutQuantilesMixin, MetricCalculator[float]):
                     continue
                 # offset may be 1, See ENG-866
                 val = ((opened.value or 0) + offset) / ((closed.value or 0) + offset)
-                metrics[i][j] = Metric(True, val, None, None)
+                metrics[i][j] = self.metric.from_fields(True, val, None, None)
         return metrics
 
     def _value(self, samples: np.ndarray) -> Metric[timedelta]:
@@ -800,7 +844,7 @@ class RatioCalculator(WithoutQuantilesMixin, MetricCalculator[float]):
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **kwargs) -> np.ndarray:
-        return np.full((len(min_times), len(facts)), None, self.dtype)
+        return np.full((len(min_times), len(facts)), self.nan, self.dtype)
 
 
 def make_register_metric(metric_calculators: Dict[str, Type[MetricCalculator]],

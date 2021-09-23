@@ -21,7 +21,7 @@ from sqlalchemy import and_, delete, func, insert, select, update
 from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.auth import Auth0, disable_default_user
-from athenian.api.cache import cached
+from athenian.api.cache import cached, middle_term_expire
 from athenian.api.controllers.account import fetch_github_installation_progress, \
     generate_jira_invitation_link, \
     get_metadata_account_ids, get_user_account_status, jira_url_template
@@ -396,7 +396,8 @@ async def _append_precomputed_progress(model: InstallationProgress,
             precomputed = reposet[RepositorySet.precomputed.name]
             created = reposet[RepositorySet.created_at.name].replace(tzinfo=timezone.utc)
             break
-    if slack is not None and not precomputed and model.finished_date is not None \
+    if slack is not None and cache is not None and not precomputed \
+            and model.finished_date is not None \
             and datetime.now(timezone.utc) - model.finished_date > timedelta(hours=2) \
             and datetime.now(timezone.utc) - created > timedelta(hours=2):
         await _notify_precomputed_failure(slack, uid, account, model, created, cache)
@@ -407,7 +408,7 @@ async def _append_precomputed_progress(model: InstallationProgress,
 
 
 @cached(
-    exptime=2 * 3600,
+    exptime=middle_term_expire,
     serialize=marshal.dumps,
     deserialize=marshal.loads,
     key=lambda account, **_: (account,),

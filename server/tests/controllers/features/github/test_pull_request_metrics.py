@@ -17,7 +17,7 @@ from athenian.api.controllers.features.github.pull_request_metrics import AllCou
     ReviewCounterWithQuantiles, ReviewTimeCalculator, WaitFirstReviewTimeCalculator, \
     WorkInProgressCounter, WorkInProgressCounterWithQuantiles, WorkInProgressTimeCalculator
 from athenian.api.controllers.features.histogram import Scale
-from athenian.api.controllers.features.metric import Metric
+from athenian.api.controllers.features.metric import MetricInt, MetricTimeDelta
 from athenian.api.controllers.features.metric_calculator import MetricCalculator, \
     MetricCalculatorEnsemble
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
@@ -224,7 +224,7 @@ def test_pull_request_flow_ratio(pr_samples):  # noqa: F811
     assert m.confidence_min is None
     assert m.confidence_max is None
     assert m.value == \
-        (open_calc.values[0][0].value + 1) / (closed_calc.values[0][0].value + 1)
+        np.float32((open_calc.values[0][0].value + 1) / (closed_calc.values[0][0].value + 1))
 
 
 def test_pull_request_flow_ratio_zeros(pr_samples):
@@ -363,7 +363,7 @@ async def test_calc_pull_request_metrics_line_github_cache_reset(
     metrics_calculator = factory(1, (6366825,), with_cache=True)
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2019, month=10, day=1, tzinfo=timezone.utc)
-    args = ([PullRequestMetricID.PR_CYCLE_TIME], [[date_from, date_to]], [0, 1], [],
+    args = ([PullRequestMetricID.PR_CYCLE_TIME], [[date_from, date_to]], [0, 1], [], [],
             [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(), False,
             release_match_setting_tag, prefixer_promise, False)
     metrics1 = (
@@ -392,7 +392,7 @@ async def test_calc_pull_request_metrics_line_github_cache_lines(
     metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2019, month=10, day=1, tzinfo=timezone.utc)
-    args = [[PullRequestMetricID.PR_CYCLE_TIME], [[date_from, date_to]], [0, 1], [0, 1000],
+    args = [[PullRequestMetricID.PR_CYCLE_TIME], [[date_from, date_to]], [0, 1], [0, 1000], [],
             [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(), False,
             release_match_setting_tag, prefixer_promise, False]
     metrics1 = (
@@ -413,7 +413,7 @@ async def test_calc_pull_request_metrics_line_github_changed_releases(
     metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2017, month=10, day=1, tzinfo=timezone.utc)
-    args = [[PullRequestMetricID.PR_CYCLE_TIME], [[date_from, date_to]], [0, 1], [],
+    args = [[PullRequestMetricID.PR_CYCLE_TIME], [[date_from, date_to]], [0, 1], [], [],
             [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(), False,
             release_match_setting_tag, prefixer_promise, False]
     metrics1 = (
@@ -437,21 +437,21 @@ async def test_pr_list_miner_match_metrics_all_count_david_bug(
     time_middle = time_from + timedelta(days=14)
     time_to = datetime(year=2016, month=12, day=15, tzinfo=timezone.utc)
     metric1 = (await metrics_calculator_no_cache.calc_pull_request_metrics_line_github(
-        [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_middle]], [0, 1], [],
+        [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_middle]], [0, 1], [], [],
         [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(), False,
         release_match_setting_tag, prefixer_promise, False,
     ))[0][0][0][0][0][0].value
     await wait_deferred()
     metric2 = (await metrics_calculator_no_cache.calc_pull_request_metrics_line_github(
-        [PullRequestMetricID.PR_ALL_COUNT], [[time_middle, time_to]], [0, 1], [],
+        [PullRequestMetricID.PR_ALL_COUNT], [[time_middle, time_to]], [0, 1], [], [],
         [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(), False,
         release_match_setting_tag, prefixer_promise, False,
     ))[0][0][0][0][0][0].value
     await wait_deferred()
     metric1_ext, metric2_ext = (m[0].value for m in (
         await metrics_calculator_no_cache.calc_pull_request_metrics_line_github(
-            [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_middle, time_to]],
-            [0, 1], [], [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(), False,
+            [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_middle, time_to]], [0, 1],
+            [], [], [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(), False,
             release_match_setting_tag, prefixer_promise, False,
         )
     )[0][0][0][0])
@@ -465,7 +465,7 @@ async def test_calc_pull_request_metrics_line_github_exclude_inactive(
     metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2017, month=1, day=12, tzinfo=timezone.utc)
-    args = [[PullRequestMetricID.PR_ALL_COUNT], [[date_from, date_to]], [0, 1], [],
+    args = [[PullRequestMetricID.PR_ALL_COUNT], [[date_from, date_to]], [0, 1], [], [],
             [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(),
             False, release_match_setting_tag, prefixer_promise, False]
     metrics = (
@@ -473,7 +473,7 @@ async def test_calc_pull_request_metrics_line_github_exclude_inactive(
     )[0][0][0][0][0][0]
     await wait_deferred()
     assert metrics.value == 7
-    args[8] = True
+    args[9] = True
     metrics = (
         await metrics_calculator.calc_pull_request_metrics_line_github(*args)
     )[0][0][0][0][0][0]
@@ -483,7 +483,7 @@ async def test_calc_pull_request_metrics_line_github_exclude_inactive(
     date_to = datetime(year=2017, month=5, day=25, tzinfo=timezone.utc)
     args[0] = [PullRequestMetricID.PR_RELEASE_COUNT]
     args[1] = [[date_from, date_to]]
-    args[8] = False
+    args[9] = False
     metrics = (
         await metrics_calculator.calc_pull_request_metrics_line_github(*args)
     )[0][0][0][0][0][0]
@@ -494,7 +494,7 @@ async def test_calc_pull_request_metrics_line_github_exclude_inactive(
     )[0][0][0][0][0][0]
     await wait_deferred()
     assert metrics.value == 70
-    args[8] = True
+    args[9] = True
     metrics = (
         await metrics_calculator.calc_pull_request_metrics_line_github(*args)
     )[0][0][0][0][0][0]
@@ -507,7 +507,7 @@ async def test_calc_pull_request_metrics_line_github_quantiles(
     metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2017, month=1, day=12, tzinfo=timezone.utc)
-    args = [[PullRequestMetricID.PR_ALL_COUNT], [[date_from, date_to]], [0, 0.95], [],
+    args = [[PullRequestMetricID.PR_ALL_COUNT], [[date_from, date_to]], [0, 0.95], [], [],
             [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(),
             False, release_match_setting_tag, prefixer_promise, False]
     metrics = (
@@ -531,7 +531,7 @@ async def test_calc_pull_request_metrics_line_github_tag_after_branch(
     metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2018, month=1, day=12, tzinfo=timezone.utc)
-    args = [[PullRequestMetricID.PR_RELEASE_TIME], [[date_from, date_to]], [0, 1], [],
+    args = [[PullRequestMetricID.PR_RELEASE_TIME], [[date_from, date_to]], [0, 1], [], [],
             [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(),
             False, release_match_setting_branch, prefixer_promise, False]
     metrics = (
@@ -558,16 +558,16 @@ async def test_calc_pull_request_metrics_line_jira_map(
         PullRequestMetricID.PR_DONE_MAPPED_TO_JIRA,
         PullRequestMetricID.PR_ALL_MAPPED_TO_JIRA,
     ]
-    args = [metrics, [[date_from, date_to]], [0, 1], [],
+    args = [metrics, [[date_from, date_to]], [0, 1], [], [],
             [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(),
             False, release_match_setting_tag_or_branch, prefixer_promise, False]
     metrics = (
         await metrics_calculator.calc_pull_request_metrics_line_github(*args)
     )[0][0][0][0][0]
     await wait_deferred()
-    assert metrics[0].value == 0.021739130434782608
-    assert metrics[1].value == 0.008
-    assert metrics[2].value == 0.021505376344086023
+    assert metrics[0].value == 0.021739130839705467
+    assert metrics[1].value == 0.00800000037997961
+    assert metrics[2].value == 0.02150537632405758
 
 
 @with_defer
@@ -589,7 +589,7 @@ async def test_calc_pull_request_metrics_deep_filters(
     args = [
         metrics,
         [[date_from, date_to], [date_from, date_from + (date_to - date_from) / 2, date_to]],
-        [0, 1], [0, 50, 10000], [{"src-d/go-git"}, {"src-d/gitbase"}, {"src-d/hercules"}],
+        [0, 1], [0, 50, 10000], [], [{"src-d/go-git"}, {"src-d/gitbase"}, {"src-d/hercules"}],
         {}, LabelFilter.empty(), JIRAFilter.empty(),
         False, settings, prefixer_promise, False,
     ]
@@ -600,22 +600,23 @@ async def test_calc_pull_request_metrics_deep_filters(
     # 5. time series secondary: 1 and 2 groups
     # 6. metrics: 3 groups
     metrics = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))
+    metric = MetricInt.from_fields
     ground_truth = np.array([
         [  # line group 1
             [  # repository group 1
                 [  # participants group 1
                     [  # time series primary 1
-                        [Metric(exists=True, value=134, confidence_min=None, confidence_max=None),
-                         Metric(exists=True, value=131, confidence_min=None, confidence_max=None),
-                         Metric(exists=True, value=110, confidence_min=None, confidence_max=None)],
+                        [metric(exists=True, value=134, confidence_min=None, confidence_max=None),
+                         metric(exists=True, value=131, confidence_min=None, confidence_max=None),
+                         metric(exists=True, value=110, confidence_min=None, confidence_max=None)],
                     ],
                     [  # time series primary 2
-                        [Metric(exists=True, value=65, confidence_min=None, confidence_max=None),
-                         Metric(exists=True, value=62, confidence_min=None, confidence_max=None),
-                         Metric(exists=True, value=54, confidence_min=None, confidence_max=None)],
-                        [Metric(exists=True, value=69, confidence_min=None, confidence_max=None),
-                         Metric(exists=True, value=69, confidence_min=None, confidence_max=None),
-                         Metric(exists=True, value=56, confidence_min=None, confidence_max=None)],
+                        [metric(exists=True, value=65, confidence_min=None, confidence_max=None),
+                         metric(exists=True, value=62, confidence_min=None, confidence_max=None),
+                         metric(exists=True, value=54, confidence_min=None, confidence_max=None)],
+                        [metric(exists=True, value=69, confidence_min=None, confidence_max=None),
+                         metric(exists=True, value=69, confidence_min=None, confidence_max=None),
+                         metric(exists=True, value=56, confidence_min=None, confidence_max=None)],
                     ],
                 ],
             ],
@@ -623,11 +624,11 @@ async def test_calc_pull_request_metrics_deep_filters(
             *[[  # repository group
                 [  # participants group 1
                     [  # time series primary 1
-                        [Metric(exists=True, value=0, confidence_min=None,
+                        [metric(exists=True, value=0, confidence_min=None,
                                 confidence_max=None)] * 3,
                     ],
                     [  # time series primary 2
-                        [Metric(exists=True, value=0, confidence_min=None,
+                        [metric(exists=True, value=0, confidence_min=None,
                                 confidence_max=None)] * 3,
                     ] * 2,
                 ],
@@ -637,17 +638,17 @@ async def test_calc_pull_request_metrics_deep_filters(
             [  # repository group 1
                 [  # participants group 1
                     [  # time series primary 1
-                        [Metric(exists=True, value=142, confidence_min=None, confidence_max=None),
-                         Metric(exists=True, value=142, confidence_min=None, confidence_max=None),
-                         Metric(exists=True, value=130, confidence_min=None, confidence_max=None)],
+                        [metric(exists=True, value=142, confidence_min=None, confidence_max=None),
+                         metric(exists=True, value=142, confidence_min=None, confidence_max=None),
+                         metric(exists=True, value=130, confidence_min=None, confidence_max=None)],
                     ],
                     [  # time series primary 2
-                        [Metric(exists=True, value=69, confidence_min=None, confidence_max=None),
-                         Metric(exists=True, value=70, confidence_min=None, confidence_max=None),
-                         Metric(exists=True, value=64, confidence_min=None, confidence_max=None)],
-                        [Metric(exists=True, value=73, confidence_min=None, confidence_max=None),
-                         Metric(exists=True, value=72, confidence_min=None, confidence_max=None),
-                         Metric(exists=True, value=66, confidence_min=None, confidence_max=None)],
+                        [metric(exists=True, value=69, confidence_min=None, confidence_max=None),
+                         metric(exists=True, value=70, confidence_min=None, confidence_max=None),
+                         metric(exists=True, value=64, confidence_min=None, confidence_max=None)],
+                        [metric(exists=True, value=73, confidence_min=None, confidence_max=None),
+                         metric(exists=True, value=72, confidence_min=None, confidence_max=None),
+                         metric(exists=True, value=66, confidence_min=None, confidence_max=None)],
                     ],
                 ],
             ],
@@ -655,11 +656,11 @@ async def test_calc_pull_request_metrics_deep_filters(
             *[[  # repository group
                 [  # participants group 1
                     [  # time series primary 1
-                        [Metric(exists=True, value=0, confidence_min=None,
+                        [metric(exists=True, value=0, confidence_min=None,
                                 confidence_max=None)] * 3,
                     ],
                     [  # time series primary 2
-                        [Metric(exists=True, value=0, confidence_min=None,
+                        [metric(exists=True, value=0, confidence_min=None,
                                 confidence_max=None)] * 3,
                     ] * 2,
                 ],
@@ -787,10 +788,10 @@ async def test_calc_pull_request_facts_github_jira(
     args[5] = JIRAFilter.empty()
     args[-1] = True
     facts = await metrics_calculator.calc_pull_request_facts_github(*args)
-    assert sum(bool(f.jira_id) for f in facts) == 60
+    assert sum(bool(f.jira_ids) for f in facts) == 60
     await wait_deferred()
     facts = await metrics_calculator_cache_only.calc_pull_request_facts_github(*args)
-    assert sum(bool(f.jira_id) for f in facts) == 60
+    assert sum(bool(f.jira_ids) for f in facts) == 60
 
 
 def test_size_calculator_shift_log():
@@ -804,7 +805,7 @@ def test_size_calculator_shift_log():
 
 @register_metric("test")
 class QuantileTestingMetric(MetricCalculator):
-    dtype = "timedelta64[s]"
+    metric = MetricTimeDelta
 
     def _analyze(self,
                  facts: pd.DataFrame,

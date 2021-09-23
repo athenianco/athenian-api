@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from athenian.api.controllers.features.metric import Metric
+from athenian.api.controllers.features.metric import MetricInt, MetricTimeDelta
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
     MedianMetricCalculator
 from athenian.api.controllers.features.statistics import mean_confidence_interval, \
@@ -18,6 +18,8 @@ def dt64arr(dt: datetime) -> np.ndarray:
 
 
 class DummyAverageMetricCalculator(AverageMetricCalculator):
+    metric = MetricTimeDelta
+
     def _analyze(self,
                  facts: pd.DataFrame,
                  min_times: np.ndarray,
@@ -68,10 +70,10 @@ def test_mean_confidence_interval_timedelta_positive():
 
 
 def test_metric_zero_division():
-    m = Metric(value=np.int64(0),
-               confidence_min=np.int64(0),
-               confidence_max=np.int64(0),
-               exists=True)
+    m = MetricInt.from_fields(value=np.int64(0),
+                              confidence_min=np.int64(0),
+                              confidence_max=np.int64(0),
+                              exists=True)
     assert m.confidence_score() == 100
 
 
@@ -138,7 +140,7 @@ def test_median_confidence_interval_empty():
 def test_metric_calculator(pr_samples, cls, negative, dtype):
     class LeadTimeCalculator(cls):
         may_have_negative_values = negative
-        dtype = "timedelta64[s]"
+        metric = MetricTimeDelta
 
         def _analyze(self, facts: np.ndarray, min_times: np.ndarray, max_time: np.ndarray,
                      ) -> np.ndarray:
@@ -166,7 +168,7 @@ def test_metric_calculator(pr_samples, cls, negative, dtype):
     assert len(calc.values) == 0
     calc.reset()
     calc._samples = np.zeros((1, 1), dtype=object)
-    calc._samples[0, 0] = np.array([0], dtype=LeadTimeCalculator.dtype)
+    calc._samples[0, 0] = np.array([0], dtype=calc.dtype)
     m = calc.values[0][0]
     assert m.exists
     assert m.value == timedelta(0)
