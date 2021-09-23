@@ -904,7 +904,9 @@ async def _build_deployments_response(df: pd.DataFrame,
                             additions=pr_adds,
                             deletions=pr_dels,
                             author=user_node_to_prefixed_login[pr_author] if pr_author else None,
-                            jira=pr_jira.astype("U") if pr_jira else None,
+                            jira=pr_jira.astype("U")
+                            if pr_jira is not None and len(pr_jira)
+                            else None,
                         )
                         for pr_number, pr_title, pr_adds, pr_dels, pr_author, pr_jira in zip(
                             pr_numbers, pr_titles, pr_additions, pr_deletions,
