@@ -1352,8 +1352,8 @@ async def _fetch_grouped_labels(names: Collection[str],
                                 rdb: ParallelDatabase,
                                 ) -> pd.DataFrame:
     df = await read_sql_query(select([DeployedLabel])
-                              .where(and_(DeployedLabel.account_id.name == account,
-                                          DeployedLabel.deployment_name.in_any_values(names))),
+                              .where(and_(DeployedLabel.account_id == account,
+                                          DeployedLabel.deployment_name.in_(names))),
                               rdb, DeployedLabel, index=DeployedLabel.deployment_name.name)
     groups = list(df.groupby(DeployedLabel.deployment_name.name, sort=False))
     grouped_labels = pd.DataFrame({
