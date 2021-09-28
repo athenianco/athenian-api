@@ -1394,22 +1394,6 @@ async def test_mine_deployments_event_releases(
         assert df.iloc[0][Release.sha.name] == "1edb992dbc419a0767b1cf3a524b0d35529799f5"
 
 
-@pytest.fixture(scope="function")
-@with_defer
-async def precomputed_deployments(
-    release_match_setting_tag_or_branch, prefixer_promise, branches, default_branches,
-    mdb, pdb, rdb,
-):
-    await mine_deployments(
-        [40550], {},
-        datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
-        ["production", "staging"],
-        [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
-        release_match_setting_tag_or_branch,
-        branches, default_branches, prefixer_promise,
-        1, (6366825,), mdb, pdb, rdb, None)
-
-
 proper_deployments = {
     "Dummy deployment": Deployment(
         name="Dummy deployment",

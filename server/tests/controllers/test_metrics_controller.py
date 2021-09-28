@@ -51,6 +51,7 @@ from athenian.api.serialization import FriendlyJson
         (PullRequestMetricID.PR_WAIT_FIRST_REVIEW_COUNT, 51),
         (PullRequestMetricID.PR_WAIT_FIRST_REVIEW_COUNT_Q, 51),
         (PullRequestMetricID.PR_SIZE, 51),
+        (PullRequestMetricID.PR_DEPLOYMENT_TIME, 0),  # because pdb is empty
     ],
 )
 async def test_calc_metrics_prs_smoke(client, metric, count, headers, app, client_cache):
@@ -64,6 +65,9 @@ async def test_calc_metrics_prs_smoke(client, metric, count, headers, app, clien
                 "repositories": [
                     "github.com/src-d/go-git",
                 ],
+                **({"environments": ["production"]}
+                   if metric == PullRequestMetricID.PR_DEPLOYMENT_TIME
+                   else {}),
             },
         ],
         "metrics": [metric],
@@ -845,6 +849,66 @@ async def test_calc_metrics_prs_lines_smoke(client, headers):
     cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(rbody))
     assert len(cm.calculated) == 1
     assert cm.calculated[0].values[0].values[0] == 6
+
+
+@pytest.mark.parametrize("metric", [
+    PullRequestMetricID.PR_DEPLOYMENT_TIME,
+    PullRequestMetricID.PR_DEPLOYMENT_COUNT,
+    PullRequestMetricID.PR_DEPLOYMENT_COUNT_Q,
+    PullRequestMetricID.PR_CYCLE_DEPLOYMENT_TIME,
+    PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT,
+    PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT_Q,
+    PullRequestMetricID.PR_LEAD_DEPLOYMENT_TIME,
+    PullRequestMetricID.PR_LEAD_DEPLOYMENT_COUNT,
+    PullRequestMetricID.PR_LEAD_DEPLOYMENT_COUNT_Q,
+])
+async def test_calc_metrics_prs_deployments_no_env(client, headers, metric):
+    body = {
+        "for": [
+            {
+                "with": {},
+                "repositories": ["{1}"],
+                **({"environments": []} if "time" in metric else {}),
+            },
+        ],
+        "metrics": [metric],
+        "date_from": "2015-10-13",
+        "date_to": "2020-01-23",
+        "granularities": ["year"],
+        "exclude_inactive": False,
+        "account": 1,
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+    )
+    assert response.status == 400, response.text()
+
+
+async def test_calc_metrics_prs_deployments_smoke(client, headers, precomputed_deployments):
+    body = {
+        "for": [
+            {
+                "repositories": ["{1}"],
+                "environments": ["staging", "production"],
+            },
+        ],
+        "metrics": [PullRequestMetricID.PR_DEPLOYMENT_TIME,
+                    PullRequestMetricID.PR_LEAD_DEPLOYMENT_TIME,
+                    PullRequestMetricID.PR_CYCLE_DEPLOYMENT_TIME,
+                    PullRequestMetricID.PR_DEPLOYMENT_COUNT],
+        "date_from": "2015-10-13",
+        "date_to": "2020-01-23",
+        "granularities": ["all"],
+        "exclude_inactive": False,
+        "account": 1,
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+    )
+    assert response.status == 200, response.text()
+    body = FriendlyJson.loads((await response.read()).decode("utf-8"))
+    values = [v["values"] for v in body["calculated"][0]["values"]]
+    assert values == [[[None, "69934116s"], [None, "73543893s"], [None, "73648258s"], [0, 177]]]
 
 
 async def test_code_bypassing_prs_smoke(client, headers):

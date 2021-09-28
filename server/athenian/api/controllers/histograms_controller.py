@@ -6,8 +6,8 @@ from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
 from athenian.api.controllers.account import get_metadata_account_ids
 from athenian.api.controllers.features.histogram import HistogramParameters, Scale
-from athenian.api.controllers.metrics_controller import compile_filters_checks, \
-    compile_filters_prs, get_calculators_for_request
+from athenian.api.controllers.metrics_controller import check_environments, \
+    compile_filters_checks, compile_filters_prs, get_calculators_for_request
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import Settings
 from athenian.api.models.web import CalculatedCodeCheckHistogram, CalculatedPullRequestHistogram, \
@@ -35,12 +35,15 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
     )
     result = []
 
-    async def calculate_for_set_histograms(service, repos, withgroups, labels, jira, for_set):
+    async def calculate_for_set_histograms(
+            service, repos, withgroups, labels, jira, for_index, for_set):
+        check_environments([h.metric for h in filt.histograms], for_index, for_set)
         if for_set.environments is not None:
             if len(for_set.environments) > 1:
                 raise ResponseError(InvalidRequestError(
+                    f".for[{for_index}].environments",
                     "`environments` cannot contain more than one item to calculate histograms"),
-                ) from None
+                )
             environment = for_set.environments[0]
         else:
             environment = None
@@ -78,8 +81,8 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
                             ))
 
     tasks = [
-        calculate_for_set_histograms(service, repos, withgroups, labels, jira, for_set)
-        for service, (repos, withgroups, labels, jira, for_set) in filters
+        calculate_for_set_histograms(service, repos, withgroups, labels, jira, for_index, for_set)
+        for service, (repos, withgroups, labels, jira, for_index, for_set) in filters
     ]
     await gather(*tasks)
     return model_response(result)

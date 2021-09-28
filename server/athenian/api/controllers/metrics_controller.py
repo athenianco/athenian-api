@@ -1,6 +1,6 @@
 from collections import defaultdict
 from itertools import chain
-from typing import Dict, Iterable, List, Sequence, Set, Tuple, Union
+from typing import Collection, Dict, Iterable, List, Sequence, Set, Tuple, Union
 
 from aiohttp import web
 import databases.core
@@ -28,16 +28,17 @@ from athenian.api.models.web import CalculatedCodeCheckMetrics, CalculatedCodeCh
     CalculatedDeveloperMetrics, CalculatedDeveloperMetricsItem, CalculatedLinearMetricValues, \
     CalculatedPullRequestMetrics, CalculatedPullRequestMetricsItem, CalculatedReleaseMetric, \
     CodeBypassingPRsMeasurement, CodeCheckMetricsRequest, CodeFilter, DeveloperMetricsRequest, \
-    ForbiddenError, ForSet, ForSetCodeChecks, ForSetDevelopers, ReleaseMetricsRequest
+    ForbiddenError, ForSet, ForSetCodeChecks, ForSetDevelopers, PullRequestMetricID, \
+    ReleaseMetricsRequest
 from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.models.web.pull_request_metrics_request import PullRequestMetricsRequest
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 from athenian.api.tracing import sentry_span
 
-#               service                          developers                                originals  # noqa
-FilterPRs = Tuple[str, Tuple[List[Set[str]], List[PRParticipants], LabelFilter, JIRAFilter, ForSet]]  # noqa
-#                             repositories
+#               service                          developers                                    originals  # noqa
+FilterPRs = Tuple[str, Tuple[List[Set[str]], List[PRParticipants], LabelFilter, JIRAFilter, int, ForSet]]  # noqa
+#                             repositories                                              for's index
 
 #                service                     developers
 FilterDevs = Tuple[str, Tuple[List[Set[str]], List[str], ForSetDevelopers]]
@@ -60,7 +61,7 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
         filt = PullRequestMetricsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        return ResponseError(InvalidRequestError("?", detail=str(e))).response
+        raise ResponseError(InvalidRequestError("?", detail=str(e)))
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
     prefixer = await Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
     filters, repos = await compile_filters_prs(filt.for_, request, filt.account, meta_ids)
@@ -95,8 +96,10 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
     )
 
     @sentry_span
-    async def calculate_for_set_metrics(service, repos, withgroups, labels, jira, for_set):
+    async def calculate_for_set_metrics(
+            service, repos, withgroups, labels, jira, for_index, for_set):
         calculator = calculators[service]
+        check_environments(filt.metrics, for_index, for_set)
         metric_values = await calculator.calc_pull_request_metrics_line_github(
             filt.metrics, time_intervals, filt.quantiles or (0, 1),
             for_set.lines or [], for_set.environments or [], repos, withgroups, labels, jira,
@@ -129,8 +132,8 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
                                 v.confidence_scores = None
                         met.calculated.append(cm)
     await gather(*(
-        calculate_for_set_metrics(service, repos, withgroups, labels, jira, for_set)
-        for service, (repos, withgroups, labels, jira, for_set) in filters
+        calculate_for_set_metrics(service, repos, withgroups, labels, jira, for_index, for_set)
+        for service, (repos, withgroups, labels, jira, for_index, for_set) in filters
     ))
     return model_response(met)
 
@@ -192,8 +195,18 @@ async def compile_filters_prs(for_sets: List[ForSet],
                     withgroups.append(withgroup)
             labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
             jira = await _compile_jira(for_set, account, request)
-            filters.append((service, (repogroups, withgroups, labels, jira, for_set)))
+            filters.append((service, (repogroups, withgroups, labels, jira, i, for_set)))
     return filters, all_repos
+
+
+def check_environments(metrics: Collection[str], for_index: int, for_set: ForSet) -> None:
+    """Raise InvalidRequestError if there are deployment metrics and no environments."""
+    if dep_metrics := set(metrics).intersection(
+            {m for m in PullRequestMetricID if "deployment" in m}) \
+            and not for_set.environments:
+        raise ResponseError(InvalidRequestError(
+            f".for[{for_index}].environments",
+            detail=f"Metrics {dep_metrics} require setting `environments`."))
 
 
 async def _compile_filters_devs(for_sets: List[ForSetDevelopers],

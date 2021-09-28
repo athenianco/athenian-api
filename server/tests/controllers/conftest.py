@@ -1,4 +1,4 @@
-from datetime import timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from random import randint
 import warnings
 
@@ -9,8 +9,10 @@ import pytest
 from sqlalchemy import delete, insert, select
 
 from athenian.api.controllers.features.entries import MetricEntriesCalculator
+from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.commit import _empty_dag, _fetch_commit_history_edges
 from athenian.api.controllers.miners.github.dag_accelerated import join_dags
+from athenian.api.controllers.miners.github.deployment import mine_deployments
 from athenian.api.controllers.miners.types import nonemin, PullRequestFacts
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
@@ -266,6 +268,22 @@ async def metrics_calculator_factory_memcached(mdb, pdb, rdb, memcached):
         return MetricEntriesCalculator(account_id, meta_ids, 28, mdb, pdb, rdb, c)
 
     return build
+
+
+@pytest.fixture(scope="function")
+@with_defer
+async def precomputed_deployments(
+    release_match_setting_tag_or_branch, prefixer_promise, branches, default_branches,
+    mdb, pdb, rdb,
+):
+    await mine_deployments(
+        [40550], {},
+        datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
+        ["production", "staging"],
+        [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        release_match_setting_tag_or_branch,
+        branches, default_branches, prefixer_promise,
+        1, (6366825,), mdb, pdb, rdb, None)
 
 
 def pytest_configure(config):

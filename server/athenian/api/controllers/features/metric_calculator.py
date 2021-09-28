@@ -146,6 +146,7 @@ class MetricCalculator(Generic[T], ABC):
             group_sample_mask = group_sample_mask.copy()
             discard_mask = np.broadcast_to(discard_mask[:, None, :], group_sample_mask.shape)
             group_sample_mask[discard_mask] = False
+        self._grouped_sample_mask = group_sample_mask
         flat_samples = np.broadcast_to(peek[None, :], notnull.shape)[group_sample_mask] \
             .astype(self.dtype, copy=False).ravel()
         group_sample_lengths = np.sum(group_sample_mask, axis=-1)
@@ -185,17 +186,23 @@ class MetricCalculator(Generic[T], ABC):
     @property
     def grouped_notnull(self) -> np.ndarray:
         """Return the last calculated boolean mask of shape groups x time intervals x facts \
-        that selects not-None samples *before discarding outliers by quantiles*.
+        that selects non-None samples *before discarding outliers by quantiles*.
 
         This mask is typically consumed by the counters that must ignore the quantiles.
         """
         return self._grouped_notnull
 
+    @property
+    def grouped_sample_mask(self) -> np.ndarray:
+        """Return the last calculated boolean mask of shape groups x time intervals x facts \
+        that selects non-None samples *after discarding outliers by quantiles*."""
+        return self._grouped_sample_mask
+
     def reset(self) -> None:
         """Clear the current state of the calculator."""
         self._samples = np.empty((0, 0), dtype=object)
         self._peek = np.empty((0, 0), dtype=object)
-        self._grouped_notnull = np.empty((0, 0, 0), dtype=bool)
+        self._grouped_notnull = self._grouped_sample_mask = np.empty((0, 0, 0), dtype=bool)
         self._last_values = None
 
     def split(self) -> List["MetricCalculator"]:
@@ -380,6 +387,7 @@ class Counter(MetricCalculator[int], ABC):
         calc = self._calcs[0]
         self._peek = calc.peek
         self._grouped_notnull = calc.grouped_notnull
+        self._grouped_sample_mask = calc.grouped_sample_mask
         self._samples = calc.samples
 
     def _values(self) -> List[List[Metric[T]]]:
@@ -439,6 +447,8 @@ class MetricCalculatorEnsemble:
         self._calcs, self._metrics = self._plan_classes(metric_classes, quantiles, **kwargs)
         self._quantiles = tuple(quantiles)
         self._quantile_stride = quantile_stride
+        if self._quantiles != (0, 1):
+            assert self._quantile_stride
 
     def __getitem__(self, metric: str) -> List[MetricCalculator]:
         """Return the owned calculator for the given metric."""
@@ -560,13 +570,12 @@ class HistogramCalculatorEnsemble(MetricCalculatorEnsemble):
                  *metrics: str,
                  class_mapping: Dict[str, Type[MetricCalculator]],
                  quantiles: Sequence[float],
-                 quantile_stride: int = 0,
                  **kwargs):
         """Initialize a new instance of HistogramCalculatorEnsemble class."""
         super().__init__(*metrics,
                          class_mapping=class_mapping,
                          quantiles=quantiles,
-                         quantile_stride=0,
+                         quantile_stride=-1,
                          **kwargs)
 
     def _compose_quantile_time_intervals(self,
