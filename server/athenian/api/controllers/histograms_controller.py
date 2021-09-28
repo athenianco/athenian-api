@@ -36,6 +36,14 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
     result = []
 
     async def calculate_for_set_histograms(service, repos, withgroups, labels, jira, for_set):
+        if for_set.environments is not None:
+            if len(for_set.environments) > 1:
+                raise ResponseError(InvalidRequestError(
+                    "`environments` cannot contain more than one item to calculate histograms"),
+                ) from None
+            environment = for_set.environments[0]
+        else:
+            environment = None
         defs = defaultdict(list)
         for h in filt.histograms:
             defs[HistogramParameters(
@@ -47,8 +55,8 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
         try:
             histograms = await calculator.calc_pull_request_histograms_github(
                 defs, time_from, time_to, filt.quantiles or (0, 1), for_set.lines or [],
-                repos, withgroups, labels, jira, filt.exclude_inactive, release_settings,
-                prefixer, filt.fresh)
+                environment, repos, withgroups, labels, jira, filt.exclude_inactive,
+                release_settings, prefixer, filt.fresh)
         except ValueError as e:
             raise ResponseError(InvalidRequestError(str(e))) from None
         for line_groups in histograms:

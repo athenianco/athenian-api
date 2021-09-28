@@ -3,7 +3,8 @@ from contextvars import ContextVar
 import dataclasses
 from datetime import datetime, timedelta
 from itertools import chain
-from typing import Any, Callable, Iterable, Iterator, List, Mapping, NamedTuple, Optional, Tuple, \
+from typing import Any, Callable, Dict, Iterable, Iterator, List, Mapping, NamedTuple, Optional, \
+    Tuple, \
     Type, \
     TypeVar, Union
 
@@ -215,11 +216,17 @@ class NumpyStruct(Mapping[str, Any]):
     dtype: np.dtype
     nested_dtypes: Mapping[str, np.dtype]
 
-    def __init__(self, data: Union[bytes, bytearray, memoryview], **optional: Any):
+    def __init__(self, data: Union[bytes, bytearray, memoryview, np.ndarray], **optional: Any):
         """Initialize a new instance of NumpyStruct from raw memory and the (perhaps incomplete) \
         mapping of mutable field values."""
-        self._data = data
-        self._arr: Optional[np.ndarray] = None
+        if isinstance(data, (np.ndarray, np.void)):
+            assert data.shape == () or data.shape == (1,)
+            data = data.reshape(1)
+            self._data = data.view(np.uint8).data
+            self._arr = data
+        else:
+            self._data = data
+            self._arr = None
         for attr in self.__slots__[2:]:
             setattr(self, attr, optional.get(attr))
 
@@ -269,9 +276,16 @@ class NumpyStruct(Mapping[str, Any]):
         return cls(b"".join(chain([arr.view(np.byte).data], extra_bytes)), **kwargs)
 
     @property
-    def data(self):
+    def data(self) -> bytes:
         """Return the underlying memory."""
         return self._data
+
+    @property
+    def array(self) -> np.ndarray:
+        """Return the underlying numpy array that wraps `data`."""
+        if self._arr is None:
+            self._arr = np.frombuffer(self.data, self.dtype, count=1)
+        return self._arr
 
     @property
     def coerced_data(self) -> memoryview:
@@ -322,6 +336,18 @@ class NumpyStruct(Mapping[str, Any]):
 
         return self.data == other.data
 
+    def __getstate__(self) -> Dict[str, Any]:
+        """Support pickle.dump()."""
+        data = self.data
+        return {
+            "data": bytes(data) if not isinstance(data, (bytes, bytearray)) else data,
+            **{attr: getattr(self, attr) for attr in self.__slots__[2:]},
+        }
+
+    def __setstate__(self, state: Dict[str, Any]):
+        """Support pickle.load()."""
+        self.__init__(**state)
+
     @staticmethod
     def _generate_get(name: str,
                       type_: Union[str, np.dtype, List[Union[str, np.dtype]]],
@@ -334,6 +360,8 @@ class NumpyStruct(Mapping[str, Any]):
             type_ = np.str_
         elif char == "S":
             type_ = np.bytes_
+        elif char == "V":
+            type_ = np.ndarray
 
         def get_field(self) -> Optional[type_]:
             if self._arr is None:
@@ -397,14 +425,15 @@ def numpy_struct(cls):
         f"{cls.__name__}FieldNames",
         [(k, str) for k in chain(dtype, optional)],
     )(*chain(dtype, optional))
+    base = type(cls.__name__ + "Base", (NumpyStruct,),
+                {k: property(NumpyStruct._generate_get(k, v)) for k, v in dtype.items()})
     body = {
         "__slots__": ("_data", "_arr", *optional),
-        **{k: property(NumpyStruct._generate_get(k, v)) for k, v in dtype.items()},
         "dtype": np.dtype(dtype_tuples),
         "nested_dtypes": nested_dtypes,
         "f": field_names,
     }
-    struct_cls = type(cls.__name__, (NumpyStruct, cls), body)
+    struct_cls = type(cls.__name__, (cls, base), body)
     struct_cls.__module__ = cls.__module__
     cls.__name__ += "Origin"
     return struct_cls

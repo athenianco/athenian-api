@@ -1,11 +1,13 @@
+import asyncio
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional, Set, Tuple, Type
+import logging
+from typing import Dict, List, Mapping, Optional, Set, Tuple, Type
 
 import aiomcache
-import databases
 import numpy as np
 import pandas as pd
 
+from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.precomputed_prs import \
@@ -13,12 +15,14 @@ from athenian.api.controllers.miners.github.precomputed_prs import \
     OpenPRFactsLoader, remove_ambiguous_prs
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.github.release_load import ReleaseLoader
-from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
+from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query, \
+    PullRequestJiraMapper
 from athenian.api.controllers.miners.types import PRParticipants, PullRequestFacts
 from athenian.api.controllers.prefixer import PrefixerPromise
 from athenian.api.controllers.settings import ReleaseSettings
-from athenian.api.db import add_pdb_hits, add_pdb_misses
+from athenian.api.db import add_pdb_hits, add_pdb_misses, ParallelDatabase
 from athenian.api.models.metadata.github import PullRequest
+from athenian.api.models.persistentdata.models import DeploymentNotification
 from athenian.api.tracing import sentry_span
 
 
@@ -28,19 +32,21 @@ class UnfreshPullRequestFactsFetcher:
     release_loader = ReleaseLoader
     open_prs_facts_loader = OpenPRFactsLoader
     merged_prs_facts_loader = MergedPRFactsLoader
+    _log = logging.getLogger(f"{metadata.__package__}.UnfreshPullRequestFactsFetcher")
 
     @classmethod
     @sentry_span
     async def fetch_pull_request_facts_unfresh(cls,
                                                miner: Type[PullRequestMiner],
-                                               done_facts: Dict[str, PullRequestFacts],
-                                               ambiguous: Dict[str, List[str]],
+                                               done_facts: Dict[int, PullRequestFacts],
+                                               ambiguous: Dict[str, List[int]],
                                                time_from: datetime,
                                                time_to: datetime,
                                                repositories: Set[str],
                                                participants: PRParticipants,
                                                labels: LabelFilter,
                                                jira: JIRAFilter,
+                                               pr_jira_mapper: Optional[PullRequestJiraMapper],
                                                exclude_inactive: bool,
                                                branches: pd.DataFrame,
                                                default_branches: Dict[str, str],
@@ -48,11 +54,11 @@ class UnfreshPullRequestFactsFetcher:
                                                prefixer: PrefixerPromise,
                                                account: int,
                                                meta_ids: Tuple[int, ...],
-                                               mdb: databases.Database,
-                                               pdb: databases.Database,
-                                               rdb: databases.Database,
+                                               mdb: ParallelDatabase,
+                                               pdb: ParallelDatabase,
+                                               rdb: ParallelDatabase,
                                                cache: Optional[aiomcache.Client],
-                                               ) -> Dict[str, PullRequestFacts]:
+                                               ) -> Dict[int, PullRequestFacts]:
         """
         Load the missing facts about merged unreleased and open PRs from pdb instead of querying \
         the most up to date information from mdb.
@@ -62,6 +68,14 @@ class UnfreshPullRequestFactsFetcher:
         :return: Map from PR node IDs to their facts.
         """
         add_pdb_hits(pdb, "fresh", 1)
+        if pr_jira_mapper is not None:
+            done_jira_map_task = asyncio.create_task(
+                pr_jira_mapper.append_pr_jira_mapping(done_facts, meta_ids, mdb),
+                name="append_pr_jira_mapping/done")
+        done_deployments_task = asyncio.create_task(
+            miner.fetch_pr_deployments(done_facts, account, pdb, rdb),
+            name="fetch_pr_deployments/done",
+        )
         blacklist = PullRequest.node_id.notin_any_values(done_facts)
         tasks = [
             # map_releases_to_prs is not required because such PRs are already released,
@@ -77,8 +91,8 @@ class UnfreshPullRequestFactsFetcher:
                 ]),
         ]
         if jira and done_facts:
-            tasks.append(cls._filter_done_facts_jira(miner, done_facts, jira, meta_ids, mdb,
-                                                     cache))
+            tasks.append(cls._filter_done_facts_jira(
+                miner, done_facts, jira, meta_ids, mdb, cache))
         else:
             async def identity():
                 return done_facts
@@ -115,21 +129,34 @@ class UnfreshPullRequestFactsFetcher:
                 LabelFilter.empty(), matched_bys,
                 default_branches, release_settings, prefixer, account, pdb,
                 time_from=time_from, exclude_inactive=exclude_inactive),
+            miner.fetch_pr_deployments(unreleased_pr_node_ids, account, pdb, rdb),
+            done_deployments_task,
         ]
-        open_facts, merged_facts = await gather(*tasks)
+        if pr_jira_mapper is not None:
+            tasks.extend([
+                pr_jira_mapper.load_pr_jira_mapping(unreleased_pr_node_ids, meta_ids, mdb),
+                done_jira_map_task,
+            ])
+        open_facts, merged_facts, unreleased_deps, released_deps, *unreleased_jira_map = \
+            await gather(*tasks, op="final gather")
         add_pdb_hits(pdb, "precomputed_open_facts", len(open_facts))
         add_pdb_hits(pdb, "precomputed_merged_unreleased_facts", len(merged_facts))
         # ensure the priority order
-        return {**open_facts, **merged_facts, **done_facts}
+        facts = {**open_facts, **merged_facts, **done_facts}
+        if pr_jira_mapper is not None:
+            for pr, jira in unreleased_jira_map[0].items():
+                facts[pr].jira_ids = jira
+        cls.append_deployments(facts, pd.concat([unreleased_deps, released_deps]), cls._log)
+        return facts
 
     @classmethod
     @sentry_span
     async def _filter_done_facts_jira(cls,
-                                      miner: PullRequestMiner,
-                                      done_facts: Dict[str, PullRequestFacts],
+                                      miner: Type[PullRequestMiner],
+                                      done_facts: Dict[int, PullRequestFacts],
                                       jira: JIRAFilter,
                                       meta_ids: Tuple[int, ...],
-                                      mdb: databases.Database,
+                                      mdb: ParallelDatabase,
                                       cache: Optional[aiomcache.Client],
                                       ) -> Dict[str, PullRequestFacts]:
         filtered = await miner.filter_jira(
@@ -150,8 +177,8 @@ class UnfreshPullRequestFactsFetcher:
                                                     prefixer: PrefixerPromise,
                                                     account: int,
                                                     meta_ids: Tuple[int, ...],
-                                                    mdb: databases.Database,
-                                                    pdb: databases.Database,
+                                                    mdb: ParallelDatabase,
+                                                    pdb: ParallelDatabase,
                                                     cache: Optional[aiomcache.Client],
                                                     ) -> pd.DataFrame:
         node_ids, repos = await discover_inactive_merged_unreleased_prs(
@@ -167,3 +194,28 @@ class UnfreshPullRequestFactsFetcher:
             [PullRequest.node_id.in_(node_ids), PullRequest.acc_id.in_(meta_ids)],
             jira, mdb, cache, columns=columns)
         return await read_sql_query(query, mdb, columns, index=PullRequest.node_id.name)
+
+    @staticmethod
+    @sentry_span
+    def append_deployments(facts: Mapping[int, PullRequestFacts],
+                           deps: pd.DataFrame,
+                           log: logging.Logger) -> None:
+        """Insert missing deployments info in the PR facts."""
+        log.info("appending %d deployments", len(deps))
+        pr_node_ids = deps.index.get_level_values(0).values
+        names = deps.index.get_level_values(1).values
+        finisheds = deps[DeploymentNotification.finished_at.name].values
+        envs = deps[DeploymentNotification.environment.name].values
+        for node_id, name, finished, env in zip(pr_node_ids, names, finisheds, envs):
+            try:
+                f = facts[node_id]
+            except KeyError:
+                continue
+            if f.deployments is None:
+                f.deployments = [name]
+                f.deployed = [finished]
+                f.environments = [env]
+            else:
+                f.deployments.append(name)
+                f.deployed.append(finished)
+                f.environments.append(env)

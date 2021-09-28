@@ -132,8 +132,9 @@ async def test_get_everything_smoke(client, headers, dummy_deployment_label):
         "changed_files", "last_commit_before_first_review", "force_push_dropped", "additions",
         "work_began", "releaser", "merged_by_id", "user_node_id", "repository_full_name",
         "first_review_request", "last_review", "activity_days", "closed", "merge_commit_id",
-        "head_ref", "jira_id", "merger", "done", "size", "reviews", "release_url",
-        "release_node_id", "review_comments", "participants", "deployments",
+        "head_ref", "jira_ids", "merger", "done", "size", "reviews", "release_url",
+        "release_node_id", "review_comments", "participants", "deployments", "deployed",
+        "environments",
     }
     assert len(releases_df) == 53
     assert set(releases_df) == {

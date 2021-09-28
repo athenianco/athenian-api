@@ -8,7 +8,8 @@ import pandas as pd
 from athenian.api.controllers.features.github.check_run_metrics_accelerated import \
     calculate_interval_intersections
 from athenian.api.controllers.features.histogram import calculate_histogram, Histogram, Scale
-from athenian.api.controllers.features.metric import Metric
+from athenian.api.controllers.features.metric import make_metric, Metric, MetricFloat, MetricInt, \
+    MetricTimeDelta
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
     BinnedHistogramCalculator, BinnedMetricCalculator, HistogramCalculatorEnsemble, \
     make_register_metric, MaxMetricCalculator, MetricCalculator, MetricCalculatorEnsemble, \
@@ -103,8 +104,7 @@ class FirstSuiteEncounters(MetricCalculator[float]):
     """Calculate the number of executed check suites for each pull request."""
 
     may_have_negative_values = False
-    dtype = float
-    has_nan = True
+    metric = MetricInt
     is_pure_dependency = True
     complete_suite_statuses = [b"COMPLETED", b"FAILURE", b"SUCCESS", b"PENDING"]
 
@@ -128,14 +128,14 @@ class FirstSuiteEncounters(MetricCalculator[float]):
         return first_suite_encounters[order]
 
     def _value(self, samples: np.ndarray) -> Metric[None]:
-        return Metric(False, None, None, None)
+        return self.metric.from_fields(False, None, None, None)
 
 
 @register_metric(CodeCheckMetricID.SUITES_COUNT)
 class SuitesCounter(SumMetricCalculator[int]):
     """Number of executed check suites metric."""
 
-    dtype = int
+    metric = MetricInt
     deps = (FirstSuiteEncounters,)
 
     def _analyze(self,
@@ -159,7 +159,7 @@ class SuitesCounter(SumMetricCalculator[int]):
 class SuitesInPRsCounter(SumMetricCalculator[int]):
     """Number of executed check suites in pull requests metric."""
 
-    dtype = int
+    metric = MetricInt
     deps = (SuitesCounter,)
 
     def _analyze(self,
@@ -175,7 +175,7 @@ class SuitesInPRsCounter(SumMetricCalculator[int]):
 class SuitesInStatusCounter(SumMetricCalculator[int]):
     """Number of executed check suites metric with the specified `statuses`."""
 
-    dtype = int
+    metric = MetricInt
     statuses = {}
 
     def _analyze(self,
@@ -246,12 +246,19 @@ class SuiteSuccessRatioCalculator(RatioCalculator):
     deps = (SuccessfulSuitesCounter, SuitesCounter)
 
 
+SuiteTimeCalculatorAnalysisDType = np.dtype([("elapsed", "timedelta64[s]"), ("size", int)])
+SuiteTimeCalculatorAnalysisMetric = make_metric(
+    "SuiteTimeCalculatorAnalysisMetric",
+    __name__,
+    SuiteTimeCalculatorAnalysisDType,
+    np.array((np.timedelta64("NaT"), MetricInt.nan), dtype=SuiteTimeCalculatorAnalysisDType))
+
+
 class SuiteTimeCalculatorAnalysis(MetricCalculator[None]):
     """Measure elapsed time and size of each check suite."""
 
     may_have_negative_values = False
-    dtype = np.dtype([("elapsed", "timedelta64[s]"), ("size", int)])
-    has_nan = True
+    metric = SuiteTimeCalculatorAnalysisMetric
     is_pure_dependency = True
 
     def _analyze(self,
@@ -312,7 +319,7 @@ class SuiteTimeCalculatorAnalysis(MetricCalculator[None]):
         return result
 
     def _value(self, samples: np.ndarray) -> Metric[None]:
-        return Metric(False, None, None, None)
+        return self.metric.from_fields(False, None, None, None)
 
 
 @register_metric(CodeCheckMetricID.SUITE_TIME)
@@ -320,8 +327,7 @@ class SuiteTimeCalculator(AverageMetricCalculator[timedelta]):
     """Average check suite execution time metric."""
 
     may_have_negative_values = False
-    dtype = "timedelta64[s]"
-    has_nan = True
+    metric = MetricTimeDelta
     deps = (SuiteTimeCalculatorAnalysis,)
 
     def _analyze(self,
@@ -336,7 +342,7 @@ class SuiteTimeCalculator(AverageMetricCalculator[timedelta]):
 class RobustSuiteTimeCalculator(MetricCalculator[timedelta]):
     """Average check suite execution time metric, sustainable version."""
 
-    dtype = "timedelta64[s]"
+    metric = MetricTimeDelta
     deps = (SuiteTimeCalculatorAnalysis,)
 
     def __call__(self,
@@ -399,7 +405,8 @@ class RobustSuiteTimeCalculator(MetricCalculator[timedelta]):
             else:
                 ts_means = np.full(len(min_times), None, dtype=elapsed.dtype)
             # confidence intervals are not implemented
-            metrics.append([Metric(m is not None, m, None, None) for m in ts_means.tolist()])
+            metrics.append([self.metric.from_fields(m is not None, m, None, None)
+                            for m in ts_means.tolist()])
 
     def _values(self) -> List[List[Metric[timedelta]]]:
         return self._metrics
@@ -420,8 +427,7 @@ class SuitesPerPRCounter(AverageMetricCalculator[float]):
     """Average number of executed check suites per pull request metric."""
 
     may_have_negative_values = False
-    dtype = float
-    has_nan = True
+    metric = MetricFloat
     deps = (FirstSuiteEncounters,)
 
     def _analyze(self,
@@ -454,8 +460,7 @@ class SuiteTimePerPRCalculator(AverageMetricCalculator[timedelta]):
     """Average check suite execution in PRs time metric."""
 
     may_have_negative_values = False
-    dtype = "timedelta64[s]"
-    has_nan = True
+    metric = MetricTimeDelta
     deps = (SuiteTimeCalculator,)
 
     def _analyze(self,
@@ -474,7 +479,7 @@ class SuiteTimePerPRCalculator(AverageMetricCalculator[timedelta]):
 class PRsWithChecksCounter(SumMetricCalculator[int]):
     """Number of PRs with executed check suites."""
 
-    dtype = int
+    metric = MetricInt
     deps = (SuitesPerPRCounter,)
 
     def _analyze(self,
@@ -525,7 +530,7 @@ def calculate_check_run_outcome_masks(check_run_statuses: np.ndarray,
 class FlakyCommitChecksCounter(SumMetricCalculator[int]):
     """Number of commits with both successful and failed check suites."""
 
-    dtype = int
+    metric = MetricInt
     deps = (SuccessfulSuitesCounter, FailedSuitesCounter)
 
     def _analyze(self,
@@ -565,7 +570,7 @@ class FlakyCommitChecksCounter(SumMetricCalculator[int]):
 class MergedPRsWithFailedChecksCounter(SumMetricCalculator[int]):
     """Count how many PRs were merged despite failing checks."""
 
-    dtype = int
+    metric = MetricInt
 
     @staticmethod
     def find_prs_merged_with_failed_check_runs(facts: pd.DataFrame,
@@ -622,7 +627,7 @@ class MergedPRsWithFailedChecksCounter(SumMetricCalculator[int]):
 class MergedPRsCounter(SumMetricCalculator[int]):
     """Count how many PRs were merged with checks."""
 
-    dtype = int
+    metric = MetricInt
 
     def _analyze(self,
                  facts: pd.DataFrame,
@@ -655,8 +660,7 @@ class MergedPRsWithFailedChecksRatioCalculator(RatioCalculator):
 class ConcurrencyCalculator(MetricCalculator[float]):
     """Calculate the concurrency value for each check run."""
 
-    dtype = float
-    has_nan = True
+    metric = MetricFloat
     is_pure_dependency = True
 
     def _analyze(self,
@@ -688,10 +692,10 @@ class ConcurrencyCalculator(MetricCalculator[float]):
             np.cumsum(crtypes_counts),
         )
         intersections = intersections[np.argsort(crtypes_order)]
-        result = np.full((len(min_times), len(facts)), np.nan, dtype=float)
+        result = np.full((len(min_times), len(facts)), np.nan, np.float32)
         result[:, have_completed] = intersections
         mask = (min_times[:, None] <= started_ats) & (started_ats < max_times[:, None])
-        result[~mask] = None
+        result[~mask] = np.nan
         return result
 
     def _value(self, samples: np.ndarray) -> Metric[float]:
@@ -703,8 +707,7 @@ class AvgConcurrencyCalculator(AverageMetricCalculator[float]):
     """Calculate the average concurrency of the check runs."""
 
     may_have_negative_values = False
-    dtype = float
-    has_nan = True
+    metric = MetricFloat
     deps = (ConcurrencyCalculator,)
 
     def _analyze(self,
@@ -720,8 +723,7 @@ class MaxConcurrencyCalculator(MaxMetricCalculator[int]):
     """Calculate the maximum concurrency of the check runs."""
 
     may_have_negative_values = False
-    dtype = float
-    has_nan = True
+    metric = MetricFloat
     deps = (ConcurrencyCalculator,)
 
     def _analyze(self,
@@ -735,12 +737,20 @@ class MaxConcurrencyCalculator(MaxMetricCalculator[int]):
         return int(super()._agg(samples))
 
 
+ElapsedTimePerConcurrencyCalculatorDType = np.dtype(
+    [("concurrency", float), ("duration", "timedelta64[s]")])
+ElapsedTimePerConcurrencyCalculatorMetric = make_metric(
+    "ElapsedTimePerConcurrencyCalculatorMetric",
+    __name__,
+    ElapsedTimePerConcurrencyCalculatorDType,
+    np.array((np.nan, np.timedelta64("NaT")), dtype=ElapsedTimePerConcurrencyCalculatorDType))
+
+
 @register_metric(CodeCheckMetricID.ELAPSED_TIME_PER_CONCURRENCY)
 class ElapsedTimePerConcurrencyCalculator(MetricCalculator[object]):
     """Calculate the cumulative time spent on each concurrency level."""
 
-    dtype = np.dtype([("concurrency", float), ("duration", "timedelta64[s]")])
-    has_nan = True
+    metric = ElapsedTimePerConcurrencyCalculatorMetric
     deps = (ConcurrencyCalculator,)
 
     def _analyze(self,
@@ -756,7 +766,8 @@ class ElapsedTimePerConcurrencyCalculator(MetricCalculator[object]):
         return result
 
     def _value(self, samples: np.ndarray) -> Metric[object]:
-        return Metric(False, None, None, None)
+        # TODO(vmarkovtsev): return a dict
+        return self.metric.from_fields(False, None, None, None)
 
     def histogram(self,
                   scale: Optional[Scale],

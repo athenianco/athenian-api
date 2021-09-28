@@ -323,18 +323,17 @@ class PullRequestListMiner:
         empty_group_mask = np.zeros((1, len(df_facts)), dtype=bool)
         for dep in counter_deps:
             dep(df_facts, no_time_from, now, None, empty_group_mask)
-        for k, calcs in calcs.items():
-            time_calc, pending_counter = calcs["time"], calcs["pending_count"]
+        for stage, stage_calcs in calcs.items():
+            time_calc, pending_counter = stage_calcs["time"], stage_calcs["pending_count"]
             pending_counter(df_facts, no_time_from, now, None, empty_group_mask)
-
             kwargs = {
                 "override_event_time": now - np.timedelta64(timedelta(seconds=1)),  # < time_max
-                "override_event_indexes": np.nonzero(pending_counter.peek[0])[0],
+                "override_event_indexes": np.flatnonzero(pending_counter.peek[0]),
             }
-            if k == "review":
+            if stage == "review":
                 kwargs["allow_unclosed"] = True
             time_calc(df_facts, no_time_from, now, None, empty_group_mask, **kwargs)
-            stage_timings[k] = time_calc.peek[0]
+            stage_timings[stage] = time_calc.peek[0]
         return stage_timings
 
     @sentry_span
@@ -925,7 +924,7 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
             prs_df[PullRequest.repository_full_name.name].unique(), account, pdb, cache)
     dfs, _, _ = await PullRequestMiner.mine_by_ids(
         prs_df, unreleased, now, releases, matched_bys, branches, default_branches, dags,
-        release_settings, prefixer, account, meta_ids, mdb, pdb, cache, with_jira=with_jira)
+        release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache, with_jira=with_jira)
     if with_deployments:
         deployment_names = dfs.deployments.index.get_level_values(1).unique()
         deployments = asyncio.create_task(load_included_deployments(

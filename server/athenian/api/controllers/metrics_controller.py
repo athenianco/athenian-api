@@ -99,7 +99,7 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
         calculator = calculators[service]
         metric_values = await calculator.calc_pull_request_metrics_line_github(
             filt.metrics, time_intervals, filt.quantiles or (0, 1),
-            for_set.lines or [], repos, withgroups, labels, jira,
+            for_set.lines or [], for_set.environments or [], repos, withgroups, labels, jira,
             filt.exclude_inactive, release_settings, prefixer, filt.fresh)
         mrange = range(len(met.metrics))
         for lines_group_index, lines_group in enumerate(metric_values):

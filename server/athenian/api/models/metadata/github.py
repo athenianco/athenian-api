@@ -424,8 +424,8 @@ class NodePullRequestJiraIssues(Base,
 
     node_id = Column(BigInteger, primary_key=True)
     node_acc = Column(BigInteger, primary_key=True)
-    jira_acc = Column(BigInteger, nullable=False)
-    jira_id = Column(Text, nullable=False)
+    jira_acc = Column(BigInteger, primary_key=True)
+    jira_id = Column(Text, primary_key=True)
 
 
 class NodeUser(Base,

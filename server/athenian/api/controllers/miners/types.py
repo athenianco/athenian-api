@@ -261,12 +261,14 @@ class PullRequestFacts:
     class Optional:
         """Mutable fields that are None by default. We do not serialize them."""
 
-        jira_id: str
+        jira_ids: List[str]
         repository_full_name: str
         author: str
         merger: str
         releaser: str
         deployments: List[str]
+        environments: List[str]
+        deployed: List[datetime]
 
     def max_timestamp(self) -> pd.Timestamp:
         """Find the maximum timestamp contained in the struct."""

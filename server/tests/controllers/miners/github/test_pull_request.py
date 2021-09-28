@@ -655,6 +655,7 @@ async def test_pr_mine_by_ids(branches, default_branches, dag, mdb, pdb, rdb, ca
         (6366825,),
         mdb,
         pdb,
+        rdb,
         cache,
     )
     dfs2, _, _ = await pr_miner.mine_by_ids(
@@ -672,6 +673,7 @@ async def test_pr_mine_by_ids(branches, default_branches, dag, mdb, pdb, rdb, ca
         (6366825,),
         mdb,
         pdb,
+        rdb,
         cache,
     )
     for df1, df2 in zip(dfs1, dfs2):

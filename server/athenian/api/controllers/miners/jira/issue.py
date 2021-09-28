@@ -573,8 +573,8 @@ class PullRequestJiraMapper:
                                      mdb: DatabaseLike) -> None:
         """Load and insert "jira_id" to the PR facts."""
         jira_map = await cls.load_pr_jira_mapping(prs, meta_ids, mdb)
-        for pr, facts in prs.items():
-            facts.jira_id = jira_map.get(pr)
+        for pr, jira in jira_map.items():
+            prs[pr].jira_ids = jira
 
     @classmethod
     @sentry_span
@@ -582,7 +582,7 @@ class PullRequestJiraMapper:
                                    prs: Collection[int],
                                    meta_ids: Tuple[int, ...],
                                    mdb: DatabaseLike,
-                                   ) -> Dict[str, str]:
+                                   ) -> Dict[int, List[str]]:
         """Fetch the mapping from PR node IDs to JIRA issue IDs."""
         nprji = NodePullRequestJiraIssues
         if len(prs) >= 20:
@@ -592,7 +592,10 @@ class PullRequestJiraMapper:
         rows = await mdb.fetch_all(sql.select([nprji.node_id, nprji.jira_id])
                                    .where(sql.and_(node_id_cond,
                                                    nprji.node_acc.in_(meta_ids))))
-        return {r[0]: r[1] for r in rows}
+        result = defaultdict(list)
+        for r in rows:
+            result[r[0]].append(r[1])
+        return result
 
 
 def resolve_work_began_and_resolved(issue_work_began: Optional[np.datetime64],

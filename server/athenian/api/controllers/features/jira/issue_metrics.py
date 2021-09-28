@@ -4,6 +4,7 @@ from typing import Dict, Sequence, Type
 import numpy as np
 import pandas as pd
 
+from athenian.api.controllers.features.metric import MetricInt, MetricTimeDelta
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
     BinnedHistogramCalculator, BinnedMetricCalculator, Counter, HistogramCalculator, \
     HistogramCalculatorEnsemble, make_register_metric, MetricCalculator, \
@@ -53,14 +54,14 @@ class JIRABinnedHistogramCalculator(BinnedHistogramCalculator):
 class RaisedCounter(SumMetricCalculator[int]):
     """Number of created issues metric."""
 
-    dtype = int
+    metric = MetricInt
 
     def _analyze(self,
                  facts: pd.DataFrame,
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
-        result = np.zeros((len(min_times), len(facts)), self.dtype)
+        result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         created = facts[Issue.created.name].values
         result[(min_times[:, None] <= created) & (created < max_times[:, None])] = 1
         return result
@@ -70,14 +71,14 @@ class RaisedCounter(SumMetricCalculator[int]):
 class ResolvedCounter(SumMetricCalculator[int]):
     """Number of resolved issues metric."""
 
-    dtype = int
+    metric = MetricInt
 
     def _analyze(self,
                  facts: pd.DataFrame,
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
-        result = np.zeros((len(min_times), len(facts)), self.dtype)
+        result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         resolved = facts[AthenianIssue.resolved.name].values.astype(min_times.dtype)
         prs_began = facts[ISSUE_PRS_BEGAN].values.astype(min_times.dtype)
         have_prs_mask = prs_began == prs_began
@@ -91,14 +92,14 @@ class ResolvedCounter(SumMetricCalculator[int]):
 class OpenCounter(SumMetricCalculator[int]):
     """Number of created issues metric."""
 
-    dtype = int
+    metric = MetricInt
 
     def _analyze(self,
                  facts: pd.DataFrame,
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
-        result = np.zeros((len(min_times), len(facts)), self.dtype)
+        result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         created = facts[Issue.created.name].values
         resolved = facts[AthenianIssue.resolved.name].values.astype(min_times.dtype)
         prs_began = facts[ISSUE_PRS_BEGAN].values.astype(min_times.dtype)
@@ -134,8 +135,7 @@ class LifeTimeCalculator(AverageMetricCalculator[timedelta]):
     """
 
     may_have_negative_values = False
-    dtype = "timedelta64[s]"
-    has_nan = True
+    metric = MetricTimeDelta
 
     def _analyze(self,
                  facts: pd.DataFrame,
@@ -170,8 +170,7 @@ class LeadTimeCalculator(AverageMetricCalculator[timedelta]):
     """
 
     may_have_negative_values = False
-    dtype = "timedelta64[s]"
-    has_nan = True
+    metric = MetricTimeDelta
 
     def _analyze(self,
                  facts: pd.DataFrame,
@@ -205,8 +204,7 @@ class AcknowledgeTimeCalculator(AverageMetricCalculator[timedelta]):
     """
 
     may_have_negative_values = False
-    dtype = "timedelta64[s]"
-    has_nan = True
+    metric = MetricTimeDelta
 
     def _analyze(self,
                  facts: pd.DataFrame,
