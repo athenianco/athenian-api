@@ -333,6 +333,64 @@ async def test_calc_histogram_prs_lines(client, headers):
     }
 
 
+@pytest.mark.parametrize("envs", [{}, {"environments": []}, {"environments": ["staging", "prod"]}])
+async def test_calc_histogram_prs_deployments_bad_envs(client, headers, envs):
+    body = {
+        "for": [
+            {
+                "repositories": ["{1}"],
+                **envs,
+            },
+        ],
+        "histograms": [{
+            "metric": PullRequestMetricID.PR_DEPLOYMENT_TIME,
+            "scale": "log",
+        }],
+        "date_from": "2017-10-13",
+        "date_to": "2018-05-23",
+        "exclude_inactive": False,
+        "account": 1,
+    }
+    response = await client.request(
+        method="POST", path="/v1/histograms/prs", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 400, "Response body is : " + body
+
+
+async def test_calc_histogram_prs_deployment_time(client, headers, precomputed_deployments):
+    body = {
+        "for": [
+            {
+                "repositories": ["{1}"],
+                "environments": ["production"],
+            },
+        ],
+        "histograms": [{
+            "metric": PullRequestMetricID.PR_DEPLOYMENT_TIME,
+            "scale": "log",
+        }],
+        "date_from": "2015-10-13",
+        "date_to": "2020-05-23",
+        "exclude_inactive": False,
+        "account": 1,
+    }
+    response = await client.request(
+        method="POST", path="/v1/histograms/prs", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    body = FriendlyJson.loads(body)
+    CalculatedPullRequestHistogram.from_dict(body[0])
+    assert body[0] == {
+        "for": {"repositories": ["{1}"], "environments": ["production"]},
+        "metric": "pr-deployment-time", "scale": "log",
+        "ticks": ["1572127s", "4273485s"],
+        "frequencies": [177],
+        "interquartile": {"left": "2592000s", "right": "2592000s"},
+    }
+
+
 async def test_calc_histogram_code_checks_smoke(client, headers):
     body = {
         "account": 1,

@@ -865,3 +865,84 @@ def test_counter_quantiles(pr_samples):
     v_with = c_with.values[0][0].value
     v_without = c_without.values[0][0].value
     assert v_without > v_with
+
+
+@pytest.fixture(scope="function")
+@with_defer
+async def real_pr_samples(release_match_setting_tag,
+                          metrics_calculator_factory,
+                          prefixer_promise) -> Tuple[datetime, datetime, pd.DataFrame]:
+    metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
+    time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
+    args = (time_from, time_to, {"src-d/go-git"}, {},
+            LabelFilter.empty(), JIRAFilter.empty(),
+            False, release_match_setting_tag, prefixer_promise, False, False)
+    facts = await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
+    samples = df_from_structs(facts)
+    return time_from, time_to, samples
+
+
+async def test_pull_request_stage_times(precomputed_deployments, real_pr_samples):
+    ensemble = PullRequestMetricCalculatorEnsemble(
+        PullRequestMetricID.PR_WIP_TIME,
+        PullRequestMetricID.PR_REVIEW_TIME,
+        PullRequestMetricID.PR_MERGING_TIME,
+        PullRequestMetricID.PR_RELEASE_TIME,
+        PullRequestMetricID.PR_DEPLOYMENT_TIME,
+        PullRequestMetricID.PR_LEAD_DEPLOYMENT_TIME,
+        quantile_stride=0,
+        quantiles=(0, 1),
+        environments=["staging", "mirror", "production"])
+    time_from, time_to, samples = real_pr_samples
+    ensemble(samples, dt64arr_ns(time_from), dt64arr_ns(time_to), [np.arange(len(samples))])
+    values = ensemble.values()
+    for metric, td in [(PullRequestMetricID.PR_WIP_TIME, timedelta(days=3, seconds=57804)),
+                       (PullRequestMetricID.PR_REVIEW_TIME, timedelta(days=5, seconds=5063)),
+                       (PullRequestMetricID.PR_MERGING_TIME, timedelta(days=4, seconds=83622)),
+                       (PullRequestMetricID.PR_RELEASE_TIME, timedelta(days=29, seconds=50065)),
+                       (PullRequestMetricID.PR_DEPLOYMENT_TIME,
+                        [None, None, timedelta(days=809, seconds=36516)]),
+                       (PullRequestMetricID.PR_LEAD_DEPLOYMENT_TIME,
+                        [None, None, timedelta(days=851, seconds=17493)])]:
+        assert values[metric][0][0].value == td, metric
+
+
+async def test_pull_request_deployment_stage_counts(precomputed_deployments, real_pr_samples):
+    ensemble = PullRequestMetricCalculatorEnsemble(
+        PullRequestMetricID.PR_DEPLOYMENT_COUNT,
+        PullRequestMetricID.PR_DEPLOYMENT_COUNT_Q,
+        PullRequestMetricID.PR_LEAD_DEPLOYMENT_COUNT,
+        PullRequestMetricID.PR_LEAD_DEPLOYMENT_COUNT_Q,
+        quantile_stride=180,
+        quantiles=(0, 0.95),
+        environments=["staging", "mirror", "production"])
+    time_from, time_to, samples = real_pr_samples
+    ensemble(samples, dt64arr_ns(time_from), dt64arr_ns(time_to), [np.arange(len(samples))])
+    values = ensemble.values()
+    for metric, td in [(PullRequestMetricID.PR_DEPLOYMENT_COUNT, [0, 0, 177]),
+                       (PullRequestMetricID.PR_DEPLOYMENT_COUNT_Q, [0, 0, 175]),
+                       (PullRequestMetricID.PR_LEAD_DEPLOYMENT_COUNT, [0, 0, 177]),
+                       (PullRequestMetricID.PR_LEAD_DEPLOYMENT_COUNT_Q, [0, 0, 168])]:
+        assert values[metric][0][0].value == td, metric
+
+
+@pytest.mark.parametrize("with_origin", [False, True])
+async def test_pull_request_cycle_deployment_time(
+        precomputed_deployments, real_pr_samples, with_origin):
+    ensemble = PullRequestMetricCalculatorEnsemble(
+        PullRequestMetricID.PR_CYCLE_DEPLOYMENT_TIME,
+        PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT,
+        PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT_Q,
+        *((PullRequestMetricID.PR_CYCLE_TIME,) if with_origin else ()),
+        quantile_stride=180,
+        quantiles=(0, 0.95),
+        environments=["staging", "mirror", "production"])
+    time_from, time_to, samples = real_pr_samples
+    ensemble(samples, dt64arr_ns(time_from), dt64arr_ns(time_to), [np.arange(len(samples))])
+    values = ensemble.values()
+    for metric, td in [(PullRequestMetricID.PR_CYCLE_DEPLOYMENT_TIME,
+                        [None, None, timedelta(days=839, seconds=46442)]),
+                       (PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT, [0, 0, 177]),
+                       (PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT_Q, [0, 0, 167])]:
+        assert values[metric][0][0].value == td, metric

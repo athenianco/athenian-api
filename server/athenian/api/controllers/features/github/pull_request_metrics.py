@@ -432,17 +432,23 @@ class CycleTimeCalculator(MetricCalculator[timedelta]):
             MergingTimeCalculator,
             ReleaseTimeCalculator)
     metric = MetricTimeDelta
+    only_complete = False
 
     def _values(self) -> List[List[MetricTimeDelta]]:
         """Calculate the current metric value."""
         raw_metrics = np.zeros(self.samples.shape, dtype=self.metric.dtype).ravel()
+        if self.only_complete:
+            raw_metrics["exists"] = True
         for calc in self._calcs:
             calc_values = np.empty(self.samples.shape, dtype=object)
             calc_values[:] = calc.values
             calc_values = np.fromiter((m.array for m in calc_values.ravel()),
                                       self.metric.dtype, calc_values.size)
             calc_exists = calc_values["exists"]
-            raw_metrics["exists"][calc_exists] = True
+            if self.only_complete:
+                raw_metrics["exists"][~calc_exists] = False
+            else:
+                raw_metrics["exists"][calc_exists] = True
             for field in ("value", "confidence_min", "confidence_max"):
                 raw_metrics[field][calc_exists] += calc_values[field][calc_exists]
         not_exists = ~raw_metrics["exists"]
@@ -462,15 +468,21 @@ class CycleTimeCalculator(MetricCalculator[timedelta]):
                  **kwargs) -> np.ndarray:
         """Update the states of the underlying calcs and return whether at least one of the PR's \
         metrics exists."""
-        sumval = np.full((len(min_times), len(facts)), self.nan, self.dtype)
+        if self.only_complete:
+            sumval = np.zeros((len(min_times), len(facts)), self.dtype)
+        else:
+            sumval = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         for calc in self._calcs:
             peek = calc.peek
-            sum_none_mask = np.isnat(sumval)
-            peek_not_none_mask = ~np.isnat(peek)
-            copy_mask = sum_none_mask & peek_not_none_mask
-            sumval[copy_mask] = peek[copy_mask]
-            add_mask = ~sum_none_mask & peek_not_none_mask
-            sumval[add_mask] += peek[add_mask]
+            if self.only_complete:
+                sumval += peek
+            else:
+                sum_none_mask = np.isnat(sumval)
+                peek_not_none_mask = ~np.isnat(peek)
+                copy_mask = sum_none_mask & peek_not_none_mask
+                sumval[copy_mask] = peek[copy_mask]
+                add_mask = ~sum_none_mask & peek_not_none_mask
+                sumval[add_mask] += peek[add_mask]
         return sumval
 
 
@@ -488,6 +500,20 @@ class CycleCounterWithQuantiles(Counter):
     or PR_RELEASE_TIME respecting the quantiles."""
 
     deps = (CycleTimeCalculator,)
+
+    def _values(self) -> List[List[Metric[T]]]:
+        if self._quantiles == (0, 1):
+            return super()._values()
+        if self._calcs[0].only_complete:
+            mask = np.ones_like(self._calcs[0].grouped_sample_mask)
+            for calc in self._calcs[0]._calcs:
+                mask &= calc.grouped_sample_mask
+        else:
+            mask = np.zeros_like(self._calcs[0].grouped_sample_mask)
+            for calc in self._calcs[0]._calcs:
+                mask |= calc.grouped_sample_mask
+        return [[self.metric.from_fields(True, s, None, None) for s in gs]
+                for gs in mask.sum(axis=-1)]
 
 
 @register_metric(PullRequestMetricID.PR_ALL_COUNT)
@@ -1010,7 +1036,7 @@ class EnvironmentsMarker(MetricCalculator[np.ndarray]):
         unique_fact_envs, imap = np.unique(all_envs, return_inverse=True)
         my_env_indexes = searchsorted_inrange(unique_fact_envs, envs)
         not_found_mask = unique_fact_envs[my_env_indexes] != envs
-        my_env_indexes[not_found_mask] = np.arange(-1, -1 - not_found_mask.sum())
+        my_env_indexes[not_found_mask] = np.arange(-1, -1 - not_found_mask.sum(), -1)
         imap = imap.astype(np.uint64)
         fact_finished = facts[PullRequestFacts.f.deployed].values
         all_finished = np.concatenate(fact_finished).astype("datetime64[s]", copy=False)
@@ -1026,10 +1052,12 @@ class EnvironmentsMarker(MetricCalculator[np.ndarray]):
         if len(unused):
             imap[np.in1d(imap, unused)] = 0
         lengths = np.array([len(v) for v in fact_envs])
-        offsets = np.zeros(len(lengths) - 1)
-        np.cumsum(lengths[:-1], out=offsets[1:])
+        offsets = np.zeros(len(lengths) + 1, dtype=int)
+        np.cumsum(lengths, out=offsets[1:])
+        offsets = offsets[:np.argmax(offsets)]
         env_marks = np.bitwise_or.reduceat(imap, offsets)
-        env_marks[lengths == 0] = 0
+        env_marks[(lengths == 0)[:len(env_marks)]] = 0
+        env_marks = np.pad(env_marks, (0, len(lengths) - len(env_marks)))
         return np.array([(env_marks, finished_by_env)], dtype=self.dtype)
 
     def _value(self, samples: np.ndarray) -> EnvironmentsMarkerMetric:
@@ -1151,15 +1179,16 @@ class LeadDeploymentCounterWithQuantiles(DeploymentMetricBase, Counter):
 
 
 @register_metric(PullRequestMetricID.PR_CYCLE_DEPLOYMENT_TIME)
-class CycleDeploymentTimeCalculator(CycleTimeCalculator):
+class CycleDeploymentTimeCalculator(DeploymentMetricBase, CycleTimeCalculator):
     """Sum of PR_WIP_TIME, PR_REVIEW_TIME, PR_MERGE_TIME, PR_RELEASE_TIME, and \
     PR_DEPLOYMENT_TIME."""
 
     deps = (CycleTimeCalculator, DeploymentTimeCalculator)
+    only_complete = True
 
 
 @register_metric(PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT_Q)
-class CycleDeploymentCounterWithQuantiles(DeploymentMetricBase, Counter):
+class CycleDeploymentCounterWithQuantiles(DeploymentMetricBase, CycleCounterWithQuantiles):
     """Count the number of PRs that were used to calculate PR_CYCLE_DEPLOYMENT_TIME respecting \
     the quantiles."""
 
