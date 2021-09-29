@@ -1401,19 +1401,34 @@ async def test_mine_releases_labels(
         mdb, pdb, rdb, release_match_setting_tag, prefixer_promise, cache):
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=11, day=1, tzinfo=timezone.utc)
-    releases, _, _, _ = await mine_releases(
-        ["src-d/go-git"], {}, None, {}, time_from, time_to, LabelFilter.empty(),
-        JIRAFilter.empty(),
+    releases1, _, _, _ = await mine_releases(
+        ["src-d/go-git"], {}, None, {}, time_from, time_to,
+        LabelFilter.empty(), JIRAFilter.empty(),
         release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache,
         with_avatars=False, with_pr_titles=False, with_deployments=False)
     await wait_deferred()
-    assert len(releases) == 22
-    releases, _, _, _ = await mine_releases(
+    assert len(releases1) == 22
+    releases2, _, _, _ = await mine_releases(
         ["src-d/go-git"], {}, None, {}, time_from, time_to,
         LabelFilter({"bug", "enhancement", "plumbing"}, set()), JIRAFilter.empty(),
         release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache,
         with_avatars=False, with_pr_titles=False, with_deployments=False)
-    assert len(releases) == 3
+    assert len(releases2) == 3
+    releases3, _, _, _ = await mine_releases(
+        ["src-d/go-git"], {}, None, {}, time_from, time_to,
+        LabelFilter(set(), {"bug", "enhancement", "plumbing"}), JIRAFilter.empty(),
+        release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache,
+        with_avatars=False, with_pr_titles=False, with_deployments=False)
+    assert len(releases3) == 22
+    reduced = defaultdict(int)
+    for (det1, facts1), (det2, facts2) in zip(releases1, releases3):
+        assert det1 == det2
+        for col in released_prs_columns:
+            key = "prs_" + col.name
+        reduced[key] += len(facts1[key]) > len(facts2[key])
+    vals = np.array(list(reduced.values()))
+    assert (vals == vals[0]).all()
+    assert vals[0] == 3
 
 
 @with_defer

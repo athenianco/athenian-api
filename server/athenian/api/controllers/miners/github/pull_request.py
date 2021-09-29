@@ -936,7 +936,7 @@ class PullRequestMiner:
                             PullRequestLabel.acc_id.in_(meta_ids))),
             mdb, lcols, index=PullRequestLabel.pull_request_node_id.name)
         left = cls.find_left_by_labels(
-            df_labels.index, df_labels[PullRequestLabel.name.name].values, labels)
+            prs.index, df_labels.index, df_labels[PullRequestLabel.name.name].values, labels)
         prs = prs.take(np.nonzero(prs.index.isin(left))[0])
         return prs
 
@@ -1119,17 +1119,25 @@ class PullRequestMiner:
             return pd.Index([])
         df_labels_index = dfs.labels.index.get_level_values(0)
         df_labels_names = dfs.labels[PullRequestLabel.name.name].values
-        left = cls.find_left_by_labels(df_labels_index, df_labels_names, labels)
+        left = cls.find_left_by_labels(dfs.prs.index, df_labels_index, df_labels_names, labels)
         if not labels.include:
             return df_labels_index.difference(left)
         return dfs.prs.index.difference(left)
 
     @classmethod
     def find_left_by_labels(cls,
+                            full_index: pd.Index,
                             df_labels_index: pd.Index,
                             df_labels_names: Sequence[str],
                             labels: LabelFilter) -> pd.Index:
-        """Post-filter PRs by their loaded labels."""
+        """
+        Post-filter PRs by their loaded labels.
+
+        :param full_index: All the PR node IDs, not just those that correspond to labeled PRs.
+        :param df_labels_index: (PR node ID, label name) DataFrame index. There may be several \
+                                rows for the same PR node ID.
+        :param df_labels_names: (PR node ID, label name) DataFrame column.
+        """
         left_include = left_exclude = None
         if labels.include:
             singles, multiples = LabelFilter.split(labels.include)
@@ -1145,7 +1153,7 @@ class PullRequestMiner:
                         break
                 left_include = left_include.union(passed)
         if labels.exclude:
-            left_exclude = df_labels_index.difference(df_labels_index.take(
+            left_exclude = full_index.difference(df_labels_index.take(
                 np.nonzero(np.in1d(df_labels_names, list(labels.exclude)))[0],
             ).unique())
         if labels.include:
@@ -1170,7 +1178,8 @@ class PullRequestMiner:
             df_labels_names = list(pd.core.common.flatten(df_labels_names))
             # if jira.labels.include is empty, we effectively drop all unmapped PRs
             # that is the desired behavior
-            left.append(cls.find_left_by_labels(df_labels_index, df_labels_names, jira.labels))
+            left.append(cls.find_left_by_labels(
+                dfs.prs.index, df_labels_index, df_labels_names, jira.labels))
         if jira.epics:
             left.append(jira_index.take(np.where(
                 dfs.jiras["epic"].isin(jira.epics))[0]).unique())

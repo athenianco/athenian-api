@@ -591,7 +591,7 @@ def _filter_by_participants(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
         return releases
     mask = np.full(len(releases), True)
     mask[missing_indexes] = False
-    return [releases[i] for i in np.nonzero(mask)[0]]
+    return [releases[i] for i in np.flatnonzero(mask)]
 
 
 def _filter_by_labels(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
@@ -600,17 +600,36 @@ def _filter_by_labels(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
                       ) -> List[Tuple[Dict[str, Any], ReleaseFacts]]:
     if not releases:
         return releases
-    left = PullRequestMiner.find_left_by_labels(
-        labels_df.index, labels_df[PullRequestLabel.name.name].values, labels_filter,
-    ).values
-    if len(left) == 0:
-        return []
     key = "prs_" + PullRequest.node_id.name
     pr_node_ids = [r[1][key] for r in releases]
     all_pr_node_ids = np.concatenate(pr_node_ids)
-    passed_prs = np.nonzero(np.in1d(all_pr_node_ids, left, assume_unique=True))[0]
-    indexes = np.unique(np.digitize(passed_prs, np.cumsum([len(x) for x in pr_node_ids])))
-    return [releases[i] for i in indexes]
+    left = PullRequestMiner.find_left_by_labels(
+        pd.Index(all_pr_node_ids),
+        labels_df.index,
+        labels_df[PullRequestLabel.name.name].values,
+        labels_filter,
+    ).values.astype(int, copy=False)
+    if len(left) == 0 and labels_filter.include:
+        return []
+    if labels_filter.include:
+        passed_prs = np.flatnonzero(np.in1d(all_pr_node_ids, left, assume_unique=True))
+        indexes = np.unique(np.digitize(passed_prs, np.cumsum([len(x) for x in pr_node_ids])))
+        return [releases[i] for i in indexes]
+    # DEV-2962
+    # all the releases pass, but we must hide unmatched PRs
+    pr_node_id_key = "prs_" + PullRequest.node_id.name
+    prs_hidden_releases = []
+    for details, release in releases:
+        pr_node_ids = release[pr_node_id_key]
+        passed = np.flatnonzero(np.in1d(pr_node_ids, left))
+        if len(passed) < len(pr_node_ids):
+            prs_hidden_release = dict(release)
+            for col in released_prs_columns:
+                key = "prs_" + col.name
+                prs_hidden_release[key] = prs_hidden_release[key][passed]
+            release = ReleaseFacts.from_fields(**prs_hidden_release)
+        prs_hidden_releases.append((details, release))
+    return prs_hidden_releases
 
 
 @sentry_span
