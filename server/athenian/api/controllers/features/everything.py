@@ -29,10 +29,10 @@ from athenian.api.controllers.settings import ReleaseSettings
 from athenian.api.db import ParallelDatabase
 from athenian.api.models.metadata.github import PullRequest, Release, User
 from athenian.api.models.persistentdata.models import DeploymentNotification
+from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts
 from athenian.api.response import ResponseError
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
-from athenian.precomputer.db.models import GitHubDonePullRequestFacts
 
 
 class MineTopic(Enum):

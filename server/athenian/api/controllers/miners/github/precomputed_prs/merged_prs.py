@@ -10,7 +10,7 @@ import databases
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, desc, insert, join, select, union_all, update
+from sqlalchemy import and_, desc, exists, insert, join, not_, select, text, union_all, update
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.sql.functions import coalesce
 
@@ -28,7 +28,7 @@ from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.db import add_pdb_hits, greatest
 from athenian.api.models.metadata.github import PullRequest, Release
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
-    GitHubMergedPullRequestFacts
+    GitHubMergedPullRequestFacts, GitHubPullRequestDeployment
 from athenian.api.tracing import sentry_span
 
 
@@ -75,16 +75,6 @@ class MergedPRFactsLoader:
                     ghmprf.merger,
                     ]
         default_version = ghmprf.__table__.columns[ghmprf.format_version.key].default.arg
-        common_filters = [
-            ghmprf.checked_until >= time_to,
-            ghmprf.format_version == default_version,
-            ghmprf.acc_id == account,
-        ]
-        if labels:
-            build_labels_filters(ghmprf, labels, common_filters, selected, postgres)
-        if exclude_inactive:
-            date_range = append_activity_days_filter(
-                time_from, time_to, selected, common_filters, ghmprf.activity_days, postgres)
         repos_by_match = defaultdict(list)
         for repo in prs[PullRequest.repository_full_name.name].unique():
             if (release_match := extract_release_match(
@@ -92,17 +82,60 @@ class MergedPRFactsLoader:
                 # no new releases
                 continue
             repos_by_match[release_match].append(repo)
+
+        def compose_common_filters(deployed: bool):
+            nonlocal selected
+            my_selected = selected.copy()
+            my_selected.append(text(f"{str(deployed).lower()} AS deployed"))
+            filters = [
+                ghmprf.checked_until >= time_to,
+                ghmprf.format_version == default_version,
+                ghmprf.acc_id == account,
+            ]
+            if labels:
+                build_labels_filters(ghmprf, labels, filters, my_selected, postgres)
+            if exclude_inactive:
+                if not deployed:
+                    date_range = append_activity_days_filter(
+                        time_from, time_to, my_selected, filters, ghmprf.activity_days, postgres)
+                else:
+                    date_range = set()
+                    if not postgres:
+                        my_selected.append(ghmprf.activity_days)
+            else:
+                date_range = set()
+            if not deployed:
+                filters.append(not_(exists().where(and_(
+                    ghmprf.acc_id == GitHubPullRequestDeployment.acc_id,
+                    ghmprf.pr_node_id == GitHubPullRequestDeployment.pull_request_id,
+                    GitHubPullRequestDeployment.finished_at < time_to,
+                ))))
+            else:
+                filters.append(exists().where(and_(
+                    ghmprf.acc_id == GitHubPullRequestDeployment.acc_id,
+                    ghmprf.pr_node_id == GitHubPullRequestDeployment.pull_request_id,
+                    GitHubPullRequestDeployment.finished_at.between(time_from, time_to)
+                    if exclude_inactive else
+                    GitHubPullRequestDeployment.finished_at < time_to,
+                )))
+            return my_selected, filters, date_range
+
         queries = []
         pr_repos = prs[PullRequest.repository_full_name.name].values.astype("S")
         pr_ids = prs.index.values
-        for release_match, repos in repos_by_match.items():
-            filters = [
-                ghmprf.pr_node_id.in_(pr_ids[np.in1d(pr_repos, np.array(repos, dtype="S"))]),
-                ghmprf.repository_full_name.in_(repos),
-                ghmprf.release_match == release_match,
-                *common_filters,
-            ]
-            queries.append(select(selected).where(and_(*filters)))
+        date_range = set()
+        for deployed in (False, True):
+            my_selected, common_filters, deployed_date_range = compose_common_filters(deployed)
+            if not deployed:
+                date_range = deployed_date_range
+            for release_match, repos in repos_by_match.items():
+                filters = [
+                    ghmprf.pr_node_id.in_(pr_ids[np.in1d(pr_repos, np.array(repos, dtype="S"))]),
+                    ghmprf.repository_full_name.in_(repos),
+                    ghmprf.release_match == release_match,
+                    *common_filters,
+                ]
+                queries.append(select(my_selected).where(and_(*filters)))
         if not queries:
             return {}
         query = union_all(*queries)
@@ -115,7 +148,7 @@ class MergedPRFactsLoader:
         facts = {}
         user_node_map_get = (await prefixer.load()).user_node_to_login.get
         for row in rows:
-            if exclude_inactive and not postgres:
+            if exclude_inactive and not postgres and not row["deployed"]:
                 activity_days = {datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc)
                                  for d in row[ghmprf.activity_days.name]}
                 if not activity_days.intersection(date_range):

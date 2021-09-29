@@ -183,6 +183,7 @@ async def test_get_users_rate_limit(xapp):
     users = await gather(*[xapp._auth0.get_user("auth0|5e1f6dfb57bc640ea390557b")
                            for _ in range(20)])
     for u in users:
+        assert u is not None
         assert u.name == "Vadim Markovtsev"
         assert u.email == vadim_email
 

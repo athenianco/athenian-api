@@ -6,11 +6,10 @@ from sqlalchemy import delete, insert, select, update
 
 from athenian.api.controllers.events_controller import resolve_deployed_component_references
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
-    DeploymentNotification, \
-    ReleaseNotification
+    DeploymentNotification, ReleaseNotification
+from athenian.api.models.precomputed.models import GitHubDeploymentFacts, \
+    GitHubDonePullRequestFacts, GitHubMergedPullRequestFacts, GitHubReleaseFacts
 from athenian.api.models.state.models import AccountGitHubAccount, UserToken
-from athenian.precomputer.db.models import GitHubDeploymentFacts, GitHubDonePullRequestFacts, \
-    GitHubMergedPullRequestFacts, GitHubReleaseFacts
 
 
 @pytest.fixture(scope="function")

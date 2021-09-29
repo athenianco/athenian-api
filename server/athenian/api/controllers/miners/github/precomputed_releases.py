@@ -14,9 +14,9 @@ from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.types import ReleaseFacts
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, ReleaseSettings
 from athenian.api.models.metadata.github import Release
-from athenian.api.models.precomputed.models import GitHubReleaseFacts
+from athenian.api.models.precomputed.models import GitHubRelease as PrecomputedRelease, \
+    GitHubReleaseFacts
 from athenian.api.tracing import sentry_span
-from athenian.precomputer.db.models import GitHubRelease as PrecomputedRelease
 
 
 def reverse_release_settings(repos: Iterable[str],
