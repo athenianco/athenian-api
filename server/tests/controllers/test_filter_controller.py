@@ -2193,6 +2193,7 @@ async def test_filter_check_runs_nasty_input(
     assert response.status == status, response_text
 
 
+@pytest.mark.flaky(reruns=3, reruns_delay=1)
 async def test_filter_deployments_smoke(client, headers):
     body = {
         "account": 1,
