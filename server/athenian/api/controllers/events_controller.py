@@ -33,8 +33,10 @@ from athenian.api.db import FastConnection, ParallelDatabase
 from athenian.api.defer import defer, launch_defer_from_request, wait_deferred
 from athenian.api.models.metadata.github import PushCommit, Release, User
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
-    DeploymentNotification, \
-    ReleaseNotification
+    DeploymentNotification, ReleaseNotification
+from athenian.api.models.precomputed.models import GitHubCommitDeployment, GitHubDeploymentFacts, \
+    GitHubDonePullRequestFacts, GitHubMergedPullRequestFacts, GitHubPullRequestDeployment, \
+    GitHubReleaseDeployment, GitHubReleaseFacts
 from athenian.api.models.web import BadRequestError, DatabaseConflict, DeleteEventsCacheRequest, \
     DeploymentNotification as WebDeploymentNotification, ForbiddenError, \
     InvalidRequestError, ReleaseNotification as WebReleaseNotification
@@ -42,10 +44,6 @@ from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError
 from athenian.api.serialization import ParseError
 from athenian.api.tracing import sentry_span
-from athenian.precomputer.db.models import GitHubCommitDeployment, GitHubDeploymentFacts, \
-    GitHubDonePullRequestFacts, \
-    GitHubMergedPullRequestFacts, GitHubPullRequestDeployment, GitHubReleaseDeployment, \
-    GitHubReleaseFacts
 
 
 commit_hash_re = re.compile(r"[a-f0-9]{7}([a-f0-9]{33})?")

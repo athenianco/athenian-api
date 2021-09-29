@@ -1103,7 +1103,12 @@ class DeploymentMetricBase(MetricCalculator[T]):
 
 @register_metric(PullRequestMetricID.PR_DEPLOYMENT_TIME)
 class DeploymentTimeCalculator(DeploymentMetricBase, AverageMetricCalculator[timedelta]):
-    """Time between Released and Deployed."""
+    """
+    Time between Released and Deployed.
+
+    If Released is later than Deployed, equals to Deployed - Merged.
+    If Released does not exist, equals to Deployed - Merged.
+    """
 
     may_have_negative_values = False
     metric = MetricTimeDelta
@@ -1121,7 +1126,7 @@ class DeploymentTimeCalculator(DeploymentMetricBase, AverageMetricCalculator[tim
             finished[override_event_indexes] = override_event_time
         started = facts[PullRequestFacts.f.merged].values.copy()
         released = facts[PullRequestFacts.f.released].values
-        release_exists = released == released
+        release_exists = released <= finished
         started[release_exists] = released[release_exists]
         finished_in_range = (min_times[:, None] <= finished) & (finished < max_times[:, None])
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)

@@ -40,11 +40,10 @@ from athenian.api.models.metadata.github import NodeCommit, NodePullRequest, \
     NodePullRequestCommit, PullRequest, PullRequestLabel, PushCommit, Release
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
     DeploymentNotification
-from athenian.api.models.precomputed.models import GitHubRelease as PrecomputedRelease
+from athenian.api.models.precomputed.models import GitHubCommitDeployment, GitHubDeploymentFacts, \
+    GitHubPullRequestDeployment, GitHubRelease as PrecomputedRelease, GitHubReleaseDeployment
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
-from athenian.precomputer.db.models import GitHubCommitDeployment, GitHubDeploymentFacts, \
-    GitHubPullRequestDeployment, GitHubReleaseDeployment
 
 
 @sentry_span

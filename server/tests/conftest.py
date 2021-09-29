@@ -92,6 +92,7 @@ override_rdb = os.getenv("OVERRIDE_RDB")
 override_memcached = os.getenv("OVERRIDE_MEMCACHED")
 logging.getLogger("aiosqlite").setLevel(logging.CRITICAL)
 db_retry_intervals.insert(-2, 5)  # reduce the probability of TooManyConnectionsError in Postgres
+with_preloading_env = os.getenv("WITH_PRELOADING", "0") == "1"
 
 
 class FakeCache:
@@ -318,7 +319,7 @@ def slack():
 
 @pytest.fixture(scope="session")
 def with_preloading_enabled():
-    return os.getenv("WITH_PRELOADING", "0") == "1"
+    return with_preloading_env
 
 
 @pytest.fixture(scope="function")

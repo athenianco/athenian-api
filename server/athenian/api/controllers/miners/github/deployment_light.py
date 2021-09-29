@@ -14,8 +14,8 @@ from athenian.api.db import ParallelDatabase
 from athenian.api.models.metadata.github import NodeCommit
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
     DeploymentNotification
+from athenian.api.models.precomputed.models import GitHubPullRequestDeployment
 from athenian.api.tracing import sentry_span
-from athenian.precomputer.db.models import GitHubPullRequestDeployment
 
 
 @sentry_span

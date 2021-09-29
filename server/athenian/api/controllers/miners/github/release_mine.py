@@ -41,8 +41,8 @@ from athenian.api.db import add_pdb_hits, add_pdb_misses, ParallelDatabase
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import NodePullRequest, PullRequest, PullRequestLabel, \
     PushCommit, Release
+from athenian.api.models.precomputed.models import GitHubReleaseDeployment
 from athenian.api.tracing import sentry_span
-from athenian.precomputer.db.models import GitHubReleaseDeployment
 
 
 async def mine_releases(repos: Iterable[str],

@@ -522,6 +522,7 @@ class DonePRFactsLoader:
         filters.append(not_(exists().where(and_(
             ghprt.acc_id == GitHubPullRequestDeployment.acc_id,
             ghprt.pr_node_id == GitHubPullRequestDeployment.pull_request_id,
+            GitHubPullRequestDeployment.finished_at.between(time_from, time_to),
         ))))
         or_items = or_items()
         if postgres:

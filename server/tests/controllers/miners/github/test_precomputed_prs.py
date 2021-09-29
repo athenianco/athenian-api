@@ -10,6 +10,7 @@ from sqlalchemy import and_, select, update
 from athenian.api.async_utils import read_sql_query
 from athenian.api.controllers.features.github.pull_request_filter import _fetch_pull_requests
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.controllers.miners.github.deployment import mine_deployments
 from athenian.api.controllers.miners.github.precomputed_prs import \
     delete_force_push_dropped_prs, discover_inactive_merged_unreleased_prs, \
     store_merged_unreleased_pull_request_facts, store_open_pull_request_facts, \
@@ -22,8 +23,10 @@ from athenian.api.controllers.miners.types import MinedPullRequest, PRParticipat
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import Branch, PullRequest, PullRequestCommit, Release
+from athenian.api.models.persistentdata.models import DeploymentNotification
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
     GitHubMergedPullRequestFacts, GitHubOpenPullRequestFacts
+from tests.conftest import with_preloading_env
 from tests.controllers.conftest import FakeFacts, with_only_master_branch
 
 
@@ -433,6 +436,29 @@ async def test_load_precomputed_done_times_reponums_smoke(
     assert len(new_prs) == 0
 
 
+@pytest.mark.xfail(with_preloading_env, reason="Not supported in the preloader")
+@pytest.mark.parametrize("exclude_inactive", [False, True])
+@with_defer
+async def test_load_precomputed_done_times_deployments(
+        metrics_calculator_factory, mdb, pdb, rdb, dag, release_match_setting_tag, cache,
+        prefixer_promise, release_loader, done_prs_facts_loader, default_branches,
+        precomputed_deployments, exclude_inactive):
+    metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
+    time_from = datetime(2018, 1, 1, tzinfo=timezone.utc)
+    time_to = datetime(2020, 5, 1, tzinfo=timezone.utc)
+    await metrics_calculator.calc_pull_request_facts_github(
+        time_from, time_to, {"src-d/go-git"}, {}, LabelFilter.empty(),
+        JIRAFilter.empty(), False, release_match_setting_tag, prefixer_promise, False, False,
+    )
+    await wait_deferred()
+    time_from = datetime(2019, 10, 1, tzinfo=timezone.utc)
+    time_to = datetime(2019, 12, 1, tzinfo=timezone.utc)
+    loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_filters(
+        time_from, time_to, {"src-d/go-git"}, {}, LabelFilter.empty(), default_branches,
+        False, release_match_setting_tag, prefixer_promise, 1, pdb)
+    assert len(loaded_prs) == 147  # 2 without deployments
+
+
 def _gen_one_pr(pr_samples):
     samples = pr_samples(1)  # type: Sequence[PullRequestFacts]
     s = samples[0]
@@ -788,10 +814,11 @@ async def test_discover_update_unreleased_prs_released(
     assert len(unreleased_prs) == 7
 
 
+@pytest.fixture(scope="function")
 @with_defer
-async def test_discover_update_unreleased_prs_exclude_inactive(
+async def precomputed_merged_unreleased(
         mdb, pdb, rdb, dag, default_branches, release_match_setting_tag, release_loader,
-        merged_prs_facts_loader, with_preloading_enabled, prefixer_promise):
+        with_preloading_enabled, prefixer_promise):
     postgres = pdb.url.dialect == "postgresql"
     prs = await read_sql_query(
         select([PullRequest]).where(and_(PullRequest.number.in_(range(1000, 1010)),
@@ -828,7 +855,15 @@ async def test_discover_update_unreleased_prs_exclude_inactive(
     }))
     if with_preloading_enabled:
         await pdb.cache.refresh()
+    return prs, matched_bys
 
+
+@with_defer
+async def test_discover_update_unreleased_prs_exclude_inactive(
+        mdb, pdb, rdb, dag, default_branches, release_match_setting_tag,
+        merged_prs_facts_loader, prefixer_promise, precomputed_merged_unreleased):
+    utc = timezone.utc
+    prs, matched_bys = precomputed_merged_unreleased
     unreleased_prs = await merged_prs_facts_loader.load_merged_unreleased_pull_request_facts(
         prs, datetime(2018, 11, 1, tzinfo=utc), LabelFilter.empty(),
         matched_bys, default_branches, release_match_setting_tag, prefixer_promise, 1, pdb,
@@ -839,6 +874,34 @@ async def test_discover_update_unreleased_prs_exclude_inactive(
         matched_bys, default_branches, release_match_setting_tag, prefixer_promise, 1, pdb,
         time_from=datetime(2018, 10, 16, tzinfo=utc), exclude_inactive=True)
     assert len(unreleased_prs) == 0
+
+
+@pytest.mark.xfail(with_preloading_env, reason="Not supported in the preloader")
+@with_defer
+async def test_discover_update_unreleased_prs_deployments(
+        mdb, pdb, rdb, dag, branches, default_branches, release_match_setting_tag,
+        merged_prs_facts_loader, prefixer_promise, precomputed_merged_unreleased):
+    await rdb.execute(update(DeploymentNotification).values({
+        DeploymentNotification.started_at: datetime(2018, 10, 30, 10, 15, tzinfo=timezone.utc),
+        DeploymentNotification.finished_at: datetime(2018, 10, 30, 12, 15, tzinfo=timezone.utc),
+        DeploymentNotification.updated_at: datetime.now(timezone.utc),
+    }))
+    await mine_deployments(
+        [40550], {},
+        datetime(2018, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
+        ["production", "staging"],
+        [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        release_match_setting_tag,
+        branches, default_branches, prefixer_promise,
+        1, (6366825,), mdb, pdb, rdb, None)
+    await wait_deferred()
+    utc = timezone.utc
+    prs, matched_bys = precomputed_merged_unreleased
+    unreleased_prs = await merged_prs_facts_loader.load_merged_unreleased_pull_request_facts(
+        prs, datetime(2018, 11, 1, tzinfo=utc), LabelFilter.empty(),
+        matched_bys, default_branches, release_match_setting_tag, prefixer_promise, 1, pdb,
+        time_from=datetime(2018, 10, 16, tzinfo=utc), exclude_inactive=True)
+    assert len(unreleased_prs) == 7  # 0 without deployments
 
 
 @with_defer
