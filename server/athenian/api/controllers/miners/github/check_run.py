@@ -114,8 +114,9 @@ async def _mine_check_runs(time_from: datetime,
             time_from - timedelta(days=14), time_to + timedelta(days=1)),
         CheckRun.repository_node_id.in_(repo_nodes),
     ]
-    if only_prs:
-        filters.append(CheckRun.pull_request_node_id.isnot(None))
+    # Postgres planner begins to suck at guessing the number of records here => terrible perf
+    # if only_prs:
+    #     filters.append(CheckRun.pull_request_node_id.isnot(None))
     if pushers:
         filters.append(CheckRun.author_login.in_(pushers))
     if labels:
@@ -130,7 +131,9 @@ async def _mine_check_runs(time_from: datetime,
                     func.lower(PullRequestLabel.name).in_(all_in_labels),
                 )))
         else:
-            filters.append(CheckRun.pull_request_node_id.isnot(None))
+            only_prs = True
+            # again, Postgres' planner sucks at checking this so we filter manually below
+            # filters.append(CheckRun.pull_request_node_id.isnot(None))
     else:
         embedded_labels_query = False
     if not jira:
@@ -142,14 +145,18 @@ async def _mine_check_runs(time_from: datetime,
             on=(CheckRun.pull_request_node_id, CheckRun.acc_id))
         set_join_collapse_limit = False
     df = await _read_sql_query_with_join_collapse(query, CheckRun, set_join_collapse_limit, mdb)
+
     # add check runs mapped to the mentioned PRs even if they are outside of the date range
-    # if only_prs is True, we should in theory load check runs mapped to both a PR and not a PR
-    # however, the number of such cases in our DB is 0
     df, df_labels = await _append_pull_request_check_runs_outside(
         df, time_from, time_to, labels, embedded_labels_query, meta_ids, mdb)
 
     # the same check runs / suites may attach to different PRs, fix that
     df = await _disambiguate_pull_requests(df, log, meta_ids, mdb)
+
+    if only_prs:
+        # we don't filter this in SQL (see above) so have to carve the result in code
+        df = df.take(np.flatnonzero(df[CheckRun.pull_request_node_id.name].values))
+        df.reset_index(inplace=True, drop=True)
 
     # deferred filter by labels so that we disambiguate PRs always the same way
     if labels:

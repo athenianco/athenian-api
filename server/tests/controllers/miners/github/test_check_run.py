@@ -38,8 +38,8 @@ async def test_check_run_smoke(mdb, time_from, time_to, repositories, pushers, l
 
 
 @pytest.mark.parametrize("time_from, time_to, size", [
-    (datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc), 2995),
-    (datetime(2018, 1, 1, tzinfo=timezone.utc), datetime(2019, 1, 1, tzinfo=timezone.utc), 1179),
+    (datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc), 2681),
+    (datetime(2018, 1, 1, tzinfo=timezone.utc), datetime(2019, 1, 1, tzinfo=timezone.utc), 1068),
 ])
 async def test_check_run_only_prs(mdb, time_from, time_to, size):
     df = await mine_check_runs(
