@@ -436,11 +436,12 @@ class CycleTimeCalculator(MetricCalculator[timedelta]):
 
     def _values(self) -> List[List[MetricTimeDelta]]:
         """Calculate the current metric value."""
-        raw_metrics = np.zeros(self.samples.shape, dtype=self.metric.dtype).ravel()
+        out_shape = self.samples.shape[:2]
+        raw_metrics = np.zeros(out_shape, dtype=self.metric.dtype).ravel()
         if self.only_complete:
             raw_metrics["exists"] = True
         for calc in self._calcs:
-            calc_values = np.empty(self.samples.shape, dtype=object)
+            calc_values = np.empty(out_shape, dtype=object)
             calc_values[:] = calc.values
             calc_values = np.fromiter((m.array for m in calc_values.ravel()),
                                       self.metric.dtype, calc_values.size)
@@ -454,7 +455,7 @@ class CycleTimeCalculator(MetricCalculator[timedelta]):
         not_exists = ~raw_metrics["exists"]
         for field in ("value", "confidence_min", "confidence_max"):
             raw_metrics[field][not_exists] = self.nan
-        obj_metrics = np.empty(self.samples.shape, dtype=object)
+        obj_metrics = np.empty(out_shape, dtype=object)
         obj_metrics.ravel()[:] = [self.metric(i) for i in raw_metrics]
         return obj_metrics
 
