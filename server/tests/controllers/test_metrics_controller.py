@@ -1872,7 +1872,7 @@ async def test_code_check_metrics_labels(client, headers):
                                 "repositories": ["github.com/src-d/go-git"]},
                         "granularity": "all",
                         "values": [{"date": date(2018, 1, 12),
-                                    "values": [699]}]},
+                                    "values": [657]}]},
                        {"for": {"labels_include": ["bug", "plumbing", "enhancement"],
                                 "repositories": ["github.com/src-d/go-git"]},
                         "granularity": "all",
