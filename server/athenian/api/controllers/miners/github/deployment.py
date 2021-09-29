@@ -436,8 +436,8 @@ async def _compute_deployment_facts(notifications: pd.DataFrame,
             account, meta_ids, mdb, pdb, rdb, cache),
     )
     facts = await _generate_deployment_facts(
-        deployed_commits_per_repo_per_env, all_mentioned_hashes, commit_stats, releases,
-        account, pdb)
+        notifications, deployed_commits_per_repo_per_env, all_mentioned_hashes, commit_stats,
+        releases, account, pdb)
     await defer(_submit_deployment_facts(facts, releases, settings, account, pdb),
                 "_submit_deployment_facts")
     return facts, releases
@@ -537,6 +537,7 @@ RepositoryDeploymentFacts = NamedTuple("RepositoryDeploymentFacts", [
 
 
 async def _generate_deployment_facts(
+        notifications: pd.DataFrame,
         deployed_commits_per_repo_per_env: Dict[str, Dict[str, DeployedCommitDetails]],
         all_mentioned_hashes: np.ndarray,
         commit_stats: DeployedCommitStats,
@@ -544,6 +545,8 @@ async def _generate_deployment_facts(
         account: int,
         pdb: ParallelDatabase,
 ) -> pd.DataFrame:
+    name_to_finished = dict(zip(notifications.index.values,
+                                notifications[DeploymentNotification.finished_at.name].values))
     pr_inserts = []
     all_releases_authors = defaultdict(set)
     if not releases.empty:
@@ -569,8 +572,9 @@ async def _generate_deployment_facts(
                     commits_overall=len(deployed_lines),
                     prs=prs,
                 )
+                finished = pd.Timestamp(name_to_finished[deployment_name], tzinfo=timezone.utc)
                 for pr in prs:
-                    pr_inserts.append((deployment_name, repo, pr))
+                    pr_inserts.append((deployment_name, finished, repo, pr))
     facts = []
     deployment_names = []
     for deployment_name, repos in facts_per_repo_per_deployment.items():
@@ -752,17 +756,18 @@ async def _submit_deployed_commits(
 
 @sentry_span
 async def _submit_deployed_prs(
-        values: Tuple[str, int, int],
+        values: Tuple[str, datetime, int, int],
         account: int,
         pdb: ParallelDatabase) -> None:
     values = [
         GitHubPullRequestDeployment(
             acc_id=account,
             deployment_name=deployment_name,
+            finished_at=finished_at,
             pull_request_id=pr,
             repository_id=repo,
         ).explode(with_primary_keys=True)
-        for (deployment_name, repo, pr) in values
+        for (deployment_name, finished_at, repo, pr) in values
     ]
     await insert_or_ignore(GitHubPullRequestDeployment, values, "_submit_deployed_prs", pdb)
 

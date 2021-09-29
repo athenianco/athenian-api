@@ -9,10 +9,10 @@ import databases
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, delete, insert, or_, select, union_all
+from sqlalchemy import and_, delete, exists, insert, not_, or_, select, text, union_all
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.orm.attributes import InstrumentedAttribute
-from sqlalchemy.sql import ClauseElement
+from sqlalchemy.sql import ClauseElement, Select
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather
@@ -35,7 +35,8 @@ from athenian.api.controllers.prefixer import PrefixerPromise
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, ReleaseSettings
 from athenian.api.db import ParallelDatabase
 from athenian.api.models.metadata.github import PullRequest, PullRequestLabel, Release
-from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts
+from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
+    GitHubPullRequestDeployment
 from athenian.api.tracing import sentry_span
 
 
@@ -438,30 +439,28 @@ class DonePRFactsLoader:
         """
         postgres = pdb.url.dialect == "postgresql"
         ghprt = GitHubDonePullRequestFacts
-        selected = [ghprt.pr_node_id,
-                    ghprt.repository_full_name,
-                    ghprt.release_match,
-                    ] + columns
+        selected = [
+            ghprt.pr_node_id,
+            ghprt.repository_full_name,
+            ghprt.release_match,
+        ] + columns
         match_groups, event_repos, _ = group_repos_by_release_match(
             repos, default_branches, release_settings)
         match_groups[ReleaseMatch.rejected] = match_groups[ReleaseMatch.force_push_drop] = \
-            {"": repos}
+            {"": list(repos)}
         if event_repos:
             match_groups[ReleaseMatch.event] = {"": event_repos}
-        or_items, _ = match_groups_to_sql(match_groups, ghprt)
-        filters = cls._create_common_filters(time_from, time_to, None, account)
-        if len(participants) > 0:
-            await cls._build_participants_filters(
-                participants, filters, selected, postgres, prefixer)
-        if labels:
-            build_labels_filters(GitHubDonePullRequestFacts, labels, filters, selected, postgres)
-        if exclude_inactive:
-            date_range = append_activity_days_filter(
-                time_from, time_to, selected, filters, ghprt.activity_days, postgres)
-        if pdb.url.dialect == "sqlite":
-            query = select(selected).where(and_(or_(*or_items), *filters))
-        else:
-            query = union_all(*(select(selected).where(and_(item, *filters)) for item in or_items))
+
+        def or_items():
+            return match_groups_to_sql(match_groups, ghprt)[0]
+
+        queries_undeployed, date_range = await cls._compose_query_filters_undeployed(
+            selected, or_items, time_from, time_to, participants, labels, exclude_inactive,
+            prefixer, account, postgres)
+        queries_deployed = await cls._compose_query_filters_deployed(
+            selected, or_items, time_from, time_to, participants, labels, exclude_inactive,
+            prefixer, account, postgres)
+        query = union_all(*(queries_undeployed + queries_deployed))
         with sentry_sdk.start_span(op="_load_precomputed_done_filters/fetch"):
             rows = await pdb.fetch_all(query)
         result = {}
@@ -485,13 +484,83 @@ class DonePRFactsLoader:
                 if labels and not labels_are_compatible(include_singles, include_multiples,
                                                         labels.exclude, row[ghprt.labels.name]):
                     continue
-                if exclude_inactive:
+                if exclude_inactive and not row["deployed"]:
                     activity_days = {datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc)
                                      for d in row[ghprt.activity_days.name]}
                     if not activity_days.intersection(date_range):
                         continue
             dump[row[ghprt.pr_node_id.name]] = row
         return cls._post_process_ambiguous_done_prs(result, ambiguous)
+
+    @classmethod
+    async def _compose_query_filters_undeployed(cls,
+                                                selected: List[InstrumentedAttribute],
+                                                or_items: Callable[[], List[ClauseElement]],
+                                                time_from: Optional[datetime],
+                                                time_to: Optional[datetime],
+                                                participants: PRParticipants,
+                                                labels: LabelFilter,
+                                                exclude_inactive: bool,
+                                                prefixer: PrefixerPromise,
+                                                account: int,
+                                                postgres: bool,
+                                                ) -> Tuple[List[Select], Set[datetime]]:
+        ghprt = GitHubDonePullRequestFacts
+        filters = cls._create_common_filters(time_from, time_to, None, account)
+        selected = selected.copy()
+        selected.append(text("false AS deployed"))
+        if len(participants) > 0:
+            await cls._build_participants_filters(
+                participants, filters, selected, postgres, prefixer)
+        if labels:
+            build_labels_filters(GitHubDonePullRequestFacts, labels, filters, selected, postgres)
+        if exclude_inactive:
+            date_range = append_activity_days_filter(
+                time_from, time_to, selected, filters, ghprt.activity_days, postgres)
+        else:
+            date_range = set()
+        filters.append(not_(exists().where(and_(
+            ghprt.acc_id == GitHubPullRequestDeployment.acc_id,
+            ghprt.pr_node_id == GitHubPullRequestDeployment.pull_request_id,
+        ))))
+        or_items = or_items()
+        if postgres:
+            return [select(selected).where(and_(item, *filters)) for item in or_items], date_range
+        return [select(selected).where(and_(or_(*or_items), *filters))], date_range
+
+    @classmethod
+    async def _compose_query_filters_deployed(cls,
+                                              selected: List[InstrumentedAttribute],
+                                              or_items: Callable[[], List[ClauseElement]],
+                                              time_from: Optional[datetime],
+                                              time_to: Optional[datetime],
+                                              participants: PRParticipants,
+                                              labels: LabelFilter,
+                                              exclude_inactive: bool,
+                                              prefixer: PrefixerPromise,
+                                              account: int,
+                                              postgres: bool,
+                                              ) -> List[Select]:
+        ghprt = GitHubDonePullRequestFacts
+        filters = cls._create_common_filters(None, time_to, None, account)
+        selected = selected.copy()
+        selected.append(text("true AS deployed"))
+        if len(participants) > 0:
+            await cls._build_participants_filters(
+                participants, filters, selected, postgres, prefixer)
+        if labels:
+            build_labels_filters(GitHubDonePullRequestFacts, labels, filters, selected, postgres)
+        filters.append(exists().where(and_(
+            ghprt.acc_id == GitHubPullRequestDeployment.acc_id,
+            ghprt.pr_node_id == GitHubPullRequestDeployment.pull_request_id,
+            GitHubPullRequestDeployment.finished_at.between(time_from, time_to),
+        )))
+        if exclude_inactive and not postgres:
+            selected.append(ghprt.activity_days)
+        or_items = or_items()
+        if postgres:
+            return [select(selected).where(and_(item, *filters)) for item in or_items]
+        return [select(selected).where(and_(or_(*or_items), *filters))]
 
     @classmethod
     def _create_common_filters(cls,
