@@ -145,7 +145,10 @@ class UnfreshPullRequestFactsFetcher:
         facts = {**open_facts, **merged_facts, **done_facts}
         if pr_jira_mapper is not None:
             for pr, jira in unreleased_jira_map[0].items():
-                facts[pr].jira_ids = jira
+                try:
+                    facts[pr].jira_ids = jira
+                except KeyError:
+                    continue  # not all PRs may be precomputed
         cls.append_deployments(facts, pd.concat([unreleased_deps, released_deps]), cls._log)
         return facts
 
