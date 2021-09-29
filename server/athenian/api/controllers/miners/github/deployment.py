@@ -380,14 +380,18 @@ async def _filter_by_prs(df: pd.DataFrame,
         query = select([PullRequest.node_id.name]).where(and_(*filters))
     tasks.insert(0, mdb.fetch_all(query))
     pr_rows, *label_df = await gather(*tasks, op="_filter_by_prs/sql")
-    prs = np.array([r[0] for r in pr_rows], dtype="S")
+    prs = np.array([r[0] for r in pr_rows])
     if labels and not embedded_labels_query:
         label_df = label_df[0]
         left = PullRequestMiner.find_left_by_labels(
-            label_df.index, label_df[PullRequestLabel.name.name].values, labels)
-        prs = prs[np.in1d(prs, left.values.astype("S"), assume_unique=True)]
+            pd.Index(prs),  # there are `multiples` so we don't care
+            label_df.index,
+            label_df[PullRequestLabel.name.name].values,
+            labels,
+        )
+        prs = prs[np.in1d(prs, left.values, assume_unique=True)]
     indexes = np.flatnonzero(np.in1d(
-        np.array(pr_node_ids, dtype="S"), prs,
+        np.array(pr_node_ids), prs,
         assume_unique=len(pr_node_ids) == len(unique_pr_node_ids)))
     passed = np.searchsorted(offsets, indexes)
     return df.take(passed)

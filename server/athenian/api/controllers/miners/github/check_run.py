@@ -430,7 +430,11 @@ def _filter_by_pr_labels(df: pd.DataFrame,
     if not embedded_labels_query:
         df_labels = df_labels[0]
         prs_left = PullRequestMiner.find_left_by_labels(
-            df_labels.index, df_labels[PullRequestLabel.name.name].values, labels)
+            pd.Index(pr_node_ids),
+            df_labels.index,
+            df_labels[PullRequestLabel.name.name].values,
+            labels,
+        )
         indexes_left = np.nonzero(np.in1d(pr_node_ids, prs_left.values))[0]
         if len(indexes_left) < len(df):
             df = df.take(indexes_left)
