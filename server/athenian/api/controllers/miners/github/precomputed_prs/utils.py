@@ -132,7 +132,7 @@ def triage_by_release_match(repo: str,
                             ambiguous: Dict[str, Any],
                             ) -> Optional[Any]:
     """Check the release match of the specified `repo` and return `None` if it is not effective \
-    or decide between `result` and `ambiguous`, depending on the settings."""
+    according to `release_settings`, or decide between `result` and `ambiguous`."""
     # DEV-1451: if we don't have this repository in the release settings, then it is deleted
     assert repo in release_settings.native, \
         f"You must take care of deleted repositories separately: {repo}"

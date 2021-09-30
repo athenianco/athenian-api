@@ -908,7 +908,7 @@ async def test_calc_metrics_prs_deployments_smoke(client, headers, precomputed_d
     assert response.status == 200, response.text()
     body = FriendlyJson.loads((await response.read()).decode("utf-8"))
     values = [v["values"] for v in body["calculated"][0]["values"]]
-    assert values == [[[None, "69934116s"], [None, "73543893s"], [None, "73648258s"], [0, 177]]]
+    assert values == [[[None, "61049544s"], [None, "64285923s"], [None, "64763686s"], [0, 314]]]
 
 
 async def test_code_bypassing_prs_smoke(client, headers):

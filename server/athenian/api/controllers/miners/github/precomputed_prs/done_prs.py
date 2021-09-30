@@ -53,7 +53,7 @@ class DonePRFactsLoader:
                                                release_settings: ReleaseSettings,
                                                account: int,
                                                pdb: databases.Database,
-                                               ) -> Tuple[Set[str], Dict[str, List[int]]]:
+                                               ) -> Tuple[Set[int], Dict[str, List[int]]]:
         """
         Load the set of done PR identifiers and specifically ambiguous PR node IDs.
 
@@ -595,9 +595,11 @@ class DonePRFactsLoader:
         """Figure out what to do with uncertain `tag_or_branch` release matches."""
         result.update(ambiguous[ReleaseMatch.tag.name])
         repokey = GitHubDonePullRequestFacts.repository_full_name.name
-        # We've found PRs released by tag belonging to these repos.
-        # This means that we are going to load tags in load_releases().
+        # we've found PRs released by tag belonging to these repos.
+        # this means that we are going to load tags in load_releases().
         confirmed_tag_repos = {obj[repokey] for obj in ambiguous[ReleaseMatch.tag.name].values()}
+        # regarding the rest - we don't know which releases we'll load, so mark such PRs
+        # as ambiguous
         ambiguous_prs = defaultdict(list)
         for node_id, obj in ambiguous[ReleaseMatch.branch.name].items():
             if (repo := obj[repokey]) not in confirmed_tag_repos:

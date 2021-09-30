@@ -319,6 +319,7 @@ def test_pull_request_metrics_counts_nq(pr_samples, cls):  # noqa: F811
     assert nonones > 0, cls
 
 
+@pytest.mark.flaky(reruns=3)
 @pytest.mark.parametrize("cls_q, cls",
                          [(WorkInProgressCounterWithQuantiles, WorkInProgressCounter),
                           (ReviewCounterWithQuantiles, ReviewCounter),
@@ -419,6 +420,7 @@ async def test_calc_pull_request_metrics_line_github_changed_releases(
     metrics1 = (
         await metrics_calculator.calc_pull_request_metrics_line_github(*args)
     )[0][0][0][0][0][0]
+    await wait_deferred()
     release_match_setting_tag = ReleaseSettings({
         "github.com/src-d/go-git": ReleaseMatchSetting("master", ".*", ReleaseMatch.branch),
     })
@@ -902,9 +904,9 @@ async def test_pull_request_stage_times(precomputed_deployments, real_pr_samples
                        (PullRequestMetricID.PR_MERGING_TIME, timedelta(days=4, seconds=83622)),
                        (PullRequestMetricID.PR_RELEASE_TIME, timedelta(days=29, seconds=50065)),
                        (PullRequestMetricID.PR_DEPLOYMENT_TIME,
-                        [None, None, timedelta(days=809, seconds=36516)]),
+                        [None, None, timedelta(days=706, seconds=51144)]),
                        (PullRequestMetricID.PR_LEAD_DEPLOYMENT_TIME,
-                        [None, None, timedelta(days=851, seconds=17493)])]:
+                        [None, None, timedelta(days=744, seconds=4323)])]:
         assert values[metric][0][0].value == td, metric
 
 
@@ -920,10 +922,10 @@ async def test_pull_request_deployment_stage_counts(precomputed_deployments, rea
     time_from, time_to, samples = real_pr_samples
     ensemble(samples, dt64arr_ns(time_from), dt64arr_ns(time_to), [np.arange(len(samples))])
     values = ensemble.values()
-    for metric, td in [(PullRequestMetricID.PR_DEPLOYMENT_COUNT, [0, 0, 177]),
-                       (PullRequestMetricID.PR_DEPLOYMENT_COUNT_Q, [0, 0, 175]),
-                       (PullRequestMetricID.PR_LEAD_DEPLOYMENT_COUNT, [0, 0, 177]),
-                       (PullRequestMetricID.PR_LEAD_DEPLOYMENT_COUNT_Q, [0, 0, 168])]:
+    for metric, td in [(PullRequestMetricID.PR_DEPLOYMENT_COUNT, [0, 0, 314]),
+                       (PullRequestMetricID.PR_DEPLOYMENT_COUNT_Q, [0, 0, 301]),
+                       (PullRequestMetricID.PR_LEAD_DEPLOYMENT_COUNT, [0, 0, 314]),
+                       (PullRequestMetricID.PR_LEAD_DEPLOYMENT_COUNT_Q, [0, 0, 298])]:
         assert values[metric][0][0].value == td, metric
 
 
@@ -942,7 +944,7 @@ async def test_pull_request_cycle_deployment_time(
     ensemble(samples, dt64arr_ns(time_from), dt64arr_ns(time_to), [np.arange(len(samples))])
     values = ensemble.values()
     for metric, td in [(PullRequestMetricID.PR_CYCLE_DEPLOYMENT_TIME,
-                        [None, None, timedelta(days=839, seconds=46442)]),
-                       (PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT, [0, 0, 177]),
-                       (PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT_Q, [0, 0, 167])]:
+                        [None, None, timedelta(days=709, seconds=2342)]),
+                       (PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT, [0, 0, 314]),
+                       (PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT_Q, [0, 0, 290])]:
         assert values[metric][0][0].value == td, metric

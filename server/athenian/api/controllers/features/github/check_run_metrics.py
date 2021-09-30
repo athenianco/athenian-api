@@ -16,6 +16,7 @@ from athenian.api.controllers.features.metric_calculator import AverageMetricCal
     RatioCalculator, SumMetricCalculator
 from athenian.api.controllers.miners.github.check_run import check_suite_started_column, \
     pull_request_closed_column, pull_request_merged_column, pull_request_started_column
+from athenian.api.int_to_str import int_to_str
 from athenian.api.models.metadata.github import CheckRun
 from athenian.api.models.web import CodeCheckMetricID
 
@@ -366,7 +367,7 @@ class RobustSuiteTimeCalculator(MetricCalculator[timedelta]):
             structs = structs[:quantiles_mounted_at]
         sizes = structs["size"].astype("S")
         repos = facts[CheckRun.repository_node_id.name].values
-        repos_sizes = np.char.add(repos.byteswap().view("S8"), np.char.add(b"|", sizes))
+        repos_sizes = np.char.add(int_to_str(repos), np.char.add(b"|", sizes))
         self._metrics = metrics = []
         for group_mask in meaningful_groups_mask:
             group_repos_sizes = repos_sizes[:, group_mask]
@@ -545,7 +546,7 @@ class FlakyCommitChecksCounter(SumMetricCalculator[int]):
             statuses, conclusions, check_suite_conclusions, True, True, False)
         commits = facts[CheckRun.commit_node_id.name].values
         check_run_names = np.char.encode(facts[CheckRun.name.name].values.astype("U"), "UTF-8")
-        commits_with_names = np.char.add(commits.byteswap().view("S8"), check_run_names)
+        commits_with_names = np.char.add(int_to_str(commits), check_run_names)
         _, unique_map = np.unique(commits_with_names, return_inverse=True)
         unique_flaky_indexes = np.intersect1d(unique_map[success_mask], unique_map[failure_mask])
         flaky_mask = np.in1d(unique_map, unique_flaky_indexes)
@@ -591,7 +592,7 @@ class MergedPRsWithFailedChecksCounter(SumMetricCalculator[int]):
         df = df.sort_values(CheckRun.started_at.name, ascending=False)  # no inplace=True, yes
         pull_requests = df[CheckRun.pull_request_node_id.name].values
         names = np.char.encode(df[CheckRun.name.name].values.astype("U"), "UTF-8")
-        joint = np.char.add(pull_requests.byteswap().view("S8"), names)
+        joint = np.char.add(int_to_str(pull_requests), names)
         _, first_encounters = np.unique(joint, return_index=True)
         statuses = df[CheckRun.status.name].values.astype("S")
         conclusions = df[CheckRun.conclusion.name].values.astype("S")

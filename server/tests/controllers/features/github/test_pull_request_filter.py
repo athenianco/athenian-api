@@ -445,22 +445,29 @@ async def test_filter_pull_requests_deployments(
         branches, default_branches, prefixer_promise,
         1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
-    args = [{PullRequestEvent.REVIEWED},
+    args = [set(),
             {PullRequestStage.WIP, PullRequestStage.REVIEWING, PullRequestStage.MERGING},
             time_from, time_to, {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
             False, release_match_setting_tag, None, None, prefixer_promise,
             1, (6366825,), mdb, pdb, rdb, None]
     prs, deps = await filter_pull_requests(*args)
-    check_pr_deployments(prs, deps)
+    assert len(prs) == 15
+    check_pr_deployments(prs, deps, 0)  # unmerged PR cannot be deployed!
+    args[1] = {PullRequestStage.DONE}
+    prs, deps = await filter_pull_requests(*args)
+    assert len(prs) == 321
+    check_pr_deployments(prs, deps, 309)
 
 
-def check_pr_deployments(prs: List[PullRequestListItem], deps: Dict[str, Deployment]) -> None:
-    prs_have_deps = False
+def check_pr_deployments(prs: List[PullRequestListItem],
+                         deps: Dict[str, Deployment],
+                         prs_must_have_deps: int) -> None:
+    prs_have_deps = 0
     for pr in prs:
         if pr.deployments is not None:
             assert len(pr.deployments) == 1 and pr.deployments[0] == "Dummy deployment", pr
-            prs_have_deps = True
-    assert prs_have_deps
+            prs_have_deps += 1
+    assert prs_have_deps == prs_must_have_deps
     assert deps == {
         "Dummy deployment": Deployment(
             name="Dummy deployment",
@@ -497,4 +504,4 @@ async def test_fetch_pull_requests_deployments(
     prs, deps = await fetch_pull_requests(
         {"src-d/go-git": {1160, 1179}}, release_match_setting_tag, prefixer_promise,
         1, (6366825,), mdb, pdb, rdb, None)
-    check_pr_deployments(prs, deps)
+    check_pr_deployments(prs, deps, 1)
