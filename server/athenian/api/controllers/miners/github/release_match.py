@@ -3,7 +3,7 @@ import bisect
 from datetime import datetime, timedelta, timezone
 import logging
 import pickle
-from typing import Any, Collection, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Collection, Dict, Iterable, List, Optional, Tuple, Union
 
 import aiomcache
 import numpy as np
@@ -241,25 +241,35 @@ class ReleaseToPullRequestMapper:
                                   pr_blacklist: Optional[BinaryExpression] = None,
                                   pr_whitelist: Optional[BinaryExpression] = None,
                                   truncate: bool = True,
-                                  ) -> Tuple[pd.DataFrame,
-                                             pd.DataFrame,
-                                             Dict[str, ReleaseMatch],
-                                             Dict[str, DAG]]:
+                                  precomputed_observed: Optional[Tuple[
+                                      np.ndarray, np.ndarray]] = None,
+                                  ) -> Union[Tuple[pd.DataFrame,
+                                                   pd.DataFrame,
+                                                   Dict[str, ReleaseMatch],
+                                                   Dict[str, DAG],
+                                                   Tuple[np.ndarray, np.ndarray]],
+                                             pd.DataFrame]:
         """Find pull requests which were released between `time_from` and `time_to` but merged before \
         `time_from`.
 
         :param authors: Required PR commit_authors.
         :param mergers: Required PR mergers.
         :param truncate: Do not load releases after `time_to`.
+        :param precomputed_observed: Saved all_observed_commits and all_observed_repos from \
+                                     the previous identical invocation. \
+                                     See PullRequestMiner._mine().
         :return: pd.DataFrame with found PRs that were created before `time_from` and released \
                  between `time_from` and `time_to` \
-                 + \
+                 (the rest exists if `precomputed_observed` is None) + \
                  pd.DataFrame with the discovered releases between \
                  `time_from` and `time_to` (today if not `truncate`) \
                  + \
                  `matched_bys` so that we don't have to compute that mapping again. \
                  + \
-                 commit DAGs that contain the relevant releases.
+                 commit DAGs that contain the relevant releases. \
+                 + \
+                 observed commits and repositories (precomputed cache for \
+                 the second call if needed).
         """
         assert isinstance(time_from, datetime)
         assert isinstance(time_to, datetime)
@@ -269,25 +279,70 @@ class ReleaseToPullRequestMapper:
         assert isinstance(pr_whitelist, (BinaryExpression, type(None)))
         assert (updated_min is None) == (updated_max is None)
 
+        if precomputed_observed is None:
+            all_observed_commits, all_observed_repos, releases_in_time_range, matched_bys, dags = \
+                await cls._map_releases_to_prs_observe(
+                    repos, branches, default_branches, time_from, time_to, release_settings, pdags,
+                    prefixer, account, meta_ids, mdb, pdb, rdb, cache, truncate)
+        else:
+            all_observed_commits, all_observed_repos = precomputed_observed
+
+        if len(all_observed_commits):
+            prs = await cls._find_old_released_prs(
+                all_observed_commits, all_observed_repos, time_from, authors, mergers, jira,
+                updated_min, updated_max, pr_blacklist, pr_whitelist, meta_ids, mdb, cache)
+        else:
+            prs = pd.DataFrame(columns=[c.name for c in PullRequest.__table__.columns
+                                        if c.name != PullRequest.node_id.name])
+            prs.index = pd.Index([], name=PullRequest.node_id.name)
+        prs["dead"] = False
+        if precomputed_observed is None:
+            return (
+                prs, releases_in_time_range, matched_bys, dags,
+                (all_observed_commits, all_observed_repos),
+            )
+        return prs
+
+    @classmethod
+    @sentry_span
+    async def _map_releases_to_prs_observe(cls,
+                                           repos: Collection[str],
+                                           branches: pd.DataFrame,
+                                           default_branches: Dict[str, str],
+                                           time_from: datetime,
+                                           time_to: datetime,
+                                           release_settings: ReleaseSettings,
+                                           pdags: Optional[Dict[str, DAG]],
+                                           prefixer: PrefixerPromise,
+                                           account: int,
+                                           meta_ids: Tuple[int, ...],
+                                           mdb: ParallelDatabase,
+                                           pdb: ParallelDatabase,
+                                           rdb: ParallelDatabase,
+                                           cache: Optional[aiomcache.Client],
+                                           truncate: bool,
+                                           ) -> Tuple[np.ndarray,
+                                                      np.ndarray,
+                                                      pd.DataFrame,
+                                                      Dict[str, ReleaseMatch],
+                                                      Dict[str, DAG]]:
         async def fetch_pdags():
             if pdags is None:
                 return await fetch_precomputed_commit_history_dags(repos, account, pdb, cache)
             return pdags
 
-        tasks = [
+        (matched_bys, releases, releases_in_time_range, release_settings), pdags = await gather(
             cls._find_releases_for_matching_prs(
                 repos, branches, default_branches, time_from, time_to, not truncate,
                 release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache),
-            fetch_pdags(),
-        ]
-        (matched_bys, releases, releases_in_time_range, release_settings), pdags = await gather(
-            *tasks)
+            fetch_pdags())
+
         # ensure that our DAGs contain all the mentioned releases
-        rpak = Release.published_at.name
-        rrfnk = Release.repository_full_name.name
         dags = await fetch_repository_commits(
             pdags, releases, RELEASE_FETCH_COMMITS_COLUMNS, False, account, meta_ids,
             mdb, pdb, cache)
+        rpak = Release.published_at.name
+        rrfnk = Release.repository_full_name.name
         all_observed_repos = []
         all_observed_commits = []
         # find the released commit hashes by two DAG traversals
@@ -306,15 +361,9 @@ class ReleaseToPullRequestMapper:
             order = np.argsort(all_observed_commits)
             all_observed_commits = all_observed_commits[order]
             all_observed_repos = all_observed_repos[order]
-            prs = await cls._find_old_released_prs(
-                all_observed_commits, all_observed_repos, time_from, authors, mergers, jira,
-                updated_min, updated_max, pr_blacklist, pr_whitelist, meta_ids, mdb, cache)
         else:
-            prs = pd.DataFrame(columns=[c.name for c in PullRequest.__table__.columns
-                                        if c.name != PullRequest.node_id.name])
-            prs.index = pd.Index([], name=PullRequest.node_id.name)
-        prs["dead"] = False
-        return prs, releases_in_time_range, matched_bys, dags
+            all_observed_commits = all_observed_repos = np.array([])
+        return all_observed_commits, all_observed_repos, releases_in_time_range, matched_bys, dags
 
     @classmethod
     @sentry_span

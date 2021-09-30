@@ -212,7 +212,7 @@ async def test_map_prs_to_releases_precomputed_released(
 async def test_map_releases_to_prs_early_merges(
         branches, default_branches, mdb, pdb, rdb, release_match_setting_tag,
         releases_to_prs_mapper, prefixer_promise):
-    prs, releases, matched_bys, dag = await releases_to_prs_mapper.map_releases_to_prs(
+    prs, releases, matched_bys, dag, _ = await releases_to_prs_mapper.map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
         datetime(year=2018, month=1, day=7, tzinfo=timezone.utc),
@@ -239,7 +239,7 @@ async def test_map_releases_to_prs_smoke(
         branches, default_branches, mdb, pdb, rdb, cache, release_match_setting_tag,
         releases_to_prs_mapper, prefixer_promise):
     for _ in range(2):
-        prs, releases, matched_bys, dag = await releases_to_prs_mapper.map_releases_to_prs(
+        prs, releases, matched_bys, dag, _ = await releases_to_prs_mapper.map_releases_to_prs(
             ["src-d/go-git"],
             branches, default_branches,
             datetime(year=2019, month=7, day=31, tzinfo=timezone.utc),
@@ -266,7 +266,7 @@ async def test_map_releases_to_prs_smoke(
 async def test_map_releases_to_prs_no_truncate(
         branches, default_branches, mdb, pdb, rdb, release_match_setting_tag,
         releases_to_prs_mapper, prefixer_promise):
-    prs, releases, matched_bys, _ = await releases_to_prs_mapper.map_releases_to_prs(
+    prs, releases, matched_bys, _, _ = await releases_to_prs_mapper.map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
         datetime(year=2018, month=7, day=31, tzinfo=timezone.utc),
@@ -285,7 +285,7 @@ async def test_map_releases_to_prs_no_truncate(
 async def test_map_releases_to_prs_empty(
         branches, default_branches, mdb, pdb, rdb, cache, release_match_setting_tag,
         releases_to_prs_mapper, prefixer_promise):
-    prs, releases, matched_bys, _ = await releases_to_prs_mapper.map_releases_to_prs(
+    prs, releases, matched_bys, _, _ = await releases_to_prs_mapper.map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
         datetime(year=2019, month=7, day=1, tzinfo=timezone.utc),
@@ -301,7 +301,7 @@ async def test_map_releases_to_prs_empty(
         "6241d0e70427cb0db4ca00182717af88f638268c",
     }
     assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
-    prs, releases, matched_bys, _ = await releases_to_prs_mapper.map_releases_to_prs(
+    prs, releases, matched_bys, _, _ = await releases_to_prs_mapper.map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
         datetime(year=2019, month=7, day=1, tzinfo=timezone.utc),
@@ -320,7 +320,7 @@ async def test_map_releases_to_prs_empty(
 async def test_map_releases_to_prs_blacklist(
         branches, default_branches, mdb, pdb, rdb, cache, release_match_setting_tag,
         releases_to_prs_mapper, prefixer_promise):
-    prs, releases, matched_bys, _ = await releases_to_prs_mapper.map_releases_to_prs(
+    prs, releases, matched_bys, _, _ = await releases_to_prs_mapper.map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
         datetime(year=2019, month=7, day=31, tzinfo=timezone.utc),
@@ -349,7 +349,7 @@ async def test_map_releases_to_prs_blacklist(
 async def test_map_releases_to_prs_authors_mergers(
         branches, default_branches, mdb, pdb, rdb, cache, prefixer_promise,
         release_match_setting_tag, authors, mergers, n, releases_to_prs_mapper):
-    prs, releases, matched_bys, _ = await releases_to_prs_mapper.map_releases_to_prs(
+    prs, releases, matched_bys, _, _ = await releases_to_prs_mapper.map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
         datetime(year=2019, month=7, day=31, tzinfo=timezone.utc),
@@ -369,7 +369,7 @@ async def test_map_releases_to_prs_authors_mergers(
 async def test_map_releases_to_prs_hard(
         branches, default_branches, mdb, pdb, rdb, cache, release_match_setting_tag,
         releases_to_prs_mapper, prefixer_promise):
-    prs, releases, matched_bys, _ = await releases_to_prs_mapper.map_releases_to_prs(
+    prs, releases, matched_bys, _, _ = await releases_to_prs_mapper.map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
         datetime(year=2019, month=6, day=18, tzinfo=timezone.utc),
@@ -389,7 +389,7 @@ async def test_map_releases_to_prs_hard(
 async def test_map_releases_to_prs_future(
         branches, default_branches, mdb, pdb, rdb, release_match_setting_tag,
         releases_to_prs_mapper, prefixer_promise):
-    prs, releases, matched_bys, _ = await releases_to_prs_mapper.map_releases_to_prs(
+    prs, releases, matched_bys, _, _ = await releases_to_prs_mapper.map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
         datetime(year=2018, month=7, day=31, tzinfo=timezone.utc),
@@ -400,6 +400,26 @@ async def test_map_releases_to_prs_future(
     assert len(prs) == 8
     assert releases is not None
     assert len(releases) == 12
+
+
+@with_defer
+async def test_map_releases_to_prs_precomputed_observed(
+        branches, default_branches, mdb, pdb, rdb, release_match_setting_tag,
+        releases_to_prs_mapper, prefixer_promise):
+    args = [
+        ["src-d/go-git"],
+        branches, default_branches,
+        datetime(year=2018, month=7, day=31, tzinfo=timezone.utc),
+        datetime(year=2030, month=12, day=2, tzinfo=timezone.utc),
+        [], [], JIRAFilter.empty(),
+        release_match_setting_tag, None, None, None,
+        prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None,
+    ]
+    prs1, _, _, _, precomputed_observed = \
+        await releases_to_prs_mapper.map_releases_to_prs(*args, truncate=False)
+    prs2 = await releases_to_prs_mapper.map_releases_to_prs(
+        *args, truncate=False, precomputed_observed=precomputed_observed)
+    assert_frame_equal(prs1, prs2)
 
 
 @pytest.mark.flaky(reruns=2)
@@ -616,7 +636,7 @@ async def test_map_releases_to_prs_branches(
         branches, default_branches, mdb, pdb, rdb, releases_to_prs_mapper, prefixer_promise):
     time_from = datetime(year=2015, month=4, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2015, month=5, day=1, tzinfo=timezone.utc)
-    prs, releases, matched_bys, _ = await releases_to_prs_mapper.map_releases_to_prs(
+    prs, releases, matched_bys, _, _ = await releases_to_prs_mapper.map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
         time_from, time_to,
@@ -635,7 +655,7 @@ async def test_map_releases_to_prs_branches(
 async def test_map_releases_to_prs_updated_min_max(
         branches, default_branches, release_match_setting_tag, mdb, pdb, rdb,
         releases_to_prs_mapper, prefixer_promise):
-    prs, releases, matched_bys, _ = await releases_to_prs_mapper.map_releases_to_prs(
+    prs, releases, matched_bys, _, _ = await releases_to_prs_mapper.map_releases_to_prs(
         ["src-d/go-git"],
         branches, default_branches,
         datetime(year=2018, month=7, day=31, tzinfo=timezone.utc),

@@ -6,8 +6,9 @@ from enum import Enum
 from itertools import chain
 import logging
 import pickle
-from typing import Collection, Dict, Generator, Iterable, Iterator, List, Optional, Sequence, \
-    Set, Tuple
+from typing import Collection, Dict, Generator, Iterable, Iterator, KeysView, List, Optional, \
+    Sequence, \
+    Set, Tuple, Union
 
 import aiomcache
 import numpy as np
@@ -38,6 +39,7 @@ from athenian.api.controllers.prefixer import PrefixerPromise
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.db import add_pdb_misses, DatabaseLike, ParallelDatabase
 from athenian.api.defer import AllEvents, defer
+from athenian.api.int_to_str import int_to_str
 from athenian.api.models.metadata.github import Base, NodePullRequestJiraIssues, \
     PullRequest, PullRequestComment, PullRequestCommit, PullRequestLabel, PullRequestReview, \
     PullRequestReviewComment, PullRequestReviewRequest, PushCommit, Release
@@ -217,13 +219,17 @@ class PullRequestMiner:
         assert isinstance(rdb, ParallelDatabase)
         assert (updated_min is None) == (updated_max is None)
         time_from, time_to = (pd.Timestamp(t, tzinfo=timezone.utc) for t in (date_from, date_to))
+        pr_blacklist_expr = ambiguous = None
         if pr_blacklist is not None:
             pr_blacklist, ambiguous = pr_blacklist
             if len(pr_blacklist) > 0:
-                pr_blacklist = PullRequest.node_id.notin_any_values(pr_blacklist)
-            else:
-                pr_blacklist = None
+                pr_blacklist_expr = PullRequest.node_id.notin_any_values(pr_blacklist)
         pdags = await fetch_precomputed_commit_history_dags(repositories, account, pdb, cache)
+        fetch_branch_dags_task = asyncio.create_task(
+            cls._fetch_branch_dags(
+                repositories, pdags, branches, account, meta_ids, mdb, pdb, cache),
+            name="_fetch_branch_dags",
+        )
         # the heaviest task should always go first
         tasks = [
             cls.mappers.releases_to_prs(
@@ -231,36 +237,44 @@ class PullRequestMiner:
                 participants.get(PRParticipationKind.AUTHOR, []),
                 participants.get(PRParticipationKind.MERGER, []),
                 jira, release_settings, updated_min, updated_max, pdags, prefixer,
-                account, meta_ids, mdb, pdb, rdb, cache, pr_blacklist, None, truncate),
+                account, meta_ids, mdb, pdb, rdb, cache, pr_blacklist_expr, None,
+                truncate=truncate),
             cls.fetch_prs(
                 time_from, time_to, repositories, participants, labels, jira,
-                exclude_inactive, pr_blacklist, None, branches, pdags, account, meta_ids,
-                mdb, pdb, cache, updated_min=updated_min, updated_max=updated_max),
+                exclude_inactive, pr_blacklist_expr, None, branches, pdags, account, meta_ids,
+                mdb, pdb, cache, updated_min=updated_min, updated_max=updated_max,
+                fetch_branch_dags_task=fetch_branch_dags_task),
+            cls.map_deployments_to_prs(
+                repositories, time_from, time_to, participants,
+                labels, jira, updated_min, updated_max, prefixer, branches, pdags,
+                account, meta_ids, mdb, pdb, cache, pr_blacklist,
+                fetch_branch_dags_task=fetch_branch_dags_task),
         ]
         # the following is a very rough approximation regarding updated_min/max:
         # we load all of none of the inactive merged PRs
+        # see also: load_precomputed_done_candidates() which generate `ambiguous``
         if not exclude_inactive and (updated_min is None or updated_min <= time_from):
             tasks.append(cls._fetch_inactive_merged_unreleased_prs(
                 time_from, time_to, repositories, participants, labels, jira, default_branches,
                 release_settings, prefixer, account, meta_ids, mdb, pdb, cache))
-        else:
-            async def dummy_unreleased():
-                return pd.DataFrame()
-            tasks.append(dummy_unreleased())
-        (released_prs, releases, matched_bys, release_dags), (prs, branch_dags), unreleased = \
-            await gather(*tasks)
-        concatenated = [prs, released_prs, unreleased]
-        missed_prs = {}
-        if pr_blacklist is not None:
-            for repo, pr_node_ids in ambiguous.items():
-                if matched_bys[repo] == ReleaseMatch.tag:
-                    missed_prs[repo] = pr_node_ids
+            # we don't load inactive released undeployed PRs because nobody needs them
+        (
+            (released_prs, releases, matched_bys, release_dags, precomputed_observed),
+            (prs, branch_dags),
+            deployed_prs,
+            *unreleased,
+        ) = await gather(*tasks)
+        del pr_blacklist_expr
+        concatenated = [prs, released_prs, deployed_prs, *unreleased]
+        missed_prs = cls._extract_missed_prs(ambiguous, pr_blacklist, deployed_prs, matched_bys)
         if missed_prs:
             add_pdb_misses(pdb, "PullRequestMiner.mine/blacklist",
                            sum(len(v) for v in missed_prs.values()))
-            # These PRs are released by branch and not by tag, and we require by tag.
-            # Now fetch only them, respecting the filters.
-            # TODO(vmarkovtsev): do not load the releases from scratch in map_releases_to_prs()
+            # these PRs are released by branch and not by tag, and we require by tag.
+            # we have not fetched them yet because they are in pr_blacklist
+            # and they are in pr_blacklist because we have previously loaded them in
+            # load_precomputed_done_candidates();
+            # now fetch only these `missed_prs`, respecting the filters.
             pr_whitelist = PullRequest.node_id.in_(
                 list(chain.from_iterable(missed_prs.values())))
             tasks = [
@@ -269,14 +283,17 @@ class PullRequestMiner:
                     participants.get(PRParticipationKind.AUTHOR, []),
                     participants.get(PRParticipationKind.MERGER, []),
                     jira, release_settings, updated_min, updated_max, pdags, prefixer,
-                    account, meta_ids, mdb, pdb, rdb, cache, None, pr_whitelist, truncate),
+                    account, meta_ids, mdb, pdb, rdb, cache, None, pr_whitelist, truncate,
+                    precomputed_observed=precomputed_observed),
                 cls.fetch_prs(
-                    time_from, time_to, missed_prs, participants, labels, jira, exclude_inactive,
-                    None, pr_whitelist, branches, branch_dags, account, meta_ids,
-                    mdb, pdb, cache, updated_min=updated_min, updated_max=updated_max),
+                    time_from, time_to, missed_prs.keys(), participants, labels, jira,
+                    exclude_inactive, None, pr_whitelist, branches, branch_dags, account, meta_ids,
+                    mdb, pdb, cache, updated_min=updated_min, updated_max=updated_max,
+                    fetch_branch_dags_task=fetch_branch_dags_task),
             ]
-            (missed_released_prs, _, _, _), (missed_prs, _) = await gather(*tasks)
+            missed_released_prs, (missed_prs, _) = await gather(*tasks)
             concatenated.extend([missed_released_prs, missed_prs])
+        fetch_branch_dags_task.cancel()  # 99.999% that it was awaited, but still
         prs = pd.concat(concatenated, copy=False)
         prs = prs[~prs.index.duplicated()]
         prs.sort_index(level=0, inplace=True, sort_remaining=False)
@@ -284,9 +301,9 @@ class PullRequestMiner:
         tasks = [
             # bypass the useless inner caching by calling _mine_by_ids directly
             cls._mine_by_ids(
-                prs, unreleased.index, time_to, releases, matched_bys, branches,
-                default_branches, release_dags, release_settings, prefixer, account, meta_ids,
-                mdb, pdb, rdb, cache, truncate=truncate),
+                prs, unreleased[0].index if unreleased else [], time_to, releases, matched_bys,
+                branches, default_branches, release_dags, release_settings, prefixer,
+                account, meta_ids, mdb, pdb, rdb, cache, truncate=truncate),
             OpenPRFactsLoader.load_open_pull_request_facts(prs, account, pdb),
         ]
         (dfs, unreleased_facts, unreleased_prs_event), open_facts = await gather(
@@ -647,9 +664,9 @@ class PullRequestMiner:
     @classmethod
     @sentry_span
     async def fetch_prs(cls,
-                        time_from: datetime,
+                        time_from: Optional[datetime],
                         time_to: datetime,
-                        repositories: Set[str],
+                        repositories: Union[Set[str], KeysView[str]],
                         participants: PRParticipants,
                         labels: LabelFilter,
                         jira: JIRAFilter,
@@ -666,6 +683,7 @@ class PullRequestMiner:
                         columns=PullRequest,
                         updated_min: Optional[datetime] = None,
                         updated_max: Optional[datetime] = None,
+                        fetch_branch_dags_task: Optional[asyncio.Task] = None,
                         ) -> Tuple[pd.DataFrame, Dict[str, DAG]]:
         """
         Query pull requests from mdb that satisfy the given filters.
@@ -673,6 +691,16 @@ class PullRequestMiner:
         Note: we cannot filter by regular PR labels here due to the DB schema limitations,
         so the caller is responsible for fetching PR labels and filtering by them afterward.
         Besides, we cannot filter by participation roles different from AUTHOR and MERGER.
+
+        Note: we cannot load PRs that closed before time_from but released between
+        `time_from` and `time_to`. Hence the caller should map_releases_to_prs separately.
+        There can be duplicates: PR closed between `time_from` and `time_to` and released
+        between `time_from` and `time_to`.
+
+        Note: we cannot load PRs that closed before time_from but deployed between
+        `time_from` and `time_to`. Hence the caller should map_deployments_to_prs separately.
+        There can be duplicates: PR closed between `time_from` and `time_to` and deployed
+        between `time_from` and `time_to`.
 
         We have to resolve the merge commits of rebased PRs so that they do not appear
         force-push-dropped.
@@ -691,16 +719,11 @@ class PullRequestMiner:
                 PullRequest.merge_commit_sha not in columns:
             return await pr_list_coro, dags
 
-        async def fetch_commits():
-            nonlocal dags
-            if dags is None:
-                dags = await fetch_precomputed_commit_history_dags(
-                    repositories, account, pdb, cache)
-            return await fetch_repository_commits_no_branch_dates(
-                dags, branches, BRANCH_FETCH_COMMITS_COLUMNS, True, account, meta_ids,
-                mdb, pdb, cache)
+        if fetch_branch_dags_task is None:
+            fetch_branch_dags_task = cls._fetch_branch_dags(
+                repositories, dags, branches, account, meta_ids, mdb, pdb, cache)
 
-        dags, prs = await gather(fetch_commits(), pr_list_coro)
+        dags, prs = await gather(fetch_branch_dags_task, pr_list_coro)
         prs = await cls.mark_dead_prs(prs, branches, dags, meta_ids, mdb, columns)
         return prs, dags
 
@@ -832,9 +855,27 @@ class PullRequestMiner:
         return prs
 
     @classmethod
+    async def _fetch_branch_dags(cls,
+                                 repositories: Set[str],
+                                 dags: Optional[Dict[str, DAG]],
+                                 branches: pd.DataFrame,
+                                 account: int,
+                                 meta_ids: Tuple[int, ...],
+                                 mdb: ParallelDatabase,
+                                 pdb: ParallelDatabase,
+                                 cache: Optional[aiomcache.Client],
+                                 ) -> Dict[str, DAG]:
+        if dags is None:
+            dags = await fetch_precomputed_commit_history_dags(
+                repositories, account, pdb, cache)
+        return await fetch_repository_commits_no_branch_dates(
+            dags, branches, BRANCH_FETCH_COMMITS_COLUMNS, True, account, meta_ids,
+            mdb, pdb, cache)
+
+    @classmethod
     @sentry_span
     async def _fetch_prs_by_filters(cls,
-                                    time_from: datetime,
+                                    time_from: Optional[datetime],
                                     time_to: datetime,
                                     repositories: Set[str],
                                     participants: PRParticipants,
@@ -852,10 +893,10 @@ class PullRequestMiner:
                                     ) -> pd.DataFrame:
         assert (updated_min is None) == (updated_max is None)
         filters = [
-            sql.case(
+            (sql.case(
                 [(PullRequest.closed, PullRequest.closed_at)],
                 else_=sql.text("'3000-01-01'"),  # backed up with a DB index
-            ) >= time_from,
+            ) >= time_from) if time_from is not None else sql.true(),
             PullRequest.created_at < time_to,
             PullRequest.acc_id.in_(meta_ids),
             PullRequest.hidden.is_(False),
@@ -1263,6 +1304,82 @@ class PullRequestMiner:
         to_remove = unreleased.union(unrejected.union(uncreated))
         cls._drop(dfs, to_remove)
 
+    @classmethod
+    def _extract_missed_prs(cls,
+                            ambiguous: Optional[Dict[str, Collection[int]]],
+                            pr_blacklist: Optional[Collection[int]],
+                            deployed_prs: pd.DataFrame,
+                            matched_bys: Dict[str, ReleaseMatch],
+                            ) -> Dict[str, np.ndarray]:
+        missed_prs = {}
+        if ambiguous is not None and pr_blacklist is not None:
+            if isinstance(pr_blacklist, (dict, set)):
+                pr_blacklist = list(pr_blacklist)
+            if deployed_prs.empty:
+                candidate_missing_node_ids = np.asarray(pr_blacklist)
+            else:
+                candidate_missing_node_ids = np.setdiff1d(
+                    pr_blacklist, deployed_prs.index.values, assume_unique=True)
+            if len(candidate_missing_node_ids):
+                for repo, pr_node_ids in ambiguous.items():
+                    if matched_bys[repo] == ReleaseMatch.tag:
+                        repo_missed_node_ids = np.intersect1d(
+                            pr_node_ids, candidate_missing_node_ids, assume_unique=True)
+                        if len(repo_missed_node_ids):
+                            missed_prs[repo] = repo_missed_node_ids
+        return missed_prs
+
+    @classmethod
+    @sentry_span
+    async def map_deployments_to_prs(cls,
+                                     repositories: Set[str],
+                                     time_from: datetime,
+                                     time_to: datetime,
+                                     participants: PRParticipants,
+                                     labels: LabelFilter,
+                                     jira: JIRAFilter,
+                                     updated_min: Optional[datetime],
+                                     updated_max: Optional[datetime],
+                                     prefixer: PrefixerPromise,
+                                     branches: pd.DataFrame,
+                                     dags: Optional[Dict[str, DAG]],
+                                     account: int,
+                                     meta_ids: Tuple[int, ...],
+                                     mdb: ParallelDatabase,
+                                     pdb: ParallelDatabase,
+                                     cache: Optional[aiomcache.Client],
+                                     pr_blacklist: Optional[List[int]] = None,
+                                     fetch_branch_dags_task: Optional[asyncio.Task] = None,
+                                     ) -> pd.DataFrame:
+        """Load PRs which were deployed between `time_from` and `time_to` and merged before \
+        `time_from`."""
+        assert (updated_min is None) == (updated_max is None)
+        prefixer = await prefixer.load()
+        repo_name_to_node = prefixer.repo_name_to_node.get
+        repo_node_ids = {repo_name_to_node(r) for r in repositories} - {None}
+        ghprd = GitHubPullRequestDeployment
+        precursor_prs = await pdb.fetch_all(
+            sql.select([sql.distinct(ghprd.pull_request_id)])
+            .where(sql.and_(ghprd.acc_id == account,
+                            ghprd.repository_id.in_(repo_node_ids),
+                            ghprd.finished_at.between(time_from, time_to))))
+        precursor_prs = {r[0] for r in precursor_prs}
+        if pr_blacklist:
+            if isinstance(pr_blacklist, dict):
+                precursor_prs -= pr_blacklist.keys()
+            elif isinstance(pr_blacklist, set):
+                precursor_prs -= pr_blacklist
+            else:
+                precursor_prs -= set(pr_blacklist)
+        if not precursor_prs:
+            return pd.DataFrame()
+        prs, _ = await cls.fetch_prs(
+            None, time_to, repositories, participants, labels, jira,
+            False, None, PullRequest.node_id.in_(precursor_prs), branches, dags, account, meta_ids,
+            mdb, pdb, cache, updated_min=updated_min, updated_max=updated_max,
+            fetch_branch_dags_task=fetch_branch_dags_task)
+        return prs
+
     def __len__(self) -> int:
         """Return the number of loaded pull requests."""
         return len(self._dfs.prs)
@@ -1282,9 +1399,9 @@ class PullRequestMiner:
             if df.index.nlevels > 1:
                 # adding the second level is not really required but makes iteration deterministic
                 second_level = df.index.get_level_values(1).values
-                node_ids_bytes = node_ids.byteswap().view("S8")
+                node_ids_bytes = int_to_str(node_ids)
                 if second_level.dtype == int:
-                    order_keys = np.char.add(node_ids_bytes, second_level.byteswap().view("S8"))
+                    order_keys = np.char.add(node_ids_bytes, int_to_str(second_level))
                 else:
                     order_keys = np.char.add(node_ids_bytes, second_level.astype("S", copy=False))
             else:
@@ -1332,13 +1449,14 @@ class PullRequestMiner:
                         except StopIteration:
                             grouped_df_states[i] = None, None
                     else:
-                        if k.endswith("s"):
-                            try:
-                                items[k] = empty_df_cache[k]
-                            except KeyError:
-                                items[k] = empty_df_cache[k] = df.iloc[:0].copy()
-                        else:
-                            items[k] = {c: None for c in df.columns}
+                        try:
+                            items[k] = empty_df_cache[k]
+                        except KeyError:
+                            if k.endswith("s"):
+                                empty_val = df.iloc[:0].copy()
+                            else:
+                                empty_val = {c: None for c in df.columns}
+                            items[k] = empty_df_cache[k] = empty_val
                 yield MinedPullRequest(**items)
         finally:
             for df, index in zip(dfs, index_backup):

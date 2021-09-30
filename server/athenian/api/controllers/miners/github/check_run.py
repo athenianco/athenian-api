@@ -17,6 +17,7 @@ from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
 from athenian.api.db import DatabaseLike, ParallelDatabase
+from athenian.api.int_to_str import int_to_str
 from athenian.api.models.metadata.github import CheckRun, CheckRunByPR, NodePullRequest, \
     NodePullRequestCommit, \
     NodeRepository, PullRequestLabel
@@ -307,8 +308,7 @@ async def _disambiguate_pull_requests(df: pd.DataFrame,
         pr_node_ids[reset_indexes] = -1
         pr_node_ids[np.equal(pr_node_ids, None)] = -1
         pr_node_ids = pr_node_ids.astype(int, copy=False)
-        joint = np.char.add(check_run_node_ids.byteswap().view("S8"),
-                            pr_node_ids.byteswap().view("S8"))
+        joint = np.char.add(int_to_str(check_run_node_ids), int_to_str(pr_node_ids))
         order = np.argsort(joint)
         _, first_encounters = np.unique(check_run_node_ids[order], return_index=True)
         first_encounters = order[first_encounters]
@@ -459,7 +459,7 @@ def _merge_status_contexts(df: pd.DataFrame) -> None:
     no_finish_urls = df[CheckRun.url.name].values[no_finish].astype("S")
     no_finish_parents = \
         df[CheckRun.check_suite_node_id.name].values[no_finish].astype(int, copy=False)
-    no_finish_seeds = np.char.add(no_finish_parents.byteswap().view("S8"), no_finish_urls)
+    no_finish_seeds = np.char.add(int_to_str(no_finish_parents), no_finish_urls)
     _, first_encounters, indexes, counts = np.unique(
         no_finish_seeds, return_index=True, return_inverse=True, return_counts=True)
     indexes_original = np.argsort(indexes)

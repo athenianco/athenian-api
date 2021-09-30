@@ -622,8 +622,8 @@ class MetricEntriesCalculator:
         ]
         if exclude_inactive:
             precomputed_tasks.append(self.done_prs_facts_loader.load_precomputed_done_candidates(
-                time_from, time_to, repositories,
-                default_branches, release_settings, self._account, self._pdb))
+                time_from, time_to, repositories, default_branches, release_settings,
+                self._account, self._pdb))
             (precomputed_facts, _), blacklist = await gather(*precomputed_tasks)
         else:
             (precomputed_facts, _) = blacklist = await precomputed_tasks[0]

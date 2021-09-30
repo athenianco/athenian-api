@@ -501,7 +501,7 @@ class PreloadedPullRequestMiner(PullRequestMiner):
     @sentry_span
     async def _fetch_prs_by_filters(
         cls,
-        time_from: datetime,
+        time_from: Optional[datetime],
         time_to: datetime,
         repositories: Set[str],
         participants: PRParticipants,
@@ -547,11 +547,12 @@ class PreloadedPullRequestMiner(PullRequestMiner):
         df = mdb.cache.dfs[MCID.prs].get_dfs(meta_ids)
 
         mask = (
-            (~df[model.closed.name] | (df[model.closed_at.name] >= time_from))
-            & (df[model.created_at.name] < time_to)
+            (df[model.created_at.name] < time_to)
             & (df[model.acc_id.name].isin(meta_ids))
             & (df[model.repository_full_name.name].isin(repositories))
         )
+        if time_from is not None:
+            mask &= (~df[model.closed.name] | (df[model.closed_at.name] >= time_from))
 
         if pr_blacklist is not None:
             pr_blacklist = cls._prs_from_binary_expression(pr_blacklist)
