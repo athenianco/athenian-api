@@ -249,14 +249,6 @@ jobs:
         set -x
         export SLACK_API_TOKEN=
         godotenv -s pytest -n 4 $LIMIT --log-level=info --cov-report=xml --cov=athenian.api tests/controllers/test_metrics_controller.py  tests/controllers/test_histograms_controller.py tests/controllers/test_jira_controller.py
-    - name: test fat with preloading
-      if: matrix.type == 'fat-preloading'
-      working-directory: server
-      run: |
-        set -x
-        export WITH_PRELOADING=1
-        export SLACK_API_TOKEN=
-        godotenv -s pytest -n 4 $LIMIT --log-level=info --benchmark-skip --cov-report=xml --cov=athenian.api tests/controllers/test_metrics_controller.py tests/controllers/test_histograms_controller.py tests/controllers/miners
     - name: test heater
       if: matrix.type == 'heater'
       working-directory: server
