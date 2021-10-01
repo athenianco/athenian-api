@@ -37,23 +37,29 @@ The tokens are not saved anywhere and cannot be recovered.
 
 ### Broken authentication
 
-A hacker can break the existing authentication and forge the user.
+#### Threat
+A hacker breaks the existing authentication and forges the user.
 
+#### Mitigation
 We delegate the work with JWTs and API Keys to reliable partners - Auth0 and Google. Both mechanisms
 exclude brute force attacks. The code that parses JWTs is covered with an extensive test suite.
 
 ### Anonymous users access unauthorized accounts
 
-A user can make an API request, such as fetch information of a specific client or change their
+#### Threat
+A user makes an API request such as fetch information of a specific client or change their
 settings without authentication.
 
+#### Mitigation
 We allow anonymous access as *@gkwillie* but it is constrained to access Athenian dogfood account only.
 
 ### Authenticated users access unauthorized accounts
 
+#### Threat
 Endpoints in the `/filter` group return information about PRs, releases, JIRA issues in the user-supplied
-repositories.
+repositories. The user sends a repository belonging to a different client and reads the response.
 
+#### Mitigation
 We check whether the requesting user has access to each provided repository on all the endpoints.
 To avoid logic bugs in SQL when a buggy query returns data of unrelated accounts, we pin
 each and every row in every table in all our databases to the owner account and filter by it.
@@ -63,8 +69,10 @@ and act on behalf on any other account user. The list of users that can access `
 
 ### Confidential data disclosure
 
+#### Threat
 An anonymous or authorized user accesses the personal information of other users in external accounts.
 
+#### Mitigation
 `/account{id}/details` lists the members of the calling user's accounts. We check whether the caller
 may access the specified account ID.
 We don't store the personal information such as user full names or emails in any database that
@@ -72,14 +80,18 @@ the API server can directly access. The API works with personal information excl
 
 ### API leaks source code of the clients
 
-The hacker intrudes in the API server and is able to download the source code of the clients.
+#### Threat
+A hacker intrudes in the API server and is able to download the source code of the clients.
 
+#### Mitigation
 The API does not fetch the source code. It only stores Git metadata.
 
 ### API leaks infrastructure secrets
 
+#### Threat
 The API returns an error message that contains secret tokens, logins and passwords, internal URLs, etc.
 
+#### Mitigation
 The debug mode is disabled in production and the server never responds with a stack trace or error messages
 with secrets.
 We delete all the environment variables in the API server after it starts.
@@ -88,8 +100,10 @@ GitHub notifies us if we push a commit with hardcoded infrastructure secrets.
 
 ### SQL injections
 
-API has to process e.g. user-provided repository names that may contain SQL injection code.
+#### Threat
+API has to process e.g. user-provided repository names that contains SQL injection code and that code executes.
 
+#### Mitigation
 We don't insert user-provided text in plaintext SQL queries. The SQL composition bases on
 [SQLAlchemy](https://docs.sqlalchemy.org/) that performs all the required text sanitization and escaping.
 Request data validation executes automatically following the OpenAPI specification in
@@ -97,15 +111,19 @@ Request data validation executes automatically following the OpenAPI specificati
 
 ### Man in the middle
 
-Somebody who may intercept the HTTP traffic between the user and the API is able to read the responses.
+#### Threat
+Somebody who intercepts the HTTP traffic between the user and the API is able to read the API responses.
 
+#### Mitigation
 All interaction with the API happens through HTTPS. API talks to Auth0 and Google KMS through HTTPS.
 
 ### HTTP protocol and other low-level attacks
 
+#### Threat
 For example, [request smuggling](https://portswigger.net/research/http2#h2desync) through HTTP protocol
 downgrade.
 
+#### Mitigation
 API server bases on [`aiohttp`](https://docs.aiohttp.org/en/stable/) to serve HTTP.
 API server operates HTTP 1.1 that further upgrades to HTTP 2 by the [Google Load Balancer](https://cloud.google.com/load-balancing).
 We monitor the vulnerabilities both in `aiohttp` and Google LB and upgrade the packages as soon as
@@ -115,17 +133,21 @@ receive automated package upgrades from [dependabot](https://dependabot.com/).
 
 ### Arbitrary code execution
 
+#### Threat
 A malicious API request leads to arbitrary code execution on the server.
 
+#### Mitigation
 We have no `exec` and `eval` calls in the API except the ["manhole"](server/MANHOLE.md).
 The way Python works excludes the buffer overflow attacks.
 The API endpoints follow the strict schema and don't serve a custom query language or similar.
 
 ### Denial of Service
 
+#### Threat
 The user sends a request that leads to huge API workload and either makes the server unresponsive
 or restarts it.
 
+#### Mitigation
 We've seen three scenarios:
 
 1. Bad API request loads the DB and leads to global API DoS for all the users.
@@ -143,8 +165,10 @@ Measures taken:
 
 ### Missing an attack
 
+#### Threat
 When somebody hacks the API we never realize and let the attack continue.
 
+#### Mitigation
 We report API errors to [Sentry](https://sentry.io/),
 log to [Google Cloud Logging](https://cloud.google.com/logging),
 as well as monitor the server metrics in Prometheus and built-in Google Cloud
@@ -152,25 +176,31 @@ inspection. We have set up alerts on each critical metric and monitor them.
 
 ### Improper code management
 
+#### Threat
 We forget to update a legacy endpoint after a refactoring and it exposes data without proper
 authentication or security access checks.
 
+#### Mitigation
 The API is driven by the [OpenAPI specification](https://github.com/athenian/api-spec), and
 the coded endpoints satisfy it, instead of the specification being updated after code changes.
 That makes the mentioned situation nearly impossible.
 
 ### Deploying hacked code
 
+#### Threat
 We deploy a server that was previously hacked.
 
+#### Mitigation
 Checking access to API source code relies on GitHub. It is technically impossible to deploy a new
 API version without a review approval by somebody else in the engineering team. We maintain
 the built Docker images in [Google Container Registry](https://cloud.google.com/container-registry).
 
 ### Security audits
 
+#### Threat
 We forget to model an important threat and the server is vulnerable to another attack.
 
+#### Mitigation
 Athenian regularly undergoes external security audits and penetration tests.
 
 ## SLA
