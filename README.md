@@ -6,7 +6,7 @@ and is implemented in [aiohttp](https://github.com/aio-libs/aiohttp) (Python).
 
 ### Schema
 
-The API schema is [`spec/openapi.yaml`](spec/openapi.yaml). You can quickly view it in [editor.swagger.io](https://editor.swagger.io/).
+The API schema is [athenianco/api-spec](https://github.com/athenianco/api-spec). You can quickly view it in [editor.swagger.io](https://editor.swagger.io/) or at [api.athenian.co/v1/ui](https://api.athenian.co/v1/ui/).
 
 ### Server
 
@@ -15,6 +15,10 @@ See [`server/README.md`](server/README.md) for the info about how to launch the 
 ### Deployment
 
 See [`DEPLOYMENT.md`](DEPLOYMENT.md).
+
+### Security
+
+See [`SECURITY.md`](SECURITY.md).
 
 ### License
 
