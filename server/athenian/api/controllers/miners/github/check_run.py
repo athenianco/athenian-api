@@ -197,7 +197,7 @@ async def _disambiguate_pull_requests(df: pd.DataFrame,
         node_ids_group_counts = np.cumsum(node_id_counts)
         groups = np.array(np.split(node_ids_order, node_ids_group_counts[:-1]), dtype=object)
         groups = groups[ambiguous_unique_check_run_indexes]
-        unique_ambiguous_pr_node_ids = np.unique(pr_node_ids[np.concatenate(groups)])
+        unique_ambiguous_pr_node_ids = np.unique(pr_node_ids[np.concatenate(groups).astype(int)])
     else:
         unique_ambiguous_pr_node_ids = []
 
