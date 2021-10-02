@@ -1,7 +1,10 @@
 from datetime import datetime, timezone
 
+from pandas.testing import assert_frame_equal
+
 from athenian.api.controllers.features import entries
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.controllers.miners.types import PullRequestFacts
 from athenian.api.defer import wait_deferred, with_defer
 
 
@@ -16,10 +19,10 @@ async def test_fetch_pull_request_facts_unfresh_smoke(
         {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         False, release_match_setting_tag, prefixer_promise, False, False,
     )
+    facts_fresh.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
     await wait_deferred()
     assert len(facts_fresh) == 230
-    for f in facts_fresh:
-        assert f.repository_full_name == "src-d/go-git"
+    assert (facts_fresh["repository_full_name"] == "src-d/go-git").all()
     orig_threshold = entries.unfresh_prs_threshold
     entries.unfresh_prs_threshold = 1
     try:
@@ -29,8 +32,8 @@ async def test_fetch_pull_request_facts_unfresh_smoke(
             False, release_match_setting_tag, prefixer_promise, False, False,
         )
         assert len(facts_unfresh) == 230
-        for i, (fresh, unfresh) in enumerate(zip(sorted(facts_fresh), sorted(facts_unfresh))):
-            assert fresh == unfresh, i
+        facts_unfresh.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
+        assert_frame_equal(facts_fresh, facts_unfresh)
     finally:
         entries.unfresh_prs_threshold = orig_threshold
 
@@ -47,6 +50,7 @@ async def test_fetch_pull_request_facts_unfresh_labels(
         {"src-d/go-git"}, {}, label_filter, JIRAFilter.empty(),
         False, release_match_setting_tag, prefixer_promise, False, False,
     )
+    facts_fresh.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
     await wait_deferred()
     assert len(facts_fresh) == 6
     orig_threshold = entries.unfresh_prs_threshold
@@ -58,8 +62,8 @@ async def test_fetch_pull_request_facts_unfresh_labels(
             False, release_match_setting_tag, prefixer_promise, False, False,
         )
         assert len(facts_unfresh) == 6
-        for i, (fresh, unfresh) in enumerate(zip(sorted(facts_fresh), sorted(facts_unfresh))):
-            assert fresh == unfresh, i
+        facts_unfresh.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
+        assert_frame_equal(facts_fresh, facts_unfresh)
     finally:
         entries.unfresh_prs_threshold = orig_threshold
 
@@ -78,6 +82,7 @@ async def test_fetch_pull_request_facts_unfresh_jira(
     )
     await wait_deferred()
     assert len(facts_fresh) == 36
+    facts_fresh.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
     orig_threshold = entries.unfresh_prs_threshold
     entries.unfresh_prs_threshold = 1
     try:
@@ -87,7 +92,7 @@ async def test_fetch_pull_request_facts_unfresh_jira(
             False, release_match_setting_tag, prefixer_promise, False, False,
         )
         assert len(facts_unfresh) == 36
-        for i, (fresh, unfresh) in enumerate(zip(sorted(facts_fresh), sorted(facts_unfresh))):
-            assert fresh == unfresh, i
+        facts_unfresh.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
+        assert_frame_equal(facts_fresh, facts_unfresh)
     finally:
         entries.unfresh_prs_threshold = orig_threshold

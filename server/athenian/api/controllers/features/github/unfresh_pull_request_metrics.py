@@ -149,6 +149,9 @@ class UnfreshPullRequestFactsFetcher:
                     facts[pr].jira_ids = jira
                 except KeyError:
                     continue  # not all PRs may be precomputed
+        else:
+            for f in facts.values():
+                f.jira_ids = []
         cls.append_deployments(facts, pd.concat([unreleased_deps, released_deps]), cls._log)
         return facts
 

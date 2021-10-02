@@ -128,6 +128,7 @@ class PullRequestMiner:
                           PRParticipants,
                           LabelFilter,
                           JIRAFilter,
+                          bool,
                           Dict[str, ReleaseMatch],
                           asyncio.Event],
             date_to: date,
@@ -135,6 +136,7 @@ class PullRequestMiner:
             participants: PRParticipants,
             labels: LabelFilter,
             jira: JIRAFilter,
+            with_jira_map: bool,
             pr_blacklist: Optional[Tuple[Collection[int], Dict[str, List[int]]]],
             truncate: bool,
             **_) -> Tuple[PRDataFrames,
@@ -143,9 +145,13 @@ class PullRequestMiner:
                           PRParticipants,
                           LabelFilter,
                           JIRAFilter,
+                          bool,
                           Dict[str, ReleaseMatch],
                           asyncio.Event]:
-        dfs, _, cached_repositories, cached_participants, cached_labels, cached_jira, _, _ = result
+        dfs, _, cached_repositories, cached_participants, cached_labels, cached_jira, \
+            cached_with_jira_map, _, _ = result
+        if with_jira_map and not cached_with_jira_map:
+            raise CancelCache()
         cls = PullRequestMiner
         if (repositories - cached_repositories or
                 not cls._check_participants_compatibility(cached_participants, participants) or
@@ -188,6 +194,7 @@ class PullRequestMiner:
                     participants: PRParticipants,
                     labels: LabelFilter,
                     jira: JIRAFilter,
+                    with_jira_map: bool,
                     branches: pd.DataFrame,
                     default_branches: Dict[str, str],
                     exclude_inactive: bool,
@@ -209,6 +216,7 @@ class PullRequestMiner:
                                PRParticipants,
                                LabelFilter,
                                JIRAFilter,
+                               bool,
                                Dict[str, ReleaseMatch],
                                asyncio.Event]:
         assert isinstance(date_from, date) and not isinstance(date_from, datetime)
@@ -303,7 +311,8 @@ class PullRequestMiner:
             cls._mine_by_ids(
                 prs, unreleased[0].index if unreleased else [], time_to, releases, matched_bys,
                 branches, default_branches, release_dags, release_settings, prefixer,
-                account, meta_ids, mdb, pdb, rdb, cache, truncate=truncate),
+                account, meta_ids, mdb, pdb, rdb, cache,
+                truncate=truncate, with_jira=with_jira_map),
             OpenPRFactsLoader.load_open_pull_request_facts(prs, account, pdb),
         ]
         (dfs, unreleased_facts, unreleased_prs_event), open_facts = await gather(
@@ -321,7 +330,7 @@ class PullRequestMiner:
                 facts[k] = v
         # we don't care about the precomputed facts, they are here for the reference
 
-        return dfs, facts, repositories, participants, labels, jira, matched_bys, \
+        return dfs, facts, repositories, participants, labels, jira, with_jira_map, matched_bys, \
             unreleased_prs_event
 
     _deserialize_mine_cache = staticmethod(_deserialize_mine_cache)
@@ -505,7 +514,8 @@ class PullRequestMiner:
                 _issue.acc_id, _issue_epic.key.label("epic"),
             ]
             if not with_jira:
-                df = pd.DataFrame(columns=[col.name for col in selected])
+                df = pd.DataFrame(columns=[col.name for col in selected
+                                           if col not in (_issue.acc_id, _issue.components)])
                 df[PullRequest.node_id.name] = df[PullRequest.node_id.name].astype(int)
                 return df.set_index([PullRequest.node_id.name, _issue.key.name])
             df = await read_sql_query(
@@ -596,6 +606,7 @@ class PullRequestMiner:
                    participants: PRParticipants,
                    labels: LabelFilter,
                    jira: JIRAFilter,
+                   with_jira_map: bool,
                    branches: pd.DataFrame,
                    default_branches: Dict[str, str],
                    exclude_inactive: bool,
@@ -629,6 +640,8 @@ class PullRequestMiner:
                              (OR aggregation). An empty dict means everybody.
         :param labels: PRs must be labeled according to this filter's include & exclude sets.
         :param jira: JIRA filters for those PRs that are matched with JIRA issues.
+        :param with_jira_map: Value indicating whether we must load JIRA issues mapped to PRs. \
+                              This is independent from filtering PRs by `jira`.
         :param branches: Preloaded DataFrame with branches in the specified repositories.
         :param default_branches: Mapping from repository names to their default branch names.
         :param exclude_inactive: Ors must have at least one event in the given time frame.
@@ -654,8 +667,8 @@ class PullRequestMiner:
         date_to_with_time = datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc)
         assert time_from >= date_from_with_time
         assert time_to <= date_to_with_time
-        dfs, facts, _, _, _, _, matched_bys, event = await cls._mine(
-            date_from, date_to, repositories, participants, labels, jira, branches,
+        dfs, facts, _, _, _, _, _, matched_bys, event = await cls._mine(
+            date_from, date_to, repositories, participants, labels, jira, with_jira_map, branches,
             default_branches, exclude_inactive, release_settings, updated_min, updated_max,
             pr_blacklist, truncate, prefixer, account, meta_ids, mdb, pdb, rdb, cache)
         cls._truncate_prs(dfs, time_from, time_to)

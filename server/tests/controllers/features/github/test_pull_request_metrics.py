@@ -4,6 +4,7 @@ from typing import Sequence, Tuple
 
 import numpy as np
 import pandas as pd
+from pandas.testing import assert_frame_equal
 import pytest
 from sqlalchemy import select
 
@@ -375,7 +376,7 @@ async def test_calc_pull_request_metrics_line_github_cache_reset(
     if with_mine_cache_wipe:
         assert await pr_miner._mine.reset_cache(
             None, date_from, date_to, {"src-d/go-git"}, {}, LabelFilter.empty(),
-            JIRAFilter.empty(), branches, default_branches,
+            JIRAFilter.empty(), False, branches, default_branches,
             False, release_match_setting_tag, None, None, None, True,
             prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
     metrics2 = (
@@ -741,11 +742,13 @@ async def test_calc_pull_request_facts_github_open_precomputed(
             LabelFilter.empty(), JIRAFilter.empty(),
             False, release_match_setting_tag, prefixer_promise, False, False)
     facts1 = await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
+    facts1.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
     await wait_deferred()
     open_facts = await pdb.fetch_all(select([GitHubOpenPullRequestFacts]))
     assert len(open_facts) == 21
     facts2 = await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
-    assert set(facts1) == set(facts2)
+    facts2.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
+    assert_frame_equal(facts1, facts2)
 
 
 @with_defer
@@ -758,6 +761,7 @@ async def test_calc_pull_request_facts_github_unreleased_precomputed(
             LabelFilter.empty(), JIRAFilter.empty(),
             False, release_match_setting_tag, prefixer_promise, False, False)
     facts1 = await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
+    facts1.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
     await wait_deferred()
     unreleased_facts = await pdb.fetch_all(select([GitHubMergedPullRequestFacts]))
     assert len(unreleased_facts) == 2
@@ -765,7 +769,8 @@ async def test_calc_pull_request_facts_github_unreleased_precomputed(
         assert row[GitHubMergedPullRequestFacts.data.name] is not None, \
             row[GitHubMergedPullRequestFacts.pr_node_id.name]
     facts2 = await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
-    assert set(facts1) == set(facts2)
+    facts2.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
+    assert_frame_equal(facts1, facts2)
 
 
 @with_defer
@@ -781,19 +786,19 @@ async def test_calc_pull_request_facts_github_jira(
             False, release_match_setting_tag, prefixer_promise, False, False]
     facts = await metrics_calculator.calc_pull_request_facts_github(*args)
     await wait_deferred()
-    assert sum(bool(f.released) for f in facts) == 234
+    assert facts[PullRequestFacts.f.released].notnull().sum() == 234
     args[5] = JIRAFilter(1, ["10003", "10009"], LabelFilter({"performance", "task"}, set()),
                          set(), set(), False)
     facts = await metrics_calculator.calc_pull_request_facts_github(*args)
-    assert sum(bool(f.released) for f in facts) == 16
+    assert facts[PullRequestFacts.f.released].notnull().sum() == 16
 
     args[5] = JIRAFilter.empty()
     args[-1] = True
     facts = await metrics_calculator.calc_pull_request_facts_github(*args)
-    assert sum(bool(f.jira_ids) for f in facts) == 60
+    assert facts[PullRequestFacts.f.jira_ids].astype(bool).sum() == 60
     await wait_deferred()
     facts = await metrics_calculator_cache_only.calc_pull_request_facts_github(*args)
-    assert sum(bool(f.jira_ids) for f in facts) == 60
+    assert facts[PullRequestFacts.f.jira_ids].astype(bool).sum() == 60
 
 
 def test_size_calculator_shift_log():
@@ -880,8 +885,7 @@ async def real_pr_samples(release_match_setting_tag,
     args = (time_from, time_to, {"src-d/go-git"}, {},
             LabelFilter.empty(), JIRAFilter.empty(),
             False, release_match_setting_tag, prefixer_promise, False, False)
-    facts = await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
-    samples = df_from_structs(facts)
+    samples = await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
     return time_from, time_to, samples
 
 
