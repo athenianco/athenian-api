@@ -306,6 +306,10 @@ async def fetch_jira_issues(installation_ids: Tuple[int, List[str]],
     issues[ISSUE_PRS_RELEASED] = released
     issues[ISSUE_PRS_COUNT] = prs_count
     issues[ISSUE_PR_IDS] = issue_prs
+    if (negative := issues[Issue.resolved.name].values < issues[Issue.created.name].values).any():
+        log.error("JIRA issues have resolved < created: %s",
+                  issues.index.values[negative].tolist())
+        issues[Issue.resolved.name].values[negative] = issues[Issue.created.name].values[negative]
     return issues
 
 
