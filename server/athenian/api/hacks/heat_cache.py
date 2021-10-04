@@ -35,6 +35,7 @@ from athenian.api.controllers.miners.github.deployment import mine_deployments
 from athenian.api.controllers.miners.github.precomputed_prs import \
     delete_force_push_dropped_prs
 from athenian.api.controllers.miners.github.release_mine import mine_releases
+from athenian.api.controllers.miners.types import PullRequestFacts
 from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
 from athenian.api.controllers.reposet import load_account_state
 from athenian.api.controllers.settings import ReleaseMatch, Settings
@@ -224,9 +225,12 @@ def main():
                 )
                 if not reposet.precomputed and slack is not None:
                     prs = len(facts)
-                    prs_done = sum(f.done for f in facts)
-                    prs_merged = sum((not f.done and f.merged is not None) for f in facts)
-                    prs_open = sum((f.closed is None) for f in facts)
+                    prs_done = facts[PullRequestFacts.f.done].sum()
+                    prs_merged = (
+                        facts[PullRequestFacts.f.merged].notnull()
+                        & ~facts[PullRequestFacts.f.done]
+                    ).sum()
+                    prs_open = facts[PullRequestFacts.f.closed].isnull().sum()
                 del facts  # free some memory
                 log.info("Mining deployments")
                 prefixer = await prefixer.load()

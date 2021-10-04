@@ -642,7 +642,7 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
     tasks = (
         PullRequestMiner.mine(
             date_from, date_to, time_from, time_to, repos, participants,
-            labels, jira, branches, default_branches, exclude_inactive, release_settings,
+            labels, jira, True, branches, default_branches, exclude_inactive, release_settings,
             prefixer, account, meta_ids, mdb, pdb, rdb, cache,
             truncate=False, updated_min=updated_min, updated_max=updated_max),
         DonePRFactsLoader.load_precomputed_done_facts_filters(

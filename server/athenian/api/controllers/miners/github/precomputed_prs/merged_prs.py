@@ -147,6 +147,7 @@ class MergedPRFactsLoader:
             include_multiples = [set(m) for m in include_multiples]
         facts = {}
         user_node_map_get = (await prefixer.load()).user_node_to_login.get
+        missing_facts = []
         for row in rows:
             if exclude_inactive and not postgres and not row["deployed"]:
                 activity_days = {datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc)
@@ -161,7 +162,7 @@ class MergedPRFactsLoader:
                 #    merged PR is matched to releases but exists in
                 #    `github_done_pull_request_facts`.
                 # 2. "Impossible" PRs that are merged.
-                log.warning("No precomputed facts for merged %s", node_id)
+                missing_facts.append(node_id)
                 continue
             if labels and not labels_are_compatible(
                     include_singles, include_multiples, labels.exclude, row[ghmprf.labels.name]):
@@ -171,6 +172,8 @@ class MergedPRFactsLoader:
                 repository_full_name=row[ghmprf.repository_full_name.name],
                 author=user_node_map_get(row[ghmprf.author.name]),
                 merger=user_node_map_get(row[ghmprf.merger.name]))
+        if missing_facts:
+            log.warning("No precomputed facts for merged %s", missing_facts)
         return facts
 
     @classmethod

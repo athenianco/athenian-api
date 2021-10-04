@@ -161,6 +161,7 @@ async def test_map_prs_to_releases_precomputed_released(
         {},
         LabelFilter.empty(),
         JIRAFilter.empty(),
+        False,
         branches, default_branches,
         False,
         release_match_setting_tag,

@@ -178,10 +178,9 @@ class MetricEntriesCalculator:
             metrics, quantiles, self._quantile_stride, exclude_inactive=exclude_inactive,
             environments=environments)
         time_from, time_to = self._align_time_min_max(time_intervals, quantiles)
-        mined_facts = await self.calc_pull_request_facts_github(
+        df_facts = await self.calc_pull_request_facts_github(
             time_from, time_to, all_repositories, all_participants, labels, jira, exclude_inactive,
             release_settings, prefixer, fresh, need_jira_mapping(metrics))
-        df_facts = df_from_structs(mined_facts)
         lines_grouper = partial(group_by_lines, lines)
         repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.name, repositories)
         with_grouper = partial(group_prs_by_participants, participants)
@@ -236,11 +235,10 @@ class MetricEntriesCalculator:
                 defs.values(), quantiles, environments=[environment])
         except KeyError as e:
             raise ValueError("Unsupported metric") from e
-        mined_facts = await self.calc_pull_request_facts_github(
+        df_facts = await self.calc_pull_request_facts_github(
             time_from, time_to, all_repositories, all_participants, labels, jira,
             exclude_inactive, release_settings, prefixer,
             fresh, False)
-        df_facts = df_from_structs(mined_facts)
         lines_grouper = partial(group_by_lines, lines)
         repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.name, repositories)
         with_grouper = partial(group_prs_by_participants, participants)
@@ -548,7 +546,7 @@ class MetricEntriesCalculator:
                                              with_jira_map: bool,
                                              branches: Optional[pd.DataFrame] = None,
                                              default_branches: Optional[Dict[str, str]] = None,
-                                             ) -> List[PullRequestFacts]:
+                                             ) -> pd.DataFrame:
         """
         Calculate facts about pull request on GitHub.
 
@@ -557,7 +555,7 @@ class MetricEntriesCalculator:
         :param exclude_inactive: Do not load PRs without events between `time_from` and `time_to`.
         :param fresh: If the number of done PRs for the time period and filters exceeds \
                       `unfresh_mode_threshold`, force querying mdb instead of pdb only.
-        :return: Map repository name -> list of PR facts.
+        :return: PullRequestFacts packed in a Pandas DataFrame.
         """
         return (await self._calc_pull_request_facts_github(
             time_from,
@@ -610,7 +608,7 @@ class MetricEntriesCalculator:
                                               with_jira_map: bool,
                                               branches: Optional[pd.DataFrame],
                                               default_branches: Optional[Dict[str, str]],
-                                              ) -> Tuple[List[PullRequestFacts], bool]:
+                                              ) -> Tuple[pd.DataFrame, bool]:
         assert isinstance(repositories, set)
         if branches is None or default_branches is None:
             branches, default_branches = await self.branch_miner.extract_branches(
@@ -642,7 +640,7 @@ class MetricEntriesCalculator:
                 exclude_inactive, branches, default_branches, release_settings, prefixer,
                 self._account, self._meta_ids,
                 self._mdb, self._pdb, self._rdb, self._cache)
-            return list(facts.values()), with_jira_map
+            return df_from_structs(facts.values()), with_jira_map
 
         if with_jira_map:
             # schedule loading the PR->JIRA mapping
@@ -663,9 +661,9 @@ class MetricEntriesCalculator:
         tasks = [
             self.pr_miner.mine(
                 date_from, date_to, time_from, time_to, repositories, participants,
-                labels, jira, branches, default_branches, exclude_inactive, release_settings,
-                prefixer, self._account, self._meta_ids, self._mdb, self._pdb, self._rdb,
-                self._cache, pr_blacklist=blacklist),
+                labels, jira, with_jira_map, branches, default_branches, exclude_inactive,
+                release_settings, prefixer, self._account, self._meta_ids,
+                self._mdb, self._pdb, self._rdb, self._cache, pr_blacklist=blacklist),
         ]
         if jira and precomputed_facts:
             tasks.append(self.pr_miner.filter_jira(
@@ -743,10 +741,15 @@ class MetricEntriesCalculator:
                     f.jira_ids = [jira_key]
                 else:
                     f.jira_ids.append(jira_key)
+        else:
+            for f in precomputed_facts.values():
+                f.jira_ids = []
         self.unfresh_pr_facts_fetcher.append_deployments(
             precomputed_facts, pd.concat([done_deps, new_deps]), self._log)
-        all_facts = list(chain(precomputed_facts.values(), mined_facts.values()))
-        return all_facts, with_jira_map
+        all_facts_iter = chain(precomputed_facts.values(), mined_facts.values())
+        all_facts_df = df_from_structs(
+            all_facts_iter, length=len(precomputed_facts) + len(mined_facts))
+        return all_facts_df, with_jira_map
 
 
 def _merge_repositories_and_participants(repositories: Sequence[Collection[str]],
