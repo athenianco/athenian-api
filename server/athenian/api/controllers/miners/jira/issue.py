@@ -306,10 +306,13 @@ async def fetch_jira_issues(installation_ids: Tuple[int, List[str]],
     issues[ISSUE_PRS_RELEASED] = released
     issues[ISSUE_PRS_COUNT] = prs_count
     issues[ISSUE_PR_IDS] = issue_prs
-    if (negative := issues[Issue.resolved.name].values < issues[Issue.created.name].values).any():
+    resolved_colname = AthenianIssue.resolved.name
+    created_colname = Issue.created.name
+    issues[resolved_colname] = issues[resolved_colname].astype(issues[created_colname].dtype)
+    if (negative := issues[resolved_colname].values < issues[created_colname].values).any():
         log.error("JIRA issues have resolved < created: %s",
                   issues.index.values[negative].tolist())
-        issues[Issue.resolved.name].values[negative] = issues[Issue.created.name].values[negative]
+        issues[resolved_colname].values[negative] = issues[created_colname].values[negative]
     return issues
 
 
