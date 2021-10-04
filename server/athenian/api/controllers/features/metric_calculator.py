@@ -330,7 +330,7 @@ class AverageMetricCalculator(MetricCalculator[T], ABC):
             zero = samples.dtype.type(0)
             negative = np.nonzero(samples < zero)[0]
             try:
-                assert len(negative) == 0, (samples[negative], negative)
+                assert len(negative) == 0, (samples[negative], negative, type(self).__name__)
             except AssertionError as e:
                 if sentry_sdk.Hub.current.scope.transaction is not None:
                     sentry_sdk.capture_exception(e)
