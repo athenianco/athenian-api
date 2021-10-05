@@ -33,8 +33,8 @@ async def sample_deployments(rdb):
         (2018, 12, 2, "SUCCESS", "4.8.1", 2755046),
         (2018, 8, 1, "SUCCESS", "4.5.0", 2755028),
         (2016, 12, 1, "SUCCESS", "3.2.0", 2755108),
-        (2018, 1, 12, "SUCCESS", "4.0.0", 2757510),
-        (2018, 1, 11, "FAILURE", "4.0.0", 2757510),
+        (2018, 1, 12, "FAILURE", "4.0.0", 2757510),
+        (2018, 1, 11, "SUCCESS", "4.0.0", 2757510),
         (2018, 1, 10, "FAILURE", "4.0.0", 2757510),
         (2016, 7, 6, "SUCCESS", "3.1.0", 2756224),
     ):
@@ -87,7 +87,23 @@ async def test_extract_pr_commits_fixture():
     extract_pr_commits(*args)
 
 
-async def test_extract_independent_ownership(dag):
+async def test_extract_independent_ownership_no_stops(dag):
+    dag = dag["src-d/go-git"]
+    stops = np.empty(4, dtype=object)
+    stops.fill([])
+    ownership = extract_independent_ownership(*dag, np.array([
+        b"b65d94e70ea1d013f43234522fa092168e4f1041",
+        b"3713157d189a109bdccdb055200defb17297b6de",
+        b"c088fd6a7e1a38e9d5a9815265cb575bb08d08ff",
+        b"0000000000000000000000000000000000000000",
+    ], dtype="S40"), stops)
+    assert len(ownership[0]) == 443
+    assert len(ownership[1]) == 603
+    assert len(ownership[2]) == 3
+    assert len(ownership[3]) == 0
+
+
+async def test_extract_independent_ownership_smoke(dag):
     dag = dag["src-d/go-git"]
     ownership = extract_independent_ownership(*dag, np.array([
         b"b65d94e70ea1d013f43234522fa092168e4f1041",
@@ -95,10 +111,10 @@ async def test_extract_independent_ownership(dag):
         b"c088fd6a7e1a38e9d5a9815265cb575bb08d08ff",
         b"0000000000000000000000000000000000000000",
     ], dtype="S40"), np.array([
-        b"431af32445562b389397f3ee7af90bf61455fff1",
-        b"e80cdbabb92a1ec35ffad536f52d3ff04b548fd1",
-        b"0000000000000000000000000000000000000000",
-        b"c088fd6a7e1a38e9d5a9815265cb575bb08d08ff",
+        [b"431af32445562b389397f3ee7af90bf61455fff1"],
+        [b"e80cdbabb92a1ec35ffad536f52d3ff04b548fd1"],
+        [b"0000000000000000000000000000000000000000"],
+        [b"c088fd6a7e1a38e9d5a9815265cb575bb08d08ff"],
     ], dtype="S40"))
     assert ownership[3].tolist() == []
     assert set(ownership[2]) == {
@@ -131,6 +147,74 @@ async def test_extract_independent_ownership(dag):
     ).tolist() == []
 
 
+def _validate_deployments(deps, count, with_2016):
+    assert len(deps) == count * 2
+    for env in ("staging", "production"):
+        assert deps.loc[f"{env}_2018_01_11"]["conclusion"] == "SUCCESS"
+        assert deps.loc[f"{env}_2018_01_12"]["conclusion"] == "FAILURE"
+    assert (deps["environment"] == "production").sum() == count
+    assert (deps["environment"] == "staging").sum() == count
+    components = deps["components"]
+    for c in components:
+        assert len(c) == 1
+        assert c.iloc[0]["repository_node_id"] == 40550
+        assert c.iloc[0]["resolved_commit_node_id"] > 0
+    assert components["production_2018_01_11"].iloc[0]["reference"] == "4.0.0"
+    assert components["staging_2018_01_11"].iloc[0]["reference"] == "4.0.0"
+    commits_overall = deps["commits_overall"]
+    if with_2016:
+        assert commits_overall["production_2016_07_06"] == [168]
+        assert commits_overall["production_2016_12_01"] == [14]
+    assert commits_overall["production_2018_01_10"] == [832]
+    assert commits_overall["production_2018_01_11"] == [832]
+    assert commits_overall["production_2018_01_12"] == [0]
+    assert commits_overall["production_2018_08_01"] == [122]
+    assert commits_overall["production_2018_12_01"] == [198]
+    assert commits_overall["production_2018_12_02"] == [0]
+    assert commits_overall["production_2019_11_01"] == [176]
+    pdeps = deps[deps["environment"] == "production"].copy()
+    releases = pdeps["releases"]
+    if with_2016:
+        assert set(releases["production_2016_07_06"]["tag"]) == {
+            "v2.2.0", "v3.1.0", "v3.0.3", "v3.0.1", "v1.0.0", "v3.0.2", "v3.0.4", "v2.1.1",
+            "v2.0.0", "v3.0.0", "v2.1.2", "v2.1.3", "v2.1.0",
+        }
+        assert set(releases["production_2016_12_01"]["tag"]) == {"v3.2.0", "v3.1.1"}
+    assert set(releases["production_2018_01_10"]["tag"]) == {
+        "v4.0.0-rc10", "v4.0.0-rc1", "v4.0.0-rc6", "v4.0.0-rc8", "v4.0.0-rc7", "v4.0.0-rc9",
+        "v4.0.0", "v4.0.0-rc13", "v4.0.0-rc2", "v4.0.0-rc12", "v4.0.0-rc14", "v4.0.0-rc15",
+        "v4.0.0-rc3", "v4.0.0-rc5", "v4.0.0-rc4", "v4.0.0-rc11",
+    }
+    assert set(releases["production_2018_01_11"]["tag"]) == {
+        "v4.0.0-rc10", "v4.0.0-rc1", "v4.0.0-rc6", "v4.0.0-rc8", "v4.0.0-rc7", "v4.0.0-rc9",
+        "v4.0.0", "v4.0.0-rc13", "v4.0.0-rc2", "v4.0.0-rc12", "v4.0.0-rc14", "v4.0.0-rc15",
+        "v4.0.0-rc3", "v4.0.0-rc5", "v4.0.0-rc4", "v4.0.0-rc11",
+    }
+    assert releases["production_2018_01_12"].empty
+    assert set(releases["production_2018_08_01"]["tag"]) == {
+        "v4.3.1", "v4.5.0", "v4.4.0", "v4.3.0", "v4.2.0", "v4.4.1", "v4.2.1", "v4.1.0", "v4.1.1",
+    }
+    assert set(releases["production_2018_12_01"]["tag"]) == {
+        "v4.7.1", "v4.6.0", "v4.8.0", "v4.8.1", "v4.7.0",
+    }
+    assert releases["production_2018_12_02"].empty
+    assert set(releases["production_2019_11_01"]["tag"]) == {
+        "v4.13.0", "v4.12.0", "v4.13.1", "v4.9.0", "v4.9.1", "v4.11.0", "v4.10.0",
+    }
+    del pdeps["environment"]
+    pdeps.sort_index(inplace=True)
+    pdeps.reset_index(drop=True, inplace=True)
+    sdeps = deps[deps["environment"] == "staging"].copy()
+    del sdeps["environment"]
+    sdeps.sort_index(inplace=True)
+    sdeps.reset_index(drop=True, inplace=True)
+    for pdf, sdf in zip(pdeps["releases"].values, sdeps["releases"].values):
+        assert_frame_equal(pdf, sdf)
+    del pdeps["releases"]
+    del sdeps["releases"]
+    assert_frame_equal(pdeps, sdeps)
+
+
 @with_defer
 async def test_mine_deployments_from_scratch(
         sample_deployments, release_match_setting_tag_or_branch, branches, default_branches,
@@ -152,21 +236,31 @@ async def test_mine_deployments_from_scratch(
         release_match_setting_tag_or_branch,
         branches, default_branches, prefixer_promise,
         1, (6366825,), mdb, pdb, rdb, cache)
-    assert len(deps) == 9 * 2
-    pdeps = deps[deps["environment"] == "production"].copy()
-    del pdeps["environment"]
-    pdeps.sort_index(inplace=True)
-    pdeps.reset_index(drop=True, inplace=True)
-    sdeps = deps[deps["environment"] == "staging"].copy()
-    del sdeps["environment"]
-    sdeps.sort_index(inplace=True)
-    sdeps.reset_index(drop=True, inplace=True)
-    for pdf, sdf in zip(pdeps["releases"].values, sdeps["releases"].values):
-        assert_frame_equal(pdf, sdf)
-    assert sum(len(df) for df in pdeps["releases"].values) == 82
-    del pdeps["releases"]
-    del sdeps["releases"]
-    assert_frame_equal(pdeps, sdeps)
+    _validate_deployments(deps, 9, True)
+
+
+@with_defer
+async def test_mine_deployments_middle(
+        sample_deployments, release_match_setting_tag_or_branch, branches, default_branches,
+        prefixer_promise, mdb, pdb, rdb, cache):
+    time_from = datetime(2017, 1, 1, tzinfo=timezone.utc)
+    time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    await mine_releases(
+        ["src-d/go-git"], {}, branches, default_branches, time_from, time_to,
+        LabelFilter.empty(), JIRAFilter.empty(), release_match_setting_tag_or_branch,
+        prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None, with_avatars=False,
+        with_pr_titles=False, with_deployments=False,
+    )
+    await wait_deferred()
+    deps, people = await mine_deployments(
+        [40550], {},
+        time_from, time_to,
+        ["production", "staging"],
+        [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        release_match_setting_tag_or_branch,
+        branches, default_branches, prefixer_promise,
+        1, (6366825,), mdb, pdb, rdb, cache)
+    _validate_deployments(deps, 7, False)
 
 
 @with_defer
@@ -1324,7 +1418,7 @@ async def test_mine_deployments_precomputed_sample(
         assert len(rel1) == len(rel2)
         assert (rel1.index.values == rel2.index.values).all()
         lensum += len(rel1)
-    assert lensum == 82 * 2
+    assert lensum == 68 * 2
     del deps1["releases"]
     del deps2["releases"]
     assert_frame_equal(deps1, deps2)
