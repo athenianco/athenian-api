@@ -353,10 +353,12 @@ async def _mine_releases(repos: Iterable[str],
 
                     my_commit_authors = np.unique(my_commit_authors[my_commit_authors > 0])
                     mentioned_authors.update(my_commit_authors)
-                    parent = parents[i]
-                    if parent < len(repo_releases):
-                        my_age = \
-                            my_published_at - repo_releases[Release.published_at.name]._ixs(parent)
+                    my_parents = parents[i]
+                    if len(my_parents):
+                        my_age = (
+                            my_published_at
+                            - repo_releases[Release.published_at.name]._ixs(my_parents[0])
+                        )
                     else:
                         my_age = my_published_at - first_commit_dates[repo]
                     if my_author is not None:

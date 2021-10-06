@@ -3,8 +3,10 @@
 # distutils: language = c++
 
 cimport cython
-from libc.stdint cimport int8_t, uint32_t, int64_t, uint64_t
+from cython.operator cimport dereference
+from libc.stdint cimport int8_t, int32_t, uint32_t, int64_t, uint64_t
 from libc.string cimport memset
+from libcpp cimport bool
 from libcpp.vector cimport vector
 import numpy as np
 from typing import Any, List, Optional, Sequence, Tuple
@@ -21,6 +23,7 @@ def extract_subdag(hashes: np.ndarray,
                    edges: np.ndarray,
                    heads: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     assert len(vertexes) == len(hashes) + 1
+    assert heads.dtype.char == "S"
     if len(hashes) == 0:
         return hashes, vertexes, edges
     if len(heads):
@@ -29,11 +32,11 @@ def extract_subdag(hashes: np.ndarray,
         existing_heads = existing_heads[hashes[existing_heads] == heads].astype(np.uint32)
     else:
         existing_heads = np.array([], dtype=np.uint32)
-    left_vertexes_map = np.zeros_like(vertexes, shape=len(hashes))
+    left_vertexes_map = np.zeros_like(vertexes)
     left_vertexes = np.zeros_like(vertexes)
     left_edges = np.zeros_like(edges)
     left_count = _extract_subdag(
-        vertexes, edges, existing_heads, left_vertexes_map, left_vertexes, left_edges)
+        vertexes, edges, existing_heads, left_vertexes_map, left_vertexes, left_edges, False)
     left_hashes = hashes[left_vertexes_map[:left_count]]
     left_vertexes = left_vertexes[:left_count + 1]
     left_edges = left_edges[:left_vertexes[left_count]]
@@ -47,7 +50,8 @@ cdef uint32_t _extract_subdag(const uint32_t[:] vertexes,
                               const uint32_t[:] heads,
                               uint32_t[:] left_vertexes_map,
                               uint32_t[:] left_vertexes,
-                              uint32_t[:] left_edges) nogil:
+                              uint32_t[:] left_edges,
+                              bool only_map) nogil:
     cdef vector[uint32_t] boilerplate
     boilerplate.reserve(max(1, len(edges) - len(vertexes) + 1))
     cdef uint32_t i, j, head, peek, edge
@@ -64,12 +68,15 @@ cdef uint32_t _extract_subdag(const uint32_t[:] vertexes,
                 edge = edges[j]
                 if not left_vertexes_map[edge]:
                     boilerplate.push_back(edge)
+    if only_map:
+        return 0
     # compress the vertex index mapping
     cdef uint32_t left_count = 0, edge_index, v
     for i in range(len(left_vertexes_map)):
         if left_vertexes_map[i]:
             left_vertexes_map[i] = left_count + 1  # disambiguate 0, become 1-based indexed
             left_count += 1
+    # len(left_vertexes) == 0 means we don't care about the extracted edges
     if len(left_vertexes) > 0:
         # rebuild the edges
         edge_index = 0
@@ -143,7 +150,7 @@ def join_dags(hashes: np.ndarray,
     if len(hashes) > 0:
         found_matches += np.arange(len(found_matches))
     _recalculate_vertices_and_edges(
-        found_matches, vertexes, edges, new_edges_lists, old_vertex_map,
+        found_matches, vertexes, edges, &new_edges_lists, old_vertex_map,
         result_vertexes, result_edges)
     return result_hashes, result_vertexes, result_edges
 
@@ -153,7 +160,7 @@ def join_dags(hashes: np.ndarray,
 cdef void _recalculate_vertices_and_edges(const int64_t[:] found_matches,
                                           const uint32_t[:] vertexes,
                                           const uint32_t[:] edges,
-                                          vector[vector[Edge]] new_edges_lists,
+                                          const vector[vector[Edge]] *new_edges_lists,
                                           uint32_t[:] old_vertex_map,
                                           uint32_t[:] result_vertexes,
                                           uint32_t[:] result_edges) nogil:
@@ -181,10 +188,10 @@ cdef void _recalculate_vertices_and_edges(const int64_t[:] found_matches,
             pos += offset
             old_edge_i += 1
         else:
-            new_edge_list = &new_edges_lists[new_edge_i]
+            new_edge_list = &dereference(new_edges_lists)[new_edge_i]
             list_size = new_edge_list.size()
             for j in range(list_size):
-                edge = new_edge_list.at(j)
+                edge = dereference(new_edge_list)[j]
                 result_edges[pos + edge.position] = edge.vertex
             pos += list_size
             new_edge_i += 1
@@ -195,20 +202,78 @@ def mark_dag_access(hashes: np.ndarray,
                     vertexes: np.ndarray,
                     edges: np.ndarray,
                     heads: np.ndarray) -> np.ndarray:
-    if len(hashes) == 0:
-        return np.array([], dtype=int)
-    # we cannot sort heads because the order is important
+    """
+    Find the earliest parent from `heads` for each commit in `hashes`.
+
+    The `heads` must be sorted by commit timestamp in descending order. Thus `heads[0]` \
+    must be the latest commit. We still sort `heads` topologically but it helps to resolve \
+    the ambiguities when there are several earliest parent options.
+
+    :return: Indexes in `heads`, *not vertexes*.
+    """
+    if len(hashes) == 0 or len(heads) == 0:
+        return np.array([], dtype=np.int64)
+    assert heads.dtype.char == "S"
+    # we cannot sort heads because the order is important - we return the original indexes
+    size = len(heads)
     existing_heads = searchsorted_inrange(hashes, heads)
-    missing_flag = len(heads)  # mark unmatched commits with this value
-    if len(heads):
-        flags = np.nonzero(hashes[existing_heads] == heads)[0]
-        heads = existing_heads[flags].astype(np.uint32)
-    else:
-        flags = np.array([], dtype=int)
-        heads = np.array([], dtype=np.uint32)
-    marked = np.full(len(hashes), missing_flag, np.int64)
-    _mark_dag_access(vertexes, edges, heads, flags, missing_flag, marked)
-    return marked
+    matched = hashes[existing_heads] == heads
+    head_vertexes = np.full(size + 1, len(vertexes), np.uint32)
+    head_vertexes[:-1][matched] = existing_heads[matched]
+    heads = head_vertexes
+    del head_vertexes
+    access = np.full(len(vertexes), size, np.int32)
+    if not matched.any():
+        return access
+    order = np.full(size, size, np.int32)
+    _toposort(vertexes, edges, heads[:-1], order)
+    _mark_dag_access(vertexes, edges, heads[order], order, access)
+    return access[:-1]  # len(vertexes) = len(hashes) + 1
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef void _toposort(const uint32_t[:] vertexes,
+                    const uint32_t[:] edges,
+                    const uint32_t[:] heads,
+                    int32_t[:] order,
+                    ) nogil:
+    """Topological sort of `heads`. The order is reversed!"""
+    cdef vector[uint32_t] boilerplate
+    boilerplate.reserve(max(1, len(edges) - len(vertexes) + 1))
+    cdef vector[int32_t] visited = vector[int32_t](len(vertexes))
+    cdef uint32_t j, head, peek, edge, missing = len(vertexes)
+    cdef int64_t i, order_pos = 0
+    cdef int32_t status, size = len(heads), vv = size + 1
+    for i in range(len(heads)):
+        head = heads[i]
+        if head == missing:
+            continue
+        visited[head] = i - size  # fused head marks in `visited`  array
+    # heads, unvisited -> -len(heads), ..., -2, -1
+    # normal vertexes, unvisited -> 0
+    # heads, visited -> 1, 2, ..., len(heads)
+    # normal vertexes, visited -> len(heads) + 1
+    for i in range(len(heads) - 1, -1, -1):  # reverse order is release-friendly
+        head = heads[i]
+        if head == missing:
+            continue
+        boilerplate.push_back(head)
+        while not boilerplate.empty():
+            peek = boilerplate.back()
+            status = visited[peek]
+            if status > 0:
+                boilerplate.pop_back()
+                if status < vv:
+                    order[order_pos] = status - 1
+                    order_pos += 1
+                    visited[peek] = vv
+                continue
+            visited[peek] += vv
+            for j in range(vertexes[peek], vertexes[peek + 1]):
+                edge = edges[j]
+                if visited[edge] <= 0:
+                    boilerplate.push_back(edge)
 
 
 @cython.boundscheck(False)
@@ -216,26 +281,28 @@ def mark_dag_access(hashes: np.ndarray,
 cdef void _mark_dag_access(const uint32_t[:] vertexes,
                            const uint32_t[:] edges,
                            const uint32_t[:] heads,
-                           const int64_t[:] flags,
-                           int64_t missing_flag,
-                           int64_t[:] marked) nogil:
+                           const int32_t[:] order,
+                           int32_t[:] access) nogil:
     cdef vector[uint32_t] boilerplate
     boilerplate.reserve(max(1, len(edges) - len(vertexes) + 1))
-    cdef uint32_t j, head, peek, edge
-    cdef int64_t i, flag
-    for i in range(len(heads) - 1, -1, -1):
+    cdef uint32_t j, head, peek, edge, missing = len(vertexes)
+    cdef int64_t i, original_index
+    cdef int32_t size = len(heads)
+    for i in range(size):
         head = heads[i]
-        flag = flags[i]
+        if head == missing:
+            continue
+        original_index = order[i]
         boilerplate.push_back(head)
         while not boilerplate.empty():
             peek = boilerplate.back()
             boilerplate.pop_back()
-            if marked[peek] != missing_flag:
+            if access[peek] < size:
                 continue
-            marked[peek] = flag
+            access[peek] = original_index
             for j in range(vertexes[peek], vertexes[peek + 1]):
                 edge = edges[j]
-                if marked[edge] == missing_flag:
+                if access[edge] == size:
                     boilerplate.push_back(edge)
 
 
@@ -245,42 +312,58 @@ def mark_dag_parents(hashes: np.ndarray,
                      heads: np.ndarray,
                      timestamps: np.ndarray,
                      ownership: np.ndarray) -> np.ndarray:
-    if len(hashes) == 0:
-        return np.array([], dtype=int)
+    if len(hashes) == 0 or len(heads) == 0:
+        return np.array([], dtype=object)
+    assert heads.dtype.char == "S"
     # we cannot sort heads because the order is important
-    if len(heads):
-        found_heads = searchsorted_inrange(hashes, heads)
-        found_heads[hashes[found_heads] != heads] = len(vertexes)
-    else:
-        found_heads = np.full(len(heads), len(vertexes), np.uint32)
+    found_heads = searchsorted_inrange(hashes, heads)
+    found_heads[hashes[found_heads] != heads] = len(vertexes)
     heads = found_heads.astype(np.uint32)
     timestamps = timestamps.view(np.uint64)
-    parents = np.zeros_like(heads, dtype=np.int64)
-    _mark_dag_parents(vertexes, edges, heads, timestamps, ownership, parents)
-    return parents
+    cdef vector[vector[uint32_t]] parents = vector[vector[uint32_t]](len(heads))
+    full_size = _mark_dag_parents(vertexes, edges, heads, timestamps, ownership, &parents)
+    concat_parents = np.zeros(full_size, dtype=np.uint32)
+    split_points = np.zeros(len(parents), dtype=np.int64)
+    _copy_parents_to_array(&parents, concat_parents, split_points)
+    result = np.empty(len(parents), dtype=object)
+    result[:] = np.split(concat_parents, split_points[:-1])
+    return result
 
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef void _mark_dag_parents(const uint32_t[:] vertexes,
-                            const uint32_t[:] edges,
-                            const uint32_t[:] heads,
-                            const uint64_t[:] timestamps,
-                            const int64_t[:] ownership,
-                            int64_t[:] parents) nogil:
-    cdef uint32_t not_found = len(vertexes), head, peek, edge, peak_owner
-    cdef uint64_t max_timestamp, timestamp, head_timestamp
-    cdef int64_t i, j, max_stop
+cdef void _copy_parents_to_array(const vector[vector[uint32_t]] *parents,
+                                 uint32_t[:] output,
+                                 int64_t[:] splits) nogil:
+    cdef int64_t i, j, size, offset = 0
+    for i in range(<int64_t>parents.size()):
+        vec = dereference(parents)[i]
+        for j in range(<int64_t>vec.size()):
+            output[offset] = vec[j]
+            offset += 1
+        splits[i] = offset
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef int _mark_dag_parents(const uint32_t[:] vertexes,
+                           const uint32_t[:] edges,
+                           const uint32_t[:] heads,
+                           const uint64_t[:] timestamps,
+                           const int32_t[:] ownership,
+                           vector[vector[uint32_t]] *parents) nogil:
+    cdef uint32_t not_found = len(vertexes), head, peek, edge, peak_owner, parent
+    cdef uint64_t timestamp, head_timestamp
+    cdef int64_t i, j, p, sum_len = 0
     cdef vector[char] visited = vector[char](len(vertexes) - 1)
     cdef vector[uint32_t] boilerplate
+    cdef vector[uint32_t] *my_parents
     for i in range(len(heads)):
         head = heads[i]
         if head == not_found:
-            parents[i] = len(heads)
             continue
         head_timestamp = timestamps[i]
-        max_stop = len(heads)
-        max_timestamp = 0
+        my_parents = &dereference(parents)[i]
         memset(visited.data(), 0, visited.size())
         boilerplate.push_back(head)
         while not boilerplate.empty():
@@ -289,18 +372,28 @@ cdef void _mark_dag_parents(const uint32_t[:] vertexes,
             if visited[peek]:
                 continue
             visited[peek] = 1
+            peak_owner = ownership[peek]
+            if peak_owner != i:
+                timestamp = timestamps[peak_owner]
+                if timestamp < head_timestamp:
+                    # we don't expect many parents so scan linear
+                    for p in range(<int64_t> my_parents.size()):
+                        parent = dereference(my_parents)[p]
+                        if parent == peak_owner:
+                            break
+                        if timestamp > timestamps[parent]:
+                            sum_len += 1
+                            my_parents.insert(my_parents.begin() + p, peak_owner)
+                            break
+                    else:
+                        sum_len += 1
+                        my_parents.push_back(peak_owner)
+                    continue
             for j in range(vertexes[peek], vertexes[peek + 1]):
                 edge = edges[j]
                 if not visited[edge]:
-                    peak_owner = ownership[edge]
-                    if peak_owner == i:
-                        boilerplate.push_back(edge)
-                    else:
-                        timestamp = timestamps[peak_owner]
-                        if max_timestamp < timestamp < head_timestamp:
-                            max_timestamp = timestamp
-                            max_stop = peak_owner
-        parents[i] = max_stop
+                    boilerplate.push_back(edge)
+    return sum_len
 
 
 def extract_first_parents(hashes: np.ndarray,
@@ -308,6 +401,7 @@ def extract_first_parents(hashes: np.ndarray,
                           edges: np.ndarray,
                           heads: np.ndarray,
                           max_depth: int = 0) -> np.ndarray:
+    assert heads.dtype.char == "S"
     heads = np.sort(heads)
     if len(hashes):
         found_heads = searchsorted_inrange(hashes, heads)
@@ -450,7 +544,7 @@ cdef void _extract_pr_commits(const uint32_t[:] vertexes,
                     boilerplate.push_back(edge)
 
         # traverse the DAG starting from the side edge, stop on any vertex in the main sub-DAG
-        my_pr_commits = &pr_commits.at(i)
+        my_pr_commits = &dereference(pr_commits)[i]
         my_pr_commits.push_back(v)  # include the merge commit in the PR
         boilerplate.push_back(edges[last - 1])
         while not boilerplate.empty():
@@ -470,27 +564,31 @@ def extract_independent_ownership(hashes: np.ndarray,
                                   vertexes: np.ndarray,
                                   edges: np.ndarray,
                                   heads: np.ndarray,
-                                  parents: np.ndarray) -> np.ndarray:
-    assert len(heads) == len(parents)
-    if len(hashes) == 0:
-        return [np.array([], dtype="S40") for _ in heads]
+                                  stops: np.ndarray) -> np.ndarray:
+    if len(hashes) == 0 or len(heads) == 0:
+        result = np.empty(len(heads), dtype=object)
+        result.fill(np.array([], dtype="S40"))
+        return result
+    assert heads.dtype.char == "S"
+    assert len(heads) == len(stops)
     # we cannot sort heads because the order is important
-    if len(heads):
-        found_heads = searchsorted_inrange(hashes, heads)
-        found_heads[hashes[found_heads] != heads] = len(vertexes)
-        found_parents = searchsorted_inrange(hashes, parents)
-        found_parents[hashes[found_parents] != parents] = len(vertexes)
-    else:
-        found_heads = np.full(len(heads), len(vertexes), np.uint32)
-        found_parents = np.full(len(heads), len(vertexes), np.uint32)
+    found_heads = searchsorted_inrange(hashes, heads)
+    found_heads[hashes[found_heads] != heads] = len(vertexes)
     heads = found_heads.astype(np.uint32)
-    parents = found_parents.astype(np.uint32)
+    del found_heads
+    all_stops = np.concatenate(stops)
+    found_stops = searchsorted_inrange(hashes, all_stops)
+    found_stops[hashes[found_stops] != all_stops] = len(vertexes)
+    splits = np.zeros(len(stops) + 1, dtype=np.int64)
+    np.cumsum([len(arr) for arr in stops], out=splits[1:])
+    stops = found_stops.astype(np.uint32)
     cdef vector[vector[uint32_t]] found_commits = vector[vector[uint32_t]](len(heads))
-    left_vertexes_map = np.zeros_like(vertexes, shape=len(hashes))
+    left_vertexes_map = np.zeros_like(vertexes)
     left_vertexes = left_edges = np.array([], dtype=np.uint32)
     single_slot = np.zeros(1, dtype=np.uint32)
     _extract_independent_ownership(
-        vertexes, edges, heads, parents, single_slot, left_vertexes_map, left_vertexes, left_edges,
+        vertexes, edges, heads, stops, splits,
+        single_slot, left_vertexes_map, left_vertexes, left_edges,
         &found_commits)
     result = np.zeros(len(found_commits), dtype=object)
     for i, own_vertexes in enumerate(found_commits):
@@ -503,49 +601,52 @@ def extract_independent_ownership(hashes: np.ndarray,
 cdef void _extract_independent_ownership(const uint32_t[:] vertexes,
                                          const uint32_t[:] edges,
                                          const uint32_t[:] heads,
-                                         const uint32_t[:] parents,
+                                         const uint32_t[:] stops,
+                                         const int64_t[:] splits,
                                          uint32_t[:] single_slot,
                                          uint32_t[:] left_vertexes_map,
                                          uint32_t[:] left_vertexes,
                                          uint32_t[:] left_edges,
                                          vector[vector[uint32_t]] *result) nogil:
-    cdef int i
+    cdef int64_t i, p
     cdef uint32_t j, head, parent, count, peek, edge
     cdef uint32_t oob = len(vertexes)
     cdef vector[uint32_t] *head_result
     cdef vector[uint32_t] boilerplate
+    cdef bool has_parent
     boilerplate.reserve(max(1, len(edges) - len(vertexes) + 1))
-    cdef vector[char] visited_vertexes = vector[char](len(vertexes))
     for i in range(len(heads)):
         head = heads[i]
         if head == oob:
             continue
-        parent = parents[i]
-        head_result = &result.at(i)
-        if parent == oob:
+        head_result = &dereference(result)[i]
+        left_vertexes_map[:] = 0
+        has_parent = False
+        for p in range(splits[i], splits[i + 1]):
+            parent = stops[p]
+            if parent == oob:
+                continue
+            has_parent = True
+            single_slot[0] = parent
+            _extract_subdag(
+                vertexes, edges, single_slot, left_vertexes_map, left_vertexes, left_edges, True)
+        if not has_parent:
             single_slot[0] = head
-            left_vertexes_map[:] = 0
             count = _extract_subdag(
-                vertexes, edges, single_slot, left_vertexes_map, left_vertexes, left_edges)
+                vertexes, edges, single_slot, left_vertexes_map, left_vertexes, left_edges, False)
             head_result.reserve(count)
             for j in range(count):
                 head_result.push_back(left_vertexes_map[j])
             continue
-        single_slot[0] = parent
-        left_vertexes_map[:] = 0
-        count = _extract_subdag(
-            vertexes, edges, single_slot, left_vertexes_map, left_vertexes, left_edges)
-        memset(visited_vertexes.data(), 0, visited_vertexes.size())
-        for j in range(count):
-            visited_vertexes[left_vertexes_map[j]] = 1
         boilerplate.push_back(head)
         while not boilerplate.empty():
             peek = boilerplate.back()
             boilerplate.pop_back()
-            if visited_vertexes[peek]:
+            if left_vertexes_map[peek]:
                 continue
+            left_vertexes_map[peek] = 1
             head_result.push_back(peek)
             for j in range(vertexes[peek], vertexes[peek + 1]):
                 edge = edges[j]
-                if not visited_vertexes[edge]:
+                if not left_vertexes_map[edge]:
                     boilerplate.push_back(edge)

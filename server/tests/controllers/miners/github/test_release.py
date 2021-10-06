@@ -1148,12 +1148,16 @@ def test_mark_dag_access_smoke():
                        "61a719e0ff7522cc0d129acb3b922c94a8a5dbca",
                        "a444ccadf5fddad6ad432c13a239c74636c7f94f"],
                       dtype="S40")
-    vertexes = np.array([0, 1, 2, 3, 3], dtype=np.uint32)
-    edges = np.array([3, 0, 0], dtype=np.uint32)
+    vertexes = np.array([0, 1, 3, 4, 4], dtype=np.uint32)
+    edges = np.array([3, 0, 2, 0], dtype=np.uint32)
     heads = np.array(["33cafc14532228edca160e46af10341a8a632e3e",
                       "61a719e0ff7522cc0d129acb3b922c94a8a5dbca"], dtype="S40")
     marks = mark_dag_access(hashes, vertexes, edges, heads)
-    assert (marks == np.array([1, 0, 1, 1], dtype=np.int64)).all()
+    assert (marks == np.array([1, 0, 1, 1], dtype=np.int32)).all()
+    heads = np.array(["61a719e0ff7522cc0d129acb3b922c94a8a5dbca",
+                      "33cafc14532228edca160e46af10341a8a632e3e"], dtype="S40")
+    marks = mark_dag_access(hashes, vertexes, edges, heads)
+    assert (marks == np.array([0, 1, 0, 0], dtype=np.int32)).all()
 
 
 def test_mark_dag_access_empty():
@@ -1186,7 +1190,8 @@ def test_partition_dag_empty():
 async def test__fetch_commit_history_dag_stops(mdb, dag):
     hashes, vertexes, edges = dag["src-d/go-git"]
     subhashes, subvertexes, subedges = extract_subdag(
-        hashes, vertexes, edges, [b"364866fc77fac656e103c1048dd7da4764c6d9d9"])
+        hashes, vertexes, edges,
+        np.array([b"364866fc77fac656e103c1048dd7da4764c6d9d9"], dtype="S40"))
     assert len(subhashes) < len(hashes)
     _, newhashes, newvertexes, newedges = await _fetch_commit_history_dag(
         subhashes, subvertexes, subedges,
@@ -1223,10 +1228,37 @@ async def test_mark_dag_parents_smoke(
     release_dates = releases[Release.published_at.name].values
     ownership = mark_dag_access(hashes, vertexes, edges, release_hashes)
     parents = mark_dag_parents(hashes, vertexes, edges, release_hashes, release_dates, ownership)
-    assert (parents == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
-                        18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 34, 53,
-                        35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 46, 53, 47, 48, 49, 50, 51,
-                        52, 53]).all()
+    array = np.array
+    uint32 = np.uint32
+    ground_truth = array([array([1], dtype=uint32), array([2], dtype=uint32),
+                          array([3], dtype=uint32), array([4], dtype=uint32),
+                          array([5, 8, 9], dtype=uint32), array([6], dtype=uint32),
+                          array([7], dtype=uint32), array([8], dtype=uint32),
+                          array([9], dtype=uint32), array([10, 11, 14, 19], dtype=uint32),
+                          array([11, 12], dtype=uint32), array([12], dtype=uint32),
+                          array([13], dtype=uint32), array([14], dtype=uint32),
+                          array([15], dtype=uint32), array([16], dtype=uint32),
+                          array([17], dtype=uint32), array([18], dtype=uint32),
+                          array([19], dtype=uint32), array([20], dtype=uint32),
+                          array([21], dtype=uint32), array([22, 23], dtype=uint32),
+                          array([23], dtype=uint32), array([24], dtype=uint32),
+                          array([25], dtype=uint32), array([26], dtype=uint32),
+                          array([27], dtype=uint32), array([28], dtype=uint32),
+                          array([29], dtype=uint32), array([30], dtype=uint32),
+                          array([31], dtype=uint32), array([32], dtype=uint32),
+                          array([34], dtype=uint32), array([], dtype=uint32),
+                          array([35], dtype=uint32), array([36], dtype=uint32),
+                          array([37], dtype=uint32), array([38], dtype=uint32),
+                          array([39], dtype=uint32), array([40], dtype=uint32),
+                          array([41], dtype=uint32), array([42], dtype=uint32),
+                          array([43], dtype=uint32), array([44], dtype=uint32),
+                          array([46, 47], dtype=uint32), array([], dtype=uint32),
+                          array([47], dtype=uint32), array([48], dtype=uint32),
+                          array([49], dtype=uint32), array([50], dtype=uint32),
+                          array([51], dtype=uint32), array([52], dtype=uint32),
+                          array([], dtype=uint32)], dtype=object)
+    for yours, mine in zip(parents, ground_truth):
+        assert (yours == mine).all()
 
 
 @with_defer

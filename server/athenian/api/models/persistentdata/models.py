@@ -55,6 +55,9 @@ class DeploymentNotification(create_time_mixin(created_at=True, updated_at=True)
     """Client's pushed deployment notifications."""
 
     __tablename__ = "deployment_notifications"
+    CONCLUSION_SUCCESS = "SUCCESS"
+    CONCLUSION_FAILURE = "FAILURE"
+    CONCLUSION_CANCELLED = "CANCELLED"
 
     name = Column(Text(), primary_key=True, nullable=False)
     conclusion = Column(Text(), nullable=False)  # SUCCESS, FAILURE, CANCELLED
