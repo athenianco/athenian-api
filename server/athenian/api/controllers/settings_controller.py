@@ -191,32 +191,36 @@ async def set_jira_identities(request: AthenianWebRequest, body: dict) -> web.Re
                                                     pointer=".changes[%d].jira_name" % i))
         updated_maps.append((github_id, jira_id))
 
-    async with sdb.connection() as sdb_conn:
-        async with sdb_conn.transaction():
-            await sdb_conn.execute(
-                delete(MappedJIRAIdentity)
-                .where(and_(MappedJIRAIdentity.account_id == request_model.account,
-                            MappedJIRAIdentity.github_user_id.in_(cleared_github_ids))))
-            if sdb.url.dialect == "postgresql":
-                sql = postgres_insert(MappedJIRAIdentity)
-                sql = sql.on_conflict_do_update(
-                    constraint=MappedJIRAIdentity.__table__.primary_key,
-                    set_={
-                        MappedJIRAIdentity.jira_user_id.name: sql.excluded.jira_user_id,
-                        MappedJIRAIdentity.updated_at.name: sql.excluded.updated_at,
-                        MappedJIRAIdentity.confidence.name: sql.excluded.confidence,
-                    },
-                )
-            else:
-                sql = insert(MappedJIRAIdentity).prefix_with("OR REPLACE")
-            await sdb_conn.execute_many(sql, [
-                MappedJIRAIdentity(
-                    account_id=request_model.account,
-                    github_user_id=ghid,
-                    jira_user_id=jid,
-                    confidence=1.0,
-                ).create_defaults().explode(with_primary_keys=True) for ghid, jid in updated_maps])
-    await load_jira_identity_mapping_sentinel.reset_cache(request_model.account, cache)
+    try:
+        async with sdb.connection() as sdb_conn:
+            async with sdb_conn.transaction():
+                await sdb_conn.execute(
+                    delete(MappedJIRAIdentity)
+                    .where(and_(MappedJIRAIdentity.account_id == request_model.account,
+                                MappedJIRAIdentity.github_user_id.in_(cleared_github_ids))))
+                if sdb.url.dialect == "postgresql":
+                    sql = postgres_insert(MappedJIRAIdentity)
+                    sql = sql.on_conflict_do_update(
+                        constraint=MappedJIRAIdentity.__table__.primary_key,
+                        set_={
+                            MappedJIRAIdentity.jira_user_id.name: sql.excluded.jira_user_id,
+                            MappedJIRAIdentity.updated_at.name: sql.excluded.updated_at,
+                            MappedJIRAIdentity.confidence.name: sql.excluded.confidence,
+                        },
+                    )
+                else:
+                    sql = insert(MappedJIRAIdentity).prefix_with("OR REPLACE")
+                await sdb_conn.execute_many(sql, [
+                    MappedJIRAIdentity(
+                        account_id=request_model.account,
+                        github_user_id=ghid,
+                        jira_user_id=jid,
+                        confidence=1.0,
+                    ).create_defaults().explode(with_primary_keys=True)
+                    for ghid, jid in updated_maps
+                ])
+    finally:
+        await load_jira_identity_mapping_sentinel.reset_cache(request_model.account, cache)
     return await get_jira_identities(request, request_model.account, jira_acc=jira_acc)
 
 

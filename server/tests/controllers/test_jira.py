@@ -4,7 +4,7 @@ from sqlalchemy.sql.functions import count
 
 from athenian.api.controllers.jira import load_jira_identity_mapping_sentinel, \
     load_mapped_jira_users, match_jira_identities, normalize_issue_type
-from athenian.api.defer import with_defer
+from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.jira import Progress
 from athenian.api.models.state.models import AccountJiraInstallation, MappedJIRAIdentity
 
@@ -13,6 +13,7 @@ from athenian.api.models.state.models import AccountJiraInstallation, MappedJIRA
 async def test_load_mapped_jira_users_cache(sdb, mdb, cache):
     mapping = await load_mapped_jira_users(1, [40020], sdb, mdb, cache)
     assert mapping == {}
+    await wait_deferred()
     await sdb.execute(insert(MappedJIRAIdentity).values(MappedJIRAIdentity(
         account_id=1,
         github_user_id=40020,
@@ -20,7 +21,27 @@ async def test_load_mapped_jira_users_cache(sdb, mdb, cache):
     ).create_defaults().explode(with_primary_keys=True)))
     mapping = await load_mapped_jira_users(1, [40020], sdb, mdb, cache)
     assert mapping == {}
+    await wait_deferred()
     await load_jira_identity_mapping_sentinel.reset_cache(1, cache)
+    mapping = await load_mapped_jira_users(1, [40020], sdb, mdb, cache)
+    assert mapping == {40020: "Vadim Markovtsev"}
+
+
+@with_defer
+async def test_load_mapped_jira_users_installation(sdb, mdb, cache):
+    await sdb.execute(delete(AccountJiraInstallation))
+    mapping = await load_mapped_jira_users(1, [40020], sdb, mdb, cache)
+    assert mapping == {}
+    await wait_deferred()
+    await sdb.execute(insert(AccountJiraInstallation).values({
+        AccountJiraInstallation.account_id: 1,
+        AccountJiraInstallation.id: 1,
+    }))
+    await sdb.execute(insert(MappedJIRAIdentity).values(MappedJIRAIdentity(
+        account_id=1,
+        github_user_id=40020,
+        jira_user_id="5de5049e2c5dd20d0f9040c1",
+    ).create_defaults().explode(with_primary_keys=True)))
     mapping = await load_mapped_jira_users(1, [40020], sdb, mdb, cache)
     assert mapping == {40020: "Vadim Markovtsev"}
 

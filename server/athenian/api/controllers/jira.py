@@ -110,15 +110,18 @@ async def resolve_projects(keys: Iterable[str],
 
 @sentry_span
 async def load_mapped_jira_users(account: int,
-                                 github_user_ids: Iterable[str],
+                                 github_user_ids: Iterable[int],
                                  sdb: DatabaseLike,
                                  mdb: DatabaseLike,
                                  cache: Optional[aiomcache.Client],
-                                 ) -> Dict[str, str]:
+                                 ) -> Dict[int, str]:
     """Fetch the map from GitHub developer IDs to JIRA names."""
     cache_dropped = not await load_jira_identity_mapping_sentinel(account, cache)
-    return await _load_mapped_jira_users(
-        account, github_user_ids, sdb, mdb, cache, cache_dropped)
+    try:
+        return await _load_mapped_jira_users(
+            account, github_user_ids, sdb, mdb, cache, cache_dropped)
+    except ResponseError:
+        return {}
 
 
 def _postprocess_load_mapped_jira_users(result: Dict[str, str],
@@ -136,28 +139,27 @@ def _postprocess_load_mapped_jira_users(result: Dict[str, str],
     key=lambda account, github_user_ids, **_: (account, sorted(github_user_ids)),
     postprocess=_postprocess_load_mapped_jira_users,
     refresh_on_access=True,
+    version=2,
 )
 async def _load_mapped_jira_users(account: int,
-                                  github_user_ids: Iterable[str],
+                                  github_user_ids: Iterable[int],
                                   sdb: DatabaseLike,
                                   mdb: DatabaseLike,
                                   cache: Optional[aiomcache.Client],
                                   cache_dropped: bool,
-                                  ) -> Dict[str, str]:
+                                  ) -> Dict[int, str]:
     tasks = [
         sdb.fetch_all(
             select([MappedJIRAIdentity.github_user_id, MappedJIRAIdentity.jira_user_id])
             .where(and_(MappedJIRAIdentity.account_id == account,
                         MappedJIRAIdentity.github_user_id.in_(github_user_ids)))),
-        get_jira_installation_or_none(account, sdb, mdb, cache),
+        get_jira_id(account, sdb, cache),
     ]
-    map_rows, jira_ids = await gather(*tasks)
-    if jira_ids is None:
-        return {}
+    map_rows, jira_id = await gather(*tasks)
     jira_user_ids = {r[1]: r[0] for r in map_rows}
     name_rows = await mdb.fetch_all(
         select([JIRAUser.id, JIRAUser.display_name])
-        .where(and_(JIRAUser.acc_id == jira_ids[0],
+        .where(and_(JIRAUser.acc_id == jira_id,
                     JIRAUser.id.in_(jira_user_ids))))
     return {jira_user_ids[row[0]]: row[1] for row in name_rows}
 
