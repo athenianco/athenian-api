@@ -905,15 +905,15 @@ def _split_issues_by_with(with_: Optional[List[JIRAFilterWith]],
         if group.assignees:
             # None will become "None" and will match; nobody is going to name a user "None"
             # except for to troll Athenian.
-            assignees = np.char.lower(np.array(group.assignees, dtype="S"))
-            mask |= np.in1d(issues["assignee"].values.astype("S"), assignees)
+            assignees = np.char.lower(np.array(group.assignees, dtype="U"))
+            mask |= np.in1d(issues["assignee"].values.astype("U"), assignees)
         if group.reporters:
-            reporters = np.char.lower(np.array(group.reporters, dtype="S"))
-            mask |= np.in1d(issues["reporter"].values.astype("S"), reporters)
+            reporters = np.char.lower(np.array(group.reporters, dtype="U"))
+            mask |= np.in1d(issues["reporter"].values.astype("U"), reporters)
         if group.commenters:
-            commenters = np.char.lower(np.array(group.commenters, dtype="S"))
+            commenters = np.char.lower(np.array(group.commenters, dtype="U"))
             issue_commenters = issues["commenters"]
-            merged_issue_commenters = np.concatenate(issue_commenters).astype("S")
+            merged_issue_commenters = np.concatenate(issue_commenters).astype("U")
             offsets = np.zeros(len(issue_commenters) + 1, dtype=int)
             np.cumsum(issue_commenters.apply(len).values, out=offsets[1:])
             indexes = np.unique(np.searchsorted(
