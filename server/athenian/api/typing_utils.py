@@ -11,6 +11,7 @@ from typing import Any, Callable, Dict, Iterable, Iterator, List, Mapping, Named
 import numpy as np
 import pandas as pd
 from pandas._libs import tslib
+import sentry_sdk
 import xxhash
 
 from athenian.api.tracing import sentry_span
@@ -520,4 +521,5 @@ def df_from_structs(items: Iterable[NumpyStruct],
             v = np.array(v, dtype=column_type)
         columns[k] = v
     df = pd.DataFrame.from_dict(columns)
+    sentry_sdk.Hub.current.scope.span.description = str(len(df))
     return df
