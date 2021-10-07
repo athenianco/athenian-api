@@ -54,7 +54,7 @@ from athenian.api.response import model_response, ResponseError
 from athenian.api.tracing import sentry_span
 
 
-@weight(1.0)
+@weight(2.0)
 async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Response:
     """Find JIRA epics and labels used in the specified date interval."""
     try:
