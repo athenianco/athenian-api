@@ -6,6 +6,7 @@ import sys
 
 from alembic import script
 from alembic.migration import MigrationContext
+from flogging import flogging
 from mako.template import Template
 from sqlalchemy import any_, create_engine
 from sqlalchemy.ext.compiler import compiles
@@ -14,7 +15,6 @@ from sqlalchemy.sql.compiler import OPERATORS
 from sqlalchemy.sql.elements import BinaryExpression, ClauseList, Grouping, UnaryExpression
 from sqlalchemy.sql.operators import ColumnOperators, custom_op, in_op, notin_op
 
-from athenian.api import slogging
 from athenian.precomputer.db import always_unequal, create_base  # noqa: F401
 
 
@@ -93,7 +93,7 @@ ColumnOperators.in_any_values = in_any_values
 ColumnOperators.notin_any_values = notin_any_values
 
 
-slogging.trailing_dot_exceptions.add("alembic.runtime.migration")
+flogging.trailing_dot_exceptions.add("alembic.runtime.migration")
 
 
 class DBSchemaMismatchError(Exception):
