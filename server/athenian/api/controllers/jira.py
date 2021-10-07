@@ -139,7 +139,6 @@ def _postprocess_load_mapped_jira_users(result: Dict[str, str],
     key=lambda account, github_user_ids, **_: (account, sorted(github_user_ids)),
     postprocess=_postprocess_load_mapped_jira_users,
     refresh_on_access=True,
-    version=2,
 )
 async def _load_mapped_jira_users(account: int,
                                   github_user_ids: Iterable[int],

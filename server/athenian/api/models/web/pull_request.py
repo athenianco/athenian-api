@@ -47,7 +47,6 @@ class PullRequest(Model):
         "participants": List[PullRequestParticipant],
         "labels": Optional[List[PullRequestLabel]],
         "jira": Optional[List[LinkedJIRAIssue]],
-        "deployments": Optional[List[str]],
     }
 
     attribute_map = {
@@ -79,7 +78,6 @@ class PullRequest(Model):
         "participants": "participants",
         "labels": "labels",
         "jira": "jira",
-        "deployments": "deployments",
     }
 
     def __init__(
@@ -112,7 +110,6 @@ class PullRequest(Model):
         participants: Optional[List[PullRequestParticipant]] = None,
         labels: Optional[List[PullRequestLabel]] = None,
         jira: Optional[List[LinkedJIRAIssue]] = None,
-        deployments: Optional[List[str]] = None,
     ):
         """PullRequest - a model defined in OpenAPI
 
@@ -142,7 +139,6 @@ class PullRequest(Model):
         :param participants: The participants of this PullRequest.
         :param labels: The labels of this PullRequest.
         :param jira: The jira of this PullRequest.
-        :param deployments: The deployments of this PullRequest.
         """
         self._repository = repository
         self._number = number
@@ -172,7 +168,6 @@ class PullRequest(Model):
         self._participants = participants
         self._labels = labels
         self._jira = jira
-        self._deployments = deployments
 
     def __lt__(self, other: "PullRequest") -> bool:
         """Compute self < other."""
@@ -795,23 +790,3 @@ class PullRequest(Model):
         :param jira: The jira of this PullRequest.
         """
         self._jira = jira
-
-    @property
-    def deployments(self) -> Optional[List[str]]:
-        """Gets the deployments of this PullRequest.
-
-        Deployments with this pull request.
-
-        :return: The deployments of this PullRequest.
-        """
-        return self._deployments
-
-    @deployments.setter
-    def deployments(self, deployments: Optional[List[str]]):
-        """Sets the deployments of this PullRequest.
-
-        Deployments with this pull request.
-
-        :param deployments: The deployments of this PullRequest.
-        """
-        self._deployments = deployments
