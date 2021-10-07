@@ -639,3 +639,9 @@ async def calc_metrics_code_checks(request: AthenianWebRequest, body: dict) -> w
         for service, (repos, ca_groups, labels, jira, for_set) in filters
     ))
     return model_response(met)
+
+
+@weight(2)
+async def calc_metrics_deployments(request: AthenianWebRequest, body: dict) -> web.Response:
+    """Calculate metrics on deployments submitted by `/events/deployments`."""
+    raise NotImplementedError

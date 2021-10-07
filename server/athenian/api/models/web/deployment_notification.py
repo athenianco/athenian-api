@@ -43,7 +43,7 @@ class DeploymentNotificationUnsealed(Model):
         url: Optional[str] = None,
         date_started: Optional[datetime] = None,
         date_finished: Optional[datetime] = None,
-        conclusion: Optional[DeploymentConclusion] = None,
+        conclusion: Optional[str] = None,
         labels: Optional[dict] = None,
     ):
         """DeploymentNotification - a model defined in OpenAPI

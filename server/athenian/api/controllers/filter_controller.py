@@ -237,6 +237,7 @@ def web_pr_from_struct(pr: PullRequestListItem,
     """Convert an intermediate PR representation to the web model."""
     props = dict(pr)
     del props["node_id"]
+    del props["deployments"]
     props["repository"] = prefixer.repo_name_to_prefixed_name[props["repository"]]
     if pr.events_time_machine is not None:
         props["events_time_machine"] = sorted(p.name.lower() for p in pr.events_time_machine)
