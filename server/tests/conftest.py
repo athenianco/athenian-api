@@ -464,6 +464,7 @@ def _init_own_db_unchecked(letter: str,
             session.commit()
         finally:
             session.close()
+    engine.dispose()
     if not override_db:
         os.chmod(db_path, 0o666)
         if not Path(backup_path).exists():

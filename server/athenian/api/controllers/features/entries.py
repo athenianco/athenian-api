@@ -133,7 +133,7 @@ class MetricEntriesCalculator:
 
     @sentry_span
     @cached(
-        exptime=PullRequestMiner.CACHE_TTL,
+        exptime=short_term_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
         key=lambda metrics, time_intervals, quantiles, lines, repositories, participants, labels, jira, environments, exclude_inactive, release_settings, **_:  # noqa
@@ -189,7 +189,7 @@ class MetricEntriesCalculator:
 
     @sentry_span
     @cached(
-        exptime=PullRequestMiner.CACHE_TTL,
+        exptime=short_term_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
         key=lambda defs, time_from, time_to, quantiles, lines, repositories, participants, labels, jira, environment, exclude_inactive, release_settings, **_:  # noqa
@@ -444,7 +444,7 @@ class MetricEntriesCalculator:
 
     @sentry_span
     @cached(
-        exptime=PullRequestMiner.CACHE_TTL,
+        exptime=short_term_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
         key=lambda defs, date_from, date_to, quantiles, repositories, pushers, labels, jira, **_:
@@ -575,7 +575,7 @@ class MetricEntriesCalculator:
 
     @sentry_span
     @cached(
-        exptime=PullRequestMiner.CACHE_TTL,
+        exptime=short_term_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
         key=lambda time_from, time_to, repositories, participants, labels, jira, exclude_inactive, release_settings, fresh, with_jira_map, **_:  # noqa

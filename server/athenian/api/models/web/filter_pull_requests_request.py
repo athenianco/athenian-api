@@ -21,6 +21,7 @@ class _FilterPullRequestsRequest(Model):
         "updated_from": Optional[date],
         "updated_to": Optional[date],
         "limit": int,
+        "environment": Optional[str],
     }
 
     attribute_map = {
@@ -32,6 +33,7 @@ class _FilterPullRequestsRequest(Model):
         "updated_from": "updated_from",
         "updated_to": "updated_to",
         "limit": "limit",
+        "environment": "environment",
     }
 
     __enable_slots__ = False
@@ -46,6 +48,7 @@ class _FilterPullRequestsRequest(Model):
         updated_from: Optional[date] = None,
         updated_to: Optional[date] = None,
         limit: Optional[int] = None,
+        environment: Optional[str] = None,
     ):
         """FilterPullRequestsRequest - a model defined in OpenAPI
 
@@ -57,6 +60,7 @@ class _FilterPullRequestsRequest(Model):
         :param updated_from: The updated_from of this FilterPullRequestsRequest.
         :param updated_to: The updated_to of this FilterPullRequestsRequest.
         :param limit: The limit of this FilterPullRequestsRequest.
+        :param environment: The environment of this FilterPullRequestsRequest.
         """
         self._in_ = in_
         self._events = events
@@ -66,6 +70,7 @@ class _FilterPullRequestsRequest(Model):
         self._updated_from = updated_from
         self._updated_to = updated_to
         self._limit = limit
+        self._environment = environment
 
     @property
     def in_(self) -> List[str]:
@@ -225,6 +230,26 @@ class _FilterPullRequestsRequest(Model):
             raise ValueError("`limit` must be greater than 0: %s" % limit)
 
         self._limit = limit
+
+    @property
+    def environment(self) -> Optional[str]:
+        """Gets the environment of this FilterPullRequestsRequest.
+
+        Target environment for the deployment events, impacts `events` and `stages`.
+
+        :return: The environment of this FilterPullRequestsRequest.
+        """
+        return self._environment
+
+    @environment.setter
+    def environment(self, environment: Optional[str]):
+        """Sets the environment of this FilterPullRequestsRequest.
+
+        Target environment for the deployment events, impacts `events` and `stages`.
+
+        :param environment: The environment of this FilterPullRequestsRequest.
+        """
+        self._environment = environment
 
 
 FilterPullRequestsRequest = AllOf(_FilterPullRequestsRequest,

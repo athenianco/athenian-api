@@ -1,20 +1,20 @@
 from collections import defaultdict
-from datetime import timezone
+from datetime import datetime, timedelta, timezone
 import pickle
-from typing import Collection, Dict, Optional, Tuple
+from typing import Collection, Dict, List, Optional, Tuple
 
 import aiomcache
-from sqlalchemy import and_, select
+from sqlalchemy import and_, join, select
 
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached, middle_term_expire
 from athenian.api.controllers.miners.types import DeployedComponent as DeployedComponentDC, \
-    Deployment, PullRequestFacts
+    Deployment
+from athenian.api.controllers.prefixer import PrefixerPromise
 from athenian.api.db import ParallelDatabase
 from athenian.api.models.metadata.github import NodeCommit
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
     DeploymentNotification
-from athenian.api.models.precomputed.models import GitHubPullRequestDeployment
 from athenian.api.tracing import sentry_span
 
 
@@ -91,17 +91,45 @@ async def load_included_deployments(names: Collection[str],
     }
 
 
+repository_environment_threshold = timedelta(days=60)
+
+
 @sentry_span
-async def append_pr_deployment_mapping(prs: Dict[int, PullRequestFacts],
-                                       account: int,
-                                       pdb: ParallelDatabase) -> None:
-    """Fetch the precomputed deployments for each pull request."""
-    ghprd = GitHubPullRequestDeployment
-    rows = await pdb.fetch_all(select([ghprd.deployment_name, ghprd.pull_request_id])
-                               .where(and_(ghprd.acc_id == account,
-                                           ghprd.pull_request_id.in_(prs))))
-    depmap = defaultdict(list)
+@cached(
+    exptime=middle_term_expire,
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda repos, **_: (",".join(sorted(repos)),),
+)
+async def fetch_repository_environments(repos: Collection[str],
+                                        prefixer: PrefixerPromise,
+                                        account: int,
+                                        rdb: ParallelDatabase,
+                                        cache: Optional[aiomcache.Client],
+                                        ) -> Dict[str, List[str]]:
+    """Map environments to repositories that have deployed there."""
+    prefixer = await prefixer.load()
+    repo_name_to_node_get = prefixer.repo_name_to_node.get
+    repo_ids = {repo_name_to_node_get(r) for r in repos} - {None}
+    rows = await rdb.fetch_all(
+        select([DeployedComponent.repository_node_id, DeploymentNotification.environment])
+        .select_from(join(DeployedComponent, DeploymentNotification, and_(
+            DeployedComponent.account_id == DeploymentNotification.account_id,
+            DeployedComponent.deployment_name == DeploymentNotification.name,
+        )))
+        .where(and_(
+            DeployedComponent.account_id == account,
+            DeployedComponent.repository_node_id.in_(repo_ids),
+            DeploymentNotification.finished_at >
+            datetime.now(timezone.utc) - repository_environment_threshold,
+        ))
+        .group_by(DeployedComponent.repository_node_id, DeploymentNotification.environment)
+        .distinct(),
+    )
+    result = defaultdict(list)
+    repo_node_to_name = prefixer.repo_node_to_name.__getitem__
     for row in rows:
-        depmap[row[ghprd.pull_request_id.name]].append(row[ghprd.deployment_name.name])
-    for key, val in depmap.items():
-        prs[key].deployments = val
+        repo_id = row[DeployedComponent.repository_node_id.name]
+        env = row[DeploymentNotification.environment.name]
+        result[env].append(repo_node_to_name(repo_id))
+    return result

@@ -373,6 +373,28 @@ async def test_filter_prs_single_stage(
 
 
 @pytest.mark.filter_pull_requests
+@with_only_master_branch
+async def test_filter_prs_stage_deployed(
+        # do not remove "mdb_rw", it is required by the decorators
+        client, headers, mdb_rw, app, precomputed_deployments, detect_deployments):
+    body = {
+        "date_from": "2015-10-13",
+        "date_to": "2020-04-23",
+        "account": 1,
+        "in": [],
+        "stages": [PullRequestStage.DEPLOYED],
+        "exclude_inactive": True,
+        "environment": "production",
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
+    text = (await response.read()).decode("utf-8")
+    assert response.status == 200, text
+    prs = PullRequestSet.from_dict(json.loads(text))
+    assert len(prs.data) == 314
+
+
+@pytest.mark.filter_pull_requests
 @pytest.mark.parametrize("event", sorted(PullRequestEvent))
 @with_only_master_branch
 async def test_filter_prs_single_event(
@@ -391,6 +413,28 @@ async def test_filter_prs_single_event(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
     await validate_prs_response(response, set(), {event}, {},
                                 datetime(year=2020, month=4, day=23, tzinfo=timezone.utc))
+
+
+@pytest.mark.filter_pull_requests
+@with_only_master_branch
+async def test_filter_prs_event_deployed(
+        # do not remove "mdb_rw", it is required by the decorators
+        client, headers, mdb_rw, app, precomputed_deployments, detect_deployments):
+    body = {
+        "date_from": "2015-10-13",
+        "date_to": "2020-04-23",
+        "account": 1,
+        "in": [],
+        "events": [PullRequestEvent.DEPLOYED],
+        "exclude_inactive": False,
+        "environment": "production",
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
+    text = (await response.read()).decode("utf-8")
+    assert response.status == 200, text
+    prs = PullRequestSet.from_dict(json.loads(text))
+    assert len(prs.data) == 314
 
 
 @pytest.mark.filter_pull_requests
@@ -532,6 +576,62 @@ async def test_filter_prs_event_releases(client, headers, with_event_releases):
     assert len(prs.data) == 37
 
 
+async def test_filter_prs_deployments_missing_env(
+        client, headers, precomputed_deployments, detect_deployments):
+    body = {
+        "date_from": "2018-10-13",
+        "date_to": "2019-02-23",
+        "account": 1,
+        "in": [],
+        "events": [PullRequestEvent.MERGED],
+        "exclude_inactive": True,
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
+    text = (await response.read()).decode("utf-8")
+    assert response.status == 200, text
+    prs = PullRequestSet.from_dict(json.loads(text))
+    assert len(prs.data) == 37
+    for pr in prs.data:
+        assert pr.stage_timings.deploy["production"] > timedelta(0)
+        assert "deployed" not in pr.events_now
+        assert "deployed" not in pr.events_time_machine
+        assert "deployed" not in pr.stages_now
+        assert "deployed" not in pr.stages_time_machine
+
+
+async def test_filter_prs_deployments_with_env(
+        client, headers, precomputed_deployments, detect_deployments):
+    body = {
+        "date_from": "2018-10-13",
+        "date_to": "2019-02-23",
+        "account": 1,
+        "in": [],
+        "events": [PullRequestEvent.MERGED],
+        "exclude_inactive": True,
+        "environment": "production",
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
+    text = (await response.read()).decode("utf-8")
+    assert response.status == 200, text
+    prs = PullRequestSet.from_dict(json.loads(text))
+    assert len(prs.data) == 37
+    deployed_margin = datetime(2019, 11, 1, 12, 15) - datetime(2015, 5, 2)
+    undeployed_margin = (datetime.now() - datetime(2019, 2, 23)) - timedelta(seconds=60)
+    deps = 0
+    for pr in prs.data:
+        if PullRequestEvent.DEPLOYED in pr.events_now:
+            deps += 1
+            assert PullRequestStage.DEPLOYED in pr.stages_now
+            assert pr.stage_timings.deploy["production"] < deployed_margin
+        else:
+            assert pr.stage_timings.deploy["production"] > undeployed_margin
+        assert PullRequestEvent.DEPLOYED not in pr.events_time_machine
+        assert PullRequestStage.DEPLOYED not in pr.stages_time_machine
+    assert deps == 32
+
+
 async def test_filter_prs_jira(client, headers, app, filter_prs_single_cache):
     app.app[CACHE_VAR_NAME] = filter_prs_single_cache
     body = {
@@ -638,6 +738,9 @@ async def validate_prs_response(response: ClientResponse,
     assert response.status == 200, text
     obj = json.loads(text)
     prs = PullRequestSet.from_dict(obj)
+    if stages == {PullRequestStage.DEPLOYED} or events == {PullRequestEvent.DEPLOYED}:
+        assert len(prs.data) == 0
+        return
     users = prs.include.users
     assert len(users) > 0, text
     for user in users:
@@ -1028,38 +1131,6 @@ async def test_filter_prs_exclude_inactive(client, headers):
     obj = json.loads((await response.read()).decode("utf-8"))
     prs = PullRequestSet.from_dict(obj)
     assert len(prs.data) == 6
-
-
-@pytest.mark.filter_pull_requests
-@with_defer
-async def test_filter_prs_deployments(
-        client, headers, mdb, pdb, rdb, release_match_setting_tag, branches, default_branches,
-        prefixer_promise):
-    time_from = datetime(year=2019, month=6, day=1, tzinfo=timezone.utc)
-    time_to = datetime(year=2019, month=12, day=1, tzinfo=timezone.utc)
-    await mine_deployments(
-        [40550], {},
-        time_from, time_to,
-        ["production", "staging"],
-        [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
-        release_match_setting_tag,
-        branches, default_branches, prefixer_promise,
-        1, (6366825,), mdb, pdb, rdb, None)
-    await wait_deferred()
-    body = {
-        "date_from": "2019-06-13",
-        "date_to": "2019-12-01",
-        "account": 1,
-        "in": [],
-        "stages": [PullRequestStage.DONE],
-        "exclude_inactive": False,
-    }
-    response = await client.request(
-        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
-    text = (await response.read()).decode("utf-8")
-    assert response.status == 200, text
-    prs = PullRequestSet.from_dict(json.loads(text))
-    validate_pr_deployments(prs)
 
 
 def _test_cached_mdb_pdb(func):
@@ -1521,18 +1592,7 @@ async def test_get_prs_nasty_input(client, headers, account, repo, numbers, stat
 @with_defer
 async def test_get_prs_deployments(
         client, headers, mdb, pdb, rdb, release_match_setting_tag, branches, default_branches,
-        prefixer_promise):
-    time_from = datetime(year=2019, month=6, day=1, tzinfo=timezone.utc)
-    time_to = datetime(year=2019, month=12, day=1, tzinfo=timezone.utc)
-    await mine_deployments(
-        [40550], {},
-        time_from, time_to,
-        ["production", "staging"],
-        [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
-        release_match_setting_tag,
-        branches, default_branches, prefixer_promise,
-        1, (6366825,), mdb, pdb, rdb, None)
-    await wait_deferred()
+        prefixer_promise, precomputed_deployments, detect_deployments):
     body = {
         "account": 1,
         "prs": [
@@ -1541,24 +1601,22 @@ async def test_get_prs_deployments(
                 "numbers": [1160, 1179],
             },
         ],
+        "environment": "production",
     }
     response = await client.request(
         method="POST", path="/v1/get/pull_requests", headers=headers, json=body)
     response_body = json.loads((await response.read()).decode("utf-8"))
     assert response.status == 200, response_body
     prs = PullRequestSet.from_dict(response_body)
-    validate_pr_deployments(prs)
 
-
-def validate_pr_deployments(prs: PullRequestSet) -> None:
-    """
-    prs_have_deps = False
     for pr in prs.data:
-        if pr.deployments is not None:
-            assert len(pr.deployments) == 1 and pr.deployments[0] == "Dummy deployment", pr
-            prs_have_deps = True
-    assert prs_have_deps
-    """
+        assert pr.stage_timings.deploy["production"] > timedelta(0)
+        if pr.number == 1160:
+            assert PullRequestEvent.DEPLOYED in pr.events_now
+            assert PullRequestStage.DEPLOYED in pr.stages_now
+        if pr.number == 1179:
+            assert PullRequestEvent.DEPLOYED not in pr.events_now
+            assert PullRequestStage.DEPLOYED not in pr.stages_now
     assert prs.include.deployments == {
         "Dummy deployment": DeploymentNotification(
             components=[

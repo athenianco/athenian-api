@@ -13,3 +13,4 @@ class PullRequestEvent(Model, metaclass=Enum):
     MERGED = "merged"
     RELEASED = "released"
     REJECTED = "rejected"
+    DEPLOYED = "deployed"
