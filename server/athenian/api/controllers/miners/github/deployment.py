@@ -713,11 +713,12 @@ async def _map_releases_to_deployments(
         if c != PrecomputedRelease.acc_id.name
     }
     releases = pd.DataFrame({"deployment_name": deployment_names, **col_vals})
-    await defer(_submit_deployed_releases(releases, account, settings, pdb),
-                "_submit_deployed_releases")
-    return await _postprocess_deployed_releases(
+    result = await _postprocess_deployed_releases(
         releases, branches, default_branches, settings, prefixer.as_promise(),
         account, meta_ids, mdb, pdb, rdb, cache)
+    await defer(_submit_deployed_releases(releases, account, settings, pdb),
+                "_submit_deployed_releases")
+    return result
 
 
 @sentry_span
@@ -785,7 +786,7 @@ async def _submit_deployed_releases(releases: pd.DataFrame,
         ).explode(with_primary_keys=True)
         for deployment_name, release_id, repo in zip(
             releases["deployment_name"].values,
-            releases[Release.node_id.name].values,
+            releases.index.values,
             releases[Release.repository_full_name.name].values,
         )
     ]
