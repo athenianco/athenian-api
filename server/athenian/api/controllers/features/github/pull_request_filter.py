@@ -3,8 +3,8 @@ from dataclasses import fields
 from datetime import datetime, timedelta, timezone
 import logging
 import pickle
-from typing import Callable, Collection, Dict, Generator, Iterable, List, Optional, Sequence, \
-    Set, Tuple
+from typing import Callable, Collection, Dict, Generator, Iterable, List, Optional, \
+    Sequence, Set, Tuple, Union
 
 import aiomcache
 import numpy as np
@@ -14,14 +14,17 @@ from sqlalchemy import and_, select, union_all
 
 from athenian.api import COROUTINE_YIELD_EVERY_ITER, list_with_yield, metadata
 from athenian.api.async_utils import gather, read_sql_query
-from athenian.api.cache import cached, CancelCache
+from athenian.api.cache import cached, CancelCache, short_term_exptime
 from athenian.api.controllers.datetime_utils import coarsen_time_interval
 from athenian.api.controllers.features.github.check_run_metrics import \
     MergedPRsWithFailedChecksCounter
 from athenian.api.controllers.features.github.pull_request_metrics import AllCounter, \
-    MergingPendingCounter, MergingTimeCalculator, ReleasePendingCounter, ReleaseTimeCalculator, \
-    ReviewPendingCounter, ReviewTimeCalculator, StagePendingDependencyCalculator, \
-    WorkInProgressPendingCounter, WorkInProgressTimeCalculator
+    DeploymentPendingMarker, DeploymentTimeCalculator, EnvironmentsMarker, MergingPendingCounter, \
+    MergingTimeCalculator, ReleasePendingCounter, ReleaseTimeCalculator, ReviewPendingCounter, \
+    ReviewTimeCalculator, StagePendingDependencyCalculator, WorkInProgressPendingCounter, \
+    WorkInProgressTimeCalculator
+from athenian.api.controllers.features.github.unfresh_pull_request_metrics import \
+    UnfreshPullRequestFactsFetcher
 from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.features.metric_calculator import MetricCalculator
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
@@ -31,7 +34,8 @@ from athenian.api.controllers.miners.github.check_run import mine_check_runs
 from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_COLUMNS, \
     fetch_precomputed_commit_history_dags, fetch_repository_commits_no_branch_dates
 from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_inrange
-from athenian.api.controllers.miners.github.deployment_light import load_included_deployments
+from athenian.api.controllers.miners.github.deployment_light import \
+    fetch_repository_environments, load_included_deployments
 from athenian.api.controllers.miners.github.precomputed_prs import \
     DonePRFactsLoader, MergedPRFactsLoader, remove_ambiguous_prs, \
     store_merged_unreleased_pull_request_facts, store_open_pull_request_facts, \
@@ -83,14 +87,21 @@ class PullRequestListMiner:
                  stages: Set[PullRequestStage],
                  time_from: datetime,
                  time_to: datetime,
-                 with_time_machine: bool):
+                 with_time_machine: bool,
+                 events_environment: Optional[str],
+                 environments: Dict[str, List[str]]):
         """Initialize a new instance of `PullRequestListMiner`."""
         self._prs = prs
         self._dfs = dfs
         self._facts = facts
+        assert isinstance(events, set)
+        assert isinstance(stages, set)
         self._events = events
         self._stages = stages
-        self._calcs, self._counter_deps = self.create_stage_calcs()
+        self._environment = events_environment
+        self._environments, environments_order = np.unique(
+            list(environments), return_inverse=True)
+        self._calcs, self._counter_deps = self.create_stage_calcs(environments, environments_order)
         assert isinstance(time_from, datetime)
         assert time_from.tzinfo == timezone.utc
         assert isinstance(time_to, datetime)
@@ -100,33 +111,59 @@ class PullRequestListMiner:
         self._with_time_machine = with_time_machine
 
     @classmethod
-    def create_stage_calcs(cls) -> Tuple[Dict[str, Dict[str, MetricCalculator[int]]],
-                                         Iterable[MetricCalculator]]:
+    def create_stage_calcs(cls,
+                           environments: Dict[str, List[str]],
+                           environments_order: Optional[Sequence[int]] = None,
+                           ) -> Tuple[Dict[str, Dict[str, List[MetricCalculator[int]]]],
+                                      Iterable[MetricCalculator]]:
         """Intialize PR metric calculators needed to calculate the stage timings."""
-        all_counter = cls.DummyAllCounter(quantiles=(0, 1))
-        pending_counter = StagePendingDependencyCalculator(all_counter, quantiles=(0, 1))
-        return {
+        quantiles = dict(quantiles=(0, 1))
+        ordered_envs = np.empty(len(environments), dtype=object)
+        repos_in_env = np.empty(len(environments), dtype=object)
+        if environments_order is None:
+            environments_order = range(len(environments))
+        for env_index, (env, repos) in zip(environments_order, environments.items()):
+            repos_in_env[env_index] = repos
+            ordered_envs[env_index] = env
+        del environments
+        del environments_order
+        if len(ordered_envs) == 0:
+            ordered_envs = [None]
+        all_counter = cls.DummyAllCounter(**quantiles)
+        pendinger = StagePendingDependencyCalculator(all_counter, **quantiles)
+        env_marker = EnvironmentsMarker(**quantiles, environments=ordered_envs)
+        calcs = {
             "wip": {
-                "time": WorkInProgressTimeCalculator(quantiles=(0, 1)),
-                "pending_count": WorkInProgressPendingCounter(
-                    pending_counter, quantiles=(0, 1)),
+                "time": [WorkInProgressTimeCalculator(**quantiles)],
+                "pending": [WorkInProgressPendingCounter(
+                    pendinger, **quantiles)],
             },
             "review": {
-                "time": ReviewTimeCalculator(quantiles=(0, 1)),
-                "pending_count": ReviewPendingCounter(
-                    pending_counter, quantiles=(0, 1)),
+                "time": [ReviewTimeCalculator(**quantiles)],
+                "pending": [ReviewPendingCounter(
+                    pendinger, **quantiles)],
             },
             "merge": {
-                "time": MergingTimeCalculator(quantiles=(0, 1)),
-                "pending_count": MergingPendingCounter(
-                    pending_counter, quantiles=(0, 1)),
+                "time": [MergingTimeCalculator(**quantiles)],
+                "pending": [MergingPendingCounter(
+                    pendinger, **quantiles)],
             },
             "release": {
-                "time": ReleaseTimeCalculator(quantiles=(0, 1)),
-                "pending_count": ReleasePendingCounter(
-                    pending_counter, quantiles=(0, 1)),
+                "time": [ReleaseTimeCalculator(**quantiles)],
+                "pending": [ReleasePendingCounter(
+                    pendinger, **quantiles)],
             },
-        }, (all_counter, pending_counter)
+            "deploy": {
+                "time": DeploymentTimeCalculator(
+                    env_marker, **quantiles, environments=ordered_envs,
+                ).split(),
+                "pending": DeploymentPendingMarker(
+                    env_marker, **quantiles, environments=ordered_envs, repositories=repos_in_env,
+                ).split(),
+                "deps": [env_marker],
+            },
+        }
+        return calcs, (all_counter, pendinger)
 
     @classmethod
     def _collect_events_and_stages(cls,
@@ -166,14 +203,17 @@ class PullRequestListMiner:
             events.add(PullRequestEvent.RELEASED)
         if hard_events[PullRequestEvent.CHANGES_REQUESTED]:
             events.add(PullRequestEvent.CHANGES_REQUESTED)
+        if hard_events[PullRequestEvent.DEPLOYED]:
+            events.add(PullRequestEvent.DEPLOYED)
+            stages.add(PullRequestStage.DEPLOYED)
         return events, stages
 
     def _compile(self,
                  pr: MinedPullRequest,
                  facts: PullRequestFacts,
-                 stage_timings: Dict[str, timedelta],
-                 hard_events_time_machine: Dict[PullRequestEvent, Set[str]],
-                 hard_events_now: Dict[PullRequestEvent, Set[str]],
+                 stage_timings: Dict[str, Union[timedelta, Dict[str, timedelta]]],
+                 hard_events_time_machine: Dict[PullRequestEvent, Set[int]],
+                 hard_events_now: Dict[PullRequestEvent, Set[int]],
                  ) -> Optional[PullRequestListItem]:
         """
         Match the PR to the required participants and properties and produce PullRequestListItem.
@@ -240,7 +280,7 @@ class PullRequestListMiner:
                     pr.jiras[Issue.type.name].values,
                 )
             ]
-        deployments = np.sort(pr.deployments.index.values) if len(pr.deployments.index) else None
+        deployments = pr.deployments.index.values if len(pr.deployments.index) else None
         return PullRequestListItem(
             node_id=pr_node_id,
             repository=pr.pr[PullRequest.repository_full_name.name],
@@ -260,7 +300,7 @@ class PullRequestListMiner:
             review_comments=review_comments,
             reviews=reviews,
             merged=self._dt64_to_pydt(facts_now.merged),
-            merged_with_failed_check_runs=None,
+            merged_with_failed_check_runs=None,  # filled by _append_merged_with_failed_check_runs
             released=self._dt64_to_pydt(facts_now.released),
             release_url=pr.release[Release.url.name],
             events_now=events_now,
@@ -285,16 +325,24 @@ class PullRequestListMiner:
         for i, pr in enumerate(self._prs):
             pr_stage_timings = {}
             for k in self._calcs:
-                seconds = stage_timings[k][i]
-                if seconds is not None:
-                    pr_stage_timings[k] = seconds.item()
+                key_stage_timings = stage_timings[k]
+                if k == "deploy":
+                    deploy_timings = {}
+                    for env, timings in zip(self._environments, key_stage_timings):
+                        if (timing := timings[i].item()) is not None:
+                            deploy_timings[env] = timing
+                    if deploy_timings:
+                        pr_stage_timings[k] = deploy_timings
+                else:
+                    if (timing := key_stage_timings[0][i].item()) is not None:
+                        pr_stage_timings[k] = timing
             item = self._compile(pr, facts[pr.pr[node_id_key]], pr_stage_timings,
                                  hard_events_time_machine, hard_events_now)
             if item is not None:
                 yield item
 
     @sentry_span
-    def _calc_stage_timings(self) -> Dict[str, Sequence[int]]:
+    def _calc_stage_timings(self) -> Dict[str, List[np.ndarray]]:
         facts = self._facts
         if len(facts) == 0 or len(self._prs) == 0:
             return {k: [] for k in self._calcs}
@@ -306,9 +354,9 @@ class PullRequestListMiner:
     @classmethod
     def calc_stage_timings(cls,
                            df_facts: pd.DataFrame,
-                           calcs: Dict[str, Dict[str, MetricCalculator[int]]],
+                           calcs: Dict[str, Dict[str, List[MetricCalculator[int]]]],
                            counter_deps: Iterable[MetricCalculator],
-                           ) -> Dict[str, Sequence[int]]:
+                           ) -> Dict[str, List[np.ndarray]]:  # np.ndarray[int]
         """
         Calculate PR stage timings.
 
@@ -324,21 +372,25 @@ class PullRequestListMiner:
         for dep in counter_deps:
             dep(df_facts, no_time_from, now, None, empty_group_mask)
         for stage, stage_calcs in calcs.items():
-            time_calc, pending_counter = stage_calcs["time"], stage_calcs["pending_count"]
-            pending_counter(df_facts, no_time_from, now, None, empty_group_mask)
-            kwargs = {
-                "override_event_time": now - np.timedelta64(timedelta(seconds=1)),  # < time_max
-                "override_event_indexes": np.flatnonzero(pending_counter.peek[0]),
-            }
-            if stage == "review":
-                kwargs["allow_unclosed"] = True
-            time_calc(df_facts, no_time_from, now, None, empty_group_mask, **kwargs)
-            stage_timings[stage] = time_calc.peek[0]
+            stage_timings[stage] = []
+            for dep in stage_calcs.get("deps", []):
+                dep(df_facts, no_time_from, now, None, empty_group_mask)
+            for time_calc, pendinger in zip(stage_calcs["time"], stage_calcs["pending"]):
+                pendinger(df_facts, no_time_from, now, None, empty_group_mask)
+                kwargs = {
+                    # -1 second to appear less than time_max
+                    "override_event_time": now - np.timedelta64(timedelta(seconds=1)),
+                    "override_event_indexes": np.flatnonzero(pendinger.peek[0] == 1),
+                }
+                if stage == "review":
+                    kwargs["allow_unclosed"] = True
+                time_calc(df_facts, no_time_from, now, None, empty_group_mask, **kwargs)
+                stage_timings[stage].append(time_calc.peek[0])
         return stage_timings
 
     @sentry_span
-    def _calc_hard_events(self) -> Tuple[Dict[PullRequestEvent, Set[str]],
-                                         Dict[PullRequestEvent, Set[str]]]:
+    def _calc_hard_events(self) -> Tuple[Dict[PullRequestEvent, Set[int]],
+                                         Dict[PullRequestEvent, Set[int]]]:
         events_time_machine = {}
         events_now = {}
         dfs = self._dfs
@@ -384,6 +436,28 @@ class PullRequestListMiner:
             events_time_machine[PullRequestEvent.CHANGES_REQUESTED] = \
                 set(original_reviews_index[mask])
 
+        if len(self._environments) == 0:
+            events_time_machine[PullRequestEvent.DEPLOYED] = \
+                events_now[PullRequestEvent.DEPLOYED] = set()
+            return events_time_machine, events_now
+
+        if self._environment is None:
+            dep_index = 0  # whatever in range
+        else:
+            dep_index = searchsorted_inrange(self._environments, [self._environment])[0]
+        if self._environments[dep_index] == self._environment:
+            prs = dfs.prs.index.values
+            deployed = np.full(len(prs), None, "datetime64[s]")
+            dep_peek = self._calcs["deploy"]["time"][dep_index].calcs[0].peek
+            mask = (dep_peek["environments"][0] & (1 << dep_index)).astype(bool)
+            deployed[mask] = dep_peek["finished"][0][dep_index]
+            events_time_machine[PullRequestEvent.DEPLOYED] = \
+                set(prs[deployed < np.array(self._time_to, dtype=deployed.dtype)])
+            events_now[PullRequestEvent.DEPLOYED] = set(prs[mask])
+        else:
+            events_time_machine[PullRequestEvent.DEPLOYED] = \
+                events_now[PullRequestEvent.DEPLOYED] = set()
+
         return events_time_machine, events_now
 
     @staticmethod
@@ -402,6 +476,7 @@ async def filter_pull_requests(events: Set[PullRequestEvent],
                                participants: PRParticipants,
                                labels: LabelFilter,
                                jira: JIRAFilter,
+                               environment: Optional[str],
                                exclude_inactive: bool,
                                release_settings: ReleaseSettings,
                                updated_min: Optional[datetime],
@@ -426,7 +501,7 @@ async def filter_pull_requests(events: Set[PullRequestEvent],
     """
     prs, deployments, _, _ = await _filter_pull_requests(
         events, stages, time_from, time_to, repos, participants, labels, jira,
-        exclude_inactive, release_settings, updated_min, updated_max,
+        environment, exclude_inactive, release_settings, updated_min, updated_max,
         prefixer, account, meta_ids, mdb, pdb, rdb, cache)
     return prs, deployments
 
@@ -586,16 +661,17 @@ async def _append_merged_with_failed_check_runs(check_runs_task: Optional[asynci
 
 
 @cached(
-    exptime=PullRequestMiner.CACHE_TTL,
+    exptime=short_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda time_from, time_to, repos, events, stages, participants, exclude_inactive, release_settings, updated_min, updated_max, **_: (  # noqa
+    key=lambda time_from, time_to, repos, events, stages, participants, environment, exclude_inactive, release_settings, updated_min, updated_max, **_: (  # noqa
         time_from.timestamp(),
         time_to.timestamp(),
         ",".join(sorted(repos)),
         ",".join(s.name.lower() for s in sorted(events)),
         ",".join(s.name.lower() for s in sorted(stages)),
         sorted((k.name.lower(), sorted(v)) for k, v in participants.items()),
+        environment,
         exclude_inactive,
         updated_min.timestamp() if updated_min is not None else None,
         updated_max.timestamp() if updated_max is not None else None,
@@ -611,6 +687,7 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
                                 participants: PRParticipants,
                                 labels: LabelFilter,
                                 jira: JIRAFilter,
+                                environment: Optional[str],
                                 exclude_inactive: bool,
                                 release_settings: ReleaseSettings,
                                 updated_min: Optional[datetime],
@@ -638,6 +715,8 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
     check_runs_task = asyncio.create_task(_load_failed_check_runs_for_prs(
         updated_min or time_from, updated_max or time_to,
         repos, labels, jira, meta_ids, mdb, cache))
+    environments_task = asyncio.create_task(fetch_repository_environments(
+        repos, prefixer, account, rdb, cache))
     branches, default_branches = await BranchMiner.extract_branches(repos, meta_ids, mdb, cache)
     tasks = (
         PullRequestMiner.mine(
@@ -649,19 +728,20 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
             time_from, time_to, repos, participants, labels, default_branches,
             exclude_inactive, release_settings, prefixer, account, pdb),
     )
-    (pr_miner, unreleased_facts, matched_bys, unreleased_prs_event), (facts, ambiguous) = \
-        await gather(*tasks)
+    (
+        (pr_miner, unreleased_facts, matched_bys, unreleased_prs_event),
+        (released_facts, ambiguous),
+    ) = await gather(*tasks)
     add_pdb_misses(pdb, "load_precomputed_done_facts_filters/ambiguous",
-                   remove_ambiguous_prs(facts, ambiguous, matched_bys))
+                   remove_ambiguous_prs(released_facts, ambiguous, matched_bys))
     # we want the released PR facts to overwrite the others
-    facts, unreleased_facts = unreleased_facts, facts
-    facts.update(unreleased_facts)
-    del unreleased_facts
+    facts = {**unreleased_facts, **released_facts}
+    del unreleased_facts, released_facts
 
     deployment_names = pr_miner.dfs.deployments.index.get_level_values(1).unique()
-    deployments = asyncio.create_task(load_included_deployments(
-        deployment_names, account, meta_ids, mdb, rdb, cache),
-        name=f"load_included_deployments({len(deployment_names)})")
+    deps_task = asyncio.create_task(_load_deployments(
+        deployment_names, facts, account, meta_ids, mdb, pdb, rdb, cache),
+        name=f"filter_pull_requests/_load_deployments({len(deployment_names)})")
     prs = await list_with_yield(pr_miner, "PullRequestMiner.__iter__")
 
     with sentry_sdk.start_span(op="PullRequestFactsMiner.__call__"):
@@ -742,29 +822,54 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
                        missed_merged_unreleased_facts_counter)
         log.info("total fact evals: %d", fact_evals)
 
+    _, include_deps_task = await gather(environments_task, deps_task)
     prs = await list_with_yield(
-        PullRequestListMiner(prs, pr_miner.dfs, facts, events, stages, time_from, time_to, True),
+        PullRequestListMiner(
+            prs, pr_miner.dfs, facts, events, stages, time_from, time_to, True, environment,
+            environments_task.result()),
         "PullRequestListMiner.__iter__",
     )
-    await _append_merged_with_failed_check_runs(check_runs_task, prs)
-    await deployments
+    await gather(_append_merged_with_failed_check_runs(check_runs_task, prs),
+                 include_deps_task)
     log.debug("return %d PRs", len(prs))
-    return prs, deployments.result(), labels, jira
+    return prs, include_deps_task.result(), labels, jira
+
+
+@sentry_span
+async def _load_deployments(new_names: Sequence[str],
+                            precomputed_facts: Dict[int, PullRequestFacts],
+                            account: int,
+                            meta_ids: Tuple[int, ...],
+                            mdb: ParallelDatabase,
+                            pdb: ParallelDatabase,
+                            rdb: ParallelDatabase,
+                            cache: Optional[aiomcache.Client],
+                            ) -> asyncio.Task:
+    deps = await PullRequestMiner.fetch_pr_deployments(precomputed_facts, account, pdb, rdb)
+    log = logging.getLogger(f"{metadata.__package__}.filter_pull_requests.load_deployments")
+    UnfreshPullRequestFactsFetcher.append_deployments(precomputed_facts, deps, log)
+    names = np.unique(np.concatenate([new_names, deps.index.get_level_values(1).values]))
+    return asyncio.create_task(
+        load_included_deployments(names, account, meta_ids, mdb, rdb, cache),
+        name="filter_pull_requests/load_included_deployments",
+    )
 
 
 @sentry_span
 @cached(
-    exptime=PullRequestMiner.CACHE_TTL,
+    exptime=short_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda prs, release_settings, **_: (  # noqa
+    key=lambda prs, release_settings, environment, **_: (
         ";".join("%s:%s" % (repo, ",".join(map(str, sorted(numbers))))
                  for repo, numbers in sorted(prs.items())),
         release_settings,
+        environment,
     ),
 )
 async def fetch_pull_requests(prs: Dict[str, Set[int]],
                               release_settings: ReleaseSettings,
+                              environment: Optional[str],
                               prefixer: PrefixerPromise,
                               account: int,
                               meta_ids: Tuple[int, ...],
@@ -778,13 +883,17 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
 
     :params prs: For each repository name without the prefix, there is a set of PR numbers to list.
     """
-    mined_prs, dfs, facts, _, deployments_task, check_runs_task = await _fetch_pull_requests(
-        prs, release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache)
+    (mined_prs, dfs, facts, _, deployments_task, check_runs_task), repo_envs = await gather(
+        _fetch_pull_requests(
+            prs, release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache),
+        fetch_repository_environments(prs, prefixer, account, rdb, cache),
+    )
     if not mined_prs:
         return [], {}
     miner = PullRequestListMiner(
         mined_prs, dfs, facts, set(), set(),
-        datetime(1970, 1, 1, tzinfo=timezone.utc), datetime.now(timezone.utc), False)
+        datetime(1970, 1, 1, tzinfo=timezone.utc), datetime.now(timezone.utc),
+        False, environment, repo_envs)
     prs = await list_with_yield(miner, "PullRequestListMiner.__iter__")
     await _append_merged_with_failed_check_runs(check_runs_task, prs)
     await deployments_task
@@ -802,7 +911,7 @@ async def _fetch_pull_requests(prs: Dict[str, Set[int]],
                                cache: Optional[aiomcache.Client],
                                ) -> Tuple[List[MinedPullRequest],
                                           PRDataFrames,
-                                          Dict[str, PullRequestFacts],
+                                          Dict[int, PullRequestFacts],
                                           Dict[str, ReleaseMatch],
                                           asyncio.Task,
                                           Optional[asyncio.Task]]:
@@ -833,8 +942,8 @@ async def _fetch_pull_requests(prs: Dict[str, Set[int]],
 
 
 async def unwrap_pull_requests(prs_df: pd.DataFrame,
-                               precomputed_done_facts: Dict[str, PullRequestFacts],
-                               precomputed_ambiguous_done_facts: Dict[str, List[str]],
+                               precomputed_done_facts: Dict[int, PullRequestFacts],
+                               precomputed_ambiguous_done_facts: Dict[str, List[int]],
                                with_jira: bool,
                                branches: pd.DataFrame,
                                default_branches: Dict[str, str],
@@ -850,7 +959,7 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
                                with_deployments: bool = True,
                                ) -> Tuple[List[MinedPullRequest],
                                           PRDataFrames,
-                                          Dict[str, PullRequestFacts],
+                                          Dict[int, PullRequestFacts],
                                           Dict[str, ReleaseMatch],
                                           Optional[asyncio.Task]]:
     """
@@ -927,11 +1036,11 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
         release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache, with_jira=with_jira)
     if with_deployments:
         deployment_names = dfs.deployments.index.get_level_values(1).unique()
-        deployments = asyncio.create_task(load_included_deployments(
-            deployment_names, account, meta_ids, mdb, rdb, cache),
+        deployments_task = asyncio.create_task(_load_deployments(
+            deployment_names, facts, account, meta_ids, mdb, pdb, rdb, cache),
             name=f"load_included_deployments({len(deployment_names)})")
     else:
-        deployments = None
+        deployments_task = None
     prs = await list_with_yield(PullRequestMiner(dfs), "PullRequestMiner.__iter__")
     for k, v in unreleased.items():
         if k not in facts:
@@ -954,4 +1063,7 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
 
     set_pdb_hits(pdb, "fetch_pull_requests/facts", len(filtered_prs) - pdb_misses)
     set_pdb_misses(pdb, "fetch_pull_requests/facts", pdb_misses)
-    return filtered_prs, dfs, facts, matched_bys, deployments
+    if deployments_task is not None:
+        await deployments_task
+        deployments_task = deployments_task.result()
+    return filtered_prs, dfs, facts, matched_bys, deployments_task

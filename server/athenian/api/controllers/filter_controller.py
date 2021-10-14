@@ -209,7 +209,7 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     updated_min, updated_max = _bake_updated_min_max(filt)
     prs, deployments = await filter_pull_requests(
         events, stages, time_from, time_to, repos, participants, labels, jira,
-        filt.exclude_inactive, settings, updated_min, updated_max,
+        filt.environment, filt.exclude_inactive, settings, updated_min, updated_max,
         prefixer, filt.account, meta_ids, request.mdb, request.pdb, request.rdb, request.cache)
     prefixer = await prefixer.load()  # no-op
     return await _build_github_prs_response(
@@ -498,7 +498,7 @@ async def get_prs(request: AthenianWebRequest, body: dict) -> web.Response:
         request, body.account, prs_by_repo, ".prs")
     prefixer = await Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
     prs, deployments = await fetch_pull_requests(
-        prs_by_repo, settings, prefixer, body.account, meta_ids,
+        prs_by_repo, settings, body.environment, prefixer, body.account, meta_ids,
         request.mdb, request.pdb, request.rdb, request.cache)
     prefixer = await prefixer.load()  # no-op
     return await _build_github_prs_response(

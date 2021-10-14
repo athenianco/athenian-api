@@ -7,8 +7,7 @@ from itertools import chain
 import logging
 import pickle
 from typing import Collection, Dict, Generator, Iterable, Iterator, KeysView, List, Optional, \
-    Sequence, \
-    Set, Tuple, Union
+    Sequence, Set, Tuple, Union
 
 import aiomcache
 import numpy as np

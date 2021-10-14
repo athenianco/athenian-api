@@ -10,3 +10,4 @@ class PullRequestStage(Model, metaclass=Enum):
     RELEASING = "releasing"
     FORCE_PUSH_DROPPED = "force_push_dropped"
     DONE = "done"
+    DEPLOYED = "deployed"

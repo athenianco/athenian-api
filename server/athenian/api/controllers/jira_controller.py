@@ -33,6 +33,7 @@ from athenian.api.controllers.jira import get_jira_installation, normalize_issue
     normalize_user_type, resolve_projects
 from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.branches import BranchMiner
+from athenian.api.controllers.miners.github.deployment_light import fetch_repository_environments
 from athenian.api.controllers.miners.github.precomputed_prs import DonePRFactsLoader
 from athenian.api.controllers.miners.jira.epic import filter_epics
 from athenian.api.controllers.miners.jira.issue import fetch_jira_issues, ISSUE_PR_IDS, \
@@ -561,12 +562,20 @@ async def _issue_flow(return_: Set[str],
         related_branches = branches.take(np.nonzero(np.in1d(
             branches[Branch.repository_full_name.name].values.astype("S"),
             prs_df[PullRequest.repository_full_name.name].unique().astype("S")))[0])
-        mined_prs, dfs, facts, _, _ = await unwrap_pull_requests(
-            prs_df, facts, ambiguous, False, related_branches, default_branches, release_settings,
-            prefixer, account, meta_ids, mdb, pdb, rdb, cache, with_deployments=False)
+        (mined_prs, dfs, facts, _, _), repo_envs = await gather(
+            unwrap_pull_requests(
+                prs_df, facts, ambiguous, False, related_branches, default_branches,
+                release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache,
+                with_deployments=False),
+            fetch_repository_environments(
+                prs_df[PullRequest.repository_full_name.name].unique(),
+                prefixer, account, rdb, cache),
+        )
+
         miner = PullRequestListMiner(
             mined_prs, dfs, facts, set(), set(),
-            datetime(1970, 1, 1, tzinfo=timezone.utc), datetime.now(timezone.utc), False)
+            datetime(1970, 1, 1, tzinfo=timezone.utc), datetime.now(timezone.utc),
+            False, None, repo_envs)
         pr_list_items = await list_with_yield(miner, "PullRequestListMiner.__iter__")
         prefixer = await prefixer.load()
         if missing_repo_indexes := [

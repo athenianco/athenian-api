@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import logging
 from random import randint
 import warnings
 
@@ -8,8 +9,10 @@ import pandas as pd
 import pytest
 from sqlalchemy import delete, insert, select
 
+from athenian.api import metadata
 from athenian.api.controllers.features.entries import MetricEntriesCalculator
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.controllers.miners.github import deployment_light
 from athenian.api.controllers.miners.github.commit import _empty_dag, _fetch_commit_history_edges
 from athenian.api.controllers.miners.github.dag_accelerated import join_dags
 from athenian.api.controllers.miners.github.deployment import mine_deployments
@@ -276,7 +279,7 @@ async def precomputed_deployments(
     release_match_setting_tag_or_branch, prefixer_promise, branches, default_branches,
     mdb, pdb, rdb,
 ):
-    await mine_deployments(
+    deps, _ = await mine_deployments(
         [40550], {},
         datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
         ["production", "staging"],
@@ -284,6 +287,19 @@ async def precomputed_deployments(
         release_match_setting_tag_or_branch,
         branches, default_branches, prefixer_promise,
         1, (6366825,), mdb, pdb, rdb, None)
+    log = logging.getLogger(f"{metadata.__package__}.precomputed_deployments")
+    log.info("Mined %d deployments", len(deps))
+
+
+@pytest.fixture(scope="function")
+def detect_deployments(request):
+    repository_environment_threshold = deployment_light.repository_environment_threshold
+    deployment_light.repository_environment_threshold = timedelta(days=100 * 365)
+
+    def restore_repository_environment_threshold():
+        deployment_light.repository_environment_threshold = repository_environment_threshold
+
+    request.addfinalizer(restore_repository_environment_threshold)
 
 
 def pytest_configure(config):

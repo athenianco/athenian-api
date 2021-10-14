@@ -222,6 +222,13 @@ class UnfreshPullRequestFactsFetcher:
                 f.deployed = [finished]
                 f.environments = [env]
             else:
-                f.deployments.append(name)
-                f.deployed.append(finished)
-                f.environments.append(env)
+                try:
+                    f.deployments.append(name)
+                    f.deployed.append(finished)
+                    f.environments.append(env)
+                except AttributeError:
+                    continue  # numpy array, already set
+        empty = []
+        for f in facts.values():
+            if f.deployments is None:
+                f.deployments = f.deployed = f.environments = empty

@@ -58,11 +58,17 @@ class MetricCalculator(Generic[T], ABC):
         nan = self.metric.nan
         return nan != nan
 
+    @property
+    def calcs(self) -> List[Union["MetricCalculator", List["MetricCalculator"]]]:
+        """Return the dependencies."""
+        return self._calcs
+
     def __init__(self,
                  *deps: Union["MetricCalculator",
                               Tuple["MetricCalculator"],
                               List["MetricCalculator"]],
-                 quantiles: Sequence[float]):
+                 quantiles: Sequence[float],
+                 **kwargs):
         """Initialize a new `MetricCalculator` instance."""
         self.reset()
         self._calcs: List[Union[MetricCalculator, List[MetricCalculator]]] = []
@@ -71,6 +77,7 @@ class MetricCalculator(Generic[T], ABC):
         assert self._quantiles[0] >= 0
         assert self._quantiles[1] <= 1
         assert self._quantiles[0] <= self._quantiles[1]
+        self.__dict__.update(kwargs)
         for calc in deps:
             if isinstance(calc, (list, tuple)):
                 example = calc[0]
@@ -206,8 +213,15 @@ class MetricCalculator(Generic[T], ABC):
         self._last_values = None
 
     def split(self) -> List["MetricCalculator"]:
-        """Clone yourself depending on the previously set external keyword arguments."""
+        """Replicate yourself depending on the previously set external keyword arguments."""
         return [self]
+
+    def clone(self, *args, **kwargs) -> "MetricCalculator":
+        """Clone from an existing calculator."""
+        instance = object.__new__(type(self))
+        instance.__dict__ = self.__dict__.copy()
+        instance.__init__(*args, **kwargs)
+        return instance
 
     @abstractmethod
     def _analyze(self,
@@ -312,9 +326,9 @@ class MetricCalculator(Generic[T], ABC):
 class WithoutQuantilesMixin:
     """Ignore the quantiles."""
 
-    def __init__(self, *deps: "MetricCalculator", quantiles: Sequence[float]):
+    def __init__(self, *deps: "MetricCalculator", quantiles: Sequence[float], **kwargs):
         """Override the constructor to disable the quantiles."""
-        super().__init__(*deps, quantiles=(0, 1))
+        super().__init__(*deps, quantiles=(0, 1), **kwargs)
 
 
 class AverageMetricCalculator(MetricCalculator[T], ABC):
@@ -484,9 +498,7 @@ class MetricCalculatorEnsemble:
         cls_instances = {}
         for cls in reversed(list(nx.topological_sort(dig))):
             calc = cls(*(cls_instances[dep] for dep in cls.deps),
-                       quantiles=quantiles)
-            for key, val in kwargs.items():
-                setattr(calc, key, val)
+                       quantiles=quantiles, **kwargs)
             calcs.extend(clones := calc.split())
             cls_instances[cls] = clones
             try:
@@ -823,9 +835,9 @@ class RatioCalculator(WithoutQuantilesMixin, MetricCalculator[float]):
     metric = MetricFloat
     value_offset = 0
 
-    def __init__(self, *deps: MetricCalculator, quantiles: Sequence[float]):
+    def __init__(self, *deps: MetricCalculator, quantiles: Sequence[float], **kwargs):
         """Initialize a new instance of RatioCalculator."""
-        super().__init__(*deps, quantiles=quantiles)
+        super().__init__(*deps, quantiles=quantiles, **kwargs)
         if isinstance(self._calcs[1], self.deps[0]):
             self._calcs = list(reversed(self._calcs))
         self._opened, self._closed = self._calcs

@@ -519,7 +519,8 @@ class CycleCounterWithQuantiles(Counter):
 
 @register_metric(PullRequestMetricID.PR_ALL_COUNT)
 class AllCounter(SumMetricCalculator[int]):
-    """Count all the PRs that are active in the given time interval."""
+    """Count all the PRs that are active in the given time interval - but ignoring \
+    the deployments."""
 
     metric = MetricInt
     exclude_inactive = False
@@ -1040,15 +1041,16 @@ class EnvironmentsMarker(MetricCalculator[np.ndarray]):
         my_env_indexes[not_found_mask] = np.arange(-1, -1 - not_found_mask.sum(), -1)
         imap = imap.astype(np.uint64)
         fact_finished = facts[PullRequestFacts.f.deployed].values
-        all_finished = np.concatenate(fact_finished).astype("datetime64[s]", copy=False)
+        all_finished = np.concatenate(
+            fact_finished, dtype=facts[PullRequestFacts.f.created].dtype, casting="unsafe",
+        ).astype("datetime64[s]", copy=False)
         assert len(all_envs) == len(all_finished)
-        finished_by_env = [None] * len(self.environments)
+        finished_by_env = np.empty(len(self.environments), dtype=object)
         for pos, ix in enumerate(my_env_indexes):
             if ix >= 0:
                 ix_mask = imap == ix
                 imap[ix_mask] = 1 << pos
                 finished_by_env[pos] = all_finished[ix_mask]
-        finished_by_env = np.array(finished_by_env, dtype=object)
         unused = np.setdiff1d(np.arange(len(unique_fact_envs)), my_env_indexes, assume_unique=True)
         if len(unused):
             imap[np.in1d(imap, unused)] = 0
@@ -1078,15 +1080,16 @@ class DeploymentMetricBase(MetricCalculator[T]):
         if len(self.environments) == 0:
             raise ValueError("Must specify at least one environment.")
         if len(self.environments) == 1:
+            if self.environments == [None]:
+                return []
             self.environment = 0
             return [self]
-        cls = type(self)
-        clones = [cls(*((calcs[i] if isinstance(calcs, (list, tuple)) else calcs)
-                        for calcs in self._calcs), quantiles=self._quantiles)
-                  for i in range(len(self.environments))]
-        for i, clone in enumerate(clones):
-            clone.environment = i
-            clone.environments = self.environments
+        clones = [
+            self.clone(*((calcs[i] if isinstance(calcs, (list, tuple)) else calcs)
+                         for calcs in self._calcs),
+                       quantiles=self._quantiles, environment=i)
+            for i in range(len(self.environments))
+        ]
         return clones
 
     def _calc_finished(self, facts: pd.DataFrame) -> np.ndarray:
@@ -1144,6 +1147,33 @@ class DeploymentCounter(DeploymentMetricBase, WithoutQuantilesMixin, Counter):
     disregarding the quantiles."""
 
     deps = (DeploymentTimeCalculator,)
+
+
+class DeploymentPendingMarker(DeploymentMetricBase):
+    """Auxiliary routine to indicate undeployed PRs belonging to \
+    self.repositories[self.environment]."""
+
+    is_pure_dependency = True
+    metric = MetricInt
+    repositories: List[List[str]] = []
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **kwargs,
+                 ) -> np.ndarray:
+        finished = self._calc_finished(facts)
+        repo_mask = np.in1d(facts[PullRequestFacts.f.repository_full_name].values,
+                            self.repositories[self.environment])
+        result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
+        finished_in_range = finished < max_times[:, None]
+        result[:, repo_mask] = 1
+        result[finished_in_range] = 0
+        return result
+
+    def _value(self, samples: np.ndarray) -> Metric[int]:
+        raise AssertionError("this must be never called")
 
 
 @register_metric(PullRequestMetricID.PR_DEPLOYMENT_COUNT_Q)

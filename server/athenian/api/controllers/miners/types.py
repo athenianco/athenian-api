@@ -75,6 +75,7 @@ class PullRequestEvent(IntEnum):
     MERGED = auto()
     REJECTED = auto()
     RELEASED = auto()
+    DEPLOYED = auto()
 
 
 class PullRequestStage(IntEnum):
@@ -86,6 +87,7 @@ class PullRequestStage(IntEnum):
     RELEASING = auto()
     FORCE_PUSH_DROPPED = auto()
     DONE = auto()
+    DEPLOYED = auto()
 
 
 @dataclass(slots=True, frozen=True)
@@ -136,7 +138,7 @@ class PullRequestListItem:
     merged: Optional[datetime]
     released: Optional[datetime]
     release_url: str
-    stage_timings: Dict[str, timedelta]
+    stage_timings: Dict[str, Union[timedelta, Dict[str, timedelta]]]
     events_time_machine: Optional[Set[PullRequestEvent]]
     stages_time_machine: Optional[Set[PullRequestStage]]
     events_now: Set[PullRequestEvent]
@@ -300,6 +302,13 @@ class PullRequestFacts:
             ((closed := arr["closed"]) == closed and (merged := arr["merged"]) != merged)
         )
         data = b"".join([arr.view(np.byte).data, self.data[self.dtype.itemsize:]])
+        if self.deployed:
+            deps_passed = [i for i, ts in enumerate(self.deployed) if ts < after_dt]
+            deployed = [self.deployed[i] for i in deps_passed]
+            deployments = [self.deployments[i] for i in deps_passed]
+            environments = [self.environments[i] for i in deps_passed]
+            return PullRequestFacts(
+                data, deployed=deployed, deployments=deployments, environments=environments)
         return PullRequestFacts(data)
 
     def __lt__(self, other: "PullRequestFacts") -> bool:

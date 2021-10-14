@@ -2,14 +2,18 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 from itertools import chain
 import json
+import logging
 from typing import Collection, Dict, Optional, Set, Tuple
 
 import aiomcache
 import pandas as pd
 from sqlalchemy import and_, distinct, select
 
+from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.controllers.features.github.pull_request_filter import PullRequestListMiner
+from athenian.api.controllers.features.github.unfresh_pull_request_metrics import \
+    UnfreshPullRequestFactsFetcher
 from athenian.api.controllers.jira import get_jira_installation, load_mapped_jira_users
 from athenian.api.controllers.jira_controller import participant_columns
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
@@ -17,11 +21,12 @@ from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.check_run import mine_check_runs
 from athenian.api.controllers.miners.github.contributors import mine_contributors
 from athenian.api.controllers.miners.github.deployment import mine_deployments
-from athenian.api.controllers.miners.github.deployment_light import append_pr_deployment_mapping
+from athenian.api.controllers.miners.github.deployment_light import fetch_repository_environments
 from athenian.api.controllers.miners.github.developer import DeveloperTopic, \
     mine_developer_activities
 from athenian.api.controllers.miners.github.precomputed_prs import \
     DonePRFactsLoader, MergedPRFactsLoader, OpenPRFactsLoader
+from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.github.release_mine import mine_releases
 from athenian.api.controllers.miners.jira.issue import fetch_jira_issues, PullRequestJiraMapper
 from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
@@ -79,10 +84,13 @@ async def mine_all_prs(repos: Collection[str],
             PullRequest.acc_id.in_(meta_ids),
             PullRequest.node_id.in_(facts),
         )), mdb, PullRequest, index=PullRequest.node_id.name),
+        fetch_repository_environments(repos, prefixer, account, rdb, cache),
+        PullRequestMiner.fetch_pr_deployments(facts, account, pdb, rdb),
         PullRequestJiraMapper.append_pr_jira_mapping(facts, meta_ids, mdb),
-        append_pr_deployment_mapping(facts, account, pdb),
     ]
-    df_prs, *_ = await gather(*tasks, op="fetch raw data")
+    df_prs, envs, deps, *_ = await gather(*tasks, op="fetch raw data")
+    UnfreshPullRequestFactsFetcher.append_deployments(
+        facts, deps, logging.getLogger(f"{metadata.__package__}.mine_all_prs"))
     df_facts = df_from_structs(facts.values())
     dummy = {ghdprf.release_url.name: None, ghdprf.release_node_id.name: None}
     for col in (ghdprf.release_url.name, ghdprf.release_node_id.name):
@@ -93,9 +101,13 @@ async def mine_all_prs(repos: Collection[str],
     df_facts.set_index(PullRequest.node_id.name, inplace=True)
     if not df_facts.empty:
         stage_timings = PullRequestListMiner.calc_stage_timings(
-            df_facts, *PullRequestListMiner.create_stage_calcs())
+            df_facts, *PullRequestListMiner.create_stage_calcs(envs))
         for stage, timings in stage_timings.items():
-            df_facts[f"stage_time_{stage}"] = pd.to_timedelta(timings, unit="s")
+            if stage == "deploy":
+                for env, val in zip(envs, timings):
+                    df_facts[f"stage_time_{stage}_{env}"] = pd.to_timedelta(val, unit="s")
+            else:
+                df_facts[f"stage_time_{stage}"] = pd.to_timedelta(timings[0], unit="s")
         del stage_timings
     for col in df_prs:
         if col in df_facts:
