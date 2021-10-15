@@ -437,7 +437,7 @@ async def _build_release_set_response(releases: List[Tuple[Dict[str, Any], Relea
         users={u: IncludedNativeUser(avatar=a) for u, a in avatars},
         jira=issues,
         deployments={
-            key: _webify_deployment(val, repo_node_to_prefixed_name)
+            key: webify_deployment(val, repo_node_to_prefixed_name)
             for key, val in sorted(deployments.items())
         } or None,
     ))
@@ -542,11 +542,12 @@ async def _check_github_repos(request: AthenianWebRequest,
     return settings, meta_ids, repos
 
 
-def _webify_deployment(val: Deployment, repo_node_to_prefixed_name) -> WebDeploymentNotification:
+def webify_deployment(val: Deployment, repo_node_to_prefixed_name) -> WebDeploymentNotification:
+    """Convert a Deployment to the web representation."""
     return WebDeploymentNotification(
         name=val.name,
         environment=val.environment,
-        conclusion=val.conclusion,
+        conclusion=val.conclusion.name,
         url=val.url,
         date_started=val.started_at,
         date_finished=val.finished_at,
@@ -580,7 +581,7 @@ async def _build_github_prs_response(prs: List[PullRequestListItem],
             login: IncludedNativeUser(avatar=avatar) for login, avatar in avatars
         },
         deployments={
-            key: _webify_deployment(val, repo_node_to_prefixed_name)
+            key: webify_deployment(val, repo_node_to_prefixed_name)
             for key, val in sorted(deployments.items())
         } or None,
     ), data=web_prs)

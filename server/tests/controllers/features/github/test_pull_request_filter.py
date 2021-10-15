@@ -9,7 +9,8 @@ from athenian.api.controllers.features.github.pull_request_filter import fetch_p
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.deployment import mine_deployments
 from athenian.api.controllers.miners.types import DeployedComponent, Deployment, \
-    PRParticipationKind, PullRequestEvent, PullRequestListItem, PullRequestStage
+    DeploymentConclusion, PRParticipationKind, PullRequestEvent, PullRequestListItem, \
+    PullRequestStage
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
     GitHubMergedPullRequestFacts, GitHubOpenPullRequestFacts
@@ -577,7 +578,7 @@ def check_pr_deployments(prs: List[PullRequestListItem],
     assert deps == {
         "Dummy deployment": Deployment(
             name="Dummy deployment",
-            conclusion="SUCCESS",
+            conclusion=DeploymentConclusion.SUCCESS,
             environment="production",
             url=None,
             started_at=datetime(2019, 11, 1, 12, 0, tzinfo=timezone.utc),

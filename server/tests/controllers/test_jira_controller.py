@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 import json
 from typing import List
 
@@ -10,7 +10,9 @@ from sqlalchemy import delete, insert, update
 from athenian.api.models.metadata.github import NodePullRequestJiraIssues, PullRequest
 from athenian.api.models.metadata.jira import Issue
 from athenian.api.models.web import CalculatedJIRAHistogram, CalculatedJIRAMetricValues, \
-    CalculatedLinearMetricValues, FilteredJIRAStuff, JIRAEpic, JIRAEpicChild, JIRAFilterReturn, \
+    CalculatedLinearMetricValues, DeployedComponent, DeploymentNotification, FilteredJIRAStuff, \
+    JIRAEpic, \
+    JIRAEpicChild, JIRAFilterReturn, \
     JIRAIssueType, JIRALabel, JIRAMetricID, JIRAPriority, JIRAStatus, JIRAUser
 from athenian.api.serialization import FriendlyJson
 
@@ -619,6 +621,56 @@ async def test_filter_jira_issue_prs_comments(client, headers):
             assert not pr.jira
     assert prs == 5
     assert comments == 872
+    assert not model.deployments
+
+
+async def test_filter_jira_issue_prs_deployments(client, headers, mdb_rw, precomputed_deployments):
+    body = {
+        "date_from": "2018-09-01",
+        "date_to": "2020-01-01",
+        "timezone": 120,
+        "account": 1,
+        "exclude_inactive": True,
+        "return": ["issues", "issue_bodies"],
+    }
+    await mdb_rw.execute(insert(NodePullRequestJiraIssues).values({
+        NodePullRequestJiraIssues.jira_acc: 1,
+        NodePullRequestJiraIssues.node_acc: 6366825,
+        NodePullRequestJiraIssues.node_id: 163373,
+        NodePullRequestJiraIssues.jira_id: "10100",
+    }))
+    try:
+        response = await client.request(
+            method="POST", path="/v1/filter/jira", headers=headers, json=body,
+        )
+    finally:
+        await mdb_rw.execute(delete(NodePullRequestJiraIssues)
+                             .where(NodePullRequestJiraIssues.node_id == 163373))
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    model = FilteredJIRAStuff.from_dict(json.loads(body))
+    assert len(model.issues) == 98
+    prs = 0
+    for issue in model.issues:
+        if issue.id == "DEV-100":
+            prs += 1
+            assert len(issue.prs) == 1
+            assert issue.prs[0].number == 1160
+    assert prs == 1
+    assert model.deployments == {
+        "Dummy deployment": DeploymentNotification(
+            components=[
+                DeployedComponent(
+                    repository="github.com/src-d/go-git",
+                    reference="v4.13.1 (0d1a009cbb604db18be960db5f1525b99a55d727)")],
+            environment="production",
+            name="Dummy deployment",
+            url=None,
+            date_started=datetime(2019, 11, 1, 12, 0, tzinfo=timezone.utc),
+            date_finished=datetime(2019, 11, 1, 12, 15, tzinfo=timezone.utc),
+            conclusion="SUCCESS",
+            labels=None),
+    }
 
 
 async def test_filter_jira_issue_only_flying(client, headers):

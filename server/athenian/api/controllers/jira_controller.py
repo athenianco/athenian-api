@@ -28,7 +28,7 @@ from athenian.api.controllers.features.jira.issue_metrics import JIRABinnedHisto
     JIRABinnedMetricCalculator
 from athenian.api.controllers.features.metric_calculator import DEFAULT_QUANTILE_STRIDE, \
     group_to_indexes
-from athenian.api.controllers.filter_controller import web_pr_from_struct
+from athenian.api.controllers.filter_controller import web_pr_from_struct, webify_deployment
 from athenian.api.controllers.jira import get_jira_installation, normalize_issue_type, \
     normalize_user_type, resolve_projects
 from athenian.api.controllers.miners.filters import LabelFilter
@@ -38,6 +38,7 @@ from athenian.api.controllers.miners.github.precomputed_prs import DonePRFactsLo
 from athenian.api.controllers.miners.jira.epic import filter_epics
 from athenian.api.controllers.miners.jira.issue import fetch_jira_issues, ISSUE_PR_IDS, \
     ISSUE_PRS_BEGAN, ISSUE_PRS_COUNT, ISSUE_PRS_RELEASED, resolve_work_began_and_resolved
+from athenian.api.controllers.miners.types import Deployment
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import ReleaseSettings, Settings
 from athenian.api.db import ParallelDatabase
@@ -46,7 +47,8 @@ from athenian.api.models.metadata.jira import AthenianIssue, Component, Issue, I
     Priority, Status, User
 from athenian.api.models.state.models import MappedJIRAIdentity
 from athenian.api.models.web import CalculatedJIRAHistogram, CalculatedJIRAMetricValues, \
-    CalculatedLinearMetricValues, FilteredJIRAStuff, FilterJIRAStuff, Interquartile, \
+    CalculatedLinearMetricValues, DeploymentNotification as WebDeploymentNotification, \
+    FilteredJIRAStuff, FilterJIRAStuff, Interquartile, \
     InvalidRequestError, JIRAEpic, JIRAEpicChild, JIRAFilterReturn, JIRAFilterWith, \
     JIRAHistogramsRequest, JIRAIssue, JIRAIssueType, JIRALabel, JIRAMetricsRequest, JIRAPriority, \
     JIRAStatus, JIRAUser, PullRequest as WebPullRequest
@@ -100,7 +102,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
                     sdb, mdb, pdb, rdb, cache),
     ]
     ((epics, epic_priorities, epic_statuses),
-     (issues, labels, issue_users, issue_types, issue_priorities, issue_statuses),
+     (issues, labels, issue_users, issue_types, issue_priorities, issue_statuses, deps),
      ) = await gather(*tasks, op="forked flows")
     if epic_priorities is None:
         priorities = issue_priorities
@@ -122,6 +124,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         priorities=priorities,
         users=issue_users,
         statuses=statuses,
+        deployments=deps,
     ))
 
 
@@ -397,10 +400,11 @@ async def _issue_flow(return_: Set[str],
                                  Optional[JIRAUser],
                                  Optional[JIRAIssueType],
                                  Optional[JIRAPriority],
-                                 Optional[JIRAStatus]]:
+                                 Optional[JIRAStatus],
+                                 Optional[Dict[str, WebDeploymentNotification]]]:
     """Fetch various information related to JIRA issues."""
     if JIRAFilterReturn.ISSUES not in return_:
-        return None, None, None, None, None, None
+        return (None,) * 7
     log = logging.getLogger("%s.filter_jira_stuff" % metadata.__package__)
     extra_columns = [
         Issue.project_id,
@@ -537,11 +541,12 @@ async def _issue_flow(return_: Set[str],
         return labels
 
     @sentry_span
-    async def _fetch_prs() -> Optional[Dict[str, WebPullRequest]]:
+    async def _fetch_prs() -> Tuple[Optional[Dict[str, WebPullRequest]],
+                                    Optional[Dict[str, Deployment]]]:
         if JIRAFilterReturn.ISSUE_BODIES not in return_:
-            return None
+            return None, None
         if len(pr_ids) == 0:
-            return {}
+            return {}, {}
         nonlocal prefixer
         tasks = [
             read_sql_query(
@@ -562,11 +567,10 @@ async def _issue_flow(return_: Set[str],
         related_branches = branches.take(np.nonzero(np.in1d(
             branches[Branch.repository_full_name.name].values.astype("S"),
             prs_df[PullRequest.repository_full_name.name].unique().astype("S")))[0])
-        (mined_prs, dfs, facts, _, _), repo_envs = await gather(
+        (mined_prs, dfs, facts, _, deployments_task), repo_envs = await gather(
             unwrap_pull_requests(
                 prs_df, facts, ambiguous, False, related_branches, default_branches,
-                release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache,
-                with_deployments=False),
+                release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache),
             fetch_repository_environments(
                 prs_df[PullRequest.repository_full_name.name].unique(),
                 prefixer, account, rdb, cache),
@@ -577,26 +581,40 @@ async def _issue_flow(return_: Set[str],
             datetime(1970, 1, 1, tzinfo=timezone.utc), datetime.now(timezone.utc),
             False, None, repo_envs)
         pr_list_items = await list_with_yield(miner, "PullRequestListMiner.__iter__")
-        prefixer = await prefixer.load()
+        loaded_prefixer = await prefixer.load()
         if missing_repo_indexes := [
                 i for i, pr in enumerate(pr_list_items)
-                if pr.repository not in prefixer.repo_name_to_prefixed_name
+                if pr.repository not in loaded_prefixer.repo_name_to_prefixed_name
         ]:
             log.error("Discarded %d PRs because their repositories are gone: %s",
                       len(missing_repo_indexes),
                       {pr_list_items[i].repository for i in missing_repo_indexes})
             for i in reversed(missing_repo_indexes):
                 pr_list_items.pop(i)
-        return dict(zip((pr.node_id for pr in pr_list_items),
-                        (web_pr_from_struct(pr, prefixer, log) for pr in pr_list_items)))
+        if deployments_task is not None:
+            await deployments_task
+            deployments = deployments_task.result()
+        else:
+            deployments = None
+        prs = dict(zip((pr.node_id for pr in pr_list_items),
+                       (web_pr_from_struct(pr, loaded_prefixer, log) for pr in pr_list_items)))
+        return prs, deployments
 
-    prs, component_names, users, mapped_identities, priorities, statuses, issue_types, labels = \
-        await gather(
-            _fetch_prs(), fetch_components(), fetch_users(), fetch_mapped_identities(),
-            _fetch_priorities(priorities, jira_ids[0], return_, mdb),
-            _fetch_statuses(statuses, status_project_map, jira_ids[0], return_, mdb),
-            _fetch_types(issue_type_projects, jira_ids[0], return_, mdb),
-            extract_labels())
+    (
+        (prs, deps),
+        component_names,
+        users,
+        mapped_identities,
+        priorities,
+        statuses,
+        issue_types,
+        labels,
+    ) = await gather(
+        _fetch_prs(), fetch_components(), fetch_users(), fetch_mapped_identities(),
+        _fetch_priorities(priorities, jira_ids[0], return_, mdb),
+        _fetch_statuses(statuses, status_project_map, jira_ids[0], return_, mdb),
+        _fetch_types(issue_type_projects, jira_ids[0], return_, mdb),
+        extract_labels())
     components = {
         row[0]: JIRALabel(title=row[1], kind="component", issues_count=components[row[0]])
         for row in component_names
@@ -611,6 +629,13 @@ async def _issue_flow(return_: Set[str],
                       developer=mapped_identities.get(row[User.id.name]),
                       )
              for row in users] or None
+    if deps is not None:
+        prefixer = await prefixer.load()
+        repo_node_to_prefixed_name = prefixer.repo_node_to_prefixed_name.get
+        deps = {
+            key: webify_deployment(val, repo_node_to_prefixed_name)
+            for key, val in sorted(deps.items())
+        }
     if issue_types is not None:
         issue_types.sort(key=lambda row: (
             row[IssueType.normalized_name.name],
@@ -705,7 +730,7 @@ async def _issue_flow(return_: Set[str],
             ))
     else:
         issue_models = None
-    return issue_models, labels, users, issue_types, priorities, statuses
+    return issue_models, labels, users, issue_types, priorities, statuses, deps
 
 
 @sentry_span

@@ -956,7 +956,6 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
                                rdb: ParallelDatabase,
                                cache: Optional[aiomcache.Client],
                                resolve_rebased: bool = True,
-                               with_deployments: bool = True,
                                ) -> Tuple[List[MinedPullRequest],
                                           PRDataFrames,
                                           Dict[int, PullRequestFacts],
@@ -988,7 +987,7 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
             PRDataFrames(*(pd.DataFrame() for _ in fields(PRDataFrames))),
             {},
             {},
-            asyncio.create_task(noop(), name="noop") if with_deployments else None,
+            asyncio.create_task(noop(), name="noop"),
         )
     if resolve_rebased:
         dags = await fetch_precomputed_commit_history_dags(
@@ -1031,20 +1030,18 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
         releases, matched_bys, unreleased = dummy_releases_df(), {}, {}
         dags = await fetch_precomputed_commit_history_dags(
             prs_df[PullRequest.repository_full_name.name].unique(), account, pdb, cache)
-    dfs, _, _ = await PullRequestMiner.mine_by_ids(
-        prs_df, unreleased, now, releases, matched_bys, branches, default_branches, dags,
-        release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache, with_jira=with_jira)
-    if with_deployments:
-        deployment_names = dfs.deployments.index.get_level_values(1).unique()
-        deployments_task = asyncio.create_task(_load_deployments(
-            deployment_names, facts, account, meta_ids, mdb, pdb, rdb, cache),
-            name=f"load_included_deployments({len(deployment_names)})")
-    else:
-        deployments_task = None
-    prs = await list_with_yield(PullRequestMiner(dfs), "PullRequestMiner.__iter__")
     for k, v in unreleased.items():
         if k not in facts:
             facts[k] = v
+    dfs, _, _ = await PullRequestMiner.mine_by_ids(
+        prs_df, unreleased, now, releases, matched_bys, branches, default_branches, dags,
+        release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache, with_jira=with_jira)
+    deployment_names = dfs.deployments.index.get_level_values(1).unique()
+    deployments_task = asyncio.create_task(_load_deployments(
+        deployment_names, facts, account, meta_ids, mdb, pdb, rdb, cache),
+        name=f"load_included_deployments({len(deployment_names)})")
+
+    prs = await list_with_yield(PullRequestMiner(dfs), "PullRequestMiner.__iter__")
 
     filtered_prs = []
     with sentry_sdk.start_span(op="PullRequestFactsMiner.__call__",

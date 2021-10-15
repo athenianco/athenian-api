@@ -15,7 +15,7 @@ from athenian.api.controllers.miners.github.deployment import mine_deployments
 from athenian.api.controllers.miners.github.release_mine import mine_releases, \
     mine_releases_by_name
 from athenian.api.controllers.miners.types import DeployedComponent as DeployedComponentStruct, \
-    Deployment, DeploymentFacts
+    Deployment, DeploymentConclusion, DeploymentFacts
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import Release
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
@@ -1491,7 +1491,7 @@ async def test_mine_deployments_event_releases(
 proper_deployments = {
     "Dummy deployment": Deployment(
         name="Dummy deployment",
-        conclusion="SUCCESS",
+        conclusion=DeploymentConclusion.SUCCESS,
         environment="production",
         url=None,
         started_at=datetime(2019, 11, 1, 12, 0, tzinfo=timezone.utc),

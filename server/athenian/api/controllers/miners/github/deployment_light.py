@@ -9,7 +9,7 @@ from sqlalchemy import and_, join, select
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached, middle_term_expire
 from athenian.api.controllers.miners.types import DeployedComponent as DeployedComponentDC, \
-    Deployment
+    Deployment, DeploymentConclusion
 from athenian.api.controllers.prefixer import PrefixerPromise
 from athenian.api.db import ParallelDatabase
 from athenian.api.models.metadata.github import NodeCommit
@@ -79,7 +79,7 @@ async def load_included_deployments(names: Collection[str],
     return {
         (name := row[DeploymentNotification.name.name]): Deployment(
             name=name,
-            conclusion=row[DeploymentNotification.conclusion.name],
+            conclusion=DeploymentConclusion[row[DeploymentNotification.conclusion.name]],
             environment=row[DeploymentNotification.environment.name],
             url=row[DeploymentNotification.url.name],
             started_at=row[DeploymentNotification.started_at.name],
