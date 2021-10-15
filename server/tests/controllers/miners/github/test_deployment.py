@@ -1530,6 +1530,7 @@ async def test_mine_releases_deployments(
         prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None,
         with_avatars=False, with_pr_titles=False, with_deployments=True)
     assert deps == proper_deployments
+    assert len(releases) == 53
     ndeps = 0
     for _, f in releases:
         ndeps += f.deployments is not None and f.deployments[0] == "Dummy deployment"

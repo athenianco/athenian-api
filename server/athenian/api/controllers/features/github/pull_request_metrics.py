@@ -1035,18 +1035,22 @@ class EnvironmentsMarker(MetricCalculator[np.ndarray]):
             return np.array([(np.zeros(len(facts), dtype=np.uint64),
                               [None] * len(self.environments))],
                             dtype=self.dtype)
-        unique_fact_envs, imap = np.unique(all_envs, return_inverse=True)
-        my_env_indexes = searchsorted_inrange(unique_fact_envs, envs)
-        not_found_mask = unique_fact_envs[my_env_indexes] != envs
-        my_env_indexes[not_found_mask] = np.arange(-1, -1 - not_found_mask.sum(), -1)
-        imap = imap.astype(np.uint64)
         fact_finished = facts[PullRequestFacts.f.deployed].values
         all_finished = np.concatenate(
             fact_finished, dtype=facts[PullRequestFacts.f.created].dtype, casting="unsafe",
         ).astype("datetime64[s]", copy=False)
         assert len(all_envs) == len(all_finished)
+        unique_fact_envs, imap = np.unique(all_envs, return_inverse=True)
+        del all_envs
+        unique_fact_envs = unique_fact_envs.astype(
+            f"U{np.char.str_len(unique_fact_envs).max()}", copy=False)
+        my_env_indexes = searchsorted_inrange(unique_fact_envs, envs)
+        not_found_mask = unique_fact_envs[my_env_indexes] != envs
+        my_env_indexes[not_found_mask] = np.arange(-1, -1 - not_found_mask.sum(), -1)
+        imap = imap.astype(np.uint64)
         finished_by_env = np.empty(len(self.environments), dtype=object)
-        for pos, ix in enumerate(my_env_indexes):
+        for pos, ix in enumerate(my_env_indexes[::-1], 1):
+            pos = len(my_env_indexes) - pos
             if ix >= 0:
                 ix_mask = imap == ix
                 imap[ix_mask] = 1 << pos

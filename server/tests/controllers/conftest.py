@@ -289,6 +289,7 @@ async def precomputed_deployments(
         1, (6366825,), mdb, pdb, rdb, None)
     log = logging.getLogger(f"{metadata.__package__}.precomputed_deployments")
     log.info("Mined %d deployments", len(deps))
+    log.info("Mined %d release deployments", sum(len(df) for df in deps["releases"].values))
 
 
 @pytest.fixture(scope="function")
