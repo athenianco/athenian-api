@@ -1147,11 +1147,11 @@ async def _resolve_commit_relationship(
                 all_deployed_ats[root_mask],
                 root_mask[:len(successful_commits)].sum(),
             )
-            for index, parent in zip(np.flatnonzero(unroot_mask), parents[unroot_mask]):
+            for index, my_parents in zip(np.flatnonzero(unroot_mask), parents[unroot_mask]):
                 my_relationships[all_commits[index]][all_deployed_ats[index]] = \
-                    CommitRelationship(all_commits[parent],
-                                       all_shas[parent],
-                                       np.zeros(len(parent), dtype=bool))
+                    CommitRelationship(all_commits[my_parents],
+                                       all_shas[my_parents],
+                                       np.zeros(len(my_parents), dtype=bool))
     del commits_per_repo_per_env
     missing_sha = b"0" * 40
     tainted_envs = []
@@ -1202,12 +1202,12 @@ async def _resolve_commit_relationship(
                     all_deployed_ats[root_mask],
                     root_mask[:success_len].sum(),
                 )
-                for index, parent in zip(np.flatnonzero(unroot_mask), parents[unroot_mask]):
+                for index, my_parents in zip(np.flatnonzero(unroot_mask), parents[unroot_mask]):
                     my_relationships[all_commit_ids[index]][all_deployed_ats[index]] = \
                         CommitRelationship(
-                            all_commit_ids[parent],
-                            all_shas[parent],
-                            np.ones(len(parent), dtype=bool))
+                            all_commit_ids[my_parents],
+                            all_shas[my_parents],
+                            my_parents == success_len)
                 if len(root_shas) > 0:
                     # there are still unresolved parents, we need to descend deeper
                     until_per_repo_env[env][repo] = env_repo_edges[env][repo]
