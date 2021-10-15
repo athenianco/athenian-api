@@ -1258,6 +1258,7 @@ class PullRequestMiner:
             dfs.reviews[PullRequestReview.created_at.name],
             dfs.comments[PullRequestComment.created_at.name],
             dfs.releases[Release.published_at.name],
+            dfs.deployments[DeploymentNotification.finished_at.name],
         ]
         for df in activities:
             if df.index.nlevels > 1:
@@ -1304,16 +1305,18 @@ class PullRequestMiner:
         This is used to correctly handle timezone offsets.
         """
         # filter out PRs which were released before `time_from`
-        unreleased = dfs.releases.index.take(np.where(
-            dfs.releases[Release.published_at.name] < time_from)[0])
+        unreleased = dfs.releases.index.take(np.flatnonzero(
+            (dfs.releases[Release.published_at.name] < time_from).values))
         # closed but not merged in `[date_from, time_from]`
-        unrejected = dfs.prs.index.take(np.where(
-            (dfs.prs[PullRequest.closed_at.name] < time_from) &
-            dfs.prs[PullRequest.merged_at.name].isnull())[0])
+        unrejected = dfs.prs.index.take(np.flatnonzero(
+            ((dfs.prs[PullRequest.closed_at.name] < time_from) &
+             dfs.prs[PullRequest.merged_at.name].isnull()).values))
         # created in `[time_to, date_to]`
-        uncreated = dfs.prs.index.take(np.where(
-            dfs.prs[PullRequest.created_at.name] >= time_to)[0])
-        to_remove = unreleased.union(unrejected.union(uncreated))
+        uncreated = dfs.prs.index.take(np.flatnonzero(
+            (dfs.prs[PullRequest.created_at.name] >= time_to).values))
+        to_remove = unreleased \
+            .union(unrejected.union(uncreated)) \
+            .difference(dfs.deployments.index.get_level_values(0))
         cls._drop(dfs, to_remove)
 
     @classmethod
