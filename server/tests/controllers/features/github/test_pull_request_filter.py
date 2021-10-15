@@ -538,9 +538,11 @@ async def test_pr_list_miner_filter_updated_min_max(
     assert len(prs) == 72
 
 
+@pytest.mark.parametrize("exclude_inactive", [False, True])
 @with_defer
 async def test_filter_pull_requests_deployments(
-        mdb, pdb, rdb, release_match_setting_tag, prefixer_promise, branches, default_branches):
+        mdb, pdb, rdb, release_match_setting_tag, prefixer_promise, branches, default_branches,
+        exclude_inactive):
     time_from = datetime(year=2019, month=6, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2019, month=12, day=1, tzinfo=timezone.utc)
     await mine_deployments(
@@ -555,10 +557,10 @@ async def test_filter_pull_requests_deployments(
     args = [set(),
             {PullRequestStage.WIP, PullRequestStage.REVIEWING, PullRequestStage.MERGING},
             time_from, time_to, {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
-            "production", False, release_match_setting_tag, None, None, prefixer_promise,
-            1, (6366825,), mdb, pdb, rdb, None]
+            "production", exclude_inactive, release_match_setting_tag, None, None,
+            prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None]
     prs, deps = await filter_pull_requests(*args)
-    assert len(prs) == 15
+    assert len(prs) == 8 if exclude_inactive else 15
     check_pr_deployments(prs, deps, 0)  # unmerged PR cannot be deployed!
     args[1] = {PullRequestStage.DONE}
     prs, deps = await filter_pull_requests(*args)
