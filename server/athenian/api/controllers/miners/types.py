@@ -302,9 +302,11 @@ class PullRequestFacts:
             ((closed := arr["closed"]) == closed and (merged := arr["merged"]) != merged)
         )
         data = b"".join([arr.view(np.byte).data, self.data[self.dtype.itemsize:]])
-        if self.deployed:
-            deps_passed = [i for i, ts in enumerate(self.deployed) if ts < after_dt]
-            deployed = [self.deployed[i] for i in deps_passed]
+        if len(self.deployed):
+            deployed = np.asarray(self.deployed)
+            np_after_dt = np.array(after_dt, dtype=deployed.dtype)
+            deps_passed = np.flatnonzero(deployed < np_after_dt)
+            deployed = deployed[deps_passed]
             deployments = [self.deployments[i] for i in deps_passed]
             environments = [self.environments[i] for i in deps_passed]
             return PullRequestFacts(

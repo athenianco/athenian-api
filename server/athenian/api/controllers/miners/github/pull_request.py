@@ -1712,7 +1712,8 @@ class PullRequestFactsMiner:
             pr.comments[PullRequestComment.user_login.name].values.astype("S"),
             pr.reviews[PullRequestReview.user_login.name].values.astype("S"),
         ])), self._bots, assume_unique=True))
-        environments = pr.deployments[DeploymentNotification.environment.name].values.astype("U")
+        environments = \
+            pr.deployments[DeploymentNotification.environment.name].values.astype("U", copy=False)
         deployed = pr.deployments[DeploymentNotification.finished_at.name].values.astype(
             "datetime64[s]")
         facts = PullRequestFacts.from_fields(

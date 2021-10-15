@@ -12,8 +12,7 @@ import aiomcache
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, distinct, exists, func, join, literal_column, not_, or_, select, \
-    union_all
+from sqlalchemy import and_, distinct, exists, func, join, not_, or_, select, union_all
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
@@ -431,7 +430,7 @@ async def _compute_deployment_facts(notifications: pd.DataFrame,
     commit_stats, releases = await gather(
         _fetch_commit_stats(all_mentioned_hashes, dags, prefixer, meta_ids, mdb),
         _map_releases_to_deployments(
-            deployed_commits_per_repo_per_env, max_release_time_to,
+            deployed_commits_per_repo_per_env, all_mentioned_hashes, max_release_time_to,
             prefixer, settings, branches, default_branches,
             account, meta_ids, mdb, pdb, rdb, cache),
     )
@@ -621,6 +620,7 @@ async def _generate_deployment_facts(
 @sentry_span
 async def _map_releases_to_deployments(
         deployed_commits_per_repo_per_env: Dict[str, Dict[int, DeployedCommitDetails]],
+        all_mentioned_hashes: np.ndarray,
         max_release_time_to: datetime,
         prefixer: PrefixerPromise,
         settings: ReleaseSettings,
@@ -678,18 +678,14 @@ async def _map_releases_to_deployments(
     )), pdb, PrecomputedRelease, index=PrecomputedRelease.node_id.name)
     releases = set_matched_by_from_release_match(releases, remove_ambiguous_tag_or_branch=False)
     if releases.empty:
-        time_from = await pdb.fetch_val(
-            select([func.min(literal_column("max_published_at"))])
-            .select_from(union_all(*(
-                select([func.max(PrecomputedRelease.published_at).label("max_published_at")])
-                .where(and_(PrecomputedRelease.acc_id == account,
-                            PrecomputedRelease.release_match ==
-                            compose_release_match(match_id, match_value),
-                            PrecomputedRelease.published_at < max_release_time_to))
-                for (match_id, match_value), commit_shas in commits_by_reverse_key.items()))
-                .alias("P")))
+        time_from = await mdb.fetch_val(
+            select([func.min(NodeCommit.committed_date)])
+            .where(and_(NodeCommit.acc_id.in_(meta_ids),
+                        NodeCommit.sha.in_any_values(all_mentioned_hashes.astype("U40")))))
         if time_from is None:
             time_from = max_release_time_to - timedelta(days=10 * 365)
+        elif mdb.url.dialect == "sqlite":
+            time_from = time_from.replace(tzinfo=timezone.utc)
     else:
         time_from = releases[Release.published_at.name].max() + timedelta(seconds=1)
     extra_releases, _ = await ReleaseLoader.load_releases(
@@ -723,7 +719,7 @@ async def _map_releases_to_deployments(
 
 @sentry_span
 async def _submit_deployed_commits(
-        deployed_commits_per_repo_per_env: Dict[str, Dict[str, DeployedCommitDetails]],
+        deployed_commits_per_repo_per_env: Dict[str, Dict[int, DeployedCommitDetails]],
         account: int,
         meta_ids: Tuple[int, ...],
         mdb: ParallelDatabase,
@@ -922,10 +918,10 @@ async def _extract_deployed_commits(
         notifications: pd.DataFrame,
         components: pd.DataFrame,
         deployed_commits_df: pd.DataFrame,
-        commit_relationship: Dict[str, Dict[int, Dict[int, CommitRelationship]]],
+        commit_relationship: Dict[str, Dict[int, Dict[int, Dict[int, CommitRelationship]]]],
         dags: Dict[str, DAG],
         prefixer: PrefixerPromise,
-) -> Tuple[Dict[str, Dict[str, DeployedCommitDetails]], np.ndarray]:
+) -> Tuple[Dict[str, Dict[int, DeployedCommitDetails]], np.ndarray]:
     commit_ids_in_df = deployed_commits_df[PushCommit.node_id.name].values
     commit_shas_in_df = deployed_commits_df[PushCommit.sha.name].values.astype("S40")
     joined = notifications.join(components)
