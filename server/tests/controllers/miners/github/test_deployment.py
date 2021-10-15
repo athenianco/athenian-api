@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import pickle
 
@@ -261,6 +261,53 @@ async def test_mine_deployments_middle(
         branches, default_branches, prefixer_promise,
         1, (6366825,), mdb, pdb, rdb, cache)
     _validate_deployments(deps, 7, False)
+
+
+@with_defer
+async def test_mine_deployments_append(
+        sample_deployments, release_match_setting_tag_or_branch, branches, default_branches,
+        prefixer_promise, mdb, pdb, rdb, cache):
+    time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
+    time_to = datetime(2019, 11, 2, tzinfo=timezone.utc)
+    await mine_deployments(
+        [40550], {},
+        time_from, time_to,
+        ["production", "staging"],
+        [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        release_match_setting_tag_or_branch,
+        branches, default_branches, prefixer_promise,
+        1, (6366825,), mdb, pdb, rdb, cache)
+    await wait_deferred()
+    name = "%s_%d_%02d_%02d" % ("production", 2019, 11, 2)
+    await rdb.execute(insert(DeploymentNotification).values(dict(
+        account_id=1,
+        name=name,
+        conclusion="SUCCESS",
+        environment="production",
+        started_at=datetime(2019, 11, 2, tzinfo=timezone.utc),
+        finished_at=datetime(2019, 11, 2, 0, 10, tzinfo=timezone.utc),
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+    )))
+    await rdb.execute(insert(DeployedComponent).values(dict(
+        account_id=1,
+        deployment_name=name,
+        repository_node_id=40550,
+        reference="v4.13.1",
+        resolved_commit_node_id=2755244,
+        created_at=datetime.now(timezone.utc),
+    )))
+    deps, _ = await mine_deployments(
+        [40550], {},
+        time_from, time_to + timedelta(days=1),
+        ["production", "staging"],
+        [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        release_match_setting_tag_or_branch,
+        branches, default_branches, prefixer_promise,
+        1, (6366825,), mdb, pdb, rdb, cache)
+    await wait_deferred()
+    assert len(deps.loc[name]["prs"]) == 0
+    assert len(deps.loc[name]["releases"]) == 0
 
 
 @with_defer
