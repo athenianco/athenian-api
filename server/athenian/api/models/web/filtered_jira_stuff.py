@@ -1,6 +1,7 @@
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from athenian.api.models.web.base_model_ import Model, VerbatimOptional
+from athenian.api.models.web.deployment_notification import DeploymentNotification
 from athenian.api.models.web.jira_epic import JIRAEpic
 from athenian.api.models.web.jira_issue import JIRAIssue
 from athenian.api.models.web.jira_issue_type import JIRAIssueType
@@ -22,6 +23,7 @@ class FilteredJIRAStuff(Model):
         "priorities": VerbatimOptional[List[JIRAPriority]],
         "statuses": VerbatimOptional[List[JIRAStatus]],
         "users": VerbatimOptional[List[JIRAUser]],
+        "deployments": VerbatimOptional[Dict[str, DeploymentNotification]],
     }
     attribute_map = {
         "epics": "epics",
@@ -31,6 +33,7 @@ class FilteredJIRAStuff(Model):
         "priorities": "priorities",
         "statuses": "statuses",
         "users": "users",
+        "deployments": "deployments",
     }
 
     def __init__(self,
@@ -40,7 +43,8 @@ class FilteredJIRAStuff(Model):
                  issue_types: Optional[List[JIRAIssueType]] = None,
                  priorities: Optional[List[JIRAPriority]] = None,
                  statuses: Optional[List[JIRAStatus]] = None,
-                 users: Optional[List[JIRAUser]] = None):
+                 users: Optional[List[JIRAUser]] = None,
+                 deployments: Optional[Dict[str, DeploymentNotification]] = None):
         """FilteredJIRAStuff - a model defined in OpenAPI
 
         :param epics: The epics of this FilteredJIRAStuff.
@@ -50,6 +54,7 @@ class FilteredJIRAStuff(Model):
         :param priorities: The priorities of this FilteredJIRAStuff.
         :param statuses: The statuses of this FilteredJIRAStuff.
         :param users: The users of this FilteredJIRAStuff.
+        :param deployments: The deployments of this FilteredJIRAStuff.
         """
         self._epics = epics
         self._issues = issues
@@ -58,6 +63,7 @@ class FilteredJIRAStuff(Model):
         self._priorities = priorities
         self._statuses = statuses
         self._users = users
+        self._deployments = deployments
 
     @property
     def epics(self) -> Optional[List[JIRAEpic]]:
@@ -186,3 +192,23 @@ class FilteredJIRAStuff(Model):
         :param users: The users of this FilteredJIRAStuff.
         """
         self._users = users
+
+    @property
+    def deployments(self) -> Optional[Dict[str, DeploymentNotification]]:
+        """Gets the deployments of this FilteredJIRAStuff.
+
+        Mentioned deployments.
+
+        :return: The deployments of this FilteredJIRAStuff.
+        """
+        return self._deployments
+
+    @deployments.setter
+    def deployments(self, deployments: Optional[Dict[str, DeploymentNotification]]):
+        """Sets the deployments of this FilteredJIRAStuff.
+
+        Mentioned deployments.
+
+        :param deployments: The deployments of this FilteredJIRAStuff.
+        """
+        self._deployments = deployments
