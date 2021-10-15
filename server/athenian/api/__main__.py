@@ -178,6 +178,9 @@ def setup_context(log: logging.Logger) -> None:
     disabled_transactions_re = re.compile("|".join([
         "openapi.json", "ui(/|$)",
     ]))
+    throttled_transactions_re = re.compile("|".join([
+        "invite/progress", "events/(?!clear_cache)",
+    ]))
     api_path_re = re.compile(r"/v\d+/")
 
     def sample_trace(context) -> float:
@@ -192,6 +195,8 @@ def setup_context(log: logging.Logger) -> None:
         path = path[match.end():]
         if disabled_transactions_re.match(path):
             return 0
+        if throttled_transactions_re.match(path):
+            return traces_sample_rate / 100
         return traces_sample_rate
 
     sentry_log = logging.getLogger("sentry_sdk.errors")
