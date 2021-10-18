@@ -211,18 +211,20 @@ def mark_dag_access(hashes: np.ndarray,
 
     :return: Indexes in `heads`, *not vertexes*.
     """
-    if len(hashes) == 0 or len(heads) == 0:
+    if len(hashes) == 0:
         return np.array([], dtype=np.int64)
+    size = len(heads)
+    access = np.full(len(vertexes), size, np.int32)
+    if size == 0:
+        return access[:-1]
     assert heads.dtype.char == "S"
     # we cannot sort heads because the order is important - we return the original indexes
-    size = len(heads)
     existing_heads = searchsorted_inrange(hashes, heads)
     matched = hashes[existing_heads] == heads
     head_vertexes = np.full(size + 1, len(vertexes), np.uint32)
     head_vertexes[:-1][matched] = existing_heads[matched]
     heads = head_vertexes
     del head_vertexes
-    access = np.full(len(vertexes), size, np.int32)
     if not matched.any():
         return access
     order = np.full(size, size, np.int32)
@@ -312,14 +314,19 @@ def mark_dag_parents(hashes: np.ndarray,
                      heads: np.ndarray,
                      timestamps: np.ndarray,
                      ownership: np.ndarray) -> np.ndarray:
-    if len(hashes) == 0 or len(heads) == 0:
-        return np.array([], dtype=object)
+    result = np.empty(len(heads), dtype=object)
+    if len(hashes) == 0:
+        result.fill([])
+        return result
+    if len(heads) == 0:
+        return result
     assert heads.dtype.char == "S"
     # we cannot sort heads because the order is important
     found_heads = searchsorted_inrange(hashes, heads)
     found_heads[hashes[found_heads] != heads] = len(vertexes)
     heads = found_heads.astype(np.uint32)
     timestamps = timestamps.view(np.uint64)
+    ownership = ownership.astype(np.int32, copy=False)
     cdef vector[vector[uint32_t]] parents = vector[vector[uint32_t]](len(heads))
     full_size = _mark_dag_parents(vertexes, edges, heads, timestamps, ownership, &parents)
     concat_parents = np.zeros(full_size, dtype=np.uint32)
