@@ -352,9 +352,9 @@ async def test_mine_deployments_only_failed(
         1, (6366825,), mdb, pdb, rdb, cache)
     await wait_deferred()
     assert len(deps) == 1
-    assert len(deps.iloc[0]["prs"]) == 224
+    assert len(deps.iloc[0]["prs"]) == 246
     rows = await pdb.fetch_all(select([GitHubPullRequestDeployment]))
-    assert len(rows) == 224
+    assert len(rows) == 246
 
 
 @with_defer

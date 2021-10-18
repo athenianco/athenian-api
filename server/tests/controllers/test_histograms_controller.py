@@ -386,7 +386,7 @@ async def test_calc_histogram_prs_deployment_time(client, headers, precomputed_d
         "for": {"repositories": ["{1}"], "environments": ["production"]},
         "metric": "pr-deployment-time", "scale": "log",
         "ticks": ["1572127s", "4273485s"],
-        "frequencies": [314],
+        "frequencies": [418],
         "interquartile": {"left": "2592000s", "right": "2592000s"},
     }
 

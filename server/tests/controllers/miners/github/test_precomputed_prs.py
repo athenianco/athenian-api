@@ -456,7 +456,7 @@ async def test_load_precomputed_done_times_deployments(
     loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_filters(
         time_from, time_to, {"src-d/go-git"}, {}, LabelFilter.empty(), default_branches,
         False, release_match_setting_tag, prefixer_promise, 1, pdb)
-    assert len(loaded_prs) == 311  # 2 without deployments
+    assert len(loaded_prs) == 415  # 2 without deployments
 
 
 def _gen_one_pr(pr_samples):

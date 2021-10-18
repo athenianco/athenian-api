@@ -36,8 +36,8 @@ from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.db import add_pdb_hits, add_pdb_misses, insert_or_ignore, ParallelDatabase
 from athenian.api.defer import defer
-from athenian.api.models.metadata.github import NodeCommit, NodePullRequest, \
-    NodePullRequestCommit, PullRequest, PullRequestLabel, PushCommit, Release
+from athenian.api.models.metadata.github import NodeCommit, NodePullRequest, PullRequest, \
+    PullRequestLabel, PushCommit, Release
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
     DeploymentNotification
 from athenian.api.models.precomputed.models import GitHubCommitDeployment, GitHubDeploymentFacts, \
@@ -109,6 +109,7 @@ async def mine_deployments(repo_node_ids: Collection[int],
         name="_fetch_precomputed_deployed_releases(%d)" % len(notifications))
     facts = await _fetch_precomputed_deployment_facts(
         notifications.index.values, settings, account, pdb)
+    # facts = facts.iloc[:0]  # uncomment to disable pdb
     add_pdb_hits(pdb, "deployments", len(facts))
     add_pdb_misses(pdb, "deployments", misses := (len(notifications) - len(facts)))
     if misses > 0:
@@ -139,6 +140,7 @@ async def mine_deployments(repo_node_ids: Collection[int],
     components = _group_components(components)
     await releases
     releases = releases.result()
+    # releases = releases.iloc[:0]  # uncomment to disable pdb
     if not missed_releases.empty:
         if not releases.empty:
             # there is a minuscule chance that some releases are duplicated here, we ignore it
@@ -516,10 +518,13 @@ DeployedCommitDetails = NamedTuple("DeployedCommitDetails", [
 
 
 DeployedCommitStats = NamedTuple("DeployedCommitStats", [
-    ("pull_requests", np.ndarray),
-    ("lines", np.ndarray),
     ("commit_authors", np.ndarray),
+    ("lines", np.ndarray),
+    ("pull_requests", np.ndarray),
+    ("merge_shas", np.ndarray),
+    ("pr_lines", np.ndarray),
     ("pr_authors", np.ndarray),
+    ("pr_commit_counts", np.ndarray),
 ])
 
 
@@ -537,7 +542,7 @@ RepositoryDeploymentFacts = NamedTuple("RepositoryDeploymentFacts", [
 
 async def _generate_deployment_facts(
         notifications: pd.DataFrame,
-        deployed_commits_per_repo_per_env: Dict[str, Dict[str, DeployedCommitDetails]],
+        deployed_commits_per_repo_per_env: Dict[str, Dict[int, DeployedCommitDetails]],
         all_mentioned_hashes: np.ndarray,
         commit_stats: DeployedCommitStats,
         releases: pd.DataFrame,
@@ -556,19 +561,21 @@ async def _generate_deployment_facts(
         for repo, details in repos.items():
             for deployment_name, deployed_shas in zip(details.deployments, details.shas):
                 indexes = np.searchsorted(all_mentioned_hashes, deployed_shas)
+                pr_indexes = searchsorted_inrange(commit_stats.merge_shas, deployed_shas)
+                pr_indexes = pr_indexes[commit_stats.merge_shas[pr_indexes] == deployed_shas]
+                prs = commit_stats.pull_requests[pr_indexes]
                 deployed_lines = commit_stats.lines[indexes]
-                in_prs = commit_stats.pull_requests[indexes] != 0
-                prs = np.unique(commit_stats.pull_requests[indexes][in_prs])
-                pr_authors = np.unique(commit_stats.pr_authors[indexes])
+                pr_deployed_lines = commit_stats.pr_lines[pr_indexes]
                 commit_authors = np.unique(commit_stats.commit_authors[indexes])
+                pr_authors = commit_stats.pr_authors[pr_indexes]
                 facts_per_repo_per_deployment[deployment_name][repo] = RepositoryDeploymentFacts(
                     pr_authors=pr_authors[pr_authors != 0],
                     commit_authors=commit_authors[commit_authors != 0],
                     release_authors=all_releases_authors.get(deployment_name, []),
-                    lines_prs=deployed_lines[in_prs].sum(),
+                    lines_prs=pr_deployed_lines.sum(),
                     lines_overall=deployed_lines.sum(),
-                    commits_prs=in_prs.sum(),
-                    commits_overall=len(deployed_lines),
+                    commits_prs=commit_stats.pr_commit_counts[pr_indexes].sum(),
+                    commits_overall=len(indexes),
                     prs=prs,
                 )
                 finished = pd.Timestamp(name_to_finished[deployment_name], tzinfo=timezone.utc)
@@ -802,68 +809,75 @@ async def _fetch_commit_stats(all_mentioned_hashes: np.ndarray,
                               mdb: ParallelDatabase,
                               ) -> DeployedCommitStats:
     commit_rows = await mdb.fetch_all(
-        select([NodeCommit.sha,
-                NodePullRequest.id.label(NodePullRequestCommit.pull_request_id.name),
-                NodeCommit.id,
+        select([NodeCommit.id,
+                NodeCommit.sha,
+                NodePullRequest.id.label("pull_request_id"),
                 NodeCommit.author_user_id,
+                NodeCommit.repository_id,
                 (NodeCommit.additions + NodeCommit.deletions).label("lines"),
                 NodePullRequest.author_id.label("pr_author"),
+                (NodePullRequest.additions + NodePullRequest.deletions).label("pr_lines"),
                 ])
-        .select_from(join(join(NodeCommit, NodePullRequestCommit, and_(
-            NodeCommit.acc_id == NodePullRequestCommit.acc_id,
-            NodeCommit.id == NodePullRequestCommit.commit_id,
-        ), isouter=True), NodePullRequest, and_(
-            NodePullRequest.acc_id == NodePullRequestCommit.acc_id,
-            NodePullRequest.id == NodePullRequestCommit.pull_request_id,
-            NodePullRequest.merged,
+        .select_from(join(NodeCommit, NodePullRequest, and_(
+            NodeCommit.acc_id == NodePullRequest.acc_id,
+            NodeCommit.id == NodePullRequest.merge_commit_id,
         ), isouter=True))
         .where(and_(NodeCommit.acc_id.in_(meta_ids),
                     NodeCommit.sha.in_any_values(all_mentioned_hashes.astype("U40"))))
-        .order_by(NodeCommit.sha,
-                  func.coalesce(NodePullRequest.created_at,
-                                NodeCommit.pushed_date,
-                                datetime(3000, 1, 1, 0, 0, 0, tzinfo=timezone.utc))))
-    shas = np.fromiter((r[NodeCommit.sha.name] for r in commit_rows),
-                       dtype="U40", count=len(commit_rows))
-    # choose the oldest PR for each commit thanks to the previously sorted rows
-    shas, first_encounters = np.unique(shas, return_index=True)
-    lines = np.fromiter(
-        (r["lines"] for r in commit_rows), dtype=int, count=len(commit_rows),
-    )[first_encounters]
-    commit_authors = np.fromiter(
-        ((r[NodeCommit.author_user_id.name] or 0) for r in commit_rows), int, len(commit_rows),
-    )[first_encounters]
-    pr_authors = np.fromiter(
-        ((r["pr_author"] or 0) for r in commit_rows), int, len(commit_rows),
-    )[first_encounters]
-    prs = np.fromiter(
-        ((r[NodePullRequestCommit.pull_request_id.name] or 0) for r in commit_rows),
-        int, len(commit_rows),
-    )[first_encounters]
-    if shas.shape != all_mentioned_hashes.shape:
-        found = np.searchsorted(all_mentioned_hashes, shas)
-        full_lines = np.zeros(len(all_mentioned_hashes), dtype=int)
-        full_lines[found] = lines
-        full_commit_authors = np.zeros(len(all_mentioned_hashes), dtype=commit_authors.dtype)
-        full_commit_authors[found] = commit_authors
-        full_pr_authors = np.zeros(len(all_mentioned_hashes), dtype=pr_authors.dtype)
-        full_pr_authors[found] = pr_authors
-        full_prs = np.zeros(len(all_mentioned_hashes), dtype=prs.dtype)
-        full_prs[found] = prs
-        lines = full_lines
-        commit_authors = full_commit_authors
-        pr_authors = full_pr_authors
-        prs = full_prs
-
-    not_pr_commits = all_mentioned_hashes[prs == 0].astype("U40")
+        .order_by(func.coalesce(NodePullRequest.merged_at, NodeCommit.committed_date)))
+    assert len(commit_rows) == len(all_mentioned_hashes)
+    repo_node_to_name_get = (await prefixer.load()).repo_node_to_name.__getitem__
+    shas = np.zeros(len(commit_rows), "S40")
+    lines = np.zeros(len(commit_rows), int)
+    commit_authors = np.zeros_like(lines)
+    merge_shas = []
+    pr_ids = []
+    pr_authors = []
+    pr_lines = []
+    prs_by_repo = defaultdict(list)
+    for i, row in enumerate(commit_rows):
+        shas[i] = (sha := row[NodeCommit.sha.name].encode())
+        lines[i] = row["lines"]
+        commit_authors[i] = row[NodeCommit.author_user_id.name] or 0
+        if pr := row["pull_request_id"]:
+            merge_shas.append(sha)
+            pr_ids.append(pr)
+            pr_authors.append(row["pr_author"] or 0)
+            pr_lines.append(row["pr_lines"])
+            prs_by_repo[row[NodeCommit.repository_id.name]].append(sha)
+    sha_order = np.argsort(shas)
+    del shas
+    lines = lines[sha_order]
+    commit_authors = commit_authors[sha_order]
+    merge_shas = np.array(merge_shas, dtype="S40")
+    pr_ids = np.array(pr_ids, dtype=int)
+    pr_authors = np.array(pr_authors, dtype=int)
+    pr_lines = np.array(pr_lines, dtype=int)
+    sha_order = np.argsort(merge_shas)
+    merge_shas = merge_shas[sha_order]
+    pr_ids = pr_ids[sha_order]
+    pr_authors = pr_authors[sha_order]
+    pr_lines = pr_lines[sha_order]
+    pr_commits = np.zeros_like(pr_lines)
+    all_pr_hashes = []
+    for repo, hashes in prs_by_repo.items():
+        dag = dags[repo_node_to_name_get(repo)]
+        pr_hashes = extract_pr_commits(*dag, np.array(hashes, dtype="S40"))
+        pr_commits[np.searchsorted(merge_shas, hashes)] = [len(c) for c in pr_hashes]
+        all_pr_hashes.extend(pr_hashes)
+    if all_pr_hashes:
+        all_pr_hashes = np.unique(np.concatenate(all_pr_hashes))
+    not_pr_commits = np.setdiff1d(all_mentioned_hashes, all_pr_hashes, assume_unique=True)
     if len(not_pr_commits) == 0:
         return DeployedCommitStats(
-            pull_requests=prs,
             commit_authors=commit_authors,
-            pr_authors=pr_authors,
             lines=lines,
+            merge_shas=merge_shas,
+            pull_requests=pr_ids,
+            pr_authors=pr_authors,
+            pr_lines=pr_lines,
+            pr_commit_counts=pr_commits,
         )
-    repo_node_to_name_get = (await prefixer.load()).repo_node_to_name.get
     force_pushed_pr_merge_hashes = await mdb.fetch_all(
         select([NodeCommit.sha, NodeCommit.repository_id, NodeCommit.message])
         .where(and_(NodeCommit.acc_id.in_(meta_ids),
@@ -875,7 +889,8 @@ async def _fetch_commit_stats(all_mentioned_hashes: np.ndarray,
     for row in force_pushed_pr_merge_hashes:
         try:
             force_pushed_per_repo[row[NodeCommit.repository_id.name]].append((
-                row[NodeCommit.sha.name], int(pr_number_re.match(row[NodeCommit.message.name])[2]),
+                row[NodeCommit.sha.name].encode(),
+                int(pr_number_re.match(row[NodeCommit.message.name])[2]),
             ))
         except (ValueError, IndexError):
             continue
@@ -883,7 +898,8 @@ async def _fetch_commit_stats(all_mentioned_hashes: np.ndarray,
         select([NodePullRequest.id,
                 NodePullRequest.repository_id,
                 NodePullRequest.number,
-                NodePullRequest.author_id])
+                NodePullRequest.author_id,
+                (NodePullRequest.additions + NodePullRequest.deletions).label("lines")])
         .where(and_(NodePullRequest.acc_id.in_(meta_ids),
                     NodePullRequest.repository_id == repo,
                     NodePullRequest.merged,
@@ -899,22 +915,44 @@ async def _fetch_commit_stats(all_mentioned_hashes: np.ndarray,
         pr_by_repo_number[(
             row[NodePullRequest.repository_id.name], row[NodePullRequest.number.name],
         )] = row
+    extra_merges = []
+    extra_pr_ids = []
+    extra_pr_authors = []
+    extra_pr_lines = []
+    extra_pr_commits = []
     for repo, merges in force_pushed_per_repo.items():
         dag = dags[repo_node_to_name_get(repo)]
         pr_hashes = extract_pr_commits(*dag, np.array([c[0] for c in merges], dtype="S40"))
-        for (_, pr_number), shas in zip(merges, pr_hashes):
+        for (merge_sha, pr_number), shas in zip(merges, pr_hashes):
             try:
                 pr = pr_by_repo_number[(repo, pr_number)]
             except KeyError:
                 continue
-            indexes = np.searchsorted(all_mentioned_hashes, shas)
-            prs[indexes] = pr[NodePullRequest.id.name]
-            pr_authors[indexes] = pr[NodePullRequest.author_id.name] or 0
+            extra_merges.append(merge_sha)
+            extra_pr_ids.append(pr[NodePullRequest.id.name])
+            extra_pr_authors.append(pr[NodePullRequest.author_id.name] or 0)
+            extra_pr_lines.append(pr["lines"])
+            extra_pr_commits.append(len(shas))
+    if extra_merges:
+        merge_shas = np.concatenate([merge_shas, extra_merges])
+        pr_ids = np.concatenate([pr_ids, extra_pr_ids])
+        pr_authors = np.concatenate([pr_authors, extra_pr_authors])
+        pr_lines = np.concatenate([pr_lines, extra_pr_lines])
+        pr_commits = np.concatenate([pr_commits, extra_pr_commits])
+        order = np.argsort(merge_shas)
+        merge_shas = merge_shas[order]
+        pr_ids = pr_ids[order]
+        pr_authors = pr_authors[order]
+        pr_lines = pr_lines[order]
+        pr_commits = pr_commits[order]
     return DeployedCommitStats(
-        pull_requests=prs,
         commit_authors=commit_authors,
-        pr_authors=pr_authors,
         lines=lines,
+        merge_shas=merge_shas,
+        pull_requests=pr_ids,
+        pr_authors=pr_authors,
+        pr_lines=pr_lines,
+        pr_commit_counts=pr_commits,
     )
 
 

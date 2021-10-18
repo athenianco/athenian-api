@@ -908,9 +908,9 @@ async def test_pull_request_stage_times(precomputed_deployments, real_pr_samples
                        (PullRequestMetricID.PR_MERGING_TIME, timedelta(days=4, seconds=83622)),
                        (PullRequestMetricID.PR_RELEASE_TIME, timedelta(days=29, seconds=50065)),
                        (PullRequestMetricID.PR_DEPLOYMENT_TIME,
-                        [None, None, timedelta(days=706, seconds=51144)]),
+                        [None, None, timedelta(days=663, seconds=69791)]),
                        (PullRequestMetricID.PR_LEAD_DEPLOYMENT_TIME,
-                        [None, None, timedelta(days=744, seconds=4323)])]:
+                        [None, None, timedelta(days=700, seconds=78816)])]:
         assert values[metric][0][0].value == td, metric
 
 
@@ -926,10 +926,10 @@ async def test_pull_request_deployment_stage_counts(precomputed_deployments, rea
     time_from, time_to, samples = real_pr_samples
     ensemble(samples, dt64arr_ns(time_from), dt64arr_ns(time_to), [np.arange(len(samples))])
     values = ensemble.values()
-    for metric, td in [(PullRequestMetricID.PR_DEPLOYMENT_COUNT, [0, 0, 314]),
-                       (PullRequestMetricID.PR_DEPLOYMENT_COUNT_Q, [0, 0, 301]),
-                       (PullRequestMetricID.PR_LEAD_DEPLOYMENT_COUNT, [0, 0, 314]),
-                       (PullRequestMetricID.PR_LEAD_DEPLOYMENT_COUNT_Q, [0, 0, 298])]:
+    for metric, td in [(PullRequestMetricID.PR_DEPLOYMENT_COUNT, [0, 0, 418]),
+                       (PullRequestMetricID.PR_DEPLOYMENT_COUNT_Q, [0, 0, 398]),
+                       (PullRequestMetricID.PR_LEAD_DEPLOYMENT_COUNT, [0, 0, 418]),
+                       (PullRequestMetricID.PR_LEAD_DEPLOYMENT_COUNT_Q, [0, 0, 397])]:
         assert values[metric][0][0].value == td, metric
 
 
@@ -948,7 +948,7 @@ async def test_pull_request_cycle_deployment_time(
     ensemble(samples, dt64arr_ns(time_from), dt64arr_ns(time_to), [np.arange(len(samples))])
     values = ensemble.values()
     for metric, td in [(PullRequestMetricID.PR_CYCLE_DEPLOYMENT_TIME,
-                        [None, None, timedelta(days=709, seconds=2342)]),
-                       (PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT, [0, 0, 314]),
-                       (PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT_Q, [0, 0, 290])]:
+                        [None, None, timedelta(days=660, seconds=28)]),
+                       (PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT, [0, 0, 418]),
+                       (PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT_Q, [0, 0, 377])]:
         assert values[metric][0][0].value == td, metric
