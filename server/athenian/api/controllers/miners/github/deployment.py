@@ -744,7 +744,7 @@ async def _submit_deployed_commits(
     rows = await mdb.fetch_all(select([NodeCommit.graph_id, NodeCommit.sha])
                                .where(and_(NodeCommit.acc_id.in_(meta_ids),
                                            NodeCommit.sha.in_any_values(all_shas))))
-    sha_to_id = {row[1]: row[0] for row in rows}
+    sha_to_id = {row[1].encode(): row[0] for row in rows}
     del rows
     values = [
         GitHubCommitDeployment(
