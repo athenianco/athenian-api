@@ -329,7 +329,7 @@ async def test_pr_list_miner_deployments_production(
         LabelFilter.empty(), JIRAFilter.empty(), "production", False,
         release_match_setting_tag, None, None,
         prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
-    assert len(prs) == 414
+    assert len(prs) == 486
     deps = 0
     merged_undeployed = 0
     deployed_margin = datetime(2019, 11, 1, 12, 15) - datetime(2015, 5, 2)
@@ -353,8 +353,8 @@ async def test_pr_list_miner_deployments_production(
             assert PullRequestEvent.DEPLOYED not in pr.events_time_machine
             assert PullRequestStage.DEPLOYED not in pr.stages_now
             assert PullRequestStage.DEPLOYED not in pr.stages_time_machine
-    assert deps == 314
-    assert merged_undeployed == 43
+    assert deps == 418
+    assert merged_undeployed == 11
 
 
 @with_defer
@@ -380,7 +380,7 @@ async def test_pr_list_miner_deployments_early(
             assert PullRequestEvent.DEPLOYED not in pr.events_time_machine
             assert PullRequestStage.DEPLOYED in pr.stages_now
             assert PullRequestStage.DEPLOYED not in pr.stages_time_machine
-    assert deps == 25
+    assert deps == 54
 
 
 @with_defer
@@ -394,7 +394,7 @@ async def test_pr_list_miner_deployments_staging(
         LabelFilter.empty(), JIRAFilter.empty(), "staging", False,
         release_match_setting_tag, None, None,
         prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
-    assert len(prs) == 414
+    assert len(prs) == 486
     deps = 0
     for pr in prs:
         if pr.deployments:
@@ -405,7 +405,7 @@ async def test_pr_list_miner_deployments_staging(
         assert PullRequestEvent.DEPLOYED not in pr.events_time_machine
         assert PullRequestStage.DEPLOYED not in pr.stages_now
         assert PullRequestStage.DEPLOYED not in pr.stages_time_machine
-    assert deps == 314
+    assert deps == 418
 
 
 @with_defer
@@ -564,8 +564,8 @@ async def test_filter_pull_requests_deployments(
     check_pr_deployments(prs, deps, 0)  # unmerged PR cannot be deployed!
     args[1] = {PullRequestStage.DONE}
     prs, deps = await filter_pull_requests(*args)
-    assert len(prs) == 321
-    check_pr_deployments(prs, deps, 309)
+    assert len(prs) == 423
+    check_pr_deployments(prs, deps, 413)
 
 
 def check_pr_deployments(prs: List[PullRequestListItem],
@@ -611,6 +611,6 @@ async def test_fetch_pull_requests_deployments(
         1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     prs, deps = await fetch_pull_requests(
-        {"src-d/go-git": {1160, 1179}}, release_match_setting_tag, "production", prefixer_promise,
+        {"src-d/go-git": {1160, 1168}}, release_match_setting_tag, "production", prefixer_promise,
         1, (6366825,), mdb, pdb, rdb, None)
     check_pr_deployments(prs, deps, 1)

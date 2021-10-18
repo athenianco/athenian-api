@@ -391,7 +391,7 @@ async def test_filter_prs_stage_deployed(
     text = (await response.read()).decode("utf-8")
     assert response.status == 200, text
     prs = PullRequestSet.from_dict(json.loads(text))
-    assert len(prs.data) == 314
+    assert len(prs.data) == 418
 
 
 @pytest.mark.filter_pull_requests
@@ -434,7 +434,7 @@ async def test_filter_prs_event_deployed(
     text = (await response.read()).decode("utf-8")
     assert response.status == 200, text
     prs = PullRequestSet.from_dict(json.loads(text))
-    assert len(prs.data) == 314
+    assert len(prs.data) == 418
 
 
 @pytest.mark.filter_pull_requests
@@ -629,7 +629,7 @@ async def test_filter_prs_deployments_with_env(
             assert pr.stage_timings.deploy["production"] > undeployed_margin
         assert PullRequestEvent.DEPLOYED not in pr.events_time_machine
         assert PullRequestStage.DEPLOYED not in pr.stages_time_machine
-    assert deps == 32
+    assert deps == 37
 
 
 async def test_filter_prs_jira(client, headers, app, filter_prs_single_cache):
@@ -1598,7 +1598,7 @@ async def test_get_prs_deployments(
         "prs": [
             {
                 "repository": "github.com/src-d/go-git",
-                "numbers": [1160, 1179],
+                "numbers": [1160, 1179, 1168],
             },
         ],
         "environment": "production",
@@ -1610,11 +1610,12 @@ async def test_get_prs_deployments(
     prs = PullRequestSet.from_dict(response_body)
 
     for pr in prs.data:
-        assert pr.stage_timings.deploy["production"] > timedelta(0)
-        if pr.number == 1160:
+        if pr.number in (1160, 1179):
+            assert pr.stage_timings.deploy["production"] > timedelta(0)
             assert PullRequestEvent.DEPLOYED in pr.events_now
             assert PullRequestStage.DEPLOYED in pr.stages_now
-        if pr.number == 1179:
+        if pr.number == 1168:
+            assert not pr.stage_timings.deploy
             assert PullRequestEvent.DEPLOYED not in pr.events_now
             assert PullRequestStage.DEPLOYED not in pr.stages_now
     assert prs.include.deployments == {
@@ -2253,7 +2254,6 @@ async def test_filter_check_runs_nasty_input(
     assert response.status == status, response_text
 
 
-@pytest.mark.flaky(reruns=3, reruns_delay=1)
 async def test_filter_deployments_smoke(client, headers):
     body = {
         "account": 1,
@@ -2267,20 +2267,23 @@ async def test_filter_deployments_smoke(client, headers):
     response_text = (await response.read()).decode("utf-8")
     assert response.status == 200, response_text
     deps = FilteredDeployments.from_dict(json.loads(response_text))
-    assert len(deps.include.users) == 119
+    assert len(deps.include.users) == 123
     assert len(deps.include.jira) == 42
     deps = deps.deployments
     assert len(deps) == 1
     assert deps[0].code.to_dict() == {
         "commits_overall": {"github.com/src-d/go-git": 1508},
-        "commits_prs": {"github.com/src-d/go-git": 1119},
+        "commits_prs": {"github.com/src-d/go-git": 1132},
         "jira": {"github.com/src-d/go-git": [
-            "DEV-139", "DEV-261", "DEV-594", "DEV-618", "DEV-626", "DEV-627", "DEV-644",
-            "DEV-651", "DEV-676", "DEV-685", "DEV-685", "DEV-724", "DEV-724", "DEV-726",
-            "DEV-732", "DEV-770"]},
+            "DEV-139", "DEV-164", "DEV-261", "DEV-558", "DEV-594", "DEV-599", "DEV-618", "DEV-626",
+            "DEV-627", "DEV-638", "DEV-644", "DEV-651", "DEV-655", "DEV-658", "DEV-671", "DEV-676",
+            "DEV-677", "DEV-681", "DEV-684", "DEV-685", "DEV-685", "DEV-691", "DEV-692", "DEV-698",
+            "DEV-708", "DEV-711", "DEV-714", "DEV-719", "DEV-720", "DEV-723", "DEV-724", "DEV-724",
+            "DEV-725", "DEV-726", "DEV-732", "DEV-733", "DEV-736", "DEV-743", "DEV-749", "DEV-757",
+            "DEV-760", "DEV-770", "DEV-772", "DEV-772", "DEV-774"]},
         "lines_overall": {"github.com/src-d/go-git": 258545},
-        "lines_prs": {"github.com/src-d/go-git": 153966},
-        "prs": {"github.com/src-d/go-git": 314},
+        "lines_prs": {"github.com/src-d/go-git": 86348},
+        "prs": {"github.com/src-d/go-git": 418},
     }
 
 

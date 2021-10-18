@@ -1101,7 +1101,7 @@ class DeploymentMetricBase(MetricCalculator[T]):
         peek = self._calcs[0].peek
         nnz_finished = peek["finished"][0][self.environment]
         if nnz_finished is not None:
-            mask = (self._calcs[0].peek["environments"][0] & (1 << self.environment)).astype(bool)
+            mask = (peek["environments"][0] & (1 << self.environment)).astype(bool)
             assert mask.sum() == len(nnz_finished), \
                 f"some PRs deployed more than once in {self.environments[self.environment]}"
             finished[mask] = nnz_finished
