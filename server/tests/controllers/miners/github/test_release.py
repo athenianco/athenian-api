@@ -1288,7 +1288,9 @@ async def test_mark_dag_parents_empty(
     edges = np.array([], dtype=np.uint32)
     ownership = mark_dag_access(hashes, vertexes, edges, release_hashes)
     parents = mark_dag_parents(hashes, vertexes, edges, release_hashes, release_dates, ownership)
-    assert len(parents) == 0
+    assert len(parents) == len(release_hashes)
+    for p in parents:
+        assert p == []
 
 
 @with_defer

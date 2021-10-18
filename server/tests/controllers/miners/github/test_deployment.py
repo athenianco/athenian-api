@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from pandas.testing import assert_frame_equal
 import pytest
-from sqlalchemy import delete, insert
+from sqlalchemy import delete, insert, select
 
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.dag_accelerated import extract_independent_ownership, \
@@ -20,6 +20,7 @@ from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import Release
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
     DeploymentNotification, ReleaseNotification
+from athenian.api.models.precomputed.models import GitHubPullRequestDeployment
 
 
 @pytest.fixture(scope="function")
@@ -308,6 +309,52 @@ async def test_mine_deployments_append(
     await wait_deferred()
     assert len(deps.loc[name]["prs"]) == 0
     assert len(deps.loc[name]["releases"]) == 0
+
+
+@with_defer
+async def test_mine_deployments_only_failed(
+        release_match_setting_tag_or_branch, branches, default_branches,
+        prefixer_promise, mdb, pdb, rdb, cache):
+    await rdb.execute(delete(DeployedLabel))
+    await rdb.execute(delete(DeployedComponent))
+    await rdb.execute(delete(DeploymentNotification))
+    for year, month, day, conclusion, tag, commit in (
+            (2018, 1, 10, "FAILURE", "4.0.0", 2757510),
+    ):
+        name = "production_%d_%02d_%02d" % (year, month, day)
+        await rdb.execute(insert(DeploymentNotification).values(dict(
+            account_id=1,
+            name=name,
+            conclusion=conclusion,
+            environment="production",
+            started_at=datetime(year, month, day, tzinfo=timezone.utc),
+            finished_at=datetime(year, month, day, 0, 10, tzinfo=timezone.utc),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )))
+        await rdb.execute(insert(DeployedComponent).values(dict(
+            account_id=1,
+            deployment_name=name,
+            repository_node_id=40550,
+            reference=tag,
+            resolved_commit_node_id=commit,
+            created_at=datetime.now(timezone.utc),
+        )))
+    time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
+    time_to = datetime(2019, 11, 2, tzinfo=timezone.utc)
+    deps, _ = await mine_deployments(
+        [40550], {},
+        time_from, time_to,
+        ["production", "staging"],
+        [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        release_match_setting_tag_or_branch,
+        branches, default_branches, prefixer_promise,
+        1, (6366825,), mdb, pdb, rdb, cache)
+    await wait_deferred()
+    assert len(deps) == 1
+    assert len(deps.iloc[0]["prs"]) == 224
+    rows = await pdb.fetch_all(select([GitHubPullRequestDeployment]))
+    assert len(rows) == 224
 
 
 @with_defer
