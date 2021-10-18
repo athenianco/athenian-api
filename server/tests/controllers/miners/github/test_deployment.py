@@ -20,7 +20,8 @@ from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import Release
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
     DeploymentNotification, ReleaseNotification
-from athenian.api.models.precomputed.models import GitHubPullRequestDeployment
+from athenian.api.models.precomputed.models import GitHubCommitDeployment, \
+    GitHubPullRequestDeployment
 
 
 @pytest.fixture(scope="function")
@@ -238,6 +239,9 @@ async def test_mine_deployments_from_scratch(
         branches, default_branches, prefixer_promise,
         1, (6366825,), mdb, pdb, rdb, cache)
     _validate_deployments(deps, 9, True)
+    await wait_deferred()
+    commits = await pdb.fetch_all(select([GitHubCommitDeployment]))
+    assert len(commits) == 4684
 
 
 @with_defer
