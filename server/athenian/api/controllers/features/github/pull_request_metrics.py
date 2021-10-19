@@ -1008,6 +1008,7 @@ class AverageReviewsCalculator(AverageMetricCalculator[np.float32]):
 EnvironmentsMarkerDType = np.dtype([
     ("environments", np.ndarray),
     ("counts", np.ndarray),
+    ("successful", np.ndarray),
     ("conclusions", np.ndarray),
     ("finished", np.ndarray),
 ])
@@ -1034,7 +1035,7 @@ class EnvironmentsMarker(MetricCalculator[np.ndarray]):
         assert len(self.environments) <= 64
         result = np.recarray(shape=(), dtype=self.dtype)
         result.fill((np.zeros(len(facts), dtype=np.uint64),
-                     *([[None] * len(self.environments)] * 3)))
+                     *([[None] * len(self.environments)] * 4)))
         if facts.empty:
             return np.array([], dtype=np.uint64)
         envs = np.array(self.environments, dtype="U")
@@ -1064,10 +1065,13 @@ class EnvironmentsMarker(MetricCalculator[np.ndarray]):
         offsets = np.zeros(len(lengths) + 1, dtype=int)
         np.cumsum(lengths, out=offsets[1:])
         offsets = offsets[:np.argmax(offsets)]
+        no_deps = lengths == 0
 
         finished_by_env = np.empty(len(self.environments), dtype=object)
         counts_by_env = np.empty_like(finished_by_env)
         conclusions_by_env = np.empty_like(finished_by_env)
+        successful_by_env = np.empty_like(finished_by_env)
+        successful_conclusions = all_conclusions == DeploymentConclusion.SUCCESS
         for pos, ix in enumerate(my_env_indexes[::-1], 1):
             pos = len(my_env_indexes) - pos
             if ix >= 0:
@@ -1075,15 +1079,24 @@ class EnvironmentsMarker(MetricCalculator[np.ndarray]):
                 imap[ix_mask] = 1 << pos
                 finished_by_env[pos] = all_finished[ix_mask]
                 # one PR should not fail to deploy more than (1 << 16) times, seems legit
-                counts_by_env[pos] = np.add.reduceat(ix_mask, offsets).astype(np.uint16)
+                counts = np.add.reduceat(ix_mask, offsets).astype(np.uint16)
+                counts[no_deps[:len(counts)]] = 0
+                counts = counts[counts > 0]
+                counts_by_env[pos] = counts
+                internal_offsets = np.zeros(len(counts), dtype=int)
+                np.cumsum(counts[:-1], out=internal_offsets[1:])
                 conclusions_by_env[pos] = all_conclusions[ix_mask]
+                successful_by_env[pos] = np.bitwise_or.reduceat(
+                    successful_conclusions[ix_mask], internal_offsets)
         unused = np.setdiff1d(np.arange(len(unique_fact_envs)), my_env_indexes, assume_unique=True)
         if len(unused):
             imap[np.in1d(imap, unused)] = 0
         env_marks = np.bitwise_or.reduceat(imap, offsets)
-        env_marks[(lengths == 0)[:len(env_marks)]] = 0
+        env_marks[no_deps[:len(env_marks)]] = 0
         env_marks = np.pad(env_marks, (0, len(lengths) - len(env_marks)))
-        result.fill((env_marks, counts_by_env, conclusions_by_env, finished_by_env))
+        result.fill((
+            env_marks, counts_by_env, successful_by_env, conclusions_by_env, finished_by_env,
+        ))
         return result
 
     def _value(self, samples: np.ndarray) -> EnvironmentsMarkerMetric:
@@ -1121,14 +1134,15 @@ class DeploymentMetricBase(MetricCalculator[T]):
         nnz_finished = peek.finished.item()[self.environment]
         if nnz_finished is not None:
             mask = (peek.environments.item() & (1 << self.environment)).astype(bool)
+            indexes = np.flatnonzero(mask)[peek.successful.item()[self.environment]]
+            successful_sum = len(indexes)
             successful = \
                 (peek.conclusions.item()[self.environment] == DeploymentConclusion.SUCCESS)
             nnz_finished = nnz_finished[successful]
-            mask_sum = mask.sum()
-            assert mask_sum == len(nnz_finished), \
+            assert successful_sum == len(nnz_finished), \
                 f"some PRs deployed more than once in {self.environments[self.environment]}: " \
-                f"{mask_sum} vs. {len(nnz_finished)}"
-            finished[mask] = nnz_finished
+                f"{successful_sum} vs. {len(nnz_finished)}"
+            finished[indexes] = nnz_finished
         return finished
 
 
