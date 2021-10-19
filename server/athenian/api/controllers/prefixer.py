@@ -1,4 +1,5 @@
 import asyncio
+from collections import defaultdict
 import pickle
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -29,7 +30,7 @@ class Prefixer:
     user_node_to_prefixed_login: Dict[int, str]
     user_login_to_prefixed_login: Dict[str, str]
     user_node_to_login: Dict[int, str]
-    user_login_to_node: Dict[str, int]
+    user_login_to_node: Dict[str, List[int]]  # same users in different accounts
 
     @staticmethod
     @cached(
@@ -88,10 +89,9 @@ class Prefixer:
             r[User.node_id.name]: r[User.login.name]
             for r in user_rows
         }
-        user_login_to_node = {
-            r[User.login.name]: r[User.node_id.name]
-            for r in user_rows
-        }
+        user_login_to_node = defaultdict(list)
+        for r in user_rows:
+            user_login_to_node[r[User.login.name]].append(r[User.node_id.name])
         return Prefixer(None,
                         repo_node_to_prefixed_name=repo_node_to_prefixed_name,
                         repo_name_to_prefixed_name=repo_name_to_prefixed_name,

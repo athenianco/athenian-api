@@ -134,15 +134,10 @@ async def test_pr_miner_blacklist(
     assert len(node_ids) == 0
 
 
-@pytest.mark.parametrize("with_memcached", [False, True])
 @with_defer
 async def test_pr_miner_iter_cache_compatible(
-        branches, default_branches, mdb, pdb, rdb, cache, memcached, release_match_setting_tag,
-        with_memcached, pr_miner, prefixer_promise):
-    if with_memcached:
-        if not has_memcached:
-            raise pytest.skip("no memcached")
-        cache = memcached
+        branches, default_branches, mdb, pdb, rdb, cache, release_match_setting_tag,
+        pr_miner, prefixer_promise):
     date_from = date(year=2015, month=1, day=1)
     date_to = date(year=2020, month=1, day=1)
     args = [
@@ -168,8 +163,7 @@ async def test_pr_miner_iter_cache_compatible(
     ]
     miner, _, _, _ = await pr_miner.mine(*args)
     await wait_deferred()
-    if not with_memcached:
-        assert len(cache.mem) > 0
+    assert len(cache.mem) > 0
     first_data = list(miner)
     miner, _, _, _ = await pr_miner.mine(
         *args[:-4],
@@ -186,8 +180,7 @@ async def test_pr_miner_iter_cache_compatible(
                 assert str(fv) == str(sv)
             else:
                 assert_frame_equal(fv.reset_index(), sv.reset_index())
-    if not with_memcached:
-        cache_size = len(cache.mem)
+    cache_size = len(cache.mem)
     # we still use the cache here
     args[5] = {PRParticipationKind.AUTHOR: {"mcuadros"}, PRParticipationKind.MERGER: {"mcuadros"}}
     prs = list((await pr_miner.mine(
@@ -198,9 +191,8 @@ async def test_pr_miner_iter_cache_compatible(
         cache,
     ))[0])
     await wait_deferred()
-    if not with_memcached:
-        # check that the cache has not changed if we add some filters
-        assert len(cache.mem) == cache_size
+    # check that the cache has not changed if we add some filters
+    assert len(cache.mem) == cache_size
     for pr in prs:
         text = ""
         for df in dataclasses.astuple(pr):
@@ -261,11 +253,16 @@ async def test_pr_miner_iter_cache_incompatible(
         )
 
 
+@pytest.mark.parametrize("with_memcached", [False, True])
 @with_defer
 async def test_pr_miner_cache_pr_blacklist(
         branches, default_branches, mdb, pdb, rdb, cache, release_match_setting_tag,
-        pr_miner, prefixer_promise):
+        pr_miner, prefixer_promise, with_memcached, memcached):
     """https://athenianco.atlassian.net/browse/DEV-206"""
+    if with_memcached:
+        if not has_memcached:
+            raise pytest.skip("no memcached")
+        cache = memcached
     date_from = date(year=2018, month=1, day=11)
     date_to = date(year=2018, month=1, day=12)
     args = (
