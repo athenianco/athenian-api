@@ -952,3 +952,17 @@ async def test_pull_request_cycle_deployment_time(
                        (PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT, [0, 0, 418]),
                        (PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT_Q, [0, 0, 377])]:
         assert values[metric][0][0].value == td, metric
+
+
+async def test_pull_request_deployment_time_with_failed(
+        precomputed_sample_deployments, real_pr_samples):
+    ensemble = PullRequestMetricCalculatorEnsemble(
+        PullRequestMetricID.PR_DEPLOYMENT_TIME,
+        quantile_stride=0,
+        quantiles=(0, 1),
+        environments=["staging", "production"])
+    time_from, time_to, samples = real_pr_samples
+    ensemble(samples, dt64arr_ns(time_from), dt64arr_ns(time_to), [np.arange(len(samples))])
+    values = ensemble.values()
+    assert values[PullRequestMetricID.PR_DEPLOYMENT_TIME][0][0].value == \
+           [timedelta(days=128, seconds=86233)] * 2

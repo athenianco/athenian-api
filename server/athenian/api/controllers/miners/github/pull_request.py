@@ -32,8 +32,8 @@ from athenian.api.controllers.miners.github.release_match import PullRequestToRe
     ReleaseToPullRequestMapper
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
-from athenian.api.controllers.miners.types import MinedPullRequest, nonemax, nonemin, \
-    PRParticipants, PRParticipationKind, PullRequestFacts
+from athenian.api.controllers.miners.types import DeploymentConclusion, MinedPullRequest, \
+    nonemax, nonemin, PRParticipants, PRParticipationKind, PullRequestFacts
 from athenian.api.controllers.prefixer import PrefixerPromise
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.db import add_pdb_misses, DatabaseLike, ParallelDatabase
@@ -1061,6 +1061,7 @@ class PullRequestMiner:
             con=pdb, columns=cols, index=ghprd.deployment_name.name)
         cols = [DeploymentNotification.name,
                 DeploymentNotification.environment,
+                DeploymentNotification.conclusion,
                 DeploymentNotification.finished_at]
         details = await read_sql_query(
             sql.select(cols)
@@ -1717,6 +1718,11 @@ class PullRequestFactsMiner:
         ])), self._bots, assume_unique=True))
         environments = \
             pr.deployments[DeploymentNotification.environment.name].values.astype("U", copy=False)
+        deployment_conclusions = np.fromiter(
+            (DeploymentConclusion[s]
+             for s in pr.deployments[DeploymentNotification.conclusion.name].values),
+            int, len(pr.deployments),
+        )
         deployed = pr.deployments[DeploymentNotification.finished_at.name].values.astype(
             "datetime64[s]")
         facts = PullRequestFacts.from_fields(
@@ -1747,6 +1753,7 @@ class PullRequestFactsMiner:
             jira_ids=pr.jiras.index.values.tolist(),
             deployments=pr.deployments.index.values,
             environments=environments,
+            deployment_conclusions=deployment_conclusions,
             deployed=deployed,
         )
         self._validate(facts, pr.pr[PullRequest.htmlurl.name])

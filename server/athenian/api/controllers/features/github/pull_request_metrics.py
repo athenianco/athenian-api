@@ -14,7 +14,8 @@ from athenian.api.controllers.features.metric_calculator import AverageMetricCal
     HistogramCalculatorEnsemble, make_register_metric, MedianMetricCalculator, MetricCalculator, \
     MetricCalculatorEnsemble, RatioCalculator, SumMetricCalculator, WithoutQuantilesMixin
 from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_inrange
-from athenian.api.controllers.miners.types import PRParticipants, PullRequestFacts
+from athenian.api.controllers.miners.types import DeploymentConclusion, PRParticipants, \
+    PullRequestFacts
 from athenian.api.models.web import PullRequestMetricID
 
 
@@ -1004,7 +1005,12 @@ class AverageReviewsCalculator(AverageMetricCalculator[np.float32]):
         return result
 
 
-EnvironmentsMarkerDType = np.dtype([("environments", np.ndarray), ("finished", np.ndarray)])
+EnvironmentsMarkerDType = np.dtype([
+    ("environments", np.ndarray),
+    ("counts", np.ndarray),
+    ("conclusions", np.ndarray),
+    ("finished", np.ndarray),
+])
 EnvironmentsMarkerMetric = make_metric(
     "EnvironmentsMarkerMetric",
     __name__,
@@ -1026,20 +1032,25 @@ class EnvironmentsMarker(MetricCalculator[np.ndarray]):
                  **kwargs,
                  ) -> np.ndarray:
         assert len(self.environments) <= 64
+        result = np.recarray(shape=(), dtype=self.dtype)
+        result.fill((np.zeros(len(facts), dtype=np.uint64),
+                     *([[None] * len(self.environments)] * 3)))
         if facts.empty:
             return np.array([], dtype=np.uint64)
         envs = np.array(self.environments, dtype="U")
         fact_envs = facts[PullRequestFacts.f.environments].values
         all_envs = np.concatenate(fact_envs).astype("U", copy=False)
         if len(all_envs) == 0:
-            return np.array([(np.zeros(len(facts), dtype=np.uint64),
-                              [None] * len(self.environments))],
-                            dtype=self.dtype)
-        fact_finished = facts[PullRequestFacts.f.deployed].values
+            return result
         all_finished = np.concatenate(
-            fact_finished, dtype=facts[PullRequestFacts.f.created].dtype, casting="unsafe",
+            facts[PullRequestFacts.f.deployed].values,
+            dtype=facts[PullRequestFacts.f.created].dtype, casting="unsafe",
         ).astype("datetime64[s]", copy=False)
-        assert len(all_envs) == len(all_finished)
+        all_conclusions = np.concatenate(
+            facts[PullRequestFacts.f.deployment_conclusions].values,
+            dtype=np.int8, casting="unsafe",
+        )
+        assert len(all_envs) == len(all_finished) == len(all_conclusions)
         unique_fact_envs, imap = np.unique(all_envs, return_inverse=True)
         del all_envs
         unique_fact_envs = unique_fact_envs.astype(
@@ -1048,24 +1059,32 @@ class EnvironmentsMarker(MetricCalculator[np.ndarray]):
         not_found_mask = unique_fact_envs[my_env_indexes] != envs
         my_env_indexes[not_found_mask] = np.arange(-1, -1 - not_found_mask.sum(), -1)
         imap = imap.astype(np.uint64)
+
+        lengths = np.array([len(v) for v in fact_envs])
+        offsets = np.zeros(len(lengths) + 1, dtype=int)
+        np.cumsum(lengths, out=offsets[1:])
+        offsets = offsets[:np.argmax(offsets)]
+
         finished_by_env = np.empty(len(self.environments), dtype=object)
+        counts_by_env = np.empty_like(finished_by_env)
+        conclusions_by_env = np.empty_like(finished_by_env)
         for pos, ix in enumerate(my_env_indexes[::-1], 1):
             pos = len(my_env_indexes) - pos
             if ix >= 0:
                 ix_mask = imap == ix
                 imap[ix_mask] = 1 << pos
                 finished_by_env[pos] = all_finished[ix_mask]
+                # one PR should not fail to deploy more than (1 << 16) times, seems legit
+                counts_by_env[pos] = np.add.reduceat(ix_mask, offsets).astype(np.uint16)
+                conclusions_by_env[pos] = all_conclusions[ix_mask]
         unused = np.setdiff1d(np.arange(len(unique_fact_envs)), my_env_indexes, assume_unique=True)
         if len(unused):
             imap[np.in1d(imap, unused)] = 0
-        lengths = np.array([len(v) for v in fact_envs])
-        offsets = np.zeros(len(lengths) + 1, dtype=int)
-        np.cumsum(lengths, out=offsets[1:])
-        offsets = offsets[:np.argmax(offsets)]
         env_marks = np.bitwise_or.reduceat(imap, offsets)
         env_marks[(lengths == 0)[:len(env_marks)]] = 0
         env_marks = np.pad(env_marks, (0, len(lengths) - len(env_marks)))
-        return np.array([(env_marks, finished_by_env)], dtype=self.dtype)
+        result.fill((env_marks, counts_by_env, conclusions_by_env, finished_by_env))
+        return result
 
     def _value(self, samples: np.ndarray) -> EnvironmentsMarkerMetric:
         raise AssertionError("this must be never called")
@@ -1096,14 +1115,19 @@ class DeploymentMetricBase(MetricCalculator[T]):
         ]
         return clones
 
-    def _calc_finished(self, facts: pd.DataFrame) -> np.ndarray:
+    def _calc_deployed(self, facts: pd.DataFrame) -> np.ndarray:
         finished = np.full(len(facts), None, "datetime64[s]")
         peek = self._calcs[0].peek
-        nnz_finished = peek["finished"][0][self.environment]
+        nnz_finished = peek.finished.item()[self.environment]
         if nnz_finished is not None:
-            mask = (peek["environments"][0] & (1 << self.environment)).astype(bool)
-            assert mask.sum() == len(nnz_finished), \
-                f"some PRs deployed more than once in {self.environments[self.environment]}"
+            mask = (peek.environments.item() & (1 << self.environment)).astype(bool)
+            successful = \
+                (peek.conclusions.item()[self.environment] == DeploymentConclusion.SUCCESS)
+            nnz_finished = nnz_finished[successful]
+            mask_sum = mask.sum()
+            assert mask_sum == len(nnz_finished), \
+                f"some PRs deployed more than once in {self.environments[self.environment]}: " \
+                f"{mask_sum} vs. {len(nnz_finished)}"
             finished[mask] = nnz_finished
         return finished
 
@@ -1128,7 +1152,7 @@ class DeploymentTimeCalculator(DeploymentMetricBase, AverageMetricCalculator[tim
                  override_event_indexes: Optional[np.ndarray] = None,
                  **kwargs,
                  ) -> np.ndarray:
-        finished = self._calc_finished(facts)
+        finished = self._calc_deployed(facts)
         if override_event_time is not None:
             finished[override_event_indexes] = override_event_time
         started = facts[PullRequestFacts.f.merged].values.copy()
@@ -1167,7 +1191,7 @@ class DeploymentPendingMarker(DeploymentMetricBase):
                  max_times: np.ndarray,
                  **kwargs,
                  ) -> np.ndarray:
-        finished = self._calc_finished(facts)
+        finished = self._calc_deployed(facts)
         repo_mask = np.in1d(facts[PullRequestFacts.f.repository_full_name].values,
                             self.repositories[self.environment])
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
@@ -1202,7 +1226,7 @@ class LeadDeploymentTimeCalculator(DeploymentMetricBase, AverageMetricCalculator
                  **kwargs,
                  ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
-        finished = self._calc_finished(facts)
+        finished = self._calc_deployed(facts)
         work_began = facts[PullRequestFacts.f.work_began].values
         delta = finished - work_began
         finished_in_range = (min_times[:, None] <= finished) & (finished < max_times[:, None])

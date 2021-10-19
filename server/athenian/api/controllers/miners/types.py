@@ -223,6 +223,14 @@ class MinedPullRequest:
         return set(np.unique(values[np.flatnonzero(values)]).tolist())
 
 
+class DeploymentConclusion(IntEnum):
+    """Possible deployment outcomes."""
+
+    SUCCESS = auto()
+    FAILURE = auto()
+    CANCELLED = auto()
+
+
 # avoid F821 in the annotations
 datetime64 = timedelta64 = List
 s = None
@@ -270,6 +278,7 @@ class PullRequestFacts:
         releaser: str
         deployments: List[str]
         environments: List[str]
+        deployment_conclusions: List[DeploymentConclusion]
         deployed: List[datetime]
 
     def max_timestamp(self) -> pd.Timestamp:
@@ -428,14 +437,6 @@ class CodeCheckRunListItem:
     size_groups: List[int]
     total_stats: CodeCheckRunListStats
     prs_stats: CodeCheckRunListStats
-
-
-class DeploymentConclusion(IntEnum):
-    """Possible deployment outcomes."""
-
-    SUCCESS = auto()
-    FAILURE = auto()
-    CANCELLED = auto()
 
 
 @dataclass(slots=True, frozen=True)
