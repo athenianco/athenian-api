@@ -22,7 +22,8 @@ from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch
     ReleaseMatchSetting, ReleaseSettings
 from athenian.api.defer import with_defer
 from athenian.api.models.metadata.github import Branch
-from athenian.api.models.persistentdata.models import DeployedLabel
+from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
+    DeploymentNotification
 from athenian.api.models.state.models import JIRAProjectSetting, MappedJIRAIdentity
 from athenian.api.typing_utils import wraps
 
@@ -276,6 +277,64 @@ async def metrics_calculator_factory_memcached(mdb, pdb, rdb, memcached):
 @pytest.fixture(scope="function")
 @with_defer
 async def precomputed_deployments(
+    release_match_setting_tag_or_branch, prefixer_promise, branches, default_branches,
+    mdb, pdb, rdb,
+):
+    await _precompute_deployments(
+        release_match_setting_tag_or_branch, prefixer_promise, branches, default_branches,
+        mdb, pdb, rdb)
+
+
+@pytest.fixture(scope="function")
+async def sample_deployments(rdb):
+    await rdb.execute(delete(DeployedLabel))
+    await rdb.execute(delete(DeployedComponent))
+    await rdb.execute(delete(DeploymentNotification))
+    for year, month, day, conclusion, tag, commit in (
+        (2019, 11, 1, "SUCCESS", "v4.13.1", 2755244),
+        (2018, 12, 1, "SUCCESS", "4.8.1", 2755046),
+        (2018, 12, 2, "SUCCESS", "4.8.1", 2755046),
+        (2018, 8, 1, "SUCCESS", "4.5.0", 2755028),
+        (2016, 12, 1, "SUCCESS", "3.2.0", 2755108),
+        (2018, 1, 12, "FAILURE", "4.0.0", 2757510),
+        (2018, 1, 11, "SUCCESS", "4.0.0", 2757510),
+        (2018, 1, 10, "FAILURE", "4.0.0", 2757510),
+        (2016, 7, 6, "SUCCESS", "3.1.0", 2756224),
+    ):
+        for env in ("production", "staging", "canary"):
+            name = "%s_%d_%02d_%02d" % (env, year, month, day)
+            await rdb.execute(insert(DeploymentNotification).values(dict(
+                account_id=1,
+                name=name,
+                conclusion=conclusion,
+                environment=env,
+                started_at=datetime(year, month, day, tzinfo=timezone.utc),
+                finished_at=datetime(year, month, day, 0, 10, tzinfo=timezone.utc),
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            )))
+            await rdb.execute(insert(DeployedComponent).values(dict(
+                account_id=1,
+                deployment_name=name,
+                repository_node_id=40550,
+                reference=tag,
+                resolved_commit_node_id=commit,
+                created_at=datetime.now(timezone.utc),
+            )))
+
+
+@pytest.fixture(scope="function")
+@with_defer
+async def precomputed_sample_deployments(
+    release_match_setting_tag_or_branch, prefixer_promise, branches, default_branches,
+    mdb, pdb, rdb, sample_deployments,
+):
+    await _precompute_deployments(
+        release_match_setting_tag_or_branch, prefixer_promise, branches, default_branches,
+        mdb, pdb, rdb)
+
+
+async def _precompute_deployments(
     release_match_setting_tag_or_branch, prefixer_promise, branches, default_branches,
     mdb, pdb, rdb,
 ):

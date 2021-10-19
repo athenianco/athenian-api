@@ -44,9 +44,9 @@ from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRe
     PRDataFrames, PullRequestFactsMiner, PullRequestMiner, ReviewResolution
 from athenian.api.controllers.miners.github.release_load import dummy_releases_df, ReleaseLoader
 from athenian.api.controllers.miners.github.release_match import load_commit_dags
-from athenian.api.controllers.miners.types import Deployment, Label, MinedPullRequest, \
-    PRParticipants, PullRequestEvent, PullRequestFacts, PullRequestJIRAIssueItem, \
-    PullRequestListItem, PullRequestStage
+from athenian.api.controllers.miners.types import Deployment, DeploymentConclusion, Label, \
+    MinedPullRequest, PRParticipants, PullRequestEvent, PullRequestFacts, \
+    PullRequestJIRAIssueItem, PullRequestListItem, PullRequestStage
 from athenian.api.controllers.prefixer import PrefixerPromise
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.db import add_pdb_misses, ParallelDatabase, set_pdb_hits, set_pdb_misses
@@ -449,8 +449,9 @@ class PullRequestListMiner:
             prs = dfs.prs.index.values
             deployed = np.full(len(prs), None, "datetime64[s]")
             dep_peek = self._calcs["deploy"]["time"][dep_index].calcs[0].peek
-            mask = (dep_peek["environments"][0] & (1 << dep_index)).astype(bool)
-            deployed[mask] = dep_peek["finished"][0][dep_index]
+            mask = (dep_peek.environments.item() & (1 << dep_index)).astype(bool)
+            successful = dep_peek.conclusions.item()[dep_index] == DeploymentConclusion.SUCCESS
+            deployed[mask] = dep_peek.finished.item()[dep_index][successful]
             events_time_machine[PullRequestEvent.DEPLOYED] = \
                 set(prs[deployed < np.array(self._time_to, dtype=deployed.dtype)])
             events_now[PullRequestEvent.DEPLOYED] = set(prs[mask])

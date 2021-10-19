@@ -17,7 +17,8 @@ from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.github.release_load import ReleaseLoader
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query, \
     PullRequestJiraMapper
-from athenian.api.controllers.miners.types import PRParticipants, PullRequestFacts
+from athenian.api.controllers.miners.types import DeploymentConclusion, PRParticipants, \
+    PullRequestFacts
 from athenian.api.controllers.prefixer import PrefixerPromise
 from athenian.api.controllers.settings import ReleaseSettings
 from athenian.api.db import add_pdb_hits, add_pdb_misses, ParallelDatabase
@@ -212,7 +213,9 @@ class UnfreshPullRequestFactsFetcher:
         names = deps.index.get_level_values(1).values
         finisheds = deps[DeploymentNotification.finished_at.name].values
         envs = deps[DeploymentNotification.environment.name].values
-        for node_id, name, finished, env in zip(pr_node_ids, names, finisheds, envs):
+        conclusions = deps[DeploymentNotification.conclusion.name].values
+        for node_id, name, finished, env, conclusion in zip(
+                pr_node_ids, names, finisheds, envs, conclusions):
             try:
                 f = facts[node_id]
             except KeyError:
@@ -221,14 +224,16 @@ class UnfreshPullRequestFactsFetcher:
                 f.deployments = [name]
                 f.deployed = [finished]
                 f.environments = [env]
+                f.deployment_conclusions = [DeploymentConclusion[conclusion]]
             else:
                 try:
                     f.deployments.append(name)
                     f.deployed.append(finished)
                     f.environments.append(env)
+                    f.deployment_conclusions.append(DeploymentConclusion[conclusion])
                 except AttributeError:
                     continue  # numpy array, already set
         empty = []
         for f in facts.values():
             if f.deployments is None:
-                f.deployments = f.deployed = f.environments = empty
+                f.deployments = f.deployed = f.environments = f.deployment_conclusions = empty
