@@ -309,9 +309,10 @@ async def _filter_by_participants(df: pd.DataFrame,
                                   participants: ReleaseParticipants,
                                   prefixer: PrefixerPromise,
                                   ) -> pd.DataFrame:
-    user_login_to_node_get = (await prefixer.load()).user_login_to_node.get
+    user_login_to_node_get = (await prefixer.load()).user_login_to_node.__getitem__
     participants = {
-        k: [user_login_to_node_get(u) for u in people] for k, people in participants.items()
+        k: list(chain.from_iterable(user_login_to_node_get(u) for u in people))
+        for k, people in participants.items()
     }
     mask = np.ones(len(df), dtype=bool)
     for pkind, col in zip(ReleaseParticipationKind, [DeploymentFacts.f.pr_authors,

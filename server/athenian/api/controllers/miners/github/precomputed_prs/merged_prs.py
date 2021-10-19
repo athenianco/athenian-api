@@ -1,6 +1,7 @@
 import asyncio
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+from itertools import chain
 import logging
 import pickle
 from typing import Collection, Dict, Iterable, List, Optional, Tuple
@@ -432,8 +433,9 @@ async def discover_inactive_merged_unreleased_prs(time_from: datetime,
                       (PRParticipationKind.MERGER, ghmprf.merger)):
         if people := participants.get(role):
             if user_login_to_node_get is None:
-                user_login_to_node_get = (await prefixer.load()).user_login_to_node.get
-            filters.append(col.in_([user_login_to_node_get(u) for u in people]))
+                user_login_to_node_get = (await prefixer.load()).user_login_to_node.__getitem__
+            filters.append(col.in_(list(chain.from_iterable(
+                user_login_to_node_get(u) for u in people))))
     if labels:
         build_labels_filters(ghmprf, labels, filters, selected, postgres)
     body = join(ghmprf, ghdprf, and_(
