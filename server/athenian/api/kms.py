@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import io
 import logging
@@ -17,6 +18,7 @@ class AthenianKMS:
     """Google Cloud Key Management Service for Athenian API."""
 
     log = logging.getLogger("%s.kms" % metadata.__package__)
+    timeout_retries = 10
 
     def __init__(self):
         """Initialize a new instance of AthenianKMS class."""
@@ -39,14 +41,27 @@ class AthenianKMS:
 
     async def encrypt(self, plaintext: Union[bytes, str]) -> str:
         """Encrypt text using Google KMS."""
-        return await self._kms.encrypt(encode(plaintext))
+        for attempt in range(self.timeout_retries):
+            try:
+                return await self._kms.encrypt(encode(plaintext))
+            except asyncio.TimeoutError as e:
+                self.log.warning("encrypt attempt %d", attempt + 1)
+                if attempt == self.timeout_retries - 1:
+                    raise e from None
 
     async def decrypt(self, ciphertext: str) -> bytes:
         """Decrypt text using Google KMS."""
         # we cannot use gcloud.aio.kms.decode because it converts bytes to string with str.decode()
-        payload = await self._kms.decrypt(ciphertext)
-        variant = payload.replace("-", "+").replace("_", "/")
-        return base64.b64decode(variant)
+        for attempt in range(self.timeout_retries):
+            try:
+                payload = await self._kms.decrypt(ciphertext)
+            except asyncio.TimeoutError as e:
+                self.log.warning("decrypt attempt %d", attempt + 1)
+                if attempt == self.timeout_retries - 1:
+                    raise e from None
+            else:
+                variant = payload.replace("-", "+").replace("_", "/")
+                return base64.b64decode(variant)
 
     async def close(self):
         """Close the underlying HTTPS session."""
