@@ -1,10 +1,11 @@
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import AllOf, Model
+from athenian.api.models.web.common_deployment_properties import CommonDeploymentProperties
 from athenian.api.models.web.common_filter_properties import CommonFilterProperties
 from athenian.api.models.web.deployment_conclusion import DeploymentConclusion
+from athenian.api.models.web.deployment_with import DeploymentWith
 from athenian.api.models.web.for_set import make_common_pull_request_filters
-from athenian.api.models.web.release_with import ReleaseWith
 
 
 class _FilterDeploymentsRequest(Model):
@@ -12,11 +13,9 @@ class _FilterDeploymentsRequest(Model):
 
     openapi_types = {
         "in_": List[str],
-        "with_": ReleaseWith,
+        "with_": DeploymentWith,
         "environments": List[str],
         "conclusions": List[str],
-        "with_labels": object,
-        "without_labels": object,
     }
 
     attribute_map = {
@@ -24,8 +23,6 @@ class _FilterDeploymentsRequest(Model):
         "with_": "with",
         "environments": "environments",
         "conclusions": "conclusions",
-        "with_labels": "with_labels",
-        "without_labels": "without_labels",
     }
 
     __enable_slots__ = False
@@ -33,11 +30,9 @@ class _FilterDeploymentsRequest(Model):
     def __init__(
         self,
         in_: Optional[List[str]] = None,
-        with_: Optional[ReleaseWith] = None,
+        with_: Optional[DeploymentWith] = None,
         environments: Optional[List[str]] = None,
         conclusions: Optional[List[str]] = None,
-        with_labels: Optional[Dict[str, Any]] = None,
-        without_labels: Optional[Dict[str, Any]] = None,
     ):
         """FilterDeploymentsRequest - a model defined in OpenAPI
 
@@ -45,15 +40,11 @@ class _FilterDeploymentsRequest(Model):
         :param with_: The with_ of this FilterDeploymentsRequest.
         :param environments: The environments of this FilterDeploymentsRequest.
         :param conclusions: The conclusions of this FilterDeploymentsRequest.
-        :param with_labels: The with_labels of this FilterDeploymentsRequest.
-        :param without_labels: The without_labels of this FilterDeploymentsRequest.
         """
         self._in_ = in_
         self._with_ = with_
         self._environments = environments
         self._conclusions = conclusions
-        self._with_labels = with_labels
-        self._without_labels = without_labels
 
     @property
     def in_(self) -> List[str]:
@@ -78,7 +69,7 @@ class _FilterDeploymentsRequest(Model):
         self._in_ = in_
 
     @property
-    def with_(self) -> ReleaseWith:
+    def with_(self) -> DeploymentWith:
         """Gets the with_ of this FilterDeploymentsRequest.
 
         :return: The with_ of this FilterDeploymentsRequest.
@@ -86,7 +77,7 @@ class _FilterDeploymentsRequest(Model):
         return self._with_
 
     @with_.setter
-    def with_(self, with_: ReleaseWith):
+    def with_(self, with_: DeploymentWith):
         """Sets the with_ of this FilterDeploymentsRequest.
 
         :param with_: The with_ of this FilterDeploymentsRequest.
@@ -138,52 +129,9 @@ class _FilterDeploymentsRequest(Model):
                         f'Value "{value}" must be one of {list(DeploymentConclusion)}')
         self._conclusions = conclusions
 
-    @property
-    def with_labels(self) -> Dict[str, Any]:
-        """Gets the with_labels of this FilterDeploymentsRequest.
-
-        Deployments should contain at least one of the specified label values. `null` matches any
-        label value and effectively checks the label existence.
-
-        :return: The with_labels of this FilterDeploymentsRequest.
-        """
-        return self._with_labels
-
-    @with_labels.setter
-    def with_labels(self, with_labels: Dict[str, Any]):
-        """Sets the with_labels of this FilterDeploymentsRequest.
-
-        Deployments should contain at least one of the specified label values. `null` matches any
-        label value and effectively checks the label existence.
-
-        :param with_labels: The with_labels of this FilterDeploymentsRequest.
-        """
-        self._with_labels = with_labels
-
-    @property
-    def without_labels(self) -> Dict[str, Any]:
-        """Gets the without_labels of this FilterDeploymentsRequest.
-
-        Deployments may not contain the specified label values. `null` matches any label value and
-        effectively ensures that the label does not exist.
-
-        :return: The without_labels of this FilterDeploymentsRequest.
-        """
-        return self._without_labels
-
-    @without_labels.setter
-    def without_labels(self, without_labels: Dict[str, Any]):
-        """Sets the without_labels of this FilterDeploymentsRequest.
-
-        Deployments may not contain the specified label values. `null` matches any label value and
-        effectively ensures that the label does not exist.
-
-        :param without_labels: The without_labels of this FilterDeploymentsRequest.
-        """
-        self._without_labels = without_labels
-
 
 FilterDeploymentsRequest = AllOf(_FilterDeploymentsRequest,
                                  CommonFilterProperties,
                                  make_common_pull_request_filters("pr_"),
+                                 CommonDeploymentProperties,
                                  name="FilterDeploymentsRequest", module=__name__)

@@ -7,6 +7,7 @@ from athenian.api.models.web.calculated_code_check_histogram import CalculatedCo
 from athenian.api.models.web.calculated_code_check_metrics import CalculatedCodeCheckMetrics
 from athenian.api.models.web.calculated_code_check_metrics_item import \
     CalculatedCodeCheckMetricsItem
+from athenian.api.models.web.calculated_deployment_metric import CalculatedDeploymentMetric
 from athenian.api.models.web.calculated_developer_metrics import CalculatedDeveloperMetrics
 from athenian.api.models.web.calculated_developer_metrics_item import \
     CalculatedDeveloperMetricsItem
@@ -30,6 +31,7 @@ from athenian.api.models.web.commit import Commit
 from athenian.api.models.web.commit_filter import CommitFilter
 from athenian.api.models.web.commit_signature import CommitSignature
 from athenian.api.models.web.commits_list import CommitsList
+from athenian.api.models.web.common_deployment_properties import CommonDeploymentProperties
 from athenian.api.models.web.common_filter_properties import CommonFilterProperties
 from athenian.api.models.web.common_metrics_properties import CommonMetricsProperties, \
     GranularitiesMixin, QuantilesMixin
@@ -44,8 +46,11 @@ from athenian.api.models.web.deployment_analysis import DeploymentAnalysis, \
     DeploymentAnalysisUnsealed
 from athenian.api.models.web.deployment_analysis_code import DeploymentAnalysisCode
 from athenian.api.models.web.deployment_conclusion import DeploymentConclusion
+from athenian.api.models.web.deployment_metric_id import DeploymentMetricID
+from athenian.api.models.web.deployment_metrics_request import DeploymentMetricsRequest
 from athenian.api.models.web.deployment_notification import DeploymentNotification, \
     DeploymentNotificationUnsealed
+from athenian.api.models.web.deployment_with import DeploymentWith
 from athenian.api.models.web.developer_metric_id import DeveloperMetricID
 from athenian.api.models.web.developer_metrics_request import DeveloperMetricsRequest
 from athenian.api.models.web.developer_summary import DeveloperSummary
