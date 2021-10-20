@@ -28,6 +28,7 @@ from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_
 from athenian.api.controllers.miners.github.precomputed_prs import \
     discover_inactive_merged_unreleased_prs, MergedPRFactsLoader, \
     OpenPRFactsLoader, update_unreleased_prs
+from athenian.api.controllers.miners.github.release_load import ReleaseLoader
 from athenian.api.controllers.miners.github.release_match import PullRequestToReleaseMapper, \
     ReleaseToPullRequestMapper
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
@@ -74,10 +75,12 @@ class PullRequestMiner:
 
     CACHE_TTL = short_term_exptime
     log = logging.getLogger("%s.PullRequestMiner" % metadata.__package__)
-    AuxiliaryMappers = namedtuple("AuxiliaryMappers", ["releases_to_prs", "prs_to_releases"])
-    mappers = AuxiliaryMappers(
-        releases_to_prs=ReleaseToPullRequestMapper.map_releases_to_prs,
-        prs_to_releases=PullRequestToReleaseMapper.map_prs_to_releases,
+    ReleaseMappers = namedtuple("ReleaseMappers", [
+        "map_releases_to_prs", "map_prs_to_releases", "load_releases"])
+    mappers = ReleaseMappers(
+        map_releases_to_prs=ReleaseToPullRequestMapper.map_releases_to_prs,
+        map_prs_to_releases=PullRequestToReleaseMapper.map_prs_to_releases,
+        load_releases=ReleaseLoader.load_releases,
     )
 
     def __init__(self, dfs: PRDataFrames):
@@ -239,7 +242,7 @@ class PullRequestMiner:
         )
         # the heaviest task should always go first
         tasks = [
-            cls.mappers.releases_to_prs(
+            cls.mappers.map_releases_to_prs(
                 repositories, branches, default_branches, time_from, time_to,
                 participants.get(PRParticipationKind.AUTHOR, []),
                 participants.get(PRParticipationKind.MERGER, []),
@@ -266,12 +269,32 @@ class PullRequestMiner:
                 release_settings, prefixer, account, meta_ids, mdb, pdb, cache))
             # we don't load inactive released undeployed PRs because nobody needs them
         (
-            (released_prs, releases, matched_bys, release_dags, precomputed_observed),
+            (released_prs, releases, release_settings, matched_bys,
+             release_dags, precomputed_observed),
             (prs, branch_dags),
             deployed_prs,
             *unreleased,
         ) = await gather(*tasks)
         del pr_blacklist_expr
+        deployed_releases_task = None
+        if not deployed_prs.empty:
+            covered_prs = prs.index.union(released_prs.index)
+            if unreleased:
+                covered_prs = covered_prs.union(unreleased[0].index)
+            new_prs = deployed_prs.index.difference(covered_prs)
+            if not new_prs.empty:
+                new_prs = deployed_prs[[
+                    PullRequest.merged_at.name, PullRequest.repository_full_name.name,
+                ]].loc[new_prs]
+                min_deployed_merged = new_prs[PullRequest.merged_at.name].min()
+                if min_deployed_merged < time_from:
+                    deployed_releases_task = asyncio.create_task(
+                        cls.mappers.load_releases(
+                            new_prs[PullRequest.repository_full_name.name].unique(),
+                            branches, default_branches, min_deployed_merged, time_from,
+                            release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache),
+                        name="PullRequestMiner.mine/deployed_releases",
+                    )
         concatenated = [prs, released_prs, deployed_prs, *unreleased]
         missed_prs = cls._extract_missed_prs(ambiguous, pr_blacklist, deployed_prs, matched_bys)
         if missed_prs:
@@ -285,7 +308,7 @@ class PullRequestMiner:
             pr_whitelist = PullRequest.node_id.in_(
                 list(chain.from_iterable(missed_prs.values())))
             tasks = [
-                cls.mappers.releases_to_prs(
+                cls.mappers.map_releases_to_prs(
                     missed_prs, branches, default_branches, time_from, time_to,
                     participants.get(PRParticipationKind.AUTHOR, []),
                     participants.get(PRParticipationKind.MERGER, []),
@@ -311,7 +334,8 @@ class PullRequestMiner:
                 prs, unreleased[0].index if unreleased else [], time_to, releases, matched_bys,
                 branches, default_branches, release_dags, release_settings, prefixer,
                 account, meta_ids, mdb, pdb, rdb, cache,
-                truncate=truncate, with_jira=with_jira_map),
+                truncate=truncate, with_jira=with_jira_map,
+                extra_releases_task=deployed_releases_task),
             OpenPRFactsLoader.load_open_pull_request_facts(prs, account, pdb),
         ]
         (dfs, unreleased_facts, unreleased_prs_event), open_facts = await gather(
@@ -419,6 +443,7 @@ class PullRequestMiner:
                            cache: Optional[aiomcache.Client],
                            truncate: bool = True,
                            with_jira: bool = True,
+                           extra_releases_task: Optional[asyncio.Task] = None,
                            ) -> Tuple[PRDataFrames,
                                       Dict[str, Tuple[str, PullRequestFacts]],
                                       asyncio.Event]:
@@ -478,7 +503,12 @@ class PullRequestMiner:
                 merged_mask = prs[PullRequest.merged_at.name].notnull()
             merged_mask &= ~prs.index.isin(unreleased)
             merged_prs = prs.take(np.where(merged_mask)[0])
-            subtasks = [cls.mappers.prs_to_releases(
+            nonlocal releases
+            if extra_releases_task is not None:
+                await extra_releases_task
+                extra_releases, _ = extra_releases_task.result()
+                releases = releases.append(extra_releases, ignore_index=True)
+            subtasks = [cls.mappers.map_prs_to_releases(
                 merged_prs, releases, matched_bys, branches, default_branches, time_to,
                 dags, release_settings, prefixer, account, meta_ids, mdb, pdb, cache),
                 MergedPRFactsLoader.load_merged_unreleased_pull_request_facts(

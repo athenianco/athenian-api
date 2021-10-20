@@ -550,6 +550,23 @@ async def test_calc_pull_request_metrics_line_github_tag_after_branch(
 
 
 @with_defer
+async def test_calc_pull_request_metrics_line_github_deployment_hazard(
+        metrics_calculator_factory, mdb, pdb, rdb, cache, prefixer_promise,
+        release_match_setting_branch, precomputed_deployments):
+    metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
+    date_from = datetime(year=2019, month=1, day=1, tzinfo=timezone.utc)
+    date_to = datetime(year=2020, month=1, day=12, tzinfo=timezone.utc)
+    args = [[PullRequestMetricID.PR_RELEASE_TIME], [[date_from, date_to]], [0, 1], [], [],
+            [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(),
+            False, release_match_setting_branch, prefixer_promise, False]
+    metrics = (
+        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
+    )[0][0][0][0][0][0]
+    await wait_deferred()
+    assert metrics.value == timedelta(seconds=0)  # 396 days without loading deployed releases
+
+
+@with_defer
 async def test_calc_pull_request_metrics_line_jira_map(
         metrics_calculator_factory, mdb, pdb, rdb, cache, release_match_setting_tag_or_branch,
         prefixer_promise):

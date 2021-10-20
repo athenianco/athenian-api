@@ -245,6 +245,7 @@ class ReleaseToPullRequestMapper:
                                       np.ndarray, np.ndarray]] = None,
                                   ) -> Union[Tuple[pd.DataFrame,
                                                    pd.DataFrame,
+                                                   ReleaseSettings,
                                                    Dict[str, ReleaseMatch],
                                                    Dict[str, DAG],
                                                    Tuple[np.ndarray, np.ndarray]],
@@ -263,6 +264,9 @@ class ReleaseToPullRequestMapper:
                  (the rest exists if `precomputed_observed` is None) + \
                  pd.DataFrame with the discovered releases between \
                  `time_from` and `time_to` (today if not `truncate`) \
+                 +\
+                 holistic release settings that enforce the happened release matches in \
+                 [`time_from`, `time_to`] \
                  + \
                  `matched_bys` so that we don't have to compute that mapping again. \
                  + \
@@ -280,10 +284,12 @@ class ReleaseToPullRequestMapper:
         assert (updated_min is None) == (updated_max is None)
 
         if precomputed_observed is None:
-            all_observed_commits, all_observed_repos, releases_in_time_range, matched_bys, dags = \
-                await cls._map_releases_to_prs_observe(
-                    repos, branches, default_branches, time_from, time_to, release_settings, pdags,
-                    prefixer, account, meta_ids, mdb, pdb, rdb, cache, truncate)
+            (
+                all_observed_commits, all_observed_repos,
+                releases_in_time_range, release_settings, matched_bys, dags,
+            ) = await cls._map_releases_to_prs_observe(
+                repos, branches, default_branches, time_from, time_to, release_settings, pdags,
+                prefixer, account, meta_ids, mdb, pdb, rdb, cache, truncate)
         else:
             all_observed_commits, all_observed_repos = precomputed_observed
 
@@ -298,7 +304,7 @@ class ReleaseToPullRequestMapper:
         prs["dead"] = False
         if precomputed_observed is None:
             return (
-                prs, releases_in_time_range, matched_bys, dags,
+                prs, releases_in_time_range, release_settings, matched_bys, dags,
                 (all_observed_commits, all_observed_repos),
             )
         return prs
@@ -324,6 +330,7 @@ class ReleaseToPullRequestMapper:
                                            ) -> Tuple[np.ndarray,
                                                       np.ndarray,
                                                       pd.DataFrame,
+                                                      ReleaseSettings,
                                                       Dict[str, ReleaseMatch],
                                                       Dict[str, DAG]]:
         async def fetch_pdags():
@@ -363,7 +370,10 @@ class ReleaseToPullRequestMapper:
             all_observed_repos = all_observed_repos[order]
         else:
             all_observed_commits = all_observed_repos = np.array([])
-        return all_observed_commits, all_observed_repos, releases_in_time_range, matched_bys, dags
+        return (
+            all_observed_commits, all_observed_repos,
+            releases_in_time_range, release_settings, matched_bys, dags,
+        )
 
     @classmethod
     @sentry_span
