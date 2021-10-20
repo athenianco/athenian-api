@@ -4,16 +4,14 @@ from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.calculated_linear_metric_values import \
     CalculatedLinearMetricValues
 from athenian.api.models.web.deployment_metric_id import DeploymentMetricID
-from athenian.api.models.web.deployment_with import DeploymentWith
+from athenian.api.models.web.for_set_deployments import ForSetDeployments
 
 
 class CalculatedDeploymentMetric(Model):
     """Calculated metrics for a deployments group."""
 
     openapi_types = {
-        "for_": Optional[List[str]],
-        "with_": Optional[DeploymentWith],
-        "environments": Optional[List[str]],
+        "for_": ForSetDeployments,
         "metrics": List[DeploymentMetricID],
         "granularity": str,
         "values": List[CalculatedLinearMetricValues],
@@ -21,8 +19,6 @@ class CalculatedDeploymentMetric(Model):
 
     attribute_map = {
         "for_": "for",
-        "with_": "with",
-        "environments": "environments",
         "metrics": "metrics",
         "granularity": "granularity",
         "values": "values",
@@ -30,9 +26,7 @@ class CalculatedDeploymentMetric(Model):
 
     def __init__(
         self,
-        for_: Optional[List[str]] = None,
-        with_: Optional[DeploymentWith] = None,
-        environments: Optional[List[str]] = None,
+        for_: Optional[ForSetDeployments] = None,
         metrics: Optional[List[str]] = None,
         granularity: Optional[str] = None,
         values: Optional[List[CalculatedLinearMetricValues]] = None,
@@ -40,72 +34,33 @@ class CalculatedDeploymentMetric(Model):
         """CalculatedDeploymentMetric - a model defined in OpenAPI
 
         :param for_: The for_ of this CalculatedDeploymentMetric.
-        :param with_: The with_ of this CalculatedDeploymentMetric.
-        :param environments: The environments of this CalculatedDeploymentMetric.
         :param metrics: The metrics of this CalculatedDeploymentMetric.
         :param granularity: The granularity of this CalculatedDeploymentMetric.
         :param values: The values of this CalculatedDeploymentMetric.
         """
         self._for_ = for_
-        self._with_ = with_
-        self._environments = environments
         self._metrics = metrics
         self._granularity = granularity
         self._values = values
 
     @property
-    def for_(self) -> Optional[List[str]]:
+    def for_(self) -> ForSetDeployments:
         """Gets the for_ of this CalculatedDeploymentMetric.
-
-        Set of repositories. An empty list raises a bad response 400. Duplicates are
-        automatically ignored.
 
         :return: The for_ of this CalculatedDeploymentMetric.
         """
         return self._for_
 
     @for_.setter
-    def for_(self, for_: Optional[List[str]]):
+    def for_(self, for_: ForSetDeployments):
         """Sets the for_ of this CalculatedDeploymentMetric.
-
-        Set of repositories. An empty list raises a bad response 400. Duplicates are
-        automatically ignored.
 
         :param for_: The for_ of this CalculatedDeploymentMetric.
         """
+        if for_ is None:
+            raise ValueError("Invalid value for `for`, must not be `None`")
+
         self._for_ = for_
-
-    @property
-    def with_(self) -> Optional[DeploymentWith]:
-        """Gets the with_ of this CalculatedDeploymentMetric.
-
-        :return: The with_ of this CalculatedDeploymentMetric.
-        """
-        return self._with_
-
-    @with_.setter
-    def with_(self, with_: Optional[DeploymentWith]):
-        """Sets the with_ of this CalculatedDeploymentMetric.
-
-        :param with_: The with_ of this CalculatedDeploymentMetric.
-        """
-        self._with_ = with_
-
-    @property
-    def environments(self) -> Optional[List[str]]:
-        """Gets the environments of this CalculatedDeploymentMetric.
-
-        :return: The environments of this CalculatedDeploymentMetric.
-        """
-        return self._environments
-
-    @environments.setter
-    def environments(self, environments: Optional[List[str]]):
-        """Sets the environments of this CalculatedDeploymentMetric.
-
-        :param environments: The environments of this CalculatedDeploymentMetric.
-        """
-        self._environments = environments
 
     @property
     def metrics(self) -> List[str]:

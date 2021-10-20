@@ -1,10 +1,14 @@
 import sys
 
+import numpy as np
+from numpy.testing import assert_array_equal
+import pandas as pd
 import pytest
 
 from athenian.api.controllers.features.entries import \
     CalculatorNotReadyException, make_calculator, \
     MetricEntriesCalculator as OriginalMetricEntriesCalculator
+from athenian.api.controllers.features.metric_calculator import group_by_repo
 
 
 @pytest.fixture
@@ -64,3 +68,33 @@ def test_get_calculator_variation_found(
         make_calculator(
             "test_entries", 2, (1, ), mdb, pdb, rdb, cache, base_module=base_testing_module,
         )
+
+
+def test_group_by_repo_single_repos():
+    df = pd.DataFrame({"repo": [
+        "one",
+        "two",
+        "one",
+        "one",
+        "one",
+        "two",
+    ]})
+    groups = group_by_repo("repo", [["one"], ["two"], ["one", "two"]], df)
+    assert len(groups) == 3
+    assert_array_equal(groups[0], [0, 2, 3, 4])
+    assert_array_equal(groups[1], [1, 5])
+    assert_array_equal(groups[2], np.arange(len(df)))
+
+
+def test_group_by_repo_few_groups():
+    df = pd.DataFrame({"repo": [
+        "one",
+        "two",
+        "one",
+        "one",
+        "one",
+        "two",
+    ]})
+    groups = group_by_repo("repo", [["one"]], df)
+    assert len(groups) == 1
+    assert_array_equal(groups[0], [0, 2, 3, 4])

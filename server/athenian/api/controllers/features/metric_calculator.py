@@ -17,7 +17,6 @@ from athenian.api.controllers.features.metric import Metric, MetricFloat, Metric
     NumpyMetric, T
 from athenian.api.controllers.features.statistics import mean_confidence_interval, \
     median_confidence_interval
-from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_inrange
 from athenian.api.tracing import sentry_span
 
 
@@ -808,25 +807,33 @@ def group_to_indexes(items: pd.DataFrame,
 
 def group_by_repo(repository_full_name_column_name: str,
                   repos: Sequence[Collection[str]],
-                  items: pd.DataFrame,
+                  df: pd.DataFrame,
                   ) -> List[np.ndarray]:
     """Group items by the value of their "repository_full_name" column."""
-    if items.empty or items.empty:
+    if df.empty:
         return [np.ndarray([], dtype=int)]
-    repocol = items[repository_full_name_column_name].values.astype("S")
-    order = np.argsort(repocol)
-    unique_repos, pivots = np.unique(repocol[order], return_index=True)
-    unique_indexes = np.split(np.arange(len(repocol))[order], pivots[1:])
-    group_indexes = []
-    for group in repos:
-        indexes = []
-        for repo in group:
-            repob = repo.encode()
-            if unique_repos[(repo_index := searchsorted_inrange(unique_repos, repob)[0])] == repob:
-                indexes.append(unique_indexes[repo_index])
-        indexes = np.concatenate(indexes) if indexes else np.array([], dtype=int)
-        group_indexes.append(indexes)
-    return group_indexes
+    df_repos = df[repository_full_name_column_name].values.astype("S")
+    repos = [
+        np.array(repo_group if not isinstance(repo_group, set) else list(repo_group), dtype="S")
+        for repo_group in repos
+    ]
+    unique_repos, imap = np.unique(np.concatenate(repos), return_inverse=True)
+    if len(unique_repos) <= len(repos):
+        matches = np.array([df_repos == repo for repo in unique_repos])
+        pos = 0
+        result = []
+        for repo_group in repos:
+            step = len(repo_group)
+            cols = imap[pos:pos + step]
+            group = np.flatnonzero(np.sum(matches[cols], axis=0, dtype=bool))
+            pos += step
+            result.append(group)
+    else:
+        result = [
+            np.flatnonzero(np.in1d(df_repos, repo_group))
+            for repo_group in repos
+        ]
+    return result
 
 
 class RatioCalculator(WithoutQuantilesMixin, MetricCalculator[float]):

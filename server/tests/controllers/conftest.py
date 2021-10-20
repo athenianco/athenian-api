@@ -68,7 +68,8 @@ def release_match_setting_event():
 @pytest.fixture(scope="module")
 def default_branches():
     return {"src-d/go-git": "master",
-            "src-d/gitbase": "master"}
+            "src-d/gitbase": "master",
+            "src-d/hercules": "master"}
 
 
 _branches = None

@@ -5,7 +5,7 @@ import importlib
 from itertools import chain
 import logging
 import pickle
-from typing import Collection, Dict, List, Optional, Sequence, Set, Tuple
+from typing import Any, Collection, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 import aiomcache
 import numpy as np
@@ -21,6 +21,9 @@ from athenian.api.controllers.features.github.check_run_metrics import \
     CheckRunBinnedHistogramCalculator, CheckRunBinnedMetricCalculator, \
     group_check_runs_by_pushers, make_check_runs_count_grouper
 from athenian.api.controllers.features.github.code import calc_code_stats
+from athenian.api.controllers.features.github.deployment_metrics import \
+    DeploymentBinnedMetricCalculator, group_deployments_by_environments, \
+    group_deployments_by_participants, group_deployments_by_repositories
 from athenian.api.controllers.features.github.developer_metrics import \
     DeveloperBinnedMetricCalculator, group_actions_by_developers
 from athenian.api.controllers.features.github.pull_request_metrics import \
@@ -39,6 +42,7 @@ from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.check_run import mine_check_runs
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
+from athenian.api.controllers.miners.github.deployment import mine_deployments
 from athenian.api.controllers.miners.github.developer import \
     developer_repository_column, DeveloperTopic, mine_developer_activities
 from athenian.api.controllers.miners.github.precomputed_prs import \
@@ -164,6 +168,8 @@ class MetricEntriesCalculator:
                                                     exclude_inactive: bool,
                                                     release_settings: ReleaseSettings,
                                                     prefixer: PrefixerPromise,
+                                                    branches: pd.DataFrame,
+                                                    default_branches: Dict[str, str],
                                                     fresh: bool,
                                                     ) -> np.ndarray:
         """
@@ -180,7 +186,8 @@ class MetricEntriesCalculator:
         time_from, time_to = self._align_time_min_max(time_intervals, quantiles)
         df_facts = await self.calc_pull_request_facts_github(
             time_from, time_to, all_repositories, all_participants, labels, jira, exclude_inactive,
-            release_settings, prefixer, fresh, need_jira_mapping(metrics))
+            release_settings, prefixer, fresh, need_jira_mapping(metrics),
+            branches, default_branches)
         lines_grouper = partial(group_by_lines, lines)
         repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.name, repositories)
         with_grouper = partial(group_prs_by_participants, participants)
@@ -221,6 +228,8 @@ class MetricEntriesCalculator:
                                                   exclude_inactive: bool,
                                                   release_settings: ReleaseSettings,
                                                   prefixer: PrefixerPromise,
+                                                  branches: Optional[pd.DataFrame],
+                                                  default_branches: Optional[Dict[str, str]],
                                                   fresh: bool,
                                                   ) -> np.ndarray:
         """
@@ -238,7 +247,7 @@ class MetricEntriesCalculator:
         df_facts = await self.calc_pull_request_facts_github(
             time_from, time_to, all_repositories, all_participants, labels, jira,
             exclude_inactive, release_settings, prefixer,
-            fresh, False)
+            fresh, False, branches, default_branches)
         lines_grouper = partial(group_by_lines, lines)
         repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.name, repositories)
         with_grouper = partial(group_prs_by_participants, participants)
@@ -376,6 +385,8 @@ class MetricEntriesCalculator:
                                                jira: JIRAFilter,
                                                release_settings: ReleaseSettings,
                                                prefixer: PrefixerPromise,
+                                               branches: pd.DataFrame,
+                                               default_branches: Dict[str, str],
                                                ) -> Tuple[np.ndarray, Dict[str, ReleaseMatch]]:
         """
         Calculate the release metrics on GitHub.
@@ -386,8 +397,6 @@ class MetricEntriesCalculator:
         time_from, time_to = self._align_time_min_max(time_intervals, quantiles)
         all_repositories = set(chain.from_iterable(repositories))
         calc = ReleaseBinnedMetricCalculator(metrics, quantiles, self._quantile_stride)
-        branches, default_branches = await self.branch_miner.extract_branches(
-            all_repositories, self._meta_ids, self._mdb, self._cache)
         all_participants = merge_release_participants(participants)
         releases, _, matched_bys, _ = await mine_releases(
             all_repositories, all_participants, branches, default_branches, time_from, time_to,
@@ -430,7 +439,7 @@ class MetricEntriesCalculator:
         """
         Calculate the check run metrics on GitHub.
 
-        :return: 1. pushers x repositories x check_runs x granularities x time intervals x metrics.
+        :return: 1. pushers x repositories x check runs count groups x granularities x time intervals x metrics.
                  2. how many suites in each check runs count group (meaningful only if split_by_check_runs=True).
                  3. suite sizes (meaningful only if split_by_check_runs=True).
         """  # noqa
@@ -473,7 +482,7 @@ class MetricEntriesCalculator:
         """
         Calculate the check run metrics on GitHub.
 
-        :return: 1. defs x pushers x repositories x check_runs -> List[Tuple[metric ID, Histogram]].
+        :return: 1. defs x pushers x repositories x check runs count groups -> List[Tuple[metric ID, Histogram]].
                  2. how many suites in each check runs count group (meaningful only if split_by_check_runs=True).
                  3. suite sizes (meaningful only if split_by_check_runs=True).
         """  # noqa
@@ -495,6 +504,64 @@ class MetricEntriesCalculator:
                         reshaped_seq[pos] = [(m, hist) for hist, m in zip(ts_group[0][0], metrics)]
                         pos += 1
         return reshaped, group_suite_counts, suite_sizes
+
+    @sentry_span
+    @cached(
+        exptime=short_term_exptime,
+        serialize=pickle.dumps,
+        deserialize=pickle.loads,
+        key=lambda metrics, time_intervals, quantiles, repositories, pushers, labels, jira, **_:
+        (
+            ",".join(sorted(metrics)),
+            ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
+            ",".join(str(q) for q in quantiles),
+            ",".join(str(sorted(r)) for r in repositories),
+            ";".join(",".join(g) for g in pushers),
+            labels,
+            jira,
+        ),
+        cache=lambda self, **_: self._cache,
+    )
+    async def calc_deployment_metrics_line_github(self,
+                                                  metrics: Sequence[str],
+                                                  time_intervals: Sequence[Sequence[datetime]],
+                                                  quantiles: Sequence[float],
+                                                  repositories: Sequence[Collection[int]],
+                                                  participants: List[ReleaseParticipants],
+                                                  environments: List[List[str]],
+                                                  pr_labels: LabelFilter,
+                                                  with_labels: Mapping[str, Any],
+                                                  without_labels: Mapping[str, Any],
+                                                  jira: JIRAFilter,
+                                                  release_settings: ReleaseSettings,
+                                                  prefixer: PrefixerPromise,
+                                                  branches: pd.DataFrame,
+                                                  default_branches: Dict[str, str],
+                                                  ) -> np.ndarray:
+        """
+        Calculate the deployment metrics on GitHub.
+
+        :return: participants x repositories x environments x granularities x time intervals x metrics.
+        """  # noqa
+        calc = DeploymentBinnedMetricCalculator(metrics, quantiles, self._quantile_stride)
+        time_from, time_to = self._align_time_min_max(time_intervals, quantiles)
+        all_repositories = set(chain.from_iterable(repositories))
+        deps, _ = await mine_deployments(
+            all_repositories,
+            participants[0] if len(participants) == 1 else {},
+            time_from, time_to,
+            set(chain.from_iterable(environments)), [],
+            with_labels, without_labels, pr_labels, jira,
+            release_settings, branches, default_branches,
+            prefixer, self._account, self._meta_ids,
+            self._mdb, self._pdb, self._rdb, self._cache,
+        )
+        repo_grouper = partial(group_deployments_by_repositories, repositories)
+        participant_grouper = partial(group_deployments_by_participants, participants)
+        env_grouper = partial(group_deployments_by_environments, environments)
+        groups = group_to_indexes(deps, participant_grouper, repo_grouper, env_grouper)
+        values = calc(deps, time_intervals, groups)
+        return values
 
     async def _mine_and_group_check_runs(self,
                                          time_from: datetime,

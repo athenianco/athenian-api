@@ -547,51 +547,32 @@ def _build_mined_releases(releases: pd.DataFrame,
 def _filter_by_participants(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
                             participants: ReleaseParticipants,
                             ) -> List[Tuple[Dict[str, Any], ReleaseFacts]]:
-    if not releases:
+    if not releases or not participants:
         return releases
     participants = {
         k: np.array(v, dtype=int) for k, v in participants.items()
     }
-    if ReleaseParticipationKind.COMMIT_AUTHOR in participants:
-        commit_authors = [r[1].commit_authors for r in releases]
-        lengths = np.asarray([len(ca) for ca in commit_authors])
-        offsets = np.zeros(len(lengths) + 1, dtype=int)
-        np.cumsum(lengths, out=offsets[1:])
-        commit_authors = np.concatenate(commit_authors)
-        included_indexes = np.nonzero(np.in1d(
-            commit_authors, participants[ReleaseParticipationKind.COMMIT_AUTHOR]))[0]
-        passed_indexes = np.unique(np.searchsorted(offsets, included_indexes, side="right") - 1)
-        mask = np.full(len(releases), False)
-        mask[passed_indexes] = True
-        missing_indexes = np.nonzero(~mask)[0]
+    if ReleaseParticipationKind.RELEASER in participants:
+        missing_indexes = np.flatnonzero(np.in1d(
+            np.fromiter((r[1].publisher for r in releases), int, len(releases)),
+            participants[ReleaseParticipationKind.RELEASER],
+            invert=True))
     else:
         missing_indexes = np.arange(len(releases))
-    if len(missing_indexes) == 0:
-        return releases
-    if ReleaseParticipationKind.RELEASER in participants:
-        still_missing = np.in1d(
-            np.array([releases[i][1].publisher for i in missing_indexes], dtype=int),
-            participants[ReleaseParticipationKind.RELEASER],
-            invert=True)
-        missing_indexes = missing_indexes[still_missing]
-    if len(missing_indexes) == 0:
-        return releases
-    if ReleaseParticipationKind.PR_AUTHOR in participants:
-        pr_authors = [getattr(releases[i][1], "prs_" + PullRequest.user_node_id.name)
-                      for i in missing_indexes]
-        lengths = np.asarray([len(pra) for pra in pr_authors])
-        offsets = np.zeros(len(lengths) + 1, dtype=int)
-        np.cumsum(lengths, out=offsets[1:])
-        pr_authors = np.concatenate(pr_authors)
-        included_indexes = np.nonzero(np.in1d(
-            pr_authors, participants[ReleaseParticipationKind.PR_AUTHOR]))[0]
-        passed_indexes = np.unique(np.searchsorted(offsets, included_indexes, side="right") - 1)
-        mask = np.full(len(missing_indexes), False)
-        mask[passed_indexes] = True
-        missing_indexes = missing_indexes[~mask]
-    if len(missing_indexes) == 0:
-        return releases
-    mask = np.full(len(releases), True)
+    for rpk, col in [
+            (ReleaseParticipationKind.COMMIT_AUTHOR, "commit_authors"),
+            (ReleaseParticipationKind.PR_AUTHOR, "prs_" + PullRequest.user_node_id.name)]:
+        if len(missing_indexes) == 0:
+            break
+        if rpk in participants:
+            values = np.array([releases[i][1][col] for i in missing_indexes], dtype=object)
+            lengths = np.array([len(ca) for ca in values[:-1]])
+            offsets = np.zeros(len(values), dtype=int)
+            np.cumsum(lengths, out=offsets[1:])
+            values = np.concatenate(values)
+            passed = np.bitwise_or.reduceat(np.in1d(values, participants[rpk]), offsets)
+            missing_indexes = missing_indexes[~passed]
+    mask = np.ones(len(releases), bool)
     mask[missing_indexes] = False
     return [releases[i] for i in np.flatnonzero(mask)]
 

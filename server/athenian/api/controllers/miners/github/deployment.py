@@ -133,8 +133,7 @@ async def mine_deployments(repo_node_ids: Collection[int],
             facts = pd.concat([facts, missed_facts])
     else:
         missed_releases = pd.DataFrame()
-    if participants:
-        facts = await _filter_by_participants(facts, participants, prefixer)
+    facts = await _filter_by_participants(facts, participants, prefixer)
     if pr_labels or jira:
         facts = await _filter_by_prs(facts, pr_labels, jira, meta_ids, mdb, cache)
     components = _group_components(components)
@@ -309,12 +308,14 @@ async def _filter_by_participants(df: pd.DataFrame,
                                   participants: ReleaseParticipants,
                                   prefixer: PrefixerPromise,
                                   ) -> pd.DataFrame:
+    if df.empty or not participants:
+        return df
     user_login_to_node_get = (await prefixer.load()).user_login_to_node.__getitem__
     participants = {
         k: list(chain.from_iterable(user_login_to_node_get(u) for u in people))
         for k, people in participants.items()
     }
-    mask = np.ones(len(df), dtype=bool)
+    mask = np.zeros(len(df), dtype=bool)
     for pkind, col in zip(ReleaseParticipationKind, [DeploymentFacts.f.pr_authors,
                                                      DeploymentFacts.f.commit_authors,
                                                      DeploymentFacts.f.release_authors]):
@@ -322,10 +323,10 @@ async def _filter_by_participants(df: pd.DataFrame,
             continue
         people = np.array(participants[pkind])
         values = df[col].values
-        offsets = np.zeros(len(values) + 1, dtype=int)
-        np.cumsum(np.array([len(v) for v in values]), out=offsets[1:])
-        passing = np.flatnonzero(np.in1d(np.concatenate(values), people))
-        mask[np.searchsorted(offsets, passing, side="right")] = True
+        offsets = np.zeros(len(values), dtype=int)
+        np.cumsum(np.array([len(v) for v in values[:-1]]), out=offsets[1:])
+        passing = np.bitwise_or.reduceat(np.in1d(np.concatenate(values), people), offsets)
+        mask[passing] = True
     return df.take(np.flatnonzero(mask))
 
 
