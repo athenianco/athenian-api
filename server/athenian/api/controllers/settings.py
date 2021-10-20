@@ -80,6 +80,10 @@ class ReleaseSettings:
         """Implement repr()."""
         return "ReleaseSettings(%r)" % self._map_prefixed
 
+    def __eq__(self, other: "ReleaseSettings") -> bool:
+        """Implement ==."""
+        return self._map_prefixed == other._map_prefixed
+
     def copy(self) -> "ReleaseSettings":
         """Shallow copy the settings."""
         return ReleaseSettings(self._map_prefixed.copy())

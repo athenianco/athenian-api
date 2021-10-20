@@ -488,9 +488,10 @@ class PreloadedPullRequestMiner(PullRequestMiner):
     """Load all the information related to PRS from the metadata DB with some preloaded methods. \
     Iterate over it to access individual PR objects."""
 
-    mappers = PullRequestMiner.AuxiliaryMappers(
-        releases_to_prs=PreloadedReleaseToPullRequestMapper.map_releases_to_prs,
-        prs_to_releases=PullRequestMiner.mappers.prs_to_releases,
+    mappers = PullRequestMiner.ReleaseMappers(
+        map_releases_to_prs=PreloadedReleaseToPullRequestMapper.map_releases_to_prs,
+        map_prs_to_releases=PullRequestMiner.mappers.map_prs_to_releases,
+        load_releases=PreloadedReleaseLoader.load_releases,
     )
 
     @classmethod
