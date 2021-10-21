@@ -1345,9 +1345,12 @@ class PullRequestMiner:
         # created in `[time_to, date_to]`
         uncreated = dfs.prs.index.take(np.flatnonzero(
             (dfs.prs[PullRequest.created_at.name] >= time_to).values))
+        deployed = dfs.deployments.index.get_level_values(0).take(np.flatnonzero(
+            dfs.deployments[DeploymentNotification.finished_at.name].between(time_from, time_to)
+            .values))
         to_remove = unreleased \
             .union(unrejected) \
-            .difference(dfs.deployments.index.get_level_values(0)) \
+            .difference(deployed) \
             .union(uncreated)
         cls._drop(dfs, to_remove)
 
