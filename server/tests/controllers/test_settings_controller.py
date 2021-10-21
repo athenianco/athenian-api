@@ -259,21 +259,27 @@ async def test_get_release_match_settings_nasty_input(client, headers, sdb, acco
 
 
 JIRA_PROJECTS = [
-    JIRAProject(name="Content", key="CON", enabled=True, last_update=None, issues_count=0,
+    JIRAProject(name="Content", key="CON", id="10013", enabled=True, last_update=None,
+                issues_count=0,
                 avatar_url="https://athenianco.atlassian.net/secure/projectavatar?pid=10013&avatarId=10424"),  # noqa
-    JIRAProject(name="Customer Success", key="CS", enabled=True, last_update=None, issues_count=0,
+    JIRAProject(name="Customer Success", key="CS", id="10012", enabled=True, last_update=None,
+                issues_count=0,
                 avatar_url="https://athenianco.atlassian.net/secure/projectavatar?pid=10012&avatarId=10419"),  # noqa
-    JIRAProject(name="Product Development", key="DEV", enabled=False, issues_count=1001,
+    JIRAProject(name="Product Development", key="DEV", id="10009", enabled=False,
+                issues_count=1001,
                 last_update=datetime(2020, 10, 22, 11, 0, 9, tzinfo=timezone.utc),
                 avatar_url="https://athenianco.atlassian.net/secure/projectavatar?pid=10009&avatarId=10551"),  # noqa
-    JIRAProject(name="Engineering", key="ENG", enabled=True, issues_count=862,
+    JIRAProject(name="Engineering", key="ENG", id="10003", enabled=True, issues_count=862,
                 last_update=datetime(2020, 9, 1, 13, 7, 56, tzinfo=timezone.utc),
                 avatar_url="https://athenianco.atlassian.net/secure/projectavatar?pid=10003&avatarId=10404"),  # noqa
-    JIRAProject(name="Growth", key="GRW", enabled=True, last_update=None, issues_count=0,
+    JIRAProject(name="Growth", key="GRW", id="10008", enabled=True, last_update=None,
+                issues_count=0,
                 avatar_url="https://athenianco.atlassian.net/secure/projectavatar?pid=10008&avatarId=10419"),  # noqa
-    JIRAProject(name="Operations", key="OPS", enabled=True, last_update=None, issues_count=0,
+    JIRAProject(name="Operations", key="OPS", id="10002", enabled=True, last_update=None,
+                issues_count=0,
                 avatar_url="https://athenianco.atlassian.net/secure/projectavatar?pid=10002&avatarId=10421"),  # noqa
-    JIRAProject(name="Product", key="PRO", enabled=True, last_update=None, issues_count=0,
+    JIRAProject(name="Product", key="PRO", id="10001", enabled=True, last_update=None,
+                issues_count=0,
                 avatar_url="https://athenianco.atlassian.net/secure/projectavatar?pid=10001&avatarId=10414"),  # noqa
 ]
 

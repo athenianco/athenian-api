@@ -10,6 +10,7 @@ class JIRAProject(Model):
     openapi_types = {
         "name": str,
         "key": str,
+        "id": str,
         "avatar_url": str,
         "enabled": bool,
         "issues_count": int,
@@ -19,6 +20,7 @@ class JIRAProject(Model):
     attribute_map = {
         "name": "name",
         "key": "key",
+        "id": "id",
         "avatar_url": "avatar_url",
         "enabled": "enabled",
         "issues_count": "issues_count",
@@ -29,6 +31,7 @@ class JIRAProject(Model):
         self,
         name: Optional[str] = None,
         key: Optional[str] = None,
+        id: Optional[str] = None,
         avatar_url: Optional[str] = None,
         enabled: Optional[bool] = None,
         issues_count: Optional[int] = None,
@@ -38,6 +41,7 @@ class JIRAProject(Model):
 
         :param name: The name of this JIRAProject.
         :param key: The key of this JIRAProject.
+        :param id: The id of this JIRAProject.
         :param avatar_url: The avatar_url of this JIRAProject.
         :param enabled: The enabled of this JIRAProject.
         :param issues_count: The issues_count of this JIRAProject.
@@ -45,6 +49,7 @@ class JIRAProject(Model):
         """
         self._name = name
         self._key = key
+        self._id = id
         self._avatar_url = avatar_url
         self._enabled = enabled
         self._issues_count = issues_count
@@ -95,6 +100,33 @@ class JIRAProject(Model):
             raise ValueError("Invalid value for `key`, must not be `None`")
 
         self._key = key
+
+    @property
+    def id(self) -> str:
+        """Gets the id of this JIRAProject.
+
+        Internal project identifier that corresponds to `project` in `/filter/jira`.
+        Note: this is a string even though this looks like an integer. That's what JIRA API
+        sends us.
+
+        :return: The id of this JIRAProject.
+        """
+        return self._id
+
+    @id.setter
+    def id(self, id: str):
+        """Sets the id of this JIRAProject.
+
+        Internal project identifier that corresponds to `project` in `/filter/jira`.
+        Note: this is a string even though this looks like an integer. That's what JIRA API
+        sends us.
+
+        :param id: The id of this JIRAProject.
+        """
+        if id is None:
+            raise ValueError("Invalid value for `id`, must not be `None`")
+
+        self._id = id
 
     @property
     def avatar_url(self) -> str:
