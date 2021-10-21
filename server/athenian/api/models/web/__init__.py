@@ -50,7 +50,6 @@ from athenian.api.models.web.deployment_metric_id import DeploymentMetricID
 from athenian.api.models.web.deployment_metrics_request import DeploymentMetricsRequest
 from athenian.api.models.web.deployment_notification import DeploymentNotification, \
     DeploymentNotificationUnsealed
-from athenian.api.models.web.deployment_with import DeploymentWith
 from athenian.api.models.web.developer_metric_id import DeveloperMetricID
 from athenian.api.models.web.developer_metrics_request import DeveloperMetricsRequest
 from athenian.api.models.web.developer_summary import DeveloperSummary
@@ -77,6 +76,7 @@ from athenian.api.models.web.filtered_release import FilteredRelease
 from athenian.api.models.web.for_set import CommonPullRequestFilters, ForSet, \
     make_common_pull_request_filters, RepositoryGroupsMixin
 from athenian.api.models.web.for_set_code_checks import ForSetCodeChecks
+from athenian.api.models.web.for_set_deployments import ForSetDeployments
 from athenian.api.models.web.for_set_developers import ForSetDevelopers
 from athenian.api.models.web.generic_error import BadRequestError, DatabaseConflict, \
     ForbiddenError, GenericError, NotFoundError, ServerNotImplementedError, TooManyRequestsError

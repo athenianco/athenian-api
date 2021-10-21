@@ -77,7 +77,7 @@ async def test_pr_list_miner_match_participants(
 @with_defer
 async def test_pr_list_miner_match_metrics_all_count(
         metrics_calculator_factory, mdb, pdb, rdb, release_match_setting_tag,
-        prefixer_promise, date_from, date_to):
+        prefixer_promise, date_from, date_to, branches, default_branches):
     metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
     time_to = datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc)
@@ -92,7 +92,7 @@ async def test_pr_list_miner_match_metrics_all_count(
     metric = (await metrics_calculator_no_cache.calc_pull_request_metrics_line_github(
         [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_to]], [0, 1], [], [],
         [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(), False,
-        release_match_setting_tag, prefixer_promise, False,
+        release_match_setting_tag, prefixer_promise, branches, default_branches, False,
     ))[0][0][0][0][0][0]
     assert len(prs) == metric.value
     if date_from.year == 2018:
