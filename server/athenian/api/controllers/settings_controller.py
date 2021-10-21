@@ -93,9 +93,10 @@ async def get_jira_projects(request: AthenianWebRequest,
     models = [
         JIRAProject(name=r[Project.name.name],
                     key=r[Project.key.name],
+                    id=(pid := r[Project.id.name]),
                     avatar_url=r[Project.avatar_url.name],
                     enabled=settings.get(r[Project.key.name], True),
-                    issues_count=(rs := stats.get(r[Project.id.name], (0, None)))[0],
+                    issues_count=(rs := stats.get(pid, (0, None)))[0],
                     last_update=rs[1])
         for r in projects
     ]
