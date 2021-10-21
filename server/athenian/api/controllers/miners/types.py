@@ -294,6 +294,7 @@ class PullRequestFacts:
     def truncate(self, after_dt: Union[pd.Timestamp, datetime]) -> "PullRequestFacts":
         """Create a copy of the facts without timestamps bigger than or equal to `dt`."""
         changed = []
+        assert self.created <= after_dt
         if after_dt.tzinfo is not None:
             after_dt = after_dt.replace(tzinfo=None)
         for field_name, (field_dtype, _) in self.dtype.fields.items():
