@@ -35,7 +35,8 @@ from athenian.api.controllers.miners.github.repository import mine_repositories
 from athenian.api.controllers.miners.github.user import mine_user_avatars, UserAvatarKeys
 from athenian.api.controllers.miners.jira.issue import fetch_jira_issues_for_prs
 from athenian.api.controllers.miners.types import Deployment, DeploymentConclusion, \
-    DeploymentFacts, PRParticipants, PRParticipationKind, PullRequestEvent, PullRequestListItem, \
+    DeploymentFacts, PRParticipants, PRParticipationKind, PullRequestEvent, \
+    PullRequestJIRAIssueItem, PullRequestListItem, \
     PullRequestStage, ReleaseFacts
 from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
 from athenian.api.controllers.release import extract_release_participants
@@ -754,7 +755,7 @@ async def filter_deployments(request: AthenianWebRequest, body: dict) -> web.Res
 
 async def _build_deployments_response(df: pd.DataFrame,
                                       people: List[Tuple[str, str]],
-                                      issues: Dict[str, LinkedJIRAIssue],
+                                      issues: Dict[str, PullRequestJIRAIssueItem],
                                       prefixer: Prefixer,
                                       ) -> [FilteredDeployment]:
     if df.empty:
@@ -871,5 +872,5 @@ async def _build_deployments_response(df: pd.DataFrame,
         )
     ], include=ReleaseSetInclude(
         users={u: IncludedNativeUser(avatar=a) for u, a in people},
-        jira=issues,
+        jira={k: LinkedJIRAIssue(**v) for k, v in issues.items()},
     ))

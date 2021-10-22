@@ -1,13 +1,19 @@
+from datetime import datetime, timedelta, timezone
+
 import numpy as np
 from numpy.testing import assert_array_equal
 import pandas as pd
 import pytest
 
+from athenian.api.controllers.features.entries import MetricEntriesCalculator
 from athenian.api.controllers.features.github.deployment_metrics import \
     group_deployments_by_environments, group_deployments_by_participants, \
     group_deployments_by_repositories
+from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.types import ReleaseParticipationKind
+from athenian.api.defer import with_defer
 from athenian.api.models.persistentdata.models import DeployedComponent
+from athenian.api.models.web import DeploymentMetricID
 
 
 @pytest.fixture(scope="module")
@@ -100,3 +106,49 @@ def test_group_deployments_by_environments_smoke(sample_deps):
     assert [x.tolist() for x in group_deployments_by_environments([["1"]], pd.DataFrame())] == \
            [[]]
     assert [x.tolist() for x in group_deployments_by_environments([], pd.DataFrame())] == [[]]
+
+
+@with_defer
+async def test_deployment_metrics_calculators_smoke(
+        sample_deployments, metrics_calculator_factory, release_match_setting_tag_or_branch,
+        prefixer_promise, branches, default_branches):
+    calc = metrics_calculator_factory(1, (6366825,))  # type: MetricEntriesCalculator
+    metrics = await calc.calc_deployment_metrics_line_github(
+        list(DeploymentMetricID),
+        [[datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2021, 1, 1, tzinfo=timezone.utc)]],
+        (0, 1),
+        [[40550]],
+        {}, [["staging"], ["production"]],
+        LabelFilter.empty(), {}, {}, JIRAFilter.empty(),
+        release_match_setting_tag_or_branch,
+        prefixer_promise,
+        branches, default_branches,
+        (1, ("10003", "10009")),
+    )
+    assert len(metrics) == 1
+    assert len(metrics[0]) == 1
+    assert len(metrics[0][0]) == 2
+    assert len(metrics[0][0][0]) == 1
+    assert len(metrics[0][0][1]) == 1
+    assert len(metrics[0][0][0][0]) == 1
+    assert len(metrics[0][0][1][0]) == 1
+    assert metrics[0][0][0][0][0] == metrics[0][0][1][0][0]
+    assert dict(zip(DeploymentMetricID, (m.value for m in metrics[0][0][0][0][0]))) == {
+        DeploymentMetricID.DEP_JIRA_ISSUES_COUNT: 44,
+        DeploymentMetricID.DEP_COMMITS_COUNT: 2342,
+        DeploymentMetricID.DEP_SIZE_RELEASES: 7.55555534362793,
+        DeploymentMetricID.DEP_JIRA_BUG_FIXES_COUNT: 12,
+        DeploymentMetricID.DEP_LINES_COUNT: 416242,
+        DeploymentMetricID.DEP_SIZE_COMMITS: 260.22222900390625,
+        DeploymentMetricID.DEP_RELEASES_COUNT: 68,
+        DeploymentMetricID.DEP_COUNT: 9,
+        DeploymentMetricID.DEP_DURATION_ALL: timedelta(seconds=600),
+        DeploymentMetricID.DEP_FAILURE_COUNT: 2,
+        DeploymentMetricID.DEP_SIZE_LINES: 46249.109375,
+        DeploymentMetricID.DEP_SUCCESS_RATIO: 0.7777777910232544,
+        DeploymentMetricID.DEP_DURATION_SUCCESSFUL: timedelta(seconds=600),
+        DeploymentMetricID.DEP_DURATION_FAILED: timedelta(seconds=600),
+        DeploymentMetricID.DEP_SIZE_PRS: 70.22222137451172,
+        DeploymentMetricID.DEP_PRS_COUNT: 632,
+        DeploymentMetricID.DEP_SUCCESS_COUNT: 7,
+    }

@@ -32,7 +32,7 @@ from athenian.api.controllers.miners.github.release_mine import group_hashes_by_
 from athenian.api.controllers.miners.jira.issue import fetch_jira_issues_for_prs, \
     generate_jira_prs_query
 from athenian.api.controllers.miners.types import DeploymentConclusion, DeploymentFacts, \
-    ReleaseFacts, ReleaseParticipants, ReleaseParticipationKind
+    PullRequestJIRAIssueItem, ReleaseFacts, ReleaseParticipants, ReleaseParticipationKind
 from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.db import add_pdb_hits, add_pdb_misses, insert_or_ignore, ParallelDatabase
@@ -43,7 +43,6 @@ from athenian.api.models.persistentdata.models import DeployedComponent, Deploye
     DeploymentNotification
 from athenian.api.models.precomputed.models import GitHubCommitDeployment, GitHubDeploymentFacts, \
     GitHubPullRequestDeployment, GitHubRelease as PrecomputedRelease, GitHubReleaseDeployment
-from athenian.api.models.web import LinkedJIRAIssue
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
 
@@ -1544,7 +1543,8 @@ async def _fetch_grouped_labels(names: Collection[str],
 async def load_jira_issues_for_deployments(deployments: pd.DataFrame,
                                            jira_ids: Optional[Tuple[int, List[str]]],
                                            meta_ids: Tuple[int, ...],
-                                           mdb: ParallelDatabase) -> Dict[str, LinkedJIRAIssue]:
+                                           mdb: ParallelDatabase,
+                                           ) -> Dict[str, PullRequestJIRAIssueItem]:
     """Fetch JIRA issues mentioned by deployed PRs."""
     if jira_ids is None or deployments.empty:
         if not deployments.empty:
@@ -1558,10 +1558,13 @@ async def load_jira_issues_for_deployments(deployments: pd.DataFrame,
 
     pr_to_ix = defaultdict(list)
     jira_col = np.empty(len(deployments), dtype=object)
+    empty = np.array([], dtype="S")
     for di, (prs, prs_offsets) in enumerate(zip(
             deployments[DeploymentFacts.f.prs].values,
             deployments[DeploymentFacts.f.prs_offsets].values)):
-        jira_col[di] = np.empty(len(prs_offsets) + 1, dtype=object)
+        dep_jira_col = np.empty(len(prs_offsets) + 1, dtype=object)
+        dep_jira_col.fill(empty)
+        jira_col[di] = dep_jira_col
         prs = np.split(prs, prs_offsets)
         for ri, node_ids in enumerate(prs):
             for node_id in node_ids:
@@ -1583,7 +1586,7 @@ async def load_jira_issues_for_deployments(deployments: pd.DataFrame,
     overall_keys = defaultdict(lambda: defaultdict(list))
     for r in rows:
         key = r["key"]
-        issues[key] = LinkedJIRAIssue(
+        issues[key] = PullRequestJIRAIssueItem(
             id=key, title=r["title"], epic=r["epic"], labels=r["labels"], type=r["type"])
         for addr in pr_to_ix[r["node_id"]]:
             if len(addr) == 3:
