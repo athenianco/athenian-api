@@ -624,3 +624,30 @@ def resolve_work_began_and_resolved(issue_work_began: Optional[np.datetime64],
             (issue_resolved != issue_resolved or issue_resolved is None):
         return work_began, None
     return work_began, max(issue_resolved, prs_released)
+
+
+async def fetch_jira_issues_for_prs(pr_nodes: Collection[int],
+                                    meta_ids: Tuple[int, ...],
+                                    jira_ids: Tuple[int, List[str]],
+                                    mdb: DatabaseLike,
+                                    ) -> List[Mapping[str, Any]]:
+    """Load brief information about JIRA issues mapped to the given PRs."""
+    regiss = aliased(Issue, name="regular")
+    epiciss = aliased(Epic, name="epic")
+    prmap = aliased(NodePullRequestJiraIssues, name="m")
+    return await mdb.fetch_all(
+        sql.select([prmap.node_id.label("node_id"),
+                    regiss.key.label("key"),
+                    regiss.title.label("title"),
+                    regiss.labels.label("labels"),
+                    regiss.type.label("type"),
+                    epiciss.key.label("epic")])
+        .select_from(sql.outerjoin(
+            sql.join(regiss, prmap, sql.and_(regiss.id == prmap.jira_id,
+                                             regiss.acc_id == prmap.jira_acc)),
+            epiciss, sql.and_(epiciss.id == regiss.epic_id,
+                              epiciss.acc_id == regiss.acc_id)))
+        .where(sql.and_(prmap.node_id.in_(pr_nodes),
+                        prmap.node_acc.in_(meta_ids),
+                        regiss.project_id.in_(jira_ids[1]),
+                        regiss.is_deleted.is_(False))))

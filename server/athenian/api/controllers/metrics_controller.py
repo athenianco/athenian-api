@@ -697,7 +697,10 @@ async def calc_metrics_deployments(request: AthenianWebRequest, body: dict) -> w
     except ValueError as e:
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError("?", detail=str(e)))
-    meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
+    meta_ids, jira_ids = await gather(
+        get_metadata_account_ids(filt.account, request.sdb, request.cache),
+        get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
+    )
     prefixer = await Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
     filters, repos = await _compile_filters_deployments(filt.for_, request, filt.account, meta_ids)
     time_intervals, tzoffset = split_to_time_intervals(
@@ -716,7 +719,7 @@ async def calc_metrics_deployments(request: AthenianWebRequest, body: dict) -> w
         metric_values = await calculator.calc_deployment_metrics_line_github(
             filt.metrics, time_intervals, filt.quantiles or (0, 1),
             repos, withgroups, envs, pr_labels, *labels, jira, release_settings,
-            prefixer, branches, default_branches)
+            prefixer, branches, default_branches, jira_ids)
         mrange = range(len(filt.metrics))
         for with_group_index, with_group in enumerate(metric_values):
             for repos_group_index, repos_group in enumerate(with_group):

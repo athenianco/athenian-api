@@ -42,7 +42,8 @@ from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.check_run import mine_check_runs
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
-from athenian.api.controllers.miners.github.deployment import mine_deployments
+from athenian.api.controllers.miners.github.deployment import load_jira_issues_for_deployments, \
+    mine_deployments
 from athenian.api.controllers.miners.github.developer import \
     developer_repository_column, DeveloperTopic, mine_developer_activities
 from athenian.api.controllers.miners.github.precomputed_prs import \
@@ -537,13 +538,13 @@ class MetricEntriesCalculator:
                                                   prefixer: PrefixerPromise,
                                                   branches: pd.DataFrame,
                                                   default_branches: Dict[str, str],
+                                                  jira_ids: Optional[Tuple[int, List[str]]],
                                                   ) -> np.ndarray:
         """
         Calculate the deployment metrics on GitHub.
 
         :return: participants x repositories x environments x granularities x time intervals x metrics.
         """  # noqa
-        calc = DeploymentBinnedMetricCalculator(metrics, quantiles, self._quantile_stride)
         time_from, time_to = self._align_time_min_max(time_intervals, quantiles)
         all_repositories = set(chain.from_iterable(repositories))
         deps, _ = await mine_deployments(
@@ -556,6 +557,9 @@ class MetricEntriesCalculator:
             prefixer, self._account, self._meta_ids,
             self._mdb, self._pdb, self._rdb, self._cache,
         )
+        issues = await load_jira_issues_for_deployments(deps, jira_ids, self._meta_ids, self._mdb)
+        calc = DeploymentBinnedMetricCalculator(
+            metrics, quantiles, self._quantile_stride, jira=issues)
         repo_grouper = partial(group_deployments_by_repositories, repositories)
         participant_grouper = partial(group_deployments_by_participants, participants)
         env_grouper = partial(group_deployments_by_environments, environments)
