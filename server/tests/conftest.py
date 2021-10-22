@@ -233,7 +233,7 @@ class FakeKMS:
         pass
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def eiso_user() -> User:
     return User(
         id="auth0|5e1f6e2e8bfa520ea5290741",
@@ -312,7 +312,7 @@ def headers() -> Dict[str, str]:
     }
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def slack():
     return create_slack(logging.getLogger("pytest"))
 
@@ -368,7 +368,7 @@ def client(loop, aiohttp_client, app):
     return loop.run_until_complete(aiohttp_client(app.app))
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def metadata_db(worker_id) -> str:
     return _metadata_db(worker_id, False)
 

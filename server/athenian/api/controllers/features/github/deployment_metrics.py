@@ -42,7 +42,7 @@ def group_deployments_by_repositories(repositories: Sequence[Collection[int]],
     if len(repositories) == 0:
         return [np.arange(len(df))]
     if df.empty:
-        return [np.ndarray([], dtype=int)]
+        return [np.array([], dtype=int)] * len(repositories)
     df_repos = [c[DeployedComponent.repository_node_id.name].values
                 for c in df["components"].values]
     df_repos_flat = np.concatenate(df_repos)
@@ -79,7 +79,7 @@ def group_deployments_by_participants(participants: List[ReleaseParticipants],
     if len(participants) == 0:
         return [np.arange(len(df))]
     if df.empty:
-        return [np.ndarray([], dtype=int)]
+        return [np.array([], dtype=int)] * len(participants)
     preprocessed = {}
     for pkind, col in zip(ReleaseParticipationKind, [DeploymentFacts.f.pr_authors,
                                                      DeploymentFacts.f.commit_authors,
@@ -96,7 +96,7 @@ def group_deployments_by_participants(participants: List[ReleaseParticipants],
         for pkind in ReleaseParticipationKind:
             if pkind not in filters:
                 continue
-            people = np.array(participants[pkind])
+            people = np.array(filters[pkind])
             values, offsets, empty = preprocessed[pkind]
             passing = np.bitwise_or.reduceat(np.in1d(values, people), offsets)[:-1]
             passing[empty] = False
@@ -112,7 +112,7 @@ def group_deployments_by_environments(environments: List[List[str]],
     if len(environments) == 0:
         return [np.arange(len(df))]
     if df.empty:
-        return [np.ndarray([], dtype=int)]
+        return [np.array([], dtype=int)] * len(environments)
     df_envs = df[DeploymentNotification.environment.name].values.astype("U", copy=False)
     unique_envs, imap = np.unique(np.concatenate(environments), return_inverse=True)
     result = []
