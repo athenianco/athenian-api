@@ -325,9 +325,12 @@ async def _filter_by_participants(df: pd.DataFrame,
             continue
         people = np.array(participants[pkind])
         values = df[col].values
-        offsets = np.zeros(len(values), dtype=int)
-        np.cumsum(np.array([len(v) for v in values[:-1]]), out=offsets[1:])
-        passing = np.bitwise_or.reduceat(np.in1d(np.concatenate(values), people), offsets)
+        offsets = np.zeros(len(values) + 1, dtype=int)
+        lengths = np.array([len(v) for v in values])
+        np.cumsum(lengths, out=offsets[1:])
+        values = np.concatenate([np.concatenate(values), [-1]])
+        passing = np.bitwise_or.reduceat(np.in1d(values, people), offsets)[:-1]
+        passing[lengths == 0] = False
         mask[passing] = True
     return df.take(np.flatnonzero(mask))
 

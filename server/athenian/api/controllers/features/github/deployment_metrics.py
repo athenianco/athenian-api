@@ -85,10 +85,11 @@ def group_deployments_by_participants(participants: List[ReleaseParticipants],
                                                      DeploymentFacts.f.commit_authors,
                                                      DeploymentFacts.f.release_authors]):
         values = df[col].values
-        offsets = np.zeros(len(values), dtype=int)
-        np.cumsum(np.array([len(v) for v in values[:-1]]), out=offsets[1:])
-        values = np.concatenate(values)
-        preprocessed[pkind] = values, offsets
+        offsets = np.zeros(len(values) + 1, dtype=int)
+        lengths = np.array([len(v) for v in values])
+        np.cumsum(lengths, out=offsets[1:])
+        values = np.concatenate([np.concatenate(values), [-1]])
+        preprocessed[pkind] = values, offsets, lengths == 0
     result = []
     for filters in participants:
         mask = np.zeros(len(df), dtype=bool)
@@ -96,8 +97,9 @@ def group_deployments_by_participants(participants: List[ReleaseParticipants],
             if pkind not in filters:
                 continue
             people = np.array(participants[pkind])
-            values, offsets = preprocessed[pkind]
-            passing = np.bitwise_or.reduceat(np.in1d(values, people), offsets)
+            values, offsets, empty = preprocessed[pkind]
+            passing = np.bitwise_or.reduceat(np.in1d(values, people), offsets)[:-1]
+            passing[empty] = False
             mask[passing] = True
         result.append(np.flatnonzero(mask))
     return result

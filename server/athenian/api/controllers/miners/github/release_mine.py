@@ -565,12 +565,14 @@ def _filter_by_participants(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
         if len(missing_indexes) == 0:
             break
         if rpk in participants:
-            values = np.array([releases[i][1][col] for i in missing_indexes], dtype=object)
-            lengths = np.array([len(ca) for ca in values[:-1]])
+            values = [releases[i][1][col] for i in missing_indexes]
+            lengths = np.fromiter((len(ca) for ca in values), int, len(values))
+            values.append([-1])
             offsets = np.zeros(len(values), dtype=int)
             np.cumsum(lengths, out=offsets[1:])
             values = np.concatenate(values)
-            passed = np.bitwise_or.reduceat(np.in1d(values, participants[rpk]), offsets)
+            passed = np.bitwise_or.reduceat(np.in1d(values, participants[rpk]), offsets)[:-1]
+            passed[lengths == 0] = False
             missing_indexes = missing_indexes[~passed]
     mask = np.ones(len(releases), bool)
     mask[missing_indexes] = False
