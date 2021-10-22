@@ -53,11 +53,12 @@ def group_releases_by_participants(participants: List[ReleaseParticipants],
                 break
             if rpk in group:
                 values = df[col].values[missing_indexes]
-                lengths = np.array([len(ca) for ca in values[:-1]])
-                offsets = np.zeros(len(values), dtype=int)
+                lengths = np.fromiter((len(ca) for ca in values), int, len(values))
+                offsets = np.zeros(len(values) + 1, dtype=int)
                 np.cumsum(lengths, out=offsets[1:])
-                values = np.concatenate(values)
-                passed = np.bitwise_or.reduceat(np.in1d(values, group[rpk]), offsets)
+                values = np.concatenate([np.concatenate(values), [-1]])
+                passed = np.bitwise_or.reduceat(np.in1d(values, group[rpk]), offsets)[:-1]
+                passed[lengths == 0] = False
                 missing_indexes = missing_indexes[~passed]
         mask = np.ones(len(df), bool)
         mask[missing_indexes] = False
