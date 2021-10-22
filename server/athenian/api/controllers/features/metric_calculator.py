@@ -811,7 +811,7 @@ def group_by_repo(repository_full_name_column_name: str,
                   ) -> List[np.ndarray]:
     """Group items by the value of their "repository_full_name" column."""
     if df.empty:
-        return [np.ndarray([], dtype=int)]
+        return [np.array([], dtype=int)] * len(repos)
     df_repos = df[repository_full_name_column_name].values.astype("S")
     repos = [
         np.array(repo_group if not isinstance(repo_group, set) else list(repo_group), dtype="S")
