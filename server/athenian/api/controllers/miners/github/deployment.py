@@ -1,7 +1,7 @@
 import asyncio
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from itertools import chain
+from itertools import chain, repeat
 import json
 import logging
 import pickle
@@ -29,7 +29,8 @@ from athenian.api.controllers.miners.github.release_load import ReleaseLoader, \
     set_matched_by_from_release_match, unfresh_releases_lag
 from athenian.api.controllers.miners.github.release_mine import group_hashes_by_ownership, \
     mine_releases_by_ids
-from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
+from athenian.api.controllers.miners.jira.issue import fetch_jira_issues_for_prs, \
+    generate_jira_prs_query
 from athenian.api.controllers.miners.types import DeploymentConclusion, DeploymentFacts, \
     ReleaseFacts, ReleaseParticipants, ReleaseParticipationKind
 from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
@@ -42,6 +43,7 @@ from athenian.api.models.persistentdata.models import DeployedComponent, Deploye
     DeploymentNotification
 from athenian.api.models.precomputed.models import GitHubCommitDeployment, GitHubDeploymentFacts, \
     GitHubPullRequestDeployment, GitHubRelease as PrecomputedRelease, GitHubReleaseDeployment
+from athenian.api.models.web import LinkedJIRAIssue
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
 
@@ -1534,3 +1536,69 @@ async def _fetch_grouped_labels(names: Collection[str],
         df.reset_index(drop=True, inplace=True)
     grouped_labels.set_index("deployment_name", drop=True, inplace=True)
     return grouped_labels
+
+
+async def load_jira_issues_for_deployments(deployments: pd.DataFrame,
+                                           jira_ids: Optional[Tuple[int, List[str]]],
+                                           meta_ids: Tuple[int, ...],
+                                           mdb: ParallelDatabase) -> Dict[str, LinkedJIRAIssue]:
+    """Fetch JIRA issues mentioned by deployed PRs."""
+    if jira_ids is None or deployments.empty:
+        if not deployments.empty:
+            empty_jira = np.empty(len(deployments), dtype=object)
+            for i, repos in enumerate(deployments[DeploymentFacts.f.repositories].values):
+                empty_jira[i] = [[]] * len(repos)
+            deployments["jira"] = empty_jira
+            for releases in deployments["releases"].values:
+                releases["prs_jira"] = np.full(len(releases), repeat(None))
+        return {}
+
+    pr_to_ix = defaultdict(list)
+    jira_col = np.empty(len(deployments), dtype=object)
+    for di, (prs, prs_offsets) in enumerate(zip(
+            deployments[DeploymentFacts.f.prs].values,
+            deployments[DeploymentFacts.f.prs_offsets].values)):
+        jira_col[di] = np.empty(len(prs_offsets) + 1, dtype=object)
+        prs = np.split(prs, prs_offsets)
+        for ri, node_ids in enumerate(prs):
+            for node_id in node_ids:
+                pr_to_ix[node_id].append((di, ri))
+    deployments["jira"] = jira_col
+    for di, releases in enumerate(deployments["releases"].values):
+        if releases.empty:
+            continue
+        releases["prs_jira"] = [[] for _ in range(len(releases))]
+        for ri, (node_ids, prs_jira) in enumerate(zip(releases["prs_" + PullRequest.node_id.name],
+                                                      releases["prs_jira"])):
+            prs_jira.extend([] for _ in range(len(node_ids)))
+            for pri, node_id in enumerate(node_ids):
+                pr_to_ix[node_id].append((di, ri, pri))
+
+    rows = await fetch_jira_issues_for_prs(pr_to_ix, meta_ids, jira_ids, mdb)
+    issues = {}
+    release_keys = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    overall_keys = defaultdict(lambda: defaultdict(list))
+    for r in rows:
+        key = r["key"]
+        issues[key] = LinkedJIRAIssue(
+            id=key, title=r["title"], epic=r["epic"], labels=r["labels"], type=r["type"])
+        for addr in pr_to_ix[r["node_id"]]:
+            if len(addr) == 3:
+                di, ri, pri = addr
+                release_keys[di][ri][pri].append(key)
+            else:
+                di, ri = addr
+                overall_keys[di][ri].append(key)
+    overall_col = deployments["jira"].values
+    for di, repos in overall_keys.items():
+        for ri, keys in repos.items():
+            overall_col[di][ri] = np.sort(np.array(keys, dtype="S"))
+    releases_col = deployments["releases"].values
+    for di, releases_jira in release_keys.items():
+        releases = releases_col[di]["prs_jira"].values
+        for ri, prs_jira in releases_jira.items():
+            prs = releases[ri]
+            for pri, release_keys in prs_jira.items():
+                prs[pri] = np.sort(np.array(release_keys, dtype="S"))
+
+    return issues

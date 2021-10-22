@@ -1,14 +1,17 @@
+from datetime import datetime
 from typing import Collection, Dict, List, Sequence, Type, TypeVar
 
 import numpy as np
 import pandas as pd
 
-from athenian.api.controllers.features.metric_calculator import BinnedMetricCalculator, \
-    make_register_metric, \
-    MetricCalculator, MetricCalculatorEnsemble
+from athenian.api.controllers.features.metric import MetricFloat, MetricInt, MetricTimeDelta
+from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
+    BinnedMetricCalculator, make_register_metric, MetricCalculator, MetricCalculatorEnsemble, \
+    RatioCalculator, SumMetricCalculator
 from athenian.api.controllers.miners.types import DeploymentFacts, ReleaseParticipants, \
     ReleaseParticipationKind
 from athenian.api.models.persistentdata.models import DeployedComponent, DeploymentNotification
+from athenian.api.models.web import DeploymentMetricID
 
 metric_calculators: Dict[str, Type[MetricCalculator]] = {}
 register_metric = make_register_metric(metric_calculators, None)
@@ -126,3 +129,274 @@ def group_deployments_by_environments(environments: List[List[str]],
             for env_group in environments
         ]
     return result
+
+
+@register_metric(DeploymentMetricID.DEP_COUNT)
+class DeploymentsCounter(SumMetricCalculator[int]):
+    """Calculate the number of deployments in the time period."""
+
+    metric = MetricInt
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **kwargs) -> np.ndarray:
+        result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
+        deployed = facts[DeploymentNotification.finished_at.name].values
+        result[(min_times[:, None] <= deployed) & (deployed < max_times[:, None])] = 1
+        return result
+
+
+@register_metric(DeploymentMetricID.DEP_SUCCESS_COUNT)
+class SuccessfulDeploymentsCounter(SumMetricCalculator[int]):
+    """Calculate the number of successful deployments in the time period."""
+
+    metric = MetricInt
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **kwargs) -> np.ndarray:
+        result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
+        deployed = facts[DeploymentNotification.finished_at.name].values
+        unsuccessful = (
+            facts[DeploymentNotification.conclusion.name].values
+            != DeploymentNotification.CONCLUSION_SUCCESS
+        )
+        deployed[unsuccessful] = np.datetime64("NaT")
+        result[(min_times[:, None] <= deployed) & (deployed < max_times[:, None])] = 1
+        return result
+
+
+@register_metric(DeploymentMetricID.DEP_FAILURE_COUNT)
+class FailedDeploymentsCounter(SumMetricCalculator[int]):
+    """Calculate the number of failed deployments in the time period."""
+
+    metric = MetricInt
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **kwargs) -> np.ndarray:
+        result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
+        deployed = facts[DeploymentNotification.finished_at.name].values
+        unfailed = (
+            facts[DeploymentNotification.conclusion.name].values
+            != DeploymentNotification.CONCLUSION_FAILURE
+        )
+        deployed[unfailed] = np.datetime64("NaT")
+        result[(min_times[:, None] <= deployed) & (deployed < max_times[:, None])] = 1
+        return result
+
+
+@register_metric(DeploymentMetricID.DEP_DURATION_ALL)
+class DurationCalculator(AverageMetricCalculator[datetime]):
+    """Calculate the average deployment procedure time - the difference between `date_finished` \
+    and `date_started` of `DeploymentNotification`."""
+
+    metric = MetricTimeDelta
+    may_have_negative_values = False
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **kwargs) -> np.ndarray:
+        result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
+        started = facts[DeploymentNotification.started_at.name].values
+        finished = facts[DeploymentNotification.finished_at.name].values
+        cancelled = (
+            facts[DeploymentNotification.conclusion.name].values
+            == DeploymentNotification.CONCLUSION_CANCELLED
+        )
+        durations = finished - started
+        finished[cancelled] = np.datetime64("NaT")
+        mask = (min_times[:, None] <= finished) & (finished < max_times[:, None])
+        result[mask] = np.broadcast_to(durations[None, :], result.shape)[mask]
+        return result
+
+
+@register_metric(DeploymentMetricID.DEP_DURATION_SUCCESSFUL)
+class SuccessfulDurationCalculator(AverageMetricCalculator[datetime]):
+    """Calculate the average successful deployment procedure time - the difference between \
+    `date_finished` and `date_started` of `DeploymentNotification`."""
+
+    metric = MetricTimeDelta
+    may_have_negative_values = False
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **kwargs) -> np.ndarray:
+        result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
+        started = facts[DeploymentNotification.started_at.name].values
+        finished = facts[DeploymentNotification.finished_at.name].values
+        unsuccessful = (
+            facts[DeploymentNotification.conclusion.name].values
+            != DeploymentNotification.CONCLUSION_SUCCESS
+        )
+        durations = finished - started
+        finished[unsuccessful] = np.datetime64("NaT")
+        mask = (min_times[:, None] <= finished) & (finished < max_times[:, None])
+        result[mask] = np.broadcast_to(durations[None, :], result.shape)[mask]
+        return result
+
+
+@register_metric(DeploymentMetricID.DEP_DURATION_FAILED)
+class FailedDurationCalculator(AverageMetricCalculator[datetime]):
+    """Calculate the average failed deployment procedure time - the difference between \
+    `date_finished` and `date_started` of `DeploymentNotification`."""
+
+    metric = MetricTimeDelta
+    may_have_negative_values = False
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **kwargs) -> np.ndarray:
+        result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
+        started = facts[DeploymentNotification.started_at.name].values
+        finished = facts[DeploymentNotification.finished_at.name].values
+        unfailed = (
+            facts[DeploymentNotification.conclusion.name].values
+            != DeploymentNotification.CONCLUSION_FAILURE
+        )
+        durations = finished - started
+        finished[unfailed] = np.datetime64("NaT")
+        mask = (min_times[:, None] <= finished) & (finished < max_times[:, None])
+        result[mask] = np.broadcast_to(durations[None, :], result.shape)[mask]
+        return result
+
+
+@register_metric(DeploymentMetricID.DEP_SUCCESS_RATIO)
+class SuccessRatioCalculator(RatioCalculator):
+    """Calculate the ratio between successful and all deployments."""
+
+    deps = (SuccessfulDeploymentsCounter, DeploymentsCounter)
+
+
+class ItemsMixin:
+    """Calculate the average `agg` of deployed items in `facts[dimension]`."""
+
+    may_have_negative_values = False
+    dimension = ""
+    agg = None
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **kwargs) -> np.ndarray:
+        result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
+        agg = self.agg
+        items = np.fromiter((agg(v) for v in facts[self.dimension].values), int, len(facts))
+        deployed = facts[DeploymentNotification.finished_at.name].values
+        mask = (min_times[:, None] <= deployed) & (deployed < max_times[:, None])
+        result[mask] = np.broadcast_to(items[None, :], result.shape)[mask]
+        return result
+
+
+class SizeCalculator(ItemsMixin, AverageMetricCalculator[float]):
+    """Calculate the average `agg` of deployed items in `facts[dimension]`."""
+
+    metric = MetricFloat
+
+
+@register_metric(DeploymentMetricID.DEP_SIZE_PRS)
+class DeployedPRSizeCalculator(SizeCalculator):
+    """Calculate the average number of deployed pull requests."""
+
+    dimension = "prs"
+    agg = len
+
+
+@register_metric(DeploymentMetricID.DEP_SIZE_RELEASES)
+class DeployedReleaseSizeCalculator(SizeCalculator):
+    """Calculate the average number of deployed releases."""
+
+    dimension = "releases"
+    agg = len
+
+
+@register_metric(DeploymentMetricID.DEP_SIZE_LINES)
+class DeployedLineSizeCalculator(SizeCalculator):
+    """Calculate the average number of deployed line changes."""
+
+    dimension = "lines_overall"
+    agg = sum
+
+
+@register_metric(DeploymentMetricID.DEP_SIZE_COMMITS)
+class DeployedCommitsSizeCalculator(SizeCalculator):
+    """Calculate the average number of deployed commits."""
+
+    dimension = "commits_overall"
+    agg = sum
+
+
+class SumCalculator(ItemsMixin, SumMetricCalculator[int]):
+    """Calculate the sum of `agg` of deployed items in `facts[dimension]`."""
+
+    metric = MetricInt
+
+
+@register_metric(DeploymentMetricID.DEP_PRS_COUNT)
+class DeployedPRsCounter(SumCalculator):
+    """Calculate the number of deployed pull requests."""
+
+    dimension = "prs"
+    agg = len
+
+
+@register_metric(DeploymentMetricID.DEP_RELEASES_COUNT)
+class DeployedReleasesCounter(SumCalculator):
+    """Calculate the number of deployed releases."""
+
+    dimension = "releases"
+    agg = len
+
+
+@register_metric(DeploymentMetricID.DEP_LINES_COUNT)
+class DeployedLinesCounter(SumCalculator):
+    """Calculate the number of deployed line changes."""
+
+    dimension = "lines_overall"
+    agg = sum
+
+
+@register_metric(DeploymentMetricID.DEP_COMMITS_COUNT)
+class DeployedCommitsCounter(SumCalculator):
+    """Calculate the number of deployed commits."""
+
+    dimension = "commits_overall"
+    agg = sum
+
+
+def _unique_len_sum(values: np.ndarray) -> int:
+    return len(np.unique(np.concatenate(values)))
+
+
+@register_metric(DeploymentMetricID.DEP_JIRA_ISSUES_COUNT)
+class DeployedIssuesCounter(SumCalculator):
+    """Calculate the number of deployed JIRA issues."""
+
+    dimension = "jira"
+    agg = _unique_len_sum
+
+
+@register_metric(DeploymentMetricID.DEP_JIRA_BUG_FIXES_COUNT)
+class DeployedBugFixesCounter(SumCalculator):
+    """Calculate the number of deployed bug fixes according to mapped JIRA issues."""
+
+    dimension = "jira"
+
+    def agg(self, values: np.ndarray) -> int:
+        """Calculate the number of issues with lower(type) == "bug"."""
+        deployed = np.unique(np.concatenate(values))
+        jira = self.jira
+        return sum(jira[i].type.lower() == "bug" for i in deployed)
