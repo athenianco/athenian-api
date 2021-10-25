@@ -628,7 +628,7 @@ class MetricEntriesCalculator:
                       `unfresh_mode_threshold`, force querying mdb instead of pdb only.
         :return: PullRequestFacts packed in a Pandas DataFrame.
         """
-        return (await self._calc_pull_request_facts_github(
+        df, *_ = (await self._calc_pull_request_facts_github(
             time_from,
             time_to,
             repositories,
@@ -642,7 +642,10 @@ class MetricEntriesCalculator:
             with_jira_map,
             branches=branches,
             default_branches=default_branches,
-        ))[0]
+        ))
+        if df.empty:
+            df = pd.DataFrame(columns=PullRequestFacts.f)
+        return df
 
     @sentry_span
     @cached(

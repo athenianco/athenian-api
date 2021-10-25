@@ -826,6 +826,22 @@ async def test_calc_pull_request_facts_github_jira(
     assert facts[PullRequestFacts.f.jira_ids].astype(bool).sum() == 60
 
 
+@with_defer
+async def test_calc_pull_request_facts_empty(
+        metrics_calculator_factory, mdb, pdb, rdb, release_match_setting_tag,
+        prefixer_promise, cache):
+    metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
+    time_from = datetime(year=2022, month=1, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2023, month=4, day=1, tzinfo=timezone.utc)
+    args = [time_from, time_to, {"src-d/go-git"}, {},
+            LabelFilter.empty(), JIRAFilter.empty(),
+            True, release_match_setting_tag, prefixer_promise, False, False]
+    facts = await metrics_calculator.calc_pull_request_facts_github(*args)
+    assert facts.empty
+    assert len(facts.columns) == len(PullRequestFacts.f)
+    assert PullRequestFacts.f.done in facts.columns
+
+
 def test_size_calculator_shift_log():
     calc = histogram_calculators[PullRequestMetricID.PR_SIZE](quantiles=(0, 1))
     calc._samples = [[np.array([0, 10, 0, 20, 150, 0])]]
