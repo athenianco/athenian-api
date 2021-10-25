@@ -674,13 +674,13 @@ async def calc_metrics_deployments(request: AthenianWebRequest, body: dict) -> w
         get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
     )
     prefixer = await Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
-    filters, repos = await _compile_filters_deployments(filt.for_, request, filt.account, meta_ids)
+    filters, _ = await _compile_filters_deployments(filt.for_, request, filt.account, meta_ids)
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
     calculated = []
     release_settings, (branches, default_branches), calculators, prefixer = await gather(
-        Settings.from_request(request, filt.account).list_release_matches(repos),
-        BranchMiner.extract_branches(repos, meta_ids, request.mdb, request.cache, strip=True),
+        Settings.from_request(request, filt.account).list_release_matches(),  # no "repos"!
+        BranchMiner.extract_branches(None, meta_ids, request.mdb, request.cache, strip=True),
         get_calculators_for_request({s for s, _ in filters}, filt.account, meta_ids, request),
         prefixer.load(),
     )
