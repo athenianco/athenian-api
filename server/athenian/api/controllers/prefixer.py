@@ -1,5 +1,4 @@
 import asyncio
-from collections import defaultdict
 import pickle
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -89,9 +88,9 @@ class Prefixer:
             r[User.node_id.name]: r[User.login.name]
             for r in user_rows
         }
-        user_login_to_node = defaultdict(list)
+        user_login_to_node = {}
         for r in user_rows:
-            user_login_to_node[r[User.login.name]].append(r[User.node_id.name])
+            user_login_to_node.setdefault(r[User.login.name], []).append(r[User.node_id.name])
         return Prefixer(None,
                         repo_node_to_prefixed_name=repo_node_to_prefixed_name,
                         repo_name_to_prefixed_name=repo_name_to_prefixed_name,

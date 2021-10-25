@@ -106,7 +106,7 @@ class _ForSetDeployments(Model, RepositoryGroupsMixin):
     def select_withgroup(self, index: int) -> "ForSetDeployments":
         """Change `with` to point at the specified group and clear `withgroups`."""
         fs = self.copy()
-        if self.withgroups is None:
+        if not self.withgroups:
             if index > 0:
                 raise IndexError("%d is out of range (no withgroups)" % index)
             return fs
@@ -119,13 +119,13 @@ class _ForSetDeployments(Model, RepositoryGroupsMixin):
     def select_envgroup(self, index: int) -> "ForSetDeployments":
         """Change `environments` to contain only the specified group."""
         fs = self.copy()
-        if self.environments is None:
+        if not self.environments:
             if index > 0:
                 raise IndexError("%d is out of range (no environments)" % index)
             return fs
         if index >= len(self.environments):
             raise IndexError("%d is out of range (max is %d)" % (index, len(self.environments)))
-        fs.environments = self.environments[index]
+        fs.environments = [self.environments[index]]
         return fs
 
 

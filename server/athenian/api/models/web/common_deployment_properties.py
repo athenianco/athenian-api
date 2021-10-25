@@ -7,8 +7,8 @@ class CommonDeploymentProperties(Model):
     """Define `with_labels` and `without_labels` properties."""
 
     openapi_types = {
-        "with_labels": object,
-        "without_labels": object,
+        "with_labels": Optional[object],
+        "without_labels": Optional[object],
     }
 
     attribute_map = {

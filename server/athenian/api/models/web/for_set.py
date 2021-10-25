@@ -75,7 +75,7 @@ class RepositoryGroupsMixin:
     def select_repogroup(self: ForSetLike, index: int) -> ForSetLike:
         """Change `repositories` to point at the specified group and clear `repogroups`."""
         fs = self.copy()
-        if self.repogroups is None:
+        if not self.repogroups:
             if index > 0:
                 raise IndexError("%d is out of range (no repogroups)" % index)
             return fs
