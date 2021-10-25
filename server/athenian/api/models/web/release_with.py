@@ -1,9 +1,9 @@
 from typing import List, Optional
 
-from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web.base_model_ import MappingModel
 
 
-class ReleaseWith(Model):
+class ReleaseWith(MappingModel):
     """Release contribution roles."""
 
     openapi_types = {

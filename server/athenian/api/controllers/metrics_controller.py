@@ -1,6 +1,6 @@
 from collections import defaultdict
 from itertools import chain
-from typing import Any, Collection, Dict, Iterable, List, Sequence, Set, Tuple, Union
+from typing import Any, Collection, Dict, Iterable, List, Mapping, Sequence, Set, Tuple, Union
 
 from aiohttp import web
 import databases.core
@@ -52,9 +52,9 @@ FilterChecks = Tuple[str, Tuple[List[Set[str]], List[List[str]], LabelFilter, JI
 
 DeploymentLabelFilter = Tuple[Dict[str, Any], Dict[str, Any]]
 
-#                       service                             withgroups                             with(out)_labels                                  originals        # noqa
-FilterDeployments = Tuple[str, Tuple[List[Set[str]], List[ReleaseParticipants], List[List[str]], DeploymentLabelFilter, LabelFilter, JIRAFilter, ForSetDeployments]]  # noqa
-#                                  repositories                                  environments                           pr_labels_*                                   # noqa
+#                       service                                       withgroups                                         with(out)_labels                                  originals             # noqa
+FilterDeployments = Tuple[str, Tuple[List[Set[str]], List[Dict[ReleaseParticipationKind, List[str]]], List[List[str]], DeploymentLabelFilter, LabelFilter, JIRAFilter, ForSetDeployments, int]]  # noqa
+#                                  repositories                                                        environments                           pr_labels_*                          ForSet index  # noqa
 
 
 @weight(10)
@@ -329,7 +329,7 @@ async def _compile_filters_deployments(for_sets: List[ForSetDeployments],
             filters.append((service, (
                 repogroups, withgroups, for_set.environments or [],
                 (for_set.with_labels or {}, for_set.without_labels or {}),
-                pr_labels, jira, for_set)))
+                pr_labels, jira, for_set, i)))
     return filters, all_repos
 
 
@@ -706,20 +706,23 @@ async def calc_metrics_deployments(request: AthenianWebRequest, body: dict) -> w
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
     calculated = []
-    release_settings, (branches, default_branches), calculators = await gather(
+    release_settings, (branches, default_branches), calculators, prefixer = await gather(
         Settings.from_request(request, filt.account).list_release_matches(repos),
         BranchMiner.extract_branches(repos, meta_ids, request.mdb, request.cache, strip=True),
         get_calculators_for_request({s for s, _ in filters}, filt.account, meta_ids, request),
+        prefixer.load(),
     )
 
     @sentry_span
     async def calculate_for_set_metrics(
-            service, repos, withgroups, envs, labels, pr_labels, jira, for_set):
+            service, repos, withgroups, envs, labels, pr_labels, jira, for_set, for_set_index):
         calculator = calculators[service]
+        resolved_repos, resolved_withgroups = _resolve_deployed_repos_and_participants(
+            repos, withgroups, prefixer, for_set_index)
         metric_values = await calculator.calc_deployment_metrics_line_github(
             filt.metrics, time_intervals, filt.quantiles or (0, 1),
-            repos, withgroups, envs, pr_labels, *labels, jira, release_settings,
-            prefixer, branches, default_branches, jira_ids)
+            resolved_repos, resolved_withgroups, envs, pr_labels, *labels, jira, release_settings,
+            prefixer.as_promise(), branches, default_branches, jira_ids)
         mrange = range(len(filt.metrics))
         for with_group_index, with_group in enumerate(metric_values):
             for repos_group_index, repos_group in enumerate(with_group):
@@ -732,6 +735,7 @@ async def calc_metrics_deployments(request: AthenianWebRequest, body: dict) -> w
                             filt.granularities, time_intervals, env_group):
                         cm = CalculatedDeploymentMetric(
                             for_=group_for_set,
+                            metrics=filt.metrics,
                             granularity=granularity,
                             values=[CalculatedLinearMetricValues(
                                 date=(d - tzoffset).date(),
@@ -749,3 +753,29 @@ async def calc_metrics_deployments(request: AthenianWebRequest, body: dict) -> w
 
     await gather(*(calculate_for_set_metrics(service, *rest) for service, rest in filters))
     return model_response(calculated)
+
+
+def _resolve_deployed_repos_and_participants(
+        repos: Sequence[Collection[str]],
+        withgroups: List[Mapping[ReleaseParticipationKind, List[str]]],
+        prefixer: Prefixer,
+        for_set_index: int) -> Tuple[List[List[int]], List[ReleaseParticipants]]:
+    repo_name_to_node = prefixer.repo_name_to_node.__getitem__
+    user_login_to_node = prefixer.user_login_to_node.__getitem__
+    resolved_repos = [[repo_name_to_node(r) for r in rg] for rg in repos]
+    resolved_withgroups = []
+    for gi, group in enumerate(withgroups):
+        resolved_group = {}
+        for k, v in group.items():
+            people = []
+            for u in v:
+                try:
+                    people.extend(user_login_to_node(u))
+                except KeyError:
+                    raise ResponseError(InvalidRequestError(
+                        pointer=f".for[{for_set_index}].withgroups[{gi}].{k.name.lower()}",
+                        detail=f'User "{u}" does not exist.',
+                    )) from None
+            resolved_group[k] = people
+        resolved_withgroups.append(resolved_group)
+    return resolved_repos, resolved_withgroups

@@ -654,11 +654,11 @@ class DonePRFactsLoader:
                                              participants: PRParticipants,
                                              prefixer: PrefixerPromise,
                                              ) -> Tuple[list, list]:
-        user_login_to_node_get = (await prefixer.load()).user_login_to_node.__getitem__
+        user_login_to_node_get = (await prefixer.load()).user_login_to_node.get
 
         def _build_conditions(roles):
             return [
-                (c, tuple(chain.from_iterable(user_login_to_node_get(u) for u in pset)))
+                (c, tuple(chain.from_iterable(user_login_to_node_get(u, []) for u in pset)))
                 for c, pset in ((col, participants.get(pk)) for col, pk in roles)
                 if pset
             ]

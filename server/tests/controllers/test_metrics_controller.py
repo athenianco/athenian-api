@@ -7,10 +7,10 @@ import pandas as pd
 import pytest
 
 from athenian.api.controllers.miners.github import developer
-from athenian.api.models.web import CalculatedCodeCheckMetrics, CalculatedDeveloperMetrics, \
-    CalculatedLinearMetricValues, CalculatedPullRequestMetrics, CalculatedReleaseMetric, \
-    CodeBypassingPRsMeasurement, CodeCheckMetricID, DeveloperMetricID, PullRequestMetricID, \
-    PullRequestWith, ReleaseMetricID
+from athenian.api.models.web import CalculatedCodeCheckMetrics, CalculatedDeploymentMetric, \
+    CalculatedDeveloperMetrics, CalculatedLinearMetricValues, CalculatedPullRequestMetrics, \
+    CalculatedReleaseMetric, CodeBypassingPRsMeasurement, CodeCheckMetricID, DeploymentMetricID, \
+    DeveloperMetricID, PullRequestMetricID, PullRequestWith, ReleaseMetricID
 from athenian.api.serialization import FriendlyJson
 
 
@@ -2057,6 +2057,141 @@ async def test_code_check_metrics_nasty_input(client, headers, account, repos, m
     }
     response = await client.request(
         method="POST", path="/v1/metrics/code_checks", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == code, "Response body is : " + body
+
+
+async def test_deployment_metrics_smoke(client, headers, sample_deployments):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "for": [{
+            "repositories": ["{1}"],
+            "withgroups": [{"releaser": ["github.com/mcuadros"]},
+                           {"pr_author": ["github.com/mcuadros"]}],
+            "environments": [["staging"], ["production"], ["mirror"]],
+        }],
+        "metrics": [DeploymentMetricID.DEP_SUCCESS_COUNT,
+                    DeploymentMetricID.DEP_DURATION_SUCCESSFUL],
+        "granularities": ["all"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/deployments", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    model = [CalculatedDeploymentMetric.from_dict(obj) for obj in json.loads(body)]
+    assert [m.to_dict() for m in model] == [{
+        "for": {
+            "repositories": ["{1}"],
+            "with": {"releaser": ["github.com/mcuadros"]},
+            "environments": [["staging"]],
+        },
+        "metrics": ["dep-success-count", "dep-duration-successful"],
+        "granularity": "all",
+        "values": [{
+            "date": date(2018, 1, 12),
+            "values": [3, "600s"],
+            "confidence_maxs": [None, "600s"],
+            "confidence_mins": [None, "600s"],
+            "confidence_scores": [None, 100],
+        }]}, {
+        "for": {
+            "repositories": ["{1}"],
+            "with": {"releaser": ["github.com/mcuadros"]},
+            "environments": [["production"]],
+        },
+        "metrics": ["dep-success-count", "dep-duration-successful"],
+        "granularity": "all",
+        "values": [{
+            "date": date(2018, 1, 12),
+            "values": [3, "600s"],
+            "confidence_maxs": [None, "600s"],
+            "confidence_mins": [None, "600s"],
+            "confidence_scores": [None, 100],
+        }]}, {
+        "for": {
+            "repositories": ["{1}"],
+            "with": {"releaser": ["github.com/mcuadros"]},
+            "environments": [["mirror"]],
+        },
+        "metrics": ["dep-success-count", "dep-duration-successful"],
+        "granularity": "all",
+        "values": [{
+            "date": date(2018, 1, 12),
+            "values": [0, None],
+        }]}, {
+        "for": {
+            "repositories": ["{1}"],
+            "with": {"pr_author": ["github.com/mcuadros"]},
+            "environments": [["staging"]],
+        },
+        "metrics": ["dep-success-count", "dep-duration-successful"],
+        "granularity": "all",
+        "values": [{
+            "date": date(2018, 1, 12),
+            "values": [3, "600s"],
+            "confidence_maxs": [None, "600s"],
+            "confidence_mins": [None, "600s"],
+            "confidence_scores": [None, 100],
+        }]}, {
+        "for": {
+            "repositories": ["{1}"],
+            "with": {"pr_author": ["github.com/mcuadros"]},
+            "environments": [["production"]],
+        },
+        "metrics": ["dep-success-count", "dep-duration-successful"],
+        "granularity": "all",
+        "values": [{
+            "date": date(2018, 1, 12),
+            "values": [3, "600s"],
+            "confidence_maxs": [None, "600s"],
+            "confidence_mins": [None, "600s"],
+            "confidence_scores": [None, 100],
+        }]}, {
+        "for": {
+            "repositories": ["{1}"],
+            "with": {"pr_author": ["github.com/mcuadros"]},
+            "environments": [["mirror"]],
+        },
+        "metrics": ["dep-success-count", "dep-duration-successful"],
+        "granularity": "all",
+        "values": [{
+            "date": date(2018, 1, 12),
+            "values": [0, None],
+        }]}]
+
+
+@pytest.mark.parametrize("account, date_from, date_to, repos, withgroups, metrics, code", [
+    (1, "2018-01-12", "2020-01-12", ["{1}"], [], [DeploymentMetricID.DEP_PRS_COUNT], 200),
+    (1, "2020-01-12", "2018-01-12", ["{1}"], [], [DeploymentMetricID.DEP_PRS_COUNT], 400),
+    (2, "2018-01-12", "2020-01-12", ["github.com/src-d/go-git"], [],
+     [DeploymentMetricID.DEP_PRS_COUNT], 422),
+    (3, "2018-01-12", "2020-01-12", ["github.com/src-d/go-git"], [],
+     [DeploymentMetricID.DEP_PRS_COUNT], 404),
+    (1, "2018-01-12", "2020-01-12", ["{1}"], [], ["whatever"], 400),
+    (1, "2018-01-12", "2020-01-12", ["github.com/athenianco/athenian-api"], [],
+     [DeploymentMetricID.DEP_PRS_COUNT], 403),
+    (1, "2018-01-12", "2020-01-12", ["{1}"], [{"pr_author": ["github.com/akbarik"]}],
+     [DeploymentMetricID.DEP_PRS_COUNT], 400),
+])
+async def test_deployment_metrics_nasty_input(
+        client, headers, account, date_from, date_to, repos, withgroups, metrics, code):
+    body = {
+        "account": account,
+        "date_from": date_from,
+        "date_to": date_to,
+        "for": [{
+            "repositories": [*repos],
+            "withgroups": [*withgroups],
+        }],
+        "metrics": [*metrics],
+        "granularities": ["all"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/deployments", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == code, "Response body is : " + body

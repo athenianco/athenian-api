@@ -207,3 +207,19 @@ def AllOf(*mixed: typing.Type[Model],
     if len(allOf.openapi_types) < sum(len(cls.openapi_types) for cls in mixed):
         raise TypeError("There are conflicting openapi_types in AllOf classes")
     return allOf
+
+
+class MappingModel(Model, typing.Mapping):
+    """Model that satisfies the Mapping interface and can be treated as a dict."""
+
+    def __getitem__(self, k: str) -> typing.Optional[typing.List[str]]:
+        """Implement []."""
+        return getattr(self, k)
+
+    def __len__(self) -> int:
+        """Implement len()."""
+        return len(self.attribute_map)
+
+    def __iter__(self) -> typing.Iterator[str]:
+        """Implement iter()."""
+        return iter(self.attribute_map)
