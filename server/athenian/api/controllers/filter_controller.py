@@ -157,8 +157,8 @@ async def _common_filter_preprocess(filt: Union[FilterReleasesRequest,
     async def login_loader() -> str:
         return (await request.user()).login
 
-    repos, meta_ids = await resolve_repos(
-        filt.in_, filt.account, request.uid, login_loader,
+    repos, _, meta_ids = await resolve_repos(
+        filt.in_, filt.account, request.uid, login_loader, None,
         request.sdb, request.mdb, request.cache, request.app["slack"],
         strip_prefix=strip_prefix)
     prefixer = await Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
@@ -597,8 +597,8 @@ async def filter_labels(request: AthenianWebRequest, body: dict) -> web.Response
     async def login_loader() -> str:
         return (await request.user()).login
 
-    repos, meta_ids = await resolve_repos(
-        body.repositories, body.account, request.uid, login_loader,
+    repos, _, meta_ids = await resolve_repos(
+        body.repositories, body.account, request.uid, login_loader, None,
         request.sdb, request.mdb, request.cache, request.app["slack"])
     labels = await mine_labels(repos, meta_ids, request.mdb, request.cache)
     labels = [FilteredLabel(**label) for label in labels]

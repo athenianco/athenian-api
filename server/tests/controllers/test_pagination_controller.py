@@ -52,19 +52,20 @@ async def test_paginate_prs_smoke(client, headers, batch, count):
 
 
 @pytest.mark.filter_pull_requests
-@pytest.mark.parametrize("account, batch, stages, code",
-                         [(1, 0, list(PullRequestStage), 400),
-                          (1, -10, list(PullRequestStage), 400),
-                          (1, None, list(PullRequestStage), 400),
-                          (3, 1, list(PullRequestStage), 403),
-                          (3, 1, None, 400)])
-async def test_paginate_prs_nasty_input(client, headers, account, batch, stages, code):
+@pytest.mark.parametrize("account, batch, stages, repos, code",
+                         [(1, 0, list(PullRequestStage), [], 400),
+                          (1, -10, list(PullRequestStage), [], 400),
+                          (1, None, list(PullRequestStage), [], 400),
+                          (3, 1, list(PullRequestStage), [], 404),
+                          (1, 1, list(PullRequestStage), ["github.com/a/b"], 403),
+                          (3, 1, None, [], 400)])
+async def test_paginate_prs_nasty_input(client, headers, account, batch, stages, repos, code):
     body = {
         "request": {
             "date_from": "2015-10-13",
             "date_to": "2020-04-01",
             "account": account,
-            "in": [],
+            "in": [*repos],
             "stages": stages,
             "exclude_inactive": True,
         },

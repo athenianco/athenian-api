@@ -243,8 +243,8 @@ class Settings:
         if not tags:
             tags = ".*"
 
-        repos, _ = await resolve_repos(
-            repos, self._account, self._user_id, self._login,
+        repos, _, _ = await resolve_repos(
+            repos, self._account, self._user_id, self._login, None,
             self._sdb, self._mdb, self._cache, self._slack, strip_prefix=False)
         async with self._sdb.connection() as conn:
             values = [ReleaseSetting(repository=r,

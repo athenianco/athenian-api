@@ -2164,6 +2164,30 @@ async def test_deployment_metrics_smoke(client, headers, sample_deployments):
         }]}]
 
 
+async def test_deployment_metrics_empty_for(client, headers, sample_deployments):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "for": [{}],
+        "metrics": [DeploymentMetricID.DEP_SUCCESS_COUNT],
+        "granularities": ["all"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/deployments", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    model = [CalculatedDeploymentMetric.from_dict(obj) for obj in json.loads(body)]
+    assert [m.to_dict() for m in model] == [{
+        "for": {},
+        "granularity": "all",
+        "metrics": [DeploymentMetricID.DEP_SUCCESS_COUNT],
+        "values": [{
+            "date": date(2018, 1, 12),
+            "values": [12]}]}]
+
+
 @pytest.mark.parametrize("account, date_from, date_to, repos, withgroups, metrics, code", [
     (1, "2018-01-12", "2020-01-12", ["{1}"], [], [DeploymentMetricID.DEP_PRS_COUNT], 200),
     (1, "2020-01-12", "2018-01-12", ["{1}"], [], [DeploymentMetricID.DEP_PRS_COUNT], 400),
