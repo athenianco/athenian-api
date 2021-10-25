@@ -3,7 +3,7 @@ connexion[aiohttp,swagger-ui]==2.9.0
 openapi-spec-validator==0.3.1
 aiohttp_cors==0.7.0
 swagger-ui-bundle==0.0.9
-sqlalchemy==1.3.23
+sqlalchemy==1.4.26
 asyncpg==0.24.0
 databases[sqlite,asyncpg]==0.4.3
 psycopg2-binary==2.9.1
