@@ -6,7 +6,7 @@ from typing import Awaitable, Coroutine, List
 from aiohttp import web
 import asyncpg
 import databases
-from sentry_sdk import Hub, start_transaction
+from sentry_sdk import Hub, push_scope, start_transaction
 from sentry_sdk.tracing import Transaction
 
 from athenian.api import metadata
@@ -126,8 +126,10 @@ async def defer(coroutine: Awaitable, name: str) -> None:
         transaction = transaction_ptr[0]  # type: Transaction
         try:
             if transaction is not None:
-                with transaction.start_child(op=name):
-                    await coroutine
+                with push_scope() as scope:
+                    scope.fingerprint = ["{{ default }}", "defer"]
+                    with transaction.start_child(op=name):
+                        await coroutine
             else:
                 _log.error("empty Sentry transaction in a deferred task")
                 await coroutine
