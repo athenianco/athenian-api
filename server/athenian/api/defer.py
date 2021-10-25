@@ -126,9 +126,9 @@ async def defer(coroutine: Awaitable, name: str) -> None:
         transaction = transaction_ptr[0]  # type: Transaction
         try:
             if transaction is not None:
-                with push_scope() as scope:
-                    scope.fingerprint = ["{{ default }}", "defer"]
-                    with transaction.start_child(op=name):
+                with transaction.start_child(op=name):
+                    with push_scope() as scope:
+                        scope.fingerprint = ["{{ default }}", "defer"]
                         await coroutine
             else:
                 _log.error("empty Sentry transaction in a deferred task")
