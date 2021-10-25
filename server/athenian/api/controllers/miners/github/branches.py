@@ -6,6 +6,7 @@ from typing import Dict, Iterable, Optional, Tuple
 import aiomcache
 import numpy as np
 import pandas as pd
+import sqlalchemy as sa
 from sqlalchemy import and_, func, select
 
 from athenian.api import metadata
@@ -26,10 +27,10 @@ class BranchMiner:
         exptime=60 * 60,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda repos, **_: (",".join(sorted(repos)),),
+        key=lambda repos, **_: (",".join(sorted(repos if repos is not None else [])),),
     )
     async def extract_branches(cls,
-                               repos: Iterable[str],
+                               repos: Optional[Iterable[str]],
                                meta_ids: Tuple[int, ...],
                                mdb: DatabaseLike,
                                cache: Optional[aiomcache.Client],
@@ -40,9 +41,9 @@ class BranchMiner:
 
         :param strip: Value indicating whether the repository names are prefixed.
         """
-        if strip:
+        if strip and repos is not None:
             repos = [r.split("/", 1)[1] for r in repos]
-        branches = await cls._extract_branches(repos, meta_ids, mdb)
+        branches, repos = await cls._extract_branches(repos, meta_ids, mdb)
         log = logging.getLogger("%s.extract_default_branches" % metadata.__package__)
         default_branches = {}
         ambiguous_defaults = {}
@@ -119,16 +120,21 @@ class BranchMiner:
         return branches, default_branches
 
     @classmethod
+    @sentry_span
     async def _extract_branches(cls,
-                                repos: Iterable[str],
+                                repos: Optional[Iterable[str]],
                                 meta_ids: Tuple[int, ...],
                                 mdb: DatabaseLike,
-                                ) -> pd.DataFrame:
-        return await read_sql_query(
-            select([Branch]).where(and_(Branch.repository_full_name.in_(repos),
-                                        Branch.acc_id.in_(meta_ids),
-                                        Branch.commit_sha.isnot(None))),
+                                ) -> Tuple[pd.DataFrame, Iterable[str]]:
+        df = await read_sql_query(
+            select([Branch]).where(and_(
+                Branch.repository_full_name.in_(repos) if repos is not None else sa.true(),
+                Branch.acc_id.in_(meta_ids),
+                Branch.commit_sha.isnot(None))),
             mdb, Branch)
+        if repos is not None:
+            return df, repos
+        return df, df[Branch.repository_full_name.name].unique()
 
 
 async def load_branch_commit_dates(branches: pd.DataFrame,

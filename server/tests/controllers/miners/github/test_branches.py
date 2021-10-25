@@ -99,3 +99,10 @@ async def test_extract_branches_only_one(mdb_rw, branch_miner, with_preloading_e
             Branch.is_default: True,
             Branch.branch_name: "master",
         }))
+
+
+@with_defer
+async def test_extract_branches_none_repos(mdb, cache, branch_miner):
+    branches, defaults = await branch_miner.extract_branches(
+        None, (6366825,), mdb, cache)
+    assert len(branches) == 4
