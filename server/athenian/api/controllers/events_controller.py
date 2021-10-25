@@ -200,7 +200,8 @@ async def _drop_precomputed_deployments(account: int,
                                         ) -> None:
     pdb, rdb = request.pdb, request.rdb
     prefixer = await prefixer.load()
-    repo_node_ids = [prefixer.repo_name_to_node[r] for r in repos]
+    repo_name_to_node = prefixer.repo_name_to_node.get
+    repo_node_ids = [repo_name_to_node(r, 0) for r in repos]
     deployments_to_kill = await rdb.fetch_all(
         select([distinct(DeployedComponent.deployment_name)])
         .where(and_(DeployedComponent.account_id == account,
@@ -289,8 +290,8 @@ async def clear_precomputed_events(request: AthenianWebRequest, body: dict) -> w
     async def login_loader() -> str:
         return (await request.user()).login
 
-    prefixed_repos, meta_ids = await resolve_repos(
-        model.repositories, model.account, request.uid, login_loader,
+    prefixed_repos, _, meta_ids = await resolve_repos(
+        model.repositories, model.account, request.uid, login_loader, None,
         request.sdb, request.mdb, request.cache, request.app["slack"], strip_prefix=False)
     repos = [r.split("/", 1)[1] for r in prefixed_repos]
     (branches, default_branches), release_settings = await gather(

@@ -3,7 +3,6 @@ from itertools import chain
 from typing import Any, Collection, Dict, Iterable, List, Mapping, Sequence, Set, Tuple, Union
 
 from aiohttp import web
-import databases.core
 
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
@@ -14,7 +13,7 @@ from athenian.api.controllers.datetime_utils import split_to_time_intervals
 from athenian.api.controllers.features.code import CodeStats
 from athenian.api.controllers.features.entries import MetricEntriesCalculator
 from athenian.api.controllers.jira import get_jira_installation, get_jira_installation_or_none
-from athenian.api.controllers.miners.access_classes import access_classes, AccessChecker
+from athenian.api.controllers.miners.access_classes import AccessChecker
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.commit import FilterCommitsProperty
@@ -23,14 +22,14 @@ from athenian.api.controllers.miners.types import PRParticipants, PRParticipatio
     ReleaseParticipants, ReleaseParticipationKind
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.release import extract_release_participants
-from athenian.api.controllers.reposet import resolve_repos, resolve_reposet
+from athenian.api.controllers.reposet import resolve_repos
 from athenian.api.controllers.settings import Settings
 from athenian.api.controllers.user import MANNEQUIN_PREFIX
 from athenian.api.models.web import CalculatedCodeCheckMetrics, CalculatedCodeCheckMetricsItem, \
     CalculatedDeploymentMetric, CalculatedDeveloperMetrics, CalculatedDeveloperMetricsItem, \
     CalculatedLinearMetricValues, CalculatedPullRequestMetrics, CalculatedPullRequestMetricsItem, \
     CalculatedReleaseMetric, CodeBypassingPRsMeasurement, CodeCheckMetricsRequest, CodeFilter, \
-    DeploymentMetricsRequest, DeveloperMetricsRequest, ForbiddenError, ForSet, ForSetCodeChecks, \
+    DeploymentMetricsRequest, DeveloperMetricsRequest, ForSet, ForSetCodeChecks, \
     ForSetDeployments, ForSetDevelopers, PullRequestMetricID, ReleaseMetricsRequest
 from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.models.web.pull_request_metrics_request import PullRequestMetricsRequest
@@ -182,29 +181,28 @@ async def compile_filters_prs(for_sets: List[ForSet],
     filters = []
     checkers = {}
     all_repos = set()
-    async with request.sdb.connection() as sdb_conn:
-        for i, for_set in enumerate(for_sets):
-            repos, prefix, service = await _extract_repos(
-                request, account, meta_ids, for_set.repositories, i, all_repos, checkers, sdb_conn)
-            if for_set.repogroups is not None:
-                repogroups = [set(chain.from_iterable(repos[i] for i in group))
-                              for group in for_set.repogroups]
-            else:
-                repogroups = [set(chain.from_iterable(repos))]
-            withgroups = []
-            for with_ in (for_set.withgroups or []) + ([for_set.with_] if for_set.with_ else []):
-                withgroup = {}
-                for k, v in with_.items():
-                    if not v:
-                        continue
-                    withgroup[PRParticipationKind[k.upper()]] = _compile_dev_logins(
-                        v, prefix, ".for[%d].%s" % (
-                            i, "withgroups" if i < len(for_set.withgroups or []) else "with"))
-                if withgroup:
-                    withgroups.append(withgroup)
-            labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
-            jira = await _compile_jira(for_set, account, request)
-            filters.append((service, (repogroups, withgroups, labels, jira, i, for_set)))
+    for i, for_set in enumerate(for_sets):
+        repos, prefix, service = await _extract_repos(
+            request, account, meta_ids, for_set.repositories, i, all_repos, checkers)
+        if for_set.repogroups is not None:
+            repogroups = [set(chain.from_iterable(repos[i] for i in group))
+                          for group in for_set.repogroups]
+        else:
+            repogroups = [set(chain.from_iterable(repos))]
+        withgroups = []
+        for with_ in (for_set.withgroups or []) + ([for_set.with_] if for_set.with_ else []):
+            withgroup = {}
+            for k, v in with_.items():
+                if not v:
+                    continue
+                withgroup[PRParticipationKind[k.upper()]] = _compile_dev_logins(
+                    v, prefix, ".for[%d].%s" % (
+                        i, "withgroups" if i < len(for_set.withgroups or []) else "with"))
+            if withgroup:
+                withgroups.append(withgroup)
+        labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
+        jira = await _compile_jira(for_set, account, request)
+        filters.append((service, (repogroups, withgroups, labels, jira, i, for_set)))
     return filters, all_repos
 
 
@@ -238,20 +236,19 @@ async def _compile_filters_devs(for_sets: List[ForSetDevelopers],
     filters = []
     checkers = {}
     all_repos = set()
-    async with request.sdb.connection() as sdb_conn:
-        for i, for_set in enumerate(for_sets):
-            repos, prefix, service = await _extract_repos(
-                request, account, meta_ids, for_set.repositories, i, all_repos, checkers, sdb_conn)
-            if for_set.repogroups is not None:
-                repogroups = [set(chain.from_iterable(repos[i] for i in group))
-                              for group in for_set.repogroups]
-            else:
-                repogroups = [set(chain.from_iterable(repos))]
-            devs = _compile_dev_logins(
-                for_set.developers, prefix, ".for[%d].developers" % i, unique=False)
-            labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
-            jira = await _compile_jira(for_set, account, request)
-            filters.append((service, (repogroups, devs, labels, jira, for_set)))
+    for i, for_set in enumerate(for_sets):
+        repos, prefix, service = await _extract_repos(
+            request, account, meta_ids, for_set.repositories, i, all_repos, checkers)
+        if for_set.repogroups is not None:
+            repogroups = [set(chain.from_iterable(repos[i] for i in group))
+                          for group in for_set.repogroups]
+        else:
+            repogroups = [set(chain.from_iterable(repos))]
+        devs = _compile_dev_logins(
+            for_set.developers, prefix, ".for[%d].developers" % i, unique=False)
+        labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
+        jira = await _compile_jira(for_set, account, request)
+        filters.append((service, (repogroups, devs, labels, jira, for_set)))
     return filters, all_repos
 
 
@@ -273,25 +270,24 @@ async def compile_filters_checks(for_sets: List[ForSetCodeChecks],
     filters = []
     checkers = {}
     all_repos = set()
-    async with request.sdb.connection() as sdb_conn:
-        for i, for_set in enumerate(for_sets):
-            repos, prefix, service = await _extract_repos(
-                request, account, meta_ids, for_set.repositories, i, all_repos, checkers, sdb_conn)
-            if for_set.repogroups is not None:
-                repogroups = [set(chain.from_iterable(repos[i] for i in group))
-                              for group in for_set.repogroups]
-            else:
-                repogroups = [set(chain.from_iterable(repos))]
-            commit_author_groups = []
-            for pushers in ((for_set.pusher_groups or []) +
-                            ([for_set.pushers] if for_set.pushers else [])):
-                if ca_group := _compile_dev_logins(pushers, prefix, ".for[%d].%s" % (
-                        i, "commit_author_groups"
-                        if i < len(for_set.pusher_groups or []) else "pushers")):
-                    commit_author_groups.append(sorted(ca_group))
-            labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
-            jira = await _compile_jira(for_set, account, request)
-            filters.append((service, (repogroups, commit_author_groups, labels, jira, for_set)))
+    for i, for_set in enumerate(for_sets):
+        repos, prefix, service = await _extract_repos(
+            request, account, meta_ids, for_set.repositories, i, all_repos, checkers)
+        if for_set.repogroups is not None:
+            repogroups = [set(chain.from_iterable(repos[i] for i in group))
+                          for group in for_set.repogroups]
+        else:
+            repogroups = [set(chain.from_iterable(repos))]
+        commit_author_groups = []
+        for pushers in ((for_set.pusher_groups or []) +
+                        ([for_set.pushers] if for_set.pushers else [])):
+            if ca_group := _compile_dev_logins(pushers, prefix, ".for[%d].%s" % (
+                    i, "commit_author_groups"
+                    if i < len(for_set.pusher_groups or []) else "pushers")):
+                commit_author_groups.append(sorted(ca_group))
+        labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
+        jira = await _compile_jira(for_set, account, request)
+        filters.append((service, (repogroups, commit_author_groups, labels, jira, for_set)))
     return filters
 
 
@@ -303,33 +299,32 @@ async def _compile_filters_deployments(for_sets: List[ForSetDeployments],
     filters = []
     checkers = {}
     all_repos = set()
-    async with request.sdb.connection() as sdb_conn:
-        for i, for_set in enumerate(for_sets):
-            repos, prefix, service = await _extract_repos(
-                request, account, meta_ids, for_set.repositories, i, all_repos, checkers, sdb_conn)
-            if for_set.repogroups is not None:
-                repogroups = [set(chain.from_iterable(repos[i] for i in group))
-                              for group in for_set.repogroups]
-            else:
-                repogroups = [set(chain.from_iterable(repos))]
-            withgroups = []
-            for with_ in (for_set.withgroups or []) + ([for_set.with_] if for_set.with_ else []):
-                withgroup = {}
-                for k, v in with_.items():
-                    if not v:
-                        continue
-                    withgroup[ReleaseParticipationKind[k.upper()]] = _compile_dev_logins(
-                        v, prefix, ".for[%d].%s" % (
-                            i, "withgroups" if i < len(for_set.withgroups or []) else "with"))
-                if withgroup:
-                    withgroups.append(withgroup)
-            pr_labels = LabelFilter.from_iterables(
-                for_set.pr_labels_include, for_set.pr_labels_exclude)
-            jira = await _compile_jira(for_set, account, request)
-            filters.append((service, (
-                repogroups, withgroups, for_set.environments or [],
-                (for_set.with_labels or {}, for_set.without_labels or {}),
-                pr_labels, jira, for_set, i)))
+    for i, for_set in enumerate(for_sets):
+        repos, prefix, service = await _extract_repos(
+            request, account, meta_ids, for_set.repositories, i, all_repos, checkers)
+        if for_set.repogroups is not None:
+            repogroups = [set(chain.from_iterable(repos[i] for i in group))
+                          for group in for_set.repogroups]
+        else:
+            repogroups = [set(chain.from_iterable(repos))]
+        withgroups = []
+        for with_ in (for_set.withgroups or []) + ([for_set.with_] if for_set.with_ else []):
+            withgroup = {}
+            for k, v in with_.items():
+                if not v:
+                    continue
+                withgroup[ReleaseParticipationKind[k.upper()]] = _compile_dev_logins(
+                    v, prefix, ".for[%d].%s" % (
+                        i, "withgroups" if i < len(for_set.withgroups or []) else "with"))
+            if withgroup:
+                withgroups.append(withgroup)
+        pr_labels = LabelFilter.from_iterables(
+            for_set.pr_labels_include, for_set.pr_labels_exclude)
+        jira = await _compile_jira(for_set, account, request)
+        filters.append((service, (
+            repogroups, withgroups, for_set.environments or [],
+            (for_set.with_labels or {}, for_set.without_labels or {}),
+            pr_labels, jira, for_set, i)))
     return filters, all_repos
 
 
@@ -370,41 +365,19 @@ async def _extract_repos(request: AthenianWebRequest,
                          for_set_index: int,
                          all_repos: Set[str],
                          checkers: Dict[str, AccessChecker],
-                         sdb: databases.core.Connection,
-                         ) -> Tuple[Sequence[Set[str]], str, str]:
-    user = request.uid
-    prefix = None
-    resolved = await gather(*[
-        resolve_reposet(r, ".for[%d].repositories[%d]" % (
-            for_set_index, j), user, account, sdb, request.cache)
-        for j, r in enumerate(for_set)], op="resolve_reposet-s")
-    for repos in resolved:
-        for i, repo in enumerate(repos):
-            repo_prefix, repos[i] = repo.split("/", 1)
-            if prefix is None:
-                prefix = repo_prefix
-            elif prefix != repo_prefix:
-                raise ResponseError(InvalidRequestError(
-                    detail='mixed providers are not allowed in the same "for" element',
-                    pointer=".for[%d].repositories" % for_set_index,
-                ))
-            all_repos.add(repo)
-    if prefix is None:
-        raise ResponseError(InvalidRequestError(
-            detail='the provider of a "for" element is unsupported or the set is empty',
-            pointer=".for[%d].repositories" % for_set_index,
-        ))
-    service = "github"  # hardcode "github" because we do not really support others
-    if (checker := checkers.get(service)) is None:
-        checkers[service] = (checker := await access_classes[service](
-            account, meta_ids, sdb, request.mdb, request.cache,
-        ).load())
-    if denied := await checker.check(set(chain.from_iterable(resolved))):
-        raise ResponseError(ForbiddenError(
-            detail="some repositories in .for[%d].repositories are access denied on %s: %s" % (
-                for_set_index, service, denied),
-        ))
-    return resolved, prefix + "/", service
+                         ) -> Tuple[List[Set[str]], str, str]:
+    async def login_loader() -> str:
+        return (await request.user()).login
+
+    pointer = ".for[%d].repositories" % for_set_index
+    resolved, prefix, _ = await resolve_repos(
+        for_set, account, request.uid, login_loader, meta_ids, request.sdb, request.mdb,
+        request.cache, request.app["slack"],
+        strip_prefix=False, separate=True, checkers=checkers, pointer=pointer)
+    all_repos.update(chain.from_iterable(resolved))
+    resolved = [{r.split("/", 1)[1] for r in rs} for rs in resolved]
+    # FIXME(vmarkovtsev): yeah, hardcode "github" because this is the only one we really support
+    return resolved, prefix, "github"
 
 
 @weight(1.5)
@@ -419,8 +392,8 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
     async def login_loader() -> str:
         return (await request.user()).login
 
-    repos, meta_ids = await resolve_repos(
-        filt.in_, filt.account, request.uid, login_loader,
+    repos, _, meta_ids = await resolve_repos(
+        filt.in_, filt.account, request.uid, login_loader, None,
         request.sdb, request.mdb, request.cache, request.app["slack"])
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularity, filt.timezone)
@@ -529,11 +502,10 @@ async def _compile_repos_releases(request: AthenianWebRequest,
     filters = []
     checkers = {}
     all_repos = set()
-    async with request.sdb.connection() as sdb_conn:
-        for i, for_set in enumerate(for_sets):
-            repos, prefix, service = await _extract_repos(
-                request, account, meta_ids, for_set, i, all_repos, checkers, sdb_conn)
-            filters.append((service, prefix, (set(chain.from_iterable(repos)), for_set)))
+    for i, for_set in enumerate(for_sets):
+        repos, prefix, service = await _extract_repos(
+            request, account, meta_ids, for_set, i, all_repos, checkers)
+        filters.append((service, prefix, (set(chain.from_iterable(repos)), for_set)))
     return filters, all_repos
 
 

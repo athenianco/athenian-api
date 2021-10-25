@@ -1,9 +1,9 @@
 import asyncio
 from http import HTTPStatus
-from itertools import chain
 import logging
 from sqlite3 import IntegrityError, OperationalError
-from typing import Callable, Coroutine, List, Mapping, Optional, Sequence, Set, Tuple, Type, Union
+from typing import Any, Callable, Coroutine, Dict, List, Mapping, Optional, Sequence, Set, Tuple, \
+    Type, Union
 
 import aiomcache
 import asyncpg
@@ -17,6 +17,7 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.controllers.account import fetch_github_installation_progress, \
     get_metadata_account_ids, get_user_account_status, match_metadata_installation
+from athenian.api.controllers.miners.access import AccessChecker
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.db import DatabaseLike, FastConnection, ParallelDatabase
@@ -95,59 +96,113 @@ async def fetch_reposet(
 
 
 @sentry_span
+async def load_all_reposet(account: int,
+                           login: Callable[[], Coroutine[None, None, str]],
+                           sdb: ParallelDatabase,
+                           mdb: ParallelDatabase,
+                           cache: Optional[aiomcache.Client],
+                           slack: Optional[SlackWebClient]):
+    """Fetch the contents (items) of the main reposet with all the repositories to consider."""
+    rss = await load_account_reposets(
+        account, login, [RepositorySet.id, RepositorySet.name, RepositorySet.items],
+        sdb, mdb, cache, slack)
+    for rs in rss:
+        if rs[RepositorySet.name.name] == RepositorySet.ALL:
+            return [rs[RepositorySet.items.name]]
+    raise ResponseError(NoSourceDataError(detail=f'No "{RepositorySet.ALL}" reposet exists.'))
+
+
+@sentry_span
 async def resolve_repos(repositories: List[str],
                         account: int,
                         uid: str,
                         login: Callable[[], Coroutine[None, None, str]],
+                        meta_ids: Optional[Tuple[int, ...]],
                         sdb: ParallelDatabase,
                         mdb: ParallelDatabase,
                         cache: Optional[aiomcache.Client],
                         slack: Optional[SlackWebClient],
                         strip_prefix=True,
-                        ) -> Tuple[Set[str], Tuple[int, ...]]:
+                        separate=False,
+                        checkers: Optional[Dict[str, AccessChecker]] = None,
+                        pointer: Optional[str] = "?",
+                        ) -> Tuple[Union[Set[str], List[Set[str]]], str, Tuple[int, ...]]:
     """
     Dereference all the reposets and produce the joint list of all mentioned repos.
 
-    :return: (Union of all the mentioned repo names, metadata (GitHub) account IDs).
+    We don't check the user access! That should happen automatically in Auth0 code.
+
+    If `repositories` is empty, we load the "ALL" reposet.
+
+    :param separate: Value indicatign whether to return each reposet separately.
+    :return: (Union of all the mentioned repo names, service prefix).
     """
-    status = await sdb.fetch_one(
-        select([UserAccount.is_admin]).where(and_(UserAccount.user_id == uid,
-                                                  UserAccount.account_id == account)))
-    if status is None:
-        raise ResponseError(ForbiddenError(
-            detail="User %s is forbidden to access account %d" % (uid, account)))
     if not repositories:
-        rss = await load_account_reposets(
-            account, login, [RepositorySet.id], sdb, mdb, cache, slack)
-        repositories = ["{%d}" % rss[0][RepositorySet.id.name]]
-    tasks = [get_metadata_account_ids(account, sdb, cache)] + [
-        resolve_reposet(r, ".in[%d]" % i, uid, account, sdb, cache)
-        for i, r in enumerate(repositories)]
-    task_results = await gather(*tasks, op="resolve_reposet-s + meta_ids")
-    repos, meta_ids = set(chain.from_iterable(task_results[1:])), task_results[0]
+        # this may initialize meta_ids, so execute serialized
+        reposets = await load_all_reposet(account, login, sdb, mdb, cache, slack)
+        if meta_ids is None:
+            meta_ids = await get_metadata_account_ids(account, sdb, cache)
+    else:
+        tasks = [resolve_reposet(r, ".in[%d]" % i, uid, account, sdb, cache)
+                 for i, r in enumerate(repositories)]
+        if meta_ids is None:
+            tasks.insert(0, get_metadata_account_ids(account, sdb, cache))
+        reposets = await gather(*tasks, op="resolve_reposet-s + meta_ids")
+        if meta_ids is None:
+            meta_ids, *reposets = reposets
+    repos = []
     checked_repos = set()
     wrong_format = set()
-    for r in repos:
-        try:
-            checked_repos.add(r.split("/", 1)[1])
-        except IndexError:
-            wrong_format.add(r)
+    prefix = None
+    for reposet in reposets:
+        resolved = set()
+        for r in reposet:
+            try:
+                repo_prefix, repo = r.split("/", 1)
+            except ValueError:
+                wrong_format.add(r)
+                continue
+            if prefix is None:
+                prefix = repo_prefix
+            elif prefix != repo_prefix:
+                raise ResponseError(InvalidRequestError(
+                    detail=f'Mixed services are not allowed: "{prefix}" vs. "{r}"',
+                    pointer=pointer))
+            checked_repos.add(repo)
+            if strip_prefix:
+                resolved.add(repo)
+            else:
+                resolved.add(r)
+        if separate:
+            repos.append(resolved)
+        else:
+            repos.extend(resolved)
+    if prefix is None:
+        raise ResponseError(InvalidRequestError(
+            detail="The service prefix may not be empty.",
+            pointer=pointer))
     if wrong_format:
         raise ResponseError(BadRequestError(
             'The following repositories are malformed (missing "github.com/your_org/" prefix?): %s'
             % wrong_format))
-    checker = await access_classes["github"](account, meta_ids, sdb, mdb, cache).load()
+    checkers = checkers or {}
+    if (checker := checkers.get(prefix)) is None:
+        checkers[prefix] = checker = await access_classes["github"](
+            account, meta_ids, sdb, mdb, cache).load()
     if denied := await checker.check(checked_repos):
         log = logging.getLogger(f"{metadata.__package__}.resolve_repos")
         log.warning("access denied account %d%s: user sent %s we've got %s",
                     account, meta_ids, denied, list(checker.installed_repos()))
         raise ResponseError(ForbiddenError(
-            detail='the following repositories are access denied for account %d (missing "'
+            detail='The following repositories are access denied for account %d (missing "'
                    'github.com/" prefix?): %s' % (account, denied),
         ))
-    if strip_prefix:
-        repos = checked_repos
-    return repos, meta_ids
+    if not separate:
+        if strip_prefix:
+            repos = checked_repos
+        else:
+            repos = set(repos)
+    return repos, prefix + "/", meta_ids
 
 
 @sentry_span
@@ -159,7 +214,7 @@ async def load_account_reposets(account: int,
                                 cache: Optional[aiomcache.Client],
                                 slack: Optional[SlackWebClient],
                                 check_progress: bool = True,
-                                ) -> List[Mapping]:
+                                ) -> List[Mapping[str, Any]]:
     """
     Load the account's repository sets and create one if no exists.
 
