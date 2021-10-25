@@ -8,7 +8,8 @@ from athenian.api.controllers.features.metric import MetricFloat, MetricInt, Met
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
     BinnedMetricCalculator, make_register_metric, MetricCalculator, MetricCalculatorEnsemble, \
     RatioCalculator, SumMetricCalculator
-from athenian.api.controllers.miners.types import DeploymentFacts, ReleaseParticipants, \
+from athenian.api.controllers.miners.types import DeploymentFacts, PullRequestJIRAIssueItem, \
+    ReleaseParticipants, \
     ReleaseParticipationKind
 from athenian.api.models.persistentdata.models import DeployedComponent, DeploymentNotification
 from athenian.api.models.web import DeploymentMetricID
@@ -21,12 +22,17 @@ T = TypeVar("T")
 class DeploymentMetricCalculatorEnsemble(MetricCalculatorEnsemble):
     """MetricCalculatorEnsemble adapted for releases."""
 
-    def __init__(self, *metrics: str, quantiles: Sequence[float], quantile_stride: int):
+    def __init__(self,
+                 *metrics: str,
+                 quantiles: Sequence[float],
+                 quantile_stride: int,
+                 jira: Dict[str, PullRequestJIRAIssueItem]):
         """Initialize a new instance of DeploymentMetricCalculatorEnsemble class."""
         super().__init__(*metrics,
                          quantiles=quantiles,
                          quantile_stride=quantile_stride,
-                         class_mapping=metric_calculators)
+                         class_mapping=metric_calculators,
+                         jira=jira)
 
 
 class DeploymentBinnedMetricCalculator(BinnedMetricCalculator):
@@ -162,7 +168,7 @@ class SuccessfulDeploymentsCounter(SumMetricCalculator[int]):
                  max_times: np.ndarray,
                  **kwargs) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
-        deployed = facts[DeploymentNotification.finished_at.name].values
+        deployed = facts[DeploymentNotification.finished_at.name].values.copy()
         unsuccessful = (
             facts[DeploymentNotification.conclusion.name].values
             != DeploymentNotification.CONCLUSION_SUCCESS
@@ -184,7 +190,7 @@ class FailedDeploymentsCounter(SumMetricCalculator[int]):
                  max_times: np.ndarray,
                  **kwargs) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
-        deployed = facts[DeploymentNotification.finished_at.name].values
+        deployed = facts[DeploymentNotification.finished_at.name].values.copy()
         unfailed = (
             facts[DeploymentNotification.conclusion.name].values
             != DeploymentNotification.CONCLUSION_FAILURE
@@ -209,7 +215,7 @@ class DurationCalculator(AverageMetricCalculator[datetime]):
                  **kwargs) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         started = facts[DeploymentNotification.started_at.name].values
-        finished = facts[DeploymentNotification.finished_at.name].values
+        finished = facts[DeploymentNotification.finished_at.name].values.copy()
         cancelled = (
             facts[DeploymentNotification.conclusion.name].values
             == DeploymentNotification.CONCLUSION_CANCELLED
@@ -236,7 +242,7 @@ class SuccessfulDurationCalculator(AverageMetricCalculator[datetime]):
                  **kwargs) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         started = facts[DeploymentNotification.started_at.name].values
-        finished = facts[DeploymentNotification.finished_at.name].values
+        finished = facts[DeploymentNotification.finished_at.name].values.copy()
         unsuccessful = (
             facts[DeploymentNotification.conclusion.name].values
             != DeploymentNotification.CONCLUSION_SUCCESS
@@ -263,7 +269,7 @@ class FailedDurationCalculator(AverageMetricCalculator[datetime]):
                  **kwargs) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         started = facts[DeploymentNotification.started_at.name].values
-        finished = facts[DeploymentNotification.finished_at.name].values
+        finished = facts[DeploymentNotification.finished_at.name].values.copy()
         unfailed = (
             facts[DeploymentNotification.conclusion.name].values
             != DeploymentNotification.CONCLUSION_FAILURE
@@ -379,16 +385,15 @@ class DeployedCommitsCounter(SumCalculator):
     agg = sum
 
 
-def _unique_len_sum(values: np.ndarray) -> int:
-    return len(np.unique(np.concatenate(values)))
-
-
 @register_metric(DeploymentMetricID.DEP_JIRA_ISSUES_COUNT)
 class DeployedIssuesCounter(SumCalculator):
     """Calculate the number of deployed JIRA issues."""
 
     dimension = "jira"
-    agg = _unique_len_sum
+
+    def agg(self, values: np.ndarray) -> int:
+        """Calculate the number of unique issues."""
+        return len(np.unique(np.concatenate(values)))
 
 
 @register_metric(DeploymentMetricID.DEP_JIRA_BUG_FIXES_COUNT)
@@ -398,7 +403,7 @@ class DeployedBugFixesCounter(SumCalculator):
     dimension = "jira"
 
     def agg(self, values: np.ndarray) -> int:
-        """Calculate the number of issues with lower(type) == "bug"."""
+        """Calculate the number of unique issues with lower(type) == "bug"."""
         deployed = np.unique(np.concatenate(values))
         jira = self.jira
-        return sum(jira[i].type.lower() == "bug" for i in deployed)
+        return sum(jira[i.decode()].type.lower() == "bug" for i in deployed)
