@@ -201,6 +201,7 @@ def setup_context(log: logging.Logger) -> None:
 
     sentry_log = logging.getLogger("sentry_sdk.errors")
     sentry_log.handlers.clear()
+    flogging.trailing_dot_exceptions.add(sentry_log.name)
     sentry_sdk.init(
         environment=sentry_env,
         dsn="https://%s@sentry.io/%s" % (sentry_key, sentry_project),
