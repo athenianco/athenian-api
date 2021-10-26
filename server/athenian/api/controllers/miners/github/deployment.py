@@ -148,8 +148,9 @@ async def mine_deployments(repo_node_ids: Collection[int],
         else:
             releases = missed_releases
     await labels
-    joined = notifications.join([components, facts, labels.result()] +
-                                ([releases] if not releases.empty else []))
+    joined = notifications \
+        .join([components, facts], how="inner") \
+        .join([labels.result()] + ([releases] if not releases.empty else []))
     joined = _adjust_empty_releases(joined)
     joined["labels"] = joined["labels"].astype(object, copy=False)
     no_labels = joined["labels"].isnull().values
@@ -161,6 +162,8 @@ async def mine_deployments(repo_node_ids: Collection[int],
 
 @sentry_span
 def _extract_mentioned_people(df: pd.DataFrame) -> np.ndarray:
+    if df.empty:
+        return np.array([], dtype=int)
     return np.unique(np.concatenate([
         *df[DeploymentFacts.f.pr_authors].values,
         *df[DeploymentFacts.f.commit_authors].values,
@@ -344,10 +347,9 @@ async def _filter_by_prs(df: pd.DataFrame,
                          ) -> pd.DataFrame:
     pr_node_ids = np.concatenate(df[DeploymentFacts.f.prs].values)
     unique_pr_node_ids = np.unique(pr_node_ids)
-    steps = np.array([len(arr) for arr in df[DeploymentFacts.f.prs].values], dtype=int)
-    offsets = np.zeros(len(steps), dtype=int)
-    np.cumsum(steps[:-1], out=offsets[1:])
-    del steps
+    lengths = np.array([len(arr) for arr in df[DeploymentFacts.f.prs].values] + [0], dtype=int)
+    offsets = np.zeros(len(lengths), dtype=int)
+    np.cumsum(lengths[:-1], out=offsets[1:])
     filters = [
         PullRequest.acc_id.in_(meta_ids),
         PullRequest.node_id.in_any_values(unique_pr_node_ids),
@@ -384,7 +386,7 @@ async def _filter_by_prs(df: pd.DataFrame,
         query = await generate_jira_prs_query(
             filters, jira, mdb, cache, columns=PullRequest.node_id)
     else:
-        query = select([PullRequest.node_id.name]).where(and_(*filters))
+        query = select([PullRequest.node_id]).where(and_(*filters))
     tasks.insert(0, mdb.fetch_all(query))
     pr_rows, *label_df = await gather(*tasks, op="_filter_by_prs/sql")
     prs = np.array([r[0] for r in pr_rows])
@@ -396,12 +398,16 @@ async def _filter_by_prs(df: pd.DataFrame,
             label_df[PullRequestLabel.name.name].values,
             labels,
         )
-        prs = prs[np.in1d(prs, left.values, assume_unique=True)]
-    indexes = np.flatnonzero(np.in1d(
-        np.array(pr_node_ids), prs,
-        assume_unique=len(pr_node_ids) == len(unique_pr_node_ids)))
-    passed = np.searchsorted(offsets, indexes)
-    return df.take(passed)
+        prs = left.values
+    passed = np.in1d(
+        np.concatenate([pr_node_ids, [0]]), prs,
+        assume_unique=len(pr_node_ids) == len(unique_pr_node_ids))
+    if labels.include or jira:
+        passed = np.bitwise_or.reduceat(passed, offsets)
+    else:
+        passed = np.bitwise_and.reduceat(passed, offsets)
+    passed[lengths == 0] = False
+    return df.take(np.flatnonzero(passed))
 
 
 @sentry_span

@@ -519,6 +519,7 @@ class MetricEntriesCalculator:
             ",".join(str(sorted(r)) for r in repositories),
             ";".join(",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(p.items()))
                      for p in participants),
+            ";".join(",".join(sorted(e)) for e in environments),
             pr_labels,
             with_labels, without_labels,
             jira,
