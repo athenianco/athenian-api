@@ -700,7 +700,9 @@ class MetricEntriesCalculator:
             precomputed_tasks.append(self.done_prs_facts_loader.load_precomputed_done_candidates(
                 time_from, time_to, repositories, default_branches, release_settings,
                 self._account, self._pdb))
+            # augment blacklist with deployed PRs
             (precomputed_facts, _), blacklist = await gather(*precomputed_tasks)
+            blacklist = (blacklist[0] | precomputed_facts.keys(), blacklist[1])
         else:
             (precomputed_facts, _) = blacklist = await precomputed_tasks[0]
         ambiguous = blacklist[1]

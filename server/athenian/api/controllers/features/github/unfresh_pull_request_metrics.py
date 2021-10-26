@@ -209,6 +209,7 @@ class UnfreshPullRequestFactsFetcher:
                            log: logging.Logger) -> None:
         """Insert missing deployments info in the PR facts."""
         log.info("appending %d deployments", len(deps))
+        assert deps.index.duplicated().sum() == 0
         pr_node_ids = deps.index.get_level_values(0).values
         names = deps.index.get_level_values(1).values
         finisheds = deps[DeploymentNotification.finished_at.name].values
