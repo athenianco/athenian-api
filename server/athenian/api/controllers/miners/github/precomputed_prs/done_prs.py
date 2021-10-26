@@ -60,6 +60,8 @@ class DonePRFactsLoader:
 
         We find all the done PRs for a given time frame, repositories, and release match settings.
 
+        Note: we don't include the deployed PRs!
+
         :return: 1. Done PR node IDs. \
                  2. Map from repository name to ambiguous PR node IDs which are released by \
                  branch with tag_or_branch strategy and without tags on the time interval.
