@@ -5,8 +5,10 @@ import json
 import numpy as np
 import pandas as pd
 import pytest
+from sqlalchemy import delete, insert
 
 from athenian.api.controllers.miners.github import developer
+from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel
 from athenian.api.models.web import CalculatedCodeCheckMetrics, CalculatedDeploymentMetric, \
     CalculatedDeveloperMetrics, CalculatedLinearMetricValues, CalculatedPullRequestMetrics, \
     CalculatedReleaseMetric, CodeBypassingPRsMeasurement, CodeCheckMetricID, DeploymentMetricID, \
@@ -2219,3 +2221,94 @@ async def test_deployment_metrics_nasty_input(
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == code, "Response body is : " + body
+
+
+async def test_deployment_metrics_filter_labels(
+        client, headers, precomputed_deployments, rdb, client_cache):
+    body = {
+        "account": 1,
+        "date_from": "2015-01-12",
+        "date_to": "2020-03-01",
+        "for": [{
+            "pr_labels_include": ["bug", "plumbing", "enhancement"],
+        }],
+        "metrics": [DeploymentMetricID.DEP_COUNT],
+        "granularities": ["all"],
+    }
+
+    async def request():
+        response = await client.request(
+            method="POST", path="/v1/metrics/deployments", headers=headers, json=body,
+        )
+        rbody = (await response.read()).decode("utf-8")
+        assert response.status == 200, "Response body is : " + rbody
+        return [CalculatedDeploymentMetric.from_dict(obj) for obj in json.loads(rbody)]
+
+    model = await request()
+    assert model[0].values[0].values[0] == 1
+
+    del body["for"][0]["pr_labels_include"]
+    body["for"][0]["pr_labels_exclude"] = ["bug", "plumbing", "enhancement"]
+    model = await request()
+    assert model[0].values[0].values[0] == 0
+
+    del body["for"][0]["pr_labels_exclude"]
+    await rdb.execute(insert(DeployedLabel).values({
+        DeployedLabel.account_id: 1,
+        DeployedLabel.deployment_name: "Dummy deployment",
+        DeployedLabel.key: "nginx",
+        DeployedLabel.value: 504,
+    }))
+    body["for"][0]["with_labels"] = {"nginx": 503}
+    model = await request()
+    assert model[0].values[0].values[0] == 0
+
+    body["for"][0]["with_labels"] = {"nginx": 504}
+    model = await request()
+    assert model[0].values[0].values[0] == 1
+
+    del body["for"][0]["with_labels"]
+    body["for"][0]["without_labels"] = {"nginx": 503}
+    model = await request()
+    assert model[0].values[0].values[0] == 1
+
+    body["for"][0]["without_labels"] = {"nginx": 504}
+    model = await request()
+    assert model[0].values[0].values[0] == 0
+
+
+async def test_deployment_metrics_environments(
+        client, headers, sample_deployments, rdb, client_cache):
+    await rdb.execute(delete(DeployedComponent)
+                      .where(DeployedComponent.deployment_name == "staging_2018_12_02"))
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "for": [{
+            "environments": [["production"]],
+        }],
+        "metrics": [DeploymentMetricID.DEP_SUCCESS_COUNT,
+                    DeploymentMetricID.DEP_DURATION_SUCCESSFUL],
+        "granularities": ["all"],
+    }
+
+    async def request():
+        response = await client.request(
+            method="POST", path="/v1/metrics/deployments", headers=headers, json=body,
+        )
+        rbody = (await response.read()).decode("utf-8")
+        assert response.status == 200, "Response body is : " + rbody
+        model = [CalculatedDeploymentMetric.from_dict(obj) for obj in json.loads(rbody)]
+        return model
+
+    model = await request()
+    assert len(model) == 1
+    assert model[0].values[0].values[0] == 4
+    body["for"][0]["environments"] = [["staging"], ["production"]]
+    model = await request()
+    assert len(model) == 2
+    assert model[0].for_.environments == [["staging"]]
+    assert model[0].values[0].values[0] == 3
+    assert model[1].for_.environments == [["production"]]
+    assert model[1].values[0].values[0] == 4

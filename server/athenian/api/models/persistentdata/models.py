@@ -2,6 +2,8 @@ from datetime import datetime, timezone
 
 from sqlalchemy import BigInteger, Boolean, Column, ForeignKeyConstraint, func, Integer, JSON, \
     Text, TIMESTAMP
+from sqlalchemy.dialects import sqlite
+from sqlalchemy.dialects.postgresql import JSONB
 
 from athenian.api.models import create_base
 
@@ -81,7 +83,7 @@ class DeployedLabel(Base):
 
     deployment_name = Column(Text(), primary_key=True)
     key = Column(Text(), primary_key=True)
-    value = Column(JSON())
+    value = Column(JSONB().with_variant(JSON(), sqlite.dialect.name))
 
 
 class DeployedComponent(create_time_mixin(created_at=True, updated_at=False), Base):

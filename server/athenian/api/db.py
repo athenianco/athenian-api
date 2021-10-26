@@ -292,8 +292,9 @@ class ParallelDatabase(databases.Database):
         self._introspect_types_cache[weakref.ref(conn)] = self._introspect_types_cache_db
         self._introspect_type_cache[weakref.ref(conn)] = self._introspect_type_cache_db
         conn.add_termination_listener(self._on_connection_close)
-        await conn.set_type_codec(
-            "json", encoder=json.dumps, decoder=json.loads, schema="pg_catalog")
+        for flavor in ("json", "jsonb"):
+            await conn.set_type_codec(
+                flavor, encoder=json.dumps, decoder=json.loads, schema="pg_catalog")
         if self._ignore_hstore:
             return
         try:
