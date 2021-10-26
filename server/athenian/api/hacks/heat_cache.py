@@ -100,7 +100,8 @@ def main():
     log = logging.getLogger("heater")
     args = _parse_args()
     setup_context(log)
-    sentry_sdk.add_breadcrumb(category="origin", message="heater", level="info")
+    with sentry_sdk.Hub.current.configure_scope() as scope:
+        scope.transaction = "heater"
     if not check_schema_versions(args.metadata_db,
                                  args.state_db,
                                  args.precomputed_db,

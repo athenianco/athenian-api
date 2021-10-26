@@ -544,19 +544,16 @@ class FlakyCommitChecksCounter(SumMetricCalculator[int]):
         check_suite_conclusions = facts[CheckRun.check_suite_conclusion.name].values.astype("S")
         success_mask, failure_mask = calculate_check_run_outcome_masks(
             statuses, conclusions, check_suite_conclusions, True, True, False)
-        commits = facts[CheckRun.commit_node_id.name].values
+        commits = facts[CheckRun.commit_node_id.name].values.copy()
         check_run_names = np.char.encode(facts[CheckRun.name.name].values.astype("U"), "UTF-8")
         commits_with_names = np.char.add(int_to_str(commits), check_run_names)
         _, unique_map = np.unique(commits_with_names, return_inverse=True)
         unique_flaky_indexes = np.intersect1d(unique_map[success_mask], unique_map[failure_mask])
         flaky_mask = np.in1d(unique_map, unique_flaky_indexes)
-        # do not count the same check suite twice if there is more than one flaky check run
-        check_suites = facts[CheckRun.check_suite_node_id.name].values
-        flaky_check_suites = np.unique(check_suites[flaky_mask])
-        unique_check_suites, first_encounters = np.unique(check_suites, return_index=True)
-        flaky_indexes = first_encounters[np.in1d(
-            unique_check_suites, flaky_check_suites, assume_unique=True)]
-
+        commits[~flaky_mask] = 0
+        unique_commits, flaky_indexes = np.unique(commits, return_index=True)
+        if len(unique_commits) and unique_commits[0] == 0:
+            flaky_indexes = flaky_indexes[1:]
         started = facts[check_suite_started_column].values.astype(min_times.dtype)
         result = np.zeros((len(min_times), len(facts)), int)
         mask = np.zeros(len(facts), bool)
