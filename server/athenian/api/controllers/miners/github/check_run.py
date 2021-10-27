@@ -165,13 +165,13 @@ async def _mine_check_runs(time_from: datetime,
 
     # some status contexts represent the start and the finish events, join them together
     df_len = len(df)
-    _merge_status_contexts(df)
+    df = _merge_status_contexts(df)
     log.info("merged %d / %d", df_len - len(df), df_len)
 
     # "Re-run jobs" may produce duplicate check runs in the same check suite, split them
     # in separate artificial check suites by enumerating in chronological order
     df_len = len(df)
-    _split_duplicate_check_runs(df)
+    df = _split_duplicate_check_runs(df)
     log.info("split %d / %d", len(df) - df_len, df_len)
 
     _postprocess_check_runs(df)
@@ -450,61 +450,82 @@ def _filter_by_pr_labels(df: pd.DataFrame,
 
 
 @sentry_span
-def _merge_status_contexts(df: pd.DataFrame) -> None:
+def _merge_status_contexts(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Infer the check run completion time from two separate events: PENDING + SUCCESS/FAILURE/etc.
+
+    See: DEV-2610, DEV-3103.
+    """
     if df.empty:
-        return
+        return df
+    # There are 4 possible status context statuses:
+    # ERROR
+    # FAILURE
+    # SUCCESS
+    # PENDING
+    #
+    # Required order:
+    # PENDING, ERROR, FAILURE, SUCCESS
+    statuses = df[CheckRun.status.name].values.astype("S", copy=False).copy()
+    statuses[statuses == b"PENDING"] = b"A"
+    starteds = df[CheckRun.started_at.name].values
+    order = np.argsort(np.char.add(int_to_str(starteds.view(int)), statuses))
+    df = df.take(order)
+    statuses = statuses[order]
+    starteds = starteds[order]
+    del order
+    df.reset_index(inplace=True, drop=True)
+    # Important: we must sort in any case
     no_finish = np.flatnonzero(df[CheckRun.completed_at.name].isnull().values)
     if len(no_finish) == 0:
-        return
+        # sweet dreams...
+        return df
     no_finish_urls = df[CheckRun.url.name].values[no_finish].astype("S")
+    empty_url_mask = no_finish_urls == b""
+    no_finish_urls[empty_url_mask] = np.char.encode(
+        df[CheckRun.name.name].values[no_finish[empty_url_mask]].astype("U"), "UTF-8")
     no_finish_parents = \
         df[CheckRun.check_suite_node_id.name].values[no_finish].astype(int, copy=False)
     no_finish_seeds = np.char.add(int_to_str(no_finish_parents), no_finish_urls)
-    _, first_encounters, indexes, counts = np.unique(
-        no_finish_seeds, return_index=True, return_inverse=True, return_counts=True)
-    indexes_original = np.argsort(indexes)
-    # give more priority to completed runs
+    _, indexes, counts = np.unique(no_finish_seeds, return_inverse=True, return_counts=True)
+    firsts = np.zeros(len(counts), dtype=int)
+    np.cumsum(counts[:-1], out=firsts[1:])
+    lasts = np.roll(firsts, -1)
+    lasts[-1] = len(indexes)
+    lasts -= 1
+    # order by CheckRun.started_at + (PENDING, ERROR, FAILURE, SUCCESS) + check suite + run type
+    indexes_original = np.argsort(indexes, kind="stable")
     no_finish_original = no_finish[indexes_original]
-    no_finish_original_statuses = df[CheckRun.status.name].values[no_finish_original]
-    timestamps = df[CheckRun.started_at.name].values[no_finish_original] + (
-        (no_finish_original_statuses != "PENDING") * np.array([1], dtype="timedelta64[us]")
-    ) + (
-        (no_finish_original_statuses == "SUCCESS") * np.array([1], dtype="timedelta64[us]")
-    )
-    captured = counts > 1
-    offsets = np.zeros(len(counts), dtype=int)
-    np.cumsum(counts[:-1], out=offsets[1:])
-    mins = np.minimum.reduceat(timestamps, offsets)[captured]
-    maxs = np.maximum.reduceat(timestamps, offsets)
-    matched_maxs = np.repeat(np.arange(len(counts)), counts) * \
-        (timestamps == np.repeat(maxs, counts))
-    argmaxs = indexes_original[np.unique(matched_maxs, return_index=True)[1][captured]]
-    maxs = maxs[captured]
-    statuses = df[CheckRun.status.name].values[no_finish[argmaxs]]
-    # we have to cast dtype here to prevent changing dtype in df to object
-    mins = pd.Series(mins).astype(df[CheckRun.started_at.name].dtype)
-    maxs = pd.Series(maxs).astype(df[CheckRun.started_at.name].dtype)
-    first_encounters = first_encounters[captured]
-    first_no_finish = no_finish[first_encounters]
-    # df.loc requires a matching index
-    mins.index = maxs.index = first_no_finish
-    df.loc[first_no_finish, CheckRun.started_at.name] = mins
-    df.loc[first_no_finish, CheckRun.completed_at.name] = maxs
-    df.loc[first_no_finish, CheckRun.status.name] = statuses
-    secondary = no_finish[np.setdiff1d(
-        np.flatnonzero(np.in1d(indexes, np.flatnonzero(captured))),
-        first_encounters,
-        assume_unique=True)]
-    df.drop(index=secondary, inplace=True)
-    df.reset_index(inplace=True, drop=True)
+    no_finish_original_statuses = statuses[no_finish_original]
+    matched_beg = no_finish_original_statuses[firsts] == b"A"  # replaced b"PENDING" earlier
+    matched_end = counts > 1  # the status does not matter
+    matched = matched_beg & matched_end
+    matched_firsts = firsts[matched]
+    matched_lasts = lasts[matched]
+
+    # calculate the indexes of removed (merged) check runs
+    drop_mask = np.zeros(len(no_finish_original), bool)
+    lengths = matched_lasts - 1 - matched_firsts
+    dropped = np.repeat(matched_lasts - 1 - lengths.cumsum(), lengths) + np.arange(lengths.sum())
+    drop_mask[dropped] = True
+    dropped = no_finish_original[drop_mask]
+
+    matched_first_starteds = starteds[no_finish_original[matched_firsts]]
+    matched_indexes = no_finish_original[matched_lasts]
+    df[CheckRun.started_at.name].values[matched_indexes] = matched_first_starteds
+    df[CheckRun.completed_at.name].values[matched_indexes] = starteds[matched_indexes]
+    if len(dropped):
+        df.drop(index=dropped, inplace=True)
+        df.reset_index(inplace=True, drop=True)
+    return df
 
 
 @sentry_span
-def _split_duplicate_check_runs(df: pd.DataFrame) -> None:
+def _split_duplicate_check_runs(df: pd.DataFrame) -> pd.DataFrame:
     # DEV-2612 split older re-runs to artificial check suites
+    # we require the df to be sorted by CheckRun.started_at
     if df.empty:
-        return
-    df.sort_values(CheckRun.started_at.name, ignore_index=True, inplace=True)
+        return df
     dupe_index = df.groupby(
         [CheckRun.check_suite_node_id.name, CheckRun.name.name], sort=False,
     ).cumcount().values
@@ -529,3 +550,4 @@ def _split_duplicate_check_runs(df: pd.DataFrame) -> None:
     if changed:
         _calculate_check_suite_started(df)
         df.reset_index(inplace=True, drop=True)
+    return df
