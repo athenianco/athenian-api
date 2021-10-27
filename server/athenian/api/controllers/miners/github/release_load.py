@@ -165,7 +165,7 @@ class ReleaseLoader:
                 except KeyError:
                     missing_all.append((repo, match))
                     continue
-                assert rt_from <= rt_to
+                assert rt_from <= rt_to, f"{rt_from} {rt_to}"
                 my_time_from = time_from
                 my_time_to = time_to
                 if applied_match == ReleaseMatch.tag_or_branch and match == ReleaseMatch.tag:
