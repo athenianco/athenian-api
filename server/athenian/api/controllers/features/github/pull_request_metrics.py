@@ -1060,6 +1060,9 @@ class EnvironmentsMarker(MetricCalculator[np.ndarray]):
         not_found_mask = unique_fact_envs[my_env_indexes] != envs
         my_env_indexes[not_found_mask] = np.arange(-1, -1 - not_found_mask.sum(), -1)
         imap = imap.astype(np.uint64)
+        unused = np.setdiff1d(np.arange(len(unique_fact_envs)), my_env_indexes, assume_unique=True)
+        if len(unused):
+            imap[np.in1d(imap, unused)] = 0
 
         lengths = np.array([len(v) for v in fact_envs])
         offsets = np.zeros(len(lengths) + 1, dtype=int)
@@ -1088,9 +1091,7 @@ class EnvironmentsMarker(MetricCalculator[np.ndarray]):
                 conclusions_by_env[pos] = all_conclusions[ix_mask]
                 successful_by_env[pos] = np.bitwise_or.reduceat(
                     successful_conclusions[ix_mask], internal_offsets)
-        unused = np.setdiff1d(np.arange(len(unique_fact_envs)), my_env_indexes, assume_unique=True)
-        if len(unused):
-            imap[np.in1d(imap, unused)] = 0
+
         env_marks = np.bitwise_or.reduceat(imap, offsets)
         env_marks[no_deps[:len(env_marks)]] = 0
         env_marks = np.pad(env_marks, (0, len(lengths) - len(env_marks)))
