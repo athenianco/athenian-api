@@ -343,8 +343,7 @@ def _postprocess_check_runs(df: pd.DataFrame) -> None:
     # there can be checks that finished before starting 🤦‍
     # pd.DataFrame.max(axis=1) does not work correctly because of the NaT-s
     started_ats = df[CheckRun.started_at.name].values
-    df[CheckRun.completed_at.name] = np.maximum(
-        df[CheckRun.completed_at.name].fillna(pd.NaT).values, started_ats)
+    df[CheckRun.completed_at.name] = np.maximum(df[CheckRun.completed_at.name].values, started_ats)
     df[CheckRun.completed_at.name] = df[CheckRun.completed_at.name].astype(started_ats.dtype)
 
     for col in (CheckRun.check_run_node_id, CheckRun.check_suite_node_id,
@@ -400,6 +399,8 @@ async def _append_pull_request_check_runs_outside(df: pd.DataFrame,
         del df[col.name]
     if not extra_df.empty:
         df = df.append(extra_df, ignore_index=True)
+    df[CheckRun.completed_at.name] = df[CheckRun.completed_at.name].astype(
+        df[CheckRun.started_at.name].dtype)
     return df, df_labels
 
 
