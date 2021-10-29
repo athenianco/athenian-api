@@ -810,7 +810,11 @@ class MetricEntriesCalculator:
         done_deps, *done_jira_map = await gather(*tasks)
         if with_jira_map:
             for pr, jira in done_jira_map[0].items():
-                precomputed_facts[pr].jira_ids = jira
+                try:
+                    precomputed_facts[pr].jira_ids = jira
+                except KeyError:
+                    assert jira
+                    continue
             for pr, jira_key in zip(new_jira.get_level_values(0).values,
                                     new_jira.get_level_values(1).values):
                 try:
