@@ -115,7 +115,7 @@ def setup_prometheus(app: web.Application) -> None:
     app[PROMETHEUS_REGISTRY_VAR_NAME] = registry
     app[METRICS_CALCULATOR_VAR_NAME] = ContextVar(METRICS_CALCULATOR_VAR_NAME, default=None)
     app["request_count"] = prometheus_client.Counter(
-        "requests_total", "Total Request Count",
+        "requests_total", "Total request count",
         ["app_name", "version", "method", "endpoint", "http_status"],
         registry=registry,
     )

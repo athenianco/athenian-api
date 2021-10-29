@@ -5,7 +5,7 @@
 cimport cython
 from cython.operator cimport dereference
 from libc.stdint cimport int8_t, int32_t, uint32_t, int64_t, uint64_t
-from libc.string cimport memset
+from libc.string cimport memcpy, memset
 from libcpp cimport bool
 from libcpp.vector cimport vector
 import numpy as np
@@ -342,12 +342,11 @@ def mark_dag_parents(hashes: np.ndarray,
 cdef void _copy_parents_to_array(const vector[vector[uint32_t]] *parents,
                                  uint32_t[:] output,
                                  int64_t[:] splits) nogil:
-    cdef int64_t i, j, size, offset = 0
+    cdef int64_t i, offset = 0
     for i in range(<int64_t>parents.size()):
-        vec = dereference(parents)[i]
-        for j in range(<int64_t>vec.size()):
-            output[offset] = vec[j]
-            offset += 1
+        vec = dereference(parents)[i]  # (*parents)[i]
+        memcpy(&output[offset], vec.data(), 4 * vec.size())
+        offset += vec.size()
         splits[i] = offset
 
 
