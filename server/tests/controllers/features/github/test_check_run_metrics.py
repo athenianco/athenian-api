@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import List
 
 import numpy as np
@@ -7,11 +8,13 @@ import pytest
 
 from athenian.api.controllers.features.entries import MetricEntriesCalculator
 from athenian.api.controllers.features.github.check_run_metrics import \
-    CheckRunHistogramCalculatorEnsemble
+    CheckRunHistogramCalculatorEnsemble, CheckRunMetricCalculatorEnsemble
 from athenian.api.controllers.features.github.check_run_metrics_accelerated import \
     calculate_interval_intersections
 from athenian.api.controllers.features.histogram import Histogram, Scale
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.controllers.miners.github.check_run import _postprocess_check_runs, \
+    _split_duplicate_check_runs
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import CheckRun
 from athenian.api.models.web import CodeCheckMetricID
@@ -79,6 +82,9 @@ async def test_check_run_metrics_suite_counts(
     (CodeCheckMetricID.CONCURRENCY, 1.0),
     (CodeCheckMetricID.CONCURRENCY_MAX, 1),
     (CodeCheckMetricID.ELAPSED_TIME_PER_CONCURRENCY, None),
+    (CodeCheckMetricID.SUITE_OCCUPANCY, None),
+    (CodeCheckMetricID.SUITE_CRITICAL_OCCUPANCY, None),
+    (CodeCheckMetricID.SUITE_IMBALANCE, None),
 ])
 @with_defer
 async def test_check_run_metrics_blitz(metrics_calculator: MetricEntriesCalculator,
@@ -225,3 +231,32 @@ def test_elapsed_time_per_concurrency_histogram():
                 interquartile=(2.9166666865348816, 3.90625)),
         ]],
     }
+
+
+@pytest.fixture(scope="module")
+def occupancy_facts() -> pd.DataFrame:
+    df = pd.read_csv(Path(__file__).parent / "check_runs.csv.gz")
+    for col in (CheckRun.started_at,
+                CheckRun.completed_at,
+                CheckRun.pull_request_created_at,
+                CheckRun.pull_request_closed_at,
+                CheckRun.committed_date):
+        df[col.name] = df[col.name].astype(np.datetime64)
+    df = _split_duplicate_check_runs(df)
+    _postprocess_check_runs(df)
+    return df
+
+
+@pytest.mark.parametrize("metric, value", [
+    (CodeCheckMetricID.SUITE_OCCUPANCY, 0.42699405550956726),
+    (CodeCheckMetricID.SUITE_CRITICAL_OCCUPANCY, 0.5141602754592896),
+    (CodeCheckMetricID.SUITE_IMBALANCE, timedelta(seconds=166)),
+])
+def test_occupancy_metrics(occupancy_facts, metric, value):
+    cls = CheckRunMetricCalculatorEnsemble(metric, quantiles=(0, 1), quantile_stride=0)
+    cls(occupancy_facts,
+        np.array([datetime(2021, 1, 1)], dtype="datetime64[ns]"),
+        np.array([datetime(2021, 11, 1)], dtype="datetime64[ns]"),
+        [np.arange(len(occupancy_facts))],
+        )
+    assert cls.values()[metric][0][0].value == value

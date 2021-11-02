@@ -240,7 +240,7 @@ async def _disambiguate_pull_requests(df: pd.DataFrame,
     df[pull_request_merged_column].fillna(False, inplace=True)
 
     # do not let different check runs belonging to the same suite map to different PRs
-    _calculate_check_suite_started_finished(df)
+    _calculate_check_suite_started(df)
     try:
         check_runs_outside_pr_lifetime_indexes = \
             np.nonzero(~df[check_suite_started_column].between(
@@ -346,6 +346,9 @@ def _postprocess_check_runs(df: pd.DataFrame) -> None:
     started_ats = df[CheckRun.started_at.name].values
     df[CheckRun.completed_at.name] = np.maximum(df[CheckRun.completed_at.name].values, started_ats)
     df[CheckRun.completed_at.name] = df[CheckRun.completed_at.name].astype(started_ats.dtype)
+    df[check_suite_completed_column] = df.groupby(
+        CheckRun.check_suite_node_id.name, sort=False,
+    )[CheckRun.completed_at.name].transform("max")
 
     for col in (CheckRun.check_run_node_id, CheckRun.check_suite_node_id,
                 CheckRun.repository_node_id, CheckRun.commit_node_id):
@@ -423,10 +426,10 @@ async def _read_sql_query_with_join_collapse(query: ClauseElement,
                 await transaction.rollback()
 
 
-def _calculate_check_suite_started_finished(df: pd.DataFrame) -> None:
-    group_by = df.groupby(CheckRun.check_suite_node_id.name, sort=False)
-    df[check_suite_started_column] = group_by[CheckRun.started_at.name].transform("min")
-    df[check_suite_completed_column] = group_by[CheckRun.completed_at.name].transform("max")
+def _calculate_check_suite_started(df: pd.DataFrame) -> None:
+    df[check_suite_started_column] = df.groupby(
+        CheckRun.check_suite_node_id.name, sort=False,
+    )[CheckRun.started_at.name].transform("min")
 
 
 @sentry_span
@@ -550,6 +553,6 @@ def _split_duplicate_check_runs(df: pd.DataFrame) -> pd.DataFrame:
             df.loc[mask, CheckRun.check_suite_conclusion.name] = c
             changed = True
     if changed:
-        _calculate_check_suite_started_finished(df)
+        _calculate_check_suite_started(df)
         df.reset_index(inplace=True, drop=True)
     return df
