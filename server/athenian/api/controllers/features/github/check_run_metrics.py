@@ -14,7 +14,8 @@ from athenian.api.controllers.features.metric_calculator import AverageMetricCal
     BinnedHistogramCalculator, BinnedMetricCalculator, HistogramCalculatorEnsemble, \
     make_register_metric, MaxMetricCalculator, MetricCalculator, MetricCalculatorEnsemble, \
     RatioCalculator, SumMetricCalculator
-from athenian.api.controllers.miners.github.check_run import check_suite_started_column, \
+from athenian.api.controllers.miners.github.check_run import check_suite_completed_column, \
+    check_suite_started_column, \
     pull_request_closed_column, pull_request_merged_column, pull_request_started_column
 from athenian.api.int_to_str import int_to_str
 from athenian.api.models.metadata.github import CheckRun
@@ -102,9 +103,8 @@ def make_check_runs_count_grouper(df: pd.DataFrame) -> Tuple[
 
 
 class FirstSuiteEncounters(MetricCalculator[float]):
-    """Calculate the number of executed check suites for each pull request."""
+    """Indicate check suites that at least tried to execute."""
 
-    may_have_negative_values = False
     metric = MetricInt
     is_pure_dependency = True
     complete_suite_statuses = [b"COMPLETED", b"FAILURE", b"SUCCESS", b"PENDING"]
@@ -129,7 +129,7 @@ class FirstSuiteEncounters(MetricCalculator[float]):
         return first_suite_encounters[order]
 
     def _value(self, samples: np.ndarray) -> Metric[None]:
-        return self.metric.from_fields(False, None, None, None)
+        raise NotImplementedError()
 
 
 @register_metric(CodeCheckMetricID.SUITES_COUNT)
@@ -808,3 +808,168 @@ class ElapsedTimePerConcurrencyCalculator(MetricCalculator[object]):
                                 groups_mask: np.ndarray,
                                 ) -> np.ndarray:
         return super()._calculate_discard_mask(peek["duration"], quantiles_mounted_at, groups_mask)
+
+
+class CompleteMarker(MetricCalculator[bool]):
+    """Mark check suites that completed in a reasonable way."""
+
+    metric = make_metric("MetricBool", __name__, np.bool8, False)
+    is_pure_dependency = True
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **_) -> np.ndarray:
+        completed = np.in1d(
+            facts[CheckRun.check_suite_status.name].values.astype("S"),
+            FirstSuiteEncounters.complete_suite_statuses)
+        conclusions = facts[CheckRun.check_suite_conclusion.name].values.astype("S")
+        completed[(conclusions == b"SKIPPED") | (conclusions == b"CANCELLED")] = False
+        run_completed_ats = facts[CheckRun.completed_at.name].values
+        completed &= run_completed_ats == run_completed_ats
+        return completed
+
+    def _value(self, samples: np.ndarray) -> Metric[None]:
+        raise NotImplementedError()
+
+
+@register_metric(CodeCheckMetricID.SUITE_OCCUPANCY)
+class SuiteOccupancyCalculator(AverageMetricCalculator[float]):
+    """
+    Calculate the average ratio between summed time of check runs in a check suite and \
+    the product of the number of check runs with the maximum check run time in that check suite.
+
+    1 means ideal resource utilization, down to 0 for absolute inefficiency. For example, there are
+    one slow check run that executes in 10x seconds, and N fast check runs that execute in
+    x seconds, in the same check suite. The metric value will be
+    (10x + Nx) / (10*(N+1)*x) → 0.1 if N → +∞.
+    """
+
+    may_have_negative_values = False
+    metric = MetricFloat
+    deps = (CompleteMarker,)
+
+    def _calc_masked(self,
+                     facts: pd.DataFrame,
+                     mask: np.ndarray,
+                     min_times: np.ndarray,
+                     max_times: np.ndarray,
+                     **_) -> np.ndarray:
+        suite_nodes = facts[CheckRun.check_suite_node_id.name].values
+        suite_nodes = suite_nodes.copy()
+        suite_nodes[~mask] = 0
+        unique_nodes, first_encounters, index_map, counts = np.unique(
+            suite_nodes, return_index=True, return_inverse=True, return_counts=True)
+        if len(unique_nodes) and unique_nodes[0] == 0:
+            counts[0] = 0
+        selected = np.flatnonzero(counts > 1)
+        selected_first_encounters = first_encounters[selected]
+        check_suite_starteds = facts[check_suite_started_column].values.copy()
+        denominators = (
+            facts[check_suite_completed_column].values[selected_first_encounters]
+            - check_suite_starteds[selected_first_encounters]
+        )
+        nonzero = denominators > np.timedelta64(0)
+        selected = selected[nonzero]
+        denominators = denominators[nonzero] * counts[selected]
+        mask = np.in1d(index_map, selected)
+        durations = (
+            facts[CheckRun.completed_at.name].values[mask]
+            - facts[CheckRun.started_at.name].values[mask]
+        )
+        order = np.argsort(index_map[mask])
+        durations = durations[order]
+        offsets = np.zeros(len(denominators) + 1, dtype=int)
+        np.cumsum(counts[selected], out=offsets[1:])
+        numerators = np.add.reduceat(durations, offsets[:-1])
+        occupancies = np.full(len(facts), self.nan, self.dtype)
+        occupancies[first_encounters[selected]] = numerators / denominators
+        occupancies = np.repeat(occupancies[None, :], len(min_times), axis=0)
+        mask = (min_times[:, None] <= check_suite_starteds) & \
+               (check_suite_starteds < max_times[:, None])
+        occupancies[~mask] = self.nan
+        return occupancies
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **_) -> np.ndarray:
+        return self._calc_masked(facts, self._calcs[0].peek, min_times, max_times)
+
+
+@register_metric(CodeCheckMetricID.SUITE_CRITICAL_OCCUPANCY)
+class SuiteCriticalOccupancyCalculator(SuiteOccupancyCalculator):
+    """
+    Calculate `chk-suite-occupancy` for critical check runs only.
+
+    A critical check run is a check run of type that at least once dominated the check suite
+    execution time on the time interval. This is the measure of check suite "trebble" when there
+    are several slowest check runs that elapse time with some standard deviation.
+    """
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **_) -> np.ndarray:
+        critical = self._calcs[0].peek & (
+            facts[CheckRun.completed_at.name].values == facts[check_suite_completed_column].values
+        )
+        names = np.char.add(facts[CheckRun.name.name].values.astype("U"),
+                            facts[CheckRun.repository_full_name.name].values.astype("U"))
+        critical_names = np.unique(names[critical])
+        critical = np.in1d(names, critical_names)
+        return self._calc_masked(facts, self._calcs[0].peek & critical, min_times, max_times)
+
+
+@register_metric(CodeCheckMetricID.SUITE_IMBALANCE)
+class SuiteImbalanceCalculator(AverageMetricCalculator[timedelta]):
+    """Calculate the average difference between the time of the slowest and the second slowest \
+    check runs in a check suite. High values signal unbalanced jobs and CI/CD inefficiency."""
+
+    may_have_negative_values = False
+    metric = MetricTimeDelta
+    deps = (CompleteMarker,)
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **_) -> np.ndarray:
+        run_completed_at = facts[CheckRun.completed_at.name].values
+        suite_completed_at = facts[check_suite_completed_column].values
+        critical = run_completed_at == suite_completed_at
+        suite_nodes = facts[CheckRun.check_suite_node_id.name].values.copy()
+        suite_nodes[run_completed_at != run_completed_at] = 0
+        # instead of suite_nodes[critical] = 0, we have to look for the first occurrence of each
+        # node ID so that the case when two different check runs finish at the same time goes well
+        suite_nodes_critical = suite_nodes.copy()
+        suite_nodes_critical[~critical] = 0
+        unique_nodes, first_encounters = np.unique(suite_nodes_critical, return_index=True)
+        if len(unique_nodes) and unique_nodes[0] == 0:
+            first_encounters = first_encounters[1:]
+        suite_nodes[first_encounters] = 0
+        suite_nodes[~self._calcs[0].peek] = 0
+
+        unique_nodes, first_encounters, index_map, counts = np.unique(
+            suite_nodes,
+            return_index=True, return_inverse=True, return_counts=True)
+        order = np.argsort(index_map)
+        if len(unique_nodes) and unique_nodes[0] == 0:
+            order = order[counts[0]:]
+            counts = counts[1:]
+            first_encounters = first_encounters[1:]
+        run_completed_at = run_completed_at[order]
+        offsets = np.zeros(len(counts) + 1, dtype=int)
+        np.cumsum(counts, out=offsets[1:])
+        seconds = np.maximum.reduceat(run_completed_at, offsets[:-1])
+        imbalance = np.full(len(facts), self.nan, self.dtype)
+        imbalance[first_encounters] = suite_completed_at[first_encounters] - seconds
+        imbalance = np.repeat(imbalance[None, :], len(min_times), axis=0)
+        check_suite_starteds = facts[check_suite_started_column].values
+        mask = (min_times[:, None] <= check_suite_starteds) & \
+               (check_suite_starteds < max_times[:, None])
+        imbalance[~mask] = self.nan
+        return imbalance
