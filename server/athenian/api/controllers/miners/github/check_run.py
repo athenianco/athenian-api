@@ -25,6 +25,7 @@ from athenian.api.tracing import sentry_span
 
 
 check_suite_started_column = "check_suite_started"
+check_suite_completed_column = "check_suite_completed"
 pull_request_started_column = "pull_request_" + NodePullRequest.created_at.name
 pull_request_closed_column = "pull_request_" + NodePullRequest.closed_at.name
 pull_request_merged_column = "pull_request_" + NodePullRequest.merged.name
@@ -239,7 +240,7 @@ async def _disambiguate_pull_requests(df: pd.DataFrame,
     df[pull_request_merged_column].fillna(False, inplace=True)
 
     # do not let different check runs belonging to the same suite map to different PRs
-    _calculate_check_suite_started(df)
+    _calculate_check_suite_started_finished(df)
     try:
         check_runs_outside_pr_lifetime_indexes = \
             np.nonzero(~df[check_suite_started_column].between(
@@ -422,10 +423,10 @@ async def _read_sql_query_with_join_collapse(query: ClauseElement,
                 await transaction.rollback()
 
 
-def _calculate_check_suite_started(df: pd.DataFrame) -> None:
-    df[check_suite_started_column] = df.groupby(
-        CheckRun.check_suite_node_id.name, sort=False,
-    )[CheckRun.started_at.name].transform("min")
+def _calculate_check_suite_started_finished(df: pd.DataFrame) -> None:
+    group_by = df.groupby(CheckRun.check_suite_node_id.name, sort=False)
+    df[check_suite_started_column] = group_by[CheckRun.started_at.name].transform("min")
+    df[check_suite_completed_column] = group_by[CheckRun.completed_at.name].transform("max")
 
 
 @sentry_span
@@ -549,6 +550,6 @@ def _split_duplicate_check_runs(df: pd.DataFrame) -> pd.DataFrame:
             df.loc[mask, CheckRun.check_suite_conclusion.name] = c
             changed = True
     if changed:
-        _calculate_check_suite_started(df)
+        _calculate_check_suite_started_finished(df)
         df.reset_index(inplace=True, drop=True)
     return df

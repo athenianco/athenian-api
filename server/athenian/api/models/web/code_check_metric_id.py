@@ -21,3 +21,6 @@ class CodeCheckMetricID(Model, metaclass=Enum):
     CONCURRENCY = "chk-concurrency"
     CONCURRENCY_MAX = "chk-concurrency-max"
     ELAPSED_TIME_PER_CONCURRENCY = "chk-elapsed-time-per-concurrency"
+    SUITE_OCCUPANCY = "chk-suite-occupancy"
+    SUITE_CRITICAL_OCCUPANCY = "chk-suite-critical-occupancy"
+    SUITE_IMBALANCE = "chk-suite-imbalance"

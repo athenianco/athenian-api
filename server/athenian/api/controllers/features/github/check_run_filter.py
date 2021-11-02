@@ -12,7 +12,8 @@ from athenian.api.cache import cached, short_term_exptime
 from athenian.api.controllers.features.github.check_run_metrics import \
     calculate_check_run_outcome_masks
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.check_run import mine_check_runs
+from athenian.api.controllers.miners.github.check_run import check_suite_completed_column, \
+    mine_check_runs
 from athenian.api.controllers.miners.types import CodeCheckRunListItem, CodeCheckRunListStats
 from athenian.api.db import DatabaseLike
 from athenian.api.models.metadata.github import CheckRun
@@ -109,11 +110,14 @@ async def filter_check_runs(time_from: datetime,
 
     started_ats = started_ats.astype("datetime64[s]")
     completed_ats = df_check_runs[CheckRun.completed_at.name].values.astype(started_ats.dtype)
+    critical_mask = completed_ats == \
+        df_check_runs[check_suite_completed_column].values.astype(started_ats.dtype)
     elapseds = completed_ats - started_ats
     elapsed_mask = elapseds == elapseds
     timeline_masks = (timeline[:-1, None] <= started_ats) & (started_ats < timeline[1:, None])
     timeline_elapseds = np.broadcast_to(elapseds[None, :], (len(timeline) - 1, len(elapseds)))
     all_time_range = (timeline[0] <= started_ats) & (started_ats < timeline[-1])
+    nat = np.array("NaT", dtype="timedelta64")
 
     result = []
     # workaround https://github.com/numpy/numpy/issues/19379
@@ -139,10 +143,16 @@ async def filter_check_runs(time_from: datetime,
                         count=mask.sum(),
                         successes=success_mask[mask].sum(),
                         skips=skips_mask.sum(),
+                        critical=critical_mask[mask].any(),
                         flaky_count=len(np.intersect1d(commitscol[success_mask & mask],
                                                        commitscol[failure_mask & mask])),
-                        mean_execution_time=_val_or_none(np.mean(elapseds[elapsed_mask & (
-                            qmask := _tighten_mask_by_quantiles(elapseds, mask, quantiles))])),
+                        mean_execution_time=_val_or_none(np.mean((
+                            tight_ts := elapseds[elapsed_mask & (
+                                qmask := _tighten_mask_by_quantiles(elapseds, mask, quantiles)
+                            )]))),
+                        stddev_execution_time=_val_or_none(np.round(np.std(tight_ts.view(int)))
+                                                           .astype(int).view("timedelta64[s]")
+                                                           if len(tight_ts) else nat),
                         median_execution_time=_val_or_none(np.median(
                             elapseds[elapsed_mask & mask])),
                         count_timeline=timeline_masks[:, mask].astype(bool).sum(axis=1).tolist(),

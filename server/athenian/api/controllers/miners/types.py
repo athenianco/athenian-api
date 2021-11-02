@@ -416,9 +416,11 @@ class CodeCheckRunListStats:
 
     count: int
     successes: int
+    critical: bool
     skips: int
     flaky_count: int
     mean_execution_time: Optional[timedelta]
+    stddev_execution_time: Optional[timedelta]
     median_execution_time: Optional[timedelta]
     count_timeline: List[int]
     successes_timeline: List[int]

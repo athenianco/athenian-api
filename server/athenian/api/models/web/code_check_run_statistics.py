@@ -10,7 +10,9 @@ class CodeCheckRunStatistics(Model):
     openapi_types = {
         "count": int,
         "successes": int,
+        "critical": bool,
         "mean_execution_time": timedelta,
+        "stddev_execution_time": timedelta,
         "median_execution_time": timedelta,
         "skips": int,
         "flaky_count": int,
@@ -23,7 +25,9 @@ class CodeCheckRunStatistics(Model):
     attribute_map = {
         "count": "count",
         "successes": "successes",
+        "critical": "critical",
         "mean_execution_time": "mean_execution_time",
+        "stddev_execution_time": "stddev_execution_time",
         "median_execution_time": "median_execution_time",
         "skips": "skips",
         "flaky_count": "flaky_count",
@@ -37,7 +41,9 @@ class CodeCheckRunStatistics(Model):
         self,
         count: Optional[int] = None,
         successes: Optional[int] = None,
+        critical: Optional[bool] = None,
         mean_execution_time: Optional[timedelta] = None,
+        stddev_execution_time: Optional[timedelta] = None,
         median_execution_time: Optional[timedelta] = None,
         skips: Optional[int] = None,
         flaky_count: Optional[int] = None,
@@ -50,6 +56,7 @@ class CodeCheckRunStatistics(Model):
 
         :param count: The count of this CodeCheckRunStatistics.
         :param successes: The successes of this CodeCheckRunStatistics.
+        :param critical: The critical of this CodeCheckRunStatistics.
         :param mean_execution_time: The mean_execution_time of this CodeCheckRunStatistics.
         :param median_execution_time: The median_execution_time of this CodeCheckRunStatistics.
         :param skips: The skips of this CodeCheckRunStatistics.
@@ -58,12 +65,15 @@ class CodeCheckRunStatistics(Model):
         :param successes_timeline: The successes_timeline of this CodeCheckRunStatistics.
         :param mean_execution_time_timeline: The mean_execution_time_timeline of this \
                CodeCheckRunStatistics.
+        :param stddev_execution_time: The stddev_execution_time of this CodeCheckRunStatistics.
         :param median_execution_time_timeline: The median_execution_time_timeline of this \
                CodeCheckRunStatistics.
         """
         self._count = count
         self._successes = successes
+        self._critical = critical
         self._mean_execution_time = mean_execution_time
+        self._stddev_execution_time = stddev_execution_time
         self._median_execution_time = median_execution_time
         self._skips = skips
         self._flaky_count = flaky_count
@@ -125,6 +135,29 @@ class CodeCheckRunStatistics(Model):
         self._successes = successes
 
     @property
+    def critical(self) -> int:
+        """Gets the critical of this CodeCheckRunStatistics.
+
+        Number of successful executions with respect to `date_from` and `date_to`.
+
+        :return: The critical of this CodeCheckRunStatistics.
+        """
+        return self._critical
+
+    @critical.setter
+    def critical(self, critical: int):
+        """Sets the critical of this CodeCheckRunStatistics.
+
+        Number of successful executions with respect to `date_from` and `date_to`.
+
+        :param critical: The critical of this CodeCheckRunStatistics.
+        """
+        if critical is None:
+            raise ValueError("Invalid value for `critical`, must not be `None`")
+
+        self._critical = critical
+
+    @property
     def mean_execution_time(self) -> timedelta:
         """Gets the mean_execution_time of this CodeCheckRunStatistics.
 
@@ -139,6 +172,22 @@ class CodeCheckRunStatistics(Model):
         :param mean_execution_time: The mean_execution_time of this CodeCheckRunStatistics.
         """
         self._mean_execution_time = mean_execution_time
+
+    @property
+    def stddev_execution_time(self) -> timedelta:
+        """Gets the stddev_execution_time of this CodeCheckRunStatistics.
+
+        :return: The stddev_execution_time of this CodeCheckRunStatistics.
+        """
+        return self._stddev_execution_time
+
+    @stddev_execution_time.setter
+    def stddev_execution_time(self, stddev_execution_time: timedelta):
+        """Sets the stddev_execution_time of this CodeCheckRunStatistics.
+
+        :param stddev_execution_time: The stddev_execution_time of this CodeCheckRunStatistics.
+        """
+        self._stddev_execution_time = stddev_execution_time
 
     @property
     def median_execution_time(self) -> timedelta:
