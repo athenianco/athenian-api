@@ -573,8 +573,11 @@ async def _generate_deployment_facts(
         for repo, details in repos.items():
             for deployment_name, deployed_shas in zip(details.deployments, details.shas):
                 indexes = np.searchsorted(all_mentioned_hashes, deployed_shas)
-                pr_indexes = searchsorted_inrange(commit_stats.merge_shas, deployed_shas)
-                pr_indexes = pr_indexes[commit_stats.merge_shas[pr_indexes] == deployed_shas]
+                if len(commit_stats.merge_shas):
+                    pr_indexes = searchsorted_inrange(commit_stats.merge_shas, deployed_shas)
+                    pr_indexes = pr_indexes[commit_stats.merge_shas[pr_indexes] == deployed_shas]
+                else:
+                    pr_indexes = []
                 prs = commit_stats.pull_requests[pr_indexes]
                 deployed_lines = commit_stats.lines[indexes]
                 pr_deployed_lines = commit_stats.pr_lines[pr_indexes]
