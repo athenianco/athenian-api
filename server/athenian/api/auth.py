@@ -305,7 +305,7 @@ class Auth0:
                 "client_id": self._client_id,
                 "client_secret": self._client_secret,
                 "audience": "https://%s/api/v2/" % self._domain,
-            })
+            }, timeout=5)
             data = await resp.json()
             self._mgmt_token = data["access_token"]
             self._mgmt_event.set()
@@ -323,7 +323,7 @@ class Auth0:
         if error is not None:
             self.log.warning("Failed to renew the Auth0 management token %d / %d: %s: %s",
                              attempt, max_attempts, error, resp_text)
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(1)
             return await self._acquire_management_token(attempt + 1)
         self.log.info("Acquired new Auth0 management token %s...%s for the next %s",
                       self._mgmt_token[:12], self._mgmt_token[-12:], timedelta(seconds=expires_in))

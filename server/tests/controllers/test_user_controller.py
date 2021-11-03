@@ -179,6 +179,7 @@ async def test_get_users_query_size_limit(xapp):
     assert users["auth0|5e1f6e2e8bfa520ea5290741"].email == eiso_email
 
 
+@pytest.mark.flaky(reruns=3, reruns_delay=60)
 async def test_get_users_rate_limit(xapp):
     users = await gather(*[xapp._auth0.get_user("auth0|5e1f6dfb57bc640ea390557b")
                            for _ in range(20)])
