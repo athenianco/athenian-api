@@ -1,4 +1,4 @@
-from collections import Counter, defaultdict
+from collections import defaultdict
 from datetime import datetime, timezone
 from itertools import chain
 import logging
@@ -6,7 +6,6 @@ import pickle
 from typing import Any, Collection, Dict, Iterable, List, Mapping, Optional, Tuple, Union
 
 import aiomcache
-import databases
 import numpy as np
 import pandas as pd
 from sqlalchemy import sql
@@ -18,11 +17,15 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached, short_term_exptime
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.controllers.miners.github.label import fetch_labels_to_filter
+from athenian.api.controllers.miners.github.logical import split_logical_repositories
 from athenian.api.controllers.miners.github.precomputed_prs import triage_by_release_match
-from athenian.api.controllers.miners.types import PullRequestFacts
-from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
-from athenian.api.db import DatabaseLike
-from athenian.api.models.metadata.github import NodePullRequestJiraIssues, PullRequest
+from athenian.api.controllers.miners.types import PullRequestFactsMap
+from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch, \
+    ReleaseSettings
+from athenian.api.db import DatabaseLike, ParallelDatabase
+from athenian.api.models.metadata.github import NodePullRequest, NodePullRequestJiraIssues, \
+    NodeRepository, PullRequest
 from athenian.api.models.metadata.jira import AthenianIssue, Component, Epic, Issue, Status
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts
 from athenian.api.tracing import sentry_span
@@ -30,7 +33,7 @@ from athenian.api.tracing import sentry_span
 
 async def generate_jira_prs_query(filters: List[ClauseElement],
                                   jira: JIRAFilter,
-                                  mdb: databases.Database,
+                                  mdb: ParallelDatabase,
                                   cache: Optional[aiomcache.Client],
                                   columns=PullRequest,
                                   seed=PullRequest,
@@ -89,7 +92,7 @@ async def generate_jira_prs_query(filters: List[ClauseElement],
 )
 async def _load_components(labels: LabelFilter,
                            account: int,
-                           mdb: databases.Database,
+                           mdb: ParallelDatabase,
                            cache: Optional[aiomcache.Client],
                            ) -> Dict[str, str]:
     all_labels = set()
@@ -168,7 +171,7 @@ ISSUE_PR_IDS = "pr_ids"
     exptime=short_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda installation_ids, time_from, time_to, exclude_inactive, labels, priorities, types, epics, reporters, assignees, commenters, nested_assignees, **kwargs: (  # noqa
+    key=lambda installation_ids, time_from, time_to, exclude_inactive, labels, priorities, types, epics, reporters, assignees, commenters, nested_assignees, release_settings, logical_settings, **kwargs: (  # noqa
         installation_ids[0],
         ",".join(installation_ids[1]),
         time_from.timestamp() if time_from else "-",
@@ -183,6 +186,8 @@ ISSUE_PR_IDS = "pr_ids"
         ",".join(sorted(commenters)),
         nested_assignees,
         ",".join(c.name for c in kwargs.get("extra_columns", ())),
+        release_settings,
+        logical_settings,
     ),
 )
 async def fetch_jira_issues(installation_ids: Tuple[int, List[str]],
@@ -199,10 +204,11 @@ async def fetch_jira_issues(installation_ids: Tuple[int, List[str]],
                             nested_assignees: bool,
                             default_branches: Dict[str, str],
                             release_settings: ReleaseSettings,
+                            logical_settings: LogicalRepositorySettings,
                             account: int,
                             meta_ids: Tuple[int, ...],
-                            mdb: databases.Database,
-                            pdb: databases.Database,
+                            mdb: ParallelDatabase,
+                            pdb: ParallelDatabase,
                             cache: Optional[aiomcache.Client],
                             extra_columns: Iterable[InstrumentedAttribute] = (),
                             ) -> pd.DataFrame:
@@ -242,65 +248,84 @@ async def fetch_jira_issues(installation_ids: Tuple[int, List[str]],
         jira_id_cond = NodePullRequestJiraIssues.jira_id.in_any_values(issues.index)
     else:
         jira_id_cond = NodePullRequestJiraIssues.jira_id.in_(issues.index)
-    pr_rows = await mdb.fetch_all(
-        sql.select([NodePullRequestJiraIssues.node_id, NodePullRequestJiraIssues.jira_id])
+    pr_cols = [
+        NodePullRequestJiraIssues.node_id,
+        NodePullRequestJiraIssues.jira_id,
+        NodePullRequest.title,
+        NodePullRequest.created_at,
+        NodeRepository.name_with_owner.label(PullRequest.repository_full_name.name),
+    ]
+    prs = await read_sql_query(
+        sql.select(pr_cols)
+        .select_from(
+            sql.outerjoin(
+                sql.outerjoin(NodePullRequestJiraIssues, NodePullRequest, sql.and_(
+                    NodePullRequestJiraIssues.node_acc == NodePullRequest.acc_id,
+                    NodePullRequestJiraIssues.node_id == NodePullRequest.graph_id,
+                )),
+                NodeRepository,
+                sql.and_(
+                    NodePullRequest.acc_id == NodeRepository.acc_id,
+                    NodePullRequest.repository_id == NodeRepository.graph_id,
+                )))
         .where(sql.and_(NodePullRequestJiraIssues.jira_acc == installation_ids[0],
                         NodePullRequestJiraIssues.node_acc.in_(meta_ids),
-                        jira_id_cond)))
-    pr_to_issue = {r[0]: r[1] for r in pr_rows}
+                        jira_id_cond)),
+        mdb, pr_cols, index=NodePullRequestJiraIssues.node_id.name,
+    )
     # TODO(vmarkovtsev): load the "fresh" released PRs
-    released_prs = await _fetch_released_prs(
-        pr_to_issue, default_branches, release_settings, account, pdb)
-    unreleased_prs = pr_to_issue.keys() - released_prs.keys()
+    released_prs, labels = await gather(
+        _fetch_released_prs(prs.index.values, default_branches, release_settings, account, pdb),
+        fetch_labels_to_filter(prs.index.values, meta_ids, mdb),
+    )
+    prs = split_logical_repositories(
+        prs, labels, logical_settings.all_logical_repos(), logical_settings)
+    pr_to_issue = {
+        key: ji for key, ji in zip(
+            prs.index.values,
+            prs[NodePullRequestJiraIssues.jira_id.name].values,
+        )
+    }
     issue_to_index = {iid: i for i, iid in enumerate(issues.index.values)}
-    prs_count = np.full(len(issues), 0, int)
-    issue_prs = [[] for _ in range(len(issues))]
-    for key, val in pr_to_issue.items():
-        issue_prs[issue_to_index[val]].append(key)
+
+    pr_node_ids = prs.index.get_level_values(0).values
+    jira_ids = prs[NodePullRequestJiraIssues.jira_id.name].values
+    unique_jira_ids, index_map, counts = np.unique(
+        jira_ids, return_inverse=True, return_counts=True)
+    split_pr_node_ids = np.split(pr_node_ids[np.argsort(index_map)], np.cumsum(counts[:-1]))
+    issue_prs = [[]] * len(issues)  # yes, the references to the same list
+    issue_indexes = []
+    for issue, node_ids in zip(unique_jira_ids, split_pr_node_ids):
+        issue_index = issue_to_index[issue]
+        issue_indexes.append(issue_index)
+        issue_prs[issue_index] = node_ids
+    prs_count = np.zeros(len(issues), dtype=int)
+    prs_count[issue_indexes] = counts
+
     nat = np.datetime64("nat")
     work_began = np.full(len(issues), nat, "datetime64[ns]")
     released = work_began.copy()
 
-    @sentry_span
-    async def released_flow():
-        for issue, count in Counter(pr_to_issue.values()).items():
-            prs_count[issue_to_index[issue]] = count
-        ghdprf = GitHubDonePullRequestFacts
-        for pr_node_id, row in released_prs.items():
-            pr_created_at = row[ghdprf.pr_created_at.name]
-            i = issue_to_index[pr_to_issue[pr_node_id]]
-            dt = work_began[i]
-            if dt != dt:
-                work_began[i] = pr_created_at
-            else:
-                work_began[i] = min(dt, np.datetime64(pr_created_at))
-            pr_released_at = row[ghdprf.pr_done_at.name]
-            dt = released[i]
-            if dt != dt:
-                released[i] = pr_released_at
-            else:
-                released[i] = max(dt, np.datetime64(pr_released_at))
-
-    if not unreleased_prs:
-        await released_flow()
-    else:
-        pr_created_ats_and_repos, err = await gather(
-            _fetch_pr_created_ats_and_repos(unreleased_prs, meta_ids, mdb), released_flow(),
-            op="released and unreleased")
-        for row in pr_created_ats_and_repos:
-            pr_created_at = row[PullRequest.created_at.name]
-            repo = row[PullRequest.repository_full_name.name]
-            i = issue_to_index[pr_to_issue[row[PullRequest.node_id.name]]]
-            dt = work_began[i]
-            if dt != dt:
-                work_began[i] = pr_created_at
-            else:
-                work_began[i] = min(dt, np.datetime64(pr_created_at))
-            if repo not in release_settings.native:
-                # deleted repository, consider the PR as force push dropped
-                released[i] = work_began[i]
-            else:
-                released[i] = nat
+    for key, pr_created_at in zip(
+        prs.index.values,
+        prs[NodePullRequest.created_at.name].values,
+    ):
+        i = issue_to_index[pr_to_issue[key]]
+        node_id, repo = key
+        if pr_created_at is not None:
+            work_began[i] = np.nanmin(np.array(
+                [work_began[i], pr_created_at],
+                dtype=np.datetime64))
+        if (row := released_prs.get(node_id)) is not None:
+            released[i] = np.nanmax(np.array(
+                [released[i], row[GitHubDonePullRequestFacts.pr_done_at.name]],
+                dtype=np.datetime64))
+            continue
+        if repo not in release_settings.native:
+            # deleted repository, consider the PR as force push dropped
+            released[i] = work_began[i]
+        else:
+            released[i] = nat
 
     issues[ISSUE_PRS_BEGAN] = work_began
     issues[ISSUE_PRS_RELEASED] = released
@@ -317,22 +342,11 @@ async def fetch_jira_issues(installation_ids: Tuple[int, List[str]],
 
 
 @sentry_span
-async def _fetch_pr_created_ats_and_repos(pr_node_ids: Iterable[int],
-                                          meta_ids: Tuple[int, ...],
-                                          mdb: databases.Database,
-                                          ) -> List[Mapping[str, Union[str, datetime]]]:
-    return await mdb.fetch_all(
-        sql.select([PullRequest.node_id, PullRequest.created_at, PullRequest.repository_full_name])
-        .where(sql.and_(PullRequest.node_id.in_(pr_node_ids),
-                        PullRequest.acc_id.in_(meta_ids))))
-
-
-@sentry_span
 async def _fetch_released_prs(pr_node_ids: Iterable[int],
                               default_branches: Dict[str, str],
                               release_settings: ReleaseSettings,
                               account: int,
-                              pdb: databases.Database,
+                              pdb: ParallelDatabase,
                               ) -> Dict[str, Mapping[str, Any]]:
     ghdprf = GitHubDonePullRequestFacts
     released_rows = await pdb.fetch_all(
@@ -369,7 +383,7 @@ async def _fetch_released_prs(pr_node_ids: Iterable[int],
     released_prs.update(ambiguous[ReleaseMatch.tag.name])
     for node_id, row in ambiguous[ReleaseMatch.branch.name].items():
         if node_id not in released_prs:
-            released_prs[node_id] = row
+            released_prs[(node_id, row[ghdprf.repository_full_name.name])] = row
     return released_prs
 
 
@@ -386,7 +400,7 @@ async def _fetch_issues(ids: Tuple[int, List[str]],
                         assignees: Collection[Optional[str]],
                         commenters: Collection[str],
                         nested_assignees: bool,
-                        mdb: databases.Database,
+                        mdb: ParallelDatabase,
                         cache: Optional[aiomcache.Client],
                         extra_columns: Iterable[InstrumentedAttribute] = (),
                         ) -> pd.DataFrame:
@@ -575,13 +589,17 @@ class PullRequestJiraMapper:
 
     @classmethod
     async def append_pr_jira_mapping(cls,
-                                     prs: Dict[int, PullRequestFacts],
+                                     prs: PullRequestFactsMap,
                                      meta_ids: Tuple[int, ...],
                                      mdb: DatabaseLike) -> None:
         """Load and insert "jira_id" to the PR facts."""
-        jira_map = await cls.load_pr_jira_mapping(prs, meta_ids, mdb)
-        for pr, jira in jira_map.items():
-            prs[pr].jira_ids = jira
+        pr_node_ids = defaultdict(list)
+        for node_id, repo in prs:
+            pr_node_ids[node_id].append(repo)
+        jira_map = await cls.load_pr_jira_mapping(pr_node_ids, meta_ids, mdb)
+        for pr_node_id, jira in jira_map.items():
+            for repo in pr_node_ids[pr_node_id]:
+                prs[(pr_node_id, repo)].jira_ids = jira
 
     @classmethod
     @sentry_span
@@ -592,13 +610,18 @@ class PullRequestJiraMapper:
                                    ) -> Dict[int, List[str]]:
         """Fetch the mapping from PR node IDs to JIRA issue IDs."""
         nprji = NodePullRequestJiraIssues
-        if len(prs) >= 20:
+        if len(prs) >= 100:
             node_id_cond = nprji.node_id.in_any_values(prs)
         else:
             node_id_cond = nprji.node_id.in_(prs)
-        rows = await mdb.fetch_all(sql.select([nprji.node_id, nprji.jira_id])
-                                   .where(sql.and_(node_id_cond,
-                                                   nprji.node_acc.in_(meta_ids))))
+        rows = await mdb.fetch_all(
+            sql.select([nprji.node_id, Issue.key])
+            .select_from(sql.outerjoin(nprji, Issue, sql.and_(
+                nprji.jira_acc == Issue.acc_id,
+                nprji.jira_id == Issue.id,
+            )))
+            .where(sql.and_(node_id_cond,
+                            nprji.node_acc.in_(meta_ids))))
         result = defaultdict(list)
         for r in rows:
             result[r[0]].append(r[1])

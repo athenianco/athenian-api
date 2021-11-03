@@ -28,7 +28,8 @@ from athenian.api.controllers.miners.github.deployment import mine_deployments
 from athenian.api.controllers.miners.github.release_mine import mine_releases
 from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
 from athenian.api.controllers.reposet import resolve_repos
-from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings, Settings
+from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch, \
+    ReleaseSettings, Settings
 from athenian.api.db import FastConnection, ParallelDatabase
 from athenian.api.defer import defer, launch_defer_from_request, wait_deferred
 from athenian.api.models.metadata.github import PushCommit, Release, User
@@ -193,6 +194,7 @@ async def _drop_precomputed_deployments(account: int,
                                         repos: Collection[str],
                                         prefixer: PrefixerPromise,
                                         release_settings: ReleaseSettings,
+                                        logical_settings: LogicalRepositorySettings,
                                         branches: pd.DataFrame,
                                         default_branches: Dict[str, str],
                                         request: AthenianWebRequest,
@@ -229,8 +231,8 @@ async def _drop_precomputed_deployments(account: int,
     today = datetime.now(timezone.utc)
     await mine_deployments(
         repo_node_ids, {}, today - timedelta(days=730), today, [], [], {}, {}, LabelFilter.empty(),
-        JIRAFilter.empty(), release_settings, branches, default_branches, prefixer.as_promise(),
-        account, meta_ids, request.mdb, pdb, rdb, None)
+        JIRAFilter.empty(), release_settings, logical_settings, branches, default_branches,
+        prefixer.as_promise(), account, meta_ids, request.mdb, pdb, rdb, None)
 
 
 @sentry_span
@@ -238,6 +240,7 @@ async def _drop_precomputed_event_releases(account: int,
                                            repos: Collection[str],
                                            prefixer: PrefixerPromise,
                                            release_settings: ReleaseSettings,
+                                           logical_settings: LogicalRepositorySettings,
                                            branches: pd.DataFrame,
                                            default_branches: Dict[str, str],
                                            request: AthenianWebRequest,
@@ -264,14 +267,15 @@ async def _drop_precomputed_event_releases(account: int,
     time_from = time_to - timedelta(days=365 * 2)
     await mine_releases(
         repos, {}, branches, default_branches, no_time_from, time_to, LabelFilter.empty(),
-        JIRAFilter.empty(), release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, None,
+        JIRAFilter.empty(), release_settings, logical_settings, prefixer, account, meta_ids,
+        mdb, pdb, rdb, None,
         force_fresh=True, with_avatars=False, with_deployments=False, with_pr_titles=False)
     await wait_deferred()
     await MetricEntriesCalculator(
         account, meta_ids, 0, mdb, pdb, rdb, None,
     ).calc_pull_request_facts_github(
         time_from, time_to, set(repos), {}, LabelFilter.empty(), JIRAFilter.empty(),
-        False, release_settings, prefixer, True, False)
+        False, release_settings, logical_settings, prefixer, True, False)
 
 
 droppers = {
@@ -294,14 +298,16 @@ async def clear_precomputed_events(request: AthenianWebRequest, body: dict) -> w
         model.repositories, model.account, request.uid, login_loader, None,
         request.sdb, request.mdb, request.cache, request.app["slack"], strip_prefix=False)
     repos = [r.split("/", 1)[1] for r in prefixed_repos]
-    (branches, default_branches), release_settings = await gather(
-        BranchMiner.extract_branches(repos, meta_ids, request.mdb, request.cache),
-        Settings.from_account(model.account, request.sdb, request.mdb, request.cache, None)
-        .list_release_matches(prefixed_repos))
     prefixer = await Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
+    settings = Settings.from_account(model.account, request.sdb, request.mdb, request.cache, None)
+    (branches, default_branches), release_settings, logical_settings = await gather(
+        BranchMiner.extract_branches(repos, meta_ids, request.mdb, request.cache),
+        settings.list_release_matches(prefixed_repos),
+        settings.list_logical_repositories(prefixer, prefixed_repos, pointer=".repositories"),
+    )
     tasks = [
-        droppers[t](model.account, repos, prefixer, release_settings, branches, default_branches,
-                    request, meta_ids)
+        droppers[t](model.account, repos, prefixer, release_settings, logical_settings,
+                    branches, default_branches, request, meta_ids)
         for t in model.targets
     ]
     await gather(*tasks, op="clear_precomputed_events/gather drops")

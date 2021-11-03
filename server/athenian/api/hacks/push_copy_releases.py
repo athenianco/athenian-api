@@ -86,16 +86,20 @@ def main():
 
         meta_ids = await get_metadata_account_ids(args.account, sdb, None)
         prefixer = await Prefixer.load(meta_ids, mdb, None)
-        settings = await Settings \
-            .from_account(args.account, sdb, mdb, None, None) \
-            .list_release_matches(prefixer.prefix_repo_names(args.repos))
+        prefixed_repos = prefixer.prefix_repo_names(args.repos)
+        settings = Settings.from_account(args.account, sdb, mdb, None, None)
+        release_settings, logical_settings = await gather(
+            settings.list_release_matches(prefixed_repos),
+            settings.list_logical_repositories(prefixer.as_promise(), prefixed_repos),
+        )
         branches, default_branches = await BranchMiner.extract_branches(
             args.repos, meta_ids, mdb, None)
         now = datetime.now(timezone.utc)
         log.info("Loading releases in %s", args.repos)
         releases, _ = await ReleaseLoader.load_releases(
             args.repos, branches, default_branches, now - timedelta(days=365 * 2), now,
-            settings, prefixer, args.account, meta_ids, mdb, pdb, rdb, None)
+            release_settings, logical_settings, prefixer, args.account, meta_ids,
+            mdb, pdb, rdb, None)
         inserted = []
         log.info("Pushing %d releases", len(releases))
         for name, sha, commit_id, published_at, url, author, repo_id in zip(

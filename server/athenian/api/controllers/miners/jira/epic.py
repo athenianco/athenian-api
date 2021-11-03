@@ -11,7 +11,7 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.jira.issue import fetch_jira_issues
-from athenian.api.controllers.settings import ReleaseSettings
+from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseSettings
 from athenian.api.models.metadata.jira import Issue
 from athenian.api.tracing import sentry_span
 
@@ -28,6 +28,7 @@ async def filter_epics(jira_ids: Tuple[int, List[str]],
                        commenters: Collection[str],
                        default_branches: Dict[str, str],
                        release_settings: ReleaseSettings,
+                       logical_settings: LogicalRepositorySettings,
                        account: int,
                        meta_ids: Tuple[int, ...],
                        mdb: databases.Database,
@@ -50,7 +51,7 @@ async def filter_epics(jira_ids: Tuple[int, List[str]],
     epics = await fetch_jira_issues(
         jira_ids, time_from, time_to, exclude_inactive, labels,
         priorities, ["epic"], [], reporters, assignees, commenters, True,
-        default_branches, release_settings, account, meta_ids, mdb, pdb, cache,
+        default_branches, release_settings, logical_settings, account, meta_ids, mdb, pdb, cache,
         extra_columns=extra_columns)
     if epics.empty:
         async def noop():
@@ -68,7 +69,7 @@ async def filter_epics(jira_ids: Tuple[int, List[str]],
     children = await fetch_jira_issues(
         jira_ids, None, None, False, LabelFilter.empty(),
         [], [], epics[Issue.key.name].values, [], [], [], False,
-        default_branches, release_settings, account, meta_ids, mdb, pdb, cache,
+        default_branches, release_settings, logical_settings, account, meta_ids, mdb, pdb, cache,
         extra_columns=extra_columns)
     # plan to fetch the subtask counts, but not await it now
     subtasks = asyncio.create_task(

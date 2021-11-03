@@ -14,7 +14,7 @@ from athenian.api.cache import CACHE_VAR_NAME, setup_cache_metrics
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.deployment import mine_deployments
 from athenian.api.controllers.miners.github.release_mine import mine_releases
-from athenian.api.controllers.settings import ReleaseMatch
+from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import Release
 from athenian.api.models.persistentdata.models import ReleaseNotification
@@ -75,7 +75,7 @@ async def test_filter_repositories_smoke(
     time_to = datetime(2017, 9, 18, tzinfo=timezone.utc)
     args = (time_from, time_to, {"src-d/go-git"}, {},
             LabelFilter.empty(), JIRAFilter.empty(),
-            False, release_match_setting_tag, prefixer_promise,
+            False, release_match_setting_tag, LogicalRepositorySettings.empty(), prefixer_promise,
             False, False)
     await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
     await wait_deferred()
@@ -106,7 +106,8 @@ async def test_filter_repositories_exclude_inactive_precomputed(
     time_to = datetime(2017, 9, 18, tzinfo=timezone.utc)
     args = (time_from, time_to, {"src-d/go-git"}, {},
             LabelFilter.empty(), JIRAFilter.empty(),
-            False, release_match_setting_tag, prefixer_promise, False, False)
+            False, release_match_setting_tag, LogicalRepositorySettings.empty(),
+            prefixer_promise, False, False)
     await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
     await wait_deferred()
     body = {
@@ -1518,6 +1519,7 @@ async def test_filter_releases_deployments(
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_match_setting_tag_or_branch,
+        LogicalRepositorySettings.empty(),
         branches, default_branches, prefixer_promise,
         1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
@@ -2074,7 +2076,8 @@ async def test_diff_releases_commits(
     time_to = datetime(year=2017, month=4, day=1, tzinfo=timezone.utc)
     releases, _, _, _ = await mine_releases(
         ["src-d/go-git"], {}, branches, default_branches, time_from, time_to,
-        LabelFilter.empty(), JIRAFilter.empty(), release_match_setting_branch, prefixer_promise,
+        LabelFilter.empty(), JIRAFilter.empty(), release_match_setting_branch,
+        LogicalRepositorySettings.empty(), prefixer_promise,
         1, (6366825,), mdb, pdb, rdb, None, with_deployments=False, with_pr_titles=False)
     await wait_deferred()
 

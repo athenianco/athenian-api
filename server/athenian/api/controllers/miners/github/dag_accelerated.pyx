@@ -313,7 +313,13 @@ def mark_dag_parents(hashes: np.ndarray,
                      edges: np.ndarray,
                      heads: np.ndarray,
                      timestamps: np.ndarray,
-                     ownership: np.ndarray) -> np.ndarray:
+                     ownership: np.ndarray,
+                     slay_hydra: bool = True) -> np.ndarray:
+    """
+    :param slay_hydra: When there is a head that reaches several roots and not all of them have \
+                       parents, clear the parents so that the regular check len(parents) == 0 \
+                       works.
+    """
     result = np.empty(len(heads), dtype=object)
     if len(hashes) == 0:
         result.fill([])
@@ -328,7 +334,8 @@ def mark_dag_parents(hashes: np.ndarray,
     timestamps = timestamps.view(np.uint64)
     ownership = ownership.astype(np.int32, copy=False)
     cdef vector[vector[uint32_t]] parents = vector[vector[uint32_t]](len(heads))
-    full_size = _mark_dag_parents(vertexes, edges, heads, timestamps, ownership, &parents)
+    full_size = _mark_dag_parents(
+        vertexes, edges, heads, timestamps, ownership, slay_hydra, &parents)
     concat_parents = np.zeros(full_size, dtype=np.uint32)
     split_points = np.zeros(len(parents), dtype=np.int64)
     _copy_parents_to_array(&parents, concat_parents, split_points)
@@ -357,10 +364,12 @@ cdef int _mark_dag_parents(const uint32_t[:] vertexes,
                            const uint32_t[:] heads,
                            const uint64_t[:] timestamps,
                            const int32_t[:] ownership,
+                           bool slay_hydra,
                            vector[vector[uint32_t]] *parents) nogil:
-    cdef uint32_t not_found = len(vertexes), head, peek, edge, peak_owner, parent
+    cdef uint32_t not_found = len(vertexes), head, peek, edge, peak_owner, parent, beg, end
     cdef uint64_t timestamp, head_timestamp
     cdef int64_t i, j, p, sum_len = 0
+    cdef bool reached_root
     cdef vector[char] visited = vector[char](len(vertexes) - 1)
     cdef vector[uint32_t] boilerplate
     cdef vector[uint32_t] *my_parents
@@ -370,6 +379,7 @@ cdef int _mark_dag_parents(const uint32_t[:] vertexes,
             continue
         head_timestamp = timestamps[i]
         my_parents = &dereference(parents)[i]
+        reached_root = False
         memset(visited.data(), 0, visited.size())
         boilerplate.push_back(head)
         while not boilerplate.empty():
@@ -395,10 +405,16 @@ cdef int _mark_dag_parents(const uint32_t[:] vertexes,
                         sum_len += 1
                         my_parents.push_back(peak_owner)
                     continue
-            for j in range(vertexes[peek], vertexes[peek + 1]):
+            beg, end = vertexes[peek], vertexes[peek + 1]
+            if beg == end:
+                reached_root = True
+            for j in range(beg, end):
                 edge = edges[j]
                 if not visited[edge]:
                     boilerplate.push_back(edge)
+        if reached_root and slay_hydra:
+            # case when there are several different histories merged together
+            my_parents.clear()
     return sum_len
 
 

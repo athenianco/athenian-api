@@ -38,11 +38,14 @@ async def get_contributors(request: AthenianWebRequest, id: int) -> web.Response
         ]
         repos, meta_ids = await gather(*tasks)
         prefixer = await Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
-        release_settings = \
-            await Settings.from_request(request, account_id).list_release_matches(repos)
+        settings = Settings.from_request(request, account_id)
+        release_settings, logical_settings = await gather(
+            settings.list_release_matches(repos),
+            settings.list_logical_repositories(prefixer, repos),
+        )
         repos = [r.split("/", 1)[1] for r in repos]
         users = await mine_contributors(
-            repos, None, None, False, [], release_settings, prefixer,
+            repos, None, None, False, [], release_settings, logical_settings, prefixer,
             account_id, meta_ids, request.mdb, request.pdb, request.rdb, request.cache)
         mapped_jira = await load_mapped_jira_users(
             account_id, [u[User.node_id.name] for u in users],

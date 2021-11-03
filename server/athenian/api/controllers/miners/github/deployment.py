@@ -34,7 +34,8 @@ from athenian.api.controllers.miners.jira.issue import fetch_jira_issues_for_prs
 from athenian.api.controllers.miners.types import DeploymentConclusion, DeploymentFacts, \
     PullRequestJIRAIssueItem, ReleaseFacts, ReleaseParticipants, ReleaseParticipationKind
 from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
-from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
+from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch, \
+    ReleaseSettings
 from athenian.api.db import add_pdb_hits, add_pdb_misses, insert_or_ignore, ParallelDatabase
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import NodeCommit, NodePullRequest, PullRequest, \
@@ -53,7 +54,8 @@ from athenian.api.typing_utils import df_from_structs
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda repo_node_ids, participants, time_from, time_to, environments, conclusions,
-    with_labels, without_labels, pr_labels, jira, settings, default_branches, **_: (
+    with_labels, without_labels, pr_labels, jira, release_settings, logical_settings,
+    default_branches, **_: (
         ",".join(map(str, repo_node_ids)),
         ",".join("%s: %s" % (k, "+".join(sorted(v))) for k, v in sorted(participants.items())),
         time_from.timestamp(),
@@ -62,7 +64,7 @@ from athenian.api.typing_utils import df_from_structs
         ",".join(sorted(conclusions)),
         ",".join(f"{k}:{v}" for k, v in sorted(with_labels.items())),
         ",".join(f"{k}:{v}" for k, v in sorted(without_labels.items())),
-        pr_labels, jira, settings,
+        pr_labels, jira, release_settings, logical_settings,
         ",".join("%s: %s" % p for p in sorted(default_branches.items())),
     ),
 )
@@ -76,7 +78,8 @@ async def mine_deployments(repo_node_ids: Collection[int],
                            without_labels: Mapping[str, Any],
                            pr_labels: LabelFilter,
                            jira: JIRAFilter,
-                           settings: ReleaseSettings,
+                           release_settings: ReleaseSettings,
+                           logical_settings: LogicalRepositorySettings,
                            branches: pd.DataFrame,
                            default_branches: Dict[str, str],
                            prefixer: PrefixerPromise,
@@ -101,15 +104,15 @@ async def mine_deployments(repo_node_ids: Collection[int],
         return pd.DataFrame(), np.array([], dtype="U")
     labels = asyncio.create_task(_fetch_grouped_labels(notifications.index.values, account, rdb),
                                  name="_fetch_grouped_labels(%d)" % len(notifications))
-    repo_names, settings = await _finalize_release_settings(
-        notifications, time_from, time_to, settings, branches, default_branches, prefixer,
-        account, meta_ids, mdb, pdb, rdb, cache)
+    repo_names, release_settings = await _finalize_release_settings(
+        notifications, time_from, time_to, release_settings, logical_settings,
+        branches, default_branches, prefixer, account, meta_ids, mdb, pdb, rdb, cache)
     releases = asyncio.create_task(_fetch_precomputed_deployed_releases(
-        notifications, repo_names, settings, branches, default_branches, prefixer,
-        account, meta_ids, mdb, pdb, rdb, cache),
+        notifications, repo_names, release_settings, logical_settings, branches, default_branches,
+        prefixer, account, meta_ids, mdb, pdb, rdb, cache),
         name="_fetch_precomputed_deployed_releases(%d)" % len(notifications))
     facts = await _fetch_precomputed_deployment_facts(
-        notifications.index.values, settings, account, pdb)
+        notifications.index.values, release_settings, account, pdb)
     # facts = facts.iloc[:0]  # uncomment to disable pdb
     add_pdb_hits(pdb, "deployments", len(facts))
     add_pdb_misses(pdb, "deployments", misses := (len(notifications) - len(facts)))
@@ -121,15 +124,16 @@ async def mine_deployments(repo_node_ids: Collection[int],
             full_notifications, full_components = await _fetch_components_and_prune_unresolved(
                 notifications, account, rdb)
             full_facts = await _fetch_precomputed_deployment_facts(
-                full_notifications.index.values, settings, account, pdb)
+                full_notifications.index.values, release_settings, account, pdb)
         else:
             full_notifications, full_components, full_facts = notifications, components, facts
         missed_indexes = np.flatnonzero(np.in1d(
             full_notifications.index.values.astype("U"), full_facts.index.values.astype("U"),
             assume_unique=True, invert=True))
         missed_facts, missed_releases = await _compute_deployment_facts(
-            full_notifications.take(missed_indexes), full_components, settings, branches,
-            default_branches, prefixer, account, meta_ids, mdb, pdb, rdb, cache)
+            full_notifications.take(missed_indexes), full_components,
+            release_settings, logical_settings, branches, default_branches,
+            prefixer, account, meta_ids, mdb, pdb, rdb, cache)
         if not missed_facts.empty:
             facts = pd.concat([facts, missed_facts])
     else:
@@ -176,7 +180,8 @@ def _extract_mentioned_people(df: pd.DataFrame) -> np.ndarray:
 async def _finalize_release_settings(notifications: pd.DataFrame,
                                      time_from: datetime,
                                      time_to: datetime,
-                                     settings: ReleaseSettings,
+                                     release_settings: ReleaseSettings,
+                                     logical_settings: LogicalRepositorySettings,
                                      branches: pd.DataFrame,
                                      default_branches: Dict[str, str],
                                      prefixer: PrefixerPromise,
@@ -196,21 +201,23 @@ async def _finalize_release_settings(notifications: pd.DataFrame,
     repos = [prefixer.repo_node_to_name[r[0]] for r in rows]
     need_disambiguate = []
     for repo in repos:
-        if settings.native[repo].match == ReleaseMatch.tag_or_branch:
+        if release_settings.native[repo].match == ReleaseMatch.tag_or_branch:
             need_disambiguate.append(repo)
             break
     if not need_disambiguate:
-        return repos, settings
+        return repos, release_settings
     _, matched_bys = await ReleaseLoader.load_releases(
-        need_disambiguate, branches, default_branches, time_from, time_to, settings,
-        prefixer.as_promise(), account, meta_ids, mdb, pdb, rdb, cache)
-    return repos, ReleaseLoader.disambiguate_release_settings(settings, matched_bys)
+        need_disambiguate, branches, default_branches, time_from, time_to,
+        release_settings, logical_settings, prefixer.as_promise(), account, meta_ids,
+        mdb, pdb, rdb, cache)
+    return repos, ReleaseLoader.disambiguate_release_settings(release_settings, matched_bys)
 
 
 @sentry_span
 async def _fetch_precomputed_deployed_releases(notifications: pd.DataFrame,
                                                repo_names: Collection[str],
-                                               settings: ReleaseSettings,
+                                               release_settings: ReleaseSettings,
+                                               logical_settings: LogicalRepositorySettings,
                                                branches: pd.DataFrame,
                                                default_branches: Dict[str, str],
                                                prefixer: PrefixerPromise,
@@ -222,7 +229,7 @@ async def _fetch_precomputed_deployed_releases(notifications: pd.DataFrame,
                                                cache: Optional[aiomcache.Client],
                                                ) -> pd.DataFrame:
     assert repo_names
-    reverse_settings = reverse_release_settings(repo_names, default_branches, settings)
+    reverse_settings = reverse_release_settings(repo_names, default_branches, release_settings)
     releases = await read_sql_query(union_all(*(
         select([GitHubReleaseDeployment.deployment_name, PrecomputedRelease])
         .select_from(join(GitHubReleaseDeployment, PrecomputedRelease, and_(
@@ -240,14 +247,15 @@ async def _fetch_precomputed_deployed_releases(notifications: pd.DataFrame,
     releases = set_matched_by_from_release_match(releases, False)
     del releases[PrecomputedRelease.acc_id.name]
     return await _postprocess_deployed_releases(
-        releases, branches, default_branches, settings, prefixer,
+        releases, branches, default_branches, release_settings, logical_settings, prefixer,
         account, meta_ids, mdb, pdb, rdb, cache)
 
 
 async def _postprocess_deployed_releases(releases: pd.DataFrame,
                                          branches: pd.DataFrame,
                                          default_branches: Dict[str, str],
-                                         settings: ReleaseSettings,
+                                         release_settings: ReleaseSettings,
+                                         logical_settings: LogicalRepositorySettings,
                                          prefixer: PrefixerPromise,
                                          account: int,
                                          meta_ids: Tuple[int, ...],
@@ -270,8 +278,8 @@ async def _postprocess_deployed_releases(releases: pd.DataFrame,
         user_node_to_login_get(u) for u in releases[Release.author_node_id.name].values
     ]
     release_facts = await mine_releases_by_ids(
-        releases, branches, default_branches, settings, prefixer.as_promise(),
-        account, meta_ids, mdb, pdb, rdb, cache, with_avatars=False)
+        releases, branches, default_branches, release_settings, logical_settings,
+        prefixer.as_promise(), account, meta_ids, mdb, pdb, rdb, cache, with_avatars=False)
     if not release_facts:
         return pd.DataFrame()
     release_facts_df = df_from_structs([f for _, f in release_facts])
@@ -413,7 +421,8 @@ async def _filter_by_prs(df: pd.DataFrame,
 @sentry_span
 async def _compute_deployment_facts(notifications: pd.DataFrame,
                                     components: pd.DataFrame,
-                                    settings: ReleaseSettings,
+                                    release_settings: ReleaseSettings,
+                                    logical_settings: LogicalRepositorySettings,
                                     branches: pd.DataFrame,
                                     default_branches: Dict[str, str],
                                     prefixer: PrefixerPromise,
@@ -445,13 +454,13 @@ async def _compute_deployment_facts(notifications: pd.DataFrame,
         _fetch_commit_stats(all_mentioned_hashes, dags, prefixer, meta_ids, mdb),
         _map_releases_to_deployments(
             deployed_commits_per_repo_per_env, all_mentioned_hashes, max_release_time_to,
-            prefixer, settings, branches, default_branches,
+            prefixer, release_settings, logical_settings, branches, default_branches,
             account, meta_ids, mdb, pdb, rdb, cache),
     )
     facts = await _generate_deployment_facts(
         notifications, deployed_commits_per_repo_per_env, all_mentioned_hashes, commit_stats,
         releases, account, pdb)
-    await defer(_submit_deployment_facts(facts, releases, settings, account, pdb),
+    await defer(_submit_deployment_facts(facts, releases, release_settings, account, pdb),
                 "_submit_deployment_facts")
     return facts, releases
 
@@ -647,7 +656,8 @@ async def _map_releases_to_deployments(
         all_mentioned_hashes: np.ndarray,
         max_release_time_to: datetime,
         prefixer: PrefixerPromise,
-        settings: ReleaseSettings,
+        release_settings: ReleaseSettings,
+        logical_settings: LogicalRepositorySettings,
         branches: pd.DataFrame,
         default_branches: Dict[str, str],
         account: int,
@@ -662,7 +672,7 @@ async def _map_releases_to_deployments(
     repo_names = {repo_node_to_name_get(r)
                   for repos in deployed_commits_per_repo_per_env.values()
                   for r in repos}
-    reverse_settings = reverse_release_settings(repo_names, default_branches, settings)
+    reverse_settings = reverse_release_settings(repo_names, default_branches, release_settings)
     reverse_settings_ptr = {}
     repo_name_to_node_get = prefixer.repo_name_to_node.get
     for key, repos in reverse_settings.items():
@@ -713,8 +723,9 @@ async def _map_releases_to_deployments(
     else:
         time_from = releases[Release.published_at.name].max() + timedelta(seconds=1)
     extra_releases, _ = await ReleaseLoader.load_releases(
-        repo_names, branches, default_branches, time_from, max_release_time_to, settings,
-        prefixer.as_promise(), account, meta_ids, mdb, pdb, rdb, cache,
+        repo_names, branches, default_branches, time_from, max_release_time_to,
+        release_settings, logical_settings, prefixer.as_promise(), account, meta_ids,
+        mdb, pdb, rdb, cache,
         force_fresh=max_release_time_to > datetime.now(timezone.utc) - unfresh_releases_lag,
         index=Release.node_id.name)
     if not extra_releases.empty:
@@ -737,9 +748,9 @@ async def _map_releases_to_deployments(
     }
     releases = pd.DataFrame({"deployment_name": deployment_names, **col_vals})
     result = await _postprocess_deployed_releases(
-        releases, branches, default_branches, settings, prefixer.as_promise(),
-        account, meta_ids, mdb, pdb, rdb, cache)
-    await defer(_submit_deployed_releases(releases, account, settings, pdb),
+        releases, branches, default_branches, release_settings, logical_settings,
+        prefixer.as_promise(), account, meta_ids, mdb, pdb, rdb, cache)
+    await defer(_submit_deployed_releases(releases, account, release_settings, pdb),
                 "_submit_deployed_releases")
     return result
 
@@ -1222,16 +1233,6 @@ async def _resolve_commit_relationship(
                 my_relationships = commit_relationship[env][repo]
                 root_ids, root_shas, root_deployed_ats, success_len = \
                     root_details_per_repo[env][repo]
-                if sha == missing_sha:
-                    # the first deployment ever
-                    del until_per_repo_env[env][repo]
-                    for node, dt in zip(root_ids, root_deployed_ats):
-                        my_relationships[node][dt] = CommitRelationship(
-                            np.array([], dtype=int),
-                            np.array([], dtype="S40"),
-                            np.array([], dtype=bool),
-                        )
-                    continue
                 dag = dags[repo_node_to_name_get(repo)]
                 successful_shas = np.concatenate([root_shas[:success_len], [sha]])
                 ownership = mark_dag_access(*dag, successful_shas)
@@ -1241,8 +1242,13 @@ async def _resolve_commit_relationship(
                     np.array([dep_started_at], dtype="datetime64[s]"),
                     root_deployed_ats[success_len:],
                 ])
-                parents = mark_dag_parents(*dag, all_shas, all_deployed_ats, ownership)
-                unroot_mask = np.array([len(p) for p in parents], dtype=bool)
+                reached_root = sha == missing_sha
+                parents = mark_dag_parents(*dag, all_shas, all_deployed_ats, ownership,
+                                           slay_hydra=not reached_root)
+                if reached_root:
+                    unroot_mask = np.ones(len(parents), dtype=bool)
+                else:
+                    unroot_mask = np.array([len(p) for p in parents], dtype=bool)
                 root_mask = ~unroot_mask
                 root_mask[success_len] = False  # oldest commit that we've just inserted
                 unroot_mask[success_len] = False

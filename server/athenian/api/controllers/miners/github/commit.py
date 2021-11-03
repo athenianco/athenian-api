@@ -218,7 +218,7 @@ def _remove_force_push_dropped(commits: pd.DataFrame, dags: Dict[str, DAG]) -> p
         ",".join(np.sort(
             branches[columns[0] if isinstance(columns[0], str) else columns[0].name].values)),
         prune,
-    ),
+    ) if not branches.empty else None,
     refresh_on_access=True,
 )
 async def fetch_repository_commits(repos: Dict[str, DAG],
@@ -247,6 +247,10 @@ async def fetch_repository_commits(repos: Dict[str, DAG],
     :param prune: Remove any commits that are not accessible from `branches`.
     :return: Map from repository names to their DAGs.
     """
+    if branches.empty:
+        if not prune:
+            return repos
+        return {key: _empty_dag() for key in repos}
     missed_counter = 0
     repo_heads = {}
     sha_col, id_col, dt_col, repo_col = (c if isinstance(c, str) else c.name for c in columns)
@@ -254,8 +258,14 @@ async def fetch_repository_commits(repos: Dict[str, DAG],
     hash_to_dt = dict(zip(branches[sha_col].values, branches[dt_col].values))
     result = {}
     tasks = []
-    for repo, repo_df in branches[[repo_col, sha_col]].groupby(repo_col, sort=False):
-        required_heads = repo_df[sha_col].values.astype("S40")
+    df_repos = branches[repo_col].values
+    df_shas = branches[sha_col].values.astype("S40")
+    unique_repos, index_map, counts = np.unique(df_repos, return_inverse=True, return_counts=True)
+    repo_order = np.argsort(index_map)
+    offsets = np.zeros(len(counts) + 1, dtype=int)
+    np.cumsum(counts, out=offsets[1:])
+    for i, repo in enumerate(unique_repos):
+        required_heads = df_shas[repo_order[offsets[i]:offsets[i + 1]]]
         repo_heads[repo] = required_heads
         hashes, vertexes, edges = repos[repo]
         if len(hashes) > 0:

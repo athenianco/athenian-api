@@ -16,7 +16,7 @@ from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.release_load import ReleaseLoader
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
 from athenian.api.controllers.prefixer import PrefixerPromise
-from athenian.api.controllers.settings import ReleaseSettings
+from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseSettings
 from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
     PullRequestLabel, PullRequestReview, PullRequestReviewComment, PushCommit, Release, \
     Repository, User
@@ -101,6 +101,7 @@ async def _mine_commits(repo_ids: np.ndarray,
                         labels: LabelFilter,
                         jira: JIRAFilter,
                         release_settings: ReleaseSettings,
+                        logical_settings: LogicalRepositorySettings,
                         prefixer: PrefixerPromise,
                         account: int,
                         meta_ids: Tuple[int, ...],
@@ -136,6 +137,7 @@ async def _mine_prs(attr_user: InstrumentedAttribute,
                     labels: LabelFilter,
                     jira: JIRAFilter,
                     release_settings: ReleaseSettings,
+                    logical_settings: LogicalRepositorySettings,
                     prefixer: PrefixerPromise,
                     account: int,
                     meta_ids: Tuple[int, ...],
@@ -186,6 +188,7 @@ async def _mine_releases(repo_ids: np.ndarray,
                          labels: LabelFilter,
                          jira: JIRAFilter,
                          release_settings: ReleaseSettings,
+                         logical_settings: LogicalRepositorySettings,
                          prefixer: PrefixerPromise,
                          account: int,
                          meta_ids: Tuple[int, ...],
@@ -198,7 +201,7 @@ async def _mine_releases(repo_ids: np.ndarray,
         repo_names, meta_ids, mdb, cache)
     releases, _ = await ReleaseLoader.load_releases(
         repo_names, branches, default_branches, time_from, time_to,
-        release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache)
+        release_settings, logical_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache)
     release_authors = releases[Release.author.name].values.astype("U")
     matched_devs_mask = np.in1d(release_authors, dev_names)
     return pd.DataFrame({
@@ -219,6 +222,7 @@ async def _mine_reviews(repo_ids: np.ndarray,
                         labels: LabelFilter,
                         jira: JIRAFilter,
                         release_settings: ReleaseSettings,
+                        logical_settings: LogicalRepositorySettings,
                         prefixer: PrefixerPromise,
                         account: int,
                         meta_ids: Tuple[int, ...],
@@ -269,6 +273,7 @@ async def _mine_pr_comments(model: Union[Type[PullRequestComment], Type[PullRequ
                             labels: LabelFilter,
                             jira: JIRAFilter,
                             release_settings: ReleaseSettings,
+                            logical_settings: LogicalRepositorySettings,
                             prefixer: PrefixerPromise,
                             account: int,
                             meta_ids: Tuple[int, ...],
@@ -345,6 +350,7 @@ async def mine_developer_activities(devs: Collection[str],
                                     labels: LabelFilter,
                                     jira: JIRAFilter,
                                     release_settings: ReleaseSettings,
+                                    logical_settings: LogicalRepositorySettings,
                                     prefixer: PrefixerPromise,
                                     account: int,
                                     meta_ids: Tuple[int, ...],
@@ -365,7 +371,7 @@ async def mine_developer_activities(devs: Collection[str],
         if key.intersection(topics):
             tasks[key] = miner(
                 repo_ids, repo_names, dev_ids, dev_names,
-                time_from, time_to, topics, labels, jira, release_settings,
+                time_from, time_to, topics, labels, jira, release_settings, logical_settings,
                 prefixer, account, meta_ids, mdb, pdb, rdb, cache)
     df_by_topic = dict(zip(tasks.keys(), await gather(*tasks.values())))
     if DeveloperTopic.pr_comments in topics:

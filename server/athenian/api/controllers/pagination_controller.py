@@ -26,27 +26,37 @@ async def paginate_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     await get_user_account_status(
         request.uid, filt.request.account, request.sdb, request.cache)
     # we ignore events and stages because we cannot do anything with them
-    time_from, time_to, repos, _, _, participants, labels, jira, settings, prefixer, meta_ids = \
+    time_from, time_to, repos, _, _, participants, labels, jira, release_settings, \
+        logical_settings, prefixer, meta_ids = \
         await resolve_filter_prs_parameters(filt.request, request)
     branches, default_branches = await BranchMiner.extract_branches(
         repos, meta_ids, request.mdb, request.cache)
     # we ignore the ambiguous PRs, thus producing a pessimistic prediction (that's OK)
     done_ats, _ = await DonePRFactsLoader.load_precomputed_done_timestamp_filters(
         time_from, time_to, repos, participants, labels,
-        default_branches, filt.request.exclude_inactive, settings, prefixer,
+        default_branches, filt.request.exclude_inactive, release_settings, prefixer.as_promise(),
         filt.request.account, request.pdb)
+    done_node_ids = {}
+    for node_id, repo in done_ats:
+        done_node_ids.setdefault(node_id, []).append(repo)
     tasks = [
         PullRequestMiner.fetch_prs(
             time_from, time_to, repos, participants, labels, jira,
-            filt.request.exclude_inactive, PullRequest.node_id.notin_(done_ats), None, branches,
-            None, filt.request.account, meta_ids, request.mdb, request.pdb, request.cache,
+            filt.request.exclude_inactive, PullRequest.node_id.notin_(done_node_ids),
+            None, branches, None, filt.request.account, meta_ids,
+            request.mdb, request.pdb, request.cache,
             columns=[PullRequest.node_id, PullRequest.updated_at]),
     ]
     if filt.request.jira:
         tasks.append(PullRequestMiner.filter_jira(
-            done_ats, jira, meta_ids, request.mdb, request.cache, columns=[PullRequest.node_id]))
+            done_node_ids, jira, meta_ids, request.mdb, request.cache,
+            columns=[PullRequest.node_id]))
         (other_prs, _), passed_jira = await gather(*tasks)
-        done_ats = {k: done_ats[k] for k in passed_jira.index.values}
+        done_ats = {
+            (k, r): done_ats[k, r]
+            for k in passed_jira.index.values
+            for r in done_node_ids[k]
+        }
     else:
         other_prs, _ = await tasks[0]
     if done_ats:

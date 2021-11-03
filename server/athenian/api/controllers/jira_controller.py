@@ -40,7 +40,7 @@ from athenian.api.controllers.miners.jira.issue import fetch_jira_issues, ISSUE_
     ISSUE_PRS_BEGAN, ISSUE_PRS_COUNT, ISSUE_PRS_RELEASED, resolve_work_began_and_resolved
 from athenian.api.controllers.miners.types import Deployment
 from athenian.api.controllers.prefixer import Prefixer
-from athenian.api.controllers.settings import ReleaseSettings, Settings
+from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseSettings, Settings
 from athenian.api.db import ParallelDatabase
 from athenian.api.models.metadata.github import Branch, PullRequest
 from athenian.api.models.metadata.jira import AthenianIssue, Component, Issue, IssueType, \
@@ -65,8 +65,9 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
     except ValueError as e:
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError("?", detail=str(e)))
-    meta_ids, jira_ids, branches, default_branches, release_settings = await _collect_ids(
-        filt.account, request, request.sdb, request.mdb, request.cache)
+    meta_ids, jira_ids, branches, default_branches, release_settings, logical_settings, \
+        prefixer = await _collect_ids(
+            filt.account, request, request.sdb, request.mdb, request.cache)
     if filt.projects is not None:
         jira_ids = (jira_ids[0], list(set(jira_ids[1]).intersection(
             await resolve_projects(filt.projects, jira_ids[0], request.mdb))))
@@ -95,11 +96,11 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
     tasks = [
         _epic_flow(return_, jira_ids, time_from, time_to, filt.exclude_inactive, label_filter,
                    filt.priorities, reporters, assignees, commenters, default_branches,
-                   release_settings, filt.account, meta_ids, mdb, pdb, cache),
+                   release_settings, logical_settings, filt.account, meta_ids, mdb, pdb, cache),
         _issue_flow(return_, filt.account, jira_ids, time_from, time_to, filt.exclude_inactive,
                     label_filter, filt.priorities, filt.types, reporters, assignees, commenters,
-                    branches, default_branches, release_settings, meta_ids,
-                    sdb, mdb, pdb, rdb, cache),
+                    branches, default_branches, release_settings, logical_settings, prefixer,
+                    meta_ids, sdb, mdb, pdb, rdb, cache),
     ]
     ((epics, epic_priorities, epic_statuses),
      (issues, labels, issue_users, issue_types, issue_priorities, issue_statuses, deps),
@@ -133,7 +134,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
     exptime=short_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda return_, time_from, time_to, exclude_inactive, label_filter, priorities, reporters, assignees, commenters, default_branches, release_settings, **_: (  # noqa
+    key=lambda return_, time_from, time_to, exclude_inactive, label_filter, priorities, reporters, assignees, commenters, default_branches, release_settings, logical_settings, **_: (  # noqa
         JIRAFilterReturn.EPICS in return_,
         JIRAFilterReturn.PRIORITIES in return_,
         JIRAFilterReturn.STATUSES in return_,
@@ -147,6 +148,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         ",".join(sorted(commenters)),
         ",".join("%s:%s" % db for db in sorted(default_branches.items())),
         release_settings,
+        logical_settings,
     ),
 )
 async def _epic_flow(return_: Set[str],
@@ -161,6 +163,7 @@ async def _epic_flow(return_: Set[str],
                      commenters: Collection[str],
                      default_branches: Dict[str, str],
                      release_settings: ReleaseSettings,
+                     logical_settings: LogicalRepositorySettings,
                      account: int,
                      meta_ids: Tuple[int, ...],
                      mdb: ParallelDatabase,
@@ -193,7 +196,8 @@ async def _epic_flow(return_: Set[str],
     epics_df, children_df, subtask_task, epic_children_map = await filter_epics(
         jira_ids, time_from, time_to, exclude_inactive, label_filter,
         priorities, reporters, assignees, commenters, default_branches,
-        release_settings, account, meta_ids, mdb, pdb, cache, extra_columns=extra_columns,
+        release_settings, logical_settings, account, meta_ids,
+        mdb, pdb, cache, extra_columns=extra_columns,
     )
     children_columns = {k: children_df[k].values for k in children_df.columns}
     children_columns[Issue.id.name] = children_df.index.values
@@ -353,7 +357,7 @@ async def _epic_flow(return_: Set[str],
     exptime=short_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda return_, time_from, time_to, exclude_inactive, label_filter, priorities, reporters, assignees, commenters, default_branches, release_settings, **_: (  # noqa
+    key=lambda return_, time_from, time_to, exclude_inactive, label_filter, priorities, reporters, assignees, commenters, default_branches, release_settings, logical_settings, **_: (  # noqa
         JIRAFilterReturn.ISSUES in return_,
         JIRAFilterReturn.ISSUE_BODIES in return_,
         JIRAFilterReturn.LABELS in return_,
@@ -372,6 +376,7 @@ async def _epic_flow(return_: Set[str],
         ",".join(sorted(commenters)),
         ",".join("%s:%s" % db for db in sorted(default_branches.items())),
         release_settings,
+        logical_settings,
     ),
 )
 async def _issue_flow(return_: Set[str],
@@ -389,6 +394,8 @@ async def _issue_flow(return_: Set[str],
                       branches: pd.DataFrame,
                       default_branches: Dict[str, str],
                       release_settings: ReleaseSettings,
+                      logical_settings: LogicalRepositorySettings,
+                      prefixer: Prefixer,
                       meta_ids: Tuple[int, ...],
                       sdb: ParallelDatabase,
                       mdb: ParallelDatabase,
@@ -418,7 +425,6 @@ async def _issue_flow(return_: Set[str],
         Issue.comments_count,
     ]
     if JIRAFilterReturn.ISSUE_BODIES in return_:
-        prefixer = await Prefixer.schedule_load(meta_ids, mdb, cache)
         extra_columns.extend([
             Issue.key,
             Issue.title,
@@ -433,7 +439,7 @@ async def _issue_flow(return_: Set[str],
         jira_ids, time_from, time_to, exclude_inactive, label_filter,
         # priorities are already lower-cased and de-None-d
         priorities, types, epics, reporters, assignees, commenters, False,
-        default_branches, release_settings, account, meta_ids, mdb, pdb, cache,
+        default_branches, release_settings, logical_settings, account, meta_ids, mdb, pdb, cache,
         extra_columns=extra_columns)
     if JIRAFilterReturn.LABELS in return_:
         components = Counter(chain.from_iterable(
@@ -547,7 +553,6 @@ async def _issue_flow(return_: Set[str],
             return None, None
         if len(pr_ids) == 0:
             return {}, {}
-        nonlocal prefixer
         tasks = [
             read_sql_query(
                 select([PullRequest]).where(and_(
@@ -556,7 +561,7 @@ async def _issue_flow(return_: Set[str],
                 )).order_by(PullRequest.node_id.name),
                 mdb, PullRequest, index=PullRequest.node_id.name),
             DonePRFactsLoader.load_precomputed_done_facts_ids(
-                pr_ids, default_branches, release_settings, prefixer, account, pdb,
+                pr_ids, default_branches, release_settings, prefixer.as_promise(), account, pdb,
                 panic_on_missing_repositories=False),
         ]
         prs_df, (facts, ambiguous) = await gather(*tasks)
@@ -570,10 +575,11 @@ async def _issue_flow(return_: Set[str],
         (mined_prs, dfs, facts, _, deployments_task), repo_envs = await gather(
             unwrap_pull_requests(
                 prs_df, facts, ambiguous, False, related_branches, default_branches,
-                release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache),
+                release_settings, logical_settings,
+                prefixer.as_promise(), account, meta_ids, mdb, pdb, rdb, cache),
             fetch_repository_environments(
                 prs_df[PullRequest.repository_full_name.name].unique(),
-                prefixer, account, rdb, cache),
+                prefixer.as_promise(), account, rdb, cache),
         )
 
         miner = PullRequestListMiner(
@@ -581,10 +587,9 @@ async def _issue_flow(return_: Set[str],
             datetime(1970, 1, 1, tzinfo=timezone.utc), datetime.now(timezone.utc),
             False, None, repo_envs)
         pr_list_items = await list_with_yield(miner, "PullRequestListMiner.__iter__")
-        loaded_prefixer = await prefixer.load()
         if missing_repo_indexes := [
                 i for i, pr in enumerate(pr_list_items)
-                if pr.repository not in loaded_prefixer.repo_name_to_prefixed_name
+                if pr.repository not in prefixer.repo_name_to_prefixed_name
         ]:
             log.error("Discarded %d PRs because their repositories are gone: %s",
                       len(missing_repo_indexes),
@@ -597,7 +602,7 @@ async def _issue_flow(return_: Set[str],
         else:
             deployments = None
         prs = dict(zip((pr.node_id for pr in pr_list_items),
-                       (web_pr_from_struct(pr, loaded_prefixer, log) for pr in pr_list_items)))
+                       (web_pr_from_struct(pr, prefixer, log) for pr in pr_list_items)))
         return prs, deployments
 
     (
@@ -630,7 +635,6 @@ async def _issue_flow(return_: Set[str],
                       )
              for row in users] or None
     if deps is not None:
-        prefixer = await prefixer.load()
         repo_node_to_prefixed_name = prefixer.repo_node_to_prefixed_name.get
         deps = {
             key: webify_deployment(val, repo_node_to_prefixed_name)
@@ -833,21 +837,26 @@ async def _collect_ids(account: int,
                                   Tuple[int, List[str]],
                                   pd.DataFrame,
                                   Dict[str, str],
-                                  ReleaseSettings]:
+                                  ReleaseSettings,
+                                  LogicalRepositorySettings,
+                                  Prefixer]:
     tasks = [
         get_account_repositories(account, True, sdb),
         get_jira_installation(account, sdb, mdb, cache),
         get_metadata_account_ids(account, sdb, cache),
     ]
     repos, jira_ids, meta_ids = await gather(*tasks, op="sdb/ids")
-    tasks = [
-        BranchMiner.extract_branches(
-            [r.split("/", 1)[1] for r in repos], meta_ids, mdb, cache),
-        Settings.from_request(request, account).list_release_matches(repos),
-    ]
-    (branches, default_branches), release_settings = await gather(
-        *tasks, op="sdb/branches and releases")
-    return meta_ids, jira_ids, branches, default_branches, release_settings
+    settings = Settings.from_request(request, account)
+    prefixer = await Prefixer.schedule_load(meta_ids, mdb, cache)
+    (branches, default_branches), release_settings, logical_settings, prefixer = await gather(
+        BranchMiner.extract_branches([r.split("/", 1)[1] for r in repos], meta_ids, mdb, cache),
+        settings.list_release_matches(repos),
+        settings.list_logical_repositories(prefixer, repos),
+        prefixer.load(),
+        op="sdb/branches and releases",
+    )
+    return meta_ids, jira_ids, branches, default_branches, release_settings, logical_settings, \
+        prefixer
 
 
 async def _calc_jira_entry(request: AthenianWebRequest,
@@ -865,8 +874,9 @@ async def _calc_jira_entry(request: AthenianWebRequest,
     except ValueError as e:
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError("?", detail=str(e))) from None
-    meta_ids, jira_ids, _, default_branches, release_settings = await _collect_ids(
-        filt.account, request, request.sdb, request.mdb, request.cache)
+    meta_ids, jira_ids, _, default_branches, release_settings, logical_settings, _ = \
+        await _collect_ids(
+            filt.account, request, request.sdb, request.mdb, request.cache)
     if filt.projects is not None:
         jira_ids = (jira_ids[0], list(set(jira_ids[1]).intersection(
             await resolve_projects(filt.projects, jira_ids[0], request.mdb))))
@@ -893,7 +903,7 @@ async def _calc_jira_entry(request: AthenianWebRequest,
         {normalize_issue_type(p) for p in (filt.types or [])},
         filt.epics or [],
         reporters, assignees, commenters, False,
-        default_branches, release_settings,
+        default_branches, release_settings, logical_settings,
         filt.account, meta_ids, request.mdb, request.pdb, request.cache,
         extra_columns=participant_columns if len(filt.with_ or []) > 1 else (),
     )

@@ -1,4 +1,4 @@
-from typing import Dict, Optional, Set, Tuple
+from typing import Dict, KeysView, Optional, Set, Tuple, Union
 
 import aiomcache
 
@@ -40,7 +40,7 @@ class AccessChecker:
         """Fetch the list of accessible repositories."""
         raise NotImplementedError
 
-    async def check(self, repos: Set[str]) -> Set[str]:
+    async def check(self, repos: Union[Set[str], KeysView[str]]) -> Set[str]:
         """Return repositories which do not belong to the metadata installation.
 
         The names must be *without* the service prefix.

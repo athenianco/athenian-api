@@ -3,11 +3,11 @@ from collections import namedtuple
 from dataclasses import dataclass, fields as dataclass_fields
 from datetime import date, datetime, timedelta, timezone
 from enum import Enum
-from itertools import chain
+from itertools import chain, repeat
 import logging
 import pickle
-from typing import Collection, Dict, Generator, Iterable, Iterator, KeysView, List, Optional, \
-    Sequence, Set, Tuple, Union
+from typing import Collection, Dict, Generator, Iterable, Iterator, KeysView, List, \
+    Mapping, Optional, Sequence, Set, Tuple, Union
 
 import aiomcache
 import numpy as np
@@ -21,22 +21,26 @@ from sqlalchemy.sql.elements import BinaryExpression
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached, CancelCache, short_term_exptime
+from athenian.api.controllers.logical_repos import coerce_logical_repos
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_COLUMNS, \
     DAG, fetch_precomputed_commit_history_dags, fetch_repository_commits_no_branch_dates
 from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_inrange
+from athenian.api.controllers.miners.github.label import fetch_labels_to_filter
+from athenian.api.controllers.miners.github.logical import split_logical_repositories
 from athenian.api.controllers.miners.github.precomputed_prs import \
-    discover_inactive_merged_unreleased_prs, MergedPRFactsLoader, \
-    OpenPRFactsLoader, update_unreleased_prs
+    discover_inactive_merged_unreleased_prs, MergedPRFactsLoader, OpenPRFactsLoader, \
+    update_unreleased_prs
 from athenian.api.controllers.miners.github.release_load import ReleaseLoader
 from athenian.api.controllers.miners.github.release_match import PullRequestToReleaseMapper, \
     ReleaseToPullRequestMapper
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
 from athenian.api.controllers.miners.types import DeploymentConclusion, MinedPullRequest, \
-    nonemax, nonemin, PRParticipants, PRParticipationKind, PullRequestFacts
+    nonemax, nonemin, PRParticipants, PRParticipationKind, PullRequestFacts, PullRequestFactsMap
 from athenian.api.controllers.prefixer import PrefixerPromise
-from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
+from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch, \
+    ReleaseSettings
 from athenian.api.db import add_pdb_misses, DatabaseLike, ParallelDatabase
 from athenian.api.defer import AllEvents, defer
 from athenian.api.int_to_str import int_to_str
@@ -50,7 +54,7 @@ from athenian.api.tracing import sentry_span
 
 
 @dataclass
-class PRDataFrames:
+class PRDataFrames(Mapping[str, pd.DataFrame]):
     """Set of dataframes with all the PR data we can reach."""
 
     prs: pd.DataFrame
@@ -64,9 +68,29 @@ class PRDataFrames:
     labels: pd.DataFrame
     deployments: pd.DataFrame
 
-    def __iter__(self) -> Iterator[pd.DataFrame]:
-        """Iterate the contained dataframes."""
-        return iter(getattr(self, f.name) for f in dataclass_fields(self))
+    def __iter__(self) -> Iterator[str]:
+        """Implement iter() - return an iterator over the field names."""
+        return iter((f.name for f in dataclass_fields(self)))
+
+    def __getitem__(self, key: str) -> pd.DataFrame:
+        """Implement self[key]."""
+        try:
+            return getattr(self, key)
+        except AttributeError:
+            raise KeyError(key) from None
+
+    def __setitem__(self, key: str, value: pd.DataFrame) -> None:
+        """Implement self[key] = value."""
+        for f in dataclass_fields(self):
+            if key == f.name:
+                break
+        else:
+            raise KeyError(key)
+        setattr(self, key, value)
+
+    def __len__(self) -> int:
+        """Implement len()."""
+        return len(dataclass_fields(self))
 
 
 class PullRequestMiner:
@@ -92,6 +116,110 @@ class PullRequestMiner:
         """Return the bound dataframes with PR information."""
         return self._dfs
 
+    def __len__(self) -> int:
+        """Return the number of loaded pull requests."""
+        return len(self._dfs.prs)
+
+    def __iter__(self) -> Generator[MinedPullRequest, None, None]:
+        """Iterate over the individual pull requests."""
+        assert self._dfs.prs.index.nlevels == 2
+        df_fields = [f.name for f in dataclass_fields(MinedPullRequest) if f.name != "pr"]
+        dfs = []
+        grouped_df_iters = []
+        index_backup = []
+        for k in df_fields:
+            plural = k.endswith("s")
+            df = getattr(self._dfs, k if plural else (k + "s"))  # type: pd.DataFrame
+            dfs.append(df)
+            # our very own groupby() allows us to call take() with reduced overhead
+            node_ids = df.index.get_level_values(0).values
+            with_repos = k == "releases"
+            if with_repos:
+                # releases already map to logical repositories
+                repos = df[Release.repository_full_name.name].values.astype("S", copy=False)
+                order_keys = np.char.add(int_to_str(node_ids), repos)
+            else:
+                if df.index.nlevels > 1:
+                    # the second level adds determinism to the iteration order
+                    second_level = df.index.get_level_values(1).values
+                    node_ids_bytes = int_to_str(node_ids)
+                    if second_level.dtype == int:
+                        order_keys = np.char.add(node_ids_bytes, int_to_str(second_level))
+                    else:
+                        order_keys = np.char.add(node_ids_bytes,
+                                                 second_level.astype("S", copy=False))
+                else:
+                    order_keys = node_ids
+            df_order = np.argsort(order_keys)
+            if not with_repos:
+                unique_node_ids, node_ids_unique_counts = np.unique(node_ids, return_counts=True)
+                offsets = np.zeros(len(node_ids_unique_counts) + 1, dtype=int)
+                np.cumsum(node_ids_unique_counts, out=offsets[1:])
+                groups = self._iter_by_split(df_order, offsets)
+                grouped_df_iters.append(iter(zip(unique_node_ids, repeat(None), groups)))
+            else:
+                _, unique_counts = np.unique(order_keys, return_counts=True)
+                node_ids = node_ids[df_order]
+                repos = repos[df_order].astype("U")
+                offsets = np.zeros(len(unique_counts) + 1, dtype=int)
+                np.cumsum(unique_counts, out=offsets[1:])
+                groups = self._iter_by_split(df_order, offsets)
+                grouped_df_iters.append(iter(zip(
+                    node_ids[offsets[:-1]], repos[offsets[:-1]], groups)))
+            if plural:
+                index_backup.append(df.index)
+                df.index = df.index.droplevel(0)
+            else:
+                index_backup.append(None)
+        try:
+            grouped_df_states = []
+            for i in grouped_df_iters:
+                try:
+                    grouped_df_states.append(next(i))
+                except StopIteration:
+                    grouped_df_states.append((None, None, None))
+            empty_df_cache = {}
+            pr_columns = [PullRequest.node_id.name, PullRequest.repository_full_name.name]
+            pr_columns.extend(self._dfs.prs.columns)
+            if not self._dfs.prs.index.is_monotonic_increasing:
+                raise IndexError("PRs index must be pre-sorted ascending: "
+                                 "prs.sort_index(inplace=True)")
+            for pr_tuple in self._dfs.prs.itertuples():
+                (pr_node_id, repo), *pr_tuple = pr_tuple
+                items = {"pr": dict(zip(pr_columns, [pr_node_id, repo] + pr_tuple))}
+                for i, (k, (state_pr_node_id, state_repo, gdf), git, df) in enumerate(zip(
+                        df_fields, grouped_df_states, grouped_df_iters, dfs)):
+                    while state_pr_node_id is not None and (
+                            state_pr_node_id < pr_node_id
+                            or (state_repo is not None and state_repo < repo)):
+                        try:
+                            state_pr_node_id, state_repo, gdf = next(git)
+                        except StopIteration:
+                            state_pr_node_id, state_repo, gdf = None, None, None
+                    grouped_df_states[i] = state_pr_node_id, state_repo, gdf
+                    if state_pr_node_id == pr_node_id and \
+                            (state_repo is None or state_repo == repo):
+                        if not k.endswith("s"):
+                            # much faster than items.iloc[gdf[0]]
+                            gdf = {c: v for c, v in zip(df.columns, df._data.fast_xs(gdf[0]))}
+                        else:
+                            gdf = df.take(gdf)
+                        items[k] = gdf
+                    else:
+                        try:
+                            items[k] = empty_df_cache[k]
+                        except KeyError:
+                            if k.endswith("s"):
+                                empty_val = df.iloc[:0].copy()
+                            else:
+                                empty_val = {c: None for c in df.columns}
+                            items[k] = empty_df_cache[k] = empty_val
+                yield MinedPullRequest(**items)
+        finally:
+            for df, index in zip(dfs, index_backup):
+                if index is not None:
+                    df.index = index
+
     def drop(self, node_ids: Collection[int]) -> pd.Index:
         """
         Remove PRs from the given collection of PR node IDs in-place.
@@ -100,17 +228,17 @@ class PullRequestMiner:
 
         :return: Actually removed node IDs.
         """
-        removed = self._dfs.prs.index.intersection(node_ids)
+        removed = self._dfs.prs.index.get_level_values(0).intersection(node_ids)
         if removed.empty:
             return removed
         self._dfs.prs.drop(removed, inplace=True)
-        for df in self._dfs:
+        for df in self._dfs.values():
             df.drop(removed, inplace=True, errors="ignore",
                     level=0 if isinstance(df.index, pd.MultiIndex) else None)
         return removed
 
     def _deserialize_mine_cache(buffer: bytes) -> Tuple[PRDataFrames,
-                                                        Dict[str, Tuple[str, PullRequestFacts]],
+                                                        PullRequestFactsMap,
                                                         Set[str],
                                                         PRParticipants,
                                                         LabelFilter,
@@ -125,7 +253,7 @@ class PullRequestMiner:
     @sentry_span
     def _postprocess_cached_prs(
             result: Tuple[PRDataFrames,
-                          Dict[str, Tuple[str, PullRequestFacts]],
+                          PullRequestFactsMap,
                           Set[str],
                           PRParticipants,
                           LabelFilter,
@@ -142,7 +270,7 @@ class PullRequestMiner:
             pr_blacklist: Optional[Tuple[Collection[int], Dict[str, List[int]]]],
             truncate: bool,
             **_) -> Tuple[PRDataFrames,
-                          Dict[str, Tuple[str, PullRequestFacts]],
+                          PullRequestFactsMap,
                           Set[str],
                           PRParticipants,
                           LabelFilter,
@@ -163,15 +291,21 @@ class PullRequestMiner:
         to_remove = set()
         if pr_blacklist is not None:
             to_remove.update(pr_blacklist[0])
-        to_remove.update(dfs.prs.index.take(np.nonzero(
-            np.in1d(dfs.prs[PullRequest.repository_full_name.name].values,
-                    list(repositories), assume_unique=True, invert=True),
-        )[0]))
+        if no_logical_repos := (coerce_logical_repos(repositories).keys() == repositories):
+            to_remove.update(dfs.prs.index.get_level_values(0).values[
+                np.in1d(dfs.prs.index.get_level_values(1).values,
+                        list(repositories), assume_unique=True, invert=True),
+            ])
         time_to = None if truncate else pd.Timestamp(date_to, tzinfo=timezone.utc)
         to_remove.update(cls._find_drop_by_participants(dfs, participants, time_to))
         to_remove.update(cls._find_drop_by_labels(dfs, labels))
         to_remove.update(cls._find_drop_by_jira(dfs, jira))
         cls._drop(dfs, to_remove)
+        if not no_logical_repos:
+            dfs.prs = dfs.prs.take(np.flatnonzero(
+                np.in1d(dfs.prs.index.get_level_values(1).values,
+                        list(repositories), assume_unique=True),
+            ))
         return result
 
     @classmethod
@@ -180,8 +314,9 @@ class PullRequestMiner:
         exptime=lambda cls, **_: cls.CACHE_TTL,
         serialize=lambda r: pickle.dumps(r[:-1]),
         deserialize=_deserialize_mine_cache,
-        key=lambda date_from, date_to, exclude_inactive, release_settings, updated_min, updated_max, pr_blacklist, truncate, **_: (  # noqa
-            date_from.toordinal(), date_to.toordinal(), exclude_inactive, release_settings,
+        key=lambda date_from, date_to, exclude_inactive, release_settings, logical_settings, updated_min, updated_max, pr_blacklist, truncate, **_: (  # noqa
+            date_from.toordinal(), date_to.toordinal(), exclude_inactive,
+            release_settings, logical_settings,
             updated_min.timestamp() if updated_min is not None else None,
             updated_max.timestamp() if updated_max is not None else None,
             ",".join(map(str, sorted(pr_blacklist[0]) if pr_blacklist is not None else [])),
@@ -201,6 +336,7 @@ class PullRequestMiner:
                     default_branches: Dict[str, str],
                     exclude_inactive: bool,
                     release_settings: ReleaseSettings,
+                    logical_settings: LogicalRepositorySettings,
                     updated_min: Optional[datetime],
                     updated_max: Optional[datetime],
                     pr_blacklist: Optional[Tuple[Collection[int], Dict[str, List[int]]]],
@@ -213,7 +349,7 @@ class PullRequestMiner:
                     rdb: ParallelDatabase,
                     cache: Optional[aiomcache.Client],
                     ) -> Tuple[PRDataFrames,
-                               Dict[str, Tuple[str, PullRequestFacts]],
+                               PullRequestFactsMap,
                                Set[str],
                                PRParticipants,
                                LabelFilter,
@@ -234,10 +370,14 @@ class PullRequestMiner:
             pr_blacklist, ambiguous = pr_blacklist
             if len(pr_blacklist) > 0:
                 pr_blacklist_expr = PullRequest.node_id.notin_any_values(pr_blacklist)
-        pdags = await fetch_precomputed_commit_history_dags(repositories, account, pdb, cache)
+        if logical_settings.has_logical_prs():
+            physical_repos = coerce_logical_repos(repositories).keys()
+        else:
+            physical_repos = repositories
+        pdags = await fetch_precomputed_commit_history_dags(physical_repos, account, pdb, cache)
         fetch_branch_dags_task = asyncio.create_task(
             cls._fetch_branch_dags(
-                repositories, pdags, branches, account, meta_ids, mdb, pdb, cache),
+                physical_repos, pdags, branches, account, meta_ids, mdb, pdb, cache),
             name="_fetch_branch_dags",
         )
         # the heaviest task should always go first
@@ -246,16 +386,16 @@ class PullRequestMiner:
                 repositories, branches, default_branches, time_from, time_to,
                 participants.get(PRParticipationKind.AUTHOR, []),
                 participants.get(PRParticipationKind.MERGER, []),
-                jira, release_settings, updated_min, updated_max, pdags, prefixer,
-                account, meta_ids, mdb, pdb, rdb, cache, pr_blacklist_expr, None,
+                jira, release_settings, logical_settings, updated_min, updated_max, pdags,
+                prefixer, account, meta_ids, mdb, pdb, rdb, cache, pr_blacklist_expr, None,
                 truncate=truncate),
             cls.fetch_prs(
-                time_from, time_to, repositories, participants, labels, jira,
+                time_from, time_to, physical_repos, participants, labels, jira,
                 exclude_inactive, pr_blacklist_expr, None, branches, pdags, account, meta_ids,
                 mdb, pdb, cache, updated_min=updated_min, updated_max=updated_max,
                 fetch_branch_dags_task=fetch_branch_dags_task),
             cls.map_deployments_to_prs(
-                repositories, time_from, time_to, participants,
+                physical_repos, time_from, time_to, participants,
                 labels, jira, updated_min, updated_max, prefixer, branches, pdags,
                 account, meta_ids, mdb, pdb, cache, pr_blacklist,
                 fetch_branch_dags_task=fetch_branch_dags_task),
@@ -292,7 +432,8 @@ class PullRequestMiner:
                         cls.mappers.load_releases(
                             new_prs[PullRequest.repository_full_name.name].unique(),
                             branches, default_branches, min_deployed_merged, time_from,
-                            release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache),
+                            release_settings, logical_settings, prefixer, account, meta_ids,
+                            mdb, pdb, rdb, cache),
                         name="PullRequestMiner.mine/deployed_releases",
                     )
         concatenated = [prs, released_prs, deployed_prs, *unreleased]
@@ -312,9 +453,9 @@ class PullRequestMiner:
                     missed_prs, branches, default_branches, time_from, time_to,
                     participants.get(PRParticipationKind.AUTHOR, []),
                     participants.get(PRParticipationKind.MERGER, []),
-                    jira, release_settings, updated_min, updated_max, pdags, prefixer,
-                    account, meta_ids, mdb, pdb, rdb, cache, None, pr_whitelist, truncate,
-                    precomputed_observed=precomputed_observed),
+                    jira, release_settings, logical_settings, updated_min, updated_max, pdags,
+                    prefixer, account, meta_ids, mdb, pdb, rdb, cache, None, pr_whitelist,
+                    truncate, precomputed_observed=precomputed_observed),
                 cls.fetch_prs(
                     time_from, time_to, missed_prs.keys(), participants, labels, jira,
                     exclude_inactive, None, pr_whitelist, branches, branch_dags, account, meta_ids,
@@ -326,17 +467,17 @@ class PullRequestMiner:
         fetch_branch_dags_task.cancel()  # 99.999% that it was awaited, but still
         prs = pd.concat(concatenated, copy=False)
         prs = prs[~prs.index.duplicated()]
-        prs.sort_index(level=0, inplace=True, sort_remaining=False)
+        prs.sort_index(inplace=True)
 
         tasks = [
             # bypass the useless inner caching by calling _mine_by_ids directly
             cls._mine_by_ids(
                 prs, unreleased[0].index if unreleased else [], time_to, releases, matched_bys,
-                branches, default_branches, release_dags, release_settings, prefixer,
-                account, meta_ids, mdb, pdb, rdb, cache,
+                branches, default_branches, release_dags, release_settings, logical_settings,
+                prefixer, account, meta_ids, mdb, pdb, rdb, cache,
                 truncate=truncate, with_jira=with_jira_map,
                 extra_releases_task=deployed_releases_task),
-            OpenPRFactsLoader.load_open_pull_request_facts(prs, account, pdb),
+            OpenPRFactsLoader.load_open_pull_request_facts(prs, repositories, account, pdb),
         ]
         (dfs, unreleased_facts, unreleased_prs_event), open_facts = await gather(
             *tasks, op="PullRequestMiner.mine/external_data")
@@ -351,8 +492,9 @@ class PullRequestMiner:
         for k, v in unreleased_facts.items():  # merged unreleased PR precomputed facts
             if v is not None:  # it can be None because the pdb table is filled in two steps
                 facts[k] = v
-        # we don't care about the precomputed facts, they are here for the reference
 
+        dfs.prs = split_logical_repositories(
+            dfs.prs, dfs.labels, repositories - physical_repos, logical_settings)
         return dfs, facts, repositories, participants, labels, jira, with_jira_map, matched_bys, \
             unreleased_prs_event
 
@@ -361,7 +503,7 @@ class PullRequestMiner:
 
     def _deserialize_mine_by_ids_cache(
             buffer: bytes) -> Tuple[PRDataFrames,
-                                    Dict[str, Tuple[str, PullRequestFacts]],
+                                    PullRequestFactsMap,
                                     asyncio.Event]:
         dfs, facts = pickle.loads(buffer)
         event = asyncio.Event()
@@ -373,11 +515,12 @@ class PullRequestMiner:
         exptime=lambda cls, **_: cls.CACHE_TTL,
         serialize=lambda r: pickle.dumps(r[:-1]),
         deserialize=_deserialize_mine_by_ids_cache,
-        key=lambda prs, unreleased, releases, time_to, truncate=True, with_jira=True, **_: (
+        key=lambda prs, unreleased, releases, time_to, logical_settings, truncate=True, with_jira=True, **_: (  # noqa
             ",".join(map(str, prs.index.values)),
             ",".join(map(str, unreleased)),
             ",".join(map(str, releases[Release.node_id.name].values)),
             time_to.timestamp(),
+            logical_settings,
             truncate,
             with_jira,
         ),
@@ -392,6 +535,7 @@ class PullRequestMiner:
                           default_branches: Dict[str, str],
                           dags: Dict[str, DAG],
                           release_settings: ReleaseSettings,
+                          logical_settings: LogicalRepositorySettings,
                           prefixer: PrefixerPromise,
                           account: int,
                           meta_ids: Tuple[int, ...],
@@ -402,7 +546,7 @@ class PullRequestMiner:
                           truncate: bool = True,
                           with_jira: bool = True,
                           ) -> Tuple[PRDataFrames,
-                                     Dict[str, Tuple[str, PullRequestFacts]],
+                                     PullRequestFactsMap,
                                      asyncio.Event]:
         """
         Fetch PR metadata for certain PRs.
@@ -412,13 +556,13 @@ class PullRequestMiner:
         :param truncate: Do not load anything after `time_to`.
         :param with_jira: Value indicating whether to load the mapped JIRA issues.
         :return: 1. List of mined DataFrame-s. \
-                 2. mapping to pickle-d PullRequestFacts for unreleased merged PR. \
+                 2. mapping to PullRequestFacts of unreleased merged PRs. \
                  3. Synchronization for updating the pdb table with merged unreleased PRs.
         """
         return await cls._mine_by_ids(
             prs, unreleased, time_to, releases, matched_bys, branches, default_branches,
-            dags, release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache,
-            truncate=truncate, with_jira=with_jira)
+            dags, release_settings, logical_settings, prefixer, account, meta_ids,
+            mdb, pdb, rdb, cache, truncate=truncate, with_jira=with_jira)
 
     _deserialize_mine_by_ids_cache = staticmethod(_deserialize_mine_by_ids_cache)
 
@@ -434,6 +578,7 @@ class PullRequestMiner:
                            default_branches: Dict[str, str],
                            dags: Dict[str, DAG],
                            release_settings: ReleaseSettings,
+                           logical_settings: LogicalRepositorySettings,
                            prefixer: PrefixerPromise,
                            account: int,
                            meta_ids: Tuple[int, ...],
@@ -445,8 +590,9 @@ class PullRequestMiner:
                            with_jira: bool = True,
                            extra_releases_task: Optional[asyncio.Task] = None,
                            ) -> Tuple[PRDataFrames,
-                                      Dict[str, Tuple[str, PullRequestFacts]],
+                                      PullRequestFactsMap,
                                       asyncio.Event]:
+        assert prs.index.nlevels == 1
         node_ids = prs.index if len(prs) > 0 else set()
         facts = {}  # precomputed PullRequestFacts about merged unreleased PRs
         unreleased_prs_event: asyncio.Event = None
@@ -493,37 +639,6 @@ class PullRequestMiner:
                 created_at=truncate)
 
         @sentry_span
-        async def map_releases():
-            if truncate:
-                merged_mask = (prs[PullRequest.merged_at.name] < time_to).values
-                nonlocal merged_unreleased_indexes
-                merged_unreleased_indexes = \
-                    np.nonzero((prs[PullRequest.merged_at.name] >= time_to).values)[0]
-            else:
-                merged_mask = prs[PullRequest.merged_at.name].notnull()
-            merged_mask &= ~prs.index.isin(unreleased)
-            merged_prs = prs.take(np.where(merged_mask)[0])
-            nonlocal releases
-            if extra_releases_task is not None:
-                await extra_releases_task
-                extra_releases, _ = extra_releases_task.result()
-                releases = releases.append(extra_releases, ignore_index=True)
-            subtasks = [cls.mappers.map_prs_to_releases(
-                merged_prs, releases, matched_bys, branches, default_branches, time_to,
-                dags, release_settings, prefixer, account, meta_ids, mdb, pdb, cache),
-                MergedPRFactsLoader.load_merged_unreleased_pull_request_facts(
-                    prs.take(np.where(~merged_mask)[0]),
-                    nonemax(releases[Release.published_at.name].nonemax(), time_to),
-                    LabelFilter.empty(), matched_bys, default_branches, release_settings,
-                    prefixer, account, pdb)]
-            df_facts, other_facts = await gather(*subtasks)
-            nonlocal facts
-            nonlocal unreleased_prs_event
-            df, facts, unreleased_prs_event = df_facts
-            facts.update(other_facts)
-            return df
-
-        @sentry_span
         async def fetch_labels():
             return await cls._read_filtered_models(
                 PullRequestLabel, node_ids, time_to, meta_ids, mdb,
@@ -531,6 +646,54 @@ class PullRequestMiner:
                          PullRequestLabel.description,
                          PullRequestLabel.color],
                 created_at=False)
+
+        fetch_labels_task = asyncio.create_task(
+            fetch_labels(), name="PullRequestMiner.mine_by_ids/fetch_labels")
+
+        @sentry_span
+        async def map_releases():
+            if truncate:
+                merged_mask = (prs[PullRequest.merged_at.name] < time_to).values
+                nonlocal merged_unreleased_indexes
+                merged_unreleased_indexes = \
+                    np.nonzero((prs[PullRequest.merged_at.name] >= time_to).values)[0]
+            else:
+                merged_mask = prs[PullRequest.merged_at.name].notnull().values
+            merged_mask &= ~prs.index.isin(unreleased)
+            merged_prs = prs.take(np.flatnonzero(merged_mask))
+            nonlocal releases
+            if extra_releases_task is not None:
+                await extra_releases_task
+                extra_releases, _ = extra_releases_task.result()
+                releases = releases.append(extra_releases, ignore_index=True)
+            labels = None
+            if logical_settings.has_logical_prs():
+                repos = releases[Release.repository_full_name.name].unique()
+                if LogicalRepositorySettings.contains_logical_repos(repos):
+                    await fetch_labels_task
+                    labels = fetch_labels_task.result()
+                    merged_prs = split_logical_repositories(
+                        merged_prs, labels, repos, logical_settings)
+            df_facts, other_facts = await gather(
+                cls.mappers.map_prs_to_releases(
+                    merged_prs, releases, matched_bys, branches, default_branches, time_to,
+                    dags, release_settings, prefixer, account, meta_ids, mdb, pdb, cache,
+                    labels=labels),
+                MergedPRFactsLoader.load_merged_unreleased_pull_request_facts(
+                    prs.take(np.flatnonzero(~merged_mask)),
+                    nonemax(releases[Release.published_at.name].nonemax(), time_to),
+                    LabelFilter.empty(), matched_bys, default_branches, release_settings,
+                    prefixer, account, pdb),
+            )
+            nonlocal facts
+            nonlocal unreleased_prs_event
+            df, facts, unreleased_prs_event = df_facts
+            facts.update(other_facts)
+            return df
+
+        async def _fetch_labels():
+            await fetch_labels_task
+            return fetch_labels_task.result()
 
         @sentry_span
         async def fetch_jira():
@@ -597,8 +760,8 @@ class PullRequestMiner:
             fetch_review_comments(),
             fetch_review_requests(),
             fetch_comments(),
-            fetch_labels(),
-            cls.fetch_pr_deployments(node_ids, account, pdb, rdb),
+            _fetch_labels(),
+            cls.fetch_pr_deployments(node_ids, prefixer, account, pdb, rdb),
         )
         dfs = PRDataFrames(prs, *dfs)
         if len(merged_unreleased_indexes):
@@ -640,6 +803,7 @@ class PullRequestMiner:
                    default_branches: Dict[str, str],
                    exclude_inactive: bool,
                    release_settings: ReleaseSettings,
+                   logical_settings: LogicalRepositorySettings,
                    prefixer: PrefixerPromise,
                    account: int,
                    meta_ids: Tuple[int, ...],
@@ -652,7 +816,7 @@ class PullRequestMiner:
                    pr_blacklist: Optional[Tuple[Collection[int], Dict[str, List[int]]]] = None,
                    truncate: bool = True,
                    ) -> Tuple["PullRequestMiner",
-                              Dict[str, Tuple[str, PullRequestFacts]],
+                              PullRequestFactsMap,
                               Dict[str, ReleaseMatch],
                               asyncio.Event]:
         """
@@ -675,6 +839,7 @@ class PullRequestMiner:
         :param default_branches: Mapping from repository names to their default branch names.
         :param exclude_inactive: Ors must have at least one event in the given time frame.
         :param release_settings: Release match settings of the account.
+        :param logical_settings: Logical repository settings of the account.
         :param updated_min: PRs must have the last update timestamp not older than it.
         :param updated_max: PRs must have the last update timestamp not newer than or equal to it.
         :param mdb: Metadata db instance.
@@ -698,8 +863,9 @@ class PullRequestMiner:
         assert time_to <= date_to_with_time
         dfs, facts, _, _, _, _, _, matched_bys, event = await cls._mine(
             date_from, date_to, repositories, participants, labels, jira, with_jira_map, branches,
-            default_branches, exclude_inactive, release_settings, updated_min, updated_max,
-            pr_blacklist, truncate, prefixer, account, meta_ids, mdb, pdb, rdb, cache)
+            default_branches, exclude_inactive, release_settings, logical_settings,
+            updated_min, updated_max, pr_blacklist, truncate, prefixer, account, meta_ids,
+            mdb, pdb, rdb, cache)
         cls._truncate_prs(dfs, time_from, time_to)
         return cls(dfs), facts, matched_bys, event
 
@@ -726,7 +892,9 @@ class PullRequestMiner:
                         updated_min: Optional[datetime] = None,
                         updated_max: Optional[datetime] = None,
                         fetch_branch_dags_task: Optional[asyncio.Task] = None,
-                        ) -> Tuple[pd.DataFrame, Dict[str, DAG]]:
+                        with_labels: bool = False,
+                        ) -> Union[Tuple[pd.DataFrame, Dict[str, DAG]],
+                                   Tuple[pd.DataFrame, Dict[str, DAG], pd.DataFrame]]:
         """
         Query pull requests from mdb that satisfy the given filters.
 
@@ -748,7 +916,8 @@ class PullRequestMiner:
         force-push-dropped.
 
         :return: pandas DataFrame with the PRs indexed by node_id; \
-                 commit DAGs that contain the branch heads.
+                 commit DAGs that contain the branch heads; \
+                 (if was required) DataFrame with PR labels.
         """
         assert isinstance(mdb, ParallelDatabase)
         assert isinstance(pdb, ParallelDatabase)
@@ -759,15 +928,25 @@ class PullRequestMiner:
         )
         if columns is not PullRequest and PullRequest.merge_commit_id not in columns and \
                 PullRequest.merge_commit_sha not in columns:
-            return await pr_list_coro, dags
+            prs, labels = await pr_list_coro
+            return prs, dags, *([labels] if with_labels else [])
 
         if fetch_branch_dags_task is None:
             fetch_branch_dags_task = cls._fetch_branch_dags(
                 repositories, dags, branches, account, meta_ids, mdb, pdb, cache)
 
-        dags, prs = await gather(fetch_branch_dags_task, pr_list_coro)
-        prs = await cls.mark_dead_prs(prs, branches, dags, meta_ids, mdb, columns)
-        return prs, dags
+        dags, (prs, labels) = await gather(fetch_branch_dags_task, pr_list_coro)
+
+        async def load_labels():
+            if labels is not None:
+                return labels
+            return await fetch_labels_to_filter(prs, meta_ids, mdb)
+
+        prs, *labels = await gather(
+            cls.mark_dead_prs(prs, branches, dags, meta_ids, mdb, columns),
+            *([load_labels()] if with_labels else []),
+        )
+        return prs, dags, *labels
 
     @classmethod
     async def mark_dead_prs(cls,
@@ -796,6 +975,7 @@ class PullRequestMiner:
         if merged_prs.empty:
             return prs
         pr_numbers = merged_prs[PullRequest.number.name].values
+        assert merged_prs.index.nlevels == 1
         pr_node_ids = merged_prs.index.values
         pr_repos = merged_prs[PullRequest.repository_full_name.name].values
         repo_order = np.argsort(pr_repos)
@@ -898,7 +1078,7 @@ class PullRequestMiner:
 
     @classmethod
     async def _fetch_branch_dags(cls,
-                                 repositories: Set[str],
+                                 repositories: Iterable[str],
                                  dags: Optional[Dict[str, DAG]],
                                  branches: pd.DataFrame,
                                  account: int,
@@ -932,7 +1112,7 @@ class PullRequestMiner:
                                     columns=PullRequest,
                                     updated_min: Optional[datetime] = None,
                                     updated_max: Optional[datetime] = None,
-                                    ) -> pd.DataFrame:
+                                    ) -> Tuple[pd.DataFrame, Optional[pd.DataFrame]]:
         assert (updated_min is None) == (updated_max is None)
         filters = [
             (sql.case(
@@ -1006,22 +1186,12 @@ class PullRequestMiner:
         if PullRequest.closed.name in prs:
             cls.adjust_pr_closed_merged_timestamps(prs)
         if not labels or embedded_labels_query:
-            return prs
-        lcols = [
-            PullRequestLabel.pull_request_node_id,
-            sql.func.lower(PullRequestLabel.name).label(PullRequestLabel.name.name),
-            PullRequestLabel.description,
-            PullRequestLabel.color,
-        ]
-        df_labels = await read_sql_query(
-            sql.select(lcols)
-            .where(sql.and_(PullRequestLabel.pull_request_node_id.in_(prs.index),
-                            PullRequestLabel.acc_id.in_(meta_ids))),
-            mdb, lcols, index=PullRequestLabel.pull_request_node_id.name)
+            return prs, None
+        df_labels = await fetch_labels_to_filter(prs.index, meta_ids, mdb)
         left = cls.find_left_by_labels(
             prs.index, df_labels.index, df_labels[PullRequestLabel.name.name].values, labels)
         prs = prs.take(np.nonzero(prs.index.isin(left))[0])
-        return prs
+        return prs, df_labels
 
     @staticmethod
     def adjust_pr_closed_merged_timestamps(prs_df: pd.DataFrame) -> None:
@@ -1037,7 +1207,7 @@ class PullRequestMiner:
             cls,
             time_from: datetime,
             time_to: datetime,
-            repos: Collection[str],
+            repos: Union[Set[str], KeysView[str]],
             participants: PRParticipants,
             labels: LabelFilter,
             jira: JIRAFilter,
@@ -1049,7 +1219,7 @@ class PullRequestMiner:
             mdb: ParallelDatabase,
             pdb: ParallelDatabase,
             cache: Optional[aiomcache.Client]) -> pd.DataFrame:
-        node_ids, _ = await discover_inactive_merged_unreleased_prs(
+        node_ids = await discover_inactive_merged_unreleased_prs(
             time_from, time_to, repos, participants, labels, default_branches, release_settings,
             prefixer, account, pdb, cache)
         if not jira:
@@ -1077,13 +1247,14 @@ class PullRequestMiner:
     @sentry_span
     async def fetch_pr_deployments(cls,
                                    pr_node_ids: Iterable[int],
+                                   prefixer: PrefixerPromise,
                                    account: int,
                                    pdb: ParallelDatabase,
                                    rdb: ParallelDatabase,
                                    ) -> pd.DataFrame:
         """Load the deployments for each PR node ID."""
         ghprd = GitHubPullRequestDeployment
-        cols = [ghprd.pull_request_id, ghprd.deployment_name]
+        cols = [ghprd.pull_request_id, ghprd.deployment_name, ghprd.repository_id]
         df = await read_sql_query(
             sql.select(cols)
             .where(sql.and_(ghprd.acc_id == account,
@@ -1103,6 +1274,9 @@ class PullRequestMiner:
         df = df.join(details)
         df.reset_index(inplace=True)
         df.set_index([ghprd.pull_request_id.name, ghprd.deployment_name.name], inplace=True)
+        repo_node_to_name = (await prefixer.load()).repo_node_to_name.get
+        df[PullRequest.repository_full_name.name] = \
+            [repo_node_to_name(r) for r in df[ghprd.repository_id.name].values]
         return df
 
     @staticmethod
@@ -1129,7 +1303,7 @@ class PullRequestMiner:
     def _drop(cls, dfs: PRDataFrames, pr_ids: Collection[int]) -> None:
         if len(pr_ids) == 0:
             return
-        for df in dfs:
+        for df in dfs.values():
             df.drop(pr_ids,
                     level=0 if isinstance(df.index, pd.MultiIndex) else None,
                     inplace=True,
@@ -1184,8 +1358,8 @@ class PullRequestMiner:
             col_parts = participants.get(pk)
             if not col_parts:
                 continue
-            passed.append(df.index.get_level_values(0).take(np.where(
-                df[col.name].isin(col_parts))[0]).unique())
+            passed.append(df.index.get_level_values(0).take(np.flatnonzero(
+                df[col.name].isin(col_parts))).unique())
         while len(passed) > 1:
             new_passed = []
             for i in range(0, len(passed), 2):
@@ -1194,7 +1368,7 @@ class PullRequestMiner:
                 else:
                     new_passed.append(passed[i])
             passed = new_passed
-        return dfs.prs.index.difference(passed[0])
+        return dfs.prs.index.get_level_values(0).difference(passed[0])
 
     @classmethod
     @sentry_span
@@ -1203,10 +1377,11 @@ class PullRequestMiner:
             return pd.Index([])
         df_labels_index = dfs.labels.index.get_level_values(0)
         df_labels_names = dfs.labels[PullRequestLabel.name.name].values
-        left = cls.find_left_by_labels(dfs.prs.index, df_labels_index, df_labels_names, labels)
+        pr_node_ids = dfs.prs.index.get_level_values(0)
+        left = cls.find_left_by_labels(pr_node_ids, df_labels_index, df_labels_names, labels)
         if not labels.include:
             return df_labels_index.difference(left)
-        return dfs.prs.index.difference(left)
+        return pr_node_ids.difference(left)
 
     @classmethod
     def find_left_by_labels(cls,
@@ -1256,6 +1431,7 @@ class PullRequestMiner:
             return pd.Index([])
         left = []
         jira_index = dfs.jiras.index.get_level_values(0)
+        pr_node_ids = dfs.prs.index.get_level_values(0)
         if jira.labels:
             df_labels_names = dfs.jiras[Issue.labels.name].values
             df_labels_index = pd.Index(np.repeat(jira_index, [len(v) for v in df_labels_names]))
@@ -1263,7 +1439,7 @@ class PullRequestMiner:
             # if jira.labels.include is empty, we effectively drop all unmapped PRs
             # that is the desired behavior
             left.append(cls.find_left_by_labels(
-                dfs.prs.index, df_labels_index, df_labels_names, jira.labels))
+                pr_node_ids, df_labels_index, df_labels_names, jira.labels))
         if jira.epics:
             left.append(jira_index.take(np.where(
                 dfs.jiras["epic"].isin(jira.epics))[0]).unique())
@@ -1273,7 +1449,7 @@ class PullRequestMiner:
         result = left[0]
         for other in left[1:]:
             result = result.intersection(other)
-        return dfs.prs.index.difference(result)
+        return pr_node_ids.difference(result)
 
     @classmethod
     @sentry_span
@@ -1298,7 +1474,7 @@ class PullRequestMiner:
         activities = pd.concat(activities, copy=False)
         active_prs = activities.index.take(np.where(
             activities.between(time_from, time_to))[0]).drop_duplicates()
-        inactive_prs = dfs.prs.index.difference(active_prs)
+        inactive_prs = dfs.prs.index.get_level_values(0).difference(active_prs)
         return inactive_prs
 
     @staticmethod
@@ -1335,15 +1511,17 @@ class PullRequestMiner:
 
         This is used to correctly handle timezone offsets.
         """
+        pr_node_ids_index = dfs.prs.index.get_level_values(0)
+
         # filter out PRs which were released before `time_from`
         unreleased = dfs.releases.index.take(np.flatnonzero(
             (dfs.releases[Release.published_at.name] < time_from).values))
         # closed but not merged in `[date_from, time_from]`
-        unrejected = dfs.prs.index.take(np.flatnonzero(
+        unrejected = pr_node_ids_index.take(np.flatnonzero(
             ((dfs.prs[PullRequest.closed_at.name] < time_from) &
              dfs.prs[PullRequest.merged_at.name].isnull()).values))
         # created in `[time_to, date_to]`
-        uncreated = dfs.prs.index.take(np.flatnonzero(
+        uncreated = pr_node_ids_index.take(np.flatnonzero(
             (dfs.prs[PullRequest.created_at.name] >= time_to).values))
         deployed = dfs.deployments.index.get_level_values(0).take(np.flatnonzero(
             dfs.deployments[DeploymentNotification.finished_at.name].between(time_from, time_to)
@@ -1382,7 +1560,7 @@ class PullRequestMiner:
     @classmethod
     @sentry_span
     async def map_deployments_to_prs(cls,
-                                     repositories: Set[str],
+                                     repositories: Union[Set[str], KeysView[str]],
                                      time_from: datetime,
                                      time_to: datetime,
                                      participants: PRParticipants,
@@ -1430,88 +1608,10 @@ class PullRequestMiner:
             fetch_branch_dags_task=fetch_branch_dags_task)
         return prs
 
-    def __len__(self) -> int:
-        """Return the number of loaded pull requests."""
-        return len(self._dfs.prs)
-
-    def __iter__(self) -> Generator[MinedPullRequest, None, None]:
-        """Iterate over the individual pull requests."""
-        df_fields = [f.name for f in dataclass_fields(MinedPullRequest) if f.name != "pr"]
-        dfs = []
-        grouped_df_iters = []
-        index_backup = []
-        for k in df_fields:
-            plural = k.endswith("s")
-            df = getattr(self._dfs, k if plural else (k + "s"))
-            dfs.append(df)
-            # our very own groupby() allows us to call take() with reduced overhead
-            node_ids = df.index.get_level_values(0).values
-            if df.index.nlevels > 1:
-                # adding the second level is not really required but makes iteration deterministic
-                second_level = df.index.get_level_values(1).values
-                node_ids_bytes = int_to_str(node_ids)
-                if second_level.dtype == int:
-                    order_keys = np.char.add(node_ids_bytes, int_to_str(second_level))
-                else:
-                    order_keys = np.char.add(node_ids_bytes, second_level.astype("S", copy=False))
-            else:
-                order_keys = node_ids
-            node_ids_order = np.argsort(order_keys)
-            node_ids = node_ids[node_ids_order]
-            node_ids_unique_counts = np.unique(node_ids, return_counts=True)[1]
-            node_ids_group_counts = np.zeros(len(node_ids_unique_counts) + 1, dtype=int)
-            np.cumsum(node_ids_unique_counts, out=node_ids_group_counts[1:])
-            keys = node_ids[node_ids_group_counts[:-1]]
-            groups = np.split(node_ids_order, node_ids_group_counts[1:-1])
-            grouped_df_iters.append(iter(zip(keys, groups)))
-            if plural:
-                index_backup.append(df.index)
-                df.index = df.index.droplevel(0)
-            else:
-                index_backup.append(None)
-        try:
-            grouped_df_states = []
-            for i in grouped_df_iters:
-                try:
-                    grouped_df_states.append(next(i))
-                except StopIteration:
-                    grouped_df_states.append((None, None))
-            empty_df_cache = {}
-            pr_columns = [PullRequest.node_id.name]
-            pr_columns.extend(self._dfs.prs.columns)
-            if not self._dfs.prs.index.is_monotonic_increasing:
-                raise IndexError("PRs index must be pre-sorted ascending: "
-                                 "prs.sort_index(inplace=True)")
-            for pr_tuple in self._dfs.prs.itertuples():
-                pr_node_id = pr_tuple.Index
-                items = {"pr": dict(zip(pr_columns, pr_tuple))}
-                for i, (k, (state_pr_node_id, gdf), git, df) in enumerate(zip(
-                        df_fields, grouped_df_states, grouped_df_iters, dfs)):
-                    if state_pr_node_id == pr_node_id:
-                        if not k.endswith("s"):
-                            # much faster than items.iloc[gdf[0]]
-                            gdf = {c: v for c, v in zip(df.columns, df._data.fast_xs(gdf[0]))}
-                        else:
-                            gdf = df.take(gdf)
-                        items[k] = gdf
-                        try:
-                            grouped_df_states[i] = next(git)
-                        except StopIteration:
-                            grouped_df_states[i] = None, None
-                    else:
-                        try:
-                            items[k] = empty_df_cache[k]
-                        except KeyError:
-                            if k.endswith("s"):
-                                empty_val = df.iloc[:0].copy()
-                            else:
-                                empty_val = {c: None for c in df.columns}
-                            items[k] = empty_df_cache[k] = empty_val
-                yield MinedPullRequest(**items)
-        finally:
-            for df, index in zip(dfs, index_backup):
-                if index is not None:
-                    df.index = index
+    @staticmethod
+    def _iter_by_split(arr: np.ndarray, splits: np.ndarray) -> Generator[np.ndarray, None, None]:
+        for beg, end in zip(splits[:-1], splits[1:]):
+            yield arr[beg:end]
 
 
 class ReviewResolution(Enum):

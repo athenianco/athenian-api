@@ -30,8 +30,10 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
     prefixer = await Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
     filters, repos = await compile_filters_prs(filt.for_, request, filt.account, meta_ids)
     time_from, time_to = filt.resolve_time_from_and_to()
-    release_settings, (branches, default_branches), calculators = await gather(
-        Settings.from_request(request, filt.account).list_release_matches(repos),
+    settings = Settings.from_request(request, filt.account)
+    release_settings, logical_settings, (branches, default_branches), calculators = await gather(
+        settings.list_release_matches(repos),
+        settings.list_logical_repositories(prefixer, repos, pointer=".for[?].repositories"),
         BranchMiner.extract_branches(repos, meta_ids, request.mdb, request.cache, strip=True),
         get_calculators_for_request({s for s, _ in filters}, filt.account, meta_ids, request),
     )
@@ -61,7 +63,8 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
             histograms = await calculator.calc_pull_request_histograms_github(
                 defs, time_from, time_to, filt.quantiles or (0, 1), for_set.lines or [],
                 environment, repos, withgroups, labels, jira, filt.exclude_inactive,
-                release_settings, prefixer, branches, default_branches, filt.fresh)
+                release_settings, logical_settings, prefixer, branches, default_branches,
+                filt.fresh)
         except ValueError as e:
             raise ResponseError(InvalidRequestError(str(e))) from None
         for line_groups in histograms:

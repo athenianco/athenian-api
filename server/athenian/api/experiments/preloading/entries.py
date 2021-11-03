@@ -32,7 +32,7 @@ from athenian.api.controllers.miners.github.release_load import \
 from athenian.api.controllers.miners.github.release_match import ReleaseToPullRequestMapper
 from athenian.api.controllers.miners.jira.issue import PullRequestJiraMapper
 from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind, \
-    PullRequestFacts
+    PullRequestFacts, PullRequestFactsMap
 from athenian.api.controllers.prefixer import PrefixerPromise
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.models.metadata.github import Base as MetadataGitHubBase, \
@@ -104,7 +104,8 @@ class PreloadedReleaseLoader(ReleaseLoader):
         )
         releases = cached_df.filter((account, ), mask)
         releases.sort_values(model.published_at.name, ascending=False, inplace=True)
-        releases = set_matched_by_from_release_match(releases, True, model.repository_node_id.name)
+        releases = set_matched_by_from_release_match(
+            releases, True, model.repository_full_name.name)
         if index is not None:
             releases.set_index(index, inplace=True)
         else:
@@ -191,13 +192,13 @@ class PreloadedDonePRFactsLoader(DonePRFactsLoader):
                                              prefixer: PrefixerPromise,
                                              account: int,
                                              pdb: databases.Database,
-                                             ) -> Tuple[Dict[int, Mapping[str, Any]],
+                                             ) -> Tuple[Dict[Tuple[int, str], Mapping[str, Any]],
                                                         Dict[str, List[int]]]:
         """
         Load some data belonging to released or rejected PRs from the preloaded precomputed DB.
 
         Query version. JIRA must be filtered separately.
-        :return: 1. Map PR node ID -> repository name & specified column value. \
+        :return: 1. Map (PR node ID, repository name) -> specified column value. \
                  2. Map from repository name to ambiguous PR node IDs which are released by \
                  branch with tag_or_branch strategy and without tags on the time interval.
         """
@@ -304,7 +305,7 @@ class PreloadedMergedPRFactsLoader(MergedPRFactsLoader):
             pdb: databases.Database,
             time_from: Optional[datetime] = None,
             exclude_inactive: bool = False,
-    ) -> Dict[str, PullRequestFacts]:
+    ) -> PullRequestFactsMap:
         """
         Load the mapping from PR node identifiers which we are sure are not released in one of \
         `releases` to the serialized facts.

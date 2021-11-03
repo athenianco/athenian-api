@@ -18,7 +18,8 @@ from athenian.api.controllers.miners.github.dag_accelerated import join_dags
 from athenian.api.controllers.miners.github.deployment import mine_deployments
 from athenian.api.controllers.miners.types import nonemin, PullRequestFacts
 from athenian.api.controllers.prefixer import Prefixer
-from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
+from athenian.api.controllers.settings import default_branch_alias, LogicalRepositorySettings, \
+    ReleaseMatch, \
     ReleaseMatchSetting, ReleaseSettings
 from athenian.api.defer import with_defer
 from athenian.api.models.metadata.github import Branch
@@ -344,7 +345,7 @@ async def _precompute_deployments(
         datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
-        release_match_setting_tag_or_branch,
+        release_match_setting_tag_or_branch, LogicalRepositorySettings.empty(),
         branches, default_branches, prefixer_promise,
         1, (6366825,), mdb, pdb, rdb, None)
     log = logging.getLogger(f"{metadata.__package__}.precomputed_deployments")

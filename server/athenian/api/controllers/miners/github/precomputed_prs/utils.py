@@ -7,7 +7,8 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import ClauseElement
 
 from athenian.api.controllers.miners.filters import LabelFilter
-from athenian.api.controllers.miners.types import MinedPullRequest, PullRequestFacts
+from athenian.api.controllers.miners.types import MinedPullRequest, PullRequestFacts, \
+    PullRequestFactsMap
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, ReleaseSettings
 from athenian.api.models.metadata.github import PullRequestComment, \
     PullRequestCommit, PullRequestReview, PullRequestReviewRequest
@@ -164,7 +165,7 @@ def triage_by_release_match(repo: str,
     return dump
 
 
-def remove_ambiguous_prs(prs: Dict[int, Any],
+def remove_ambiguous_prs(prs: PullRequestFactsMap,
                          ambiguous: Dict[str, List[int]],
                          matched_bys: Dict[str, ReleaseMatch]) -> int:
     """
@@ -177,7 +178,7 @@ def remove_ambiguous_prs(prs: Dict[int, Any],
         if matched_bys[repo] == ReleaseMatch.tag:
             for node_id in pr_node_ids:
                 try:
-                    del prs[node_id]
+                    del prs[(node_id, repo)]
                     missed += 1
                 except KeyError:
                     continue
