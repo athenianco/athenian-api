@@ -19,8 +19,13 @@ depends_on = None
 def upgrade():
     for table in ("account_github_accounts", "account_jira_installations"):
         with op.batch_alter_table(table) as bop:
-            bop.add_column(sa.Column("created_at", sa.TIMESTAMP(timezone=True),
-                                     server_default=sa.func.now()))
+            bop.add_column(sa.Column(
+                "created_at", sa.TIMESTAMP(timezone=True),
+                server_default=sa.func.now()
+                if op.get_bind().dialect.name == "postgresql"
+                else None))
+            if op.get_bind().dialect.name != "postgresql":
+                bop.alter_column("created_at", server_default=sa.func.now())
 
 
 def downgrade():

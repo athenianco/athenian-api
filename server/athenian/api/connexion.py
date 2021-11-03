@@ -163,6 +163,8 @@ class AthenianAioHttpApi(connexion.AioHttpApi):
 
 # Avoid DeprecationWarning on inheritance, because we know better than @asvetlov.
 del aiohttp.web.Application.__init_subclass__
+# Avoid DeprecationWarning on `del app["key"]` during the destruction, because... you guessed it.
+aiohttp.web.Application._check_frozen = lambda self: None
 
 
 class AthenianWebApplication(aiohttp.web.Application):
@@ -450,6 +452,7 @@ class AthenianApp(connexion.AioHttpApp):
                     use_default_access_log=True,
                     handle_signals=False,
                     access_log_format=access_log_format,
+                    loop=asyncio.get_event_loop(),
                     **options)
 
     async def shutdown(self, app: Optional[aiohttp.web.Application] = None) -> None:
