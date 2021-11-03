@@ -245,6 +245,8 @@ class NumpyStruct(Mapping[str, Any]):
             except KeyError:
                 if value is None and field_dtype.char in ("S", "U"):
                     value = ""
+                if field_dtype.char == "M" and isinstance(value, datetime):
+                    value = value.replace(tzinfo=None)
                 arr[field_name] = np.asarray(value, field_dtype)
             else:
                 if is_str := ((is_ascii := _dtype_is_ascii(nested_dtype)) or
