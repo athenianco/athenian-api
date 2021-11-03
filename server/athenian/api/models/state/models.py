@@ -276,3 +276,22 @@ class WorkType(create_time_mixin(created_at=True, updated_at=True), Base):
     name = Column(Text(), nullable=False)
     color = Column(String(6), nullable=False)
     rules = Column(JSON, nullable=False)
+
+
+class LogicalRepository(create_time_mixin(created_at=True, updated_at=True), Base):
+    """Logical repository - rules to select PRs and releases in a monorepo."""
+
+    __tablename__ = "logical_repositories"
+    __table_args__ = (UniqueConstraint("account_id", "name", "repository_id",
+                                       name="uc_logical_repository"),
+                      {"sqlite_autoincrement": True})
+
+    id = Column(BigInteger().with_variant(Integer(), "sqlite"), primary_key=True)
+    account_id = Column(Integer(),
+                        ForeignKey("accounts.id", name="fk_logical_repository_account"),
+                        nullable=False)
+    name = Column(Text(), nullable=False)
+    repository_id = Column(BigInteger(), nullable=False)
+    prs = Column(JSON, nullable=False, default={}, server_default="{}")
+    releases = Column(JSON, nullable=False, default={}, server_default="{}")
+    deployments = Column(JSON, nullable=False, default={}, server_default="{}")
