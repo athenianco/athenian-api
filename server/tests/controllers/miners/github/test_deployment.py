@@ -324,6 +324,45 @@ async def test_mine_deployments_only_failed(
 
 
 @with_defer
+async def test_mine_deployments_no_prs(
+        release_match_setting_tag_or_branch, branches, default_branches,
+        prefixer_promise, mdb, pdb, rdb, cache):
+    time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
+    time_to = datetime(2016, 1, 1, tzinfo=timezone.utc)
+    await rdb.execute(delete(DeployedLabel))
+    await rdb.execute(delete(DeployedComponent))
+    await rdb.execute(delete(DeploymentNotification))
+    await rdb.execute(insert(DeploymentNotification).values(dict(
+        account_id=1,
+        name="DeployWithoutPRs",
+        conclusion="SUCCESS",
+        environment="production",
+        started_at=datetime(2015, 5, 21, tzinfo=timezone.utc),
+        finished_at=datetime(2015, 5, 21, 0, 10, tzinfo=timezone.utc),
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+    )))
+    await rdb.execute(insert(DeployedComponent).values(dict(
+        account_id=1,
+        deployment_name="DeployWithoutPRs",
+        repository_node_id=40550,
+        reference="35b585759cbf29f8ec428ef89da20705d59f99ec",
+        resolved_commit_node_id=2755715,
+        created_at=datetime.now(timezone.utc),
+    )))
+    deps, _ = await mine_deployments(
+        [40550], {},
+        time_from, time_to,
+        ["production"],
+        [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        release_match_setting_tag_or_branch,
+        branches, default_branches, prefixer_promise,
+        1, (6366825,), mdb, pdb, rdb, cache)
+    assert len(deps) == 1
+    assert len(deps.iloc[0]["prs"]) == 0
+
+
+@with_defer
 async def test_mine_deployments_no_release_facts(
         release_match_setting_tag_or_branch, branches, default_branches,
         prefixer_promise, mdb, pdb, rdb, cache):
