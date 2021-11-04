@@ -349,10 +349,10 @@ async def store_merged_unreleased_pull_request_facts(
             acc_id=account,
             pr_node_id=pr.pr[PullRequest.node_id.name],
             release_match=release_match,
+            repository_full_name=repo,
             data=facts.data,
             activity_days=collect_activity_days(pr, facts, not postgres),
             # the following does not matter, are not updated so we set to 0xdeadbeef
-            repository_full_name="",
             checked_until=dt,
             merged_at=dt,
             author=None,
