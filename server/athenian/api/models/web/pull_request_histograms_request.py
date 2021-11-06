@@ -9,7 +9,7 @@ from athenian.api.models.web.pull_request_histogram_definition import \
 
 
 class _PullRequestHistogramsRequest(Model, QuantilesMixin):
-    """Request of `/histograms/prs`."""
+    """Request of `/histograms/pull_requests`."""
 
     openapi_types = {
         "for_": List[ForSet],

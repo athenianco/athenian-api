@@ -78,7 +78,7 @@ async def test_get_everything_smoke(client, headers, dummy_deployment_label):
         "account": 1,
     }
     response = await client.request(
-        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body

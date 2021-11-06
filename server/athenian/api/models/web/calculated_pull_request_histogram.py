@@ -9,7 +9,7 @@ from athenian.api.models.web.pull_request_metric_id import PullRequestMetricID
 
 
 class CalculatedPullRequestHistogram(Model):
-    """Response from `/histograms/prs`."""
+    """Response from `/histograms/pull_requests`."""
 
     openapi_types = {
         "for_": ForSet,

@@ -211,7 +211,7 @@ async def get_histograms_prs(
     timezone,
 ):
     """Get the historam metrics for the PRs filetered with the provided params."""
-    url = "https://api.athenian.co/v1/histograms/prs"
+    url = "https://api.athenian.co/v1/histograms/pull_requests"
     forset = [
         {
             "labels_include": labels,
@@ -258,7 +258,7 @@ async def get_metrics_prs(
     timezone,
 ):
     """Get the linear metrics for the PRs filetered with the provided params."""
-    url = "https://api.athenian.co/v1/metrics/prs"
+    url = "https://api.athenian.co/v1/metrics/pull_requests"
     forset = [
         {
             "labels_include": labels,
