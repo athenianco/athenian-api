@@ -56,7 +56,7 @@ async def test_calc_histogram_prs_smoke(
             "account": 1,
         }
         response = await client.request(
-            method="POST", path="/v1/histograms/prs", headers=headers, json=body,
+            method="POST", path="/v1/histograms/pull_requests", headers=headers, json=body,
         )
         body = (await response.read()).decode("utf-8")
         assert response.status == 200, "Response body is : " + body
@@ -114,7 +114,7 @@ async def test_calc_histogram_prs_nasty_input(
         "account": account,
     }
     response = await client.request(
-        method="POST", path="/v1/histograms/prs", headers=headers, json=body,
+        method="POST", path="/v1/histograms/pull_requests", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == status, "Response body is : " + body
@@ -137,7 +137,7 @@ async def test_calc_histogram_prs_no_histograms(client, headers):
         "account": 1,
     }
     response = await client.request(
-        method="POST", path="/v1/histograms/prs", headers=headers, json=body,
+        method="POST", path="/v1/histograms/pull_requests", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 400, "Response body is : " + body
@@ -174,7 +174,7 @@ async def test_calc_histogram_prs_multiple(client, headers):
         "account": 1,
     }
     response = await client.request(
-        method="POST", path="/v1/histograms/prs", headers=headers, json=body,
+        method="POST", path="/v1/histograms/pull_requests", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
@@ -206,7 +206,7 @@ async def test_calc_histogram_prs_size(client, headers):
         "account": 1,
     }
     response = await client.request(
-        method="POST", path="/v1/histograms/prs", headers=headers, json=body,
+        method="POST", path="/v1/histograms/pull_requests", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
@@ -237,7 +237,7 @@ async def test_calc_histogram_prs_ticks(client, headers):
         "account": 1,
     }
     response = await client.request(
-        method="POST", path="/v1/histograms/prs", headers=headers, json=body,
+        method="POST", path="/v1/histograms/pull_requests", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
@@ -266,7 +266,7 @@ async def test_calc_histogram_prs_groups(client, headers):
         "account": 1,
     }
     response = await client.request(
-        method="POST", path="/v1/histograms/prs", headers=headers, json=body,
+        method="POST", path="/v1/histograms/pull_requests", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
@@ -305,7 +305,7 @@ async def test_calc_histogram_prs_lines(client, headers):
         "account": 1,
     }
     response = await client.request(
-        method="POST", path="/v1/histograms/prs", headers=headers, json=body,
+        method="POST", path="/v1/histograms/pull_requests", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
@@ -352,7 +352,7 @@ async def test_calc_histogram_prs_deployments_bad_envs(client, headers, envs):
         "account": 1,
     }
     response = await client.request(
-        method="POST", path="/v1/histograms/prs", headers=headers, json=body,
+        method="POST", path="/v1/histograms/pull_requests", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 400, "Response body is : " + body
@@ -376,7 +376,7 @@ async def test_calc_histogram_prs_deployment_time(client, headers, precomputed_d
         "account": 1,
     }
     response = await client.request(
-        method="POST", path="/v1/histograms/prs", headers=headers, json=body,
+        method="POST", path="/v1/histograms/pull_requests", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body

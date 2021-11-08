@@ -82,7 +82,7 @@ async def test_calc_metrics_prs_smoke(client, metric, count, headers, app, clien
 
     for _ in range(2):
         response = await client.request(
-            method="POST", path="/v1/metrics/prs", headers=headers, json=req_body,
+            method="POST", path="/v1/metrics/pull_requests", headers=headers, json=req_body,
         )
         body = (await response.read()).decode("utf-8")
         assert response.status == 200, "Response body is : " + body
@@ -135,7 +135,7 @@ async def test_calc_metrics_prs_all_time(client, headers):
         "account": 1,
     }
     response = await client.request(
-        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
@@ -211,7 +211,7 @@ async def test_calc_metrics_prs_access_denied(client, headers):
         "account": 1,
     }
     response = await client.request(
-        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 403, "Response body is : " + body
@@ -237,7 +237,7 @@ async def test_calc_metrics_prs_empty_devs_tight_date(client, devs, date_from, h
         "metrics": list(PullRequestMetricID),
     }
     response = await client.request(
-        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
@@ -290,7 +290,7 @@ async def test_calc_metrics_prs_nasty_input(
         "account": account,
     }
     response = await client.request(
-        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == code, "Response body is : " + body
@@ -313,7 +313,7 @@ async def test_calc_metrics_prs_reposet(client, headers):
         "account": 1,
     }
     response = await client.request(
-        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
@@ -358,7 +358,7 @@ async def test_calc_metrics_prs_counts_sums(client, headers, metric, count):
         "account": 1,
     }
     response = await client.request(
-        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
     )
     assert response.status == 200, response.text()
     body = FriendlyJson.loads((await response.read()).decode("utf-8"))
@@ -391,7 +391,7 @@ async def test_calc_metrics_prs_averages(client, headers):
         "account": 1,
     }
     response = await client.request(
-        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
     )
     assert response.status == 200, response.text()
     body = FriendlyJson.loads((await response.read()).decode("utf-8"))
@@ -420,7 +420,7 @@ async def test_calc_metrics_prs_sizes(client, headers):
         "account": 1,
     }
     response = await client.request(
-        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
     )
     assert response.status == 200, response.text()
     rbody = FriendlyJson.loads((await response.read()).decode("utf-8"))
@@ -432,7 +432,7 @@ async def test_calc_metrics_prs_sizes(client, headers):
 
     body["quantiles"] = [0, 0.9]
     response = await client.request(
-        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
     )
     assert response.status == 200, response.text()
     rbody = FriendlyJson.loads((await response.read()).decode("utf-8"))
@@ -441,7 +441,7 @@ async def test_calc_metrics_prs_sizes(client, headers):
 
     body["granularities"].append("month")
     response = await client.request(
-        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
     )
     assert response.status == 200, response.text()
     rbody = FriendlyJson.loads((await response.read()).decode("utf-8"))
@@ -469,7 +469,7 @@ async def test_calc_metrics_prs_index_error(client, headers):
         "account": 1,
     }
     response = await client.request(
-        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
     )
     assert response.status == 200
 
@@ -491,7 +491,7 @@ async def test_calc_metrics_prs_ratio_flow(client, headers):
                     PullRequestMetricID.PR_CLOSED],
     }
     response = await client.request(
-        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
@@ -525,7 +525,7 @@ async def test_calc_metrics_prs_exclude_inactive_full_span(client, headers):
         "exclude_inactive": True,
     }
     response = await client.request(
-        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
     )
     rbody = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + rbody
@@ -548,7 +548,7 @@ async def test_calc_metrics_prs_exclude_inactive_split(client, headers):
         "exclude_inactive": True,
     }
     response = await client.request(
-        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
     )
     rbody = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + rbody
@@ -576,7 +576,7 @@ async def test_calc_metrics_prs_filter_authors(client, headers):
         "exclude_inactive": False,
     }
     response = await client.request(
-        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
@@ -607,7 +607,7 @@ async def test_calc_metrics_prs_group_authors(client, headers):
         "exclude_inactive": False,
     }
     response = await client.request(
-        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
@@ -638,7 +638,7 @@ async def test_calc_metrics_prs_labels_include(client, headers):
         "exclude_inactive": False,
     }
     response = await client.request(
-        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
@@ -664,7 +664,7 @@ async def test_calc_metrics_prs_quantiles(client, headers):
         "exclude_inactive": False,
     }
     response = await client.request(
-        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
     )
     rbody = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + rbody
@@ -673,7 +673,7 @@ async def test_calc_metrics_prs_quantiles(client, headers):
 
     body["quantiles"] = [0, 0.5]
     response = await client.request(
-        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
     )
     rbody = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + rbody
@@ -697,7 +697,7 @@ async def test_calc_metrics_prs_quantiles(client, headers):
 
     body["granularities"] = ["week", "month"]
     response = await client.request(
-        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
     )
     rbody = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + rbody
@@ -723,7 +723,7 @@ async def test_calc_metrics_prs_jira(client, headers):
         "account": 1,
     }
     response = await client.request(
-        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
@@ -748,7 +748,7 @@ async def test_calc_metrics_prs_jira_disabled_projects(client, headers, disabled
         "account": 1,
     }
     response = await client.request(
-        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
@@ -775,7 +775,7 @@ async def test_calc_metrics_prs_groups_smoke(client, headers):
         "account": 1,
     }
     response = await client.request(
-        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
@@ -805,7 +805,7 @@ async def test_calc_metrics_prs_groups_nasty(client, headers, repogroups):
         "account": 1,
     }
     response = await client.request(
-        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 400, "Response body is : " + body
@@ -829,7 +829,7 @@ async def test_calc_metrics_prs_lines_smoke(client, headers):
         "account": 1,
     }
     response = await client.request(
-        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
     )
     rbody = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + rbody
@@ -844,7 +844,7 @@ async def test_calc_metrics_prs_lines_smoke(client, headers):
 
     body["for"][0]["lines"] = [50, 100500]
     response = await client.request(
-        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
     )
     rbody = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + rbody
@@ -881,7 +881,7 @@ async def test_calc_metrics_prs_deployments_no_env(client, headers, metric):
         "account": 1,
     }
     response = await client.request(
-        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
     )
     assert response.status == 400, response.text()
 
@@ -905,7 +905,7 @@ async def test_calc_metrics_prs_deployments_smoke(client, headers, precomputed_d
         "account": 1,
     }
     response = await client.request(
-        method="POST", path="/v1/metrics/prs", headers=headers, json=body,
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
     )
     assert response.status == 200, response.text()
     body = FriendlyJson.loads((await response.read()).decode("utf-8"))
