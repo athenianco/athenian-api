@@ -1154,7 +1154,7 @@ async def test_pr_miner_jira_cache(
     args[-3] = pdb
     args[-2] = rdb
     args[-1] = None
-    miner, _, _, _ = await pr_miner.mine(*args)
+    miner, *_ = await pr_miner.mine(*args)
     assert len(miner) == 0
 
 
@@ -1172,12 +1172,12 @@ async def test_fetch_prs_no_branches(mdb, pdb, dag, branch_miner, pr_miner):
         {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         False, None, None, branches, dags, 1, (6366825,), mdb, pdb, None,
     ]
-    prs, xdags = await pr_miner.fetch_prs(*args)
+    prs, xdags, _ = await pr_miner.fetch_prs(*args)
     assert prs["dead"].sum() == 0
     assert xdags["src-d/go-git"]
     branches = branches.iloc[:0]
     args[-7] = branches
-    prs, _ = await pr_miner.fetch_prs(*args)
+    prs, *_ = await pr_miner.fetch_prs(*args)
     assert prs["dead"].sum() == 0
 
 
@@ -1192,7 +1192,7 @@ async def test_fetch_prs_dead(mdb, pdb, branch_miner, pr_miner):
         {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         False, None, None, branches, None, 1, (6366825,), mdb, pdb, None,
     ]
-    prs, xdags = await pr_miner.fetch_prs(*args)
+    prs, xdags, _ = await pr_miner.fetch_prs(*args)
     assert prs["dead"].sum() == len(force_push_dropped_go_git_pr_numbers)
     pdb_dag = DAG(await pdb.fetch_val(select([GitHubCommitHistory.dag])))
     dag = await fetch_dag(mdb, branches[Branch.commit_id.name].tolist())

@@ -411,7 +411,7 @@ class PullRequestMiner:
         (
             (released_prs, releases, release_settings, matched_bys,
              release_dags, precomputed_observed),
-            (prs, branch_dags),
+            (prs, branch_dags, _),
             deployed_prs,
             *unreleased,
         ) = await gather(*tasks)
@@ -462,7 +462,7 @@ class PullRequestMiner:
                     mdb, pdb, cache, updated_min=updated_min, updated_max=updated_max,
                     fetch_branch_dags_task=fetch_branch_dags_task),
             ]
-            missed_released_prs, (missed_prs, _) = await gather(*tasks)
+            missed_released_prs, (missed_prs, *_) = await gather(*tasks)
             concatenated.extend([missed_released_prs, missed_prs])
         fetch_branch_dags_task.cancel()  # 99.999% that it was awaited, but still
         prs = pd.concat(concatenated, copy=False)
@@ -893,8 +893,7 @@ class PullRequestMiner:
                         updated_max: Optional[datetime] = None,
                         fetch_branch_dags_task: Optional[asyncio.Task] = None,
                         with_labels: bool = False,
-                        ) -> Union[Tuple[pd.DataFrame, Dict[str, DAG]],
-                                   Tuple[pd.DataFrame, Dict[str, DAG], pd.DataFrame]]:
+                        ) -> Tuple[pd.DataFrame, Dict[str, DAG], Optional[pd.DataFrame]]:
         """
         Query pull requests from mdb that satisfy the given filters.
 
@@ -929,7 +928,7 @@ class PullRequestMiner:
         if columns is not PullRequest and PullRequest.merge_commit_id not in columns and \
                 PullRequest.merge_commit_sha not in columns:
             prs, labels = await pr_list_coro
-            return prs, dags, *([labels] if with_labels else [])
+            return prs, dags, labels if with_labels else None
 
         if fetch_branch_dags_task is None:
             fetch_branch_dags_task = cls._fetch_branch_dags(
@@ -938,15 +937,17 @@ class PullRequestMiner:
         dags, (prs, labels) = await gather(fetch_branch_dags_task, pr_list_coro)
 
         async def load_labels():
+            if not with_labels:
+                return None
             if labels is not None:
                 return labels
-            return await fetch_labels_to_filter(prs, meta_ids, mdb)
+            return await fetch_labels_to_filter(prs.index.values, meta_ids, mdb)
 
-        prs, *labels = await gather(
+        prs, labels = await gather(
             cls.mark_dead_prs(prs, branches, dags, meta_ids, mdb, columns),
-            *([load_labels()] if with_labels else []),
+            load_labels(),
         )
-        return prs, dags, *labels
+        return prs, dags, labels
 
     @classmethod
     async def mark_dead_prs(cls,
@@ -1601,7 +1602,7 @@ class PullRequestMiner:
                 precursor_prs -= set(pr_blacklist)
         if not precursor_prs:
             return pd.DataFrame()
-        prs, _ = await cls.fetch_prs(
+        prs, *_ = await cls.fetch_prs(
             None, time_to, repositories, participants, labels, jira,
             False, None, PullRequest.node_id.in_(precursor_prs), branches, dags, account, meta_ids,
             mdb, pdb, cache, updated_min=updated_min, updated_max=updated_max,

@@ -51,14 +51,14 @@ async def paginate_prs(request: AthenianWebRequest, body: dict) -> web.Response:
         tasks.append(PullRequestMiner.filter_jira(
             done_node_ids, jira, meta_ids, request.mdb, request.cache,
             columns=[PullRequest.node_id]))
-        (other_prs, _), passed_jira = await gather(*tasks)
+        (other_prs, *_), passed_jira = await gather(*tasks)
         done_ats = {
             (k, r): done_ats[k, r]
             for k in passed_jira.index.values
             for r in done_node_ids[k]
         }
     else:
-        other_prs, _ = await tasks[0]
+        other_prs, *_ = await tasks[0]
     if done_ats:
         updateds = np.concatenate([other_prs[PullRequest.updated_at.name].values,
                                    np.asarray(list(done_ats.values()))]).astype("datetime64[ns]")
