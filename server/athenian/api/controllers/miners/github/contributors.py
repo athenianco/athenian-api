@@ -17,7 +17,7 @@ from athenian.api.controllers.miners.github.bots import Bots
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.release_load import ReleaseLoader
 from athenian.api.controllers.prefixer import PrefixerPromise
-from athenian.api.controllers.settings import ReleaseSettings
+from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseSettings
 from athenian.api.models.metadata.github import NodeCommit, NodeRepository, OrganizationMember, \
     PullRequest, PullRequestComment, PullRequestReview, PushCommit, Release, User
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts
@@ -30,11 +30,13 @@ from athenian.api.tracing import sentry_span
     exptime=short_term_exptime,
     serialize=marshal.dumps,
     deserialize=marshal.loads,
-    key=lambda repos, time_from, time_to, with_stats, user_roles, release_settings, **_: (
+    key=lambda repos, time_from, time_to, with_stats, user_roles, release_settings, logical_settings, **_: (  # noqa
         ",".join(sorted(repos)),
         time_from.timestamp() if time_from is not None else "null",
         time_to.timestamp() if time_to is not None else "null",
-        with_stats, sorted(user_roles), release_settings,
+        with_stats, sorted(user_roles),
+        release_settings,
+        logical_settings,
     ),
 )
 async def mine_contributors(repos: Collection[str],
@@ -43,6 +45,7 @@ async def mine_contributors(repos: Collection[str],
                             with_stats: bool,
                             user_roles: List[str],
                             release_settings: ReleaseSettings,
+                            logical_settings: LogicalRepositorySettings,
                             prefixer: PrefixerPromise,
                             account: int,
                             meta_ids: Tuple[int, ...],
@@ -188,7 +191,7 @@ async def mine_contributors(repos: Collection[str],
             rt_to = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
         releases, _ = await ReleaseLoader.load_releases(
             repos, branches, default_branches, rt_from, rt_to,
-            release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache,
+            release_settings, logical_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache,
             force_fresh=force_fresh_releases)
         counts = releases[Release.author.name].value_counts()
         return {

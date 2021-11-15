@@ -11,6 +11,7 @@ from athenian.api.controllers.miners.github.deployment import mine_deployments
 from athenian.api.controllers.miners.types import DeployedComponent, Deployment, \
     DeploymentConclusion, PRParticipationKind, PullRequestEvent, PullRequestListItem, \
     PullRequestStage
+from athenian.api.controllers.settings import LogicalRepositorySettings
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
     GitHubMergedPullRequestFacts, GitHubOpenPullRequestFacts
@@ -38,8 +39,8 @@ async def test_pr_list_miner_stages(
     prs, _ = await filter_pull_requests(
         set(), {stage}, *time_from_to, {"src-d/go-git"}, {},
         LabelFilter.empty(), JIRAFilter.empty(),
-        "production", False, release_match_setting_tag, None, None,
-        prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
+        "production", False, release_match_setting_tag, LogicalRepositorySettings.empty(),
+        None, None, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
     assert len(prs) == n
 
 
@@ -51,7 +52,7 @@ async def test_pr_list_miner_match_participants(
     prs, _ = await filter_pull_requests(
         set(), set(), *time_from_to, {"src-d/go-git"},
         participants, LabelFilter.empty(), JIRAFilter.empty(), "production", False,
-        release_match_setting_tag,
+        release_match_setting_tag, LogicalRepositorySettings.empty(),
         None, None, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
     assert isinstance(prs, list)
     assert len(prs) == 320
@@ -84,7 +85,8 @@ async def test_pr_list_miner_match_metrics_all_count(
     prs, _ = await filter_pull_requests(
         set(), set(),
         time_from, time_to, {"src-d/go-git"}, {}, LabelFilter.empty(),
-        JIRAFilter.empty(), "production", False, release_match_setting_tag, None, None,
+        JIRAFilter.empty(), "production", False, release_match_setting_tag,
+        LogicalRepositorySettings.empty(), None, None,
         prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     assert prs
@@ -92,7 +94,8 @@ async def test_pr_list_miner_match_metrics_all_count(
     metric = (await metrics_calculator_no_cache.calc_pull_request_metrics_line_github(
         [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_to]], [0, 1], [], [],
         [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(), False,
-        release_match_setting_tag, prefixer_promise, branches, default_branches, False,
+        release_match_setting_tag, LogicalRepositorySettings.empty(),
+        prefixer_promise, branches, default_branches, False,
     ))[0][0][0][0][0][0]
     assert len(prs) == metric.value
     if date_from.year == 2018:
@@ -116,13 +119,15 @@ async def test_pr_list_miner_release_settings(
     time_to = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     prs1, _ = await filter_pull_requests(
         set(), {PullRequestStage.RELEASING}, time_from, time_to, {"src-d/go-git"}, {},
-        LabelFilter.empty(), JIRAFilter.empty(), "production", False, release_match_setting_tag,
+        LabelFilter.empty(), JIRAFilter.empty(), "production", False,
+        release_match_setting_tag, LogicalRepositorySettings.empty(),
         None, None, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
     assert prs1
     await wait_deferred()
     prs2, _ = await filter_pull_requests(
         set(), {PullRequestStage.RELEASING}, time_from, time_to, {"src-d/go-git"}, {},
-        LabelFilter.empty(), JIRAFilter.empty(), "production", False, release_match_setting_branch,
+        LabelFilter.empty(), JIRAFilter.empty(), "production", False,
+        release_match_setting_branch, LogicalRepositorySettings.empty(),
         None, None, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
     assert len(prs2) == 96  # force-push-dropped PRs still accessible from the artificial branches
 
@@ -138,7 +143,7 @@ async def test_pr_list_miner_release_cache_participants(
     prs1, _ = await filter_pull_requests(
         set(), {PullRequestStage.RELEASING}, time_from, time_to, {"src-d/go-git"},
         participants, LabelFilter.empty(), JIRAFilter.empty(), "production", False,
-        release_match_setting_tag,
+        release_match_setting_tag, LogicalRepositorySettings.empty(),
         None, None, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
     await wait_deferred()
     assert prs1
@@ -149,7 +154,7 @@ async def test_pr_list_miner_release_cache_participants(
     prs2, _ = await filter_pull_requests(
         set(), {PullRequestStage.RELEASING}, time_from, time_to, {"src-d/go-git"},
         participants, LabelFilter.empty(), JIRAFilter.empty(), "production", False,
-        release_match_setting_tag,
+        release_match_setting_tag, LogicalRepositorySettings.empty(),
         None, None, prefixer_promise, 1, (6366825,), None, None, None, cache)
     assert len(prs1) == len(prs2)
 
@@ -161,12 +166,14 @@ async def test_pr_list_miner_exclude_inactive(
     time_to = datetime(year=2017, month=1, day=11, tzinfo=timezone.utc)
     prs1, _ = await filter_pull_requests(
         set(), set(), time_from, time_to, {"src-d/go-git"}, {},
-        LabelFilter.empty(), JIRAFilter.empty(), "production", False, release_match_setting_tag,
+        LabelFilter.empty(), JIRAFilter.empty(), "production", False,
+        release_match_setting_tag, LogicalRepositorySettings.empty(),
         None, None, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
     assert len(prs1) == 7
     prs1, _ = await filter_pull_requests(
         set(), set(), time_from, time_to, {"src-d/go-git"}, {},
-        LabelFilter.empty(), JIRAFilter.empty(), "production", True, release_match_setting_tag,
+        LabelFilter.empty(), JIRAFilter.empty(), "production", True,
+        release_match_setting_tag, LogicalRepositorySettings.empty(),
         None, None, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
     assert len(prs1) == 6
 
@@ -179,7 +186,7 @@ async def test_pr_list_miner_filter_labels_cache(
     prs1, _ = await filter_pull_requests(
         set(), set(), time_from, time_to, {"src-d/go-git"}, {},
         LabelFilter({"bug", "enhancement"}, set()), JIRAFilter.empty(), "production", False,
-        release_match_setting_tag, None, None,
+        release_match_setting_tag, LogicalRepositorySettings.empty(), None, None,
         prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
     await wait_deferred()
     assert len(prs1) == 6
@@ -189,7 +196,7 @@ async def test_pr_list_miner_filter_labels_cache(
     prs2, _ = await filter_pull_requests(
         set(), set(), time_from, time_to, {"src-d/go-git"}, {},
         LabelFilter({"bug"}, set()), JIRAFilter.empty(), "production", False,
-        release_match_setting_tag, None, None,
+        release_match_setting_tag, LogicalRepositorySettings.empty(), None, None,
         prefixer_promise, 1, (6366825,), None, None, None, cache)
     await wait_deferred()
     assert len(prs2) == 3
@@ -199,7 +206,7 @@ async def test_pr_list_miner_filter_labels_cache(
     prs3, _ = await filter_pull_requests(
         set(), set(), time_from, time_to, {"src-d/go-git"}, {},
         LabelFilter({"bug", "plumbing"}, set()), JIRAFilter.empty(), "production", False,
-        release_match_setting_tag, None, None,
+        release_match_setting_tag, LogicalRepositorySettings.empty(), None, None,
         prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
     assert len(prs3) == 5
     for pr in prs3:
@@ -214,20 +221,21 @@ async def test_pr_list_miner_filter_labels_cache_postprocess(
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
     await filter_pull_requests(
         set(), set(), time_from, time_to, {"src-d/go-git"}, {},
-        LabelFilter.empty(), JIRAFilter.empty(), "production", False, release_match_setting_tag,
+        LabelFilter.empty(), JIRAFilter.empty(), "production", False,
+        release_match_setting_tag, LogicalRepositorySettings.empty(),
         None, None, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
     await wait_deferred()
     prs1, _ = await filter_pull_requests(
         set(), set(), time_from, time_to, {"src-d/go-git"}, {},
         LabelFilter({"bug"}, set()), JIRAFilter.empty(), "production", False,
-        release_match_setting_tag, None, None,
+        release_match_setting_tag, LogicalRepositorySettings.empty(), None, None,
         prefixer_promise, 1, (6366825,), None, None, None, cache)
     await wait_deferred()
     assert len(prs1) == 3
     prs2, _ = await filter_pull_requests(
         set(), set(), time_from, time_to, {"src-d/go-git"}, {},
         LabelFilter({"bug"}, set()), JIRAFilter.empty(), "production", False,
-        release_match_setting_tag, None, None,
+        release_match_setting_tag, LogicalRepositorySettings.empty(), None, None,
         prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     assert prs1 == prs2
@@ -235,14 +243,14 @@ async def test_pr_list_miner_filter_labels_cache_postprocess(
     await filter_pull_requests(
         set(), set(), time_from, time_to, {"src-d/go-git"}, {},
         LabelFilter({"bug"}, set()), JIRAFilter.empty(), "production", False,
-        release_match_setting_tag, None, None,
+        release_match_setting_tag, LogicalRepositorySettings.empty(), None, None,
         prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
     await wait_deferred()
     with pytest.raises(Exception):
         await filter_pull_requests(
             set(), set(), time_from, time_to, {"src-d/go-git"}, {},
             LabelFilter.empty(), JIRAFilter.empty(), "production", False,
-            release_match_setting_tag,
+            release_match_setting_tag, LogicalRepositorySettings.empty(),
             None, None, prefixer_promise, 1, (6366825,), None, None, None, cache)
 
 
@@ -254,14 +262,15 @@ async def test_pr_list_miner_filter_labels_cache_exclude(
     prs1, _ = await filter_pull_requests(
         set(), set(), time_from, time_to, {"src-d/go-git"}, {},
         LabelFilter(set(), {"bug"}), JIRAFilter.empty(), "production", False,
-        release_match_setting_tag, None, None,
+        release_match_setting_tag, LogicalRepositorySettings.empty(), None, None,
         prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
     await wait_deferred()
     assert len(prs1) == 71
 
     prs2, _ = await filter_pull_requests(
         set(), set(), time_from, time_to, {"src-d/go-git"}, {},
-        LabelFilter.empty(), JIRAFilter.empty(), "production", False, release_match_setting_tag,
+        LabelFilter.empty(), JIRAFilter.empty(), "production", False,
+        release_match_setting_tag, LogicalRepositorySettings.empty(),
         None, None, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
     await wait_deferred()
     assert len(prs2) == 74
@@ -269,7 +278,7 @@ async def test_pr_list_miner_filter_labels_cache_exclude(
     prs3, _ = await filter_pull_requests(
         set(), set(), time_from, time_to, {"src-d/go-git"}, {},
         LabelFilter(set(), {"bug"}), JIRAFilter.empty(), "production", False,
-        release_match_setting_tag, None, None,
+        release_match_setting_tag, LogicalRepositorySettings.empty(), None, None,
         prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
     await wait_deferred()
     assert len(prs3) == 71
@@ -284,14 +293,14 @@ async def test_pr_list_miner_filter_labels_pdb(
     await metrics_calculator_no_cache.calc_pull_request_facts_github(
         time_from, time_to,
         {"src-d/go-git"}, {}, LabelFilter({"bug", "enhancement"}, set()), JIRAFilter.empty(),
-        False, release_match_setting_tag, prefixer_promise,
+        False, release_match_setting_tag, LogicalRepositorySettings.empty(), prefixer_promise,
         False, False,
     )
     await wait_deferred()
     prs, _ = await filter_pull_requests(
         set(), set(), time_from, time_to, {"src-d/go-git"}, {},
         LabelFilter({"bug", "enhancement"}, set()), JIRAFilter.empty(), "production", False,
-        release_match_setting_tag, None, None,
+        release_match_setting_tag, LogicalRepositorySettings.empty(), None, None,
         prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     assert len(prs) == 6
@@ -301,7 +310,7 @@ async def test_pr_list_miner_filter_labels_pdb(
     prs, _ = await filter_pull_requests(
         set(), set(), time_from, time_to, {"src-d/go-git"}, {},
         LabelFilter({"bug"}, set()), JIRAFilter.empty(), "production", False,
-        release_match_setting_tag,
+        release_match_setting_tag, LogicalRepositorySettings.empty(),
         None, None, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
     assert len(prs) == 3
     for pr in prs:
@@ -320,14 +329,14 @@ async def test_pr_list_miner_deployments_production(
         await metrics_calculator_no_cache.calc_pull_request_facts_github(
             time_from, time_to,
             {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
-            False, release_match_setting_tag, prefixer_promise,
+            False, release_match_setting_tag, LogicalRepositorySettings.empty(), prefixer_promise,
             False, False,
         )
         await wait_deferred()
     prs, _ = await filter_pull_requests(
         set(), set(), time_from, time_to, {"src-d/go-git"}, {},
         LabelFilter.empty(), JIRAFilter.empty(), "production", False,
-        release_match_setting_tag, None, None,
+        release_match_setting_tag, LogicalRepositorySettings.empty(), None, None,
         prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
     assert len(prs) == 486
     deps = 0
@@ -366,7 +375,7 @@ async def test_pr_list_miner_deployments_early(
     prs, _ = await filter_pull_requests(
         set(), set(), time_from, time_to, {"src-d/go-git"}, {},
         LabelFilter.empty(), JIRAFilter.empty(), "production", False,
-        release_match_setting_tag, None, None,
+        release_match_setting_tag, LogicalRepositorySettings.empty(), None, None,
         prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
     assert len(prs) == 79
     deps = 0
@@ -392,7 +401,7 @@ async def test_pr_list_miner_deployments_staging(
     prs, _ = await filter_pull_requests(
         set(), set(), time_from, time_to, {"src-d/go-git"}, {},
         LabelFilter.empty(), JIRAFilter.empty(), "staging", False,
-        release_match_setting_tag, None, None,
+        release_match_setting_tag, LogicalRepositorySettings.empty(), None, None,
         prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
     assert len(prs) == 486
     deps = 0
@@ -418,13 +427,14 @@ async def test_fetch_pull_requests_smoke(
     await metrics_calculator_no_cache.calc_pull_request_facts_github(
         time_from, time_to,
         {"src-d/go-git"}, {}, LabelFilter({"bug", "enhancement"}, set()), JIRAFilter.empty(),
-        False, release_match_setting_tag, prefixer_promise,
+        False, release_match_setting_tag, LogicalRepositorySettings.empty(), prefixer_promise,
         False, False,
     )
     await wait_deferred()
     prs1, deps = await filter_pull_requests(
         set(), set(), time_from, time_to, {"src-d/go-git"}, {},
-        LabelFilter.empty(), JIRAFilter.empty(), "production", False, release_match_setting_tag,
+        LabelFilter.empty(), JIRAFilter.empty(), "production", False,
+        release_match_setting_tag, LogicalRepositorySettings.empty(),
         None, None, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     assert deps == {}
@@ -432,11 +442,13 @@ async def test_fetch_pull_requests_smoke(
     # 921 is needed to check done_times
     prs2, deps2 = await fetch_pull_requests(
         {"src-d/go-git": set(list(range(1000, 1011)) + [921])},
-        release_match_setting_tag, None, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
+        release_match_setting_tag, LogicalRepositorySettings.empty(), None, prefixer_promise,
+        1, (6366825,), mdb, pdb, rdb, cache)
     await wait_deferred()
     prs3, deps3 = await fetch_pull_requests(
         {"src-d/go-git": set(list(range(1000, 1011)) + [921])},
-        release_match_setting_tag, None, prefixer_promise, 1, (6366825,), None, None, None, cache)
+        release_match_setting_tag, LogicalRepositorySettings.empty(), None, prefixer_promise,
+        1, (6366825,), None, None, None, cache)
     assert prs2 == prs3
     assert deps2 == deps3 == {}
     del prs3
@@ -450,7 +462,8 @@ async def test_fetch_pull_requests_smoke(
     with pytest.raises(Exception):
         await fetch_pull_requests(
             {"src-d/go-git": set(list(range(1000, 1011)) + [922])},
-            release_match_setting_tag, None, prefixer_promise,
+            release_match_setting_tag, LogicalRepositorySettings.empty(),
+            None, prefixer_promise,
             1, (6366825,), None, None, None, cache)
 
 
@@ -458,7 +471,8 @@ async def test_fetch_pull_requests_smoke(
 async def test_fetch_pull_requests_no_merged(
         mdb, pdb, rdb, release_match_setting_tag, prefixer_promise, cache):
     prs, _ = await fetch_pull_requests(
-        {"src-d/go-git": {1069}}, release_match_setting_tag, None, prefixer_promise,
+        {"src-d/go-git": {1069}}, release_match_setting_tag, LogicalRepositorySettings.empty(),
+        None, prefixer_promise,
         1, (6366825,), mdb, pdb, rdb, cache)
     assert len(prs) == 1
     assert prs[0].number == 1069
@@ -473,7 +487,8 @@ async def test_fetch_pull_requests_no_merged(
 async def test_fetch_pull_requests_empty(
         mdb, pdb, rdb, release_match_setting_tag, prefixer_promise, cache):
     prs, deployments = await fetch_pull_requests(
-        {"src-d/go-git": {0}}, release_match_setting_tag, None, prefixer_promise,
+        {"src-d/go-git": {0}}, release_match_setting_tag, LogicalRepositorySettings.empty(),
+        None, prefixer_promise,
         1, (6366825,), mdb, pdb, rdb, cache)
     assert len(prs) == 0
     assert len(deployments) == 0
@@ -487,8 +502,8 @@ async def test_pr_list_miner_filter_open_precomputed(
     args = [set(),
             {PullRequestStage.WIP, PullRequestStage.REVIEWING, PullRequestStage.MERGING},
             time_from, time_to, {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
-            "production", False, release_match_setting_tag, None, None,
-            prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None]
+            "production", False, release_match_setting_tag, LogicalRepositorySettings.empty(),
+            None, None, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None]
     prs1, _ = await filter_pull_requests(*args)
     await wait_deferred()
     assert len(prs1) == 21
@@ -497,9 +512,9 @@ async def test_pr_list_miner_filter_open_precomputed(
 
     # the following is offtopic but saves the precious execution time
     done_facts = await pdb.fetch_all(select([GitHubDonePullRequestFacts]))
-    assert len(done_facts) == 293
+    assert len(done_facts) == 294
     merged_facts = await pdb.fetch_all(select([GitHubMergedPullRequestFacts]))
-    assert len(merged_facts) == 245
+    assert len(merged_facts) == 246
     # offtopic ends
 
     prs2, _ = await filter_pull_requests(*args)
@@ -516,8 +531,8 @@ async def test_pr_list_miner_filter_stages_events_aggregation(
     args = [{PullRequestEvent.REVIEWED},
             {PullRequestStage.WIP, PullRequestStage.REVIEWING, PullRequestStage.MERGING},
             time_from, time_to, {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
-            "production", False, release_match_setting_tag, None, None,
-            prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None]
+            "production", False, release_match_setting_tag, LogicalRepositorySettings.empty(),
+            None, None, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None]
     prs, _ = await filter_pull_requests(*args)
     assert len(prs) == 132
 
@@ -530,7 +545,7 @@ async def test_pr_list_miner_filter_updated_min_max(
     args = [{PullRequestEvent.REVIEWED},
             {PullRequestStage.WIP, PullRequestStage.REVIEWING, PullRequestStage.MERGING},
             time_from, time_to, {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
-            "production", False, release_match_setting_tag,
+            "production", False, release_match_setting_tag, LogicalRepositorySettings.empty(),
             datetime(2018, 2, 1, tzinfo=timezone.utc),
             datetime(2019, 2, 1, tzinfo=timezone.utc),
             prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None]
@@ -551,13 +566,15 @@ async def test_filter_pull_requests_deployments(
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_match_setting_tag,
+        LogicalRepositorySettings.empty(),
         branches, default_branches, prefixer_promise,
         1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     args = [set(),
             {PullRequestStage.WIP, PullRequestStage.REVIEWING, PullRequestStage.MERGING},
             time_from, time_to, {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
-            "production", exclude_inactive, release_match_setting_tag, None, None,
+            "production", exclude_inactive, release_match_setting_tag,
+            LogicalRepositorySettings.empty(), None, None,
             prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None]
     prs, deps = await filter_pull_requests(*args)
     assert len(prs) == 8 if exclude_inactive else 15
@@ -607,10 +624,12 @@ async def test_fetch_pull_requests_deployments(
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_match_setting_tag,
+        LogicalRepositorySettings.empty(),
         branches, default_branches, prefixer_promise,
         1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     prs, deps = await fetch_pull_requests(
-        {"src-d/go-git": {1160, 1168}}, release_match_setting_tag, "production", prefixer_promise,
+        {"src-d/go-git": {1160, 1168}}, release_match_setting_tag,
+        LogicalRepositorySettings.empty(), "production", prefixer_promise,
         1, (6366825,), mdb, pdb, rdb, None)
     check_pr_deployments(prs, deps, 1)

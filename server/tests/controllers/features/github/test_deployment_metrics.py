@@ -11,6 +11,7 @@ from athenian.api.controllers.features.github.deployment_metrics import \
     group_deployments_by_repositories
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.types import ReleaseParticipationKind
+from athenian.api.controllers.settings import LogicalRepositorySettings
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.persistentdata.models import DeployedComponent
 from athenian.api.models.web import DeploymentMetricID
@@ -128,6 +129,7 @@ async def test_deployment_metrics_calculators_smoke(
             {}, [["staging"], ["production"]],
             LabelFilter.empty(), {}, {}, JIRAFilter.empty(),
             release_match_setting_tag_or_branch,
+            LogicalRepositorySettings.empty(),
             prefixer_promise,
             branches, default_branches,
             (1, ("10003", "10009")),

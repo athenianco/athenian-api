@@ -31,7 +31,7 @@ from athenian.api.controllers.miners.github.release_load import group_repos_by_r
 from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
     new_released_prs_df
 from athenian.api.controllers.miners.types import MinedPullRequest, PRParticipants, \
-    PRParticipationKind, PullRequestFacts
+    PRParticipationKind, PullRequestFacts, PullRequestFactsMap
 from athenian.api.controllers.prefixer import PrefixerPromise
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, ReleaseSettings
 from athenian.api.db import ParallelDatabase
@@ -81,9 +81,9 @@ class DonePRFactsLoader:
                 release_settings, default_branches, result, ambiguous)
             if dump is None:
                 continue
-            dump[row[ghprt.pr_node_id.name]] = row
+            dump[(row[ghprt.pr_node_id.name], row[ghprt.repository_full_name.name])] = row
         result, ambiguous = cls._post_process_ambiguous_done_prs(result, ambiguous)
-        return set(result), ambiguous
+        return {node_id for node_id, _ in result}, ambiguous
 
     @classmethod
     @sentry_span
@@ -99,7 +99,7 @@ class DonePRFactsLoader:
                                                   prefixer: PrefixerPromise,
                                                   account: int,
                                                   pdb: databases.Database,
-                                                  ) -> Tuple[Dict[int, PullRequestFacts],
+                                                  ) -> Tuple[PullRequestFactsMap,
                                                              Dict[str, List[int]]]:
         """
         Fetch precomputed done PR facts.
@@ -116,8 +116,8 @@ class DonePRFactsLoader:
             time_from, time_to, repos, participants, labels,
             default_branches, exclude_inactive, release_settings, prefixer, account, pdb)
         user_node_to_login_get = (await prefixer.load()).user_node_to_login.get
-        for node_id, row in result.items():
-            result[node_id] = cls._done_pr_facts_from_row(row, user_node_to_login_get)
+        for key, row in result.items():
+            result[key] = cls._done_pr_facts_from_row(row, user_node_to_login_get)
         return result, ambiguous
 
     @classmethod
@@ -129,7 +129,7 @@ class DonePRFactsLoader:
                                               account: int,
                                               pdb: databases.Database,
                                               extra: Iterable[InstrumentedAttribute] = (),
-                                              ) -> Tuple[Dict[int, PullRequestFacts],
+                                              ) -> Tuple[PullRequestFactsMap,
                                                          Dict[str, Mapping[str, Any]]]:
         """
         Fetch all the precomputed done PR facts we have.
@@ -148,8 +148,8 @@ class DonePRFactsLoader:
             default_branches, False, release_settings, prefixer, account, pdb)
         raw = {}
         user_node_to_login_get = (await prefixer.load()).user_node_to_login.get
-        for node_id, row in result.items():
-            result[node_id] = PullRequestFacts(
+        for (node_id, repo), row in result.items():
+            result[(node_id, repo)] = PullRequestFacts(
                 data=row[ghdprf.data.name],
                 releaser=user_node_to_login_get(row[ghdprf.releaser.name]))
             raw[node_id] = row
@@ -169,7 +169,7 @@ class DonePRFactsLoader:
                                                       prefixer: PrefixerPromise,
                                                       account: int,
                                                       pdb: databases.Database,
-                                                      ) -> Tuple[Dict[str, datetime],
+                                                      ) -> Tuple[Dict[Tuple[int, str], datetime],
                                                                  Dict[str, List[int]]]:
         """
         Fetch precomputed done PR "pr_done_at" timestamps.
@@ -178,15 +178,16 @@ class DonePRFactsLoader:
                  2. Map from repository name to ambiguous PR node IDs which are released by \
                  branch with tag_or_branch strategy and without tags on the time interval.
         """
-        result, ambiguous = await cls._load_precomputed_done_filters(
+        prs, ambiguous = await cls._load_precomputed_done_filters(
             [GitHubDonePullRequestFacts.pr_done_at], time_from, time_to, repos, participants,
             labels, default_branches, exclude_inactive, release_settings, prefixer, account, pdb)
-        sqlite = pdb.url.dialect == "sqlite"
-        for node_id, row in result.items():
-            dt = row[GitHubDonePullRequestFacts.pr_done_at.name]
-            if sqlite:
-                dt = dt.replace(tzinfo=timezone.utc)
-            result[node_id] = dt
+        result = {
+            key: row[GitHubDonePullRequestFacts.pr_done_at.name]
+            for key, row in prs.items()
+        }
+        if pdb.url.dialect == "sqlite":
+            for key, dt in result.items():
+                result[key] = dt.replace(tzinfo=timezone.utc)
         return result, ambiguous
 
     @classmethod
@@ -198,7 +199,7 @@ class DonePRFactsLoader:
                                                    prefixer: PrefixerPromise,
                                                    account: int,
                                                    pdb: databases.Database,
-                                                   ) -> Tuple[Dict[int, PullRequestFacts],
+                                                   ) -> Tuple[PullRequestFactsMap,
                                                               Dict[str, List[int]]]:
         """
         Load PullRequestFacts belonging to released or rejected PRs from the precomputed DB.
@@ -252,12 +253,13 @@ class DonePRFactsLoader:
         ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
         user_node_to_login_get = (await prefixer.load()).user_node_to_login.get
         for row in rows:
+            repo = row[ghprt.repository_full_name.name]
             dump = triage_by_release_match(
-                row[ghprt.repository_full_name.name], row[ghprt.release_match.name],
+                repo, row[ghprt.release_match.name],
                 release_settings, default_branches, result, ambiguous)
             if dump is None:
                 continue
-            dump[row[ghprt.pr_node_id.name]] = cls._done_pr_facts_from_row(
+            dump[(row[ghprt.pr_node_id.name], repo)] = cls._done_pr_facts_from_row(
                 row, user_node_to_login_get)
         return cls._post_process_ambiguous_done_prs(result, ambiguous)
 
@@ -271,7 +273,7 @@ class DonePRFactsLoader:
                                               account: int,
                                               pdb: databases.Database,
                                               panic_on_missing_repositories: bool = True,
-                                              ) -> Tuple[Dict[int, PullRequestFacts],
+                                              ) -> Tuple[PullRequestFactsMap,
                                                          Dict[str, List[int]]]:
         """
         Load PullRequestFacts belonging to released or rejected PRs from the precomputed DB.
@@ -282,7 +284,7 @@ class DonePRFactsLoader:
           all the loaded PR repositories. If `False`, we log warnings and discard the offending \
           PRs.
 
-        :return: 1. Map PR node ID -> repository name & specified column value. \
+        :return: 1. Map (PR node ID, repository name) -> facts. \
                  2. Map from repository name to ambiguous PR node IDs which are released by \
                  branch with tag_or_branch strategy and without tags on the time interval.
         """
@@ -318,7 +320,7 @@ class DonePRFactsLoader:
                 release_settings, default_branches, result, ambiguous)
             if dump is None:
                 continue
-            dump[row[ghprt.pr_node_id.name]] = \
+            dump[(row[ghprt.pr_node_id.name], repo)] = \
                 cls._done_pr_facts_from_row(row, user_node_to_login_get)
         return cls._post_process_ambiguous_done_prs(result, ambiguous)
 
@@ -430,13 +432,13 @@ class DonePRFactsLoader:
                                              prefixer: PrefixerPromise,
                                              account: int,
                                              pdb: databases.Database,
-                                             ) -> Tuple[Dict[int, Mapping[str, Any]],
+                                             ) -> Tuple[Dict[Tuple[int, str], Mapping[str, Any]],
                                                         Dict[str, List[int]]]:
         """
         Load some data belonging to released or rejected PRs from the precomputed DB.
 
         Query version. JIRA must be filtered separately.
-        :return: 1. Map PR node ID -> repository name & specified column value. \
+        :return: 1. Map (PR node ID, repository name) -> facts. \
                  2. Map from repository name to ambiguous PR node IDs which are released by \
                  branch with tag_or_branch strategy and without tags on the time interval.
         """
@@ -492,7 +494,7 @@ class DonePRFactsLoader:
                                      for d in row[ghprt.activity_days.name]}
                     if not activity_days.intersection(date_range):
                         continue
-            dump[row[ghprt.pr_node_id.name]] = row
+            dump[(row[ghprt.pr_node_id.name], repo)] = row
         return cls._post_process_ambiguous_done_prs(result, ambiguous)
 
     @classmethod
@@ -590,23 +592,22 @@ class DonePRFactsLoader:
 
     @classmethod
     def _post_process_ambiguous_done_prs(cls,
-                                         result: Dict[int, Mapping[str, Any]],
+                                         result: Dict[Tuple[int, str], Mapping[str, Any]],
                                          ambiguous: Dict[ReleaseMatch,
-                                                         Dict[int, Mapping[str, Any]]],
-                                         ) -> Tuple[Dict[int, Mapping[str, Any]],
+                                                         Dict[Tuple[int, str], Mapping[str, Any]]],
+                                         ) -> Tuple[Dict[Tuple[int, str], Mapping[str, Any]],
                                                     Dict[str, List[int]]]:
         """Figure out what to do with uncertain `tag_or_branch` release matches."""
         result.update(ambiguous[ReleaseMatch.tag.name])
-        repokey = GitHubDonePullRequestFacts.repository_full_name.name
         # we've found PRs released by tag belonging to these repos.
         # this means that we are going to load tags in load_releases().
-        confirmed_tag_repos = {obj[repokey] for obj in ambiguous[ReleaseMatch.tag.name].values()}
+        confirmed_tag_repos = {repo for _, repo in ambiguous[ReleaseMatch.tag.name]}
         # regarding the rest - we don't know which releases we'll load, so mark such PRs
         # as ambiguous
         ambiguous_prs = defaultdict(list)
-        for node_id, obj in ambiguous[ReleaseMatch.branch.name].items():
-            if (repo := obj[repokey]) not in confirmed_tag_repos:
-                result[node_id] = obj
+        for (node_id, repo), obj in ambiguous[ReleaseMatch.branch.name].items():
+            if repo not in confirmed_tag_repos:
+                result[(node_id, repo)] = obj
                 ambiguous_prs[repo].append(node_id)
         return result, ambiguous_prs
 

@@ -175,8 +175,11 @@ def main():
                     num_teams = num_bots = 0
             await match_jira_identities(reposet.owner_id, meta_ids, sdb, mdb, slack, cache)
             repos = {r.split("/", 1)[1] for r in reposet.items}
-            settings = await Settings.from_account(
-                reposet.owner_id, sdb, mdb, cache, None).list_release_matches(reposet.items)
+            settings = Settings.from_account(reposet.owner_id, sdb, mdb, cache, None)
+            release_settings, logical_settings = await gather(
+                settings.list_release_matches(reposet.items),
+                settings.list_logical_repositories(prefixer, reposet.items),
+            )
             log.info("Heating reposet %d of account %d (%d repos)",
                      reposet.id, reposet.owner_id, len(repos))
             try:
@@ -185,8 +188,8 @@ def main():
                     repos, meta_ids, mdb, None)
                 releases, _, _, _ = await mine_releases(
                     repos, {}, branches, default_branches, no_time_from, time_to,
-                    LabelFilter.empty(), JIRAFilter.empty(), settings, prefixer, reposet.owner_id,
-                    meta_ids, mdb, pdb, rdb, None,
+                    LabelFilter.empty(), JIRAFilter.empty(), release_settings, logical_settings,
+                    prefixer, reposet.owner_id, meta_ids, mdb, pdb, rdb, None,
                     force_fresh=True, with_pr_titles=False, with_deployments=False)
                 await wait_deferred()
                 branches_count = len(branches)
@@ -217,7 +220,8 @@ def main():
                     LabelFilter.empty(),
                     JIRAFilter.empty(),
                     False,
-                    settings,
+                    release_settings,
+                    logical_settings,
                     prefixer,
                     True,
                     False,
@@ -239,9 +243,9 @@ def main():
                               if r in prefixer.repo_name_to_node]
                 await mine_deployments(
                     repo_nodes, {}, no_time_from, time_to, [], [], {}, {}, LabelFilter.empty(),
-                    JIRAFilter.empty(), settings, branches, default_branches,
-                    prefixer.as_promise(), reposet.owner_id, meta_ids, mdb, pdb, rdb,
-                    None)  # yes, disable the cache
+                    JIRAFilter.empty(), release_settings, logical_settings,
+                    branches, default_branches, prefixer.as_promise(), reposet.owner_id, meta_ids,
+                    mdb, pdb, rdb, None)  # yes, disable the cache
                 if not reposet.precomputed:
                     if slack is not None:
                         jira_link = await generate_jira_invitation_link(reposet.owner_id, sdb)
@@ -313,11 +317,14 @@ async def create_teams(account: int,
                                                Team.owner_id == account)))
     if bot_team is not None:
         return num_teams, bot_team[Team.members_count.name]
-    release_settings = await Settings.from_account(
-        account, sdb, mdb, None, None).list_release_matches(repos)
+    settings = Settings.from_account(account, sdb, mdb, None, None)
+    release_settings, logical_settings = await gather(
+        settings.list_release_matches(repos),
+        settings.list_logical_repositories(prefixer, repos),
+    )
     contributors = await mine_contributors(
         {r.split("/", 1)[1] for r in repos}, None, None, False, [],
-        release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, None,
+        release_settings, logical_settings, prefixer, account, meta_ids, mdb, pdb, rdb, None,
         force_fresh_releases=True)
     if bots := {u[User.login.name] for u in contributors}.intersection(all_bots):
         bots = (await prefixer.load()).prefix_user_logins(bots)

@@ -16,6 +16,7 @@ from athenian.api.controllers.miners.github.release_mine import mine_releases, \
     mine_releases_by_name
 from athenian.api.controllers.miners.types import DeployedComponent as DeployedComponentStruct, \
     Deployment, DeploymentConclusion, DeploymentFacts
+from athenian.api.controllers.settings import LogicalRepositorySettings
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import Release
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
@@ -188,6 +189,7 @@ async def test_mine_deployments_from_scratch(
     await mine_releases(
         ["src-d/go-git"], {}, branches, default_branches, time_from, time_to,
         LabelFilter.empty(), JIRAFilter.empty(), release_match_setting_tag_or_branch,
+        LogicalRepositorySettings.empty(),
         prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None, with_avatars=False,
         with_pr_titles=False, with_deployments=False,
     )
@@ -198,6 +200,7 @@ async def test_mine_deployments_from_scratch(
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_match_setting_tag_or_branch,
+        LogicalRepositorySettings.empty(),
         branches, default_branches, prefixer_promise,
         1, (6366825,), mdb, pdb, rdb, cache)
     _validate_deployments(deps, 9, True)
@@ -213,8 +216,10 @@ async def test_mine_deployments_middle(
     time_from = datetime(2017, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
     await mine_releases(
-        ["src-d/go-git"], {}, branches, default_branches, time_from, time_to,
+        ["src-d/go-git"], {}, branches, default_branches,
+        datetime(2016, 1, 1, tzinfo=timezone.utc), time_to,
         LabelFilter.empty(), JIRAFilter.empty(), release_match_setting_tag_or_branch,
+        LogicalRepositorySettings.empty(),
         prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None, with_avatars=False,
         with_pr_titles=False, with_deployments=False,
     )
@@ -225,6 +230,7 @@ async def test_mine_deployments_middle(
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_match_setting_tag_or_branch,
+        LogicalRepositorySettings.empty(),
         branches, default_branches, prefixer_promise,
         1, (6366825,), mdb, pdb, rdb, cache)
     _validate_deployments(deps, 7, False)
@@ -242,6 +248,7 @@ async def test_mine_deployments_append(
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_match_setting_tag_or_branch,
+        LogicalRepositorySettings.empty(),
         branches, default_branches, prefixer_promise,
         1, (6366825,), mdb, pdb, rdb, cache)
     await wait_deferred()
@@ -270,6 +277,7 @@ async def test_mine_deployments_append(
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_match_setting_tag_or_branch,
+        LogicalRepositorySettings.empty(),
         branches, default_branches, prefixer_promise,
         1, (6366825,), mdb, pdb, rdb, cache)
     await wait_deferred()
@@ -314,6 +322,7 @@ async def test_mine_deployments_only_failed(
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_match_setting_tag_or_branch,
+        LogicalRepositorySettings.empty(),
         branches, default_branches, prefixer_promise,
         1, (6366825,), mdb, pdb, rdb, cache)
     await wait_deferred()
@@ -356,6 +365,7 @@ async def test_mine_deployments_no_prs(
         ["production"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_match_setting_tag_or_branch,
+        LogicalRepositorySettings.empty(),
         branches, default_branches, prefixer_promise,
         1, (6366825,), mdb, pdb, rdb, cache)
     assert len(deps) == 1
@@ -374,6 +384,7 @@ async def test_mine_deployments_no_release_facts(
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_match_setting_tag_or_branch,
+        LogicalRepositorySettings.empty(),
         branches, default_branches, prefixer_promise,
         1, (6366825,), mdb, pdb, rdb, cache)
     assert len(deps) == 1
@@ -1216,15 +1227,15 @@ async def test_mine_deployments_no_release_facts(
         "name": {
             41475: "v4.13.1", 41474: "v4.13.0", 41473: "v4.12.0", 41472: "v4.11.0",
             41471: "v4.10.0", 41470: "v4.9.1", 41469: "v4.9.0", 41468: "v4.8.1",
-            41467: "v4.8.0", 41485: "v4.7.1", 41484: "", 41483: "v4.6.0", 41482: "v4.5.0",
+            41467: "v4.8.0", 41485: "v4.7.1", 41484: "v4.7.0", 41483: "v4.6.0", 41482: "v4.5.0",
             41481: "v4.4.1", 41480: "v4.4.0", 41479: "v4.3.1", 41478: "v4.3.0",
             41477: "v4.2.1", 41476: "v4.2.0", 41517: "v4.1.1", 41519: "v4.1.0",
             41518: "v4.0.0", 41514: "v4.0.0-rc15", 41513: "v4.0.0-rc14", 41516: "v4.0.0-rc13",
             41515: "v4.0.0-rc12", 41512: "v4.0.0-rc11", 41511: "v4.0.0-rc10",
             41510: "v4.0.0-rc9", 41509: "v4.0.0-rc8", 41508: "v4.0.0-rc7",
             41506: "v4.0.0-rc6", 41505: "v4.0.0-rc5", 41503: "v4.0.0-rc4",
-            41502: "v4.0.0-rc3", 41501: "v4.0.0-rc2", 41507: "v4.0.0-rc1", 41496: "",
-            41495: "", 41500: "v3.0.4", 41499: "v3.0.3", 41498: "v3.0.2", 41497: "v3.0.1",
+            41502: "v4.0.0-rc3", 41501: "v4.0.0-rc2", 41507: "v4.0.0-rc1", 41496: "v3.1.1",
+            41495: "v3.1.0", 41500: "v3.0.4", 41499: "v3.0.3", 41498: "v3.0.2", 41497: "v3.0.1",
             41490: "v3.0.0-alpha", 41488: "v2.2.0", 41487: "v2.1.3", 41486: "v2.1.2 hotfix",
             41494: "v2.1.1 hotfix", 41493: "v2.1.0", 41492: "v2.0.0", 41491: "v1.0.0"},
         "published_at": {
@@ -1462,6 +1473,7 @@ async def test_mine_deployments_precomputed_dummy(
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_match_setting_tag_or_branch,
+        LogicalRepositorySettings.empty(),
         branches, default_branches, prefixer_promise,
         1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
@@ -1471,6 +1483,7 @@ async def test_mine_deployments_precomputed_dummy(
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_match_setting_tag_or_branch,
+        LogicalRepositorySettings.empty(),
         branches, default_branches, prefixer_promise,
         1, (6366825,), mdb, pdb, rdb, None)
     assert len(deps1) == len(deps2) == 1
@@ -1497,6 +1510,7 @@ async def test_mine_deployments_precomputed_sample(
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_match_setting_tag_or_branch,
+        LogicalRepositorySettings.empty(),
         branches, default_branches, prefixer_promise,
         1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
@@ -1506,6 +1520,7 @@ async def test_mine_deployments_precomputed_sample(
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_match_setting_tag_or_branch,
+        LogicalRepositorySettings.empty(),
         branches, default_branches, prefixer_promise,
         1, (6366825,), mdb, pdb, rdb, None)
     assert len(deps1) == len(deps2) == 2 * 9
@@ -1539,6 +1554,7 @@ async def test_mine_deployments_empty(
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_match_setting_tag_or_branch,
+        LogicalRepositorySettings.empty(),
         branches, default_branches, prefixer_promise,
         1, (6366825,), mdb, pdb, rdb, cache)
     assert len(deps) == 0
@@ -1564,6 +1580,7 @@ async def test_mine_deployments_event_releases(
         await mine_releases(
             ["src-d/go-git"], {}, branches, default_branches, time_from, time_to,
             LabelFilter.empty(), JIRAFilter.empty(), release_match_setting_event,
+            LogicalRepositorySettings.empty(),
             prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None, with_avatars=False,
             with_pr_titles=False, with_deployments=False,
         )
@@ -1574,6 +1591,7 @@ async def test_mine_deployments_event_releases(
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_match_setting_event,
+        LogicalRepositorySettings.empty(),
         branches, default_branches, prefixer_promise,
         1, (6366825,), mdb, pdb, rdb, cache)
     for depname in ("production_2019_11_01", "staging_2019_11_01"):
@@ -1612,7 +1630,7 @@ async def test_mine_release_by_name_deployments(
     names = {"36c78b9d1b1eea682703fb1cbb0f4f3144354389", "v4.0.0"}
     releases, _, deps = await mine_releases_by_name(
         {"src-d/go-git": names},
-        release_match_setting_tag_or_branch, prefixer_promise,
+        release_match_setting_tag_or_branch, LogicalRepositorySettings.empty(), prefixer_promise,
         1, (6366825,), mdb, pdb, rdb, None)
     assert deps == proper_deployments
     assert releases[0][1].deployments == ["Dummy deployment"]
@@ -1626,6 +1644,7 @@ async def test_mine_releases_deployments(
         ["src-d/go-git"], {}, branches, default_branches,
         datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
         LabelFilter.empty(), JIRAFilter.empty(), release_match_setting_tag_or_branch,
+        LogicalRepositorySettings.empty(),
         prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None,
         with_avatars=False, with_pr_titles=False, with_deployments=True)
     assert deps == proper_deployments

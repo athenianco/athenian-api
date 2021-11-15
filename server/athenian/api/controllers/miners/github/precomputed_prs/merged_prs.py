@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from itertools import chain
 import logging
 import pickle
-from typing import Collection, Dict, Iterable, List, Optional, Tuple
+from typing import Collection, Dict, Iterable, KeysView, List, Optional, Set, Tuple, Union
 
 import aiomcache
 import databases
@@ -18,12 +18,13 @@ from sqlalchemy.sql.functions import coalesce
 from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached
+from athenian.api.controllers.logical_repos import coerce_logical_repos, drop_logical_repo
 from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.precomputed_prs.utils import \
     append_activity_days_filter, build_labels_filters, collect_activity_days, \
     extract_release_match, labels_are_compatible, triage_by_release_match
 from athenian.api.controllers.miners.types import MinedPullRequest, PRParticipants, \
-    PRParticipationKind, PullRequestFacts
+    PRParticipationKind, PullRequestFacts, PullRequestFactsMap
 from athenian.api.controllers.prefixer import PrefixerPromise
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.db import add_pdb_hits, greatest
@@ -40,7 +41,7 @@ class MergedPRFactsLoader:
     @sentry_span
     async def load_merged_unreleased_pull_request_facts(
             cls,
-            prs: pd.DataFrame,
+            prs: Union[pd.DataFrame, pd.Index],
             time_to: datetime,
             labels: LabelFilter,
             matched_bys: Dict[str, ReleaseMatch],
@@ -51,7 +52,7 @@ class MergedPRFactsLoader:
             pdb: databases.Database,
             time_from: Optional[datetime] = None,
             exclude_inactive: bool = False,
-    ) -> Dict[int, PullRequestFacts]:
+    ) -> PullRequestFactsMap:
         """
         Load the mapping from PR node identifiers which we are sure are not released in one of \
         `releases` to the serialized facts.
@@ -75,14 +76,39 @@ class MergedPRFactsLoader:
                     ghmprf.author,
                     ghmprf.merger,
                     ]
-        default_version = ghmprf.__table__.columns[ghmprf.format_version.key].default.arg
+        default_version = ghmprf.__table__.columns[ghmprf.format_version.name].default.arg
         repos_by_match = defaultdict(list)
-        for repo in prs[PullRequest.repository_full_name.name].unique():
-            if (release_match := extract_release_match(
-                    repo, matched_bys, default_branches, release_settings)) is None:
-                # no new releases
-                continue
-            repos_by_match[release_match].append(repo)
+        pure_logical = {}
+        if isinstance(prs, pd.Index):
+            prs_index = prs
+            assert prs.nlevels == 2
+        else:
+            prs_index = prs.index
+        if prs_index.nlevels == 2:
+            nodes_col = prs_index.get_level_values(0).values
+            repos_col = prs_index.get_level_values(1).values
+        else:
+            nodes_col = prs_index.values
+            repos_col = prs[PullRequest.repository_full_name.name].values
+        physical_repos, index_map, counts = np.unique(
+            repos_col, return_inverse=True, return_counts=True)
+        pr_ids_by_repo = dict(zip(
+            physical_repos,
+            np.split(nodes_col[np.argsort(index_map)], np.cumsum(counts[:-1]))))
+        logical_repos_map = coerce_logical_repos(physical_repos)
+        for physical_repo in physical_repos:
+            logical_repos = logical_repos_map[physical_repo] & matched_bys.keys()
+            if physical_repo in logical_repos:
+                for repo in logical_repos - {physical_repo}:
+                    pure_logical[repo] = physical_repo
+            pr_ids = pr_ids_by_repo[physical_repo]
+            for repo in logical_repos:
+                if (release_match := extract_release_match(
+                        repo, matched_bys, default_branches, release_settings)) is None:
+                    # no new releases
+                    continue
+                pr_ids_by_repo[repo] = pr_ids
+                repos_by_match[release_match].append(repo)
 
         def compose_common_filters(deployed: bool):
             nonlocal selected
@@ -122,16 +148,15 @@ class MergedPRFactsLoader:
             return my_selected, filters, date_range
 
         queries = []
-        pr_repos = prs[PullRequest.repository_full_name.name].values.astype("S")
-        pr_ids = prs.index.values
         date_range = set()
         for deployed in (False, True):
             my_selected, common_filters, deployed_date_range = compose_common_filters(deployed)
             if not deployed:
                 date_range = deployed_date_range
             for release_match, repos in repos_by_match.items():
+                pr_ids = np.unique(np.concatenate([pr_ids_by_repo[r] for r in repos]))
                 filters = [
-                    ghmprf.pr_node_id.in_(pr_ids[np.in1d(pr_repos, np.array(repos, dtype="S"))]),
+                    ghmprf.pr_node_id.in_(pr_ids),
                     ghmprf.repository_full_name.in_(repos),
                     ghmprf.release_match == release_match,
                     *common_filters,
@@ -149,6 +174,7 @@ class MergedPRFactsLoader:
         facts = {}
         user_node_map_get = (await prefixer.load()).user_node_to_login.get
         missing_facts = []
+        remove_physical = set()
         for row in rows:
             if exclude_inactive and not postgres and not row["deployed"]:
                 activity_days = {datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc)
@@ -168,11 +194,19 @@ class MergedPRFactsLoader:
             if labels and not labels_are_compatible(
                     include_singles, include_multiples, labels.exclude, row[ghmprf.labels.name]):
                 continue
-            facts[node_id] = PullRequestFacts(
+            repo = row[ghmprf.repository_full_name.name]
+            if physical_repo := pure_logical.get(repo):
+                remove_physical.add((node_id, physical_repo))
+            facts[(node_id, repo)] = PullRequestFacts(
                 data=data,
-                repository_full_name=row[ghmprf.repository_full_name.name],
+                repository_full_name=repo,
                 author=user_node_map_get(row[ghmprf.author.name]),
                 merger=user_node_map_get(row[ghmprf.merger.name]))
+        for pair in remove_physical:
+            try:
+                del facts[pair]
+            except KeyError:
+                continue
         if missing_facts:
             log.warning("No precomputed facts for merged %s", missing_facts)
         return facts
@@ -184,7 +218,7 @@ class MergedPRFactsLoader:
                                                  pr_node_id_blacklist: Collection[int],
                                                  account: int,
                                                  pdb: databases.Database,
-                                                 ) -> Dict[int, PullRequestFacts]:
+                                                 ) -> PullRequestFactsMap:
         """
         Load the precomputed merged PR facts through all the time.
 
@@ -196,9 +230,10 @@ class MergedPRFactsLoader:
         ghmprf = GitHubMergedPullRequestFacts
         selected = [
             ghmprf.pr_node_id,
+            ghmprf.repository_full_name,
             ghmprf.data,
         ]
-        default_version = ghmprf.__table__.columns[ghmprf.format_version.key].default.arg
+        default_version = ghmprf.__table__.columns[ghmprf.format_version.name].default.arg
         filters = [
             ghmprf.pr_node_id.notin_(pr_node_id_blacklist),
             ghmprf.repository_full_name.in_(repos),
@@ -222,7 +257,7 @@ class MergedPRFactsLoader:
                 # 2. "Impossible" PRs that are merged.
                 log.warning("No precomputed facts for merged %s", node_id)
                 continue
-            facts[node_id] = PullRequestFacts(data)
+            facts[(node_id, row[ghmprf.repository_full_name.name])] = PullRequestFacts(data)
         return facts
 
 
@@ -262,7 +297,8 @@ async def update_unreleased_prs(merged_prs: pd.DataFrame,
                 # no new releases
                 continue
             for node_id, merged_at, author, merger in zip(
-                    repo_prs.index.values, repo_prs[PullRequest.merged_at.name],
+                    repo_prs.index.get_level_values(0).values,
+                    repo_prs[PullRequest.merged_at.name],
                     repo_prs[PullRequest.user_node_id.name].values,
                     repo_prs[PullRequest.merged_by_id.name].values):
                 try:
@@ -405,7 +441,7 @@ async def store_merged_unreleased_pull_request_facts(
 )
 async def discover_inactive_merged_unreleased_prs(time_from: datetime,
                                                   time_to: datetime,
-                                                  repos: Collection[str],
+                                                  repos: Union[Set[str], KeysView[str]],
                                                   participants: PRParticipants,
                                                   labels: LabelFilter,
                                                   default_branches: Dict[str, str],
@@ -414,8 +450,13 @@ async def discover_inactive_merged_unreleased_prs(time_from: datetime,
                                                   account: int,
                                                   pdb: databases.Database,
                                                   cache: Optional[aiomcache.Client],
-                                                  ) -> Tuple[List[str], List[str]]:
-    """Discover PRs which were merged before `time_from` and still not released."""
+                                                  ) -> Dict[int, List[str]]:
+    """
+    Discover PRs which were merged before `time_from` and still not released.
+
+    :return: mapping PR node ID -> logical repository names.
+    """
+    assert isinstance(repos, (set, KeysView))
     postgres = pdb.url.dialect == "postgresql"
     ghmprf = GitHubMergedPullRequestFacts
     ghdprf = GitHubDonePullRequestFacts
@@ -457,6 +498,8 @@ async def discover_inactive_merged_unreleased_prs(time_from: datetime,
         include_singles, include_multiples = LabelFilter.split(labels.include)
         include_singles = set(include_singles)
         include_multiples = [set(m) for m in include_multiples]
+    result = {}
+    remove_physical = set()
     for row in rows:
         dump = triage_by_release_match(
             row[1], row[2], release_settings, default_branches, "whatever", ambiguous)
@@ -467,7 +510,14 @@ async def discover_inactive_merged_unreleased_prs(time_from: datetime,
                 include_singles, include_multiples, labels.exclude,
                 row[GitHubMergedPullRequestFacts.labels.name]):
             continue
-        node_ids.append(row[0])
-        repos.append(row[1])
+        node_id, repo = row[0], row[1]
+        if (physical_repo := drop_logical_repo(repo)) != repo and physical_repo in repos:
+            remove_physical.add((node_id, physical_repo))
+        result.setdefault(node_id, []).append(repo)
+    for node_id, repo in remove_physical:
+        try:
+            result[node_id].remove(repo)
+        except ValueError:
+            continue
     add_pdb_hits(pdb, "inactive_merged_unreleased", len(node_ids))
-    return node_ids, repos
+    return result

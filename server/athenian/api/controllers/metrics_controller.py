@@ -97,8 +97,10 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
     met.exclude_inactive = filt.exclude_inactive
     met.calculated = []
 
-    release_settings, (branches, default_branches), calculators = await gather(
-        Settings.from_request(request, filt.account).list_release_matches(repos),
+    settings = Settings.from_request(request, filt.account)
+    release_settings, logical_settings, (branches, default_branches), calculators = await gather(
+        settings.list_release_matches(repos),
+        settings.list_logical_repositories(prefixer, repos, pointer=".for[?].repositories"),
         BranchMiner.extract_branches(repos, meta_ids, request.mdb, request.cache, strip=True),
         get_calculators_for_request({s for s, _ in filters}, filt.account, meta_ids, request),
     )
@@ -111,7 +113,7 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
         metric_values = await calculator.calc_pull_request_metrics_line_github(
             filt.metrics, time_intervals, filt.quantiles or (0, 1), for_set.lines or [],
             for_set.environments or [], repos, withgroups, labels, jira, filt.exclude_inactive,
-            release_settings, prefixer, branches, default_branches, filt.fresh)
+            release_settings, logical_settings, prefixer, branches, default_branches, filt.fresh)
         mrange = range(len(met.metrics))
         for lines_group_index, lines_group in enumerate(metric_values):
             for repos_group_index, with_groups in enumerate(lines_group):
@@ -435,8 +437,12 @@ async def calc_metrics_developers(request: AthenianWebRequest, body: dict) -> we
         ))
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
-    release_settings = \
-        await Settings.from_request(request, filt.account).list_release_matches(all_repos)
+    settings = Settings.from_request(request, filt.account)
+    release_settings, logical_settings, calculators = await gather(
+        settings.list_release_matches(all_repos),
+        settings.list_logical_repositories(prefixer, all_repos, pointer=".for[?].repositories"),
+        get_calculators_for_request({s for s, _ in filters}, filt.account, meta_ids, request),
+    )
 
     met = CalculatedDeveloperMetrics()
     met.date_from = filt.date_from
@@ -449,9 +455,6 @@ async def calc_metrics_developers(request: AthenianWebRequest, body: dict) -> we
     tasks = []
     for_sets = []
 
-    calculators = await get_calculators_for_request(
-        {s for s, _ in filters}, filt.account, meta_ids, request)
-
     for service, (repos, devs, labels, jira, for_set) in filters:
         if for_set.aggregate_devgroups:
             dev_groups = [[devs[i] for i in group] for group in for_set.aggregate_devgroups]
@@ -459,7 +462,8 @@ async def calc_metrics_developers(request: AthenianWebRequest, body: dict) -> we
             dev_groups = [[dev] for dev in devs]
         calculator = calculators[service]
         tasks.append(calculator.calc_developer_metrics_github(
-            dev_groups, repos, time_intervals, topics, labels, jira, release_settings, prefixer))
+            dev_groups, repos, time_intervals, topics, labels, jira,
+            release_settings, logical_settings, prefixer))
         for_sets.append(for_set)
     all_stats = await gather(*tasks)
     for (stats_metrics, stats_topics), for_set in zip(all_stats, for_sets):
@@ -529,9 +533,11 @@ async def calc_metrics_releases(request: AthenianWebRequest, body: dict) -> web.
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
 
-    release_settings, (branches, default_branches), jira_ids, calculators, *participants = \
-        await gather(
-            Settings.from_request(request, filt.account).list_release_matches(repos),
+    settings = Settings.from_request(request, filt.account)
+    release_settings, logical_settings, (branches, default_branches), jira_ids, calculators, \
+        *participants = await gather(
+            settings.list_release_matches(repos),
+            settings.list_logical_repositories(prefixer, repos, pointer=".for[?].repositories"),
             BranchMiner.extract_branches(repos, meta_ids, request.mdb, request.cache, strip=True),
             get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
             get_calculators_for_request(grouped_repos.keys(), filt.account, meta_ids, request),
@@ -545,7 +551,7 @@ async def calc_metrics_releases(request: AthenianWebRequest, body: dict) -> web.
         release_metric_values, release_matches = await calculator.calc_release_metrics_line_github(
             filt.metrics, time_intervals, filt.quantiles or (0, 1), repos, participants,
             LabelFilter.from_iterables(filt.labels_include, filt.labels_exclude),
-            JIRAFilter.from_web(filt.jira, jira_ids), release_settings, prefixer,
+            JIRAFilter.from_web(filt.jira, jira_ids), release_settings, logical_settings, prefixer,
             branches, default_branches)
         release_matches = {k: v.name for k, v in release_matches.items()}
         mrange = range(len(filt.metrics))
@@ -678,11 +684,14 @@ async def calc_metrics_deployments(request: AthenianWebRequest, body: dict) -> w
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
     calculated = []
-    release_settings, (branches, default_branches), calculators, prefixer = await gather(
-        Settings.from_request(request, filt.account).list_release_matches(),  # no "repos"!
-        BranchMiner.extract_branches(None, meta_ids, request.mdb, request.cache, strip=True),
-        get_calculators_for_request({s for s, _ in filters}, filt.account, meta_ids, request),
-        prefixer.load(),
+    settings = Settings.from_request(request, filt.account)
+    release_settings, logical_settings, (branches, default_branches), calculators, prefixer = \
+        await gather(
+            settings.list_release_matches(),  # no "repos"!
+            settings.list_logical_repositories(prefixer),
+            BranchMiner.extract_branches(None, meta_ids, request.mdb, request.cache, strip=True),
+            get_calculators_for_request({s for s, _ in filters}, filt.account, meta_ids, request),
+            prefixer.load(),
     )
 
     @sentry_span
@@ -693,8 +702,9 @@ async def calc_metrics_deployments(request: AthenianWebRequest, body: dict) -> w
             repos, withgroups, prefixer, for_set_index)
         metric_values = await calculator.calc_deployment_metrics_line_github(
             filt.metrics, time_intervals, filt.quantiles or (0, 1),
-            resolved_repos, resolved_withgroups, envs, pr_labels, *labels, jira, release_settings,
-            prefixer.as_promise(), branches, default_branches, jira_ids)
+            resolved_repos, resolved_withgroups, envs, pr_labels, *labels, jira,
+            release_settings, logical_settings, prefixer.as_promise(),
+            branches, default_branches, jira_ids)
         mrange = range(len(filt.metrics))
         for with_group_index, with_group in enumerate(metric_values):
             for repos_group_index, repos_group in enumerate(with_group):

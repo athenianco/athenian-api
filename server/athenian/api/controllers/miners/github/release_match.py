@@ -1,5 +1,4 @@
 import asyncio
-import bisect
 from datetime import datetime, timedelta, timezone
 import logging
 import pickle
@@ -15,21 +14,22 @@ from sqlalchemy.sql.elements import BinaryExpression
 from athenian.api import metadata
 from athenian.api.async_utils import gather, postprocess_datetime, read_sql_query
 from athenian.api.cache import cached
+from athenian.api.controllers.logical_repos import coerce_logical_repos, drop_logical_repo
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import load_branch_commit_dates
 from athenian.api.controllers.miners.github.commit import DAG, \
-    fetch_precomputed_commit_history_dags, \
-    fetch_repository_commits, RELEASE_FETCH_COMMITS_COLUMNS
+    fetch_precomputed_commit_history_dags, fetch_repository_commits, RELEASE_FETCH_COMMITS_COLUMNS
 from athenian.api.controllers.miners.github.dag_accelerated import extract_subdag, \
-    mark_dag_access, searchsorted_inrange
+    mark_dag_access, mark_dag_parents, searchsorted_inrange
 from athenian.api.controllers.miners.github.precomputed_prs import \
     DonePRFactsLoader, MergedPRFactsLoader, update_unreleased_prs
 from athenian.api.controllers.miners.github.release_load import dummy_releases_df, ReleaseLoader
 from athenian.api.controllers.miners.github.released_pr import new_released_prs_df, release_columns
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
-from athenian.api.controllers.miners.types import nonemax, PullRequestFacts
+from athenian.api.controllers.miners.types import nonemax, PullRequestFactsMap
 from athenian.api.controllers.prefixer import PrefixerPromise
-from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
+from athenian.api.controllers.settings import LogicalPRSettings, LogicalRepositorySettings, \
+    ReleaseMatch, ReleaseSettings
 from athenian.api.db import add_pdb_hits, add_pdb_misses, insert_or_ignore, ParallelDatabase
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import NodeCommit, NodeRepository, PullRequest, \
@@ -72,8 +72,9 @@ class PullRequestToReleaseMapper:
                                   mdb: ParallelDatabase,
                                   pdb: ParallelDatabase,
                                   cache: Optional[aiomcache.Client],
+                                  labels: Optional[pd.DataFrame] = None,
                                   ) -> Tuple[pd.DataFrame,
-                                             Dict[str, Tuple[str, PullRequestFacts]],
+                                             PullRequestFactsMap,
                                              asyncio.Event]:
         """
         Match the merged pull requests to the nearest releases that include them.
@@ -90,7 +91,7 @@ class PullRequestToReleaseMapper:
         if prs.empty:
             unreleased_prs_event.set()
             return pr_releases, {}, unreleased_prs_event
-        tasks = [
+        _, unreleased_prs, precomputed_pr_releases = await gather(
             load_branch_commit_dates(branches, meta_ids, mdb),
             MergedPRFactsLoader.load_merged_unreleased_pull_request_facts(
                 prs, nonemax(releases[Release.published_at.name].nonemax(), time_to),
@@ -99,21 +100,21 @@ class PullRequestToReleaseMapper:
             DonePRFactsLoader.load_precomputed_pr_releases(
                 prs.index, time_to, matched_bys, default_branches, release_settings,
                 prefixer, account, pdb, cache),
-        ]
-        _, unreleased_prs, precomputed_pr_releases = await gather(*tasks)
+        )
         add_pdb_hits(pdb, "map_prs_to_releases/released", len(precomputed_pr_releases))
         add_pdb_hits(pdb, "map_prs_to_releases/unreleased", len(unreleased_prs))
         pr_releases = precomputed_pr_releases
-        merged_prs = prs[~prs.index.isin(pr_releases.index.union(unreleased_prs))]
+        unreleased_node_ids = [node_id for node_id, _ in unreleased_prs]
+        merged_prs = prs[~prs.index.isin(pr_releases.index.union(unreleased_node_ids))]
         if merged_prs.empty:
             unreleased_prs_event.set()
             return pr_releases, unreleased_prs, unreleased_prs_event
-        tasks = [
-            cls._fetch_labels(merged_prs.index, meta_ids, mdb),
+
+        labels, missed_released_prs, dead_prs = await gather(
+            cls._fetch_labels(merged_prs.index, labels, meta_ids, mdb),
             cls._map_prs_to_releases(merged_prs, dags, releases),
             cls._find_dead_merged_prs(merged_prs),
-        ]
-        labels, missed_released_prs, dead_prs = await gather(*tasks)
+        )
         # PRs may wrongly classify as dead although they are really released; remove the conflicts
         dead_prs.drop(index=missed_released_prs.index, inplace=True, errors="ignore")
         add_pdb_misses(pdb, "map_prs_to_releases/released", len(missed_released_prs))
@@ -197,9 +198,16 @@ class PullRequestToReleaseMapper:
     @sentry_span
     async def _fetch_labels(cls,
                             node_ids: Iterable[str],
+                            df: Optional[pd.DataFrame],
                             meta_ids: Tuple[int, ...],
                             mdb: ParallelDatabase,
                             ) -> Dict[str, List[str]]:
+        if df is not None:
+            labels = {}
+            for node_id, name in zip(df.index.get_level_values(0).values,
+                                     df[PullRequestLabel.name.name].values):
+                labels.setdefault(node_id, []).append(name)
+            return labels
         rows = await mdb.fetch_all(
             select([PullRequestLabel.pull_request_node_id, func.lower(PullRequestLabel.name)])
             .where(and_(PullRequestLabel.pull_request_node_id.in_(node_ids),
@@ -228,6 +236,7 @@ class ReleaseToPullRequestMapper:
                                   mergers: Collection[str],
                                   jira: JIRAFilter,
                                   release_settings: ReleaseSettings,
+                                  logical_settings: LogicalRepositorySettings,
                                   updated_min: Optional[datetime],
                                   updated_max: Optional[datetime],
                                   pdags: Optional[Dict[str, DAG]],
@@ -252,6 +261,8 @@ class ReleaseToPullRequestMapper:
                                              pd.DataFrame]:
         """Find pull requests which were released between `time_from` and `time_to` but merged before \
         `time_from`.
+
+        The returned DataFrame-s with releases are already with logical repositories.
 
         :param authors: Required PR commit_authors.
         :param mergers: Required PR mergers.
@@ -288,7 +299,8 @@ class ReleaseToPullRequestMapper:
                 all_observed_commits, all_observed_repos,
                 releases_in_time_range, release_settings, matched_bys, dags,
             ) = await cls._map_releases_to_prs_observe(
-                repos, branches, default_branches, time_from, time_to, release_settings, pdags,
+                repos, branches, default_branches, time_from, time_to,
+                release_settings, logical_settings, pdags,
                 prefixer, account, meta_ids, mdb, pdb, rdb, cache, truncate)
         else:
             all_observed_commits, all_observed_repos = precomputed_observed
@@ -312,12 +324,13 @@ class ReleaseToPullRequestMapper:
     @classmethod
     @sentry_span
     async def _map_releases_to_prs_observe(cls,
-                                           repos: Collection[str],
+                                           repos: Collection[str],  # logical
                                            branches: pd.DataFrame,
                                            default_branches: Dict[str, str],
                                            time_from: datetime,
                                            time_to: datetime,
                                            release_settings: ReleaseSettings,
+                                           logical_settings: LogicalRepositorySettings,
                                            pdags: Optional[Dict[str, DAG]],
                                            prefixer: PrefixerPromise,
                                            account: int,
@@ -333,21 +346,12 @@ class ReleaseToPullRequestMapper:
                                                       ReleaseSettings,
                                                       Dict[str, ReleaseMatch],
                                                       Dict[str, DAG]]:
-        async def fetch_pdags():
-            if pdags is None:
-                return await fetch_precomputed_commit_history_dags(repos, account, pdb, cache)
-            return pdags
-
-        (matched_bys, releases, releases_in_time_range, release_settings), pdags = await gather(
-            cls._find_releases_for_matching_prs(
+        matched_bys, releases, releases_in_time_range, release_settings, dags = \
+            await cls._find_releases_for_matching_prs(
                 repos, branches, default_branches, time_from, time_to, not truncate,
-                release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache),
-            fetch_pdags())
+                release_settings, logical_settings, pdags, prefixer, account, meta_ids,
+                mdb, pdb, rdb, cache)
 
-        # ensure that our DAGs contain all the mentioned releases
-        dags = await fetch_repository_commits(
-            pdags, releases, RELEASE_FETCH_COMMITS_COLUMNS, False, account, meta_ids,
-            mdb, pdb, cache)
         rpak = Release.published_at.name
         rrfnk = Release.repository_full_name.name
         all_observed_repos = []
@@ -355,13 +359,14 @@ class ReleaseToPullRequestMapper:
         # find the released commit hashes by two DAG traversals
         with sentry_sdk.start_span(op="_generate_released_prs_clause"):
             for repo, repo_releases in releases.groupby(rrfnk, sort=False):
+                physical_repo = drop_logical_repo(repo)
                 if (repo_releases[rpak] >= time_from).any():
                     observed_commits = cls._extract_released_commits(
-                        repo_releases, dags[repo], time_from)
+                        repo_releases, dags[physical_repo], time_from)
                     if len(observed_commits):
                         all_observed_commits.append(observed_commits)
                         all_observed_repos.append(np.full(
-                            len(observed_commits), repo, dtype=f"S{len(repo)}"))
+                            len(observed_commits), physical_repo, dtype=f"S{len(physical_repo)}"))
         if all_observed_commits:
             all_observed_repos = np.concatenate(all_observed_repos)
             all_observed_commits = np.concatenate(all_observed_commits)
@@ -379,13 +384,15 @@ class ReleaseToPullRequestMapper:
     @sentry_span
     async def _find_releases_for_matching_prs(
             cls,
-            repos: Iterable[str],
+            repos: Iterable[str],  # logical
             branches: pd.DataFrame,
             default_branches: Dict[str, str],
             time_from: datetime,
             time_to: datetime,
             until_today: bool,
             release_settings: ReleaseSettings,
+            logical_settings: LogicalRepositorySettings,
+            pdags: Optional[Dict[str, DAG]],
             prefixer: PrefixerPromise,
             account: int,
             meta_ids: Tuple[int, ...],
@@ -397,14 +404,14 @@ class ReleaseToPullRequestMapper:
     ) -> Tuple[Dict[str, ReleaseMatch],
                pd.DataFrame,
                pd.DataFrame,
-               ReleaseSettings]:
+               ReleaseSettings,
+               Dict[str, DAG]]:
         """
         Load releases with sufficient history depth.
 
         1. Load releases between `time_from` and `time_to`, record the effective release matches.
         2. Use those matches to load enough releases before `time_from` to ensure we don't get \
-           "release leakages" in the commit DAG. Ideally, we should use the DAGs, but we take \
-           risks and just set a long enough lookbehind time interval.
+           "release leakages" in the commit DAG.
         3. Optionally, use those matches to load all the releases after `time_to`.
         """
         if releases_in_time_range is None:
@@ -413,20 +420,41 @@ class ReleaseToPullRequestMapper:
             # see ENG-710 and ENG-725
             releases_in_time_range, matched_bys = await cls.release_loader.load_releases(
                 repos, branches, default_branches, time_from, time_to,
-                release_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache)
+                release_settings, logical_settings, prefixer, account, meta_ids,
+                mdb, pdb, rdb, cache)
         else:
             matched_bys = {}
-        # these matching rules must be applied in the past to stay consistent
+        existing_repos = releases_in_time_range[Release.repository_full_name.name].unique()
+        physical_repos = coerce_logical_repos(existing_repos)
+
+        # these matching rules must be applied to the past to stay consistent
         consistent_release_settings = ReleaseLoader.disambiguate_release_settings(
             release_settings, matched_bys)
-        repos_matched_by_tag = []
-        repos_matched_by_branch = []
-        for repo in repos:
-            match = consistent_release_settings.native[repo].match
-            if match in (ReleaseMatch.tag, ReleaseMatch.event):
-                repos_matched_by_tag.append(repo)
-            elif match == ReleaseMatch.branch:
-                repos_matched_by_branch.append(repo)
+
+        # seek releases backwards until each in_time_range one has a parent
+
+        # preload releases not older than 5 weeks before `time_from`
+        lookbehind_depth = time_from - timedelta(days=5 * 7)
+        # if our initial guess failed, load releases until this exponential offset
+        depth_step = timedelta(days=3 * 31)
+        most_recent_time = time_from - timedelta(seconds=1)
+
+        async def fetch_dags() -> Dict[str, DAG]:
+            nonlocal pdags
+            if pdags is None:
+                pdags = await fetch_precomputed_commit_history_dags(
+                    physical_repos, account, pdb, cache)
+            return await fetch_repository_commits(
+                pdags, releases_in_time_range, RELEASE_FETCH_COMMITS_COLUMNS, False,
+                account, meta_ids, mdb, pdb, cache)
+
+        if has_logical := logical_settings.contains_logical_repos(existing_repos):
+            repo_name_origin_column = f"{Release.repository_full_name.name}_original"
+            releases_in_time_range[repo_name_origin_column] = \
+                releases_in_time_range[Release.repository_full_name.name]
+            release_repos = releases_in_time_range[Release.repository_full_name.name].values
+            for i, repo in enumerate(release_repos):
+                release_repos[i] = drop_logical_repo(repo)
 
         async def dummy_load_releases_until_today() -> Tuple[pd.DataFrame, Any]:
             return dummy_releases_df(), None
@@ -437,88 +465,93 @@ class ReleaseToPullRequestMapper:
                                      datetime.min.time(), tzinfo=timezone.utc)
             if today > time_to:
                 until_today_task = cls.release_loader.load_releases(
+                    # important: not existing_repos
                     repos, branches, default_branches, time_to, today,
-                    consistent_release_settings, prefixer,
+                    consistent_release_settings, logical_settings, prefixer,
                     account, meta_ids, mdb, pdb, rdb, cache)
         if until_today_task is None:
             until_today_task = dummy_load_releases_until_today()
 
-        # there are two groups of repos now: matched by tag and by branch
-        # we have to fetch *all* the tags from the past because:
-        # some repos fork a new branch for each release and make a unique release commit
-        # some repos maintain several major versions in parallel
-        # so when somebody releases 1.1.0 in August 2020 alongside with 2.0.0 released in June 2020
-        # and 1.0.0 in September 2018, we must load 1.0.0, otherwise the PR for 1.0.0 release
-        # will be matched to 1.1.0 in August 2020 and will have a HUGE release time
-
-        # we are golden if we match by branch, one older merge preceding `time_from` should be fine
-        # unless there are several release branches; we hope for the best then
-        # so we split repos and take two different logic paths
-
-        # find branch releases not older than 5 weeks before `time_from`
-        branch_lookbehind_time_from = time_from - timedelta(days=5 * 7)
-        # find tag releases not older than 2 years before `time_from`
-        tag_lookbehind_time_from = time_from - timedelta(days=2 * 365)
-        # look for releases up till this date
-        most_recent_time = time_from - timedelta(seconds=1)
-        tasks = [
+        (releases_today, _), (releases_previous, _), dags, repo_births = await gather(
             until_today_task,
-            cls.release_loader.load_releases(repos_matched_by_branch, branches, default_branches,
-                                             branch_lookbehind_time_from, most_recent_time,
-                                             consistent_release_settings, prefixer, account,
-                                             meta_ids, mdb, pdb, rdb, cache),
-            cls.release_loader.load_releases(repos_matched_by_tag, branches, default_branches,
-                                             tag_lookbehind_time_from, most_recent_time,
-                                             consistent_release_settings, prefixer, account,
-                                             meta_ids, mdb, pdb, rdb, cache),
-            cls._fetch_repository_first_commit_dates(repos_matched_by_branch, account, meta_ids,
-                                                     mdb, pdb, cache),
-        ]
-        releases_today, releases_old_branches, releases_old_tags, repo_births = await gather(
-            *tasks)
-        releases_today = releases_today[0]
-        releases_old_branches = releases_old_branches[0]
-        releases_old_tags = releases_old_tags[0]
-        hard_repos = set(repos_matched_by_branch) - \
-            set(releases_old_branches[Release.repository_full_name.name].unique())
-        if hard_repos:
-            with sentry_sdk.start_span(op="_find_releases_for_matching_prs/hard_repos"):
-                repo_births = sorted((v, k) for k, v in repo_births.items() if k in hard_repos)
-                repo_births_dates = [rb[0].replace(tzinfo=timezone.utc) for rb in repo_births]
-                repo_births_names = [rb[1] for rb in repo_births]
-                del repo_births
-                deeper_step = timedelta(days=6 * 31)
-                while hard_repos:
-                    # no previous releases were discovered for `hard_repos`, go deeper in history
-                    hard_repos = hard_repos.intersection(repo_births_names[:bisect.bisect_right(
-                        repo_births_dates, branch_lookbehind_time_from)])
-                    if not hard_repos:
-                        break
-                    extra_releases, _ = await cls.release_loader.load_releases(
-                        hard_repos, branches, default_branches,
-                        branch_lookbehind_time_from - deeper_step, branch_lookbehind_time_from,
-                        consistent_release_settings, prefixer, account, meta_ids,
-                        mdb, pdb, rdb, cache)
-                    releases_old_branches = releases_old_branches.append(extra_releases)
-                    hard_repos -= set(extra_releases[Release.repository_full_name.name].unique())
-                    del extra_releases
-                    branch_lookbehind_time_from -= deeper_step
-                    deeper_step *= 2
-        releases = pd.concat([releases_today, releases_in_time_range,
-                              releases_old_branches, releases_old_tags],
+            cls.release_loader.load_releases(
+                existing_repos, branches, default_branches, lookbehind_depth, most_recent_time,
+                consistent_release_settings, logical_settings,
+                prefixer, account, meta_ids, mdb, pdb, rdb, cache),
+            fetch_dags(),
+            cls._fetch_repository_first_commit_dates(
+                physical_repos, account, meta_ids, mdb, pdb, cache),
+        )
+        if extended_releases := [df for df in (releases_today, releases_previous) if not df.empty]:
+            if len(extended_releases) == 2:
+                extended_releases = pd.concat(extended_releases)
+            else:
+                extended_releases = extended_releases[0]
+            dags = await fetch_repository_commits(
+                dags, extended_releases, RELEASE_FETCH_COMMITS_COLUMNS, False,
+                account, meta_ids, mdb, pdb, cache)
+        del extended_releases
+        if has_logical:
+            releases_in_time_range[Release.repository_full_name.name] = \
+                releases_in_time_range[repo_name_origin_column]
+            del releases_in_time_range[repo_name_origin_column]
+
+        in_range_repos = releases_in_time_range[Release.repository_full_name.name].values
+        in_range_shas = releases_in_time_range[Release.sha.name].values.astype("S40")
+        in_range_dates = releases_in_time_range[Release.published_at.name].values
+
+        not_enough_repos = [None]
+        while not_enough_repos:
+            previous_shas = releases_previous[Release.sha.name].values.astype("S40")
+            previous_dates = releases_previous[Release.published_at.name].values
+            grouped_previous = dict(LogicalPRSettings.group_by_repo(
+                releases_previous[Release.repository_full_name.name].values))
+            not_enough_repos.clear()
+            for repo, in_range_repo_indexes in LogicalPRSettings.group_by_repo(in_range_repos):
+                physical_repo = drop_logical_repo(repo)
+                if repo_births[physical_repo] >= lookbehind_depth:
+                    continue
+                previous_repo_indexes = grouped_previous.get(repo, [])
+                if not len(previous_repo_indexes):
+                    not_enough_repos.append(repo)
+                    continue
+                previous_repo_shas = previous_shas[previous_repo_indexes]
+                previous_repo_dates = previous_dates[previous_repo_indexes]
+                in_range_repo_shas = in_range_shas[in_range_repo_indexes]
+                in_range_repo_dates = in_range_dates[in_range_repo_indexes]
+                all_shas = np.concatenate([in_range_repo_shas, previous_repo_shas])
+                all_timestamps = np.concatenate([in_range_repo_dates, previous_repo_dates])
+                dag = dags[physical_repo]
+                ownership = mark_dag_access(*dag, all_shas)
+                parents = mark_dag_parents(*dag, all_shas, all_timestamps, ownership)
+                if any((len(p) == 0) for p in parents[:len(in_range_repo_indexes)]):
+                    not_enough_repos.append(repo)
+            if not_enough_repos:
+                most_recent_time = lookbehind_depth - timedelta(seconds=1)
+                lookbehind_depth -= depth_step
+                depth_step *= 2
+                releases_previous_older, _ = await cls.release_loader.load_releases(
+                    existing_repos, branches, default_branches,
+                    lookbehind_depth, most_recent_time,
+                    consistent_release_settings, logical_settings,
+                    prefixer, account, meta_ids, mdb, pdb, rdb, cache)
+                dags = await fetch_repository_commits(
+                    dags, releases_previous_older, RELEASE_FETCH_COMMITS_COLUMNS, False,
+                    account, meta_ids, mdb, pdb, cache)
+                releases_previous = pd.concat([releases_previous, releases_previous_older])
+
+        releases = pd.concat([releases_today, releases_in_time_range, releases_previous],
                              ignore_index=True, copy=False)
-        releases.sort_values(Release.published_at.name,
-                             inplace=True, ascending=False, ignore_index=True)
         if not releases_today.empty:
             releases_in_time_range = pd.concat([releases_today, releases_in_time_range],
                                                ignore_index=True, copy=False)
-        return matched_bys, releases, releases_in_time_range, consistent_release_settings
+        return matched_bys, releases, releases_in_time_range, consistent_release_settings, dags
 
     @classmethod
     @sentry_span
     async def _find_old_released_prs(cls,
                                      commits: np.ndarray,
-                                     repos: np.ndarray,
+                                     repos: np.ndarray,  # physical
                                      time_boundary: datetime,
                                      authors: Collection[str],
                                      mergers: Collection[str],
@@ -565,7 +598,7 @@ class ReleaseToPullRequestMapper:
         pr_commits = prs[PullRequest.merge_commit_sha.name].values.astype("S40")
         pr_repos = prs[PullRequest.repository_full_name.name].values.astype("S")
         indexes = np.searchsorted(commits, pr_commits)
-        checked = np.nonzero(pr_repos == repos[indexes])[0]
+        checked = np.flatnonzero(pr_repos == repos[indexes])
         if len(checked) < len(prs):
             prs = prs.take(checked)
         return prs
@@ -637,8 +670,8 @@ class ReleaseToPullRequestMapper:
                                   dag: DAG,
                                   time_boundary: datetime,
                                   ) -> np.ndarray:
-        time_mask = releases[Release.published_at.name] >= time_boundary
-        new_releases = releases.take(np.where(time_mask)[0])
+        time_mask = (releases[Release.published_at.name] >= time_boundary).values
+        new_releases = releases.take(np.flatnonzero(time_mask))
         assert not new_releases.empty, "you must check this before calling me"
         hashes, vertexes, edges = dag
         visited_hashes, _, _ = extract_subdag(

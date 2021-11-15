@@ -238,8 +238,8 @@ async def test_clear_precomputed_event_releases_smoke(client, headers, pdb, disa
         method="POST", path="/v1/events/clear_cache", headers=headers, json=body,
     )
     assert response.status == 200
-    for table, n in ((GitHubDonePullRequestFacts, 292),
-                     (GitHubMergedPullRequestFacts, 245),
+    for table, n in ((GitHubDonePullRequestFacts, 293),
+                     (GitHubMergedPullRequestFacts, 246),
                      (GitHubReleaseFacts, 53)):
         assert len(await pdb.fetch_all(select([table]))) == n, table
 

@@ -1,6 +1,7 @@
 from operator import itemgetter
 
 from athenian.api.controllers.miners.github.contributors import mine_contributors
+from athenian.api.controllers.settings import LogicalRepositorySettings
 from athenian.api.defer import wait_deferred, with_defer
 from tests.conftest import has_memcached
 
@@ -13,11 +14,13 @@ async def test_mine_contributors_expected_cache_miss_with_stats(
 
     contribs_with_stats = await mine_contributors(
         ["src-d/go-git"], None, None, True, [],
-        release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
+        release_match_setting_tag, LogicalRepositorySettings.empty(),
+        prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
     await wait_deferred()
     contribs_with_no_stats = await mine_contributors(
         ["src-d/go-git"], None, None, False, [],
-        release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
+        release_match_setting_tag, LogicalRepositorySettings.empty(),
+        prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
 
     assert len(contribs_with_stats) == len(contribs_with_no_stats)
     _assert_contribs_equal(contribs_with_stats, contribs_with_no_stats, [True, False])
@@ -31,11 +34,13 @@ async def test_mine_contributors_expected_cache_miss_with_different_roles(
 
     authors = await mine_contributors(
         ["src-d/go-git"], None, None, True, ["author"],
-        release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
+        release_match_setting_tag, LogicalRepositorySettings.empty(),
+        prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
     await wait_deferred()
     mergers = await mine_contributors(
         ["src-d/go-git"], None, None, True, ["merger"],
-        release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
+        release_match_setting_tag, LogicalRepositorySettings.empty(),
+        prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
 
     assert len(authors) == 172
     assert len(mergers) == 8
@@ -46,13 +51,15 @@ async def test_mine_contributors_with_empty_and_all_roles(
         mdb, pdb, rdb, release_match_setting_tag, prefixer_promise):
     contribs_with_empty_roles = await mine_contributors(
         ["src-d/go-git"], None, None, True, [],
-        release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
+        release_match_setting_tag, LogicalRepositorySettings.empty(),
+        prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     contribs_with_all_roles = await mine_contributors(
         ["src-d/go-git"], None, None, True,
         ["author", "reviewer", "commit_author", "commit_committer",
          "commenter", "merger", "releaser"],
-        release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
+        release_match_setting_tag, LogicalRepositorySettings.empty(),
+        prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
 
     assert len(contribs_with_empty_roles) == len(contribs_with_all_roles)
     _assert_contribs_equal(contribs_with_empty_roles, contribs_with_all_roles, [True, True])
@@ -63,11 +70,13 @@ async def test_mine_contributors_user_roles(
         mdb, pdb, rdb, release_match_setting_tag, prefixer_promise):
     authors_with_stats = await mine_contributors(
         ["src-d/go-git"], None, None, True, ["author"],
-        release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
+        release_match_setting_tag, LogicalRepositorySettings.empty(),
+        prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     authors_with_no_stats = await mine_contributors(
         ["src-d/go-git"], None, None, False, ["author"],
-        release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
+        release_match_setting_tag, LogicalRepositorySettings.empty(),
+        prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
 
     assert len(authors_with_stats) == 172
     assert len(authors_with_no_stats) == 172
@@ -75,11 +84,13 @@ async def test_mine_contributors_user_roles(
 
     mergers_with_stats = await mine_contributors(
         ["src-d/go-git"], None, None, True, ["merger"],
-        release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
+        release_match_setting_tag, LogicalRepositorySettings.empty(),
+        prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     mergers_with_no_stats = await mine_contributors(
         ["src-d/go-git"], None, None, False, ["merger"],
-        release_match_setting_tag, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
+        release_match_setting_tag, LogicalRepositorySettings.empty(),
+        prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
 
     actual_merges_count = {c["login"]: c["stats"]["merger"] for c in mergers_with_stats}
     expected_merges_count = {

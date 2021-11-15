@@ -1,9 +1,11 @@
 import pickle
-from typing import List, Optional, Set, Tuple
+from typing import Collection, List, Optional, Set, Tuple
 
 import aiomcache
+import pandas as pd
 from sqlalchemy import and_, func, select
 
+from athenian.api.async_utils import read_sql_query
 from athenian.api.cache import cached
 from athenian.api.db import DatabaseLike
 from athenian.api.models.metadata.github import PullRequestLabel
@@ -47,3 +49,23 @@ async def mine_labels(repos: Set[str],
               for row in rows]
     result.sort(key=lambda label: label.used_prs, reverse=True)
     return result
+
+
+async def fetch_labels_to_filter(prs: Collection[int],
+                                 meta_ids: Tuple[int, ...],
+                                 mdb: DatabaseLike,
+                                 ) -> pd.DataFrame:
+    """
+    Load PR labels from mdb for filtering purposes.
+
+    :return: DataFrame, the index is PR node IDs and the only column is lowercase label names.
+    """
+    lcols = [
+        PullRequestLabel.pull_request_node_id,
+        func.lower(PullRequestLabel.name).label(PullRequestLabel.name.name),
+    ]
+    return await read_sql_query(
+        select(lcols)
+        .where(and_(PullRequestLabel.pull_request_node_id.in_(prs),
+                    PullRequestLabel.acc_id.in_(meta_ids))),
+        mdb, lcols, index=PullRequestLabel.pull_request_node_id.name)

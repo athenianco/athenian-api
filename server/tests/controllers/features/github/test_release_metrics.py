@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.controllers.settings import LogicalRepositorySettings
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.web import ReleaseMetricID
 
@@ -19,7 +20,8 @@ async def test_calc_release_metrics_line_github_jira_cache(
         [],
         LabelFilter.empty(),
         JIRAFilter.empty(),
-        release_match_setting_tag, prefixer_promise, branches, default_branches,
+        release_match_setting_tag, LogicalRepositorySettings.empty(),
+        prefixer_promise, branches, default_branches,
     )
     await wait_deferred()
     assert metrics[0][0][0][0][0].value == 130
@@ -33,6 +35,7 @@ async def test_calc_release_metrics_line_github_jira_cache(
         LabelFilter.empty(),
         JIRAFilter(1, ["10003", "10009"], LabelFilter({"performance", "bug"}, set()),
                    set(), set(), False),
-        release_match_setting_tag, prefixer_promise, branches, default_branches,
+        release_match_setting_tag, LogicalRepositorySettings.empty(),
+        prefixer_promise, branches, default_branches,
     )
     assert metrics[0][0][0][0][0].value == 7

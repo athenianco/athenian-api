@@ -17,6 +17,7 @@ from athenian.api.balancing import weight
 from athenian.api.controllers.account import get_metadata_account_ids, get_user_account_status
 from athenian.api.controllers.features.everything import mine_everything, MineTopic
 from athenian.api.controllers.miners.github.contributors import load_organization_members
+from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import Settings
 from athenian.api.models.state.models import UserAccount
 from athenian.api.models.web import InvalidRequestError, MatchedIdentity, MatchIdentitiesRequest
@@ -127,13 +128,16 @@ async def get_everything(request: AthenianWebRequest,
         account = rows[0][0]
     else:
         await get_user_account_status(request.uid, account, request.sdb, request.cache)
-    tasks = [
-        get_metadata_account_ids(account, request.sdb, request.cache),
-        Settings.from_request(request, account).list_release_matches(),
-    ]
-    meta_ids, settings = await gather(*tasks)
+    meta_ids = await get_metadata_account_ids(account, request.sdb, request.cache)
+    prefixer = await Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
+    settings = Settings.from_request(request, account)
+    release_settings, logical_settings, prefixer = await gather(
+        settings.list_release_matches(),
+        settings.list_logical_repositories(prefixer),
+        prefixer.load(),
+    )
     data = await mine_everything(
-        set(MineTopic), settings, account, meta_ids,
+        set(MineTopic), release_settings, logical_settings, prefixer, account, meta_ids,
         request.sdb, request.mdb, request.pdb, request.rdb, request.cache)
     serialize = _get_everything_formats[format]
     with NamedTemporaryFile(prefix=f"athenian_get_everything_{account}_",

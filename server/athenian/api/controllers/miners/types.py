@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from enum import auto, IntEnum
-from typing import Any, Dict, List, Mapping, Optional, Set, Union
+from typing import Any, Dict, List, Mapping, Optional, Set, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -328,6 +328,9 @@ class PullRequestFacts:
         if self.work_began != other.work_began:
             return self.work_began < other.work_began
         return self.created < other.created
+
+
+PullRequestFactsMap = Dict[Tuple[int, str], PullRequestFacts]
 
 
 def nonemin(*args: Union[pd.Timestamp, type(None)]) -> Optional[pd.Timestamp]:

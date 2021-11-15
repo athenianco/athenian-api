@@ -17,6 +17,7 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.controllers.account import fetch_github_installation_progress, \
     get_metadata_account_ids, get_user_account_status, match_metadata_installation
+from athenian.api.controllers.logical_repos import coerce_logical_repos
 from athenian.api.controllers.miners.access import AccessChecker
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.prefixer import Prefixer
@@ -143,7 +144,7 @@ async def resolve_repos(repositories: List[str],
         if meta_ids is None:
             meta_ids = await get_metadata_account_ids(account, sdb, cache)
     else:
-        tasks = [resolve_reposet(r, ".in[%d]" % i, uid, account, sdb, cache)
+        tasks = [resolve_reposet(r, f"{pointer}[{i}]", uid, account, sdb, cache)
                  for i, r in enumerate(repositories)]
         if meta_ids is None:
             tasks.insert(0, get_metadata_account_ids(account, sdb, cache))
@@ -189,7 +190,7 @@ async def resolve_repos(repositories: List[str],
     if (checker := checkers.get(prefix)) is None:
         checkers[prefix] = checker = await access_classes["github"](
             account, meta_ids, sdb, mdb, cache).load()
-    if denied := await checker.check(checked_repos):
+    if denied := await checker.check(coerce_logical_repos(checked_repos).keys()):
         log = logging.getLogger(f"{metadata.__package__}.resolve_repos")
         log.warning("access denied account %d%s: user sent %s we've got %s",
                     account, meta_ids, denied, list(checker.installed_repos()))

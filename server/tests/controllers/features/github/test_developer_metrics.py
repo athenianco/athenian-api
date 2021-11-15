@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from athenian.api.controllers.features.metric import MetricInt
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.developer import DeveloperTopic
+from athenian.api.controllers.settings import LogicalRepositorySettings
 from athenian.api.defer import with_defer
 
 
@@ -37,6 +38,7 @@ async def test_developer_metrics_smoke(
         LabelFilter.empty(),
         JIRAFilter.empty(),
         release_match_setting_tag,
+        LogicalRepositorySettings.empty(),
         prefixer_promise)
     assert set(topics) == requested_topics
     metrics = metrics.swapaxes(1, 2)  # the test was written before the axes swap

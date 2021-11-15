@@ -1,6 +1,5 @@
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from itertools import chain
 import logging
 import pickle
 import re
@@ -19,19 +18,19 @@ from sqlalchemy.sql import ClauseElement
 from athenian.api import metadata
 from athenian.api.async_utils import gather, postprocess_datetime, read_sql_query
 from athenian.api.cache import cached, cached_methods
+from athenian.api.controllers.logical_repos import coerce_logical_repos, drop_logical_repo
 from athenian.api.controllers.miners.github.branches import load_branch_commit_dates
 from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_COLUMNS, \
-    fetch_precomputed_commit_history_dags, \
-    fetch_repository_commits
+    fetch_precomputed_commit_history_dags, fetch_repository_commits
 from athenian.api.controllers.miners.github.dag_accelerated import extract_first_parents
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.prefixer import PrefixerPromise
-from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, \
-    ReleaseMatchSetting, ReleaseSettings
+from athenian.api.controllers.settings import default_branch_alias, LogicalRepositorySettings, \
+    ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
 from athenian.api.db import add_pdb_hits, add_pdb_misses, greatest, least, ParallelDatabase
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import Branch, NodeCommit, PushCommit, Release, \
-    Repository, User
+    User
 from athenian.api.models.persistentdata.models import ReleaseNotification
 from athenian.api.models.precomputed.models import GitHubRelease as PrecomputedRelease, \
     GitHubReleaseMatchTimespan
@@ -55,7 +54,8 @@ class ReleaseLoader:
                             default_branches: Dict[str, str],
                             time_from: datetime,
                             time_to: datetime,
-                            settings: ReleaseSettings,
+                            release_settings: ReleaseSettings,
+                            logical_settings: LogicalRepositorySettings,
                             prefixer: PrefixerPromise,
                             account: int,
                             meta_ids: Tuple[int, ...],
@@ -85,7 +85,7 @@ class ReleaseLoader:
 
         log = logging.getLogger("%s.load_releases" % metadata.__package__)
         match_groups, event_repos, repos_count = group_repos_by_release_match(
-            repos, default_branches, settings)
+            repos, default_branches, release_settings)
         if repos_count == 0:
             log.warning("no repositories")
             return dummy_releases_df(index), {}
@@ -101,7 +101,8 @@ class ReleaseLoader:
                 time_to + tag_by_branch_probe_lookaround,
                 prefixer, account, pdb, index=index),
             cls._fetch_release_events(
-                event_repos, account, meta_ids, time_from, time_to, mdb, rdb, index=index),
+                event_repos, account, meta_ids, time_from, time_to, logical_settings,
+                prefixer, mdb, rdb, index=index),
         ]
         spans, releases, event_releases = await gather(*tasks)
 
@@ -125,8 +126,8 @@ class ReleaseLoader:
             if repos_count > unfresh_releases_threshold:
                 log.warning("Activated the unfresh mode for a set of %d repositories", repos_count)
                 max_time_to -= unfresh_releases_lag
-        settings = settings.copy()
-        for full_repo, setting in settings.prefixed.items():
+        release_settings = release_settings.copy()
+        for full_repo, setting in release_settings.prefixed.items():
             repo = full_repo.split("/", 1)[1]
             try:
                 match = applied_matches[repo]
@@ -136,7 +137,7 @@ class ReleaseLoader:
             else:
                 if setting.match == ReleaseMatch.tag_or_branch:
                     if match == ReleaseMatch.tag:
-                        settings.set_by_prefixed(full_repo, ReleaseMatchSetting(
+                        release_settings.set_by_prefixed(full_repo, ReleaseMatchSetting(
                             tags=setting.tags, branches=setting.branches, match=ReleaseMatch.tag))
                         applied_matches[repo] = ReleaseMatch.tag
                     else:
@@ -191,25 +192,27 @@ class ReleaseLoader:
             missing_high.sort()
             tasks.append(cls._load_releases(
                 [r for _, r in missing_high], branches, default_branches, missing_high[0][0],
-                time_to, settings, account, meta_ids, mdb, pdb, cache, index=index))
+                time_to, release_settings, account, meta_ids, mdb, pdb, cache, index=index))
             add_pdb_misses(pdb, "releases/high", len(missing_high))
         if missing_low:
             missing_low.sort()
             tasks.append(cls._load_releases(
                 [r for _, r in missing_low], branches, default_branches, time_from,
-                missing_low[-1][0], settings, account, meta_ids, mdb, pdb, cache, index=index))
+                missing_low[-1][0], release_settings, account, meta_ids, mdb, pdb, cache,
+                index=index))
             add_pdb_misses(pdb, "releases/low", len(missing_low))
         if missing_all:
             tasks.append(cls._load_releases(
                 missing_all, branches, default_branches, time_from, time_to,
-                settings, account, meta_ids, mdb, pdb, cache, index=index))
+                release_settings, account, meta_ids, mdb, pdb, cache, index=index))
             add_pdb_misses(pdb, "releases/all", len(missing_all))
         if tasks:
             missings = await gather(*tasks)
             missings = pd.concat(missings, copy=False)
+            assert matched_by_column in missings
             releases = pd.concat([releases, missings], copy=False)
             if index is not None:
-                releases = releases.take(np.where(~releases.index.duplicated())[0])
+                releases = releases.take(np.flatnonzero(~releases.index.duplicated()))
             else:
                 releases.drop_duplicates(Release.node_id.name, inplace=True, ignore_index=True)
             releases.sort_values(Release.published_at.name,
@@ -219,7 +222,7 @@ class ReleaseLoader:
             if r in applied_matches:
                 continue
             # no releases were loaded for this repository
-            match = settings.native[r].match
+            match = release_settings.native[r].match
             if match == ReleaseMatch.tag_or_branch:
                 match = ReleaseMatch.branch
             applied_matches[r] = match
@@ -230,7 +233,7 @@ class ReleaseLoader:
                     # the updates must be integer so we take a transaction
                     async with pdb_conn.transaction():
                         await cls._store_precomputed_releases(
-                            missings, default_branches, settings, account, pdb_conn)
+                            missings, default_branches, release_settings, account, pdb_conn)
                         # if we know that we've scanned branches for `tag_or_branch`, no matter if
                         # we loaded tags or not, we should update the span
                         matches = applied_matches.copy()
@@ -251,7 +254,7 @@ class ReleaseLoader:
             matched_by_vec = releases[matched_by_column].values
             errors = np.full(len(releases), False)
             for repo, match in applied_matches.items():
-                if settings.native[repo].match == ReleaseMatch.tag_or_branch:
+                if release_settings.native[repo].match == ReleaseMatch.tag_or_branch:
                     errors |= (repos_vec == repo.encode()) & (matched_by_vec != match)
             include = \
                 ~errors & (published_at >= time_from).values & (published_at < time_to).values
@@ -325,7 +328,7 @@ class ReleaseLoader:
                              default_branches: Dict[str, str],
                              time_from: datetime,
                              time_to: datetime,
-                             settings: ReleaseSettings,
+                             release_settings: ReleaseSettings,
                              account: int,
                              meta_ids: Tuple[int, ...],
                              mdb: ParallelDatabase,
@@ -346,10 +349,10 @@ class ReleaseLoader:
         result = []
         if repos_by_tag:
             result.append(rel_matcher.match_releases_by_tag(
-                repos_by_tag, time_from, time_to, settings))
+                repos_by_tag, time_from, time_to, release_settings))
         if repos_by_branch:
             result.append(rel_matcher.match_releases_by_branch(
-                repos_by_branch, branches, default_branches, time_from, time_to, settings))
+                repos_by_branch, branches, default_branches, time_from, time_to, release_settings))
         result = await gather(*result)
         result = pd.concat(result) if result else dummy_releases_df()
         if index is not None:
@@ -388,7 +391,7 @@ class ReleaseLoader:
                 .order_by(desc(prel.published_at))
                 for item in or_items))
         df = await read_sql_query(query, pdb, prel)
-        df = set_matched_by_from_release_match(df, True, prel.repository_node_id.name)
+        df = set_matched_by_from_release_match(df, True, prel.repository_full_name.name)
         if index is not None:
             df.set_index(index, inplace=True)
         else:
@@ -407,6 +410,8 @@ class ReleaseLoader:
                                     meta_ids: Tuple[int, ...],
                                     time_from: datetime,
                                     time_to: datetime,
+                                    logical_settings: LogicalRepositorySettings,
+                                    prefixer: PrefixerPromise,
                                     mdb: ParallelDatabase,
                                     rdb: ParallelDatabase,
                                     index: Optional[Union[str, Sequence[str]]] = None,
@@ -414,13 +419,8 @@ class ReleaseLoader:
         """Load pushed releases from persistentdata DB."""
         if len(repos) == 0:
             return dummy_releases_df(index)
-        release_rows = await mdb.fetch_all(
-            select([Repository.node_id, Repository.full_name])
-            .where(and_(
-                Repository.acc_id.in_(meta_ids),
-                Repository.full_name.in_(repos),
-            )))
-        repo_ids = {r[0]: r[1] for r in release_rows}
+        repo_name_to_node = (await prefixer.load()).repo_name_to_node.get
+        repo_ids = {repo_name_to_node(r): r for r in coerce_logical_repos(repos)}
         release_rows = await rdb.fetch_all(
             select([ReleaseNotification])
             .where(and_(
@@ -502,21 +502,30 @@ class ReleaseLoader:
             else:
                 commit_hash = row[ReleaseNotification.resolved_commit_hash.name]
             author = row[ReleaseNotification.author_node_id.name]
-            releases.append({
-                Release.author.name: user_map.get(author, author),
-                Release.author_node_id.name: author,
-                Release.commit_id.name: commit_node_id,
-                Release.node_id.name: commit_node_id,
-                Release.name.name: row[ReleaseNotification.name.name],
-                Release.published_at.name:
-                    row[ReleaseNotification.published_at.name].replace(tzinfo=timezone.utc),
-                Release.repository_full_name.name: repo_ids[repo],
-                Release.repository_node_id.name: repo,
-                Release.sha.name: commit_hash,
-                Release.tag.name: None,
-                Release.url.name: row[ReleaseNotification.url.name],
-                matched_by_column: ReleaseMatch.event.value,
-            })
+            name = row[ReleaseNotification.name.name]
+            repo_name = repo_ids[repo]
+            try:
+                logical = logical_settings.releases(repo_name)
+            except KeyError:
+                logical_repos = [repo_name]
+            else:
+                logical_repos = logical.match_event(name)
+            for logical_repo in logical_repos:
+                releases.append({
+                    Release.author.name: user_map.get(author, author),
+                    Release.author_node_id.name: author,
+                    Release.commit_id.name: commit_node_id,
+                    Release.node_id.name: commit_node_id,
+                    Release.name.name: name,
+                    Release.published_at.name:
+                        row[ReleaseNotification.published_at.name].replace(tzinfo=timezone.utc),
+                    Release.repository_full_name.name: logical_repo,
+                    Release.repository_node_id.name: repo,
+                    Release.sha.name: commit_hash,
+                    Release.tag.name: None,
+                    Release.url.name: row[ReleaseNotification.url.name],
+                    matched_by_column: ReleaseMatch.event.value,
+                })
         if updated:
             async def update_pushed_release_commits():
                 for repo, prefix, node_id, full_hash in updated:
@@ -773,10 +782,11 @@ def set_matched_by_from_release_match(df: pd.DataFrame,
         ambiguous_repos = np.intersect1d(repos[matched_by_tag_mask], repos[matched_by_branch_mask])
         if len(ambiguous_repos):
             matched_by_branch_mask[np.in1d(repos, ambiguous_repos)] = False
-    df[matched_by_column] = ReleaseMatch.rejected
-    df.loc[matched_by_tag_mask, matched_by_column] = ReleaseMatch.tag
-    df.loc[matched_by_branch_mask, matched_by_column] = ReleaseMatch.branch
-    df.loc[matched_by_event_mask, matched_by_column] = ReleaseMatch.event
+    matched_values = np.full(len(df), ReleaseMatch.rejected)
+    matched_values[matched_by_tag_mask] = ReleaseMatch.tag
+    matched_values[matched_by_branch_mask] = ReleaseMatch.branch
+    matched_values[matched_by_event_mask] = ReleaseMatch.event
+    df[matched_by_column] = matched_values
     df.drop(PrecomputedRelease.release_match.name, inplace=True, axis=1)
     df = df.take(np.flatnonzero(df[matched_by_column].values != ReleaseMatch.rejected))
     return df
@@ -801,7 +811,7 @@ class ReleaseMatcher:
                                     repos: Iterable[str],
                                     time_from: datetime,
                                     time_to: datetime,
-                                    settings: ReleaseSettings,
+                                    release_settings: ReleaseSettings,
                                     releases: Optional[pd.DataFrame] = None,
                                     ) -> pd.DataFrame:
         """Return the releases matched by tag."""
@@ -809,28 +819,30 @@ class ReleaseMatcher:
             with sentry_sdk.start_span(op="fetch_tags"):
                 releases = await read_sql_query(
                     select([Release])
-                    .where(and_(Release.acc_id.in_(self._meta_ids),
-                                Release.published_at.between(time_from, time_to),
-                                Release.repository_full_name.in_(repos),
-                                Release.commit_id.isnot(None)))
+                    .where(and_(
+                        Release.acc_id.in_(self._meta_ids),
+                        Release.published_at.between(time_from, time_to),
+                        Release.repository_full_name.in_(coerce_logical_repos(repos)),
+                        Release.commit_id.isnot(None)))
                     .order_by(desc(Release.published_at)),
-                    self._mdb, Release,
-                    index=[Release.repository_full_name.name, Release.tag.name])
+                    self._mdb, Release)
         releases = releases[~releases.index.duplicated(keep="first")]
         if (missing_sha := releases[Release.sha.name].isnull().values).any():
             raise ResponseError(NoSourceDataError(
                 detail="There are missing commit hashes for releases %s" %
                        releases[Release.node_id.name].values[missing_sha].tolist()))
         regexp_cache = {}
-        matched = []
+        matched_physical = {}
+        matched_overridden = {}
+        removed = defaultdict(list)
+        release_index_repos = releases[Release.repository_full_name.name].values.astype("U")
+        release_index_tags = releases[Release.tag.name].values
         for repo in repos:
-            try:
-                repo_releases = releases.loc[repo]
-            except KeyError:
+            physical_repo = drop_logical_repo(repo)
+            repo_indexes = np.flatnonzero(release_index_repos == physical_repo)
+            if not len(repo_indexes):
                 continue
-            if repo_releases.empty:
-                continue
-            regexp = settings.native[repo].tags
+            regexp = release_settings.native[repo].tags
             if not regexp.endswith("$"):
                 regexp += "$"
             # note: dict.setdefault() is not good here because re.compile() will be evaluated
@@ -838,15 +850,39 @@ class ReleaseMatcher:
                 regexp = regexp_cache[regexp]
             except KeyError:
                 regexp = regexp_cache[regexp] = re.compile(regexp)
-            tags_matched = repo_releases.index[repo_releases.index.str.match(regexp)]
-            matched.append([(repo, tag) for tag in tags_matched])
-        # this shows up in the profile but I cannot make it faster
-        releases = releases.loc[list(chain.from_iterable(matched))]
-        releases.reset_index(inplace=True)
+            tags_matched = np.fromiter(
+                (bool(regexp.match(tag)) for tag in release_index_tags[repo_indexes]),
+                bool, len(repo_indexes))
+            if len(indexes_matched := repo_indexes[tags_matched]):
+                if physical_repo != repo:
+                    matched_overridden[repo] = indexes_matched
+                    removed[physical_repo].append(indexes_matched)
+                else:
+                    matched_physical[physical_repo] = indexes_matched
+        for repo, indexes in removed.items():
+            try:
+                matched_physical[repo] = np.setdiff1d(
+                    matched_physical[repo],
+                    np.unique(np.concatenate(indexes)),
+                    assume_unique=True)
+            except KeyError:
+                continue
+        df_parts = []
+        if matched_physical:
+            df_parts.append(releases.take(np.concatenate(list(matched_physical.values()))))
+        for repo, indexes in matched_overridden.items():
+            df = releases.take(indexes)
+            df[Release.repository_full_name.name] = repo
+            df_parts.append(df)
+        if df_parts:
+            releases = pd.concat(df_parts)
+            releases.reset_index(inplace=True, drop=True)
+            names = releases[Release.name.name].values
+            missing_names = np.flatnonzero(~names.astype(bool))
+            names[missing_names] = releases[Release.tag.name].values[missing_names]
+        else:
+            releases = releases.iloc[:0]
         releases[matched_by_column] = ReleaseMatch.tag.value
-        missing_names = releases[Release.name.name].isnull()
-        releases.loc[missing_names, Release.name.name] = \
-            releases.loc[missing_names, Release.tag.name]
         return releases
 
     @sentry_span
@@ -856,12 +892,14 @@ class ReleaseMatcher:
                                        default_branches: Dict[str, str],
                                        time_from: datetime,
                                        time_to: datetime,
-                                       settings: ReleaseSettings) -> pd.DataFrame:
+                                       release_settings: ReleaseSettings,
+                                       ) -> pd.DataFrame:
         """Return the releases matched by branch."""
+        assert not LogicalRepositorySettings.contains_logical_repos(repos)
         branches = branches.take(np.where(
             branches[Branch.repository_full_name.name].isin(repos))[0])
         branches_matched = self._match_branches_by_release_settings(
-            branches, default_branches, settings)
+            branches, default_branches, release_settings)
         if not branches_matched:
             return dummy_releases_df()
         branches = pd.concat(branches_matched.values())

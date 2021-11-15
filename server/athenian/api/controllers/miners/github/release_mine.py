@@ -28,15 +28,15 @@ from athenian.api.controllers.miners.github.precomputed_releases import \
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.github.release_load import \
     group_repos_by_release_match, ReleaseLoader
-from athenian.api.controllers.miners.github.release_match import \
-    load_commit_dags, ReleaseToPullRequestMapper
+from athenian.api.controllers.miners.github.release_match import ReleaseToPullRequestMapper
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.github.user import mine_user_avatars, UserAvatarKeys
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
 from athenian.api.controllers.miners.types import Deployment, released_prs_columns, ReleaseFacts, \
     ReleaseParticipants, ReleaseParticipationKind
 from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
-from athenian.api.controllers.settings import ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
+from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch, \
+    ReleaseMatchSetting, ReleaseSettings
 from athenian.api.db import add_pdb_hits, add_pdb_misses, ParallelDatabase
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import NodePullRequest, PullRequest, PullRequestLabel, \
@@ -53,7 +53,8 @@ async def mine_releases(repos: Iterable[str],
                         time_to: datetime,
                         labels: LabelFilter,
                         jira: JIRAFilter,
-                        settings: ReleaseSettings,
+                        release_settings: ReleaseSettings,
+                        logical_settings: LogicalRepositorySettings,
                         prefixer: PrefixerPromise,
                         account: int,
                         meta_ids: Tuple[int, ...],
@@ -87,7 +88,7 @@ async def mine_releases(repos: Iterable[str],
     """
     result = await _mine_releases(
         repos, participants, branches, default_branches, time_from, time_to, labels, jira,
-        settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache,
+        release_settings, logical_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache,
         force_fresh, with_avatars, with_pr_titles, with_deployments)
     return result[:-3]
 
@@ -124,10 +125,13 @@ def _triage_flags(result: Tuple[List[Tuple[Dict[str, Any], ReleaseFacts]],
     exptime=60 * 60,  # 1 hour
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda repos, participants, time_from, time_to, labels, jira, settings, **_: (
+    key=lambda repos, participants, time_from, time_to, labels, jira, release_settings, logical_settings, **_: (  # noqa
         ",".join(sorted(repos)),
         ",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(participants.items())),
-        time_from, time_to, labels, jira, settings),
+        time_from, time_to, labels, jira,
+        release_settings,
+        logical_settings,
+    ),
     postprocess=_triage_flags,
 )
 async def _mine_releases(repos: Iterable[str],
@@ -138,7 +142,8 @@ async def _mine_releases(repos: Iterable[str],
                          time_to: datetime,
                          labels: LabelFilter,
                          jira: JIRAFilter,
-                         settings: ReleaseSettings,
+                         release_settings: ReleaseSettings,
+                         logical_settings: LogicalRepositorySettings,
                          prefixer: PrefixerPromise,
                          account: int,
                          meta_ids: Tuple[int, ...],
@@ -158,20 +163,21 @@ async def _mine_releases(repos: Iterable[str],
     log = logging.getLogger("%s.mine_releases" % metadata.__package__)
     releases_in_time_range, matched_bys = await ReleaseLoader.load_releases(
         repos, branches, default_branches, time_from, time_to,
-        settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache, force_fresh=force_fresh)
-    settings = ReleaseLoader.disambiguate_release_settings(settings, matched_bys)
+        release_settings, logical_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache,
+        force_fresh=force_fresh)
+    release_settings = ReleaseLoader.disambiguate_release_settings(release_settings, matched_bys)
     if releases_in_time_range.empty:
         return (
-            [], [], {r: v.match for r, v in settings.prefixed.items()}, {},
+            [], [], {r: v.match for r, v in release_settings.prefixed.items()}, {},
             with_avatars, with_pr_titles, with_deployments,
         )
     if with_deployments:
         deployments = asyncio.create_task(
-            _load_release_deployments(releases_in_time_range, default_branches, settings,
+            _load_release_deployments(releases_in_time_range, default_branches, release_settings,
                                       account, meta_ids, mdb, pdb, rdb, cache),
             name="_load_release_deployments(%d)" % len(releases_in_time_range))
     precomputed_facts = await load_precomputed_release_facts(
-        releases_in_time_range, default_branches, settings, account, pdb)
+        releases_in_time_range, default_branches, release_settings, account, pdb)
     # uncomment this line to compute releases from scratch:
     # precomputed_facts = {}
     if with_pr_titles or labels:
@@ -198,16 +204,16 @@ async def _mine_releases(repos: Iterable[str],
         releases_in_time_range = releases_in_time_range.take(np.where(
             releases_in_time_range[Release.repository_full_name.name].isin(missing_repos).values,
         )[0])
-        _, releases, _, _ = await ReleaseToPullRequestMapper._find_releases_for_matching_prs(
-            missing_repos, branches, default_branches, time_from, time_to, False,
-            settings, prefixer.as_promise(), account, meta_ids, mdb, pdb, rdb, cache,
-            releases_in_time_range=releases_in_time_range)
-        tasks = [
-            load_commit_dags(releases, account, meta_ids, mdb, pdb, cache),
+        (_, releases, _, _, dags), first_commit_dates = await gather(
+            ReleaseToPullRequestMapper._find_releases_for_matching_prs(
+                missing_repos, branches, default_branches, time_from, time_to, False,
+                release_settings, logical_settings, None, prefixer.as_promise(),
+                account, meta_ids, mdb, pdb, rdb, cache,
+                releases_in_time_range=releases_in_time_range),
             ReleaseToPullRequestMapper._fetch_repository_first_commit_dates(
                 missing_repos, account, meta_ids, mdb, pdb, cache),
-        ]
-        dags, first_commit_dates = await gather(*tasks, op="mine_releases/commits")
+            description="mine_releases/commits",
+        )
 
         all_hashes = []
         for repo, repo_releases in releases.groupby(Release.repository_full_name.name, sort=False):
@@ -393,7 +399,7 @@ async def _mine_releases(repos: Iterable[str],
         if data:
             await defer(
                 store_precomputed_release_facts(
-                    data, default_branches, settings, account, pdb),
+                    data, default_branches, release_settings, account, pdb),
                 "store_precomputed_release_facts(%d)" % len(data))
         log.info("mined %d new releases", len(data))
         return data
@@ -454,7 +460,7 @@ async def _mine_releases(repos: Iterable[str],
     else:
         deployments = {}
     return (
-        result, avatars, {r: v.match for r, v in settings.prefixed.items()}, deployments,
+        result, avatars, {r: v.match for r, v in release_settings.prefixed.items()}, deployments,
         with_avatars, with_pr_titles, with_deployments,
     )
 
@@ -666,10 +672,15 @@ async def _load_prs_by_merge_commit_ids(commit_ids: Sequence[str],
     exptime=short_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda names, **_: ({k: sorted(v) for k, v in names.items()},),
+    key=lambda names, release_settings, logical_settings, **_: (
+        {k: sorted(v) for k, v in sorted(names.items())},
+        release_settings,
+        logical_settings,
+    ),
 )
 async def mine_releases_by_name(names: Dict[str, Iterable[str]],
-                                settings: ReleaseSettings,
+                                release_settings: ReleaseSettings,
+                                logical_settings: LogicalRepositorySettings,
                                 prefixer: PrefixerPromise,
                                 account: int,
                                 meta_ids: Tuple[int, ...],
@@ -685,18 +696,21 @@ async def mine_releases_by_name(names: Dict[str, Iterable[str]],
     log = logging.getLogger("%s.mine_releases_by_name" % metadata.__package__)
     names = {k: set(v) for k, v in names.items()}
     releases, _, branches, default_branches = await _load_releases_by_name(
-        names, log, settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache)
+        names, log, release_settings, logical_settings, prefixer, account, meta_ids,
+        mdb, pdb, rdb, cache)
     if releases.empty:
         return [], [], {}
-    settings = settings.select(releases[Release.repository_full_name.name].unique())
+    release_settings = release_settings.select(
+        releases[Release.repository_full_name.name].unique())
     tasks = [
-        mine_releases_by_ids(releases, branches, default_branches, settings, prefixer,
-                             account, meta_ids, mdb, pdb, rdb, cache, with_avatars=True),
+        mine_releases_by_ids(
+            releases, branches, default_branches, release_settings, logical_settings, prefixer,
+            account, meta_ids, mdb, pdb, rdb, cache, with_avatars=True),
     ]
-    tag_or_branch = [k for k, v in settings.native.items()
+    tag_or_branch = [k for k, v in release_settings.native.items()
                      if v.match == ReleaseMatch.tag_or_branch]
     if not tag_or_branch:
-        tasks.append(_load_release_deployments(releases, default_branches, settings,
+        tasks.append(_load_release_deployments(releases, default_branches, release_settings,
                                                account, meta_ids, mdb, pdb, rdb, cache))
     else:
         tag_releases = releases[
@@ -709,27 +723,29 @@ async def mine_releases_by_name(names: Dict[str, Iterable[str]],
         ]
         if tag_releases.empty or branch_releases.empty:
             if tag_releases.empty:
-                settings = ReleaseLoader.disambiguate_release_settings(
-                    settings.select(tag_or_branch),
+                release_settings = ReleaseLoader.disambiguate_release_settings(
+                    release_settings.select(tag_or_branch),
                     {r: ReleaseMatch.branch for r in tag_or_branch})
             else:
-                settings = ReleaseLoader.disambiguate_release_settings(
-                    settings.select(tag_or_branch),
+                release_settings = ReleaseLoader.disambiguate_release_settings(
+                    release_settings.select(tag_or_branch),
                     {r: ReleaseMatch.tag for r in tag_or_branch})
-            tasks.append(_load_release_deployments(releases, default_branches, settings,
+            tasks.append(_load_release_deployments(releases, default_branches, release_settings,
                                                    account, meta_ids, mdb, pdb, rdb, cache))
         else:
             remainder = releases.loc[~releases.index.isin(
                 tag_releases.index.append(branch_releases.index))]
-            tasks.append(_load_release_deployments(remainder, default_branches, settings,
+            tasks.append(_load_release_deployments(remainder, default_branches, release_settings,
                                                    account, meta_ids, mdb, pdb, rdb, cache))
             tag_settings = ReleaseLoader.disambiguate_release_settings(
-                settings.select(tag_or_branch), {r: ReleaseMatch.tag for r in tag_or_branch})
+                release_settings.select(tag_or_branch),
+                {r: ReleaseMatch.tag for r in tag_or_branch})
             tasks.append(_load_release_deployments(
                 tag_releases, default_branches, tag_settings, account, meta_ids,
                 mdb, pdb, rdb, cache))
             branch_settings = ReleaseLoader.disambiguate_release_settings(
-                settings.select(tag_or_branch), {r: ReleaseMatch.branch for r in tag_or_branch})
+                release_settings.select(tag_or_branch),
+                {r: ReleaseMatch.branch for r in tag_or_branch})
             tasks.append(_load_release_deployments(
                 branch_releases, default_branches, branch_settings, account, meta_ids,
                 mdb, pdb, rdb, cache))
@@ -750,7 +766,8 @@ async def mine_releases_by_name(names: Dict[str, Iterable[str]],
 async def mine_releases_by_ids(releases: pd.DataFrame,
                                branches: pd.DataFrame,
                                default_branches: Dict[str, str],
-                               settings: ReleaseSettings,
+                               release_settings: ReleaseSettings,
+                               logical_settings: LogicalRepositorySettings,
                                prefixer: PrefixerPromise,
                                account: int,
                                meta_ids: Tuple[int, ...],
@@ -764,7 +781,7 @@ async def mine_releases_by_ids(releases: pd.DataFrame,
                                           List[Tuple[Dict[str, Any], ReleaseFacts]]]:
     """Collect details about releases in the DataFrame (`load_releases()`-like)."""
     settings_tags, settings_branches, settings_events = {}, {}, {}
-    for k, v in settings.prefixed.items():
+    for k, v in release_settings.prefixed.items():
         if v.match == ReleaseMatch.tag_or_branch:
             settings_tags[k] = ReleaseMatchSetting(
                 match=ReleaseMatch.tag,
@@ -816,7 +833,7 @@ async def mine_releases_by_ids(releases: pd.DataFrame,
         time_to = missing_releases[Release.published_at.name].iloc[0] + timedelta(seconds=1)
         mined_result, mined_authors, _, _ = await mine_releases(
             repos, {}, branches, default_branches, time_from, time_to, LabelFilter.empty(),
-            JIRAFilter.empty(), settings, prefixer.as_promise(),
+            JIRAFilter.empty(), release_settings, logical_settings, prefixer.as_promise(),
             account, meta_ids, mdb, pdb, rdb, cache,
             force_fresh=True, with_avatars=False, with_pr_titles=True, with_deployments=False)
         missing_releases_by_repo = defaultdict(set)
@@ -861,7 +878,8 @@ async def mine_releases_by_ids(releases: pd.DataFrame,
 
 async def _load_releases_by_name(names: Dict[str, Set[str]],
                                  log: logging.Logger,
-                                 settings: ReleaseSettings,
+                                 release_settings: ReleaseSettings,
+                                 logical_settings: LogicalRepositorySettings,
                                  prefixer: PrefixerPromise,
                                  account: int,
                                  meta_ids: Tuple[int, ...],
@@ -891,7 +909,7 @@ async def _load_releases_by_name(names: Dict[str, Set[str]],
         now = datetime.now(timezone.utc)
         # There can be fresh new releases that are not in the pdb yet.
         match_groups, event_releases, repos_count = group_repos_by_release_match(
-            missing, default_branches, settings)
+            missing, default_branches, release_settings)
         # event releases will be loaded in any case
         spans = await ReleaseLoader.fetch_precomputed_release_match_spans(
             match_groups, account, pdb)
@@ -914,7 +932,8 @@ async def _load_releases_by_name(names: Dict[str, Set[str]],
                 break
         new_releases, _ = await ReleaseLoader.load_releases(
             missing, branches, default_branches, now - offset, now,
-            settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache, force_fresh=True)
+            release_settings, logical_settings, prefixer, account, meta_ids,
+            mdb, pdb, rdb, cache, force_fresh=True)
         new_releases_index = defaultdict(dict)
         for i, (repo, name) in enumerate(zip(
                 new_releases[Release.repository_full_name.name].values,
@@ -987,10 +1006,15 @@ async def _complete_commit_hashes(names: Dict[str, Set[str]],
     exptime=short_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda borders, **_: ({k: sorted(v) for k, v in borders.items()},),
+    key=lambda borders, release_settings, logical_settings, **_: (
+        {k: sorted(v) for k, v in sorted(borders.items())},
+        release_settings,
+        logical_settings,
+    ),
 )
 async def diff_releases(borders: Dict[str, List[Tuple[str, str]]],
-                        settings: ReleaseSettings,
+                        release_settings: ReleaseSettings,
+                        logical_settings: LogicalRepositorySettings,
                         prefixer: PrefixerPromise,
                         account: int,
                         meta_ids: Tuple[int, ...],
@@ -1008,7 +1032,8 @@ async def diff_releases(borders: Dict[str, List[Tuple[str, str]]],
         for old, new in pairs:
             names[repo].update((old, new))
     border_releases, names, branches, default_branches = await _load_releases_by_name(
-        names, log, settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache)
+        names, log, release_settings, logical_settings, prefixer, account, meta_ids,
+        mdb, pdb, rdb, cache)
     if border_releases.empty:
         return {}, []
     repos = border_releases[Release.repository_full_name.name].unique()
@@ -1025,8 +1050,8 @@ async def diff_releases(borders: Dict[str, List[Tuple[str, str]]],
     tasks = [
         mine_releases(
             repos, {}, branches, default_branches, time_from, time_to, LabelFilter.empty(),
-            JIRAFilter.empty(), settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache,
-            force_fresh=True, with_pr_titles=True),
+            JIRAFilter.empty(), release_settings, logical_settings, prefixer, account, meta_ids,
+            mdb, pdb, rdb, cache, force_fresh=True, with_pr_titles=True),
         fetch_dags(),
     ]
     (releases, avatars, _, _), dags = await gather(*tasks, op="mine_releases + dags")

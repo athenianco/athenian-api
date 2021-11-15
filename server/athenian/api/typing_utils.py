@@ -3,10 +3,8 @@ from contextvars import ContextVar
 import dataclasses
 from datetime import datetime, timedelta
 from itertools import chain
-from typing import Any, Callable, Dict, Iterable, Iterator, List, Mapping, NamedTuple, Optional, \
-    Tuple, \
-    Type, \
-    TypeVar, Union
+from typing import Any, Callable, Dict, Iterable, Iterator, List, Mapping, NamedTuple, \
+    Optional, Tuple, Type, TypeVar, Union
 
 import numpy as np
 import pandas as pd
@@ -350,6 +348,10 @@ class NumpyStruct(Mapping[str, Any]):
     def __setstate__(self, state: Dict[str, Any]):
         """Support pickle.load()."""
         self.__init__(**state)
+
+    def copy(self) -> "NumpyStruct":
+        """Clone the instance."""
+        return type(self)(self.data, **{attr: getattr(self, attr) for attr in self.__slots__[2:]})
 
     @staticmethod
     def _generate_get(name: str,

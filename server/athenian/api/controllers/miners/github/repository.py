@@ -1,10 +1,9 @@
 from datetime import datetime
 from itertools import chain
 import marshal
-from typing import Collection, List, Optional, Tuple
+from typing import Collection, KeysView, List, Optional, Tuple
 
 import aiomcache
-import databases
 import sentry_sdk
 from sqlalchemy import and_, distinct, join, select, union, union_all
 from sqlalchemy.sql.functions import coalesce
@@ -17,8 +16,10 @@ from athenian.api.controllers.miners.github.precomputed_prs import \
     discover_inactive_merged_unreleased_prs
 from athenian.api.controllers.prefixer import PrefixerPromise
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
+from athenian.api.db import ParallelDatabase
 from athenian.api.models.metadata.github import NodeCommit, NodeRepository, PullRequest, \
     PullRequestComment, PullRequestReview, PushCommit, Repository
+from athenian.api.models.persistentdata.models import DeployedComponent, DeploymentNotification
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
     GitHubMergedPullRequestFacts, GitHubOpenPullRequestFacts, GitHubRelease
 from athenian.api.tracing import sentry_span
@@ -44,8 +45,9 @@ async def mine_repositories(repos: Collection[str],
                             prefixer: PrefixerPromise,
                             account: int,
                             meta_ids: Tuple[int, ...],
-                            mdb: databases.Database,
-                            pdb: databases.Database,
+                            mdb: ParallelDatabase,
+                            pdb: ParallelDatabase,
+                            rdb: ParallelDatabase,
                             cache: Optional[aiomcache.Client],
                             ) -> List[str]:
     """
@@ -55,11 +57,11 @@ async def mine_repositories(repos: Collection[str],
     """
     assert isinstance(time_from, datetime)
     assert isinstance(time_to, datetime)
-    with sentry_sdk.start_span(op="mine_repositories/nodes", description=str(len(repos))):
-        rows = await mdb.fetch_all(select([NodeRepository.id])
-                                   .where(and_(NodeRepository.name_with_owner.in_(repos),
-                                               NodeRepository.acc_id.in_(meta_ids))))
-        repo_ids = [r[0] for r in rows]
+    prefixer = await prefixer.load()
+    repo_name_to_node = prefixer.repo_name_to_node.get
+    repo_ids = [repo_name_to_node(r) for r in repos]
+    if not isinstance(repos, (set, KeysView)):
+        repos = set(repos)
 
     @sentry_span
     async def fetch_active_prs():
@@ -99,10 +101,10 @@ async def mine_repositories(repos: Collection[str],
     @sentry_span
     async def fetch_inactive_merged_prs():
         _, default_branches = await BranchMiner.extract_branches(repos, meta_ids, mdb, cache)
-        _, inactive_repos = await discover_inactive_merged_unreleased_prs(
+        repo_map = await discover_inactive_merged_unreleased_prs(
             time_from, time_to, repos, {}, LabelFilter.empty(), default_branches,
-            release_settings, prefixer, account, pdb, cache)
-        return [(r,) for r in set(inactive_repos)]
+            release_settings, prefixer.as_promise(), account, pdb, cache)
+        return chain.from_iterable(repo_map.values())
 
     @sentry_span
     async def fetch_commits_comments_reviews():
@@ -156,10 +158,28 @@ async def mine_repositories(repos: Collection[str],
             query = union_all(*queries)
         return await pdb.fetch_all(query)
 
+    @sentry_span
+    async def fetch_deployments():
+        rows = await rdb.fetch_all(
+            select([distinct(DeployedComponent.repository_node_id)])
+            .select_from(join(DeployedComponent, DeploymentNotification, and_(
+                DeployedComponent.account_id == DeploymentNotification.account_id,
+                DeployedComponent.deployment_name == DeploymentNotification.name,
+            )))
+            .where(and_(
+                DeploymentNotification.account_id == account,
+                DeploymentNotification.started_at <= time_to,
+                DeploymentNotification.finished_at >= time_from,
+            )),
+        )
+        repo_node_to_name = prefixer.repo_node_to_name
+        return [(repo_node_to_name[row[0]],) for row in rows if row[0] in repo_node_to_name]
+
     tasks = [
         fetch_commits_comments_reviews(),
         fetch_active_prs(),
         fetch_releases(),
+        fetch_deployments(),
     ]
     if not exclude_inactive:
         tasks = [fetch_inactive_open_prs(), fetch_inactive_merged_prs()] + tasks
