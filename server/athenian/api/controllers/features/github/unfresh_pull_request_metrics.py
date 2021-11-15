@@ -120,14 +120,14 @@ class UnfreshPullRequestFactsFetcher:
             tasks.append(dummy_inactive_prs())
         (
             (_, matched_bys),
-            (unreleased_prs, _, *unreleased_labels),
+            (unreleased_prs, _, unreleased_labels),
             done_facts,
             inactive_merged_prs,
         ) = await gather(*tasks, op="discover PRs")
         add_pdb_misses(pdb, "load_precomputed_done_facts_filters/ambiguous",
                        remove_ambiguous_prs(done_facts, ambiguous, matched_bys))
         unreleased_prs = split_logical_repositories(
-            unreleased_prs, unreleased_labels[0], repositories, logical_settings)
+            unreleased_prs, unreleased_labels, repositories, logical_settings)
         unreleased_pr_node_ids = unreleased_prs.index.get_level_values(0).values
         merged_mask = unreleased_prs[PullRequest.merged_at.name].notnull().values
         open_prs = unreleased_pr_node_ids[~merged_mask]

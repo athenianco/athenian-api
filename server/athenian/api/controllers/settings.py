@@ -141,7 +141,7 @@ class LogicalPRSettings:
                 pattern = "(?!)"  # should never match
             else:
                 repos.add(repo)
-            title_regexps[repo] = re.compile(pattern)
+            title_regexps[repo] = re.compile(pattern, re.MULTILINE)
             obj_labels = obj.get("labels", [])
             if obj_labels:
                 repos.add(repo)
@@ -218,15 +218,18 @@ class LogicalPRSettings:
         :param pr_indexes: only consider PRs indexed in `prs`.
         :return: mapping from logical repository names to indexes in `prs`.
         """
+        assert isinstance(prs, pd.DataFrame)
+        assert isinstance(labels, pd.DataFrame)
         matched = {}
         titles = prs[PullRequest.title.name].values
-        if pr_indexes:
+        if len(pr_indexes):
             titles = titles[pr_indexes]
         else:
             pr_indexes = np.arange(len(prs))
-        offsets = np.fromiter((len(s) for s in chain([""], titles)), int, len(titles) + 1)
-        offsets += np.arange(len(offsets))
-        offsets = np.cumsum(offsets)
+        lengths = np.fromiter((len(s) for s in titles), int, len(titles))
+        lengths += 1
+        offsets = np.zeros(len(lengths), dtype=int)
+        np.cumsum(lengths[:-1], out=offsets[1:])
         concat_titles = "\n".join(titles)  # PR titles are guaranteed to not contain \n
         for repo, regexp in self._title_regexps.items():
             found = [m.start() for m in regexp.finditer(concat_titles) if m is not None]
@@ -234,7 +237,7 @@ class LogicalPRSettings:
             matched[repo] = found
         if not labels.empty and self.has_labels:
             matched_by_label = defaultdict(list)
-            pr_ids = prs.index.values[pr_indexes]
+            pr_ids = prs[PullRequest.node_id.name].values[pr_indexes]
             order = np.argsort(pr_ids)
             pr_ids = pr_ids[order]
             label_pr_ids = labels.index.values
@@ -249,11 +252,10 @@ class LogicalPRSettings:
                 reverse_indexes[np.argsort(name_map)], np.cumsum(counts[:-1]))
             label_keys = np.array(list(self._labels.keys()))
             label_values = np.array(list(self._labels.values()))
-            found_indexes = np.searchsorted(label_keys, unique_names)
-            found_indexes[found_indexes == len(label_keys)] = 0
-            found_prs = np.flatnonzero(label_keys[found_indexes] == unique_names)
-            found_repos = label_values[found_prs]
-            for label_index, repos in zip(found_prs, found_repos):
+            found_indexes = np.searchsorted(unique_names, label_keys)
+            found_indexes[found_indexes == len(unique_names)] = 0
+            mask = unique_names[found_indexes] == label_keys
+            for label_index, repos in zip(found_indexes[mask], label_values[mask]):
                 label_pr_indexes = grouped_pr_indexes[label_index]
                 for repo in repos:
                     matched_by_label[repo].append(label_pr_indexes)
