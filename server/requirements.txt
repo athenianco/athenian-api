@@ -3,7 +3,7 @@ connexion[aiohttp,swagger-ui]==2.9.0
 openapi-spec-validator==0.3.1
 aiohttp_cors==0.7.0
 swagger-ui-bundle==0.0.9
-sqlalchemy==1.3.23
+sqlalchemy==1.4.27
 asyncpg==0.24.0
 databases[sqlite,asyncpg]==0.4.3
 psycopg2-binary==2.9.1
@@ -28,7 +28,7 @@ tqdm==4.62.3
 slack_sdk[optional]==3.11.2
 gcloud-aio-kms==3.2.0
 # gcloud-aio-kms does not pin the exact versions of the following packages
-gcloud-aio-auth==3.6.2
+gcloud-aio-auth==3.7.0
 backoff==1.11.1
 # end of gcloud-aio-kms unpinned deps
 pympler==0.9
