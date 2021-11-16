@@ -52,3 +52,25 @@ async def test_split_logical_repositories_labels(sample_prs):
     assert len(result) == 676
     assert (result.index.get_level_values(1) == "src-d/go-git/alpha").sum() == 5
     assert (result.index.get_level_values(1) == "src-d/go-git/beta").sum() == 7
+
+
+async def test_split_logical_repositories_both(sample_prs):
+    settings = LogicalRepositorySettings({
+        "src-d/go-git/alpha": {"title": ".*[Ff]ix", "labels": ["bug"]},
+        "src-d/go-git/beta": {"title": ".*[Aa]dd", "labels": ["enhancement"]},
+    }, {}, {})
+    result = split_logical_repositories(
+        *sample_prs, {"src-d/go-git/alpha", "src-d/go-git/beta"}, settings)
+    assert len(result) == 695
+    assert (result.index.get_level_values(1) == "src-d/go-git/alpha").sum() == 190
+    assert (result.index.get_level_values(1) == "src-d/go-git/beta").sum() == 144
+
+
+async def test_split_logical_repositories_none(sample_prs):
+    settings = LogicalRepositorySettings({
+        "src-d/go-git/alpha": {},
+        "src-d/go-git/beta": {},
+    }, {}, {})
+    result = split_logical_repositories(
+        *sample_prs, {"src-d/go-git/alpha", "src-d/go-git/beta"}, settings)
+    assert len(result) == 676

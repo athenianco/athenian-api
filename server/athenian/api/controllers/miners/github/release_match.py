@@ -14,7 +14,8 @@ from sqlalchemy.sql.elements import BinaryExpression
 from athenian.api import metadata
 from athenian.api.async_utils import gather, postprocess_datetime, read_sql_query
 from athenian.api.cache import cached
-from athenian.api.controllers.logical_repos import coerce_logical_repos, drop_logical_repo
+from athenian.api.controllers.logical_repos import coerce_logical_repos, contains_logical_repos, \
+    drop_logical_repo
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import load_branch_commit_dates
 from athenian.api.controllers.miners.github.commit import DAG, \
@@ -448,7 +449,7 @@ class ReleaseToPullRequestMapper:
                 pdags, releases_in_time_range, RELEASE_FETCH_COMMITS_COLUMNS, False,
                 account, meta_ids, mdb, pdb, cache)
 
-        if has_logical := logical_settings.contains_logical_repos(existing_repos):
+        if has_logical := contains_logical_repos(existing_repos):
             repo_name_origin_column = f"{Release.repository_full_name.name}_original"
             releases_in_time_range[repo_name_origin_column] = \
                 releases_in_time_range[Release.repository_full_name.name]

@@ -18,7 +18,8 @@ from sqlalchemy.sql import ClauseElement
 from athenian.api import metadata
 from athenian.api.async_utils import gather, postprocess_datetime, read_sql_query
 from athenian.api.cache import cached, cached_methods
-from athenian.api.controllers.logical_repos import coerce_logical_repos, drop_logical_repo
+from athenian.api.controllers.logical_repos import coerce_logical_repos, contains_logical_repos, \
+    drop_logical_repo
 from athenian.api.controllers.miners.github.branches import load_branch_commit_dates
 from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_COLUMNS, \
     fetch_precomputed_commit_history_dags, fetch_repository_commits
@@ -895,7 +896,7 @@ class ReleaseMatcher:
                                        release_settings: ReleaseSettings,
                                        ) -> pd.DataFrame:
         """Return the releases matched by branch."""
-        assert not LogicalRepositorySettings.contains_logical_repos(repos)
+        assert not contains_logical_repos(repos)
         branches = branches.take(np.where(
             branches[Branch.repository_full_name.name].isin(repos))[0])
         branches_matched = self._match_branches_by_release_settings(

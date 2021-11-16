@@ -12,3 +12,8 @@ def coerce_logical_repos(repos: Iterable[str]) -> Dict[str, Set[str]]:
     for r in repos:
         result.setdefault(drop_logical_repo(r), set()).add(r)
     return result
+
+
+def contains_logical_repos(repos: Iterable[str]) -> bool:
+    """Check whether at least one repository name is logical."""
+    return any(r.count("/") > 1 for r in repos)
