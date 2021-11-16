@@ -1,4 +1,4 @@
-from typing import Collection, Optional
+from typing import Collection, KeysView, Optional
 
 import pandas as pd
 
@@ -13,27 +13,30 @@ def split_logical_repositories(prs: pd.DataFrame,
                                logical_settings: LogicalRepositorySettings,
                                ) -> pd.DataFrame:
     """Remove and clone PRs according to the logical repository settings."""
-    chunks = []
-    removed = []
     assert isinstance(prs, pd.DataFrame)
     prs.reset_index(inplace=True)
-    for physical_repo, indexes in LogicalPRSettings.group_by_repo(
-            prs[PullRequest.repository_full_name.name].values,
-            coerce_logical_repos(logical_repos)):
-        try:
-            repo_settings = logical_settings.prs(physical_repo)
-        except KeyError:
-            continue
-        for repo, logical_indexes in repo_settings.match(prs, labels, indexes).items():
-            if len(logical_indexes) < len(prs):
-                sub_df = prs.take(logical_indexes)
-            else:
-                sub_df = prs.copy()
-            sub_df["repository_full_name"] = repo
-            chunks.append(sub_df)
-            removed.append(logical_indexes)
-    if len(chunks):
-        prs = pd.concat(chunks, copy=False)
+    if isinstance(logical_repos, dict):
+        logical_repos = logical_repos.keys()
+    elif not isinstance(logical_repos, (set, KeysView)):
+        logical_repos = set(logical_repos)
+    physical_repos = coerce_logical_repos(logical_repos)
+    if physical_repos.keys() != logical_repos:
+        chunks = []
+        for physical_repo, indexes in LogicalPRSettings.group_by_repo(
+                prs[PullRequest.repository_full_name.name].values, physical_repos):
+            try:
+                repo_settings = logical_settings.prs(physical_repo)
+            except KeyError:
+                continue
+            for repo, logical_indexes in repo_settings.match(prs, labels, indexes).items():
+                if len(logical_indexes) < len(prs):
+                    sub_df = prs.take(logical_indexes)
+                else:
+                    sub_df = prs.copy()
+                sub_df["repository_full_name"] = repo
+                chunks.append(sub_df)
+        if len(chunks):
+            prs = pd.concat(chunks, copy=False)
     prs.set_index([PullRequest.node_id.name, PullRequest.repository_full_name.name],
                   inplace=True)
     prs.sort_index(inplace=True)

@@ -135,15 +135,10 @@ class LogicalPRSettings:
         self._title_regexps = title_regexps = {}
         labels = {}
         for repo, obj in prs.items():
-            try:
-                pattern = f"^({obj['title']})"
-            except KeyError:
-                pattern = "(?!)"  # should never match
-            else:
+            if pattern := obj.get("title"):
                 repos.add(repo)
-            title_regexps[repo] = re.compile(pattern, re.MULTILINE)
-            obj_labels = obj.get("labels", [])
-            if obj_labels:
+                title_regexps[repo] = re.compile(f"^({pattern})", re.MULTILINE)
+            if obj_labels := obj.get("labels", []):
                 repos.add(repo)
                 for label in obj_labels:
                     labels.setdefault(label, []).append(repo)
@@ -159,18 +154,27 @@ class LogicalPRSettings:
             for repo in repos:
                 labels[repo].append(label)
         return str(dict((r, {
-            "title": p.pattern,
-            "labels": sorted(labels[r]),
-        }) for r, p in sorted(self._title_regexps.items())))
+            **({"title": pattern} if (pattern := self._title_regexps.get(r)) else {}),
+            **({"labels": sorted(labels)} if (labels := labels.get(r)) else {}),
+        }) for r in sorted(self._repos - {self._origin})))
 
     def __repr__(self) -> str:
         """Implement repr()."""
         return f"LogicalPRSettings({str(self)})"
 
+    def __bool__(self) -> bool:
+        """Return True if there is at least one logical repository, otherwise, False."""
+        return bool(self._labels) or bool(self._title_regexps)
+
     @property
     def logical_repositories(self) -> FrozenSet[str]:
         """Return all known logical repositories."""
         return self._repos
+
+    @property
+    def has_titles(self) -> bool:
+        """Return value indicating whether there is at least one title filter."""
+        return bool(self._title_regexps)
 
     @property
     def has_labels(self) -> bool:
@@ -261,8 +265,11 @@ class LogicalPRSettings:
                     matched_by_label[repo].append(label_pr_indexes)
             for repo, label_matches in matched_by_label.items():
                 matched[repo] = np.unique(np.concatenate([matched.get(repo, []), *label_matches]))
-        concat_logical = np.unique(np.concatenate(list(matched.values())))
-        generic = np.setdiff1d(pr_indexes, concat_logical, assume_unique=True)
+        try:
+            concat_logical = np.unique(np.concatenate(list(matched.values())))
+            generic = np.setdiff1d(pr_indexes, concat_logical, assume_unique=True)
+        except ValueError:
+            generic = pr_indexes
         matched[self._origin] = generic
         return matched
 
@@ -323,7 +330,7 @@ class LogicalRepositorySettings:
 
     def has_logical_prs(self) -> bool:
         """Return value indicating whether there are any logical PR settings."""
-        return bool(self._prs)
+        return any(self._prs.values())
 
     def has_logical_releases(self) -> bool:
         """Return value indicating whether there are any logical release settings."""
@@ -334,14 +341,13 @@ class LogicalRepositorySettings:
         """Initialize clear settings without logical repositories."""
         return LogicalRepositorySettings({}, {}, {})
 
-    @classmethod
-    def contains_logical_repos(cls, repos: Iterable[str]) -> bool:
-        """Check whether at least one repository name is logical."""
-        return any(r.count("/") > 1 for r in repos)
-
     def all_logical_repos(self) -> Set[str]:
         """Collect all mentioned logical repositories."""
-        return set(chain.from_iterable(prs.logical_repositories for prs in self._prs.values()))
+        return set(chain.from_iterable(
+            prs.logical_repositories
+            for prs in self._prs.values()
+            if prs
+        ))
 
     def prs(self, repo: str) -> Optional[LogicalPRSettings]:
         """Return PR match rules for the given repository native name."""
@@ -352,8 +358,11 @@ class LogicalRepositorySettings:
         return self._releases[repo]
 
     def has_prs_by_label(self, repos: Iterable[str]) -> bool:
-        """Return value indicating whether there is at least one logical repo identified by \
-        a label."""
+        """
+        Return value indicating whether there is at least one logical repo identified by a label.
+
+        :param repos: Physical repositories.
+        """
         for repo in repos:
             try:
                 if self.prs(repo).has_labels:
@@ -526,7 +535,7 @@ class Settings:
         """
         async with self._sdb.connection() as sdb_conn:
             if repos is None:
-                repos = await get_account_repositories(self._account, True, sdb_conn)
+                repos = await get_account_repositories(self._account, False, sdb_conn)
                 diff_repos = set()
             else:
                 repos = {r.split("/", 1)[1] for r in repos}

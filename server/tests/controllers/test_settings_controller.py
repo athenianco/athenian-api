@@ -7,15 +7,19 @@ from sqlalchemy import and_, delete, insert, select, update
 
 from athenian.api import auth
 from athenian.api.async_utils import read_sql_query
+from athenian.api.controllers.logical_repos import coerce_logical_repos, contains_logical_repos, \
+    drop_logical_repo
+from athenian.api.controllers.settings import Settings
 from athenian.api.models.metadata.github import NodeUser
-from athenian.api.models.state.models import AccountGitHubAccount, MappedJIRAIdentity, \
+from athenian.api.models.state.models import AccountGitHubAccount, LogicalRepository, \
+    MappedJIRAIdentity, \
     ReleaseSetting, RepositorySet, UserAccount, WorkType
 from athenian.api.models.web import JIRAProject, MappedJIRAIdentity as WebMappedJIRAIdentity, \
     ReleaseMatchSetting, ReleaseMatchStrategy, WorkType as WebWorkType
 from athenian.api.serialization import FriendlyJson
 
 
-async def validate_settings(body, response, sdb, exhaustive: bool):
+async def validate_release_settings(body, response, sdb, exhaustive: bool):
     assert response.status == 200
     repos = json.loads((await response.read()).decode("utf-8"))
     assert len(repos) > 0
@@ -43,7 +47,7 @@ async def test_set_release_match_overwrite(client, headers, sdb, disable_default
     }
     response = await client.request(
         method="PUT", path="/v1/settings/release_match", headers=headers, json=body)
-    repos = await validate_settings(body, response, sdb, True)
+    repos = await validate_release_settings(body, response, sdb, True)
     assert repos == ["github.com/src-d/gitbase", "github.com/src-d/go-git"]
     body.update({
         "branches": ".*",
@@ -52,7 +56,7 @@ async def test_set_release_match_overwrite(client, headers, sdb, disable_default
     })
     response = await client.request(
         method="PUT", path="/v1/settings/release_match", headers=headers, json=body)
-    repos = await validate_settings(body, response, sdb, True)
+    repos = await validate_release_settings(body, response, sdb, True)
     assert repos == ["github.com/src-d/gitbase", "github.com/src-d/go-git"]
 
 
@@ -81,8 +85,8 @@ async def test_set_release_match_different_accounts(client, headers, sdb, disabl
     }
     response2 = await client.request(
         method="PUT", path="/v1/settings/release_match", headers=headers, json=body2)
-    await validate_settings(body1, response1, sdb, False)
-    await validate_settings(body2, response2, sdb, False)
+    await validate_release_settings(body1, response1, sdb, False)
+    await validate_release_settings(body2, response2, sdb, False)
 
 
 async def test_set_release_match_default_user(client, headers):
@@ -713,3 +717,53 @@ async def test_set_work_type_empty_rules(client, headers, sdb):
         "name": "Bug Fixing",
         "rules": [],
     }
+
+
+async def test_drop_logical_repo():
+    assert drop_logical_repo("src-d/go-git") == "src-d/go-git"
+    assert drop_logical_repo("src-d/go-git/alpha") == "src-d/go-git"
+    assert drop_logical_repo("") == ""
+
+
+async def test_coerce_logical_repos():
+    assert coerce_logical_repos(["src-d/go-git"]) == {"src-d/go-git": {"src-d/go-git"}}
+    assert coerce_logical_repos(["src-d/go-git/alpha", "src-d/go-git/beta"]) == {
+        "src-d/go-git": {"src-d/go-git/alpha", "src-d/go-git/beta"},
+    }
+    assert coerce_logical_repos([]) == {}
+
+
+async def test_contains_logical_repos():
+    assert not contains_logical_repos([])
+    assert not contains_logical_repos(["src-d/go-git"])
+    assert contains_logical_repos(["src-d/go-git/"])
+    assert contains_logical_repos(["src-d/go-git/alpha"])
+
+
+@pytest.mark.parametrize("with_title", [False, True])
+@pytest.mark.parametrize("with_labels", [False, True])
+async def test_logical_settings_smoke(sdb, mdb, prefixer_promise, with_title, with_labels):
+    await sdb.execute(insert(LogicalRepository).values(LogicalRepository(
+        account_id=1,
+        name="alpha",
+        repository_id=40550,
+        prs={**({"title": ".*[Ff]ix"} if with_title else {}),
+             **({"labels": ["bug"]} if with_labels else {})},
+    ).create_defaults().explode()))
+    settings = Settings.from_account(1, sdb, mdb, None, None)
+    logical_settings = await settings.list_logical_repositories(prefixer_promise)
+    any_with = with_labels or with_title
+    assert logical_settings.has_logical_prs() == any_with
+    assert logical_settings.all_logical_repos() == \
+           ({"src-d/go-git", "src-d/go-git/alpha"} if any_with else set())
+    assert logical_settings.has_prs_by_label(["src-d/go-git"]) == with_labels
+    if not any_with:
+        with pytest.raises(KeyError):
+            logical_settings.prs("src-d/go-git")
+        return
+    repo_settings = logical_settings.prs("src-d/go-git")
+    assert repo_settings
+    assert repo_settings.has_labels == with_labels
+    assert repo_settings.has_titles == with_title
+    assert repo_settings.logical_repositories == \
+           {"src-d/go-git", "src-d/go-git/alpha"} if any_with else {"src-d/go-git"}

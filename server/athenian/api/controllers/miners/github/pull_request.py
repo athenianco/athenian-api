@@ -669,7 +669,7 @@ class PullRequestMiner:
             labels = None
             if logical_settings.has_logical_prs():
                 repos = releases[Release.repository_full_name.name].unique()
-                if LogicalRepositorySettings.contains_logical_repos(repos):
+                if logical_settings.has_prs_by_label(coerce_logical_repos(repos)):
                     await fetch_labels_task
                     labels = fetch_labels_task.result()
                     merged_prs = split_logical_repositories(

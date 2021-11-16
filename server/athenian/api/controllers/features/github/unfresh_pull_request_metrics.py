@@ -99,7 +99,7 @@ class UnfreshPullRequestFactsFetcher:
                 account, meta_ids, mdb, pdb, cache, columns=[
                     PullRequest.node_id, PullRequest.repository_full_name, PullRequest.merged_at,
                     PullRequest.user_login,
-                ], with_labels=has_logical_repos),
+                ], with_labels=logical_settings.has_prs_by_label(physical_repos)),
         ]
         if jira and done_facts:
             tasks.append(cls._filter_done_facts_jira(
