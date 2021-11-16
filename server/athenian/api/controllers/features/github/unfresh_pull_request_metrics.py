@@ -170,7 +170,10 @@ class UnfreshPullRequestFactsFetcher:
         else:
             for f in facts.values():
                 f.jira_ids = []
-        cls.append_deployments(facts, pd.concat([unreleased_deps, released_deps]), cls._log)
+        cls.append_deployments(facts,
+                               pd.concat([unreleased_deps, released_deps]),
+                               has_logical_repos,
+                               cls._log)
         return facts
 
     @classmethod
@@ -238,35 +241,72 @@ class UnfreshPullRequestFactsFetcher:
     @sentry_span
     def append_deployments(facts: PullRequestFactsMap,
                            deps: pd.DataFrame,
+                           has_logical_repos: bool,
                            log: logging.Logger) -> None:
         """Insert missing deployments info in the PR facts."""
+        if len(facts) == 0:
+            return
         log.info("appending %d deployments", len(deps))
         assert deps.index.duplicated().sum() == 0
-        pr_node_ids = deps.index.get_level_values(0).values
-        names = deps.index.get_level_values(1).values
-        finisheds = deps[DeploymentNotification.finished_at.name].values
-        envs = deps[DeploymentNotification.environment.name].values
+        dep_pr_node_ids = deps.index.get_level_values(0).values
+        names = deps.index.get_level_values(1).values.astype("U", copy=False)
+        finisheds = deps[DeploymentNotification.finished_at.name].values.astype("datetime64[s]")
+        envs = deps[DeploymentNotification.environment.name].values.astype("U", copy=False)
         conclusions = deps[DeploymentNotification.conclusion.name].values
-        repos = deps[PullRequest.repository_full_name.name].values
-        for node_id, name, finished, env, conclusion, repo in zip(
-                pr_node_ids, names, finisheds, envs, conclusions, repos):
-            try:
-                f = facts[(node_id, repo)]
-            except KeyError:
-                continue
-            if f.deployments is None:
-                f.deployments = [name]
-                f.deployed = [finished]
-                f.environments = [env]
-                f.deployment_conclusions = [DeploymentConclusion[conclusion]]
-            else:
+        if not has_logical_repos:
+            repos = deps[PullRequest.repository_full_name.name].values
+            for node_id, name, finished, env, conclusion, repo in zip(
+                    dep_pr_node_ids, names, finisheds, envs, conclusions, repos):
                 try:
-                    f.deployments.append(name)
-                    f.deployed.append(finished)
-                    f.environments.append(env)
-                    f.deployment_conclusions.append(DeploymentConclusion[conclusion])
-                except AttributeError:
-                    continue  # numpy array, already set
+                    f = facts[(node_id, repo)]
+                except KeyError:
+                    continue
+                if f.deployments is None:
+                    f.deployments = [name]
+                    f.deployed = [finished]
+                    f.environments = [env]
+                    f.deployment_conclusions = [DeploymentConclusion[conclusion]]
+                else:
+                    try:
+                        f.deployments.append(name)
+                        f.deployed.append(finished)
+                        f.environments.append(env)
+                        f.deployment_conclusions.append(DeploymentConclusion[conclusion])
+                    except AttributeError:
+                        continue  # numpy array, already set
+        else:
+            facts_node_ids = np.fromiter((node_id for node_id, _ in facts), int, len(facts))
+            facts_facts = np.empty(len(facts), dtype=object)
+            facts_facts[:] = list(facts.values())
+            unique_facts_node_ids, facts_index_map, facts_counts = np.unique(
+                facts_node_ids, return_inverse=True, return_counts=True)
+            facts_facts = facts_facts[np.argsort(facts_index_map)]
+            facts_offsets = np.cumsum(facts_counts)
+            found_indexes = np.searchsorted(unique_facts_node_ids, dep_pr_node_ids)
+            found_indexes[found_indexes >= len(unique_facts_node_ids)] = 0
+            mask = unique_facts_node_ids[found_indexes] == dep_pr_node_ids
+            found_indexes = found_indexes[mask]
+            order = np.argsort(found_indexes)
+            names = names[mask][order]
+            finisheds = finisheds[mask][order]
+            envs = envs[mask][order]
+            conclusions = conclusions[mask][order]
+            unique_found_indexes, counts = np.unique(found_indexes, return_counts=True)
+            offsets = np.cumsum(counts)
+            for facts_index, dep_count, dep_end in zip(unique_found_indexes, counts, offsets):
+                facts_end = facts_offsets[facts_index]
+                facts_beg = facts_end - facts_counts[facts_index]
+                dep_beg = dep_end - dep_count
+                f_names = names[dep_beg:dep_end]
+                f_finisheds = finisheds[dep_beg:dep_end]
+                f_envs = envs[dep_beg:dep_end]
+                f_conclusions = [DeploymentConclusion[c] for c in conclusions[dep_beg:dep_end]]
+                for f in facts_facts[facts_beg:facts_end]:
+                    if f.deployments is None:
+                        f.deployments = f_names
+                        f.deployed = f_finisheds
+                        f.environments = f_envs
+                        f.deployment_conclusions = f_conclusions
         empty = []
         for f in facts.values():
             if f.deployments is None:

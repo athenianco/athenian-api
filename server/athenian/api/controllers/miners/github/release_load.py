@@ -215,7 +215,8 @@ class ReleaseLoader:
             if index is not None:
                 releases = releases.take(np.flatnonzero(~releases.index.duplicated()))
             else:
-                releases.drop_duplicates(Release.node_id.name, inplace=True, ignore_index=True)
+                releases.drop_duplicates([Release.node_id.name, Release.repository_full_name.name],
+                                         inplace=True, ignore_index=True)
             releases.sort_values(Release.published_at.name,
                                  inplace=True, ascending=False, ignore_index=index is None)
         applied_matches = gather_applied_matches()
@@ -248,6 +249,18 @@ class ReleaseLoader:
 
         if not releases.empty:
             releases = _adjust_release_dtypes(releases)
+            physical_repos = coerce_logical_repos(repos)
+            if physical_repos.keys() != applied_matches.keys():
+                physical = np.in1d(
+                    releases[Release.repository_full_name.name].values, list(physical_repos))
+                physical_node_ids = releases[Release.node_id.name].values[physical]
+                logical_node_ids = np.unique(releases[Release.node_id.name].values[~physical])
+                removed = np.intersect1d(physical_node_ids, logical_node_ids, assume_unique=True)
+                if len(removed):
+                    left = np.flatnonzero(
+                        ~(np.in1d(releases[Release.node_id.name].values, removed) & physical))
+                    releases = releases.take(left)
+                    releases.reset_index(inplace=True)
             # we could have loaded both branch and tag releases for `tag_or_branch`,
             # remove the errors
             repos_vec = releases[Release.repository_full_name.name].values.astype("S")
@@ -844,16 +857,19 @@ class ReleaseMatcher:
             if not len(repo_indexes):
                 continue
             regexp = release_settings.native[repo].tags
-            if not regexp.endswith("$"):
-                regexp += "$"
+            regexp = f"^({regexp})$"
             # note: dict.setdefault() is not good here because re.compile() will be evaluated
             try:
                 regexp = regexp_cache[regexp]
             except KeyError:
-                regexp = regexp_cache[regexp] = re.compile(regexp)
-            tags_matched = np.fromiter(
-                (bool(regexp.match(tag)) for tag in release_index_tags[repo_indexes]),
-                bool, len(repo_indexes))
+                regexp = regexp_cache[regexp] = re.compile(regexp, re.MULTILINE)
+            tags_to_check = release_index_tags[repo_indexes]
+            tags_concat = "\n".join(tags_to_check)
+            found = [m.start() for m in regexp.finditer(tags_concat)]
+            offsets = np.zeros(len(tags_to_check), dtype=int)
+            lengths = np.fromiter((len(s) for s in tags_to_check), int, len(tags_to_check)) + 1
+            np.cumsum(lengths[:-1], out=offsets[1:])
+            tags_matched = np.in1d(offsets, found)
             if len(indexes_matched := repo_indexes[tags_matched]):
                 if physical_repo != repo:
                     matched_overridden[repo] = indexes_matched

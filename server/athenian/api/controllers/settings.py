@@ -154,8 +154,8 @@ class LogicalPRSettings:
             for repo in repos:
                 labels[repo].append(label)
         return str(dict((r, {
-            **({"title": pattern} if (pattern := self._title_regexps.get(r)) else {}),
-            **({"labels": sorted(labels)} if (labels := labels.get(r)) else {}),
+            **({"title": pattern[2:-1]} if (pattern := self._title_regexps.get(r)) else {}),
+            **({"labels": sorted(repo_labels)} if (repo_labels := labels.get(r)) else {}),
         }) for r in sorted(self._repos - {self._origin})))
 
     def __repr__(self) -> str:
@@ -230,13 +230,12 @@ class LogicalPRSettings:
             titles = titles[pr_indexes]
         else:
             pr_indexes = np.arange(len(prs))
-        lengths = np.fromiter((len(s) for s in titles), int, len(titles))
-        lengths += 1
+        lengths = np.fromiter((len(s) for s in titles), int, len(titles)) + 1
         offsets = np.zeros(len(lengths), dtype=int)
         np.cumsum(lengths[:-1], out=offsets[1:])
         concat_titles = "\n".join(titles)  # PR titles are guaranteed to not contain \n
         for repo, regexp in self._title_regexps.items():
-            found = [m.start() for m in regexp.finditer(concat_titles) if m is not None]
+            found = [m.start() for m in regexp.finditer(concat_titles)]
             found = pr_indexes[np.in1d(offsets, found, assume_unique=True)]
             matched[repo] = found
         if not labels.empty and self.has_labels:

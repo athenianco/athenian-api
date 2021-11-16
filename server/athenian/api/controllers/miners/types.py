@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from enum import auto, IntEnum
-from typing import Any, Dict, List, Mapping, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -276,10 +276,10 @@ class PullRequestFacts:
         author: str
         merger: str
         releaser: str
-        deployments: List[str]
-        environments: List[str]
-        deployment_conclusions: List[DeploymentConclusion]
-        deployed: List[datetime]
+        deployments: Sequence[str]
+        environments: Sequence[str]
+        deployment_conclusions: Sequence[DeploymentConclusion]
+        deployed: Sequence[datetime]
 
     def max_timestamp(self) -> pd.Timestamp:
         """Find the maximum timestamp contained in the struct."""

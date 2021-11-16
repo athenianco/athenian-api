@@ -34,8 +34,8 @@ class OpenPRFactsLoader:
 
         We filter open PRs inplace so the user does not have to worry about that.
         """
-        open_indexes = np.nonzero(prs[PullRequest.closed_at.name].isnull().values)[0]
-        node_ids = prs.index.get_level_values(0).take(open_indexes)
+        open_indexes = np.flatnonzero(prs[PullRequest.closed_at.name].isnull().values)
+        node_ids = prs.index.get_level_values(0).values[open_indexes]
         authors = dict(zip(node_ids, prs[PullRequest.user_login.name].values[open_indexes]))
         ghoprf = GitHubOpenPullRequestFacts
         default_version = ghoprf.__table__.columns[ghoprf.format_version.key].default.arg
@@ -53,22 +53,21 @@ class OpenPRFactsLoader:
                         ghoprf.acc_id == account)))
         if not rows:
             return {}
-        found_node_ids = [r[0] for r in rows]
-        found_updated_ats = [r[1] for r in rows]
-        if pdb.url.dialect == "sqlite":
-            found_updated_ats = [dt.replace(tzinfo=timezone.utc) for dt in found_updated_ats]
-        updated_ats = prs[PullRequest.updated_at.name].take(open_indexes)
-        passed_indexes = np.flatnonzero((updated_ats[found_node_ids] <= found_updated_ats).values)
-        passed_node_ids = set(updated_ats.index.get_level_values(0).take(passed_indexes))
+        updated_ats = prs[PullRequest.updated_at.name].values[open_indexes]
+        found_node_ids = np.fromiter((r[ghoprf.pr_node_id.name] for r in rows), int, len(rows))
+        found_updated_ats = np.fromiter(
+            (r[ghoprf.pr_updated_at.name] for r in rows), updated_ats.dtype, len(rows))
+        indexes = np.searchsorted(node_ids, found_node_ids)
+        passed = np.flatnonzero(updated_ats[indexes] <= found_updated_ats)
         facts = {}
-        for row in rows:
+        for i in passed:
+            row = rows[i]
             node_id = row[ghoprf.pr_node_id.name]
-            if node_id in passed_node_ids:
-                repo = row[ghoprf.repository_full_name.name]
-                facts[(node_id, repo)] = PullRequestFacts(
-                    data=row[ghoprf.data.name],
-                    repository_full_name=repo,
-                    author=authors[node_id])
+            repo = row[ghoprf.repository_full_name.name]
+            facts[(node_id, repo)] = PullRequestFacts(
+                data=row[ghoprf.data.name],
+                repository_full_name=repo,
+                author=authors[node_id])
         return facts
 
     @classmethod

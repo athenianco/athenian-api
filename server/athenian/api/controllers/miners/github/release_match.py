@@ -141,46 +141,69 @@ class PullRequestToReleaseMapper:
                                    ) -> pd.DataFrame:
         if prs.empty:
             return new_released_prs_df()
-        releases = dict(list(releases.groupby(Release.repository_full_name.name, sort=False)))
-
+        release_repos = releases[Release.repository_full_name.name].values
+        unique_release_repos, release_index_map, release_repo_counts = np.unique(
+            release_repos, return_inverse=True, return_counts=True)
+        release_repo_order = np.argsort(release_index_map)
+        ordered_release_shas = releases[Release.sha.name].values[release_repo_order].astype("S40")
+        release_repo_offsets = np.zeros(len(release_repo_counts) + 1, dtype=int)
+        np.cumsum(release_repo_counts, out=release_repo_offsets[1:])
+        physical_unique_release_repos = \
+            np.array([drop_logical_repo(r) for r in unique_release_repos])
+        pr_repos = prs[PullRequest.repository_full_name.name].values
+        unique_pr_repos, pr_index_map, pr_repo_counts = np.unique(
+            pr_repos, return_inverse=True, return_counts=True)
+        pr_repo_order = np.argsort(pr_index_map)
+        pr_merge_hashes = \
+            prs[PullRequest.merge_commit_sha.name].values[pr_repo_order].astype("S40")
+        pr_merged_at = prs[PullRequest.merged_at.name].values[pr_repo_order]
+        pr_node_ids = prs.index.values[pr_repo_order]
+        pr_repo_offsets = np.zeros(len(pr_repo_counts) + 1, dtype=int)
+        np.cumsum(pr_repo_counts, out=pr_repo_offsets[1:])
+        release_pos = pr_pos = 0
         released_prs = []
         log = logging.getLogger("%s.map_prs_to_releases" % metadata.__package__)
-        for repo, repo_prs in prs.groupby(PullRequest.repository_full_name.name, sort=False):
-            try:
-                repo_releases = releases[repo]
-            except KeyError:
-                # no releases exist for this repo
-                continue
-            repo_prs = repo_prs.take(
-                np.where(~repo_prs[PullRequest.merge_commit_sha.name].isnull())[0])
-            hashes, vertexes, edges = dags[repo]
-            if len(hashes) == 0:
-                log.error("very suspicious: empty DAG for %s\n%s", repo, repo_releases.to_csv())
-            ownership = mark_dag_access(
-                hashes, vertexes, edges, repo_releases[Release.sha.name].values.astype("S40"))
-            unmatched = np.where(ownership == len(repo_releases))[0]
-            if len(unmatched) > 0:
-                hashes = np.delete(hashes, unmatched)
-                ownership = np.delete(ownership, unmatched)
-            if len(hashes) == 0:
-                continue
-            merge_hashes = repo_prs[PullRequest.merge_commit_sha.name].values.astype("S40")
-            merges_found = searchsorted_inrange(hashes, merge_hashes)
-            found_mask = hashes[merges_found] == merge_hashes
-            found_releases = repo_releases[release_columns].take(
-                ownership[merges_found[found_mask]])
-            if not found_releases.empty:
-                found_prs = repo_prs.index.take(np.nonzero(found_mask)[0])
-                found_releases.set_index(found_prs, inplace=True)
-                released_prs.append(found_releases)
-            await asyncio.sleep(0)
+        while release_pos < len(unique_release_repos) and pr_pos < len(unique_pr_repos):
+            physical_release_repo = physical_unique_release_repos[release_pos]
+            pr_repo = unique_pr_repos[pr_pos]
+            if physical_release_repo == pr_repo:
+                hashes, vertexes, edges = dags[pr_repo]
+                if len(hashes) == 0:
+                    log.error("very suspicious: empty DAG for %s", pr_repo)
+                release_beg = release_repo_offsets[release_pos]
+                release_end = release_repo_offsets[release_pos + 1]
+                ownership = mark_dag_access(
+                    hashes, vertexes, edges, ordered_release_shas[release_beg:release_end])
+                unmatched = np.flatnonzero(ownership == (release_end - release_beg))
+                if len(unmatched) > 0:
+                    hashes = np.delete(hashes, unmatched)
+                    ownership = np.delete(ownership, unmatched)
+                if len(hashes) == 0:
+                    release_pos += 1
+                    continue
+                pr_beg = pr_repo_offsets[pr_pos]
+                pr_end = pr_repo_offsets[pr_pos + 1]
+                merge_hashes = pr_merge_hashes[pr_beg:pr_end]
+                merges_found = searchsorted_inrange(hashes, merge_hashes)
+                found_mask = hashes[merges_found] == merge_hashes
+                found_releases = releases[release_columns].take(
+                    release_repo_order[release_beg:release_end]
+                    [ownership[merges_found[found_mask]]])
+                if not found_releases.empty:
+                    found_releases[Release.published_at.name] = np.maximum(
+                        found_releases[Release.published_at.name].values,
+                        pr_merged_at[pr_beg:pr_end][found_mask])
+                    found_releases.set_index(pr_node_ids[pr_beg:pr_end][found_mask], inplace=True)
+                    released_prs.append(found_releases)
+                release_pos += 1
+            elif physical_release_repo < pr_repo:
+                release_pos += 1
+            else:
+                pr_pos += 1
         if released_prs:
             released_prs = pd.concat(released_prs, copy=False)
         else:
             released_prs = new_released_prs_df()
-        released_prs[Release.published_at.name] = np.maximum(
-            released_prs[Release.published_at.name],
-            prs.loc[released_prs.index, PullRequest.merged_at.name])
         return postprocess_datetime(released_prs)
 
     @classmethod

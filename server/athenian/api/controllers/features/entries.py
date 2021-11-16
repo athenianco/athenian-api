@@ -5,7 +5,7 @@ import importlib
 from itertools import chain
 import logging
 import pickle
-from typing import Any, Collection, Dict, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Any, Collection, Dict, List, Mapping, Optional, Sequence, Set, Tuple, Union
 
 import aiomcache
 import numpy as np
@@ -160,7 +160,7 @@ class MetricEntriesCalculator:
     async def calc_pull_request_metrics_line_github(self,
                                                     metrics: Sequence[str],
                                                     time_intervals: Sequence[Sequence[datetime]],
-                                                    quantiles: Sequence[float],
+                                                    quantiles: Sequence[Union[float, int]],
                                                     lines: Sequence[int],
                                                     environments: Sequence[str],
                                                     repositories: Sequence[Collection[str]],
@@ -847,7 +847,10 @@ class MetricEntriesCalculator:
             for f in precomputed_facts.values():
                 f.jira_ids = empty_list
         self.unfresh_pr_facts_fetcher.append_deployments(
-            precomputed_facts, pd.concat([done_deps, new_deps]), self._log)
+            precomputed_facts,
+            pd.concat([done_deps, new_deps]),
+            logical_settings.has_logical_prs(),
+            self._log)
         all_facts_iter = chain(precomputed_facts.values(), mined_facts.values())
         all_facts_df = df_from_structs(
             all_facts_iter, length=len(precomputed_facts) + len(mined_facts))

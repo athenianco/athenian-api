@@ -1828,7 +1828,9 @@ class PullRequestFactsMiner:
         reviews = np.sort(reviews_before_close[PullRequestReview.submitted_at.name].values) \
             .astype(ts_dtype)
         activity_days = np.concatenate([
-            np.array([created, closed, released], dtype=ts_dtype),
+            np.array([created.to_numpy() if created is not None else None,
+                      closed.to_numpy() if closed is not None else None,
+                      released.to_numpy() if released is not None else None], dtype=ts_dtype),
             pr.commits[PullRequestCommit.committed_date.name].values,
             pr.review_requests[PullRequestReviewRequest.created_at.name].values,
             pr.reviews[PullRequestReview.created_at.name].values,

@@ -92,7 +92,8 @@ async def mine_all_prs(repos: Collection[str],
     ]
     df_prs, envs, deps, *_ = await gather(*tasks, op="fetch raw data")
     UnfreshPullRequestFactsFetcher.append_deployments(
-        facts, deps, logging.getLogger(f"{metadata.__package__}.mine_all_prs"))
+        facts, deps, logical_settings.has_logical_prs(),
+        logging.getLogger(f"{metadata.__package__}.mine_all_prs"))
     df_facts = df_from_structs(facts.values())
     dummy = {ghdprf.release_url.name: None, ghdprf.release_node_id.name: None}
     for col in (ghdprf.release_url.name, ghdprf.release_node_id.name):
