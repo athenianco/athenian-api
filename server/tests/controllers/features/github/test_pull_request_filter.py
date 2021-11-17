@@ -417,6 +417,57 @@ async def test_pr_list_miner_deployments_staging(
     assert deps == 418
 
 
+@pytest.mark.parametrize("stage, n", [
+    (PullRequestStage.WIP, {
+        "": 3,
+        "/alpha": 1,
+        "/beta": 2,
+    }),
+    (PullRequestStage.REVIEWING, {
+        "": 4,
+        "/alpha": 2,
+        "/beta": 1,
+    }),
+    (PullRequestStage.MERGING, {
+        "": 2,
+        "/alpha": 2,
+        "/beta": 0,
+    }),
+    (PullRequestStage.RELEASING, {
+        "": 70,
+        "/alpha": 37,
+        "/beta": 27,
+    }),
+    (PullRequestStage.DONE, {
+        "": 290,
+        "/alpha": 146,
+        "/beta": 108,
+    }),
+    (PullRequestStage.FORCE_PUSH_DROPPED, {
+        "": 6,
+        "/alpha": 3,
+        "/beta": 2,
+    }),
+])
+@with_defer
+async def test_pr_list_miner_logical(
+        mdb, pdb, rdb, logical_settings, release_match_setting_tag_logical, time_from_to, stage, n,
+        prefixer_promise):
+    prs, _ = await filter_pull_requests(
+        set(), {stage}, *time_from_to, {"src-d/go-git", "src-d/go-git/alpha", "src-d/go-git/beta"},
+        {}, LabelFilter.empty(), JIRAFilter.empty(),
+        "production", False, release_match_setting_tag_logical, logical_settings,
+        None, None, prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
+    stats = {
+        "": 0,
+        "/alpha": 0,
+        "/beta": 0,
+    }
+    for pr in prs:
+        stats[pr.repository[len("src-d/go-git"):]] += 1
+    assert stats == n
+
+
 @with_defer
 async def test_fetch_pull_requests_smoke(
         metrics_calculator_factory, mdb, pdb, rdb, release_match_setting_tag,

@@ -655,6 +655,80 @@ async def test_load_releases_tag_or_branch_initial(branches, default_branches, m
 
 
 @with_defer
+async def test_load_releases_tag_logical(
+        branches, default_branches, mdb, pdb, rdb, release_loader, prefixer_promise,
+        logical_settings, release_match_setting_tag_logical):
+    time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2020, month=10, day=22, tzinfo=timezone.utc)
+    releases, matched_bys = await release_loader.load_releases(
+        ["src-d/go-git/alpha", "src-d/go-git/beta"],
+        branches, default_branches,
+        time_from,
+        time_to,
+        release_match_setting_tag_logical,
+        logical_settings,
+        prefixer_promise,
+        1,
+        (6366825,),
+        mdb,
+        pdb,
+        rdb,
+        None,
+    )
+    await wait_deferred()
+    assert matched_bys == {
+        "src-d/go-git/alpha": ReleaseMatch.tag,
+        "src-d/go-git/beta": ReleaseMatch.tag,
+    }
+    assert (releases[Release.repository_full_name.name] == "src-d/go-git/alpha").sum() == 53
+    assert (releases[Release.repository_full_name.name] == "src-d/go-git/beta").sum() == 37
+    releases, matched_bys = await release_loader.load_releases(
+        ["src-d/go-git", "src-d/go-git/alpha", "src-d/go-git/beta"],
+        branches, default_branches,
+        time_from,
+        time_to,
+        release_match_setting_tag_logical,
+        logical_settings,
+        prefixer_promise,
+        1,
+        (6366825,),
+        mdb,
+        pdb,
+        rdb,
+        None,
+    )
+    assert matched_bys == {
+        "src-d/go-git": ReleaseMatch.tag,
+        "src-d/go-git/alpha": ReleaseMatch.tag,
+        "src-d/go-git/beta": ReleaseMatch.tag,
+    }
+    assert (releases[Release.repository_full_name.name] == "src-d/go-git").sum() == 0
+    assert (releases[Release.repository_full_name.name] == "src-d/go-git/alpha").sum() == 53
+    assert (releases[Release.repository_full_name.name] == "src-d/go-git/beta").sum() == 37
+    releases, matched_bys = await release_loader.load_releases(
+        ["src-d/go-git", "src-d/go-git/beta"],
+        branches, default_branches,
+        time_from,
+        time_to,
+        release_match_setting_tag_logical,
+        logical_settings,
+        prefixer_promise,
+        1,
+        (6366825,),
+        mdb,
+        pdb,
+        rdb,
+        None,
+    )
+    assert matched_bys == {
+        "src-d/go-git": ReleaseMatch.tag,
+        "src-d/go-git/beta": ReleaseMatch.tag,
+    }
+    assert (releases[Release.repository_full_name.name] == "src-d/go-git").sum() == 16
+    assert (releases[Release.repository_full_name.name] == "src-d/go-git/beta").sum() == 37
+
+
+@with_defer
 async def test_map_releases_to_prs_branches(
         branches, default_branches, mdb, pdb, rdb, releases_to_prs_mapper, prefixer_promise):
     time_from = datetime(year=2015, month=4, day=1, tzinfo=timezone.utc)

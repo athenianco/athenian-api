@@ -722,8 +722,14 @@ async def _map_releases_to_deployments(
             time_from = time_from.replace(tzinfo=timezone.utc)
     else:
         time_from = releases[Release.published_at.name].max() + timedelta(seconds=1)
+    logical_names = set()
+    for repo in repo_names:
+        try:
+            logical_names.update(logical_settings.prs(repo).logical_repositories)
+        except KeyError:
+            logical_names.add(repo)
     extra_releases, _ = await ReleaseLoader.load_releases(
-        repo_names, branches, default_branches, time_from, max_release_time_to,
+        logical_names, branches, default_branches, time_from, max_release_time_to,
         release_settings, logical_settings, prefixer.as_promise(), account, meta_ids,
         mdb, pdb, rdb, cache,
         force_fresh=max_release_time_to > datetime.now(timezone.utc) - unfresh_releases_lag,

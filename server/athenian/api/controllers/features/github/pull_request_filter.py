@@ -759,7 +759,8 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
 
     deployment_names = pr_miner.dfs.deployments.index.get_level_values(1).unique()
     deps_task = asyncio.create_task(_load_deployments(
-        deployment_names, facts, prefixer, account, meta_ids, mdb, pdb, rdb, cache),
+        deployment_names, facts, logical_settings, prefixer,
+        account, meta_ids, mdb, pdb, rdb, cache),
         name=f"filter_pull_requests/_load_deployments({len(deployment_names)})")
     prs = await list_with_yield(pr_miner, "PullRequestMiner.__iter__")
 
@@ -858,6 +859,7 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
 @sentry_span
 async def _load_deployments(new_names: Sequence[str],
                             precomputed_facts: PullRequestFactsMap,
+                            logical_settings: LogicalRepositorySettings,
                             prefixer: PrefixerPromise,
                             account: int,
                             meta_ids: Tuple[int, ...],
@@ -869,7 +871,8 @@ async def _load_deployments(new_names: Sequence[str],
     deps = await PullRequestMiner.fetch_pr_deployments(
         {node_id for node_id, _ in precomputed_facts}, prefixer, account, pdb, rdb)
     log = logging.getLogger(f"{metadata.__package__}.filter_pull_requests.load_deployments")
-    UnfreshPullRequestFactsFetcher.append_deployments(precomputed_facts, deps, log)
+    UnfreshPullRequestFactsFetcher.append_deployments(
+        precomputed_facts, deps, logical_settings.has_logical_prs(), log)
     names = np.unique(np.concatenate([new_names, deps.index.get_level_values(1).values]))
     return asyncio.create_task(
         load_included_deployments(names, account, meta_ids, mdb, rdb, cache),
@@ -1068,7 +1071,8 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
         mdb, pdb, rdb, cache, with_jira=with_jira)
     deployment_names = dfs.deployments.index.get_level_values(1).unique()
     deployments_task = asyncio.create_task(_load_deployments(
-        deployment_names, facts, prefixer, account, meta_ids, mdb, pdb, rdb, cache),
+        deployment_names, facts, logical_settings, prefixer,
+        account, meta_ids, mdb, pdb, rdb, cache),
         name=f"load_included_deployments({len(deployment_names)})")
     if repositories is None:
         repositories = logical_settings.all_logical_repos()

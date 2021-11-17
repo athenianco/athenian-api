@@ -25,7 +25,8 @@ from athenian.api.defer import with_defer
 from athenian.api.models.metadata.github import Branch
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
     DeploymentNotification
-from athenian.api.models.state.models import JIRAProjectSetting, MappedJIRAIdentity
+from athenian.api.models.state.models import JIRAProjectSetting, LogicalRepository, \
+    MappedJIRAIdentity
 from athenian.api.typing_utils import wraps
 
 
@@ -111,6 +112,41 @@ async def dummy_deployment_label(rdb):
         key="xxx",
         value=["yyy"],
     ).explode(with_primary_keys=True)))
+
+
+@pytest.fixture(scope="session")
+def logical_settings():
+    return LogicalRepositorySettings({
+        "src-d/go-git/alpha": {"title": ".*[Ff]ix"},
+        "src-d/go-git/beta": {"title": ".*[Aa]dd"},
+    }, {}, {})
+
+
+@pytest.fixture(scope="function")
+async def logical_settings_db(sdb):
+    await sdb.execute(insert(LogicalRepository).values(LogicalRepository(
+        account_id=1,
+        name="alpha",
+        repository_id=40550,
+        prs={"title": ".*[Ff]ix"},
+    ).create_defaults().explode()))
+    await sdb.execute(insert(LogicalRepository).values(LogicalRepository(
+        account_id=1,
+        name="beta",
+        repository_id=40550,
+        prs={"title": ".*[Aa]dd"},
+    ).create_defaults().explode()))
+
+
+@pytest.fixture(scope="session")
+def release_match_setting_tag_logical(release_match_setting_tag):
+    return ReleaseSettings({
+        **release_match_setting_tag.prefixed,
+        "github.com/src-d/go-git/alpha": ReleaseMatchSetting(
+            branches="", tags=".*", match=ReleaseMatch.tag),
+        "github.com/src-d/go-git/beta": ReleaseMatchSetting(
+            branches="", tags=r"v4\..*", match=ReleaseMatch.tag),
+    })
 
 
 @pytest.fixture(scope="session")
