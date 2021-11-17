@@ -8,10 +8,11 @@ Create Date: 2021-11-17 13:16:59.991522+00:00
 import sqlite3
 
 from alembic import op
-import psycopg2.errors
-
+from psycopg2.errors import UniqueViolation
+from sqlalchemy.exc import IntegrityError
 
 # revision identifiers, used by Alembic.
+
 revision = "eb0de1efbe52"
 down_revision = "de3819e9b84d"
 branch_labels = None
@@ -22,7 +23,7 @@ def upgrade():
     try:
         op.execute("insert into features(name, component, enabled, default_parameters) "
                    "values ('api_channel', 'webapp', true, '\"stable\"');")
-    except (sqlite3.IntegrityError, psycopg2.errors.UniqueViolation):
+    except (sqlite3.IntegrityError, IntegrityError, UniqueViolation):
         pass
 
 
