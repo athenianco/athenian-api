@@ -171,6 +171,7 @@ def fill_state_session(session: sqlalchemy.orm.Session):
         name="all",
         owner_id=1,
         precomputed=os.getenv("PRECOMPUTED", "1") == "1",
+        tracking_re=".*alpha",
         items=["github.com/src-d/gitbase", "github.com/src-d/go-git"]))
     session.add(RepositorySet(
         name="all",

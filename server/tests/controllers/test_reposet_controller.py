@@ -50,10 +50,9 @@ async def test_delete_repository_set_bad_account(client, reposet, headers, disab
 
 @pytest.mark.parametrize("reposet,checked", [(1, "github.com/src-d/go-git"),
                                              (2, "github.com/src-d/hercules")])
-async def test_get_repository_set(client, reposet, headers, checked):
-    body = {}
+async def test_get_repository_set_smoke(client, reposet, headers, checked):
     response = await client.request(
-        method="GET", path="/v1/reposet/%d" % reposet, headers=headers, json=body,
+        method="GET", path="/v1/reposet/%d" % reposet, headers=headers,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
@@ -64,19 +63,30 @@ async def test_get_repository_set(client, reposet, headers, checked):
     assert body.precomputed == (reposet == 1)
 
 
-async def test_get_repository_set_404(client, headers):
-    body = {}
+async def test_get_repository_set_logical(client, headers, logical_settings_db):
     response = await client.request(
-        method="GET", path="/v1/reposet/10", headers=headers, json=body,
+        method="GET", path="/v1/reposet/1", headers=headers,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    body = RepositorySetWithName.from_dict(json.loads(body))
+    assert body.items == [
+        "github.com/src-d/gitbase", "github.com/src-d/go-git", "github.com/src-d/go-git/alpha",
+    ]
+    assert body.name == "all"
+
+
+async def test_get_repository_set_404(client, headers):
+    response = await client.request(
+        method="GET", path="/v1/reposet/10", headers=headers,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 404, "Response body is : " + body
 
 
 async def test_get_repository_set_bad_account(client, headers):
-    body = {}
     response = await client.request(
-        method="GET", path="/v1/reposet/3", headers=headers, json=body,
+        method="GET", path="/v1/reposet/3", headers=headers,
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 404, "Response body is : " + body
