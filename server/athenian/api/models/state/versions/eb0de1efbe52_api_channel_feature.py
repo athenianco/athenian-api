@@ -5,11 +5,7 @@ Revises: de3819e9b84d
 Create Date: 2021-11-17 13:16:59.991522+00:00
 
 """
-import sqlite3
-
 from alembic import op
-from psycopg2.errors import UniqueViolation
-from sqlalchemy.exc import IntegrityError
 
 # revision identifiers, used by Alembic.
 
@@ -20,11 +16,13 @@ depends_on = None
 
 
 def upgrade():
-    try:
-        op.execute("insert into features(name, component, enabled, default_parameters) "
+    if op.get_bind().dialect == "sqlite":
+        op.execute("insert or ignore into features(name, component, enabled, default_parameters) "
                    "values ('api_channel', 'webapp', true, '\"stable\"');")
-    except (sqlite3.IntegrityError, IntegrityError, UniqueViolation):
-        pass
+    else:
+        op.execute("insert into features(name, component, enabled, default_parameters) "
+                   "values ('api_channel', 'webapp', true, '\"stable\"') "
+                   "on conflict do nothing;")
 
 
 def downgrade():
