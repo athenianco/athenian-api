@@ -29,7 +29,7 @@ async def test_split_logical_repositories_title(sample_prs):
     }, {}, {})
     result = split_logical_repositories(
         *sample_prs, {"src-d/go-git/alpha", "src-d/go-git/beta"}, settings)
-    assert len(result) == 695
+    assert len(result) == 326
     assert (result.index.get_level_values(1) == "src-d/go-git/alpha").sum() == 188
     assert (result.index.get_level_values(1) == "src-d/go-git/beta").sum() == 138
     for row in result.itertuples():
@@ -49,7 +49,7 @@ async def test_split_logical_repositories_labels(sample_prs):
     }, {}, {})
     result = split_logical_repositories(
         *sample_prs, {"src-d/go-git/alpha", "src-d/go-git/beta"}, settings)
-    assert len(result) == 676
+    assert len(result) == 12
     assert (result.index.get_level_values(1) == "src-d/go-git/alpha").sum() == 5
     assert (result.index.get_level_values(1) == "src-d/go-git/beta").sum() == 7
 
@@ -61,7 +61,7 @@ async def test_split_logical_repositories_both(sample_prs):
     }, {}, {})
     result = split_logical_repositories(
         *sample_prs, {"src-d/go-git/alpha", "src-d/go-git/beta"}, settings)
-    assert len(result) == 695
+    assert len(result) == 334
     assert (result.index.get_level_values(1) == "src-d/go-git/alpha").sum() == 190
     assert (result.index.get_level_values(1) == "src-d/go-git/beta").sum() == 144
 
@@ -73,4 +73,16 @@ async def test_split_logical_repositories_none(sample_prs):
     }, {}, {})
     result = split_logical_repositories(
         *sample_prs, {"src-d/go-git/alpha", "src-d/go-git/beta"}, settings)
+    assert len(result) == 0
+
+
+async def test_split_logical_repositories_mixture(sample_prs):
+    settings = LogicalRepositorySettings({
+        "src-d/go-git/alpha": {"labels": ["bug"]},
+        "src-d/go-git/beta": {"labels": ["enhancement"]},
+    }, {}, {})
+    result = split_logical_repositories(
+        *sample_prs, {"src-d/go-git", "src-d/go-git/alpha", "src-d/go-git/beta"}, settings)
     assert len(result) == 676
+    assert (result.index.get_level_values(1) == "src-d/go-git/alpha").sum() == 5
+    assert (result.index.get_level_values(1) == "src-d/go-git/beta").sum() == 7

@@ -913,6 +913,35 @@ async def test_calc_metrics_prs_deployments_smoke(client, headers, precomputed_d
     assert values == [[[None, "57352991s"], [None, "60558816s"], [None, "61067133s"], [0, 418]]]
 
 
+async def test_calc_metrics_prs_logical(
+        client, headers, logical_settings_db, release_match_setting_tag_logical_db):
+    body = {
+        "for": [
+            {
+                "repositories": ["github.com/src-d/go-git/alpha", "github.com/src-d/go-git/beta"],
+            },
+        ],
+        "metrics": [
+            PullRequestMetricID.PR_MERGED,
+            PullRequestMetricID.PR_REJECTED,
+            PullRequestMetricID.PR_REVIEW_COUNT,
+            PullRequestMetricID.PR_RELEASE_COUNT,
+        ],
+        "date_from": "2015-10-13",
+        "date_to": "2020-01-23",
+        "granularities": ["all"],
+        "exclude_inactive": False,
+        "account": 1,
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
+    )
+    assert response.status == 200, response.text()
+    body = FriendlyJson.loads((await response.read()).decode("utf-8"))
+    values = [v["values"] for v in body["calculated"][0]["values"]]
+    assert values == [[266, 52, 205, 183]]
+
+
 async def test_code_bypassing_prs_smoke(client, headers):
     body = {
         "account": 1,

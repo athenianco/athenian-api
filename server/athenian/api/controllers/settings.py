@@ -12,13 +12,15 @@ from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import and_, delete, insert, select
 
 from athenian.api.controllers.account import get_account_repositories
-from athenian.api.controllers.logical_repos import coerce_logical_repos, drop_logical_repo
+from athenian.api.controllers.logical_repos import coerce_logical_repos, \
+    coerce_prefixed_logical_repos, drop_logical_repo, \
+    drop_prefixed_logical_repo
 from athenian.api.controllers.prefixer import PrefixerPromise
 from athenian.api.controllers.reposet import resolve_repos
 from athenian.api.db import ParallelDatabase
 from athenian.api.models.metadata.github import PullRequest, PullRequestLabel
 from athenian.api.models.state.models import LogicalRepository, ReleaseSetting
-from athenian.api.models.web import InvalidRequestError, ReleaseMatchStrategy
+from athenian.api.models.web import InvalidRequestError, MissingSettingsError, ReleaseMatchStrategy
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError
 from athenian.api.typing_utils import dataclass
@@ -154,7 +156,9 @@ class LogicalPRSettings:
             for repo in repos:
                 labels[repo].append(label)
         return str(dict((r, {
-            **({"title": pattern[2:-1]} if (pattern := self._title_regexps.get(r)) else {}),
+            **({"title": pattern.pattern[2:-1]}
+               if (pattern := self._title_regexps.get(r))
+               else {}),
             **({"labels": sorted(repo_labels)} if (repo_labels := labels.get(r)) else {}),
         }) for r in sorted(self._repos - {self._origin})))
 
@@ -327,6 +331,10 @@ class LogicalRepositorySettings:
         releases = [f"{repo}: {val}" for repo, val in sorted(self._releases.items())]
         return f"prs: {prs}; releases: {releases}"
 
+    def __repr__(self) -> str:
+        """Implement repr()."""
+        return f"LogicalRepositorySettings(prs={repr(self._prs)}, releases={repr(self._releases)})"
+
     def has_logical_prs(self) -> bool:
         """Return value indicating whether there are any logical PR settings."""
         return any(self._prs.values())
@@ -443,7 +451,7 @@ class Settings:
         async with self._sdb.connection() as sdb_conn:
             if repos is None:
                 repos = await get_account_repositories(self._account, True, sdb_conn)
-            repos = frozenset(repos)
+            repos = set(repos).union(coerce_prefixed_logical_repos(repos).keys())
             rows = await sdb_conn.fetch_all(
                 select([ReleaseSetting])
                 .where(and_(ReleaseSetting.account_id == self._account,
@@ -460,8 +468,12 @@ class Settings:
                     tags=row[ReleaseSetting.tags.name],
                     match=ReleaseMatch(row[ReleaseSetting.match.name]),
                 )))
+        missing_logical = []
         for repo in repos:
             if repo not in loaded:
+                if drop_prefixed_logical_repo(repo) != repo:
+                    missing_logical.append(repo)
+                    continue
                 settings.append((
                     repo,
                     ReleaseMatchSetting(
@@ -469,6 +481,10 @@ class Settings:
                         tags=".*",
                         match=ReleaseMatch.tag_or_branch,
                     )))
+        if missing_logical:
+            raise ResponseError(MissingSettingsError(
+                detail=f"Logical repositories must have releases settings: {missing_logical}",
+            ))
         settings.sort()
         settings = dict(settings)
         return ReleaseSettings(settings)

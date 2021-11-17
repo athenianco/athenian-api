@@ -20,7 +20,7 @@ from athenian.api.controllers.features.github.check_run_filter import filter_che
 from athenian.api.controllers.features.github.pull_request_filter import fetch_pull_requests, \
     filter_pull_requests
 from athenian.api.controllers.jira import get_jira_installation_or_none, load_mapped_jira_users
-from athenian.api.controllers.logical_repos import coerce_logical_repos
+from athenian.api.controllers.logical_repos import coerce_logical_repos, drop_logical_repo
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import BranchMiner
@@ -247,7 +247,13 @@ def web_pr_from_struct(pr: PullRequestListItem,
     props = dict(pr)
     del props["node_id"]
     del props["deployments"]
-    props["repository"] = prefixer.repo_name_to_prefixed_name[props["repository"]]
+    repo = props["repository"]
+    physical_repo = drop_logical_repo(repo)
+    if physical_repo != repo:
+        append = repo[len(physical_repo):]
+    else:
+        append = ""
+    props["repository"] = prefixer.repo_name_to_prefixed_name[physical_repo] + append
     if pr.events_time_machine is not None:
         props["events_time_machine"] = sorted(p.name.lower() for p in pr.events_time_machine)
     if pr.stages_time_machine is not None:

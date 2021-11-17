@@ -494,7 +494,7 @@ class PullRequestMiner:
                 facts[k] = v
 
         dfs.prs = split_logical_repositories(
-            dfs.prs, dfs.labels, repositories - physical_repos, logical_settings)
+            dfs.prs, dfs.labels, repositories, logical_settings)
         return dfs, facts, repositories, participants, labels, jira, with_jira_map, matched_bys, \
             unreleased_prs_event
 

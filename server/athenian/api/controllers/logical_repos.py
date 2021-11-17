@@ -6,11 +6,24 @@ def drop_logical_repo(repo: str) -> str:
     return "/".join(repo.split("/", 2)[:2])
 
 
+def drop_prefixed_logical_repo(repo: str) -> str:
+    """Remove the logical part of the prefixed repository name."""
+    return "/".join(repo.split("/", 3)[:3])
+
+
 def coerce_logical_repos(repos: Iterable[str]) -> Dict[str, Set[str]]:
     """Remove the logical part of the repository names + deduplicate."""
     result = {}
     for r in repos:
         result.setdefault(drop_logical_repo(r), set()).add(r)
+    return result
+
+
+def coerce_prefixed_logical_repos(repos: Iterable[str]) -> Dict[str, Set[str]]:
+    """Remove the logical part of the prefixed repository names + deduplicate."""
+    result = {}
+    for r in repos:
+        result.setdefault(drop_prefixed_logical_repo(r), set()).add(r)
     return result
 
 

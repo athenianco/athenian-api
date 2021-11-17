@@ -27,8 +27,11 @@ def split_logical_repositories(prs: pd.DataFrame,
             try:
                 repo_settings = logical_settings.prs(physical_repo)
             except KeyError:
+                chunks.append(prs.take(indexes))
                 continue
             for repo, logical_indexes in repo_settings.match(prs, labels, indexes).items():
+                if repo not in logical_repos:
+                    continue
                 if len(logical_indexes) < len(prs):
                     sub_df = prs.take(logical_indexes)
                 else:
@@ -37,6 +40,8 @@ def split_logical_repositories(prs: pd.DataFrame,
                 chunks.append(sub_df)
         if len(chunks):
             prs = pd.concat(chunks, copy=False)
+        else:
+            prs = prs.iloc[:0].copy()
     prs.set_index([PullRequest.node_id.name, PullRequest.repository_full_name.name],
                   inplace=True)
     prs.sort_index(inplace=True)

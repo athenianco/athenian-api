@@ -391,6 +391,40 @@ async def test_calc_histogram_prs_deployment_time(client, headers, precomputed_d
     }
 
 
+async def test_calc_histogram_prs_logical(
+        client, headers, logical_settings_db, release_match_setting_tag_logical_db):
+    body = {
+        "for": [
+            {
+                "repositories": ["github.com/src-d/go-git/alpha", "github.com/src-d/go-git/beta"],
+            },
+        ],
+        "histograms": [{
+            "metric": PullRequestMetricID.PR_REVIEW_TIME,
+            "scale": "log",
+        }],
+        "date_from": "2015-10-13",
+        "date_to": "2020-05-23",
+        "exclude_inactive": False,
+        "account": 1,
+    }
+    response = await client.request(
+        method="POST", path="/v1/histograms/pull_requests", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    body = FriendlyJson.loads(body)
+    CalculatedPullRequestHistogram.from_dict(body[0])
+    assert body[0] == {
+        "for": {"repositories": ["github.com/src-d/go-git/alpha", "github.com/src-d/go-git/beta"]},
+        "metric": "pr-review-time", "scale": "log",
+        "ticks": ["60s", "146s", "355s", "865s", "2105s", "5123s", "12470s",
+                  "30351s", "73870s", "179789s", "437576s", "1064987s", "2591999s"],
+        "frequencies": [17, 2, 9, 10, 5, 18, 10, 33, 36, 30, 15, 20],
+        "interquartile": {"left": "7950s", "right": "290128s"},
+    }
+
+
 async def test_calc_histogram_code_checks_smoke(client, headers):
     body = {
         "account": 1,
