@@ -1,4 +1,5 @@
 from datetime import timezone
+import re
 from sqlite3 import IntegrityError, OperationalError
 from typing import List, Optional
 
@@ -8,9 +9,12 @@ import databases.core
 from sqlalchemy import and_, delete, insert, select, update
 
 from athenian.api.auth import disable_default_user
-from athenian.api.controllers.account import get_metadata_account_ids, get_user_account_status
+from athenian.api.controllers.account import get_metadata_account_ids, \
+    get_metadata_account_ids_or_empty, get_user_account_status
 from athenian.api.controllers.miners.access_classes import access_classes
+from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.reposet import fetch_reposet, load_account_reposets
+from athenian.api.controllers.settings import Settings
 from athenian.api.models.state.models import RepositorySet
 from athenian.api.models.web import CreatedIdentifier, DatabaseConflict, \
     ForbiddenError, InvalidRequestError, RepositorySetWithName
@@ -68,14 +72,36 @@ async def get_reposet(request: AthenianWebRequest, id: int) -> web.Response:
     """List a repository set.
 
     :param id: Numeric identifier of the repository set to list.
-    :type id: int
+    :type id: repository set ID.
     """
-    rs, _ = await fetch_reposet(id, [RepositorySet.name, RepositorySet.items,
-                                     RepositorySet.precomputed],
-                                request.uid, request.sdb, request.cache)
-    # "items" collides with dict.items() so we have to access the list via []
+    rs_cols = [
+        RepositorySet.name,
+        RepositorySet.items,
+        RepositorySet.precomputed,
+        RepositorySet.tracking_re,
+    ]
+    rs, _ = await fetch_reposet(id, rs_cols, request.uid, request.sdb, request.cache)
+    repos = set(rs.items)
+    meta_ids = await get_metadata_account_ids_or_empty(rs.owner_id, request.sdb, request.cache)
+    if meta_ids:
+        # append logical repositories, if they exist
+        prefixer = await Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
+        settings = Settings.from_request(request, rs.owner_id)
+        logical_settings = await settings.list_logical_repositories(prefixer, rs.items)
+        regexp = re.compile(rs.tracking_re)
+        if logical_settings.has_logical_prs():
+            for repo in rs.items:
+                prefix, native_repo = repo.split("/", 1)
+                prefix += "/"
+                try:
+                    logical_repos = logical_settings.prs(native_repo).logical_repositories
+                except KeyError:
+                    continue
+                for logical_repo in logical_repos:
+                    if regexp.fullmatch(logical_repo):
+                        repos.add(prefix + logical_repo)
     return model_response(RepositorySetWithName(
-        name=rs.name, items=rs.items, precomputed=rs.precomputed))
+        name=rs.name, items=sorted(repos), precomputed=rs.precomputed))
 
 
 async def _check_reposet(request: AthenianWebRequest,
