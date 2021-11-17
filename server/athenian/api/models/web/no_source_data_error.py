@@ -11,7 +11,6 @@ class NoSourceDataError(GenericError):
         title: str = HTTPStatus.UNPROCESSABLE_ENTITY.phrase,
         status: int = HTTPStatus.UNPROCESSABLE_ENTITY,
         detail: str = None,
-        instance: str = None,
     ):
         """NoSourceDataError - a model defined in OpenAPI
 
@@ -21,4 +20,4 @@ class NoSourceDataError(GenericError):
         :param instance: The instance of this NoSourceDataError.
         """
         super().__init__(type="/errors/NoSourceDataError", title=title, status=status,
-                         detail=detail, instance=instance)
+                         detail=detail)

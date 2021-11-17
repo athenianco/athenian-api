@@ -8,7 +8,7 @@ Create Date: 2021-11-17 13:16:59.991522+00:00
 import sqlite3
 
 from alembic import op
-import psycopg2
+import psycopg2.errors
 
 
 # revision identifiers, used by Alembic.
@@ -22,7 +22,7 @@ def upgrade():
     try:
         op.execute("insert into features(name, component, enabled, default_parameters) "
                    "values ('api_channel', 'webapp', true, '\"stable\"');")
-    except (sqlite3.IntegrityError, psycopg2.IntegrityError):
+    except (sqlite3.IntegrityError, psycopg2.errors.UniqueViolation):
         pass
 
 

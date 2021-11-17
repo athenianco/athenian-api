@@ -26,7 +26,7 @@ from athenian.api.models.metadata.github import Branch
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
     DeploymentNotification
 from athenian.api.models.state.models import JIRAProjectSetting, LogicalRepository, \
-    MappedJIRAIdentity
+    MappedJIRAIdentity, ReleaseSetting
 from athenian.api.typing_utils import wraps
 
 
@@ -147,6 +147,22 @@ def release_match_setting_tag_logical(release_match_setting_tag):
         "github.com/src-d/go-git/beta": ReleaseMatchSetting(
             branches="", tags=r"v4\..*", match=ReleaseMatch.tag),
     })
+
+
+@pytest.fixture(scope="function")
+async def release_match_setting_tag_logical_db(sdb):
+    await sdb.execute(insert(ReleaseSetting).values(
+        ReleaseSetting(repository="github.com/src-d/go-git/alpha",
+                       account_id=1,
+                       branches="master",
+                       tags=".*",
+                       match=ReleaseMatch.tag).create_defaults().explode(with_primary_keys=True)))
+    await sdb.execute(insert(ReleaseSetting).values(
+        ReleaseSetting(repository="github.com/src-d/go-git/beta",
+                       account_id=1,
+                       branches="master",
+                       tags=r"v4\..*",
+                       match=ReleaseMatch.tag).create_defaults().explode(with_primary_keys=True)))
 
 
 @pytest.fixture(scope="session")

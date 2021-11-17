@@ -468,7 +468,9 @@ async def test_filter_prs_no_stages(client, headers, mdb_rw):
 
 @pytest.mark.filter_pull_requests
 @with_only_master_branch
-async def test_filter_prs_shot_updated(client, headers, mdb_rw):
+async def test_filter_prs_shot_updated(
+        client, headers, mdb_rw, release_match_setting_tag_logical_db):
+    # release_match_setting_tag_logical_db is here to save time and test that everything works
     body = {
         "date_from": "2016-10-13",
         "date_to": "2018-01-23",
@@ -689,6 +691,26 @@ async def test_filter_prs_jira_disabled_projects(client, headers, disabled_dev):
     assert response.status == 200, text
     prs = PullRequestSet.from_dict(json.loads(text))
     assert len(prs.data) == 0
+
+
+@pytest.mark.filter_pull_requests
+async def test_filter_prs_logical(
+        client, headers, logical_settings_db, release_match_setting_tag_logical_db):
+    body = {
+        "date_from": "2015-10-13",
+        "date_to": "2020-04-23",
+        "account": 1,
+        "in": ["github.com/src-d/go-git/alpha", "github.com/src-d/go-git/beta"],
+        "stages": [PullRequestStage.DONE],
+        "exclude_inactive": False,
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
+    assert response.status == 200
+    prs = PullRequestSet.from_dict(json.loads((await response.read()).decode("utf-8")))
+    assert len(prs.data) == 236
+    for pr in prs.data:
+        assert pr.repository in ["github.com/src-d/go-git/alpha", "github.com/src-d/go-git/beta"]
 
 
 open_go_git_pr_numbers = {

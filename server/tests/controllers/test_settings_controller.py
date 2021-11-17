@@ -9,13 +9,14 @@ from athenian.api import auth
 from athenian.api.async_utils import read_sql_query
 from athenian.api.controllers.logical_repos import coerce_logical_repos, contains_logical_repos, \
     drop_logical_repo
-from athenian.api.controllers.settings import Settings
+from athenian.api.controllers.settings import ReleaseMatch, Settings
 from athenian.api.models.metadata.github import NodeUser
 from athenian.api.models.state.models import AccountGitHubAccount, LogicalRepository, \
     MappedJIRAIdentity, \
     ReleaseSetting, RepositorySet, UserAccount, WorkType
 from athenian.api.models.web import JIRAProject, MappedJIRAIdentity as WebMappedJIRAIdentity, \
     ReleaseMatchSetting, ReleaseMatchStrategy, WorkType as WebWorkType
+from athenian.api.response import ResponseError
 from athenian.api.serialization import FriendlyJson
 
 
@@ -228,7 +229,7 @@ async def test_get_release_match_settings_existing(client, headers, sdb):
                        account_id=1,
                        branches="master",
                        tags="v.*",
-                       match=1).create_defaults().explode(with_primary_keys=True)))
+                       match=ReleaseMatch.tag).create_defaults().explode(with_primary_keys=True)))
     response = await client.request(
         method="GET", path="/v1/settings/release_match/1", headers=headers)
     assert response.status == 200
@@ -260,6 +261,18 @@ async def test_get_release_match_settings_nasty_input(client, headers, sdb, acco
     response = await client.request(
         method="GET", path="/v1/settings/release_match/%d" % account, headers=headers)
     assert response.status == code
+
+
+async def test_get_release_match_settings_logical_fail(sdb, mdb, logical_settings_db):
+    settings = Settings.from_account(1, sdb, mdb, None, None)
+    with pytest.raises(ResponseError, match="424"):
+        await settings.list_release_matches(["github.com/src-d/go-git/alpha"])
+
+
+async def test_get_release_match_settings_logical_success(
+        sdb, mdb, logical_settings_db, release_match_setting_tag_logical_db):
+    settings = Settings.from_account(1, sdb, mdb, None, None)
+    await settings.list_release_matches(["github.com/src-d/go-git/alpha"])
 
 
 JIRA_PROJECTS = [

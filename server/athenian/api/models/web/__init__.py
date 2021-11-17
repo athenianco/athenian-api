@@ -41,6 +41,7 @@ from athenian.api.models.web.create_token_request import CreateTokenRequest
 from athenian.api.models.web.created_identifier import CreatedIdentifier
 from athenian.api.models.web.created_token import CreatedToken
 from athenian.api.models.web.delete_events_cache_request import DeleteEventsCacheRequest
+from athenian.api.models.web.dependency_failed_error import MissingSettingsError
 from athenian.api.models.web.deployed_component import DeployedComponent
 from athenian.api.models.web.deployment_analysis import DeploymentAnalysis, \
     DeploymentAnalysisUnsealed
