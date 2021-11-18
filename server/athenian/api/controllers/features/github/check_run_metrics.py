@@ -15,8 +15,8 @@ from athenian.api.controllers.features.metric_calculator import AverageMetricCal
     make_register_metric, MaxMetricCalculator, MetricCalculator, MetricCalculatorEnsemble, \
     RatioCalculator, SumMetricCalculator
 from athenian.api.controllers.miners.github.check_run import check_suite_completed_column, \
-    check_suite_started_column, \
-    pull_request_closed_column, pull_request_merged_column, pull_request_started_column
+    check_suite_started_column, pull_request_closed_column, pull_request_merged_column, \
+    pull_request_started_column
 from athenian.api.int_to_str import int_to_str
 from athenian.api.models.metadata.github import CheckRun
 from athenian.api.models.web import CodeCheckMetricID
@@ -356,13 +356,17 @@ class RobustSuiteTimeCalculator(MetricCalculator[timedelta]):
         """Completely ignore the default boilerplate and calculate metrics from scratch."""
         structs = self._calcs[0].peek
         elapsed = structs["elapsed"]
-        meaningful_groups_mask = groups_mask & (structs["size"] > 0).any(axis=0)[None, :]
+        meaningful_groups_mask = (
+            groups_mask
+            & (structs["size"] > 0).any(axis=0)[None, :]
+            & (elapsed == elapsed)
+        )
         if self._quantiles != (0, 1):
             discard_mask = self._calculate_discard_mask(
                 elapsed, quantiles_mounted_at, meaningful_groups_mask)
             meaningful_groups_mask[discard_mask] = False
             min_times = min_times[:quantiles_mounted_at]
-            max_times = max_times[:quantiles_mounted_at]
+            # max_times = max_times[:quantiles_mounted_at]
             elapsed = elapsed[:quantiles_mounted_at]
             structs = structs[:quantiles_mounted_at]
         sizes = structs["size"].astype("S")
@@ -784,22 +788,23 @@ class ElapsedTimePerConcurrencyCalculator(MetricCalculator[object]):
                 concurrency_histogram = calculate_histogram(
                     samples["concurrency"], scale, bins, ticks)
                 concurrency_levels = np.asarray(concurrency_histogram.ticks)
-                concurrency_levels[-1] = np.ceil(concurrency_levels[-1])
-                concurrency_levels[:-1] = np.floor(concurrency_levels[:-1])
-                concurrency_levels = np.unique(concurrency_levels.astype(int, copy=False))
-                concurrency_map = np.digitize(samples["concurrency"], concurrency_levels) - 1
-                elapsed_times = np.sum(
-                    np.broadcast_to(samples["duration"][None, :],
-                                    (len(concurrency_levels) - 1, len(samples))),
-                    axis=1,
-                    where=concurrency_map == np.arange(len(concurrency_levels) - 1)[:, None])
-                group_histograms.append(Histogram(
-                    scale=concurrency_histogram.scale,
-                    bins=len(concurrency_levels) - 1,
-                    ticks=concurrency_levels.tolist(),
-                    frequencies=elapsed_times.tolist(),
-                    interquartile=concurrency_histogram.interquartile,
-                ))
+                if len(concurrency_levels):
+                    concurrency_levels[-1] = np.ceil(concurrency_levels[-1])
+                    concurrency_levels[:-1] = np.floor(concurrency_levels[:-1])
+                    concurrency_levels = np.unique(concurrency_levels.astype(int, copy=False))
+                    concurrency_map = np.digitize(samples["concurrency"], concurrency_levels) - 1
+                    elapsed_times = np.sum(
+                        np.broadcast_to(samples["duration"][None, :],
+                                        (len(concurrency_levels) - 1, len(samples))),
+                        axis=1,
+                        where=concurrency_map == np.arange(len(concurrency_levels) - 1)[:, None])
+                    group_histograms.append(Histogram(
+                        scale=concurrency_histogram.scale,
+                        bins=len(concurrency_levels) - 1,
+                        ticks=concurrency_levels.tolist(),
+                        frequencies=elapsed_times.tolist(),
+                        interquartile=concurrency_histogram.interquartile,
+                    ))
         return histograms
 
     def _calculate_discard_mask(self,

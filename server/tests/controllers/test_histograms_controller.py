@@ -3,6 +3,7 @@ import itertools
 import pytest
 
 from athenian.api.cache import CACHE_VAR_NAME
+from athenian.api.controllers.miners.github import check_run
 from athenian.api.models.web import CalculatedPullRequestHistogram, CodeCheckMetricID, \
     PullRequestMetricID
 from athenian.api.serialization import FriendlyJson
@@ -583,7 +584,8 @@ async def test_calc_histogram_code_checks_split(client, headers):
     ]
 
 
-async def test_calc_histogram_code_checks_elapsed_time_per_concurrency(client, headers):
+@pytest.mark.parametrize("patch", [False, True])
+async def test_calc_histogram_code_checks_elapsed_time_per_concurrency(client, headers, patch):
     body = {
         "account": 1,
         "date_from": "2018-01-12",
@@ -595,17 +597,26 @@ async def test_calc_histogram_code_checks_elapsed_time_per_concurrency(client, h
             "repositories": ["github.com/src-d/go-git"],
         }],
     }
-    response = await client.request(
-        method="POST", path="/v1/histograms/code_checks", headers=headers, json=body,
-    )
+    backup = check_run._erase_run_time_of_specific_check_runs
+    if patch:
+        check_run._erase_run_time_of_specific_check_runs = lambda df: None
+    try:
+        response = await client.request(
+            method="POST", path="/v1/histograms/code_checks", headers=headers, json=body,
+        )
+    finally:
+        check_run._erase_run_time_of_specific_check_runs = backup
     rbody = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + rbody
     rbody = FriendlyJson.loads(rbody)
-    assert rbody == [{
-        "metric": "chk-elapsed-time-per-concurrency",
-        "scale": "linear",
-        "ticks": [0, 2],
-        "frequencies": ["223s"],
-        "interquartile": {"left": 1.0, "right": 1.0},
-        "for": {"repositories": ["github.com/src-d/go-git"]},
-    }]
+    if patch:
+        assert rbody == [{
+            "metric": "chk-elapsed-time-per-concurrency",
+            "scale": "linear",
+            "ticks": [0, 2],
+            "frequencies": ["223s"],
+            "interquartile": {"left": 1.0, "right": 1.0},
+            "for": {"repositories": ["github.com/src-d/go-git"]},
+        }]
+    else:
+        assert rbody == []

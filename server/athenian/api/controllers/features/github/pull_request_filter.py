@@ -635,7 +635,7 @@ async def _load_failed_check_runs_for_prs(time_from: datetime,
                                           cache: Optional[aiomcache.Client],
                                           ) -> Tuple[np.ndarray, List[np.ndarray]]:
     df = await mine_check_runs(
-        time_from, time_to, repos, [], labels, jira, True, meta_ids, mdb, cache)
+        time_from, time_to, repos, [], labels, jira, True, False, meta_ids, mdb, cache)
     index, pull_requests, failure_mask = \
         MergedPRsWithFailedChecksCounter.find_prs_merged_with_failed_check_runs(df)
     check_run_names = df[CheckRun.name.name].values[index.values]
