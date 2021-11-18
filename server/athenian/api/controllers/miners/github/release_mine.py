@@ -15,6 +15,7 @@ from sqlalchemy import and_, func, select, union_all
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached, CancelCache, short_term_exptime
+from athenian.api.controllers.logical_repos import coerce_logical_repos, drop_logical_repo
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.commit import fetch_precomputed_commit_history_dags, \
@@ -211,13 +212,13 @@ async def _mine_releases(repos: Iterable[str],
                 account, meta_ids, mdb, pdb, rdb, cache,
                 releases_in_time_range=releases_in_time_range),
             ReleaseToPullRequestMapper._fetch_repository_first_commit_dates(
-                missing_repos, account, meta_ids, mdb, pdb, cache),
+                coerce_logical_repos(missing_repos).keys(), account, meta_ids, mdb, pdb, cache),
             description="mine_releases/commits",
         )
 
         all_hashes = []
         for repo, repo_releases in releases.groupby(Release.repository_full_name.name, sort=False):
-            hashes, vertexes, edges = dags[repo]
+            hashes, vertexes, edges = dags[drop_logical_repo(repo)]
             if len(hashes) == 0:
                 log.error("%s has an empty commit DAG, skipped from mining releases", repo)
                 continue
@@ -366,7 +367,7 @@ async def _mine_releases(repos: Iterable[str],
                             - repo_releases[Release.published_at.name]._ixs(my_parents[0])
                         )
                     else:
-                        my_age = my_published_at - first_commit_dates[repo]
+                        my_age = my_published_at - first_commit_dates[drop_logical_repo(repo)]
                     if my_author is not None:
                         mentioned_authors.add(my_author)
                     computed_release_info_by_commit[my_commit] = (
@@ -378,22 +379,24 @@ async def _mine_releases(repos: Iterable[str],
                         my_age, my_additions, my_deletions, commits_count, my_prs,
                         my_commit_authors,
                     ) = dupe
-                data.append(({Release.node_id.name: my_id,
-                              Release.name.name: my_name or my_tag,
-                              Release.repository_full_name.name:
-                                  prefixer.repo_name_to_prefixed_name[repo],
-                              Release.url.name: my_url,
-                              Release.sha.name: my_commit},
-                             ReleaseFacts.from_fields(published=my_published_at,
-                                                      publisher=my_author,
-                                                      matched_by=ReleaseMatch(my_matched_by),
-                                                      age=my_age,
-                                                      additions=my_additions,
-                                                      deletions=my_deletions,
-                                                      commits_count=commits_count,
-                                                      commit_authors=my_commit_authors,
-                                                      **my_prs,
-                                                      repository_full_name=repo)))
+                data.append((
+                    {
+                        Release.node_id.name: my_id,
+                        Release.name.name: my_name or my_tag,
+                        Release.repository_full_name.name: prefixer.prefix_logical_repo(repo),
+                        Release.url.name: my_url,
+                        Release.sha.name: my_commit,
+                    },
+                    ReleaseFacts.from_fields(published=my_published_at,
+                                             publisher=my_author,
+                                             matched_by=ReleaseMatch(my_matched_by),
+                                             age=my_age,
+                                             additions=my_additions,
+                                             deletions=my_deletions,
+                                             commits_count=commits_count,
+                                             commit_authors=my_commit_authors,
+                                             **my_prs,
+                                             repository_full_name=repo)))
                 if len(data) % 500 == 0:
                     await asyncio.sleep(0)
         if data:
