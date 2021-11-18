@@ -120,8 +120,8 @@ async def filter_repositories(request: AthenianWebRequest, body: dict) -> web.Re
         raise ResponseError(InvalidRequestError("?", detail=str(e)))
     time_from, time_to, repos, meta_ids, prefixer = await _common_filter_preprocess(
         filt, request, strip_prefix=False)
-    release_settings = \
-        await Settings.from_request(request, filt.account).list_release_matches(repos)
+    settings = Settings.from_request(request, filt.account)
+    release_settings = await settings.list_release_matches(repos)
     repos = [r.split("/", 1)[1] for r in repos]
     repos = await mine_repositories(
         repos, time_from, time_to, filt.exclude_inactive, release_settings, prefixer,

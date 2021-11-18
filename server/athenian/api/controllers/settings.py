@@ -19,7 +19,7 @@ from athenian.api.controllers.prefixer import PrefixerPromise
 from athenian.api.controllers.reposet import resolve_repos
 from athenian.api.db import ParallelDatabase
 from athenian.api.models.metadata.github import PullRequest, PullRequestLabel
-from athenian.api.models.state.models import LogicalRepository, ReleaseSetting
+from athenian.api.models.state.models import LogicalRepository, ReleaseSetting, RepositorySet
 from athenian.api.models.web import InvalidRequestError, MissingSettingsError, ReleaseMatchStrategy
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError
@@ -377,6 +377,25 @@ class LogicalRepositorySettings:
             except KeyError:
                 continue
         return False
+
+    def append_logical_repos_to_reposet(self, rs: RepositorySet) -> Collection[str]:
+        """Insert all the configured logical repositories that point at the physical repositories \
+        in the repository set."""
+        if not self.has_logical_prs():
+            return rs.items
+        repos = set(rs.items)
+        for repo in rs.items:
+            regexp = re.compile(rs.tracking_re)
+            prefix, native_repo = repo.split("/", 1)
+            prefix += "/"
+            try:
+                logical_repos = self.prs(native_repo).logical_repositories
+            except KeyError:
+                continue
+            for logical_repo in logical_repos:
+                if regexp.fullmatch(logical_repo):
+                    repos.add(prefix + logical_repo)
+        return repos
 
 
 class Settings:
