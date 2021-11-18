@@ -174,12 +174,15 @@ def main():
                     return_code = 1
                     num_teams = num_bots = 0
             await match_jira_identities(reposet.owner_id, meta_ids, sdb, mdb, slack, cache)
-            repos = {r.split("/", 1)[1] for r in reposet.items}
             settings = Settings.from_account(reposet.owner_id, sdb, mdb, cache, None)
             release_settings, logical_settings = await gather(
                 settings.list_release_matches(reposet.items),
                 settings.list_logical_repositories(prefixer, reposet.items),
             )
+            repos = {
+                r.split("/", 1)[1]
+                for r in logical_settings.append_logical_repos_to_reposet(reposet)
+            }
             log.info("Heating reposet %d of account %d (%d repos)",
                      reposet.id, reposet.owner_id, len(repos))
             try:

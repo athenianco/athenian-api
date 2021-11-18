@@ -1,5 +1,4 @@
 from datetime import timezone
-import re
 from sqlite3 import IntegrityError, OperationalError
 from typing import List, Optional
 
@@ -16,8 +15,8 @@ from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.reposet import fetch_reposet, load_account_reposets
 from athenian.api.controllers.settings import Settings
 from athenian.api.models.state.models import RepositorySet
-from athenian.api.models.web import CreatedIdentifier, DatabaseConflict, \
-    ForbiddenError, InvalidRequestError, RepositorySetWithName
+from athenian.api.models.web import CreatedIdentifier, DatabaseConflict, ForbiddenError, \
+    InvalidRequestError, RepositorySetWithName
 from athenian.api.models.web.repository_set_create_request import RepositorySetCreateRequest
 from athenian.api.models.web.repository_set_list_item import RepositorySetListItem
 from athenian.api.request import AthenianWebRequest
@@ -88,18 +87,7 @@ async def get_reposet(request: AthenianWebRequest, id: int) -> web.Response:
         prefixer = await Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
         settings = Settings.from_request(request, rs.owner_id)
         logical_settings = await settings.list_logical_repositories(prefixer, rs.items)
-        regexp = re.compile(rs.tracking_re)
-        if logical_settings.has_logical_prs():
-            for repo in rs.items:
-                prefix, native_repo = repo.split("/", 1)
-                prefix += "/"
-                try:
-                    logical_repos = logical_settings.prs(native_repo).logical_repositories
-                except KeyError:
-                    continue
-                for logical_repo in logical_repos:
-                    if regexp.fullmatch(logical_repo):
-                        repos.add(prefix + logical_repo)
+        repos = logical_settings.append_logical_repos_to_reposet(rs)
     return model_response(RepositorySetWithName(
         name=rs.name, items=sorted(repos), precomputed=rs.precomputed))
 
