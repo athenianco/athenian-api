@@ -69,13 +69,13 @@ async def test_filter_repositories_no_repos(client, headers):
 @with_defer
 async def test_filter_repositories_smoke(
         metrics_calculator_factory, client, headers, mdb, pdb, rdb, release_match_setting_tag,
-        prefixer_promise):
+        prefixer):
     metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(2017, 9, 15, tzinfo=timezone.utc)
     time_to = datetime(2017, 9, 18, tzinfo=timezone.utc)
     args = (time_from, time_to, {"src-d/go-git"}, {},
             LabelFilter.empty(), JIRAFilter.empty(),
-            False, release_match_setting_tag, LogicalRepositorySettings.empty(), prefixer_promise,
+            False, release_match_setting_tag, LogicalRepositorySettings.empty(), prefixer,
             False, False)
     await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
     await wait_deferred()
@@ -100,14 +100,14 @@ async def test_filter_repositories_smoke(
 @pytest.mark.filter_repositories
 @with_defer
 async def test_filter_repositories_exclude_inactive_precomputed(
-        metrics_calculator_factory, client, headers, release_match_setting_tag, prefixer_promise):
+        metrics_calculator_factory, client, headers, release_match_setting_tag, prefixer):
     metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(2017, 9, 15, tzinfo=timezone.utc)
     time_to = datetime(2017, 9, 18, tzinfo=timezone.utc)
     args = (time_from, time_to, {"src-d/go-git"}, {},
             LabelFilter.empty(), JIRAFilter.empty(),
             False, release_match_setting_tag, LogicalRepositorySettings.empty(),
-            prefixer_promise, False, False)
+            prefixer, False, False)
     await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
     await wait_deferred()
     body = {
@@ -200,6 +200,39 @@ async def test_filter_repositories_nasty_input(client, headers, account, date_to
     response = await client.request(
         method="POST", path="/v1/filter/repositories", headers=headers, json=body)
     assert response.status == code
+
+
+@pytest.mark.filter_repositories
+@with_defer
+async def test_filter_repositories_logical(
+        metrics_calculator_factory, client, headers, mdb, pdb, rdb,
+        release_match_setting_tag_logical, release_match_setting_tag_logical_db,
+        prefixer, logical_settings, logical_settings_db):
+    metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
+    time_from = datetime(2017, 9, 15, tzinfo=timezone.utc)
+    time_to = datetime(2018, 1, 18, tzinfo=timezone.utc)
+    args = (time_from, time_to, {"src-d/go-git", "src-d/go-git/alpha"}, {},
+            LabelFilter.empty(), JIRAFilter.empty(),
+            False, release_match_setting_tag_logical, logical_settings, prefixer,
+            False, False)
+    await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
+    await wait_deferred()
+    body = {
+        "date_from": "2017-09-16",
+        "date_to": "2018-01-17",
+        "timezone": 60,
+        "account": 1,
+        "in": [],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/repositories", headers=headers, json=body)
+    repos = json.loads((await response.read()).decode("utf-8"))
+    assert set(repos) == {"github.com/src-d/go-git", "github.com/src-d/go-git/alpha"}
+    body["in"] = ["github.com/src-d/go-git/alpha"]
+    response = await client.request(
+        method="POST", path="/v1/filter/repositories", headers=headers, json=body)
+    repos = json.loads((await response.read()).decode("utf-8"))
+    assert repos == ["github.com/src-d/go-git/alpha"]
 
 
 @pytest.mark.filter_contributors
@@ -1533,7 +1566,7 @@ async def test_filter_releases_by_labels(client, headers):
 @pytest.mark.filter_releases
 @with_defer
 async def test_filter_releases_deployments(
-        client, headers, release_match_setting_tag_or_branch, prefixer_promise, branches,
+        client, headers, release_match_setting_tag_or_branch, prefixer, branches,
         default_branches, mdb, pdb, rdb, dummy_deployment_label):
     await mine_deployments(
         [40550], {},
@@ -1542,7 +1575,7 @@ async def test_filter_releases_deployments(
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_match_setting_tag_or_branch,
         LogicalRepositorySettings.empty(),
-        branches, default_branches, prefixer_promise,
+        branches, default_branches, prefixer,
         1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     body = {
@@ -1616,7 +1649,7 @@ async def test_get_prs_nasty_input(client, headers, account, repo, numbers, stat
 @with_defer
 async def test_get_prs_deployments(
         client, headers, mdb, pdb, rdb, release_match_setting_tag, branches, default_branches,
-        prefixer_promise, precomputed_deployments, detect_deployments):
+        prefixer, precomputed_deployments, detect_deployments):
     body = {
         "account": 1,
         "prs": [
@@ -2077,7 +2110,7 @@ async def test_diff_releases_smoke(client, headers):
 @pytest.mark.flaky(reruns=3)
 @with_defer
 async def test_diff_releases_commits(
-        client, headers, mdb, pdb, rdb, release_match_setting_branch, prefixer_promise,
+        client, headers, mdb, pdb, rdb, release_match_setting_branch, prefixer,
         branches, default_branches):
     # d105e15d91e7553d9d40d6e9fffe0a5008cf8afe
     # 31a249d0d5b71bc0f374d3297247d89808263a8b
@@ -2099,7 +2132,7 @@ async def test_diff_releases_commits(
     releases, _, _, _ = await mine_releases(
         ["src-d/go-git"], {}, branches, default_branches, time_from, time_to,
         LabelFilter.empty(), JIRAFilter.empty(), release_match_setting_branch,
-        LogicalRepositorySettings.empty(), prefixer_promise,
+        LogicalRepositorySettings.empty(), prefixer,
         1, (6366825,), mdb, pdb, rdb, None, with_deployments=False, with_pr_titles=False)
     await wait_deferred()
 

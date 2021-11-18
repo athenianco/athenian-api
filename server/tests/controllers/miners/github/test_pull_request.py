@@ -35,7 +35,7 @@ from tests.controllers.test_filter_controller import force_push_dropped_go_git_p
 @with_defer
 async def test_pr_miner_iter_smoke(
         branches, default_branches, mdb, pdb, rdb, release_match_setting_tag,
-        pr_miner, prefixer_promise):
+        pr_miner, prefixer):
     date_from = date(year=2015, month=1, day=1)
     date_to = date(year=2020, month=1, day=1)
     miner, _, _, _ = await pr_miner.mine(
@@ -52,7 +52,7 @@ async def test_pr_miner_iter_smoke(
         False,
         release_match_setting_tag,
         LogicalRepositorySettings.empty(),
-        prefixer_promise,
+        prefixer,
         1,
         (6366825,),
         mdb,
@@ -79,7 +79,7 @@ async def test_pr_miner_iter_smoke(
 @with_defer
 async def test_pr_miner_blacklist(
         branches, default_branches, mdb, pdb, rdb, release_match_setting_tag, pr_miner,
-        prefixer_promise):
+        prefixer):
     date_from = date(year=2017, month=1, day=1)
     date_to = date(year=2017, month=1, day=12)
     miner, _, _, _ = await pr_miner.mine(
@@ -96,7 +96,7 @@ async def test_pr_miner_blacklist(
         False,
         release_match_setting_tag,
         LogicalRepositorySettings.empty(),
-        prefixer_promise,
+        prefixer,
         1,
         (6366825,),
         mdb,
@@ -125,7 +125,7 @@ async def test_pr_miner_blacklist(
         False,
         release_match_setting_tag,
         LogicalRepositorySettings.empty(),
-        prefixer_promise,
+        prefixer,
         1,
         (6366825,),
         mdb,
@@ -141,7 +141,7 @@ async def test_pr_miner_blacklist(
 @with_defer
 async def test_pr_miner_iter_cache_compatible(
         branches, default_branches, mdb, pdb, rdb, cache, release_match_setting_tag,
-        pr_miner, prefixer_promise):
+        pr_miner, prefixer):
     date_from = date(year=2015, month=1, day=1)
     date_to = date(year=2020, month=1, day=1)
     args = [
@@ -158,7 +158,7 @@ async def test_pr_miner_iter_cache_compatible(
         False,
         release_match_setting_tag,
         LogicalRepositorySettings.empty(),
-        prefixer_promise,
+        prefixer,
         1,
         (6366825,),
         mdb,
@@ -211,7 +211,7 @@ async def test_pr_miner_iter_cache_compatible(
 @with_defer
 async def test_pr_miner_iter_cache_incompatible(
         branches, default_branches, mdb, pdb, rdb, cache, release_match_setting_tag,
-        pr_miner, prefixer_promise):
+        pr_miner, prefixer):
     date_from = date(year=2018, month=1, day=1)
     date_to = date(year=2020, month=1, day=1)
     args = [
@@ -228,7 +228,7 @@ async def test_pr_miner_iter_cache_incompatible(
         False,
         release_match_setting_tag,
         LogicalRepositorySettings.empty(),
-        prefixer_promise,
+        prefixer,
         1,
         (6366825,),
         mdb,
@@ -263,7 +263,7 @@ async def test_pr_miner_iter_cache_incompatible(
 @with_defer
 async def test_pr_miner_cache_pr_blacklist(
         branches, default_branches, mdb, pdb, rdb, cache, release_match_setting_tag,
-        pr_miner, prefixer_promise, with_memcached, memcached):
+        pr_miner, prefixer, with_memcached, memcached):
     """https://athenianco.atlassian.net/browse/DEV-206"""
     if with_memcached:
         if not has_memcached:
@@ -285,7 +285,7 @@ async def test_pr_miner_cache_pr_blacklist(
         False,
         release_match_setting_tag,
         LogicalRepositorySettings.empty(),
-        prefixer_promise,
+        prefixer,
         1,
         (6366825,),
         mdb,
@@ -318,7 +318,7 @@ async def test_pr_miner_cache_pr_blacklist(
 @with_defer
 async def test_pr_miner_participant_filters(
         branches, default_branches, mdb, pdb, rdb, release_match_setting_tag, pk,
-        pr_miner, prefixer_promise):
+        pr_miner, prefixer):
     date_from = date(year=2015, month=1, day=1)
     date_to = date(year=2020, month=1, day=1)
     miner, _, _, _ = await pr_miner.mine(
@@ -335,7 +335,7 @@ async def test_pr_miner_participant_filters(
         False,
         release_match_setting_tag,
         LogicalRepositorySettings.empty(),
-        prefixer_promise,
+        prefixer,
         1,
         (6366825,),
         mdb,
@@ -411,7 +411,7 @@ def validate_pull_request_facts(prmeta: Dict[str, Any], prt: PullRequestFacts):
 @with_defer
 async def test_pr_facts_miner_smoke(
         branches, default_branches, mdb, pdb, rdb, release_match_setting_tag, pr_miner,
-        prefixer_promise):
+        prefixer):
     date_from = date(year=2015, month=1, day=1)
     date_to = date(year=2020, month=1, day=1)
     miner, _, _, _ = await pr_miner.mine(
@@ -428,7 +428,7 @@ async def test_pr_facts_miner_smoke(
         False,
         release_match_setting_tag,
         LogicalRepositorySettings.empty(),
-        prefixer_promise,
+        prefixer,
         1,
         (6366825,),
         mdb,
@@ -445,7 +445,7 @@ async def test_pr_facts_miner_smoke(
 @with_defer
 async def test_pr_facts_miner_empty_review_comments(
         branches, default_branches, mdb, pdb, rdb, release_match_setting_tag, pr_miner,
-        prefixer_promise):
+        prefixer):
     date_from = date(year=2015, month=1, day=1)
     date_to = date(year=2020, month=1, day=1)
     miner, _, _, _ = await pr_miner.mine(
@@ -462,7 +462,7 @@ async def test_pr_facts_miner_empty_review_comments(
         False,
         release_match_setting_tag,
         LogicalRepositorySettings.empty(),
-        prefixer_promise,
+        prefixer,
         1,
         (6366825,),
         mdb,
@@ -480,7 +480,7 @@ async def test_pr_facts_miner_empty_review_comments(
 @with_defer
 async def test_pr_facts_miner_empty_commits(
         branches, default_branches, mdb, pdb, rdb, release_match_setting_tag, pr_miner,
-        prefixer_promise):
+        prefixer):
     date_from = date(year=2015, month=1, day=1)
     date_to = date(year=2020, month=1, day=1)
     miner, _, _, _ = await pr_miner.mine(
@@ -497,7 +497,7 @@ async def test_pr_facts_miner_empty_commits(
         False,
         release_match_setting_tag,
         LogicalRepositorySettings.empty(),
-        prefixer_promise,
+        prefixer,
         1,
         (6366825,),
         mdb,
@@ -515,7 +515,7 @@ async def test_pr_facts_miner_empty_commits(
 @with_defer
 async def test_pr_facts_miner_bug_less_timestamp_float(
         branches, default_branches, mdb, pdb, rdb, release_match_setting_tag, pr_miner,
-        prefixer_promise):
+        prefixer):
     date_from = date(2019, 10, 16) - timedelta(days=3)
     date_to = date(2019, 10, 16)
     miner, _, _, _ = await pr_miner.mine(
@@ -532,7 +532,7 @@ async def test_pr_facts_miner_bug_less_timestamp_float(
         False,
         release_match_setting_tag,
         LogicalRepositorySettings.empty(),
-        prefixer_promise,
+        prefixer,
         1,
         (6366825,),
         mdb,
@@ -549,7 +549,7 @@ async def test_pr_facts_miner_bug_less_timestamp_float(
 
 @with_defer
 async def test_pr_facts_miner_empty_releases(branches, default_branches, mdb, pdb, rdb,
-                                             pr_miner, prefixer_promise):
+                                             pr_miner, prefixer):
     date_from = date(year=2017, month=1, day=1)
     date_to = date(year=2018, month=1, day=1)
     miner, _, _, _ = await pr_miner.mine(
@@ -567,7 +567,7 @@ async def test_pr_facts_miner_empty_releases(branches, default_branches, mdb, pd
         ReleaseSettings({"github.com/src-d/go-git": ReleaseMatchSetting(
             branches="unknown", tags="", match=ReleaseMatch.branch)}),
         LogicalRepositorySettings.empty(),
-        prefixer_promise,
+        prefixer,
         1,
         (6366825,),
         mdb,
@@ -583,7 +583,7 @@ async def test_pr_facts_miner_empty_releases(branches, default_branches, mdb, pd
 
 @with_defer
 async def test_pr_mine_by_ids(branches, default_branches, dag, mdb, pdb, rdb, cache,
-                              release_loader, pr_miner, prefixer_promise):
+                              release_loader, pr_miner, prefixer):
     date_from = date(year=2017, month=1, day=1)
     date_to = date(year=2018, month=1, day=1)
     time_from = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
@@ -606,7 +606,7 @@ async def test_pr_mine_by_ids(branches, default_branches, dag, mdb, pdb, rdb, ca
         False,
         release_settings,
         LogicalRepositorySettings.empty(),
-        prefixer_promise,
+        prefixer,
         1,
         (6366825,),
         mdb,
@@ -620,7 +620,7 @@ async def test_pr_mine_by_ids(branches, default_branches, dag, mdb, pdb, rdb, ca
     prs.set_index(PullRequest.node_id.name, inplace=True)
     releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"], branches, default_branches, time_from, time_to,
-        release_settings, LogicalRepositorySettings.empty(), prefixer_promise,
+        release_settings, LogicalRepositorySettings.empty(), prefixer,
         1, (6366825,), mdb, pdb, rdb, cache)
     dfs1, _, _ = await pr_miner.mine_by_ids(
         prs,
@@ -633,7 +633,7 @@ async def test_pr_mine_by_ids(branches, default_branches, dag, mdb, pdb, rdb, ca
         dag,
         release_settings,
         LogicalRepositorySettings.empty(),
-        prefixer_promise,
+        prefixer,
         1,
         (6366825,),
         mdb,
@@ -653,7 +653,7 @@ async def test_pr_mine_by_ids(branches, default_branches, dag, mdb, pdb, rdb, ca
         dag,
         release_settings,
         LogicalRepositorySettings.empty(),
-        prefixer_promise,
+        prefixer,
         1,
         (6366825,),
         mdb,
@@ -685,7 +685,7 @@ async def test_pr_mine_by_ids(branches, default_branches, dag, mdb, pdb, rdb, ca
 @with_defer
 async def test_pr_miner_exclude_inactive(
         branches, default_branches, mdb, pdb, rdb, release_match_setting_tag, pr_miner,
-        prefixer_promise):
+        prefixer):
     date_from = date(year=2017, month=1, day=1)
     date_to = date(year=2017, month=1, day=12)
     miner, _, _, _ = await pr_miner.mine(
@@ -702,7 +702,7 @@ async def test_pr_miner_exclude_inactive(
         True,
         release_match_setting_tag,
         LogicalRepositorySettings.empty(),
-        prefixer_promise,
+        prefixer,
         1,
         (6366825,),
         mdb,
@@ -720,7 +720,7 @@ async def test_pr_miner_exclude_inactive(
 
 @with_defer
 async def test_pr_miner_unreleased_pdb(mdb, pdb, rdb, release_match_setting_tag,
-                                       pr_miner, prefixer_promise):
+                                       pr_miner, prefixer):
     time_from = datetime(2018, 11, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
     miner_incomplete, _, _, _ = await pr_miner.mine(
@@ -729,7 +729,7 @@ async def test_pr_miner_unreleased_pdb(mdb, pdb, rdb, release_match_setting_tag,
         pd.DataFrame(columns=[Branch.commit_id.name, Branch.commit_sha.name,
                               Branch.repository_full_name.name]),
         {}, False, release_match_setting_tag, LogicalRepositorySettings.empty(),
-        prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
+        prefixer, 1, (6366825,), mdb, pdb, rdb, None)
     time_from_lookback = time_from - timedelta(days=60)
     await wait_deferred()
     # populate pdb
@@ -739,7 +739,7 @@ async def test_pr_miner_unreleased_pdb(mdb, pdb, rdb, release_match_setting_tag,
         pd.DataFrame(columns=[Branch.commit_id.name, Branch.commit_sha.name,
                               Branch.repository_full_name.name]),
         {}, False, release_match_setting_tag, LogicalRepositorySettings.empty(),
-        prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
+        prefixer, 1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     miner_complete, facts, _, _ = await pr_miner.mine(
         time_from.date(), time_to.date(), time_from, time_to,
@@ -747,7 +747,7 @@ async def test_pr_miner_unreleased_pdb(mdb, pdb, rdb, release_match_setting_tag,
         pd.DataFrame(columns=[Branch.commit_id.name, Branch.commit_sha.name,
                               Branch.repository_full_name.name]),
         {}, False, release_match_setting_tag, LogicalRepositorySettings.empty(),
-        prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
+        prefixer, 1, (6366825,), mdb, pdb, rdb, None)
     assert isinstance(facts, dict)
     assert len(facts) == 0
     await wait_deferred()
@@ -759,13 +759,13 @@ async def test_pr_miner_unreleased_pdb(mdb, pdb, rdb, release_match_setting_tag,
         pd.DataFrame(columns=[Branch.commit_id.name, Branch.commit_sha.name,
                               Branch.repository_full_name.name]),
         {}, True, release_match_setting_tag, LogicalRepositorySettings.empty(),
-        prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
+        prefixer, 1, (6366825,), mdb, pdb, rdb, None)
     assert len(miner_active._dfs.prs) <= 19
 
 
 @with_defer
 async def test_pr_miner_labels_torture(mdb, pdb, rdb, release_match_setting_tag, cache,
-                                       pr_miner, prefixer_promise):
+                                       pr_miner, prefixer):
     time_from = datetime(2018, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
     miner, _, _, _ = await pr_miner.mine(
@@ -774,7 +774,7 @@ async def test_pr_miner_labels_torture(mdb, pdb, rdb, release_match_setting_tag,
         pd.DataFrame(columns=[Branch.commit_id.name, Branch.commit_sha.name,
                               Branch.repository_full_name.name]),
         {}, False, release_match_setting_tag, LogicalRepositorySettings.empty(),
-        prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
+        prefixer, 1, (6366825,), mdb, pdb, rdb, None)
     prs = list(miner)
     assert {pr.pr[PullRequest.number.name] for pr in prs} == {887, 921, 958, 947, 950, 949}
     miner, _, _, _ = await pr_miner.mine(
@@ -783,7 +783,7 @@ async def test_pr_miner_labels_torture(mdb, pdb, rdb, release_match_setting_tag,
         pd.DataFrame(columns=[Branch.commit_id.name, Branch.commit_sha.name,
                               Branch.repository_full_name.name]),
         {}, False, release_match_setting_tag, LogicalRepositorySettings.empty(),
-        prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
+        prefixer, 1, (6366825,), mdb, pdb, rdb, cache)
     prs = list(miner)
     assert {pr.pr[PullRequest.number.name] for pr in prs} == {887, 921, 958, 947, 950, 949}
     miner, _, _, _ = await pr_miner.mine(
@@ -792,7 +792,7 @@ async def test_pr_miner_labels_torture(mdb, pdb, rdb, release_match_setting_tag,
         pd.DataFrame(columns=[Branch.commit_id.name, Branch.commit_sha.name,
                               Branch.repository_full_name.name]),
         {}, False, release_match_setting_tag, LogicalRepositorySettings.empty(),
-        prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
+        prefixer, 1, (6366825,), mdb, pdb, rdb, cache)
     prs = list(miner)
     assert {pr.pr[PullRequest.number.name] for pr in prs} == {921, 940, 946, 950, 958}
     await pr_miner.mine(
@@ -801,14 +801,14 @@ async def test_pr_miner_labels_torture(mdb, pdb, rdb, release_match_setting_tag,
         pd.DataFrame(columns=[Branch.commit_id.name, Branch.commit_sha.name,
                               Branch.repository_full_name.name]),
         {}, False, release_match_setting_tag, LogicalRepositorySettings.empty(),
-        prefixer_promise, 1, (6366825,), mdb, pdb, rdb, cache)
+        prefixer, 1, (6366825,), mdb, pdb, rdb, cache)
     miner, _, _, _ = await pr_miner.mine(
         time_from.date(), time_to.date(), time_from, time_to, {"src-d/go-git"}, {},
         LabelFilter({"bug", "plumbing"}, set()), JIRAFilter.empty(), False,
         pd.DataFrame(columns=[Branch.commit_id.name, Branch.commit_sha.name,
                               Branch.repository_full_name.name]),
         {}, False, release_match_setting_tag, LogicalRepositorySettings.empty(),
-        prefixer_promise, 1, (6366825,), None, None, None, cache)
+        prefixer, 1, (6366825,), None, None, None, cache)
     prs = list(miner)
     assert {pr.pr[PullRequest.number.name] for pr in prs} == {921, 940, 946, 950, 958}
     miner, _, _, _ = await pr_miner.mine(
@@ -817,7 +817,7 @@ async def test_pr_miner_labels_torture(mdb, pdb, rdb, release_match_setting_tag,
         pd.DataFrame(columns=[Branch.commit_id.name, Branch.commit_sha.name,
                               Branch.repository_full_name.name]),
         {}, False, release_match_setting_tag, LogicalRepositorySettings.empty(),
-        prefixer_promise, 1, (6366825,), None, None, None, cache)
+        prefixer, 1, (6366825,), None, None, None, cache)
     prs = list(miner)
     assert {pr.pr[PullRequest.number.name] for pr in prs} == {921, 950, 958}
     miner, _, _, _ = await pr_miner.mine(
@@ -826,7 +826,7 @@ async def test_pr_miner_labels_torture(mdb, pdb, rdb, release_match_setting_tag,
         pd.DataFrame(columns=[Branch.commit_id.name, Branch.commit_sha.name,
                               Branch.repository_full_name.name]),
         {}, False, release_match_setting_tag, LogicalRepositorySettings.empty(),
-        prefixer_promise, 1, (6366825,), None, None, None, cache)
+        prefixer, 1, (6366825,), None, None, None, cache)
     prs = list(miner)
     assert {pr.pr[PullRequest.number.name] for pr in prs} == {921}
     miner, _, _, _ = await pr_miner.mine(
@@ -835,7 +835,7 @@ async def test_pr_miner_labels_torture(mdb, pdb, rdb, release_match_setting_tag,
         pd.DataFrame(columns=[Branch.commit_id.name, Branch.commit_sha.name,
                               Branch.repository_full_name.name]),
         {}, False, release_match_setting_tag, LogicalRepositorySettings.empty(),
-        prefixer_promise, 1, (6366825,), mdb, pdb, rdb,
+        prefixer, 1, (6366825,), mdb, pdb, rdb,
         None)
     prs = list(miner)
     assert {pr.pr[PullRequest.number.name] for pr in prs} == {921}
@@ -845,7 +845,7 @@ async def test_pr_miner_labels_torture(mdb, pdb, rdb, release_match_setting_tag,
         pd.DataFrame(columns=[Branch.commit_id.name, Branch.commit_sha.name,
                               Branch.repository_full_name.name]),
         {}, False, release_match_setting_tag, LogicalRepositorySettings.empty(),
-        prefixer_promise, 1, (6366825,), None, None, None, cache)
+        prefixer, 1, (6366825,), None, None, None, cache)
     assert event.is_set()
     prs = list(miner)
     assert {pr.pr[PullRequest.number.name] for pr in prs} == {921}
@@ -853,7 +853,7 @@ async def test_pr_miner_labels_torture(mdb, pdb, rdb, release_match_setting_tag,
 
 @with_defer
 async def test_pr_miner_labels_unreleased(mdb, pdb, rdb, release_match_setting_tag,
-                                          pr_miner, prefixer_promise):
+                                          pr_miner, prefixer):
     time_from = datetime(2018, 11, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
     time_from_lookback = time_from - timedelta(days=60)
@@ -864,7 +864,7 @@ async def test_pr_miner_labels_unreleased(mdb, pdb, rdb, release_match_setting_t
         pd.DataFrame(columns=[Branch.commit_id.name, Branch.commit_sha.name,
                               Branch.repository_full_name.name]),
         {}, False, release_match_setting_tag, LogicalRepositorySettings.empty(),
-        prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
+        prefixer, 1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     miner_complete, _, _, _ = await pr_miner.mine(
         time_from.date(), time_to.date(), time_from, time_to,
@@ -872,7 +872,7 @@ async def test_pr_miner_labels_unreleased(mdb, pdb, rdb, release_match_setting_t
         pd.DataFrame(columns=[Branch.commit_id.name, Branch.commit_sha.name,
                               Branch.repository_full_name.name]),
         {}, False, release_match_setting_tag, LogicalRepositorySettings.empty(),
-        prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None,
+        prefixer, 1, (6366825,), mdb, pdb, rdb, None,
         pr_blacklist=([163242,
                        163253,
                        163272], {}))
@@ -884,7 +884,7 @@ async def test_pr_miner_labels_unreleased(mdb, pdb, rdb, release_match_setting_t
         pd.DataFrame(columns=[Branch.commit_id.name, Branch.commit_sha.name,
                               Branch.repository_full_name.name]),
         {}, False, release_match_setting_tag, LogicalRepositorySettings.empty(),
-        prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None,
+        prefixer, 1, (6366825,), mdb, pdb, rdb, None,
         pr_blacklist=([163242,
                        163253,
                        163272], {}))
@@ -896,14 +896,14 @@ async def test_pr_miner_labels_unreleased(mdb, pdb, rdb, release_match_setting_t
         pd.DataFrame(columns=[Branch.commit_id.name, Branch.commit_sha.name,
                               Branch.repository_full_name.name]),
         {}, True, release_match_setting_tag, LogicalRepositorySettings.empty(),
-        prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None)
+        prefixer, 1, (6366825,), mdb, pdb, rdb, None)
     assert len(miner_complete._dfs.prs) == 0
 
 
 @with_explicit_defer
 async def test_pr_miner_unreleased_facts(
         branches, default_branches, mdb, pdb, rdb, release_match_setting_tag,
-        merged_prs_facts_loader, pr_miner, with_preloading_enabled, prefixer_promise):
+        merged_prs_facts_loader, pr_miner, with_preloading_enabled, prefixer):
     date_from = date(year=2018, month=1, day=1)
     date_to = date(year=2020, month=4, day=1)
     time_from = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
@@ -922,7 +922,7 @@ async def test_pr_miner_unreleased_facts(
         False,
         release_match_setting_tag,
         LogicalRepositorySettings.empty(),
-        prefixer_promise,
+        prefixer,
         1,
         (6366825,),
         mdb,
@@ -967,7 +967,7 @@ async def test_pr_miner_unreleased_facts(
 
     discovered = await merged_prs_facts_loader.load_merged_unreleased_pull_request_facts(
         miner._dfs.prs, time_to, LabelFilter.empty(), matched_bys, default_branches,
-        release_match_setting_tag, prefixer_promise, 1, pdb)
+        release_match_setting_tag, prefixer, 1, pdb)
     assert {pr.pr[PullRequest.node_id.name] for pr, _ in merged_unreleased_prs_and_facts} == \
         {node_id for node_id, _ in discovered}
     await store_open_pull_request_facts(open_prs_and_facts, 1, pdb)
@@ -991,7 +991,7 @@ async def test_pr_miner_unreleased_facts(
 @with_defer
 async def test_pr_miner_jira_filter(
         branches, default_branches, mdb, pdb, rdb, release_match_setting_tag, pr_miner,
-        prefixer_promise):
+        prefixer):
     date_from = date(year=2018, month=1, day=1)
     date_to = date(year=2020, month=4, day=1)
     time_from = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
@@ -1011,7 +1011,7 @@ async def test_pr_miner_jira_filter(
         False,
         release_match_setting_tag,
         LogicalRepositorySettings.empty(),
-        prefixer_promise,
+        prefixer,
         1,
         (6366825,),
         mdb,
@@ -1053,7 +1053,7 @@ async def test_pr_miner_jira_filter(
 @with_defer
 async def test_pr_miner_jira_fetch(
         branches, default_branches, mdb, pdb, rdb, release_match_setting_tag, pr_miner,
-        prefixer_promise):
+        prefixer):
     date_from = date(year=2018, month=1, day=1)
     date_to = date(year=2020, month=4, day=1)
     time_from = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
@@ -1072,7 +1072,7 @@ async def test_pr_miner_jira_fetch(
         False,
         release_match_setting_tag,
         LogicalRepositorySettings.empty(),
-        prefixer_promise,
+        prefixer,
         1,
         (6366825,),
         mdb,
@@ -1106,7 +1106,7 @@ async def test_pr_miner_jira_fetch(
 @with_defer
 async def test_pr_miner_jira_cache(
         branches, default_branches, mdb, pdb, rdb, release_match_setting_tag, cache,
-        pr_miner, prefixer_promise):
+        pr_miner, prefixer):
     date_from = date(year=2018, month=1, day=1)
     date_to = date(year=2020, month=4, day=1)
     time_from = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
@@ -1125,7 +1125,7 @@ async def test_pr_miner_jira_cache(
         False,
         release_match_setting_tag,
         LogicalRepositorySettings.empty(),
-        prefixer_promise,
+        prefixer,
         1,
         (6366825,),
         mdb,

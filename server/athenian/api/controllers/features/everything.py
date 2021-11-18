@@ -67,7 +67,7 @@ async def mine_all_prs(repos: Collection[str],
     """Extract everything we know about pull requests."""
     ghdprf = GitHubDonePullRequestFacts
     done_facts, raw_done_rows = await DonePRFactsLoader.load_precomputed_done_facts_all(
-        repos, default_branches, release_settings, prefixer.as_promise(), account, pdb,
+        repos, default_branches, release_settings, prefixer, account, pdb,
         extra=[ghdprf.release_url, ghdprf.release_node_id])
     done_node_ids = {node_id for node_id, _ in done_facts}
     merged_facts = await MergedPRFactsLoader.load_merged_pull_request_facts_all(
@@ -86,8 +86,8 @@ async def mine_all_prs(repos: Collection[str],
             PullRequest.acc_id.in_(meta_ids),
             PullRequest.node_id.in_(node_ids),
         )), mdb, PullRequest, index=PullRequest.node_id.name),
-        fetch_repository_environments(repos, prefixer.as_promise(), account, rdb, cache),
-        PullRequestMiner.fetch_pr_deployments(node_ids, prefixer.as_promise(), account, pdb, rdb),
+        fetch_repository_environments(repos, prefixer, account, rdb, cache),
+        PullRequestMiner.fetch_pr_deployments(node_ids, prefixer, account, pdb, rdb),
         PullRequestJiraMapper.append_pr_jira_mapping(facts, meta_ids, mdb),
     ]
     df_prs, envs, deps, *_ = await gather(*tasks, op="fetch raw data")
@@ -134,14 +134,14 @@ async def mine_all_developers(repos: Collection[str],
                               cache: Optional[aiomcache.Client]) -> Dict[str, pd.DataFrame]:
     """Extract everything we know about developers."""
     contributors = await mine_contributors(
-        repos, None, None, False, [], release_settings, logical_settings, prefixer.as_promise(),
+        repos, None, None, False, [], release_settings, logical_settings, prefixer,
         account, meta_ids, mdb, pdb, rdb, cache)
     logins = [u[User.login.name] for u in contributors]
     mined_dfs, mapped_jira = await gather(
         mine_developer_activities(
             logins, repos, datetime(1970, 1, 1, tzinfo=timezone.utc), datetime.now(timezone.utc),
             set(DeveloperTopic), LabelFilter.empty(), JIRAFilter.empty(),
-            release_settings, logical_settings, prefixer.as_promise(), account, meta_ids,
+            release_settings, logical_settings, prefixer, account, meta_ids,
             mdb, pdb, rdb, cache),
         load_mapped_jira_users(account, [u[User.node_id.name] for u in contributors],
                                sdb, mdb, cache),
@@ -173,7 +173,7 @@ async def mine_all_releases(repos: Collection[str],
     releases = (await mine_releases(
         repos, {}, branches, default_branches, datetime(1970, 1, 1, tzinfo=timezone.utc),
         datetime.now(timezone.utc), LabelFilter.empty(), JIRAFilter.empty(),
-        release_settings, logical_settings, prefixer.as_promise(), account, meta_ids,
+        release_settings, logical_settings, prefixer, account, meta_ids,
         mdb, pdb, rdb, cache, with_avatars=False, with_pr_titles=True))[0]
     df_gen = pd.DataFrame.from_records([r[0] for r in releases])
     df_facts = df_from_structs([r[1] for r in releases])
@@ -262,7 +262,7 @@ async def mine_all_deployments(repos: Collection[str],
         [repo_name_to_node[r] for r in repos if r in repo_name_to_node], {},
         now - timedelta(days=365 * 10), now,
         envs, [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
-        release_settings, logical_settings, branches, default_branches, prefixer.as_promise(),
+        release_settings, logical_settings, branches, default_branches, prefixer,
         account, meta_ids, mdb, pdb, rdb, cache)
     split_cols = ["releases", "components", "labels"]
     for name, *dfs in zip(deps.index.values, *(deps[col].values for col in split_cols)):

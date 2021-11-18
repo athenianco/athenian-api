@@ -183,14 +183,14 @@ def _validate_deployments(deps, count, with_2016):
 @with_defer
 async def test_mine_deployments_from_scratch(
         sample_deployments, release_match_setting_tag_or_branch, branches, default_branches,
-        prefixer_promise, mdb, pdb, rdb, cache):
+        prefixer, mdb, pdb, rdb, cache):
     time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
     await mine_releases(
         ["src-d/go-git"], {}, branches, default_branches, time_from, time_to,
         LabelFilter.empty(), JIRAFilter.empty(), release_match_setting_tag_or_branch,
         LogicalRepositorySettings.empty(),
-        prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None, with_avatars=False,
+        prefixer, 1, (6366825,), mdb, pdb, rdb, None, with_avatars=False,
         with_pr_titles=False, with_deployments=False,
     )
     await wait_deferred()
@@ -201,7 +201,7 @@ async def test_mine_deployments_from_scratch(
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_match_setting_tag_or_branch,
         LogicalRepositorySettings.empty(),
-        branches, default_branches, prefixer_promise,
+        branches, default_branches, prefixer,
         1, (6366825,), mdb, pdb, rdb, cache)
     _validate_deployments(deps, 9, True)
     await wait_deferred()
@@ -212,7 +212,7 @@ async def test_mine_deployments_from_scratch(
 @with_defer
 async def test_mine_deployments_middle(
         sample_deployments, release_match_setting_tag_or_branch, branches, default_branches,
-        prefixer_promise, mdb, pdb, rdb, cache):
+        prefixer, mdb, pdb, rdb, cache):
     time_from = datetime(2017, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
     await mine_releases(
@@ -220,7 +220,7 @@ async def test_mine_deployments_middle(
         datetime(2016, 1, 1, tzinfo=timezone.utc), time_to,
         LabelFilter.empty(), JIRAFilter.empty(), release_match_setting_tag_or_branch,
         LogicalRepositorySettings.empty(),
-        prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None, with_avatars=False,
+        prefixer, 1, (6366825,), mdb, pdb, rdb, None, with_avatars=False,
         with_pr_titles=False, with_deployments=False,
     )
     await wait_deferred()
@@ -231,7 +231,7 @@ async def test_mine_deployments_middle(
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_match_setting_tag_or_branch,
         LogicalRepositorySettings.empty(),
-        branches, default_branches, prefixer_promise,
+        branches, default_branches, prefixer,
         1, (6366825,), mdb, pdb, rdb, cache)
     _validate_deployments(deps, 7, False)
 
@@ -239,7 +239,7 @@ async def test_mine_deployments_middle(
 @with_defer
 async def test_mine_deployments_append(
         sample_deployments, release_match_setting_tag_or_branch, branches, default_branches,
-        prefixer_promise, mdb, pdb, rdb, cache):
+        prefixer, mdb, pdb, rdb, cache):
     time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2019, 11, 2, tzinfo=timezone.utc)
     await mine_deployments(
@@ -249,7 +249,7 @@ async def test_mine_deployments_append(
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_match_setting_tag_or_branch,
         LogicalRepositorySettings.empty(),
-        branches, default_branches, prefixer_promise,
+        branches, default_branches, prefixer,
         1, (6366825,), mdb, pdb, rdb, cache)
     await wait_deferred()
     name = "%s_%d_%02d_%02d" % ("production", 2019, 11, 2)
@@ -278,7 +278,7 @@ async def test_mine_deployments_append(
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_match_setting_tag_or_branch,
         LogicalRepositorySettings.empty(),
-        branches, default_branches, prefixer_promise,
+        branches, default_branches, prefixer,
         1, (6366825,), mdb, pdb, rdb, cache)
     await wait_deferred()
     assert len(deps.loc[name]["prs"]) == 0
@@ -288,7 +288,7 @@ async def test_mine_deployments_append(
 @with_defer
 async def test_mine_deployments_only_failed(
         release_match_setting_tag_or_branch, branches, default_branches,
-        prefixer_promise, mdb, pdb, rdb, cache):
+        prefixer, mdb, pdb, rdb, cache):
     await rdb.execute(delete(DeployedLabel))
     await rdb.execute(delete(DeployedComponent))
     await rdb.execute(delete(DeploymentNotification))
@@ -323,7 +323,7 @@ async def test_mine_deployments_only_failed(
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_match_setting_tag_or_branch,
         LogicalRepositorySettings.empty(),
-        branches, default_branches, prefixer_promise,
+        branches, default_branches, prefixer,
         1, (6366825,), mdb, pdb, rdb, cache)
     await wait_deferred()
     assert len(deps) == 1
@@ -335,7 +335,7 @@ async def test_mine_deployments_only_failed(
 @with_defer
 async def test_mine_deployments_no_prs(
         release_match_setting_tag_or_branch, branches, default_branches,
-        prefixer_promise, mdb, pdb, rdb, cache):
+        prefixer, mdb, pdb, rdb, cache):
     time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2016, 1, 1, tzinfo=timezone.utc)
     await rdb.execute(delete(DeployedLabel))
@@ -366,7 +366,7 @@ async def test_mine_deployments_no_prs(
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_match_setting_tag_or_branch,
         LogicalRepositorySettings.empty(),
-        branches, default_branches, prefixer_promise,
+        branches, default_branches, prefixer,
         1, (6366825,), mdb, pdb, rdb, cache)
     assert len(deps) == 1
     assert len(deps.iloc[0]["prs"]) == 0
@@ -375,7 +375,7 @@ async def test_mine_deployments_no_prs(
 @with_defer
 async def test_mine_deployments_no_release_facts(
         release_match_setting_tag_or_branch, branches, default_branches,
-        prefixer_promise, mdb, pdb, rdb, cache):
+        prefixer, mdb, pdb, rdb, cache):
     time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
     deps, people = await mine_deployments(
@@ -385,7 +385,7 @@ async def test_mine_deployments_no_release_facts(
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_match_setting_tag_or_branch,
         LogicalRepositorySettings.empty(),
-        branches, default_branches, prefixer_promise,
+        branches, default_branches, prefixer,
         1, (6366825,), mdb, pdb, rdb, cache)
     assert len(deps) == 1
     assert deps.iloc[0].name == "Dummy deployment"
@@ -1464,7 +1464,7 @@ async def test_mine_deployments_no_release_facts(
 @with_defer
 async def test_mine_deployments_precomputed_dummy(
         release_match_setting_tag_or_branch, branches, default_branches,
-        prefixer_promise, mdb, pdb, rdb):
+        prefixer, mdb, pdb, rdb):
     time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
     deps1, people1 = await mine_deployments(
@@ -1474,7 +1474,7 @@ async def test_mine_deployments_precomputed_dummy(
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_match_setting_tag_or_branch,
         LogicalRepositorySettings.empty(),
-        branches, default_branches, prefixer_promise,
+        branches, default_branches, prefixer,
         1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     deps2, people2 = await mine_deployments(
@@ -1484,7 +1484,7 @@ async def test_mine_deployments_precomputed_dummy(
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_match_setting_tag_or_branch,
         LogicalRepositorySettings.empty(),
-        branches, default_branches, prefixer_promise,
+        branches, default_branches, prefixer,
         1, (6366825,), mdb, pdb, rdb, None)
     assert len(deps1) == len(deps2) == 1
     assert deps1.index.tolist() == deps2.index.tolist()
@@ -1501,7 +1501,7 @@ async def test_mine_deployments_precomputed_dummy(
 @with_defer
 async def test_mine_deployments_precomputed_sample(
         sample_deployments, release_match_setting_tag_or_branch, branches, default_branches,
-        prefixer_promise, mdb, pdb, rdb):
+        prefixer, mdb, pdb, rdb):
     time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
     deps1, people1 = await mine_deployments(
@@ -1511,7 +1511,7 @@ async def test_mine_deployments_precomputed_sample(
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_match_setting_tag_or_branch,
         LogicalRepositorySettings.empty(),
-        branches, default_branches, prefixer_promise,
+        branches, default_branches, prefixer,
         1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     deps2, people2 = await mine_deployments(
@@ -1521,7 +1521,7 @@ async def test_mine_deployments_precomputed_sample(
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_match_setting_tag_or_branch,
         LogicalRepositorySettings.empty(),
-        branches, default_branches, prefixer_promise,
+        branches, default_branches, prefixer,
         1, (6366825,), mdb, pdb, rdb, None)
     assert len(deps1) == len(deps2) == 2 * 9
     assert deps1.index.tolist() == deps2.index.tolist()
@@ -1542,7 +1542,7 @@ async def test_mine_deployments_precomputed_sample(
 @with_defer
 async def test_mine_deployments_empty(
         release_match_setting_tag_or_branch, branches, default_branches,
-        prefixer_promise, mdb, pdb, rdb, cache):
+        prefixer, mdb, pdb, rdb, cache):
     await rdb.execute(delete(DeployedLabel))
     await rdb.execute(delete(DeployedComponent))
     await rdb.execute(delete(DeploymentNotification))
@@ -1555,7 +1555,7 @@ async def test_mine_deployments_empty(
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_match_setting_tag_or_branch,
         LogicalRepositorySettings.empty(),
-        branches, default_branches, prefixer_promise,
+        branches, default_branches, prefixer,
         1, (6366825,), mdb, pdb, rdb, cache)
     assert len(deps) == 0
 
@@ -1564,7 +1564,7 @@ async def test_mine_deployments_empty(
 @with_defer
 async def test_mine_deployments_event_releases(
         sample_deployments, release_match_setting_event, branches, default_branches,
-        prefixer_promise, mdb, pdb, rdb, cache, with_premining):
+        prefixer, mdb, pdb, rdb, cache, with_premining):
     await rdb.execute(insert(ReleaseNotification).values(ReleaseNotification(
         account_id=1,
         repository_node_id=40550,
@@ -1581,7 +1581,7 @@ async def test_mine_deployments_event_releases(
             ["src-d/go-git"], {}, branches, default_branches, time_from, time_to,
             LabelFilter.empty(), JIRAFilter.empty(), release_match_setting_event,
             LogicalRepositorySettings.empty(),
-            prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None, with_avatars=False,
+            prefixer, 1, (6366825,), mdb, pdb, rdb, None, with_avatars=False,
             with_pr_titles=False, with_deployments=False,
         )
         await wait_deferred()
@@ -1592,7 +1592,7 @@ async def test_mine_deployments_event_releases(
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_match_setting_event,
         LogicalRepositorySettings.empty(),
-        branches, default_branches, prefixer_promise,
+        branches, default_branches, prefixer,
         1, (6366825,), mdb, pdb, rdb, cache)
     for depname in ("production_2019_11_01", "staging_2019_11_01"):
         df = deps.loc[depname]["releases"]
@@ -1625,12 +1625,12 @@ proper_deployments = {
 
 @with_defer
 async def test_mine_release_by_name_deployments(
-        release_match_setting_tag_or_branch, prefixer_promise, precomputed_deployments,
+        release_match_setting_tag_or_branch, prefixer, precomputed_deployments,
         mdb, pdb, rdb):
     names = {"36c78b9d1b1eea682703fb1cbb0f4f3144354389", "v4.0.0"}
     releases, _, deps = await mine_releases_by_name(
         {"src-d/go-git": names},
-        release_match_setting_tag_or_branch, LogicalRepositorySettings.empty(), prefixer_promise,
+        release_match_setting_tag_or_branch, LogicalRepositorySettings.empty(), prefixer,
         1, (6366825,), mdb, pdb, rdb, None)
     assert deps == proper_deployments
     assert releases[0][1].deployments == ["Dummy deployment"]
@@ -1638,14 +1638,14 @@ async def test_mine_release_by_name_deployments(
 
 @with_defer
 async def test_mine_releases_deployments(
-        release_match_setting_tag_or_branch, prefixer_promise, precomputed_deployments,
+        release_match_setting_tag_or_branch, prefixer, precomputed_deployments,
         branches, default_branches, mdb, pdb, rdb):
     releases, _, _, deps = await mine_releases(
         ["src-d/go-git"], {}, branches, default_branches,
         datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
         LabelFilter.empty(), JIRAFilter.empty(), release_match_setting_tag_or_branch,
         LogicalRepositorySettings.empty(),
-        prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None,
+        prefixer, 1, (6366825,), mdb, pdb, rdb, None,
         with_avatars=False, with_pr_titles=False, with_deployments=True)
     assert deps == proper_deployments
     assert len(releases) == 53

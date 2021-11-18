@@ -186,7 +186,7 @@ async def copy_teams_as_needed(account: int,
     :return: List of created teams.
     """
     log = logging.getLogger("%s.create_teams_as_needed" % metadata.__package__)
-    prefixer = await Prefixer.schedule_load(meta_ids, mdb, cache)
+    prefixer = await Prefixer.load(meta_ids, mdb, cache)
     existing = await sdb.fetch_val(select([func.count(StateTeam.id)])
                                    .where(and_(StateTeam.owner_id == account,
                                                StateTeam.name != StateTeam.BOTS)))
@@ -220,7 +220,6 @@ async def copy_teams_as_needed(account: int,
         select([TeamMember.parent_id, TeamMember.child_id])
         .where(and_(TeamMember.parent_id.in_(teams), TeamMember.acc_id.in_(meta_ids))))
     members = defaultdict(list)
-    prefixer = await prefixer.load()
     for row in member_rows:
         try:
             members[row[TeamMember.parent_id.name]].append(

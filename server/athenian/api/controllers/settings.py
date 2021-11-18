@@ -11,11 +11,11 @@ import pandas as pd
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import and_, delete, insert, select
 
-from athenian.api.controllers.account import get_account_repositories
+from athenian.api.controllers.account import get_account_repositories, get_metadata_account_ids
 from athenian.api.controllers.logical_repos import coerce_logical_repos, \
     coerce_prefixed_logical_repos, drop_logical_repo, \
     drop_prefixed_logical_repo
-from athenian.api.controllers.prefixer import PrefixerPromise
+from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.reposet import resolve_repos
 from athenian.api.db import ParallelDatabase
 from athenian.api.models.metadata.github import PullRequest, PullRequestLabel
@@ -397,6 +397,22 @@ class LogicalRepositorySettings:
                     repos.add(prefix + logical_repo)
         return repos
 
+    def append_logical_repos(self, items: Collection[str]) -> Collection[str]:
+        """
+        Extend the physical repositories with their configured logical components.
+
+        Repository names are not prefixed!
+        """
+        if not self.has_logical_prs():
+            return items
+        repos = set(items)
+        for repo in items:
+            try:
+                repos.update(self.prs(repo).logical_repositories)
+            except KeyError:
+                continue
+        return repos
+
 
 class Settings:
     """
@@ -534,8 +550,20 @@ class Settings:
         if not tags:
             tags = ".*"
 
-        repos, _, _ = await resolve_repos(
-            repos, self._account, self._user_id, self._login, None,
+        try:
+            meta_ids = await get_metadata_account_ids(self._account, self._sdb, self._cache)
+        except ResponseError as e:
+            if repos:
+                raise e from None
+            meta_ids = None
+            logical_settings = LogicalRepositorySettings.empty()
+        else:
+            prefixer = await Prefixer.load(meta_ids, self._mdb, self._cache)
+            settings = Settings.from_account(
+                self._account, self._sdb, self._mdb, self._cache, self._slack)
+            logical_settings = await settings.list_logical_repositories(prefixer)
+        repos, _ = await resolve_repos(
+            repos, self._account, self._user_id, self._login, logical_settings, meta_ids,
             self._sdb, self._mdb, self._cache, self._slack, strip_prefix=False)
         async with self._sdb.connection() as conn:
             values = [ReleaseSetting(repository=r,
@@ -556,7 +584,7 @@ class Settings:
         return repos
 
     async def list_logical_repositories(self,
-                                        prefixer: PrefixerPromise,
+                                        prefixer: Prefixer,
                                         repos: Optional[Collection[str]] = None,
                                         pointer: Optional[str] = None,
                                         ) -> LogicalRepositorySettings:
@@ -569,14 +597,16 @@ class Settings:
         """
         async with self._sdb.connection() as sdb_conn:
             if repos is None:
-                repos = await get_account_repositories(self._account, False, sdb_conn)
+                try:
+                    repos = await get_account_repositories(self._account, False, sdb_conn)
+                except ResponseError:
+                    repos = []
                 diff_repos = set()
             else:
                 repos = {r.split("/", 1)[1] for r in repos}
                 logical_repos = coerce_logical_repos(repos)
                 diff_repos = repos - logical_repos.keys()
                 repos = logical_repos.keys()
-            prefixer = await prefixer.load()
             repo_name_to_node = prefixer.repo_name_to_node.get
             repo_ids = [n for r in repos if (n := repo_name_to_node(r))]
             rows = await sdb_conn.fetch_all(

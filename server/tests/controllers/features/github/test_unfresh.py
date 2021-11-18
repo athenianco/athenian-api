@@ -14,7 +14,7 @@ from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
 
 @with_defer
 async def test_fetch_pull_request_facts_unfresh_smoke(
-        metrics_calculator_factory, release_match_setting_tag, mdb, pdb, rdb, prefixer_promise,
+        metrics_calculator_factory, release_match_setting_tag, mdb, pdb, rdb, prefixer,
         precomputed_deployments):
     metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(2017, 9, 1, tzinfo=timezone.utc)
@@ -23,7 +23,7 @@ async def test_fetch_pull_request_facts_unfresh_smoke(
         time_from, time_to,
         {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         False, release_match_setting_tag, LogicalRepositorySettings.empty(),
-        prefixer_promise, False, False,
+        prefixer, False, False,
     )
     facts_fresh.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
     await wait_deferred()
@@ -36,7 +36,7 @@ async def test_fetch_pull_request_facts_unfresh_smoke(
             time_from, time_to,
             {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
             False, release_match_setting_tag, LogicalRepositorySettings.empty(),
-            prefixer_promise, False, False,
+            prefixer, False, False,
         )
         assert len(facts_unfresh) == 230
         facts_unfresh.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
@@ -47,7 +47,7 @@ async def test_fetch_pull_request_facts_unfresh_smoke(
 
 @with_defer
 async def test_fetch_pull_request_facts_unfresh_labels(
-        metrics_calculator_factory, release_match_setting_tag, mdb, pdb, rdb, prefixer_promise):
+        metrics_calculator_factory, release_match_setting_tag, mdb, pdb, rdb, prefixer):
     metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(2017, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
@@ -56,7 +56,7 @@ async def test_fetch_pull_request_facts_unfresh_labels(
         time_from, time_to,
         {"src-d/go-git"}, {}, label_filter, JIRAFilter.empty(),
         False, release_match_setting_tag, LogicalRepositorySettings.empty(),
-        prefixer_promise, False, False,
+        prefixer, False, False,
     )
     facts_fresh.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
     await wait_deferred()
@@ -68,7 +68,7 @@ async def test_fetch_pull_request_facts_unfresh_labels(
             time_from, time_to,
             {"src-d/go-git"}, {}, label_filter, JIRAFilter.empty(),
             False, release_match_setting_tag, LogicalRepositorySettings.empty(),
-            prefixer_promise, False, False,
+            prefixer, False, False,
         )
         assert len(facts_unfresh) == 6
         facts_unfresh.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
@@ -79,7 +79,7 @@ async def test_fetch_pull_request_facts_unfresh_labels(
 
 @with_defer
 async def test_fetch_pull_request_facts_unfresh_jira(
-        metrics_calculator_factory, release_match_setting_tag, mdb, pdb, rdb, prefixer_promise):
+        metrics_calculator_factory, release_match_setting_tag, mdb, pdb, rdb, prefixer):
     metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(2017, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
@@ -88,7 +88,7 @@ async def test_fetch_pull_request_facts_unfresh_jira(
         time_from, time_to,
         {"src-d/go-git"}, {}, LabelFilter.empty(), jira_filter,
         False, release_match_setting_tag, LogicalRepositorySettings.empty(),
-        prefixer_promise, False, True,
+        prefixer, False, True,
     )
     await wait_deferred()
     assert len(facts_fresh) == 36
@@ -111,7 +111,7 @@ async def test_fetch_pull_request_facts_unfresh_jira(
             time_from, time_to,
             {"src-d/go-git"}, {}, LabelFilter.empty(), jira_filter,
             False, release_match_setting_tag, LogicalRepositorySettings.empty(),
-            prefixer_promise, False, True,
+            prefixer, False, True,
         )
         assert len(facts_unfresh) == 36
         facts_unfresh.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)

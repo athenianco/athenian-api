@@ -22,7 +22,7 @@ from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query, 
     PullRequestJiraMapper
 from athenian.api.controllers.miners.types import DeploymentConclusion, PRParticipants, \
     PullRequestFactsMap
-from athenian.api.controllers.prefixer import PrefixerPromise
+from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseSettings
 from athenian.api.db import add_pdb_hits, add_pdb_misses, ParallelDatabase
 from athenian.api.models.metadata.github import PullRequest
@@ -56,7 +56,7 @@ class UnfreshPullRequestFactsFetcher:
                                                default_branches: Dict[str, str],
                                                release_settings: ReleaseSettings,
                                                logical_settings: LogicalRepositorySettings,
-                                               prefixer: PrefixerPromise,
+                                               prefixer: Prefixer,
                                                account: int,
                                                meta_ids: Tuple[int, ...],
                                                mdb: ParallelDatabase,
@@ -209,7 +209,7 @@ class UnfreshPullRequestFactsFetcher:
                                                     jira: JIRAFilter,
                                                     default_branches: Dict[str, str],
                                                     release_settings: ReleaseSettings,
-                                                    prefixer: PrefixerPromise,
+                                                    prefixer: Prefixer,
                                                     account: int,
                                                     meta_ids: Tuple[int, ...],
                                                     mdb: ParallelDatabase,

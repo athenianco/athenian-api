@@ -33,7 +33,7 @@ from athenian.api.controllers.miners.github.release_match import ReleaseToPullRe
 from athenian.api.controllers.miners.jira.issue import PullRequestJiraMapper
 from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind, \
     PullRequestFacts, PullRequestFactsMap
-from athenian.api.controllers.prefixer import PrefixerPromise
+from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.models.metadata.github import Base as MetadataGitHubBase, \
     Branch, NodePullRequestJiraIssues, PullRequest, Release
@@ -88,7 +88,7 @@ class PreloadedReleaseLoader(ReleaseLoader):
                                           match_groups: Dict[ReleaseMatch, Dict[str, List[str]]],
                                           time_from: datetime,
                                           time_to: datetime,
-                                          prefixer: PrefixerPromise,
+                                          prefixer: Prefixer,
                                           account: int,
                                           pdb: databases.Database,
                                           index: Optional[Union[str, Sequence[str]]] = None,
@@ -110,7 +110,7 @@ class PreloadedReleaseLoader(ReleaseLoader):
             releases.set_index(index, inplace=True)
         else:
             releases.reset_index(drop=True, inplace=True)
-        user_node_to_login_get = (await prefixer.load()).user_node_to_login.get
+        user_node_to_login_get = prefixer.user_node_to_login.get
         releases[Release.author.name] = [
             user_node_to_login_get(u) for u in releases[model.author_node_id.name].values
         ]
@@ -189,7 +189,7 @@ class PreloadedDonePRFactsLoader(DonePRFactsLoader):
                                              default_branches: Dict[str, str],
                                              exclude_inactive: bool,
                                              release_settings: ReleaseSettings,
-                                             prefixer: PrefixerPromise,
+                                             prefixer: Prefixer,
                                              account: int,
                                              pdb: databases.Database,
                                              ) -> Tuple[Dict[Tuple[int, str], Mapping[str, Any]],
@@ -270,7 +270,7 @@ class PreloadedDonePRFactsLoader(DonePRFactsLoader):
     async def _build_participants_mask(cls,
                                        df: pd.DataFrame,
                                        participants: PRParticipants,
-                                       prefixer: PrefixerPromise,
+                                       prefixer: Prefixer,
                                        ) -> pd.Series:
         dev_conds_single, dev_conds_multiple = \
             await cls._build_participants_conditions(participants, prefixer)
@@ -300,7 +300,7 @@ class PreloadedMergedPRFactsLoader(MergedPRFactsLoader):
             matched_bys: Dict[str, ReleaseMatch],
             default_branches: Dict[str, str],
             release_settings: ReleaseSettings,
-            prefixer: PrefixerPromise,
+            prefixer: Prefixer,
             account: int,
             pdb: databases.Database,
             time_from: Optional[datetime] = None,
@@ -380,7 +380,7 @@ class PreloadedMergedPRFactsLoader(MergedPRFactsLoader):
         ])
 
         facts = {}
-        user_node_map_get = (await prefixer.load()).user_node_to_prefixed_login.get
+        user_node_map_get = prefixer.user_node_to_prefixed_login.get
         for node_id, data, repository_full_name, author, merger in zip(
                 merged_pr_facts[model.pr_node_id.name].values,
                 merged_pr_facts[model.data.name].values,

@@ -1,5 +1,3 @@
-import pytest
-
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.defer import wait_deferred, with_defer
 
@@ -15,23 +13,6 @@ async def test_prefixer_load(mdb, cache):
         assert len(prefixer.repo_node_to_prefixed_name) == 306
         assert len(prefixer.repo_name_to_prefixed_name) == 292
         assert "src-d/go-git" in prefixer.repo_name_to_prefixed_name
-
-
-@with_defer
-async def test_prefixer_schedule_load(mdb):
-    prefixer = await Prefixer.schedule_load((6366825,), mdb, None)
-    prefixer = await prefixer.load()
-    assert prefixer.user_login_to_prefixed_login
-    promise = prefixer.as_promise()
-    assert prefixer == await promise.load()
-
-
-@with_defer
-async def test_prefixer_schedule_cancel(mdb):
-    prefixer = await Prefixer.schedule_load((6366825,), mdb, None)
-    await prefixer.cancel()
-    with pytest.raises(AssertionError):
-        await prefixer.load()
 
 
 async def test_prefixer_sequences(mdb):

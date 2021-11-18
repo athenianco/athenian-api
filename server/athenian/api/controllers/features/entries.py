@@ -54,7 +54,7 @@ from athenian.api.controllers.miners.github.release_mine import mine_releases
 from athenian.api.controllers.miners.jira.issue import PullRequestJiraMapper
 from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind, \
     PullRequestFacts, ReleaseParticipants
-from athenian.api.controllers.prefixer import PrefixerPromise
+from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch, \
     ReleaseSettings
 from athenian.api.db import add_pdb_hits, add_pdb_misses, ParallelDatabase
@@ -170,7 +170,7 @@ class MetricEntriesCalculator:
                                                     exclude_inactive: bool,
                                                     release_settings: ReleaseSettings,
                                                     logical_settings: LogicalRepositorySettings,
-                                                    prefixer: PrefixerPromise,
+                                                    prefixer: Prefixer,
                                                     branches: pd.DataFrame,
                                                     default_branches: Dict[str, str],
                                                     fresh: bool,
@@ -232,7 +232,7 @@ class MetricEntriesCalculator:
                                                   exclude_inactive: bool,
                                                   release_settings: ReleaseSettings,
                                                   logical_settings: LogicalRepositorySettings,
-                                                  prefixer: PrefixerPromise,
+                                                  prefixer: Prefixer,
                                                   branches: Optional[pd.DataFrame],
                                                   default_branches: Optional[Dict[str, str]],
                                                   fresh: bool,
@@ -331,7 +331,7 @@ class MetricEntriesCalculator:
                                             jira: JIRAFilter,
                                             release_settings: ReleaseSettings,
                                             logical_settings: LogicalRepositorySettings,
-                                            prefixer: PrefixerPromise,
+                                            prefixer: Prefixer,
                                             ) -> Tuple[np.ndarray, List[DeveloperTopic]]:
         """
         Calculate the developer metrics on GitHub.
@@ -394,7 +394,7 @@ class MetricEntriesCalculator:
                                                jira: JIRAFilter,
                                                release_settings: ReleaseSettings,
                                                logical_settings: LogicalRepositorySettings,
-                                               prefixer: PrefixerPromise,
+                                               prefixer: Prefixer,
                                                branches: pd.DataFrame,
                                                default_branches: Dict[str, str],
                                                ) -> Tuple[np.ndarray, Dict[str, ReleaseMatch]]:
@@ -550,7 +550,7 @@ class MetricEntriesCalculator:
                                                   jira: JIRAFilter,
                                                   release_settings: ReleaseSettings,
                                                   logical_settings: LogicalRepositorySettings,
-                                                  prefixer: PrefixerPromise,
+                                                  prefixer: Prefixer,
                                                   branches: pd.DataFrame,
                                                   default_branches: Dict[str, str],
                                                   jira_ids: Optional[Tuple[int, List[str]]],
@@ -628,7 +628,7 @@ class MetricEntriesCalculator:
                                              exclude_inactive: bool,
                                              release_settings: ReleaseSettings,
                                              logical_settings: LogicalRepositorySettings,
-                                             prefixer: PrefixerPromise,
+                                             prefixer: Prefixer,
                                              fresh: bool,
                                              with_jira_map: bool,
                                              branches: Optional[pd.DataFrame] = None,
@@ -696,7 +696,7 @@ class MetricEntriesCalculator:
                                               exclude_inactive: bool,
                                               release_settings: ReleaseSettings,
                                               logical_settings: LogicalRepositorySettings,
-                                              prefixer: PrefixerPromise,
+                                              prefixer: Prefixer,
                                               fresh: bool,
                                               with_jira_map: bool,
                                               branches: Optional[pd.DataFrame],

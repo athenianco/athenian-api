@@ -2,8 +2,8 @@ import asyncio
 from http import HTTPStatus
 import logging
 from sqlite3 import IntegrityError, OperationalError
-from typing import Any, Callable, Coroutine, Dict, List, Mapping, Optional, Sequence, Set, Tuple, \
-    Type, Union
+from typing import Any, Callable, Collection, Coroutine, Dict, List, Mapping, Optional, Sequence, \
+    Set, Tuple, Type, Union
 
 import aiomcache
 import asyncpg
@@ -36,9 +36,10 @@ async def resolve_reposet(repo: str,
                           pointer: str,
                           uid: str,
                           account: int,
+                          logical_settings,  # LogicalRepositorySettings
                           sdb: Union[FastConnection, ParallelDatabase],
                           cache: Optional[aiomcache.Client],
-                          ) -> List[str]:
+                          ) -> Collection[str]:
     """
     Dereference the repository sets.
 
@@ -59,12 +60,13 @@ async def resolve_reposet(repo: str,
             detail="repository set identifier is invalid: %s" % repo,
             pointer=pointer,
         ))
-    rs, _ = await fetch_reposet(set_id, [RepositorySet.items], uid, sdb, cache)
+    rs, _ = await fetch_reposet(
+        set_id, [RepositorySet.items, RepositorySet.tracking_re], uid, sdb, cache)
     if rs.owner_id != account:
         raise ResponseError(ForbiddenError(
             detail="User %s is not allowed to reference reposet %d in this query" %
                    (uid, set_id)))
-    return rs.items
+    return logical_settings.append_logical_repos_to_reposet(rs)
 
 
 @sentry_span
@@ -99,17 +101,20 @@ async def fetch_reposet(
 @sentry_span
 async def load_all_reposet(account: int,
                            login: Callable[[], Coroutine[None, None, str]],
+                           logical_settings,  # LogicalRepositorySettings
                            sdb: ParallelDatabase,
                            mdb: ParallelDatabase,
                            cache: Optional[aiomcache.Client],
-                           slack: Optional[SlackWebClient]):
+                           slack: Optional[SlackWebClient],
+                           ) -> List[Collection[str]]:
     """Fetch the contents (items) of the main reposet with all the repositories to consider."""
     rss = await load_account_reposets(
-        account, login, [RepositorySet.id, RepositorySet.name, RepositorySet.items],
+        account, login,
+        [RepositorySet.id, RepositorySet.name, RepositorySet.items, RepositorySet.tracking_re],
         sdb, mdb, cache, slack)
     for rs in rss:
         if rs[RepositorySet.name.name] == RepositorySet.ALL:
-            return [rs[RepositorySet.items.name]]
+            return [logical_settings.append_logical_repos_to_reposet(RepositorySet(**rs))]
     raise ResponseError(NoSourceDataError(detail=f'No "{RepositorySet.ALL}" reposet exists.'))
 
 
@@ -118,6 +123,7 @@ async def resolve_repos(repositories: List[str],
                         account: int,
                         uid: str,
                         login: Callable[[], Coroutine[None, None, str]],
+                        logical_settings,  # LogicalRepositorySettings
                         meta_ids: Optional[Tuple[int, ...]],
                         sdb: ParallelDatabase,
                         mdb: ParallelDatabase,
@@ -127,30 +133,27 @@ async def resolve_repos(repositories: List[str],
                         separate=False,
                         checkers: Optional[Dict[str, AccessChecker]] = None,
                         pointer: Optional[str] = "?",
-                        ) -> Tuple[Union[Set[str], List[Set[str]]], str, Tuple[int, ...]]:
+                        ) -> Tuple[Union[Set[str], List[Set[str]]], str]:
     """
     Dereference all the reposets and produce the joint list of all mentioned repos.
 
-    We don't check the user access! That should happen automatically in Auth0 code.
+    We don't check the user's access! That should happen automatically in Auth0 code.
 
     If `repositories` is empty, we load the "ALL" reposet.
 
-    :param separate: Value indicatign whether to return each reposet separately.
+    :param separate: Value indicating whether to return each reposet separately.
     :return: (Union of all the mentioned repo names, service prefix).
     """
     if not repositories:
         # this may initialize meta_ids, so execute serialized
-        reposets = await load_all_reposet(account, login, sdb, mdb, cache, slack)
+        reposets = await load_all_reposet(account, login, logical_settings, sdb, mdb, cache, slack)
         if meta_ids is None:
             meta_ids = await get_metadata_account_ids(account, sdb, cache)
     else:
-        tasks = [resolve_reposet(r, f"{pointer}[{i}]", uid, account, sdb, cache)
+        assert meta_ids is not None
+        tasks = [resolve_reposet(r, f"{pointer}[{i}]", uid, account, logical_settings, sdb, cache)
                  for i, r in enumerate(repositories)]
-        if meta_ids is None:
-            tasks.insert(0, get_metadata_account_ids(account, sdb, cache))
         reposets = await gather(*tasks, op="resolve_reposet-s + meta_ids")
-        if meta_ids is None:
-            meta_ids, *reposets = reposets
     repos = []
     checked_repos = set()
     wrong_format = set()
@@ -203,7 +206,7 @@ async def resolve_repos(repositories: List[str],
             repos = checked_repos
         else:
             repos = set(repos)
-    return repos, prefix + "/", meta_ids
+    return repos, prefix + "/"
 
 
 @sentry_span

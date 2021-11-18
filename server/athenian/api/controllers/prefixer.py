@@ -1,6 +1,5 @@
-import asyncio
 import pickle
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional
 
 import aiomcache
 from sqlalchemy import and_, select
@@ -8,7 +7,6 @@ from sqlalchemy import and_, select
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached, short_term_exptime
 from athenian.api.db import DatabaseLike
-from athenian.api.defer import defer
 from athenian.api.models.metadata.github import Repository, User
 from athenian.api.typing_utils import dataclass
 
@@ -42,7 +40,7 @@ class Prefixer:
                    mdb: DatabaseLike,
                    cache: Optional[aiomcache.Client],
                    ) -> "Prefixer":
-        """Create a Prefixer for all repositories and users of the given metadata account IDs."""
+        """Load node IDs and prefixes for all known repositories and users."""
         repo_rows, user_rows = await gather(
             mdb.fetch_all(
                 select([Repository.node_id, Repository.full_name, Repository.html_url])
@@ -101,31 +99,13 @@ class Prefixer:
                         user_node_to_login=user_node_to_login,
                         user_login_to_node=user_login_to_node)
 
-    @staticmethod
-    async def schedule_load(meta_ids: Tuple[int, ...],
-                            mdb: DatabaseLike,
-                            cache: Optional[aiomcache.Client],
-                            ) -> "PrefixerPromise":
-        """Postponse the Prefixer initialization so that it can load asynchronously in \
-        the background."""
-        task = asyncio.create_task(Prefixer.load(meta_ids, mdb, cache), name="Prefixer.load")
-        # we must do this because if we raise an exception later, this task must still be awaited
-        await defer(task, name="Prefixer.load")
-        return PrefixerPromise(None, task=task)
-
-    def as_promise(self) -> "PrefixerPromise":
-        """Convert self to a held promise."""
-        promise = PrefixerPromise(None, task=None)
-        promise._prefixer = self
-        return promise
-
     def resolve_repo_nodes(self, repo_node_ids: Iterable[int]) -> List[str]:
         """Lookup each repository node ID in repo_node_map."""
         return [self.repo_node_to_prefixed_name[node_id] for node_id in repo_node_ids]
 
     def prefix_repo_names(self, repo_names: Iterable[str]) -> List[str]:
         """Lookup each repository full name in repo_name_map."""
-        return [self.repo_name_to_prefixed_name[name] for name in repo_names]
+        return [self.prefix_logical_repo(name) for name in repo_names]
 
     def resolve_user_nodes(self, user_node_ids: Iterable[int]) -> List[str]:
         """Lookup each user node ID in user_node_to_prefixed_login."""
@@ -142,45 +122,3 @@ class Prefixer:
             return self.repo_name_to_prefixed_name[repo]
         physical_repo = self.repo_name_to_prefixed_name["/".join(physical_repo)]
         return "/".join([physical_repo, logical_name])
-
-
-class PrefixerPromise:
-    """
-    Lazy loading wrapper around Prefixer.
-
-    Usage:
-        >>> promise = await Prefixer.schedule_load(meta_ids, mdb)
-        >>> # ...
-        >>> prefixer = await promise.load()
-    """
-
-    def __init__(self,
-                 do_not_call_me_directly: Any, *,
-                 task: Optional[asyncio.Task]):
-        """Initialize a new instance of PrefixerPromise. The user is not supposed to call this \
-        constructor directly."""
-        self._task = task
-        self._prefixer = None
-
-    async def load(self) -> Prefixer:
-        """Block until the referenced Prefixer loads and return it."""
-        if self._prefixer is None:
-            assert self._task is not None
-            await self._task
-            if self._task is None:
-                # race condition, but single-threaded => no need to take the lock
-                assert self._prefixer is not None
-            else:
-                self._prefixer = self._task.result()
-                self._task = None
-        return self._prefixer
-
-    async def cancel(self):
-        """Stop and delete the task to load the Prefixer."""
-        if self._task is not None:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
-            self._task = None

@@ -16,7 +16,7 @@ from athenian.api.cache import cached, short_term_exptime
 from athenian.api.controllers.miners.github.bots import Bots
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.release_load import ReleaseLoader
-from athenian.api.controllers.prefixer import PrefixerPromise
+from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseSettings
 from athenian.api.models.metadata.github import NodeCommit, NodeRepository, OrganizationMember, \
     PullRequest, PullRequestComment, PullRequestReview, PushCommit, Release, User
@@ -46,7 +46,7 @@ async def mine_contributors(repos: Collection[str],
                             user_roles: List[str],
                             release_settings: ReleaseSettings,
                             logical_settings: LogicalRepositorySettings,
-                            prefixer: PrefixerPromise,
+                            prefixer: Prefixer,
                             account: int,
                             meta_ids: Tuple[int, ...],
                             mdb: databases.Database,
@@ -101,10 +101,9 @@ async def mine_contributors(repos: Collection[str],
             mdb.fetch_all(union(*(select([PullRequest.user_login, PullRequest.node_id])
                                   .where(and_(*common_prs_where(), prs_opt))
                                   for prs_opt in prs_opts))),
-            prefixer.load(),
         ]
-        released, main, loaded_prefixer = await gather(*tasks)
-        user_node_to_login_get = loaded_prefixer.user_node_to_login.get
+        released, main = await gather(*tasks)
+        user_node_to_login_get = prefixer.user_node_to_login.get
         return {
             "author": Counter(user for user, _ in set(chain(
                 ((user_node_to_login_get(r[0]), r[1]) for r in released),

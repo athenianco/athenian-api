@@ -90,7 +90,7 @@ def main():
         settings = Settings.from_account(args.account, sdb, mdb, None, None)
         release_settings, logical_settings = await gather(
             settings.list_release_matches(prefixed_repos),
-            settings.list_logical_repositories(prefixer.as_promise(), prefixed_repos),
+            settings.list_logical_repositories(prefixer, prefixed_repos),
         )
         branches, default_branches = await BranchMiner.extract_branches(
             args.repos, meta_ids, mdb, None)

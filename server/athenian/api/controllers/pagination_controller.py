@@ -34,7 +34,7 @@ async def paginate_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     # we ignore the ambiguous PRs, thus producing a pessimistic prediction (that's OK)
     done_ats, _ = await DonePRFactsLoader.load_precomputed_done_timestamp_filters(
         time_from, time_to, repos, participants, labels,
-        default_branches, filt.request.exclude_inactive, release_settings, prefixer.as_promise(),
+        default_branches, filt.request.exclude_inactive, release_settings, prefixer,
         filt.request.account, request.pdb)
     done_node_ids = {}
     for node_id, repo in done_ats:

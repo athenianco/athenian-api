@@ -10,11 +10,12 @@ from sqlalchemy.sql.functions import coalesce
 
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached, short_term_exptime
+from athenian.api.controllers.logical_repos import coerce_logical_repos
 from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.precomputed_prs import \
     discover_inactive_merged_unreleased_prs
-from athenian.api.controllers.prefixer import PrefixerPromise
+from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.db import ParallelDatabase
 from athenian.api.models.metadata.github import NodeCommit, NodeRepository, PullRequest, \
@@ -42,7 +43,7 @@ async def mine_repositories(repos: Collection[str],
                             time_to: datetime,
                             exclude_inactive: bool,
                             release_settings: ReleaseSettings,
-                            prefixer: PrefixerPromise,
+                            prefixer: Prefixer,
                             account: int,
                             meta_ids: Tuple[int, ...],
                             mdb: ParallelDatabase,
@@ -57,7 +58,6 @@ async def mine_repositories(repos: Collection[str],
     """
     assert isinstance(time_from, datetime)
     assert isinstance(time_to, datetime)
-    prefixer = await prefixer.load()
     repo_name_to_node = prefixer.repo_name_to_node.get
     repo_ids = [repo_name_to_node(r) for r in repos]
     if not isinstance(repos, (set, KeysView)):
@@ -103,7 +103,7 @@ async def mine_repositories(repos: Collection[str],
         _, default_branches = await BranchMiner.extract_branches(repos, meta_ids, mdb, cache)
         repo_map = await discover_inactive_merged_unreleased_prs(
             time_from, time_to, repos, {}, LabelFilter.empty(), default_branches,
-            release_settings, prefixer.as_promise(), account, pdb, cache)
+            release_settings, prefixer, account, pdb, cache)
         return chain.from_iterable(repo_map.values())
 
     @sentry_span
@@ -185,12 +185,12 @@ async def mine_repositories(repos: Collection[str],
         tasks = [fetch_inactive_open_prs(), fetch_inactive_merged_prs()] + tasks
 
     results = await gather(*tasks)
-    repos = set(r[0] for r in chain.from_iterable(results))
+    repos = coerce_logical_repos(r[0] for r in chain.from_iterable(results))
     with sentry_sdk.start_span(op="SELECT FROM github.api_repositories"):
-        repos = await mdb.fetch_all(select([Repository.full_name])
-                                    .where(and_(Repository.archived.is_(False),
-                                                Repository.disabled.is_(False),
-                                                Repository.full_name.in_(repos),
-                                                Repository.acc_id.in_(meta_ids)))
-                                    .order_by(Repository.full_name))
-    return [r[0] for r in repos]
+        physical_repos = await mdb.fetch_all(select([Repository.full_name])
+                                             .where(and_(Repository.archived.is_(False),
+                                                         Repository.disabled.is_(False),
+                                                         Repository.full_name.in_(repos),
+                                                         Repository.acc_id.in_(meta_ids)))
+                                             .order_by(Repository.full_name))
+    return list(chain.from_iterable(repos[r[0]] for r in physical_repos))
