@@ -22,6 +22,7 @@ The server requires:
 - (optional) `ATHENIAN_MAX_CLIENT_SIZE` to limit the maximum request body size (256KB by default).
 - (optional) `ATHENIAN_MAX_LOAD`to set the maximum load in abstract units the server accepts before rejecting requests with HTTP 503; the default value is 12.
 - (optional) `ATHENIAN_SEGMENT_KEY` to enable user action tracking in [Segment](https://segment.com/).
+- (optional) `GOOGLE_ANALYTICS` tag to track Swagger UI.
 - `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET` environment variables to enable authorization.
 - `ATHENIAN_DEFAULT_USER` environment variable that points to the Auth0 user ID used for unauthorized public requests.
 - `ATHENIAN_INVITATION_KEY` environment variable with the passphrase for encrypting invitation URLs.

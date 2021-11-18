@@ -71,6 +71,8 @@ def parse_args() -> argparse.Namespace:
                            Path to the JSON file with Google Cloud credentions to access KMS
   ATHENIAN_SEGMENT_KEY (optional)
                            Enable user action tracking in Segment.
+  GOOGLE_ANALYTICS (optional)
+                           Track Swagger UI by Google Analytics tag.
   """,  # noqa
                                      formatter_class=Formatter)
 
@@ -361,6 +363,7 @@ def main() -> Optional[AthenianApp]:
         client_max_size=int(os.getenv("ATHENIAN_MAX_CLIENT_SIZE", 256 * 1024)),
         max_load=float(os.getenv("ATHENIAN_MAX_LOAD", 12)),
         segment=create_segment(),
+        google_analytics=os.getenv("GOOGLE_ANALYTICS", ""),
     )
     if args.preload_dataframes:
         setup_preloading(app, args.preload_refresh_frequency, log)

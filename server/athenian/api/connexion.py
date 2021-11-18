@@ -147,17 +147,24 @@ class AthenianAioHttpApi(connexion.AioHttpApi):
             console_ui_path + "/swagger-ui-athenian.css",
             self._get_swagger_css,
         )
+        self.subapp.router.add_route(
+            "GET",
+            console_ui_path + "/swagger-ui-athenian.js",
+            self._get_swagger_js,
+        )
         super().add_swagger_ui()
 
-    async def _get_swagger_css(self, request: aiohttp.web.Request) -> aiohttp.web.Response:
+    async def _get_swagger_css(self, _: aiohttp.web.Request) -> aiohttp.web.FileResponse:
+        return aiohttp.web.FileResponse(
+            Path(__file__).with_name("swagger") / "swagger-ui-athenian.css")
+
+    async def _get_swagger_js(self, _: aiohttp.web.Request) -> aiohttp.web.Response:
+        js = (Path(__file__).with_name("swagger") / "swagger-ui-athenian.js").read_text()
+        js = js.replace("{{ google_analytics }}", self.options.as_dict()["google_analytics"])
         return aiohttp.web.Response(
             status=200,
-            content_type="text/css",
-            body="""
-            .topbar {
-              display: none;
-            }
-            """,
+            content_type="text/javascript",
+            body=js,
         )
 
 
@@ -241,7 +248,8 @@ class AthenianApp(connexion.AioHttpApp):
                  cache: Optional[aiomcache.Client] = None,
                  slack: Optional[SlackWebClient] = None,
                  with_pdb_schema_checks: bool = True,
-                 segment: Optional[SegmentClient] = None):
+                 segment: Optional[SegmentClient] = None,
+                 google_analytics: Optional[str] = ""):
         """
         Initialize the underlying connexion -> aiohttp application.
 
@@ -264,6 +272,7 @@ class AthenianApp(connexion.AioHttpApp):
         :param slack: Slack API client to post messages.
         :param with_pdb_schema_checks: Enable or disable periodic pdb schema version checks.
         :param segment: User action tracker.
+        :param google_analytics: Google Analytics tag to track Swagger UI.
         """
         options = {"swagger_ui": ui}
         specification_dir = str(Path(__file__).parent / "openapi")
@@ -300,14 +309,17 @@ class AthenianApp(connexion.AioHttpApp):
                     self.i_will_survive, self.with_db, self.postprocess_response, self.manhole,
                 ],
                 "auth": self._auth0,
+                "google_analytics": google_analytics,
                 "swagger_ui_config": {
                     "tagsSorter": "alpha",
                     "persistAuthorization": True,
                 },
                 "swagger_ui_template_arguments": {
-                    "title": "Athenian API specification</title>"
-                             '<link rel="stylesheet" type="text/css" '
-                             'href="./swagger-ui-athenian.css" >',
+                    "title": f"""Athenian API specification</title>
+                        <link rel="stylesheet" type="text/css" href="./swagger-ui-athenian.css">
+                        <script async src="https://www.googletagmanager.com/gtag/js?id={google_analytics}"></script>
+                        <script async type="text/javascript" src="./swagger-ui-athenian.js"></script>
+                    """,  # noqa
                     "validatorUrl": "null, filter: true",
                 },
             },
