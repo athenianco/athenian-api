@@ -135,6 +135,14 @@ class Prefixer:
         """Lookup each user login in user_login_to_prefixed_login."""
         return [self.user_login_to_prefixed_login[name] for name in user_logins]
 
+    def prefix_logical_repo(self, repo: str) -> str:
+        """Lookup the repository name prefix for the given logical repository."""
+        *physical_repo, logical_name = repo.split("/", 2)
+        if len(physical_repo) == 1:
+            return self.repo_name_to_prefixed_name[repo]
+        physical_repo = self.repo_name_to_prefixed_name["/".join(physical_repo)]
+        return "/".join([physical_repo, logical_name])
+
 
 class PrefixerPromise:
     """

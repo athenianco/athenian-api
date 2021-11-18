@@ -1639,6 +1639,29 @@ async def test_mine_releases_cache(
     assert releases3 == releases2
 
 
+@with_defer
+async def test_mine_releases_logical(
+        mdb, pdb, rdb, release_match_setting_tag_logical, prefixer_promise, logical_settings):
+    time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2018, month=11, day=1, tzinfo=timezone.utc)
+    releases, _, _, _ = await mine_releases(
+        ["src-d/go-git/alpha", "src-d/go-git/beta"], {}, None, {}, time_from, time_to,
+        LabelFilter.empty(), JIRAFilter.empty(),
+        release_match_setting_tag_logical, logical_settings,
+        prefixer_promise, 1, (6366825,), mdb, pdb, rdb, None,
+        with_avatars=False, with_pr_titles=False, with_deployments=False)
+    counts = {
+        "github.com/src-d/go-git/alpha": 0,
+        "github.com/src-d/go-git/beta": 0,
+    }
+    for r, _ in releases:
+        counts[r[Release.repository_full_name.name]] += 1
+    assert counts == {
+        "github.com/src-d/go-git/alpha": 44,
+        "github.com/src-d/go-git/beta": 28,
+    }
+
+
 @pytest.mark.parametrize("settings_index", [0, 1])
 @with_defer
 async def test_precomputed_releases_low_level(
