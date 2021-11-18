@@ -38,7 +38,7 @@ from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
 from athenian.api.controllers.miners.types import DeploymentConclusion, MinedPullRequest, \
     nonemax, nonemin, PRParticipants, PRParticipationKind, PullRequestFacts, PullRequestFactsMap
-from athenian.api.controllers.prefixer import PrefixerPromise
+from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch, \
     ReleaseSettings
 from athenian.api.db import add_pdb_misses, DatabaseLike, ParallelDatabase
@@ -341,7 +341,7 @@ class PullRequestMiner:
                     updated_max: Optional[datetime],
                     pr_blacklist: Optional[Tuple[Collection[int], Dict[str, List[int]]]],
                     truncate: bool,
-                    prefixer: PrefixerPromise,
+                    prefixer: Prefixer,
                     account: int,
                     meta_ids: Tuple[int, ...],
                     mdb: ParallelDatabase,
@@ -536,7 +536,7 @@ class PullRequestMiner:
                           dags: Dict[str, DAG],
                           release_settings: ReleaseSettings,
                           logical_settings: LogicalRepositorySettings,
-                          prefixer: PrefixerPromise,
+                          prefixer: Prefixer,
                           account: int,
                           meta_ids: Tuple[int, ...],
                           mdb: ParallelDatabase,
@@ -579,7 +579,7 @@ class PullRequestMiner:
                            dags: Dict[str, DAG],
                            release_settings: ReleaseSettings,
                            logical_settings: LogicalRepositorySettings,
-                           prefixer: PrefixerPromise,
+                           prefixer: Prefixer,
                            account: int,
                            meta_ids: Tuple[int, ...],
                            mdb: ParallelDatabase,
@@ -804,7 +804,7 @@ class PullRequestMiner:
                    exclude_inactive: bool,
                    release_settings: ReleaseSettings,
                    logical_settings: LogicalRepositorySettings,
-                   prefixer: PrefixerPromise,
+                   prefixer: Prefixer,
                    account: int,
                    meta_ids: Tuple[int, ...],
                    mdb: ParallelDatabase,
@@ -1214,7 +1214,7 @@ class PullRequestMiner:
             jira: JIRAFilter,
             default_branches: Dict[str, str],
             release_settings: ReleaseSettings,
-            prefixer: PrefixerPromise,
+            prefixer: Prefixer,
             account: int,
             meta_ids: Tuple[int, ...],
             mdb: ParallelDatabase,
@@ -1248,7 +1248,7 @@ class PullRequestMiner:
     @sentry_span
     async def fetch_pr_deployments(cls,
                                    pr_node_ids: Iterable[int],
-                                   prefixer: PrefixerPromise,
+                                   prefixer: Prefixer,
                                    account: int,
                                    pdb: ParallelDatabase,
                                    rdb: ParallelDatabase,
@@ -1275,7 +1275,7 @@ class PullRequestMiner:
         df = df.join(details)
         df.reset_index(inplace=True)
         df.set_index([ghprd.pull_request_id.name, ghprd.deployment_name.name], inplace=True)
-        repo_node_to_name = (await prefixer.load()).repo_node_to_name.get
+        repo_node_to_name = prefixer.repo_node_to_name.get
         df[PullRequest.repository_full_name.name] = \
             [repo_node_to_name(r) for r in df[ghprd.repository_id.name].values]
         return df
@@ -1569,7 +1569,7 @@ class PullRequestMiner:
                                      jira: JIRAFilter,
                                      updated_min: Optional[datetime],
                                      updated_max: Optional[datetime],
-                                     prefixer: PrefixerPromise,
+                                     prefixer: Prefixer,
                                      branches: pd.DataFrame,
                                      dags: Optional[Dict[str, DAG]],
                                      account: int,
@@ -1583,7 +1583,6 @@ class PullRequestMiner:
         """Load PRs which were deployed between `time_from` and `time_to` and merged before \
         `time_from`."""
         assert (updated_min is None) == (updated_max is None)
-        prefixer = await prefixer.load()
         repo_name_to_node = prefixer.repo_name_to_node.get
         repo_node_ids = {repo_name_to_node(r) for r in repositories} - {None}
         ghprd = GitHubPullRequestDeployment

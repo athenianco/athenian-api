@@ -87,14 +87,8 @@ async def branches(mdb, branch_miner):
 
 @pytest.fixture(scope="function")
 @with_defer
-async def prefixer_promise(mdb, request, loop):
-    promise = await Prefixer.schedule_load((6366825,), mdb, None)
-
-    def cancel():
-        loop.run_until_complete(promise.cancel())
-
-    request.addfinalizer(cancel)
-    return promise
+async def prefixer(mdb):
+    return await Prefixer.load((6366825,), mdb, None)
 
 
 @pytest.fixture(scope="function")
@@ -331,11 +325,11 @@ async def metrics_calculator_factory_memcached(mdb, pdb, rdb, memcached):
 @pytest.fixture(scope="function")
 @with_defer
 async def precomputed_deployments(
-    release_match_setting_tag_or_branch, prefixer_promise, branches, default_branches,
+    release_match_setting_tag_or_branch, prefixer, branches, default_branches,
     mdb, pdb, rdb,
 ):
     await _precompute_deployments(
-        release_match_setting_tag_or_branch, prefixer_promise, branches, default_branches,
+        release_match_setting_tag_or_branch, prefixer, branches, default_branches,
         mdb, pdb, rdb)
 
 
@@ -380,11 +374,11 @@ async def sample_deployments(rdb):
 @pytest.fixture(scope="function")
 @with_defer
 async def precomputed_sample_deployments(
-    release_match_setting_tag_or_branch, prefixer_promise, branches, default_branches,
+    release_match_setting_tag_or_branch, prefixer, branches, default_branches,
     mdb, pdb, rdb, sample_deployments,
 ):
     await _precompute_deployments(
-        release_match_setting_tag_or_branch, prefixer_promise, branches, default_branches,
+        release_match_setting_tag_or_branch, prefixer, branches, default_branches,
         mdb, pdb, rdb)
 
 

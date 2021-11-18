@@ -112,7 +112,7 @@ def test_group_deployments_by_environments_smoke(sample_deps):
 @with_defer
 async def test_deployment_metrics_calculators_smoke(
         sample_deployments, metrics_calculator_factory, release_match_setting_tag_or_branch,
-        prefixer_promise, branches, default_branches):
+        prefixer, branches, default_branches):
     for i in range(2):
         calc = metrics_calculator_factory(
             1, (6366825,), with_cache=True)  # type: MetricEntriesCalculator
@@ -130,7 +130,7 @@ async def test_deployment_metrics_calculators_smoke(
             LabelFilter.empty(), {}, {}, JIRAFilter.empty(),
             release_match_setting_tag_or_branch,
             LogicalRepositorySettings.empty(),
-            prefixer_promise,
+            prefixer,
             branches, default_branches,
             (1, ("10003", "10009")),
         )

@@ -35,7 +35,7 @@ from athenian.api.controllers.miners.github.user import mine_user_avatars, UserA
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
 from athenian.api.controllers.miners.types import Deployment, released_prs_columns, ReleaseFacts, \
     ReleaseParticipants, ReleaseParticipationKind
-from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
+from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch, \
     ReleaseMatchSetting, ReleaseSettings
 from athenian.api.db import add_pdb_hits, add_pdb_misses, ParallelDatabase
@@ -56,7 +56,7 @@ async def mine_releases(repos: Iterable[str],
                         jira: JIRAFilter,
                         release_settings: ReleaseSettings,
                         logical_settings: LogicalRepositorySettings,
-                        prefixer: PrefixerPromise,
+                        prefixer: Prefixer,
                         account: int,
                         meta_ids: Tuple[int, ...],
                         mdb: ParallelDatabase,
@@ -145,7 +145,7 @@ async def _mine_releases(repos: Iterable[str],
                          jira: JIRAFilter,
                          release_settings: ReleaseSettings,
                          logical_settings: LogicalRepositorySettings,
-                         prefixer: PrefixerPromise,
+                         prefixer: Prefixer,
                          account: int,
                          meta_ids: Tuple[int, ...],
                          mdb: ParallelDatabase,
@@ -192,7 +192,6 @@ async def _mine_releases(repos: Iterable[str],
     if jira:
         precomputed_facts = await _filter_precomputed_release_facts_by_jira(
             precomputed_facts, jira, meta_ids, mdb, cache)
-    prefixer = await prefixer.load()
     result, mentioned_authors, has_precomputed_facts = _build_mined_releases(
         releases_in_time_range, precomputed_facts, prefixer, True)
 
@@ -208,7 +207,7 @@ async def _mine_releases(repos: Iterable[str],
         (_, releases, _, _, dags), first_commit_dates = await gather(
             ReleaseToPullRequestMapper._find_releases_for_matching_prs(
                 missing_repos, branches, default_branches, time_from, time_to, False,
-                release_settings, logical_settings, None, prefixer.as_promise(),
+                release_settings, logical_settings, None, prefixer,
                 account, meta_ids, mdb, pdb, rdb, cache,
                 releases_in_time_range=releases_in_time_range),
             ReleaseToPullRequestMapper._fetch_repository_first_commit_dates(
@@ -684,7 +683,7 @@ async def _load_prs_by_merge_commit_ids(commit_ids: Sequence[str],
 async def mine_releases_by_name(names: Dict[str, Iterable[str]],
                                 release_settings: ReleaseSettings,
                                 logical_settings: LogicalRepositorySettings,
-                                prefixer: PrefixerPromise,
+                                prefixer: Prefixer,
                                 account: int,
                                 meta_ids: Tuple[int, ...],
                                 mdb: ParallelDatabase,
@@ -771,7 +770,7 @@ async def mine_releases_by_ids(releases: pd.DataFrame,
                                default_branches: Dict[str, str],
                                release_settings: ReleaseSettings,
                                logical_settings: LogicalRepositorySettings,
-                               prefixer: PrefixerPromise,
+                               prefixer: Prefixer,
                                account: int,
                                meta_ids: Tuple[int, ...],
                                mdb: ParallelDatabase,
@@ -827,7 +826,6 @@ async def mine_releases_by_ids(releases: pd.DataFrame,
     }
     add_pdb_hits(pdb, "release_facts", len(precomputed_facts))
     add_pdb_misses(pdb, "release_facts", len(releases) - len(precomputed_facts))
-    prefixer = await prefixer.load()
     result, mentioned_authors, has_precomputed_facts = _build_mined_releases(
         releases, precomputed_facts, prefixer, with_avatars=with_avatars)
     if not (missing_releases := releases.take(np.flatnonzero(~has_precomputed_facts))).empty:
@@ -836,7 +834,7 @@ async def mine_releases_by_ids(releases: pd.DataFrame,
         time_to = missing_releases[Release.published_at.name].iloc[0] + timedelta(seconds=1)
         mined_result, mined_authors, _, _ = await mine_releases(
             repos, {}, branches, default_branches, time_from, time_to, LabelFilter.empty(),
-            JIRAFilter.empty(), release_settings, logical_settings, prefixer.as_promise(),
+            JIRAFilter.empty(), release_settings, logical_settings, prefixer,
             account, meta_ids, mdb, pdb, rdb, cache,
             force_fresh=True, with_avatars=False, with_pr_titles=True, with_deployments=False)
         missing_releases_by_repo = defaultdict(set)
@@ -883,7 +881,7 @@ async def _load_releases_by_name(names: Dict[str, Set[str]],
                                  log: logging.Logger,
                                  release_settings: ReleaseSettings,
                                  logical_settings: LogicalRepositorySettings,
-                                 prefixer: PrefixerPromise,
+                                 prefixer: Prefixer,
                                  account: int,
                                  meta_ids: Tuple[int, ...],
                                  mdb: ParallelDatabase,
@@ -1018,7 +1016,7 @@ async def _complete_commit_hashes(names: Dict[str, Set[str]],
 async def diff_releases(borders: Dict[str, List[Tuple[str, str]]],
                         release_settings: ReleaseSettings,
                         logical_settings: LogicalRepositorySettings,
-                        prefixer: PrefixerPromise,
+                        prefixer: Prefixer,
                         account: int,
                         meta_ids: Tuple[int, ...],
                         mdb: ParallelDatabase,

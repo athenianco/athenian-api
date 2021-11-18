@@ -28,7 +28,7 @@ from athenian.api.controllers.miners.github.release_load import dummy_releases_d
 from athenian.api.controllers.miners.github.released_pr import new_released_prs_df, release_columns
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
 from athenian.api.controllers.miners.types import nonemax, PullRequestFactsMap
-from athenian.api.controllers.prefixer import PrefixerPromise
+from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import LogicalPRSettings, LogicalRepositorySettings, \
     ReleaseMatch, ReleaseSettings
 from athenian.api.db import add_pdb_hits, add_pdb_misses, insert_or_ignore, ParallelDatabase
@@ -67,7 +67,7 @@ class PullRequestToReleaseMapper:
                                   time_to: datetime,
                                   dags: Dict[str, DAG],
                                   release_settings: ReleaseSettings,
-                                  prefixer: PrefixerPromise,
+                                  prefixer: Prefixer,
                                   account: int,
                                   meta_ids: Tuple[int, ...],
                                   mdb: ParallelDatabase,
@@ -264,7 +264,7 @@ class ReleaseToPullRequestMapper:
                                   updated_min: Optional[datetime],
                                   updated_max: Optional[datetime],
                                   pdags: Optional[Dict[str, DAG]],
-                                  prefixer: PrefixerPromise,
+                                  prefixer: Prefixer,
                                   account: int,
                                   meta_ids: Tuple[int, ...],
                                   mdb: ParallelDatabase,
@@ -356,7 +356,7 @@ class ReleaseToPullRequestMapper:
                                            release_settings: ReleaseSettings,
                                            logical_settings: LogicalRepositorySettings,
                                            pdags: Optional[Dict[str, DAG]],
-                                           prefixer: PrefixerPromise,
+                                           prefixer: Prefixer,
                                            account: int,
                                            meta_ids: Tuple[int, ...],
                                            mdb: ParallelDatabase,
@@ -417,7 +417,7 @@ class ReleaseToPullRequestMapper:
             release_settings: ReleaseSettings,
             logical_settings: LogicalRepositorySettings,
             pdags: Optional[Dict[str, DAG]],
-            prefixer: PrefixerPromise,
+            prefixer: Prefixer,
             account: int,
             meta_ids: Tuple[int, ...],
             mdb: ParallelDatabase,

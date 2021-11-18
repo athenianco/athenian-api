@@ -561,7 +561,7 @@ async def _issue_flow(return_: Set[str],
                 )).order_by(PullRequest.node_id.name),
                 mdb, PullRequest, index=PullRequest.node_id.name),
             DonePRFactsLoader.load_precomputed_done_facts_ids(
-                pr_ids, default_branches, release_settings, prefixer.as_promise(), account, pdb,
+                pr_ids, default_branches, release_settings, prefixer, account, pdb,
                 panic_on_missing_repositories=False),
         ]
         prs_df, (facts, ambiguous) = await gather(*tasks)
@@ -576,10 +576,10 @@ async def _issue_flow(return_: Set[str],
             unwrap_pull_requests(
                 prs_df, facts, ambiguous, False, related_branches, default_branches,
                 release_settings, logical_settings,
-                prefixer.as_promise(), account, meta_ids, mdb, pdb, rdb, cache),
+                prefixer, account, meta_ids, mdb, pdb, rdb, cache),
             fetch_repository_environments(
                 prs_df[PullRequest.repository_full_name.name].unique(),
-                prefixer.as_promise(), account, rdb, cache),
+                prefixer, account, rdb, cache),
         )
 
         miner = PullRequestListMiner(
@@ -847,14 +847,14 @@ async def _collect_ids(account: int,
     ]
     repos, jira_ids, meta_ids = await gather(*tasks, op="sdb/ids")
     settings = Settings.from_request(request, account)
-    prefixer = await Prefixer.schedule_load(meta_ids, mdb, cache)
-    (branches, default_branches), release_settings, logical_settings, prefixer = await gather(
+    prefixer = await Prefixer.load(meta_ids, mdb, cache)
+    (branches, default_branches), logical_settings = await gather(
         BranchMiner.extract_branches([r.split("/", 1)[1] for r in repos], meta_ids, mdb, cache),
-        settings.list_release_matches(repos),
         settings.list_logical_repositories(prefixer, repos),
-        prefixer.load(),
         op="sdb/branches and releases",
     )
+    repos = logical_settings.append_logical_repos(repos)
+    release_settings = await settings.list_release_matches(repos)
     return meta_ids, jira_ids, branches, default_branches, release_settings, logical_settings, \
         prefixer
 

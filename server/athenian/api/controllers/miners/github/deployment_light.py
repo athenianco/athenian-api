@@ -10,7 +10,7 @@ from athenian.api.async_utils import gather
 from athenian.api.cache import cached, middle_term_expire
 from athenian.api.controllers.miners.types import DeployedComponent as DeployedComponentDC, \
     Deployment, DeploymentConclusion
-from athenian.api.controllers.prefixer import PrefixerPromise
+from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.db import ParallelDatabase
 from athenian.api.models.metadata.github import NodeCommit
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
@@ -102,13 +102,12 @@ repository_environment_threshold = timedelta(days=60)
     key=lambda repos, **_: (",".join(sorted(repos)),),
 )
 async def fetch_repository_environments(repos: Collection[str],
-                                        prefixer: PrefixerPromise,
+                                        prefixer: Prefixer,
                                         account: int,
                                         rdb: ParallelDatabase,
                                         cache: Optional[aiomcache.Client],
                                         ) -> Dict[str, List[str]]:
     """Map environments to repositories that have deployed there."""
-    prefixer = await prefixer.load()
     repo_name_to_node_get = prefixer.repo_name_to_node.get
     repo_ids = {repo_name_to_node_get(r) for r in repos} - {None}
     rows = await rdb.fetch_all(

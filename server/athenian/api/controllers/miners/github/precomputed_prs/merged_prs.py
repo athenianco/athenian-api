@@ -25,7 +25,7 @@ from athenian.api.controllers.miners.github.precomputed_prs.utils import \
     extract_release_match, labels_are_compatible, triage_by_release_match
 from athenian.api.controllers.miners.types import MinedPullRequest, PRParticipants, \
     PRParticipationKind, PullRequestFacts, PullRequestFactsMap
-from athenian.api.controllers.prefixer import PrefixerPromise
+from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.db import add_pdb_hits, greatest
 from athenian.api.models.metadata.github import PullRequest, Release
@@ -47,7 +47,7 @@ class MergedPRFactsLoader:
             matched_bys: Dict[str, ReleaseMatch],
             default_branches: Dict[str, str],
             release_settings: ReleaseSettings,
-            prefixer: PrefixerPromise,
+            prefixer: Prefixer,
             account: int,
             pdb: databases.Database,
             time_from: Optional[datetime] = None,
@@ -172,7 +172,7 @@ class MergedPRFactsLoader:
             include_singles = set(include_singles)
             include_multiples = [set(m) for m in include_multiples]
         facts = {}
-        user_node_map_get = (await prefixer.load()).user_node_to_login.get
+        user_node_map_get = prefixer.user_node_to_login.get
         missing_facts = []
         remove_physical = set()
         for row in rows:
@@ -446,7 +446,7 @@ async def discover_inactive_merged_unreleased_prs(time_from: datetime,
                                                   labels: LabelFilter,
                                                   default_branches: Dict[str, str],
                                                   release_settings: ReleaseSettings,
-                                                  prefixer: PrefixerPromise,
+                                                  prefixer: Prefixer,
                                                   account: int,
                                                   pdb: databases.Database,
                                                   cache: Optional[aiomcache.Client],
@@ -474,7 +474,7 @@ async def discover_inactive_merged_unreleased_prs(time_from: datetime,
                       (PRParticipationKind.MERGER, ghmprf.merger)):
         if people := participants.get(role):
             if user_login_to_node_get is None:
-                user_login_to_node_get = (await prefixer.load()).user_login_to_node.get
+                user_login_to_node_get = prefixer.user_login_to_node.get
             filters.append(col.in_(list(chain.from_iterable(
                 user_login_to_node_get(u, []) for u in people))))
     if labels:

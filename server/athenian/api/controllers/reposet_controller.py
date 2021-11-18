@@ -80,14 +80,15 @@ async def get_reposet(request: AthenianWebRequest, id: int) -> web.Response:
         RepositorySet.tracking_re,
     ]
     rs, _ = await fetch_reposet(id, rs_cols, request.uid, request.sdb, request.cache)
-    repos = set(rs.items)
     meta_ids = await get_metadata_account_ids_or_empty(rs.owner_id, request.sdb, request.cache)
     if meta_ids:
         # append logical repositories, if they exist
-        prefixer = await Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
+        prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
         settings = Settings.from_request(request, rs.owner_id)
         logical_settings = await settings.list_logical_repositories(prefixer, rs.items)
         repos = logical_settings.append_logical_repos_to_reposet(rs)
+    else:
+        repos = set(rs.items)
     return model_response(RepositorySetWithName(
         name=rs.name, items=sorted(repos), precomputed=rs.precomputed))
 

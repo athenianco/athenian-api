@@ -15,6 +15,7 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached, middle_term_expire, short_term_exptime
+from athenian.api.controllers.logical_repos import drop_logical_repo
 from athenian.api.controllers.miners.github.branches import BranchMiner, load_branch_commit_dates
 from athenian.api.controllers.miners.github.dag_accelerated import extract_first_parents, \
     extract_subdag, join_dags, partition_dag, searchsorted_inrange
@@ -267,7 +268,7 @@ async def fetch_repository_commits(repos: Dict[str, DAG],
     for i, repo in enumerate(unique_repos):
         required_heads = df_shas[repo_order[offsets[i]:offsets[i + 1]]]
         repo_heads[repo] = required_heads
-        hashes, vertexes, edges = repos[repo]
+        hashes, vertexes, edges = repos[drop_logical_repo(repo)]
         if len(hashes) > 0:
             found_indexes = searchsorted_inrange(hashes, required_heads)
             missed_mask = hashes[found_indexes] != required_heads

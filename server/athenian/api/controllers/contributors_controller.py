@@ -30,27 +30,26 @@ async def get_contributors(request: AthenianWebRequest, id: int) -> web.Response
                 f"Account {account_id} does not exist or user {request.uid} "
                 "is not a member."
             )
-            return ResponseError(NotFoundError(detail=err_detail)).response
+            raise ResponseError(NotFoundError(detail=err_detail))
         tasks = [
             get_account_repositories(id, True, sdb_conn),
             #                            not sdb_conn! we must go parallel
             get_metadata_account_ids(id, request.sdb, request.cache),
         ]
         repos, meta_ids = await gather(*tasks)
-        prefixer = await Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
+        prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
         settings = Settings.from_request(request, account_id)
         release_settings, logical_settings = await gather(
             settings.list_release_matches(repos),
             settings.list_logical_repositories(prefixer, repos),
         )
-        repos = [r.split("/", 1)[1] for r in repos]
+        repos = logical_settings.append_logical_repos([r.split("/", 1)[1] for r in repos])
         users = await mine_contributors(
             repos, None, None, False, [], release_settings, logical_settings, prefixer,
             account_id, meta_ids, request.mdb, request.pdb, request.rdb, request.cache)
         mapped_jira = await load_mapped_jira_users(
             account_id, [u[User.node_id.name] for u in users],
             sdb_conn, request.mdb, request.cache)
-        prefixer = await prefixer.load()
         contributors = [
             Contributor(login=prefixer.user_node_to_prefixed_login[u[User.node_id.name]],
                         name=u[User.name.name],

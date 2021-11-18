@@ -32,7 +32,7 @@ from athenian.api.controllers.miners.github.released_pr import matched_by_column
     new_released_prs_df
 from athenian.api.controllers.miners.types import MinedPullRequest, PRParticipants, \
     PRParticipationKind, PullRequestFacts, PullRequestFactsMap
-from athenian.api.controllers.prefixer import PrefixerPromise
+from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, ReleaseSettings
 from athenian.api.db import ParallelDatabase
 from athenian.api.models.metadata.github import PullRequest, PullRequestLabel, Release
@@ -96,7 +96,7 @@ class DonePRFactsLoader:
                                                   default_branches: Dict[str, str],
                                                   exclude_inactive: bool,
                                                   release_settings: ReleaseSettings,
-                                                  prefixer: PrefixerPromise,
+                                                  prefixer: Prefixer,
                                                   account: int,
                                                   pdb: databases.Database,
                                                   ) -> Tuple[PullRequestFactsMap,
@@ -115,7 +115,7 @@ class DonePRFactsLoader:
             [ghdprf.data, ghdprf.author, ghdprf.merger, ghdprf.releaser],
             time_from, time_to, repos, participants, labels,
             default_branches, exclude_inactive, release_settings, prefixer, account, pdb)
-        user_node_to_login_get = (await prefixer.load()).user_node_to_login.get
+        user_node_to_login_get = prefixer.user_node_to_login.get
         for key, row in result.items():
             result[key] = cls._done_pr_facts_from_row(row, user_node_to_login_get)
         return result, ambiguous
@@ -125,7 +125,7 @@ class DonePRFactsLoader:
                                               repos: Collection[str],
                                               default_branches: Dict[str, str],
                                               release_settings: ReleaseSettings,
-                                              prefixer: PrefixerPromise,
+                                              prefixer: Prefixer,
                                               account: int,
                                               pdb: databases.Database,
                                               extra: Iterable[InstrumentedAttribute] = (),
@@ -147,7 +147,7 @@ class DonePRFactsLoader:
             None, None, repos, {}, LabelFilter.empty(),
             default_branches, False, release_settings, prefixer, account, pdb)
         raw = {}
-        user_node_to_login_get = (await prefixer.load()).user_node_to_login.get
+        user_node_to_login_get = prefixer.user_node_to_login.get
         for (node_id, repo), row in result.items():
             result[(node_id, repo)] = PullRequestFacts(
                 data=row[ghdprf.data.name],
@@ -166,7 +166,7 @@ class DonePRFactsLoader:
                                                       default_branches: Dict[str, str],
                                                       exclude_inactive: bool,
                                                       release_settings: ReleaseSettings,
-                                                      prefixer: PrefixerPromise,
+                                                      prefixer: Prefixer,
                                                       account: int,
                                                       pdb: databases.Database,
                                                       ) -> Tuple[Dict[Tuple[int, str], datetime],
@@ -196,7 +196,7 @@ class DonePRFactsLoader:
                                                    repos: Dict[str, Set[int]],
                                                    default_branches: Dict[str, str],
                                                    release_settings: ReleaseSettings,
-                                                   prefixer: PrefixerPromise,
+                                                   prefixer: Prefixer,
                                                    account: int,
                                                    pdb: databases.Database,
                                                    ) -> Tuple[PullRequestFactsMap,
@@ -251,7 +251,7 @@ class DonePRFactsLoader:
             rows = await pdb.fetch_all(query)
         result = {}
         ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
-        user_node_to_login_get = (await prefixer.load()).user_node_to_login.get
+        user_node_to_login_get = prefixer.user_node_to_login.get
         for row in rows:
             repo = row[ghprt.repository_full_name.name]
             dump = triage_by_release_match(
@@ -269,7 +269,7 @@ class DonePRFactsLoader:
                                               node_ids: Iterable[int],
                                               default_branches: Dict[str, str],
                                               release_settings: ReleaseSettings,
-                                              prefixer: PrefixerPromise,
+                                              prefixer: Prefixer,
                                               account: int,
                                               pdb: databases.Database,
                                               panic_on_missing_repositories: bool = True,
@@ -308,7 +308,7 @@ class DonePRFactsLoader:
             rows = await pdb.fetch_all(query)
         result = {}
         ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
-        user_node_to_login_get = (await prefixer.load()).user_node_to_login.get
+        user_node_to_login_get = prefixer.user_node_to_login.get
         for row in rows:
             repo = row[ghprt.repository_full_name.name]
             if not panic_on_missing_repositories and repo not in release_settings.native:
@@ -341,7 +341,7 @@ class DonePRFactsLoader:
                                            matched_bys: Dict[str, ReleaseMatch],
                                            default_branches: Dict[str, str],
                                            release_settings: ReleaseSettings,
-                                           prefixer: PrefixerPromise,
+                                           prefixer: Prefixer,
                                            account: int,
                                            pdb: databases.Database,
                                            cache: Optional[aiomcache.Client],
@@ -366,7 +366,7 @@ class DonePRFactsLoader:
         records = []
         utc = timezone.utc
         force_push_dropped = set()
-        user_node_to_login_get = (await prefixer.load()).user_node_to_login.get
+        user_node_to_login_get = prefixer.user_node_to_login.get
         for pr in prs:
             repo = pr[ghprt.repository_full_name.name]
             node_id = pr[ghprt.pr_node_id.name]
@@ -429,7 +429,7 @@ class DonePRFactsLoader:
                                              default_branches: Dict[str, str],
                                              exclude_inactive: bool,
                                              release_settings: ReleaseSettings,
-                                             prefixer: PrefixerPromise,
+                                             prefixer: Prefixer,
                                              account: int,
                                              pdb: databases.Database,
                                              ) -> Tuple[Dict[Tuple[int, str], Mapping[str, Any]],
@@ -475,7 +475,7 @@ class DonePRFactsLoader:
             include_singles = set(include_singles)
             include_multiples = [set(m) for m in include_multiples]
         if len(participants) > 0 and not postgres:
-            user_node_to_login_get = (await prefixer.load()).user_node_to_login.get
+            user_node_to_login_get = prefixer.user_node_to_login.get
         for row in rows:
             repo, rm = row[ghprt.repository_full_name.name], row[ghprt.release_match.name]
             dump = triage_by_release_match(
@@ -506,7 +506,7 @@ class DonePRFactsLoader:
                                                 participants: PRParticipants,
                                                 labels: LabelFilter,
                                                 exclude_inactive: bool,
-                                                prefixer: PrefixerPromise,
+                                                prefixer: Prefixer,
                                                 account: int,
                                                 postgres: bool,
                                                 ) -> Tuple[List[Select], Set[datetime]]:
@@ -543,7 +543,7 @@ class DonePRFactsLoader:
                                               participants: PRParticipants,
                                               labels: LabelFilter,
                                               exclude_inactive: bool,
-                                              prefixer: PrefixerPromise,
+                                              prefixer: Prefixer,
                                               account: int,
                                               postgres: bool,
                                               ) -> List[Select]:
@@ -617,7 +617,7 @@ class DonePRFactsLoader:
                                           filters: list,
                                           selected: list,
                                           postgres: bool,
-                                          prefixer: PrefixerPromise,
+                                          prefixer: Prefixer,
                                           ) -> None:
         ghdprf = GitHubDonePullRequestFacts
         if postgres:
@@ -655,9 +655,9 @@ class DonePRFactsLoader:
     @classmethod
     async def _build_participants_conditions(cls,
                                              participants: PRParticipants,
-                                             prefixer: PrefixerPromise,
+                                             prefixer: Prefixer,
                                              ) -> Tuple[list, list]:
-        user_login_to_node_get = (await prefixer.load()).user_login_to_node.get
+        user_login_to_node_get = prefixer.user_login_to_node.get
 
         def _build_conditions(roles):
             return [

@@ -23,7 +23,7 @@ from athenian.api.controllers.miners.types import PRParticipants, PRParticipatio
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.release import extract_release_participants
 from athenian.api.controllers.reposet import resolve_repos
-from athenian.api.controllers.settings import Settings
+from athenian.api.controllers.settings import LogicalRepositorySettings, Settings
 from athenian.api.controllers.user import MANNEQUIN_PREFIX
 from athenian.api.models.web import CalculatedCodeCheckMetrics, CalculatedCodeCheckMetricsItem, \
     CalculatedDeploymentMetric, CalculatedDeveloperMetrics, CalculatedDeveloperMetricsItem, \
@@ -70,8 +70,8 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError("?", detail=str(e)))
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
-    prefixer = await Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
-    filters, repos = await compile_filters_prs(filt.for_, request, filt.account, meta_ids)
+    filters, repos, prefixer, logical_settings = await compile_filters_prs(
+        filt.for_, request, filt.account, meta_ids)
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
 
@@ -98,9 +98,8 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
     met.calculated = []
 
     settings = Settings.from_request(request, filt.account)
-    release_settings, logical_settings, (branches, default_branches), calculators = await gather(
+    release_settings, (branches, default_branches), calculators = await gather(
         settings.list_release_matches(repos),
-        settings.list_logical_repositories(prefixer, repos, pointer=".for[?].repositories"),
         BranchMiner.extract_branches(repos, meta_ids, request.mdb, request.cache, strip=True),
         get_calculators_for_request({s for s, _ in filters}, filt.account, meta_ids, request),
     )
@@ -168,7 +167,10 @@ async def compile_filters_prs(for_sets: List[ForSet],
                               request: AthenianWebRequest,
                               account: int,
                               meta_ids: Tuple[int, ...],
-                              ) -> Tuple[List[FilterPRs], Set[str]]:
+                              ) -> Tuple[List[FilterPRs],
+                                         Set[str],
+                                         Prefixer,
+                                         LogicalRepositorySettings]:
     """
     Build the list of filters for a given list of ForSet-s.
 
@@ -183,9 +185,13 @@ async def compile_filters_prs(for_sets: List[ForSet],
     filters = []
     checkers = {}
     all_repos = set()
+    prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
+    settings = Settings.from_request(request, account)
+    logical_settings = await settings.list_logical_repositories(prefixer)
     for i, for_set in enumerate(for_sets):
         repos, prefix, service = await _extract_repos(
-            request, account, meta_ids, for_set.repositories, i, all_repos, checkers)
+            request, logical_settings, account, meta_ids, for_set.repositories,
+            i, all_repos, checkers)
         if for_set.repogroups is not None:
             repogroups = [set(chain.from_iterable(repos[i] for i in group))
                           for group in for_set.repogroups]
@@ -205,7 +211,7 @@ async def compile_filters_prs(for_sets: List[ForSet],
         labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
         jira = await _compile_jira(for_set, account, request)
         filters.append((service, (repogroups, withgroups, labels, jira, i, for_set)))
-    return filters, all_repos
+    return filters, all_repos, prefixer, logical_settings
 
 
 def check_environments(metrics: Collection[str], for_index: int, for_set: ForSet) -> None:
@@ -222,7 +228,10 @@ async def _compile_filters_devs(for_sets: List[ForSetDevelopers],
                                 request: AthenianWebRequest,
                                 account: int,
                                 meta_ids: Tuple[int, ...],
-                                ) -> (List[FilterDevs], List[str]):
+                                ) -> Tuple[List[FilterDevs],
+                                           List[str],
+                                           Prefixer,
+                                           LogicalRepositorySettings]:
     """
     Build the list of filters for a given list of ForSetDevelopers'.
 
@@ -238,9 +247,13 @@ async def _compile_filters_devs(for_sets: List[ForSetDevelopers],
     filters = []
     checkers = {}
     all_repos = set()
+    prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
+    settings = Settings.from_request(request, account)
+    logical_settings = await settings.list_logical_repositories(prefixer)
     for i, for_set in enumerate(for_sets):
         repos, prefix, service = await _extract_repos(
-            request, account, meta_ids, for_set.repositories, i, all_repos, checkers)
+            request, logical_settings, account, meta_ids, for_set.repositories,
+            i, all_repos, checkers)
         if for_set.repogroups is not None:
             repogroups = [set(chain.from_iterable(repos[i] for i in group))
                           for group in for_set.repogroups]
@@ -251,14 +264,16 @@ async def _compile_filters_devs(for_sets: List[ForSetDevelopers],
         labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
         jira = await _compile_jira(for_set, account, request)
         filters.append((service, (repogroups, devs, labels, jira, for_set)))
-    return filters, all_repos
+    return filters, all_repos, prefixer, logical_settings
 
 
 async def compile_filters_checks(for_sets: List[ForSetCodeChecks],
                                  request: AthenianWebRequest,
                                  account: int,
                                  meta_ids: Tuple[int, ...],
-                                 ) -> List[FilterChecks]:
+                                 ) -> Tuple[List[FilterChecks],
+                                            Prefixer,
+                                            LogicalRepositorySettings]:
     """
     Build the list of filters for a given list of ForSetCodeChecks'.
 
@@ -272,9 +287,13 @@ async def compile_filters_checks(for_sets: List[ForSetCodeChecks],
     filters = []
     checkers = {}
     all_repos = set()
+    prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
+    settings = Settings.from_request(request, account)
+    logical_settings = await settings.list_logical_repositories(prefixer)
     for i, for_set in enumerate(for_sets):
         repos, prefix, service = await _extract_repos(
-            request, account, meta_ids, for_set.repositories, i, all_repos, checkers)
+            request, logical_settings, account, meta_ids, for_set.repositories,
+            i, all_repos, checkers)
         if for_set.repogroups is not None:
             repogroups = [set(chain.from_iterable(repos[i] for i in group))
                           for group in for_set.repogroups]
@@ -290,20 +309,27 @@ async def compile_filters_checks(for_sets: List[ForSetCodeChecks],
         labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
         jira = await _compile_jira(for_set, account, request)
         filters.append((service, (repogroups, commit_author_groups, labels, jira, for_set)))
-    return filters
+    return filters, prefixer, logical_settings
 
 
 async def _compile_filters_deployments(for_sets: List[ForSetDeployments],
                                        request: AthenianWebRequest,
                                        account: int,
                                        meta_ids: Tuple[int, ...],
-                                       ) -> Tuple[List[FilterDeployments], Set[str]]:
+                                       ) -> Tuple[List[FilterDeployments],
+                                                  Set[str],
+                                                  Prefixer,
+                                                  LogicalRepositorySettings]:
     filters = []
     checkers = {}
     all_repos = set()
+    prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
+    settings = Settings.from_request(request, account)
+    logical_settings = await settings.list_logical_repositories(prefixer)
     for i, for_set in enumerate(for_sets):
         repos, prefix, service = await _extract_repos(
-            request, account, meta_ids, for_set.repositories, i, all_repos, checkers)
+            request, logical_settings, account, meta_ids,
+            for_set.repositories, i, all_repos, checkers)
         if for_set.repogroups is not None:
             repogroups = [set(chain.from_iterable(repos[i] for i in group))
                           for group in for_set.repogroups]
@@ -327,7 +353,7 @@ async def _compile_filters_deployments(for_sets: List[ForSetDeployments],
             repogroups, withgroups, for_set.environments or [],
             (for_set.with_labels or {}, for_set.without_labels or {}),
             pr_labels, jira, for_set, i)))
-    return filters, all_repos
+    return filters, all_repos, prefixer, logical_settings
 
 
 def _compile_dev_logins(developers: Iterable[str],
@@ -361,6 +387,7 @@ async def _compile_jira(for_set, account: int, request: AthenianWebRequest) -> J
 
 
 async def _extract_repos(request: AthenianWebRequest,
+                         logical_settings: LogicalRepositorySettings,
                          account: int,
                          meta_ids: Tuple[int, ...],
                          for_set: List[str],
@@ -372,9 +399,9 @@ async def _extract_repos(request: AthenianWebRequest,
         return (await request.user()).login
 
     pointer = ".for[%d].repositories" % for_set_index
-    resolved, prefix, _ = await resolve_repos(
-        for_set, account, request.uid, login_loader, meta_ids, request.sdb, request.mdb,
-        request.cache, request.app["slack"],
+    resolved, prefix = await resolve_repos(
+        for_set, account, request.uid, login_loader, logical_settings, meta_ids,
+        request.sdb, request.mdb, request.cache, request.app["slack"],
         strip_prefix=False, separate=True, checkers=checkers, pointer=pointer)
     all_repos.update(chain.from_iterable(resolved))
     resolved = [{r.split("/", 1)[1] for r in rs} for rs in resolved]
@@ -389,13 +416,18 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
         filt = CodeFilter.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        return ResponseError(InvalidRequestError("?", detail=str(e))).response
+        raise ResponseError(InvalidRequestError("?", detail=str(e)))
+
+    meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
+    prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
+    settings = Settings.from_request(request, filt.account)
+    logical_settings = await settings.list_logical_repositories(prefixer)
 
     async def login_loader() -> str:
         return (await request.user()).login
 
-    repos, _, meta_ids = await resolve_repos(
-        filt.in_, filt.account, request.uid, login_loader, None,
+    repos, _ = await resolve_repos(
+        filt.in_, filt.account, request.uid, login_loader, logical_settings, meta_ids,
         request.sdb, request.mdb, request.cache, request.app["slack"])
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularity, filt.timezone)
@@ -427,8 +459,7 @@ async def calc_metrics_developers(request: AthenianWebRequest, body: dict) -> we
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError("?", detail=str(e)))
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
-    prefixer = await Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
-    filters, all_repos = await _compile_filters_devs(
+    filters, all_repos, prefixer, logical_settings = await _compile_filters_devs(
         filt.for_, request, filt.account, meta_ids)
     if filt.date_to < filt.date_from:
         raise ResponseError(InvalidRequestError(
@@ -438,9 +469,8 @@ async def calc_metrics_developers(request: AthenianWebRequest, body: dict) -> we
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
     settings = Settings.from_request(request, filt.account)
-    release_settings, logical_settings, calculators = await gather(
+    release_settings, calculators = await gather(
         settings.list_release_matches(all_repos),
-        settings.list_logical_repositories(prefixer, all_repos, pointer=".for[?].repositories"),
         get_calculators_for_request({s for s, _ in filters}, filt.account, meta_ids, request),
     )
 
@@ -502,15 +532,20 @@ async def _compile_repos_releases(request: AthenianWebRequest,
                                   account: int,
                                   meta_ids: Tuple[int, ...],
                                   ) -> Tuple[List[Tuple[str, str, Tuple[Set[str], List[str]]]],
-                                             Set[str]]:
+                                             Set[str],
+                                             Prefixer,
+                                             LogicalRepositorySettings]:
     filters = []
     checkers = {}
     all_repos = set()
+    prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
+    settings = Settings.from_request(request, account)
+    logical_settings = await settings.list_logical_repositories(prefixer)
     for i, for_set in enumerate(for_sets):
         repos, prefix, service = await _extract_repos(
-            request, account, meta_ids, for_set, i, all_repos, checkers)
+            request, logical_settings, account, meta_ids, for_set, i, all_repos, checkers)
         filters.append((service, prefix, (set(chain.from_iterable(repos)), for_set)))
-    return filters, all_repos
+    return filters, all_repos, prefixer, logical_settings
 
 
 @weight(4)
@@ -522,8 +557,8 @@ async def calc_metrics_releases(request: AthenianWebRequest, body: dict) -> web.
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError("?", detail=str(e)))
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
-    prefixer = await Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
-    filters, repos = await _compile_repos_releases(request, filt.for_, filt.account, meta_ids)
+    filters, repos, prefixer, logical_settings = await _compile_repos_releases(
+        request, filt.for_, filt.account, meta_ids)
     grouped_for_sets = defaultdict(list)
     grouped_repos = defaultdict(list)
     for service, prefix, (for_set_repos, for_set) in filters:
@@ -534,10 +569,9 @@ async def calc_metrics_releases(request: AthenianWebRequest, body: dict) -> web.
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
 
     settings = Settings.from_request(request, filt.account)
-    release_settings, logical_settings, (branches, default_branches), jira_ids, calculators, \
+    release_settings, (branches, default_branches), jira_ids, calculators, \
         *participants = await gather(
             settings.list_release_matches(repos),
-            settings.list_logical_repositories(prefixer, repos, pointer=".for[?].repositories"),
             BranchMiner.extract_branches(repos, meta_ids, request.mdb, request.cache, strip=True),
             get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
             get_calculators_for_request(grouped_repos.keys(), filt.account, meta_ids, request),
@@ -602,7 +636,7 @@ async def calc_metrics_code_checks(request: AthenianWebRequest, body: dict) -> w
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError("?", detail=str(e)))
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
-    filters = await compile_filters_checks(filt.for_, request, filt.account, meta_ids)
+    filters, _, _ = await compile_filters_checks(filt.for_, request, filt.account, meta_ids)
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
     met = CalculatedCodeCheckMetrics()
@@ -679,19 +713,17 @@ async def calc_metrics_deployments(request: AthenianWebRequest, body: dict) -> w
         get_metadata_account_ids(filt.account, request.sdb, request.cache),
         get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
     )
-    prefixer = await Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
-    filters, _ = await _compile_filters_deployments(filt.for_, request, filt.account, meta_ids)
+    prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
+    filters, _, prefixer, logical_settings = await _compile_filters_deployments(
+        filt.for_, request, filt.account, meta_ids)
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
     calculated = []
-    settings = Settings.from_request(request, filt.account)
-    release_settings, logical_settings, (branches, default_branches), calculators, prefixer = \
+    release_settings, (branches, default_branches), calculators = \
         await gather(
-            settings.list_release_matches(),  # no "repos"!
-            settings.list_logical_repositories(prefixer),
+            Settings.from_request(request, filt.account).list_release_matches(),  # no "repos"!
             BranchMiner.extract_branches(None, meta_ids, request.mdb, request.cache, strip=True),
             get_calculators_for_request({s for s, _ in filters}, filt.account, meta_ids, request),
-            prefixer.load(),
     )
 
     @sentry_span
@@ -703,7 +735,7 @@ async def calc_metrics_deployments(request: AthenianWebRequest, body: dict) -> w
         metric_values = await calculator.calc_deployment_metrics_line_github(
             filt.metrics, time_intervals, filt.quantiles or (0, 1),
             resolved_repos, resolved_withgroups, envs, pr_labels, *labels, jira,
-            release_settings, logical_settings, prefixer.as_promise(),
+            release_settings, logical_settings, prefixer,
             branches, default_branches, jira_ids)
         mrange = range(len(filt.metrics))
         for with_group_index, with_group in enumerate(metric_values):

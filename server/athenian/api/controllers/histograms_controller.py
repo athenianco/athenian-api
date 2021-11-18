@@ -9,7 +9,6 @@ from athenian.api.controllers.features.histogram import HistogramParameters, Sca
 from athenian.api.controllers.metrics_controller import check_environments, \
     compile_filters_checks, compile_filters_prs, get_calculators_for_request
 from athenian.api.controllers.miners.github.branches import BranchMiner
-from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import Settings
 from athenian.api.models.web import CalculatedCodeCheckHistogram, CalculatedPullRequestHistogram, \
     CodeCheckHistogramsRequest, ForSetCodeChecks, Interquartile, InvalidRequestError, \
@@ -27,13 +26,11 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
-    prefixer = await Prefixer.schedule_load(meta_ids, request.mdb, request.cache)
-    filters, repos = await compile_filters_prs(filt.for_, request, filt.account, meta_ids)
+    filters, repos, prefixer, logical_settings = await compile_filters_prs(
+        filt.for_, request, filt.account, meta_ids)
     time_from, time_to = filt.resolve_time_from_and_to()
-    settings = Settings.from_request(request, filt.account)
-    release_settings, logical_settings, (branches, default_branches), calculators = await gather(
-        settings.list_release_matches(repos),
-        settings.list_logical_repositories(prefixer, repos, pointer=".for[?].repositories"),
+    release_settings, (branches, default_branches), calculators = await gather(
+        Settings.from_request(request, filt.account).list_release_matches(repos),
         BranchMiner.extract_branches(repos, meta_ids, request.mdb, request.cache, strip=True),
         get_calculators_for_request({s for s, _ in filters}, filt.account, meta_ids, request),
     )
@@ -103,7 +100,7 @@ async def calc_histogram_code_checks(request: AthenianWebRequest, body: dict) ->
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
-    filters = await compile_filters_checks(filt.for_, request, filt.account, meta_ids)
+    filters, _, _ = await compile_filters_checks(filt.for_, request, filt.account, meta_ids)
     time_from, time_to = filt.resolve_time_from_and_to()
     calculators = await get_calculators_for_request(
         {s for s, _ in filters}, filt.account, meta_ids, request)

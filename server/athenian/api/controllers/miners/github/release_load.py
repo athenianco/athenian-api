@@ -25,7 +25,7 @@ from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_C
     fetch_precomputed_commit_history_dags, fetch_repository_commits
 from athenian.api.controllers.miners.github.dag_accelerated import extract_first_parents
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
-from athenian.api.controllers.prefixer import PrefixerPromise
+from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import default_branch_alias, LogicalRepositorySettings, \
     ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
 from athenian.api.db import add_pdb_hits, add_pdb_misses, greatest, least, ParallelDatabase
@@ -57,7 +57,7 @@ class ReleaseLoader:
                             time_to: datetime,
                             release_settings: ReleaseSettings,
                             logical_settings: LogicalRepositorySettings,
-                            prefixer: PrefixerPromise,
+                            prefixer: Prefixer,
                             account: int,
                             meta_ids: Tuple[int, ...],
                             mdb: ParallelDatabase,
@@ -381,7 +381,7 @@ class ReleaseLoader:
                                           match_groups: Dict[ReleaseMatch, Dict[str, List[str]]],
                                           time_from: datetime,
                                           time_to: datetime,
-                                          prefixer: PrefixerPromise,
+                                          prefixer: Prefixer,
                                           account: int,
                                           pdb: ParallelDatabase,
                                           index: Optional[Union[str, Sequence[str]]] = None,
@@ -410,7 +410,7 @@ class ReleaseLoader:
             df.set_index(index, inplace=True)
         else:
             df.reset_index(drop=True, inplace=True)
-        user_node_to_login_get = (await prefixer.load()).user_node_to_login.get
+        user_node_to_login_get = prefixer.user_node_to_login.get
         df[Release.author.name] = [
             user_node_to_login_get(u) for u in df[Release.author_node_id.name].values
         ]
@@ -425,7 +425,7 @@ class ReleaseLoader:
                                     time_from: datetime,
                                     time_to: datetime,
                                     logical_settings: LogicalRepositorySettings,
-                                    prefixer: PrefixerPromise,
+                                    prefixer: Prefixer,
                                     mdb: ParallelDatabase,
                                     rdb: ParallelDatabase,
                                     index: Optional[Union[str, Sequence[str]]] = None,
@@ -433,7 +433,7 @@ class ReleaseLoader:
         """Load pushed releases from persistentdata DB."""
         if len(repos) == 0:
             return dummy_releases_df(index)
-        repo_name_to_node = (await prefixer.load()).repo_name_to_node.get
+        repo_name_to_node = prefixer.repo_name_to_node.get
         repo_ids = {repo_name_to_node(r): r for r in coerce_logical_repos(repos)}
         release_rows = await rdb.fetch_all(
             select([ReleaseNotification])

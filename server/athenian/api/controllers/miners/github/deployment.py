@@ -33,7 +33,7 @@ from athenian.api.controllers.miners.jira.issue import fetch_jira_issues_for_prs
     generate_jira_prs_query
 from athenian.api.controllers.miners.types import DeploymentConclusion, DeploymentFacts, \
     PullRequestJIRAIssueItem, ReleaseFacts, ReleaseParticipants, ReleaseParticipationKind
-from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
+from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch, \
     ReleaseSettings
 from athenian.api.db import add_pdb_hits, add_pdb_misses, insert_or_ignore, ParallelDatabase
@@ -82,7 +82,7 @@ async def mine_deployments(repo_node_ids: Collection[int],
                            logical_settings: LogicalRepositorySettings,
                            branches: pd.DataFrame,
                            default_branches: Dict[str, str],
-                           prefixer: PrefixerPromise,
+                           prefixer: Prefixer,
                            account: int,
                            meta_ids: Tuple[int, ...],
                            mdb: ParallelDatabase,
@@ -184,7 +184,7 @@ async def _finalize_release_settings(notifications: pd.DataFrame,
                                      logical_settings: LogicalRepositorySettings,
                                      branches: pd.DataFrame,
                                      default_branches: Dict[str, str],
-                                     prefixer: PrefixerPromise,
+                                     prefixer: Prefixer,
                                      account: int,
                                      meta_ids: Tuple[int, ...],
                                      mdb: ParallelDatabase,
@@ -197,7 +197,6 @@ async def _finalize_release_settings(notifications: pd.DataFrame,
         select([distinct(DeployedComponent.repository_node_id)])
         .where(and_(DeployedComponent.account_id == account,
                     DeployedComponent.deployment_name.in_any_values(notifications.index.values))))
-    prefixer = await prefixer.load()
     repos = [prefixer.repo_node_to_name[r[0]] for r in rows]
     need_disambiguate = []
     for repo in repos:
@@ -208,7 +207,7 @@ async def _finalize_release_settings(notifications: pd.DataFrame,
         return repos, release_settings
     _, matched_bys = await ReleaseLoader.load_releases(
         need_disambiguate, branches, default_branches, time_from, time_to,
-        release_settings, logical_settings, prefixer.as_promise(), account, meta_ids,
+        release_settings, logical_settings, prefixer, account, meta_ids,
         mdb, pdb, rdb, cache)
     return repos, ReleaseLoader.disambiguate_release_settings(release_settings, matched_bys)
 
@@ -220,7 +219,7 @@ async def _fetch_precomputed_deployed_releases(notifications: pd.DataFrame,
                                                logical_settings: LogicalRepositorySettings,
                                                branches: pd.DataFrame,
                                                default_branches: Dict[str, str],
-                                               prefixer: PrefixerPromise,
+                                               prefixer: Prefixer,
                                                account: int,
                                                meta_ids: Tuple[int, ...],
                                                mdb: ParallelDatabase,
@@ -256,7 +255,7 @@ async def _postprocess_deployed_releases(releases: pd.DataFrame,
                                          default_branches: Dict[str, str],
                                          release_settings: ReleaseSettings,
                                          logical_settings: LogicalRepositorySettings,
-                                         prefixer: PrefixerPromise,
+                                         prefixer: Prefixer,
                                          account: int,
                                          meta_ids: Tuple[int, ...],
                                          mdb: ParallelDatabase,
@@ -272,14 +271,13 @@ async def _postprocess_deployed_releases(releases: pd.DataFrame,
     if not isinstance(releases[Release.published_at.name].dtype, pd.DatetimeTZDtype):
         releases[Release.published_at.name] = \
             releases[Release.published_at.name].dt.tz_localize(timezone.utc)
-    prefixer = await prefixer.load()
     user_node_to_login_get = prefixer.user_node_to_login.get
     releases[Release.author.name] = [
         user_node_to_login_get(u) for u in releases[Release.author_node_id.name].values
     ]
     release_facts = await mine_releases_by_ids(
         releases, branches, default_branches, release_settings, logical_settings,
-        prefixer.as_promise(), account, meta_ids, mdb, pdb, rdb, cache, with_avatars=False)
+        prefixer, account, meta_ids, mdb, pdb, rdb, cache, with_avatars=False)
     if not release_facts:
         return pd.DataFrame()
     release_facts_df = df_from_structs([f for _, f in release_facts])
@@ -318,11 +316,11 @@ def _group_components(df: pd.DataFrame) -> pd.DataFrame:
 @sentry_span
 async def _filter_by_participants(df: pd.DataFrame,
                                   participants: ReleaseParticipants,
-                                  prefixer: PrefixerPromise,
+                                  prefixer: Prefixer,
                                   ) -> pd.DataFrame:
     if df.empty or not participants:
         return df
-    user_login_to_node_get = (await prefixer.load()).user_login_to_node.__getitem__
+    user_login_to_node_get = prefixer.user_login_to_node.__getitem__
     participants = {
         k: list(chain.from_iterable(user_login_to_node_get(u) for u in people))
         for k, people in participants.items()
@@ -425,7 +423,7 @@ async def _compute_deployment_facts(notifications: pd.DataFrame,
                                     logical_settings: LogicalRepositorySettings,
                                     branches: pd.DataFrame,
                                     default_branches: Dict[str, str],
-                                    prefixer: PrefixerPromise,
+                                    prefixer: Prefixer,
                                     account: int,
                                     meta_ids: Tuple[int, ...],
                                     mdb: ParallelDatabase,
@@ -655,7 +653,7 @@ async def _map_releases_to_deployments(
         deployed_commits_per_repo_per_env: Dict[str, Dict[int, DeployedCommitDetails]],
         all_mentioned_hashes: np.ndarray,
         max_release_time_to: datetime,
-        prefixer: PrefixerPromise,
+        prefixer: Prefixer,
         release_settings: ReleaseSettings,
         logical_settings: LogicalRepositorySettings,
         branches: pd.DataFrame,
@@ -667,7 +665,6 @@ async def _map_releases_to_deployments(
         rdb: ParallelDatabase,
         cache: Optional[aiomcache.Client],
 ) -> pd.DataFrame:
-    prefixer = await prefixer.load()
     repo_node_to_name_get = prefixer.repo_node_to_name.get
     repo_names = {repo_node_to_name_get(r)
                   for repos in deployed_commits_per_repo_per_env.values()
@@ -730,7 +727,7 @@ async def _map_releases_to_deployments(
             logical_names.add(repo)
     extra_releases, _ = await ReleaseLoader.load_releases(
         logical_names, branches, default_branches, time_from, max_release_time_to,
-        release_settings, logical_settings, prefixer.as_promise(), account, meta_ids,
+        release_settings, logical_settings, prefixer, account, meta_ids,
         mdb, pdb, rdb, cache,
         force_fresh=max_release_time_to > datetime.now(timezone.utc) - unfresh_releases_lag,
         index=Release.node_id.name)
@@ -755,7 +752,7 @@ async def _map_releases_to_deployments(
     releases = pd.DataFrame({"deployment_name": deployment_names, **col_vals})
     result = await _postprocess_deployed_releases(
         releases, branches, default_branches, release_settings, logical_settings,
-        prefixer.as_promise(), account, meta_ids, mdb, pdb, rdb, cache)
+        prefixer, account, meta_ids, mdb, pdb, rdb, cache)
     await defer(_submit_deployed_releases(releases, account, release_settings, pdb),
                 "_submit_deployed_releases")
     return result
@@ -836,7 +833,7 @@ async def _submit_deployed_releases(releases: pd.DataFrame,
 @sentry_span
 async def _fetch_commit_stats(all_mentioned_hashes: np.ndarray,
                               dags: Dict[str, DAG],
-                              prefixer: PrefixerPromise,
+                              prefixer: Prefixer,
                               meta_ids: Tuple[int, ...],
                               mdb: ParallelDatabase,
                               ) -> DeployedCommitStats:
@@ -858,7 +855,7 @@ async def _fetch_commit_stats(all_mentioned_hashes: np.ndarray,
                     NodeCommit.sha.in_any_values(all_mentioned_hashes.astype("U40"))))
         .order_by(func.coalesce(NodePullRequest.merged_at, NodeCommit.committed_date)))
     assert len(commit_rows) == len(all_mentioned_hashes)
-    repo_node_to_name_get = (await prefixer.load()).repo_node_to_name.__getitem__
+    repo_node_to_name_get = prefixer.repo_node_to_name.__getitem__
     shas = np.zeros(len(commit_rows), "S40")
     lines = np.zeros(len(commit_rows), int)
     commit_authors = np.zeros_like(lines)
@@ -995,7 +992,7 @@ async def _extract_deployed_commits(
         deployed_commits_df: pd.DataFrame,
         commit_relationship: Dict[str, Dict[int, Dict[int, Dict[int, CommitRelationship]]]],
         dags: Dict[str, DAG],
-        prefixer: PrefixerPromise,
+        prefixer: Prefixer,
 ) -> Tuple[Dict[str, Dict[int, DeployedCommitDetails]], np.ndarray]:
     commit_ids_in_df = deployed_commits_df[PushCommit.node_id.name].values
     commit_shas_in_df = deployed_commits_df[PushCommit.sha.name].values.astype("S40")
@@ -1004,7 +1001,7 @@ async def _extract_deployed_commits(
     conclusions = joined[DeploymentNotification.conclusion.name].values.astype("S9")
     deployment_names = joined.index.values.astype("U")
     deployment_started_ats = joined[DeploymentNotification.started_at.name].values
-    repo_node_to_name_get = (await prefixer.load()).repo_node_to_name.get
+    repo_node_to_name_get = prefixer.repo_node_to_name.get
     deployed_commits_per_repo_per_env = defaultdict(dict)
     all_mentioned_hashes = []
     for (env, repo), indexes in joined.groupby(
@@ -1113,7 +1110,7 @@ async def _fetch_components_and_prune_unresolved(notifications: pd.DataFrame,
 async def _resolve_commit_relationship(
         notifications: pd.DataFrame,
         components: pd.DataFrame,
-        prefixer: PrefixerPromise,
+        prefixer: Prefixer,
         account: int,
         meta_ids: Tuple[int, ...],
         mdb: ParallelDatabase,
@@ -1169,7 +1166,6 @@ async def _resolve_commit_relationship(
     del joined
     del started_ats
     del commit_ids
-    prefixer = await prefixer.load()
     repo_node_to_name_get = prefixer.repo_node_to_name.get
     commits_per_repo = {}
     for env_commits_per_repo in commits_per_repo_per_env.values():

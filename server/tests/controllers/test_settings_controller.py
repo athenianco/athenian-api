@@ -10,10 +10,8 @@ from athenian.api.async_utils import read_sql_query
 from athenian.api.controllers.logical_repos import coerce_logical_repos, contains_logical_repos, \
     drop_logical_repo
 from athenian.api.controllers.settings import ReleaseMatch, Settings
-from athenian.api.models.metadata.github import NodeUser
 from athenian.api.models.state.models import AccountGitHubAccount, LogicalRepository, \
-    MappedJIRAIdentity, \
-    ReleaseSetting, RepositorySet, UserAccount, WorkType
+    MappedJIRAIdentity, ReleaseSetting, RepositorySet, UserAccount, WorkType
 from athenian.api.models.web import JIRAProject, MappedJIRAIdentity as WebMappedJIRAIdentity, \
     ReleaseMatchSetting, ReleaseMatchStrategy, WorkType as WebWorkType
 from athenian.api.response import ResponseError
@@ -145,10 +143,7 @@ async def test_set_release_match_nasty_input(
     assert response.status == code
 
 
-async def cleanup_gkwillie(sdb, with_accounts: bool):
-    await sdb.execute(delete(RepositorySet))
-    if with_accounts:
-        await sdb.execute(delete(AccountGitHubAccount))
+async def cleanup_gkwillie(sdb):
     await sdb.execute(insert(UserAccount).values(UserAccount(
         user_id="github|60340680", account_id=1, is_admin=True,
     ).create_defaults().explode(with_primary_keys=True)))
@@ -156,7 +151,8 @@ async def cleanup_gkwillie(sdb, with_accounts: bool):
 
 async def test_set_release_match_login_failure(
         client, headers, sdb, lazy_gkwillie, disable_default_user):
-    await cleanup_gkwillie(sdb, False)
+    await cleanup_gkwillie(sdb)
+    await sdb.execute(delete(RepositorySet))
     await sdb.execute(delete(AccountGitHubAccount))
     body = {
         "repositories": [],
@@ -174,31 +170,26 @@ async def test_set_release_match_login_failure(
     assert response.status == 403, await response.read()
 
 
-@pytest.mark.parametrize("code", [200, 422])
+@pytest.mark.parametrize("code, clear_kind", [
+    (200, None), (200, "reposets"), (422, "account"), (422, "repos"),
+])
 async def test_set_release_match_422(
-        client, headers, sdb, mdb_rw, gkwillie, disable_default_user, code):
-    mdb = mdb_rw
-    await cleanup_gkwillie(sdb, True)
-    if code == 422:
-        await mdb.execute(update(NodeUser)
-                          .where(NodeUser.login == "gkwillie")
-                          .values({NodeUser.login: "gkwillie2"}))
-    try:
-        body = {
-            "repositories": [],
-            "account": 1,
-            "branches": ".*",
-            "tags": ".*",
-            "match": ReleaseMatchStrategy.TAG_OR_BRANCH,
-        }
-        response = await client.request(
-            method="PUT", path="/v1/settings/release_match", headers=headers, json=body)
-        assert response.status == code, await response.read()
-    finally:
-        if code == 422:
-            await mdb.execute(update(NodeUser)
-                              .where(NodeUser.login == "gkwillie2")
-                              .values({NodeUser.login: "gkwillie"}))
+        client, headers, sdb, gkwillie, disable_default_user, code, clear_kind):
+    await cleanup_gkwillie(sdb)
+    if clear_kind == "reposets":
+        await sdb.execute(delete(RepositorySet))
+    elif clear_kind in ("account", "repos"):
+        await sdb.execute(delete(AccountGitHubAccount))
+    body = {
+        "repositories": ["github.com/src-d/go-git"] if clear_kind == "repos" else [],
+        "account": 1,
+        "branches": ".*",
+        "tags": ".*",
+        "match": ReleaseMatchStrategy.TAG_OR_BRANCH,
+    }
+    response = await client.request(
+        method="PUT", path="/v1/settings/release_match", headers=headers, json=body)
+    assert response.status == code, await response.read()
 
 
 async def test_get_release_match_settings_defaults(client, headers):
@@ -755,7 +746,7 @@ async def test_contains_logical_repos():
 
 @pytest.mark.parametrize("with_title", [False, True])
 @pytest.mark.parametrize("with_labels", [False, True])
-async def test_logical_settings_smoke(sdb, mdb, prefixer_promise, with_title, with_labels):
+async def test_logical_settings_smoke(sdb, mdb, prefixer, with_title, with_labels):
     await sdb.execute(insert(LogicalRepository).values(LogicalRepository(
         account_id=1,
         name="alpha",
@@ -764,7 +755,7 @@ async def test_logical_settings_smoke(sdb, mdb, prefixer_promise, with_title, wi
              **({"labels": ["bug"]} if with_labels else {})},
     ).create_defaults().explode()))
     settings = Settings.from_account(1, sdb, mdb, None, None)
-    logical_settings = await settings.list_logical_repositories(prefixer_promise)
+    logical_settings = await settings.list_logical_repositories(prefixer)
     any_with = with_labels or with_title
     assert logical_settings.has_logical_prs() == any_with
     assert logical_settings.all_logical_repos() == \

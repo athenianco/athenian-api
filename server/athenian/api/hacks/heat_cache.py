@@ -36,7 +36,7 @@ from athenian.api.controllers.miners.github.precomputed_prs import \
     delete_force_push_dropped_prs
 from athenian.api.controllers.miners.github.release_mine import mine_releases
 from athenian.api.controllers.miners.types import PullRequestFacts
-from athenian.api.controllers.prefixer import Prefixer, PrefixerPromise
+from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.reposet import load_account_state
 from athenian.api.controllers.settings import ReleaseMatch, Settings
 import athenian.api.db
@@ -160,7 +160,7 @@ def main():
                             reposet.owner_id, reposet.id)
                 continue
             meta_ids = await get_metadata_account_ids(reposet.owner_id, sdb, cache)
-            prefixer = await Prefixer.schedule_load(meta_ids, mdb, cache)
+            prefixer = await Prefixer.load(meta_ids, mdb, cache)
             if not reposet.precomputed:
                 log.info("Considering account %d as brand new, creating the Bots team",
                          reposet.owner_id)
@@ -237,13 +237,12 @@ def main():
                     prs_open = facts[PullRequestFacts.f.closed].isnull().sum()
                 del facts  # free some memory
                 log.info("Mining deployments")
-                prefixer = await prefixer.load()
                 repo_nodes = [prefixer.repo_name_to_node[r] for r in repos
                               if r in prefixer.repo_name_to_node]
                 await mine_deployments(
                     repo_nodes, {}, no_time_from, time_to, [], [], {}, {}, LabelFilter.empty(),
                     JIRAFilter.empty(), release_settings, logical_settings,
-                    branches, default_branches, prefixer.as_promise(), reposet.owner_id, meta_ids,
+                    branches, default_branches, prefixer, reposet.owner_id, meta_ids,
                     mdb, pdb, rdb, None)  # yes, disable the cache
                 if not reposet.precomputed:
                     if slack is not None:
@@ -299,7 +298,7 @@ async def create_teams(account: int,
                        meta_ids: Tuple[int, ...],
                        repos: Collection[str],
                        all_bots: Set[str],
-                       prefixer: PrefixerPromise,
+                       prefixer: Prefixer,
                        sdb: ParallelDatabase,
                        mdb: ParallelDatabase,
                        pdb: ParallelDatabase,
@@ -326,7 +325,7 @@ async def create_teams(account: int,
         release_settings, logical_settings, prefixer, account, meta_ids, mdb, pdb, rdb, None,
         force_fresh_releases=True)
     if bots := {u[User.login.name] for u in contributors}.intersection(all_bots):
-        bots = (await prefixer.load()).prefix_user_logins(bots)
+        bots = prefixer.prefix_user_logins(bots)
         await sdb.execute(insert(Team).values(
             Team(id=account, name=Team.BOTS, owner_id=account, members=sorted(bots))
             .create_defaults().explode()))
