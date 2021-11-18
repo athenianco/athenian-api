@@ -70,17 +70,17 @@ async def test_check_run_metrics_suite_counts(
 
 
 @pytest.mark.parametrize("metric, value", [
-    (CodeCheckMetricID.SUITE_TIME, timedelta(0)),
-    (CodeCheckMetricID.SUITE_TIME_PER_PR, timedelta(0)),
+    (CodeCheckMetricID.SUITE_TIME, None),
+    (CodeCheckMetricID.SUITE_TIME_PER_PR, None),
     (CodeCheckMetricID.SUITES_PER_PR, 1.9682300090789795),
     (CodeCheckMetricID.SUCCESS_RATIO, 0.5393718481063843),
     (CodeCheckMetricID.PRS_WITH_CHECKS_COUNT, 661),
     (CodeCheckMetricID.FLAKY_COMMIT_CHECKS_COUNT, 0),
     (CodeCheckMetricID.PRS_MERGED_WITH_FAILED_CHECKS_COUNT, 238),
     (CodeCheckMetricID.PRS_MERGED_WITH_FAILED_CHECKS_RATIO, 0.43830570578575134),
-    (CodeCheckMetricID.ROBUST_SUITE_TIME, timedelta(0)),
-    (CodeCheckMetricID.CONCURRENCY, 1.0),
-    (CodeCheckMetricID.CONCURRENCY_MAX, 1),
+    (CodeCheckMetricID.ROBUST_SUITE_TIME, None),
+    (CodeCheckMetricID.CONCURRENCY, None),
+    (CodeCheckMetricID.CONCURRENCY_MAX, 0),
     (CodeCheckMetricID.ELAPSED_TIME_PER_CONCURRENCY, None),
     (CodeCheckMetricID.SUITE_OCCUPANCY, None),
     (CodeCheckMetricID.SUITE_CRITICAL_OCCUPANCY, None),
@@ -116,15 +116,17 @@ async def test_check_run_metrics_robust_empty(metrics_calculator: MetricEntriesC
 
 
 @with_defer
-async def test_check_run_metrics_robust_quantiles(metrics_calculator: MetricEntriesCalculator):
-    metrics_calculator._quantile_stride = 20 * 365
-    metrics, _, _ = await metrics_calculator.calc_check_run_metrics_line_github(
-        [CodeCheckMetricID.ROBUST_SUITE_TIME],
-        [[datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2017, 6, 1, tzinfo=timezone.utc),
-         datetime(2020, 1, 1, tzinfo=timezone.utc)]],
-        [0.8, 1], [["src-d/go-git"]], [], False, LabelFilter.empty(), JIRAFilter.empty())
-    assert metrics[0, 0, 0, 0][0][0].value == timedelta(seconds=2)
-    assert metrics[0, 0, 0, 0][1][0].value == timedelta(seconds=2)
+async def test_check_run_metrics_robust_quantiles(alternative_facts):
+    cls = CheckRunMetricCalculatorEnsemble(CodeCheckMetricID.ROBUST_SUITE_TIME,
+                                           quantiles=(0.8, 1), quantile_stride=30)
+    cls(alternative_facts,
+        np.array([datetime(2021, 1, 1), datetime(2021, 6, 1)], dtype="datetime64[ns]"),
+        np.array([datetime(2021, 6, 1), datetime(2021, 11, 1)], dtype="datetime64[ns]"),
+        [np.arange(len(alternative_facts))],
+        )
+    values = cls.values()[CodeCheckMetricID.ROBUST_SUITE_TIME]
+    assert values[0][0].value == timedelta(seconds=1903)
+    assert values[1][0].value == timedelta(seconds=18146)
 
 
 ii_starts = np.array([
@@ -234,7 +236,7 @@ def test_elapsed_time_per_concurrency_histogram():
 
 
 @pytest.fixture(scope="module")
-def occupancy_facts() -> pd.DataFrame:
+def alternative_facts() -> pd.DataFrame:
     df = pd.read_csv(Path(__file__).parent / "check_runs.csv.gz")
     for col in (CheckRun.started_at,
                 CheckRun.completed_at,
@@ -243,20 +245,26 @@ def occupancy_facts() -> pd.DataFrame:
                 CheckRun.committed_date):
         df[col.name] = df[col.name].astype(np.datetime64)
     df = _split_duplicate_check_runs(df)
-    _postprocess_check_runs(df)
+    _postprocess_check_runs(df, True)
     return df
 
 
 @pytest.mark.parametrize("metric, value", [
-    (CodeCheckMetricID.SUITE_OCCUPANCY, 0.42699405550956726),
-    (CodeCheckMetricID.SUITE_CRITICAL_OCCUPANCY, 0.5141602754592896),
-    (CodeCheckMetricID.SUITE_IMBALANCE, timedelta(seconds=166)),
+    (CodeCheckMetricID.SUITE_TIME, timedelta(seconds=816)),
+    (CodeCheckMetricID.SUITE_TIME_PER_PR, timedelta(seconds=816)),
+    (CodeCheckMetricID.ROBUST_SUITE_TIME, timedelta(seconds=10979)),
+    (CodeCheckMetricID.CONCURRENCY, 1.6017557382583618),
+    (CodeCheckMetricID.CONCURRENCY_MAX, 10),
+    (CodeCheckMetricID.ELAPSED_TIME_PER_CONCURRENCY, None),
+    (CodeCheckMetricID.SUITE_OCCUPANCY, 0.4226307272911072),
+    (CodeCheckMetricID.SUITE_CRITICAL_OCCUPANCY, 0.3870483636856079),
+    (CodeCheckMetricID.SUITE_IMBALANCE, timedelta(seconds=10)),
 ])
-def test_occupancy_metrics(occupancy_facts, metric, value):
+def test_check_run_metrics_alternative_blitz(alternative_facts, metric, value):
     cls = CheckRunMetricCalculatorEnsemble(metric, quantiles=(0, 1), quantile_stride=0)
-    cls(occupancy_facts,
+    cls(alternative_facts,
         np.array([datetime(2021, 1, 1)], dtype="datetime64[ns]"),
         np.array([datetime(2021, 11, 1)], dtype="datetime64[ns]"),
-        [np.arange(len(occupancy_facts))],
+        [np.arange(len(alternative_facts))],
         )
     assert cls.values()[metric][0][0].value == value

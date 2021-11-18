@@ -29,7 +29,8 @@ from athenian.api.models.metadata.github import CheckRun
 ])
 async def test_check_run_smoke(mdb, time_from, time_to, repositories, pushers, labels, jira, size):
     df = await mine_check_runs(
-        time_from, time_to, repositories, pushers, labels, jira, False, (6366825,), mdb, None)
+        time_from, time_to, repositories, pushers, labels, jira, False, False,
+        (6366825,), mdb, None)
     assert len(df) == size
     for col in CheckRun.__table__.columns:
         if col.name != CheckRun.committed_date_hack.name:
@@ -43,7 +44,7 @@ async def test_check_run_smoke(mdb, time_from, time_to, repositories, pushers, l
 ])
 async def test_check_run_only_prs(mdb, time_from, time_to, size):
     df = await mine_check_runs(
-        time_from, time_to, ["src-d/go-git"], [], LabelFilter.empty(), JIRAFilter.empty(), True,
-        (6366825,), mdb, None)
+        time_from, time_to, ["src-d/go-git"], [], LabelFilter.empty(), JIRAFilter.empty(),
+        True, False, (6366825,), mdb, None)
     assert (df[CheckRun.pull_request_node_id.name].values != 0).all()
     assert len(df) == size
