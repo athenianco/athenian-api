@@ -253,12 +253,15 @@ class ReleaseLoader:
             if physical_repos.keys() != applied_matches.keys():
                 physical = np.in1d(
                     releases[Release.repository_full_name.name].values, list(physical_repos))
-                physical_node_ids = releases[Release.node_id.name].values[physical]
-                logical_node_ids = np.unique(releases[Release.node_id.name].values[~physical])
+                if index == Release.node_id.name:
+                    release_node_ids = releases.index
+                else:
+                    release_node_ids = releases[Release.node_id.name]
+                physical_node_ids = release_node_ids.values[physical]
+                logical_node_ids = np.unique(release_node_ids.values[~physical])
                 removed = np.intersect1d(physical_node_ids, logical_node_ids, assume_unique=True)
                 if len(removed):
-                    left = np.flatnonzero(
-                        ~(np.in1d(releases[Release.node_id.name].values, removed) & physical))
+                    left = np.flatnonzero(~(np.in1d(release_node_ids.values, removed) & physical))
                     releases = releases.take(left)
                     releases.reset_index(inplace=True)
             # we could have loaded both branch and tag releases for `tag_or_branch`,
