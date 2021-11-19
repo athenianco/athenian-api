@@ -1,6 +1,5 @@
 from datetime import timedelta
 from typing import Callable, Dict, List, Optional, Sequence, Tuple, Type
-import warnings
 
 import numpy as np
 import pandas as pd
@@ -288,18 +287,16 @@ class SuiteTimeCalculatorAnalysis(MetricCalculator[None]):
         run_counts_order = np.argsort(back_indexes)
         ordered_indexes = np.concatenate(suite_blocks[run_counts_order]).astype(int, copy=False)
         groups = np.split(ordered_indexes, np.cumsum(group_counts * unique_run_counts)[:-1])
-        run_finished = facts[CheckRun.completed_at.name].values.astype(min_times.dtype)
         suite_started_col = facts[check_suite_started_column].values
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", "All-NaN slice encountered")
-            suite_finished = np.concatenate([
-                np.nanmax(run_finished[group].reshape(-1, unique_run_count), axis=1)
-                for group, unique_run_count in zip(groups, unique_run_counts)
-            ])
-            suite_started = np.concatenate([
-                suite_started_col[group].reshape(-1, unique_run_count)[:, 0]
-                for group, unique_run_count in zip(groups, unique_run_counts)
-            ])
+        suite_finished_col = facts[check_suite_completed_column].values
+        suite_finished = np.concatenate([
+            suite_finished_col[group].reshape(-1, unique_run_count)[:, 0]
+            for group, unique_run_count in zip(groups, unique_run_counts)
+        ])
+        suite_started = np.concatenate([
+            suite_started_col[group].reshape(-1, unique_run_count)[:, 0]
+            for group, unique_run_count in zip(groups, unique_run_counts)
+        ])
         elapsed = suite_finished - suite_started
         # reorder the sequence to match unique_suites
         suite_order = np.argsort(run_counts_order)

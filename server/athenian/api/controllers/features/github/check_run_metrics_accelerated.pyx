@@ -1,10 +1,16 @@
 # cython: language_level=3, boundscheck=False, nonecheck=False, optimize.unpack_method_calls=True
-# cython: warn.undeclared=True, warn.maybe_uninitialized=True
+# cython: warn.maybe_uninitialized=True
 # distutils: language = c++
+
+from typing import Tuple
 
 cimport cython
 from libc.stdint cimport int64_t, uint64_t
+from libcpp cimport bool
 from libcpp.set cimport set
+from libcpp.string cimport string
+from libcpp.unordered_map cimport unordered_map
+from libcpp.vector cimport vector
 import numpy as np
 
 # __builtin_clzl is a compiler built-in that counts the number of leading zeros
@@ -90,3 +96,69 @@ cdef void _calculate_interval_intersections(const uint64_t[:] intervals,
                 open_intervals.erase(ii)
             previous_timestamp = timestamp
         open_intervals.clear()
+
+
+def mark_check_suite_types(check_run_names: np.ndarray,
+                           check_suite_ids: np.ndarray,
+                           ) -> Tuple[np.ndarray, np.ndarray]:
+    assert len(check_run_names) == len(check_suite_ids)
+    _, name_indexes = np.unique(check_run_names, return_inverse=True)
+    _, first_suite_encounters, suite_sizes = np.unique(
+        check_suite_ids, return_index=True, return_counts=True)
+    fused = np.empty(len(name_indexes), dtype=[
+        ("check_suite_id", check_suite_ids.dtype),
+        ("name", name_indexes.dtype),
+    ])
+    fused["check_suite_id"] = check_suite_ids
+    fused["name"] = name_indexes
+    order = np.argsort(fused)  # sort first by suite ID, then by name
+    name_indexes = name_indexes[order]
+    type_marks = np.full(len(suite_sizes), -1, int)
+    _mark_check_suite_types(name_indexes, suite_sizes, type_marks)
+    return first_suite_encounters, type_marks
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef void _mark_check_suite_types(const int64_t[:] check_run_names,
+                                  const int64_t[:] check_suite_sizes,
+                                  int64_t[:] type_marks,
+                                  ) nogil:
+    cdef int64_t pos = 0, local_pos, size, previous_name, current_name
+    cdef bool duplicates
+    cdef unordered_map[string, vector[int64_t]] type_map
+    cdef vector[int64_t] unique_names
+    for index in range(len(check_suite_sizes)):
+        size = check_suite_sizes[index]
+        duplicates = False
+        previous_name = -1
+        for local_pos in range(size):
+            current_name = check_run_names[pos + local_pos]
+            if current_name == previous_name:
+                # we sorted this, so if there are duplicates, they are adjacent
+                duplicates = True
+                break
+            previous_name = current_name
+        if duplicates:
+            unique_names.clear()
+            previous_name = -1
+            for local_pos in range(size):
+                current_name = check_run_names[pos + local_pos]
+                if current_name != previous_name:
+                    unique_names.push_back(current_name)
+                previous_name = current_name
+            type_map[
+                string(<const char*>unique_names.data(),
+                       unique_names.size() * sizeof(int64_t))
+            ].push_back(index)
+        else:
+            type_map[
+                string(<const char*>&check_run_names[pos],
+                       size * sizeof(int64_t))
+            ].push_back(index)
+        pos += size
+    pos = 0
+    for i in type_map:
+        for index in i.second:
+            type_marks[index] = pos
+        pos += 1

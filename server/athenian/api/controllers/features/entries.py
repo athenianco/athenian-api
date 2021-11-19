@@ -597,7 +597,7 @@ class MetricEntriesCalculator:
         all_repositories = set(chain.from_iterable(repositories))
         all_pushers = set(chain.from_iterable(pushers))
         df_check_runs = await mine_check_runs(
-            time_from, time_to, all_repositories, all_pushers, labels, jira, False, True,
+            time_from, time_to, all_repositories, all_pushers, labels, jira, False,
             self._meta_ids, self._mdb, self._cache)
         repo_grouper = partial(group_by_repo, CheckRun.repository_full_name.name, repositories)
         commit_author_grouper = partial(group_check_runs_by_pushers, pushers)

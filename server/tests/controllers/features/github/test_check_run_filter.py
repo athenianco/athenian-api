@@ -28,7 +28,7 @@ async def test_filter_check_runs_monthly_quantiles(mdb):
         last_execution_url="https://github.com/src-d/go-git/runs/367607194",
         size_groups=[1, 3, 4, 5, 6],
         total_stats=CodeCheckRunListStats(
-            count=383, successes=361, skips=0, critical=True, flaky_count=0,
+            count=383, successes=361, skips=0, critical=False, flaky_count=0,
             mean_execution_time=timedelta(seconds=0),
             stddev_execution_time=timedelta(seconds=1),
             median_execution_time=timedelta(seconds=1),
@@ -55,7 +55,7 @@ async def test_filter_check_runs_monthly_quantiles(mdb):
                 None, 2., 1., 2.]),
         ),
         prs_stats=CodeCheckRunListStats(
-            count=319, successes=301, skips=0, critical=True, flaky_count=0,
+            count=319, successes=301, skips=0, critical=False, flaky_count=0,
             mean_execution_time=timedelta(seconds=0),
             stddev_execution_time=timedelta(seconds=1),
             median_execution_time=timedelta(seconds=1),
