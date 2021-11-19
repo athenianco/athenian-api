@@ -30,8 +30,7 @@ from athenian.api.controllers.settings import default_branch_alias, LogicalRepos
     ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
 from athenian.api.db import add_pdb_hits, add_pdb_misses, greatest, least, ParallelDatabase
 from athenian.api.defer import defer
-from athenian.api.models.metadata.github import Branch, NodeCommit, PushCommit, Release, \
-    User
+from athenian.api.models.metadata.github import Branch, NodeCommit, PushCommit, Release, User
 from athenian.api.models.persistentdata.models import ReleaseNotification
 from athenian.api.models.precomputed.models import GitHubRelease as PrecomputedRelease, \
     GitHubReleaseMatchTimespan
@@ -249,21 +248,6 @@ class ReleaseLoader:
 
         if not releases.empty:
             releases = _adjust_release_dtypes(releases)
-            physical_repos = coerce_logical_repos(repos)
-            if physical_repos.keys() != applied_matches.keys():
-                physical = np.in1d(
-                    releases[Release.repository_full_name.name].values, list(physical_repos))
-                if index == Release.node_id.name:
-                    release_node_ids = releases.index
-                else:
-                    release_node_ids = releases[Release.node_id.name]
-                physical_node_ids = release_node_ids.values[physical]
-                logical_node_ids = np.unique(release_node_ids.values[~physical])
-                removed = np.intersect1d(physical_node_ids, logical_node_ids, assume_unique=True)
-                if len(removed):
-                    left = np.flatnonzero(~(np.in1d(release_node_ids.values, removed) & physical))
-                    releases = releases.take(left)
-                    releases.reset_index(inplace=True)
             # we could have loaded both branch and tag releases for `tag_or_branch`,
             # remove the errors
             repos_vec = releases[Release.repository_full_name.name].values.astype("S")
@@ -849,9 +833,7 @@ class ReleaseMatcher:
                 detail="There are missing commit hashes for releases %s" %
                        releases[Release.node_id.name].values[missing_sha].tolist()))
         regexp_cache = {}
-        matched_physical = {}
-        matched_overridden = {}
-        removed = defaultdict(list)
+        df_parts = []
         release_index_repos = releases[Release.repository_full_name.name].values.astype("U")
         release_index_tags = releases[Release.tag.name].values
         for repo in repos:
@@ -874,26 +856,9 @@ class ReleaseMatcher:
             np.cumsum(lengths[:-1], out=offsets[1:])
             tags_matched = np.in1d(offsets, found)
             if len(indexes_matched := repo_indexes[tags_matched]):
-                if physical_repo != repo:
-                    matched_overridden[repo] = indexes_matched
-                    removed[physical_repo].append(indexes_matched)
-                else:
-                    matched_physical[physical_repo] = indexes_matched
-        for repo, indexes in removed.items():
-            try:
-                matched_physical[repo] = np.setdiff1d(
-                    matched_physical[repo],
-                    np.unique(np.concatenate(indexes)),
-                    assume_unique=True)
-            except KeyError:
-                continue
-        df_parts = []
-        if matched_physical:
-            df_parts.append(releases.take(np.concatenate(list(matched_physical.values()))))
-        for repo, indexes in matched_overridden.items():
-            df = releases.take(indexes)
-            df[Release.repository_full_name.name] = repo
-            df_parts.append(df)
+                df = releases.take(indexes_matched)
+                df[Release.repository_full_name.name] = repo
+                df_parts.append(df)
         if df_parts:
             releases = pd.concat(df_parts)
             releases.reset_index(inplace=True, drop=True)

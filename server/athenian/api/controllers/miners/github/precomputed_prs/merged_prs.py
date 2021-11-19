@@ -18,7 +18,7 @@ from sqlalchemy.sql.functions import coalesce
 from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached
-from athenian.api.controllers.logical_repos import coerce_logical_repos, drop_logical_repo
+from athenian.api.controllers.logical_repos import drop_logical_repo
 from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.precomputed_prs.utils import \
     append_activity_days_filter, build_labels_filters, collect_activity_days, \
@@ -78,7 +78,6 @@ class MergedPRFactsLoader:
                     ]
         default_version = ghmprf.__table__.columns[ghmprf.format_version.name].default.arg
         repos_by_match = defaultdict(list)
-        pure_logical = {}
         if isinstance(prs, pd.Index):
             prs_index = prs
             assert prs.nlevels == 2
@@ -90,25 +89,17 @@ class MergedPRFactsLoader:
         else:
             nodes_col = prs_index.values
             repos_col = prs[PullRequest.repository_full_name.name].values
-        physical_repos, index_map, counts = np.unique(
+        logical_repos, index_map, counts = np.unique(
             repos_col, return_inverse=True, return_counts=True)
         pr_ids_by_repo = dict(zip(
-            physical_repos,
+            logical_repos,
             np.split(nodes_col[np.argsort(index_map)], np.cumsum(counts[:-1]))))
-        logical_repos_map = coerce_logical_repos(physical_repos)
-        for physical_repo in physical_repos:
-            logical_repos = logical_repos_map[physical_repo] & matched_bys.keys()
-            if physical_repo in logical_repos:
-                for repo in logical_repos - {physical_repo}:
-                    pure_logical[repo] = physical_repo
-            pr_ids = pr_ids_by_repo[physical_repo]
-            for repo in logical_repos:
-                if (release_match := extract_release_match(
-                        repo, matched_bys, default_branches, release_settings)) is None:
-                    # no new releases
-                    continue
-                pr_ids_by_repo[repo] = pr_ids
-                repos_by_match[release_match].append(repo)
+        for repo in pr_ids_by_repo:
+            if (release_match := extract_release_match(
+                    repo, matched_bys, default_branches, release_settings)) is None:
+                # no new releases
+                continue
+            repos_by_match[release_match].append(repo)
 
         def compose_common_filters(deployed: bool):
             nonlocal selected
@@ -148,12 +139,15 @@ class MergedPRFactsLoader:
             return my_selected, filters, date_range
 
         queries = []
-        date_range = set()
         for deployed in (False, True):
             my_selected, common_filters, deployed_date_range = compose_common_filters(deployed)
             if not deployed:
                 date_range = deployed_date_range
             for release_match, repos in repos_by_match.items():
+                if not postgres:
+                    # SQLite does not support parameter re-usage
+                    my_selected, common_filters, deployed_date_range = \
+                        compose_common_filters(deployed)
                 pr_ids = np.unique(np.concatenate([pr_ids_by_repo[r] for r in repos]))
                 filters = [
                     ghmprf.pr_node_id.in_(pr_ids),
@@ -171,10 +165,11 @@ class MergedPRFactsLoader:
             include_singles, include_multiples = LabelFilter.split(labels.include)
             include_singles = set(include_singles)
             include_multiples = [set(m) for m in include_multiples]
+        for repo, pr_ids in pr_ids_by_repo.items():
+            pr_ids_by_repo[repo] = set(pr_ids)
         facts = {}
         user_node_map_get = prefixer.user_node_to_login.get
         missing_facts = []
-        remove_physical = set()
         for row in rows:
             if exclude_inactive and not postgres and not row["deployed"]:
                 activity_days = {datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc)
@@ -194,19 +189,12 @@ class MergedPRFactsLoader:
             if labels and not labels_are_compatible(
                     include_singles, include_multiples, labels.exclude, row[ghmprf.labels.name]):
                 continue
-            repo = row[ghmprf.repository_full_name.name]
-            if physical_repo := pure_logical.get(repo):
-                remove_physical.add((node_id, physical_repo))
-            facts[(node_id, repo)] = PullRequestFacts(
-                data=data,
-                repository_full_name=repo,
-                author=user_node_map_get(row[ghmprf.author.name]),
-                merger=user_node_map_get(row[ghmprf.merger.name]))
-        for pair in remove_physical:
-            try:
-                del facts[pair]
-            except KeyError:
-                continue
+            if node_id in pr_ids_by_repo[(repo := row[ghmprf.repository_full_name.name])]:
+                facts[(node_id, repo)] = PullRequestFacts(
+                    data=data,
+                    repository_full_name=repo,
+                    author=user_node_map_get(row[ghmprf.author.name]),
+                    merger=user_node_map_get(row[ghmprf.merger.name]))
         if missing_facts:
             log.warning("No precomputed facts for merged %s", missing_facts)
         return facts
@@ -265,7 +253,7 @@ class MergedPRFactsLoader:
 async def update_unreleased_prs(merged_prs: pd.DataFrame,
                                 released_prs: pd.DataFrame,
                                 time_to: datetime,
-                                labels: Dict[str, List[str]],
+                                labels: Dict[int, List[str]],
                                 matched_bys: Dict[str, ReleaseMatch],
                                 default_branches: Dict[str, str],
                                 release_settings: ReleaseSettings,
@@ -281,17 +269,18 @@ async def update_unreleased_prs(merged_prs: pd.DataFrame,
     :param time_to: Until when we checked releases for the specified PRs.
     """
     assert time_to.tzinfo is not None
+    assert merged_prs.index.nlevels == 2
     time_to = min(time_to, datetime.now(timezone.utc))
     postgres = pdb.url.dialect == "postgresql"
     values = []
     if not released_prs.empty:
+        assert released_prs.index.nlevels == 2
         release_times = dict(zip(released_prs.index.values,
                                  released_prs[Release.published_at.name] - timedelta(minutes=1)))
     else:
         release_times = {}
     with sentry_sdk.start_span(op="update_unreleased_prs/generate"):
-        for repo, repo_prs in merged_prs.groupby(PullRequest.repository_full_name.name,
-                                                 sort=False):
+        for repo, repo_prs in merged_prs.groupby(level=1, sort=False):
             if (release_match := extract_release_match(
                     repo, matched_bys, default_branches, release_settings)) is None:
                 # no new releases
@@ -302,7 +291,7 @@ async def update_unreleased_prs(merged_prs: pd.DataFrame,
                     repo_prs[PullRequest.user_node_id.name].values,
                     repo_prs[PullRequest.merged_by_id.name].values):
                 try:
-                    released_time = release_times[node_id]
+                    released_time = release_times[(node_id, repo)]
                 except KeyError:
                     checked_until = time_to
                 else:

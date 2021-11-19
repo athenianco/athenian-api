@@ -19,6 +19,12 @@ release_columns = [
 def new_released_prs_df(records=None) -> pd.DataFrame:
     """Create a pandas DataFrame with the required released PR columns."""
     if records is None:
-        return pd.DataFrame(columns=release_columns, index=pd.Index([], name=index_name))
-    return pd.DataFrame.from_records(
-        records, columns=[index_name] + release_columns, index=index_name)
+        return pd.DataFrame(
+            columns=release_columns,
+            index=pd.MultiIndex(
+                levels=[pd.Index([]), pd.Index([])],
+                codes=[[], []],
+                names=[index_name, Release.repository_full_name.name]))
+    df = pd.DataFrame.from_records(records, columns=[index_name] + release_columns)
+    df.set_index([index_name, Release.repository_full_name.name], inplace=True)
+    return df

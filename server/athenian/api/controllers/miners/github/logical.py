@@ -14,6 +14,8 @@ def split_logical_repositories(prs: pd.DataFrame,
                                ) -> pd.DataFrame:
     """Remove and clone PRs according to the logical repository settings."""
     assert isinstance(prs, pd.DataFrame)
+    if labels is None:
+        labels = pd.DataFrame()
     prs.reset_index(inplace=True)
     if isinstance(logical_repos, dict):
         logical_repos = logical_repos.keys()

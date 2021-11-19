@@ -330,13 +330,16 @@ class DonePRFactsLoader:
         exptime=60 * 60,  # 1 hour
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda prs, default_branches, release_settings, **_: (
-            ",".join(map(str, sorted(prs))), sorted(default_branches.items()), release_settings,
+        key=lambda prs, time_to, default_branches, release_settings, **_: (
+            ",".join(map(str, sorted(prs.index.values))),
+            time_to,
+            sorted(default_branches.items()),
+            release_settings,
         ),
         refresh_on_access=True,
     )
     async def load_precomputed_pr_releases(cls,
-                                           prs: Iterable[int],
+                                           prs: pd.DataFrame,
                                            time_to: datetime,
                                            matched_bys: Dict[str, ReleaseMatch],
                                            default_branches: Dict[str, str],
@@ -354,12 +357,15 @@ class DonePRFactsLoader:
         log = logging.getLogger("%s.load_precomputed_pr_releases" % metadata.__package__)
         assert isinstance(time_to, datetime)
         assert time_to.tzinfo is not None
+        assert prs.index.nlevels == 2
         ghprt = GitHubDonePullRequestFacts
         with sentry_sdk.start_span(op="load_precomputed_pr_releases/fetch"):
             prs = await pdb.fetch_all(
                 select([ghprt.pr_node_id, ghprt.pr_done_at, ghprt.releaser, ghprt.release_url,
                         ghprt.release_node_id, ghprt.repository_full_name, ghprt.release_match])
-                .where(and_(ghprt.pr_node_id.in_(prs),
+                .where(and_(ghprt.pr_node_id.in_(prs.index.get_level_values(0).values),
+                            ghprt.repository_full_name.in_(
+                                prs.index.get_level_values(1).unique()),
                             ghprt.acc_id == account,
                             ghprt.releaser.isnot(None),
                             ghprt.pr_done_at < time_to)))

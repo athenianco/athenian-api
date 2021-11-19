@@ -939,7 +939,7 @@ async def test_calc_metrics_prs_logical(
     assert response.status == 200, response.text()
     body = FriendlyJson.loads((await response.read()).decode("utf-8"))
     values = [v["values"] for v in body["calculated"][0]["values"]]
-    assert values == [[266, 52, 205, 183]]
+    assert values == [[266, 52, 205, 197]]
 
 
 async def test_code_bypassing_prs_smoke(client, headers):

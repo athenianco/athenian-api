@@ -98,7 +98,7 @@ class UnfreshPullRequestFactsFetcher:
                 exclude_inactive, blacklist, None, branches, None,
                 account, meta_ids, mdb, pdb, cache, columns=[
                     PullRequest.node_id, PullRequest.repository_full_name, PullRequest.merged_at,
-                    PullRequest.user_login,
+                    PullRequest.user_login, PullRequest.title,
                 ], with_labels=logical_settings.has_prs_by_label(physical_repos)),
         ]
         if jira and done_facts:

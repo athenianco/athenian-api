@@ -625,6 +625,7 @@ async def test_pr_mine_by_ids(branches, default_branches, dag, mdb, pdb, rdb, ca
     dfs1, _, _ = await pr_miner.mine_by_ids(
         prs,
         [],
+        {"src-d/go-git"},
         time_to,
         releases,
         matched_bys,
@@ -645,6 +646,7 @@ async def test_pr_mine_by_ids(branches, default_branches, dag, mdb, pdb, rdb, ca
     dfs2, _, _ = await pr_miner.mine_by_ids(
         prs,
         [],
+        {"src-d/go-git"},
         time_to,
         releases,
         matched_bys,

@@ -43,15 +43,16 @@ from tests.controllers.test_filter_controller import force_push_dropped_go_git_p
 def generate_repo_settings(prs: pd.DataFrame) -> ReleaseSettings:
     return ReleaseSettings({
         "github.com/" + r: ReleaseMatchSetting(branches="", tags=".*", match=ReleaseMatch.tag)
-        for r in prs[PullRequest.repository_full_name.name]
+        for r in prs.index.get_level_values(1).values
     })
 
 
 @with_defer
 async def test_map_prs_to_releases_cache(
         branches, default_branches, dag, mdb, pdb, rdb, cache, release_loader, prefixer):
-    prs = await read_sql_query(select([PullRequest]).where(PullRequest.number == 1126),
-                               mdb, PullRequest, index=PullRequest.node_id.name)
+    prs = await read_sql_query(
+        select([PullRequest]).where(PullRequest.number == 1126),
+        mdb, PullRequest, index=[PullRequest.node_id.name, PullRequest.repository_full_name.name])
     prs["dead"] = False
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
     time_from = time_to - timedelta(days=5 * 365)
@@ -85,8 +86,9 @@ async def test_map_prs_to_releases_cache(
 @with_defer
 async def test_map_prs_to_releases_pdb(branches, default_branches, dag, mdb, pdb, rdb,
                                        release_loader, prefixer):
-    prs = await read_sql_query(select([PullRequest]).where(PullRequest.number.in_((1126, 1180))),
-                               mdb, PullRequest, index=PullRequest.node_id.name)
+    prs = await read_sql_query(
+        select([PullRequest]).where(PullRequest.number.in_((1126, 1180))),
+        mdb, PullRequest, index=[PullRequest.node_id.name, PullRequest.repository_full_name.name])
     prs["dead"] = False
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
     time_from = time_to - timedelta(days=5 * 365)
@@ -125,8 +127,9 @@ async def test_map_prs_to_releases_pdb(branches, default_branches, dag, mdb, pdb
 @with_defer
 async def test_map_prs_to_releases_empty(branches, default_branches, dag, mdb, pdb, rdb, cache,
                                          release_loader, prefixer):
-    prs = await read_sql_query(select([PullRequest]).where(PullRequest.number == 1231),
-                               mdb, PullRequest, index=PullRequest.node_id.name)
+    prs = await read_sql_query(
+        select([PullRequest]).where(PullRequest.number == 1231),
+        mdb, PullRequest, index=[PullRequest.node_id.name, PullRequest.repository_full_name.name])
     prs["dead"] = False
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
     time_from = time_to - timedelta(days=5 * 365)
@@ -181,7 +184,8 @@ async def test_map_prs_to_releases_precomputed_released(
     facts_miner = PullRequestFactsMiner(await bots(mdb))
     true_prs = [pr for pr in miner if pr.release[Release.published_at.name] is not None]
     facts = [facts_miner(pr) for pr in true_prs]
-    prs = pd.DataFrame([pr.pr for pr in true_prs]).set_index(PullRequest.node_id.name)
+    prs = pd.DataFrame([pr.pr for pr in true_prs]).set_index(
+        [PullRequest.node_id.name, PullRequest.repository_full_name.name])
     releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"], branches, default_branches, time_from, time_to,
         release_match_setting_tag, LogicalRepositorySettings.empty(), prefixer,
@@ -458,8 +462,9 @@ async def test_map_prs_to_releases_smoke_metrics(
         PullRequest.repository_full_name.in_(["src-d/go-git"]),
         PullRequest.user_login.in_(["mcuadros", "vmarkovtsev"]),
     ]
-    prs = await read_sql_query(select([PullRequest]).where(sql.and_(*filters)),
-                               mdb, PullRequest, index=PullRequest.node_id.name)
+    prs = await read_sql_query(
+        select([PullRequest]).where(sql.and_(*filters)),
+        mdb, PullRequest, index=[PullRequest.node_id.name, PullRequest.repository_full_name.name])
     prs["dead"] = False
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
     time_from = time_to - timedelta(days=5 * 365)
@@ -702,7 +707,7 @@ async def test_load_releases_tag_logical(
         "src-d/go-git/alpha": ReleaseMatch.tag,
         "src-d/go-git/beta": ReleaseMatch.tag,
     }
-    assert (releases[Release.repository_full_name.name] == "src-d/go-git").sum() == 0
+    assert (releases[Release.repository_full_name.name] == "src-d/go-git").sum() == 53
     assert (releases[Release.repository_full_name.name] == "src-d/go-git/alpha").sum() == 53
     assert (releases[Release.repository_full_name.name] == "src-d/go-git/beta").sum() == 37
     releases, matched_bys = await release_loader.load_releases(
@@ -724,7 +729,7 @@ async def test_load_releases_tag_logical(
         "src-d/go-git": ReleaseMatch.tag,
         "src-d/go-git/beta": ReleaseMatch.tag,
     }
-    assert (releases[Release.repository_full_name.name] == "src-d/go-git").sum() == 16
+    assert (releases[Release.repository_full_name.name] == "src-d/go-git").sum() == 53
     assert (releases[Release.repository_full_name.name] == "src-d/go-git/beta").sum() == 37
 
 
@@ -1161,7 +1166,7 @@ async def test__fetch_repository_commits_full(mdb, pdb, dag, cache, branch_miner
 async def test__find_dead_merged_prs_smoke(mdb):
     prs = await read_sql_query(
         select([PullRequest]).where(PullRequest.merged_at.isnot(None)),
-        mdb, PullRequest, index=PullRequest.node_id.name)
+        mdb, PullRequest, index=[PullRequest.node_id.name, PullRequest.repository_full_name.name])
     prs["dead"] = False
     prs.loc[prs[PullRequest.number.name].isin(force_push_dropped_go_git_pr_numbers), "dead"] = True
     dead_prs = await PullRequestToReleaseMapper._find_dead_merged_prs(prs)
@@ -1169,7 +1174,8 @@ async def test__find_dead_merged_prs_smoke(mdb):
     assert dead_prs[Release.published_at.name].isnull().all()
     assert (dead_prs[matched_by_column] == ReleaseMatch.force_push_drop).all()
     dead_prs = await mdb.fetch_all(
-        select([PullRequest.number]).where(PullRequest.node_id.in_(dead_prs.index)))
+        select([PullRequest.number])
+        .where(PullRequest.node_id.in_(dead_prs.index.get_level_values(0).values)))
     assert {pr[0] for pr in dead_prs} == set(force_push_dropped_go_git_pr_numbers)
 
 
@@ -1891,8 +1897,9 @@ https://athenianco.atlassian.net/browse/DEV-250
 
 async def test_map_prs_to_releases_miguel(
         mdb, pdb, rdb, release_match_setting_tag, cache, release_loader, prefixer):
-    miguel_pr = await read_sql_query(select([PullRequest]).where(PullRequest.number == 907),
-                                     mdb, PullRequest, index=PullRequest.node_id.name)
+    miguel_pr = await read_sql_query(
+        select([PullRequest]).where(PullRequest.number == 907),
+        mdb, PullRequest, index=[PullRequest.node_id.name, PullRequest.repository_full_name.name])
     # https://github.com/src-d/go-git/pull/907
     assert len(miguel_pr) == 1
     time_from = datetime(2018, 1, 1, tzinfo=timezone.utc)
