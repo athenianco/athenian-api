@@ -14,6 +14,8 @@ from sqlalchemy.sql import ClauseElement
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached, CancelCache, short_term_exptime
+from athenian.api.controllers.features.github.check_run_metrics_accelerated import \
+    mark_check_suite_types
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
@@ -38,7 +40,6 @@ async def mine_check_runs(time_from: datetime,
                           labels: LabelFilter,
                           jira: JIRAFilter,
                           only_prs: bool,
-                          erase_quick_check_run_completed_ats: bool,
                           meta_ids: Tuple[int, ...],
                           mdb: DatabaseLike,
                           cache: Optional[aiomcache.Client],
@@ -64,8 +65,7 @@ async def mine_check_runs(time_from: datetime,
     :return: Pandas DataFrame with columns mapped from CheckRun model.
     """
     df, _ = await _mine_check_runs(
-        time_from, time_to, repositories, pushers, labels, jira, only_prs,
-        erase_quick_check_run_completed_ats, meta_ids, mdb, cache)
+        time_from, time_to, repositories, pushers, labels, jira, only_prs, meta_ids, mdb, cache)
     return df
 
 
@@ -86,14 +86,13 @@ def _postprocess_only_prs(result: Tuple[pd.DataFrame, bool],
     exptime=short_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda time_from, time_to, repositories, pushers, labels, jira, erase_quick_check_run_completed_ats, **_:  # noqa
+    key=lambda time_from, time_to, repositories, pushers, labels, jira, **_:  # noqa
     (
         time_from.timestamp(), time_to.timestamp(),
         ",".join(sorted(repositories)),
         ",".join(sorted(pushers)),
         labels,
         jira,
-        erase_quick_check_run_completed_ats,
     ),
     postprocess=_postprocess_only_prs,
 )
@@ -104,7 +103,6 @@ async def _mine_check_runs(time_from: datetime,
                            labels: LabelFilter,
                            jira: JIRAFilter,
                            only_prs: bool,
-                           erase_quick_check_run_completed_ats: bool,
                            meta_ids: Tuple[int, ...],
                            mdb: DatabaseLike,
                            cache: Optional[aiomcache.Client],
@@ -182,7 +180,7 @@ async def _mine_check_runs(time_from: datetime,
     df = _split_duplicate_check_runs(df)
     log.info("split %d / %d", len(df) - df_len, df_len)
 
-    _postprocess_check_runs(df, erase_quick_check_run_completed_ats)
+    _postprocess_check_runs(df)
 
     return df, only_prs
 
@@ -334,7 +332,7 @@ async def _disambiguate_pull_requests(df: pd.DataFrame,
 
 
 @sentry_span
-def _erase_run_time_of_specific_check_runs(df: pd.DataFrame):
+def _erase_completed_at_as_needed(df: pd.DataFrame):
     if df.empty:
         return
 
@@ -344,35 +342,33 @@ def _erase_run_time_of_specific_check_runs(df: pd.DataFrame):
     # exclude "too quick" checks from execution time calculation DEV-3155
     cr_types = np.char.add(int_to_str(df[CheckRun.repository_node_id.name].values),
                            np.char.encode(df[CheckRun.name.name].values.astype("U"), "UTF-8"))
-    _, cr_type_inverse_map, cr_type_counts = \
-        np.unique(cr_types, return_inverse=True, return_counts=True)
-    cr_type_offsets = cr_type_counts.cumsum()
-    max_cr_count = cr_type_counts.max()
-    cr_run_times_shaped = np.full((len(cr_type_counts), max_cr_count), None, "timedelta64[s]")
-    cr_indexes = np.repeat(
-        np.arange(len(cr_type_counts)) * max_cr_count + cr_type_counts - cr_type_offsets,
-        cr_type_counts,
-    ) + np.arange(len(cr_types))
-    cr_type_order = np.argsort(cr_type_inverse_map)
-    cr_run_times_shaped.ravel()[cr_indexes] = (
-        df[CheckRun.completed_at.name].values - df[CheckRun.started_at.name].values
-    )[cr_type_order]
+    first_encounters, suite_groups = mark_check_suite_types(
+        cr_types, df[CheckRun.check_suite_node_id.name].values)
+    del cr_types
+    _, cs_type_counts = np.unique(suite_groups, return_counts=True)
+    max_cs_count = cs_type_counts.max()
+    cs_type_offsets = cs_type_counts.cumsum()
+    cs_indexes = np.repeat(
+        np.arange(len(cs_type_counts)) * max_cs_count + cs_type_counts - cs_type_offsets,
+        cs_type_counts,
+    ) + np.arange(len(suite_groups))
+    cs_run_times_shaped = np.full((len(cs_type_counts), max_cs_count), None, "timedelta64[s]")
+    cs_run_times_shaped.ravel()[cs_indexes] = (
+        df[check_suite_completed_column].values - df[check_suite_started_column].values
+    )[first_encounters[np.argsort(suite_groups)]]
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", "All-NaN slice encountered")
-        median_cr_run_times = np.nanmedian(cr_run_times_shaped, axis=-1)
-    excluded_prs = np.flatnonzero(median_cr_run_times <= np.timedelta64(8, "s"))
-    excluded_lengths = cr_type_counts[excluded_prs]
-    excluded_indexes = (
-        np.repeat(cr_type_offsets[excluded_prs] - excluded_lengths.cumsum(), excluded_lengths)
-        + np.arange(excluded_lengths.sum())
-    )
-    df[CheckRun.completed_at.name].values[cr_type_order[excluded_indexes]] = None
+        median_cs_run_times = np.nanmedian(cs_run_times_shaped, axis=-1)
+    excluded_cs_types = np.flatnonzero(median_cs_run_times <= np.timedelta64(8, "s"))
+    excluded_cs = df[CheckRun.check_suite_node_id.name].values[
+        first_encounters[np.in1d(suite_groups, excluded_cs_types)]
+    ]
+    excluded_mask = np.in1d(df[CheckRun.check_suite_node_id.name].values, excluded_cs)
+    df[check_suite_completed_column].values[excluded_mask] = None
 
 
 @sentry_span
-def _postprocess_check_runs(df: pd.DataFrame,
-                            erase_quick_check_run_completed_ats: bool,
-                            ) -> None:
+def _postprocess_check_runs(df: pd.DataFrame) -> None:
     # there can be checks that finished before starting 🤦‍
     # pd.DataFrame.max(axis=1) does not work correctly because of the NaT-s
     started_ats = df[CheckRun.started_at.name].values
@@ -382,8 +378,7 @@ def _postprocess_check_runs(df: pd.DataFrame,
         CheckRun.check_suite_node_id.name, sort=False,
     )[CheckRun.completed_at.name].transform("max")
 
-    if erase_quick_check_run_completed_ats:
-        _erase_run_time_of_specific_check_runs(df)
+    _erase_completed_at_as_needed(df)
 
     # ensure that the timestamps are in sync after pruning PRs
     pr_ts_columns = [

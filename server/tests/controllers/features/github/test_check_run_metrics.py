@@ -79,8 +79,8 @@ async def test_check_run_metrics_suite_counts(
     (CodeCheckMetricID.PRS_MERGED_WITH_FAILED_CHECKS_COUNT, 238),
     (CodeCheckMetricID.PRS_MERGED_WITH_FAILED_CHECKS_RATIO, 0.43830570578575134),
     (CodeCheckMetricID.ROBUST_SUITE_TIME, None),
-    (CodeCheckMetricID.CONCURRENCY, None),
-    (CodeCheckMetricID.CONCURRENCY_MAX, 0),
+    (CodeCheckMetricID.CONCURRENCY, 1),
+    (CodeCheckMetricID.CONCURRENCY_MAX, 1),
     (CodeCheckMetricID.ELAPSED_TIME_PER_CONCURRENCY, None),
     (CodeCheckMetricID.SUITE_OCCUPANCY, None),
     (CodeCheckMetricID.SUITE_CRITICAL_OCCUPANCY, None),
@@ -125,8 +125,8 @@ async def test_check_run_metrics_robust_quantiles(alternative_facts):
         [np.arange(len(alternative_facts))],
         )
     values = cls.values()[CodeCheckMetricID.ROBUST_SUITE_TIME]
-    assert values[0][0].value == timedelta(seconds=1903)
-    assert values[1][0].value == timedelta(seconds=18146)
+    assert values[0][0].value == timedelta(seconds=1919)
+    assert values[1][0].value == timedelta(seconds=18152)
 
 
 ii_starts = np.array([
@@ -245,15 +245,15 @@ def alternative_facts() -> pd.DataFrame:
                 CheckRun.committed_date):
         df[col.name] = df[col.name].astype(np.datetime64)
     df = _split_duplicate_check_runs(df)
-    _postprocess_check_runs(df, True)
+    _postprocess_check_runs(df)
     return df
 
 
 @pytest.mark.parametrize("metric, value", [
-    (CodeCheckMetricID.SUITE_TIME, timedelta(seconds=816)),
-    (CodeCheckMetricID.SUITE_TIME_PER_PR, timedelta(seconds=816)),
-    (CodeCheckMetricID.ROBUST_SUITE_TIME, timedelta(seconds=10979)),
-    (CodeCheckMetricID.CONCURRENCY, 1.6017557382583618),
+    (CodeCheckMetricID.SUITE_TIME, timedelta(seconds=822)),
+    (CodeCheckMetricID.SUITE_TIME_PER_PR, timedelta(seconds=822)),
+    (CodeCheckMetricID.ROBUST_SUITE_TIME, timedelta(seconds=9770)),
+    (CodeCheckMetricID.CONCURRENCY, 1.497145652770996),
     (CodeCheckMetricID.CONCURRENCY_MAX, 10),
     (CodeCheckMetricID.ELAPSED_TIME_PER_CONCURRENCY, None),
     (CodeCheckMetricID.SUITE_OCCUPANCY, 0.4226307272911072),
