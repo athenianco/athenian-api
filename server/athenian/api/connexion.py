@@ -592,27 +592,30 @@ class AthenianApp(connexion.AioHttpApp):
         start_time = time.time()
         asyncio.current_task().set_name("shield %s %s" % (request.method, request.path))
 
-        load = extract_handler_weight(handler)
-        if (new_load := self._load + load) > self._max_load:
-            self.log.warning("Rejecting the request, too much load: %.1f > %.1f",
-                             new_load, self._max_load)
-            # no "raise"! the "except" does not exist yet
-            return ResponseError(ServiceUnavailableError(
-                type="/errors/HeavyLoadError",
-                detail="This server is serving too much load, please repeat your request.",
-            )).response
+        if request.method != "OPTIONS":
+            load = extract_handler_weight(handler)
+            if (new_load := self._load + load) > self._max_load:
+                self.log.warning("Rejecting the request, too much load: %.1f > %.1f",
+                                 new_load, self._max_load)
+                # no "raise"! the "except" does not exist yet
+                return ResponseError(ServiceUnavailableError(
+                    type="/errors/HeavyLoadError",
+                    detail="This server is serving too much load, please repeat your request.",
+                )).response
 
-        custom_load_delta = 0
+            custom_load_delta = 0
 
-        def adjust_load(value: float) -> None:
-            nonlocal custom_load_delta
-            custom_load_delta += value
-            assert load + custom_load_delta >= 0, "you cannot lower the load below 0"
-            self._load += value
+            def adjust_load(value: float) -> None:
+                nonlocal custom_load_delta
+                custom_load_delta += value
+                assert load + custom_load_delta >= 0, "you cannot lower the load below 0"
+                self._load += value
 
-        self.app[ADJUST_LOAD_VAR_NAME].set(adjust_load)
+            self.app[ADJUST_LOAD_VAR_NAME].set(adjust_load)
+            self._load = new_load  # GIL + no await-s => no races
+        else:
+            load = custom_load_delta = 0
         self._requests += 1
-        self._load = new_load
 
         enable_defer(explicit_launch=not self._devenv)
         traced = self._set_request_sentry_context(request)
