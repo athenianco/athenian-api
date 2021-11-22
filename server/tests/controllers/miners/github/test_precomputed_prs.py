@@ -586,22 +586,30 @@ async def test_load_precomputed_pr_releases_smoke(
     await store_precomputed_done_facts(
         prs, [with_mutables(s) for s in samples],
         default_branches, settings, 1, pdb)
+
+    def df_from_prs():
+        df = pd.DataFrame()
+        df[PullRequest.node_id.name] = [pr.pr[PullRequest.node_id.name] for pr in prs]
+        df[PullRequest.repository_full_name.name] = \
+            [pr.pr[PullRequest.repository_full_name.name] for pr in prs]
+        df.set_index([PullRequest.node_id.name, PullRequest.repository_full_name.name],
+                     inplace=True)
+        return df
+
     for i in range(2):
         released_prs = await done_prs_facts_loader.load_precomputed_pr_releases(
-            [pr.pr[PullRequest.node_id.name] for pr in prs],
+            df_from_prs(),
             max(s.released.item().replace(tzinfo=timezone.utc) for s in samples) +
             timedelta(days=1),
             {pr.pr[PullRequest.repository_full_name.name]: ReleaseMatch.branch for pr in prs},
             default_branches, settings, prefixer, 1, pdb if i == 0 else None, cache)
         await wait_deferred()
         for s, pr in zip(samples, prs):
-            rpr = released_prs.loc[pr.pr[PullRequest.node_id.name]]
+            rpr = released_prs.loc[pr.pr[PullRequest.node_id.name], "src-d/go-git"]
             for col in (Release.author.name, Release.url.name, Release.node_id.name,
                         matched_by_column):
                 assert rpr[col] == pr.release[col], i
             assert rpr[Release.published_at.name].replace(tzinfo=None) == s.released, i
-            assert rpr[Release.repository_full_name.name] == \
-                pr.pr[PullRequest.repository_full_name.name], i
 
 
 async def test_load_precomputed_pr_releases_time_to(
@@ -618,8 +626,18 @@ async def test_load_precomputed_pr_releases_time_to(
     await store_precomputed_done_facts(
         prs, [with_mutables(s) for s in samples],
         default_branches, settings, 1, pdb)
+
+    def df_from_prs():
+        df = pd.DataFrame()
+        df[PullRequest.node_id.name] = [pr.pr[PullRequest.node_id.name] for pr in prs]
+        df[PullRequest.repository_full_name.name] = \
+            [pr.pr[PullRequest.repository_full_name.name] for pr in prs]
+        df.set_index([PullRequest.node_id.name, PullRequest.repository_full_name.name],
+                     inplace=True)
+        return df
+
     released_prs = await done_prs_facts_loader.load_precomputed_pr_releases(
-        [pr.pr[PullRequest.node_id.name] for pr in prs],
+        df_from_prs(),
         min(s.released.item().replace(tzinfo=timezone.utc) for s in samples),
         {pr.pr[PullRequest.repository_full_name.name]: ReleaseMatch.branch for pr in prs},
         default_branches, settings, prefixer, 1, pdb, None)
@@ -640,14 +658,24 @@ async def test_load_precomputed_pr_releases_release_mismatch(
     await store_precomputed_done_facts(
         prs, [with_mutables(s) for s in samples],
         default_branches, settings, 1, pdb)
+
+    def df_from_prs():
+        df = pd.DataFrame()
+        df[PullRequest.node_id.name] = [pr.pr[PullRequest.node_id.name] for pr in prs]
+        df[PullRequest.repository_full_name.name] = \
+            [pr.pr[PullRequest.repository_full_name.name] for pr in prs]
+        df.set_index([PullRequest.node_id.name, PullRequest.repository_full_name.name],
+                     inplace=True)
+        return df
+
     released_prs = await done_prs_facts_loader.load_precomputed_pr_releases(
-        [pr.pr[PullRequest.node_id.name] for pr in prs],
+        df_from_prs(),
         max(s.released.item().replace(tzinfo=timezone.utc) for s in samples) + timedelta(days=1),
         {pr.pr[PullRequest.repository_full_name.name]: ReleaseMatch.tag for pr in prs},
         default_branches, settings, prefixer, 1, pdb, None)
     assert released_prs.empty
     released_prs = await done_prs_facts_loader.load_precomputed_pr_releases(
-        [pr.pr[PullRequest.node_id.name] for pr in prs],
+        df_from_prs(),
         max(s.released.item().replace(tzinfo=timezone.utc) for s in samples) + timedelta(days=1),
         {pr.pr[PullRequest.repository_full_name.name]: ReleaseMatch.branch for pr in prs},
         {"src-d/go-git": "vmarkovtsev"}, settings, prefixer, 1, pdb, None)
@@ -666,14 +694,24 @@ async def test_load_precomputed_pr_releases_tag(
     await store_precomputed_done_facts(
         prs, [with_repository_full_name(s) for s in samples],
         default_branches, settings, 1, pdb)
+
+    def df_from_prs():
+        df = pd.DataFrame()
+        df[PullRequest.node_id.name] = [pr.pr[PullRequest.node_id.name] for pr in prs]
+        df[PullRequest.repository_full_name.name] = \
+            [pr.pr[PullRequest.repository_full_name.name] for pr in prs]
+        df.set_index([PullRequest.node_id.name, PullRequest.repository_full_name.name],
+                     inplace=True)
+        return df
+
     released_prs = await done_prs_facts_loader.load_precomputed_pr_releases(
-        [pr.pr[PullRequest.node_id.name] for pr in prs],
+        df_from_prs(),
         max(s.released.item().replace(tzinfo=timezone.utc) for s in samples) + timedelta(days=1),
         {pr.pr[PullRequest.repository_full_name.name]: ReleaseMatch.tag for pr in prs},
         {}, settings, prefixer, 1, pdb, None)
     assert len(released_prs) == len(prs)
     released_prs = await done_prs_facts_loader.load_precomputed_pr_releases(
-        [pr.pr[PullRequest.node_id.name] for pr in prs],
+        df_from_prs(),
         max(s.released.item().replace(tzinfo=timezone.utc) for s in samples) + timedelta(days=1),
         {pr.pr[PullRequest.repository_full_name.name]: ReleaseMatch.tag for pr in prs},
         {}, ReleaseSettings({"github.com/src-d/go-git": ReleaseMatchSetting(
@@ -689,7 +727,7 @@ async def test_discover_update_unreleased_prs_smoke(
     prs = await read_sql_query(
         select([PullRequest]).where(and_(PullRequest.number.in_(range(1000, 1010)),
                                          PullRequest.merged_at.isnot(None))),
-        mdb, PullRequest, index=PullRequest.node_id.name)
+        mdb, PullRequest, index=[PullRequest.node_id.name, PullRequest.repository_full_name.name])
     prs[prs[PullRequest.merged_at.name].isnull()] = datetime.now(tz=timezone.utc)
     utc = timezone.utc
     releases, matched_bys = await release_loader.load_releases(
@@ -740,7 +778,7 @@ async def test_discover_update_unreleased_prs_smoke(
     unreleased_prs = await merged_prs_facts_loader.load_merged_unreleased_pull_request_facts(
         prs, datetime(2018, 11, 20, tzinfo=utc), LabelFilter.empty(), matched_bys,
         default_branches, release_match_setting_tag, prefixer, 1, pdb)
-    assert set(prs.index) == {node_id for node_id, _ in unreleased_prs}
+    assert set(prs.index) == set(unreleased_prs)
     releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"], None, default_branches,
         datetime(2018, 9, 1, tzinfo=utc),
@@ -780,7 +818,7 @@ async def test_discover_update_unreleased_prs_released(
     prs = await read_sql_query(
         select([PullRequest]).where(and_(PullRequest.number.in_(range(1000, 1010)),
                                          PullRequest.merged_at.isnot(None))),
-        mdb, PullRequest, index=PullRequest.node_id.name)
+        mdb, PullRequest, index=[PullRequest.node_id.name, PullRequest.repository_full_name.name])
     prs["dead"] = False
     prs[prs[PullRequest.merged_at.name].isnull()] = datetime.now(tz=timezone.utc)
     utc = timezone.utc
@@ -829,7 +867,7 @@ async def precomputed_merged_unreleased(
     prs = await read_sql_query(
         select([PullRequest]).where(and_(PullRequest.number.in_(range(1000, 1010)),
                                          PullRequest.merged_at.isnot(None))),
-        mdb, PullRequest, index=PullRequest.node_id.name)
+        mdb, PullRequest, index=[PullRequest.node_id.name, PullRequest.repository_full_name.name])
     prs["dead"] = False
     prs[prs[PullRequest.merged_at.name].isnull()] = datetime.now(tz=timezone.utc)
     utc = timezone.utc
@@ -934,7 +972,7 @@ async def test_discover_old_merged_unreleased_prs_smoke(
     assert len(unreleased_prs) == 11
     unreleased_prs = await read_sql_query(
         select([PullRequest]).where(PullRequest.node_id.in_(unreleased_prs)),
-        mdb, PullRequest, index=PullRequest.node_id.name)
+        mdb, PullRequest, index=[PullRequest.node_id.name, PullRequest.repository_full_name.name])
     assert (unreleased_prs[PullRequest.merged_at.name] >
             datetime(2018, 10, 17, tzinfo=timezone.utc)).all()
     unreleased_prs = await discover_inactive_merged_unreleased_prs(
@@ -944,7 +982,7 @@ async def test_discover_old_merged_unreleased_prs_smoke(
     assert len(unreleased_prs) == 11
     unreleased_prs = await read_sql_query(
         select([PullRequest]).where(PullRequest.node_id.in_(unreleased_prs)),
-        mdb, PullRequest, index=PullRequest.node_id.name)
+        mdb, PullRequest, index=[PullRequest.node_id.name, PullRequest.repository_full_name.name])
     releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"], None, None, metrics_time_from, unreleased_time_to,
         release_match_setting_tag, LogicalRepositorySettings.empty(), prefixer,

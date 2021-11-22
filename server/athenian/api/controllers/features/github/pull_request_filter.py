@@ -1021,6 +1021,8 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
             {},
             asyncio.create_task(noop(), name="noop"),
         )
+    if repositories is None:
+        repositories = logical_settings.all_logical_repos()
     if resolve_rebased:
         dags = await fetch_precomputed_commit_history_dags(
             prs_df[PullRequest.repository_full_name.name].unique(), account, pdb, cache)
@@ -1066,16 +1068,14 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
         if k not in facts:
             facts[k] = v
     dfs, _, _ = await PullRequestMiner.mine_by_ids(
-        prs_df, unreleased, now, releases, matched_bys, branches, default_branches, dags,
-        release_settings, logical_settings, prefixer, account, meta_ids,
+        prs_df, unreleased, repositories, now, releases, matched_bys, branches, default_branches,
+        dags, release_settings, logical_settings, prefixer, account, meta_ids,
         mdb, pdb, rdb, cache, with_jira=with_jira)
     deployment_names = dfs.deployments.index.get_level_values(1).unique()
     deployments_task = asyncio.create_task(_load_deployments(
         deployment_names, facts, logical_settings, prefixer,
         account, meta_ids, mdb, pdb, rdb, cache),
         name=f"load_included_deployments({len(deployment_names)})")
-    if repositories is None:
-        repositories = logical_settings.all_logical_repos()
 
     dfs.prs = split_logical_repositories(dfs.prs, dfs.labels, repositories, logical_settings)
     prs = await list_with_yield(PullRequestMiner(dfs), "PullRequestMiner.__iter__")

@@ -12,6 +12,7 @@ from sqlalchemy import and_, func, select
 from athenian.api import metadata
 from athenian.api.async_utils import read_sql_query
 from athenian.api.cache import cached, cached_methods
+from athenian.api.controllers.logical_repos import coerce_logical_repos
 from athenian.api.db import DatabaseLike
 from athenian.api.models.metadata.github import Branch, NodeCommit, NodeRepositoryRef, Repository
 from athenian.api.tracing import sentry_span
@@ -47,40 +48,47 @@ class BranchMiner:
         log = logging.getLogger("%s.extract_default_branches" % metadata.__package__)
         default_branches = {}
         ambiguous_defaults = {}
-        for repo, repo_branches in branches.groupby(Branch.repository_full_name.name, sort=False):
-            default_indexes = np.where(repo_branches[Branch.is_default.name].values)[0]
-            branch_names = repo_branches[Branch.branch_name.name]  # type: pd.Series
+        branch_repos = branches[Branch.repository_full_name.name].values
+        unique_branch_repos, index_map, counts = np.unique(
+            branch_repos, return_inverse=True, return_counts=True)
+        order = np.argsort(index_map)
+        branch_names = branches[Branch.branch_name.name].values[order]
+        branch_defaults = branches[Branch.is_default.name].values[order]
+        branch_commit_ids = branches[Branch.commit_id.name].values[order]
+        pos = 0
+        for i, repo in enumerate(unique_branch_repos):
+            next_pos = pos + counts[i]
+            default_indexes = np.flatnonzero(branch_defaults[pos:next_pos])
+            repo_branch_names = branch_names[pos:next_pos]
             if len(default_indexes) > 0:
-                default_branch = branch_names._ixs(default_indexes[0])
+                default_branch = repo_branch_names[default_indexes[0]]
             else:
-                branch_names = branch_names.values
-                if "master" in branch_names:
+                if "master" in repo_branch_names:
                     default_branch = "master"
-                elif "main" in branch_names:
+                elif "main" in repo_branch_names:
                     default_branch = "main"
-                elif len(branch_names) == 1:
-                    default_branch = branch_names[0]
-                elif len(branch_names) > 0:
-                    ambiguous_defaults[repo] = repo_branches
+                elif len(repo_branch_names) == 1:
+                    default_branch = repo_branch_names[0]
+                elif len(repo_branch_names) > 0:
+                    ambiguous_defaults[repo] = (branch_commit_ids[pos:next_pos], repo_branch_names)
                     default_branch = "<ambiguous>"
                 else:
                     default_branch = "master"
                 log.warning(
                     "%s does not have an explicit default branch among %d listed, set to %s",
-                    repo, len(branch_names), default_branch)
+                    repo, len(repo_branch_names), default_branch)
             default_branches[repo] = default_branch
+            pos = next_pos
         if ambiguous_defaults:
-            commit_ids = np.concatenate([rb[Branch.commit_id.name].values
-                                         for rb in ambiguous_defaults.values()])
+            commit_ids = np.concatenate([rb[0] for rb in ambiguous_defaults.values()])
             committed_dates = await mdb.fetch_all(
                 select([NodeCommit.id, NodeCommit.committed_date])
                 .where(and_(NodeCommit.id.in_(commit_ids),
                             NodeCommit.acc_id.in_(meta_ids))))
             committed_dates = {r[0]: r[1] for r in committed_dates}
-            for repo, repo_branches in ambiguous_defaults.items():
+            for repo, (repo_commit_ids, repo_branch_names) in ambiguous_defaults.items():
                 default_branch = max_date = None
-                for name, commit_id in zip(repo_branches[Branch.branch_name.name].values,
-                                           repo_branches[Branch.commit_id.name].values):
+                for name, commit_id in zip(repo_branch_names, repo_commit_ids):
                     if (commit_date := committed_dates.get(commit_id)) is None:
                         continue
                     if max_date is None or max_date < commit_date:
@@ -128,7 +136,9 @@ class BranchMiner:
                                 ) -> Tuple[pd.DataFrame, Iterable[str]]:
         df = await read_sql_query(
             select([Branch]).where(and_(
-                Branch.repository_full_name.in_(repos) if repos is not None else sa.true(),
+                Branch.repository_full_name.in_(coerce_logical_repos(repos))
+                if repos is not None
+                else sa.true(),
                 Branch.acc_id.in_(meta_ids),
                 Branch.commit_sha.isnot(None))),
             mdb, Branch)

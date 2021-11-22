@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from pandas.testing import assert_frame_equal
+import pytest
 from sqlalchemy import delete, select, update
 
 from athenian.api.controllers.features import entries
@@ -117,6 +118,48 @@ async def test_fetch_pull_request_facts_unfresh_jira(
         facts_unfresh.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
         for i in (5, 23):
             facts_unfresh.loc[i, PullRequestFacts.f.releaser] = "mcuadros"
+        assert_frame_equal(facts_fresh, facts_unfresh)
+    finally:
+        entries.unfresh_prs_threshold = orig_threshold
+
+
+@pytest.mark.parametrize("repos, count", [
+    ({"src-d/go-git/alpha"}, 68),
+    ({"src-d/go-git/alpha", "src-d/go-git/beta"}, 122),
+    ({"src-d/go-git", "src-d/go-git/alpha"}, 185),
+])
+@with_defer
+async def test_fetch_pull_request_facts_unfresh_logical_title(
+        metrics_calculator_factory, release_match_setting_tag_logical, mdb, pdb, rdb, prefixer,
+        logical_settings, repos, count):
+    metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
+    time_from = datetime(2017, 9, 1, tzinfo=timezone.utc)
+    time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
+    facts_fresh = await metrics_calculator_no_cache.calc_pull_request_facts_github(
+        time_from, time_to,
+        repos, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        True, release_match_setting_tag_logical, logical_settings,
+        prefixer, False, False,
+    )
+    facts_fresh.sort_values(
+        [PullRequestFacts.f.created, PullRequestFacts.f.repository_full_name],
+        inplace=True, ignore_index=True)
+    await wait_deferred()
+    assert len(facts_fresh) == count
+    assert facts_fresh["repository_full_name"].isin(repos).all()
+    orig_threshold = entries.unfresh_prs_threshold
+    entries.unfresh_prs_threshold = 1
+    try:
+        facts_unfresh = await metrics_calculator_no_cache.calc_pull_request_facts_github(
+            time_from, time_to,
+            repos, {}, LabelFilter.empty(), JIRAFilter.empty(),
+            True, release_match_setting_tag_logical, logical_settings,
+            prefixer, False, False,
+        )
+        assert len(facts_unfresh) == count
+        facts_unfresh.sort_values(
+            [PullRequestFacts.f.created, PullRequestFacts.f.repository_full_name],
+            inplace=True, ignore_index=True)
         assert_frame_equal(facts_fresh, facts_unfresh)
     finally:
         entries.unfresh_prs_threshold = orig_threshold

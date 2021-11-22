@@ -106,3 +106,10 @@ async def test_extract_branches_none_repos(mdb, cache, branch_miner):
     branches, defaults = await branch_miner.extract_branches(
         None, (6366825,), mdb, cache)
     assert len(branches) == 4
+
+
+@with_defer
+async def test_extract_branches_logical(mdb, cache, branch_miner):
+    branches, defaults = await branch_miner.extract_branches(
+        ["src-d/go-git/alpha", "src-d/go-git/beta"], (6366825,), mdb, cache)
+    assert len(branches) == 4

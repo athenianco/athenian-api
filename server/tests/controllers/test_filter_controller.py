@@ -741,7 +741,7 @@ async def test_filter_prs_logical(
         method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
     assert response.status == 200
     prs = PullRequestSet.from_dict(json.loads((await response.read()).decode("utf-8")))
-    assert len(prs.data) == 236
+    assert len(prs.data) == 255
     for pr in prs.data:
         assert pr.repository in ["github.com/src-d/go-git/alpha", "github.com/src-d/go-git/beta"]
 

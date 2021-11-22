@@ -25,7 +25,8 @@ from athenian.api.controllers.miners.github.dag_accelerated import extract_subda
 from athenian.api.controllers.miners.github.precomputed_prs import \
     DonePRFactsLoader, MergedPRFactsLoader, update_unreleased_prs
 from athenian.api.controllers.miners.github.release_load import dummy_releases_df, ReleaseLoader
-from athenian.api.controllers.miners.github.released_pr import new_released_prs_df, release_columns
+from athenian.api.controllers.miners.github.released_pr import index_name, new_released_prs_df, \
+    release_columns
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
 from athenian.api.controllers.miners.types import nonemax, PullRequestFactsMap
 from athenian.api.controllers.prefixer import Prefixer
@@ -87,6 +88,7 @@ class PullRequestToReleaseMapper:
         assert isinstance(time_to, datetime)
         assert isinstance(mdb, ParallelDatabase)
         assert isinstance(pdb, ParallelDatabase)
+        assert prs.index.nlevels == 2
         pr_releases = new_released_prs_df()
         unreleased_prs_event = asyncio.Event()
         if prs.empty:
@@ -99,23 +101,24 @@ class PullRequestToReleaseMapper:
                 LabelFilter.empty(), matched_bys, default_branches, release_settings,
                 prefixer, account, pdb),
             DonePRFactsLoader.load_precomputed_pr_releases(
-                prs.index, time_to, matched_bys, default_branches, release_settings,
+                prs, time_to, matched_bys, default_branches, release_settings,
                 prefixer, account, pdb, cache),
         )
         add_pdb_hits(pdb, "map_prs_to_releases/released", len(precomputed_pr_releases))
         add_pdb_hits(pdb, "map_prs_to_releases/unreleased", len(unreleased_prs))
         pr_releases = precomputed_pr_releases
-        unreleased_node_ids = [node_id for node_id, _ in unreleased_prs]
-        merged_prs = prs[~prs.index.isin(pr_releases.index.union(unreleased_node_ids))]
+        merged_prs = prs[~prs.index.isin(pr_releases.index.union(unreleased_prs.keys()))]
         if merged_prs.empty:
             unreleased_prs_event.set()
             return pr_releases, unreleased_prs, unreleased_prs_event
 
         labels, missed_released_prs, dead_prs = await gather(
-            cls._fetch_labels(merged_prs.index, labels, meta_ids, mdb),
+            cls._fetch_labels(merged_prs.index.get_level_values(0).values, labels, meta_ids, mdb),
             cls._map_prs_to_releases(merged_prs, dags, releases),
             cls._find_dead_merged_prs(merged_prs),
         )
+        assert missed_released_prs.index.nlevels == 2
+        assert dead_prs.index.nlevels == 2
         # PRs may wrongly classify as dead although they are really released; remove the conflicts
         dead_prs.drop(index=missed_released_prs.index, inplace=True, errors="ignore")
         add_pdb_misses(pdb, "map_prs_to_releases/released", len(missed_released_prs))
@@ -141,6 +144,7 @@ class PullRequestToReleaseMapper:
                                    ) -> pd.DataFrame:
         if prs.empty:
             return new_released_prs_df()
+        assert prs.index.nlevels == 2
         release_repos = releases[Release.repository_full_name.name].values
         unique_release_repos, release_index_map, release_repo_counts = np.unique(
             release_repos, return_inverse=True, return_counts=True)
@@ -148,26 +152,24 @@ class PullRequestToReleaseMapper:
         ordered_release_shas = releases[Release.sha.name].values[release_repo_order].astype("S40")
         release_repo_offsets = np.zeros(len(release_repo_counts) + 1, dtype=int)
         np.cumsum(release_repo_counts, out=release_repo_offsets[1:])
-        physical_unique_release_repos = \
-            np.array([drop_logical_repo(r) for r in unique_release_repos])
-        pr_repos = prs[PullRequest.repository_full_name.name].values
+        pr_repos = prs.index.get_level_values(1).values
         unique_pr_repos, pr_index_map, pr_repo_counts = np.unique(
             pr_repos, return_inverse=True, return_counts=True)
         pr_repo_order = np.argsort(pr_index_map)
         pr_merge_hashes = \
             prs[PullRequest.merge_commit_sha.name].values[pr_repo_order].astype("S40")
         pr_merged_at = prs[PullRequest.merged_at.name].values[pr_repo_order]
-        pr_node_ids = prs.index.values[pr_repo_order]
+        pr_node_ids = prs.index.get_level_values(0).values[pr_repo_order]
         pr_repo_offsets = np.zeros(len(pr_repo_counts) + 1, dtype=int)
         np.cumsum(pr_repo_counts, out=pr_repo_offsets[1:])
         release_pos = pr_pos = 0
         released_prs = []
         log = logging.getLogger("%s.map_prs_to_releases" % metadata.__package__)
         while release_pos < len(unique_release_repos) and pr_pos < len(unique_pr_repos):
-            physical_release_repo = physical_unique_release_repos[release_pos]
+            release_repo = unique_release_repos[release_pos]
             pr_repo = unique_pr_repos[pr_pos]
-            if physical_release_repo == pr_repo:
-                hashes, vertexes, edges = dags[pr_repo]
+            if release_repo == pr_repo:
+                hashes, vertexes, edges = dags[drop_logical_repo(pr_repo)]
                 if len(hashes) == 0:
                     log.error("very suspicious: empty DAG for %s", pr_repo)
                 release_beg = release_repo_offsets[release_pos]
@@ -193,15 +195,17 @@ class PullRequestToReleaseMapper:
                     found_releases[Release.published_at.name] = np.maximum(
                         found_releases[Release.published_at.name].values,
                         pr_merged_at[pr_beg:pr_end][found_mask])
-                    found_releases.set_index(pr_node_ids[pr_beg:pr_end][found_mask], inplace=True)
+                    found_releases[index_name] = pr_node_ids[pr_beg:pr_end][found_mask]
                     released_prs.append(found_releases)
                 release_pos += 1
-            elif physical_release_repo < pr_repo:
+                pr_pos += 1
+            elif release_repo < pr_repo:
                 release_pos += 1
             else:
                 pr_pos += 1
         if released_prs:
             released_prs = pd.concat(released_prs, copy=False)
+            released_prs.set_index([index_name, Release.repository_full_name.name], inplace=True)
         else:
             released_prs = new_released_prs_df()
         return postprocess_datetime(released_prs)
@@ -209,23 +213,24 @@ class PullRequestToReleaseMapper:
     @classmethod
     @sentry_span
     async def _find_dead_merged_prs(cls, prs: pd.DataFrame) -> pd.DataFrame:
-        dead_indexes = np.flatnonzero(prs["dead"].values)
+        assert prs.index.nlevels == 2
+        dead_mask = prs["dead"].values.astype(bool, copy=False)
+        node_ids = prs.index.get_level_values(0).values
+        repos = prs.index.get_level_values(1).values
         dead_prs = [
             (pr_id, None, None, None, None, None, repo, ReleaseMatch.force_push_drop)
-            for repo, pr_id in zip(
-                prs[PullRequest.repository_full_name.name].take(dead_indexes).values,
-                prs.index.take(dead_indexes).values)
+            for repo, pr_id in zip(repos[dead_mask], node_ids[dead_mask])
         ]
         return new_released_prs_df(dead_prs)
 
     @classmethod
     @sentry_span
     async def _fetch_labels(cls,
-                            node_ids: Iterable[str],
+                            node_ids: Iterable[int],
                             df: Optional[pd.DataFrame],
                             meta_ids: Tuple[int, ...],
                             mdb: ParallelDatabase,
-                            ) -> Dict[str, List[str]]:
+                            ) -> Dict[int, List[str]]:
         if df is not None:
             labels = {}
             for node_id, name in zip(df.index.get_level_values(0).values,
