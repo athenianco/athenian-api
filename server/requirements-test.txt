@@ -6,7 +6,7 @@ pytest-benchmark==3.4.1
 pytest-rerunfailures==10.2
 pytest-xdist==2.4.0
 pytest-timeout==2.0.1
-filelock==3.3.2
+filelock==3.4.0
 faker==9.8.2
 freezegun==1.1.0
 nest_asyncio==1.5.1
