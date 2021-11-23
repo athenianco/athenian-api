@@ -12,7 +12,7 @@ from athenian.api.defer import wait_deferred, with_defer
     (FilterCommitsProperty.BYPASSING_PRS, 289),
 ])
 @with_defer
-async def test_extract_commits_users(mdb, pdb, property, count, cache):
+async def test_extract_commits_users(mdb, pdb, property, count, cache, prefixer):
     """
     date_from: datetime,
                           date_to: datetime,
@@ -36,6 +36,7 @@ async def test_extract_commits_users(mdb, pdb, property, count, cache):
         with_committer=["mcuadros"],
         only_default_branch=False,
         branch_miner=BranchMiner(),
+        prefixer=prefixer,
         account=1,
         meta_ids=(6366825,),
         mdb=mdb,

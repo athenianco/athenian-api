@@ -184,7 +184,7 @@ def main():
             try:
                 log.info("Mining the releases")
                 branches, default_branches = await BranchMiner.extract_branches(
-                    repos, meta_ids, mdb, None)
+                    repos, prefixer, meta_ids, mdb, None)
                 releases, _, _, _ = await mine_releases(
                     repos, {}, branches, default_branches, no_time_from, time_to,
                     LabelFilter.empty(), JIRAFilter.empty(), release_settings, logical_settings,

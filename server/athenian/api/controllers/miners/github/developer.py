@@ -198,7 +198,7 @@ async def _mine_releases(repo_ids: np.ndarray,
                          cache: Optional[aiomcache.Client],
                          ) -> pd.DataFrame:
     branches, default_branches = await BranchMiner.extract_branches(
-        repo_names, meta_ids, mdb, cache)
+        repo_names, prefixer, meta_ids, mdb, cache)
     releases, _ = await ReleaseLoader.load_releases(
         repo_names, branches, default_branches, time_from, time_to,
         release_settings, logical_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache)

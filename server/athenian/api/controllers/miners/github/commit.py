@@ -20,6 +20,7 @@ from athenian.api.controllers.miners.github.branches import BranchMiner, load_br
 from athenian.api.controllers.miners.github.dag_accelerated import extract_first_parents, \
     extract_subdag, join_dags, partition_dag, searchsorted_inrange
 from athenian.api.controllers.miners.types import DAG as DAGStruct
+from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.db import add_pdb_hits, add_pdb_misses, DatabaseLike, ParallelDatabase
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import Branch, NodeCommit, NodePullRequestCommit, \
@@ -63,6 +64,7 @@ async def extract_commits(prop: FilterCommitsProperty,
                           with_committer: Optional[Collection[str]],
                           only_default_branch: bool,
                           branch_miner: Optional[BranchMiner],
+                          prefixer: Prefixer,
                           account: int,
                           meta_ids: Tuple[int, ...],
                           mdb: DatabaseLike,
@@ -133,7 +135,7 @@ async def extract_commits(prop: FilterCommitsProperty,
     tasks = [
         commits_task,
         fetch_repository_commits_from_scratch(
-            repos, branch_miner, True, account, meta_ids, mdb, pdb, cache),
+            repos, branch_miner, True, prefixer, account, meta_ids, mdb, pdb, cache),
     ]
     commits, (dags, branches, default_branches) = await gather(*tasks, op="extract_commits/fetch")
     candidates_count = len(commits)
@@ -369,6 +371,7 @@ async def fetch_repository_commits_no_branch_dates(
 async def fetch_repository_commits_from_scratch(repos: Iterable[str],
                                                 branch_miner: BranchMiner,
                                                 prune: bool,
+                                                prefixer: Prefixer,
                                                 account: int,
                                                 meta_ids: Tuple[int, ...],
                                                 mdb: ParallelDatabase,
@@ -384,7 +387,7 @@ async def fetch_repository_commits_from_scratch(repos: Iterable[str],
     in-place.
     """
     (branches, defaults), pdags = await gather(
-        branch_miner.extract_branches(repos, meta_ids, mdb, cache),
+        branch_miner.extract_branches(repos, prefixer, meta_ids, mdb, cache),
         fetch_precomputed_commit_history_dags(repos, account, pdb, cache),
     )
     dags = await fetch_repository_commits_no_branch_dates(

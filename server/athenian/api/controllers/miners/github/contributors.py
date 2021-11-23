@@ -69,7 +69,7 @@ async def mine_contributors(repos: Collection[str],
         PullRequest.acc_id.in_(meta_ids),
     ]
     tasks = [
-        BranchMiner.extract_branches(repos, meta_ids, mdb, cache),
+        BranchMiner.extract_branches(repos, prefixer, meta_ids, mdb, cache),
         mdb.fetch_all(select([NodeRepository.node_id])
                       .where(and_(NodeRepository.name_with_owner.in_(repos),
                                   NodeRepository.acc_id.in_(meta_ids)))),

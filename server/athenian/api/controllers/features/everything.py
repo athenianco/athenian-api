@@ -307,7 +307,8 @@ async def mine_everything(topics: Set[MineTopic],
                           ) -> Dict[MineTopic, Dict[str, pd.DataFrame]]:
     """Mine all the specified data topics."""
     repos = release_settings.native.keys()
-    branches, default_branches = await BranchMiner.extract_branches(repos, meta_ids, mdb, cache)
+    branches, default_branches = await BranchMiner.extract_branches(
+        repos, prefixer, meta_ids, mdb, cache)
     tasks = [miners[t](repos, branches, default_branches, release_settings, logical_settings,
                        prefixer, account, meta_ids, sdb, mdb, pdb, rdb, cache)
              for t in topics]

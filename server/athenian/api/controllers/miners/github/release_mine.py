@@ -894,7 +894,7 @@ async def _load_releases_by_name(names: Dict[str, Set[str]],
                                             Dict[str, str]]:
     names = await _complete_commit_hashes(names, meta_ids, mdb)
     tasks = [
-        BranchMiner.extract_branches(names, meta_ids, mdb, cache),
+        BranchMiner.extract_branches(names, prefixer, meta_ids, mdb, cache),
         fetch_precomputed_releases_by_name(names, account, pdb),
     ]
     (branches, default_branches), releases = await gather(*tasks)

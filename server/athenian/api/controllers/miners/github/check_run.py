@@ -2,17 +2,16 @@ from datetime import datetime, timedelta, timezone
 from itertools import chain
 import logging
 import pickle
-from typing import Collection, Optional, Tuple, Type, Union
+from typing import Collection, Optional, Tuple
 import warnings
 
 import aiomcache
 import numpy as np
 import pandas as pd
 from sqlalchemy import and_, exists, func, select, union_all
-from sqlalchemy.sql import ClauseElement
 
 from athenian.api import metadata
-from athenian.api.async_utils import gather, read_sql_query
+from athenian.api.async_utils import gather, read_sql_query, read_sql_query_with_join_collapse
 from athenian.api.cache import cached, CancelCache, short_term_exptime
 from athenian.api.controllers.features.github.check_run_metrics_accelerated import \
     mark_check_suite_types
@@ -145,13 +144,13 @@ async def _mine_check_runs(time_from: datetime,
         embedded_labels_query = False
     if not jira:
         query = select([CheckRun]).where(and_(*filters))
-        set_join_collapse_limit = mdb.url.dialect == "postgresql"
+        set_join_collapse_limit = True
     else:
         query = await generate_jira_prs_query(
             filters, jira, mdb, cache, columns=CheckRun.__table__.columns, seed=CheckRun,
             on=(CheckRun.pull_request_node_id, CheckRun.acc_id))
         set_join_collapse_limit = False
-    df = await _read_sql_query_with_join_collapse(query, CheckRun, set_join_collapse_limit, mdb)
+    df = await read_sql_query_with_join_collapse(query, CheckRun, set_join_collapse_limit, mdb)
 
     # add check runs mapped to the mentioned PRs even if they are outside of the date range
     df, df_labels = await _append_pull_request_check_runs_outside(
@@ -426,7 +425,7 @@ async def _append_pull_request_check_runs_outside(df: pd.DataFrame,
         )))
     pr_sql = union_all(query_before, query_after)
     tasks = [
-        _read_sql_query_with_join_collapse(pr_sql, CheckRunByPR, True, mdb),
+        read_sql_query_with_join_collapse(pr_sql, CheckRunByPR, True, mdb),
     ]
     if labels and not embedded_labels_query:
         tasks.append(read_sql_query(
@@ -446,24 +445,6 @@ async def _append_pull_request_check_runs_outside(df: pd.DataFrame,
     df[CheckRun.completed_at.name] = df[CheckRun.completed_at.name].astype(
         df[CheckRun.started_at.name].dtype)
     return df, df_labels
-
-
-async def _read_sql_query_with_join_collapse(query: ClauseElement,
-                                             columns: Union[Type[CheckRun], Type[CheckRunByPR]],
-                                             set_join_collapse_limit: bool,
-                                             mdb: ParallelDatabase,
-                                             ) -> pd.DataFrame:
-    set_join_collapse_limit &= mdb.url.dialect == "postgresql"
-    async with mdb.connection() as mdb_conn:
-        if set_join_collapse_limit:
-            transaction = mdb_conn.transaction()
-            await transaction.start()
-            await mdb_conn.execute("set join_collapse_limit=1")
-        try:
-            return await read_sql_query(query, mdb_conn, columns=columns)
-        finally:
-            if set_join_collapse_limit:
-                await transaction.rollback()
 
 
 def _calculate_check_suite_started(df: pd.DataFrame) -> None:

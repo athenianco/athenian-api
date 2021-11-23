@@ -12,7 +12,7 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import ClauseElement
 
 from athenian.api import metadata
-from athenian.api.db import DatabaseLike
+from athenian.api.db import DatabaseLike, ParallelDatabase
 from athenian.api.models.metadata.github import Base as MetadataBase
 from athenian.api.models.persistentdata.models import Base as PerdataBase
 from athenian.api.models.precomputed.models import GitHubBase as PrecomputedBase
@@ -197,3 +197,24 @@ async def gather(*coros_or_futures,
         with sentry_sdk.start_span(op=op, description=description):
             return await body()
     return await body()
+
+
+async def read_sql_query_with_join_collapse(
+        query: ClauseElement,
+        columns: Union[Sequence[str], Sequence[InstrumentedAttribute],
+                       MetadataBase, PerdataBase, PrecomputedBase, StateBase],
+        set_join_collapse_limit: bool,
+        mdb: ParallelDatabase,
+) -> pd.DataFrame:
+    """Enforce the predefined JOIN order in read_sql_query()."""
+    set_join_collapse_limit &= mdb.url.dialect == "postgresql"
+    async with mdb.connection() as mdb_conn:
+        if set_join_collapse_limit:
+            transaction = mdb_conn.transaction()
+            await transaction.start()
+            await mdb_conn.execute("set join_collapse_limit=1")
+        try:
+            return await read_sql_query(query, mdb_conn, columns=columns)
+        finally:
+            if set_join_collapse_limit:
+                await transaction.rollback()

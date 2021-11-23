@@ -302,7 +302,7 @@ async def clear_precomputed_events(request: AthenianWebRequest, body: dict) -> w
         request.sdb, request.mdb, request.cache, request.app["slack"], strip_prefix=False)
     repos = [r.split("/", 1)[1] for r in prefixed_repos]
     (branches, default_branches), release_settings = await gather(
-        BranchMiner.extract_branches(repos, meta_ids, request.mdb, request.cache),
+        BranchMiner.extract_branches(repos, prefixer, meta_ids, request.mdb, request.cache),
         settings.list_release_matches(prefixed_repos),
     )
     tasks = [

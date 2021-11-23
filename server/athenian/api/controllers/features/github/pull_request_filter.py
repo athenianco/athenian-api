@@ -736,7 +736,8 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
         repos, labels, jira, meta_ids, mdb, cache))
     environments_task = asyncio.create_task(fetch_repository_environments(
         repos, prefixer, account, rdb, cache))
-    branches, default_branches = await BranchMiner.extract_branches(repos, meta_ids, mdb, cache)
+    branches, default_branches = await BranchMiner.extract_branches(
+        repos, prefixer, meta_ids, mdb, cache)
     tasks = (
         PullRequestMiner.mine(
             date_from, date_to, time_from, time_to, repos, participants, labels, jira, True,
@@ -944,7 +945,8 @@ async def _fetch_pull_requests(prs: Dict[str, Set[int]],
                                           Dict[str, ReleaseMatch],
                                           asyncio.Task,
                                           Optional[asyncio.Task]]:
-    branches, default_branches = await BranchMiner.extract_branches(prs, meta_ids, mdb, cache)
+    branches, default_branches = await BranchMiner.extract_branches(
+        prs, prefixer, meta_ids, mdb, cache)
     filters = [and_(PullRequest.repository_full_name == drop_logical_repo(repo),
                     PullRequest.number.in_(numbers),
                     PullRequest.acc_id.in_(meta_ids))

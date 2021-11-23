@@ -78,10 +78,11 @@ _branches = None
 
 
 @pytest.fixture(scope="function")
-async def branches(mdb, branch_miner):
+async def branches(mdb, branch_miner, prefixer):
     global _branches
     if _branches is None:
-        _branches, _ = await branch_miner.extract_branches(["src-d/go-git"], (6366825,), mdb, None)
+        _branches, _ = await branch_miner.extract_branches(
+            ["src-d/go-git"], prefixer, (6366825,), mdb, None)
     return _branches
 
 

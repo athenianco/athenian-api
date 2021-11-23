@@ -100,7 +100,8 @@ async def mine_repositories(repos: Collection[str],
 
     @sentry_span
     async def fetch_inactive_merged_prs():
-        _, default_branches = await BranchMiner.extract_branches(repos, meta_ids, mdb, cache)
+        _, default_branches = await BranchMiner.extract_branches(
+            repos, prefixer, meta_ids, mdb, cache)
         repo_map = await discover_inactive_merged_unreleased_prs(
             time_from, time_to, repos, {}, LabelFilter.empty(), default_branches,
             release_settings, prefixer, account, pdb, cache)
