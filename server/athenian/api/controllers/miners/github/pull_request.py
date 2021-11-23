@@ -676,10 +676,16 @@ class PullRequestMiner:
                     int_to_str(prs.index.values),
                     (prs_repos := prs[PullRequest.repository_full_name.name].values.astype("S")),
                 )
-                unreleased_index = np.char.add(
-                    int_to_str(unreleased[:, 0].astype(int)),
-                    unreleased[:, 1].astype(prs_repos.dtype),
-                )
+                if isinstance(unreleased, np.ndarray):
+                    unreleased_index = np.char.add(
+                        int_to_str(unreleased[:, 0].astype(int)),
+                        unreleased[:, 1].astype(prs_repos.dtype),
+                    )
+                else:
+                    unreleased_index = np.char.add(
+                        int_to_str(np.fromiter((p[0] for p in unreleased), int, len(unreleased))),
+                        np.array([p[1] for p in unreleased], dtype=prs_repos.dtype),
+                    )
                 merged_mask &= np.in1d(prs_index, unreleased_index, invert=True)
             merged_prs = prs.take(np.flatnonzero(merged_mask))
             nonlocal releases
