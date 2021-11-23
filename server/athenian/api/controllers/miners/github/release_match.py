@@ -158,7 +158,8 @@ class PullRequestToReleaseMapper:
         pr_repo_order = np.argsort(pr_index_map)
         pr_merge_hashes = \
             prs[PullRequest.merge_commit_sha.name].values[pr_repo_order].astype("S40")
-        pr_merged_at = prs[PullRequest.merged_at.name].values[pr_repo_order]
+        pr_merged_at = prs[PullRequest.merged_at.name].values[pr_repo_order].astype(
+            releases[Release.published_at.name].values.dtype, copy=False)
         pr_node_ids = prs.index.get_level_values(0).values[pr_repo_order]
         pr_repo_offsets = np.zeros(len(pr_repo_counts) + 1, dtype=int)
         np.cumsum(pr_repo_counts, out=pr_repo_offsets[1:])
