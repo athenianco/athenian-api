@@ -10,9 +10,10 @@ import sqlalchemy as sa
 from sqlalchemy import and_, func, select
 
 from athenian.api import metadata
-from athenian.api.async_utils import read_sql_query
+from athenian.api.async_utils import read_sql_query_with_join_collapse
 from athenian.api.cache import cached, cached_methods
 from athenian.api.controllers.logical_repos import coerce_logical_repos
+from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.db import DatabaseLike
 from athenian.api.models.metadata.github import Branch, NodeCommit, NodeRepositoryRef, Repository
 from athenian.api.tracing import sentry_span
@@ -32,6 +33,7 @@ class BranchMiner:
     )
     async def extract_branches(cls,
                                repos: Optional[Iterable[str]],
+                               prefixer: Prefixer,
                                meta_ids: Tuple[int, ...],
                                mdb: DatabaseLike,
                                cache: Optional[aiomcache.Client],
@@ -44,13 +46,20 @@ class BranchMiner:
         """
         if strip and repos is not None:
             repos = [r.split("/", 1)[1] for r in repos]
-        branches, repos = await cls._extract_branches(repos, meta_ids, mdb)
+        if repos is not None:
+            repos = coerce_logical_repos(repos)
+            repo_ids = [prefixer.repo_name_to_node.get(r) for r in repos]
+        else:
+            repo_ids = None
+        branches = await cls._extract_branches(repo_ids, meta_ids, mdb)
         log = logging.getLogger("%s.extract_default_branches" % metadata.__package__)
         default_branches = {}
         ambiguous_defaults = {}
         branch_repos = branches[Branch.repository_full_name.name].values
         unique_branch_repos, index_map, counts = np.unique(
             branch_repos, return_inverse=True, return_counts=True)
+        if repos is None:
+            repos = unique_branch_repos
         order = np.argsort(index_map)
         branch_names = branches[Branch.branch_name.name].values[order]
         branch_defaults = branches[Branch.is_default.name].values[order]
@@ -130,21 +139,23 @@ class BranchMiner:
     @classmethod
     @sentry_span
     async def _extract_branches(cls,
-                                repos: Optional[Iterable[str]],
+                                repos: Optional[Iterable[int]],
                                 meta_ids: Tuple[int, ...],
                                 mdb: DatabaseLike,
-                                ) -> Tuple[pd.DataFrame, Iterable[str]]:
-        df = await read_sql_query(
+                                ) -> pd.DataFrame:
+        df = await read_sql_query_with_join_collapse(
             select([Branch]).where(and_(
-                Branch.repository_full_name.in_(coerce_logical_repos(repos))
+                Branch.repository_node_id.in_(repos)
                 if repos is not None
                 else sa.true(),
-                Branch.acc_id.in_(meta_ids),
-                Branch.commit_sha.isnot(None))),
-            mdb, Branch)
-        if repos is not None:
-            return df, repos
-        return df, df[Branch.repository_full_name.name].unique()
+                Branch.acc_id.in_(meta_ids))),
+            columns=Branch,
+            set_join_collapse_limit=True,
+            mdb=mdb)
+        sha_not_null = df[Branch.commit_sha.name].notnull().values
+        if sha_not_null.sum() < len(df):
+            df = df.take(np.flatnonzero(sha_not_null))
+        return df
 
 
 async def load_branch_commit_dates(branches: pd.DataFrame,

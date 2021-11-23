@@ -1132,8 +1132,8 @@ async def test__fetch_repository_commits_many(mdb, pdb):
 
 
 @with_defer
-async def test__fetch_repository_commits_full(mdb, pdb, dag, cache, branch_miner):
-    branches, _ = await branch_miner.extract_branches(dag, (6366825,), mdb, None)
+async def test__fetch_repository_commits_full(mdb, pdb, dag, cache, branch_miner, prefixer):
+    branches, _ = await branch_miner.extract_branches(dag, prefixer, (6366825,), mdb, None)
     commit_ids = branches[Branch.commit_id.name].values
     commit_dates = await mdb.fetch_all(select([NodeCommit.id, NodeCommit.committed_date])
                                        .where(NodeCommit.id.in_(commit_ids)))

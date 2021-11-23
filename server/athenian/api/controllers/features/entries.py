@@ -292,15 +292,17 @@ class MetricEntriesCalculator:
                                        with_author: Optional[Collection[str]],
                                        with_committer: Optional[Collection[str]],
                                        only_default_branch: bool,
+                                       prefixer: Prefixer,
                                        ) -> List[CodeStats]:
         """Filter code pushed on GitHub according to the specified criteria."""
         time_from, time_to = self.align_time_min_max(time_intervals, 100500)
         x_commits = await extract_commits(
             prop, time_from, time_to, repos, with_author, with_committer, only_default_branch,
-            self.branch_miner(), self._account, self._meta_ids, self._mdb, self._pdb, self._cache)
+            self.branch_miner(), prefixer, self._account, self._meta_ids,
+            self._mdb, self._pdb, self._cache)
         all_commits = await extract_commits(
             FilterCommitsProperty.NO_PR_MERGES, time_from, time_to, repos,
-            with_author, with_committer, only_default_branch, self.branch_miner(),
+            with_author, with_committer, only_default_branch, self.branch_miner(), prefixer,
             self._account, self._meta_ids, self._mdb, self._pdb, self._cache,
             columns=[PushCommit.committed_date, PushCommit.additions, PushCommit.deletions])
         return calc_code_stats(x_commits, all_commits, time_intervals)
@@ -705,7 +707,7 @@ class MetricEntriesCalculator:
         assert isinstance(repositories, set)
         if branches is None or default_branches is None:
             branches, default_branches = await self.branch_miner.extract_branches(
-                repositories, self._meta_ids, self._mdb, self._cache)
+                repositories, prefixer, self._meta_ids, self._mdb, self._cache)
         precomputed_tasks = [
             self.done_prs_facts_loader.load_precomputed_done_facts_filters(
                 time_from, time_to, repositories, participants, labels, default_branches,

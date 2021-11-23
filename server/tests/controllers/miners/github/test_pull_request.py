@@ -1161,8 +1161,9 @@ async def test_pr_miner_jira_cache(
 
 
 @with_defer
-async def test_fetch_prs_no_branches(mdb, pdb, dag, branch_miner, pr_miner):
-    branches, _ = await branch_miner.extract_branches(["src-d/go-git"], (6366825,), mdb, None)
+async def test_fetch_prs_no_branches(mdb, pdb, dag, branch_miner, pr_miner, prefixer):
+    branches, _ = await branch_miner.extract_branches(
+        ["src-d/go-git"], prefixer, (6366825,), mdb, None)
     branches = branches[branches[Branch.branch_name.name] == "master"]
     branches[Branch.repository_full_name.name] = "xxx"
     branches[Branch.commit_date] = [datetime.now(timezone.utc)]
@@ -1184,8 +1185,9 @@ async def test_fetch_prs_no_branches(mdb, pdb, dag, branch_miner, pr_miner):
 
 
 @with_defer
-async def test_fetch_prs_dead(mdb, pdb, branch_miner, pr_miner):
-    branches, _ = await branch_miner.extract_branches(["src-d/go-git"], (6366825,), mdb, None)
+async def test_fetch_prs_dead(mdb, pdb, branch_miner, pr_miner, prefixer):
+    branches, _ = await branch_miner.extract_branches(
+        ["src-d/go-git"], prefixer, (6366825,), mdb, None)
     branches = branches[branches[Branch.branch_name.name] == "master"]
     branches[Branch.commit_date] = datetime.now(timezone.utc)
     args = [

@@ -14,6 +14,7 @@ from athenian.api.controllers.account import get_metadata_account_ids, get_user_
 from athenian.api.controllers.jira import ALLOWED_USER_TYPES, get_jira_id, \
     load_jira_identity_mapping_sentinel
 from athenian.api.controllers.miners.github.branches import BranchMiner
+from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import ReleaseMatch, Settings
 from athenian.api.models.metadata.github import User as GitHubUser
 from athenian.api.models.metadata.jira import Issue, Project, User as JIRAUser
@@ -30,17 +31,22 @@ async def list_release_match_settings(request: AthenianWebRequest, id: int) -> w
     """List the current release matching settings."""
     # Check the user separately beforehand to avoid security problems.
     await get_user_account_status(request.uid, id, request.sdb, request.cache)
-    tasks = [
-        get_metadata_account_ids(id, request.sdb, request.cache),
+
+    async def load_prefixer():
+        meta_ids = await get_metadata_account_ids(id, request.sdb, request.cache)
+        prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
+        return meta_ids, prefixer
+
+    (meta_ids, prefixer), settings = await gather(
+        load_prefixer(),
         Settings.from_request(request, id).list_release_matches(),
-    ]
-    meta_ids, settings = await gather(*tasks, op="sdb")
+        op="sdb")
     model = {
         k: ReleaseMatchSetting.from_dataclass(m).to_dict()
         for k, m in settings.prefixed.items()
     }
     _, default_branches = await BranchMiner.extract_branches(
-        settings.native, meta_ids, request.mdb, request.cache)
+        settings.native, prefixer, meta_ids, request.mdb, request.cache)
     for repo, name in default_branches.items():
         model[settings.prefixed_for_native(repo)]["default_branch"] = name
     return web.json_response(model)

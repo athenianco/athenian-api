@@ -303,7 +303,7 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
     commits = await extract_commits(
         FilterCommitsProperty(filt.property), time_from, time_to, repos,
         with_author, with_committer, filt.only_default_branch,
-        BranchMiner(), filt.account, meta_ids, request.mdb, request.pdb, request.cache)
+        BranchMiner(), prefixer, filt.account, meta_ids, request.mdb, request.pdb, request.cache)
     model = CommitsList(data=[], include=IncludedNativeUsers(users={}))
     users = model.include.users
     utc = timezone.utc
@@ -386,7 +386,8 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
         await gather(
             settings.list_release_matches(repos),
             get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
-            BranchMiner.extract_branches(stripped_repos, meta_ids, request.mdb, request.cache),
+            BranchMiner.extract_branches(
+                stripped_repos, prefixer, meta_ids, request.mdb, request.cache),
             extract_release_participants(filt.with_, meta_ids, request.mdb),
     )
     releases, avatars, _, deployments = await mine_releases(
@@ -739,7 +740,8 @@ async def filter_deployments(request: AthenianWebRequest, body: dict) -> web.Res
             .where(and_(NodeRepository.acc_id.in_(meta_ids),
                         NodeRepository.name_with_owner.in_(stripped_repos)))),
         settings.list_release_matches(repos),
-        BranchMiner.extract_branches(stripped_repos, meta_ids, request.mdb, request.cache),
+        BranchMiner.extract_branches(
+            stripped_repos, prefixer, meta_ids, request.mdb, request.cache),
         extract_release_participants(filt.with_, meta_ids, request.mdb),
     )
     deployments, people = await mine_deployments(

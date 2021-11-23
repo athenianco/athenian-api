@@ -100,7 +100,8 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
     settings = Settings.from_request(request, filt.account)
     release_settings, (branches, default_branches), calculators = await gather(
         settings.list_release_matches(repos),
-        BranchMiner.extract_branches(repos, meta_ids, request.mdb, request.cache, strip=True),
+        BranchMiner.extract_branches(
+            repos, prefixer, meta_ids, request.mdb, request.cache, strip=True),
         get_calculators_for_request({s for s, _ in filters}, filt.account, meta_ids, request),
     )
 
@@ -437,7 +438,7 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
         ["github"], filt.account, meta_ids, request))["github"]
     stats = await calculator.calc_code_metrics_github(
         FilterCommitsProperty.BYPASSING_PRS, time_intervals, repos, with_author,
-        with_committer, filt.only_default_branch)  # type: List[CodeStats]
+        with_committer, filt.only_default_branch, prefixer)  # type: List[CodeStats]
     model = [
         CodeBypassingPRsMeasurement(
             date=(d - tzoffset).date(),
@@ -572,7 +573,8 @@ async def calc_metrics_releases(request: AthenianWebRequest, body: dict) -> web.
     release_settings, (branches, default_branches), jira_ids, calculators, \
         *participants = await gather(
             settings.list_release_matches(repos),
-            BranchMiner.extract_branches(repos, meta_ids, request.mdb, request.cache, strip=True),
+            BranchMiner.extract_branches(
+                repos, prefixer, meta_ids, request.mdb, request.cache, strip=True),
             get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
             get_calculators_for_request(grouped_repos.keys(), filt.account, meta_ids, request),
             *(extract_release_participants(with_, meta_ids, request.mdb, position=i)
@@ -722,7 +724,7 @@ async def calc_metrics_deployments(request: AthenianWebRequest, body: dict) -> w
     release_settings, (branches, default_branches), calculators = \
         await gather(
             Settings.from_request(request, filt.account).list_release_matches(),  # no "repos"!
-            BranchMiner.extract_branches(None, meta_ids, request.mdb, request.cache, strip=True),
+            BranchMiner.extract_branches(None, prefixer, meta_ids, request.mdb, request.cache),
             get_calculators_for_request({s for s, _ in filters}, filt.account, meta_ids, request),
     )
 

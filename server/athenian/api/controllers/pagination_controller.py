@@ -30,7 +30,7 @@ async def paginate_prs(request: AthenianWebRequest, body: dict) -> web.Response:
         logical_settings, prefixer, meta_ids = \
         await resolve_filter_prs_parameters(filt.request, request)
     branches, default_branches = await BranchMiner.extract_branches(
-        repos, meta_ids, request.mdb, request.cache)
+        repos, prefixer, meta_ids, request.mdb, request.cache)
     # we ignore the ambiguous PRs, thus producing a pessimistic prediction (that's OK)
     done_ats, _ = await DonePRFactsLoader.load_precomputed_done_timestamp_filters(
         time_from, time_to, repos, participants, labels,
