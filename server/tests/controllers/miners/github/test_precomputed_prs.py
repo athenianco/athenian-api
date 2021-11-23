@@ -290,8 +290,11 @@ async def test_load_store_precomputed_done_match_by(
 
 
 async def test_load_store_precomputed_done_exclude_inactive(
-        pr_samples, default_branches, pdb, done_prs_facts_loader,
+        pr_samples, pdb, done_prs_facts_loader,
         with_preloading_enabled, prefixer):
+    default_branches = {
+        "one": "master",
+    }
     while True:
         samples = pr_samples(2)  # type: Sequence[PullRequestFacts]
         samples = sorted(samples, key=lambda s: s.first_comment_on_first_review)
@@ -708,13 +711,13 @@ async def test_load_precomputed_pr_releases_tag(
         df_from_prs(),
         max(s.released.item().replace(tzinfo=timezone.utc) for s in samples) + timedelta(days=1),
         {pr.pr[PullRequest.repository_full_name.name]: ReleaseMatch.tag for pr in prs},
-        {}, settings, prefixer, 1, pdb, None)
+        default_branches, settings, prefixer, 1, pdb, None)
     assert len(released_prs) == len(prs)
     released_prs = await done_prs_facts_loader.load_precomputed_pr_releases(
         df_from_prs(),
         max(s.released.item().replace(tzinfo=timezone.utc) for s in samples) + timedelta(days=1),
         {pr.pr[PullRequest.repository_full_name.name]: ReleaseMatch.tag for pr in prs},
-        {}, ReleaseSettings({"github.com/src-d/go-git": ReleaseMatchSetting(
+        default_branches, ReleaseSettings({"github.com/src-d/go-git": ReleaseMatchSetting(
             tags="v.*", branches="", match=ReleaseMatch.tag),
         }), prefixer, 1, pdb, None)
     assert released_prs.empty
@@ -831,7 +834,8 @@ async def test_discover_update_unreleased_prs_released(
         release_match_setting_tag, LogicalRepositorySettings.empty(),
         prefixer, 1, (6366825,), mdb, pdb, rdb, None)
     released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
-        prs, releases, matched_bys, pd.DataFrame(columns=[Branch.commit_id.name]), {}, time_to,
+        prs, releases, matched_bys, pd.DataFrame(columns=[Branch.commit_id.name]),
+        default_branches, time_to,
         dag, release_match_setting_tag, prefixer, 1, (6366825,), mdb, pdb, None)
     await wait_deferred()
     if with_preloading_enabled:
@@ -880,7 +884,8 @@ async def precomputed_merged_unreleased(
         release_match_setting_tag, LogicalRepositorySettings.empty(),
         prefixer, 1, (6366825,), mdb, pdb, rdb, None)
     released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
-        prs, releases, matched_bys, pd.DataFrame(columns=[Branch.commit_id.name]), {}, time_to,
+        prs, releases, matched_bys, pd.DataFrame(columns=[Branch.commit_id.name]),
+        default_branches, time_to,
         dag, release_match_setting_tag, prefixer, 1, (6366825,), mdb, pdb, None)
     await wait_deferred()
     if with_preloading_enabled:
@@ -952,7 +957,7 @@ async def test_discover_update_unreleased_prs_deployments(
 @with_defer
 async def test_discover_old_merged_unreleased_prs_smoke(
         metrics_calculator_factory, mdb, pdb, rdb, dag, release_match_setting_tag, cache,
-        prefixer, release_loader):
+        prefixer, release_loader, default_branches):
     metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     metrics_time_from = datetime(2018, 1, 1, tzinfo=timezone.utc)
     metrics_time_to = datetime(2020, 5, 1, tzinfo=timezone.utc)
@@ -990,8 +995,8 @@ async def test_discover_old_merged_unreleased_prs_smoke(
     await wait_deferred()
     unreleased_prs["dead"] = False
     released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(
-        unreleased_prs, releases, matched_bys, pd.DataFrame(columns=[Branch.commit_id.name]), {},
-        unreleased_time_to, dag, release_match_setting_tag,
+        unreleased_prs, releases, matched_bys, pd.DataFrame(columns=[Branch.commit_id.name]),
+        default_branches, unreleased_time_to, dag, release_match_setting_tag,
         prefixer, 1, (6366825,), mdb, pdb, cache)
     await wait_deferred()
     assert released_prs.empty

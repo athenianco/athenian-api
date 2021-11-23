@@ -6,6 +6,7 @@ from sqlalchemy import not_, or_
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import ClauseElement
 
+from athenian.api.controllers.logical_repos import drop_logical_repo
 from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.types import MinedPullRequest, PullRequestFacts, \
     PullRequestFactsMap
@@ -113,16 +114,9 @@ def extract_release_match(repo: str,
         matched_by = matched_bys[repo]
     except KeyError:
         return None
-    release_setting = release_settings.native[repo]
-    if matched_by == ReleaseMatch.tag:
-        return "tag|" + release_setting.tags
-    if matched_by == ReleaseMatch.branch:
-        branch = release_setting.branches.replace(
-            default_branch_alias, default_branches[repo])
-        return "branch|" + branch
-    if matched_by == ReleaseMatch.event:
-        return ReleaseMatch.event.name
-    raise AssertionError("Unsupported release match %s" % matched_by)
+    return release_settings.native[repo] \
+        .with_match(matched_by) \
+        .as_db(default_branches[drop_logical_repo(repo)])
 
 
 def triage_by_release_match(repo: str,

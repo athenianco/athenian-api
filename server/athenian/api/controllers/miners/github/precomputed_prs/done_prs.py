@@ -33,7 +33,7 @@ from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.types import MinedPullRequest, PRParticipants, \
     PRParticipationKind, PullRequestFacts, PullRequestFactsMap
 from athenian.api.controllers.prefixer import Prefixer
-from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, ReleaseSettings
+from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.db import ParallelDatabase
 from athenian.api.models.metadata.github import PullRequest, PullRequestLabel, Release
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
@@ -392,27 +392,15 @@ class DonePRFactsLoader:
                                 pr[ghprt.repository_full_name.name],
                                 ReleaseMatch[release_match]))
                 continue
-            match_name, match_by = release_match.split("|", 1)
-            release_match = ReleaseMatch[match_name]
             try:
-                if release_match != matched_bys[repo]:
-                    continue
+                release_setting = release_settings.native[repo].with_match(matched_bys[repo])
             except KeyError:
                 # pdb thinks this PR was released but our current release matching settings
                 # disagree
                 log.warning("Alternative release matching detected: %s", dict(pr))
                 continue
-            if release_match == ReleaseMatch.tag:
-                if match_by != release_settings.native[repo].tags:
-                    continue
-            elif release_match == ReleaseMatch.branch:
-                branches = release_settings.native[repo].branches.replace(
-                    default_branch_alias, default_branches[repo])
-                if match_by != branches:
-                    continue
-            else:
-                raise AssertionError("Unsupported release match in the precomputed DB: " +
-                                     match_name)
+            if not release_setting.compatible_with_db(release_match, default_branches[repo]):
+                continue
             records.append((node_id,
                             pr[ghprt.pr_done_at.name].replace(tzinfo=utc),
                             user_node_to_login_get(author_node_id),
@@ -420,7 +408,7 @@ class DonePRFactsLoader:
                             pr[ghprt.release_url.name],
                             pr[ghprt.release_node_id.name],
                             pr[ghprt.repository_full_name.name],
-                            release_match))
+                            release_setting.match))
         return new_released_prs_df(records)
 
     @classmethod
@@ -754,20 +742,9 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
                 continue
         repo = pr.pr[PullRequest.repository_full_name.name]
         if pr.release[matched_by_column] is not None:
-            release_match = release_settings.native[repo]
-            match = ReleaseMatch(pr.release[matched_by_column])
-            if match == ReleaseMatch.branch:
-                branch = release_match.branches.replace(
-                    default_branch_alias, default_branches[repo])
-                release_match = "|".join((match.name, branch))
-            elif match == ReleaseMatch.tag:
-                release_match = "|".join((match.name, release_match.tags))
-            elif match == ReleaseMatch.force_push_drop:
-                release_match = ReleaseMatch.force_push_drop.name
-            elif match == ReleaseMatch.event:
-                release_match = ReleaseMatch.event.name
-            else:
-                raise AssertionError("Unhandled release match strategy: " + match.name)
+            release_match = release_settings.native[repo] \
+                .with_match(ReleaseMatch(pr.release[matched_by_column])) \
+                .as_db(default_branches[repo])
         else:
             release_match = ReleaseMatch.rejected.name
         participants = pr.participant_nodes()

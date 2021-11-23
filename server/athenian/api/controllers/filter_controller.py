@@ -10,7 +10,6 @@ import aiomcache
 from dateutil.parser import parse as parse_datetime
 import numpy as np
 import pandas as pd
-from sqlalchemy import and_, select
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather
@@ -36,15 +35,13 @@ from athenian.api.controllers.miners.github.user import mine_user_avatars, UserA
 from athenian.api.controllers.miners.jira.issue import fetch_jira_issues_for_prs
 from athenian.api.controllers.miners.types import Deployment, DeploymentConclusion, \
     DeploymentFacts, PRParticipants, PRParticipationKind, PullRequestEvent, \
-    PullRequestJIRAIssueItem, PullRequestListItem, \
-    PullRequestStage, ReleaseFacts
+    PullRequestJIRAIssueItem, PullRequestListItem, PullRequestStage, ReleaseFacts
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.release import extract_release_participants
 from athenian.api.controllers.reposet import resolve_repos
 from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseSettings, Settings
 from athenian.api.db import ParallelDatabase
-from athenian.api.models.metadata.github import NodeRepository, PullRequest, PushCommit, Release, \
-    User
+from athenian.api.models.metadata.github import PullRequest, PushCommit, Release, User
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
     DeploymentNotification
 from athenian.api.models.web import BadRequestError, Commit, CommitSignature, CommitsList, \
@@ -731,21 +728,17 @@ async def filter_deployments(request: AthenianWebRequest, body: dict) -> web.Res
         _common_filter_preprocess(filt, request, strip_prefix=False),
         get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
     )
-    stripped_repos = [r.split("/", 1)[1] for r in repos]
+    repos = [r.split("/", 1)[1] for r in repos]
     settings = Settings.from_request(request, filt.account)
-    repo_node_rows, release_settings, (branches, default_branches), \
+    # all the repos, because we don't know what else is released in the matched deployments
+    release_settings, (branches, default_branches), \
         participants = await gather(
-        request.mdb.fetch_all(
-            select([NodeRepository.node_id])
-            .where(and_(NodeRepository.acc_id.in_(meta_ids),
-                        NodeRepository.name_with_owner.in_(stripped_repos)))),
-        settings.list_release_matches(repos),
-        BranchMiner.extract_branches(
-            stripped_repos, prefixer, meta_ids, request.mdb, request.cache),
+        settings.list_release_matches(),
+        BranchMiner.extract_branches(None, prefixer, meta_ids, request.mdb, request.cache),
         extract_release_participants(filt.with_, meta_ids, request.mdb),
     )
     deployments, people = await mine_deployments(
-        repo_node_ids=[r[0] for r in repo_node_rows],
+        repo_node_ids=[prefixer.repo_name_to_node[r] for r in repos],
         participants=participants,
         time_from=time_from,
         time_to=time_to,

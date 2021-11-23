@@ -56,15 +56,48 @@ class ReleaseMatchSetting:
         return 'ReleaseMatchSetting(branches="%s", tags="%s", match=Match["%s"])' % (
             self.branches, self.tags, self.match.name)
 
-    def as_db(self) -> str:
+    def with_match(self, match: ReleaseMatch) -> "ReleaseMatchSetting":
+        """Clone self and override the effective `match`."""
+        return ReleaseMatchSetting(
+            tags=self.tags,
+            branches=self.branches,
+            match=match,
+        )
+
+    def as_db(self, default_branch: str) -> str:
         """Render database `release_match` value. Works only for specific match types."""
         if self.match == ReleaseMatch.tag:
             return "tag|" + self.tags
         if self.match == ReleaseMatch.branch:
-            return "branch|" + self.branches
+            return "branch|" + self.branches.replace(default_branch_alias, default_branch)
         if self.match == ReleaseMatch.event:
             return ReleaseMatch.event.name
-        raise AssertionError("Impossible release match: %s" % self.match)
+        if self.match == ReleaseMatch.force_push_drop:
+            return ReleaseMatch.force_push_drop.name
+        raise AssertionError(f"Impossible release match: {self.match}")
+
+    @classmethod
+    def from_db(cls, db: str) -> "ReleaseMatchSetting":
+        """Parse the `release_match` value from the database."""
+        if db == ReleaseMatch.event.name:
+            match_name, match_by = db, ""
+        else:
+            match_name, match_by = db.split("|", 1)
+        release_match = ReleaseMatch[match_name]
+        return ReleaseMatchSetting(branches=match_by, tags=match_by, match=release_match)
+
+    def compatible_with_db(self, db: str, default_branch: str):
+        """Check if the release setting is compatible with the database value."""
+        db_match = self.from_db(db)
+        if self.match != db_match.match and self.match != ReleaseMatch.tag_or_branch:
+            return False
+        if db_match.match == ReleaseMatch.branch:
+            return self.branches.replace(default_branch_alias, default_branch) == db_match.branches
+        elif db_match.match == ReleaseMatch.tag:
+            return self.tags == db_match.tags
+        elif db_match.match == ReleaseMatch.event:
+            return True
+        raise AssertionError(f"Impossible release match: {db}")
 
     def __lt__(self, other: "ReleaseMatchSetting") -> bool:
         """Implement self < other to become sortable."""
