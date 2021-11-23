@@ -31,6 +31,7 @@ from athenian.api.controllers.features.metric_calculator import DEFAULT_QUANTILE
 from athenian.api.controllers.filter_controller import web_pr_from_struct, webify_deployment
 from athenian.api.controllers.jira import get_jira_installation, normalize_issue_type, \
     normalize_user_type, resolve_projects
+from athenian.api.controllers.logical_repos import drop_logical_repo
 from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.deployment_light import fetch_repository_environments
@@ -589,7 +590,7 @@ async def _issue_flow(return_: Set[str],
         pr_list_items = await list_with_yield(miner, "PullRequestListMiner.__iter__")
         if missing_repo_indexes := [
                 i for i, pr in enumerate(pr_list_items)
-                if pr.repository not in prefixer.repo_name_to_prefixed_name
+                if drop_logical_repo(pr.repository) not in prefixer.repo_name_to_prefixed_name
         ]:
             log.error("Discarded %d PRs because their repositories are gone: %s",
                       len(missing_repo_indexes),
