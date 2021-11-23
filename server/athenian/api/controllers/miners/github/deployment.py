@@ -112,7 +112,7 @@ async def mine_deployments(repo_node_ids: Collection[int],
         prefixer, account, meta_ids, mdb, pdb, rdb, cache),
         name="_fetch_precomputed_deployed_releases(%d)" % len(notifications))
     facts = await _fetch_precomputed_deployment_facts(
-        notifications.index.values, release_settings, account, pdb)
+        notifications.index.values, default_branches, release_settings, account, pdb)
     # facts = facts.iloc[:0]  # uncomment to disable pdb
     add_pdb_hits(pdb, "deployments", len(facts))
     add_pdb_misses(pdb, "deployments", misses := (len(notifications) - len(facts)))
@@ -124,7 +124,7 @@ async def mine_deployments(repo_node_ids: Collection[int],
             full_notifications, full_components = await _fetch_components_and_prune_unresolved(
                 notifications, account, rdb)
             full_facts = await _fetch_precomputed_deployment_facts(
-                full_notifications.index.values, release_settings, account, pdb)
+                full_notifications.index.values, default_branches, release_settings, account, pdb)
         else:
             full_notifications, full_components, full_facts = notifications, components, facts
         missed_indexes = np.flatnonzero(np.in1d(
@@ -458,7 +458,8 @@ async def _compute_deployment_facts(notifications: pd.DataFrame,
     facts = await _generate_deployment_facts(
         notifications, deployed_commits_per_repo_per_env, all_mentioned_hashes, commit_stats,
         releases, account, pdb)
-    await defer(_submit_deployment_facts(facts, releases, release_settings, account, pdb),
+    await defer(_submit_deployment_facts(facts, releases, default_branches, release_settings,
+                                         account, pdb),
                 "_submit_deployment_facts")
     return facts, releases
 
@@ -476,6 +477,7 @@ def _adjust_empty_releases(joined: pd.DataFrame) -> pd.DataFrame:
 
 async def _submit_deployment_facts(facts: pd.DataFrame,
                                    releases: pd.DataFrame,
+                                   default_branches: Dict[str, str],
                                    settings: ReleaseSettings,
                                    account: int,
                                    pdb: ParallelDatabase) -> None:
@@ -486,7 +488,7 @@ async def _submit_deployment_facts(facts: pd.DataFrame,
             deployment_name=name,
             release_matches=json.dumps(dict(zip(
                 subreleases[Release.repository_full_name.name].values,
-                (settings.native[r].as_db()
+                (settings.native[r].as_db(default_branches[r])
                  for r in subreleases[Release.repository_full_name.name].values),
             ))) if not subreleases.empty else "{}",
             data=DeploymentFacts.from_fields(
@@ -753,7 +755,8 @@ async def _map_releases_to_deployments(
     result = await _postprocess_deployed_releases(
         releases, branches, default_branches, release_settings, logical_settings,
         prefixer, account, meta_ids, mdb, pdb, rdb, cache)
-    await defer(_submit_deployed_releases(releases, account, release_settings, pdb),
+    await defer(_submit_deployed_releases(releases, account, default_branches,
+                                          release_settings, pdb),
                 "_submit_deployed_releases")
     return result
 
@@ -811,6 +814,7 @@ async def _submit_deployed_prs(
 @sentry_span
 async def _submit_deployed_releases(releases: pd.DataFrame,
                                     account: int,
+                                    default_branches: Dict[str, str],
                                     settings: ReleaseSettings,
                                     pdb: ParallelDatabase,
                                     ) -> None:
@@ -819,7 +823,7 @@ async def _submit_deployed_releases(releases: pd.DataFrame,
             acc_id=account,
             deployment_name=deployment_name,
             release_id=release_id,
-            release_match=settings.native[repo].as_db(),
+            release_match=settings.native[repo].as_db(default_branches[repo]),
         ).explode(with_primary_keys=True)
         for deployment_name, release_id, repo in zip(
             releases["deployment_name"].values,
@@ -1400,6 +1404,7 @@ async def _fetch_latest_deployed_components(
 
 @sentry_span
 async def _fetch_precomputed_deployment_facts(names: Collection[str],
+                                              default_branches: Dict[str, str],
                                               settings: ReleaseSettings,
                                               account: int,
                                               pdb: ParallelDatabase,
@@ -1418,7 +1423,8 @@ async def _fetch_precomputed_deployment_facts(names: Collection[str],
     index = []
     structs = []
     for row in dep_rows:
-        if not _settings_are_compatible(row[GitHubDeploymentFacts.release_matches.name], settings):
+        if not _settings_are_compatible(
+                row[GitHubDeploymentFacts.release_matches.name], settings, default_branches):
             continue
         index.append(row[GitHubDeploymentFacts.deployment_name.name])
         structs.append(DeploymentFacts(row[GitHubDeploymentFacts.data.name]))
@@ -1427,10 +1433,12 @@ async def _fetch_precomputed_deployment_facts(names: Collection[str],
     return facts
 
 
-def _settings_are_compatible(matches: str, settings: ReleaseSettings) -> bool:
+def _settings_are_compatible(matches: str,
+                             settings: ReleaseSettings,
+                             default_branches: Dict[str, str]) -> bool:
     matches = json.loads(matches)
     for key, val in matches.items():
-        if settings.native[key].as_db() != val:
+        if not settings.native[key].compatible_with_db(val, default_branches[key]):
             return False
     return True
 

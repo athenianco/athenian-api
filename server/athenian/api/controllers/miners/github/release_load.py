@@ -278,6 +278,8 @@ class ReleaseLoader:
         settings = settings.copy()
         for repo, setting in settings.native.items():
             match = ReleaseMatch(matched_bys.get(repo, setting.match))
+            if match == ReleaseMatch.tag_or_branch:
+                match = ReleaseMatch.branch
             settings.set_by_native(repo, ReleaseMatchSetting(
                 tags=setting.tags,
                 branches=setting.branches,

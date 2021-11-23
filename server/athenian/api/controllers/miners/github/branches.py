@@ -152,9 +152,9 @@ class BranchMiner:
             columns=Branch,
             set_join_collapse_limit=True,
             mdb=mdb)
-        sha_not_null = df[Branch.commit_sha.name].notnull().values
-        if sha_not_null.sum() < len(df):
-            df = df.take(np.flatnonzero(sha_not_null))
+        for left_join_col in (Branch.commit_sha.name, Branch.repository_full_name.name):
+            if (not_null := df[left_join_col].notnull().values).sum() < len(df):
+                df = df.take(np.flatnonzero(not_null))
         return df
 
 
