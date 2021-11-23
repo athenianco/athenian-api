@@ -18,6 +18,7 @@ from sqlalchemy.sql import ClauseElement, Select
 from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached
+from athenian.api.controllers.logical_repos import drop_logical_repo
 from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.branches import load_branch_commit_dates
 from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_COLUMNS, \
@@ -399,7 +400,8 @@ class DonePRFactsLoader:
                 # disagree
                 log.warning("Alternative release matching detected: %s", dict(pr))
                 continue
-            if not release_setting.compatible_with_db(release_match, default_branches[repo]):
+            if not release_setting.compatible_with_db(
+                    release_match, default_branches[drop_logical_repo(repo)]):
                 continue
             records.append((node_id,
                             pr[ghprt.pr_done_at.name].replace(tzinfo=utc),
