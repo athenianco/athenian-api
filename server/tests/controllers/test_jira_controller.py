@@ -673,6 +673,33 @@ async def test_filter_jira_issue_prs_deployments(client, headers, mdb_rw, precom
     }
 
 
+async def test_filter_jira_issue_prs_logical(client, headers, logical_settings_db):
+    body = {
+        "date_from": "2019-09-01",
+        "date_to": "2022-01-01",
+        "timezone": 120,
+        "account": 1,
+        "exclude_inactive": True,
+        "return": ["issues", "issue_bodies"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/jira", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    model = FilteredJIRAStuff.from_dict(json.loads(body))
+    assert len(model.issues) == 1797
+    prs = {}
+    for issue in model.issues:
+        for pr in issue.prs or []:
+            prs[pr.repository] = prs.setdefault(pr.repository, 0) + 1
+    assert prs == {
+        "github.com/src-d/go-git": 24,
+        "github.com/src-d/go-git/beta": 21,
+        "github.com/src-d/go-git/alpha": 17,
+    }
+
+
 async def test_filter_jira_issue_only_flying(client, headers):
     body = {
         "date_from": "2020-09-01",
