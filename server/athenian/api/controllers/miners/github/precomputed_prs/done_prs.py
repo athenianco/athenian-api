@@ -746,7 +746,7 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
         if pr.release[matched_by_column] is not None:
             release_match = release_settings.native[repo] \
                 .with_match(ReleaseMatch(pr.release[matched_by_column])) \
-                .as_db(default_branches[repo])
+                .as_db(default_branches[drop_logical_repo(repo)])
         else:
             release_match = ReleaseMatch.rejected.name
         participants = pr.participant_nodes()
