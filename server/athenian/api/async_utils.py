@@ -10,6 +10,7 @@ import sentry_sdk
 from sqlalchemy import Column, DateTime, Integer
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import ClauseElement
+from sqlalchemy.sql.elements import Label
 
 from athenian.api import metadata
 from athenian.api.db import DatabaseLike, ParallelDatabase
@@ -99,11 +100,18 @@ def _extract_datetime_columns(columns: Iterable[Union[Column, str]]) -> Collecti
 def _extract_integer_columns(columns: Iterable[Union[Column, str]],
                              ) -> Collection[Tuple[str, bool]]:
     return [
-        (c.name, getattr(c, "info", {}).get("erase_nulls", False)) for c in columns
+        (
+            c.name, getattr(
+                c, "info", {} if not isinstance(c, Label) else getattr(c.element, "info", {}),
+            ).get("erase_nulls", False),
+        )
+        for c in columns
         if not isinstance(c, str) and (
             isinstance(c.type, Integer) or
             (isinstance(c.type, type) and issubclass(c.type, Integer))
-        ) and not getattr(c, "nullable", False)
+        )
+        and not getattr(c, "nullable", False)
+        and (not isinstance(c, Label) or not getattr(c.element, "nullable", False))
     ]
 
 

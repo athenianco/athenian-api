@@ -397,12 +397,14 @@ class LogicalRepositorySettings:
         """Return release match rules for the given repository native name."""
         return self._releases[repo]
 
-    def has_prs_by_label(self, repos: Iterable[str]) -> bool:
+    def has_prs_by_label(self, repos: Optional[Iterable[str]] = None) -> bool:
         """
         Return value indicating whether there is at least one logical repo identified by a label.
 
         :param repos: Physical repositories.
         """
+        if repos is None:
+            repos = self._prs.keys()
         for repo in repos:
             try:
                 if self.prs(repo).has_labels:

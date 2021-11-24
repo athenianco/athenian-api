@@ -11,6 +11,7 @@ def split_logical_repositories(prs: pd.DataFrame,
                                labels: Optional[pd.DataFrame],
                                logical_repos: Collection[str],
                                logical_settings: LogicalRepositorySettings,
+                               set_index: bool = True,
                                ) -> pd.DataFrame:
     """Remove and clone PRs according to the logical repository settings."""
     assert isinstance(prs, pd.DataFrame)
@@ -44,7 +45,8 @@ def split_logical_repositories(prs: pd.DataFrame,
             prs = pd.concat(chunks, copy=False)
         else:
             prs = prs.iloc[:0].copy()
-    prs.set_index([PullRequest.node_id.name, PullRequest.repository_full_name.name],
-                  inplace=True)
-    prs.sort_index(inplace=True)
+    if set_index:
+        prs.set_index([PullRequest.node_id.name, PullRequest.repository_full_name.name],
+                      inplace=True)
+        prs.sort_index(inplace=True)
     return prs

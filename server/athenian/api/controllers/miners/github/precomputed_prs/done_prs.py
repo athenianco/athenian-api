@@ -3,7 +3,8 @@ from datetime import datetime, timezone
 from itertools import chain
 import logging
 import pickle
-from typing import Any, Callable, Collection, Dict, Iterable, List, Mapping, Optional, Set, Tuple
+from typing import Any, Callable, Collection, Dict, Iterable, KeysView, List, Mapping, Optional, \
+    Set, Tuple
 
 import aiomcache
 import databases
@@ -360,37 +361,39 @@ class DonePRFactsLoader:
         assert time_to.tzinfo is not None
         assert prs.index.nlevels == 2
         ghprt = GitHubDonePullRequestFacts
+        query = (
+            select([ghprt.pr_node_id, ghprt.pr_done_at, ghprt.releaser, ghprt.release_url,
+                    ghprt.release_node_id, ghprt.repository_full_name, ghprt.release_match])
+            .where(and_(ghprt.pr_node_id.in_(prs.index.get_level_values(0).values),
+                        ghprt.repository_full_name.in_(
+                            prs.index.get_level_values(1).unique()),
+                        ghprt.acc_id == account,
+                        ghprt.releaser.isnot(None),
+                        ghprt.pr_done_at < time_to))
+        )
         with sentry_sdk.start_span(op="load_precomputed_pr_releases/fetch"):
-            prs = await pdb.fetch_all(
-                select([ghprt.pr_node_id, ghprt.pr_done_at, ghprt.releaser, ghprt.release_url,
-                        ghprt.release_node_id, ghprt.repository_full_name, ghprt.release_match])
-                .where(and_(ghprt.pr_node_id.in_(prs.index.get_level_values(0).values),
-                            ghprt.repository_full_name.in_(
-                                prs.index.get_level_values(1).unique()),
-                            ghprt.acc_id == account,
-                            ghprt.releaser.isnot(None),
-                            ghprt.pr_done_at < time_to)))
+            rows = await pdb.fetch_all(query)
         records = []
         utc = timezone.utc
         force_push_dropped = set()
         user_node_to_login_get = prefixer.user_node_to_login.get
-        for pr in prs:
-            repo = pr[ghprt.repository_full_name.name]
-            node_id = pr[ghprt.pr_node_id.name]
-            release_match = pr[ghprt.release_match.name]
-            author_node_id = pr[ghprt.releaser.name]
+        for row in rows:
+            repo = row[ghprt.repository_full_name.name]
+            node_id = row[ghprt.pr_node_id.name]
+            release_match = row[ghprt.release_match.name]
+            author_node_id = row[ghprt.releaser.name]
             if release_match in (ReleaseMatch.force_push_drop.name, ReleaseMatch.event.name):
                 if release_match == ReleaseMatch.force_push_drop.name:
                     if node_id in force_push_dropped:
                         continue
                     force_push_dropped.add(node_id)
                 records.append((node_id,
-                                pr[ghprt.pr_done_at.name].replace(tzinfo=utc),
+                                row[ghprt.pr_done_at.name].replace(tzinfo=utc),
                                 user_node_to_login_get(author_node_id),
                                 author_node_id,
-                                pr[ghprt.release_url.name],
-                                pr[ghprt.release_node_id.name],
-                                pr[ghprt.repository_full_name.name],
+                                row[ghprt.release_url.name],
+                                row[ghprt.release_node_id.name],
+                                row[ghprt.repository_full_name.name],
                                 ReleaseMatch[release_match]))
                 continue
             try:
@@ -398,18 +401,18 @@ class DonePRFactsLoader:
             except KeyError:
                 # pdb thinks this PR was released but our current release matching settings
                 # disagree
-                log.warning("Alternative release matching detected: %s", dict(pr))
+                log.warning("Alternative release matching detected: %s", dict(row))
                 continue
             if not release_setting.compatible_with_db(
                     release_match, default_branches[drop_logical_repo(repo)]):
                 continue
             records.append((node_id,
-                            pr[ghprt.pr_done_at.name].replace(tzinfo=utc),
+                            row[ghprt.pr_done_at.name].replace(tzinfo=utc),
                             user_node_to_login_get(author_node_id),
                             author_node_id,
-                            pr[ghprt.release_url.name],
-                            pr[ghprt.release_node_id.name],
-                            pr[ghprt.repository_full_name.name],
+                            row[ghprt.release_url.name],
+                            row[ghprt.release_node_id.name],
+                            row[ghprt.repository_full_name.name],
                             release_setting.match))
         return new_released_prs_df(records)
 
@@ -438,6 +441,8 @@ class DonePRFactsLoader:
                  2. Map from repository name to ambiguous PR node IDs which are released by \
                  branch with tag_or_branch strategy and without tags on the time interval.
         """
+        if not isinstance(repos, (set, KeysView)):
+            repos = set(repos)
         postgres = pdb.url.dialect == "postgresql"
         ghprt = GitHubDonePullRequestFacts
         selected = [
@@ -472,8 +477,14 @@ class DonePRFactsLoader:
             include_multiples = [set(m) for m in include_multiples]
         if len(participants) > 0 and not postgres:
             user_node_to_login_get = prefixer.user_node_to_login.get
-        for row in rows:
-            repo, rm = row[ghprt.repository_full_name.name], row[ghprt.release_match.name]
+        logical_repos = np.array([row[ghprt.repository_full_name.name] for row in rows], dtype="U")
+        blocked_physical = set()
+        # make logical repos come before physical
+        for i in np.argsort(logical_repos)[::-1]:
+            repo, row = logical_repos[i], rows[i]
+            rm, pr_node_id = row[ghprt.release_match.name], row[ghprt.pr_node_id.name]
+            if (key := (pr_node_id, repo)) in blocked_physical:
+                continue
             dump = triage_by_release_match(
                 repo, rm, release_settings, default_branches, result, ambiguous)
             if dump is None:
@@ -490,7 +501,10 @@ class DonePRFactsLoader:
                                      for d in row[ghprt.activity_days.name]}
                     if not activity_days.intersection(date_range):
                         continue
-            dump[(row[ghprt.pr_node_id.name], repo)] = row
+            if (physical_repo := drop_logical_repo(repo)) != repo:
+                blocked_physical.add((pr_node_id, physical_repo))
+            dump[key] = row
+
         return cls._post_process_ambiguous_done_prs(result, ambiguous)
 
     @classmethod

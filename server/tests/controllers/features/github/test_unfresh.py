@@ -128,17 +128,19 @@ async def test_fetch_pull_request_facts_unfresh_jira(
     ({"src-d/go-git/alpha", "src-d/go-git/beta"}, 122),
     ({"src-d/go-git", "src-d/go-git/alpha"}, 185),
 ])
+@pytest.mark.parametrize("exclude_inactive", [False, True])
+# there are no precomputed PRs before `time_from`so count-s stay the same
 @with_defer
 async def test_fetch_pull_request_facts_unfresh_logical_title(
         metrics_calculator_factory, release_match_setting_tag_logical, mdb, pdb, rdb, prefixer,
-        logical_settings, repos, count):
+        logical_settings, repos, exclude_inactive, count):
     metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(2017, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
     facts_fresh = await metrics_calculator_no_cache.calc_pull_request_facts_github(
         time_from, time_to,
         repos, {}, LabelFilter.empty(), JIRAFilter.empty(),
-        True, release_match_setting_tag_logical, logical_settings,
+        exclude_inactive, release_match_setting_tag_logical, logical_settings,
         prefixer, False, False,
     )
     facts_fresh.sort_values(
@@ -153,7 +155,7 @@ async def test_fetch_pull_request_facts_unfresh_logical_title(
         facts_unfresh = await metrics_calculator_no_cache.calc_pull_request_facts_github(
             time_from, time_to,
             repos, {}, LabelFilter.empty(), JIRAFilter.empty(),
-            True, release_match_setting_tag_logical, logical_settings,
+            exclude_inactive, release_match_setting_tag_logical, logical_settings,
             prefixer, False, False,
         )
         assert len(facts_unfresh) == count

@@ -1491,7 +1491,7 @@ async def test_mine_releases_precomputed_time_range(
         prefixer, 1, (6366825,), mdb, pdb, rdb, None, with_deployments=False)
     for _, f in releases:
         assert time_from <= f.published.item().replace(tzinfo=timezone.utc) < time_to
-        for col in released_prs_columns:
+        for col in released_prs_columns(PullRequest):
             assert len(f["prs_" + col.name]) > 0
         assert f.commits_count > 0
     assert len(releases) == 22
@@ -1595,7 +1595,7 @@ async def test_mine_releases_labels(
     reduced = defaultdict(int)
     for (det1, facts1), (det2, facts2) in zip(releases1, releases3):
         assert det1 == det2
-        for col in released_prs_columns:
+        for col in released_prs_columns(PullRequest):
             key = "prs_" + col.name
         reduced[key] += len(facts1[key]) > len(facts2[key])
     vals = np.array(list(reduced.values()))
@@ -1660,11 +1660,17 @@ async def test_mine_releases_logical(
         "github.com/src-d/go-git/alpha": 0,
         "github.com/src-d/go-git/beta": 0,
     }
-    for r, _ in releases:
-        counts[r[Release.repository_full_name.name]] += 1
+    prs = counts.copy()
+    for r, f in releases:
+        counts[(repo := r[Release.repository_full_name.name])] += 1
+        prs[repo] += len(f["prs_" + PullRequest.number.name])
     assert counts == {
         "github.com/src-d/go-git/alpha": 44,
         "github.com/src-d/go-git/beta": 28,
+    }
+    assert prs == {
+        "github.com/src-d/go-git/alpha": 92,
+        "github.com/src-d/go-git/beta": 58,
     }
 
 

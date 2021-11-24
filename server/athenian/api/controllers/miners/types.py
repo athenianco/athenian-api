@@ -1,11 +1,11 @@
 from datetime import datetime, timedelta
 from enum import auto, IntEnum
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple, Union
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple, Type, Union
 
 import numpy as np
 import pandas as pd
 
-from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
+from athenian.api.models.metadata.github import NodePullRequest, PullRequest, PullRequestComment, \
     PullRequestCommit, PullRequestReview, Release
 from athenian.api.typing_utils import dataclass, numpy_struct
 
@@ -347,17 +347,19 @@ def nonemax(*args: Union[pd.Timestamp, type(None)]) -> Optional[pd.Timestamp]:
     return max(arg for arg in args if arg)
 
 
-released_prs_columns = [
-    PullRequest.node_id,
-    PullRequest.number,
-    PullRequest.additions,
-    PullRequest.deletions,
-    PullRequest.user_node_id,
-]
+def released_prs_columns(model: Union[Type[PullRequest], Type[NodePullRequest]]):
+    """Return the columns that must exist in the released PR DataFrame."""
+    return [
+        model.node_id.label(PullRequest.node_id.name),
+        model.number,
+        model.additions,
+        model.deletions,
+        model.user_node_id.label(PullRequest.user_node_id.name),
+    ]
 
 
 def _add_prs_annotations(cls):
-    for col in released_prs_columns:
+    for col in released_prs_columns(PullRequest):
         cls.__annotations__["prs_" + col.name] = [int]
     return cls
 
