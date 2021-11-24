@@ -45,11 +45,11 @@ async def load_precomputed_release_facts(releases: pd.DataFrame,
                                          settings: ReleaseSettings,
                                          account: int,
                                          pdb: databases.Database,
-                                         ) -> Dict[int, ReleaseFacts]:
+                                         ) -> Dict[Tuple[int, str], ReleaseFacts]:
     """
     Fetch precomputed facts about releases.
 
-    :return: Mapping Release.id -> facts.
+    :return: Mapping (Release.id, Release.repository_full_name) -> facts.
     """
     if releases.empty:
         return {}
@@ -73,7 +73,9 @@ async def load_precomputed_release_facts(releases: pd.DataFrame,
         GitHubReleaseFacts.__table__.columns[GitHubReleaseFacts.format_version.key].default.arg
 
     queries = [
-        select([GitHubReleaseFacts.id, GitHubReleaseFacts.data])
+        select([GitHubReleaseFacts.id,
+                GitHubReleaseFacts.repository_full_name,
+                GitHubReleaseFacts.data])
         .where(and_(GitHubReleaseFacts.format_version == default_version,
                     GitHubReleaseFacts.acc_id == account,
                     GitHubReleaseFacts.id.in_(chain.from_iterable(
@@ -85,7 +87,14 @@ async def load_precomputed_release_facts(releases: pd.DataFrame,
     with sentry_sdk.start_span(op="load_precomputed_release_facts/fetch",
                                description=str(len(releases))):
         rows = await pdb.fetch_all(query)
-    return {r[0]: ReleaseFacts(r[1]) for r in rows}
+    result = {}
+    for row in rows:
+        node_id, repo = \
+            row[GitHubReleaseFacts.id.name], row[GitHubReleaseFacts.repository_full_name.name]
+        f = ReleaseFacts(row[GitHubReleaseFacts.data.name])
+        f.repository_full_name = repo
+        result[(node_id, repo)] = f
+    return result
 
 
 def compose_release_match(match: ReleaseMatch, value: str) -> str:

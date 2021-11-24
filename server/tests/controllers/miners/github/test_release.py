@@ -1528,8 +1528,9 @@ async def test_mine_releases_jira(
         mdb, pdb, rdb, release_match_setting_tag, prefixer, cache):
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=11, day=1, tzinfo=timezone.utc)
+    repo = "src-d/go-git"
     releases, avatars, _, _ = await mine_releases(
-        ["src-d/go-git"], {}, None, {}, time_from, time_to, LabelFilter.empty(),
+        [repo], {}, None, {}, time_from, time_to, LabelFilter.empty(),
         JIRAFilter(1, ["10003", "10009"], LabelFilter({"bug", "onboarding", "performance"}, set()),
                    set(), set(), False),
         release_match_setting_tag, LogicalRepositorySettings.empty(), prefixer,
@@ -1537,14 +1538,14 @@ async def test_mine_releases_jira(
     await wait_deferred()
     assert len(releases) == 8
     releases, avatars, _, _ = await mine_releases(
-        ["src-d/go-git"], {}, None, {}, time_from, time_to, LabelFilter.empty(),
+        [repo], {}, None, {}, time_from, time_to, LabelFilter.empty(),
         JIRAFilter.empty(),
         release_match_setting_tag, LogicalRepositorySettings.empty(), prefixer,
         1, (6366825,), mdb, pdb, rdb, None, with_deployments=False)
     await wait_deferred()
     assert len(releases) == 22
     releases, avatars, _, _ = await mine_releases(
-        ["src-d/go-git"], {}, None, {}, time_from, time_to, LabelFilter.empty(),
+        [repo], {}, None, {}, time_from, time_to, LabelFilter.empty(),
         JIRAFilter(1, ["10003", "10009"], LabelFilter({"bug", "onboarding", "performance"}, set()),
                    set(), set(), False),
         release_match_setting_tag, LogicalRepositorySettings.empty(), prefixer,
@@ -1552,17 +1553,60 @@ async def test_mine_releases_jira(
     assert len(releases) == 8
     await wait_deferred()
     releases, avatars, _, _ = await mine_releases(
-        ["src-d/go-git"], {}, None, {}, time_from, time_to, LabelFilter.empty(),
+        [repo], {}, None, {}, time_from, time_to, LabelFilter.empty(),
         JIRAFilter.empty(),
         release_match_setting_tag, LogicalRepositorySettings.empty(), prefixer,
         1, (6366825,), mdb, pdb, rdb, cache, with_deployments=False)
     assert len(releases) == 22
     releases, avatars, _, _ = await mine_releases(
-        ["src-d/go-git"], {}, None, {}, time_from, time_to, LabelFilter.empty(),
+        [repo], {}, None, {}, time_from, time_to, LabelFilter.empty(),
         JIRAFilter(1, ["10003", "10009"], LabelFilter.empty(), set(), set(), True),
         release_match_setting_tag, LogicalRepositorySettings.empty(), prefixer,
         1, (6366825,), mdb, pdb, rdb, cache, with_deployments=False)
     assert len(releases) == 15
+
+
+@with_defer
+async def test_mine_releases_logical_jira(
+        mdb, pdb, rdb, release_match_setting_tag_logical, logical_settings, prefixer, cache):
+    time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2020, month=11, day=1, tzinfo=timezone.utc)
+    repo = "src-d/go-git/alpha"
+    releases, avatars, _, _ = await mine_releases(
+        [repo], {}, None, {}, time_from, time_to, LabelFilter.empty(),
+        JIRAFilter(1, ["10003", "10009"], LabelFilter({"bug", "onboarding", "performance"}, set()),
+                   set(), set(), False),
+        release_match_setting_tag_logical, logical_settings, prefixer,
+        1, (6366825,), mdb, pdb, rdb, None, with_deployments=False)
+    await wait_deferred()
+    assert len(releases) == 4
+    releases, avatars, _, _ = await mine_releases(
+        [repo], {}, None, {}, time_from, time_to, LabelFilter.empty(),
+        JIRAFilter.empty(),
+        release_match_setting_tag_logical, logical_settings, prefixer,
+        1, (6366825,), mdb, pdb, rdb, None, with_deployments=False)
+    await wait_deferred()
+    assert len(releases) == 22
+    releases, avatars, _, _ = await mine_releases(
+        [repo], {}, None, {}, time_from, time_to, LabelFilter.empty(),
+        JIRAFilter(1, ["10003", "10009"], LabelFilter({"bug", "onboarding", "performance"}, set()),
+                   set(), set(), False),
+        release_match_setting_tag_logical, logical_settings, prefixer,
+        1, (6366825,), mdb, pdb, rdb, cache, with_deployments=False)
+    assert len(releases) == 4
+    await wait_deferred()
+    releases, avatars, _, _ = await mine_releases(
+        [repo], {}, None, {}, time_from, time_to, LabelFilter.empty(),
+        JIRAFilter.empty(),
+        release_match_setting_tag_logical, logical_settings, prefixer,
+        1, (6366825,), mdb, pdb, rdb, cache, with_deployments=False)
+    assert len(releases) == 22
+    releases, avatars, _, _ = await mine_releases(
+        [repo], {}, None, {}, time_from, time_to, LabelFilter.empty(),
+        JIRAFilter(1, ["10003", "10009"], LabelFilter.empty(), set(), set(), True),
+        release_match_setting_tag_logical, logical_settings, prefixer,
+        1, (6366825,), mdb, pdb, rdb, cache, with_deployments=False)
+    assert len(releases) == 12
 
 
 @with_defer
@@ -1650,28 +1694,30 @@ async def test_mine_releases_logical(
         mdb, pdb, rdb, release_match_setting_tag_logical, prefixer, logical_settings):
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2018, month=11, day=1, tzinfo=timezone.utc)
-    releases, _, _, _ = await mine_releases(
-        ["src-d/go-git/alpha", "src-d/go-git/beta"], {}, None, {}, time_from, time_to,
-        LabelFilter.empty(), JIRAFilter.empty(),
-        release_match_setting_tag_logical, logical_settings,
-        prefixer, 1, (6366825,), mdb, pdb, rdb, None,
-        with_avatars=False, with_pr_titles=False, with_deployments=False)
-    counts = {
-        "github.com/src-d/go-git/alpha": 0,
-        "github.com/src-d/go-git/beta": 0,
-    }
-    prs = counts.copy()
-    for r, f in releases:
-        counts[(repo := r[Release.repository_full_name.name])] += 1
-        prs[repo] += len(f["prs_" + PullRequest.number.name])
-    assert counts == {
-        "github.com/src-d/go-git/alpha": 44,
-        "github.com/src-d/go-git/beta": 28,
-    }
-    assert prs == {
-        "github.com/src-d/go-git/alpha": 92,
-        "github.com/src-d/go-git/beta": 58,
-    }
+    for _ in range(2):  # test pdb
+        releases, _, _, _ = await mine_releases(
+            ["src-d/go-git/alpha", "src-d/go-git/beta"], {}, None, {}, time_from, time_to,
+            LabelFilter.empty(), JIRAFilter.empty(),
+            release_match_setting_tag_logical, logical_settings,
+            prefixer, 1, (6366825,), mdb, pdb, rdb, None,
+            with_avatars=False, with_pr_titles=False, with_deployments=False)
+        await wait_deferred()
+        counts = {
+            "github.com/src-d/go-git/alpha": 0,
+            "github.com/src-d/go-git/beta": 0,
+        }
+        prs = counts.copy()
+        for r, f in releases:
+            counts[(repo := r[Release.repository_full_name.name])] += 1
+            prs[repo] += len(f["prs_" + PullRequest.number.name])
+        assert counts == {
+            "github.com/src-d/go-git/alpha": 44,
+            "github.com/src-d/go-git/beta": 28,
+        }
+        assert prs == {
+            "github.com/src-d/go-git/alpha": 92,
+            "github.com/src-d/go-git/beta": 58,
+        }
 
 
 @pytest.mark.parametrize("settings_index", [0, 1])
