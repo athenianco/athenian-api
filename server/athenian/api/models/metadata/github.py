@@ -347,6 +347,7 @@ class NodePullRequest(Base,
 
     title = Column(Text, nullable=False)
     author_id = Column(BigInteger)
+    user_node_id = synonym("author_id")
     merged = Column(Boolean)
     additions = Column(BigInteger, nullable=False)
     deletions = Column(BigInteger, nullable=False)

@@ -961,49 +961,52 @@ async def test_pull_request_count_logical(
         PullRequestMetricID.PR_DEPLOYMENT_COUNT,
         PullRequestMetricID.PR_RELEASE_COUNT,
     ]
-    args = [
-        metrics, [[time_from, time_to]], (0, 1), [], ["production"],
-        [["src-d/go-git/alpha"], ["src-d/go-git/beta"]], [],
-        LabelFilter.empty(), JIRAFilter.empty(),
-        False, release_match_setting_tag_logical, logical_settings, prefixer,
-        branches, default_branches, False,
-    ]
-    values = await metrics_calculator.calc_pull_request_metrics_line_github(*args)
-    await wait_deferred()
-    assert values.shape == (1, 2, 1, 1)
+    for i in range(2):  # test the second run with filled pdb
+        print(["no pdb", "with pdb"][i], flush=True)
+        args = [
+            metrics, [[time_from, time_to]], (0, 1), [], ["production"],
+            [["src-d/go-git/alpha"], ["src-d/go-git/beta"]], [],
+            LabelFilter.empty(), JIRAFilter.empty(),
+            False, release_match_setting_tag_logical, logical_settings, prefixer,
+            branches, default_branches, False,
+        ]
+        values = await metrics_calculator.calc_pull_request_metrics_line_github(*args)
+        await wait_deferred()
+        assert values.shape == (1, 2, 1, 1)
 
-    def check_metrics():
-        assert values[0, 0, 0, 0][0][0].value == 159
-        assert values[0, 0, 0, 0][0][1].value == 24
-        assert values[0, 0, 0, 0][0][2].value == 106
-        assert values[0, 0, 0, 0][0][3].value == 119
-        assert values[0, 0, 0, 0][0][4].value == 119
+        def check_metrics():
+            assert values[0, 0, 0, 0][0][0].value == 159
+            assert values[0, 0, 0, 0][0][1].value == 24
+            assert values[0, 0, 0, 0][0][2].value == 106
+            assert values[0, 0, 0, 0][0][3].value == 119
+            assert values[0, 0, 0, 0][0][4].value == 119
 
-        assert values[0, 1, 0, 0][0][0].value == 107
-        assert values[0, 1, 0, 0][0][1].value == 29
-        assert values[0, 1, 0, 0][0][2].value == 99
-        assert values[0, 1, 0, 0][0][3].value == 79
-        assert values[0, 1, 0, 0][0][4].value == 78
+            assert values[0, 1, 0, 0][0][0].value == 107
+            assert values[0, 1, 0, 0][0][1].value == 29
+            assert values[0, 1, 0, 0][0][2].value == 99
+            assert values[0, 1, 0, 0][0][3].value == 79
+            assert values[0, 1, 0, 0][0][4].value == 78
 
-    check_metrics()
-    args[5].append(["src-d/go-git"])
-    values = await metrics_calculator.calc_pull_request_metrics_line_github(*args)
-    await wait_deferred()
-    assert values.shape == (1, 3, 1, 1)
-    check_metrics()
-    assert values[0, 2, 0, 0][0][0].value == 304
-    assert values[0, 2, 0, 0][0][1].value == 57
-    assert values[0, 2, 0, 0][0][2].value == 268
-    assert values[0, 2, 0, 0][0][3].value == 231
-    assert values[0, 2, 0, 0][0][4].value == 228
-    args[5] = [["src-d/go-git"]]
-    values = await metrics_calculator.calc_pull_request_metrics_line_github(*args)
-    assert values.shape == (1, 1, 1, 1)
-    assert values[0, 0, 0, 0][0][0].value == 554
-    assert values[0, 0, 0, 0][0][1].value == 107
-    assert values[0, 0, 0, 0][0][2].value == 463
-    assert values[0, 0, 0, 0][0][3].value == 418
-    assert values[0, 0, 0, 0][0][4].value == 414
+        check_metrics()
+        args[5].append(["src-d/go-git"])
+        values = await metrics_calculator.calc_pull_request_metrics_line_github(*args)
+        await wait_deferred()
+        assert values.shape == (1, 3, 1, 1)
+        check_metrics()
+        assert values[0, 2, 0, 0][0][0].value == 304
+        assert values[0, 2, 0, 0][0][1].value == 57
+        assert values[0, 2, 0, 0][0][2].value == 268
+        assert values[0, 2, 0, 0][0][3].value == 231
+        assert values[0, 2, 0, 0][0][4].value == 228
+        args[5] = [["src-d/go-git"]]
+        values = await metrics_calculator.calc_pull_request_metrics_line_github(*args)
+        await wait_deferred()
+        assert values.shape == (1, 1, 1, 1)
+        assert values[0, 0, 0, 0][0][0].value == 554
+        assert values[0, 0, 0, 0][0][1].value == 107
+        assert values[0, 0, 0, 0][0][2].value == 463
+        assert values[0, 0, 0, 0][0][3].value == 418
+        assert values[0, 0, 0, 0][0][4].value == 414
 
 
 async def test_pull_request_stage_times(precomputed_deployments, real_pr_samples):

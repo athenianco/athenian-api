@@ -10,7 +10,7 @@ import aiomcache
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, func, select, union_all
+from sqlalchemy import and_, func, join, select, union_all
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
@@ -23,6 +23,7 @@ from athenian.api.controllers.miners.github.commit import fetch_precomputed_comm
 from athenian.api.controllers.miners.github.dag_accelerated import extract_subdag, \
     mark_dag_access, mark_dag_parents, searchsorted_inrange
 from athenian.api.controllers.miners.github.deployment_light import load_included_deployments
+from athenian.api.controllers.miners.github.logical import split_logical_repositories
 from athenian.api.controllers.miners.github.precomputed_releases import \
     compose_release_match, fetch_precomputed_releases_by_name, load_precomputed_release_facts, \
     reverse_release_settings, store_precomputed_release_facts
@@ -40,8 +41,9 @@ from athenian.api.controllers.settings import LogicalRepositorySettings, Release
     ReleaseMatchSetting, ReleaseSettings
 from athenian.api.db import add_pdb_hits, add_pdb_misses, ParallelDatabase
 from athenian.api.defer import defer
-from athenian.api.models.metadata.github import NodePullRequest, PullRequest, PullRequestLabel, \
-    PushCommit, Release
+from athenian.api.int_to_str import int_to_str
+from athenian.api.models.metadata.github import NodeCommit, NodePullRequest, PullRequest, \
+    PullRequestLabel, PushCommit, Release
 from athenian.api.models.precomputed.models import GitHubReleaseDeployment
 from athenian.api.tracing import sentry_span
 
@@ -249,26 +251,26 @@ async def _mine_releases(repos: Iterable[str],
             all_hashes.append(hashes)
             repo_releases_analyzed[repo] = repo_releases, grouped_owned_hashes, parents
         commits_df_columns = [
-            PushCommit.sha,
-            PushCommit.additions,
-            PushCommit.deletions,
-            PushCommit.author_user_id,
-            PushCommit.node_id,
+            NodeCommit.sha,
+            NodeCommit.additions,
+            NodeCommit.deletions,
+            NodeCommit.author_user_id,
+            NodeCommit.node_id,
         ]
         all_hashes = np.concatenate(all_hashes).astype("U40") if all_hashes else []
         with sentry_sdk.start_span(op="mine_releases/fetch_commits",
                                    description=str(len(all_hashes))):
             commits_df = await read_sql_query(
                 select(commits_df_columns)
-                .where(and_(PushCommit.sha.in_any_values(all_hashes),
-                            PushCommit.acc_id.in_(meta_ids)))
-                .order_by(PushCommit.sha),
-                mdb, commits_df_columns, index=PushCommit.sha.name)
+                .where(and_(NodeCommit.sha.in_any_values(all_hashes),
+                            NodeCommit.acc_id.in_(meta_ids)))
+                .order_by(NodeCommit.sha),
+                mdb, commits_df_columns, index=NodeCommit.sha.name)
         log.info("Loaded %d commits", len(commits_df))
         commits_index = commits_df.index.values.astype("S40")
-        commit_ids = commits_df[PushCommit.node_id.name].values
-        commits_additions = commits_df[PushCommit.additions.name].values
-        commits_deletions = commits_df[PushCommit.deletions.name].values
+        commit_ids = commits_df[NodeCommit.node_id.name].values
+        commits_additions = commits_df[NodeCommit.additions.name].values
+        commits_deletions = commits_df[NodeCommit.deletions.name].values
         add_nans = commits_additions != commits_additions
         del_nans = commits_deletions != commits_deletions
         if (nans := (add_nans & del_nans)).any():
@@ -282,9 +284,9 @@ async def _mine_releases(repos: Iterable[str],
             log.error("null commit deletions for %s", commit_ids[del_nans])
             commits_deletions[del_nans] = 0
         commits_authors, commits_authors_nz = _null_to_zero_int(
-            commits_df, PushCommit.author_user_id.name)
+            commits_df, NodeCommit.author_user_id.name)
 
-        tasks = [_load_prs_by_merge_commit_ids(commit_ids, meta_ids, mdb)]
+        tasks = [_load_prs_by_merge_commit_ids(commit_ids, repos, logical_settings, meta_ids, mdb)]
         if jira:
             query = await generate_jira_prs_query(
                 [PullRequest.merge_commit_id.in_(commit_ids),
@@ -295,8 +297,13 @@ async def _mine_releases(repos: Iterable[str],
                                      op="mine_releases/fetch_pull_requests",
                                      description=str(len(commit_ids)))
         if jira:
-            filtered_prs_commit_ids = np.unique(np.array([r[0] for r in rest[0]]))
+            filtered_prs_commit_ids = \
+                np.unique(np.fromiter((r[0] for r in rest[0]), int, len(rest[0])))
         prs_commit_ids = prs_df[PullRequest.merge_commit_id.name].values
+        if logical_settings.has_logical_prs():
+            prs_commit_ids = np.char.add(
+                int_to_str(prs_commit_ids),
+                prs_df[PullRequest.repository_full_name.name].values.astype("S"))
         prs_authors, prs_authors_nz = _null_to_zero_int(prs_df, PullRequest.user_node_id.name)
         prs_node_ids = prs_df[PullRequest.node_id.name].values
         if with_pr_titles or labels:
@@ -310,6 +317,7 @@ async def _mine_releases(repos: Iterable[str],
         data = []
         if repo_releases_analyzed:
             log.info("Processing %d repos", len(repo_releases_analyzed))
+        has_logical_prs = logical_settings.has_logical_prs()
         for repo, (repo_releases, owned_hashes, parents) in repo_releases_analyzed.items():
             computed_release_info_by_commit = {}
             for i, (my_id, my_name, my_tag, my_url, my_author, my_published_at,
@@ -337,6 +345,8 @@ async def _mine_releases(repos: Iterable[str],
                             filtered_prs_commit_ids, my_commit_ids, assume_unique=True)):
                         continue
                     if len(prs_commit_ids):
+                        if has_logical_prs:
+                            my_commit_ids = np.char.add(int_to_str(my_commit_ids), repo.encode())
                         my_prs_indexes = searchsorted_inrange(prs_commit_ids, my_commit_ids)
                         if len(my_prs_indexes):
                             my_prs_indexes = \
@@ -350,7 +360,7 @@ async def _mine_releases(repos: Iterable[str],
                     my_prs_authors = prs_authors[my_prs_indexes]
                     mentioned_authors.update(np.unique(my_prs_authors[my_prs_authors > 0]))
                     my_prs = dict(zip(
-                        ["prs_" + c.name for c in released_prs_columns],
+                        ["prs_" + c.name for c in released_prs_columns(PullRequest)],
                         [prs_node_ids[my_prs_indexes],
                          prs_numbers[my_prs_indexes],
                          prs_additions[my_prs_indexes],
@@ -612,12 +622,13 @@ def _filter_by_labels(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
     # all the releases pass, but we must hide unmatched PRs
     pr_node_id_key = "prs_" + PullRequest.node_id.name
     prs_hidden_releases = []
+    pr_released_prs_columns = released_prs_columns(PullRequest)
     for details, release in releases:
         pr_node_ids = release[pr_node_id_key]
         passed = np.flatnonzero(np.in1d(pr_node_ids, left))
         if len(passed) < len(pr_node_ids):
             prs_hidden_release = dict(release)
-            for col in released_prs_columns:
+            for col in pr_released_prs_columns:
                 key = "prs_" + col.name
                 prs_hidden_release[key] = prs_hidden_release[key][passed]
             release = ReleaseFacts.from_fields(**prs_hidden_release)
@@ -657,16 +668,50 @@ async def _filter_precomputed_release_facts_by_jira(precomputed_facts: Dict[int,
 
 @sentry_span
 async def _load_prs_by_merge_commit_ids(commit_ids: Sequence[str],
+                                        repos: Set[str],
+                                        logical_settings: LogicalRepositorySettings,
                                         meta_ids: Tuple[int, ...],
                                         mdb: ParallelDatabase,
                                         ) -> pd.DataFrame:
-    columns = [PullRequest.merge_commit_id, *released_prs_columns]
-    return await read_sql_query(
-        select(columns)
-        .where(and_(PullRequest.merge_commit_id.in_(commit_ids),
-                    PullRequest.acc_id.in_(meta_ids)))
-        .order_by(PullRequest.merge_commit_id),
-        mdb, columns)
+    has_logical_prs = logical_settings.has_logical_prs()
+    model = PullRequest if has_logical_prs else NodePullRequest
+    columns = [model.merge_commit_id, *released_prs_columns(model)]
+    if has_logical_prs:
+        columns.extend((PullRequest.title, PullRequest.repository_full_name))
+    tasks = [
+        read_sql_query(
+            select(columns)
+            .where(and_(model.merge_commit_id.in_(commit_ids),
+                        model.acc_id.in_(meta_ids)))
+            .order_by(model.merge_commit_id),
+            mdb, columns),
+    ]
+    if logical_settings.has_prs_by_label():
+        tasks.append(
+            read_sql_query(
+                select([PullRequestLabel.pull_request_node_id,
+                        func.lower(PullRequestLabel.name).label(PullRequestLabel.name.name)])
+                .select_from(join(NodePullRequest, PullRequestLabel, and_(
+                    NodePullRequest.acc_id == PullRequestLabel.acc_id,
+                    NodePullRequest.node_id == PullRequestLabel.pull_request_node_id,
+                )))
+                .where(and_(NodePullRequest.merge_commit_id.in_(commit_ids),
+                            NodePullRequest.acc_id.in_(meta_ids)))
+                .order_by(PullRequestLabel.pull_request_node_id),
+                mdb, [PullRequestLabel.pull_request_node_id, PullRequestLabel.name]),
+        )
+    df_prs, *df_labels = await gather(*tasks)
+    if df_labels:
+        df_labels = df_labels[0]
+    else:
+        df_labels = None
+    df_prs = split_logical_repositories(
+        df_prs, df_labels, repos, logical_settings, set_index=False)
+    if has_logical_prs:
+        df_prs.sort_values(
+            [PullRequest.merge_commit_id.name, PullRequest.repository_full_name.name],
+            inplace=True)
+    return df_prs
 
 
 @sentry_span
