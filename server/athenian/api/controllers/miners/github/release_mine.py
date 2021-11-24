@@ -198,7 +198,7 @@ async def _mine_releases(repos: Iterable[str],
         releases_in_time_range, precomputed_facts, prefixer, True)
 
     missing_repos = releases_in_time_range[Release.repository_full_name.name].take(
-        np.where(~has_precomputed_facts)[0]).unique()
+        np.flatnonzero(~has_precomputed_facts)).unique()
     commits_authors = prs_authors = []
     commits_authors_nz = prs_authors_nz = slice(0)
     repo_releases_analyzed = {}
@@ -217,6 +217,11 @@ async def _mine_releases(repos: Iterable[str],
             description="mine_releases/commits",
         )
 
+        unfiltered_precomputed_facts_keys = np.char.add(
+            int_to_str(np.fromiter((i for i, _ in unfiltered_precomputed_facts),
+                                   int, len(unfiltered_precomputed_facts))),
+            np.array([r for _, r in unfiltered_precomputed_facts], dtype="S"),
+        )
         all_hashes = []
         for repo, repo_releases in releases.groupby(Release.repository_full_name.name, sort=False):
             hashes, vertexes, edges = dags[drop_logical_repo(repo)]
@@ -228,8 +233,10 @@ async def _mine_releases(repos: Iterable[str],
             ownership = mark_dag_access(hashes, vertexes, edges, release_hashes)
             parents = mark_dag_parents(
                 hashes, vertexes, edges, release_hashes, release_timestamps, ownership)
-            precomputed_mask = \
-                repo_releases[Release.node_id.name].isin(unfiltered_precomputed_facts).values
+            precomputed_mask = np.in1d(np.char.add(
+                int_to_str(repo_releases[Release.node_id.name].values),
+                repo_releases[Release.repository_full_name.name].values.astype("S"),
+            ), unfiltered_precomputed_facts_keys)
             out_of_range_mask = release_timestamps < np.array(time_from.replace(tzinfo=None),
                                                               dtype=release_timestamps.dtype)
             relevant = np.nonzero(~(precomputed_mask | out_of_range_mask))[0]
@@ -299,10 +306,10 @@ async def _mine_releases(repos: Iterable[str],
         if jira:
             filtered_prs_commit_ids = \
                 np.unique(np.fromiter((r[0] for r in rest[0]), int, len(rest[0])))
-        prs_commit_ids = prs_df[PullRequest.merge_commit_id.name].values
+        originl_prs_commit_ids = prs_commit_ids = prs_df[PullRequest.merge_commit_id.name].values
         if logical_settings.has_logical_prs():
             prs_commit_ids = np.char.add(
-                int_to_str(prs_commit_ids),
+                int_to_str(prs_commit_ids.astype(int, copy=False)),
                 prs_df[PullRequest.repository_full_name.name].values.astype("S"))
         prs_authors, prs_authors_nz = _null_to_zero_int(prs_df, PullRequest.user_node_id.name)
         prs_node_ids = prs_df[PullRequest.node_id.name].values
@@ -330,7 +337,7 @@ async def _mine_releases(repos: Iterable[str],
                                   repo_releases[Release.published_at.name],  # no values
                                   repo_releases[matched_by_column].values,
                                   repo_releases[Release.sha.name].values)):
-                if my_published_at < time_from or my_id in unfiltered_precomputed_facts:
+                if my_published_at < time_from or (my_id, repo) in unfiltered_precomputed_facts:
                     continue
                 dupe = computed_release_info_by_commit.get(my_commit)
                 if dupe is None:
@@ -341,9 +348,6 @@ async def _mine_releases(repos: Iterable[str],
                     else:
                         found_indexes = np.array([], dtype=int)
                     my_commit_ids = commit_ids[found_indexes]
-                    if jira and not len(np.intersect1d(
-                            filtered_prs_commit_ids, my_commit_ids, assume_unique=True)):
-                        continue
                     if len(prs_commit_ids):
                         if has_logical_prs:
                             my_commit_ids = np.char.add(int_to_str(my_commit_ids), repo.encode())
@@ -353,6 +357,10 @@ async def _mine_releases(repos: Iterable[str],
                                 my_prs_indexes[prs_commit_ids[my_prs_indexes] == my_commit_ids]
                     else:
                         my_prs_indexes = np.array([], dtype=int)
+                    if jira and not len(np.intersect1d(
+                            filtered_prs_commit_ids, originl_prs_commit_ids[my_prs_indexes],
+                            assume_unique=True)):
+                        continue
                     commits_count = len(found_indexes)
                     my_additions = commits_additions[found_indexes].sum()
                     my_deletions = commits_deletions[found_indexes].sum()
@@ -477,11 +485,6 @@ async def _mine_releases(repos: Iterable[str],
     )
 
 
-def _release_facts_with_repository_full_name(facts: ReleaseFacts, repo: str) -> ReleaseFacts:
-    facts.repository_full_name = repo
-    return facts
-
-
 def _null_to_zero_int(df: pd.DataFrame, col: str) -> Tuple[np.ndarray, np.ndarray]:
     vals = df[col]
     vals_z = vals.isnull().values
@@ -520,14 +523,21 @@ def group_hashes_by_ownership(ownership: np.ndarray,
 
 
 def _build_mined_releases(releases: pd.DataFrame,
-                          precomputed_facts: Dict[int, ReleaseFacts],
+                          precomputed_facts: Dict[Tuple[int, str], ReleaseFacts],
                           prefixer: Prefixer,
                           with_avatars: bool,
                           ) -> Tuple[List[Tuple[Dict[str, Any], ReleaseFacts]],
                                      Optional[np.ndarray],
                                      np.ndarray]:
-    has_precomputed_facts = releases[Release.node_id.name].isin(precomputed_facts).values
-    _, unique_releases = np.unique(releases[Release.node_id.name].values, return_index=True)
+    release_repos = releases[Release.repository_full_name.name].values.astype("S")
+    release_keys = np.char.add(int_to_str(releases[Release.node_id.name].values), release_repos)
+    precomputed_keys = np.char.add(
+        int_to_str(np.fromiter((i for i, _ in precomputed_facts), int, len(precomputed_facts))),
+        np.array([r for _, r in precomputed_facts], dtype=release_repos.dtype),
+    )
+    del release_repos
+    has_precomputed_facts = np.in1d(release_keys, precomputed_keys)
+    _, unique_releases = np.unique(release_keys, return_index=True)
     mask = np.zeros(len(releases), dtype=bool)
     mask[unique_releases] = True
     mask &= has_precomputed_facts
@@ -537,7 +547,7 @@ def _build_mined_releases(releases: pd.DataFrame,
           Release.repository_full_name.name: prefixed_repo,
           Release.url.name: my_url,
           Release.sha.name: my_commit},
-         _release_facts_with_repository_full_name(precomputed_facts[my_id], my_repo))
+         precomputed_facts[(my_id, my_repo)])
         for my_id, my_name, my_tag, my_repo, my_url, my_commit in zip(
             releases[Release.node_id.name].values[mask],
             releases[Release.name.name].values[mask],
@@ -547,7 +557,7 @@ def _build_mined_releases(releases: pd.DataFrame,
             releases[Release.sha.name].values[mask],
         )
         # "gone" repositories, reposet-sync has not updated yet
-        if (prefixed_repo := prefixer.repo_name_to_prefixed_name.get(my_repo)) is not None
+        if (prefixed_repo := prefixer.prefix_logical_repo(my_repo)) is not None
     ]
     if not with_avatars:
         return result, None, has_precomputed_facts
@@ -637,12 +647,13 @@ def _filter_by_labels(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
 
 
 @sentry_span
-async def _filter_precomputed_release_facts_by_jira(precomputed_facts: Dict[int, ReleaseFacts],
-                                                    jira: JIRAFilter,
-                                                    meta_ids: Tuple[int, ...],
-                                                    mdb: ParallelDatabase,
-                                                    cache: Optional[aiomcache.Client],
-                                                    ) -> Dict[int, ReleaseFacts]:
+async def _filter_precomputed_release_facts_by_jira(
+        precomputed_facts: Dict[Tuple[int, str], ReleaseFacts],
+        jira: JIRAFilter,
+        meta_ids: Tuple[int, ...],
+        mdb: ParallelDatabase,
+        cache: Optional[aiomcache.Client],
+) -> Dict[Tuple[int, str], ReleaseFacts]:
     assert jira
     pr_ids = [getattr(f, "prs_" + PullRequest.node_id.name) for f in precomputed_facts.values()]
     if not pr_ids:
@@ -656,14 +667,20 @@ async def _filter_precomputed_release_facts_by_jira(precomputed_facts: Dict[int,
     query = await generate_jira_prs_query(
         [PullRequest.node_id.in_(pr_ids), PullRequest.acc_id.in_(meta_ids)],
         jira, mdb, cache, columns=[PullRequest.node_id])
-    release_ids = np.repeat(list(precomputed_facts), lengths)
+    release_ids = np.repeat([k[0] for k in precomputed_facts], lengths)
+    release_repos = np.repeat([k[1] for k in precomputed_facts], lengths)
+    release_keys = np.empty(len(release_ids), dtype=[("id", int), ("repo", release_repos.dtype)])
+    release_keys["id"] = release_ids
+    release_keys["repo"] = release_repos
+    del release_ids
+    del release_repos
     order = np.argsort(pr_ids)
     pr_ids = pr_ids[order]
-    release_ids = release_ids[order]
+    release_keys = release_keys[order]
     rows = await mdb.fetch_all(query)
     matching_pr_ids = np.sort(np.fromiter((r[0] for r in rows), int, len(rows)))
-    release_ids = np.unique(release_ids[np.searchsorted(pr_ids, matching_pr_ids)])
-    return {k: precomputed_facts[k] for k in release_ids}
+    release_keys = np.unique(release_keys[np.searchsorted(pr_ids, matching_pr_ids)])
+    return {(tk := tuple(k)): precomputed_facts[tk] for k in release_keys}
 
 
 @sentry_span
@@ -999,7 +1016,8 @@ async def _load_releases_by_name(names: Dict[str, Set[str]],
                                  inplace=True, ascending=False, ignore_index=True)
             if event_releases:
                 # we could load them twice
-                releases.drop_duplicates(subset=Release.node_id.name, inplace=True)
+                releases.drop_duplicates(
+                    subset=[Release.node_id.name, Release.repository_full_name.name], inplace=True)
         if still_missing:
             log.warning("Some releases were not found: %s", still_missing)
     return releases, names, branches, default_branches
