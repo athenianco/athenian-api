@@ -757,6 +757,57 @@ async def test_calc_metrics_prs_jira_disabled_projects(client, headers, disabled
     assert cm.calculated[0].values[0].values[0] is None
 
 
+async def test_calc_metrics_prs_jira_custom_projects(client, headers):
+    body = {
+        "for": [{
+            "repositories": ["{1}"],
+            "jira": {
+                "epics": ["DEV-149", "DEV-776", "DEV-737", "DEV-667", "DEV-140"],
+                "projects": ["ENG"],
+            },
+        }],
+        "metrics": [PullRequestMetricID.PR_LEAD_TIME],
+        "date_from": "2015-10-13",
+        "date_to": "2020-01-23",
+        "granularities": ["all"],
+        "exclude_inactive": False,
+        "account": 1,
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(body))
+    assert len(cm.calculated[0].values) > 0
+    assert cm.calculated[0].values[0].values[0] is None
+
+
+async def test_calc_metrics_prs_jira_only_custom_projects(client, headers):
+    body = {
+        "for": [{
+            "repositories": ["{1}"],
+            "jira": {
+                "projects": ["DEV"],
+            },
+        }],
+        "metrics": [PullRequestMetricID.PR_MERGED],
+        "date_from": "2015-10-13",
+        "date_to": "2020-01-23",
+        "granularities": ["all"],
+        "exclude_inactive": False,
+        "account": 1,
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(body))
+    assert len(cm.calculated[0].values) > 0
+    assert cm.calculated[0].values[0].values[0] == 45  # > 400 without JIRA projects
+
+
 async def test_calc_metrics_prs_groups_smoke(client, headers):
     """Two repository groups."""
     body = {

@@ -828,7 +828,7 @@ async def test_calc_pull_request_facts_github_jira(
     await wait_deferred()
     assert facts[PullRequestFacts.f.released].notnull().sum() == 235
     args[5] = JIRAFilter(1, ["10003", "10009"], LabelFilter({"performance", "task"}, set()),
-                         set(), set(), False)
+                         set(), set(), False, False)
     facts = await metrics_calculator.calc_pull_request_facts_github(*args)
     assert facts[PullRequestFacts.f.released].notnull().sum() == 16
 

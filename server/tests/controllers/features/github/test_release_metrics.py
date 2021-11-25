@@ -34,7 +34,7 @@ async def test_calc_release_metrics_line_github_jira_cache(
         [],
         LabelFilter.empty(),
         JIRAFilter(1, ["10003", "10009"], LabelFilter({"performance", "bug"}, set()),
-                   set(), set(), False),
+                   set(), set(), False, False),
         release_match_setting_tag, LogicalRepositorySettings.empty(),
         prefixer, branches, default_branches,
     )

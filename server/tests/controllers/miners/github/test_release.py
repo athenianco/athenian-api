@@ -1532,7 +1532,7 @@ async def test_mine_releases_jira(
     releases, avatars, _, _ = await mine_releases(
         [repo], {}, None, {}, time_from, time_to, LabelFilter.empty(),
         JIRAFilter(1, ["10003", "10009"], LabelFilter({"bug", "onboarding", "performance"}, set()),
-                   set(), set(), False),
+                   set(), set(), False, False),
         release_match_setting_tag, LogicalRepositorySettings.empty(), prefixer,
         1, (6366825,), mdb, pdb, rdb, None, with_deployments=False)
     await wait_deferred()
@@ -1547,7 +1547,7 @@ async def test_mine_releases_jira(
     releases, avatars, _, _ = await mine_releases(
         [repo], {}, None, {}, time_from, time_to, LabelFilter.empty(),
         JIRAFilter(1, ["10003", "10009"], LabelFilter({"bug", "onboarding", "performance"}, set()),
-                   set(), set(), False),
+                   set(), set(), False, False),
         release_match_setting_tag, LogicalRepositorySettings.empty(), prefixer,
         1, (6366825,), mdb, pdb, rdb, cache, with_deployments=False)
     assert len(releases) == 8
@@ -1560,7 +1560,7 @@ async def test_mine_releases_jira(
     assert len(releases) == 22
     releases, avatars, _, _ = await mine_releases(
         [repo], {}, None, {}, time_from, time_to, LabelFilter.empty(),
-        JIRAFilter(1, ["10003", "10009"], LabelFilter.empty(), set(), set(), True),
+        JIRAFilter(1, ["10003", "10009"], LabelFilter.empty(), set(), set(), False, True),
         release_match_setting_tag, LogicalRepositorySettings.empty(), prefixer,
         1, (6366825,), mdb, pdb, rdb, cache, with_deployments=False)
     assert len(releases) == 15
@@ -1575,7 +1575,7 @@ async def test_mine_releases_logical_jira(
     releases, avatars, _, _ = await mine_releases(
         [repo], {}, None, {}, time_from, time_to, LabelFilter.empty(),
         JIRAFilter(1, ["10003", "10009"], LabelFilter({"bug", "onboarding", "performance"}, set()),
-                   set(), set(), False),
+                   set(), set(), False, False),
         release_match_setting_tag_logical, logical_settings, prefixer,
         1, (6366825,), mdb, pdb, rdb, None, with_deployments=False)
     await wait_deferred()
@@ -1590,7 +1590,7 @@ async def test_mine_releases_logical_jira(
     releases, avatars, _, _ = await mine_releases(
         [repo], {}, None, {}, time_from, time_to, LabelFilter.empty(),
         JIRAFilter(1, ["10003", "10009"], LabelFilter({"bug", "onboarding", "performance"}, set()),
-                   set(), set(), False),
+                   set(), set(), False, False),
         release_match_setting_tag_logical, logical_settings, prefixer,
         1, (6366825,), mdb, pdb, rdb, cache, with_deployments=False)
     assert len(releases) == 4
@@ -1603,7 +1603,7 @@ async def test_mine_releases_logical_jira(
     assert len(releases) == 22
     releases, avatars, _, _ = await mine_releases(
         [repo], {}, None, {}, time_from, time_to, LabelFilter.empty(),
-        JIRAFilter(1, ["10003", "10009"], LabelFilter.empty(), set(), set(), True),
+        JIRAFilter(1, ["10003", "10009"], LabelFilter.empty(), set(), set(), False, True),
         release_match_setting_tag_logical, logical_settings, prefixer,
         1, (6366825,), mdb, pdb, rdb, cache, with_deployments=False)
     assert len(releases) == 12
