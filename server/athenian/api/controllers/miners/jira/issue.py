@@ -16,6 +16,7 @@ from sqlalchemy.sql import ClauseElement
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached, short_term_exptime
+from athenian.api.controllers.jira import JIRAConfig
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.label import fetch_labels_to_filter
 from athenian.api.controllers.miners.github.logical import split_logical_repositories
@@ -190,7 +191,7 @@ ISSUE_PR_IDS = "pr_ids"
         logical_settings,
     ),
 )
-async def fetch_jira_issues(installation_ids: Tuple[int, List[str]],
+async def fetch_jira_issues(installation_ids: JIRAConfig,
                             time_from: Optional[datetime],
                             time_to: Optional[datetime],
                             exclude_inactive: bool,
@@ -388,7 +389,7 @@ async def _fetch_released_prs(pr_node_ids: Iterable[int],
 
 
 @sentry_span
-async def _fetch_issues(ids: Tuple[int, List[str]],
+async def _fetch_issues(ids: JIRAConfig,
                         time_from: Optional[datetime],
                         time_to: Optional[datetime],
                         exclude_inactive: bool,
@@ -651,7 +652,7 @@ def resolve_work_began_and_resolved(issue_work_began: Optional[np.datetime64],
 
 async def fetch_jira_issues_for_prs(pr_nodes: Collection[int],
                                     meta_ids: Tuple[int, ...],
-                                    jira_ids: Tuple[int, List[str]],
+                                    jira_ids: JIRAConfig,
                                     mdb: DatabaseLike,
                                     ) -> List[Mapping[str, Any]]:
     """Load brief information about JIRA issues mapped to the given PRs."""

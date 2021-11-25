@@ -1,5 +1,6 @@
 from typing import Iterable, List, Optional, Set, Tuple
 
+from athenian.api.controllers.jira import JIRAConfig
 from athenian.api.models.web.jira_filter import JIRAFilter as WebJIRAFilter
 from athenian.api.typing_utils import dataclass
 
@@ -77,7 +78,7 @@ class LabelFilter:
         return singles, multiples
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, frozen=True)
 class JIRAFilter:
     """JIRA traits to select assigned PRs."""
 
@@ -86,28 +87,40 @@ class JIRAFilter:
     labels: LabelFilter
     epics: Set[str]
     issue_types: Set[str]
-    unmapped: bool
+    custom_projects: bool  # PRs must be mapped to any issue in `projects`
+    unmapped: bool  # select everything but the mapped PRs
 
     @classmethod
     def empty(cls) -> "JIRAFilter":
         """Initialize an empty JIRAFilter."""
-        return cls(0, [], LabelFilter.empty(), set(), set(), False)
+        return cls(0, [], LabelFilter.empty(), set(), set(), False, False)
 
     def __bool__(self) -> bool:
         """Return value indicating whether this filter is not an identity."""
         return self.account > 0 and (
-            bool(self.labels) or bool(self.epics) or bool(self.issue_types) or self.unmapped)
+            bool(self.labels)
+            or bool(self.epics)
+            or bool(self.issue_types)
+            or self.unmapped
+            or self.custom_projects)
 
     def __str__(self) -> str:
         """Implement str()."""
         if not self.unmapped:
-            return "[%s, %s, %s]" % (self.labels, sorted(self.epics), sorted(self.issue_types))
+            return "[%s, %s, %s, custom_projects=%s, unmapped=%s]" % (
+                self.labels,
+                sorted(self.epics),
+                sorted(self.issue_types),
+                self.custom_projects,
+                self.unmapped,
+            )
         return "<unmapped>"
 
     def __repr__(self) -> str:
         """Implement repr()."""
-        return "JIRAFilter(%r, %r, %r, %r, %r)" % (
-            self.account, self.labels, self.epics, self.issue_types, self.unmapped)
+        return "JIRAFilter(%r, %r, %r, %r, %r, %r)" % (
+            self.account, self.labels, self.epics, self.issue_types, self.custom_projects,
+            self.unmapped)
 
     def compatible_with(self, other: "JIRAFilter") -> bool:
         """Check whether the `other` filter can be applied to the items filtered by `self`."""
@@ -126,14 +139,20 @@ class JIRAFilter:
         return True
 
     @classmethod
-    def from_web(cls, model: Optional[WebJIRAFilter], ids: Tuple[int, List[str]]) -> "JIRAFilter":
+    def from_web(cls, model: Optional[WebJIRAFilter], ids: JIRAConfig) -> "JIRAFilter":
         """Initialize a new JIRAFilter from the corresponding web model."""
         if model is None:
             return cls.empty()
         labels = LabelFilter.from_iterables(model.labels_include, model.labels_exclude)
+        if not (custom_projects := bool(model.projects)):
+            projects = sorted(ids[1])
+        else:
+            reverse_map = {v: k for k, v in ids[1].items()}
+            projects = sorted(reverse_map[k] for k in model.projects if k in reverse_map)
         return JIRAFilter(account=ids[0],
-                          projects=ids[1],
+                          projects=projects,
                           labels=labels,
                           epics={s.upper() for s in (model.epics or [])},
                           issue_types={s.lower() for s in (model.issue_types or [])},
+                          custom_projects=custom_projects,
                           unmapped=bool(model.unmapped))

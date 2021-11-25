@@ -18,7 +18,8 @@ from athenian.api.controllers.account import get_metadata_account_ids
 from athenian.api.controllers.features.github.check_run_filter import filter_check_runs
 from athenian.api.controllers.features.github.pull_request_filter import fetch_pull_requests, \
     filter_pull_requests
-from athenian.api.controllers.jira import get_jira_installation_or_none, load_mapped_jira_users
+from athenian.api.controllers.jira import get_jira_installation_or_none, JIRAConfig, \
+    load_mapped_jira_users
 from athenian.api.controllers.logical_repos import coerce_logical_repos, drop_logical_repo
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
@@ -411,7 +412,7 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
         releases, avatars, deployments, prefixer, jira_ids, meta_ids, request.mdb)
 
 
-async def _load_jira_issues_for_releases(jira_ids: Optional[Tuple[int, List[str]]],
+async def _load_jira_issues_for_releases(jira_ids: Optional[JIRAConfig],
                                          releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
                                          meta_ids: Tuple[int, ...],
                                          mdb: ParallelDatabase) -> Dict[str, LinkedJIRAIssue]:
@@ -441,7 +442,7 @@ async def _build_release_set_response(releases: List[Tuple[Dict[str, Any], Relea
                                       avatars: List[Tuple[str, str]],
                                       deployments: Dict[str, Deployment],
                                       prefixer: Prefixer,
-                                      jira_ids: Optional[Tuple[int, List[str]]],
+                                      jira_ids: Optional[JIRAConfig],
                                       meta_ids: Tuple[int, ...],
                                       mdb: ParallelDatabase,
                                       ) -> web.Response:

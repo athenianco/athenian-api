@@ -1,7 +1,7 @@
 import logging
 import marshal
 import re
-from typing import Dict, Iterable, List, Optional, Set, Tuple
+from typing import Dict, Iterable, Optional, Set, Tuple
 
 import aiomcache
 from names_matcher import NamesMatcher
@@ -50,12 +50,15 @@ async def get_jira_id(account: int,
     return jira_id
 
 
+JIRAConfig = Tuple[int, Dict[str, str]]
+
+
 @sentry_span
 async def get_jira_installation(account: int,
                                 sdb: DatabaseLike,
                                 mdb: DatabaseLike,
                                 cache: Optional[aiomcache.Client],
-                                ) -> Tuple[int, List[str]]:
+                                ) -> JIRAConfig:
     """
     Retrieve the JIRA installation ID belonging to the account or raise an exception.
 
@@ -74,7 +77,7 @@ async def get_jira_installation(account: int,
     ]
     projects, disabled = await gather(*tasks, op="load JIRA projects")
     disabled = {r[0] for r in disabled}
-    projects = sorted(r[0] for r in projects if r[1] not in disabled)
+    projects = {r[0]: r[1] for r in projects if r[1] not in disabled}
     return jira_id, projects
 
 
@@ -82,7 +85,7 @@ async def get_jira_installation_or_none(account: int,
                                         sdb: DatabaseLike,
                                         mdb: DatabaseLike,
                                         cache: Optional[aiomcache.Client],
-                                        ) -> Optional[Tuple[int, List[str]]]:
+                                        ) -> Optional[JIRAConfig]:
     """
     Retrieve the JIRA installation ID belonging to the account or raise an exception.
 

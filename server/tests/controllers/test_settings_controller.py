@@ -771,3 +771,13 @@ async def test_logical_settings_smoke(sdb, mdb, prefixer, with_title, with_label
     assert repo_settings.has_titles == with_title
     assert repo_settings.logical_repositories == \
            {"src-d/go-git", "src-d/go-git/alpha"} if any_with else {"src-d/go-git"}
+
+"""
+async def test_delete_logical_repository_smoke(client, headers, logical_settings_db):
+    response = await client.request(
+        method="DELETE",
+        path="/v1/settings/logical_repository?name=github.com/athenianco/athenian-api/alpha",
+        headers=headers)
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+"""

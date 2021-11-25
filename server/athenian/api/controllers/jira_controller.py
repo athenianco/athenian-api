@@ -29,8 +29,8 @@ from athenian.api.controllers.features.jira.issue_metrics import JIRABinnedHisto
 from athenian.api.controllers.features.metric_calculator import DEFAULT_QUANTILE_STRIDE, \
     group_to_indexes
 from athenian.api.controllers.filter_controller import web_pr_from_struct, webify_deployment
-from athenian.api.controllers.jira import get_jira_installation, normalize_issue_type, \
-    normalize_user_type, resolve_projects
+from athenian.api.controllers.jira import get_jira_installation, JIRAConfig, \
+    normalize_issue_type, normalize_user_type, resolve_projects
 from athenian.api.controllers.logical_repos import drop_logical_repo
 from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.branches import BranchMiner
@@ -153,7 +153,7 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
     ),
 )
 async def _epic_flow(return_: Set[str],
-                     jira_ids: Tuple[int, List[str]],
+                     jira_ids: JIRAConfig,
                      time_from: Optional[datetime],
                      time_to: Optional[datetime],
                      exclude_inactive: bool,
@@ -382,7 +382,7 @@ async def _epic_flow(return_: Set[str],
 )
 async def _issue_flow(return_: Set[str],
                       account: int,
-                      jira_ids: Tuple[int, List[str]],
+                      jira_ids: JIRAConfig,
                       time_from: Optional[datetime],
                       time_to: Optional[datetime],
                       exclude_inactive: bool,
@@ -835,7 +835,7 @@ async def _collect_ids(account: int,
                        mdb: ParallelDatabase,
                        cache: Optional[aiomcache.Client],
                        ) -> Tuple[Tuple[int, ...],
-                                  Tuple[int, List[str]],
+                                  JIRAConfig,
                                   pd.DataFrame,
                                   Dict[str, str],
                                   ReleaseSettings,

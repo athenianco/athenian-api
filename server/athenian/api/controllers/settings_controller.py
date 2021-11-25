@@ -366,3 +366,18 @@ async def list_work_types(request: AthenianWebRequest, id: int) -> web.Response:
         rules=[WorkTypeRule(name, args) for name, args in row[WorkType.rules.name]],
     ) for row in rows]
     return model_response(models)
+
+
+async def list_logical_repositories(request: AthenianWebRequest, id: int) -> web.Response:
+    """List the currently configured logical repositories."""
+    raise NotImplementedError
+
+
+async def set_logical_repository(request: AthenianWebRequest, body: dict) -> web.Response:
+    """Insert or update a logical repository."""
+    raise NotImplementedError()
+
+
+async def delete_logical_repository(request: AthenianWebRequest, name: str) -> web.Response:
+    """Delete a logical repository."""
+    raise NotImplementedError()

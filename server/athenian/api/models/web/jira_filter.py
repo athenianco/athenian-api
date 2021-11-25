@@ -11,6 +11,7 @@ class JIRAFilter(Model):
         "labels_include": Optional[List[str]],
         "labels_exclude": Optional[List[str]],
         "issue_types": Optional[List[str]],
+        "projects": Optional[List[str]],
         "unmapped": Optional[bool],
     }
 
@@ -19,6 +20,7 @@ class JIRAFilter(Model):
         "labels_include": "labels_include",
         "labels_exclude": "labels_exclude",
         "issue_types": "issue_types",
+        "projects": "projects",
         "unmapped": "unmapped",
     }
 
@@ -28,6 +30,7 @@ class JIRAFilter(Model):
         labels_include: Optional[List[str]] = None,
         labels_exclude: Optional[List[str]] = None,
         issue_types: Optional[List[str]] = None,
+        projects: Optional[List[str]] = None,
         unmapped: Optional[bool] = None,
     ):
         """JIRAFilter - a model defined in OpenAPI
@@ -36,12 +39,14 @@ class JIRAFilter(Model):
         :param labels_include: The labels_include of this JIRAFilter.
         :param labels_exclude: The labels_exclude of this JIRAFilter.
         :param issue_types: The issue_types of this JIRAFilter.
+        :param projects: The projects of this JIRAFilter.
         :param unmapped: The unmapped of this JIRAFilter.
         """
         self._epics = epics
         self._labels_include = labels_include
         self._labels_exclude = labels_exclude
         self._issue_types = issue_types
+        self._projects = projects
         self._unmapped = unmapped
 
     @property
@@ -133,6 +138,28 @@ class JIRAFilter(Model):
         if issue_types and self._unmapped:
             raise ValueError("`unmapped` may not be mixed with anything else")
         self._issue_types = issue_types
+
+    @property
+    def projects(self) -> Optional[List[str]]:
+        """Gets the projects of this JIRAFilter.
+
+        PRs must be linked to any JIRA issue in the given project keys.
+
+        :return: The projects of this JIRAFilter.
+        """
+        return self._projects
+
+    @projects.setter
+    def projects(self, projects: Optional[List[str]]):
+        """Sets the projects of this JIRAFilter.
+
+        PRs must be linked to any JIRA issue in the given project keys.
+
+        :param projects: The projects of this JIRAFilter.
+        """
+        if projects and self._unmapped:
+            raise ValueError("`unmapped` may not be mixed with anything else")
+        self._projects = projects
 
     @property
     def unmapped(self) -> Optional[bool]:

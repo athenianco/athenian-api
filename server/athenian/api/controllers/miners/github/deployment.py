@@ -17,6 +17,7 @@ from sqlalchemy import and_, distinct, exists, func, join, not_, or_, select, un
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached, CancelCache, short_term_exptime
+from athenian.api.controllers.jira import JIRAConfig
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.commit import COMMIT_FETCH_COMMITS_COLUMNS, DAG, \
     fetch_dags_with_commits, fetch_repository_commits
@@ -1566,7 +1567,7 @@ async def _fetch_grouped_labels(names: Collection[str],
 
 
 async def load_jira_issues_for_deployments(deployments: pd.DataFrame,
-                                           jira_ids: Optional[Tuple[int, List[str]]],
+                                           jira_ids: Optional[JIRAConfig],
                                            meta_ids: Tuple[int, ...],
                                            mdb: ParallelDatabase,
                                            ) -> Dict[str, PullRequestJIRAIssueItem]:

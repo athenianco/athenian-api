@@ -1,6 +1,6 @@
 import asyncio
 from datetime import datetime
-from typing import Collection, Dict, List, Optional, Sequence, Tuple
+from typing import Collection, Dict, Optional, Sequence, Tuple
 
 import aiomcache
 import databases
@@ -9,6 +9,7 @@ import pandas as pd
 from sqlalchemy import and_, func, select
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
+from athenian.api.controllers.jira import JIRAConfig
 from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.jira.issue import fetch_jira_issues
 from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseSettings
@@ -17,7 +18,7 @@ from athenian.api.tracing import sentry_span
 
 
 @sentry_span
-async def filter_epics(jira_ids: Tuple[int, List[str]],
+async def filter_epics(jira_ids: JIRAConfig,
                        time_from: Optional[datetime],
                        time_to: Optional[datetime],
                        exclude_inactive: bool,

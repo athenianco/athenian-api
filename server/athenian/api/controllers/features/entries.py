@@ -36,6 +36,7 @@ from athenian.api.controllers.features.github.unfresh_pull_request_metrics impor
 from athenian.api.controllers.features.histogram import HistogramParameters
 from athenian.api.controllers.features.metric_calculator import DEFAULT_QUANTILE_STRIDE, \
     group_by_repo, group_to_indexes, MetricCalculatorEnsemble
+from athenian.api.controllers.jira import JIRAConfig
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import BranchMiner
@@ -555,7 +556,7 @@ class MetricEntriesCalculator:
                                                   prefixer: Prefixer,
                                                   branches: pd.DataFrame,
                                                   default_branches: Dict[str, str],
-                                                  jira_ids: Optional[Tuple[int, List[str]]],
+                                                  jira_ids: Optional[JIRAConfig],
                                                   ) -> np.ndarray:
         """
         Calculate the deployment metrics on GitHub.
