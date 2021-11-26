@@ -42,7 +42,8 @@ from tests.controllers.test_filter_controller import force_push_dropped_go_git_p
 
 def generate_repo_settings(prs: pd.DataFrame) -> ReleaseSettings:
     return ReleaseSettings({
-        "github.com/" + r: ReleaseMatchSetting(branches="", tags=".*", match=ReleaseMatch.tag)
+        "github.com/" + r: ReleaseMatchSetting(
+            branches="", tags=".*", events=".*", match=ReleaseMatch.tag)
         for r in prs.index.get_level_values(1).values
     })
 
@@ -274,7 +275,7 @@ async def test_map_releases_to_prs_smoke(
         }
         assert new_settings == ReleaseSettings({
             "github.com/src-d/go-git": ReleaseMatchSetting(
-                branches="master", tags=".*", match=ReleaseMatch.tag),
+                branches="master", tags=".*", events=".*", match=ReleaseMatch.tag),
         })
         assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
 
@@ -325,7 +326,7 @@ async def test_map_releases_to_prs_empty(
         datetime(year=2019, month=12, day=2, tzinfo=timezone.utc),
         [], [], JIRAFilter.empty(), ReleaseSettings({
             "github.com/src-d/go-git": ReleaseMatchSetting(
-                branches="master", tags=".*", match=ReleaseMatch.branch),
+                branches="master", tags=".*", events=".*", match=ReleaseMatch.branch),
         }), LogicalRepositorySettings.empty(), None, None, None, prefixer,
         1, (6366825,), mdb, pdb, rdb, cache)
     assert prs.empty
@@ -523,7 +524,7 @@ async def test_load_releases_branches(branches, default_branches, mdb, pdb, rdb,
         time_from,
         time_to,
         ReleaseSettings({"github.com/src-d/go-git": ReleaseMatchSetting(
-            branches=branches_, tags="", match=ReleaseMatch.branch)}),
+            branches=branches_, tags="", events="", match=ReleaseMatch.branch)}),
         LogicalRepositorySettings.empty(),
         prefixer,
         1,
@@ -548,7 +549,7 @@ async def test_load_releases_branches_empty(branches, default_branches, mdb, pdb
         time_from,
         time_to,
         ReleaseSettings({"github.com/src-d/go-git": ReleaseMatchSetting(
-            branches="unknown", tags="", match=ReleaseMatch.branch)}),
+            branches="unknown", tags="", events="", match=ReleaseMatch.branch)}),
         LogicalRepositorySettings.empty(),
         prefixer,
         1,
@@ -595,7 +596,7 @@ async def test_load_releases_tag_or_branch_dates(
             await pdb.cache.refresh()
 
     release_settings = ReleaseSettings({"github.com/src-d/go-git": ReleaseMatchSetting(
-        branches="master", tags=".*", match=ReleaseMatch.tag_or_branch)})
+        branches="master", tags=".*", events=".*", match=ReleaseMatch.tag_or_branch)})
     releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"],
         branches, default_branches,
@@ -645,7 +646,7 @@ async def test_load_releases_tag_or_branch_initial(branches, default_branches, m
         time_from,
         time_to,
         ReleaseSettings({"github.com/src-d/go-git": ReleaseMatchSetting(
-            branches="master", tags="", match=ReleaseMatch.branch)}),
+            branches="master", tags="", events=".*", match=ReleaseMatch.branch)}),
         LogicalRepositorySettings.empty(),
         prefixer,
         1,
@@ -739,7 +740,7 @@ async def test_map_releases_to_prs_branches(
     time_from = datetime(year=2015, month=4, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2015, month=5, day=1, tzinfo=timezone.utc)
     release_settings = ReleaseSettings({"github.com/src-d/go-git": ReleaseMatchSetting(
-        branches="master", tags="", match=ReleaseMatch.branch)})
+        branches="master", tags="", events=".*", match=ReleaseMatch.branch)})
     prs, releases, new_settings, matched_bys, _, _ = \
         await releases_to_prs_mapper.map_releases_to_prs(
             ["src-d/go-git"],
@@ -785,7 +786,7 @@ async def test_load_releases_empty(
         datetime(year=2020, month=6, day=30, tzinfo=timezone.utc),
         datetime(year=2020, month=7, day=30, tzinfo=timezone.utc),
         ReleaseSettings({"github.com/src-d/gitbase": ReleaseMatchSetting(
-            branches=".*", tags=".*", match=ReleaseMatch.branch)}),
+            branches=".*", tags=".*", events=".*", match=ReleaseMatch.branch)}),
         LogicalRepositorySettings.empty(),
         prefixer,
         1,
@@ -806,7 +807,7 @@ async def test_load_releases_empty(
         time_from,
         time_to,
         ReleaseSettings({"github.com/src-d/go-git": ReleaseMatchSetting(
-            branches="master", tags="", match=ReleaseMatch.tag)}),
+            branches="master", tags="", events=".*", match=ReleaseMatch.tag)}),
         LogicalRepositorySettings.empty(),
         prefixer,
         1,
@@ -824,7 +825,7 @@ async def test_load_releases_empty(
         time_from,
         time_to,
         ReleaseSettings({"github.com/src-d/go-git": ReleaseMatchSetting(
-            branches="", tags=".*", match=ReleaseMatch.branch)}),
+            branches="", tags=".*", events=".*", match=ReleaseMatch.branch)}),
         LogicalRepositorySettings.empty(),
         prefixer,
         1,
@@ -856,7 +857,7 @@ async def test_load_releases_events_settings(
         datetime(year=2019, month=1, day=30, tzinfo=timezone.utc),
         datetime(year=2020, month=7, day=30, tzinfo=timezone.utc),
         ReleaseSettings({"github.com/src-d/go-git": ReleaseMatchSetting(
-            branches=".*", tags=".*", match=ReleaseMatch.tag)}),
+            branches=".*", tags=".*", events=".*", match=ReleaseMatch.tag)}),
         LogicalRepositorySettings.empty(),
         prefixer,
         1,
@@ -875,7 +876,7 @@ async def test_load_releases_events_settings(
         datetime(year=2019, month=1, day=30, tzinfo=timezone.utc),
         datetime(year=2020, month=7, day=30, tzinfo=timezone.utc),
         ReleaseSettings({"github.com/src-d/go-git": ReleaseMatchSetting(
-            branches=".*", tags=".*", match=ReleaseMatch.event)}),
+            branches=".*", tags=".*", events=".*", match=ReleaseMatch.event)}),
         LogicalRepositorySettings.empty(),
         prefixer,
         1,
@@ -946,7 +947,7 @@ async def test_load_releases_events_unresolved(
         datetime(year=2019, month=1, day=30, tzinfo=timezone.utc),
         datetime(year=2020, month=7, day=30, tzinfo=timezone.utc),
         ReleaseSettings({"github.com/src-d/go-git": ReleaseMatchSetting(
-            branches=".*", tags=".*", match=ReleaseMatch.event)}),
+            branches=".*", tags=".*", events=".*", match=ReleaseMatch.event)}),
         LogicalRepositorySettings.empty(),
         prefixer,
         1,

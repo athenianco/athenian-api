@@ -360,9 +360,7 @@ async def test_accept_invitation_admin_duplicate_not_precomputed(
                       .where(RepositorySet.id == 1)
                       .values({RepositorySet.precomputed: False,
                                RepositorySet.updates_count: RepositorySet.updates_count,
-                               RepositorySet.updated_at: datetime.now(timezone.utc),
-                               RepositorySet.items_count: RepositorySet.items_count,
-                               RepositorySet.items_checksum: RepositorySet.items_checksum}))
+                               RepositorySet.updated_at: datetime.now(timezone.utc)}))
     num_accounts_before = len(await sdb.fetch_all(select([Account])))
     iid = await sdb.execute(
         insert(Invitation).values(
@@ -580,8 +578,6 @@ async def test_progress_no_precomputed(client, headers, sdb):
     await sdb.execute(update(RepositorySet).where(RepositorySet.id == 1).values({
         RepositorySet.precomputed: False,
         RepositorySet.updated_at: datetime.now(timezone.utc),
-        RepositorySet.items_count: 2,
-        RepositorySet.items_checksum: 42,
         RepositorySet.updates_count: 2,
         RepositorySet.created_at: datetime.now(timezone.utc) - timedelta(days=1),
     }))

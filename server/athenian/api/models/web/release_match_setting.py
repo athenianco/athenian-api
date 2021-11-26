@@ -1,3 +1,4 @@
+import re
 from typing import Optional
 
 from athenian.api.models.web.base_model_ import Model
@@ -10,6 +11,7 @@ class _ReleaseMatchSetting(Model):
     openapi_types = {
         "branches": str,
         "tags": str,
+        "events": Optional[str],
         "match": str,
         "default_branch": Optional[str],
     }
@@ -17,6 +19,7 @@ class _ReleaseMatchSetting(Model):
     attribute_map = {
         "branches": "branches",
         "tags": "tags",
+        "events": "events",
         "match": "match",
         "default_branch": "default_branch",
     }
@@ -24,17 +27,20 @@ class _ReleaseMatchSetting(Model):
     def __init__(self,
                  branches: Optional[str] = None,
                  tags: Optional[str] = None,
+                 events: Optional[str] = None,
                  match: Optional[str] = None,
                  default_branch: Optional[str] = None):
         """ReleaseMatchSetting - a model defined in OpenAPI
 
         :param branches: The branches of this ReleaseMatchSetting.
         :param tags: The tags of this ReleaseMatchSetting.
+        :param events: The events of this ReleaseMatchSetting.
         :param match: The match of this ReleaseMatchSetting.
         :param default_branch: The default_branch of this ReleaseMatchSetting.
         """
         self._branches = branches
         self._tags = tags
+        self._events = events
         self._match = match
         self._default_branch = default_branch
 
@@ -60,6 +66,10 @@ class _ReleaseMatchSetting(Model):
         """  # noqa
         if branches is None:
             raise ValueError("Invalid value for `branches`, must not be `None`")
+        try:
+            re.compile(branches)
+        except re.error:
+            raise ValueError("Invalid value for `branches`, must be a valid regular expression")
 
         self._branches = branches
 
@@ -85,8 +95,40 @@ class _ReleaseMatchSetting(Model):
         """  # noqa
         if tags is None:
             raise ValueError("Invalid value for `tags`, must not be `None`")
+        try:
+            re.compile(tags)
+        except re.error:
+            raise ValueError("Invalid value for `tags`, must be a valid regular expression")
 
         self._tags = tags
+
+    @property
+    def events(self) -> str:
+        """Gets the events of this ReleaseMatchSetting.
+
+        Regular expression to match release event names.
+        Reference: https://www.postgresql.org/docs/current/functions-matching.html#FUNCTIONS-SIMILARTO-REGEXP
+
+        :return: The events of this ReleaseMatchSetting.
+        """  # noqa
+        return self._events
+
+    @events.setter
+    def events(self, events: str):
+        """Sets the events of this ReleaseMatchSetting.
+
+        Regular expression to match release event names.
+        Reference: https://www.postgresql.org/docs/current/functions-matching.html#FUNCTIONS-SIMILARTO-REGEXP
+
+        :param events: The events of this ReleaseMatchSetting.
+        """  # noqa
+        if events is not None:
+            try:
+                re.compile(events)
+            except re.error:
+                raise ValueError("Invalid value for `events`, must be a valid regular expression")
+
+        self._events = events
 
     @property
     def match(self) -> str:
@@ -142,4 +184,5 @@ class ReleaseMatchSetting(_ReleaseMatchSetting):
         """Convert a dataclass structure to the web model."""
         return ReleaseMatchSetting(branches=struct.branches,
                                    tags=struct.tags,
+                                   events=struct.events,
                                    match=struct.match.name)

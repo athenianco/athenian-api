@@ -52,7 +52,7 @@ async def test_load_store_precomputed_done_smoke(
         samples[-i] = PullRequestFacts.from_fields(**kwargs)
     names = ["one", "two", "three"]
     settings = ReleaseSettings({
-        "github.com/" + k: ReleaseMatchSetting("{{default}}", ".*", ReleaseMatch(i))
+        "github.com/" + k: ReleaseMatchSetting("{{default}}", ".*", ".*", ReleaseMatch(i))
         for i, k in enumerate(names)})
     default_branches = {k: "master" for k in names}
     prs = [MinedPullRequest(
@@ -138,7 +138,7 @@ async def test_load_store_precomputed_done_filters(
     samples = pr_samples(102)  # type: Sequence[PullRequestFacts]
     names = ["one", "two", "three"]
     settings = ReleaseSettings({
-        "github.com/" + k: ReleaseMatchSetting("{{default}}", ".*", ReleaseMatch(i))
+        "github.com/" + k: ReleaseMatchSetting("{{default}}", ".*", ".*", ReleaseMatch(i))
         for i, k in enumerate(names)})
     default_branches = {k: "master" for k in names}
     prs = [MinedPullRequest(
@@ -240,14 +240,15 @@ async def test_load_store_precomputed_done_match_by(
         default_branches, False, settings, prefixer, 1, pdb)
     assert len(loaded_prs) == 1
     settings = ReleaseSettings({
-        "github.com/src-d/go-git": ReleaseMatchSetting("master", ".*", ReleaseMatch.branch),
+        "github.com/src-d/go-git": ReleaseMatchSetting("master", ".*", ".*", ReleaseMatch.branch),
     })
     loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_filters(
         time_from, time_to, ["src-d/go-git"], {}, LabelFilter.empty(),
         default_branches, False, settings, prefixer, 1, pdb)
     assert len(loaded_prs) == 1
     settings = ReleaseSettings({
-        "github.com/src-d/go-git": ReleaseMatchSetting("nope", ".*", ReleaseMatch.tag_or_branch),
+        "github.com/src-d/go-git": ReleaseMatchSetting(
+            "nope", ".*", ".*", ReleaseMatch.tag_or_branch),
     })
     loaded_prs, ambiguous = await done_prs_facts_loader.load_precomputed_done_facts_filters(
         time_from, time_to, ["src-d/go-git"], {}, LabelFilter.empty(),
@@ -255,7 +256,8 @@ async def test_load_store_precomputed_done_match_by(
     assert len(loaded_prs) == 0
     assert len(ambiguous) == 0
     settings = ReleaseSettings({
-        "github.com/src-d/go-git": ReleaseMatchSetting("{{default}}", ".*", ReleaseMatch.tag),
+        "github.com/src-d/go-git": ReleaseMatchSetting(
+            "{{default}}", ".*", ".*", ReleaseMatch.tag),
     })
     loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_filters(
         time_from, time_to, ["src-d/go-git"], {}, LabelFilter.empty(),
@@ -281,7 +283,7 @@ async def test_load_store_precomputed_done_match_by(
     assert len(loaded_prs) == 1
     settings = ReleaseSettings({
         "github.com/src-d/go-git":
-            ReleaseMatchSetting("{{default}}", "vmarkovtsev", ReleaseMatch.tag),
+            ReleaseMatchSetting("{{default}}", "vmarkovtsev", ".*", ReleaseMatch.tag),
     })
     loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_filters(
         time_from, time_to, ["src-d/go-git"], {}, LabelFilter.empty(),
@@ -305,7 +307,7 @@ async def test_load_store_precomputed_done_exclude_inactive(
         if all(d > timedelta(days=2) for d in deltas):
             break
     settings = ReleaseSettings({
-        "github.com/one": ReleaseMatchSetting("{{default}}", ".*", ReleaseMatch.tag),
+        "github.com/one": ReleaseMatchSetting("{{default}}", ".*", ".*", ReleaseMatch.tag),
     })
     prs = [MinedPullRequest(
         pr={PullRequest.created_at.name: s.created,
@@ -375,7 +377,7 @@ async def test_load_precomputed_done_times_reponums_smoke(
     samples = pr_samples(12)  # type: Sequence[PullRequestFacts]
     names = ["one", "two", "three"]
     settings = ReleaseSettings({
-        "github.com/" + k: ReleaseMatchSetting("{{default}}", ".*", ReleaseMatch(i))
+        "github.com/" + k: ReleaseMatchSetting("{{default}}", ".*", ".*", ReleaseMatch(i))
         for i, k in enumerate(names)
     })
     default_branches = {k: "master" for k in names}
@@ -473,7 +475,7 @@ def _gen_one_pr(pr_samples):
     s = samples[0]
     settings = ReleaseSettings({
         "github.com/src-d/go-git": ReleaseMatchSetting(
-            "{{default}}", ".*", ReleaseMatch.tag_or_branch),
+            "{{default}}", ".*", ".*", ReleaseMatch.tag_or_branch),
     })
     prs = [MinedPullRequest(
         pr={PullRequest.created_at.name: s.created,
@@ -718,7 +720,7 @@ async def test_load_precomputed_pr_releases_tag(
         max(s.released.item().replace(tzinfo=timezone.utc) for s in samples) + timedelta(days=1),
         {pr.pr[PullRequest.repository_full_name.name]: ReleaseMatch.tag for pr in prs},
         default_branches, ReleaseSettings({"github.com/src-d/go-git": ReleaseMatchSetting(
-            tags="v.*", branches="", match=ReleaseMatch.tag),
+            tags="v.*", branches="", events="", match=ReleaseMatch.tag),
         }), prefixer, 1, pdb, None)
     assert released_prs.empty
 
@@ -797,7 +799,7 @@ async def test_discover_update_unreleased_prs_smoke(
     unreleased_prs = await merged_prs_facts_loader.load_merged_unreleased_pull_request_facts(
         prs, datetime(2018, 11, 1, tzinfo=utc), LabelFilter.empty(), matched_bys, default_branches,
         ReleaseSettings({"github.com/src-d/go-git": ReleaseMatchSetting(
-            branches="", tags="v.*", match=ReleaseMatch.tag)}),
+            branches="", tags="v.*", events=".*", match=ReleaseMatch.tag)}),
         prefixer, 1, pdb)
     assert len(unreleased_prs) == 0
     releases, matched_bys = await release_loader.load_releases(
@@ -1044,7 +1046,7 @@ async def test_discover_old_merged_unreleased_prs_labels(
 async def test_store_precomputed_done_none_assert(pdb, pr_samples):
     samples = pr_samples(1)  # type: Sequence[PullRequestFacts]
     settings = ReleaseSettings({
-        "github.com/one": ReleaseMatchSetting("{{default}}", ".*", ReleaseMatch.tag),
+        "github.com/one": ReleaseMatchSetting("{{default}}", ".*", ".*", ReleaseMatch.tag),
     })
     default_branches = {"one": "master"}
     prs = [MinedPullRequest(

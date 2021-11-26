@@ -59,5 +59,4 @@ async def test_copy_teams_as_needed(sdb, mdb):
         "team", "engineering", "business", "operations", "product", "admin", "automation",
     }
     assert loaded_teams["product"][Team.members.name] == ["github.com/eiso", "github.com/warenlg"]
-    assert loaded_teams["product"][Team.members_count.name] == 2
     assert loaded_teams["product"][Team.parent_id.name] == 1

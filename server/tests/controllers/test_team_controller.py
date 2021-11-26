@@ -26,7 +26,6 @@ async def test_create_team_smoke(client, headers, sdb, account, disable_default_
     _test_same_team(team, {
         "id": 1,
         "members": ["github.com/se7entyse7en"],
-        "members_count": 1,
         "name": "Engineering",
         "owner_id": account,
         "parent_id": None,
@@ -44,7 +43,6 @@ async def test_create_team_smoke(client, headers, sdb, account, disable_default_
     _test_same_team(team, {
         "id": 2,
         "members": ["github.com/vmarkovtsev"],
-        "members_count": 1,
         "name": "Management",
         "owner_id": account,
         "parent_id": 1,
@@ -66,7 +64,6 @@ async def test_create_team_bot(client, headers, sdb, disable_default_user):
     _test_same_team(team, {
         "id": 1,
         "members": ["github.com/apps/dependabot"],
-        "members_count": 1,
         "name": "Engineering",
         "owner_id": 1,
         "parent_id": None,
@@ -203,7 +200,6 @@ async def test_create_team_same_name(client, headers, sdb, disable_default_user)
     _test_same_team(teams[0], {
         "id": 1,
         "members": ["github.com/se7entyse7en"],
-        "members_count": 1,
         "name": "Engineering",
         "owner_id": 1,
         "parent_id": None,

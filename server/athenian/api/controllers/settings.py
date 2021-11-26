@@ -44,34 +44,37 @@ class ReleaseMatchSetting:
 
     branches: str
     tags: str
+    events: str
     match: ReleaseMatch
 
     def __str__(self) -> str:
         """Return the compact string representation of the object."""
-        return '{"branches": "%s", "tags": "%s", "match": "%s"}' % (
-            self.branches, self.tags, self.match.name)
+        return '{"branches": "%s", "tags": "%s", "events": "%s", "match": "%s"}' % (
+            self.branches, self.tags, self.events, self.match.name)
 
     def __repr__(self) -> str:
         """Return the Python representation of the object."""
-        return 'ReleaseMatchSetting(branches="%s", tags="%s", match=Match["%s"])' % (
-            self.branches, self.tags, self.match.name)
+        return 'ReleaseMatchSetting(branches="%s", tags="%s", events="%s", match=Match["%s"])' % (
+            self.branches, self.tags, self.events, self.match.name)
 
     def with_match(self, match: ReleaseMatch) -> "ReleaseMatchSetting":
         """Clone self and override the effective `match`."""
         return ReleaseMatchSetting(
             tags=self.tags,
             branches=self.branches,
+            events=self.events,
             match=match,
         )
 
     def as_db(self, default_branch: str) -> str:
         """Render database `release_match` value. Works only for specific match types."""
         if self.match == ReleaseMatch.tag:
-            return "tag|" + self.tags
+            return "|".join([ReleaseMatch.tag.name, self.tags])
         if self.match == ReleaseMatch.branch:
-            return "branch|" + self.branches.replace(default_branch_alias, default_branch)
+            return "|".join([ReleaseMatch.branch.name,
+                             self.branches.replace(default_branch_alias, default_branch)])
         if self.match == ReleaseMatch.event:
-            return ReleaseMatch.event.name
+            return "|".join([ReleaseMatch.event.name, self.events])
         if self.match == ReleaseMatch.force_push_drop:
             return ReleaseMatch.force_push_drop.name
         raise AssertionError(f"Impossible release match: {self.match}")
@@ -79,12 +82,14 @@ class ReleaseMatchSetting:
     @classmethod
     def from_db(cls, db: str) -> "ReleaseMatchSetting":
         """Parse the `release_match` value from the database."""
-        if db == ReleaseMatch.event.name:
-            match_name, match_by = db, ""
-        else:
-            match_name, match_by = db.split("|", 1)
+        match_name, match_by = db.split("|", 1)
         release_match = ReleaseMatch[match_name]
-        return ReleaseMatchSetting(branches=match_by, tags=match_by, match=release_match)
+        return ReleaseMatchSetting(
+            branches=match_by,
+            tags=match_by,
+            events=match_by,
+            match=release_match,
+        )
 
     def compatible_with_db(self, db: str, default_branch: str):
         """Check if the release setting is compatible with the database value."""
@@ -96,7 +101,7 @@ class ReleaseMatchSetting:
         elif db_match.match == ReleaseMatch.tag:
             return self.tags == db_match.tags
         elif db_match.match == ReleaseMatch.event:
-            return True
+            return self.events == db_match.events
         raise AssertionError(f"Impossible release match: {db}")
 
     def __lt__(self, other: "ReleaseMatchSetting") -> bool:
@@ -105,7 +110,11 @@ class ReleaseMatchSetting:
             return self.match < other.match
         if self.tags != other.tags:
             return self.tags < other.tags
-        return self.branches < other.branches
+        if self.branches != other.branches:
+            return self.branches < other.branches
+        if self.events != other.events:
+            return self.events < other.events
+        return False
 
 
 class ReleaseSettings:
@@ -310,38 +319,11 @@ class LogicalPRSettings:
         return matched
 
 
-class LogicalReleaseSettings:
-    """Matching rules for event releases in a physical repository."""
-
-    __slots__ = ("_repos", "_re")
-
-    def __init__(self, events: Mapping[str, str]):
-        """Initialize a new instance of LogicalReleaseSettings class."""
-        self._repos = list(events)
-        self._re = re.compile("|".join(f"({p})" for p in events.values()))
-
-    def __str__(self) -> str:
-        """Implement str()."""
-        return str(dict(zip(self._repos, self._re.pattern[1:-1].split(")|("))))
-
-    def __repr__(self) -> str:
-        """Implement repr()."""
-        return f"LogicalReleaseSettings({str(self)})"
-
-    def match_event(self, name: str) -> List[str]:
-        """Find the logical repositories released by the event name."""
-        if (match := self._re.match(name)) is None:
-            return []
-        repos = self._repos
-        return [repos[i] for i, v in enumerate(match.groups()) if v is not None]
-
-
 class LogicalRepositorySettings:
     """Rules for matching PRs, releases, deployments to account-defined sub-repositories."""
 
     def __init__(self,
                  prs: Mapping[str, Any],
-                 releases: Mapping[str, Any],
                  deployments: Mapping[str, Any]):
         """Initialize a new instance of LogicalRepositorySettings class."""
         pr_settings = defaultdict(dict)
@@ -351,35 +333,23 @@ class LogicalRepositorySettings:
             repo: LogicalPRSettings(val, repo) for repo, val in pr_settings.items()
         }
 
-        release_settings = defaultdict(dict)
-        for repo, val in releases.items():
-            release_settings[drop_logical_repo(repo)][repo] = val
-        self._releases = {
-            repo: LogicalReleaseSettings(val) for repo, val in release_settings.items()
-        }
-
     def __str__(self) -> str:
         """Implement str()."""
         prs = [f"{repo}: {val}" for repo, val in sorted(self._prs.items())]
-        releases = [f"{repo}: {val}" for repo, val in sorted(self._releases.items())]
-        return f"prs: {prs}; releases: {releases}"
+        return f"prs: {prs}; deployments: None"
 
     def __repr__(self) -> str:
         """Implement repr()."""
-        return f"LogicalRepositorySettings(prs={repr(self._prs)}, releases={repr(self._releases)})"
+        return f"LogicalRepositorySettings(prs={repr(self._prs)}, deployments=None)"
 
     def has_logical_prs(self) -> bool:
         """Return value indicating whether there are any logical PR settings."""
         return any(self._prs.values())
 
-    def has_logical_releases(self) -> bool:
-        """Return value indicating whether there are any logical release settings."""
-        return bool(self._releases)
-
     @classmethod
     def empty(cls) -> "LogicalRepositorySettings":
         """Initialize clear settings without logical repositories."""
-        return LogicalRepositorySettings({}, {}, {})
+        return LogicalRepositorySettings({}, {})
 
     def all_logical_repos(self) -> Set[str]:
         """Collect all mentioned logical repositories."""
@@ -392,10 +362,6 @@ class LogicalRepositorySettings:
     def prs(self, repo: str) -> Optional[LogicalPRSettings]:
         """Return PR match rules for the given repository native name."""
         return self._prs[repo]
-
-    def releases(self, repo: str) -> LogicalReleaseSettings:
-        """Return release match rules for the given repository native name."""
-        return self._releases[repo]
 
     def has_prs_by_label(self, repos: Optional[Iterable[str]] = None) -> bool:
         """
@@ -536,6 +502,7 @@ class Settings:
                 ReleaseMatchSetting(
                     branches=row[ReleaseSetting.branches.name],
                     tags=row[ReleaseSetting.tags.name],
+                    events=row[ReleaseSetting.events.name],
                     match=ReleaseMatch(row[ReleaseSetting.match.name]),
                 )))
         missing_logical = []
@@ -549,6 +516,7 @@ class Settings:
                     ReleaseMatchSetting(
                         branches=default_branch_alias,
                         tags=".*",
+                        events=".*",
                         match=ReleaseMatch.tag_or_branch,
                     )))
         if missing_logical:
@@ -563,6 +531,7 @@ class Settings:
                                   repos: List[str],
                                   branches: str,
                                   tags: str,
+                                  events: str,
                                   match: ReleaseMatch,
                                   ) -> Set[str]:
         """Set the release matching rule for a list of repositories."""
@@ -605,6 +574,7 @@ class Settings:
                                      account_id=self._account,
                                      branches=branches,
                                      tags=tags,
+                                     events=events,
                                      match=match,
                                      ).create_defaults().explode(with_primary_keys=True)
                       for r in repos]
@@ -650,7 +620,6 @@ class Settings:
                             LogicalRepository.repository_id.in_(repo_ids))),
             )
         prs = {}
-        releases = {}
         deployments = {}
         repo_node_to_name = prefixer.repo_node_to_name.__getitem__
         for row in rows:
@@ -659,8 +628,6 @@ class Settings:
             diff_repos.discard(logical_name)
             if prs_setting := row[LogicalRepository.prs.name]:
                 prs[logical_name] = prs_setting
-            if releases_setting := row[LogicalRepository.releases.name]:
-                releases[logical_name] = releases_setting
             if deployments_setting := row[LogicalRepository.deployments.name]:
                 deployments[logical_name] = deployments_setting
         if diff_repos:
@@ -668,4 +635,4 @@ class Settings:
             raise ResponseError(InvalidRequestError(
                 pointer,
                 detail="Some logical repositories do not exist: %s" % diff_repos))
-        return LogicalRepositorySettings(prs, releases, deployments)
+        return LogicalRepositorySettings(prs, deployments)

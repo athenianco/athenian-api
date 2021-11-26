@@ -18,9 +18,12 @@ from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import ReleaseMatch, Settings
 from athenian.api.models.metadata.github import User as GitHubUser
 from athenian.api.models.metadata.jira import Issue, Project, User as JIRAUser
-from athenian.api.models.state.models import JIRAProjectSetting, MappedJIRAIdentity, WorkType
-from athenian.api.models.web import ForbiddenError, InvalidRequestError, JIRAProject, \
-    JIRAProjectsRequest, MappedJIRAIdentity as WebMappedJIRAIdentity, NotFoundError, \
+from athenian.api.models.state.models import JIRAProjectSetting, LogicalRepository, \
+    MappedJIRAIdentity, WorkType
+from athenian.api.models.web import BadRequestError, ForbiddenError, InvalidRequestError, \
+    JIRAProject, \
+    JIRAProjectsRequest, LogicalPRRules, LogicalRepository as WebLogicalRepository, \
+    MappedJIRAIdentity as WebMappedJIRAIdentity, NotFoundError, \
     ReleaseMatchRequest, ReleaseMatchSetting, SetMappedJIRAIdentitiesRequest, \
     WorkType as WebWorkType, WorkTypeGetRequest, WorkTypePutRequest, WorkTypeRule
 from athenian.api.request import AthenianWebRequest
@@ -55,10 +58,14 @@ async def list_release_match_settings(request: AthenianWebRequest, id: int) -> w
 @disable_default_user
 async def set_release_match(request: AthenianWebRequest, body: dict) -> web.Response:
     """Set the release matching rule for a list of repositories."""
-    rule = ReleaseMatchRequest.from_dict(body)
+    try:
+        rule = ReleaseMatchRequest.from_dict(body)
+    except ValueError as e:
+        raise ResponseError(BadRequestError(str(e))) from e
     settings = Settings.from_request(request, rule.account)
     match = ReleaseMatch[rule.match]
-    repos = await settings.set_release_matches(rule.repositories, rule.branches, rule.tags, match)
+    repos = await settings.set_release_matches(
+        rule.repositories, rule.branches, rule.tags, rule.events or ".*", match)
     return web.json_response(sorted(repos))
 
 
@@ -371,7 +378,35 @@ async def list_work_types(request: AthenianWebRequest, id: int) -> web.Response:
 async def list_logical_repositories(request: AthenianWebRequest, id: int) -> web.Response:
     """List the currently configured logical repositories."""
     await get_user_account_status(request.uid, id, request.sdb, request.cache)
-    raise NotImplementedError()
+    settings = Settings.from_request(request, id)
+
+    async def load_prefixer():
+        meta_ids = await get_metadata_account_ids(id, request.sdb, request.cache)
+        return await Prefixer.load(meta_ids, request.mdb, request.cache)
+
+    prefixer, release_settings, rows = await gather(
+        load_prefixer(),
+        request.sdb.fetch_all(
+            select([LogicalRepository])
+            .where(LogicalRepository.account_id == id),
+        ),
+        settings.list_release_matches(),
+    )
+    models = []
+    for row in rows:
+        repo = prefixer.repo_node_to_name[row[LogicalRepository.repository_id.name]]
+        prs = row[LogicalRepository.prs.name]
+        models.append(WebLogicalRepository(
+            name=row[LogicalRepository.name.name],
+            parent=prefixer.repo_name_to_prefixed_name[repo],
+            prs=LogicalPRRules(
+                title=prs.get("title"),
+                labels_include=prs.get("labels"),
+            ),
+            releases=ReleaseMatchSetting.from_dataclass(release_settings.native[repo]),
+            deployments=None,
+        ))
+    return model_response(models)
 
 
 async def set_logical_repository(request: AthenianWebRequest, body: dict) -> web.Response:

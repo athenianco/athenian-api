@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 import logging
 import pickle
 import re
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
 
 import aiomcache
 import asyncpg
@@ -138,7 +138,10 @@ class ReleaseLoader:
                 if setting.match == ReleaseMatch.tag_or_branch:
                     if match == ReleaseMatch.tag:
                         release_settings.set_by_prefixed(full_repo, ReleaseMatchSetting(
-                            tags=setting.tags, branches=setting.branches, match=ReleaseMatch.tag))
+                            tags=setting.tags,
+                            branches=setting.branches,
+                            events=setting.events,
+                            match=ReleaseMatch.tag))
                         applied_matches[repo] = ReleaseMatch.tag
                     else:
                         # having precomputed branch releases when we want tags does not mean
@@ -283,6 +286,7 @@ class ReleaseLoader:
             settings.set_by_native(repo, ReleaseMatchSetting(
                 tags=setting.tags,
                 branches=setting.branches,
+                events=setting.events,
                 match=match,
             ))
         return settings
@@ -408,7 +412,7 @@ class ReleaseLoader:
     @classmethod
     @sentry_span
     async def _fetch_release_events(cls,
-                                    repos: Sequence[str],
+                                    repos: Mapping[str, str],
                                     account: int,
                                     meta_ids: Tuple[int, ...],
                                     time_from: datetime,
@@ -420,7 +424,7 @@ class ReleaseLoader:
                                     index: Optional[Union[str, Sequence[str]]] = None,
                                     ) -> pd.DataFrame:
         """Load pushed releases from persistentdata DB."""
-        if len(repos) == 0:
+        if not repos:
             return dummy_releases_df(index)
         repo_name_to_node = prefixer.repo_name_to_node.get
         repo_ids = {repo_name_to_node(r): r for r in coerce_logical_repos(repos)}
@@ -446,17 +450,17 @@ class ReleaseLoader:
                            for r in release_rows} - {None}
         queries = []
         queries.extend(
-            select([PushCommit.repository_node_id, PushCommit.node_id, PushCommit.sha])
-            .where(and_(PushCommit.acc_id.in_(meta_ids),
-                        PushCommit.repository_node_id == repo,
-                        func.substr(PushCommit.sha, 1, 7).in_(commits)))
+            select([NodeCommit.repository_id, NodeCommit.node_id, NodeCommit.sha])
+            .where(and_(NodeCommit.acc_id.in_(meta_ids),
+                        NodeCommit.repository_id == repo,
+                        func.substr(NodeCommit.sha, 1, 7).in_(commits)))
             for repo, commits in unresolved_commits_short.items()
         )
         queries.extend(
-            select([PushCommit.repository_node_id, PushCommit.node_id, PushCommit.sha])
-            .where(and_(PushCommit.acc_id.in_(meta_ids),
-                        PushCommit.repository_node_id == repo,
-                        PushCommit.sha.in_(commits)))
+            select([NodeCommit.repository_id, NodeCommit.node_id, NodeCommit.sha])
+            .where(and_(NodeCommit.acc_id.in_(meta_ids),
+                        NodeCommit.repository_id == repo,
+                        NodeCommit.sha.in_(commits)))
             for repo, commits in unresolved_commits_long.items()
         )
         if len(queries) == 1:
@@ -472,9 +476,9 @@ class ReleaseLoader:
             async def resolve_commits():
                 commit_rows = await mdb.fetch_all(sql)
                 for row in commit_rows:
-                    repo = row[PushCommit.repository_node_id.name]
-                    node_id = row[PushCommit.node_id.name]
-                    sha = row[PushCommit.sha.name]
+                    repo = row[NodeCommit.repository_id.name]
+                    node_id = row[NodeCommit.node_id.name]
+                    sha = row[NodeCommit.sha.name]
                     resolved_commits[(repo, sha)] = node_id, sha
                     resolved_commits[(repo, sha[:7])] = node_id, sha
 
@@ -492,8 +496,16 @@ class ReleaseLoader:
 
         releases = []
         updated = []
+        re_cache = {}
         for row in release_rows:
             repo = row[ReleaseNotification.repository_node_id.name]
+            repo_name = repo_ids[repo]
+            try:
+                re_name = re_cache[repo]
+            except KeyError:
+                re_name = re_cache[repo] = re.compile(repos[repo_name])
+            if not re_name.match(repo_name):
+                continue
             if (commit_node_id := row[ReleaseNotification.resolved_commit_node_id.name]) is None:
                 commit_node_id, commit_hash = resolved_commits.get(
                     (repo, commit_prefix := row[ReleaseNotification.commit_hash_prefix.name]),
@@ -506,13 +518,10 @@ class ReleaseLoader:
                 commit_hash = row[ReleaseNotification.resolved_commit_hash.name]
             author = row[ReleaseNotification.author_node_id.name]
             name = row[ReleaseNotification.name.name]
-            repo_name = repo_ids[repo]
             try:
-                logical = logical_settings.releases(repo_name)
+                logical_repos = logical_settings.prs(repo_name).logical_repositories
             except KeyError:
                 logical_repos = [repo_name]
-            else:
-                logical_repos = logical.match_event(name)
             for logical_repo in logical_repos:
                 releases.append({
                     Release.author.name: user_map.get(author, author),
@@ -683,15 +692,15 @@ def _adjust_release_dtypes(df: pd.DataFrame) -> pd.DataFrame:
 
 def group_repos_by_release_match(repos: Iterable[str],
                                  default_branches: Dict[str, str],
-                                 settings: ReleaseSettings,
+                                 release_settings: ReleaseSettings,
                                  ) -> Tuple[Dict[ReleaseMatch, Dict[str, List[str]]],
-                                            List[str],
+                                            Dict[str, str],
                                             int]:
     """
     Aggregate repository lists by specific release matches.
 
     :return: 1. map ReleaseMatch => map Required match regexp => list of repositories. \
-             2. repositories released by push event. \
+             2. repositories released by push event mapped to name regexps. \
              3. number of processed repositories.
     """
     match_groups = {
@@ -699,10 +708,10 @@ def group_repos_by_release_match(repos: Iterable[str],
         ReleaseMatch.branch: {},
     }
     count = 0
-    event_repos = []
+    event_repos = {}
     for repo in repos:
         count += 1
-        rms = settings.native[repo]
+        rms = release_settings.native[repo]
         if rms.match in (ReleaseMatch.tag, ReleaseMatch.tag_or_branch):
             match_groups[ReleaseMatch.tag].setdefault(rms.tags, []).append(repo)
         if rms.match in (ReleaseMatch.branch, ReleaseMatch.tag_or_branch):
@@ -710,7 +719,7 @@ def group_repos_by_release_match(repos: Iterable[str],
                 rms.branches.replace(default_branch_alias, default_branches[repo]), [],
             ).append(repo)
         if rms.match == ReleaseMatch.event:
-            event_repos.append(repo)
+            event_repos[repo] = rms.events
     return match_groups, event_repos, count
 
 

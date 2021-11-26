@@ -101,30 +101,31 @@ async def test_set_release_match_default_user(client, headers):
     assert response.status == 403
 
 
-@pytest.mark.parametrize("code, account, repositories, branches, tags, match", [
-    (400, 1, ["{1}"], None, ".*", ReleaseMatchStrategy.BRANCH),
-    (400, 1, ["{1}"], "", ".*", ReleaseMatchStrategy.TAG_OR_BRANCH),
-    (200, 1, ["{1}"], "", ".*", ReleaseMatchStrategy.TAG),
-    (200, 1, [], "", ".*", ReleaseMatchStrategy.TAG),
-    (400, 1, ["{1}"], None, ".*", ReleaseMatchStrategy.TAG),
-    (400, 1, ["{1}"], "", ".*", ReleaseMatchStrategy.BRANCH),
-    (400, 1, ["{1}"], "(f", ".*", ReleaseMatchStrategy.BRANCH),
-    (400, 1, ["{1}"], ".*", None, ReleaseMatchStrategy.TAG),
-    (400, 1, ["{1}"], ".*", None, ReleaseMatchStrategy.BRANCH),
-    (200, 1, ["{1}"], ".*", "", ReleaseMatchStrategy.BRANCH),
-    (400, 1, ["{1}"], ".*", "", ReleaseMatchStrategy.TAG),
-    (400, 1, ["{1}"], ".*", "", ReleaseMatchStrategy.TAG_OR_BRANCH),
-    (400, 1, ["{1}"], ".*", "(f", ReleaseMatchStrategy.TAG),
-    (422, 2, ["{1}"], ".*", ".*", ReleaseMatchStrategy.BRANCH),
-    (403, 2, ["github.com/athenianco/athenian-api"], ".*", ".*", ReleaseMatchStrategy.BRANCH),
-    (404, 3, ["{1}"], ".*", ".*", ReleaseMatchStrategy.BRANCH),
-    (403, 1, ["{2}"], ".*", ".*", ReleaseMatchStrategy.BRANCH),
-    (400, 1, ["{1}"], ".*", ".*", "whatever"),
-    (400, 1, ["{1}"], ".*", ".*", None),
-    (400, 1, ["{1}"], ".*", ".*", ""),
+@pytest.mark.parametrize("code, account, repositories, branches, tags, events, match", [
+    (400, 1, ["{1}"], None, ".*", {}, ReleaseMatchStrategy.BRANCH),
+    (400, 1, ["{1}"], "", ".*", {}, ReleaseMatchStrategy.TAG_OR_BRANCH),
+    (200, 1, ["{1}"], "", ".*", {}, ReleaseMatchStrategy.TAG),
+    (200, 1, [], "", ".*", {}, ReleaseMatchStrategy.TAG),
+    (400, 1, ["{1}"], None, ".*", {}, ReleaseMatchStrategy.TAG),
+    (400, 1, ["{1}"], "", ".*", {}, ReleaseMatchStrategy.BRANCH),
+    (400, 1, ["{1}"], "(f", ".*", {}, ReleaseMatchStrategy.BRANCH),
+    (400, 1, ["{1}"], ".*", None, {}, ReleaseMatchStrategy.TAG),
+    (400, 1, ["{1}"], ".*", None, {}, ReleaseMatchStrategy.BRANCH),
+    (200, 1, ["{1}"], ".*", "", {}, ReleaseMatchStrategy.BRANCH),
+    (400, 1, ["{1}"], ".*", "", {}, ReleaseMatchStrategy.TAG),
+    (400, 1, ["{1}"], ".*", "", {}, ReleaseMatchStrategy.TAG_OR_BRANCH),
+    (400, 1, ["{1}"], ".*", "(f", {}, ReleaseMatchStrategy.TAG),
+    (422, 2, ["{1}"], ".*", ".*", {}, ReleaseMatchStrategy.BRANCH),
+    (403, 2, ["github.com/athenianco/athenian-api"], ".*", ".*", {}, ReleaseMatchStrategy.BRANCH),
+    (404, 3, ["{1}"], ".*", ".*", {}, ReleaseMatchStrategy.BRANCH),
+    (403, 1, ["{2}"], ".*", ".*", {}, ReleaseMatchStrategy.BRANCH),
+    (400, 1, ["{1}"], ".*", ".*", {}, "whatever"),
+    (400, 1, ["{1}"], ".*", ".*", {}, None),
+    (400, 1, ["{1}"], ".*", ".*", {}, ""),
+    (400, 1, [], "", ".*", {"events": "(f"}, ReleaseMatchStrategy.TAG),
 ])
 async def test_set_release_match_nasty_input(
-        client, headers, sdb, code, account, repositories, branches, tags, match,
+        client, headers, sdb, code, account, repositories, branches, tags, events, match,
         disable_default_user):
     if account == 2 and code == 403:
         await sdb.execute(insert(AccountGitHubAccount).values({
@@ -137,6 +138,7 @@ async def test_set_release_match_nasty_input(
         "branches": branches,
         "tags": tags,
         "match": match,
+        **events,
     }
     response = await client.request(
         method="PUT", path="/v1/settings/release_match", headers=headers, json=body)
@@ -204,6 +206,7 @@ async def test_get_release_match_settings_defaults(client, headers):
     defset = ReleaseMatchSetting(
         branches="{{default}}",
         tags=".*",
+        events=".*",
         match=ReleaseMatchStrategy.TAG_OR_BRANCH,
         default_branch="master",
     )
@@ -220,6 +223,7 @@ async def test_get_release_match_settings_existing(client, headers, sdb):
                        account_id=1,
                        branches="master",
                        tags="v.*",
+                       events=".*",
                        match=ReleaseMatch.tag).create_defaults().explode(with_primary_keys=True)))
     response = await client.request(
         method="GET", path="/v1/settings/release_match/1", headers=headers)
@@ -232,12 +236,14 @@ async def test_get_release_match_settings_existing(client, headers, sdb):
     assert settings["github.com/src-d/go-git"] == ReleaseMatchSetting(
         branches="master",
         tags="v.*",
+        events=".*",
         match=ReleaseMatchStrategy.TAG,
         default_branch="master",
     )
     defset = ReleaseMatchSetting(
         branches="{{default}}",
         tags=".*",
+        events=".*",
         match=ReleaseMatchStrategy.TAG_OR_BRANCH,
         default_branch="whatever",
     )
