@@ -370,7 +370,8 @@ async def list_work_types(request: AthenianWebRequest, id: int) -> web.Response:
 
 async def list_logical_repositories(request: AthenianWebRequest, id: int) -> web.Response:
     """List the currently configured logical repositories."""
-    raise NotImplementedError
+    await get_user_account_status(request.uid, id, request.sdb, request.cache)
+    raise NotImplementedError()
 
 
 async def set_logical_repository(request: AthenianWebRequest, body: dict) -> web.Response:

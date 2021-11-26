@@ -4,14 +4,14 @@ from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.release_match_strategy import ReleaseMatchStrategy
 
 
-class ReleaseMatchSetting(Model):
-    """Release matching setting for a specific repository."""
+class _ReleaseMatchSetting(Model):
+    __enable_slots__ = False
 
     openapi_types = {
         "branches": str,
         "tags": str,
         "match": str,
-        "default_branch": str,
+        "default_branch": Optional[str],
     }
 
     attribute_map = {
@@ -37,13 +37,6 @@ class ReleaseMatchSetting(Model):
         self._tags = tags
         self._match = match
         self._default_branch = default_branch
-
-    @classmethod
-    def from_dataclass(cls, struct) -> "ReleaseMatchSetting":
-        """Convert a dataclass structure to the web model."""
-        return ReleaseMatchSetting(branches=struct.branches,
-                                   tags=struct.tags,
-                                   match=struct.match.name)
 
     @property
     def branches(self) -> str:
@@ -119,7 +112,7 @@ class ReleaseMatchSetting(Model):
         self._match = match
 
     @property
-    def default_branch(self) -> str:
+    def default_branch(self) -> Optional[str]:
         """Gets the default_branch of this ReleaseMatchSetting.
 
         Name of the default branch of this repository.
@@ -129,14 +122,24 @@ class ReleaseMatchSetting(Model):
         return self._default_branch
 
     @default_branch.setter
-    def default_branch(self, default_branch: str):
+    def default_branch(self, default_branch: Optional[str]):
         """Sets the default_branch of this ReleaseMatchSetting.
 
         Name of the default branch of this repository.
 
         :param default_branch: The default_branch of this ReleaseMatchSetting.
         """  # noqa
-        if default_branch is None:
-            raise ValueError("Invalid value for `default_branch`, must not be `None`")
-
         self._default_branch = default_branch
+
+
+class ReleaseMatchSetting(_ReleaseMatchSetting):
+    """Release matching setting for a specific repository."""
+
+    __enable_slots__ = True
+
+    @classmethod
+    def from_dataclass(cls, struct) -> "ReleaseMatchSetting":
+        """Convert a dataclass structure to the web model."""
+        return ReleaseMatchSetting(branches=struct.branches,
+                                   tags=struct.tags,
+                                   match=struct.match.name)

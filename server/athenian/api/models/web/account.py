@@ -111,3 +111,40 @@ class Account(Model):
         :param jira: The jira of this Account.
         """
         self._jira = jira
+
+
+class _Account(Model):
+    __enable_slots__ = False
+
+    openapi_types = {"account": int}
+
+    attribute_map = {"account": "account"}
+
+    def __init__(
+        self,
+        account: Optional[int] = None,
+    ):
+        """ReleaseMatchRequest - a model defined in OpenAPI
+
+        :param account: The account of this Request.
+        """
+        self._account = account
+
+    @property
+    def account(self) -> int:
+        """Gets the account of this Request.
+
+        :return: The account of this Request.
+        """
+        return self._account
+
+    @account.setter
+    def account(self, account: int):
+        """Sets the account of this Request.
+
+        :param account: The account of this Request.
+        """
+        if account is None:
+            raise ValueError("Invalid value for `account`, must not be `None`")
+
+        self._account = account
