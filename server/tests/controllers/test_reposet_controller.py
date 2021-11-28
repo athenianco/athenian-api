@@ -161,13 +161,7 @@ async def test_set_repository_set_409(client, headers, disable_default_user):
     await client.request(
         method="POST", path="/v1/reposet/create", headers=headers, json=body,
     )
-    body = RepositorySetWithName(name="yyy", items=["github.com/src-d/go-git"]).to_dict()
-    response = await client.request(
-        method="PUT", path="/v1/reposet/1", headers=headers, json=body,
-    )
-    assert response.status == 409
-    body["name"] = "xxx"
-    body["items"] = ["github.com/src-d/go-git", "github.com/src-d/gitbase"]
+    body = RepositorySetWithName(name="xxx", items=["github.com/src-d/go-git"]).to_dict()
     response = await client.request(
         method="PUT", path="/v1/reposet/1", headers=headers, json=body,
     )
@@ -221,9 +215,9 @@ async def test_create_repository_set_409(client, headers, disable_default_user):
     response = await client.request(
         method="POST", path="/v1/reposet/create", headers=headers, json=body,
     )
-    assert response.status == 409
+    assert response.status == 200
     body = RepositorySetCreateRequest(
-        1, name="all", items=["github.com/src-d/go-git"]).to_dict()
+        1, name="xxx", items=["github.com/src-d/go-git"]).to_dict()
     response = await client.request(
         method="POST", path="/v1/reposet/create", headers=headers, json=body,
     )

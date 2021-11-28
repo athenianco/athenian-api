@@ -38,6 +38,7 @@ async def with_event_releases(sdb, rdb):
                        account_id=1,
                        branches="master",
                        tags=".*",
+                       events=".*",
                        match=ReleaseMatch.event.value,
                        ).create_defaults().explode(with_primary_keys=True)))
     await rdb.execute(insert(ReleaseNotification).values(ReleaseNotification(
@@ -152,6 +153,7 @@ async def test_filter_repositories_fuck_up(client, headers, sdb, pdb):
                        account_id=1,
                        branches="master",
                        tags=".*",
+                       events=".*",
                        match=ReleaseMatch.branch.value,
                        ).create_defaults().explode(with_primary_keys=True)))
     await pdb.execute(insert(GitHubRelease).values(

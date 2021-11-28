@@ -429,7 +429,7 @@ async def test_calc_pull_request_metrics_line_github_changed_releases(
     )[0][0][0][0][0][0]
     await wait_deferred()
     release_match_setting_tag = ReleaseSettings({
-        "github.com/src-d/go-git": ReleaseMatchSetting("master", ".*", ReleaseMatch.branch),
+        "github.com/src-d/go-git": ReleaseMatchSetting("master", ".*", ".*", ReleaseMatch.branch),
     })
     args[-6] = release_match_setting_tag
     metrics2 = (

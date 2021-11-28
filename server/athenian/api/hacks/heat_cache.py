@@ -277,9 +277,7 @@ def main():
                         .where(RepositorySet.id == reposet.id)
                         .values({RepositorySet.precomputed: True,
                                  RepositorySet.updates_count: RepositorySet.updates_count,
-                                 RepositorySet.updated_at: datetime.now(timezone.utc),
-                                 RepositorySet.items_count: RepositorySet.items_count,
-                                 RepositorySet.items_checksum: RepositorySet.items_checksum}))
+                                 RepositorySet.updated_at: datetime.now(timezone.utc)}))
             finally:
                 await wait_deferred()
             await validate_deployed_prs(pdb, rdb, log, "after")
@@ -313,11 +311,11 @@ async def create_teams(account: int,
     :return: Number of copied teams and the number of noticed bots.
     """
     num_teams = len(await copy_teams_as_needed(account, meta_ids, sdb, mdb, cache))
-    bot_team = await sdb.fetch_one(select([Team.id, Team.members_count])
+    bot_team = await sdb.fetch_one(select([Team.id, Team.members])
                                    .where(and_(Team.name == Team.BOTS,
                                                Team.owner_id == account)))
     if bot_team is not None:
-        return num_teams, bot_team[Team.members_count.name]
+        return num_teams, len(bot_team[Team.members.name])
     settings = Settings.from_account(account, sdb, mdb, None, None)
     release_settings, logical_settings = await gather(
         settings.list_release_matches(repos),

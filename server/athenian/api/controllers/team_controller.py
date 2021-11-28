@@ -66,8 +66,7 @@ async def delete_team(request: AthenianWebRequest, id: int) -> web.Response:
         await sdb_conn.execute(update(Team)
                                .where(Team.parent_id == id)
                                .values({Team.parent_id: None,
-                                        Team.updated_at: datetime.now(timezone.utc),
-                                        Team.members_count: Team.members_count}))
+                                        Team.updated_at: datetime.now(timezone.utc)}))
         await sdb_conn.execute(delete(Team).where(Team.id == id))
     return web.Response()
 

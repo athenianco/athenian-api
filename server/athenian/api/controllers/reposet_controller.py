@@ -186,6 +186,6 @@ async def list_reposets(request: AthenianWebRequest, id: int) -> web.Response:
         name=rs[RepositorySet.name.name],
         created=rs[RepositorySet.created_at.name].replace(tzinfo=timezone.utc),
         updated=rs[RepositorySet.updated_at.name].replace(tzinfo=timezone.utc),
-        items_count=rs[RepositorySet.items_count.name],
+        items_count=len(rs[RepositorySet.items.name]),
     ) for rs in rss]
     return model_response(items)

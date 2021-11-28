@@ -565,7 +565,7 @@ async def test_pr_facts_miner_empty_releases(branches, default_branches, mdb, pd
         branches, default_branches,
         False,
         ReleaseSettings({"github.com/src-d/go-git": ReleaseMatchSetting(
-            branches="unknown", tags="", match=ReleaseMatch.branch)}),
+            branches="unknown", tags="", events="", match=ReleaseMatch.branch)}),
         LogicalRepositorySettings.empty(),
         prefixer,
         1,
@@ -590,7 +590,7 @@ async def test_pr_mine_by_ids(branches, default_branches, dag, mdb, pdb, rdb, ca
     time_to = datetime.combine(date_to, datetime.min.time(), tzinfo=timezone.utc)
     release_settings = ReleaseSettings({
         "github.com/src-d/go-git": ReleaseMatchSetting(
-            branches="unknown", tags="", match=ReleaseMatch.branch),
+            branches="unknown", tags="", events="", match=ReleaseMatch.branch),
     })
     miner, _, _, _ = await pr_miner.mine(
         date_from,

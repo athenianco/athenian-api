@@ -39,7 +39,7 @@ def no_deprecation_warnings():
 def release_match_setting_tag_or_branch():
     return ReleaseSettings({
         "github.com/src-d/go-git": ReleaseMatchSetting(
-            branches="master", tags=".*", match=ReleaseMatch.tag_or_branch),
+            branches="master", tags=".*", events=".*", match=ReleaseMatch.tag_or_branch),
     })
 
 
@@ -47,7 +47,7 @@ def release_match_setting_tag_or_branch():
 def release_match_setting_tag():
     return ReleaseSettings({
         "github.com/src-d/go-git": ReleaseMatchSetting(
-            branches="", tags=".*", match=ReleaseMatch.tag),
+            branches="", tags=".*", events=".*", match=ReleaseMatch.tag),
     })
 
 
@@ -55,7 +55,7 @@ def release_match_setting_tag():
 def release_match_setting_branch():
     return ReleaseSettings({
         "github.com/src-d/go-git": ReleaseMatchSetting(
-            branches=default_branch_alias, tags=".*", match=ReleaseMatch.branch),
+            branches=default_branch_alias, tags=".*", events=".*", match=ReleaseMatch.branch),
     })
 
 
@@ -63,7 +63,7 @@ def release_match_setting_branch():
 def release_match_setting_event():
     return ReleaseSettings({
         "github.com/src-d/go-git": ReleaseMatchSetting(
-            branches="", tags=".*", match=ReleaseMatch.event),
+            branches="", tags=".*", events=".*", match=ReleaseMatch.event),
     })
 
 
@@ -114,7 +114,7 @@ def logical_settings():
     return LogicalRepositorySettings({
         "src-d/go-git/alpha": {"title": ".*[Ff]ix"},
         "src-d/go-git/beta": {"title": ".*[Aa]dd"},
-    }, {}, {})
+    }, {})
 
 
 @pytest.fixture(scope="function")
@@ -138,9 +138,9 @@ def release_match_setting_tag_logical(release_match_setting_tag):
     return ReleaseSettings({
         **release_match_setting_tag.prefixed,
         "github.com/src-d/go-git/alpha": ReleaseMatchSetting(
-            branches="", tags=".*", match=ReleaseMatch.tag),
+            branches="", tags=".*", events=".*", match=ReleaseMatch.tag),
         "github.com/src-d/go-git/beta": ReleaseMatchSetting(
-            branches="", tags=r"v4\..*", match=ReleaseMatch.tag),
+            branches="", tags=r"v4\..*", events=".*", match=ReleaseMatch.tag),
     })
 
 
@@ -151,12 +151,14 @@ async def release_match_setting_tag_logical_db(sdb):
                        account_id=1,
                        branches="master",
                        tags=".*",
+                       events=".*",
                        match=ReleaseMatch.tag).create_defaults().explode(with_primary_keys=True)))
     await sdb.execute(insert(ReleaseSetting).values(
         ReleaseSetting(repository="github.com/src-d/go-git/beta",
                        account_id=1,
                        branches="master",
                        tags=r"v4\..*",
+                       events=".*",
                        match=ReleaseMatch.tag).create_defaults().explode(with_primary_keys=True)))
 
 

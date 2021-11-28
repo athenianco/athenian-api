@@ -851,11 +851,13 @@ async def mine_releases_by_ids(releases: pd.DataFrame,
                 match=ReleaseMatch.tag,
                 branches=v.branches,
                 tags=v.tags,
+                events=v.events,
             )
             settings_branches[k] = ReleaseMatchSetting(
                 match=ReleaseMatch.branch,
                 branches=v.branches,
                 tags=v.tags,
+                events=v.events,
             )
         elif v.match == ReleaseMatch.tag:
             settings_tags[k] = v

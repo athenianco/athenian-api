@@ -206,6 +206,7 @@ async def test_paginate_prs_same_day(client, headers, sdb):
         account_id=1,
         branches="",
         tags=".*",
+        events=".*",
         match=ReleaseMatch.tag,
     ).create_defaults().explode(with_primary_keys=True)))
     print("filter", flush=True)

@@ -1,12 +1,10 @@
-import ctypes
 from datetime import datetime, timezone
 import enum
-import json
 
 from sqlalchemy import BigInteger, Boolean, CheckConstraint, Column, Enum, Float, ForeignKey, \
     ForeignKeyConstraint, func, Integer, JSON, SmallInteger, String, Text, TIMESTAMP, \
     UniqueConstraint
-import xxhash
+from sqlalchemy.dialects.postgresql import JSONB
 
 from athenian.api.models import always_unequal, create_base
 
@@ -14,33 +12,14 @@ from athenian.api.models import always_unequal, create_base
 Base = create_base()
 
 
-def create_collection_mixin(name: str, with_checksum: bool) -> type:
+def create_collection_mixin(name: str) -> type:
     """Create the collections mixin according to the required column name."""
 
     class CollectionMixin:
         name = Column(String(256), nullable=False)
 
-        @staticmethod
-        def count_items(ctx):
-            """Return the number of items in the collection."""
-            return len(ctx.get_current_parameters()[name])
-
-        if with_checksum:
-            @staticmethod
-            def calc_items_checksum(ctx):
-                """Calculate the checksum of the items in the collection."""
-                return ctypes.c_longlong(xxhash.xxh64_intdigest(json.dumps(
-                    ctx.get_current_parameters()[name]))).value
-
-    setattr(CollectionMixin, name, Column(always_unequal(JSON()), nullable=False))
-    setattr(CollectionMixin, f"{name}_count",
-            Column(always_unequal(Integer()), nullable=False, default=CollectionMixin.count_items,
-                   onupdate=CollectionMixin.count_items))
-    if with_checksum:
-        setattr(CollectionMixin, f"{name}_checksum",
-                Column(always_unequal(BigInteger()), nullable=False,
-                       default=CollectionMixin.calc_items_checksum,
-                       onupdate=CollectionMixin.calc_items_checksum))
+    setattr(CollectionMixin, name, Column(always_unequal(JSONB().with_variant(JSON(), "sqlite")),
+                                          nullable=False))
 
     return CollectionMixin
 
@@ -68,12 +47,11 @@ def create_time_mixin(created_at: bool = False,
 
 
 class RepositorySet(create_time_mixin(created_at=True, updated_at=True),
-                    create_collection_mixin("items", with_checksum=True), Base):
+                    create_collection_mixin("items"), Base):
     """A group of repositories identified by an integer."""
 
     __tablename__ = "repository_sets"
-    __table_args__ = (UniqueConstraint("owner_id", "items_checksum", name="uc_owner_items"),
-                      UniqueConstraint("owner_id", "name", name="uc_owner_name2"),
+    __table_args__ = (UniqueConstraint("owner_id", "name", name="uc_owner_name2"),
                       {"sqlite_autoincrement": True})
     ALL = "all"  # <<< constant name of the main reposet
 
@@ -111,7 +89,7 @@ class Account(create_time_mixin(created_at=True), Base):
 
 
 class Team(create_time_mixin(created_at=True, updated_at=True),
-           create_collection_mixin("members", with_checksum=False), Base):
+           create_collection_mixin("members"), Base):
     """Group of users part of the same team."""
 
     __tablename__ = "teams"
@@ -175,12 +153,13 @@ class ReleaseSetting(create_time_mixin(updated_at=True), Base):
 
     __tablename__ = "release_settings"
 
-    repository = Column(String(512), primary_key=True)
+    repository = Column(String(), primary_key=True)
     account_id = Column(Integer(), ForeignKey("accounts.id", name="fk_release_settings_account"),
                         primary_key=True)
-    branches = Column(String(1024))
-    tags = Column(String(1024))
-    match = Column(SmallInteger())
+    branches = Column(String(), nullable=False, server_default="{{default}}")
+    tags = Column(String(), nullable=False, server_default=".*")
+    events = Column(String(), nullable=False, server_default=".*")
+    match = Column(SmallInteger(), nullable=False, server_default="2")
 
 
 class FeatureComponent(enum.IntEnum):
@@ -293,5 +272,4 @@ class LogicalRepository(create_time_mixin(created_at=True, updated_at=True), Bas
     name = Column(Text(), nullable=False)
     repository_id = Column(BigInteger(), nullable=False)
     prs = Column(JSON, nullable=False, default={}, server_default="{}")
-    releases = Column(JSON, nullable=False, default={}, server_default="{}")
     deployments = Column(JSON, nullable=False, default={}, server_default="{}")
