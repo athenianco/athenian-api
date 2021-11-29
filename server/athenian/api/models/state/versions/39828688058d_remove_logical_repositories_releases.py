@@ -17,6 +17,9 @@ depends_on = None
 
 
 def upgrade():
+    op.execute("UPDATE release_settings SET branches = '{{default}}' WHERE branches is null;")
+    op.execute("UPDATE release_settings SET tags = '.*' WHERE tags is null;")
+    op.execute("UPDATE release_settings SET match = 2 WHERE match is null;")
     with op.batch_alter_table("logical_repositories") as bop:
         bop.drop_column("releases")
     with op.batch_alter_table("repository_sets") as bop:
