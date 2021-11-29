@@ -11,9 +11,8 @@ from athenian.api.models.metadata.github import NodePullRequestJiraIssues, PullR
 from athenian.api.models.metadata.jira import Issue
 from athenian.api.models.web import CalculatedJIRAHistogram, CalculatedJIRAMetricValues, \
     CalculatedLinearMetricValues, DeployedComponent, DeploymentNotification, FilteredJIRAStuff, \
-    JIRAEpic, \
-    JIRAEpicChild, JIRAFilterReturn, \
-    JIRAIssueType, JIRALabel, JIRAMetricID, JIRAPriority, JIRAStatus, JIRAUser
+    JIRAEpic, JIRAEpicChild, JIRAFilterReturn, JIRAIssueType, JIRALabel, JIRAMetricID, \
+    JIRAPriority, JIRAStatus, JIRAUser
 from athenian.api.serialization import FriendlyJson
 
 
@@ -673,7 +672,8 @@ async def test_filter_jira_issue_prs_deployments(client, headers, mdb_rw, precom
     }
 
 
-async def test_filter_jira_issue_prs_logical(client, headers, logical_settings_db):
+async def test_filter_jira_issue_prs_logical(
+        client, headers, logical_settings_db, release_match_setting_tag_logical_db):
     body = {
         "date_from": "2019-09-01",
         "date_to": "2022-01-01",

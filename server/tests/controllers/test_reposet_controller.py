@@ -71,7 +71,8 @@ async def test_get_repository_set_logical(client, headers, logical_settings_db):
     assert response.status == 200, "Response body is : " + body
     body = RepositorySetWithName.from_dict(json.loads(body))
     assert body.items == [
-        "github.com/src-d/gitbase", "github.com/src-d/go-git", "github.com/src-d/go-git/alpha",
+        "github.com/src-d/gitbase", "github.com/src-d/go-git",
+        "github.com/src-d/go-git/alpha", "github.com/src-d/go-git/beta",
     ]
     assert body.name == "all"
 

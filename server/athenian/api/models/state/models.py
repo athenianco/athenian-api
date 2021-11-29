@@ -156,10 +156,11 @@ class ReleaseSetting(create_time_mixin(updated_at=True), Base):
     repository = Column(String(), primary_key=True)
     account_id = Column(Integer(), ForeignKey("accounts.id", name="fk_release_settings_account"),
                         primary_key=True)
-    branches = Column(String(), nullable=False, server_default="{{default}}")
-    tags = Column(String(), nullable=False, server_default=".*")
-    events = Column(String(), nullable=False, server_default=".*")
-    match = Column(SmallInteger(), nullable=False, server_default="2")
+    branches = Column(String(), nullable=False, default="{{default}}",
+                      server_default="{{default}}")
+    tags = Column(String(), nullable=False, default=".*", server_default=".*")
+    events = Column(String(), nullable=False, default=".*", server_default=".*")
+    match = Column(SmallInteger(), nullable=False, default=2, server_default="2")
 
 
 class FeatureComponent(enum.IntEnum):

@@ -9,7 +9,8 @@ from sqlalchemy import and_, delete, select, update
 
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached, max_exptime
-from athenian.api.controllers.account import get_account_organizations, get_user_account_status
+from athenian.api.controllers.account import get_account_organizations, get_user_account_status, \
+    only_admin
 from athenian.api.controllers.jira import get_jira_id
 from athenian.api.controllers.user import load_user_accounts
 from athenian.api.db import DatabaseLike
@@ -154,36 +155,33 @@ async def become_user(request: AthenianWebRequest, id: str = "") -> web.Response
     return model_response(user)
 
 
+@only_admin
 async def change_user(request: AthenianWebRequest, body: dict) -> web.Response:
     """Change the status of an account member: regular, admin, or banished (deleted)."""
     aucr = AccountUserChangeRequest.from_dict(body)
     async with request.sdb.connection() as conn:
-        if not await get_user_account_status(request.uid, aucr.account, conn, request.cache):
-            return ResponseError(ForbiddenError(
-                detail="User %s is not an admin of account %d" % (request.uid, aucr.account)),
-            ).response
         users = await request.sdb.fetch_all(
             select([UserAccount]).where(UserAccount.account_id == aucr.account))
         for user in users:
             if user[UserAccount.user_id.name] == aucr.user:
                 break
         else:
-            return ResponseError(NotFoundError(
+            raise ResponseError(NotFoundError(
                 detail="User %s was not found in account %d" % (aucr.user, aucr.account)),
-            ).response
+            )
         if len(users) == 1:
-            return ResponseError(ForbiddenError(
+            raise ResponseError(ForbiddenError(
                 detail="Forbidden to edit the last user of account %d" % aucr.account),
-            ).response
+            )
         admins = set()
         for user in users:
             if user[UserAccount.is_admin.name]:
                 admins.add(user[UserAccount.user_id.name])
         if aucr.status == UserChangeStatus.REGULAR:
             if len(admins) == 1 and aucr.user in admins:
-                return ResponseError(ForbiddenError(
+                raise ResponseError(ForbiddenError(
                     detail="Forbidden to demote the last admin of account %d" % aucr.account),
-                ).response
+                )
             await conn.execute(update(UserAccount)
                                .where(and_(UserAccount.user_id == aucr.user,
                                            UserAccount.account_id == aucr.account))
@@ -195,9 +193,9 @@ async def change_user(request: AthenianWebRequest, body: dict) -> web.Response:
                                .values({UserAccount.is_admin: True}))
         elif aucr.status == UserChangeStatus.BANISHED:
             if len(admins) == 1 and aucr.user in admins:
-                return ResponseError(ForbiddenError(
+                raise ResponseError(ForbiddenError(
                     detail="Forbidden to banish the last admin of account %d" % aucr.account),
-                ).response
+                )
             await conn.execute(delete(UserAccount)
                                .where(and_(UserAccount.user_id == aucr.user,
                                            UserAccount.account_id == aucr.account)))
