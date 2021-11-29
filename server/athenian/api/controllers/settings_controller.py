@@ -386,24 +386,27 @@ async def list_logical_repositories(request: AthenianWebRequest, id: int) -> web
 
     prefixer, release_settings, rows = await gather(
         load_prefixer(),
+        settings.list_release_matches(),
         request.sdb.fetch_all(
             select([LogicalRepository])
             .where(LogicalRepository.account_id == id),
         ),
-        settings.list_release_matches(),
     )
     models = []
     for row in rows:
         repo = prefixer.repo_node_to_name[row[LogicalRepository.repository_id.name]]
+        prefixed_repo = prefixer.repo_name_to_prefixed_name[repo]
+        name = row[LogicalRepository.name.name]
+        full_name = f"{repo}/{name}"
         prs = row[LogicalRepository.prs.name]
         models.append(WebLogicalRepository(
-            name=row[LogicalRepository.name.name],
-            parent=prefixer.repo_name_to_prefixed_name[repo],
+            name=name,
+            parent=prefixed_repo,
             prs=LogicalPRRules(
                 title=prs.get("title"),
                 labels_include=prs.get("labels"),
             ),
-            releases=ReleaseMatchSetting.from_dataclass(release_settings.native[repo]),
+            releases=ReleaseMatchSetting.from_dataclass(release_settings.native[full_name]),
             deployments=None,
         ))
     return model_response(models)

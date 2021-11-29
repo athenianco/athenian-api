@@ -7,7 +7,7 @@ import faker
 import numpy as np
 import pandas as pd
 import pytest
-from sqlalchemy import delete, insert, select
+from sqlalchemy import delete, insert, select, update
 
 from athenian.api import metadata
 from athenian.api.controllers.features.entries import MetricEntriesCalculator
@@ -26,7 +26,7 @@ from athenian.api.models.metadata.github import Branch
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
     DeploymentNotification
 from athenian.api.models.state.models import JIRAProjectSetting, LogicalRepository, \
-    MappedJIRAIdentity, ReleaseSetting
+    MappedJIRAIdentity, ReleaseSetting, RepositorySet
 from athenian.api.typing_utils import wraps
 
 
@@ -160,6 +160,20 @@ async def release_match_setting_tag_logical_db(sdb):
                        tags=r"v4\..*",
                        events=".*",
                        match=ReleaseMatch.tag).create_defaults().explode(with_primary_keys=True)))
+
+
+@pytest.fixture(scope="function")
+async def logical_reposet(sdb):
+    await sdb.execute(update(RepositorySet).where(RepositorySet.id == 1).values({
+        RepositorySet.items: [
+            "github.com/src-d/gitbase",
+            "github.com/src-d/go-git",
+            "github.com/src-d/go-git/alpha",
+            "github.com/src-d/go-git/beta",
+        ],
+        RepositorySet.updated_at: datetime.now(timezone.utc),
+        RepositorySet.updates_count: 2,
+    }))
 
 
 @pytest.fixture(scope="session")

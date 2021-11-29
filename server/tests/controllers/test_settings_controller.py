@@ -12,8 +12,9 @@ from athenian.api.controllers.logical_repos import coerce_logical_repos, contain
 from athenian.api.controllers.settings import ReleaseMatch, Settings
 from athenian.api.models.state.models import AccountGitHubAccount, LogicalRepository, \
     MappedJIRAIdentity, ReleaseSetting, RepositorySet, UserAccount, WorkType
-from athenian.api.models.web import JIRAProject, MappedJIRAIdentity as WebMappedJIRAIdentity, \
-    ReleaseMatchSetting, ReleaseMatchStrategy, WorkType as WebWorkType
+from athenian.api.models.web import JIRAProject, LogicalRepository as WebLogicalRepository, \
+    MappedJIRAIdentity as WebMappedJIRAIdentity, ReleaseMatchSetting, ReleaseMatchStrategy, \
+    WorkType as WebWorkType
 from athenian.api.response import ResponseError
 from athenian.api.serialization import FriendlyJson
 
@@ -777,6 +778,64 @@ async def test_logical_settings_smoke(sdb, mdb, prefixer, with_title, with_label
     assert repo_settings.has_titles == with_title
     assert repo_settings.logical_repositories == \
            {"src-d/go-git", "src-d/go-git/alpha"} if any_with else {"src-d/go-git"}
+
+
+@pytest.fixture(scope="function")
+async def logical_settings_with_labels(sdb):
+    await sdb.execute(insert(LogicalRepository).values(LogicalRepository(
+        account_id=1,
+        name="alpha",
+        repository_id=40550,
+        prs={"title": ".*[Ff]ix", "labels": ["fix"]},
+    ).create_defaults().explode()))
+    await sdb.execute(insert(LogicalRepository).values(LogicalRepository(
+        account_id=1,
+        name="beta",
+        repository_id=40550,
+        prs={"title": ".*[Aa]dd"},
+    ).create_defaults().explode()))
+
+
+async def test_list_logical_repositories_smoke(
+        client, headers, sdb, logical_settings_with_labels, release_match_setting_tag_logical_db,
+        logical_reposet):
+    response = await client.request(
+        method="GET",
+        path="/v1/settings/logical_repositories/1",
+        headers=headers)
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    repos = [WebLogicalRepository.from_dict(d) for d in json.loads(body)]
+    assert len(repos) == 2
+    assert repos[0].name == "alpha"
+    assert repos[0].parent == "github.com/src-d/go-git"
+    assert repos[0].prs.title == ".*[Ff]ix"
+    assert repos[0].prs.labels_include == ["fix"]
+    assert repos[0].releases.match == ReleaseMatch.tag.name
+    assert repos[0].releases.branches == "master"
+    assert repos[0].releases.tags == ".*"
+    assert repos[0].releases.events == ".*"
+    assert repos[1].name == "beta"
+    assert repos[1].parent == "github.com/src-d/go-git"
+    assert repos[1].prs.title == ".*[Aa]dd"
+    assert repos[1].prs.labels_include is None
+    assert repos[1].releases.match == ReleaseMatch.tag.name
+    assert repos[1].releases.branches == "master"
+    assert repos[1].releases.tags == r"v4\..*"
+    assert repos[1].releases.events == ".*"
+
+
+@pytest.mark.parametrize("account, code", [(2, 422), (3, 404)])
+async def test_list_logical_repositories_nasty_input(
+        client, headers, sdb, logical_settings_with_labels, release_match_setting_tag_logical_db,
+        logical_reposet, account, code):
+    response = await client.request(
+        method="GET",
+        path=f"/v1/settings/logical_repositories/{account}",
+        headers=headers)
+    body = (await response.read()).decode("utf-8")
+    assert response.status == code, "Response body is : " + body
+
 
 """
 async def test_delete_logical_repository_smoke(client, headers, logical_settings_db):
