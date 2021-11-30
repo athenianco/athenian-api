@@ -515,20 +515,21 @@ class Settings:
                                   meta_ids: Optional[Tuple[int, ...]] = None,
                                   prefixer: Optional[Prefixer] = None,
                                   dereference: bool = True,
+                                  pointer_root: str = "",
                                   ) -> Set[str]:
         """Set the release matching rule for a list of repositories."""
         for propname, s in (("branches", ReleaseMatch.branch), ("tags", ReleaseMatch.tag)):
             propval = locals()[propname]
             if match in (s, ReleaseMatch.tag_or_branch) and not propval:
                 raise ResponseError(InvalidRequestError(
-                    "." + propname,
+                    f"{pointer_root}.{propname}",
                     detail='Value may not be empty given "match" = "%s"' % match.name),
                 )
             try:
                 re.compile(propval)
             except re.error as e:
                 raise ResponseError(InvalidRequestError(
-                    "." + propname,
+                    f"{pointer_root}.{propname}",
                     detail="Invalid regular expression: %s" % e),
                 ) from None
         if not branches:
@@ -555,14 +556,24 @@ class Settings:
             repos, _ = await resolve_repos(
                 repos, self._account, self._user_id, self._login, logical_settings, meta_ids,
                 self._sdb, self._mdb, self._cache, self._slack, strip_prefix=False)
-        values = [ReleaseSetting(repository=r,
-                                 account_id=self._account,
-                                 branches=branches,
-                                 tags=tags,
-                                 events=events,
-                                 match=match,
-                                 ).create_defaults().explode(with_primary_keys=True)
-                  for r in repos]
+        values = []
+        for repo in repos:
+            if drop_prefixed_logical_repo(repo) != repo:
+                # logical
+                if match not in (ReleaseMatch.tag, ReleaseMatch.event):
+                    raise ResponseError(InvalidRequestError(
+                        f"{pointer_root}.{match}",
+                        detail=f"Logical repository {repo} must be released either by tag or by "
+                               f"submitted event.",
+                    ))
+            values.append(ReleaseSetting(
+                repository=repo,
+                account_id=self._account,
+                branches=branches,
+                tags=tags,
+                events=events,
+                match=match,
+            ).create_defaults().explode(with_primary_keys=True))
         if isinstance(self._sdb, ParallelDatabase):
             sqlite = self._sdb.url.dialect == "sqlite"
         else:
