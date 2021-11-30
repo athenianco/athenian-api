@@ -600,7 +600,11 @@ class PullRequestJiraMapper:
         jira_map = await cls.load_pr_jira_mapping(pr_node_ids, meta_ids, mdb)
         for pr_node_id, jira in jira_map.items():
             for repo in pr_node_ids[pr_node_id]:
-                prs[(pr_node_id, repo)].jira_ids = jira
+                try:
+                    prs[(pr_node_id, repo)].jira_ids = jira
+                except KeyError:
+                    # we removed this PR in JIRA filter
+                    continue
 
     @classmethod
     @sentry_span

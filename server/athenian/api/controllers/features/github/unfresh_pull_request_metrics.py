@@ -106,7 +106,7 @@ class UnfreshPullRequestFactsFetcher:
                 miner, done_facts, jira, meta_ids, mdb, cache))
         else:
             async def identity():
-                return done_facts
+                return
 
             tasks.append(identity())
         if not exclude_inactive:
@@ -121,8 +121,8 @@ class UnfreshPullRequestFactsFetcher:
         (
             (_, matched_bys),
             (unreleased_prs, _, unreleased_labels),
-            done_facts,
-            inactive_merged_prs,
+            _,  # _filter_done_facts_jira
+            inactive_merged_prs,  # _fetch_inactive_merged_unreleased_prs
         ) = await gather(*tasks, op="discover PRs")
         add_pdb_misses(pdb, "load_precomputed_done_facts_filters/ambiguous",
                        remove_ambiguous_prs(done_facts, ambiguous, matched_bys))
@@ -185,17 +185,15 @@ class UnfreshPullRequestFactsFetcher:
                                       meta_ids: Tuple[int, ...],
                                       mdb: ParallelDatabase,
                                       cache: Optional[aiomcache.Client],
-                                      ) -> PullRequestFactsMap:
+                                      ) -> None:
         pr_node_ids = defaultdict(list)
         for node_id, repo in done_facts:
             pr_node_ids[node_id].append(repo)
         filtered = await miner.filter_jira(
             pr_node_ids, jira, meta_ids, mdb, cache, columns=[PullRequest.node_id])
-        return {
-            (node_id, repo): done_facts[(node_id, repo)]
-            for node_id in filtered.index.values
-            for repo in pr_node_ids[node_id]
-        }
+        for node_id in pr_node_ids.keys() - set(filtered.index.values):
+            for repo in pr_node_ids[node_id]:
+                del done_facts[(node_id, repo)]
 
     @classmethod
     @sentry_span
