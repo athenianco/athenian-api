@@ -131,14 +131,9 @@ def triage_by_release_match(repo: str,
     # DEV-1451: if we don't have this repository in the release settings, then it is deleted
     assert repo in release_settings.native, \
         f"You must take care of deleted repositories separately: {repo}"
-    if release_match in (ReleaseMatch.rejected.name,
-                         ReleaseMatch.force_push_drop.name):
+    if release_match in (ReleaseMatch.rejected.name, ReleaseMatch.force_push_drop.name):
         return result
     required_release_match = release_settings.native[repo]
-    if release_match == ReleaseMatch.event.name:
-        if required_release_match.match == ReleaseMatch.event:
-            return result
-        return None
     match_name, match_by = release_match.split("|", 1)
     match = ReleaseMatch[match_name]
     if required_release_match.match != ReleaseMatch.tag_or_branch:
@@ -152,6 +147,8 @@ def triage_by_release_match(repo: str,
     elif match == ReleaseMatch.branch:
         target = required_release_match.branches.replace(
             default_branch_alias, default_branches.get(repo, default_branch_alias))
+    elif match == ReleaseMatch.event:
+        target = required_release_match.events
     else:
         raise AssertionError("Precomputed DB may not contain Match.tag_or_branch")
     if target != match_by:

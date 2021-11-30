@@ -9,7 +9,7 @@ import pandas as pd
 from pandas.core.dtypes.common import is_datetime64_any_dtype
 from pandas.testing import assert_frame_equal
 import pytest
-from sqlalchemy import select, update
+from sqlalchemy import delete, insert, select, update
 
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
@@ -25,8 +25,9 @@ import athenian.api.db
 from athenian.api.defer import launch_defer, wait_deferred, with_defer, with_explicit_defer
 from athenian.api.models.metadata.github import Branch, PullRequest
 from athenian.api.models.metadata.jira import Issue
+from athenian.api.models.persistentdata.models import ReleaseNotification
 from athenian.api.models.precomputed.models import GitHubCommitHistory, \
-    GitHubMergedPullRequestFacts
+    GitHubDonePullRequestFacts, GitHubMergedPullRequestFacts
 from tests.conftest import has_memcached
 from tests.controllers.conftest import FakeFacts, fetch_dag
 from tests.controllers.test_filter_controller import force_push_dropped_go_git_pr_numbers
@@ -1204,3 +1205,40 @@ async def test_fetch_prs_dead(mdb, pdb, branch_miner, pr_miner, prefixer):
     assert not (set(dag["src-d/go-git"][0]) - set(pdb_dag.hashes))
     for i in range(3):
         assert (xdags["src-d/go-git"][i] == pdb_dag[["hashes", "vertexes", "edges"][i]]).all()
+
+
+@with_defer
+async def test_mine_pull_requests_event_releases(
+        metrics_calculator_factory, release_match_setting_event, mdb, pdb, rdb, prefixer):
+    time_from = datetime(2018, 9, 1, tzinfo=timezone.utc)
+    time_to = datetime(2019, 11, 19, tzinfo=timezone.utc)
+    await rdb.execute(insert(ReleaseNotification).values(ReleaseNotification(
+        account_id=1,
+        repository_node_id=40550,
+        commit_hash_prefix="1edb992",
+        name="Pushed!",
+        author_node_id=40020,
+        url="www",
+        published_at=datetime(2019, 9, 1, tzinfo=timezone.utc),
+    ).create_defaults().explode(with_primary_keys=True)))
+    args = (time_from, time_to, {"src-d/go-git"}, {},
+            LabelFilter.empty(), JIRAFilter.empty(),
+            False, release_match_setting_event, LogicalRepositorySettings.empty(),
+            prefixer, False, False)
+    calc = metrics_calculator_factory(1, (6366825,))
+    facts1 = await calc.calc_pull_request_facts_github(*args)
+    facts1.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
+    await wait_deferred()
+    await pdb.execute(
+        delete(GitHubDonePullRequestFacts)
+        .where(GitHubDonePullRequestFacts.pr_node_id == 163529))
+    await pdb.execute(
+        update(GitHubMergedPullRequestFacts)
+        .where(GitHubMergedPullRequestFacts.pr_node_id == 163529)
+        .values({
+            GitHubMergedPullRequestFacts.checked_until: datetime.now(timezone.utc),
+            GitHubMergedPullRequestFacts.updated_at: datetime.now(timezone.utc),
+        }))
+    facts2 = await calc.calc_pull_request_facts_github(*args)
+    facts2.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
+    assert_frame_equal(facts1.iloc[1:], facts2.iloc[1:])
