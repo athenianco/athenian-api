@@ -294,23 +294,25 @@ class LogicalPRSettings:
             found_indexes = np.searchsorted(pr_ids, label_pr_ids)
             found_indexes[found_indexes == len(pr_ids)] = 0
             label_pr_indexes = np.flatnonzero(pr_ids[found_indexes] == label_pr_ids)
-            reverse_indexes = pr_indexes[order][found_indexes[label_pr_indexes]]
-            names = labels[PullRequestLabel.name.name].values[label_pr_indexes]
-            unique_names, name_map, counts = np.unique(
-                names, return_inverse=True, return_counts=True)
-            grouped_pr_indexes = np.split(
-                reverse_indexes[np.argsort(name_map)], np.cumsum(counts[:-1]))
-            label_keys = np.array(list(self._labels.keys()))
-            label_values = np.array(list(self._labels.values()))
-            found_indexes = np.searchsorted(unique_names, label_keys)
-            found_indexes[found_indexes == len(unique_names)] = 0
-            mask = unique_names[found_indexes] == label_keys
-            for label_index, repos in zip(found_indexes[mask], label_values[mask]):
-                label_pr_indexes = grouped_pr_indexes[label_index]
-                for repo in repos:
-                    matched_by_label[repo].append(label_pr_indexes)
-            for repo, label_matches in matched_by_label.items():
-                matched[repo] = np.unique(np.concatenate([matched.get(repo, []), *label_matches]))
+            if len(label_pr_indexes):
+                reverse_indexes = pr_indexes[order][found_indexes[label_pr_indexes]]
+                names = labels[PullRequestLabel.name.name].values[label_pr_indexes]
+                unique_names, name_map, counts = np.unique(
+                    names, return_inverse=True, return_counts=True)
+                grouped_pr_indexes = np.split(
+                    reverse_indexes[np.argsort(name_map)], np.cumsum(counts[:-1]))
+                label_keys = np.array(list(self._labels.keys()))
+                label_values = np.array(list(self._labels.values()))
+                found_indexes = np.searchsorted(unique_names, label_keys)
+                found_indexes[found_indexes == len(unique_names)] = 0
+                mask = unique_names[found_indexes] == label_keys
+                for label_index, repos in zip(found_indexes[mask], label_values[mask]):
+                    label_pr_indexes = grouped_pr_indexes[label_index]
+                    for repo in repos:
+                        matched_by_label[repo].append(label_pr_indexes)
+                for repo, label_matches in matched_by_label.items():
+                    matched[repo] = np.unique(np.concatenate(
+                        [matched.get(repo, []), *label_matches]))
         try:
             concat_logical = np.unique(np.concatenate(list(matched.values())))
             generic = np.setdiff1d(pr_indexes, concat_logical, assume_unique=True)
