@@ -467,6 +467,8 @@ class ReleaseToPullRequestMapper:
         lookbehind_depth = time_from - timedelta(days=5 * 7)
         # if our initial guess failed, load releases until this exponential offset
         depth_step = timedelta(days=3 * 31)
+        # we load all previous releases when we reach this depth
+        lookbehind_depth_limit = time_from - timedelta(days=365)
         most_recent_time = time_from - timedelta(seconds=1)
 
         async def fetch_dags() -> Dict[str, DAG]:
@@ -560,6 +562,9 @@ class ReleaseToPullRequestMapper:
                 most_recent_time = lookbehind_depth - timedelta(seconds=1)
                 lookbehind_depth -= depth_step
                 depth_step *= 2
+                if lookbehind_depth < lookbehind_depth_limit:
+                    lookbehind_depth = \
+                        min(repo_births[drop_logical_repo(r)] for r in not_enough_repos)
                 releases_previous_older, _ = await cls.release_loader.load_releases(
                     existing_repos, branches, default_branches,
                     lookbehind_depth, most_recent_time,

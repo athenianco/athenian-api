@@ -799,12 +799,12 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
             missed_merged_unreleased_facts_counter = 0
         bad_prs = []
         for i, pr in enumerate(prs):
-            node_id = pr.pr[PullRequest.node_id.name]
-            if node_id not in facts:
+            node_id, repo = \
+                pr.pr[PullRequest.node_id.name], pr.pr[PullRequest.repository_full_name.name]
+            if (node_id, repo) not in facts:
                 fact_evals += 1
                 if (fact_evals + 1) % COROUTINE_YIELD_EVERY_ITER == 0:
                     await asyncio.sleep(0)
-                repo = pr.pr[PullRequest.repository_full_name.name]
                 try:
                     facts[(node_id, repo)] = pr_facts = facts_miner(pr)
                 except ImpossiblePullRequest:
@@ -1088,8 +1088,9 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
         facts_miner = PullRequestFactsMiner(await bots(mdb))
         pdb_misses = 0
         for pr in prs:
-            if (node_id := pr.pr[PullRequest.node_id.name]) not in facts:
-                repo = pr.pr[PullRequest.repository_full_name.name]
+            node_id, repo = \
+                pr.pr[PullRequest.node_id.name], pr.pr[PullRequest.repository_full_name.name]
+            if (node_id, repo) not in facts:
                 try:
                     facts[(node_id, repo)] = facts_miner(pr)
                 except ImpossiblePullRequest:
