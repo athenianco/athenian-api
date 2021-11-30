@@ -195,6 +195,38 @@ async def test_set_release_match_422(
     assert response.status == code, await response.read()
 
 
+async def test_set_release_match_logical(
+        client, headers, sdb, disable_default_user, release_match_setting_tag_logical_db):
+    body = {
+        "repositories": ["github.com/src-d/go-git/alpha"],
+        "account": 1,
+        "branches": "master",
+        "tags": ".*",
+        "match": ReleaseMatchStrategy.EVENT,
+    }
+    response = await client.request(
+        method="PUT", path="/v1/settings/release_match", headers=headers, json=body)
+    assert response.status == 200, await response.read()
+    match = await sdb.fetch_val(
+        select([ReleaseSetting.match])
+        .where(ReleaseSetting.repository == "github.com/src-d/go-git/alpha"))
+    assert match == 3
+
+
+async def test_set_release_match_logical_fail(
+        client, headers, sdb, disable_default_user, release_match_setting_tag_logical_db):
+    body = {
+        "repositories": ["github.com/src-d/go-git/alpha"],
+        "account": 1,
+        "branches": "master",
+        "tags": ".*",
+        "match": ReleaseMatchStrategy.TAG_OR_BRANCH,
+    }
+    response = await client.request(
+        method="PUT", path="/v1/settings/release_match", headers=headers, json=body)
+    assert response.status == 400, await response.read()
+
+
 async def test_get_release_match_settings_defaults(client, headers):
     response = await client.request(
         method="GET", path="/v1/settings/release_match/1", headers=headers)
@@ -942,14 +974,15 @@ async def test_set_logical_repository_replace(
     await _test_set_logical_repository(client, headers, sdb, 2)
 
 
-@pytest.mark.parametrize("account, name, parent, code", [
-    (2, "alpha", "github.com/src-d/go-git", 403),
-    (3, "alpha", "github.com/src-d/go-git", 404),
-    (1, "alpha", "github.com/athenianco/athenian-api", 403),
-    (1, "", "github.com/src-d/go-git", 400),
+@pytest.mark.parametrize("account, name, parent, match, code", [
+    (2, "alpha", "github.com/src-d/go-git", "tag", 403),
+    (3, "alpha", "github.com/src-d/go-git", "tag", 404),
+    (1, "alpha", "github.com/athenianco/athenian-api", "tag", 403),
+    (1, "", "github.com/src-d/go-git", "tag", 400),
+    (1, "alpha", "github.com/src-d/go-git", "branch", 400),
 ])
 async def test_set_logical_repository_nasty_input(
-        client, headers, account, name, parent, code):
+        client, headers, account, name, parent, match, code):
     body = {
         "account": account,
         "name": name,
@@ -960,7 +993,7 @@ async def test_set_logical_repository_nasty_input(
         "releases": {
             "branches": "master",
             "tags": "v.*",
-            "match": "tag",
+            "match": match,
         },
     }
     response = await client.request(
