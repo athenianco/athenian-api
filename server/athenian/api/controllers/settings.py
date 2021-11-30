@@ -6,20 +6,21 @@ from typing import Any, Callable, Collection, Coroutine, Dict, FrozenSet, Genera
     List, Mapping, Optional, Sequence, Set, Tuple
 
 import aiomcache
+import aiosqlite.core
 import numpy as np
 import pandas as pd
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
-from sqlalchemy import and_, delete, insert, select
+from sqlalchemy import and_, insert, select
+from sqlalchemy.dialects.postgresql import insert as postgres_insert
 
 from athenian.api.controllers.account import get_account_repositories, get_metadata_account_ids
 from athenian.api.controllers.logical_repos import coerce_logical_repos, \
-    coerce_prefixed_logical_repos, drop_logical_repo, \
-    drop_prefixed_logical_repo
+    coerce_prefixed_logical_repos, drop_logical_repo, drop_prefixed_logical_repo
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.reposet import resolve_repos
-from athenian.api.db import ParallelDatabase
+from athenian.api.db import DatabaseLike, ParallelDatabase
 from athenian.api.models.metadata.github import PullRequest, PullRequestLabel
-from athenian.api.models.state.models import LogicalRepository, ReleaseSetting, RepositorySet
+from athenian.api.models.state.models import LogicalRepository, ReleaseSetting
 from athenian.api.models.web import InvalidRequestError, MissingSettingsError, ReleaseMatchStrategy
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError
@@ -379,25 +380,6 @@ class LogicalRepositorySettings:
                 continue
         return False
 
-    def append_logical_repos_to_reposet(self, rs: RepositorySet) -> Collection[str]:
-        """Insert all the configured logical repositories that point at the physical repositories \
-        in the repository set."""
-        if not self.has_logical_prs():
-            return rs.items
-        repos = set(rs.items)
-        for repo in rs.items:
-            regexp = re.compile(rs.tracking_re)
-            prefix, native_repo = repo.split("/", 1)
-            prefix += "/"
-            try:
-                logical_repos = self.prs(native_repo).logical_repositories
-            except KeyError:
-                continue
-            for logical_repo in logical_repos:
-                if regexp.fullmatch(logical_repo):
-                    repos.add(prefix + logical_repo)
-        return repos
-
     def append_logical_repos(self, items: Collection[str]) -> Collection[str]:
         """
         Extend the physical repositories with their configured logical components.
@@ -428,17 +410,15 @@ class Settings:
                  account: int,
                  user_id: Optional[str],
                  login: Optional[Callable[[], Coroutine[None, None, str]]],
-                 sdb: ParallelDatabase,
-                 mdb: ParallelDatabase,
+                 sdb: DatabaseLike,
+                 mdb: DatabaseLike,
                  cache: Optional[aiomcache.Client],
                  slack: Optional[SlackWebClient]):
         """Initialize a new instance of Settings class."""
         self._account = account
         self._user_id = user_id
         self._login = login
-        assert isinstance(sdb, ParallelDatabase)
         self._sdb = sdb
-        assert isinstance(mdb, ParallelDatabase)
         self._mdb = mdb
         self._cache = cache
         self._slack = slack
@@ -484,14 +464,13 @@ class Settings:
         :param repos: *Prefixed* repository names. If is None, load all the repositories \
                       belonging to the account.
         """
-        async with self._sdb.connection() as sdb_conn:
-            if repos is None:
-                repos = await get_account_repositories(self._account, True, sdb_conn)
-            repos = set(repos).union(coerce_prefixed_logical_repos(repos).keys())
-            rows = await sdb_conn.fetch_all(
-                select([ReleaseSetting])
-                .where(and_(ReleaseSetting.account_id == self._account,
-                            ReleaseSetting.repository.in_(repos))))
+        if repos is None:
+            repos = await get_account_repositories(self._account, True, self._sdb)
+        repos = set(repos).union(coerce_prefixed_logical_repos(repos).keys())
+        rows = await self._sdb.fetch_all(
+            select([ReleaseSetting])
+            .where(and_(ReleaseSetting.account_id == self._account,
+                        ReleaseSetting.repository.in_(repos))))
         settings = []
         loaded = set()
         for row in rows:
@@ -521,7 +500,7 @@ class Settings:
                     )))
         if missing_logical:
             raise ResponseError(MissingSettingsError(
-                detail=f"Logical repositories must have releases settings: {missing_logical}",
+                detail=f"Logical repositories must have release settings: {missing_logical}",
             ))
         settings.sort()
         settings = dict(settings)
@@ -533,6 +512,9 @@ class Settings:
                                   tags: str,
                                   events: str,
                                   match: ReleaseMatch,
+                                  meta_ids: Optional[Tuple[int, ...]] = None,
+                                  prefixer: Optional[Prefixer] = None,
+                                  dereference: bool = True,
                                   ) -> Set[str]:
         """Set the release matching rule for a list of repositories."""
         for propname, s in (("branches", ReleaseMatch.branch), ("tags", ReleaseMatch.tag)):
@@ -554,38 +536,58 @@ class Settings:
         if not tags:
             tags = ".*"
 
-        try:
-            meta_ids = await get_metadata_account_ids(self._account, self._sdb, self._cache)
-        except ResponseError as e:
-            if repos:
-                raise e from None
-            meta_ids = None
-            logical_settings = LogicalRepositorySettings.empty()
+        if dereference:
+            try:
+                if meta_ids is None:
+                    meta_ids = await get_metadata_account_ids(
+                        self._account, self._sdb, self._cache)
+            except ResponseError as e:
+                if repos:
+                    raise e from None
+                meta_ids = None
+                logical_settings = LogicalRepositorySettings.empty()
+            else:
+                if prefixer is None:
+                    prefixer = await Prefixer.load(meta_ids, self._mdb, self._cache)
+                settings = Settings.from_account(
+                    self._account, self._sdb, self._mdb, self._cache, self._slack)
+                logical_settings = await settings.list_logical_repositories(prefixer)
+            repos, _ = await resolve_repos(
+                repos, self._account, self._user_id, self._login, logical_settings, meta_ids,
+                self._sdb, self._mdb, self._cache, self._slack, strip_prefix=False)
+        values = [ReleaseSetting(repository=r,
+                                 account_id=self._account,
+                                 branches=branches,
+                                 tags=tags,
+                                 events=events,
+                                 match=match,
+                                 ).create_defaults().explode(with_primary_keys=True)
+                  for r in repos]
+        if isinstance(self._sdb, ParallelDatabase):
+            sqlite = self._sdb.url.dialect == "sqlite"
         else:
-            prefixer = await Prefixer.load(meta_ids, self._mdb, self._cache)
-            settings = Settings.from_account(
-                self._account, self._sdb, self._mdb, self._cache, self._slack)
-            logical_settings = await settings.list_logical_repositories(prefixer)
-        repos, _ = await resolve_repos(
-            repos, self._account, self._user_id, self._login, logical_settings, meta_ids,
-            self._sdb, self._mdb, self._cache, self._slack, strip_prefix=False)
-        async with self._sdb.connection() as conn:
-            values = [ReleaseSetting(repository=r,
-                                     account_id=self._account,
-                                     branches=branches,
-                                     tags=tags,
-                                     events=events,
-                                     match=match,
-                                     ).create_defaults().explode(with_primary_keys=True)
-                      for r in repos]
-            query = insert(ReleaseSetting).prefix_with("OR REPLACE", dialect="sqlite")
-            async with conn.transaction():
-                if self._sdb.url.dialect != "sqlite":
-                    await conn.execute(delete(ReleaseSetting).where(and_(
-                        ReleaseSetting.account_id == self._account,
-                        ReleaseSetting.repository.in_(repos),
-                    )))
-                await conn.execute_many(query, values)
+            sqlite = isinstance(self._sdb.raw_connection, aiosqlite.core.Connection)
+        if sqlite:
+            query = insert(ReleaseSetting).prefix_with("OR REPLACE")
+        else:
+            query = postgres_insert(ReleaseSetting)
+            query = query.on_conflict_do_update(
+                constraint=ReleaseSetting.__table__.primary_key,
+                set_={
+                    ReleaseSetting.match.name: query.excluded.match,
+                    ReleaseSetting.branches.name: query.excluded.branches,
+                    ReleaseSetting.tags.name: query.excluded.tags,
+                    ReleaseSetting.events.name: query.excluded.events,
+                    ReleaseSetting.updated_at.name: query.excluded.updated_at,
+                },
+            )
+
+        if isinstance(self._sdb, ParallelDatabase):
+            async with self._sdb.connection() as sdb_conn:
+                async with sdb_conn.transaction():
+                    await sdb_conn.execute_many(query, values)
+        else:
+            await self._sdb.execute_many(query, values)
         return repos
 
     async def list_logical_repositories(self,
@@ -600,25 +602,24 @@ class Settings:
                       belonging to the account.
         :param pointer: Optional pointer to the web model for error reporting.
         """
-        async with self._sdb.connection() as sdb_conn:
-            if repos is None:
-                try:
-                    repos = await get_account_repositories(self._account, False, sdb_conn)
-                except ResponseError:
-                    repos = []
-                diff_repos = set()
-            else:
-                repos = {r.split("/", 1)[1] for r in repos}
-                logical_repos = coerce_logical_repos(repos)
-                diff_repos = repos - logical_repos.keys()
-                repos = logical_repos.keys()
-            repo_name_to_node = prefixer.repo_name_to_node.get
-            repo_ids = [n for r in repos if (n := repo_name_to_node(r))]
-            rows = await sdb_conn.fetch_all(
-                select([LogicalRepository])
-                .where(and_(LogicalRepository.account_id == self._account,
-                            LogicalRepository.repository_id.in_(repo_ids))),
-            )
+        if repos is None:
+            try:
+                repos = await get_account_repositories(self._account, False, self._sdb)
+            except ResponseError:
+                repos = []
+            diff_repos = set()
+        else:
+            repos = {r.split("/", 1)[1] for r in repos}
+            logical_repos = coerce_logical_repos(repos)
+            diff_repos = repos - logical_repos.keys()
+            repos = logical_repos.keys()
+        repo_name_to_node = prefixer.repo_name_to_node.get
+        repo_ids = [n for r in repos if (n := repo_name_to_node(r))]
+        rows = await self._sdb.fetch_all(
+            select([LogicalRepository])
+            .where(and_(LogicalRepository.account_id == self._account,
+                        LogicalRepository.repository_id.in_(repo_ids))),
+        )
         prs = {}
         deployments = {}
         repo_node_to_name = prefixer.repo_node_to_name.__getitem__

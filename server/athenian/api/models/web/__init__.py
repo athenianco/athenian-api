@@ -120,6 +120,7 @@ from athenian.api.models.web.linked_jira_issue import LinkedJIRAIssue
 from athenian.api.models.web.listed_token import ListedToken
 from athenian.api.models.web.logical_pr_rules import LogicalPRRules
 from athenian.api.models.web.logical_repository import LogicalRepository
+from athenian.api.models.web.logical_repository_get_request import LogicalRepositoryGetRequest
 from athenian.api.models.web.logical_repository_request import LogicalRepositoryRequest
 from athenian.api.models.web.mapped_jira_identity import MappedJIRAIdentity
 from athenian.api.models.web.mapped_jira_identity_change import MappedJIRAIdentityChange

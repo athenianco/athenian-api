@@ -38,11 +38,13 @@ The tokens are not saved anywhere and cannot be recovered.
 ### Broken authentication
 
 #### Threat
-A hacker breaks the existing authentication and forges the user.
+A hacker breaks the existing authentication and forges the user. [CSRF](https://en.wikipedia.org/wiki/Cross-site_request_forgery)-s.
 
 #### Mitigation
 We delegate the work with JWTs and API Keys to reliable partners - Auth0 and Google. Both mechanisms
 exclude brute force attacks. The code that parses JWTs is covered with an extensive test suite.
+CSRF is impossible because we don't use cookies and user sessions. Besides, we don't allow any
+side effects in GET requests.
 
 ### Anonymous users access unauthorized accounts
 

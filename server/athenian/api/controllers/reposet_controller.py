@@ -9,11 +9,9 @@ from sqlalchemy import and_, delete, insert, select, update
 
 from athenian.api.auth import disable_default_user
 from athenian.api.controllers.account import get_metadata_account_ids, \
-    get_metadata_account_ids_or_empty, get_user_account_status
+    get_user_account_status, only_admin
 from athenian.api.controllers.miners.access_classes import access_classes
-from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.reposet import fetch_reposet, load_account_reposets
-from athenian.api.controllers.settings import Settings
 from athenian.api.models.state.models import RepositorySet
 from athenian.api.models.web import CreatedIdentifier, DatabaseConflict, ForbiddenError, \
     InvalidRequestError, RepositorySetWithName
@@ -24,18 +22,15 @@ from athenian.api.response import model_response, ResponseError
 
 
 @disable_default_user
+@only_admin
 async def create_reposet(request: AthenianWebRequest, body: dict) -> web.Response:
     """Create a repository set.
 
     :param body: List of repositories to group.
     """
     body = RepositorySetCreateRequest.from_dict(body)
-    user = request.uid
     account = body.account
     async with request.sdb.connection() as sdb_conn:
-        if not await get_user_account_status(user, account, sdb_conn, request.cache):
-            raise ResponseError(ForbiddenError(
-                detail="User %s is not an admin of the account %d" % (user, account)))
         dupe_id = await sdb_conn.fetch_val(select([RepositorySet.id])
                                            .where(and_(RepositorySet.owner_id == account,
                                                        RepositorySet.name == body.name)))
@@ -80,17 +75,8 @@ async def get_reposet(request: AthenianWebRequest, id: int) -> web.Response:
         RepositorySet.tracking_re,
     ]
     rs, _ = await fetch_reposet(id, rs_cols, request.uid, request.sdb, request.cache)
-    meta_ids = await get_metadata_account_ids_or_empty(rs.owner_id, request.sdb, request.cache)
-    if meta_ids:
-        # append logical repositories, if they exist
-        prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
-        settings = Settings.from_request(request, rs.owner_id)
-        logical_settings = await settings.list_logical_repositories(prefixer, rs.items)
-        repos = logical_settings.append_logical_repos_to_reposet(rs)
-    else:
-        repos = set(rs.items)
     return model_response(RepositorySetWithName(
-        name=rs.name, items=sorted(repos), precomputed=rs.precomputed))
+        name=rs.name, items=rs.items, precomputed=rs.precomputed))
 
 
 async def _check_reposet(request: AthenianWebRequest,

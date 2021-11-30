@@ -66,7 +66,7 @@ async def resolve_reposet(repo: str,
         raise ResponseError(ForbiddenError(
             detail="User %s is not allowed to reference reposet %d in this query" %
                    (uid, set_id)))
-    return logical_settings.append_logical_repos_to_reposet(rs)
+    return rs.items
 
 
 @sentry_span
@@ -114,7 +114,7 @@ async def load_all_reposet(account: int,
         sdb, mdb, cache, slack)
     for rs in rss:
         if rs[RepositorySet.name.name] == RepositorySet.ALL:
-            return [logical_settings.append_logical_repos_to_reposet(RepositorySet(**rs))]
+            return [rs[RepositorySet.items.name]]
     raise ResponseError(NoSourceDataError(detail=f'No "{RepositorySet.ALL}" reposet exists.'))
 
 

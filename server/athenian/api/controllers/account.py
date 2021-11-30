@@ -8,6 +8,7 @@ from sqlite3 import IntegrityError
 import struct
 from typing import Any, Collection, List, Mapping, Optional, Tuple
 
+from aiohttp import web
 import aiomcache
 import aiosqlite
 from asyncpg import UniqueViolationError
@@ -25,9 +26,12 @@ from athenian.api.models.metadata.github import Account as MetadataAccount, Acco
     FetchProgress, NodeUser, Organization, Team as MetadataTeam, TeamMember
 from athenian.api.models.state.models import Account, AccountGitHubAccount, RepositorySet, \
     Team as StateTeam, UserAccount
-from athenian.api.models.web import InstallationProgress, NoSourceDataError, NotFoundError, \
+from athenian.api.models.web import ForbiddenError, InstallationProgress, NoSourceDataError, \
+    NotFoundError, \
     TableFetchingProgress
+from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError
+from athenian.api.typing_utils import wraps
 
 jira_url_template = os.getenv("ATHENIAN_JIRA_INSTALLATION_URL_TEMPLATE")
 
@@ -50,7 +54,7 @@ async def get_metadata_account_ids(account: int,
     if len(ids) == 0:
         acc_exists = await sdb.fetch_val(select([Account.id]).where(Account.id == account))
         if not acc_exists:
-            raise ResponseError(NotFoundError(detail="Account %d does not exist" % account))
+            raise ResponseError(NotFoundError(detail=f"Account {account} does not exist"))
         raise ResponseError(NoSourceDataError(
             detail="The installation of account %d has not finished yet." % account))
     return tuple(r[0] for r in ids)
@@ -137,6 +141,17 @@ async def get_user_account_status(user: str,
         raise ResponseError(NotFoundError(
             detail="Account %d does not exist or user %s is not a member." % (account, user)))
     return status
+
+
+def only_admin(func):
+    """Enforce the admin access level to an API handler."""
+    async def wrapped_only_admin(request: AthenianWebRequest, body: dict) -> web.Response:
+        account = body["account"]
+        if not await get_user_account_status(request.uid, account, request.sdb, request.cache):
+            raise ResponseError(ForbiddenError(
+                f'User "{request.uid}" must be an admin of account {account}'))
+        return await func(request, body)
+    return wraps(wrapped_only_admin, func)
 
 
 async def get_account_repositories(account: int,

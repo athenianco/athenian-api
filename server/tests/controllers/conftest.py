@@ -131,6 +131,16 @@ async def logical_settings_db(sdb):
         repository_id=40550,
         prs={"title": ".*[Aa]dd"},
     ).create_defaults().explode()))
+    await sdb.execute(update(RepositorySet).where(RepositorySet.owner_id == 1).values({
+        RepositorySet.items: [
+            "github.com/src-d/gitbase",
+            "github.com/src-d/go-git",
+            "github.com/src-d/go-git/alpha",
+            "github.com/src-d/go-git/beta",
+        ],
+        RepositorySet.updates_count: RepositorySet.updates_count + 1,
+        RepositorySet.updated_at: datetime.now(timezone.utc),
+    }))
 
 
 @pytest.fixture(scope="session")
