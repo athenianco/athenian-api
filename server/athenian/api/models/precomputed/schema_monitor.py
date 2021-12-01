@@ -6,13 +6,13 @@ from typing import List, Optional
 import aiohttp
 from alembic import script
 from alembic.runtime.migration import MigrationContext
-import databases
+import morcilla
 
 from athenian.api import metadata
 from athenian.api.models.precomputed import template
 
 
-def schedule_pdb_schema_check(pdb: databases.Database,
+def schedule_pdb_schema_check(pdb: morcilla.Database,
                               app: aiohttp.web.Application,
                               interval: float = 15 * 60,
                               ) -> List[asyncio.Task]:

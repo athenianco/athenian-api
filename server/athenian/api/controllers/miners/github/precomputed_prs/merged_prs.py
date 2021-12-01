@@ -7,7 +7,7 @@ import pickle
 from typing import Collection, Dict, Iterable, KeysView, List, Optional, Set, Tuple, Union
 
 import aiomcache
-import databases
+import morcilla
 import numpy as np
 import pandas as pd
 import sentry_sdk
@@ -49,7 +49,7 @@ class MergedPRFactsLoader:
             release_settings: ReleaseSettings,
             prefixer: Prefixer,
             account: int,
-            pdb: databases.Database,
+            pdb: morcilla.Database,
             time_from: Optional[datetime] = None,
             exclude_inactive: bool = False,
     ) -> PullRequestFactsMap:
@@ -205,7 +205,7 @@ class MergedPRFactsLoader:
                                                  repos: Collection[str],
                                                  pr_node_id_blacklist: Collection[int],
                                                  account: int,
-                                                 pdb: databases.Database,
+                                                 pdb: morcilla.Database,
                                                  ) -> PullRequestFactsMap:
         """
         Load the precomputed merged PR facts through all the time.
@@ -258,7 +258,7 @@ async def update_unreleased_prs(merged_prs: pd.DataFrame,
                                 default_branches: Dict[str, str],
                                 release_settings: ReleaseSettings,
                                 account: int,
-                                pdb: databases.Database,
+                                pdb: morcilla.Database,
                                 unreleased_prs_event: asyncio.Event) -> None:
     """
     Bump the last check timestamps for unreleased merged PRs.
@@ -351,7 +351,7 @@ async def store_merged_unreleased_pull_request_facts(
         default_branches: Dict[str, str],
         release_settings: ReleaseSettings,
         account: int,
-        pdb: databases.Database,
+        pdb: morcilla.Database,
         unreleased_prs_event: asyncio.Event) -> None:
     """
     Persist the facts about merged unreleased pull requests to the database.
@@ -437,7 +437,7 @@ async def discover_inactive_merged_unreleased_prs(time_from: datetime,
                                                   release_settings: ReleaseSettings,
                                                   prefixer: Prefixer,
                                                   account: int,
-                                                  pdb: databases.Database,
+                                                  pdb: morcilla.Database,
                                                   cache: Optional[aiomcache.Client],
                                                   ) -> Dict[int, List[str]]:
     """

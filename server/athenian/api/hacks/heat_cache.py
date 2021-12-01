@@ -41,7 +41,7 @@ from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.reposet import load_account_state
 from athenian.api.controllers.settings import ReleaseMatch, Settings
 import athenian.api.db
-from athenian.api.db import measure_db_overhead_and_retry, ParallelDatabase
+from athenian.api.db import Database, measure_db_overhead_and_retry
 from athenian.api.defer import enable_defer, wait_deferred
 from athenian.api.faster_pandas import patch_pandas
 from athenian.api.models.metadata import dereference_schemas as dereference_metadata_schemas
@@ -73,12 +73,12 @@ def _parse_args():
 
 
 async def _connect_to_dbs(args: argparse.Namespace,
-                          ) -> Tuple[ParallelDatabase, ParallelDatabase,
-                                     ParallelDatabase, ParallelDatabase]:
-    sdb = measure_db_overhead_and_retry(ParallelDatabase(args.state_db))
-    mdb = measure_db_overhead_and_retry(ParallelDatabase(args.metadata_db))
-    pdb = measure_db_overhead_and_retry(ParallelDatabase(args.precomputed_db))
-    rdb = measure_db_overhead_and_retry(ParallelDatabase(args.persistentdata_db))
+                          ) -> Tuple[Database, Database,
+                                     Database, Database]:
+    sdb = measure_db_overhead_and_retry(Database(args.state_db))
+    mdb = measure_db_overhead_and_retry(Database(args.metadata_db))
+    pdb = measure_db_overhead_and_retry(Database(args.precomputed_db))
+    rdb = measure_db_overhead_and_retry(Database(args.persistentdata_db))
     await gather(sdb.connect(), mdb.connect(), pdb.connect(), rdb.connect())
     pdb.metrics = {
         "hits": ContextVar("pdb_hits", default=defaultdict(int)),
@@ -300,10 +300,10 @@ async def create_teams(account: int,
                        repos: Collection[str],
                        all_bots: Set[str],
                        prefixer: Prefixer,
-                       sdb: ParallelDatabase,
-                       mdb: ParallelDatabase,
-                       pdb: ParallelDatabase,
-                       rdb: ParallelDatabase,
+                       sdb: Database,
+                       mdb: Database,
+                       pdb: Database,
+                       rdb: Database,
                        cache: Optional[aiomcache.Client]) -> Tuple[int, int]:
     """Copy the existing teams from GitHub and create a new team with all the involved bots \
     for the specified account.
@@ -333,7 +333,7 @@ async def create_teams(account: int,
     return num_teams, len(bots)
 
 
-async def sync_labels(log: logging.Logger, mdb: ParallelDatabase, pdb: ParallelDatabase) -> int:
+async def sync_labels(log: logging.Logger, mdb: Database, pdb: Database) -> int:
     """Update the labels in `github_done_pull_request_times` and `github_merged_pull_requests`."""
     log.info("Syncing labels")
     tasks = []

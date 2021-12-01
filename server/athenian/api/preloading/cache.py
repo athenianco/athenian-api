@@ -3,7 +3,7 @@ from enum import Enum
 import logging
 from typing import Collection, Dict, Iterable, List, NamedTuple, Optional, Union
 
-import databases
+import morcilla
 import numpy as np
 import pandas as pd
 import prometheus_client
@@ -51,7 +51,7 @@ class CachedDataFrame:
     def __init__(
         self,
         id_: str,
-        db: databases.Database,
+        db: morcilla.Database,
         sharding: Dict,
         cols: Optional[List[sa.Column]] = None,
         categorical_cols: Optional[List[sa.Column]] = None,
@@ -70,7 +70,7 @@ class CachedDataFrame:
         :param categorical_cols: Columns that can be cast to `category` dtype
         :param identifier_cols: Columns that can be cast to bytes, `S` dtype
         """
-        assert isinstance(db, databases.Database)
+        assert isinstance(db, morcilla.Database)
         self._id = id_
         self._cols = cols or ["*"]
         self._categorical_cols = categorical_cols or []
@@ -259,14 +259,14 @@ class MemoryCache:
 
     def __init__(
         self,
-        sdb: databases.Database,
-        db: databases.Database,
+        sdb: morcilla.Database,
+        db: morcilla.Database,
         options: Dict[str, Dict],
         gauges: Optional[Gauges],
         debug_memory: Optional[bool],
     ):
         """Initialize a `MemoryCache`."""
-        assert isinstance(db, databases.Database)
+        assert isinstance(db, morcilla.Database)
         self._sdb = sdb
         self._db = db
         self._options = options
@@ -408,7 +408,7 @@ class MemoryCachePreloader:
 
         self._gauges = gauges
 
-    async def preload(self, **dbs: databases.Database) -> None:
+    async def preload(self, **dbs: morcilla.Database) -> None:
         """
         Load in memory the tables configured in `get_memory_cache_options()`.
 
@@ -445,7 +445,7 @@ class MemoryCachePreloader:
         self._log.info("Refresh jobs for preloaded DB tables stopped")
 
 
-async def _refresh(db: databases.Database) -> None:
+async def _refresh(db: morcilla.Database) -> None:
     await db.cache.refresh()
 
 

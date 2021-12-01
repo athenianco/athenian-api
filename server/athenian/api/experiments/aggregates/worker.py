@@ -8,7 +8,7 @@ import logging
 from typing import List, Optional, Set, Tuple
 
 import aiomcache
-from databases.core import Connection
+from morcilla.core import Connection
 import pandas as pd
 from sqlalchemy import and_, create_engine, extract, func, insert, or_, select, update
 
@@ -18,7 +18,7 @@ from athenian.api.controllers.account import get_metadata_account_ids
 from athenian.api.controllers.features.github.pull_request_filter import fetch_pull_requests
 from athenian.api.controllers.miners.types import PRParticipationKind, PullRequestListItem
 from athenian.api.controllers.settings import ReleaseMatchSetting, Settings
-from athenian.api.db import ParallelDatabase
+from athenian.api.db import Database
 from athenian.api.defer import enable_defer
 from athenian.api.experiments.aggregates.models import Base, PullRequestEvent, PullRequestStatus
 from athenian.api.experiments.aggregates.typing_utils import PullRequestsCollection
@@ -83,7 +83,7 @@ async def refresh_aggregates(
 
 
 async def _retrieve_and_insert_new_prs(
-        mdb: ParallelDatabase, adb: ParallelDatabase, account: int, repos: Set[str]):
+        mdb: Database, adb: Database, account: int, repos: Set[str]):
     log.info("Retrieving latest PRs for each repository from %s...",
              table_fqdn(adb, PullRequestStatus))
     # SELECT repository_node_id, repository_full_name, MAX(number) AS latest_pull_request
@@ -152,7 +152,7 @@ async def _retrieve_and_insert_new_prs(
 
 
 async def _retrieve_and_insert_new_prs_for_new_repos(
-        mdb: ParallelDatabase, adb: ParallelDatabase, account: int, repos: Set[str]):
+        mdb: Database, adb: Database, account: int, repos: Set[str]):
     log.info("Retrieving current repos from %s...", table_fqdn(adb, PullRequestStatus))
     # SELECT DISTINCT repository_node_id FROM pull_requests_status;
     current_repos = await adb.fetch_all(
@@ -202,7 +202,7 @@ async def _retrieve_and_insert_new_prs_for_new_repos(
 
 
 async def _get_outdated_aggregation_prs(
-        sdb: ParallelDatabase, mdb: ParallelDatabase, adb: ParallelDatabase,
+        sdb: Database, mdb: Database, adb: Database,
         account: int, freshness_threshold_seconds: int,
 ) -> PullRequestsCollection:
     # 1. fetch non-fresh prs from aggregates
@@ -304,14 +304,14 @@ async def _get_outdated_aggregation_prs(
 
 async def _fetch_prs_data(
         account: int, meta_ids: Tuple[int, ...], prs_collection: PullRequestsCollection,
-        sdb: ParallelDatabase, mdb: ParallelDatabase, pdb: ParallelDatabase,
-        rdb: ParallelDatabase, cache: Optional[aiomcache.Client] = None,
+        sdb: Database, mdb: Database, pdb: Database,
+        rdb: Database, cache: Optional[aiomcache.Client] = None,
 ) -> Tuple[List[PullRequestListItem], ReleaseMatchSetting]:
     # TODO: fetch_pull_requests and Settings require passing `databases.Database`
-    sdb_ = ParallelDatabase(sdb._connection._database._database_url._url)
-    mdb_ = ParallelDatabase(mdb._connection._database._database_url._url)
-    pdb_ = ParallelDatabase(pdb._connection._database._database_url._url)
-    rdb_ = ParallelDatabase(rdb._connection._database._database_url._url)
+    sdb_ = Database(sdb._connection._database._database_url._url)
+    mdb_ = Database(mdb._connection._database._database_url._url)
+    pdb_ = Database(pdb._connection._database._database_url._url)
+    rdb_ = Database(rdb._connection._database._database_url._url)
     pdb_.metrics = {
         "hits": ContextVar("pdb_hits", default=defaultdict(int)),
         "misses": ContextVar("pdb_misses", default=defaultdict(int)),
@@ -460,7 +460,7 @@ def _eventify_prs(account: int, prs_data: List[PullRequestListItem],
             for ev in events]
 
 
-async def _ingest_events(adb: ParallelDatabase, prs_events: List[PullRequestEvent]):
+async def _ingest_events(adb: Database, prs_events: List[PullRequestEvent]):
     log.info("Inserting %d new events to %s...",
              len(prs_events), table_fqdn(adb, PullRequestEvent))
     # TODO: This raises exceptions after first run for repo due to db contraint.
@@ -474,7 +474,7 @@ async def _ingest_events(adb: ParallelDatabase, prs_events: List[PullRequestEven
 
 
 async def _checkpoint_aggregates_timestamps(
-        adb: ParallelDatabase, prs_node_ids: List[str],
+        adb: Database, prs_node_ids: List[str],
         checkpoint_timestamp: datetime):
     log.info("Updating timestamp of aggregates for %d PRs to %s...",
              len(prs_node_ids), checkpoint_timestamp)
@@ -491,13 +491,13 @@ async def _checkpoint_aggregates_timestamps(
 async def _get_db_conns(
         sdb_conn_uri: str, mdb_conn_uri: str, pdb_conn_uri: str, adb_conn_uri: str,
         cache_conn: Optional[str] = None,
-) -> Tuple[ParallelDatabase, ParallelDatabase, ParallelDatabase, ParallelDatabase,
+) -> Tuple[Database, Database, Database, Database,
            aiomcache.Client]:
     sdb_conn, mdb_conn, pdb_conn, adb_conn = (
-        ParallelDatabase(sdb_conn_uri),
-        ParallelDatabase(mdb_conn_uri),
-        ParallelDatabase(pdb_conn_uri),
-        ParallelDatabase(adb_conn_uri),
+        Database(sdb_conn_uri),
+        Database(mdb_conn_uri),
+        Database(pdb_conn_uri),
+        Database(adb_conn_uri),
     )
     await gather(sdb_conn.connect(), mdb_conn.connect(), pdb_conn.connect(), adb_conn.connect())
 
@@ -513,7 +513,7 @@ async def _get_db_conns(
 
 
 @asynccontextmanager
-async def _lock_enabled(adb: ParallelDatabase) -> None:
+async def _lock_enabled(adb: Database) -> None:
     try:
         yield
     except Exception:  # locked by other

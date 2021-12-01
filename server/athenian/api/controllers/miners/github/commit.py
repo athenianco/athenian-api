@@ -21,7 +21,7 @@ from athenian.api.controllers.miners.github.dag_accelerated import extract_first
     extract_subdag, join_dags, partition_dag, searchsorted_inrange
 from athenian.api.controllers.miners.types import DAG as DAGStruct
 from athenian.api.controllers.prefixer import Prefixer
-from athenian.api.db import add_pdb_hits, add_pdb_misses, DatabaseLike, ParallelDatabase
+from athenian.api.db import add_pdb_hits, add_pdb_misses, Database, DatabaseLike
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import Branch, NodeCommit, NodePullRequestCommit, \
     PushCommit, Release, User
@@ -233,8 +233,8 @@ async def fetch_repository_commits(repos: Dict[str, DAG],
                                    prune: bool,
                                    account: int,
                                    meta_ids: Tuple[int, ...],
-                                   mdb: ParallelDatabase,
-                                   pdb: ParallelDatabase,
+                                   mdb: Database,
+                                   pdb: Database,
                                    cache: Optional[aiomcache.Client],
                                    ) -> Dict[str, DAG]:
     """
@@ -352,8 +352,8 @@ async def fetch_repository_commits_no_branch_dates(
         prune: bool,
         account: int,
         meta_ids: Tuple[int, ...],
-        mdb: ParallelDatabase,
-        pdb: ParallelDatabase,
+        mdb: Database,
+        pdb: Database,
         cache: Optional[aiomcache.Client],
 ) -> Dict[str, DAG]:
     """
@@ -374,8 +374,8 @@ async def fetch_repository_commits_from_scratch(repos: Iterable[str],
                                                 prefixer: Prefixer,
                                                 account: int,
                                                 meta_ids: Tuple[int, ...],
-                                                mdb: ParallelDatabase,
-                                                pdb: ParallelDatabase,
+                                                mdb: Database,
+                                                pdb: Database,
                                                 cache: Optional[aiomcache.Client],
                                                 ) -> Tuple[Dict[str, DAG],
                                                            pd.DataFrame,
@@ -405,7 +405,7 @@ async def fetch_repository_commits_from_scratch(repos: Iterable[str],
 async def fetch_precomputed_commit_history_dags(
         repos: Iterable[str],
         account: int,
-        pdb: ParallelDatabase,
+        pdb: Database,
         cache: Optional[aiomcache.Client],
 ) -> Dict[str, DAG]:
     """Load commit DAGs from the pdb."""
@@ -443,7 +443,7 @@ async def _fetch_commit_history_dag(hashes: np.ndarray,
                                     head_ids: Sequence[int],
                                     repo: str,
                                     meta_ids: Tuple[int, ...],
-                                    mdb: ParallelDatabase,
+                                    mdb: Database,
                                     ) -> Tuple[str, np.ndarray, np.ndarray, np.ndarray]:
     max_stop_heads = 25
     max_inner_partitions = 25
@@ -501,7 +501,7 @@ async def _fetch_commit_history_dag(hashes: np.ndarray,
 async def _fetch_commit_history_edges(commit_ids: Iterable[int],
                                       stop_hashes: Iterable[str],
                                       meta_ids: Tuple[int, ...],
-                                      mdb: ParallelDatabase,
+                                      mdb: Database,
                                       ) -> List[Tuple]:
     """
     Query metadata DB for the new commit DAG edges.
@@ -517,7 +517,7 @@ async def _fetch_commit_history_edges(commit_ids: Iterable[int],
     We don't include the edges from the outside to the first parents (`commit_ids`). This means
     that if some of `commit_ids` do not have children, there will be 0 edges with them.
     """
-    assert isinstance(mdb, ParallelDatabase), "fetch_all() must be patched to avoid re-wrapping"
+    assert isinstance(mdb, Database), "fetch_all() must be patched to avoid re-wrapping"
     rq = "`" if mdb.url.dialect == "sqlite" else ""
     tq = '"' if mdb.url.dialect == "sqlite" else ""
     if len(meta_ids) == 1:
@@ -571,8 +571,8 @@ async def fetch_dags_with_commits(commits: Mapping[str, Sequence[int]],
                                   prune: bool,
                                   account: int,
                                   meta_ids: Tuple[int, ...],
-                                  mdb: ParallelDatabase,
-                                  pdb: ParallelDatabase,
+                                  mdb: Database,
+                                  pdb: Database,
                                   cache: Optional[aiomcache.Client],
                                   ) -> Tuple[Dict[str, DAG], pd.DataFrame]:
     """
@@ -605,7 +605,7 @@ async def fetch_dags_with_commits(commits: Mapping[str, Sequence[int]],
 )
 async def _fetch_commits_for_dags(commits: Mapping[str, Sequence[str]],
                                   meta_ids: Tuple[int, ...],
-                                  mdb: ParallelDatabase,
+                                  mdb: Database,
                                   cache: Optional[aiomcache.Client],
                                   ) -> pd.DataFrame:
     queries = [

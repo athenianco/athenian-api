@@ -42,8 +42,7 @@ from athenian.api.balancing import extract_handler_weight
 from athenian.api.cache import CACHE_VAR_NAME, setup_cache_metrics
 from athenian.api.controllers import invitation_controller
 from athenian.api.controllers.status_controller import setup_status
-from athenian.api.db import add_pdb_metrics_context, measure_db_overhead_and_retry, \
-    ParallelDatabase
+from athenian.api.db import add_pdb_metrics_context, Database, measure_db_overhead_and_retry
 from athenian.api.defer import defer, enable_defer, launch_defer_from_request, wait_all_deferred, \
     wait_deferred
 from athenian.api.kms import AthenianKMS
@@ -349,7 +348,7 @@ class AthenianApp(connexion.AioHttpApp):
 
         async def connect_to_db(name: str, shortcut: str, db_conn: str, db_options: dict):
             try:
-                db = ParallelDatabase(db_conn, **(db_options or {}))
+                db = Database(db_conn, **(db_options or {}))
                 for i in range(attempts := 3):
                     try:
                         await db.connect()

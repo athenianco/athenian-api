@@ -18,7 +18,7 @@ from athenian.api.controllers.logical_repos import coerce_logical_repos, \
     coerce_prefixed_logical_repos, drop_logical_repo, drop_prefixed_logical_repo
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.reposet import resolve_repos
-from athenian.api.db import DatabaseLike, ParallelDatabase
+from athenian.api.db import Database, DatabaseLike
 from athenian.api.models.metadata.github import PullRequest, PullRequestLabel
 from athenian.api.models.state.models import LogicalRepository, ReleaseSetting
 from athenian.api.models.web import InvalidRequestError, MissingSettingsError, ReleaseMatchStrategy
@@ -428,8 +428,8 @@ class Settings:
     @classmethod
     def from_account(cls,
                      account: int,
-                     sdb: ParallelDatabase,
-                     mdb: ParallelDatabase,
+                     sdb: Database,
+                     mdb: Database,
                      cache: Optional[aiomcache.Client],
                      slack: Optional[SlackWebClient]):
         """Create a new Settings class instance in readonly mode given the account ID."""
@@ -576,10 +576,11 @@ class Settings:
                 events=events,
                 match=match,
             ).create_defaults().explode(with_primary_keys=True))
-        if isinstance(self._sdb, ParallelDatabase):
+        if isinstance(self._sdb, Database):
             sqlite = self._sdb.url.dialect == "sqlite"
         else:
-            sqlite = isinstance(self._sdb.raw_connection, aiosqlite.core.Connection)
+            async with self._sdb.raw_connection() as raw_connection:
+                sqlite = isinstance(raw_connection, aiosqlite.core.Connection)
         if sqlite:
             query = insert(ReleaseSetting).prefix_with("OR REPLACE")
         else:
@@ -595,7 +596,7 @@ class Settings:
                 },
             )
 
-        if isinstance(self._sdb, ParallelDatabase):
+        if isinstance(self._sdb, Database):
             async with self._sdb.connection() as sdb_conn:
                 async with sdb_conn.transaction():
                     await sdb_conn.execute_many(query, values)

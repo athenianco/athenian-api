@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Collection, Iterable, Mapping, Set, Tuple
 
-import databases
+import morcilla
 import numpy as np
 import pandas as pd
 import sentry_sdk
@@ -27,7 +27,7 @@ class OpenPRFactsLoader:
                                            prs: pd.DataFrame,
                                            repositories: Set[str],
                                            account: int,
-                                           pdb: databases.Database,
+                                           pdb: morcilla.Database,
                                            ) -> PullRequestFactsMap:
         """
         Fetch precomputed facts about the open PRs from the DataFrame.
@@ -80,7 +80,7 @@ class OpenPRFactsLoader:
                                                    exclude_inactive: bool,
                                                    authors: Mapping[str, str],
                                                    account: int,
-                                                   pdb: databases.Database,
+                                                   pdb: morcilla.Database,
                                                    ) -> PullRequestFactsMap:
         """
         Fetch precomputed facts about the open PRs from the DataFrame.
@@ -136,7 +136,7 @@ class OpenPRFactsLoader:
                                                repos: Collection[str],
                                                pr_node_id_blacklist: Collection[int],
                                                account: int,
-                                               pdb: databases.Database,
+                                               pdb: morcilla.Database,
                                                ) -> PullRequestFactsMap:
         """
         Load the precomputed open PR facts through all the time.
@@ -173,7 +173,7 @@ class OpenPRFactsLoader:
 async def store_open_pull_request_facts(
         open_prs_and_facts: Iterable[Tuple[MinedPullRequest, PullRequestFacts]],
         account: int,
-        pdb: databases.Database) -> None:
+        pdb: morcilla.Database) -> None:
     """
     Persist the facts about open pull requests to the database.
 

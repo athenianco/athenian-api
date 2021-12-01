@@ -5,7 +5,7 @@ from typing import Awaitable, Coroutine, List
 
 from aiohttp import web
 import asyncpg
-import databases
+import morcilla
 from sentry_sdk import Hub, push_scope, start_transaction
 from sentry_sdk.tracing import Transaction
 
@@ -101,7 +101,7 @@ async def defer(coroutine: Awaitable, name: str) -> None:
     if isinstance(coroutine, Coroutine):
         for key, val in coroutine.cr_frame.f_locals.items():
             try:
-                assert not isinstance(val, databases.core.Connection), \
+                assert not isinstance(val, morcilla.core.Connection), \
                     f"{key} must not be visible to {coroutine.__qualname__}"
             except AssertionError as e:
                 coroutine.close()

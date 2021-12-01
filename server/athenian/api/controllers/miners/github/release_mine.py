@@ -39,7 +39,7 @@ from athenian.api.controllers.miners.types import Deployment, released_prs_colum
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch, \
     ReleaseMatchSetting, ReleaseSettings
-from athenian.api.db import add_pdb_hits, add_pdb_misses, ParallelDatabase
+from athenian.api.db import add_pdb_hits, add_pdb_misses, Database
 from athenian.api.defer import defer
 from athenian.api.int_to_str import int_to_str
 from athenian.api.models.metadata.github import NodeCommit, NodePullRequest, PullRequest, \
@@ -61,9 +61,9 @@ async def mine_releases(repos: Iterable[str],
                         prefixer: Prefixer,
                         account: int,
                         meta_ids: Tuple[int, ...],
-                        mdb: ParallelDatabase,
-                        pdb: ParallelDatabase,
-                        rdb: ParallelDatabase,
+                        mdb: Database,
+                        pdb: Database,
+                        rdb: Database,
                         cache: Optional[aiomcache.Client],
                         force_fresh: bool = False,
                         with_avatars: bool = True,
@@ -150,9 +150,9 @@ async def _mine_releases(repos: Iterable[str],
                          prefixer: Prefixer,
                          account: int,
                          meta_ids: Tuple[int, ...],
-                         mdb: ParallelDatabase,
-                         pdb: ParallelDatabase,
-                         rdb: ParallelDatabase,
+                         mdb: Database,
+                         pdb: Database,
+                         rdb: Database,
                          cache: Optional[aiomcache.Client],
                          force_fresh: bool,
                          with_avatars: bool,
@@ -651,7 +651,7 @@ async def _filter_precomputed_release_facts_by_jira(
         precomputed_facts: Dict[Tuple[int, str], ReleaseFacts],
         jira: JIRAFilter,
         meta_ids: Tuple[int, ...],
-        mdb: ParallelDatabase,
+        mdb: Database,
         cache: Optional[aiomcache.Client],
 ) -> Dict[Tuple[int, str], ReleaseFacts]:
     assert jira
@@ -688,7 +688,7 @@ async def _load_prs_by_merge_commit_ids(commit_ids: Sequence[str],
                                         repos: Set[str],
                                         logical_settings: LogicalRepositorySettings,
                                         meta_ids: Tuple[int, ...],
-                                        mdb: ParallelDatabase,
+                                        mdb: Database,
                                         ) -> pd.DataFrame:
     has_logical_prs = logical_settings.has_logical_prs()
     model = PullRequest if has_logical_prs else NodePullRequest
@@ -748,9 +748,9 @@ async def mine_releases_by_name(names: Dict[str, Iterable[str]],
                                 prefixer: Prefixer,
                                 account: int,
                                 meta_ids: Tuple[int, ...],
-                                mdb: ParallelDatabase,
-                                pdb: ParallelDatabase,
-                                rdb: ParallelDatabase,
+                                mdb: Database,
+                                pdb: Database,
+                                rdb: Database,
                                 cache: Optional[aiomcache.Client],
                                 ) -> Tuple[List[Tuple[Dict[str, Any], ReleaseFacts]],
                                            List[Tuple[str, str]],
@@ -835,9 +835,9 @@ async def mine_releases_by_ids(releases: pd.DataFrame,
                                prefixer: Prefixer,
                                account: int,
                                meta_ids: Tuple[int, ...],
-                               mdb: ParallelDatabase,
-                               pdb: ParallelDatabase,
-                               rdb: ParallelDatabase,
+                               mdb: Database,
+                               pdb: Database,
+                               rdb: Database,
                                cache: Optional[aiomcache.Client],
                                *, with_avatars: bool,
                                ) -> Union[Tuple[List[Tuple[Dict[str, Any], ReleaseFacts]],
@@ -948,9 +948,9 @@ async def _load_releases_by_name(names: Dict[str, Set[str]],
                                  prefixer: Prefixer,
                                  account: int,
                                  meta_ids: Tuple[int, ...],
-                                 mdb: ParallelDatabase,
-                                 pdb: ParallelDatabase,
-                                 rdb: ParallelDatabase,
+                                 mdb: Database,
+                                 pdb: Database,
+                                 rdb: Database,
                                  cache: Optional[aiomcache.Client],
                                  ) -> Tuple[pd.DataFrame,
                                             Dict[str, Dict[str, str]],
@@ -1031,7 +1031,7 @@ commit_prefix_re = re.compile(r"[a-f0-9]{7}")
 @sentry_span
 async def _complete_commit_hashes(names: Dict[str, Set[str]],
                                   meta_ids: Tuple[int, ...],
-                                  mdb: ParallelDatabase) -> Dict[str, Dict[str, str]]:
+                                  mdb: Database) -> Dict[str, Dict[str, str]]:
     candidates = defaultdict(list)
     for repo, strs in names.items():
         for name in strs:
@@ -1084,9 +1084,9 @@ async def diff_releases(borders: Dict[str, List[Tuple[str, str]]],
                         prefixer: Prefixer,
                         account: int,
                         meta_ids: Tuple[int, ...],
-                        mdb: ParallelDatabase,
-                        pdb: ParallelDatabase,
-                        rdb: ParallelDatabase,
+                        mdb: Database,
+                        pdb: Database,
+                        rdb: Database,
                         cache: Optional[aiomcache.Client],
                         ) -> Tuple[
         Dict[str, List[Tuple[str, str, List[Tuple[Dict[str, Any], ReleaseFacts]]]]],
@@ -1167,9 +1167,9 @@ async def _load_release_deployments(releases_in_time_range: pd.DataFrame,
                                     settings: ReleaseSettings,
                                     account: int,
                                     meta_ids: Tuple[int, ...],
-                                    mdb: ParallelDatabase,
-                                    pdb: ParallelDatabase,
-                                    rdb: ParallelDatabase,
+                                    mdb: Database,
+                                    pdb: Database,
+                                    rdb: Database,
                                     cache: Optional[aiomcache.Client],
                                     ) -> Tuple[Dict[int, np.ndarray], Dict[str, Deployment]]:
     if releases_in_time_range.empty:

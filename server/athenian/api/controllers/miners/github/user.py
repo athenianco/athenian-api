@@ -4,7 +4,7 @@ import pickle
 from typing import Any, Collection, Iterable, List, Mapping, Optional, Tuple, Union
 
 import aiomcache
-import databases
+import morcilla
 from sqlalchemy import and_, select
 
 from athenian.api.cache import cached
@@ -21,7 +21,7 @@ from athenian.api.tracing import sentry_span
 )
 async def mine_users(logins: Collection[str],
                      meta_ids: Tuple[int, ...],
-                     mdb: databases.Database,
+                     mdb: morcilla.Database,
                      cache: Optional[aiomcache.Client],
                      ) -> List[Mapping[str, Any]]:
     """
@@ -48,7 +48,7 @@ class UserAvatarKeys(IntEnum):
 async def mine_user_avatars(logins: Iterable[str],
                             keys: UserAvatarKeys,
                             meta_ids: Tuple[int, ...],
-                            mdb: databases.Database,
+                            mdb: morcilla.Database,
                             cache: Optional[aiomcache.Client],
                             ) -> List[Tuple[Union[str, int], str]]:
     """Fetch the user profile picture URL for each login."""
@@ -74,7 +74,7 @@ async def mine_user_avatars(logins: Iterable[str],
 )
 async def _mine_user_avatars(logins: Iterable[str],
                              meta_ids: Tuple[int, ...],
-                             mdb: databases.Database,
+                             mdb: morcilla.Database,
                              cache: Optional[aiomcache.Client],
                              ) -> List[Tuple[int, str, str]]:
     rows = await mdb.fetch_all(select([User.node_id, User.html_url, User.avatar_url])

@@ -8,6 +8,7 @@ from sqlalchemy.orm import sessionmaker
 
 from athenian.api import metadata
 from athenian.api.__main__ import setup_context
+from athenian.api.db import extract_registered_models
 from athenian.api.models.metadata import check_schema_version, dereference_schemas, github, jira
 from athenian.api.slogging import setup as setup_logging
 
@@ -25,7 +26,7 @@ def main() -> int:
     log.info("Checking the metadata schema...")
     errors = []
     for module in github, jira:
-        for model in module.Base._decl_class_registry.values():
+        for model in extract_registered_models(module.Base).values():
             session = sessionmaker(bind=engine)()
             try:
                 try:

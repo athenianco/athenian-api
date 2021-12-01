@@ -18,7 +18,7 @@ from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.release_load import ReleaseLoader
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import Settings
-from athenian.api.db import measure_db_overhead_and_retry, ParallelDatabase
+from athenian.api.db import Database, measure_db_overhead_and_retry
 from athenian.api.defer import enable_defer
 from athenian.api.faster_pandas import patch_pandas
 from athenian.api.models.metadata import dereference_schemas as dereference_metadata_schemas
@@ -68,10 +68,10 @@ def main():
 
     async def async_run():
         enable_defer(False)
-        sdb = measure_db_overhead_and_retry(ParallelDatabase(args.state_db))
-        mdb = measure_db_overhead_and_retry(ParallelDatabase(args.metadata_db))
-        pdb = measure_db_overhead_and_retry(ParallelDatabase(args.precomputed_db))
-        rdb = measure_db_overhead_and_retry(ParallelDatabase(args.persistentdata_db))
+        sdb = measure_db_overhead_and_retry(Database(args.state_db))
+        mdb = measure_db_overhead_and_retry(Database(args.metadata_db))
+        pdb = measure_db_overhead_and_retry(Database(args.precomputed_db))
+        rdb = measure_db_overhead_and_retry(Database(args.persistentdata_db))
         await gather(sdb.connect(), mdb.connect(), pdb.connect(), rdb.connect())
         pdb.metrics = {
             "hits": ContextVar("pdb_hits", default=defaultdict(int)),

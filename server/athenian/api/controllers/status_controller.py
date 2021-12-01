@@ -5,7 +5,7 @@ from typing import Optional
 
 from aiohttp import web
 import aiomcache
-import databases
+import morcilla
 import objgraph
 import prometheus_client
 import pympler.muppy
@@ -28,7 +28,7 @@ from athenian.api.response import model_response, ResponseError
     serialize=lambda s: s.encode(),
     deserialize=lambda b: b.decode(),
 )
-async def _get_metadata_version(mdb: databases.Database, cache: Optional[aiomcache.Client]) -> str:
+async def _get_metadata_version(mdb: morcilla.Database, cache: Optional[aiomcache.Client]) -> str:
     return str(await mdb.fetch_val(select([metadata.SchemaMigration.version])))
 
 

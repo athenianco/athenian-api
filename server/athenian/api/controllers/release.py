@@ -4,7 +4,7 @@ from typing import Optional, Tuple
 from sqlalchemy import and_, select
 
 from athenian.api.controllers.miners.types import ReleaseParticipants, ReleaseParticipationKind
-from athenian.api.db import ParallelDatabase
+from athenian.api.db import Database
 from athenian.api.models.metadata.github import User
 from athenian.api.models.web import InvalidRequestError, ReleaseWith
 from athenian.api.response import ResponseError
@@ -12,7 +12,7 @@ from athenian.api.response import ResponseError
 
 async def extract_release_participants(filt_with: Optional[ReleaseWith],
                                        meta_ids: Tuple[int, ...],
-                                       mdb: ParallelDatabase,
+                                       mdb: Database,
                                        position: int = None,
                                        ) -> ReleaseParticipants:
     """Resolve and deduplicate people mentioned in releases."""

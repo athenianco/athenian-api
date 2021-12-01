@@ -7,7 +7,7 @@ import textwrap
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather
-from athenian.api.db import check_schema_versions, ParallelDatabase
+from athenian.api.db import check_schema_versions, Database
 from athenian.api.preloading.cache import MemoryCachePreloader
 
 
@@ -62,7 +62,7 @@ def main():
 async def _main(db_conns: dict, detailed: bool):
     tasks, dbs = [], {}
     for db_shortcut, db_conn in db_conns.items():
-        db = ParallelDatabase(db_conn)
+        db = Database(db_conn)
         tasks.append(db.connect())
         dbs[db_shortcut] = db
 

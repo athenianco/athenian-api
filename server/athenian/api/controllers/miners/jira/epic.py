@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Collection, Dict, Optional, Sequence, Tuple
 
 import aiomcache
-import databases
+import morcilla
 import numpy as np
 import pandas as pd
 from sqlalchemy import and_, func, select
@@ -32,8 +32,8 @@ async def filter_epics(jira_ids: JIRAConfig,
                        logical_settings: LogicalRepositorySettings,
                        account: int,
                        meta_ids: Tuple[int, ...],
-                       mdb: databases.Database,
-                       pdb: databases.Database,
+                       mdb: morcilla.Database,
+                       pdb: morcilla.Database,
                        cache: Optional[aiomcache.Client],
                        extra_columns: Collection[InstrumentedAttribute] = (),
                        ) -> Tuple[pd.DataFrame,

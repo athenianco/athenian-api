@@ -32,7 +32,7 @@ from athenian.api.controllers.miners.types import nonemax, PullRequestFactsMap
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import LogicalPRSettings, LogicalRepositorySettings, \
     ReleaseMatch, ReleaseSettings
-from athenian.api.db import add_pdb_hits, add_pdb_misses, insert_or_ignore, ParallelDatabase
+from athenian.api.db import add_pdb_hits, add_pdb_misses, Database, insert_or_ignore
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import NodeCommit, NodeRepository, PullRequest, \
     PullRequestLabel, PushCommit, Release
@@ -43,8 +43,8 @@ from athenian.api.tracing import sentry_span
 async def load_commit_dags(releases: pd.DataFrame,
                            account: int,
                            meta_ids: Tuple[int, ...],
-                           mdb: ParallelDatabase,
-                           pdb: ParallelDatabase,
+                           mdb: Database,
+                           pdb: Database,
                            cache: Optional[aiomcache.Client],
                            ) -> Dict[str, DAG]:
     """Produce the commit history DAGs which should contain the specified releases."""
@@ -71,8 +71,8 @@ class PullRequestToReleaseMapper:
                                   prefixer: Prefixer,
                                   account: int,
                                   meta_ids: Tuple[int, ...],
-                                  mdb: ParallelDatabase,
-                                  pdb: ParallelDatabase,
+                                  mdb: Database,
+                                  pdb: Database,
                                   cache: Optional[aiomcache.Client],
                                   labels: Optional[pd.DataFrame] = None,
                                   ) -> Tuple[pd.DataFrame,
@@ -86,8 +86,8 @@ class PullRequestToReleaseMapper:
                  3. Synchronization for updating the pdb table with merged unreleased PRs.
         """
         assert isinstance(time_to, datetime)
-        assert isinstance(mdb, ParallelDatabase)
-        assert isinstance(pdb, ParallelDatabase)
+        assert isinstance(mdb, Database)
+        assert isinstance(pdb, Database)
         assert prs.index.nlevels == 2
         pr_releases = new_released_prs_df()
         unreleased_prs_event = asyncio.Event()
@@ -230,7 +230,7 @@ class PullRequestToReleaseMapper:
                             node_ids: Iterable[int],
                             df: Optional[pd.DataFrame],
                             meta_ids: Tuple[int, ...],
-                            mdb: ParallelDatabase,
+                            mdb: Database,
                             ) -> Dict[int, List[str]]:
         if df is not None:
             labels = {}
@@ -273,9 +273,9 @@ class ReleaseToPullRequestMapper:
                                   prefixer: Prefixer,
                                   account: int,
                                   meta_ids: Tuple[int, ...],
-                                  mdb: ParallelDatabase,
-                                  pdb: ParallelDatabase,
-                                  rdb: ParallelDatabase,
+                                  mdb: Database,
+                                  pdb: Database,
+                                  rdb: Database,
                                   cache: Optional[aiomcache.Client],
                                   pr_blacklist: Optional[BinaryExpression] = None,
                                   pr_whitelist: Optional[BinaryExpression] = None,
@@ -318,8 +318,8 @@ class ReleaseToPullRequestMapper:
         """
         assert isinstance(time_from, datetime)
         assert isinstance(time_to, datetime)
-        assert isinstance(mdb, ParallelDatabase)
-        assert isinstance(pdb, ParallelDatabase)
+        assert isinstance(mdb, Database)
+        assert isinstance(pdb, Database)
         assert isinstance(pr_blacklist, (BinaryExpression, type(None)))
         assert isinstance(pr_whitelist, (BinaryExpression, type(None)))
         assert (updated_min is None) == (updated_max is None)
@@ -366,9 +366,9 @@ class ReleaseToPullRequestMapper:
                                            prefixer: Prefixer,
                                            account: int,
                                            meta_ids: Tuple[int, ...],
-                                           mdb: ParallelDatabase,
-                                           pdb: ParallelDatabase,
-                                           rdb: ParallelDatabase,
+                                           mdb: Database,
+                                           pdb: Database,
+                                           rdb: Database,
                                            cache: Optional[aiomcache.Client],
                                            truncate: bool,
                                            ) -> Tuple[np.ndarray,
@@ -427,9 +427,9 @@ class ReleaseToPullRequestMapper:
             prefixer: Prefixer,
             account: int,
             meta_ids: Tuple[int, ...],
-            mdb: ParallelDatabase,
-            pdb: ParallelDatabase,
-            rdb: ParallelDatabase,
+            mdb: Database,
+            pdb: Database,
+            rdb: Database,
             cache: Optional[aiomcache.Client],
             releases_in_time_range: Optional[pd.DataFrame] = None,
     ) -> Tuple[Dict[str, ReleaseMatch],
@@ -598,7 +598,7 @@ class ReleaseToPullRequestMapper:
                                      pr_whitelist: Optional[BinaryExpression],
                                      prefixer: Prefixer,
                                      meta_ids: Tuple[int, ...],
-                                     mdb: ParallelDatabase,
+                                     mdb: Database,
                                      cache: Optional[aiomcache.Client],
                                      ) -> pd.DataFrame:
         assert len(commits) == len(repos)
@@ -662,8 +662,8 @@ class ReleaseToPullRequestMapper:
                                                    repos: Iterable[str],
                                                    account: int,
                                                    meta_ids: Tuple[int, ...],
-                                                   mdb: ParallelDatabase,
-                                                   pdb: ParallelDatabase,
+                                                   mdb: Database,
+                                                   pdb: Database,
                                                    cache: Optional[aiomcache.Client],
                                                    ) -> Dict[str, datetime]:
         rows = await pdb.fetch_all(

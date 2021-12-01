@@ -7,7 +7,7 @@ from typing import Any, Collection, Dict, Iterable, List, Mapping, Optional, Seq
     Tuple, Union
 
 import aiomcache
-import databases
+import morcilla
 import numpy as np
 import pandas as pd
 import sentry_sdk
@@ -90,7 +90,7 @@ class PreloadedReleaseLoader(ReleaseLoader):
                                           time_to: datetime,
                                           prefixer: Prefixer,
                                           account: int,
-                                          pdb: databases.Database,
+                                          pdb: morcilla.Database,
                                           index: Optional[Union[str, Sequence[str]]] = None,
                                           ) -> pd.DataFrame:
         model = PrecomputedRelease
@@ -124,7 +124,7 @@ class PreloadedReleaseLoader(ReleaseLoader):
             cls,
             match_groups: Dict[ReleaseMatch, Dict[str, List[str]]],
             account: int,
-            pdb: databases.Database) -> Dict[str, Dict[str, Tuple[datetime, datetime]]]:
+            pdb: morcilla.Database) -> Dict[str, Dict[str, Tuple[datetime, datetime]]]:
         """Find out the precomputed time intervals for each release match group of repositories."""
         model = PrecomputedGitHubReleaseMatchTimespan
         cached_df = pdb.cache.dfs[PCID.releases_match_timespan]
@@ -191,7 +191,7 @@ class PreloadedDonePRFactsLoader(DonePRFactsLoader):
                                              release_settings: ReleaseSettings,
                                              prefixer: Prefixer,
                                              account: int,
-                                             pdb: databases.Database,
+                                             pdb: morcilla.Database,
                                              ) -> Tuple[Dict[Tuple[int, str], Mapping[str, Any]],
                                                         Dict[str, List[int]]]:
         """
@@ -302,7 +302,7 @@ class PreloadedMergedPRFactsLoader(MergedPRFactsLoader):
             release_settings: ReleaseSettings,
             prefixer: Prefixer,
             account: int,
-            pdb: databases.Database,
+            pdb: morcilla.Database,
             time_from: Optional[datetime] = None,
             exclude_inactive: bool = False,
     ) -> PullRequestFactsMap:
@@ -415,7 +415,7 @@ class PreloadedOpenPRFactsLoader(OpenPRFactsLoader):
                                                    exclude_inactive: bool,
                                                    authors: Mapping[str, str],
                                                    account: int,
-                                                   pdb: databases.Database,
+                                                   pdb: morcilla.Database,
                                                    ) -> Dict[str, PullRequestFacts]:
         """
         Fetch preloaded precomputed facts about the open PRs from the DataFrame.
@@ -471,7 +471,7 @@ class PreloadedBranchMiner(BranchMiner):
     async def _extract_branches(cls,
                                 repos: Iterable[str],
                                 meta_ids: Tuple[int, ...],
-                                mdb: databases.Database,
+                                mdb: morcilla.Database,
                                 ) -> Tuple[pd.DataFrame, Dict[str, str]]:
         model = Branch
         df = mdb.cache.dfs[MCID.branches].get_dfs(meta_ids)
@@ -513,7 +513,7 @@ class PreloadedPullRequestMiner(PullRequestMiner):
         pr_blacklist: Optional[BinaryExpression],
         pr_whitelist: Optional[BinaryExpression],
         meta_ids: Tuple[int, ...],
-        mdb: databases.Database,
+        mdb: morcilla.Database,
         cache: Optional[aiomcache.Client],
         columns=PullRequest,
         updated_min: Optional[datetime] = None,
@@ -625,7 +625,7 @@ class PreloadedPullRequestJiraMapper(PullRequestJiraMapper):
     async def load_pr_jira_mapping(cls,
                                    prs: Collection[int],
                                    meta_ids: Tuple[int, ...],
-                                   mdb: databases.Database) -> Dict[int, str]:
+                                   mdb: morcilla.Database) -> Dict[int, str]:
         """Fetch the mapping from PR node IDs to JIRA issue IDs."""
         model = NodePullRequestJiraIssues
         cached_df = mdb.cache.dfs[MCID.jira_mapping]

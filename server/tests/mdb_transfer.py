@@ -8,6 +8,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql import elements
 from tqdm import tqdm
 
+from athenian.api.db import extract_registered_models
 from athenian.api.models.metadata.github import Base
 
 
@@ -18,7 +19,7 @@ def main():
     json_col = JSON()
     dialect = sqlite.dialect()
     type(dialect.type_descriptor(json_col)).literal_processor = lambda self, _: json.dumps
-    for model in tqdm(list(Base._decl_class_registry.values()), file=sys.stderr):
+    for model in tqdm(list(extract_registered_models(Base).values()), file=sys.stderr):
         try:
             model.__name__, model.__tablename__
         except AttributeError:

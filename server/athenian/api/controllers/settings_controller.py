@@ -19,7 +19,7 @@ from athenian.api.controllers.jira import ALLOWED_USER_TYPES, get_jira_id, \
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import ReleaseMatch, Settings
-from athenian.api.db import DatabaseLike, ParallelDatabase
+from athenian.api.db import Database, DatabaseLike
 from athenian.api.models.metadata.github import User as GitHubUser
 from athenian.api.models.metadata.jira import Issue, Project, User as JIRAUser
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
@@ -492,7 +492,7 @@ async def _delete_logical_repository(name: str,
                                      repo_id: int,
                                      account: int,
                                      sdb: DatabaseLike,
-                                     pdb: ParallelDatabase) -> None:
+                                     pdb: Database) -> None:
     async def clean_repository_sets():
         rows = await sdb.fetch_all(
             select([RepositorySet]).where(RepositorySet.owner_id == account))

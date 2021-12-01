@@ -2,7 +2,7 @@ import asyncio
 from time import time
 from typing import Optional, Set
 
-import databases
+import morcilla
 from sqlalchemy import select
 
 from athenian.api.cache import middle_term_expire
@@ -18,11 +18,11 @@ class Bots:
         self._timestamp = time()
         self._lock = None  # type: Optional[asyncio.Lock]
 
-    async def _fetch(self, mdb: databases.Database) -> None:
+    async def _fetch(self, mdb: morcilla.Database) -> None:
         self._bots = {r[0] for r in await mdb.fetch_all(select([Bot.login]))}
         self._timestamp = time()
 
-    async def __call__(self, mdb: databases.Database) -> Set[str]:
+    async def __call__(self, mdb: morcilla.Database) -> Set[str]:
         """Return the bot logins."""
         if self._bots and time() - self._timestamp < middle_term_expire:
             # fast path to avoid acquiring the lock

@@ -15,9 +15,9 @@ import aiohttp.web
 from aiohttp.web_runner import GracefulExit
 import aiomcache
 from connexion.decorators import validation
-import databases
 from flogging import flogging
 import jinja2
+import morcilla
 import numpy
 import pandas
 from sentry_sdk.integrations.aiohttp import AioHttpIntegration
@@ -155,7 +155,7 @@ def setup_context(log: logging.Logger) -> None:
     pandas.io.formats.info.BaseInfo.info = _short_info_df
     numpy.set_printoptions(threshold=10, edgeitems=1)
     if (level := log.getEffectiveLevel()) >= logging.INFO:
-        databases.core.logger.setLevel(level + 10)
+        morcilla.core.logger.setLevel(level + 10)
     validation.logger.error = validation.logger.warning
 
     sentry_key, sentry_project = os.getenv("SENTRY_KEY"), os.getenv("SENTRY_PROJECT")

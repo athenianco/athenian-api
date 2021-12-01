@@ -11,8 +11,7 @@ import aiomcache
 import asyncpg
 import pandas as pd
 from sqlalchemy import and_, delete, distinct, exists, func, insert, not_, select, text, union, \
-    union_all, \
-    update
+    union_all, update
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from xxhash._xxhash import xxh32_intdigest
 
@@ -30,7 +29,7 @@ from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.reposet import resolve_repos
 from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch, \
     ReleaseSettings, Settings
-from athenian.api.db import FastConnection, ParallelDatabase
+from athenian.api.db import Connection, Database
 from athenian.api.defer import defer, launch_defer_from_request, wait_deferred
 from athenian.api.models.metadata.github import PushCommit, Release, User
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
@@ -394,7 +393,7 @@ def _compose_name(notification: WebDeploymentNotification) -> str:
 @sentry_span
 async def _resolve_references(components: Iterable[Tuple[Union[int, str], str]],
                               meta_ids: Tuple[int, ...],
-                              mdb: ParallelDatabase,
+                              mdb: Database,
                               repository_node_ids: bool,
                               ) -> Dict[str, Dict[str, str]]:
     releases = defaultdict(set)
@@ -462,7 +461,7 @@ async def _resolve_references(components: Iterable[Tuple[Union[int, str], str]],
 @sentry_span
 async def _notify_deployment(notification: WebDeploymentNotification,
                              account: int,
-                             rdb: ParallelDatabase,
+                             rdb: Database,
                              resolved_refs: Mapping[str, Mapping[str, str]],
                              repo_nodes: Mapping[str, str],
                              ) -> None:
@@ -503,20 +502,20 @@ async def _notify_deployment(notification: WebDeploymentNotification,
                 await rdb_conn.execute_many(insert(DeployedLabel), lvalues)
 
 
-async def resolve_deployed_component_references(sdb: ParallelDatabase,
-                                                mdb: ParallelDatabase,
-                                                rdb: ParallelDatabase,
+async def resolve_deployed_component_references(sdb: Database,
+                                                mdb: Database,
+                                                rdb: Database,
                                                 cache: Optional[aiomcache.Client],
                                                 ) -> None:
     """Resolve the missing deployed component references and remove stale deployments."""
     async with rdb.connection() as rdb_conn:
-        async with rdb.transaction():
+        async with rdb_conn.transaction():
             return await _resolve_deployed_component_references(sdb, mdb, rdb_conn, cache)
 
 
-async def _resolve_deployed_component_references(sdb: ParallelDatabase,
-                                                 mdb: ParallelDatabase,
-                                                 rdb: FastConnection,
+async def _resolve_deployed_component_references(sdb: Database,
+                                                 mdb: Database,
+                                                 rdb: Connection,
                                                  cache: Optional[aiomcache.Client],
                                                  ) -> None:
     await rdb.execute(delete(DeployedComponent).where(and_(
