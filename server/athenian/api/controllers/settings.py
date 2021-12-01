@@ -290,7 +290,7 @@ class LogicalPRSettings:
             pr_ids = prs[PullRequest.node_id.name].values[pr_indexes]
             order = np.argsort(pr_ids)
             pr_ids = pr_ids[order]
-            label_pr_ids = labels.index.values
+            label_pr_ids = labels.index.get_level_values(0).values
             found_indexes = np.searchsorted(pr_ids, label_pr_ids)
             found_indexes[found_indexes == len(pr_ids)] = 0
             label_pr_indexes = np.flatnonzero(pr_ids[found_indexes] == label_pr_ids)
