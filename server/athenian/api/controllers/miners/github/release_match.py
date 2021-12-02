@@ -338,7 +338,8 @@ class ReleaseToPullRequestMapper:
         if len(all_observed_commits):
             prs = await cls._find_old_released_prs(
                 all_observed_commits, all_observed_repos, time_from, authors, mergers, jira,
-                updated_min, updated_max, pr_blacklist, pr_whitelist, meta_ids, mdb, cache)
+                updated_min, updated_max, pr_blacklist, pr_whitelist,
+                prefixer, meta_ids, mdb, cache)
         else:
             prs = pd.DataFrame(columns=[c.name for c in PullRequest.__table__.columns
                                         if c.name != PullRequest.node_id.name])
@@ -595,17 +596,27 @@ class ReleaseToPullRequestMapper:
                                      updated_max: Optional[datetime],
                                      pr_blacklist: Optional[BinaryExpression],
                                      pr_whitelist: Optional[BinaryExpression],
+                                     prefixer: Prefixer,
                                      meta_ids: Tuple[int, ...],
                                      mdb: ParallelDatabase,
                                      cache: Optional[aiomcache.Client],
                                      ) -> pd.DataFrame:
         assert len(commits) == len(repos)
         assert len(commits) > 0
+        # performance: first find out the merge commit IDs, then use them to query PullRequest
+        # instead of PullRequest.merge_commit_sha.in_(np.unique(commits).astype("U40")),
+        commit_rows = await mdb.fetch_all(select([NodeCommit.node_id]).where(and_(
+            NodeCommit.acc_id.in_(meta_ids),
+            NodeCommit.repository_id.in_(
+                [prefixer.repo_name_to_node[r] for r in np.unique(repos).astype("U40")]),
+            NodeCommit.sha.in_(np.unique(commits).astype("U40")),
+        )))
+        merge_commit_ids = [r[0] for r in commit_rows]
         filters = [
             PullRequest.merged_at < time_boundary,
             PullRequest.hidden.is_(False),
             PullRequest.acc_id.in_(meta_ids),
-            PullRequest.merge_commit_sha.in_(commits.astype("U40")),
+            PullRequest.merge_commit_id.in_(merge_commit_ids),
         ]
         if updated_min is not None:
             filters.append(PullRequest.updated_at.between(updated_min, updated_max))
