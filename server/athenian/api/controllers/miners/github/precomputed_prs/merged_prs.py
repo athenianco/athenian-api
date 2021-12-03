@@ -232,6 +232,7 @@ class MergedPRFactsLoader:
         with sentry_sdk.start_span(op="load_merged_pull_request_facts_all/fetch"):
             rows = await pdb.fetch_all(query)
         facts = {}
+        missing_facts = []
         for row in rows:
             if (node_id := row[ghmprf.pr_node_id.name]) in facts:
                 # different release match settings, we don't care because the facts are the same
@@ -243,9 +244,11 @@ class MergedPRFactsLoader:
                 #    merged PR is matched to releases but exists in
                 #    `github_done_pull_request_facts`.
                 # 2. "Impossible" PRs that are merged.
-                log.warning("No precomputed facts for merged %s", node_id)
+                missing_facts.append(node_id)
                 continue
             facts[(node_id, row[ghmprf.repository_full_name.name])] = PullRequestFacts(data)
+        if missing_facts:
+            log.warning("No precomputed facts on account %d for merged %s", account, missing_facts)
         return facts
 
 
