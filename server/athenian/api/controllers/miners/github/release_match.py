@@ -608,7 +608,7 @@ class ReleaseToPullRequestMapper:
         commit_rows = await mdb.fetch_all(select([NodeCommit.node_id]).where(and_(
             NodeCommit.acc_id.in_(meta_ids),
             NodeCommit.repository_id.in_(
-                [prefixer.repo_name_to_node[r] for r in np.unique(repos).astype("U40")]),
+                [prefixer.repo_name_to_node[r] for r in np.unique(repos).astype("U")]),
             NodeCommit.sha.in_(np.unique(commits).astype("U40")),
         )))
         merge_commit_ids = [r[0] for r in commit_rows]
