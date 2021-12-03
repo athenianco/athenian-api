@@ -52,7 +52,7 @@ from athenian.api.controllers.miners.github.precomputed_prs import DonePRFactsLo
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.github.release_load import ReleaseLoader
 from athenian.api.controllers.miners.github.release_match import ReleaseToPullRequestMapper
-from athenian.api.db import db_retry_intervals, measure_db_overhead_and_retry, ParallelDatabase
+from athenian.api.db import Database, db_retry_intervals, measure_db_overhead_and_retry
 from athenian.api.experiments.preloading.entries import PreloadedBranchMiner, \
     PreloadedDonePRFactsLoader, PreloadedMergedPRFactsLoader, PreloadedOpenPRFactsLoader, \
     PreloadedPullRequestMiner, PreloadedReleaseLoader, PreloadedReleaseToPullRequestMapper
@@ -492,7 +492,7 @@ def precomputed_db(worker_id) -> str:
 
 
 async def _connect_to_db(addr, loop, request):
-    db = measure_db_overhead_and_retry(ParallelDatabase(addr), None, None)
+    db = measure_db_overhead_and_retry(Database(addr), None, None)
     try:
         await db.connect()
     except Exception:

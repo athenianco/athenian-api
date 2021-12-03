@@ -42,7 +42,7 @@ from athenian.api.controllers.miners.jira.issue import fetch_jira_issues, ISSUE_
 from athenian.api.controllers.miners.types import Deployment
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseSettings, Settings
-from athenian.api.db import ParallelDatabase
+from athenian.api.db import Database
 from athenian.api.models.metadata.github import Branch, PullRequest
 from athenian.api.models.metadata.jira import AthenianIssue, Component, Issue, IssueType, \
     Priority, Status, User
@@ -167,8 +167,8 @@ async def _epic_flow(return_: Set[str],
                      logical_settings: LogicalRepositorySettings,
                      account: int,
                      meta_ids: Tuple[int, ...],
-                     mdb: ParallelDatabase,
-                     pdb: ParallelDatabase,
+                     mdb: Database,
+                     pdb: Database,
                      cache: Optional[aiomcache.Client],
                      ) -> Tuple[Optional[List[JIRAEpic]],
                                 Optional[List[JIRAPriority]],
@@ -398,10 +398,10 @@ async def _issue_flow(return_: Set[str],
                       logical_settings: LogicalRepositorySettings,
                       prefixer: Prefixer,
                       meta_ids: Tuple[int, ...],
-                      sdb: ParallelDatabase,
-                      mdb: ParallelDatabase,
-                      pdb: ParallelDatabase,
-                      rdb: ParallelDatabase,
+                      sdb: Database,
+                      mdb: Database,
+                      pdb: Database,
+                      rdb: Database,
                       cache: Optional[aiomcache.Client],
                       ) -> Tuple[Optional[JIRAIssue],
                                  Optional[JIRALabel],
@@ -742,7 +742,7 @@ async def _issue_flow(return_: Set[str],
 async def _fetch_priorities(priorities: Collection[str],
                             acc_id: int,
                             return_: Set[str],
-                            mdb: ParallelDatabase,
+                            mdb: Database,
                             ) -> Optional[List[JIRAPriority]]:
     if JIRAFilterReturn.PRIORITIES not in return_:
         return None
@@ -767,7 +767,7 @@ async def _fetch_statuses(statuses: Collection[str],
                           status_project_map: Dict[str, Set[str]],
                           acc_id: int,
                           return_: Set[str],
-                          mdb: ParallelDatabase,
+                          mdb: Database,
                           ) -> Optional[List[JIRAStatus]]:
     if JIRAFilterReturn.STATUSES not in return_:
         return None
@@ -791,7 +791,7 @@ async def _fetch_statuses(statuses: Collection[str],
 async def _fetch_types(issue_type_projects: Mapping[str, Collection[str]],
                        acc_id: int,
                        return_: Set[str],
-                       mdb: ParallelDatabase,
+                       mdb: Database,
                        columns: Optional[List[InstrumentedAttribute]] = None,
                        ) -> Optional[List[Mapping[str, Any]]]:
     if JIRAFilterReturn.ISSUE_TYPES not in return_ and \
@@ -831,8 +831,8 @@ def _nonzero(arr: np.ndarray) -> np.ndarray:
 
 async def _collect_ids(account: int,
                        request: AthenianWebRequest,
-                       sdb: ParallelDatabase,
-                       mdb: ParallelDatabase,
+                       sdb: Database,
+                       mdb: Database,
                        cache: Optional[aiomcache.Client],
                        ) -> Tuple[Tuple[int, ...],
                                   JIRAConfig,

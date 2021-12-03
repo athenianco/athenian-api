@@ -24,7 +24,7 @@ from athenian.api.controllers.miners.types import DeploymentConclusion, PRPartic
     PullRequestFactsMap
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseSettings
-from athenian.api.db import add_pdb_hits, add_pdb_misses, ParallelDatabase
+from athenian.api.db import add_pdb_hits, add_pdb_misses, Database
 from athenian.api.models.metadata.github import PullRequest
 from athenian.api.models.persistentdata.models import DeploymentNotification
 from athenian.api.tracing import sentry_span
@@ -59,9 +59,9 @@ class UnfreshPullRequestFactsFetcher:
                                                prefixer: Prefixer,
                                                account: int,
                                                meta_ids: Tuple[int, ...],
-                                               mdb: ParallelDatabase,
-                                               pdb: ParallelDatabase,
-                                               rdb: ParallelDatabase,
+                                               mdb: Database,
+                                               pdb: Database,
+                                               rdb: Database,
                                                cache: Optional[aiomcache.Client],
                                                ) -> PullRequestFactsMap:
         """
@@ -183,7 +183,7 @@ class UnfreshPullRequestFactsFetcher:
                                       done_facts: PullRequestFactsMap,
                                       jira: JIRAFilter,
                                       meta_ids: Tuple[int, ...],
-                                      mdb: ParallelDatabase,
+                                      mdb: Database,
                                       cache: Optional[aiomcache.Client],
                                       ) -> None:
         pr_node_ids = defaultdict(list)
@@ -210,8 +210,8 @@ class UnfreshPullRequestFactsFetcher:
                                                     prefixer: Prefixer,
                                                     account: int,
                                                     meta_ids: Tuple[int, ...],
-                                                    mdb: ParallelDatabase,
-                                                    pdb: ParallelDatabase,
+                                                    mdb: Database,
+                                                    pdb: Database,
                                                     cache: Optional[aiomcache.Client],
                                                     ) -> pd.Index:
         prs = await discover_inactive_merged_unreleased_prs(

@@ -29,7 +29,7 @@ from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.types import released_prs_columns
 from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch, \
     ReleaseMatchSetting, ReleaseSettings
-from athenian.api.db import ParallelDatabase
+from athenian.api.db import Database
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import Branch, NodeCommit, PullRequest, \
     PullRequestLabel, Release
@@ -102,8 +102,7 @@ async def test_map_prs_to_releases_pdb(branches, default_branches, dag, mdb, pdb
         release_settings, prefixer, 1, (6366825,), mdb, pdb, None)
     await wait_deferred()
     assert len(released_prs) == 1
-    dummy_mdb = ParallelDatabase("sqlite://", force_rollback=True)
-    await dummy_mdb.connect()
+    dummy_mdb = await Database("sqlite://").connect()
     try:
         prlt = PullRequestLabel.__table__
         if prlt.schema:
@@ -193,8 +192,7 @@ async def test_map_prs_to_releases_precomputed_released(
         1, (6366825,), mdb, pdb, rdb, None)
 
     await pdb.execute(delete(GitHubCommitHistory))
-    dummy_mdb = ParallelDatabase("sqlite://", force_rollback=True)
-    await dummy_mdb.connect()
+    dummy_mdb = await Database("sqlite://").connect()
     prlt = PullRequestLabel.__table__
     try:
         if prlt.schema:
@@ -1013,7 +1011,7 @@ async def test__fetch_repository_commits_smoke(mdb, pdb, prune):
             columns=["1", "2", "3", "4"],
         ),
         ("1", "2", "3", "4"),
-        prune, 1, (6366825,), ParallelDatabase("sqlite://"), pdb, None)
+        prune, 1, (6366825,), Database("sqlite://"), pdb, None)
     assert pickle.dumps(dags2) == pickle.dumps(dags)
     with pytest.raises(Exception):
         await fetch_repository_commits(
@@ -1030,7 +1028,7 @@ async def test__fetch_repository_commits_smoke(mdb, pdb, prune):
                 columns=["1", "2", "3", "4"],
             ),
             ("1", "2", "3", "4"),
-            prune, 1, (6366825,), ParallelDatabase("sqlite://"), pdb, None)
+            prune, 1, (6366825,), Database("sqlite://"), pdb, None)
 
 
 @pytest.mark.parametrize("prune", [False, True])
@@ -1087,7 +1085,7 @@ async def test__fetch_repository_commits_cache(mdb, pdb, cache):
         ("1", "2", "3", "4"),
         False, 1, (6366825,), None, None, cache)
     assert pickle.dumps(dags1) == pickle.dumps(dags2)
-    fake_pdb = ParallelDatabase("sqlite://")
+    fake_pdb = Database("sqlite://")
 
     class FakeMetrics:
         def get(self):
@@ -1187,10 +1185,10 @@ async def test__fetch_repository_first_commit_dates_pdb_cache(
         ["src-d/go-git"], 1, (6366825,), mdb, pdb, cache)
     await wait_deferred()
     fcd2 = await releases_to_prs_mapper._fetch_repository_first_commit_dates(
-        ["src-d/go-git"], 1, (6366825,), ParallelDatabase("sqlite://"), pdb, None)
+        ["src-d/go-git"], 1, (6366825,), Database("sqlite://"), pdb, None)
     fcd3 = await releases_to_prs_mapper._fetch_repository_first_commit_dates(
-        ["src-d/go-git"], 1, (6366825,), ParallelDatabase("sqlite://"),
-        ParallelDatabase("sqlite://"), cache)
+        ["src-d/go-git"], 1, (6366825,), Database("sqlite://"),
+        Database("sqlite://"), cache)
     assert len(fcd1) == len(fcd2) == len(fcd3) == 1
     assert fcd1["src-d/go-git"] == fcd2["src-d/go-git"] == fcd3["src-d/go-git"]
     assert fcd1["src-d/go-git"].tzinfo == timezone.utc

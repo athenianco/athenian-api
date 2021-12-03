@@ -6,7 +6,7 @@ import marshal
 from typing import Any, Collection, Dict, List, Optional, Tuple
 
 import aiomcache
-import databases
+import morcilla
 import sentry_sdk
 from sqlalchemy import and_, func, not_, select, union
 from sqlalchemy.sql.functions import coalesce
@@ -49,9 +49,9 @@ async def mine_contributors(repos: Collection[str],
                             prefixer: Prefixer,
                             account: int,
                             meta_ids: Tuple[int, ...],
-                            mdb: databases.Database,
-                            pdb: databases.Database,
-                            rdb: databases.Database,
+                            mdb: morcilla.Database,
+                            pdb: morcilla.Database,
+                            rdb: morcilla.Database,
                             cache: Optional[aiomcache.Client],
                             force_fresh_releases: bool = False) -> List[Dict[str, Any]]:
     """Discover developers who made any important action in the given repositories and \
@@ -246,8 +246,8 @@ async def mine_contributors(repos: Collection[str],
 
 async def load_organization_members(account: int,
                                     meta_ids: Tuple[int, ...],
-                                    mdb: databases.Database,
-                                    sdb: databases.Database,
+                                    mdb: morcilla.Database,
+                                    sdb: morcilla.Database,
                                     log: logging.Logger,
                                     ) -> Tuple[Dict[str, set], Dict[str, set], Dict[str, str]]:
     """

@@ -7,7 +7,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
 from aiohttp import web
 import aiomcache
 from asyncpg import UniqueViolationError
-import databases
+import morcilla
 from sqlalchemy import and_, delete, insert, select, update
 
 from athenian.api import metadata
@@ -216,8 +216,8 @@ async def _check_parent_cycle(team_id: int, parent_id: Optional[int], sdb: Datab
 async def _get_all_team_members(teams: Iterable[Mapping],
                                 account: int,
                                 meta_ids: Tuple[int, ...],
-                                mdb: databases.Database,
-                                sdb: databases.Database,
+                                mdb: morcilla.Database,
+                                sdb: morcilla.Database,
                                 cache: Optional[aiomcache.Client]) -> Dict[str, Contributor]:
     all_members_prefixed = set(chain.from_iterable([t[Team.members.name] for t in teams]))
     all_members = {m.rsplit("/", 1)[1]: m for m in all_members_prefixed}

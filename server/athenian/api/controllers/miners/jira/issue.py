@@ -24,7 +24,7 @@ from athenian.api.controllers.miners.github.precomputed_prs import triage_by_rel
 from athenian.api.controllers.miners.types import PullRequestFactsMap
 from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch, \
     ReleaseSettings
-from athenian.api.db import DatabaseLike, ParallelDatabase
+from athenian.api.db import Database, DatabaseLike
 from athenian.api.models.metadata.github import NodePullRequest, NodePullRequestJiraIssues, \
     NodeRepository, PullRequest
 from athenian.api.models.metadata.jira import AthenianIssue, Component, Epic, Issue, Status
@@ -34,7 +34,7 @@ from athenian.api.tracing import sentry_span
 
 async def generate_jira_prs_query(filters: List[ClauseElement],
                                   jira: JIRAFilter,
-                                  mdb: ParallelDatabase,
+                                  mdb: Database,
                                   cache: Optional[aiomcache.Client],
                                   columns=PullRequest,
                                   seed=PullRequest,
@@ -93,7 +93,7 @@ async def generate_jira_prs_query(filters: List[ClauseElement],
 )
 async def _load_components(labels: LabelFilter,
                            account: int,
-                           mdb: ParallelDatabase,
+                           mdb: Database,
                            cache: Optional[aiomcache.Client],
                            ) -> Dict[str, str]:
     all_labels = set()
@@ -208,8 +208,8 @@ async def fetch_jira_issues(installation_ids: JIRAConfig,
                             logical_settings: LogicalRepositorySettings,
                             account: int,
                             meta_ids: Tuple[int, ...],
-                            mdb: ParallelDatabase,
-                            pdb: ParallelDatabase,
+                            mdb: Database,
+                            pdb: Database,
                             cache: Optional[aiomcache.Client],
                             extra_columns: Iterable[InstrumentedAttribute] = (),
                             ) -> pd.DataFrame:
@@ -347,7 +347,7 @@ async def _fetch_released_prs(pr_node_ids: Iterable[int],
                               default_branches: Dict[str, str],
                               release_settings: ReleaseSettings,
                               account: int,
-                              pdb: ParallelDatabase,
+                              pdb: Database,
                               ) -> Dict[str, Mapping[str, Any]]:
     ghdprf = GitHubDonePullRequestFacts
     released_rows = await pdb.fetch_all(
@@ -401,7 +401,7 @@ async def _fetch_issues(ids: JIRAConfig,
                         assignees: Collection[Optional[str]],
                         commenters: Collection[str],
                         nested_assignees: bool,
-                        mdb: ParallelDatabase,
+                        mdb: Database,
                         cache: Optional[aiomcache.Client],
                         extra_columns: Iterable[InstrumentedAttribute] = (),
                         ) -> pd.DataFrame:

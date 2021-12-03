@@ -37,7 +37,7 @@ from athenian.api.controllers.miners.types import DeploymentConclusion, Deployme
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch, \
     ReleaseSettings
-from athenian.api.db import add_pdb_hits, add_pdb_misses, insert_or_ignore, ParallelDatabase
+from athenian.api.db import add_pdb_hits, add_pdb_misses, Database, insert_or_ignore
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import NodeCommit, NodePullRequest, PullRequest, \
     PullRequestLabel, PushCommit, Release
@@ -86,9 +86,9 @@ async def mine_deployments(repo_node_ids: Collection[int],
                            prefixer: Prefixer,
                            account: int,
                            meta_ids: Tuple[int, ...],
-                           mdb: ParallelDatabase,
-                           pdb: ParallelDatabase,
-                           rdb: ParallelDatabase,
+                           mdb: Database,
+                           pdb: Database,
+                           rdb: Database,
                            cache: Optional[aiomcache.Client],
                            ) -> Tuple[pd.DataFrame, np.ndarray]:
     """Gather facts about deployments that satisfy the specified filters.
@@ -188,9 +188,9 @@ async def _finalize_release_settings(notifications: pd.DataFrame,
                                      prefixer: Prefixer,
                                      account: int,
                                      meta_ids: Tuple[int, ...],
-                                     mdb: ParallelDatabase,
-                                     pdb: ParallelDatabase,
-                                     rdb: ParallelDatabase,
+                                     mdb: Database,
+                                     pdb: Database,
+                                     rdb: Database,
                                      cache: Optional[aiomcache.Client],
                                      ) -> Tuple[List[str], ReleaseSettings]:
     assert not notifications.empty
@@ -223,9 +223,9 @@ async def _fetch_precomputed_deployed_releases(notifications: pd.DataFrame,
                                                prefixer: Prefixer,
                                                account: int,
                                                meta_ids: Tuple[int, ...],
-                                               mdb: ParallelDatabase,
-                                               pdb: ParallelDatabase,
-                                               rdb: ParallelDatabase,
+                                               mdb: Database,
+                                               pdb: Database,
+                                               rdb: Database,
                                                cache: Optional[aiomcache.Client],
                                                ) -> pd.DataFrame:
     assert repo_names
@@ -259,9 +259,9 @@ async def _postprocess_deployed_releases(releases: pd.DataFrame,
                                          prefixer: Prefixer,
                                          account: int,
                                          meta_ids: Tuple[int, ...],
-                                         mdb: ParallelDatabase,
-                                         pdb: ParallelDatabase,
-                                         rdb: ParallelDatabase,
+                                         mdb: Database,
+                                         pdb: Database,
+                                         rdb: Database,
                                          cache: Optional[aiomcache.Client],
                                          ) -> pd.DataFrame:
     if releases.empty:
@@ -349,7 +349,7 @@ async def _filter_by_prs(df: pd.DataFrame,
                          labels: LabelFilter,
                          jira: JIRAFilter,
                          meta_ids: Tuple[int, ...],
-                         mdb: ParallelDatabase,
+                         mdb: Database,
                          cache: Optional[aiomcache.Client],
                          ) -> pd.DataFrame:
     pr_node_ids = np.concatenate(df[DeploymentFacts.f.prs].values)
@@ -427,9 +427,9 @@ async def _compute_deployment_facts(notifications: pd.DataFrame,
                                     prefixer: Prefixer,
                                     account: int,
                                     meta_ids: Tuple[int, ...],
-                                    mdb: ParallelDatabase,
-                                    pdb: ParallelDatabase,
-                                    rdb: ParallelDatabase,
+                                    mdb: Database,
+                                    pdb: Database,
+                                    rdb: Database,
                                     cache: Optional[aiomcache.Client],
                                     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     components = components.take(np.flatnonzero(np.in1d(
@@ -481,7 +481,7 @@ async def _submit_deployment_facts(facts: pd.DataFrame,
                                    default_branches: Dict[str, str],
                                    settings: ReleaseSettings,
                                    account: int,
-                                   pdb: ParallelDatabase) -> None:
+                                   pdb: Database) -> None:
     joined = _adjust_empty_releases(facts.join(releases))
     values = [
         GitHubDeploymentFacts(
@@ -569,7 +569,7 @@ async def _generate_deployment_facts(
         commit_stats: DeployedCommitStats,
         releases: pd.DataFrame,
         account: int,
-        pdb: ParallelDatabase,
+        pdb: Database,
 ) -> pd.DataFrame:
     name_to_finished = dict(zip(notifications.index.values,
                                 notifications[DeploymentNotification.finished_at.name].values))
@@ -663,9 +663,9 @@ async def _map_releases_to_deployments(
         default_branches: Dict[str, str],
         account: int,
         meta_ids: Tuple[int, ...],
-        mdb: ParallelDatabase,
-        pdb: ParallelDatabase,
-        rdb: ParallelDatabase,
+        mdb: Database,
+        pdb: Database,
+        rdb: Database,
         cache: Optional[aiomcache.Client],
 ) -> pd.DataFrame:
     repo_node_to_name_get = prefixer.repo_node_to_name.get
@@ -767,8 +767,8 @@ async def _submit_deployed_commits(
         deployed_commits_per_repo_per_env: Dict[str, Dict[int, DeployedCommitDetails]],
         account: int,
         meta_ids: Tuple[int, ...],
-        mdb: ParallelDatabase,
-        pdb: ParallelDatabase) -> None:
+        mdb: Database,
+        pdb: Database) -> None:
     all_shas = []
     for repos in deployed_commits_per_repo_per_env.values():
         for details in repos.values():
@@ -798,7 +798,7 @@ async def _submit_deployed_commits(
 async def _submit_deployed_prs(
         values: Tuple[str, datetime, int, int],
         account: int,
-        pdb: ParallelDatabase) -> None:
+        pdb: Database) -> None:
     values = [
         GitHubPullRequestDeployment(
             acc_id=account,
@@ -817,7 +817,7 @@ async def _submit_deployed_releases(releases: pd.DataFrame,
                                     account: int,
                                     default_branches: Dict[str, str],
                                     settings: ReleaseSettings,
-                                    pdb: ParallelDatabase,
+                                    pdb: Database,
                                     ) -> None:
     values = [
         GitHubReleaseDeployment(
@@ -840,7 +840,7 @@ async def _fetch_commit_stats(all_mentioned_hashes: np.ndarray,
                               dags: Dict[str, DAG],
                               prefixer: Prefixer,
                               meta_ids: Tuple[int, ...],
-                              mdb: ParallelDatabase,
+                              mdb: Database,
                               ) -> DeployedCommitStats:
     commit_rows = await mdb.fetch_all(
         select([NodeCommit.id,
@@ -1083,7 +1083,7 @@ async def _extract_deployed_commits(
 @sentry_span
 async def _fetch_components_and_prune_unresolved(notifications: pd.DataFrame,
                                                  account: int,
-                                                 rdb: ParallelDatabase,
+                                                 rdb: Database,
                                                  ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     components = await read_sql_query(
         select([DeployedComponent])
@@ -1118,9 +1118,9 @@ async def _resolve_commit_relationship(
         prefixer: Prefixer,
         account: int,
         meta_ids: Tuple[int, ...],
-        mdb: ParallelDatabase,
-        pdb: ParallelDatabase,
-        rdb: ParallelDatabase,
+        mdb: Database,
+        pdb: Database,
+        rdb: Database,
         cache: Optional[aiomcache.Client],
 ) -> Tuple[Dict[str, Dict[int, Dict[int, Dict[int, CommitRelationship]]]],
            Dict[str, DAG],
@@ -1294,8 +1294,8 @@ async def _extend_dags_with_previous_commits(
         prefixer: Prefixer,
         account: int,
         meta_ids: Tuple[int, ...],
-        mdb: ParallelDatabase,
-        pdb: ParallelDatabase):
+        mdb: Database,
+        pdb: Database):
     records = {}
     missing_sha = b"0" * 40
     repo_node_to_name_get = prefixer.repo_node_to_name.get
@@ -1324,8 +1324,8 @@ async def _fetch_latest_deployed_components(
         until_per_repo_env: Dict[str, Dict[str, datetime]],
         account: int,
         meta_ids: Tuple[int, ...],
-        mdb: ParallelDatabase,
-        rdb: ParallelDatabase,
+        mdb: Database,
+        rdb: Database,
 ) -> Tuple[Dict[str, Dict[int, Tuple[str, bytes, datetime]]],
            Dict[str, Dict[str, datetime]]]:
     queries = [
@@ -1408,7 +1408,7 @@ async def _fetch_precomputed_deployment_facts(names: Collection[str],
                                               default_branches: Dict[str, str],
                                               settings: ReleaseSettings,
                                               account: int,
-                                              pdb: ParallelDatabase,
+                                              pdb: Database,
                                               ) -> pd.DataFrame:
     format_version = GitHubDeploymentFacts.__table__.columns[
         GitHubDeploymentFacts.format_version.name].default.arg
@@ -1494,7 +1494,7 @@ async def _fetch_deployment_candidates(repo_node_ids: Collection[int],
                                        with_labels: Mapping[str, Any],
                                        without_labels: Mapping[str, Any],
                                        account: int,
-                                       rdb: ParallelDatabase,
+                                       rdb: Database,
                                        cache: Optional[aiomcache.Client],
                                        ) -> Tuple[pd.DataFrame,
                                                   Collection[str],
@@ -1549,7 +1549,7 @@ async def _fetch_deployment_candidates(repo_node_ids: Collection[int],
 
 async def _fetch_grouped_labels(names: Collection[str],
                                 account: int,
-                                rdb: ParallelDatabase,
+                                rdb: Database,
                                 ) -> pd.DataFrame:
     df = await read_sql_query(select([DeployedLabel])
                               .where(and_(DeployedLabel.account_id == account,
@@ -1569,7 +1569,7 @@ async def _fetch_grouped_labels(names: Collection[str],
 async def load_jira_issues_for_deployments(deployments: pd.DataFrame,
                                            jira_ids: Optional[JIRAConfig],
                                            meta_ids: Tuple[int, ...],
-                                           mdb: ParallelDatabase,
+                                           mdb: Database,
                                            ) -> Dict[str, PullRequestJIRAIssueItem]:
     """Fetch JIRA issues mentioned by deployed PRs."""
     if jira_ids is None or deployments.empty:
@@ -1636,8 +1636,8 @@ async def load_jira_issues_for_deployments(deployments: pd.DataFrame,
     return issues
 
 
-async def validate_deployed_prs(pdb: ParallelDatabase,
-                                rdb: ParallelDatabase,
+async def validate_deployed_prs(pdb: Database,
+                                rdb: Database,
                                 log: logging.Logger,
                                 context: str) -> None:
     """Check whether all the PRs were deployed only once in each environment."""

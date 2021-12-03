@@ -14,7 +14,7 @@ from aiohttp import web
 import aiomcache
 import aiosqlite.core
 from asyncpg import IntegrityConstraintViolationError
-import databases.core
+import morcilla.core
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import and_, delete, func, insert, select, update
 
@@ -28,7 +28,7 @@ from athenian.api.controllers.account import fetch_github_installation_progress,
 from athenian.api.controllers.ffx import decrypt, encrypt
 from athenian.api.controllers.reposet import load_account_reposets
 from athenian.api.controllers.user import load_user_accounts
-from athenian.api.db import DatabaseLike, FastConnection, ParallelDatabase
+from athenian.api.db import Connection, Database, DatabaseLike
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import NodeUser, OrganizationMember
 from athenian.api.models.state.models import Account, AccountFeature, Feature, FeatureComponent, \
@@ -82,7 +82,7 @@ async def gen_invitation(request: AthenianWebRequest, id: int) -> web.Response:
         return model_response(model)
 
 
-async def _check_admin_access(uid: str, account: int, sdb_conn: databases.core.Connection):
+async def _check_admin_access(uid: str, account: int, sdb_conn: morcilla.core.Connection):
     status = await sdb_conn.fetch_one(
         select([UserAccount.is_admin])
         .where(and_(UserAccount.user_id == uid, UserAccount.account_id == account)))
@@ -151,10 +151,10 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
 async def _accept_invitation(iid: int,
                              salt: int,
                              request: AthenianWebRequest,
-                             sdb_transaction: FastConnection,
-                             sdb: ParallelDatabase,
-                             mdb: ParallelDatabase,
-                             rdb: ParallelDatabase,
+                             sdb_transaction: Connection,
+                             sdb: Database,
+                             mdb: Database,
+                             rdb: Database,
                              cache: Optional[aiomcache.Client],
                              ) -> Tuple[int, User]:
     """
@@ -295,10 +295,11 @@ async def _check_user_org_membership(request: AthenianWebRequest,
 
 async def create_new_account(conn: DatabaseLike, secret: str) -> int:
     """Create a new account."""
-    if isinstance(conn, databases.Database):
+    if isinstance(conn, morcilla.Database):
         slow = conn.url.dialect == "sqlite"
     else:
-        slow = isinstance(conn.raw_connection, aiosqlite.core.Connection)
+        async with conn.raw_connection() as raw_connection:
+            slow = isinstance(raw_connection, aiosqlite.core.Connection)
     if slow:
         return await _create_new_account_slow(conn, secret)
     return await _create_new_account_fast(conn, secret)
@@ -375,8 +376,8 @@ async def _append_precomputed_progress(model: InstallationProgress,
                                        account: int,
                                        uid: str,
                                        login: Callable[[], Coroutine[None, None, str]],
-                                       sdb: ParallelDatabase,
-                                       mdb: ParallelDatabase,
+                                       sdb: Database,
+                                       mdb: Database,
                                        cache: Optional[aiomcache.Client],
                                        slack: Optional[SlackWebClient]) -> None:
     assert model.finished_date is not None

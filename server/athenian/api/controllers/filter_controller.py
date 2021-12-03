@@ -41,7 +41,7 @@ from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.release import extract_release_participants
 from athenian.api.controllers.reposet import resolve_repos
 from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseSettings, Settings
-from athenian.api.db import ParallelDatabase
+from athenian.api.db import Database
 from athenian.api.models.metadata.github import PullRequest, PushCommit, Release, User
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
     DeploymentNotification
@@ -415,7 +415,7 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
 async def _load_jira_issues_for_releases(jira_ids: Optional[JIRAConfig],
                                          releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
                                          meta_ids: Tuple[int, ...],
-                                         mdb: ParallelDatabase) -> Dict[str, LinkedJIRAIssue]:
+                                         mdb: Database) -> Dict[str, LinkedJIRAIssue]:
     if jira_ids is None:
         for (_, facts) in releases:
             facts.prs_jira = np.full(len(facts["prs_" + PullRequest.node_id.name]), None)
@@ -444,7 +444,7 @@ async def _build_release_set_response(releases: List[Tuple[Dict[str, Any], Relea
                                       prefixer: Prefixer,
                                       jira_ids: Optional[JIRAConfig],
                                       meta_ids: Tuple[int, ...],
-                                      mdb: ParallelDatabase,
+                                      mdb: Database,
                                       ) -> web.Response:
     issues = await _load_jira_issues_for_releases(jira_ids, releases, meta_ids, mdb)
     repo_node_to_prefixed_name = prefixer.repo_node_to_prefixed_name.get
@@ -586,7 +586,7 @@ async def _build_github_prs_response(prs: List[PullRequestListItem],
                                      deployments: Dict[str, Deployment],
                                      prefixer: Prefixer,
                                      meta_ids: Tuple[int, ...],
-                                     mdb: ParallelDatabase,
+                                     mdb: Database,
                                      cache: Optional[aiomcache.Client],
                                      ) -> web.Response:
     log = logging.getLogger(f"{metadata.__package__}._build_github_prs_response")

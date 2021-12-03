@@ -4,7 +4,7 @@ from typing import List, Optional
 
 from aiohttp import web
 from asyncpg import UniqueViolationError
-import databases.core
+import morcilla.core
 from sqlalchemy import and_, delete, insert, select, update
 
 from athenian.api.auth import disable_default_user
@@ -80,7 +80,7 @@ async def get_reposet(request: AthenianWebRequest, id: int) -> web.Response:
 
 
 async def _check_reposet(request: AthenianWebRequest,
-                         sdb_conn: Optional[databases.core.Connection],
+                         sdb_conn: Optional[morcilla.core.Connection],
                          account: int,
                          body: List[str],
                          ) -> List[str]:

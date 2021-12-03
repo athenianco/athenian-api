@@ -99,7 +99,8 @@ async def instrument(request: web.Request, handler) -> web.Response:
     for v in chain(request.app["cache_context"].values(), request.app["pdb_context"].values()):
         v.set(defaultdict(int))
     try:
-        return (response := await handler(request))  # type: web.Response
+        response = await handler(request)  # type: web.Response
+        return response
     finally:
         if request.method != "OPTIONS":
             try:

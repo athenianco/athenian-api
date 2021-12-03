@@ -6,6 +6,7 @@ import tempfile
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from athenian.api.db import extract_registered_models
 from athenian.api.models.state.models import Base
 
 
@@ -22,7 +23,7 @@ def test_migrations(worker_id):
         engine = create_engine(cs)
         session = sessionmaker(bind=engine)()
         try:
-            for model in Base._decl_class_registry.values():
+            for model in extract_registered_models(Base).values():
                 try:
                     model.__name__, model.__tablename__
                 except AttributeError:

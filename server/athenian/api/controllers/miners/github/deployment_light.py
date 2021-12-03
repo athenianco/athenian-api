@@ -11,7 +11,7 @@ from athenian.api.cache import cached, middle_term_expire
 from athenian.api.controllers.miners.types import DeployedComponent as DeployedComponentDC, \
     Deployment, DeploymentConclusion
 from athenian.api.controllers.prefixer import Prefixer
-from athenian.api.db import ParallelDatabase
+from athenian.api.db import Database
 from athenian.api.models.metadata.github import NodeCommit
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
     DeploymentNotification
@@ -29,8 +29,8 @@ from athenian.api.tracing import sentry_span
 async def load_included_deployments(names: Collection[str],
                                     account: int,
                                     meta_ids: Tuple[int, ...],
-                                    mdb: ParallelDatabase,
-                                    rdb: ParallelDatabase,
+                                    mdb: Database,
+                                    rdb: Database,
                                     cache: Optional[aiomcache.Client],
                                     ) -> Dict[str, Deployment]:
     """
@@ -104,7 +104,7 @@ repository_environment_threshold = timedelta(days=60)
 async def fetch_repository_environments(repos: Collection[str],
                                         prefixer: Prefixer,
                                         account: int,
-                                        rdb: ParallelDatabase,
+                                        rdb: Database,
                                         cache: Optional[aiomcache.Client],
                                         ) -> Dict[str, List[str]]:
     """Map environments to repositories that have deployed there."""

@@ -1,4 +1,4 @@
-import databases
+import morcilla
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -26,6 +26,6 @@ async def _test_reset_sequence(state_db):
     finally:
         session.close()
     main_invite(sqla_conn_str)
-    db = databases.Database(state_db)
+    db = morcilla.Database(state_db)
     await db.connect()
     assert await invitation_controller.create_new_account(db, "whatever") == 4

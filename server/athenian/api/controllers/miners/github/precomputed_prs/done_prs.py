@@ -7,7 +7,7 @@ from typing import Any, Callable, Collection, Dict, Iterable, KeysView, List, Ma
     Set, Tuple
 
 import aiomcache
-import databases
+import morcilla
 import numpy as np
 import pandas as pd
 import sentry_sdk
@@ -36,7 +36,7 @@ from athenian.api.controllers.miners.types import MinedPullRequest, PRParticipan
     PRParticipationKind, PullRequestFacts, PullRequestFactsMap
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
-from athenian.api.db import ParallelDatabase
+from athenian.api.db import Database
 from athenian.api.models.metadata.github import PullRequest, PullRequestLabel, Release
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
     GitHubPullRequestDeployment
@@ -55,7 +55,7 @@ class DonePRFactsLoader:
                                                default_branches: Dict[str, str],
                                                release_settings: ReleaseSettings,
                                                account: int,
-                                               pdb: databases.Database,
+                                               pdb: morcilla.Database,
                                                ) -> Tuple[Set[int], Dict[str, List[int]]]:
         """
         Load the set of done PR identifiers and specifically ambiguous PR node IDs.
@@ -100,7 +100,7 @@ class DonePRFactsLoader:
                                                   release_settings: ReleaseSettings,
                                                   prefixer: Prefixer,
                                                   account: int,
-                                                  pdb: databases.Database,
+                                                  pdb: morcilla.Database,
                                                   ) -> Tuple[PullRequestFactsMap,
                                                              Dict[str, List[int]]]:
         """
@@ -129,7 +129,7 @@ class DonePRFactsLoader:
                                               release_settings: ReleaseSettings,
                                               prefixer: Prefixer,
                                               account: int,
-                                              pdb: databases.Database,
+                                              pdb: morcilla.Database,
                                               extra: Iterable[InstrumentedAttribute] = (),
                                               ) -> Tuple[PullRequestFactsMap,
                                                          Dict[str, Mapping[str, Any]]]:
@@ -170,7 +170,7 @@ class DonePRFactsLoader:
                                                       release_settings: ReleaseSettings,
                                                       prefixer: Prefixer,
                                                       account: int,
-                                                      pdb: databases.Database,
+                                                      pdb: morcilla.Database,
                                                       ) -> Tuple[Dict[Tuple[int, str], datetime],
                                                                  Dict[str, List[int]]]:
         """
@@ -200,7 +200,7 @@ class DonePRFactsLoader:
                                                    release_settings: ReleaseSettings,
                                                    prefixer: Prefixer,
                                                    account: int,
-                                                   pdb: databases.Database,
+                                                   pdb: morcilla.Database,
                                                    ) -> Tuple[PullRequestFactsMap,
                                                               Dict[str, List[int]]]:
         """
@@ -273,7 +273,7 @@ class DonePRFactsLoader:
                                               release_settings: ReleaseSettings,
                                               prefixer: Prefixer,
                                               account: int,
-                                              pdb: databases.Database,
+                                              pdb: morcilla.Database,
                                               panic_on_missing_repositories: bool = True,
                                               ) -> Tuple[PullRequestFactsMap,
                                                          Dict[str, List[int]]]:
@@ -348,7 +348,7 @@ class DonePRFactsLoader:
                                            release_settings: ReleaseSettings,
                                            prefixer: Prefixer,
                                            account: int,
-                                           pdb: databases.Database,
+                                           pdb: morcilla.Database,
                                            cache: Optional[aiomcache.Client],
                                            ) -> pd.DataFrame:
         """
@@ -430,7 +430,7 @@ class DonePRFactsLoader:
                                              release_settings: ReleaseSettings,
                                              prefixer: Prefixer,
                                              account: int,
-                                             pdb: databases.Database,
+                                             pdb: morcilla.Database,
                                              ) -> Tuple[Dict[Tuple[int, str], Mapping[str, Any]],
                                                         Dict[str, List[int]]]:
         """
@@ -728,7 +728,7 @@ async def store_precomputed_done_facts(prs: Iterable[MinedPullRequest],
                                        default_branches: Dict[str, str],
                                        release_settings: ReleaseSettings,
                                        account: int,
-                                       pdb: databases.Database,
+                                       pdb: morcilla.Database,
                                        ) -> None:
     """Store PullRequestFacts belonging to released or rejected PRs to the precomputed DB."""
     log = logging.getLogger("%s.store_precomputed_done_facts" % metadata.__package__)
@@ -826,8 +826,8 @@ async def delete_force_push_dropped_prs(repos: Iterable[str],
                                         branches: pd.DataFrame,
                                         account: int,
                                         meta_ids: Tuple[int, ...],
-                                        mdb: ParallelDatabase,
-                                        pdb: ParallelDatabase,
+                                        mdb: Database,
+                                        pdb: Database,
                                         cache: Optional[aiomcache.Client],
                                         ) -> Collection[str]:
     """

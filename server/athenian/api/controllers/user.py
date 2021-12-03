@@ -37,7 +37,8 @@ async def load_user_accounts(uid: str,
     try:
         is_sqlite = sdb.url.dialect == "sqlite"
     except AttributeError:
-        is_sqlite = isinstance(sdb.raw_connection, aiosqlite.Connection)
+        async with sdb.raw_connection() as raw_connection:
+            is_sqlite = isinstance(raw_connection, aiosqlite.Connection)
     now = datetime.now(None if is_sqlite else timezone.utc)
     tasks = [
         get_jira_installation_or_none(x[UserAccount.account_id.name], sdb, mdb, cache)

@@ -18,7 +18,7 @@ from athenian.api.controllers.features.github.check_run_metrics_accelerated impo
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
-from athenian.api.db import DatabaseLike, ParallelDatabase
+from athenian.api.db import Database, DatabaseLike
 from athenian.api.int_to_str import int_to_str
 from athenian.api.models.metadata.github import CheckRun, CheckRunByPR, NodePullRequest, \
     NodePullRequestCommit, NodeRepository, PullRequestLabel
@@ -188,7 +188,7 @@ async def _mine_check_runs(time_from: datetime,
 async def _disambiguate_pull_requests(df: pd.DataFrame,
                                       log: logging.Logger,
                                       meta_ids: Tuple[int, ...],
-                                      mdb: ParallelDatabase,
+                                      mdb: Database,
                                       ) -> pd.DataFrame:
     pr_node_ids = df[CheckRun.pull_request_node_id.name].values
     check_run_node_ids = df[CheckRun.check_run_node_id.name].values.astype(int, copy=False)
@@ -401,7 +401,7 @@ async def _append_pull_request_check_runs_outside(df: pd.DataFrame,
                                                   labels: LabelFilter,
                                                   embedded_labels_query: bool,
                                                   meta_ids: Tuple[int, ...],
-                                                  mdb: ParallelDatabase,
+                                                  mdb: Database,
                                                   ) -> [pd.DataFrame, Tuple[pd.DataFrame, ...]]:
     pr_node_ids = df[CheckRun.pull_request_node_id.name]
     prs_from_the_past = pr_node_ids[(

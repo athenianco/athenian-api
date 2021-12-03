@@ -3,7 +3,7 @@ from datetime import timezone
 from itertools import chain
 from typing import Any, Dict, Iterable, List, Tuple
 
-import databases
+import morcilla
 import pandas as pd
 import sentry_sdk
 from sqlalchemy import and_, desc, insert, or_, select, union_all
@@ -44,7 +44,7 @@ async def load_precomputed_release_facts(releases: pd.DataFrame,
                                          default_branches: Dict[str, str],
                                          settings: ReleaseSettings,
                                          account: int,
-                                         pdb: databases.Database,
+                                         pdb: morcilla.Database,
                                          ) -> Dict[Tuple[int, str], ReleaseFacts]:
     """
     Fetch precomputed facts about releases.
@@ -113,7 +113,7 @@ async def store_precomputed_release_facts(releases: List[Tuple[Dict[str, Any], R
                                           default_branches: Dict[str, str],
                                           settings: ReleaseSettings,
                                           account: int,
-                                          pdb: databases.Database) -> None:
+                                          pdb: morcilla.Database) -> None:
     """Put the new release facts to the pdb."""
     values = []
     for dikt, facts in releases:
@@ -153,7 +153,7 @@ async def store_precomputed_release_facts(releases: List[Tuple[Dict[str, Any], R
 @sentry_span
 async def fetch_precomputed_releases_by_name(names: Dict[str, Iterable[str]],
                                              account: int,
-                                             pdb: databases.Database,
+                                             pdb: morcilla.Database,
                                              ) -> pd.DataFrame:
     """Load precomputed release facts given the mapping from repository names to release names."""
     prel = PrecomputedRelease

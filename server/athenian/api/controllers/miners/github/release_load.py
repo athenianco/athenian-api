@@ -7,7 +7,7 @@ from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Uni
 
 import aiomcache
 import asyncpg
-import databases
+import morcilla
 import numpy as np
 import pandas as pd
 import sentry_sdk
@@ -28,7 +28,7 @@ from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import default_branch_alias, LogicalRepositorySettings, \
     ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
-from athenian.api.db import add_pdb_hits, add_pdb_misses, greatest, least, ParallelDatabase
+from athenian.api.db import add_pdb_hits, add_pdb_misses, Database, greatest, least
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import Branch, NodeCommit, PushCommit, Release, User
 from athenian.api.models.persistentdata.models import ReleaseNotification
@@ -59,9 +59,9 @@ class ReleaseLoader:
                             prefixer: Prefixer,
                             account: int,
                             meta_ids: Tuple[int, ...],
-                            mdb: ParallelDatabase,
-                            pdb: ParallelDatabase,
-                            rdb: ParallelDatabase,
+                            mdb: Database,
+                            pdb: Database,
+                            rdb: Database,
                             cache: Optional[aiomcache.Client],
                             index: Optional[Union[str, Sequence[str]]] = None,
                             force_fresh: bool = False,
@@ -78,9 +78,9 @@ class ReleaseLoader:
                  2. map from repository names (without the service prefix) to the effective
                     matches.
         """
-        assert isinstance(mdb, ParallelDatabase)
-        assert isinstance(pdb, ParallelDatabase)
-        assert isinstance(rdb, ParallelDatabase)
+        assert isinstance(mdb, Database)
+        assert isinstance(pdb, Database)
+        assert isinstance(rdb, Database)
         assert time_from <= time_to
 
         log = logging.getLogger("%s.load_releases" % metadata.__package__)
@@ -297,7 +297,7 @@ class ReleaseLoader:
             cls,
             match_groups: Dict[ReleaseMatch, Dict[str, List[str]]],
             account: int,
-            pdb: ParallelDatabase) -> Dict[str, Dict[str, Tuple[datetime, datetime]]]:
+            pdb: Database) -> Dict[str, Dict[str, Tuple[datetime, datetime]]]:
         """Find out the precomputed time intervals for each release match group of repositories."""
         ghrts = GitHubReleaseMatchTimespan
         sqlite = pdb.url.dialect == "sqlite"
@@ -338,8 +338,8 @@ class ReleaseLoader:
                              release_settings: ReleaseSettings,
                              account: int,
                              meta_ids: Tuple[int, ...],
-                             mdb: ParallelDatabase,
-                             pdb: ParallelDatabase,
+                             mdb: Database,
+                             pdb: Database,
                              cache: Optional[aiomcache.Client],
                              index: Optional[Union[str, Sequence[str]]] = None,
                              ) -> pd.DataFrame:
@@ -376,7 +376,7 @@ class ReleaseLoader:
                                           time_to: datetime,
                                           prefixer: Prefixer,
                                           account: int,
-                                          pdb: ParallelDatabase,
+                                          pdb: Database,
                                           index: Optional[Union[str, Sequence[str]]] = None,
                                           ) -> pd.DataFrame:
         prel = PrecomputedRelease
@@ -419,8 +419,8 @@ class ReleaseLoader:
                                     time_to: datetime,
                                     logical_settings: LogicalRepositorySettings,
                                     prefixer: Prefixer,
-                                    mdb: ParallelDatabase,
-                                    rdb: ParallelDatabase,
+                                    mdb: Database,
+                                    rdb: Database,
                                     index: Optional[Union[str, Sequence[str]]] = None,
                                     ) -> pd.DataFrame:
         """Load pushed releases from persistentdata DB."""
@@ -570,8 +570,8 @@ class ReleaseLoader:
             time_from: datetime,
             time_to: datetime,
             account: int,
-            pdb: databases.core.Connection) -> None:
-        assert isinstance(pdb, databases.core.Connection)
+            pdb: morcilla.core.Connection) -> None:
+        assert isinstance(pdb, morcilla.core.Connection)
         inserted = []
         time_to = min(time_to, datetime.now(timezone.utc))
         for rm, pair in match_groups.items():
@@ -596,7 +596,9 @@ class ReleaseLoader:
                         ).explode(with_primary_keys=True))
         if not inserted:
             return
-        if isinstance(pdb.raw_connection, asyncpg.Connection):
+        async with pdb.raw_connection() as raw_connection:
+            postgres = isinstance(raw_connection, asyncpg.Connection)
+        if postgres:
             sql = postgres_insert(GitHubReleaseMatchTimespan)
             sql = sql.on_conflict_do_update(
                 constraint=GitHubReleaseMatchTimespan.__table__.primary_key,
@@ -618,8 +620,8 @@ class ReleaseLoader:
                                           default_branches: Dict[str, str],
                                           settings: ReleaseSettings,
                                           account: int,
-                                          pdb: databases.core.Connection) -> None:
-        assert isinstance(pdb, databases.core.Connection)
+                                          pdb: morcilla.core.Connection) -> None:
+        assert isinstance(pdb, morcilla.core.Connection)
         if not isinstance(releases.index, pd.RangeIndex):
             releases = releases.reset_index()
         inserted = []
@@ -652,11 +654,12 @@ class ReleaseLoader:
             inserted.append(obj)
 
         if inserted:
-            if isinstance(pdb.raw_connection, asyncpg.Connection):
-                sql = postgres_insert(PrecomputedRelease)
-                sql = sql.on_conflict_do_nothing()
-            else:
-                sql = insert(PrecomputedRelease).prefix_with("OR IGNORE")
+            async with pdb.raw_connection() as raw_connection:
+                if isinstance(raw_connection, asyncpg.Connection):
+                    sql = postgres_insert(PrecomputedRelease)
+                    sql = sql.on_conflict_do_nothing()
+                else:
+                    sql = insert(PrecomputedRelease).prefix_with("OR IGNORE")
 
             with sentry_sdk.start_span(op="_store_precomputed_releases/execute_many"):
                 await pdb.execute_many(sql, inserted)
@@ -809,7 +812,7 @@ class ReleaseMatcher:
     """Release matcher for tag and branch."""
 
     def __init__(self, account: int, meta_ids: Tuple[int, ...],
-                 mdb: ParallelDatabase, pdb: ParallelDatabase,
+                 mdb: Database, pdb: Database,
                  cache: Optional[aiomcache.Client]):
         """Create a `ReleaseMatcher`."""
         self._account = account

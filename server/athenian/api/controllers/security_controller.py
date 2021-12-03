@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional
 
 from aiohttp import web
 from asyncpg import UniqueViolationError
-import databases.core
+import morcilla.core
 from sqlalchemy import and_, delete, insert, select, update
 
 from athenian.api.controllers.account import get_user_account_status
@@ -115,7 +115,7 @@ async def list_tokens(request: AthenianWebRequest, id: int) -> web.Response:
 
 async def _check_token_access(request: AthenianWebRequest,
                               id: int,
-                              conn: databases.core.Connection) -> None:
+                              conn: morcilla.core.Connection) -> None:
     token = await conn.fetch_one(select([UserToken]).where(UserToken.id == id))
     if token is None:
         raise ResponseError(NotFoundError(detail="Token %d was not found" % id))

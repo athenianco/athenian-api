@@ -21,7 +21,7 @@ from athenian.api.controllers.logical_repos import coerce_logical_repos
 from athenian.api.controllers.miners.access import AccessChecker
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.prefixer import Prefixer
-from athenian.api.db import DatabaseLike, FastConnection, ParallelDatabase
+from athenian.api.db import Connection, Database, DatabaseLike
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import AccountRepository, NodeUser
 from athenian.api.models.state.models import RepositorySet, UserAccount
@@ -37,7 +37,7 @@ async def resolve_reposet(repo: str,
                           uid: str,
                           account: int,
                           logical_settings,  # LogicalRepositorySettings
-                          sdb: Union[FastConnection, ParallelDatabase],
+                          sdb: Union[Connection, Database],
                           cache: Optional[aiomcache.Client],
                           ) -> Collection[str]:
     """
@@ -102,8 +102,8 @@ async def fetch_reposet(
 async def load_all_reposet(account: int,
                            login: Callable[[], Coroutine[None, None, str]],
                            logical_settings,  # LogicalRepositorySettings
-                           sdb: ParallelDatabase,
-                           mdb: ParallelDatabase,
+                           sdb: Database,
+                           mdb: Database,
                            cache: Optional[aiomcache.Client],
                            slack: Optional[SlackWebClient],
                            ) -> List[Collection[str]]:
@@ -125,8 +125,8 @@ async def resolve_repos(repositories: List[str],
                         login: Callable[[], Coroutine[None, None, str]],
                         logical_settings,  # LogicalRepositorySettings
                         meta_ids: Optional[Tuple[int, ...]],
-                        sdb: ParallelDatabase,
-                        mdb: ParallelDatabase,
+                        sdb: Database,
+                        mdb: Database,
                         cache: Optional[aiomcache.Client],
                         slack: Optional[SlackWebClient],
                         strip_prefix=True,
@@ -213,8 +213,8 @@ async def resolve_repos(repositories: List[str],
 async def load_account_reposets(account: int,
                                 login: Callable[[], Coroutine[None, None, str]],
                                 fields: list,
-                                sdb: ParallelDatabase,
-                                mdb: ParallelDatabase,
+                                sdb: Database,
+                                mdb: Database,
                                 cache: Optional[aiomcache.Client],
                                 slack: Optional[SlackWebClient],
                                 check_progress: bool = True,
@@ -231,8 +231,8 @@ async def load_account_reposets(account: int,
     :param check_progress: Check that we've already fetched all the repositories in mdb.
     :return: List of DB rows or __dict__-s representing the loaded RepositorySets.
     """
-    assert isinstance(sdb, ParallelDatabase)
-    assert isinstance(mdb, ParallelDatabase)
+    assert isinstance(sdb, Database)
+    assert isinstance(mdb, Database)
     async with sdb.connection() as sdb_conn:
         async with mdb.connection() as mdb_conn:
             return await _load_account_reposets(
@@ -243,14 +243,14 @@ async def _load_account_reposets(account: int,
                                  login: Callable[[], Coroutine[None, None, str]],
                                  fields: list,
                                  check_progress: bool,
-                                 sdb_conn: FastConnection,
-                                 mdb_conn: FastConnection,
-                                 mdb: ParallelDatabase,
+                                 sdb_conn: Connection,
+                                 mdb_conn: Connection,
+                                 mdb: Database,
                                  cache: Optional[aiomcache.Client],
                                  slack: Optional[SlackWebClient],
                                  ) -> List[Mapping]:
-    assert isinstance(sdb_conn, FastConnection)
-    assert isinstance(mdb_conn, FastConnection)
+    assert isinstance(sdb_conn, Connection)
+    assert isinstance(mdb_conn, Connection)
     rss = await sdb_conn.fetch_all(
         select(fields)
         .where(RepositorySet.owner_id == account)
@@ -301,10 +301,11 @@ async def _load_account_reposets(account: int,
                 select([ar.repo_graph_id, ar.enabled, updated_col])
                 .where(ar.acc_id.in_(meta_ids))
             ).alias("w")
-            if isinstance(sdb_conn.raw_connection, asyncpg.Connection):
-                and_func = func.bool_and
-            else:
-                and_func = func.max
+            async with sdb_conn.raw_connection() as raw_connection:
+                if isinstance(raw_connection, asyncpg.Connection):
+                    and_func = func.bool_and
+                else:
+                    and_func = func.max
             query = (
                 select([window_query.c.repo_graph_id])
                 .select_from(window_query)
@@ -348,8 +349,8 @@ async def _load_account_reposets(account: int,
 
 
 async def load_account_state(account: int,
-                             sdb: ParallelDatabase,
-                             mdb: ParallelDatabase,
+                             sdb: Database,
+                             mdb: Database,
                              cache: Optional[aiomcache.Client],
                              slack: Optional[SlackWebClient],
                              log: Optional[logging.Logger] = None,

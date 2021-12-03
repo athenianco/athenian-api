@@ -13,7 +13,7 @@ from sqlalchemy.sql import ClauseElement
 from sqlalchemy.sql.elements import Label
 
 from athenian.api import metadata
-from athenian.api.db import DatabaseLike, ParallelDatabase
+from athenian.api.db import Database, DatabaseLike
 from athenian.api.models.metadata.github import Base as MetadataBase
 from athenian.api.models.persistentdata.models import Base as PerdataBase
 from athenian.api.models.precomputed.models import GitHubBase as PrecomputedBase
@@ -212,7 +212,7 @@ async def read_sql_query_with_join_collapse(
         columns: Union[Sequence[str], Sequence[InstrumentedAttribute],
                        MetadataBase, PerdataBase, PrecomputedBase, StateBase],
         set_join_collapse_limit: bool,
-        mdb: ParallelDatabase,
+        mdb: Database,
 ) -> pd.DataFrame:
     """Enforce the predefined JOIN order in read_sql_query()."""
     set_join_collapse_limit &= mdb.url.dialect == "postgresql"

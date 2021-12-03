@@ -12,7 +12,7 @@ from aiohttp import web
 import aiomcache
 import aiosqlite
 from asyncpg import UniqueViolationError
-import databases.core
+import morcilla.core
 import networkx as nx
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import and_, func, insert, select
@@ -20,7 +20,7 @@ from sqlalchemy import and_, func, insert, select
 from athenian.api import metadata
 from athenian.api.cache import cached, max_exptime
 from athenian.api.controllers.prefixer import Prefixer
-from athenian.api.db import DatabaseLike, FastConnection, ParallelDatabase
+from athenian.api.db import Connection, Database, DatabaseLike
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import Account as MetadataAccount, AccountRepository, \
     FetchProgress, NodeUser, Organization, Team as MetadataTeam, TeamMember
@@ -77,9 +77,9 @@ async def get_metadata_account_ids_or_empty(account: int,
 
 async def match_metadata_installation(account: int,
                                       login: str,
-                                      sdb_conn: FastConnection,
-                                      mdb_conn: FastConnection,
-                                      mdb: ParallelDatabase,
+                                      sdb_conn: Connection,
+                                      mdb_conn: Connection,
+                                      mdb: Database,
                                       slack: Optional[SlackWebClient],
                                       ) -> Collection[int]:
     """Discover new metadata installations for the given state DB account.
@@ -306,7 +306,7 @@ async def get_installation_event_ids(account: int,
     refresh_on_access=True,
 )
 async def get_installation_owner(metadata_account_id: int,
-                                 mdb_conn: databases.core.Connection,
+                                 mdb_conn: morcilla.core.Connection,
                                  cache: Optional[aiomcache.Client],
                                  ) -> str:
     """Load the native user ID who installed the app."""
@@ -324,13 +324,14 @@ async def get_installation_owner(metadata_account_id: int,
         key=lambda account, **_: (account,))
 async def fetch_github_installation_progress(account: int,
                                              sdb: DatabaseLike,
-                                             mdb_conn: FastConnection,
+                                             mdb_conn: Connection,
                                              cache: Optional[aiomcache.Client],
                                              ) -> InstallationProgress:
     """Load the GitHub installation progress for the specified account."""
     log = logging.getLogger("%s.fetch_github_installation_progress" % metadata.__package__)
-    assert isinstance(mdb_conn, FastConnection)
-    mdb_sqlite = isinstance(mdb_conn.raw_connection, aiosqlite.Connection)
+    assert isinstance(mdb_conn, Connection)
+    async with mdb_conn.raw_connection() as raw_connection:
+        mdb_sqlite = isinstance(raw_connection, aiosqlite.Connection)
     idle_threshold = timedelta(hours=3)
     calm_threshold = timedelta(hours=1, minutes=30)
     event_ids = await get_installation_event_ids(account, sdb, mdb_conn, cache)

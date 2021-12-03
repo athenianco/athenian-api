@@ -3,7 +3,7 @@ import json
 from random import randint
 import re
 
-import databases
+import morcilla
 import pytest
 from sqlalchemy import and_, delete, insert, select, update
 
@@ -15,7 +15,7 @@ from athenian.api.models.state.models import Account, AccountFeature, AccountGit
     RepositorySet, UserAccount, UserToken, WorkType
 
 
-async def clean_state(sdb: databases.Database) -> int:
+async def clean_state(sdb: morcilla.Database) -> int:
     await sdb.execute(delete(RepositorySet))
     await sdb.execute(delete(AccountFeature))
     await sdb.execute(delete(UserAccount))

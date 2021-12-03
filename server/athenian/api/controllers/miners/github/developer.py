@@ -4,7 +4,7 @@ from itertools import chain
 from typing import Collection, FrozenSet, List, Optional, Set, Tuple, Type, Union
 
 import aiomcache
-import databases
+import morcilla
 import numpy as np
 import pandas as pd
 from sqlalchemy import and_, exists, func, not_, select
@@ -105,9 +105,9 @@ async def _mine_commits(repo_ids: np.ndarray,
                         prefixer: Prefixer,
                         account: int,
                         meta_ids: Tuple[int, ...],
-                        mdb: databases.Database,
-                        pdb: databases.Database,
-                        rdb: databases.Database,
+                        mdb: morcilla.Database,
+                        pdb: morcilla.Database,
+                        rdb: morcilla.Database,
                         cache: Optional[aiomcache.Client],
                         ) -> pd.DataFrame:
     columns = [PushCommit.author_user_id.label(developer_identity_column),
@@ -141,9 +141,9 @@ async def _mine_prs(attr_user: InstrumentedAttribute,
                     prefixer: Prefixer,
                     account: int,
                     meta_ids: Tuple[int, ...],
-                    mdb: databases.Database,
-                    pdb: databases.Database,
-                    rdb: databases.Database,
+                    mdb: morcilla.Database,
+                    pdb: morcilla.Database,
+                    rdb: morcilla.Database,
                     cache: Optional[aiomcache.Client],
                     ) -> pd.DataFrame:
     selected = [attr_user.label(developer_identity_column),
@@ -192,9 +192,9 @@ async def _mine_releases(repo_ids: np.ndarray,
                          prefixer: Prefixer,
                          account: int,
                          meta_ids: Tuple[int, ...],
-                         mdb: databases.Database,
-                         pdb: databases.Database,
-                         rdb: databases.Database,
+                         mdb: morcilla.Database,
+                         pdb: morcilla.Database,
+                         rdb: morcilla.Database,
                          cache: Optional[aiomcache.Client],
                          ) -> pd.DataFrame:
     branches, default_branches = await BranchMiner.extract_branches(
@@ -226,9 +226,9 @@ async def _mine_reviews(repo_ids: np.ndarray,
                         prefixer: Prefixer,
                         account: int,
                         meta_ids: Tuple[int, ...],
-                        mdb: databases.Database,
-                        pdb: databases.Database,
-                        rdb: databases.Database,
+                        mdb: morcilla.Database,
+                        pdb: morcilla.Database,
+                        rdb: morcilla.Database,
                         cache: Optional[aiomcache.Client],
                         ) -> pd.DataFrame:
     selected = [
@@ -277,9 +277,9 @@ async def _mine_pr_comments(model: Union[Type[PullRequestComment], Type[PullRequ
                             prefixer: Prefixer,
                             account: int,
                             meta_ids: Tuple[int, ...],
-                            mdb: databases.Database,
-                            pdb: databases.Database,
-                            rdb: databases.Database,
+                            mdb: morcilla.Database,
+                            pdb: morcilla.Database,
+                            rdb: morcilla.Database,
                             cache: Optional[aiomcache.Client],
                             ) -> pd.DataFrame:
     selected = [model.user_node_id.label(developer_identity_column),
@@ -354,9 +354,9 @@ async def mine_developer_activities(devs: Collection[str],
                                     prefixer: Prefixer,
                                     account: int,
                                     meta_ids: Tuple[int, ...],
-                                    mdb: databases.Database,
-                                    pdb: databases.Database,
-                                    rdb: databases.Database,
+                                    mdb: morcilla.Database,
+                                    pdb: morcilla.Database,
+                                    rdb: morcilla.Database,
                                     cache: Optional[aiomcache.Client],
                                     ) -> List[Tuple[FrozenSet[DeveloperTopic], pd.DataFrame]]:
     """Extract pandas DataFrame-s for each topic relationship group."""
@@ -410,7 +410,7 @@ async def mine_developer_activities(devs: Collection[str],
 async def _fetch_node_ids(devs: Collection[str],
                           repos: Collection[str],
                           meta_ids: Tuple[int, ...],
-                          mdb: databases.Database,
+                          mdb: morcilla.Database,
                           ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     tasks = [
         mdb.fetch_all(select([Repository.node_id, Repository.full_name])

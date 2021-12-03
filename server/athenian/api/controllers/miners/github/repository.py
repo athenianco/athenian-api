@@ -17,7 +17,7 @@ from athenian.api.controllers.miners.github.precomputed_prs import \
     discover_inactive_merged_unreleased_prs
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
-from athenian.api.db import ParallelDatabase
+from athenian.api.db import Database
 from athenian.api.models.metadata.github import NodeCommit, NodeRepository, PullRequest, \
     PullRequestComment, PullRequestReview, PushCommit, Repository
 from athenian.api.models.persistentdata.models import DeployedComponent, DeploymentNotification
@@ -46,9 +46,9 @@ async def mine_repositories(repos: Collection[str],
                             prefixer: Prefixer,
                             account: int,
                             meta_ids: Tuple[int, ...],
-                            mdb: ParallelDatabase,
-                            pdb: ParallelDatabase,
-                            rdb: ParallelDatabase,
+                            mdb: Database,
+                            pdb: Database,
+                            rdb: Database,
                             cache: Optional[aiomcache.Client],
                             ) -> List[str]:
     """

@@ -58,7 +58,7 @@ from athenian.api.controllers.miners.types import PRParticipants, PRParticipatio
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch, \
     ReleaseSettings
-from athenian.api.db import add_pdb_hits, add_pdb_misses, ParallelDatabase
+from athenian.api.db import add_pdb_hits, add_pdb_misses, Database
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import CheckRun, PullRequest, PushCommit, Release
 from athenian.api.tracing import sentry_span
@@ -93,9 +93,9 @@ class MetricEntriesCalculator:
                  account: int,
                  meta_ids: Tuple[int, ...],
                  quantile_stride: int,
-                 mdb: ParallelDatabase,
-                 pdb: ParallelDatabase,
-                 rdb: ParallelDatabase,
+                 mdb: Database,
+                 pdb: Database,
+                 rdb: Database,
                  cache: Optional[aiomcache.Client]):
         """Create a `MetricEntriesCalculator`."""
         self._account = account
@@ -893,9 +893,9 @@ def make_calculator(
     variation: Optional[str],
     account: int,
     meta_ids: Tuple[int, ...],
-    mdb: ParallelDatabase,
-    pdb: ParallelDatabase,
-    rdb: ParallelDatabase,
+    mdb: Database,
+    pdb: Database,
+    rdb: Database,
     cache: Optional[aiomcache.Client],
     base_module: Optional[str] = None,
 ) -> MetricEntriesCalculator:
