@@ -92,7 +92,7 @@ class OpenPRFactsLoader:
         """
         postgres = pdb.url.dialect == "postgresql"
         ghoprf = GitHubOpenPullRequestFacts
-        selected = [ghoprf.pr_node_id, ghoprf.repository_full_name, ghoprf.data]
+        selected = {ghoprf.pr_node_id, ghoprf.repository_full_name, ghoprf.data}
         default_version = ghoprf.__table__.columns[ghoprf.format_version.key].default.arg
         filters = [
             ghoprf.pr_node_id.in_(prs),
@@ -103,6 +103,7 @@ class OpenPRFactsLoader:
         if exclude_inactive:
             date_range = append_activity_days_filter(
                 time_from, time_to, selected, filters, ghoprf.activity_days, postgres)
+        selected = sorted(selected, key=lambda i: i.key)
         rows = await pdb.fetch_all(select(selected).where(and_(*filters)))
         if not rows:
             return {}

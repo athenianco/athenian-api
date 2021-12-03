@@ -11,7 +11,7 @@ import morcilla
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, delete, exists, insert, not_, or_, select, text, union_all
+from sqlalchemy import and_, delete, exists, false, insert, not_, or_, select, true, union_all
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import ClauseElement, Select
@@ -443,11 +443,11 @@ class DonePRFactsLoader:
             repos = set(repos)
         postgres = pdb.url.dialect == "postgresql"
         ghprt = GitHubDonePullRequestFacts
-        selected = [
+        selected = {
             ghprt.pr_node_id,
             ghprt.repository_full_name,
             ghprt.release_match,
-        ] + columns
+        }.union(columns)
         match_groups, _ = group_repos_by_release_match(repos, default_branches, release_settings)
         match_groups[ReleaseMatch.rejected] = match_groups[ReleaseMatch.force_push_drop] = \
             {"": list(repos)}
@@ -504,7 +504,7 @@ class DonePRFactsLoader:
 
     @classmethod
     async def _compose_query_filters_undeployed(cls,
-                                                selected: List[InstrumentedAttribute],
+                                                selected: Set[InstrumentedAttribute],
                                                 or_items: Callable[[], List[ClauseElement]],
                                                 time_from: Optional[datetime],
                                                 time_to: Optional[datetime],
@@ -518,7 +518,7 @@ class DonePRFactsLoader:
         ghprt = GitHubDonePullRequestFacts
         filters = cls._create_common_filters(time_from, time_to, None, account)
         selected = selected.copy()
-        selected.append(text("false AS deployed"))
+        selected.add(false().label("deployed"))
         if len(participants) > 0:
             await cls._build_participants_filters(
                 participants, filters, selected, postgres, prefixer)
@@ -535,13 +535,14 @@ class DonePRFactsLoader:
             GitHubPullRequestDeployment.finished_at.between(time_from, time_to),
         ))))
         or_items = or_items()
+        selected = sorted(selected, key=lambda i: i.key)
         if postgres:
             return [select(selected).where(and_(item, *filters)) for item in or_items], date_range
         return [select(selected).where(and_(or_(*or_items), *filters))], date_range
 
     @classmethod
     async def _compose_query_filters_deployed(cls,
-                                              selected: List[InstrumentedAttribute],
+                                              selected: Set[InstrumentedAttribute],
                                               or_items: Callable[[], List[ClauseElement]],
                                               time_from: Optional[datetime],
                                               time_to: Optional[datetime],
@@ -555,7 +556,7 @@ class DonePRFactsLoader:
         ghprt = GitHubDonePullRequestFacts
         filters = cls._create_common_filters(None, time_to, None, account)
         selected = selected.copy()
-        selected.append(text("true AS deployed"))
+        selected.add(true().label("deployed"))
         if len(participants) > 0:
             await cls._build_participants_filters(
                 participants, filters, selected, postgres, prefixer)
@@ -567,8 +568,9 @@ class DonePRFactsLoader:
             GitHubPullRequestDeployment.finished_at.between(time_from, time_to),
         )))
         if exclude_inactive and not postgres:
-            selected.append(ghprt.activity_days)
+            selected.add(ghprt.activity_days)
         or_items = or_items()
+        selected = sorted(selected, key=lambda i: i.key)
         if postgres:
             return [select(selected).where(and_(item, *filters)) for item in or_items]
         return [select(selected).where(and_(or_(*or_items), *filters))]
@@ -620,7 +622,7 @@ class DonePRFactsLoader:
     async def _build_participants_filters(cls,
                                           participants: PRParticipants,
                                           filters: list,
-                                          selected: list,
+                                          selected: Set[InstrumentedAttribute],
                                           postgres: bool,
                                           prefixer: Prefixer,
                                           ) -> None:
@@ -653,9 +655,10 @@ class DonePRFactsLoader:
 
             filters.append(or_(*developer_filters_single, *developer_filters_multiple))
         else:
-            selected.extend([
+            selected.update({
                 ghdprf.author, ghdprf.merger, ghdprf.releaser, ghdprf.reviewers, ghdprf.commenters,
-                ghdprf.commit_authors, ghdprf.commit_committers])
+                ghdprf.commit_authors, ghdprf.commit_committers,
+            })
 
     @classmethod
     async def _build_participants_conditions(cls,
@@ -858,7 +861,7 @@ async def delete_force_push_dropped_prs(repos: Iterable[str],
     merge_hashes = np.fromiter((r[0] for r in pr_merges), "S40", len(pr_merges))
     if len(accessible_hashes) > 0:
         found = searchsorted_inrange(accessible_hashes, merge_hashes)
-        dead_indexes = np.nonzero(accessible_hashes[found] != merge_hashes)[0]
+        dead_indexes = np.flatnonzero(accessible_hashes[found] != merge_hashes)
     else:
         log = logging.getLogger(f"{metadata.__package__}.delete_force_push_dropped_prs")
         log.error("all these repositories have empty commit DAGs: %s", sorted(dags))

@@ -3,6 +3,7 @@ import logging
 import os
 import subprocess
 import sys
+from typing import Any, Sequence
 
 from alembic import script
 from alembic.migration import MigrationContext
@@ -10,26 +11,30 @@ from flogging import flogging
 from mako.template import Template
 from sqlalchemy import any_, create_engine
 from sqlalchemy.ext.compiler import compiles
-from sqlalchemy.sql import operators
+from sqlalchemy.sql import operators, Values
 from sqlalchemy.sql.compiler import OPERATORS
-from sqlalchemy.sql.elements import BinaryExpression, ClauseList, Grouping, UnaryExpression
-from sqlalchemy.sql.operators import ColumnOperators, custom_op, in_op, notin_op
+from sqlalchemy.sql.elements import BinaryExpression, BindParameter, Grouping
+from sqlalchemy.sql.operators import ColumnOperators, in_op, notin_op
 
 from athenian.precomputer.db import always_unequal, create_base  # noqa: F401
 
 
-class values(UnaryExpression):
-    """PostgreSQL "VALUES (...), (...), ..."."""
+class TupleWrapper(Sequence):
+    """Pretend to be a sequence, wrap each element in a tuple."""
 
-    def __init__(self, element):
-        """Plug in UnaryExpression to provide the required syntax: there is no outer grouping, \
-        but each element is grouped separately."""
-        if isinstance(element, Grouping):
-            element = element.element
-        contents = ClauseList(*element.clauses, group_contents=False, group=False)
-        for i, clause in enumerate(contents.clauses):
-            contents.clauses[i] = Grouping(clause)
-        super().__init__(element=contents, operator=custom_op("VALUES "))
+    __slots__ = ("_items",)
+
+    def __init__(self, items: Sequence):
+        """Initialize a new instance of TupleWrapper over `items`."""
+        self._items = items
+
+    def __len__(self):
+        """Return the length of the underlying sequence."""
+        return len(self._items)
+
+    def __getitem__(self, item: int) -> Any:
+        """Return element by index wrapped in a tuple."""
+        return (self._items[item],)
 
 
 @compiles(BinaryExpression)
@@ -40,14 +45,14 @@ def compile_binary(binary, compiler, override_operator=None, **kw):
     """  # noqa: D200
     operator = override_operator or binary.operator
 
-    try:
-        right_len = len(binary.right)
-    except TypeError:
-        if isinstance(binary.right, Grouping):
-            right_len = len(getattr(binary.right.element, "clauses", []))
-        else:
-            right_len = 0
-    if (operator is in_op or operator is notin_op) and right_len >= 10:
+    if operator is not in_op and operator is not notin_op:
+        return compiler.visit_binary(binary, override_operator=override_operator, **kw)
+
+    if isinstance(binary.right, BindParameter):
+        right_len = len(binary.right.value)
+    else:
+        right_len = 0
+    if right_len >= 10:
         left = compiler.process(binary.left, **kw)
         kw["literal_binds"] = True
         use_any = getattr(binary, "any_values", False) and compiler.dialect.name == "postgresql"
@@ -57,7 +62,9 @@ def compile_binary(binary, compiler, override_operator=None, **kw):
             # 1. IN (...)
             # 2. IN(ARRAY[...])
             # 3. IN(VALUES ...)
-            right = any_(values(binary.right))
+            right = any_(Grouping(Values(
+                binary.left, literal_binds=True,
+            ).data(TupleWrapper(binary.right.value))))
             operator = operators.eq
         else:
             right = binary.right
@@ -68,9 +75,7 @@ def compile_binary(binary, compiler, override_operator=None, **kw):
         return sql
     elif operator is in_op and right_len == 1:
         # IN (<value>) -> = <value>
-        left = compiler.process(binary.left, **kw)
-        right = compiler.process(binary.right.element.clauses[0], **kw)
-        return left + OPERATORS[operators.eq] + right
+        return compiler.process(binary.left == binary.right.value[0], **kw)
 
     return compiler.visit_binary(binary, override_operator=override_operator, **kw)
 
