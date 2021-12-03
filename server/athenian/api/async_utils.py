@@ -111,7 +111,10 @@ def _extract_integer_columns(columns: Iterable[Union[Column, str]],
             (isinstance(c.type, type) and issubclass(c.type, Integer))
         )
         and not getattr(c, "nullable", False)
-        and (not isinstance(c, Label) or not getattr(c.element, "nullable", False))
+        and (not isinstance(c, Label) or (
+            (not getattr(c.element, "nullable", False))
+            and (not getattr(c, "nullable", False))
+        ))
     ]
 
 

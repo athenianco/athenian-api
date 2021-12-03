@@ -249,11 +249,15 @@ async def fetch_jira_issues(installation_ids: JIRAConfig,
         jira_id_cond = NodePullRequestJiraIssues.jira_id.in_any_values(issues.index)
     else:
         jira_id_cond = NodePullRequestJiraIssues.jira_id.in_(issues.index)
+    nullable_repository_id = NodePullRequest.repository_id
+    nullable_repository_id = nullable_repository_id.label(nullable_repository_id.name)
+    nullable_repository_id.nullable = True
     pr_cols = [
         NodePullRequestJiraIssues.node_id,
         NodePullRequestJiraIssues.jira_id,
         NodePullRequest.title,
         NodePullRequest.created_at,
+        nullable_repository_id,
         NodeRepository.name_with_owner.label(PullRequest.repository_full_name.name),
     ]
     prs = await read_sql_query(
@@ -275,6 +279,15 @@ async def fetch_jira_issues(installation_ids: JIRAConfig,
         mdb, pr_cols, index=NodePullRequestJiraIssues.node_id.name,
     )
     # TODO(vmarkovtsev): load the "fresh" released PRs
+    existing_repos = np.flatnonzero(np.not_equal(
+        prs[PullRequest.repository_full_name.name].values, None))
+    if len(existing_repos) < len(prs):
+        log.error(
+            "Repositories referenced by github.node_pullrequest do not exist in "
+            "github.node_repository on GitHub account %s: %s",
+            meta_ids, np.unique(prs[NodePullRequest.repository_id.name].values[np.setdiff1d(
+                np.arange(len(prs)), existing_repos, assume_unique=True)]).tolist())
+        prs = prs.take(existing_repos)
     released_prs, labels = await gather(
         _fetch_released_prs(prs.index.values, default_branches, release_settings, account, pdb),
         fetch_labels_to_filter(prs.index.values, meta_ids, mdb),
