@@ -283,14 +283,14 @@ async def _postprocess_deployed_releases(releases: pd.DataFrame,
     if not release_facts:
         return pd.DataFrame()
     release_facts_df = df_from_structs([f for _, f in release_facts])
-    release_facts_df.index = pd.Index([r[Release.node_id.name] for r, _ in release_facts],
-                                      name=Release.node_id.name)
+    release_facts_df[Release.node_id.name] = [r[Release.node_id.name] for r, _ in release_facts]
+    release_facts_df.set_index([Release.node_id.name, ReleaseFacts.f.repository_full_name],
+                               inplace=True)
     assert release_facts_df.index.is_unique
     del release_facts
-    for col in (ReleaseFacts.f.publisher, ReleaseFacts.f.published, ReleaseFacts.f.matched_by,
-                ReleaseFacts.f.repository_full_name):
+    for col in (ReleaseFacts.f.publisher, ReleaseFacts.f.published, ReleaseFacts.f.matched_by):
         del release_facts_df[col]
-    releases.set_index(Release.node_id.name, drop=True, inplace=True)
+    releases.set_index([Release.node_id.name, Release.repository_full_name.name], inplace=True)
     releases = release_facts_df.join(releases)
     groups = list(releases.groupby("deployment_name", sort=False))
     grouped_releases = pd.DataFrame({
@@ -489,9 +489,9 @@ async def _submit_deployment_facts(facts: pd.DataFrame,
             acc_id=account,
             deployment_name=name,
             release_matches=json.dumps(dict(zip(
-                subreleases[Release.repository_full_name.name].values,
+                subreleases.index.get_level_values(1).values,
                 (settings.native[r].as_db(default_branches[drop_logical_repo(r)])
-                 for r in subreleases[Release.repository_full_name.name].values),
+                 for r in subreleases.index.get_level_values(1).values),
             ))) if not subreleases.empty else "{}",
             data=DeploymentFacts.from_fields(
                 pr_authors=pr_authors,
@@ -829,8 +829,8 @@ async def _submit_deployed_releases(releases: pd.DataFrame,
         ).explode(with_primary_keys=True)
         for deployment_name, release_id, repo in zip(
             releases["deployment_name"].values,
-            releases.index.values,
-            releases[Release.repository_full_name.name].values,
+            releases.index.get_level_values(0).values,
+            releases.index.get_level_values(1).values,
         )
     ]
     await insert_or_ignore(GitHubReleaseDeployment, values, "_submit_deployed_releases", pdb)

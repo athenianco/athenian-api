@@ -849,7 +849,7 @@ async def _build_deployments_response(df: pd.DataFrame,
                 pr_numbers, pr_titles, pr_additions, pr_deletions, pr_user_node_ids,
                 pr_jiras
                 in zip(releases_df[Release.name.name].values,
-                       releases_df[Release.repository_full_name.name].values,
+                       releases_df.index.get_level_values(1).values,
                        releases_df[Release.url.name].values,
                        releases_df[Release.author.name].values,
                        releases_df[Release.published_at.name].values,
