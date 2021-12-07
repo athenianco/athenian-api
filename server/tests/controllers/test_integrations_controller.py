@@ -173,7 +173,7 @@ async def test_get_everything_smoke(client, headers, dummy_deployment_label):
         "commit_authors", "prs_node_id", "prs_number", "prs_additions",
         "prs_deletions", "prs_user_node_id", "prs_title", "prs_jira",
         "deployments", "age", "additions", "deletions", "commits_count",
-        "repository_full_name", "repository_node_id", "author_node_id", "name",
+        "repository_node_id", "author_node_id", "name",
         "published_at", "tag", "url", "sha", "commit_id", "matched_by",
         "author", "deployment_name",
     }
