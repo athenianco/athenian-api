@@ -7,6 +7,9 @@ import numpy as np
 import pytest
 from sqlalchemy import delete, insert, update
 
+from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.controllers.settings import LogicalRepositorySettings
+from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import NodePullRequestJiraIssues, PullRequest
 from athenian.api.models.metadata.jira import Issue
 from athenian.api.models.web import CalculatedJIRAHistogram, CalculatedJIRAMetricValues, \
@@ -1091,11 +1094,23 @@ async def test_jira_metrics_counts(client, headers, metric, exclude_inactive, n)
 
 
 @pytest.mark.parametrize("metric, value, score, cmin, cmax", [
-    (JIRAMetricID.JIRA_LIFE_TIME, "758190s", 72, "647080s", "859905s"),
-    (JIRAMetricID.JIRA_LEAD_TIME, "304289s", 53, "229359s", "374686s"),
+    (JIRAMetricID.JIRA_LIFE_TIME, "3360382s", 51, "2557907s", "4227690s"),
+    (JIRAMetricID.JIRA_LEAD_TIME, "2922288s", 43, "2114455s", "3789853s"),
     (JIRAMetricID.JIRA_ACKNOWLEDGE_TIME, "450250s", 66, "369809s", "527014s"),
 ])
-async def test_jira_metrics_bug_times(client, headers, metric, value, score, cmin, cmax):
+@with_defer
+async def test_jira_metrics_bug_times(
+        client, headers, metric, value, score, cmin, cmax, metrics_calculator_factory,
+        release_match_setting_tag, prefixer):
+    metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
+    time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
+    args = (time_from, time_to, {"src-d/go-git"}, {},
+            LabelFilter.empty(), JIRAFilter.empty(),
+            False, release_match_setting_tag, LogicalRepositorySettings.empty(),
+            prefixer, False, False)
+    await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
+    await wait_deferred()
     np.random.seed(7)
     body = {
         "date_from": "2016-01-01",

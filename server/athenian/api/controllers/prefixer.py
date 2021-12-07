@@ -11,7 +11,7 @@ from athenian.api.models.metadata.github import Repository, User
 from athenian.api.typing_utils import dataclass
 
 
-@dataclass(slots=True, frozen=True)
+@dataclass(slots=True, frozen=True, repr=False)
 class Prefixer:
     """
     Prepend service prefixes to repository and user names.
@@ -125,6 +125,10 @@ class Prefixer:
             return "/".join([physical_repo, logical_name])
         except KeyError:
             return None
+
+    def __str__(self) -> str:
+        """Implement str()."""
+        return repr(self)
 
     def __repr__(self) -> str:
         """Avoid spamming Sentry stacks."""
