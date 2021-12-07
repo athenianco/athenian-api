@@ -1,6 +1,6 @@
 from typing import Iterable, List, Optional, Set, Tuple
 
-from athenian.api.controllers.jira import JIRAConfig
+from athenian.api.controllers.jira import JIRAConfig, normalize_issue_type
 from athenian.api.models.web.jira_filter import JIRAFilter as WebJIRAFilter
 from athenian.api.typing_utils import dataclass
 
@@ -153,6 +153,6 @@ class JIRAFilter:
                           projects=projects,
                           labels=labels,
                           epics={s.upper() for s in (model.epics or [])},
-                          issue_types={s.lower() for s in (model.issue_types or [])},
+                          issue_types={normalize_issue_type(s) for s in (model.issue_types or [])},
                           custom_projects=custom_projects,
                           unmapped=bool(model.unmapped))
