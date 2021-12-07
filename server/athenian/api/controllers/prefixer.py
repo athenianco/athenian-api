@@ -125,3 +125,8 @@ class Prefixer:
             return "/".join([physical_repo, logical_name])
         except KeyError:
             return None
+
+    def __repr__(self) -> str:
+        """Avoid spamming Sentry stacks."""
+        return f"<Prefixer with {len(self.repo_node_to_name)} repos, " \
+               f"{len(self.user_node_to_login)} users>"

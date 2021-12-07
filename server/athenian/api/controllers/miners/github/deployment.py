@@ -18,6 +18,7 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached, CancelCache, short_term_exptime
 from athenian.api.controllers.jira import JIRAConfig
+from athenian.api.controllers.logical_repos import drop_logical_repo
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.commit import COMMIT_FETCH_COMMITS_COLUMNS, DAG, \
     fetch_dags_with_commits, fetch_repository_commits
@@ -489,7 +490,7 @@ async def _submit_deployment_facts(facts: pd.DataFrame,
             deployment_name=name,
             release_matches=json.dumps(dict(zip(
                 subreleases[Release.repository_full_name.name].values,
-                (settings.native[r].as_db(default_branches[r])
+                (settings.native[r].as_db(default_branches[drop_logical_repo(r)])
                  for r in subreleases[Release.repository_full_name.name].values),
             ))) if not subreleases.empty else "{}",
             data=DeploymentFacts.from_fields(
@@ -824,7 +825,7 @@ async def _submit_deployed_releases(releases: pd.DataFrame,
             acc_id=account,
             deployment_name=deployment_name,
             release_id=release_id,
-            release_match=settings.native[repo].as_db(default_branches[repo]),
+            release_match=settings.native[repo].as_db(default_branches[drop_logical_repo(repo)]),
         ).explode(with_primary_keys=True)
         for deployment_name, release_id, repo in zip(
             releases["deployment_name"].values,
@@ -1439,7 +1440,8 @@ def _settings_are_compatible(matches: str,
                              default_branches: Dict[str, str]) -> bool:
     matches = json.loads(matches)
     for key, val in matches.items():
-        if not settings.native[key].compatible_with_db(val, default_branches[key]):
+        if not settings.native[key].compatible_with_db(
+                val, default_branches[drop_logical_repo(key)]):
             return False
     return True
 
