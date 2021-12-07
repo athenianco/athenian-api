@@ -67,7 +67,7 @@ async def generate_jira_prs_query(filters: List[ClauseElement],
         _append_label_filters(
             jira.labels, components, mdb.url.dialect == "postgresql", filters, model=_issue)
     if jira.issue_types:
-        filters.append(sql.func.lower(_issue.type).in_(jira.issue_types))
+        filters.append(_issue.type.in_(jira.issue_types))
     if not jira.epics:
         return sql.select(columns).select_from(sql.join(
             seed, sql.join(_map, _issue, _map.jira_id == _issue.id),
