@@ -10,7 +10,7 @@ import pandas as pd
 from sqlalchemy import and_, exists, func, not_, select
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
-from athenian.api.async_utils import gather, read_sql_query
+from athenian.api.async_utils import gather, read_sql_query, read_sql_query_with_join_collapse
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.release_load import ReleaseLoader
@@ -159,15 +159,15 @@ async def _mine_prs(attr_user: InstrumentedAttribute,
         _filter_by_labels(PullRequest.acc_id, PullRequest.node_id, labels, filters)
         if jira:
             query = await generate_jira_prs_query(
-                filters, jira, mdb, cache, columns=selected, seed=PullRequest)
+                filters, jira, None, mdb, cache, columns=selected, seed=PullRequest)
         else:
             query = select(selected).where(and_(*filters))
     elif jira:
         query = await generate_jira_prs_query(
-            filters, jira, mdb, cache, columns=selected)
+            filters, jira, None, mdb, cache, columns=selected)
     else:
         query = select(selected).where(and_(*filters))
-    return await read_sql_query(query, mdb, [c.name for c in selected])
+    return await read_sql_query_with_join_collapse(query, mdb, [c.name for c in selected])
 
 
 async def _mine_prs_created(*args, **kwargs) -> pd.DataFrame:
@@ -249,17 +249,17 @@ async def _mine_reviews(repo_ids: np.ndarray,
                           labels, filters)
         if jira:
             query = await generate_jira_prs_query(
-                filters, jira, mdb, cache, columns=selected, seed=PullRequestReview,
+                filters, jira, None, mdb, cache, columns=selected, seed=PullRequestReview,
                 on=(PullRequestReview.pull_request_node_id, PullRequestReview.acc_id))
         else:
             query = select(selected).where(and_(*filters))
     elif jira:
         query = await generate_jira_prs_query(
-            filters, jira, mdb, cache, columns=selected, seed=PullRequestReview,
+            filters, jira, None, mdb, cache, columns=selected, seed=PullRequestReview,
             on=(PullRequestReview.pull_request_node_id, PullRequestReview.acc_id))
     else:
         query = select(selected).where(and_(*filters))
-    return await read_sql_query(query, mdb, selected)
+    return await read_sql_query_with_join_collapse(query, mdb, selected)
 
 
 async def _mine_pr_comments(model: Union[Type[PullRequestComment], Type[PullRequestReviewComment]],
@@ -295,17 +295,17 @@ async def _mine_pr_comments(model: Union[Type[PullRequestComment], Type[PullRequ
         _filter_by_labels(model.acc_id, model.pull_request_node_id, labels, filters)
         if jira:
             query = await generate_jira_prs_query(
-                filters, jira, mdb, cache, columns=selected, seed=model,
+                filters, jira, None, mdb, cache, columns=selected, seed=model,
                 on=(model.pull_request_node_id, model.acc_id))
         else:
             query = select(selected).where(and_(*filters))
     elif jira:
         query = await generate_jira_prs_query(
-            filters, jira, mdb, cache, columns=selected, seed=model,
+            filters, jira, None, mdb, cache, columns=selected, seed=model,
             on=(model.pull_request_node_id, model.acc_id))
     else:
         query = select(selected).where(and_(*filters))
-    return await read_sql_query(query, mdb, [c.name for c in selected])
+    return await read_sql_query_with_join_collapse(query, mdb, [c.name for c in selected])
 
 
 async def _mine_pr_comments_regular(*args, **kwargs) -> pd.DataFrame:

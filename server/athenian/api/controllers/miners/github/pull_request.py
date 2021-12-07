@@ -19,7 +19,7 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql.elements import BinaryExpression
 
 from athenian.api import metadata
-from athenian.api.async_utils import gather, read_sql_query
+from athenian.api.async_utils import gather, read_sql_query, read_sql_query_with_join_collapse
 from athenian.api.cache import cached, CancelCache, short_term_exptime
 from athenian.api.controllers.logical_repos import coerce_logical_repos
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
@@ -1211,7 +1211,7 @@ class PullRequestMiner:
             query = sql.select(selected_columns).where(sql.and_(*filters))
         else:
             query = await generate_jira_prs_query(
-                filters, jira, mdb, cache, columns=selected_columns)
+                filters, jira, None, mdb, cache, columns=selected_columns)
         prs = await read_sql_query(query, mdb, columns, index=PullRequest.node_id.name)
         if remove_acc_id:
             del prs[PullRequest.acc_id.name]
@@ -1292,8 +1292,9 @@ class PullRequestMiner:
         """Filter PRs by JIRA properties."""
         assert jira
         filters = [PullRequest.node_id.in_(pr_node_ids)]
-        query = await generate_jira_prs_query(filters, jira, mdb, cache, columns=columns)
-        return await read_sql_query(query, mdb, columns, index=PullRequest.node_id.name)
+        query = await generate_jira_prs_query(filters, jira, meta_ids, mdb, cache, columns=columns)
+        return await read_sql_query_with_join_collapse(
+            query, mdb, columns, index=PullRequest.node_id.name)
 
     @classmethod
     @sentry_span

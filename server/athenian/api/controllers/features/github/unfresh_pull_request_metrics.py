@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from athenian.api import metadata
-from athenian.api.async_utils import gather, read_sql_query
+from athenian.api.async_utils import gather, read_sql_query_with_join_collapse
 from athenian.api.controllers.logical_repos import coerce_logical_repos
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.logical import split_logical_repositories
@@ -222,8 +222,8 @@ class UnfreshPullRequestFactsFetcher:
         columns = [PullRequest.node_id, PullRequest.repository_full_name]
         query = await generate_jira_prs_query(
             [PullRequest.node_id.in_(prs), PullRequest.acc_id.in_(meta_ids)],
-            jira, mdb, cache, columns=columns)
-        df = await read_sql_query(query, mdb, columns, index=[
+            jira, meta_ids, mdb, cache, columns=columns)
+        df = await read_sql_query_with_join_collapse(query, mdb, columns, index=[
             PullRequest.node_id.name, PullRequest.repository_full_name.name,
         ])
         if not has_logical_repos:

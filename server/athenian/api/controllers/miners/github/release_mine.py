@@ -13,7 +13,7 @@ import sentry_sdk
 from sqlalchemy import and_, func, join, select, union_all
 
 from athenian.api import metadata
-from athenian.api.async_utils import gather, read_sql_query
+from athenian.api.async_utils import gather, read_sql_query, read_sql_query_with_join_collapse
 from athenian.api.cache import cached, CancelCache, short_term_exptime
 from athenian.api.controllers.logical_repos import coerce_logical_repos, drop_logical_repo
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
@@ -296,16 +296,15 @@ async def _mine_releases(repos: Iterable[str],
         tasks = [_load_prs_by_merge_commit_ids(commit_ids, repos, logical_settings, meta_ids, mdb)]
         if jira:
             query = await generate_jira_prs_query(
-                [PullRequest.merge_commit_id.in_(commit_ids),
-                 PullRequest.acc_id.in_(meta_ids)],
-                jira, mdb, cache, columns=[PullRequest.merge_commit_id])
-            tasks.append(mdb.fetch_all(query))
+                [PullRequest.merge_commit_id.in_(commit_ids)],
+                jira, meta_ids, mdb, cache, columns=[PullRequest.merge_commit_id])
+            tasks.append(read_sql_query_with_join_collapse(
+                query, mdb, columns=[PullRequest.merge_commit_id]))
         prs_df, *rest = await gather(*tasks,
                                      op="mine_releases/fetch_pull_requests",
                                      description=str(len(commit_ids)))
         if jira:
-            filtered_prs_commit_ids = \
-                np.unique(np.fromiter((r[0] for r in rest[0]), int, len(rest[0])))
+            filtered_prs_commit_ids = rest[0][PullRequest.merge_commit_id.name].unique()
         originl_prs_commit_ids = prs_commit_ids = prs_df[PullRequest.merge_commit_id.name].values
         if logical_settings.has_logical_prs():
             prs_commit_ids = np.char.add(
@@ -665,8 +664,8 @@ async def _filter_precomputed_release_facts_by_jira(
     # we could run the following in parallel with the rest, but
     # "the rest" is a no-op in most of the cases thanks to preheating
     query = await generate_jira_prs_query(
-        [PullRequest.node_id.in_(pr_ids), PullRequest.acc_id.in_(meta_ids)],
-        jira, mdb, cache, columns=[PullRequest.node_id])
+        [PullRequest.node_id.in_(pr_ids)],
+        jira, meta_ids, mdb, cache, columns=[PullRequest.node_id])
     release_ids = np.repeat([k[0] for k in precomputed_facts], lengths)
     release_repos = np.repeat([k[1] for k in precomputed_facts], lengths)
     release_keys = np.empty(len(release_ids), dtype=[("id", int), ("repo", release_repos.dtype)])
@@ -677,8 +676,8 @@ async def _filter_precomputed_release_facts_by_jira(
     order = np.argsort(pr_ids)
     pr_ids = pr_ids[order]
     release_keys = release_keys[order]
-    rows = await mdb.fetch_all(query)
-    matching_pr_ids = np.sort(np.fromiter((r[0] for r in rows), int, len(rows)))
+    df = await read_sql_query_with_join_collapse(query, mdb, columns=[PullRequest.node_id])
+    matching_pr_ids = np.sort(df[PullRequest.node_id.name].values)
     release_keys = np.unique(release_keys[np.searchsorted(pr_ids, matching_pr_ids)])
     return {(tk := tuple(k)): precomputed_facts[tk] for k in release_keys}
 

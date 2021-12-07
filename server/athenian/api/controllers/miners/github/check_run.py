@@ -144,13 +144,11 @@ async def _mine_check_runs(time_from: datetime,
         embedded_labels_query = False
     if not jira:
         query = select([CheckRun]).where(and_(*filters))
-        set_join_collapse_limit = True
     else:
         query = await generate_jira_prs_query(
-            filters, jira, mdb, cache, columns=CheckRun.__table__.columns, seed=CheckRun,
+            filters, jira, None, mdb, cache, columns=CheckRun.__table__.columns, seed=CheckRun,
             on=(CheckRun.pull_request_node_id, CheckRun.acc_id))
-        set_join_collapse_limit = False
-    df = await read_sql_query_with_join_collapse(query, CheckRun, set_join_collapse_limit, mdb)
+    df = await read_sql_query_with_join_collapse(query, mdb, CheckRun)
 
     # add check runs mapped to the mentioned PRs even if they are outside of the date range
     df, df_labels = await _append_pull_request_check_runs_outside(
@@ -425,7 +423,7 @@ async def _append_pull_request_check_runs_outside(df: pd.DataFrame,
         )))
     pr_sql = union_all(query_before, query_after)
     tasks = [
-        read_sql_query_with_join_collapse(pr_sql, CheckRunByPR, True, mdb),
+        read_sql_query_with_join_collapse(pr_sql, mdb, CheckRunByPR),
     ]
     if labels and not embedded_labels_query:
         tasks.append(read_sql_query(
