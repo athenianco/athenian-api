@@ -415,9 +415,8 @@ async def _fetch_released_prs(pr_node_ids: Iterable[int],
             for node_id, row in prs.items():
                 dump[(node_id, repo)] = row
     released_prs.update(ambiguous[ReleaseMatch.tag.name])
-    for node_id, row in ambiguous[ReleaseMatch.branch.name].items():
-        if node_id not in released_prs:
-            released_prs[(node_id, row[ghdprf.repository_full_name.name])] = row
+    for key, row in ambiguous[ReleaseMatch.branch.name].items():
+        released_prs.setdefault(key, row)
     return released_prs
 
 
