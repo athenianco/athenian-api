@@ -149,9 +149,7 @@ class BranchMiner:
                 if repos is not None
                 else sa.true(),
                 Branch.acc_id.in_(meta_ids))),
-            columns=Branch,
-            set_join_collapse_limit=True,
-            mdb=mdb)
+            mdb, Branch)
         for left_join_col in (Branch.commit_sha.name, Branch.repository_full_name.name):
             if (not_null := df[left_join_col].notnull().values).sum() < len(df):
                 df = df.take(np.flatnonzero(not_null))

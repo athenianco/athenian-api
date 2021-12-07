@@ -34,6 +34,7 @@ from athenian.api.tracing import sentry_span
 
 async def generate_jira_prs_query(filters: List[ClauseElement],
                                   jira: JIRAFilter,
+                                  meta_ids: Optional[Tuple[int, ...]],
                                   mdb: Database,
                                   cache: Optional[aiomcache.Client],
                                   columns=PullRequest,
@@ -52,15 +53,17 @@ async def generate_jira_prs_query(filters: List[ClauseElement],
     if columns is PullRequest:
         columns = [PullRequest]
     _map = aliased(NodePullRequestJiraIssues, name="m")
+    meta_ids_cond = (on[1].in_(meta_ids),) if meta_ids is not None else ()
     if jira.unmapped:
         return sql.select(columns).select_from(sql.outerjoin(
             seed, _map, sql.and_(on[0] == _map.node_id, on[1] == _map.node_acc),
-        )).where(sql.and_(*filters, _map.node_id.is_(None)))
+        )).where(sql.and_(*filters, *meta_ids_cond, _map.node_id.is_(None)))
     _issue = aliased(Issue, name="j")
     filters.extend((
         _issue.acc_id == jira.account,
         _issue.project_id.in_(jira.projects),
         _issue.is_deleted.is_(False),
+        *meta_ids_cond,
     ))
     if jira.labels:
         components = await _load_components(jira.labels, jira.account, mdb, cache)
@@ -70,16 +73,31 @@ async def generate_jira_prs_query(filters: List[ClauseElement],
         filters.append(_issue.type.in_(jira.issue_types))
     if not jira.epics:
         return sql.select(columns).select_from(sql.join(
-            seed, sql.join(_map, _issue, _map.jira_id == _issue.id),
-            sql.and_(on[0] == _map.node_id, on[1] == _map.node_acc),
+            seed, sql.join(_map, _issue, sql.and_(
+                _map.jira_acc == _issue.acc_id,
+                _map.jira_id == _issue.id,
+            )),
+            sql.and_(
+                on[0] == _map.node_id,
+                on[1] == _map.node_acc,
+            ),
         )).where(sql.and_(*filters))
     _issue_epic = aliased(Issue, name="e")
     filters.append(_issue_epic.key.in_(jira.epics))
     return sql.select(columns).select_from(sql.join(
         seed, sql.join(
-            _map, sql.join(_issue, _issue_epic, _issue.epic_id == _issue_epic.id),
-            _map.jira_id == _issue.id),
-        sql.and_(on[0] == _map.node_id, on[1] == _map.node_acc),
+            _map, sql.join(_issue, _issue_epic, sql.and_(
+                _issue.epic_id == _issue_epic.id,
+                _issue.acc_id == _issue_epic.acc_id,
+            )),
+            sql.and_(
+                _map.jira_id == _issue.id,
+                _map.jira_acc == _issue.acc_id,
+            )),
+        sql.and_(
+            on[0] == _map.node_id,
+            on[1] == _map.node_acc,
+        ),
     )).where(sql.and_(*filters))
 
 
