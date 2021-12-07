@@ -330,7 +330,7 @@ async def fetch_jira_issues(installation_ids: JIRAConfig,
             work_began[i] = np.nanmin(np.array(
                 [work_began[i], pr_created_at],
                 dtype=np.datetime64))
-        if (row := released_prs.get(node_id)) is not None:
+        if (row := released_prs.get(key)) is not None:
             released[i] = np.nanmax(np.array(
                 [released[i], row[GitHubDonePullRequestFacts.pr_done_at.name]],
                 dtype=np.datetime64))
@@ -361,7 +361,7 @@ async def _fetch_released_prs(pr_node_ids: Iterable[int],
                               release_settings: ReleaseSettings,
                               account: int,
                               pdb: Database,
-                              ) -> Dict[str, Mapping[str, Any]]:
+                              ) -> Dict[Tuple[int, str], Mapping[str, Any]]:
     ghdprf = GitHubDonePullRequestFacts
     released_rows = await pdb.fetch_all(
         sql.select([ghdprf.pr_node_id,
@@ -383,17 +383,19 @@ async def _fetch_released_prs(pr_node_ids: Iterable[int],
         for match, prs in matches.items():
             if repo not in release_settings.native:
                 for node_id, row in prs.items():
+                    key = (node_id, repo)
                     try:
-                        if released_prs[node_id][ghdprf.pr_done_at] < row[ghdprf.pr_done_at]:
-                            released_prs[node_id] = row
+                        if released_prs[key][ghdprf.pr_done_at] < row[ghdprf.pr_done_at]:
+                            released_prs[key] = row
                     except KeyError:
-                        released_prs[node_id] = row
+                        released_prs[key] = row
                 continue
             dump = triage_by_release_match(
                 repo, match, release_settings, default_branches, released_prs, ambiguous)
             if dump is None:
                 continue
-            dump.update(prs)
+            for node_id, row in prs.items():
+                dump[(node_id, repo)] = row
     released_prs.update(ambiguous[ReleaseMatch.tag.name])
     for node_id, row in ambiguous[ReleaseMatch.branch.name].items():
         if node_id not in released_prs:
