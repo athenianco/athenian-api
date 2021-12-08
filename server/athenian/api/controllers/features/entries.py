@@ -470,15 +470,16 @@ class MetricEntriesCalculator:
         exptime=short_term_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda defs, date_from, date_to, quantiles, repositories, pushers, labels, jira, **_:
+        key=lambda defs, time_from, time_to, quantiles, repositories, pushers, labels, jira, split_by_check_runs, **_:  # noqa
         (
             ",".join("%s:%s" % (k, sorted(v)) for k, v in sorted(defs.items())),
-            date_from.timestamp(), date_to.timestamp(),
+            time_from.timestamp(), time_to.timestamp(),
             ",".join(str(q) for q in quantiles),
             ",".join(str(sorted(r)) for r in repositories),
             ";".join(",".join(g) for g in pushers),
             labels,
             jira,
+            split_by_check_runs,
         ),
         cache=lambda self, **_: self._cache,
     )
