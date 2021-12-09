@@ -91,7 +91,7 @@ async def test_get_everything_smoke(client, headers, dummy_deployment_label):
 
     developer_dfs = {
         "jira_mapping": 206,
-        "active_commits_pushed_lines_changed": 3135,
+        "active_active0_commits_pushed_lines_changed": 3135,
         "prs_created": 681,
         "prs_merged": 554,
         "releases": 53,

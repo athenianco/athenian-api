@@ -820,6 +820,8 @@ async def _submit_deployed_releases(releases: pd.DataFrame,
                                     settings: ReleaseSettings,
                                     pdb: Database,
                                     ) -> None:
+    if releases.empty:
+        return
     values = [
         GitHubReleaseDeployment(
             acc_id=account,

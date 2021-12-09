@@ -1086,15 +1086,17 @@ developer_metric_mcuadros_stats = {
     "dev-regular-pr-comments": 92,
     "dev-review-pr-comments": 74,
     "dev-active": 0,
+    "dev-active0": 1,
+    "dev-worked": 1,
 }
 
 developer_metric_be_stats = {
-    "dev-commits-pushed": [[207], [8], [86], [11]],
-    "dev-lines-changed": [[34494], [482], [6159], [592]],
+    "dev-commits-pushed": [[0], [0], [0], [0]],
+    "dev-lines-changed": [[0], [0], [0], [0]],
     "dev-prs-created": [[0], [0], [1], [0]],
     "dev-prs-reviewed": [[2], [4], [3], [4]],
     "dev-prs-merged": [[6], [0], [0], [0]],
-    "dev-releases": [[21], [0], [0], [0]],
+    "dev-releases": [[0], [0], [0], [0]],
     "dev-reviews": [[8], [6], [7], [4]],
     "dev-review-approvals": [[1], [3], [2], [3]],
     "dev-review-rejections": [[1], [1], [0], [0]],
@@ -1103,6 +1105,8 @@ developer_metric_be_stats = {
     "dev-regular-pr-comments": [[3], [1], [0], [1]],
     "dev-review-pr-comments": [[7], [5], [5], [1]],
     "dev-active": [[0], [0], [0], [0]],
+    "dev-active0": [[0], [0], [0], [0]],
+    "dev-worked": [[1], [1], [1], [1]],
 }
 
 
@@ -1145,7 +1149,12 @@ developer_metric_mcuadros_jira_stats = {
     "dev-pr-comments": 43,
     "dev-regular-pr-comments": 24,
     "dev-review-pr-comments": 19,
-    "dev-active": 1,
+    "dev-active": 0,
+    "dev-active0": 0,
+    "dev-worked": 1,
+    "dev-releases": 0,
+    "dev-commits-pushed": 0,  # this will be non-zero when the metric becomes PR-aware
+    "dev-lines-changed": 0,  # this will be non-zero when the metric becomes PR-aware
 }
 
 
@@ -1194,7 +1203,9 @@ developer_metric_mcuadros_jira_labels_stats = {
     "dev-pr-comments": 0,
     "dev-regular-pr-comments": 0,
     "dev-review-pr-comments": 0,
-    "dev-active": 1,
+    "dev-active": 0,
+    "dev-active0": 0,
+    "dev-worked": 1,
 }
 
 

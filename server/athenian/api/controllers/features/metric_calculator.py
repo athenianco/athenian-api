@@ -390,8 +390,15 @@ class MaxMetricCalculator(AggregationMetricCalculator[T], ABC):
         return samples.max()
 
 
+class AnyMetricCalculator(AggregationMetricCalculator[T], ABC):
+    """len(samples) > 0 calculator."""
+
+    def _agg(self, samples: np.ndarray) -> T:
+        return len(samples) > 0
+
+
 class Counter(MetricCalculator[int], ABC):
-    """Count the number of PRs that were used to calculate the specified metric."""
+    """Count the number of items that were used to calculate the specified metric."""
 
     metric = MetricInt
 

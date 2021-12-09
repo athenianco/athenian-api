@@ -4,7 +4,8 @@ import numpy as np
 import pandas as pd
 
 from athenian.api.controllers.features.metric import Metric, MetricInt
-from athenian.api.controllers.features.metric_calculator import BinnedMetricCalculator, \
+from athenian.api.controllers.features.metric_calculator import AnyMetricCalculator, \
+    BinnedMetricCalculator, \
     MetricCalculator, MetricCalculatorEnsemble, SumMetricCalculator
 from athenian.api.controllers.miners.github.developer import developer_changed_lines_column, \
     developer_identity_column, DeveloperTopic
@@ -58,7 +59,7 @@ class DeveloperTopicCounter(SumMetricCalculator[int]):
                  max_times: np.ndarray,
                  **kwargs) -> np.array:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
-        column = facts[self.timestamp_column].values
+        column = facts[self.timestamp_column].astype(min_times.dtype, copy=False).values
         column_in_range = (min_times[:, None] <= column) & (column < max_times[:, None])
         result[column_in_range] = 1
         return result
@@ -134,6 +135,22 @@ class ActiveCounter(MetricCalculator[int]):
         result += lengths[:, None]
         result[~column_in_range] = self.nan
         return result
+
+
+@register_metric(DeveloperTopic.active0)
+class Active0Counter(AnyMetricCalculator[int]):
+    """Calculate "dev-active0" metric."""
+
+    deps = (ActiveCounter,)
+    may_have_negative_values = False
+    metric = MetricInt
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **kwargs) -> np.array:
+        return self._calcs[0].peek
 
 
 @register_metric(DeveloperTopic.prs_created)
@@ -248,6 +265,33 @@ class NeutralReviewsCounter(ReviewStatesCounter):
     """Calculate "dev-review-neutrals" metric."""
 
     state = ReviewResolution.COMMENTED
+
+
+@register_metric(DeveloperTopic.worked)
+class WorkedCounter(AnyMetricCalculator[int]):
+    """Calculate "dev-worked" metric."""
+
+    deps = (
+        PRsCreatedCounter,
+        PRsMergedCounter,
+        ReleasesCounter,
+        CommitsPushedCounter,
+        ReviewsCounter,
+        RegularPRCommentsCounter,
+    )
+    may_have_negative_values = False
+    metric = MetricInt
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **kwargs) -> np.array:
+        result = np.full((len(min_times), len(facts)), 0, self.dtype)
+        for calc in self._calcs:
+            result |= calc.peek > 0
+        result[result == 0] = self.nan
+        return result
 
 
 def group_actions_by_developers(devs: Sequence[Collection[str]],
