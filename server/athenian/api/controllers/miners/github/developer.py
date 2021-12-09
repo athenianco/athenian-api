@@ -41,6 +41,8 @@ class DeveloperTopic(Enum):
     regular_pr_comments = "dev-regular-pr-comments"
     review_pr_comments = "dev-review-pr-comments"
     active = "dev-active"
+    active0 = "dev-active0"
+    worked = "dev-worked"
 
     def __lt__(self, other: "DeveloperTopic") -> bool:
         """Support sorting."""
@@ -110,6 +112,15 @@ async def _mine_commits(repo_ids: np.ndarray,
                         rdb: morcilla.Database,
                         cache: Optional[aiomcache.Client],
                         ) -> pd.DataFrame:
+    if labels or jira:
+        # TODO(vmarkovtsev): filter PRs, take merge commits, load the DAGs, find the PR commits
+        # We cannot rely on PullRequestCommit because there can be duplicates after force pushes;
+        # on the other hand, "rebase/squash and merge" erases information about individual commits
+        return pd.DataFrame(columns=[
+            developer_identity_column,
+            developer_repository_column,
+            PushCommit.committed_date.name,
+        ])
     columns = [PushCommit.author_user_id.label(developer_identity_column),
                PushCommit.repository_node_id.label(developer_repository_column),
                PushCommit.committed_date]
@@ -197,6 +208,12 @@ async def _mine_releases(repo_ids: np.ndarray,
                          rdb: morcilla.Database,
                          cache: Optional[aiomcache.Client],
                          ) -> pd.DataFrame:
+    if labels or jira:
+        return pd.DataFrame(columns=[
+            developer_identity_column + _dereferenced_suffix,
+            developer_repository_column + _dereferenced_suffix,
+            Release.published_at.name,
+        ])
     branches, default_branches = await BranchMiner.extract_branches(
         repo_names, prefixer, meta_ids, mdb, cache)
     releases, _ = await ReleaseLoader.load_releases(
@@ -324,18 +341,23 @@ _dereferenced_suffix = "_dereferenced"
 processors = [
     (frozenset((DeveloperTopic.commits_pushed,
                 DeveloperTopic.lines_changed,
-                DeveloperTopic.active)),
+                DeveloperTopic.active,
+                DeveloperTopic.active0,
+                DeveloperTopic.worked)),
      _mine_commits),
-    (frozenset((DeveloperTopic.prs_created,)), _mine_prs_created),
-    (frozenset((DeveloperTopic.prs_merged,)), _mine_prs_merged),
-    (frozenset((DeveloperTopic.releases,)), _mine_releases),
+    (frozenset((DeveloperTopic.prs_created, DeveloperTopic.worked)), _mine_prs_created),
+    (frozenset((DeveloperTopic.prs_merged, DeveloperTopic.worked)), _mine_prs_merged),
+    (frozenset((DeveloperTopic.releases, DeveloperTopic.worked)), _mine_releases),
     (frozenset((DeveloperTopic.reviews,
                 DeveloperTopic.review_approvals,
                 DeveloperTopic.review_neutrals,
                 DeveloperTopic.review_rejections,
-                DeveloperTopic.prs_reviewed)),
+                DeveloperTopic.prs_reviewed,
+                DeveloperTopic.worked)),
      _mine_reviews),
-    (frozenset((DeveloperTopic.pr_comments, DeveloperTopic.regular_pr_comments)),
+    (frozenset((DeveloperTopic.pr_comments,
+                DeveloperTopic.regular_pr_comments,
+                DeveloperTopic.worked)),
      _mine_pr_comments_regular),
     (frozenset((DeveloperTopic.pr_comments, DeveloperTopic.review_pr_comments)),
      _mine_pr_comments_review),
@@ -374,6 +396,31 @@ async def mine_developer_activities(devs: Collection[str],
                 time_from, time_to, topics, labels, jira, release_settings, logical_settings,
                 prefixer, account, meta_ids, mdb, pdb, rdb, cache)
     df_by_topic = dict(zip(tasks.keys(), await gather(*tasks.values())))
+    # convert node IDs to user logins and repository names
+    for key, df in df_by_topic.items():
+        try:
+            df[developer_identity_column] = dev_names[np.searchsorted(
+                dev_ids, df[developer_identity_column].values)]
+            df[developer_repository_column] = repo_names[np.searchsorted(
+                repo_ids, df[developer_repository_column].values)]
+        except IndexError as e:
+            raise AssertionError(str(key)) from e
+        except KeyError:
+            df.rename(columns={
+                developer_identity_column + _dereferenced_suffix: developer_identity_column,
+                developer_repository_column + _dereferenced_suffix: developer_repository_column,
+            }, inplace=True, errors="raise")
+    new_df_by_topic = {}
+    worked_dfs = []
+    for key, val in df_by_topic.items():
+        if DeveloperTopic.worked in key:
+            worked_dfs.append(val)
+            new_df_by_topic[key - {DeveloperTopic.worked}] = val
+        else:
+            new_df_by_topic[key] = val
+    df_by_topic = new_df_by_topic
+    if DeveloperTopic.worked in topics:
+        df_by_topic[frozenset((DeveloperTopic.worked,))] = pd.concat(worked_dfs)
     if DeveloperTopic.pr_comments in topics:
         regular_pr_comments = df_by_topic[(
             key := frozenset((DeveloperTopic.pr_comments, DeveloperTopic.regular_pr_comments))
@@ -389,20 +436,11 @@ async def mine_developer_activities(devs: Collection[str],
             df_by_topic[frozenset((DeveloperTopic.review_pr_comments,))] = review_pr_comments
         df_by_topic[frozenset((DeveloperTopic.pr_comments,))] = pd.concat([
             regular_pr_comments, review_pr_comments])
-    # convert node IDs to user logins and repository names
     effective_df_by_topic = {}
     for key, df in df_by_topic.items():
-        effective_df_by_topic[key.intersection(topics)] = df
-        try:
-            df[developer_identity_column] = dev_names[np.searchsorted(
-                dev_ids, df[developer_identity_column].values)]
-            df[developer_repository_column] = repo_names[np.searchsorted(
-                repo_ids, df[developer_repository_column].values)]
-        except KeyError:
-            df.rename(columns={
-                developer_identity_column + _dereferenced_suffix: developer_identity_column,
-                developer_repository_column + _dereferenced_suffix: developer_repository_column,
-            }, inplace=True, errors="raise")
+        if not (new_key := key.intersection(topics)):
+            continue
+        effective_df_by_topic[new_key] = df
     return list(effective_df_by_topic.items())
 
 
