@@ -270,11 +270,11 @@ class SuiteTimeCalculatorAnalysis(MetricCalculator[None]):
             facts[CheckRun.check_suite_node_id.name].values,
             return_index=True, return_inverse=True, return_counts=True)
         statuses = facts[CheckRun.check_suite_status.name].values[first_encounters].astype("S")
-        completed = statuses == b"COMPLETED"
+        completed = np.in1d(statuses, [b"COMPLETED", b"SUCCESS", b"FAILURE"])
         conclusions = facts[CheckRun.check_suite_conclusion.name].values[
             first_encounters[completed]
         ].astype("S")
-        sensibly_completed = np.nonzero(completed)[0][
+        sensibly_completed = np.flatnonzero(completed)[
             np.in1d(conclusions, [b"CANCELLED", b"SKIPPED"], invert=True)]
         # first_encounters[sensibly_completed] gives the indexes of the completed suites
         first_encounters = first_encounters[sensibly_completed]
