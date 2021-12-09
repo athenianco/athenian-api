@@ -20,6 +20,8 @@ import numpy as np
 import sentry_sdk
 from sqlalchemy import insert
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
+from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.sql import CompoundSelect, Select
 from sqlalchemy.sql.functions import ReturnTypeFromArgs
 
 from athenian.api import metadata
@@ -298,6 +300,40 @@ DatabaseLike = Union[Database, Connection]
 # https://stackoverflow.com/questions/49456158/integer-in-python-pandas-becomes-blob-binary-in-sqlite  # noqa
 for dtype in (np.uint32, np.int32, np.uint64, np.int64):
     sqlite3.register_adapter(dtype, lambda val: int(val))
+
+
+def _with_statement_hint(self, text, dialect_name="*"):
+    self._statement_hints += ((dialect_name, text),)
+    return self
+
+
+CompoundSelect._statement_hints = ()
+CompoundSelect.with_statement_hint = _with_statement_hint
+
+
+@compiles(Select)
+@compiles(CompoundSelect)
+def _visit_select(element, compiler, **kw):
+    """Prepend pg_hint_plan hints."""
+    per_dialect = [
+        ht
+        for (dialect_name, ht) in element._statement_hints
+        if dialect_name in ("*", compiler.dialect.name)
+    ]
+    if per_dialect:
+        hints = "/*+\n    %s\n */\n" % "\n    ".join(per_dialect)
+        statement_hints = element._statement_hints
+        element._statement_hints = ()
+    else:
+        hints = ""
+        statement_hints = ()
+    try:
+        text = getattr(compiler, f"visit_{element.__visit_name__}")(element, **kw)
+    finally:
+        element._statement_hints = statement_hints
+    if hints:
+        return hints + text
+    return text
 
 
 async def insert_or_ignore(model,

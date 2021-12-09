@@ -218,14 +218,5 @@ async def read_sql_query_with_join_collapse(
         index: Optional[Union[str, Sequence[str]]] = None,
 ) -> pd.DataFrame:
     """Enforce the predefined JOIN order in read_sql_query()."""
-    set_join_collapse_limit = db.url.dialect == "postgresql"
-    async with db.connection() as mdb_conn:
-        if set_join_collapse_limit:
-            transaction = mdb_conn.transaction()
-            await transaction.start()
-            await mdb_conn.execute("set join_collapse_limit=1")
-        try:
-            return await read_sql_query(query, mdb_conn, columns=columns, index=index)
-        finally:
-            if set_join_collapse_limit:
-                await transaction.rollback()
+    query = query.with_statement_hint("Set(join_collapse_limit 1)")
+    return await read_sql_query(query, db, columns=columns, index=index)

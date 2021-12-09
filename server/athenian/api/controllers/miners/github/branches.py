@@ -143,13 +143,13 @@ class BranchMiner:
                                 meta_ids: Tuple[int, ...],
                                 mdb: DatabaseLike,
                                 ) -> pd.DataFrame:
-        df = await read_sql_query_with_join_collapse(
-            select([Branch]).where(and_(
-                Branch.repository_node_id.in_(repos)
-                if repos is not None
-                else sa.true(),
-                Branch.acc_id.in_(meta_ids))),
-            mdb, Branch)
+        query = select([Branch]).where(and_(
+            Branch.repository_node_id.in_(repos)
+            if repos is not None
+            else sa.true(),
+            Branch.acc_id.in_(meta_ids))) \
+            .with_statement_hint("IndexOnlyScan(c node_commit_repository_target)")
+        df = await read_sql_query_with_join_collapse(query, mdb, Branch)
         for left_join_col in (Branch.commit_sha.name, Branch.repository_full_name.name):
             if (not_null := df[left_join_col].notnull().values).sum() < len(df):
                 df = df.take(np.flatnonzero(not_null))
