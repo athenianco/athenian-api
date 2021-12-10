@@ -1582,12 +1582,15 @@ async def test_developer_metrics_order(client, headers):
     assert [m[0].values for m in result.calculated[0].values] == [[8], [14]]
 
 
-async def test_release_metrics_smoke(client, headers):
+async def test_release_metrics_smoke(client, headers, no_jira):
     body = {
         "account": 1,
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
         "for": [["{1}"]],
+        "jira": {
+            "epics": [],
+        },
         "metrics": list(ReleaseMetricID),
         "granularities": ["all", "3 month"],
     }

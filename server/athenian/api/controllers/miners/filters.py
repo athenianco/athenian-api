@@ -139,9 +139,9 @@ class JIRAFilter:
         return True
 
     @classmethod
-    def from_web(cls, model: Optional[WebJIRAFilter], ids: JIRAConfig) -> "JIRAFilter":
+    def from_web(cls, model: Optional[WebJIRAFilter], ids: Optional[JIRAConfig]) -> "JIRAFilter":
         """Initialize a new JIRAFilter from the corresponding web model."""
-        if model is None:
+        if model is None or ids is None:
             return cls.empty()
         labels = LabelFilter.from_iterables(model.labels_include, model.labels_exclude)
         if not (custom_projects := bool(model.projects)):
