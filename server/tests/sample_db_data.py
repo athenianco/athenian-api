@@ -102,6 +102,8 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
                     kwargs["url"] = "https://athenianco.atlassian.net/browse/" + kwargs["key"]
                 if table == "github.node_repository":
                     kwargs["name"] = kwargs["name_with_owner"].split("/", 1)[1]
+                if table == "github.api_check_runs":
+                    kwargs["repository_node_id_hack"] = kwargs["repository_node_id"]
                 session.add(model(**kwargs))
                 if table == "github.api_pull_requests":
                     session.add(NodePullRequest(graph_id=kwargs["node_id"],
@@ -132,6 +134,7 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
                                            ))
                 elif table == "github.api_check_runs":
                     del kwargs["committed_date_hack"]
+                    del kwargs["repository_node_id_hack"]
                     del kwargs["pull_request_created_at"]
                     del kwargs["pull_request_closed_at"]
                     session.add(CheckRunByPR(**kwargs))
