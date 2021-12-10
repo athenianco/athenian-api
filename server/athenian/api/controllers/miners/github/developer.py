@@ -276,7 +276,7 @@ async def _mine_reviews(repo_ids: np.ndarray,
             on=(PullRequestReview.pull_request_node_id, PullRequestReview.acc_id))
     else:
         query = select(selected).where(and_(*filters))
-    return await read_sql_query_with_join_collapse(query, mdb, selected)
+    return await read_sql_query(query, mdb, selected)
 
 
 async def _mine_pr_comments(model: Union[Type[PullRequestComment], Type[PullRequestReviewComment]],
@@ -322,7 +322,7 @@ async def _mine_pr_comments(model: Union[Type[PullRequestComment], Type[PullRequ
             on=(model.pull_request_node_id, model.acc_id))
     else:
         query = select(selected).where(and_(*filters))
-    return await read_sql_query_with_join_collapse(query, mdb, [c.name for c in selected])
+    return await read_sql_query(query, mdb, [c.name for c in selected])
 
 
 async def _mine_pr_comments_regular(*args, **kwargs) -> pd.DataFrame:
