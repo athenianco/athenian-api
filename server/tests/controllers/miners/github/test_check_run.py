@@ -10,8 +10,7 @@ from athenian.api.controllers.features.github.check_run_metrics_accelerated impo
     mark_check_suite_types
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.check_run import _postprocess_check_runs, \
-    _split_duplicate_check_runs, \
-    mine_check_runs
+    _split_duplicate_check_runs, mine_check_runs
 from athenian.api.int_to_str import int_to_str
 from athenian.api.models.metadata.github import CheckRun
 
@@ -42,7 +41,8 @@ async def test_check_run_smoke(mdb, time_from, time_to, repositories, pushers, l
         (6366825,), mdb, None)
     assert len(df) == size
     for col in CheckRun.__table__.columns:
-        if col.name != CheckRun.committed_date_hack.name:
+        if col.name not in (CheckRun.committed_date_hack.name,
+                            CheckRun.repository_node_id_hack.name):
             assert col.name in df.columns
     assert len(df[CheckRun.check_run_node_id.name].unique()) == len(df)
 

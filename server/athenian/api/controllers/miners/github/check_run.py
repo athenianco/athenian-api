@@ -118,6 +118,7 @@ async def _mine_check_runs(time_from: datetime,
         CheckRun.started_at.between(time_from, time_to),
         CheckRun.committed_date_hack.between(
             time_from - timedelta(days=14), time_to + timedelta(days=1)),
+        CheckRun.repository_node_id_hack.in_(repo_nodes),
         CheckRun.repository_node_id.in_(repo_nodes),
     ]
     # Postgres planner begins to suck at guessing the number of records here => terrible perf
@@ -148,6 +149,9 @@ async def _mine_check_runs(time_from: datetime,
         query = await generate_jira_prs_query(
             filters, jira, None, mdb, cache, columns=CheckRun.__table__.columns, seed=CheckRun,
             on=(CheckRun.pull_request_node_id, CheckRun.acc_id))
+    query = query \
+        .with_statement_hint("IndexScan(c_1 github_node_commit_contributors)") \
+        .with_statement_hint("IndexScan(sc node_statuscontext_main)")
     df = await read_sql_query_with_join_collapse(query, mdb, CheckRun)
 
     # add check runs mapped to the mentioned PRs even if they are outside of the date range
@@ -435,6 +439,7 @@ async def _append_pull_request_check_runs_outside(df: pd.DataFrame,
             index=PullRequestLabel.pull_request_node_id.name))
     extra_df, *df_labels = await gather(*tasks)
     for col in (CheckRun.committed_date_hack,
+                CheckRun.repository_node_id_hack,
                 CheckRun.pull_request_created_at,
                 CheckRun.pull_request_closed_at):
         del df[col.name]
