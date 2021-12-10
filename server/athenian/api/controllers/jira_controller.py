@@ -569,10 +569,14 @@ async def _issue_flow(return_: Set[str],
         existing_mask = prs_df[PullRequest.repository_full_name.name].isin(
             release_settings.native).values
         if not existing_mask.all():
-            prs_df = prs_df.take(np.nonzero(existing_mask)[0])
-        related_branches = branches.take(np.nonzero(np.in1d(
+            prs_df = prs_df.take(np.flatnonzero(existing_mask))
+        found_repos = set(prs_df[PullRequest.repository_full_name.name].unique())
+        if ambiguous.keys() - found_repos:
+            # there are archived or disabled repos
+            ambiguous = {k: v for k, v in ambiguous.items() if k in found_repos}
+        related_branches = branches.take(np.flatnonzero(np.in1d(
             branches[Branch.repository_full_name.name].values.astype("S"),
-            prs_df[PullRequest.repository_full_name.name].unique().astype("S")))[0])
+            prs_df[PullRequest.repository_full_name.name].unique().astype("S"))))
         (mined_prs, dfs, facts, _, deployments_task), repo_envs = await gather(
             unwrap_pull_requests(
                 prs_df, facts, ambiguous, False, related_branches, default_branches,
