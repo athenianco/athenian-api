@@ -47,7 +47,7 @@ async def paginate_prs(request: AthenianWebRequest, body: dict) -> web.Response:
             request.mdb, request.pdb, request.cache,
             columns=[PullRequest.node_id, PullRequest.updated_at]),
     ]
-    if filt.request.jira:
+    if jira:
         tasks.append(PullRequestMiner.filter_jira(
             done_node_ids, jira, meta_ids, request.mdb, request.cache,
             columns=[PullRequest.node_id]))
