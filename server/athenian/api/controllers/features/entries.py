@@ -38,7 +38,6 @@ from athenian.api.controllers.features.metric_calculator import DEFAULT_QUANTILE
     group_by_repo, group_to_indexes, MetricCalculatorEnsemble
 from athenian.api.controllers.jira import JIRAConfig
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.check_run import mine_check_runs
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
@@ -169,6 +168,7 @@ class MetricEntriesCalculator:
                                                     labels: LabelFilter,
                                                     jira: JIRAFilter,
                                                     exclude_inactive: bool,
+                                                    bots: Set[str],
                                                     release_settings: ReleaseSettings,
                                                     logical_settings: LogicalRepositorySettings,
                                                     prefixer: Prefixer,
@@ -190,7 +190,7 @@ class MetricEntriesCalculator:
         time_from, time_to = self._align_time_min_max(time_intervals, quantiles)
         df_facts = await self.calc_pull_request_facts_github(
             time_from, time_to, all_repositories, all_participants, labels, jira, exclude_inactive,
-            release_settings, logical_settings, prefixer, fresh, need_jira_mapping(metrics),
+            bots, release_settings, logical_settings, prefixer, fresh, need_jira_mapping(metrics),
             branches, default_branches)
         lines_grouper = partial(group_by_lines, lines)
         repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.name, repositories)
@@ -231,6 +231,7 @@ class MetricEntriesCalculator:
                                                   labels: LabelFilter,
                                                   jira: JIRAFilter,
                                                   exclude_inactive: bool,
+                                                  bots: Set[str],
                                                   release_settings: ReleaseSettings,
                                                   logical_settings: LogicalRepositorySettings,
                                                   prefixer: Prefixer,
@@ -252,7 +253,7 @@ class MetricEntriesCalculator:
             raise ValueError("Unsupported metric") from e
         df_facts = await self.calc_pull_request_facts_github(
             time_from, time_to, all_repositories, all_participants, labels, jira,
-            exclude_inactive, release_settings, logical_settings, prefixer,
+            exclude_inactive, bots, release_settings, logical_settings, prefixer,
             fresh, False, branches, default_branches)
         lines_grouper = partial(group_by_lines, lines)
         repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.name, repositories)
@@ -630,6 +631,7 @@ class MetricEntriesCalculator:
                                              labels: LabelFilter,
                                              jira: JIRAFilter,
                                              exclude_inactive: bool,
+                                             bots: Set[str],
                                              release_settings: ReleaseSettings,
                                              logical_settings: LogicalRepositorySettings,
                                              prefixer: Prefixer,
@@ -656,6 +658,7 @@ class MetricEntriesCalculator:
             labels,
             jira,
             exclude_inactive,
+            bots,
             release_settings,
             logical_settings,
             prefixer,
@@ -698,6 +701,7 @@ class MetricEntriesCalculator:
                                               labels: LabelFilter,
                                               jira: JIRAFilter,
                                               exclude_inactive: bool,
+                                              bots: Set[str],
                                               release_settings: ReleaseSettings,
                                               logical_settings: LogicalRepositorySettings,
                                               prefixer: Prefixer,
@@ -786,7 +790,7 @@ class MetricEntriesCalculator:
         add_pdb_hits(self._pdb, "precomputed_unreleased_facts", len(precomputed_unreleased_prs))
         for key in precomputed_unreleased_prs.values:
             precomputed_facts[key] = unreleased_facts[key]
-        facts_miner = PullRequestFactsMiner(await bots(self._mdb))
+        facts_miner = PullRequestFactsMiner(bots)
         mined_prs = []
         mined_facts = {}
         open_pr_facts = []

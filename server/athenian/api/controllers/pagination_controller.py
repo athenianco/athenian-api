@@ -26,8 +26,8 @@ async def paginate_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     await get_user_account_status(
         request.uid, filt.request.account, request.sdb, request.cache)
     # we ignore events and stages because we cannot do anything with them
-    time_from, time_to, repos, _, _, participants, labels, jira, release_settings, \
-        logical_settings, prefixer, meta_ids = \
+    time_from, time_to, repos, _, _, participants, labels, jira, _, \
+        release_settings, logical_settings, prefixer, meta_ids = \
         await resolve_filter_prs_parameters(filt.request, request)
     branches, default_branches = await BranchMiner.extract_branches(
         repos, prefixer, meta_ids, request.mdb, request.cache)

@@ -15,7 +15,7 @@ from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
 
 @with_defer
 async def test_fetch_pull_request_facts_unfresh_smoke(
-        metrics_calculator_factory, release_match_setting_tag, mdb, pdb, rdb, prefixer,
+        metrics_calculator_factory, release_match_setting_tag, mdb, pdb, rdb, prefixer, bots,
         precomputed_deployments):
     metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(2017, 9, 1, tzinfo=timezone.utc)
@@ -23,7 +23,7 @@ async def test_fetch_pull_request_facts_unfresh_smoke(
     facts_fresh = await metrics_calculator_no_cache.calc_pull_request_facts_github(
         time_from, time_to,
         {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
-        False, release_match_setting_tag, LogicalRepositorySettings.empty(),
+        False, bots, release_match_setting_tag, LogicalRepositorySettings.empty(),
         prefixer, False, False,
     )
     facts_fresh.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
@@ -36,7 +36,7 @@ async def test_fetch_pull_request_facts_unfresh_smoke(
         facts_unfresh = await metrics_calculator_no_cache.calc_pull_request_facts_github(
             time_from, time_to,
             {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
-            False, release_match_setting_tag, LogicalRepositorySettings.empty(),
+            False, bots, release_match_setting_tag, LogicalRepositorySettings.empty(),
             prefixer, False, False,
         )
         assert len(facts_unfresh) == 230
@@ -48,7 +48,7 @@ async def test_fetch_pull_request_facts_unfresh_smoke(
 
 @with_defer
 async def test_fetch_pull_request_facts_unfresh_labels(
-        metrics_calculator_factory, release_match_setting_tag, mdb, pdb, rdb, prefixer):
+        metrics_calculator_factory, release_match_setting_tag, mdb, pdb, rdb, prefixer, bots):
     metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(2017, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
@@ -56,7 +56,7 @@ async def test_fetch_pull_request_facts_unfresh_labels(
     facts_fresh = await metrics_calculator_no_cache.calc_pull_request_facts_github(
         time_from, time_to,
         {"src-d/go-git"}, {}, label_filter, JIRAFilter.empty(),
-        False, release_match_setting_tag, LogicalRepositorySettings.empty(),
+        False, bots, release_match_setting_tag, LogicalRepositorySettings.empty(),
         prefixer, False, False,
     )
     facts_fresh.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
@@ -68,7 +68,7 @@ async def test_fetch_pull_request_facts_unfresh_labels(
         facts_unfresh = await metrics_calculator_no_cache.calc_pull_request_facts_github(
             time_from, time_to,
             {"src-d/go-git"}, {}, label_filter, JIRAFilter.empty(),
-            False, release_match_setting_tag, LogicalRepositorySettings.empty(),
+            False, bots, release_match_setting_tag, LogicalRepositorySettings.empty(),
             prefixer, False, False,
         )
         assert len(facts_unfresh) == 6
@@ -80,7 +80,7 @@ async def test_fetch_pull_request_facts_unfresh_labels(
 
 @with_defer
 async def test_fetch_pull_request_facts_unfresh_jira(
-        metrics_calculator_factory, release_match_setting_tag, mdb, pdb, rdb, prefixer):
+        metrics_calculator_factory, release_match_setting_tag, mdb, pdb, rdb, prefixer, bots):
     metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(2017, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
@@ -89,7 +89,7 @@ async def test_fetch_pull_request_facts_unfresh_jira(
     facts_fresh = await metrics_calculator_no_cache.calc_pull_request_facts_github(
         time_from, time_to,
         {"src-d/go-git"}, {}, LabelFilter.empty(), jira_filter,
-        False, release_match_setting_tag, LogicalRepositorySettings.empty(),
+        False, bots, release_match_setting_tag, LogicalRepositorySettings.empty(),
         prefixer, False, True,
     )
     await wait_deferred()
@@ -112,7 +112,7 @@ async def test_fetch_pull_request_facts_unfresh_jira(
         facts_unfresh = await metrics_calculator_no_cache.calc_pull_request_facts_github(
             time_from, time_to,
             {"src-d/go-git"}, {}, LabelFilter.empty(), jira_filter,
-            False, release_match_setting_tag, LogicalRepositorySettings.empty(),
+            False, bots, release_match_setting_tag, LogicalRepositorySettings.empty(),
             prefixer, False, True,
         )
         assert len(facts_unfresh) == 36
@@ -134,14 +134,14 @@ async def test_fetch_pull_request_facts_unfresh_jira(
 @with_defer
 async def test_fetch_pull_request_facts_unfresh_logical_title(
         metrics_calculator_factory, release_match_setting_tag_logical, mdb, pdb, rdb, prefixer,
-        logical_settings, repos, exclude_inactive, count):
+        bots, logical_settings, repos, exclude_inactive, count):
     metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(2017, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 11, 19, tzinfo=timezone.utc)
     facts_fresh = await metrics_calculator_no_cache.calc_pull_request_facts_github(
         time_from, time_to,
         repos, {}, LabelFilter.empty(), JIRAFilter.empty(),
-        exclude_inactive, release_match_setting_tag_logical, logical_settings,
+        exclude_inactive, bots, release_match_setting_tag_logical, logical_settings,
         prefixer, False, False,
     )
     facts_fresh.sort_values(
@@ -156,7 +156,7 @@ async def test_fetch_pull_request_facts_unfresh_logical_title(
         facts_unfresh = await metrics_calculator_no_cache.calc_pull_request_facts_github(
             time_from, time_to,
             repos, {}, LabelFilter.empty(), JIRAFilter.empty(),
-            exclude_inactive, release_match_setting_tag_logical, logical_settings,
+            exclude_inactive, bots, release_match_setting_tag_logical, logical_settings,
             prefixer, False, False,
         )
         assert len(facts_unfresh) == count

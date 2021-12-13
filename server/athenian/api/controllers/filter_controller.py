@@ -23,6 +23,7 @@ from athenian.api.controllers.jira import get_jira_installation_or_none, JIRACon
 from athenian.api.controllers.logical_repos import coerce_logical_repos, drop_logical_repo
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
 from athenian.api.controllers.miners.github.contributors import mine_contributors
@@ -173,6 +174,7 @@ async def resolve_filter_prs_parameters(filt: FilterPullRequestsRequest,
                                         ) -> Tuple[datetime, datetime,
                                                    Set[str], Set[str], Set[str],
                                                    PRParticipants, LabelFilter, JIRAFilter,
+                                                   Set[str],
                                                    ReleaseSettings,
                                                    LogicalRepositorySettings,
                                                    Prefixer,
@@ -189,9 +191,10 @@ async def resolve_filter_prs_parameters(filt: FilterPullRequestsRequest,
     participants = {PRParticipationKind[k.upper()]: {d.rsplit("/", 1)[1] for d in v}
                     for k, v in (filt.with_ or {}).items() if v}
     settings = Settings.from_request(request, filt.account)
-    release_settings, jira = await gather(
+    release_settings, jira, account_bots = await gather(
         settings.list_release_matches(repos),
         get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
+        bots(filt.account, request.mdb, request.sdb, request.cache),
     )
     repos = {r.split("/", 1)[1] for r in repos}
     labels = LabelFilter.from_iterables(filt.labels_include, filt.labels_exclude)
@@ -200,7 +203,7 @@ async def resolve_filter_prs_parameters(filt: FilterPullRequestsRequest,
     else:
         jira = JIRAFilter.empty()
     return time_from, time_to, repos, events, stages, participants, labels, jira, \
-        release_settings, logical_settings, prefixer, meta_ids
+        account_bots, release_settings, logical_settings, prefixer, meta_ids
 
 
 @weight(6)
@@ -211,12 +214,13 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     except ValueError as e:
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError("?", detail=str(e)))
-    time_from, time_to, repos, events, stages, participants, labels, jira, release_settings, \
-        logical_settings, prefixer, meta_ids = await resolve_filter_prs_parameters(filt, request)
+    time_from, time_to, repos, events, stages, participants, labels, jira, account_bots, \
+        release_settings, logical_settings, prefixer, meta_ids = \
+        await resolve_filter_prs_parameters(filt, request)
     updated_min, updated_max = _bake_updated_min_max(filt)
     prs, deployments = await filter_pull_requests(
         events, stages, time_from, time_to, repos, participants, labels, jira,
-        filt.environment, filt.exclude_inactive, release_settings, logical_settings,
+        filt.environment, filt.exclude_inactive, account_bots, release_settings, logical_settings,
         updated_min, updated_max, prefixer, filt.account, meta_ids,
         request.mdb, request.pdb, request.rdb, request.cache)
     return await _build_github_prs_response(
@@ -510,10 +514,10 @@ async def get_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     prs_by_repo = {}
     for p in body.prs:
         prs_by_repo.setdefault(p.repository, set()).update(p.numbers)
-    release_settings, logical_settings, prefixer, meta_ids, prs_by_repo = \
+    release_settings, logical_settings, prefixer, account_bots, meta_ids, prs_by_repo = \
         await _check_github_repos(request, body.account, prs_by_repo, ".prs")
     prs, deployments = await fetch_pull_requests(
-        prs_by_repo, release_settings, logical_settings, body.environment, prefixer,
+        prs_by_repo, account_bots, release_settings, logical_settings, body.environment, prefixer,
         body.account, meta_ids, request.mdb, request.pdb, request.rdb, request.cache)
     return await _build_github_prs_response(
         prs, deployments, prefixer, meta_ids, request.mdb, request.cache)
@@ -526,6 +530,7 @@ async def _check_github_repos(request: AthenianWebRequest,
                               ) -> Tuple[ReleaseSettings,
                                          LogicalRepositorySettings,
                                          Prefixer,
+                                         Set[str],
                                          Tuple[int, ...],
                                          Dict[str, Any]]:
     meta_ids = await get_metadata_account_ids(account, request.sdb, request.cache)
@@ -551,13 +556,14 @@ async def _check_github_repos(request: AthenianWebRequest,
         return meta_ids
 
     settings = Settings.from_request(request, account)
-    meta_ids, release_settings, logical_settings = await gather(
+    meta_ids, release_settings, logical_settings, account_bots = await gather(
         check(),
         settings.list_release_matches(prefixed_repos),
         settings.list_logical_repositories(prefixer, prefixed_repos, pointer=pointer),
+        bots(account, request.mdb, request.sdb, request.cache),
         op="_check_github_repos",
     )
-    return release_settings, logical_settings, prefixer, meta_ids, repos
+    return release_settings, logical_settings, prefixer, account_bots, meta_ids, repos
 
 
 def webify_deployment(val: Deployment, repo_node_to_prefixed_name) -> WebDeploymentNotification:
@@ -634,7 +640,7 @@ async def get_releases(request: AthenianWebRequest, body: dict) -> web.Response:
     for p in body.releases:
         releases_by_repo.setdefault(p.repository, set()).update(p.names)
     try:
-        (release_settings, logical_settings, prefixer, meta_ids, releases_by_repo), jira_ids = \
+        (release_settings, logical_settings, prefixer, _, meta_ids, releases_by_repo), jira_ids = \
             await gather(
                 _check_github_repos(request, body.account, releases_by_repo, ".releases"),
                 get_jira_installation_or_none(
@@ -657,9 +663,11 @@ async def diff_releases(request: AthenianWebRequest, body: dict) -> web.Response
     for repo, border in body.borders.items():
         borders[repo] = [(pair.old, pair.new) for pair in border]
     try:
-        (release_settings, logical_settings, prefixer, meta_ids, borders), jira_ids = await gather(
-            _check_github_repos(request, body.account, borders, ".borders"),
-            get_jira_installation_or_none(body.account, request.sdb, request.mdb, request.cache),
+        (release_settings, logical_settings, prefixer, _, meta_ids, borders), jira_ids = \
+            await gather(
+                _check_github_repos(request, body.account, borders, ".borders"),
+                get_jira_installation_or_none(body.account, request.sdb, request.mdb,
+                                              request.cache),
         )
     except KeyError:
         return model_response(ReleaseSet())

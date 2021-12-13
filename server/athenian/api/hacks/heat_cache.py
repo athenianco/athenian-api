@@ -27,7 +27,7 @@ from athenian.api.controllers.events_controller import resolve_deployed_componen
 from athenian.api.controllers.features.entries import MetricEntriesCalculator
 from athenian.api.controllers.jira import match_jira_identities
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.bots import Bots
+from athenian.api.controllers.miners.github.bots import bots as fetch_bots
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.contributors import mine_contributors
 from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_inrange
@@ -131,9 +131,6 @@ def main():
         log.info("Resolving deployed references")
         await resolve_deployed_component_references(sdb, mdb, rdb, cache)
 
-        bots = await Bots()(mdb)
-        log.info("Loaded %d bots", len(bots))
-
         account_progress_settings = {}
         accounts = [r[0] for r in await sdb.fetch_all(
             select([Account.id])
@@ -162,7 +159,11 @@ def main():
                             reposet.owner_id, reposet.id)
                 continue
             meta_ids = await get_metadata_account_ids(reposet.owner_id, sdb, cache)
-            prefixer = await Prefixer.load(meta_ids, mdb, cache)
+            prefixer, bots = await gather(
+                Prefixer.load(meta_ids, mdb, cache),
+                fetch_bots(reposet.owner_id, mdb, sdb, None),
+            )
+            log.info("Loaded %d bots", len(bots))
             if not reposet.precomputed:
                 log.info("Considering account %d as brand new, creating the Bots team",
                          reposet.owner_id)
@@ -221,6 +222,7 @@ def main():
                     LabelFilter.empty(),
                     JIRAFilter.empty(),
                     False,
+                    bots,
                     release_settings,
                     logical_settings,
                     prefixer,

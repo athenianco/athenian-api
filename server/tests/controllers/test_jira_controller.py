@@ -1101,13 +1101,13 @@ async def test_jira_metrics_counts(client, headers, metric, exclude_inactive, n)
 @with_defer
 async def test_jira_metrics_bug_times(
         client, headers, metric, value, score, cmin, cmax, metrics_calculator_factory,
-        release_match_setting_tag, prefixer):
+        release_match_setting_tag, prefixer, bots):
     metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
     args = (time_from, time_to, {"src-d/go-git"}, {},
             LabelFilter.empty(), JIRAFilter.empty(),
-            False, release_match_setting_tag, LogicalRepositorySettings.empty(),
+            False, bots, release_match_setting_tag, LogicalRepositorySettings.empty(),
             prefixer, False, False)
     await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
     await wait_deferred()

@@ -29,7 +29,6 @@ from athenian.api.controllers.features.metric import Metric
 from athenian.api.controllers.features.metric_calculator import MetricCalculator
 from athenian.api.controllers.logical_repos import drop_logical_repo
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.check_run import mine_check_runs
 from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_COLUMNS, \
@@ -492,6 +491,7 @@ async def filter_pull_requests(events: Set[PullRequestEvent],
                                jira: JIRAFilter,
                                environment: Optional[str],
                                exclude_inactive: bool,
+                               bots: Set[str],
                                release_settings: ReleaseSettings,
                                logical_settings: LogicalRepositorySettings,
                                updated_min: Optional[datetime],
@@ -516,7 +516,7 @@ async def filter_pull_requests(events: Set[PullRequestEvent],
     """
     prs, deployments, _, _ = await _filter_pull_requests(
         events, stages, time_from, time_to, repos, participants, labels, jira,
-        environment, exclude_inactive, release_settings, logical_settings,
+        environment, exclude_inactive, bots, release_settings, logical_settings,
         updated_min, updated_max, prefixer, account, meta_ids, mdb, pdb, rdb, cache)
     return prs, deployments
 
@@ -705,6 +705,7 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
                                 jira: JIRAFilter,
                                 environment: Optional[str],
                                 exclude_inactive: bool,
+                                bots: Set[str],
                                 release_settings: ReleaseSettings,
                                 logical_settings: LogicalRepositorySettings,
                                 updated_min: Optional[datetime],
@@ -766,7 +767,7 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
     prs = await list_with_yield(pr_miner, "PullRequestMiner.__iter__")
 
     with sentry_sdk.start_span(op="PullRequestFactsMiner.__call__"):
-        facts_miner = PullRequestFactsMiner(await bots(mdb))
+        facts_miner = PullRequestFactsMiner(bots)
         missed_done_facts = []
         missed_open_facts = []
         missed_merged_unreleased_facts = []
@@ -895,6 +896,7 @@ async def _load_deployments(new_names: Sequence[str],
     ),
 )
 async def fetch_pull_requests(prs: Dict[str, Set[int]],
+                              bots: Set[str],
                               release_settings: ReleaseSettings,
                               logical_settings: LogicalRepositorySettings,
                               environment: Optional[str],
@@ -913,7 +915,7 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
     """
     (mined_prs, dfs, facts, _, deployments_task, check_runs_task), repo_envs = await gather(
         _fetch_pull_requests(
-            prs, release_settings, logical_settings, prefixer, account, meta_ids,
+            prs, bots, release_settings, logical_settings, prefixer, account, meta_ids,
             mdb, pdb, rdb, cache),
         fetch_repository_environments(prs, prefixer, account, rdb, cache),
     )
@@ -930,6 +932,7 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
 
 
 async def _fetch_pull_requests(prs: Dict[str, Set[int]],
+                               bots: Set[str],
                                release_settings: ReleaseSettings,
                                logical_settings: LogicalRepositorySettings,
                                prefixer: Prefixer,
@@ -968,7 +971,7 @@ async def _fetch_pull_requests(prs: Dict[str, Set[int]],
         check_runs_task = None
     unwrapped = await unwrap_pull_requests(
         prs_df, facts, ambiguous, True, branches, default_branches,
-        release_settings, logical_settings, prefixer, account, meta_ids,
+        bots, release_settings, logical_settings, prefixer, account, meta_ids,
         mdb, pdb, rdb, cache, repositories=prs.keys())
     return unwrapped + (check_runs_task,)
 
@@ -979,6 +982,7 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
                                with_jira: bool,
                                branches: pd.DataFrame,
                                default_branches: Dict[str, str],
+                               bots: Set[str],
                                release_settings: ReleaseSettings,
                                logical_settings: LogicalRepositorySettings,
                                prefixer: Prefixer,
@@ -1085,7 +1089,7 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
     filtered_prs = []
     with sentry_sdk.start_span(op="PullRequestFactsMiner.__call__",
                                description=str(len(prs))):
-        facts_miner = PullRequestFactsMiner(await bots(mdb))
+        facts_miner = PullRequestFactsMiner(bots)
         pdb_misses = 0
         for pr in prs:
             node_id, repo = \

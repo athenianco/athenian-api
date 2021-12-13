@@ -7,7 +7,7 @@ import aiomcache
 from sqlalchemy import and_, join, select
 
 from athenian.api.async_utils import gather
-from athenian.api.cache import cached, middle_term_expire
+from athenian.api.cache import cached, middle_term_exptime
 from athenian.api.controllers.miners.types import DeployedComponent as DeployedComponentDC, \
     Deployment, DeploymentConclusion
 from athenian.api.controllers.prefixer import Prefixer
@@ -23,7 +23,7 @@ from athenian.api.tracing import sentry_span
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda names, **_: (",".join(sorted(names)),),
-    exptime=middle_term_expire,
+    exptime=middle_term_exptime,
     refresh_on_access=True,
 )
 async def load_included_deployments(names: Collection[str],
@@ -96,7 +96,7 @@ repository_environment_threshold = timedelta(days=60)
 
 @sentry_span
 @cached(
-    exptime=middle_term_expire,
+    exptime=middle_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda repos, **_: (",".join(sorted(repos)),),

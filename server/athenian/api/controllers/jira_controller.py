@@ -33,6 +33,7 @@ from athenian.api.controllers.jira import get_jira_installation, JIRAConfig, \
     normalize_issue_type, normalize_user_type, resolve_projects
 from athenian.api.controllers.logical_repos import drop_logical_repo
 from athenian.api.controllers.miners.filters import LabelFilter
+from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.deployment_light import fetch_repository_environments
 from athenian.api.controllers.miners.github.precomputed_prs import DonePRFactsLoader
@@ -554,7 +555,7 @@ async def _issue_flow(return_: Set[str],
             return None, None
         if len(pr_ids) == 0:
             return {}, {}
-        tasks = [
+        prs_df, (facts, ambiguous), account_bots = await gather(
             read_sql_query(
                 select([PullRequest]).where(and_(
                     PullRequest.acc_id.in_(meta_ids),
@@ -564,8 +565,8 @@ async def _issue_flow(return_: Set[str],
             DonePRFactsLoader.load_precomputed_done_facts_ids(
                 pr_ids, default_branches, release_settings, prefixer, account, pdb,
                 panic_on_missing_repositories=False),
-        ]
-        prs_df, (facts, ambiguous) = await gather(*tasks)
+            bots(account, mdb, sdb, cache),
+        )
         existing_mask = prs_df[PullRequest.repository_full_name.name].isin(
             release_settings.native).values
         if not existing_mask.all():
@@ -580,7 +581,7 @@ async def _issue_flow(return_: Set[str],
         (mined_prs, dfs, facts, _, deployments_task), repo_envs = await gather(
             unwrap_pull_requests(
                 prs_df, facts, ambiguous, False, related_branches, default_branches,
-                release_settings, logical_settings,
+                account_bots, release_settings, logical_settings,
                 prefixer, account, meta_ids, mdb, pdb, rdb, cache),
             fetch_repository_environments(
                 prs_df[PullRequest.repository_full_name.name].unique(),
