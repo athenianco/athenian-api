@@ -21,7 +21,7 @@ from sqlalchemy import and_, delete, func, insert, select, update
 from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.auth import Auth0, disable_default_user
-from athenian.api.cache import cached, middle_term_expire
+from athenian.api.cache import cached, middle_term_exptime
 from athenian.api.controllers.account import fetch_github_installation_progress, \
     generate_jira_invitation_link, \
     get_metadata_account_ids, get_user_account_status, jira_url_template
@@ -409,7 +409,7 @@ async def _append_precomputed_progress(model: InstallationProgress,
 
 
 @cached(
-    exptime=middle_term_expire,
+    exptime=middle_term_exptime,
     serialize=marshal.dumps,
     deserialize=marshal.loads,
     key=lambda account, **_: (account,),

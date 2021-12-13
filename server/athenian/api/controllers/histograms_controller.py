@@ -8,6 +8,7 @@ from athenian.api.controllers.account import get_metadata_account_ids
 from athenian.api.controllers.features.histogram import HistogramParameters, Scale
 from athenian.api.controllers.metrics_controller import check_environments, \
     compile_filters_checks, compile_filters_prs, get_calculators_for_request
+from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.settings import Settings
 from athenian.api.models.web import CalculatedCodeCheckHistogram, CalculatedPullRequestHistogram, \
@@ -29,10 +30,11 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
     filters, repos, prefixer, logical_settings = await compile_filters_prs(
         filt.for_, request, filt.account, meta_ids)
     time_from, time_to = filt.resolve_time_from_and_to()
-    release_settings, (branches, default_branches), calculators = await gather(
+    release_settings, (branches, default_branches), account_bots, calculators = await gather(
         Settings.from_request(request, filt.account).list_release_matches(repos),
         BranchMiner.extract_branches(
             repos, prefixer, meta_ids, request.mdb, request.cache, strip=True),
+        bots(filt.account, request.mdb, request.sdb, request.cache),
         get_calculators_for_request({s for s, _ in filters}, filt.account, meta_ids, request),
     )
     result = []
@@ -61,8 +63,8 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
             histograms = await calculator.calc_pull_request_histograms_github(
                 defs, time_from, time_to, filt.quantiles or (0, 1), for_set.lines or [],
                 environment, repos, withgroups, labels, jira, filt.exclude_inactive,
-                release_settings, logical_settings, prefixer, branches, default_branches,
-                filt.fresh)
+                account_bots, release_settings, logical_settings, prefixer,
+                branches, default_branches, fresh=filt.fresh)
         except ValueError as e:
             raise ResponseError(InvalidRequestError(str(e))) from None
         for line_groups in histograms:

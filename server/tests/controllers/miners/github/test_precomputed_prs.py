@@ -451,15 +451,15 @@ async def test_load_precomputed_done_times_reponums_smoke(
 @with_defer
 async def test_load_precomputed_done_times_deployments(
         metrics_calculator_factory, mdb, pdb, rdb, dag, release_match_setting_tag, cache,
-        prefixer, release_loader, done_prs_facts_loader, default_branches,
+        prefixer, bots, release_loader, done_prs_facts_loader, default_branches,
         precomputed_deployments, exclude_inactive):
     metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     time_from = datetime(2018, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2020, 5, 1, tzinfo=timezone.utc)
     await metrics_calculator.calc_pull_request_facts_github(
         time_from, time_to, {"src-d/go-git"}, {}, LabelFilter.empty(),
-        JIRAFilter.empty(), False, release_match_setting_tag, LogicalRepositorySettings.empty(),
-        prefixer, False, False,
+        JIRAFilter.empty(), False, bots, release_match_setting_tag,
+        LogicalRepositorySettings.empty(), prefixer, False, False,
     )
     await wait_deferred()
     time_from = datetime(2019, 10, 1, tzinfo=timezone.utc)
@@ -959,14 +959,14 @@ async def test_discover_update_unreleased_prs_deployments(
 @with_defer
 async def test_discover_old_merged_unreleased_prs_smoke(
         metrics_calculator_factory, mdb, pdb, rdb, dag, release_match_setting_tag, cache,
-        prefixer, release_loader, default_branches):
+        prefixer, bots, release_loader, default_branches):
     metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     metrics_time_from = datetime(2018, 1, 1, tzinfo=timezone.utc)
     metrics_time_to = datetime(2020, 5, 1, tzinfo=timezone.utc)
     await metrics_calculator.calc_pull_request_facts_github(
         metrics_time_from, metrics_time_to, {"src-d/go-git"}, {}, LabelFilter.empty(),
-        JIRAFilter.empty(), False, release_match_setting_tag, LogicalRepositorySettings.empty(),
-        prefixer, False, False,
+        JIRAFilter.empty(), False, bots, release_match_setting_tag,
+        LogicalRepositorySettings.empty(), prefixer, False, False,
     )
     await wait_deferred()
     unreleased_time_from = datetime(2018, 11, 1, tzinfo=timezone.utc)
@@ -1014,14 +1014,14 @@ async def test_discover_old_merged_unreleased_prs_smoke(
 @with_defer
 async def test_discover_old_merged_unreleased_prs_labels(
         metrics_calculator_factory, mdb, pdb, rdb, release_match_setting_tag,
-        prefixer, cache):
+        prefixer, bots, cache):
     metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     metrics_time_from = datetime(2018, 5, 1, tzinfo=timezone.utc)
     metrics_time_to = datetime(2019, 1, 1, tzinfo=timezone.utc)
     await metrics_calculator.calc_pull_request_facts_github(
         metrics_time_from, metrics_time_to, {"src-d/go-git"}, {}, LabelFilter.empty(),
-        JIRAFilter.empty(), False, release_match_setting_tag, LogicalRepositorySettings.empty(),
-        prefixer, False, False,
+        JIRAFilter.empty(), False, bots, release_match_setting_tag,
+        LogicalRepositorySettings.empty(), prefixer, False, False,
     )
     await wait_deferred()
     unreleased_time_from = datetime(2018, 9, 19, tzinfo=timezone.utc)
@@ -1090,10 +1090,10 @@ async def test_store_precomputed_done_none_assert(pdb, pr_samples):
 
 @with_defer
 async def test_store_merged_unreleased_pull_request_facts_smoke(
-        mdb, pdb, rdb, default_branches, release_match_setting_tag, prefixer):
+        mdb, pdb, rdb, default_branches, release_match_setting_tag, prefixer, bots):
     prs, dfs, facts, matched_bys, deps_task, cr_task = await _fetch_pull_requests(
         {"src-d/go-git": set(range(1000, 1010))},
-        release_match_setting_tag, LogicalRepositorySettings.empty(),
+        bots, release_match_setting_tag, LogicalRepositorySettings.empty(),
         prefixer, 1, (6366825,), mdb, pdb, rdb, None)
     deps_task.cancel()
     cr_task.cancel()
@@ -1147,10 +1147,10 @@ async def test_store_merged_unreleased_pull_request_facts_smoke(
 @with_defer
 async def test_store_open_pull_request_facts_smoke(
         mdb, pdb, rdb, release_match_setting_tag, open_prs_facts_loader,
-        with_preloading_enabled, prefixer):
+        with_preloading_enabled, prefixer, bots):
     prs, dfs, facts, _, deps_task, cr_task = await _fetch_pull_requests(
         {"src-d/go-git": set(range(1000, 1010))},
-        release_match_setting_tag, LogicalRepositorySettings.empty(),
+        bots, release_match_setting_tag, LogicalRepositorySettings.empty(),
         prefixer, 1, (6366825,), mdb, pdb, rdb, None)
     deps_task.cancel()
     cr_task.cancel()

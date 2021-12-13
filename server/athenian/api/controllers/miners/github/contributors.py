@@ -13,7 +13,7 @@ from sqlalchemy.sql.functions import coalesce
 
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached, short_term_exptime
-from athenian.api.controllers.miners.github.bots import Bots
+from athenian.api.controllers.miners.github.bots import bots as fetch_bots
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.release_load import ReleaseLoader
 from athenian.api.controllers.prefixer import Prefixer
@@ -249,6 +249,7 @@ async def load_organization_members(account: int,
                                     mdb: morcilla.Database,
                                     sdb: morcilla.Database,
                                     log: logging.Logger,
+                                    cache: Optional[aiomcache.Client],
                                     ) -> Tuple[Dict[str, set], Dict[str, set], Dict[str, str]]:
     """
     Fetch the mapping from account's GitHub organization member IDs to their signatures.
@@ -267,7 +268,7 @@ async def load_organization_members(account: int,
                       .where(and_(User.acc_id.in_(meta_ids),
                                   User.node_id.in_(user_ids),
                                   User.name.isnot(None)))),
-        Bots()(mdb),
+        fetch_bots(account, mdb, sdb, cache),
         sdb.fetch_val(select([Team.members]).where(and_(
             Team.owner_id == account,
             Team.name == Team.BOTS,
@@ -275,8 +276,7 @@ async def load_organization_members(account: int,
     ]
     user_rows, bots, team_bots = await gather(*tasks)
     if team_bots:
-        bots = bots.copy()
-        bots.update(u.rsplit("/", 1)[1] for u in team_bots)
+        bots = bots.union(u.rsplit("/", 1)[1] for u in team_bots)
     log.info("Detailed %d GitHub users", len(user_rows))
     bot_ids = set()
     new_user_rows = []

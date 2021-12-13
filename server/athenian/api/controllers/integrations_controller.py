@@ -50,7 +50,7 @@ async def match_identities(request: AthenianWebRequest, body: dict) -> web.Respo
     log.debug("to match by email: %d", len(match_by_email))
     meta_ids = await get_metadata_account_ids(model.account, request.sdb, request.cache)
     github_names, github_emails, github_prefixed_logins = await load_organization_members(
-        model.account, meta_ids, request.mdb, request.sdb, log)
+        model.account, meta_ids, request.mdb, request.sdb, log, request.cache)
     inverted_github_emails = {}
     for node_id, emails in github_emails.items():
         for email in emails:

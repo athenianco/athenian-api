@@ -12,7 +12,6 @@ import pytest
 from sqlalchemy import delete, insert, select, update
 
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.commit import _empty_dag
 from athenian.api.controllers.miners.github.precomputed_prs import \
     store_merged_unreleased_pull_request_facts, store_open_pull_request_facts
@@ -412,7 +411,7 @@ def validate_pull_request_facts(prmeta: Dict[str, Any], prt: PullRequestFacts):
 @with_defer
 async def test_pr_facts_miner_smoke(
         branches, default_branches, mdb, pdb, rdb, release_match_setting_tag, pr_miner,
-        prefixer):
+        prefixer, bots):
     date_from = date(year=2015, month=1, day=1)
     date_to = date(year=2020, month=1, day=1)
     miner, _, _, _ = await pr_miner.mine(
@@ -437,7 +436,7 @@ async def test_pr_facts_miner_smoke(
         rdb,
         None,
     )
-    facts_miner = PullRequestFactsMiner(await bots(mdb))
+    facts_miner = PullRequestFactsMiner(bots)
     prts = [(pr.pr, facts_miner(pr)) for pr in miner]
     for prt in prts:
         validate_pull_request_facts(*prt)
@@ -446,7 +445,7 @@ async def test_pr_facts_miner_smoke(
 @with_defer
 async def test_pr_facts_miner_empty_review_comments(
         branches, default_branches, mdb, pdb, rdb, release_match_setting_tag, pr_miner,
-        prefixer):
+        prefixer, bots):
     date_from = date(year=2015, month=1, day=1)
     date_to = date(year=2020, month=1, day=1)
     miner, _, _, _ = await pr_miner.mine(
@@ -472,7 +471,7 @@ async def test_pr_facts_miner_empty_review_comments(
         None,
     )
     miner._dfs.review_comments = miner._dfs.review_comments.iloc[0:0]
-    facts_miner = PullRequestFactsMiner(await bots(mdb))
+    facts_miner = PullRequestFactsMiner(bots)
     prts = [(pr.pr, facts_miner(pr)) for pr in miner]
     for prt in prts:
         validate_pull_request_facts(*prt)
@@ -481,7 +480,7 @@ async def test_pr_facts_miner_empty_review_comments(
 @with_defer
 async def test_pr_facts_miner_empty_commits(
         branches, default_branches, mdb, pdb, rdb, release_match_setting_tag, pr_miner,
-        prefixer):
+        prefixer, bots):
     date_from = date(year=2015, month=1, day=1)
     date_to = date(year=2020, month=1, day=1)
     miner, _, _, _ = await pr_miner.mine(
@@ -507,7 +506,7 @@ async def test_pr_facts_miner_empty_commits(
         None,
     )
     miner._dfs.commits = miner._dfs.commits.iloc[0:0]
-    facts_miner = PullRequestFactsMiner(await bots(mdb))
+    facts_miner = PullRequestFactsMiner(bots)
     prts = [(pr.pr, facts_miner(pr)) for pr in miner]
     for prt in prts:
         validate_pull_request_facts(*prt)
@@ -516,7 +515,7 @@ async def test_pr_facts_miner_empty_commits(
 @with_defer
 async def test_pr_facts_miner_bug_less_timestamp_float(
         branches, default_branches, mdb, pdb, rdb, release_match_setting_tag, pr_miner,
-        prefixer):
+        prefixer, bots):
     date_from = date(2019, 10, 16) - timedelta(days=3)
     date_to = date(2019, 10, 16)
     miner, _, _, _ = await pr_miner.mine(
@@ -541,7 +540,7 @@ async def test_pr_facts_miner_bug_less_timestamp_float(
         rdb,
         None,
     )
-    facts_miner = PullRequestFactsMiner(await bots(mdb))
+    facts_miner = PullRequestFactsMiner(bots)
     prts = [(pr.pr, facts_miner(pr)) for pr in miner]
     assert len(prts) > 0
     for prt in prts:
@@ -550,7 +549,7 @@ async def test_pr_facts_miner_bug_less_timestamp_float(
 
 @with_defer
 async def test_pr_facts_miner_empty_releases(branches, default_branches, mdb, pdb, rdb,
-                                             pr_miner, prefixer):
+                                             pr_miner, prefixer, bots):
     date_from = date(year=2017, month=1, day=1)
     date_to = date(year=2018, month=1, day=1)
     miner, _, _, _ = await pr_miner.mine(
@@ -576,7 +575,7 @@ async def test_pr_facts_miner_empty_releases(branches, default_branches, mdb, pd
         rdb,
         None,
     )
-    facts_miner = PullRequestFactsMiner(await bots(mdb))
+    facts_miner = PullRequestFactsMiner(bots)
     prts = [(pr.pr, facts_miner(pr)) for pr in miner]
     for prt in prts:
         validate_pull_request_facts(*prt)
@@ -906,7 +905,7 @@ async def test_pr_miner_labels_unreleased(mdb, pdb, rdb, release_match_setting_t
 @with_explicit_defer
 async def test_pr_miner_unreleased_facts(
         branches, default_branches, mdb, pdb, rdb, release_match_setting_tag,
-        merged_prs_facts_loader, pr_miner, with_preloading_enabled, prefixer):
+        merged_prs_facts_loader, pr_miner, with_preloading_enabled, prefixer, bots):
     date_from = date(year=2018, month=1, day=1)
     date_to = date(year=2020, month=4, day=1)
     time_from = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
@@ -948,7 +947,7 @@ async def test_pr_miner_unreleased_facts(
     open_prs_and_facts = []
     merged_unreleased_prs_and_facts = []
     force_push_dropped = []
-    facts_miner = PullRequestFactsMiner(await bots(mdb))
+    facts_miner = PullRequestFactsMiner(bots)
     for pr in miner:
         facts = facts_miner(pr)
         if not facts.closed:
@@ -1209,7 +1208,7 @@ async def test_fetch_prs_dead(mdb, pdb, branch_miner, pr_miner, prefixer):
 
 @with_defer
 async def test_mine_pull_requests_event_releases(
-        metrics_calculator_factory, release_match_setting_event, mdb, pdb, rdb, prefixer):
+        metrics_calculator_factory, release_match_setting_event, mdb, pdb, rdb, prefixer, bots):
     time_from = datetime(2018, 9, 1, tzinfo=timezone.utc)
     time_to = datetime(2019, 11, 19, tzinfo=timezone.utc)
     await rdb.execute(insert(ReleaseNotification).values(ReleaseNotification(
@@ -1223,7 +1222,7 @@ async def test_mine_pull_requests_event_releases(
     ).create_defaults().explode(with_primary_keys=True)))
     args = (time_from, time_to, {"src-d/go-git"}, {},
             LabelFilter.empty(), JIRAFilter.empty(),
-            False, release_match_setting_event, LogicalRepositorySettings.empty(),
+            False, bots, release_match_setting_event, LogicalRepositorySettings.empty(),
             prefixer, False, False)
     calc = metrics_calculator_factory(1, (6366825,))
     facts1 = await calc.calc_pull_request_facts_github(*args)

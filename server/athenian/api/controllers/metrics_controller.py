@@ -15,6 +15,7 @@ from athenian.api.controllers.features.entries import MetricEntriesCalculator
 from athenian.api.controllers.jira import get_jira_installation, get_jira_installation_or_none
 from athenian.api.controllers.miners.access_classes import AccessChecker
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.commit import FilterCommitsProperty
 from athenian.api.controllers.miners.github.developer import DeveloperTopic
@@ -98,10 +99,11 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
     met.calculated = []
 
     settings = Settings.from_request(request, filt.account)
-    release_settings, (branches, default_branches), calculators = await gather(
+    release_settings, (branches, default_branches), account_bots, calculators = await gather(
         settings.list_release_matches(repos),
         BranchMiner.extract_branches(
             repos, prefixer, meta_ids, request.mdb, request.cache, strip=True),
+        bots(filt.account, request.mdb, request.sdb, request.cache),
         get_calculators_for_request({s for s, _ in filters}, filt.account, meta_ids, request),
     )
 
@@ -113,7 +115,8 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
         metric_values = await calculator.calc_pull_request_metrics_line_github(
             filt.metrics, time_intervals, filt.quantiles or (0, 1), for_set.lines or [],
             for_set.environments or [], repos, withgroups, labels, jira, filt.exclude_inactive,
-            release_settings, logical_settings, prefixer, branches, default_branches, filt.fresh)
+            account_bots, release_settings, logical_settings, prefixer, branches, default_branches,
+            filt.fresh)
         mrange = range(len(met.metrics))
         for lines_group_index, lines_group in enumerate(metric_values):
             for repos_group_index, with_groups in enumerate(lines_group):

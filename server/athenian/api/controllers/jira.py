@@ -230,7 +230,7 @@ async def _match_jira_identities(account: int,
                                                    MappedJIRAIdentity.jira_user_id])
                                            .where(MappedJIRAIdentity.account_id == account))
     if not (github_users :=
-            (await load_organization_members(account, meta_ids, mdb, sdb, log))[0]):
+            (await load_organization_members(account, meta_ids, mdb, sdb, log, cache))[0]):
         return 0, 0, 0, len(existing_mapping) == 0
     if existing_mapping:
         for row in existing_mapping:

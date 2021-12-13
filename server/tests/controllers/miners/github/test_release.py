@@ -13,7 +13,6 @@ from sqlalchemy.schema import CreateTable
 
 from athenian.api.async_utils import read_sql_query
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.commit import _empty_dag, _fetch_commit_history_dag, \
     fetch_repository_commits
 from athenian.api.controllers.miners.github.dag_accelerated import extract_subdag, join_dags, \
@@ -155,7 +154,7 @@ async def test_map_prs_to_releases_empty(branches, default_branches, dag, mdb, p
 @with_defer
 async def test_map_prs_to_releases_precomputed_released(
         branches, default_branches, dag, mdb, pdb, rdb, release_match_setting_tag,
-        release_loader, pr_miner, prefixer):
+        release_loader, pr_miner, prefixer, bots):
     time_to = datetime(year=2019, month=8, day=2, tzinfo=timezone.utc)
     time_from = time_to - timedelta(days=2)
 
@@ -181,7 +180,7 @@ async def test_map_prs_to_releases_precomputed_released(
         rdb,
         None,
     )
-    facts_miner = PullRequestFactsMiner(await bots(mdb))
+    facts_miner = PullRequestFactsMiner(bots)
     true_prs = [pr for pr in miner if pr.release[Release.published_at.name] is not None]
     facts = [facts_miner(pr) for pr in true_prs]
     prs = pd.DataFrame([pr.pr for pr in true_prs]).set_index(

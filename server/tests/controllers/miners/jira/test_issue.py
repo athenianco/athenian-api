@@ -12,14 +12,14 @@ from athenian.api.defer import wait_deferred, with_defer
 @with_defer
 async def test_fetch_jira_issues_releases(
         metrics_calculator_factory, mdb, pdb, rdb, default_branches, release_match_setting_tag,
-        prefixer, cache):
+        prefixer, bots, cache):
     metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(2016, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2021, 1, 1, tzinfo=timezone.utc)
     await metrics_calculator_no_cache.calc_pull_request_facts_github(
         time_from, time_to, {"src-d/go-git"}, {},
         LabelFilter.empty(), JIRAFilter.empty(),
-        False, release_match_setting_tag, LogicalRepositorySettings.empty(),
+        False, bots, release_match_setting_tag, LogicalRepositorySettings.empty(),
         prefixer, False, False)
     await wait_deferred()
     args = [(1, ["10003", "10009"]), time_from, time_to, False,

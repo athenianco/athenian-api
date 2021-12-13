@@ -70,13 +70,13 @@ async def test_filter_repositories_no_repos(client, headers):
 @with_defer
 async def test_filter_repositories_smoke(
         metrics_calculator_factory, client, headers, mdb, pdb, rdb, release_match_setting_tag,
-        prefixer):
+        prefixer, bots):
     metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(2017, 9, 15, tzinfo=timezone.utc)
     time_to = datetime(2017, 9, 18, tzinfo=timezone.utc)
     args = (time_from, time_to, {"src-d/go-git"}, {},
             LabelFilter.empty(), JIRAFilter.empty(),
-            False, release_match_setting_tag, LogicalRepositorySettings.empty(), prefixer,
+            False, bots, release_match_setting_tag, LogicalRepositorySettings.empty(), prefixer,
             False, False)
     await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
     await wait_deferred()
@@ -101,13 +101,13 @@ async def test_filter_repositories_smoke(
 @pytest.mark.filter_repositories
 @with_defer
 async def test_filter_repositories_exclude_inactive_precomputed(
-        metrics_calculator_factory, client, headers, release_match_setting_tag, prefixer):
+        metrics_calculator_factory, client, headers, release_match_setting_tag, prefixer, bots):
     metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(2017, 9, 15, tzinfo=timezone.utc)
     time_to = datetime(2017, 9, 18, tzinfo=timezone.utc)
     args = (time_from, time_to, {"src-d/go-git"}, {},
             LabelFilter.empty(), JIRAFilter.empty(),
-            False, release_match_setting_tag, LogicalRepositorySettings.empty(),
+            False, bots, release_match_setting_tag, LogicalRepositorySettings.empty(),
             prefixer, False, False)
     await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
     await wait_deferred()
@@ -209,13 +209,13 @@ async def test_filter_repositories_nasty_input(client, headers, account, date_to
 async def test_filter_repositories_logical(
         metrics_calculator_factory, client, headers, mdb, pdb, rdb,
         release_match_setting_tag_logical, release_match_setting_tag_logical_db,
-        prefixer, logical_settings, logical_settings_db):
+        prefixer, bots, logical_settings, logical_settings_db):
     metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(2017, 9, 15, tzinfo=timezone.utc)
     time_to = datetime(2018, 1, 18, tzinfo=timezone.utc)
     args = (time_from, time_to, {"src-d/go-git", "src-d/go-git/alpha"}, {},
             LabelFilter.empty(), JIRAFilter.empty(),
-            False, release_match_setting_tag_logical, logical_settings, prefixer,
+            False, bots, release_match_setting_tag_logical, logical_settings, prefixer,
             False, False)
     await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
     await wait_deferred()

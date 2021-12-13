@@ -14,7 +14,7 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
-from athenian.api.cache import cached, middle_term_expire, short_term_exptime
+from athenian.api.cache import cached, middle_term_exptime, short_term_exptime
 from athenian.api.controllers.logical_repos import drop_logical_repo
 from athenian.api.controllers.miners.github.branches import BranchMiner, load_branch_commit_dates
 from athenian.api.controllers.miners.github.dag_accelerated import extract_first_parents, \
@@ -213,7 +213,7 @@ def _remove_force_push_dropped(commits: pd.DataFrame, dags: Dict[str, DAG]) -> p
 
 @sentry_span
 @cached(
-    exptime=middle_term_expire,
+    exptime=middle_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda repos, branches, columns, prune, **_: (
@@ -594,7 +594,7 @@ async def fetch_dags_with_commits(commits: Mapping[str, Sequence[int]],
 
 @sentry_span
 @cached(
-    exptime=middle_term_expire,
+    exptime=middle_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda commits, **_: (

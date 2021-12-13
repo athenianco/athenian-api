@@ -1,3 +1,4 @@
+import asyncio
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from itertools import chain
@@ -22,6 +23,7 @@ from athenian.api.controllers.account import get_metadata_account_ids
 from athenian.api.controllers.features.entries import MetricEntriesCalculator
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.deployment import mine_deployments
 from athenian.api.controllers.miners.github.release_mine import mine_releases
@@ -245,6 +247,8 @@ async def _drop_precomputed_event_releases(account: int,
                                            meta_ids: Tuple[int, ...],
                                            ) -> None:
     pdb = request.pdb
+    bots_task = asyncio.create_task(bots(account, request.mdb, request.sdb, request.cache),
+                                    name="_drop_precomputed_event_releases/bots")
     await gather(*(
         pdb.execute(delete(table).where(and_(
             table.release_match == ReleaseMatch.event.name,
@@ -268,12 +272,12 @@ async def _drop_precomputed_event_releases(account: int,
         JIRAFilter.empty(), release_settings, logical_settings, prefixer, account, meta_ids,
         mdb, pdb, rdb, None,
         force_fresh=True, with_avatars=False, with_deployments=False, with_pr_titles=False)
-    await wait_deferred()
+    await gather(wait_deferred(), bots_task)
     await MetricEntriesCalculator(
         account, meta_ids, 0, mdb, pdb, rdb, None,
     ).calc_pull_request_facts_github(
         time_from, time_to, set(repos), {}, LabelFilter.empty(), JIRAFilter.empty(),
-        False, release_settings, logical_settings, prefixer, True, False)
+        False, bots_task.result(), release_settings, logical_settings, prefixer, True, False)
 
 
 droppers = {

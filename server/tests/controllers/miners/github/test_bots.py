@@ -1,7 +1,7 @@
 from athenian.api.controllers.miners.github.bots import bots
 
 
-async def test_bots_fetch(mdb):
-    bs = await bots(mdb)
+async def test_bots_fetch(mdb, sdb):
+    bs = await bots(1, mdb, sdb, None)
     assert "codecov" in bs
     assert "dependabot" in bs

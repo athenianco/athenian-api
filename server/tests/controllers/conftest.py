@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import logging
 from random import randint
+from typing import Set
 import warnings
 
 import faker
@@ -25,8 +26,7 @@ from athenian.api.models.metadata.github import Branch
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
     DeploymentNotification
 from athenian.api.models.state.models import AccountJiraInstallation, JIRAProjectSetting, \
-    LogicalRepository, \
-    MappedJIRAIdentity, ReleaseSetting, RepositorySet
+    LogicalRepository, MappedJIRAIdentity, ReleaseSetting, RepositorySet
 from athenian.api.typing_utils import wraps
 
 
@@ -280,6 +280,21 @@ async def denys_id_mapping(sdb):
 @pytest.fixture(scope="function")
 async def no_jira(sdb):
     await sdb.execute(delete(AccountJiraInstallation))
+
+
+@pytest.fixture(scope="session")
+def bots() -> Set[str]:
+    return {
+        "login", "similar-code-searcher", "prettierci", "pull",
+        "dependabot", "changeset-bot", "jira", "depfu",
+        "codecov-io", "linear-app", "pull-assistant", "stale", "codecov",
+        "sentry-io", "minimum-review-bot", "sonarcloud",
+        "thehub-integration", "release-drafter", "netlify", "height", "allcontributors", "linc",
+        "cla-checker-service", "unfurl-links", "probot-auto-merge", "snyk-bot", "slash-commands",
+        "greenkeeper", "cypress", "gally-bot", "commitlint",
+        "monocodus", "dependabot-preview", "vercel", "codecov-commenter", "botelastic", "renovate",
+        "markdownify", "coveralls", "github-actions", "codeclimate", "zube",
+    }
 
 
 _dag = None

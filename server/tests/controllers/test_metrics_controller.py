@@ -9,6 +9,7 @@ from sqlalchemy import delete, insert
 
 from athenian.api.controllers.miners.github import developer
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel
+from athenian.api.models.state.models import Team
 from athenian.api.models.web import CalculatedCodeCheckMetrics, CalculatedDeploymentMetric, \
     CalculatedDeveloperMetrics, CalculatedLinearMetricValues, CalculatedPullRequestMetrics, \
     CalculatedReleaseMetric, CodeBypassingPRsMeasurement, CodeCheckMetricID, DeploymentMetricID, \
@@ -373,7 +374,25 @@ async def test_calc_metrics_prs_counts_sums(client, headers, metric, count):
     assert s == count
 
 
-async def test_calc_metrics_prs_averages(client, headers):
+@pytest.mark.parametrize("with_bots, values", [
+    (False, [[2.461538553237915, None, None],
+             [2.8358209133148193, 3.8701298236846924, 10.055999755859375],
+             [3.003115177154541, 3.751295328140259, 7.915887832641602],
+             [2.9247312545776367, 3.8782050609588623, 8.620689392089844],
+             [2.660493850708008, 4.161616325378418, 10.92727279663086]]),
+    (True, [[1.4807692766189575, None, None],
+            [1.9432835578918457, 3.1481480598449707, 8.55555534362793],
+            [2.121495246887207, 3.124293804168701, 6.418367385864258],
+            [2.0465950965881348, 3.178082227706909, 6.865853786468506],
+            [1.814814805984497, 3.471909999847412, 8.72549057006836]]),
+])
+async def test_calc_metrics_prs_averages(client, headers, with_bots, values, sdb):
+    if with_bots:
+        await sdb.execute(insert(Team).values(Team(
+            owner_id=1,
+            name=Team.BOTS,
+            members=["github.com/mcuadros"],
+        ).create_defaults().explode()))
     body = {
         "for": [
             {
@@ -395,12 +414,7 @@ async def test_calc_metrics_prs_averages(client, headers):
     )
     assert response.status == 200, response.text()
     body = FriendlyJson.loads((await response.read()).decode("utf-8"))
-    values = [v["values"] for v in body["calculated"][0]["values"]]
-    assert values == [[2.461538553237915, None, None],
-                      [2.8358209133148193, 3.8701298236846924, 10.055999755859375],
-                      [3.003115177154541, 3.751295328140259, 7.915887832641602],
-                      [2.9247312545776367, 3.8782050609588623, 8.620689392089844],
-                      [2.660493850708008, 4.161616325378418, 10.92727279663086]]
+    assert [v["values"] for v in body["calculated"][0]["values"]] == values
 
 
 async def test_calc_metrics_prs_sizes(client, headers):

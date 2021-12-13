@@ -24,7 +24,7 @@ from athenian.api.typing_utils import serialize_mutable_fields_in_dataclasses, w
 pickle.dumps = functools.partial(pickle.dumps, protocol=-1)
 max_exptime = 30 * 24 * 3600  # 30 days according to the docs
 short_term_exptime = 5 * 60  # 5 minutes
-middle_term_expire = 60 * 60  # 1 hour
+middle_term_exptime = 60 * 60  # 1 hour
 
 
 class CancelCache(Exception):
