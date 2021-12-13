@@ -90,6 +90,10 @@ def cached(exptime: Union[int, Callable[..., int]],
                 return cache
         signature = inspect.signature(func)
         full_name = func.__module__ + "." + func.__qualname__
+        if full_name.startswith(__package__):
+            short_name = full_name[len(__package__) + 1:]
+        else:
+            short_name = full_name
 
         def _gen_cache_key(args_dict: dict) -> Optional[bytes]:
             props = key(**args_dict)
@@ -135,20 +139,20 @@ def cached(exptime: Union[int, Callable[..., int]],
                             except CancelCache:
                                 log.info("%s/%s was ignored", full_name, cache_key.decode())
                                 client.metrics["ignored"].labels(
-                                    __package__, __version__, full_name).inc()
-                                client.metrics["context"]["ignores"].get()[full_name] += 1
+                                    __package__, __version__, short_name).inc()
+                                client.metrics["context"]["ignores"].get()[short_name] += 1
                                 ignore = True
                             else:
                                 log.debug("%s/postprocess passed OK", full_name)
                         if not ignore:
                             log.debug("%s cache hit", full_name)
                             client.metrics["hits"] \
-                                .labels(__package__, __version__, full_name) \
+                                .labels(__package__, __version__, short_name) \
                                 .inc()
                             client.metrics["hit_latency"] \
-                                .labels(__package__, __version__, full_name) \
+                                .labels(__package__, __version__, short_name) \
                                 .observe(time.time() - start_time)
-                            client.metrics["context"]["hits"].get()[full_name] += 1
+                            client.metrics["context"]["hits"].get()[short_name] += 1
                             return result
             log.debug("%s cache miss", full_name)
             result = await func(*args, **kwargs)
@@ -181,15 +185,15 @@ def cached(exptime: Union[int, Callable[..., int]],
                     await defer(set_cache_item(), "set_cache_items(%s, %d)" % (
                         func.__qualname__, len(payload)))
                     client.metrics["misses"] \
-                        .labels(__package__, __version__, full_name) \
+                        .labels(__package__, __version__, short_name) \
                         .inc()
                     client.metrics["miss_latency"] \
-                        .labels(__package__, __version__, full_name) \
+                        .labels(__package__, __version__, short_name) \
                         .observe(time.time() - start_time)
                     client.metrics["size"] \
-                        .labels(__package__, __version__, full_name) \
+                        .labels(__package__, __version__, short_name) \
                         .observe(uncompressed_payload_size)
-                    client.metrics["context"]["misses"].get()[full_name] += 1
+                    client.metrics["context"]["misses"].get()[short_name] += 1
             return result
 
         async def reset_cache(*args, **kwargs) -> bool:
