@@ -46,46 +46,49 @@ def _after_response(request: web.Request,
         with sentry_sdk.configure_scope() as scope:
             for k, v in response.headers.items():
                 scope.set_extra(k, v)
-    request.app["state_db_latency"] \
-        .labels(__package__, __version__, request.path) \
-        .observe(sdb_elapsed)
-    request.app["metadata_db_latency"] \
-        .labels(__package__, __version__, request.path) \
-        .observe(mdb_elapsed)
-    request.app["precomputed_db_latency"] \
-        .labels(__package__, __version__, request.path) \
-        .observe(pdb_elapsed)
-    request.app["persistentdata_db_latency"] \
-        .labels(__package__, __version__, request.path) \
-        .observe(rdb_elapsed)
+    code = response.status if response is not None else 500
     request.app["request_in_progress"] \
         .labels(__package__, __version__, request.path, request.method) \
         .dec()
+    request.app["request_count"] \
+        .labels(__package__, __version__, request.method, request.path, code, account) \
+        .inc()
     elapsed = (time() - start_time) or 0.001
-    request.app["request_latency"] \
-        .labels(__package__, __version__, request.path, account) \
-        .observe(elapsed)
-    request.app["state_db_latency_ratio"] \
-        .labels(__package__, __version__, request.path) \
-        .observe(sdb_elapsed / elapsed)
-    request.app["metadata_db_latency_ratio"] \
-        .labels(__package__, __version__, request.path) \
-        .observe(mdb_elapsed / elapsed)
-    request.app["precomputed_db_latency_ratio"] \
-        .labels(__package__, __version__, request.path) \
-        .observe(pdb_elapsed / elapsed)
-    request.app["persistentdata_db_latency_ratio"] \
-        .labels(__package__, __version__, request.path) \
-        .observe(rdb_elapsed / elapsed)
-    code = response.status if response is not None else 500
+    if request.path.startswith("/v1") and not request.path.startswith("/v1/ui"):
+        request.app["request_latency"] \
+            .labels(__package__, __version__, request.path, account) \
+            .observe(elapsed)
+        db_latency = request.app["db_latency"]
+        db_latency \
+            .labels(__package__, __version__, request.path, "state") \
+            .observe(sdb_elapsed)
+        db_latency \
+            .labels(__package__, __version__, request.path, "metadata") \
+            .observe(mdb_elapsed)
+        db_latency \
+            .labels(__package__, __version__, request.path, "precomputed") \
+            .observe(pdb_elapsed)
+        db_latency \
+            .labels(__package__, __version__, request.path, "persistentdata") \
+            .observe(rdb_elapsed)
+        db_latency_ratio = request.app["db_latency_ratio"]
+        db_latency_ratio \
+            .labels(__package__, __version__, request.path, "state") \
+            .observe(sdb_elapsed / elapsed)
+        db_latency_ratio \
+            .labels(__package__, __version__, request.path, "metadata") \
+            .observe(mdb_elapsed / elapsed)
+        db_latency_ratio \
+            .labels(__package__, __version__, request.path, "precomputed") \
+            .observe(pdb_elapsed / elapsed)
+        db_latency_ratio \
+            .labels(__package__, __version__, request.path, "persistentdata") \
+            .observe(rdb_elapsed / elapsed)
     if elapsed > elapsed_error_threshold:
         with sentry_sdk.push_scope() as scope:
             scope.fingerprint = ["{{ default }}", request.path]
             logging.getLogger(f"{__package__}.instrument").error(
                 "%s took %ds -> HTTP %d", request.path, int(elapsed), code)
-    request.app["request_count"] \
-        .labels(__package__, __version__, request.method, request.path, code, account) \
-        .inc()
 
 
 @web.middleware
@@ -135,31 +138,29 @@ def setup_prometheus(app: web.Application) -> None:
         ["app_name", "version", "endpoint", "method"],
         registry=registry,
     )
-    db_latency_buckets = [
-        0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0,
-        1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0,
-        12.0, 15.0, 20.0, 25.0, 30.0,
-        45.0, 60.0, 120.0, 180.0, 240.0, prometheus_client.metrics.INF]
-    for db in ("state", "metadata", "precomputed", "persistentdata"):
-        app["%s_db_latency" % db] = prometheus_client.Histogram(
-            "%s_db_latency_seconds" % db,
-            "%s%s DB latency" % (db[0].upper(), db[1:]),
-            ["app_name", "version", "endpoint"],
-            buckets=db_latency_buckets,
-            registry=registry,
-        )
-    db_ratio_buckets = [
-        0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09,
-        0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5,
-        0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0]
-    for db in ("state", "metadata", "precomputed", "persistentdata"):
-        app["%s_db_latency_ratio" % db] = prometheus_client.Histogram(
-            "%s_db_latency_ratio" % db,
-            "%s%s DB latency ratio to request time" % (db[0].upper(), db[1:]),
-            ["app_name", "version", "endpoint"],
-            buckets=db_ratio_buckets,
-            registry=registry,
-        )
+    app["db_latency"] = prometheus_client.Histogram(
+        "db_latency_seconds",
+        "How much time was spent in each DB.",
+        ["app_name", "version", "endpoint", "database"],
+        buckets=[
+            0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0,
+            1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0,
+            12.0, 15.0, 20.0, 25.0, 30.0,
+            45.0, 60.0, 120.0, 180.0, 240.0, prometheus_client.metrics.INF,
+        ],
+        registry=registry,
+    )
+    app["db_latency_ratio"] = prometheus_client.Histogram(
+        "db_latency_ratio",
+        "Ratio between time spent in each DB to request time",
+        ["app_name", "version", "endpoint", "database"],
+        buckets=[
+            0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09,
+            0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5,
+            0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0,
+        ],
+        registry=registry,
+    )
     app["db_elapsed"] = ContextVar("db_elapsed", default=None)
     prometheus_client.Info("server", "API server metadata", registry=registry).info({
         "version": __version__,
