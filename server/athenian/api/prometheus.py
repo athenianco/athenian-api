@@ -22,6 +22,7 @@ def _after_response(request: web.Request,
                     response: Optional[web.Response],
                     start_time: float,
                     ) -> None:
+    account = getattr(request, "account", "N/A")
     db_elapsed = request.app["db_elapsed"].get()
     metrics_calculator = request.app[METRICS_CALCULATOR_VAR_NAME].get()
     cache_context = request.app["cache_context"]
@@ -62,7 +63,7 @@ def _after_response(request: web.Request,
         .dec()
     elapsed = (time() - start_time) or 0.001
     request.app["request_latency"] \
-        .labels(__package__, __version__, request.path) \
+        .labels(__package__, __version__, request.path, account) \
         .observe(elapsed)
     request.app["state_db_latency_ratio"] \
         .labels(__package__, __version__, request.path) \
@@ -83,7 +84,7 @@ def _after_response(request: web.Request,
             logging.getLogger(f"{__package__}.instrument").error(
                 "%s took %ds -> HTTP %d", request.path, int(elapsed), code)
     request.app["request_count"] \
-        .labels(__package__, __version__, request.method, request.path, code) \
+        .labels(__package__, __version__, request.method, request.path, code, account) \
         .inc()
 
 
@@ -117,12 +118,12 @@ def setup_prometheus(app: web.Application) -> None:
     app[METRICS_CALCULATOR_VAR_NAME] = ContextVar(METRICS_CALCULATOR_VAR_NAME, default=None)
     app["request_count"] = prometheus_client.Counter(
         "requests_total", "Total request count",
-        ["app_name", "version", "method", "endpoint", "http_status"],
+        ["app_name", "version", "method", "endpoint", "http_status", "account"],
         registry=registry,
     )
     app["request_latency"] = prometheus_client.Histogram(
         "request_latency_seconds", "Request latency",
-        ["app_name", "version", "endpoint"],
+        ["app_name", "version", "endpoint", "account"],
         buckets=[0.05, 0.1, 0.25, 0.5, 0.75, 1.0,
                  1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0,
                  12.0, 15.0, 20.0, 25.0, 30.0,
