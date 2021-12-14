@@ -257,6 +257,7 @@ cdef void _toposort(const uint32_t[:] vertexes,
     # heads, visited -> 1, 2, ..., len(heads)
     # normal vertexes, visited -> len(heads) + 1
     for i in range(len(heads) - 1, -1, -1):  # reverse order is release-friendly
+        # we start from the earliest head and end at the latest
         head = heads[i]
         if head == missing:
             continue
@@ -267,8 +268,11 @@ cdef void _toposort(const uint32_t[:] vertexes,
             if status > 0:
                 boilerplate.pop_back()
                 if status < vv:
-                    order[order_pos] = status - 1
-                    order_pos += 1
+                    status -= 1  # index of the head
+                    if status >= i:  # ignore future releases standing in front
+                        # if status >= i means it comes after => appeared earlier
+                        order[order_pos] = status
+                        order_pos += 1
                     visited[peek] = vv
                 continue
             visited[peek] += vv

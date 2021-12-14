@@ -149,7 +149,8 @@ class PullRequestToReleaseMapper:
         release_repos = releases[Release.repository_full_name.name].values
         unique_release_repos, release_index_map, release_repo_counts = np.unique(
             release_repos, return_inverse=True, return_counts=True)
-        release_repo_order = np.argsort(release_index_map)
+        # stable sort to preserve the decreasing order by published_at
+        release_repo_order = np.argsort(release_index_map, kind="stable")
         ordered_release_shas = releases[Release.sha.name].values[release_repo_order].astype("S40")
         release_repo_offsets = np.zeros(len(release_repo_counts) + 1, dtype=int)
         np.cumsum(release_repo_counts, out=release_repo_offsets[1:])
