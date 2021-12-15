@@ -603,7 +603,7 @@ async def fetch_dags_with_commits(commits: Mapping[str, Sequence[int]],
     ),
     refresh_on_access=True,
 )
-async def _fetch_commits_for_dags(commits: Mapping[str, Sequence[str]],
+async def _fetch_commits_for_dags(commits: Mapping[str, Sequence[int]],
                                   meta_ids: Tuple[int, ...],
                                   mdb: Database,
                                   cache: Optional[aiomcache.Client],
