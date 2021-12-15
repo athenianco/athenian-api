@@ -229,7 +229,7 @@ def mark_dag_access(hashes: np.ndarray,
     heads = head_vertexes
     del head_vertexes
     if not matched.any():
-        return access
+        return access[:-1]
     order = np.full(size, size, np.int32)
     _toposort(vertexes, edges, heads[:-1], heads_order_is_significant, order)
     _mark_dag_access(vertexes, edges, heads[order], order, access)
