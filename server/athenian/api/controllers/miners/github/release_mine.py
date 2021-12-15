@@ -230,7 +230,7 @@ async def _mine_releases(repos: Iterable[str],
                 continue
             release_hashes = repo_releases[Release.sha.name].values.astype("S40")
             release_timestamps = repo_releases[Release.published_at.name].values
-            ownership = mark_dag_access(hashes, vertexes, edges, release_hashes)
+            ownership = mark_dag_access(hashes, vertexes, edges, release_hashes, True)
             parents = mark_dag_parents(
                 hashes, vertexes, edges, release_hashes, release_timestamps, ownership)
             precomputed_mask = np.in1d(np.char.add(

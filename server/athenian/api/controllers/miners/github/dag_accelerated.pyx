@@ -201,13 +201,16 @@ cdef void _recalculate_vertices_and_edges(const int64_t[:] found_matches,
 def mark_dag_access(hashes: np.ndarray,
                     vertexes: np.ndarray,
                     edges: np.ndarray,
-                    heads: np.ndarray) -> np.ndarray:
+                    heads: np.ndarray,
+                    heads_order_is_significant: bool) -> np.ndarray:
     """
     Find the earliest parent from `heads` for each commit in `hashes`.
 
-    The `heads` must be sorted by commit timestamp in descending order. Thus `heads[0]` \
-    must be the latest commit. We still sort `heads` topologically but it helps to resolve \
-    the ambiguities when there are several earliest parent options.
+    If `heads_order_is_significant`, the `heads` must be sorted by commit timestamp in descending \
+    order. Thus `heads[0]` should be the latest commit.
+
+    If not `heads_order_is_significant`, we sort `heads` topologically, but the earlier commits \
+    have the priority over the later commits, if they are the same.
 
     :return: Indexes in `heads`, *not vertexes*.
     """
@@ -228,7 +231,7 @@ def mark_dag_access(hashes: np.ndarray,
     if not matched.any():
         return access
     order = np.full(size, size, np.int32)
-    _toposort(vertexes, edges, heads[:-1], order)
+    _toposort(vertexes, edges, heads[:-1], heads_order_is_significant, order)
     _mark_dag_access(vertexes, edges, heads[order], order, access)
     return access[:-1]  # len(vertexes) = len(hashes) + 1
 
@@ -238,6 +241,7 @@ def mark_dag_access(hashes: np.ndarray,
 cdef void _toposort(const uint32_t[:] vertexes,
                     const uint32_t[:] edges,
                     const uint32_t[:] heads,
+                    bool heads_order_is_significant,
                     int32_t[:] order,
                     ) nogil:
     """Topological sort of `heads`. The order is reversed!"""
@@ -269,8 +273,9 @@ cdef void _toposort(const uint32_t[:] vertexes,
                 boilerplate.pop_back()
                 if status < vv:
                     status -= 1  # index of the head
-                    if status >= i:  # ignore future releases standing in front
-                        # if status >= i means it comes after => appeared earlier
+                    if status >= i or not heads_order_is_significant:
+                        # status >= i means it comes after => appeared earlier
+                        # we must ignore future releases standing in front
                         order[order_pos] = status
                         order_pos += 1
                     visited[peek] = vv

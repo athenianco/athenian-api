@@ -1266,13 +1266,15 @@ def test_mark_dag_access_smoke():
     edges = np.array([3, 0, 2, 0], dtype=np.uint32)
     heads = np.array(["33cafc14532228edca160e46af10341a8a632e3e",
                       "61a719e0ff7522cc0d129acb3b922c94a8a5dbca"], dtype="S40")
-    marks = mark_dag_access(hashes, vertexes, edges, heads)
+    marks = mark_dag_access(hashes, vertexes, edges, heads, True)
     assert_array_equal(marks, np.array([1, 0, 1, 1], dtype=np.int32))
     heads = np.array(["61a719e0ff7522cc0d129acb3b922c94a8a5dbca",
                       "33cafc14532228edca160e46af10341a8a632e3e"], dtype="S40")
     # 33cafc14532228edca160e46af10341a8a632e3e shows the oldest, but it's the entry => takes all
-    marks = mark_dag_access(hashes, vertexes, edges, heads)
+    marks = mark_dag_access(hashes, vertexes, edges, heads, True)
     assert_array_equal(marks, np.array([1, 1, 1, 1], dtype=np.int32))
+    marks = mark_dag_access(hashes, vertexes, edges, heads, False)
+    assert_array_equal(marks, np.array([0, 1, 0, 0], dtype=np.int32))
 
 
 def test_mark_dag_access_empty():
@@ -1281,7 +1283,7 @@ def test_mark_dag_access_empty():
     edges = np.array([], dtype=np.uint32)
     heads = np.array(["33cafc14532228edca160e46af10341a8a632e3e",
                       "61a719e0ff7522cc0d129acb3b922c94a8a5dbca"], dtype="S40")
-    marks = mark_dag_access(hashes, vertexes, edges, heads)
+    marks = mark_dag_access(hashes, vertexes, edges, heads, True)
     assert len(marks) == 0
 
 
@@ -1342,7 +1344,7 @@ async def test_mark_dag_parents_smoke(
     )
     release_hashes = releases[Release.sha.name].values.astype("S40")
     release_dates = releases[Release.published_at.name].values
-    ownership = mark_dag_access(hashes, vertexes, edges, release_hashes)
+    ownership = mark_dag_access(hashes, vertexes, edges, release_hashes, True)
     parents = mark_dag_parents(hashes, vertexes, edges, release_hashes, release_dates, ownership)
     array = np.array
     uint32 = np.uint32
@@ -1403,7 +1405,7 @@ async def test_mark_dag_parents_empty(
     hashes = np.array([], dtype="S40")
     vertexes = np.array([0], dtype=np.uint32)
     edges = np.array([], dtype=np.uint32)
-    ownership = mark_dag_access(hashes, vertexes, edges, release_hashes)
+    ownership = mark_dag_access(hashes, vertexes, edges, release_hashes, True)
     parents = mark_dag_parents(hashes, vertexes, edges, release_hashes, release_dates, ownership)
     assert len(parents) == len(release_hashes)
     for p in parents:

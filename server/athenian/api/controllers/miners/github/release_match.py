@@ -178,7 +178,7 @@ class PullRequestToReleaseMapper:
                 release_beg = release_repo_offsets[release_pos]
                 release_end = release_repo_offsets[release_pos + 1]
                 ownership = mark_dag_access(
-                    hashes, vertexes, edges, ordered_release_shas[release_beg:release_end])
+                    hashes, vertexes, edges, ordered_release_shas[release_beg:release_end], True)
                 unmatched = np.flatnonzero(ownership == (release_end - release_beg))
                 if len(unmatched) > 0:
                     hashes = np.delete(hashes, unmatched)
@@ -557,7 +557,7 @@ class ReleaseToPullRequestMapper:
                 all_shas = np.concatenate([in_range_repo_shas, previous_repo_shas])
                 all_timestamps = np.concatenate([in_range_repo_dates, previous_repo_dates])
                 dag = dags[physical_repo]
-                ownership = mark_dag_access(*dag, all_shas)
+                ownership = mark_dag_access(*dag, all_shas, True)
                 parents = mark_dag_parents(*dag, all_shas, all_timestamps, ownership)
                 if any((len(p) == 0) for p in parents[:len(in_range_repo_indexes)]):
                     not_enough_repos.append(repo)
