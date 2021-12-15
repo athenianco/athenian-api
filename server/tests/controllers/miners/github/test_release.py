@@ -1258,16 +1258,21 @@ def test_mark_dag_access_smoke():
                        "61a719e0ff7522cc0d129acb3b922c94a8a5dbca",
                        "a444ccadf5fddad6ad432c13a239c74636c7f94f"],
                       dtype="S40")
+    # 33cafc14532228edca160e46af10341a8a632e3e -> 308a9f90707fb9d12cbcd28da1bc33da436386fe
+    # 33cafc14532228edca160e46af10341a8a632e3e -> 61a719e0ff7522cc0d129acb3b922c94a8a5dbca
+    # 61a719e0ff7522cc0d129acb3b922c94a8a5dbca -> 308a9f90707fb9d12cbcd28da1bc33da436386fe
+    # 308a9f90707fb9d12cbcd28da1bc33da436386fe -> a444ccadf5fddad6ad432c13a239c74636c7f94f
     vertexes = np.array([0, 1, 3, 4, 4], dtype=np.uint32)
     edges = np.array([3, 0, 2, 0], dtype=np.uint32)
     heads = np.array(["33cafc14532228edca160e46af10341a8a632e3e",
                       "61a719e0ff7522cc0d129acb3b922c94a8a5dbca"], dtype="S40")
     marks = mark_dag_access(hashes, vertexes, edges, heads)
-    assert (marks == np.array([1, 0, 1, 1], dtype=np.int32)).all()
+    assert_array_equal(marks, np.array([1, 0, 1, 1], dtype=np.int32))
     heads = np.array(["61a719e0ff7522cc0d129acb3b922c94a8a5dbca",
                       "33cafc14532228edca160e46af10341a8a632e3e"], dtype="S40")
+    # 33cafc14532228edca160e46af10341a8a632e3e shows the oldest, but it's the entry => takes all
     marks = mark_dag_access(hashes, vertexes, edges, heads)
-    assert (marks == np.array([0, 1, 0, 0], dtype=np.int32)).all()
+    assert_array_equal(marks, np.array([1, 1, 1, 1], dtype=np.int32))
 
 
 def test_mark_dag_access_empty():

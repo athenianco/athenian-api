@@ -243,7 +243,7 @@ class LogicalPRSettings:
             if not isinstance(whitelist, (list, tuple, np.ndarray)):
                 whitelist = list(whitelist)
         unique_repos, index_map, counts = np.unique(repos, return_inverse=True, return_counts=True)
-        repo_indexes = np.arange(len(repos))[np.argsort(index_map)]
+        repo_indexes = np.arange(len(repos))[np.argsort(index_map, kind="stable")]
         if whitelist is not None:
             allowed_repos = np.flatnonzero(np.in1d(unique_repos, whitelist, assume_unique=True))
         else:
