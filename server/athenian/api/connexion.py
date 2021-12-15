@@ -597,10 +597,13 @@ class AthenianApp(connexion.AioHttpApp):
                 self.log.warning("Rejecting the request, too much load: %.1f > %.1f",
                                  new_load, self._max_load)
                 # no "raise"! the "except" does not exist yet
-                return ResponseError(ServiceUnavailableError(
+                response = ResponseError(ServiceUnavailableError(
                     type="/errors/HeavyLoadError",
                     detail="This server is serving too much load, please repeat your request.",
                 )).response
+                response.headers.add("X-Serving-Load", "%.1f" % self._load)
+                response.headers.add("X-Requested-Load", "%.1f" % new_load)
+                return response
 
             custom_load_delta = 0
 
