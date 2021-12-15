@@ -23,8 +23,9 @@ def _after_response(request: web.Request,
                     start_time: float,
                     ) -> None:
     account = getattr(request, "account", "N/A")
+    if account is None:
+        account = "N/A"
     db_elapsed = request.app["db_elapsed"].get()
-    metrics_calculator = request.app[METRICS_CALCULATOR_VAR_NAME].get()
     cache_context = request.app["cache_context"]
     pdb_context = request.app["pdb_context"]
     sdb_elapsed, mdb_elapsed, pdb_elapsed, rdb_elapsed = (
@@ -34,8 +35,6 @@ def _after_response(request: web.Request,
             "X-Performance-DB",
             "s %.3f, m %.3f, p %.3f, r %.3f" % (
                 sdb_elapsed, mdb_elapsed, pdb_elapsed, rdb_elapsed))
-        response.headers.add("X-Metrics-Calculator",
-                             ",".join(f"{k}={v}" for k, v in metrics_calculator.items()))
         for k, v in cache_context.items():
             s = sorted("%s %d" % (f.replace("athenian.api.", ""), n)
                        for f, n in v.get().items())
@@ -53,6 +52,10 @@ def _after_response(request: web.Request,
     request.app["request_count"] \
         .labels(__package__, __version__, request.method, request.path, code, account) \
         .inc()
+    if "X-Requested-Load" in response.headers:
+        request.app["requests_rejected_by_load"] \
+            .labels(__package__, __version__) \
+            .inc()
     elapsed = (time() - start_time) or 0.001
     if request.path.startswith("/v1") and not request.path.startswith("/v1/ui"):
         request.app["request_latency"] \
@@ -122,6 +125,11 @@ def setup_prometheus(app: web.Application) -> None:
     app["request_count"] = prometheus_client.Counter(
         "requests_total", "Total request count",
         ["app_name", "version", "method", "endpoint", "http_status", "account"],
+        registry=registry,
+    )
+    app["requests_rejected_by_load"] = prometheus_client.Counter(
+        "requests_rejected_by_load", "Number of requests rejected for exceeding the maximum load",
+        ["app_name", "version"],
         registry=registry,
     )
     app["request_latency"] = prometheus_client.Histogram(
