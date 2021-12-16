@@ -231,13 +231,11 @@ class PreloadedDonePRFactsLoader(DonePRFactsLoader):
                 ):
                     mask &= _build_activity_mask(model, df, time_from, time_to)
 
-            match_groups, event_repos, _ = group_repos_by_release_match(
+            match_groups, _ = group_repos_by_release_match(
                 repos, default_branches, release_settings)
             match_groups[ReleaseMatch.rejected] = match_groups[
                 ReleaseMatch.force_push_drop
             ] = {"": repos}
-            if event_repos:
-                match_groups[ReleaseMatch.event] = {"": event_repos}
 
             mask &= _match_groups_to_mask(model, df, match_groups)
 

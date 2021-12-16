@@ -612,7 +612,7 @@ async def test_load_releases_tag_or_branch_dates(
     await wait_deferred()
     if with_preloading_enabled:
         await pdb.cache.refresh()
-    match_groups, _, repos_count = group_repos_by_release_match(
+    match_groups, repos_count = group_repos_by_release_match(
         ["src-d/go-git"], default_branches, release_settings)
     spans = (await release_loader.fetch_precomputed_release_match_spans(
         match_groups, 1, pdb))["src-d/go-git"]

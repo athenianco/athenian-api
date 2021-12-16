@@ -972,7 +972,7 @@ async def _load_releases_by_name(names: Dict[str, Set[str]],
     if missing:
         now = datetime.now(timezone.utc)
         # There can be fresh new releases that are not in the pdb yet.
-        match_groups, event_releases, repos_count = group_repos_by_release_match(
+        match_groups, repos_count = group_repos_by_release_match(
             missing, default_branches, release_settings)
         # event releases will be loaded in any case
         spans = await ReleaseLoader.fetch_precomputed_release_match_spans(
@@ -1015,7 +1015,7 @@ async def _load_releases_by_name(names: Dict[str, Set[str]],
             releases = releases.append(new_releases.take(matching_indexes), ignore_index=True)
             releases.sort_values(Release.published_at.name,
                                  inplace=True, ascending=False, ignore_index=True)
-            if event_releases:
+            if match_groups[ReleaseMatch.event]:
                 # we could load them twice
                 releases.drop_duplicates(
                     subset=[Release.node_id.name, Release.repository_full_name.name], inplace=True)

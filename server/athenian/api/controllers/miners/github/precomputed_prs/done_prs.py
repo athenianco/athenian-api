@@ -233,12 +233,10 @@ class DonePRFactsLoader:
             ]
             query = select(selected).where(and_(*filters))
         else:
-            match_groups, event_repos, _ = group_repos_by_release_match(
+            match_groups, _ = group_repos_by_release_match(
                 repos, default_branches, release_settings)
             match_groups[ReleaseMatch.rejected] = match_groups[ReleaseMatch.force_push_drop] = \
                 {"": repos}
-            if event_repos:
-                match_groups[ReleaseMatch.event] = {"": event_repos}
             or_items, or_repos = match_groups_to_sql(match_groups, ghprt)
             query = union_all(*(
                 select(selected).where(and_(item, format_version_filter, or_(
@@ -450,12 +448,9 @@ class DonePRFactsLoader:
             ghprt.repository_full_name,
             ghprt.release_match,
         ] + columns
-        match_groups, event_repos, _ = group_repos_by_release_match(
-            repos, default_branches, release_settings)
+        match_groups, _ = group_repos_by_release_match(repos, default_branches, release_settings)
         match_groups[ReleaseMatch.rejected] = match_groups[ReleaseMatch.force_push_drop] = \
             {"": list(repos)}
-        if event_repos:
-            match_groups[ReleaseMatch.event] = {"": event_repos}
 
         def or_items():
             return match_groups_to_sql(match_groups, ghprt)[0]
