@@ -4,8 +4,10 @@ from typing import Optional
 
 from aiohttp import web
 import aiomcache
+import morcilla
 import sentry_sdk
-from sqlalchemy import and_, delete, select, update
+from sqlalchemy import and_, delete, insert, select, update
+from sqlalchemy.dialects.postgresql import insert as postgres_insert
 
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached, max_exptime
@@ -16,13 +18,14 @@ from athenian.api.controllers.user import load_user_accounts
 from athenian.api.db import DatabaseLike
 from athenian.api.models.metadata.jira import Installation as JIRAInstallation, \
     Project as JIRAProject
-from athenian.api.models.state.models import AccountFeature, Feature, FeatureComponent, God, \
-    UserAccount
+from athenian.api.models.state.models import Account as DBAccount, AccountFeature, Feature, \
+    FeatureComponent, God, UserAccount
 from athenian.api.models.web import Account, AccountUserChangeRequest, ForbiddenError, \
-    JIRAInstallation as WebJIRAInstallation, NotFoundError, Organization, ProductFeature, \
-    UserChangeStatus
+    InvalidRequestError, JIRAInstallation as WebJIRAInstallation, NotFoundError, Organization, \
+    ProductFeature, UserChangeStatus
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
+from athenian.api.serialization import deserialize_datetime
 
 
 async def get_user(request: AthenianWebRequest) -> web.Response:
@@ -109,42 +112,97 @@ async def get_account_features(request: AthenianWebRequest, id: int) -> web.Resp
     """Return enabled product features for the account."""
     async with request.sdb.connection() as conn:
         await get_user_account_status(request.uid, id, conn, request.cache)
-        account_features = await conn.fetch_all(
-            select([AccountFeature.feature_id, AccountFeature.parameters])
-            .where(and_(AccountFeature.account_id == id, AccountFeature.enabled)))
-        account_features = {row[0]: row[1] for row in account_features}
-        features = await conn.fetch_all(
-            select([Feature.id, Feature.name, Feature.default_parameters])
-            .where(and_(Feature.id.in_(account_features),
-                        Feature.component == FeatureComponent.webapp,
-                        Feature.enabled)))
-        features = {row[0]: [row[1], row[2]] for row in features}
-        for k, v in account_features.items():
-            try:
-                fk = features[k]
-            except KeyError:
-                continue
-            if v is not None:
-                if isinstance(v, dict):
-                    for pk, pv in v.items():
-                        fk[1][pk] = pv
+        return await _get_account_features(conn, id)
+
+
+async def _get_account_features(conn: morcilla.Connection, id: int) -> web.Response:
+    account_features = await conn.fetch_all(
+        select([AccountFeature.feature_id, AccountFeature.parameters])
+        .where(and_(AccountFeature.account_id == id, AccountFeature.enabled)))
+    account_features = {row[0]: row[1] for row in account_features}
+    features = await conn.fetch_all(
+        select([Feature.id, Feature.name, Feature.default_parameters])
+        .where(and_(Feature.id.in_(account_features),
+                    Feature.component == FeatureComponent.webapp,
+                    Feature.enabled)))
+    features = {row[0]: [row[1], row[2]] for row in features}
+    for k, v in account_features.items():
+        try:
+            fk = features[k]
+        except KeyError:
+            continue
+        if v is not None:
+            if isinstance(v, dict):
+                for pk, pv in v.items():
+                    fk[1][pk] = pv
+            else:
+                fk[1] = v
+    models = [ProductFeature(*v) for k, v in sorted(features.items())]
+    return model_response(models)
+
+
+async def set_account_features(request: AthenianWebRequest, id: int, body: dict) -> web.Response:
+    """Set account features if you are a god."""
+    if getattr(request, "god_id", None) is None:  # no hasattr() please
+        raise ResponseError(ForbiddenError(
+            detail="User %s is not allowed to set features of accounts" % request.uid))
+    features = [ProductFeature.from_dict(f) for f in body]
+    async with request.sdb.connection() as conn:
+        await get_user_account_status(request.uid, id, conn, request.cache)
+        for i, feature in enumerate(features):
+            if feature.name == "expires_at":
+                try:
+                    expires_at = deserialize_datetime(feature.parameters)
+                except (TypeError, ValueError):
+                    raise ResponseError(InvalidRequestError(
+                        pointer=f".[{i}].parameters",
+                        detail=f"Invalid datetime string: {feature.parameters}"))
+                await conn.execute(update(DBAccount).where(DBAccount.id == id).values({
+                    DBAccount.expires_at: expires_at,
+                }))
+            else:
+                if not isinstance(feature.parameters, dict) or \
+                        not isinstance(feature.parameters.get("enabled"), bool):
+                    raise ResponseError(InvalidRequestError(
+                        pointer=f".[{i}].parameters",
+                        detail='Parameters must be {"enabled": true|false, ...}',
+                    ))
+                fid = await conn.fetch_val(select([Feature.id])
+                                           .where(Feature.name == feature.name))
+                if fid is None:
+                    raise ResponseError(InvalidRequestError(
+                        pointer=f".[{i}].name",
+                        detail=f"Feature is not supported: {feature.name}"))
+                if request.sdb.url.dialect == "postgresql":
+                    query = postgres_insert(AccountFeature)
+                    query = query.on_conflict_do_update(
+                        constraint=AccountFeature.__table__.primary_key,
+                        set_={
+                            AccountFeature.enabled.name: query.excluded.enabled,
+                            AccountFeature.parameters.name: query.excluded.parameters,
+                        },
+                    )
                 else:
-                    fk[1] = v
-        models = [ProductFeature(*v) for k, v in sorted(features.items())]
-        return model_response(models)
+                    query = insert(AccountFeature).prefix_with("OR REPLACE")
+                await conn.execute(query.values(AccountFeature(
+                    account_id=id,
+                    feature_id=fid,
+                    enabled=feature.parameters["enabled"],
+                    parameters=feature.parameters.get("parameters"),
+                ).create_defaults().explode(with_primary_keys=True)))
+        return await _get_account_features(conn, id)
 
 
 async def become_user(request: AthenianWebRequest, id: str = "") -> web.Response:
     """God mode ability to turn into any user. The current user must be marked internally as \
     a super admin."""
-    user_id = getattr(request, "god_id", None)
-    if user_id is None:
-        return ResponseError(ForbiddenError(
-            detail="User %s is not allowed to mutate" % user_id)).response
+    if (user_id := getattr(request, "god_id", None)) is None:
+        raise ResponseError(ForbiddenError(
+            detail="User %s is not allowed to mutate" % request.uid))
     async with request.sdb.connection() as conn:
         if id and (await conn.fetch_one(
                 select([UserAccount]).where(UserAccount.user_id == id))) is None:
-            return ResponseError(NotFoundError(detail="User %s does not exist" % id)).response
+            raise ResponseError(NotFoundError(detail="User %s does not exist" % id))
         god = await conn.fetch_one(select([God]).where(God.user_id == user_id))
         god = God(**god).refresh()
         god.mapped_id = id or None
