@@ -2,6 +2,7 @@ from collections import defaultdict
 from contextvars import ContextVar
 from itertools import chain
 import logging
+import re
 from time import time
 from typing import Optional
 
@@ -16,6 +17,7 @@ from athenian.api.metadata import __package__, __version__
 PROMETHEUS_REGISTRY_VAR_NAME = "prometheus_registry"
 METRICS_CALCULATOR_VAR_NAME = "metrics_calculator"
 elapsed_error_threshold = 60
+measure_latency_re = re.compile("/v1/(metrics|histograms|get|diff|filter|paginate)")
 
 
 def _after_response(request: web.Request,
@@ -59,7 +61,7 @@ def _after_response(request: web.Request,
         .labels(__package__, __version__, request.method, request.path, code, account) \
         .inc()
     elapsed = (time() - start_time) or 0.001
-    if request.path.startswith("/v1") and not request.path.startswith("/v1/ui"):
+    if measure_latency_re.match(request.path):
         request.app["request_latency"] \
             .labels(__package__, __version__, request.path, account) \
             .observe(elapsed)
@@ -76,19 +78,6 @@ def _after_response(request: web.Request,
         db_latency \
             .labels(__package__, __version__, request.path, "persistentdata") \
             .observe(rdb_elapsed)
-        db_latency_ratio = request.app["db_latency_ratio"]
-        db_latency_ratio \
-            .labels(__package__, __version__, request.path, "state") \
-            .observe(sdb_elapsed / elapsed)
-        db_latency_ratio \
-            .labels(__package__, __version__, request.path, "metadata") \
-            .observe(mdb_elapsed / elapsed)
-        db_latency_ratio \
-            .labels(__package__, __version__, request.path, "precomputed") \
-            .observe(pdb_elapsed / elapsed)
-        db_latency_ratio \
-            .labels(__package__, __version__, request.path, "persistentdata") \
-            .observe(rdb_elapsed / elapsed)
     if elapsed > elapsed_error_threshold:
         with sentry_sdk.push_scope() as scope:
             scope.fingerprint = ["{{ default }}", request.path]
@@ -157,17 +146,6 @@ def setup_prometheus(app: web.Application) -> None:
             1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0,
             12.0, 15.0, 20.0, 25.0, 30.0,
             45.0, 60.0, 120.0, 180.0, 240.0, prometheus_client.metrics.INF,
-        ],
-        registry=registry,
-    )
-    app["db_latency_ratio"] = prometheus_client.Histogram(
-        "db_latency_ratio",
-        "Ratio between time spent in each DB to request time",
-        ["app_name", "version", "endpoint", "database"],
-        buckets=[
-            0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09,
-            0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5,
-            0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0,
         ],
         registry=registry,
     )
