@@ -1,5 +1,6 @@
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+from itertools import chain
 import logging
 import pickle
 import re
@@ -84,7 +85,7 @@ class ReleaseLoader:
         assert time_from <= time_to
 
         log = logging.getLogger("%s.load_releases" % metadata.__package__)
-        match_groups, event_repos, repos_count = group_repos_by_release_match(
+        match_groups, repos_count = group_repos_by_release_match(
             repos, default_branches, release_settings)
         if repos_count == 0:
             log.warning("no repositories")
@@ -101,8 +102,8 @@ class ReleaseLoader:
                 time_to + tag_by_branch_probe_lookaround,
                 prefixer, account, pdb, index=index),
             cls._fetch_release_events(
-                event_repos, account, meta_ids, time_from, time_to, logical_settings,
-                prefixer, mdb, rdb, index=index),
+                match_groups[ReleaseMatch.event], account, meta_ids, time_from, time_to,
+                logical_settings, prefixer, mdb, rdb, index=index),
         ]
         spans, releases, event_releases = await gather(*tasks)
 
@@ -114,7 +115,7 @@ class ReleaseLoader:
             matches = releases[[Release.repository_full_name.name, matched_by_column]].groupby(
                 Release.repository_full_name.name, sort=False,
             )[matched_by_column].apply(lambda s: s[s.astype(int).idxmax()]).to_dict()
-            for repo in event_repos:
+            for repo in chain.from_iterable(match_groups[ReleaseMatch.event].values()):
                 matches[repo] = ReleaseMatch.event
             return matches
 
@@ -412,7 +413,7 @@ class ReleaseLoader:
     @classmethod
     @sentry_span
     async def _fetch_release_events(cls,
-                                    repos: Mapping[str, str],
+                                    repos: Mapping[str, List[str]],
                                     account: int,
                                     meta_ids: Tuple[int, ...],
                                     time_from: datetime,
@@ -427,6 +428,12 @@ class ReleaseLoader:
         if not repos:
             return dummy_releases_df(index)
         repo_name_to_node = prefixer.repo_name_to_node.get
+        repos_inverted = {}
+        for pattern, pattern_repos in repos.items():
+            pattern = re.compile(pattern)
+            for repo in pattern_repos:
+                repos_inverted[repo] = pattern
+        repos = repos_inverted
         repo_ids = {repo_name_to_node(r): r for r in coerce_logical_repos(repos)}
         release_rows = await rdb.fetch_all(
             select([ReleaseNotification])
@@ -496,15 +503,10 @@ class ReleaseLoader:
 
         releases = []
         updated = []
-        re_cache = {}
         for row in release_rows:
             repo = row[ReleaseNotification.repository_node_id.name]
             repo_name = repo_ids[repo]
-            try:
-                re_name = re_cache[repo]
-            except KeyError:
-                re_name = re_cache[repo] = re.compile(repos[repo_name])
-            if not re_name.match(repo_name):
+            if not repos[repo_name].match(repo_name):
                 continue
             if (commit_node_id := row[ReleaseNotification.resolved_commit_node_id.name]) is None:
                 commit_node_id, commit_hash = resolved_commits.get(
@@ -579,6 +581,8 @@ class ReleaseLoader:
                 prefix = "tag|"
             elif rm == ReleaseMatch.branch:
                 prefix = "branch|"
+            elif rm == ReleaseMatch.event:
+                continue
             else:
                 raise AssertionError("Impossible release match: %s" % rm)
             for val, repos in pair.items():
@@ -697,21 +701,19 @@ def group_repos_by_release_match(repos: Iterable[str],
                                  default_branches: Dict[str, str],
                                  release_settings: ReleaseSettings,
                                  ) -> Tuple[Dict[ReleaseMatch, Dict[str, List[str]]],
-                                            Dict[str, str],
                                             int]:
     """
     Aggregate repository lists by specific release matches.
 
     :return: 1. map ReleaseMatch => map Required match regexp => list of repositories. \
-             2. repositories released by push event mapped to name regexps. \
-             3. number of processed repositories.
+             2. number of processed repositories.
     """
     match_groups = {
         ReleaseMatch.tag: {},
         ReleaseMatch.branch: {},
+        ReleaseMatch.event: {},
     }
     count = 0
-    event_repos = {}
     for repo in repos:
         count += 1
         rms = release_settings.native[repo]
@@ -722,8 +724,8 @@ def group_repos_by_release_match(repos: Iterable[str],
                 rms.branches.replace(default_branch_alias, default_branches[repo]), [],
             ).append(repo)
         if rms.match == ReleaseMatch.event:
-            event_repos[repo] = rms.events
-    return match_groups, event_repos, count
+            match_groups[ReleaseMatch.event].setdefault(rms.events, []).append(repo)
+    return match_groups, count
 
 
 def match_groups_to_sql(match_groups: Dict[ReleaseMatch, Dict[str, Iterable[str]]],
@@ -761,7 +763,7 @@ def match_groups_to_conditions(
         (ReleaseMatch.branch, "|"),
         (ReleaseMatch.rejected, ""),
         (ReleaseMatch.force_push_drop, ""),
-        (ReleaseMatch.event, ""),
+        (ReleaseMatch.event, "|"),
     ]:
         if not (match_group := match_groups.get(match)):
             continue

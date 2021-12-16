@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from pandas.testing import assert_frame_equal
 import pytest
-from sqlalchemy import select
+from sqlalchemy import insert, select
 
 from athenian.api.controllers.features.github.pull_request_metrics import AllCounter, \
     ClosedCalculator, CycleCounter, CycleCounterWithQuantiles, CycleTimeCalculator, \
@@ -26,6 +26,7 @@ from athenian.api.controllers.miners.types import PullRequestFacts
 from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch, \
     ReleaseMatchSetting, ReleaseSettings
 from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.models.persistentdata.models import ReleaseNotification
 from athenian.api.models.precomputed.models import GitHubMergedPullRequestFacts, \
     GitHubOpenPullRequestFacts
 from athenian.api.models.web import Granularity, PullRequestMetricID
@@ -839,6 +840,33 @@ async def test_calc_pull_request_facts_github_jira(
     await wait_deferred()
     facts = await metrics_calculator_cache_only.calc_pull_request_facts_github(*args)
     assert facts[PullRequestFacts.f.jira_ids].astype(bool).sum() == 60
+
+
+@with_defer
+async def test_calc_pull_request_facts_github_event_releases(
+        metrics_calculator_factory, mdb, pdb, rdb, release_match_setting_event,
+        prefixer, bots, cache):
+    await rdb.execute(insert(ReleaseNotification).values(ReleaseNotification(
+        account_id=1,
+        repository_node_id=40550,
+        commit_hash_prefix="1edb992",
+        name="Pushed!",
+        author_node_id=40020,
+        url="www",
+        published_at=datetime(2019, 9, 1, tzinfo=timezone.utc),
+    ).create_defaults().explode(with_primary_keys=True)))
+    metrics_calculator = metrics_calculator_factory(1, (6366825,))
+    time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
+    args = [time_from, time_to, {"src-d/go-git"}, {},
+            LabelFilter.empty(), JIRAFilter.empty(),
+            False, bots, release_match_setting_event, LogicalRepositorySettings.empty(),
+            prefixer, False, False]
+    facts = await metrics_calculator.calc_pull_request_facts_github(*args)
+    await wait_deferred()
+    assert facts[PullRequestFacts.f.released].notnull().sum() == 381
+    facts = await metrics_calculator.calc_pull_request_facts_github(*args)
+    assert facts[PullRequestFacts.f.released].notnull().sum() == 381
 
 
 @with_defer
