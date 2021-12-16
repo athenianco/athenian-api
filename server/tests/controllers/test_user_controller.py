@@ -1,14 +1,14 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import json
 
 from aiohttp import web
 import dateutil.parser
 import pytest
-from sqlalchemy import insert, update
+from sqlalchemy import insert, select, update
 
 from athenian.api.async_utils import gather
 from athenian.api.controllers.user_controller import get_user
-from athenian.api.models.state.models import AccountFeature, Feature, God
+from athenian.api.models.state.models import Account as DBAccount, AccountFeature, Feature, God
 from athenian.api.models.web import Account, ProductFeature
 from athenian.api.request import AthenianWebRequest
 from tests.conftest import disable_default_user
@@ -16,6 +16,13 @@ from tests.conftest import disable_default_user
 
 vadim_email = "af253b50a4d7b2c9841f436fbe4c635f270f4388653649b0971f2751a441a556fe63a9dabfa150a444dd"  # noqa
 eiso_email = "18fe5f66fce88e4791d0117a311c6c2b2102216e18585c1199f90516186aa4461df7a2453857d781b6"  # noqa
+
+
+@pytest.fixture(scope="function")
+async def god(sdb) -> None:
+    await sdb.execute(insert(God).values(God(
+        user_id="auth0|5e1f6dfb57bc640ea390557b",
+    ).create_defaults().explode(with_primary_keys=True)))
 
 
 async def test_get_user_smoke(client, headers, app):
@@ -169,6 +176,48 @@ async def test_get_account_features_disabled(client, headers, sdb):
     assert body == []
 
 
+async def test_set_account_features_smoke(client, headers, god, sdb):
+    body = [
+        {"name": "expires_at", "parameters": "2020-01-01"},
+        {"name": "jira",
+         "parameters": {"enabled": True, "parameters": "test"}},
+        {"name": "bare_value", "parameters": {"enabled": False}},
+    ]
+    response = await client.request(
+        method="POST", path="/v1/account/1/features", headers=headers, json=body,
+    )
+    body = json.loads((await response.read()).decode("utf-8"))
+    assert isinstance(body, list)
+    assert len(body) == 1
+    models = [ProductFeature.from_dict(f) for f in body]
+    model = models[0]
+    expires_at = await sdb.fetch_val(select([DBAccount.expires_at]).where(DBAccount.id == 1))
+    assert expires_at.date() == date(2020, 1, 1)
+    assert model.parameters == "test"
+
+
+async def test_set_account_features_nongod(client, headers, sdb):
+    body = [
+        {"name": "expires_at", "parameters": "2020-01-01"},
+    ]
+    response = await client.request(
+        method="POST", path="/v1/account/1/features", headers=headers, json=body,
+    )
+    assert response.status == 403
+    expires_at = await sdb.fetch_val(select([DBAccount.expires_at]).where(DBAccount.id == 1))
+    assert expires_at.date() == date(2030, 1, 1)
+
+
+async def test_set_account_features_nasty(client, headers, god):
+    body = [
+        {"name": "xxx", "parameters": "2020-01-01"},
+    ]
+    response = await client.request(
+        method="POST", path="/v1/account/1/features", headers=headers, json=body,
+    )
+    assert response.status == 400
+
+
 async def test_get_users_query_size_limit(xapp):
     users = await xapp._auth0.get_users(
         ["auth0|5e1f6dfb57bc640ea390557b"] * 200 + ["auth0|5e1f6e2e8bfa520ea5290741"] * 200)
@@ -189,10 +238,7 @@ async def test_get_users_rate_limit(xapp):
         assert u.email == vadim_email
 
 
-async def test_become_db(client, headers, sdb):
-    await sdb.execute(insert(God).values(God(
-        user_id="auth0|5e1f6dfb57bc640ea390557b",
-    ).create_defaults().explode(with_primary_keys=True)))
+async def test_become_db(client, headers, sdb, god):
     response = await client.request(
         method="GET", path="/v1/become?id=auth0|5e1f6e2e8bfa520ea5290741", headers=headers,
         json={},
@@ -257,10 +303,7 @@ async def test_become_db(client, headers, sdb):
     }
 
 
-async def test_become_header(client, headers, sdb):
-    await sdb.execute(insert(God).values(God(
-        user_id="auth0|5e1f6dfb57bc640ea390557b",
-    ).create_defaults().explode(with_primary_keys=True)))
+async def test_become_header(client, headers, sdb, god):
     headers = headers.copy()
     headers["X-Identity"] = "auth0|5e1f6e2e8bfa520ea5290741"
     response = await client.request(
