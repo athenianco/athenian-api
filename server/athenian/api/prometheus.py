@@ -45,17 +45,19 @@ def _after_response(request: web.Request,
         with sentry_sdk.configure_scope() as scope:
             for k, v in response.headers.items():
                 scope.set_extra(k, v)
-    code = response.status if response is not None else 500
+        if "X-Requested-Load" in response.headers:
+            request.app["requests_rejected_by_load"] \
+                .labels(__package__, __version__) \
+                .inc()
+        code = response.status
+    else:
+        code = 500
     request.app["request_in_progress"] \
         .labels(__package__, __version__, request.path, request.method) \
         .dec()
     request.app["request_count"] \
         .labels(__package__, __version__, request.method, request.path, code, account) \
         .inc()
-    if "X-Requested-Load" in response.headers:
-        request.app["requests_rejected_by_load"] \
-            .labels(__package__, __version__) \
-            .inc()
     elapsed = (time() - start_time) or 0.001
     if request.path.startswith("/v1") and not request.path.startswith("/v1/ui"):
         request.app["request_latency"] \
