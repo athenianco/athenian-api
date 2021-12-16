@@ -4,6 +4,7 @@ import logging
 from typing import Any, Dict
 
 import aiohttp
+from flogging import flogging
 from sqlalchemy import distinct, func, select
 
 from athenian.api import metadata
@@ -13,6 +14,9 @@ from athenian.api.controllers.account import get_metadata_account_ids_or_empty
 from athenian.api.models.metadata.github import NodeRepository
 from athenian.api.models.state.models import UserAccount
 from athenian.api.request import AthenianWebRequest
+
+
+flogging.trailing_dot_exceptions.add("charset_normalizer")
 
 
 class SegmentClient:
