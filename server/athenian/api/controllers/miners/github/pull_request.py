@@ -1099,7 +1099,7 @@ class PullRequestMiner:
                              ascending=False, inplace=True, na_position="first")
         resolved.drop_duplicates("pr_node_id", inplace=True)
         # patch the commit IDs and the hashes
-        alive_node_ids = resolved["pr_node_id"]
+        alive_node_ids = resolved["pr_node_id"].values
         if columns is PullRequest or PullRequest.merge_commit_id in columns:
             prs.loc[alive_node_ids, PullRequest.merge_commit_id.name] = \
                 resolved["commit_node_id"].values
@@ -1217,12 +1217,15 @@ class PullRequestMiner:
             del prs[PullRequest.acc_id.name]
         if PullRequest.closed.name in prs:
             cls.adjust_pr_closed_merged_timestamps(prs)
+        _, first_encounters = np.unique(prs.index.values, return_index=True)
+        if len(first_encounters) < len(prs):
+            prs = prs.take(first_encounters)
         if not labels or embedded_labels_query:
             return prs, None
         df_labels = await fetch_labels_to_filter(prs.index, meta_ids, mdb)
         left = cls.find_left_by_labels(
             prs.index, df_labels.index, df_labels[PullRequestLabel.name.name].values, labels)
-        prs = prs.take(np.nonzero(prs.index.isin(left))[0])
+        prs = prs.take(np.flatnonzero(prs.index.isin(left)))
         return prs, df_labels
 
     @staticmethod
