@@ -447,12 +447,14 @@ async def _mine_releases(repos: Iterable[str],
             .where(and_(NodePullRequest.acc_id.in_(meta_ids),
                         NodePullRequest.id.in_any_values(all_pr_node_ids)))))
     if labels:
-        tasks.insert(0, read_sql_query(
+        query = (
             select([PullRequestLabel.pull_request_node_id,
                     func.lower(PullRequestLabel.name).label(PullRequestLabel.name.name)])
             .where(and_(PullRequestLabel.acc_id.in_(meta_ids),
-                        PullRequestLabel.pull_request_node_id.in_any_values(all_pr_node_ids))),
-            mdb, [PullRequestLabel.pull_request_node_id, PullRequestLabel.name],
+                        PullRequestLabel.pull_request_node_id.in_any_values(all_pr_node_ids)))
+        ).with_statement_hint("Leading(*VALUES* prl label repo)")
+        tasks.insert(0, read_sql_query(
+            query, mdb, [PullRequestLabel.pull_request_node_id, PullRequestLabel.name],
             index=PullRequestLabel.pull_request_node_id.name))
     mentioned_authors = set(mentioned_authors)
     *secondary, mined_releases = await gather(*tasks, op="mine missing releases")
