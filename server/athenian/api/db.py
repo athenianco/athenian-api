@@ -109,7 +109,11 @@ async def _asyncpg_execute(self,
                            timeout,
                            **kwargs):
     description = query = query.strip()
-    if _log_sql_re.match(query) and not _testing:
+    if query.startswith("/*"):
+        log_sql_probe = query[query.find("*/") + 3:]
+    else:
+        log_sql_probe = query
+    if _log_sql_re.match(log_sql_probe) and not _testing:
         from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
         if len(description) <= MAX_SENTRY_STRING_LENGTH and args:
             description += " | " + str(args)
