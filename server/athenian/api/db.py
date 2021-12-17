@@ -110,7 +110,7 @@ async def _asyncpg_execute(self,
                            **kwargs):
     description = query = query.strip()
     if query.startswith("/*"):
-        log_sql_probe = query[query.find("*/") + 3:]
+        log_sql_probe = query[query.find("*/", 2, 1024) + 3:]
     else:
         log_sql_probe = query
     if _log_sql_re.match(log_sql_probe) and not _testing:

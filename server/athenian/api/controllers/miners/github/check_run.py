@@ -390,6 +390,7 @@ def _postprocess_check_runs(df: pd.DataFrame) -> None:
     df.loc[df[CheckRun.pull_request_node_id.name] == 0, pr_ts_columns] = None
     for column in pr_ts_columns:
         df.loc[df[column] == 0, column] = None
+        df[column] = df[column].astype(started_ats.dtype, copy=False)
 
     for col in (CheckRun.check_run_node_id, CheckRun.check_suite_node_id,
                 CheckRun.repository_node_id, CheckRun.commit_node_id):
