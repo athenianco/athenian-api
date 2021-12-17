@@ -118,11 +118,13 @@ def setup_prometheus(app: web.Application) -> None:
         ["app_name", "version", "method", "endpoint", "http_status", "account"],
         registry=registry,
     )
-    app["requests_rejected_by_load"] = prometheus_client.Counter(
+    app["requests_rejected_by_load"] = requests_rejected_by_load_total = prometheus_client.Counter(
         "requests_rejected_by_load", "Number of requests rejected for exceeding the maximum load",
         ["app_name", "version"],
         registry=registry,
     )
+    # explicitly initialize this metric so it appears at startup
+    requests_rejected_by_load_total.labels(__package__, __version__)
     app["request_latency"] = prometheus_client.Histogram(
         "request_latency_seconds", "Request latency",
         ["app_name", "version", "endpoint", "account"],
