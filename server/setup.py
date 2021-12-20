@@ -1,12 +1,14 @@
 from importlib.machinery import SourceFileLoader
 import os
 from pathlib import Path
+import site
+site.ENABLE_USER_SITE = True  # workaround https://github.com/pypa/pip/issues/7953
 
-from setuptools import find_packages, setup
+from setuptools import find_packages, setup  # noqa: E402
 # The following import has to stay after imports from `setuptools`:
 # - https://stackoverflow.com/questions/21594925/
 #     error-each-element-of-ext-modules-option-must-be-an-extension-instance-or-2-t
-from Cython.Build import cythonize  # noqa: I100
+from Cython.Build import cythonize  # noqa: I100, E402
 
 project_root = Path(__file__).parent
 code_root = project_root / "athenian" / "api"
