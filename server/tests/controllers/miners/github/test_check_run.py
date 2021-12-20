@@ -41,8 +41,7 @@ async def test_check_run_smoke(mdb, time_from, time_to, repositories, pushers, l
         (6366825,), mdb, None)
     assert len(df) == size
     for col in CheckRun.__table__.columns:
-        if col.name not in (CheckRun.committed_date_hack.name,
-                            CheckRun.repository_node_id_hack.name):
+        if col.name not in (CheckRun.committed_date_hack.name,):
             assert col.name in df.columns
     assert len(df[CheckRun.check_run_node_id.name].unique()) == len(df)
 
