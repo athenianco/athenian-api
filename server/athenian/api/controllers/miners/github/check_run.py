@@ -9,6 +9,7 @@ import aiomcache
 import numpy as np
 import pandas as pd
 from sqlalchemy import and_, exists, func, select, union_all
+from xxhash import xxh3_64_intdigest
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query, read_sql_query_with_join_collapse
@@ -208,10 +209,10 @@ async def _disambiguate_pull_requests(df: pd.DataFrame,
         # another groupby() replacement for speed
         # we determine check runs belonging to the same commit with multiple pull requests
         node_ids_order = np.argsort(check_run_node_ids)
-        node_ids_group_counts = np.cumsum(node_id_counts)
-        groups = np.array(np.split(node_ids_order, node_ids_group_counts[:-1]), dtype=object)
-        groups = groups[ambiguous_unique_check_run_indexes]
-        unique_ambiguous_pr_node_ids = np.unique(pr_node_ids[np.concatenate(groups).astype(int)])
+        stops = np.cumsum(node_id_counts)[ambiguous_unique_check_run_indexes]
+        lengths = node_id_counts[ambiguous_unique_check_run_indexes]
+        groups = np.repeat(stops - lengths.cumsum(), lengths) + np.arange(lengths.sum())
+        unique_ambiguous_pr_node_ids = np.unique(pr_node_ids[node_ids_order[groups]])
     else:
         unique_ambiguous_pr_node_ids = []
 
@@ -236,6 +237,10 @@ async def _disambiguate_pull_requests(df: pd.DataFrame,
             index=NodePullRequestCommit.pull_request_id.name),
     )
     del unique_ambiguous_pr_node_ids
+    with open("/tmp/pr_lifetimes.pickle", "wb") as fout:
+        pickle.dump(pr_lifetimes, fout)
+    with open("/tmp/pr_commit_counts.pickle", "wb") as fout:
+        pickle.dump(pr_commit_counts, fout)
     pr_lifetimes[NodePullRequest.closed_at.name].fillna(
         datetime.now(timezone.utc), inplace=True)
     df = df.join(
@@ -265,10 +270,22 @@ async def _disambiguate_pull_requests(df: pd.DataFrame,
         # all the timestamps are NAT-s
         check_runs_outside_pr_lifetime_indexes = np.arange(len(df))
     # check run must launch while the PR remains open
-    df.loc[check_runs_outside_pr_lifetime_indexes, CheckRun.pull_request_node_id.name] = None
+    df[CheckRun.pull_request_node_id.name] = \
+        df[CheckRun.pull_request_node_id.name].astype(object, copy=False)
+    df[CheckRun.pull_request_node_id.name].values[check_runs_outside_pr_lifetime_indexes] = None
     old_df_len = len(df)
+    """
+    faster than
     df.drop_duplicates([CheckRun.check_run_node_id.name, CheckRun.pull_request_node_id.name],
                        inplace=True, ignore_index=True)
+    """
+    dupe_arr = np.zeros(len(df), dtype=[("cr", int), ("pr", int)])
+    dupe_arr["cr"] = df[CheckRun.check_run_node_id.name].values
+    nnz_mask = df[CheckRun.pull_request_node_id.name].notnull().values
+    dupe_arr["pr"][nnz_mask] = \
+        df[CheckRun.pull_request_node_id.name].values[nnz_mask].astype(int, copy=False)
+    df = df.take(np.unique(dupe_arr, return_index=True)[1])
+    df.reset_index(drop=True, inplace=True)
     log.info("rejecting check runs by PR lifetimes: %d / %d", len(df), old_df_len)
 
     if len(ambiguous_unique_check_run_indexes):
@@ -276,13 +293,13 @@ async def _disambiguate_pull_requests(df: pd.DataFrame,
         check_run_node_ids = df[CheckRun.check_run_node_id.name].values
         pr_node_ids = df[CheckRun.pull_request_node_id.name].values.copy()
         unique_node_ids, node_id_counts = np.unique(check_run_node_ids, return_counts=True)
-        ambiguous_unique_check_run_indexes = np.nonzero(node_id_counts > 1)[0]
+        ambiguous_unique_check_run_indexes = np.flatnonzero(node_id_counts > 1)
         if len(ambiguous_unique_check_run_indexes):
             node_ids_order = np.argsort(check_run_node_ids)
-            node_ids_group_counts = np.cumsum(node_id_counts)
-            groups = np.array(np.split(node_ids_order, node_ids_group_counts[:-1]), dtype=object)
-            groups = groups[ambiguous_unique_check_run_indexes]
-            ambiguous_indexes = np.concatenate(groups)
+            stops = np.cumsum(node_id_counts)[ambiguous_unique_check_run_indexes]
+            lengths = node_id_counts[ambiguous_unique_check_run_indexes]
+            groups = np.repeat(stops - lengths.cumsum(), lengths) + np.arange(lengths.sum())
+            ambiguous_indexes = node_ids_order[groups]
             log.info("must disambiguate %d check runs", len(ambiguous_indexes))
             ambiguous_pr_node_ids = pr_node_ids[ambiguous_indexes]
     if len(ambiguous_unique_check_run_indexes):
@@ -308,8 +325,10 @@ async def _disambiguate_pull_requests(df: pd.DataFrame,
             pr_commit_counts, on=CheckRun.pull_request_node_id.name)
         del ambiguous_df
         # heuristic: the PR with the least number of commits wins
-        passed = passed_df.groupby(CheckRun.check_run_node_id.name)["count"] \
-            .idxmin().values.astype(int, copy=False)
+        order = np.argsort(passed_df["count"].values, kind="stable")
+        passed_cr_node_ids = passed_df[CheckRun.check_run_node_id.name].values[order]
+        _, first_encounters = np.unique(passed_cr_node_ids, return_index=True)
+        passed = passed_df.index.values[order[first_encounters]]
         log.info("disambiguation step 2 - commit counts: %d / %d", len(passed), len(passed_df))
         del passed_df
         # we may discard some check runs completely here, set pull_request_node_id to None for them
@@ -348,8 +367,14 @@ def _erase_completed_at_as_needed(df: pd.DataFrame):
     df[CheckRun.completed_at.name].values[df[CheckRun.conclusion.name].values == "NEUTRAL"] = None
 
     # exclude "too quick" checks from execution time calculation DEV-3155
-    cr_types = np.char.add(int_to_str(df[CheckRun.repository_node_id.name].values),
-                           np.char.encode(df[CheckRun.name.name].values.astype("U"), "UTF-8"))
+    cr_types = np.empty(len(df), dtype=[("repo", int), ("name", np.uint64)])
+    cr_types["repo"] = df[CheckRun.repository_node_id.name].values.byteswap()
+    cr_names = df[CheckRun.name.name].values.astype("U")
+    # take the hash to avoid very long names - they lead to bad performance
+    cr_types["name"] = np.fromiter(
+        (xxh3_64_intdigest(s) for s in cr_names.view(f"S{cr_names.dtype.itemsize}")),
+        np.uint64, len(df))
+    cr_types = cr_types.view("S16")  # speeds up np.unique()
     first_encounters, suite_groups = mark_check_suite_types(
         cr_types, df[CheckRun.check_suite_node_id.name].values)
     del cr_types
@@ -518,8 +543,8 @@ def _merge_status_contexts(df: pd.DataFrame) -> pd.DataFrame:
         return df
     no_finish_urls = df[CheckRun.url.name].values[no_finish].astype("S")
     empty_url_mask = no_finish_urls == b""
-    no_finish_urls[empty_url_mask] = np.char.encode(
-        df[CheckRun.name.name].values[no_finish[empty_url_mask]].astype("U"), "UTF-8")
+    empty_url_names = df[CheckRun.name.name].values[no_finish[empty_url_mask]].astype("U")
+    no_finish_urls[empty_url_mask] = empty_url_names.view(f"S{empty_url_names.dtype.itemsize}")
     no_finish_parents = \
         df[CheckRun.check_suite_node_id.name].values[no_finish].astype(int, copy=False)
     no_finish_seeds = np.char.add(int_to_str(no_finish_parents), no_finish_urls)

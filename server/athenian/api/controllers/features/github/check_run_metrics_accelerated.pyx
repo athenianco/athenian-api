@@ -106,12 +106,12 @@ def mark_check_suite_types(check_run_names: np.ndarray,
     _, first_suite_encounters, suite_sizes = np.unique(
         check_suite_ids, return_index=True, return_counts=True)
     fused = np.empty(len(name_indexes), dtype=[
-        ("check_suite_id", check_suite_ids.dtype),
-        ("name", name_indexes.dtype),
+        ("check_suite_id", int),
+        ("name", int),
     ])
-    fused["check_suite_id"] = check_suite_ids
-    fused["name"] = name_indexes
-    order = np.argsort(fused)  # sort first by suite ID, then by name
+    fused["check_suite_id"] = check_suite_ids.byteswap()
+    fused["name"] = name_indexes.byteswap()
+    order = np.argsort(fused.view("S16"))  # sort first by suite ID, then by name
     name_indexes = name_indexes[order]
     type_marks = np.full(len(suite_sizes), -1, int)
     _mark_check_suite_types(name_indexes, suite_sizes, type_marks)
