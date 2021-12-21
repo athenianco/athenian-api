@@ -523,7 +523,6 @@ class CheckRunMixin(CommonCheckRunMixin):
     __tablename__ = "api_check_runs"
 
     committed_date_hack = Column(TIMESTAMP(timezone=True), nullable=False)
-    repository_node_id_hack = Column(BigInteger, nullable=False)
     pull_request_created_at = Column(TIMESTAMP(timezone=True))
     pull_request_closed_at = Column(TIMESTAMP(timezone=True))
 
