@@ -328,7 +328,7 @@ async def _disambiguate_pull_requests(df: pd.DataFrame,
         order = np.argsort(passed_df["count"].values, kind="stable")
         passed_cr_node_ids = passed_df[CheckRun.check_run_node_id.name].values[order]
         _, first_encounters = np.unique(passed_cr_node_ids, return_index=True)
-        passed = passed_df.index.values[order[first_encounters]]
+        passed = passed_df.index.values[order[first_encounters]].astype(int, copy=False)
         log.info("disambiguation step 2 - commit counts: %d / %d", len(passed), len(passed_df))
         del passed_df
         # we may discard some check runs completely here, set pull_request_node_id to None for them
