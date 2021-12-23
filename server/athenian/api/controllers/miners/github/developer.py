@@ -10,7 +10,7 @@ import pandas as pd
 from sqlalchemy import and_, exists, func, not_, select
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
-from athenian.api.async_utils import gather, read_sql_query, read_sql_query_with_join_collapse
+from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.release_load import ReleaseLoader
@@ -178,7 +178,7 @@ async def _mine_prs(attr_user: InstrumentedAttribute,
             filters, jira, None, mdb, cache, columns=selected)
     else:
         query = select(selected).where(and_(*filters))
-    return await read_sql_query_with_join_collapse(query, mdb, [c.name for c in selected])
+    return await read_sql_query(query, mdb, [c.name for c in selected])
 
 
 async def _mine_prs_created(*args, **kwargs) -> pd.DataFrame:
@@ -262,6 +262,7 @@ async def _mine_reviews(repo_ids: np.ndarray,
         PullRequestReview.repository_node_id.in_(repo_ids),
     ]
     if labels:
+        # don't Set(join_collapse_limit 1) because Postgres goes crazy on EXISTS
         _filter_by_labels(PullRequestReview.acc_id, PullRequestReview.pull_request_node_id,
                           labels, filters)
         if jira:
@@ -274,6 +275,7 @@ async def _mine_reviews(repo_ids: np.ndarray,
         query = await generate_jira_prs_query(
             filters, jira, None, mdb, cache, columns=selected, seed=PullRequestReview,
             on=(PullRequestReview.pull_request_node_id, PullRequestReview.acc_id))
+        query = query.with_statement_hint("Set(join_collapse_limit 1)")
     else:
         query = select(selected).where(and_(*filters))
     return await read_sql_query(query, mdb, selected)
