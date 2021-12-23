@@ -19,7 +19,7 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql.elements import BinaryExpression
 
 from athenian.api import metadata
-from athenian.api.async_utils import gather, read_sql_query, read_sql_query_with_join_collapse
+from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached, CancelCache, short_term_exptime
 from athenian.api.controllers.logical_repos import coerce_logical_repos
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
@@ -1286,7 +1286,7 @@ class PullRequestMiner:
     @classmethod
     @sentry_span
     async def filter_jira(cls,
-                          pr_node_ids: Iterable[int],
+                          pr_node_ids: Collection[int],
                           jira: JIRAFilter,
                           meta_ids: Tuple[int, ...],
                           mdb: Database,
@@ -1296,7 +1296,8 @@ class PullRequestMiner:
         assert jira
         filters = [PullRequest.node_id.in_(pr_node_ids)]
         query = await generate_jira_prs_query(filters, jira, meta_ids, mdb, cache, columns=columns)
-        return await read_sql_query_with_join_collapse(
+        query = query.with_statement_hint(f"Rows(pr repo #{len(pr_node_ids)})")
+        return await read_sql_query(
             query, mdb, columns, index=PullRequest.node_id.name)
 
     @classmethod

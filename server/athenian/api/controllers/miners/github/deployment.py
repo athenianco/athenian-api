@@ -15,7 +15,7 @@ import sentry_sdk
 from sqlalchemy import and_, distinct, exists, func, join, not_, or_, select, union_all
 
 from athenian.api import metadata
-from athenian.api.async_utils import gather, read_sql_query, read_sql_query_with_join_collapse
+from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached, CancelCache, short_term_exptime
 from athenian.api.controllers.jira import JIRAConfig
 from athenian.api.controllers.logical_repos import drop_logical_repo
@@ -395,7 +395,8 @@ async def _filter_by_prs(df: pd.DataFrame,
             filters, jira, meta_ids, mdb, cache, columns=[PullRequest.node_id])
     else:
         query = select([PullRequest.node_id]).where(and_(*filters))
-    tasks.insert(0, read_sql_query_with_join_collapse(query, mdb, [PullRequest.node_id]))
+    query = query.with_statement_hint(f"Rows(pr repo #{len(unique_pr_node_ids)})")
+    tasks.insert(0, read_sql_query(query, mdb, [PullRequest.node_id]))
     prs_df, *label_df = await gather(*tasks, op="_filter_by_prs/sql")
     prs = prs_df[PullRequest.node_id.name].values
     if labels and not embedded_labels_query:

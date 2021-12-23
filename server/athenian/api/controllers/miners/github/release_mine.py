@@ -13,7 +13,7 @@ import sentry_sdk
 from sqlalchemy import and_, func, join, select, union_all
 
 from athenian.api import metadata
-from athenian.api.async_utils import gather, read_sql_query, read_sql_query_with_join_collapse
+from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached, CancelCache, short_term_exptime
 from athenian.api.controllers.logical_repos import coerce_logical_repos, drop_logical_repo
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
@@ -298,7 +298,8 @@ async def _mine_releases(repos: Iterable[str],
             query = await generate_jira_prs_query(
                 [PullRequest.merge_commit_id.in_(commit_ids)],
                 jira, meta_ids, mdb, cache, columns=[PullRequest.merge_commit_id])
-            tasks.append(read_sql_query_with_join_collapse(
+            query = query.with_statement_hint(f"Rows(pr repo #{len(commit_ids)})")
+            tasks.append(read_sql_query(
                 query, mdb, columns=[PullRequest.merge_commit_id]))
         prs_df, *rest = await gather(*tasks,
                                      op="mine_releases/fetch_pull_requests",
@@ -668,6 +669,7 @@ async def _filter_precomputed_release_facts_by_jira(
     query = await generate_jira_prs_query(
         [PullRequest.node_id.in_(pr_ids)],
         jira, meta_ids, mdb, cache, columns=[PullRequest.node_id])
+    query = query.with_statement_hint(f"Rows(pr repo #{len(pr_ids)})")
     release_ids = np.repeat([k[0] for k in precomputed_facts], lengths)
     release_repos = np.repeat([k[1] for k in precomputed_facts], lengths)
     release_keys = np.empty(len(release_ids), dtype=[("id", int), ("repo", release_repos.dtype)])
@@ -678,7 +680,7 @@ async def _filter_precomputed_release_facts_by_jira(
     order = np.argsort(pr_ids)
     pr_ids = pr_ids[order]
     release_keys = release_keys[order]
-    df = await read_sql_query_with_join_collapse(query, mdb, columns=[PullRequest.node_id])
+    df = await read_sql_query(query, mdb, columns=[PullRequest.node_id])
     matching_pr_ids = np.sort(df[PullRequest.node_id.name].values)
     release_keys = np.unique(release_keys[np.searchsorted(pr_ids, matching_pr_ids)])
     return {(tk := tuple(k)): precomputed_facts[tk] for k in release_keys}

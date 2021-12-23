@@ -262,7 +262,6 @@ async def _mine_reviews(repo_ids: np.ndarray,
         PullRequestReview.repository_node_id.in_(repo_ids),
     ]
     if labels:
-        # don't Set(join_collapse_limit 1) because Postgres goes crazy on EXISTS
         _filter_by_labels(PullRequestReview.acc_id, PullRequestReview.pull_request_node_id,
                           labels, filters)
         if jira:
@@ -275,7 +274,6 @@ async def _mine_reviews(repo_ids: np.ndarray,
         query = await generate_jira_prs_query(
             filters, jira, None, mdb, cache, columns=selected, seed=PullRequestReview,
             on=(PullRequestReview.pull_request_node_id, PullRequestReview.acc_id))
-        query = query.with_statement_hint("Set(join_collapse_limit 1)")
     else:
         query = select(selected).where(and_(*filters))
     return await read_sql_query(query, mdb, selected)

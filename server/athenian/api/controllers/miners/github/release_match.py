@@ -12,8 +12,7 @@ from sqlalchemy import and_, func, join, or_, select
 from sqlalchemy.sql.elements import BinaryExpression
 
 from athenian.api import metadata
-from athenian.api.async_utils import gather, postprocess_datetime, \
-    read_sql_query_with_join_collapse
+from athenian.api.async_utils import gather, postprocess_datetime, read_sql_query
 from athenian.api.cache import cached
 from athenian.api.controllers.logical_repos import coerce_logical_repos, contains_logical_repos, \
     drop_logical_repo
@@ -643,7 +642,7 @@ class ReleaseToPullRequestMapper:
         else:
             query = await generate_jira_prs_query(filters, jira, None, mdb, cache)
         query = query.order_by(PullRequest.merge_commit_sha.name)
-        prs = await read_sql_query_with_join_collapse(
+        prs = await read_sql_query(
             query, mdb, PullRequest, index=PullRequest.node_id.name)
         if prs.empty:
             return prs
