@@ -28,7 +28,7 @@ def build_days_range(time_from: datetime, time_to: datetime) -> Set[datetime]:
 
 
 def append_activity_days_filter(time_from: datetime, time_to: datetime,
-                                selected: List[InstrumentedAttribute],
+                                selected: Set[InstrumentedAttribute],
                                 filters: List[ClauseElement],
                                 activity_days_column: InstrumentedAttribute,
                                 postgres: bool) -> Set[datetime]:
@@ -37,7 +37,7 @@ def append_activity_days_filter(time_from: datetime, time_to: datetime,
     if postgres:
         filters.append(activity_days_column.overlap(list(date_range)))
     else:
-        selected.append(activity_days_column)
+        selected.add(activity_days_column)
         date_range = set(date_range)
     return date_range
 
@@ -72,7 +72,7 @@ def collect_activity_days(pr: MinedPullRequest, facts: PullRequestFacts, sqlite:
 def build_labels_filters(model: GitHubBase,
                          labels: LabelFilter,
                          filters: list,
-                         selected: list,
+                         selected: Set[InstrumentedAttribute],
                          postgres: bool) -> None:
     """Build SQL filter for labels."""
     if postgres:
@@ -86,7 +86,7 @@ def build_labels_filters(model: GitHubBase,
         if labels.exclude:
             filters.append(not_(model.labels.has_any(labels.exclude)))
     else:
-        selected.append(model.labels)
+        selected.add(model.labels)
 
 
 def labels_are_compatible(include_singles: Set[str],

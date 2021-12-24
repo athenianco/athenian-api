@@ -11,7 +11,8 @@ import morcilla
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, desc, exists, insert, join, not_, select, text, union_all, update
+from sqlalchemy import and_, desc, exists, false, insert, join, not_, select, true, union_all, \
+    update
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.sql.functions import coalesce
 
@@ -70,12 +71,13 @@ class MergedPRFactsLoader:
                                 metadata.__package__)
         ghmprf = GitHubMergedPullRequestFacts
         postgres = pdb.url.dialect == "postgresql"
-        selected = [ghmprf.pr_node_id,
-                    ghmprf.repository_full_name,
-                    ghmprf.data,
-                    ghmprf.author,
-                    ghmprf.merger,
-                    ]
+        selected = {
+            ghmprf.pr_node_id,
+            ghmprf.repository_full_name,
+            ghmprf.data,
+            ghmprf.author,
+            ghmprf.merger,
+        }
         default_version = ghmprf.__table__.columns[ghmprf.format_version.name].default.arg
         repos_by_match = defaultdict(list)
         if isinstance(prs, pd.Index):
@@ -104,7 +106,7 @@ class MergedPRFactsLoader:
         def compose_common_filters(deployed: bool):
             nonlocal selected
             my_selected = selected.copy()
-            my_selected.append(text(f"{str(deployed).lower()} AS deployed"))
+            my_selected.add([false(), true()][deployed].label("deployed"))
             filters = [
                 ghmprf.checked_until >= time_to,
                 ghmprf.format_version == default_version,
@@ -119,7 +121,7 @@ class MergedPRFactsLoader:
                 else:
                     date_range = set()
                     if not postgres:
-                        my_selected.append(ghmprf.activity_days)
+                        my_selected.add(ghmprf.activity_days)
             else:
                 date_range = set()
             if not deployed:
@@ -155,6 +157,7 @@ class MergedPRFactsLoader:
                     ghmprf.release_match == release_match,
                     *common_filters,
                 ]
+                my_selected = sorted(my_selected, key=lambda i: i.key)
                 queries.append(select(my_selected).where(and_(*filters)))
         if not queries:
             return {}
@@ -452,9 +455,11 @@ async def discover_inactive_merged_unreleased_prs(time_from: datetime,
     postgres = pdb.url.dialect == "postgresql"
     ghmprf = GitHubMergedPullRequestFacts
     ghdprf = GitHubDonePullRequestFacts
-    selected = [ghmprf.pr_node_id,
-                ghmprf.repository_full_name,
-                ghmprf.release_match]
+    selected = {
+        ghmprf.pr_node_id,
+        ghmprf.repository_full_name,
+        ghmprf.release_match,
+    }
     filters = [
         coalesce(ghdprf.pr_done_at, datetime(3000, 1, 1, tzinfo=timezone.utc)) >= time_to,
         ghmprf.repository_full_name.in_(repos),
@@ -477,6 +482,7 @@ async def discover_inactive_merged_unreleased_prs(time_from: datetime,
         ghdprf.release_match == ghmprf.release_match,
         ghdprf.pr_created_at < time_from,
     ), isouter=True)
+    selected = sorted(selected, key=lambda i: i.key)
     with sentry_sdk.start_span(op="load_inactive_merged_unreleased_prs/fetch"):
         rows = await pdb.fetch_all(
             select(selected)
@@ -494,7 +500,8 @@ async def discover_inactive_merged_unreleased_prs(time_from: datetime,
     remove_physical = set()
     for row in rows:
         dump = triage_by_release_match(
-            row[1], row[2], release_settings, default_branches, "whatever", ambiguous)
+            row[ghmprf.repository_full_name.name], row[ghmprf.release_match.name],
+            release_settings, default_branches, "whatever", ambiguous)
         if dump is None:
             continue
         # we do not care about the exact release match
@@ -502,7 +509,7 @@ async def discover_inactive_merged_unreleased_prs(time_from: datetime,
                 include_singles, include_multiples, labels.exclude,
                 row[GitHubMergedPullRequestFacts.labels.name]):
             continue
-        node_id, repo = row[0], row[1]
+        node_id, repo = row[ghmprf.pr_node_id.name], row[ghmprf.repository_full_name.name]
         if (physical_repo := drop_logical_repo(repo)) != repo and physical_repo in repos:
             remove_physical.add((node_id, physical_repo))
         result.setdefault(node_id, []).append(repo)
