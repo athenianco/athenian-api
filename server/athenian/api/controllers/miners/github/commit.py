@@ -270,7 +270,11 @@ async def fetch_repository_commits(repos: Dict[str, DAG],
     for i, repo in enumerate(unique_repos):
         required_heads = df_shas[repo_order[offsets[i]:offsets[i + 1]]]
         repo_heads[repo] = required_heads
-        hashes, vertexes, edges = repos[drop_logical_repo(repo)]
+        try:
+            hashes, vertexes, edges = repos[drop_logical_repo(repo)]
+        except KeyError:
+            # totally OK, `branches` may include repositories from other ForSet-s
+            continue
         if len(hashes) > 0:
             found_indexes = searchsorted_inrange(hashes, required_heads)
             missed_mask = hashes[found_indexes] != required_heads
