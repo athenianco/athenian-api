@@ -309,7 +309,7 @@ async def test_map_releases_to_prs_empty(
         None, None, None, prefixer, 1, (6366825,), mdb, pdb, rdb, cache)
     await wait_deferred()
     assert prs.empty
-    assert len(cache.mem) == 4
+    assert len(cache.mem) == 5
     assert len(releases) == 2
     assert set(releases[Release.sha.name]) == {
         "0d1a009cbb604db18be960db5f1525b99a55d727",
@@ -327,7 +327,7 @@ async def test_map_releases_to_prs_empty(
         }), LogicalRepositorySettings.empty(), None, None, None, prefixer,
         1, (6366825,), mdb, pdb, rdb, cache)
     assert prs.empty
-    assert len(cache.mem) == 9
+    assert len(cache.mem) == 11
     assert len(releases) == 19
     assert matched_bys == {"src-d/go-git": ReleaseMatch.branch}
 

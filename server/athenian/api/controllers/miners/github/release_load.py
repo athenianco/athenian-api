@@ -94,7 +94,7 @@ class ReleaseLoader:
         # because when the update transaction commits, we can be otherwise half-way through
         # strictly speaking, there is still no guarantee with our order, but it is enough for
         # passing the unit tests
-        tasks = [
+        spans, releases, event_releases = await gather(
             cls.fetch_precomputed_release_match_spans(match_groups, account, pdb),
             cls._fetch_precomputed_releases(
                 match_groups,
@@ -104,8 +104,7 @@ class ReleaseLoader:
             cls._fetch_release_events(
                 match_groups[ReleaseMatch.event], account, meta_ids, time_from, time_to,
                 logical_settings, prefixer, mdb, rdb, index=index),
-        ]
-        spans, releases, event_releases = await gather(*tasks)
+        )
 
         def gather_applied_matches() -> Dict[str, ReleaseMatch]:
             # nlargest(1) puts `tag` in front of `branch` for `tag_or_branch` repositories with
@@ -271,6 +270,7 @@ class ReleaseLoader:
             releases = pd.concat([releases, event_releases], copy=False)
             releases.sort_values(Release.published_at.name,
                                  inplace=True, ascending=False, ignore_index=index is None)
+        sentry_sdk.Hub.current.scope.span.description = f"{repos_count} -> {len(releases)}"
         return releases, applied_matches
 
     @classmethod
@@ -362,11 +362,9 @@ class ReleaseLoader:
             result.append(rel_matcher.match_releases_by_branch(
                 repos_by_branch, branches, default_branches, time_from, time_to, release_settings))
         result = await gather(*result)
-        result = pd.concat(result) if result else dummy_releases_df()
+        result = pd.concat(result, ignore_index=True) if result else dummy_releases_df()
         if index is not None:
             result.set_index(index, inplace=True)
-        else:
-            result.reset_index(drop=True, inplace=True)
         return result
 
     @classmethod
@@ -876,8 +874,7 @@ class ReleaseMatcher:
                 df[Release.repository_full_name.name] = repo
                 df_parts.append(df)
         if df_parts:
-            releases = pd.concat(df_parts)
-            releases.reset_index(inplace=True, drop=True)
+            releases = pd.concat(df_parts, ignore_index=True)
             names = releases[Release.name.name].values
             missing_names = np.flatnonzero(~names.astype(bool))
             names[missing_names] = releases[Release.tag.name].values[missing_names]
@@ -897,13 +894,13 @@ class ReleaseMatcher:
                                        ) -> pd.DataFrame:
         """Return the releases matched by branch."""
         assert not contains_logical_repos(repos)
-        branches = branches.take(np.where(
-            branches[Branch.repository_full_name.name].isin(repos))[0])
+        branches = branches.take(np.flatnonzero(
+            branches[Branch.repository_full_name.name].isin(repos).values))
         branches_matched = self._match_branches_by_release_settings(
             branches, default_branches, release_settings)
         if not branches_matched:
             return dummy_releases_df()
-        branches = pd.concat(branches_matched.values())
+        branches = pd.concat(branches_matched.values(), ignore_index=True)
         tasks = [
             load_branch_commit_dates(branches, self._meta_ids, self._mdb),
             fetch_precomputed_commit_history_dags(branches_matched, self._account,
@@ -951,7 +948,7 @@ class ReleaseMatcher:
             }))
         if not pseudo_releases:
             return dummy_releases_df()
-        return pd.concat(pseudo_releases, copy=False)
+        return pd.concat(pseudo_releases, ignore_index=True, copy=False)
 
     def _match_branches_by_release_settings(self,
                                             branches: pd.DataFrame,

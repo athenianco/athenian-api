@@ -8,12 +8,12 @@ import aiomcache
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, func, join, or_, select
+from sqlalchemy import and_, func, join, or_, select, union_all
 from sqlalchemy.sql.elements import BinaryExpression
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, postprocess_datetime, read_sql_query
-from athenian.api.cache import cached
+from athenian.api.cache import cached, max_exptime, middle_term_exptime
 from athenian.api.controllers.logical_repos import coerce_logical_repos, contains_logical_repos, \
     drop_logical_repo
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
@@ -24,7 +24,8 @@ from athenian.api.controllers.miners.github.dag_accelerated import extract_subda
     mark_dag_access, mark_dag_parents, searchsorted_inrange
 from athenian.api.controllers.miners.github.precomputed_prs import \
     DonePRFactsLoader, MergedPRFactsLoader, update_unreleased_prs
-from athenian.api.controllers.miners.github.release_load import dummy_releases_df, ReleaseLoader
+from athenian.api.controllers.miners.github.release_load import dummy_releases_df, \
+    group_repos_by_release_match, match_groups_to_sql, ReleaseLoader
 from athenian.api.controllers.miners.github.released_pr import index_name, new_released_prs_df, \
     release_columns
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
@@ -36,7 +37,8 @@ from athenian.api.db import add_pdb_hits, add_pdb_misses, Database, insert_or_ig
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import NodeCommit, NodeRepository, PullRequest, \
     PullRequestLabel, PushCommit, Release
-from athenian.api.models.precomputed.models import GitHubRepository
+from athenian.api.models.precomputed.models import GitHubRelease as PrecomputedRelease, \
+    GitHubRepository
 from athenian.api.tracing import sentry_span
 
 
@@ -466,10 +468,11 @@ class ReleaseToPullRequestMapper:
         # seek releases backwards until each in_time_range one has a parent
 
         # preload releases not older than 5 weeks before `time_from`
-        lookbehind_depth = time_from - timedelta(days=5 * 7)
+        lookbehind_depth = time_from - timedelta(days=3 * 31)
         # if our initial guess failed, load releases until this exponential offset
-        depth_step = timedelta(days=3 * 31)
+        depth_step = timedelta(days=6 * 31)
         # we load all previous releases when we reach this depth
+        # effectively, max 2 iterations
         lookbehind_depth_limit = time_from - timedelta(days=365)
         most_recent_time = time_from - timedelta(seconds=1)
 
@@ -513,12 +516,13 @@ class ReleaseToPullRequestMapper:
                 consistent_release_settings, logical_settings,
                 prefixer, account, meta_ids, mdb, pdb, rdb, cache),
             fetch_dags(),
-            cls._fetch_repository_first_commit_dates(
-                physical_repos, account, meta_ids, mdb, pdb, cache),
+            cls._fetch_first_release_dates(
+                physical_repos, consistent_release_settings, default_branches,
+                account, meta_ids, mdb, pdb, cache),
         )
         if extended_releases := [df for df in (releases_today, releases_previous) if not df.empty]:
             if len(extended_releases) == 2:
-                extended_releases = pd.concat(extended_releases)
+                extended_releases = pd.concat(extended_releases, ignore_index=True, copy=False)
             else:
                 extended_releases = extended_releases[0]
             dags = await fetch_repository_commits(
@@ -565,17 +569,35 @@ class ReleaseToPullRequestMapper:
                 lookbehind_depth -= depth_step
                 depth_step *= 2
                 if lookbehind_depth < lookbehind_depth_limit:
-                    lookbehind_depth = \
-                        min(repo_births[drop_logical_repo(r)] for r in not_enough_repos)
-                releases_previous_older, _ = await cls.release_loader.load_releases(
-                    existing_repos, branches, default_branches,
-                    lookbehind_depth, most_recent_time,
-                    consistent_release_settings, logical_settings,
-                    prefixer, account, meta_ids, mdb, pdb, rdb, cache)
+                    if len(not_enough_repos) < 3:
+                        lookbehind_depth = \
+                            min(repo_births[drop_logical_repo(r)] for r in not_enough_repos)
+                    else:
+                        # load releases in 3 batches to save some resources
+                        lookbehind_depth = None
+                        repo_birth_seq = sorted(
+                            (repo_births[drop_logical_repo(r)], r) for r in not_enough_repos)
+                        step = len(not_enough_repos) // 3 + 1
+                        chunks = await gather(*(cls.release_loader.load_releases(
+                            [p[1] for p in repo_birth_seq[i * step:(i + 1) * step]],
+                            branches, default_branches,
+                            repo_birth_seq[i * step][0], most_recent_time,
+                            consistent_release_settings, logical_settings,
+                            prefixer, account, meta_ids, mdb, pdb, rdb, cache)
+                            for i in range(3)))
+                        releases_previous_older = pd.concat(
+                            [c[0] for c in chunks], ignore_index=True, copy=False)
+                if lookbehind_depth is not None:
+                    releases_previous_older, _ = await cls.release_loader.load_releases(
+                        not_enough_repos, branches, default_branches,
+                        lookbehind_depth, most_recent_time,
+                        consistent_release_settings, logical_settings,
+                        prefixer, account, meta_ids, mdb, pdb, rdb, cache)
                 dags = await fetch_repository_commits(
                     dags, releases_previous_older, RELEASE_FETCH_COMMITS_COLUMNS, False,
                     account, meta_ids, mdb, pdb, cache)
-                releases_previous = pd.concat([releases_previous, releases_previous_older])
+                releases_previous = pd.concat(
+                    [releases_previous, releases_previous_older], ignore_index=True, copy=False)
 
         releases = pd.concat([releases_today, releases_in_time_range, releases_previous],
                              ignore_index=True, copy=False)
@@ -657,7 +679,68 @@ class ReleaseToPullRequestMapper:
     @classmethod
     @sentry_span
     @cached(
-        exptime=24 * 60 * 60,  # 1 day
+        exptime=middle_term_exptime,
+        serialize=pickle.dumps,
+        deserialize=pickle.loads,
+        key=lambda repos, release_settings, **_: (
+            ",".join(sorted(repos)),
+            release_settings,
+        ),
+        refresh_on_access=True,
+    )
+    async def _fetch_first_release_dates(cls,
+                                         repos: Iterable[str],
+                                         release_settings: ReleaseSettings,
+                                         default_branches: Dict[str, str],
+                                         account: int,
+                                         meta_ids: Tuple[int, ...],
+                                         mdb: Database,
+                                         pdb: Database,
+                                         cache: Optional[aiomcache.Client],
+                                         ) -> Dict[str, datetime]:
+        match_groups, _ = group_repos_by_release_match(repos, default_branches, release_settings)
+        spans, earliest_releases, repo_biths = await gather(
+            cls.release_loader.fetch_precomputed_release_match_spans(match_groups, account, pdb),
+            cls._fetch_earliest_precomputed_releases(match_groups, account, pdb),
+            cls._fetch_repository_first_commit_dates(repos, account, meta_ids, mdb, pdb, cache),
+        )
+        for key, val in repo_biths.items():
+            try:
+                span_from, span_to = spans[key][release_settings.native[key].match]
+                earliest_release = earliest_releases[key] - timedelta(seconds=1)
+            except KeyError:
+                continue
+            if val >= span_from and earliest_release < span_to:
+                repo_biths[key] = earliest_release
+        return repo_biths
+
+    @classmethod
+    @sentry_span
+    async def _fetch_earliest_precomputed_releases(
+            cls,
+            match_groups: Dict[ReleaseMatch, Dict[str, List[str]]],
+            account: int,
+            pdb: Database) -> Dict[str, datetime]:
+        prel = PrecomputedRelease
+        or_items, _ = match_groups_to_sql(match_groups, prel)
+        if not or_items:
+            return {}
+        query = union_all(*(
+            select([prel.repository_full_name, func.min(prel.published_at)])
+            .where(and_(item, prel.acc_id == account))
+            .group_by(prel.repository_full_name)
+            for item in or_items))
+        rows = await pdb.fetch_all(query)
+        result = {r[0]: r[1] for r in rows}
+        if pdb.url.dialect == "sqlite":
+            for key, val in result.items():
+                result[key] = val.replace(tzinfo=timezone.utc)
+        return result
+
+    @classmethod
+    @sentry_span
+    @cached(
+        exptime=max_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
         key=lambda repos, **_: (",".join(sorted(repos)),),
