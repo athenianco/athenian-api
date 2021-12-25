@@ -539,6 +539,7 @@ class ReleaseToPullRequestMapper:
         in_range_dates = releases_in_time_range[Release.published_at.name].values
 
         not_enough_repos = [None]
+        releases_previous_older = None
         while not_enough_repos:
             previous_shas = releases_previous[Release.sha.name].values.astype("S40")
             previous_dates = releases_previous[Release.published_at.name].values
@@ -569,25 +570,24 @@ class ReleaseToPullRequestMapper:
                 lookbehind_depth -= depth_step
                 depth_step *= 2
                 if lookbehind_depth < lookbehind_depth_limit:
-                    if len(not_enough_repos) < 3:
-                        lookbehind_depth = \
-                            min(repo_births[drop_logical_repo(r)] for r in not_enough_repos)
-                    else:
-                        # load releases in 3 batches to save some resources
-                        lookbehind_depth = None
+                    lookbehind_depth = \
+                        min(repo_births[drop_logical_repo(r)] for r in not_enough_repos)
+                    if len(not_enough_repos) >= 3:
+                        # load releases in `num_chunks` batches to save some resources
                         repo_birth_seq = sorted(
                             (repo_births[drop_logical_repo(r)], r) for r in not_enough_repos)
-                        step = len(not_enough_repos) // 3 + 1
+                        num_chunks = 3
+                        step = len(not_enough_repos) // num_chunks + 1
                         chunks = await gather(*(cls.release_loader.load_releases(
                             [p[1] for p in repo_birth_seq[i * step:(i + 1) * step]],
                             branches, default_branches,
-                            repo_birth_seq[i * step][0], most_recent_time,
-                            consistent_release_settings, logical_settings,
+                            repo_birth_seq[min(i * step, len(repo_birth_seq) - 1)][0],
+                            most_recent_time, consistent_release_settings, logical_settings,
                             prefixer, account, meta_ids, mdb, pdb, rdb, cache)
-                            for i in range(3)))
+                            for i in range(num_chunks)))
                         releases_previous_older = pd.concat(
                             [c[0] for c in chunks], ignore_index=True, copy=False)
-                if lookbehind_depth is not None:
+                if releases_previous_older is None:
                     releases_previous_older, _ = await cls.release_loader.load_releases(
                         not_enough_repos, branches, default_branches,
                         lookbehind_depth, most_recent_time,
@@ -598,6 +598,7 @@ class ReleaseToPullRequestMapper:
                     account, meta_ids, mdb, pdb, cache)
                 releases_previous = pd.concat(
                     [releases_previous, releases_previous_older], ignore_index=True, copy=False)
+                releases_previous_older = None
 
         releases = pd.concat([releases_today, releases_in_time_range, releases_previous],
                              ignore_index=True, copy=False)

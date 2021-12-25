@@ -128,8 +128,16 @@ class ReleaseSettings:
         self._coherence = dict(zip(self._map_native, self._map_prefixed))
 
     def __repr__(self) -> str:
-        """Implement repr()."""
-        return "ReleaseSettings(%r)" % self._map_prefixed
+        """Implement repr(). Sentry requires very short summaries."""
+        return f"<ReleaseSettings(...{len(self)} repositories...)>"
+
+    def __str__(self) -> str:
+        """Implement str()."""
+        return f"ReleaseSettings({repr(self._map_prefixed)})"
+
+    def __len__(self) -> int:
+        """Implement len()."""
+        return len(self._map_prefixed)
 
     def __eq__(self, other: "ReleaseSettings") -> bool:
         """Implement ==."""
