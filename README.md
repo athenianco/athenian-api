@@ -4,6 +4,8 @@ API layer to glue them all.
 Athenian API server follows the [OpenAPI 3 standard](https://github.com/OAI/OpenAPI-Specification/blob/master/versions/3.0.3.md)
 and is implemented in [aiohttp](https://github.com/aio-libs/aiohttp) (Python).
 
+![Design diagram](docs/design.svg)
+
 ### Schema
 
 The API schema is [athenianco/api-spec](https://github.com/athenianco/api-spec). You can quickly view it in [editor.swagger.io](https://editor.swagger.io/) or at [api.athenian.co/v1/ui](https://api.athenian.co/v1/ui/).
