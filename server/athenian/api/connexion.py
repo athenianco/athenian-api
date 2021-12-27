@@ -576,13 +576,17 @@ class AthenianApp(connexion.AioHttpApp):
         happen unexpected intrusions by some "clever" author of the upstream code.
         """
         if self._shutting_down:
-            return ResponseError(ServiceUnavailableError(
-                type="/errors/ShuttingDownError",
-                detail="This server is shutting down, please repeat your request.",
-            )).response
+            return self._respond_shutting_down()
 
         asyncio.current_task().set_name("entry %s %s" % (request.method, request.path))
         return await asyncio.shield(self._shielded(request, handler))
+
+    @staticmethod
+    def _respond_shutting_down() -> aiohttp.web.Response:
+        return ResponseError(ServiceUnavailableError(
+            type="/errors/ShuttingDownError",
+            detail="This server is shutting down, please repeat your request.",
+        )).response
 
     async def _shielded(self,
                         request: aiohttp.web.Request,
@@ -621,6 +625,7 @@ class AthenianApp(connexion.AioHttpApp):
 
         enable_defer(explicit_launch=not self._devenv)
         traced = self._set_request_sentry_context(request)
+        aborted = False
         try:
             return await handler(request)
         except bdb.BdbQuit:
@@ -636,7 +641,18 @@ class AthenianApp(connexion.AioHttpApp):
                 HTTPResetContent,  # 205
                 ) as e:
             raise e from None
-        except Exception as e:
+        except GeneratorExit:
+            # DEV-3413
+            # our defer context is likely broken at this point
+            self.log.error("Aborted request with force")
+            aborted = True
+            return self._respond_shutting_down()
+        except (KeyboardInterrupt, SystemExit) as e:
+            # I have never seen this happen in practice.
+            self.log.error("%s inside a request handler", type(e).__name__)
+            aborted = True
+            return self._respond_shutting_down()
+        except Exception as e:  # note: not BaseException
             if self._devenv:
                 raise e from None
             event_id = sentry_sdk.capture_exception(e)
@@ -644,13 +660,14 @@ class AthenianApp(connexion.AioHttpApp):
         finally:
             if traced:
                 self._set_stack_samples_sentry_context(request, start_time)
-            if self._devenv:
-                # block the response until we execute all the deferred coroutines
-                await wait_deferred()
-            else:
-                # execute the deferred coroutines in 100ms to not interfere with serving
-                # the parallel requests, but only if not shutting down, otherwise, immediately
-                launch_defer_from_request(0.1 * (1 - self._shutting_down), request)
+            if not aborted:
+                if self._devenv:
+                    # block the response until we execute all the deferred coroutines
+                    await wait_deferred()
+                else:
+                    # execute the deferred coroutines in 100ms to not interfere with serving
+                    # the parallel requests, but only if not shutting down, otherwise, immediately
+                    launch_defer_from_request(0.1 * (1 - self._shutting_down), request)
             self._requests -= 1
             self._load -= load + custom_load_delta
             if self._requests == 0 and self._shutting_down:
