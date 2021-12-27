@@ -165,14 +165,14 @@ def main():
             )
             log.info("Loaded %d bots", len(bots))
             if not reposet.precomputed:
-                log.info("Considering account %d as brand new, creating the Bots team",
+                log.info("Considering account %d as brand new, creating the teams",
                          reposet.owner_id)
                 try:
                     num_teams, num_bots = await create_teams(
                         reposet.owner_id, meta_ids, reposet.items, bots, prefixer,
                         sdb, mdb, pdb, rdb, cache)
                 except Exception as e:
-                    log.warning("bots %d: %s: %s", reposet.owner_id, type(e).__name__, e)
+                    log.warning("teams %d: %s: %s", reposet.owner_id, type(e).__name__, e)
                     sentry_sdk.capture_exception(e)
                     return_code = 1
                     num_teams = num_bots = 0
@@ -312,7 +312,7 @@ async def create_teams(account: int,
 
     :return: Number of copied teams and the number of noticed bots.
     """
-    num_teams = len(await copy_teams_as_needed(account, meta_ids, sdb, mdb, cache))
+    _, num_teams = await copy_teams_as_needed(account, meta_ids, sdb, mdb, cache)
     bot_team = await sdb.fetch_one(select([Team.id, Team.members])
                                    .where(and_(Team.name == Team.BOTS,
                                                Team.owner_id == account)))

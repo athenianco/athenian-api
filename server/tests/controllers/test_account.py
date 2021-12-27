@@ -52,11 +52,14 @@ async def test_match_metadata_installation(sdb, mdb, slack):
 
 @with_defer
 async def test_copy_teams_as_needed(sdb, mdb):
-    created_teams = await copy_teams_as_needed(1, (6366825,), sdb, mdb, None)
+    created_teams, n = await copy_teams_as_needed(1, (6366825,), sdb, mdb, None)
     loaded_teams = {t[Team.name.name]: t for t in await sdb.fetch_all(select([Team]))}
-    assert len(created_teams) == len(loaded_teams)
+    assert len(created_teams) == len(loaded_teams) == n
     assert loaded_teams.keys() == {
         "team", "engineering", "business", "operations", "product", "admin", "automation",
     }
     assert loaded_teams["product"][Team.members.name] == ["github.com/eiso", "github.com/warenlg"]
     assert loaded_teams["product"][Team.parent_id.name] == 1
+    created_teams, n = await copy_teams_as_needed(1, (6366825,), sdb, mdb, None)
+    assert created_teams == []
+    assert n == len(loaded_teams)
