@@ -194,11 +194,11 @@ async def copy_teams_as_needed(account: int,
                                sdb: DatabaseLike,
                                mdb: DatabaseLike,
                                cache: Optional[aiomcache.Client],
-                               ) -> List[Mapping[str, Any]]:
+                               ) -> Tuple[List[Mapping[str, Any]], int]:
     """
     Copy the teams from GitHub organization if none exist yet.
 
-    :return: List of created teams.
+    :return: <list of created teams if nothing exists>, <final number of teams>.
     """
     log = logging.getLogger("%s.create_teams_as_needed" % metadata.__package__)
     prefixer = await Prefixer.load(meta_ids, mdb, cache)
@@ -207,14 +207,14 @@ async def copy_teams_as_needed(account: int,
                                                StateTeam.name != StateTeam.BOTS)))
     if existing > 0:
         log.info("Found %d existing teams for account %d, no-op", existing, account)
-        return []
+        return [], existing
     orgs = [org.id for org in await get_account_organizations(account, sdb, mdb, cache)]
     team_rows = await mdb.fetch_all(select([MetadataTeam])
                                     .where(and_(MetadataTeam.organization_id.in_(orgs),
                                                 MetadataTeam.acc_id.in_(meta_ids))))
     if not team_rows:
         log.warning("Found 0 metadata teams for account %d", account)
-        return []
+        return [], 0
     # check for cycles - who knows?
     dig = nx.DiGraph()
     for row in team_rows:
@@ -229,7 +229,7 @@ async def copy_teams_as_needed(account: int,
         pass
     else:
         log.error("Found a metadata parent-child team reference cycle: %s", cycle)
-        return []
+        return [], 0
     teams = {t[MetadataTeam.id.name]: t for t in team_rows}
     member_rows = await mdb.fetch_all(
         select([TeamMember.parent_id, TeamMember.child_id])
@@ -265,7 +265,7 @@ async def copy_teams_as_needed(account: int,
     log.info("Created %d out of %d teams in account %d: %s",
              len(created_teams), len(team_names), account,
              [t[StateTeam.name.name] for t in created_teams])
-    return created_teams
+    return created_teams, len(created_teams)
 
 
 async def generate_jira_invitation_link(account: int, sdb: DatabaseLike) -> str:

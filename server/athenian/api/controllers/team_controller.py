@@ -265,6 +265,6 @@ async def resync_teams(request: AthenianWebRequest, id: int) -> web.Response:
         async with sdb_conn.transaction():
             await sdb_conn.execute(delete(Team).where(and_(Team.owner_id == account,
                                                            Team.name != Team.BOTS)))
-            teams = await copy_teams_as_needed(
+            teams, _ = await copy_teams_as_needed(
                 account, meta_ids, sdb_conn, request.mdb, request.cache)
     return await _list_loaded_teams(teams, account, meta_ids, request)
