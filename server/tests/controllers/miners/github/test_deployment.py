@@ -2,11 +2,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import pickle
 
+import morcilla
 import numpy as np
 import pandas as pd
 from pandas.testing import assert_frame_equal
 import pytest
-from sqlalchemy import delete, insert, select
+from sqlalchemy import and_, delete, func, insert, select
 
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.dag_accelerated import extract_independent_ownership, \
@@ -236,6 +237,19 @@ async def test_mine_deployments_middle(
     _validate_deployments(deps, 7, False)
 
 
+async def validate_deployed_prs(pdb: morcilla.Database) -> None:
+    rows = await pdb.fetch_all(
+        select([GitHubPullRequestDeployment.pull_request_id])
+        .where(and_(GitHubPullRequestDeployment.deployment_name.like("production_%"),
+                    GitHubPullRequestDeployment.deployment_name.notin_([
+                        "production_2018_01_10", "production_2018_01_12",
+                    ])))
+        .group_by(GitHubPullRequestDeployment.pull_request_id)
+        .having(func.count(GitHubPullRequestDeployment.deployment_name) > 1),
+    )
+    assert len(rows) == 0, rows
+
+
 @with_defer
 async def test_mine_deployments_append(
         sample_deployments, release_match_setting_tag_or_branch, branches, default_branches,
@@ -283,6 +297,38 @@ async def test_mine_deployments_append(
     await wait_deferred()
     assert len(deps.loc[name]["prs"]) == 0
     assert len(deps.loc[name]["releases"]) == 0
+    await validate_deployed_prs(pdb)
+
+
+@with_defer
+async def test_mine_deployments_insert_middle(
+        sample_deployments, release_match_setting_tag_or_branch, branches, default_branches,
+        prefixer, mdb, pdb, rdb, cache):
+    time_from = datetime(2018, 1, 1, tzinfo=timezone.utc)
+    time_to = datetime(2018, 12, 31, tzinfo=timezone.utc)
+    await mine_deployments(
+        [40550], {},
+        time_from, time_to,
+        ["production"],
+        [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        release_match_setting_tag_or_branch,
+        LogicalRepositorySettings.empty(),
+        branches, default_branches, prefixer,
+        1, (6366825,), mdb, pdb, rdb, cache)
+    await wait_deferred()
+    time_from = datetime(2015, 12, 31, tzinfo=timezone.utc)
+    time_to = datetime(2019, 12, 31, tzinfo=timezone.utc)
+    await mine_deployments(
+        [40550], {},
+        time_from, time_to,
+        ["production"],
+        [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        release_match_setting_tag_or_branch,
+        LogicalRepositorySettings.empty(),
+        branches, default_branches, prefixer,
+        1, (6366825,), mdb, pdb, rdb, cache)
+    await wait_deferred()
+    await validate_deployed_prs(pdb)
 
 
 @with_defer
