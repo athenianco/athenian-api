@@ -12,7 +12,7 @@ import aiomcache
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, distinct, exists, func, join, not_, or_, select, union_all
+from sqlalchemy import and_, desc, distinct, exists, func, join, not_, or_, select, union_all
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
@@ -129,13 +129,14 @@ async def mine_deployments(repo_node_ids: Collection[int],
                 full_notifications.index.values, default_branches, release_settings, account, pdb)
         else:
             full_notifications, full_components, full_facts = notifications, components, facts
-        missed_indexes = np.flatnonzero(np.in1d(
+        missed_mask = np.in1d(
             full_notifications.index.values.astype("U"), full_facts.index.values.astype("U"),
-            assume_unique=True, invert=True))
+            assume_unique=True, invert=True)
+        full_notifications = _reduce_to_missed_notifications_if_possible(
+            full_notifications, missed_mask)
         missed_facts, missed_releases = await _compute_deployment_facts(
-            full_notifications.take(missed_indexes), full_components,
-            release_settings, logical_settings, branches, default_branches,
-            prefixer, account, meta_ids, mdb, pdb, rdb, cache)
+            full_notifications, full_components, release_settings, logical_settings,
+            branches, default_branches, prefixer, account, meta_ids, mdb, pdb, rdb, cache)
         if not missed_facts.empty:
             facts = pd.concat([facts, missed_facts])
     else:
@@ -164,6 +165,33 @@ async def mine_deployments(repo_node_ids: Collection[int],
     subst.fill(pd.DataFrame())
     joined["labels"].values[no_labels] = subst
     return joined, _extract_mentioned_people(joined)
+
+
+@sentry_span
+def _reduce_to_missed_notifications_if_possible(
+        notifications: pd.DataFrame, missed_mask: np.ndarray) -> pd.DataFrame:
+    _, env_indexes, env_counts = np.unique(
+        notifications[DeploymentNotification.environment.name].values,
+        return_counts=True, return_inverse=True)
+    order = np.argsort(env_indexes)
+    effective_missed_mask = np.zeros(len(notifications), dtype=bool)
+    pos = 0
+    missed_mask = missed_mask.astype(int)
+    for size in env_counts:
+        next_pos = pos + size
+        indexes = order[pos:next_pos]
+        pos = next_pos
+        env_missed_mask = missed_mask[indexes]
+        # we order notifications by finished_at descending
+        # if there are no gaps and the missing indexes are strictly at the beginning,
+        # compute only them; otherwise, compute everything
+        if (np.diff(env_missed_mask) <= 0).all():
+            effective_missed_mask[indexes] = env_missed_mask
+        else:
+            effective_missed_mask[indexes] = True
+    if effective_missed_mask.all():
+        return notifications
+    return notifications.take(np.flatnonzero(effective_missed_mask))
 
 
 @sentry_span
@@ -459,8 +487,8 @@ async def _compute_deployment_facts(notifications: pd.DataFrame,
             account, meta_ids, mdb, pdb, rdb, cache),
     )
     facts = await _generate_deployment_facts(
-        notifications, deployed_commits_per_repo_per_env, all_mentioned_hashes, commit_stats,
-        releases, account, pdb)
+        notifications, deployed_commits_per_repo_per_env,
+        all_mentioned_hashes, commit_stats, releases, account, pdb)
     await defer(_submit_deployment_facts(facts, releases, default_branches, release_settings,
                                          account, pdb),
                 "_submit_deployment_facts")
@@ -1543,7 +1571,7 @@ async def _fetch_deployment_candidates(repo_node_ids: Collection[int],
                 *(and_(DeployedLabel.key == k, DeployedLabel.value == v)
                   for k, v in with_labels.items() if v is not None)),
         )))
-    query = query.where(and_(*filters)).order_by(DeploymentNotification.name)
+    query = query.where(and_(*filters)).order_by(desc(DeploymentNotification.finished_at))
     notifications = await read_sql_query(
         query, rdb, DeploymentNotification, index=DeploymentNotification.name.name)
     del notifications[DeploymentNotification.account_id.name]
