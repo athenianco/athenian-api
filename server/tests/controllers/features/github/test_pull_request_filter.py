@@ -615,6 +615,17 @@ async def test_filter_pull_requests_deployments(
         exclude_inactive):
     time_from = datetime(year=2019, month=6, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2019, month=12, day=1, tzinfo=timezone.utc)
+    args = [set(),
+            {PullRequestStage.WIP, PullRequestStage.REVIEWING, PullRequestStage.MERGING},
+            time_from, time_to, {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+            "production", exclude_inactive, bots, release_match_setting_tag,
+            LogicalRepositorySettings.empty(), None, None,
+            prefixer, 1, (6366825,), mdb, pdb, rdb, None]
+    # we have set `environment` but nothing has been deployed yet, will we break?
+    prs, deps = await filter_pull_requests(*args)
+    assert len(prs) == 8 if exclude_inactive else 15
+    for pr in prs:
+        assert pr.deployments is None
     await mine_deployments(
         [40550], {},
         time_from, time_to,
@@ -625,12 +636,6 @@ async def test_filter_pull_requests_deployments(
         branches, default_branches, prefixer,
         1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
-    args = [set(),
-            {PullRequestStage.WIP, PullRequestStage.REVIEWING, PullRequestStage.MERGING},
-            time_from, time_to, {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
-            "production", exclude_inactive, bots, release_match_setting_tag,
-            LogicalRepositorySettings.empty(), None, None,
-            prefixer, 1, (6366825,), mdb, pdb, rdb, None]
     prs, deps = await filter_pull_requests(*args)
     assert len(prs) == 8 if exclude_inactive else 15
     check_pr_deployments(prs, deps, 0)  # unmerged PR cannot be deployed!
