@@ -1034,10 +1034,23 @@ class EnvironmentsMarker(MetricCalculator[np.ndarray]):
                  ) -> np.ndarray:
         assert len(self.environments) <= 64
         result = np.recarray(shape=(), dtype=self.dtype)
-        result.fill((np.zeros(len(facts), dtype=np.uint64),
-                     *([[None] * len(self.environments)] * 4)))
+        finished_by_env = np.empty(len(self.environments), dtype=object)
+        counts_by_env = np.empty_like(finished_by_env)
+        conclusions_by_env = np.empty_like(finished_by_env)
+        successful_by_env = np.empty_like(finished_by_env)
+        counts_by_env.fill(np.array([], dtype=int))
+        conclusions_by_env.fill(np.array([], dtype=int))
+        successful_by_env.fill(np.array([], dtype=int))
+        finished_by_env.fill(np.array([], dtype="datetime64[s]"))
+        result.fill((
+            np.zeros(len(facts), dtype=np.uint64),
+            counts_by_env,
+            successful_by_env,
+            conclusions_by_env,
+            finished_by_env,
+        ))
         if facts.empty:
-            return np.array([], dtype=np.uint64)
+            return result
         envs = np.array(self.environments, dtype="U")
         fact_envs = facts[PullRequestFacts.f.environments].values
         all_envs = np.concatenate(fact_envs).astype("U", copy=False)
@@ -1070,10 +1083,6 @@ class EnvironmentsMarker(MetricCalculator[np.ndarray]):
         offsets = offsets[:np.argmax(offsets)]
         no_deps = lengths == 0
 
-        finished_by_env = np.empty(len(self.environments), dtype=object)
-        counts_by_env = np.empty_like(finished_by_env)
-        conclusions_by_env = np.empty_like(finished_by_env)
-        successful_by_env = np.empty_like(finished_by_env)
         successful_conclusions = all_conclusions == DeploymentConclusion.SUCCESS
         for pos, ix in enumerate(my_env_indexes[::-1], 1):
             pos = len(my_env_indexes) - pos
@@ -1095,9 +1104,7 @@ class EnvironmentsMarker(MetricCalculator[np.ndarray]):
         env_marks = np.bitwise_or.reduceat(imap, offsets)
         env_marks[no_deps[:len(env_marks)]] = 0
         env_marks = np.pad(env_marks, (0, len(lengths) - len(env_marks)))
-        result.fill((
-            env_marks, counts_by_env, successful_by_env, conclusions_by_env, finished_by_env,
-        ))
+        result.environments.item()[:] = env_marks
         return result
 
     def _value(self, samples: np.ndarray) -> EnvironmentsMarkerMetric:
