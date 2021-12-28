@@ -31,8 +31,7 @@ from athenian.api.controllers.miners.github.bots import bots as fetch_bots
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.contributors import mine_contributors
 from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_inrange
-from athenian.api.controllers.miners.github.deployment import mine_deployments, \
-    validate_deployed_prs
+from athenian.api.controllers.miners.github.deployment import mine_deployments
 from athenian.api.controllers.miners.github.precomputed_prs import \
     delete_force_push_dropped_prs
 from athenian.api.controllers.miners.github.release_mine import mine_releases
@@ -125,7 +124,6 @@ def main():
             v.set(defaultdict(int))
         sdb, mdb, pdb, rdb = await _connect_to_dbs(args)
 
-        await validate_deployed_prs(pdb, rdb, log, "before")
         nonlocal return_code
         return_code = await sync_labels(log, mdb, pdb)
         log.info("Resolving deployed references")
@@ -282,7 +280,6 @@ def main():
                                  RepositorySet.updated_at: datetime.now(timezone.utc)}))
             finally:
                 await wait_deferred()
-            await validate_deployed_prs(pdb, rdb, log, "after")
 
     async def sentry_wrapper():
         nonlocal return_code
