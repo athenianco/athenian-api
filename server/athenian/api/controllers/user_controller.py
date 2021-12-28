@@ -1,4 +1,5 @@
 import asyncio
+from datetime import timezone
 import pickle
 from typing import Optional
 
@@ -110,22 +111,33 @@ async def _get_account_jira(account: int,
 
 async def get_account_features(request: AthenianWebRequest, id: int) -> web.Response:
     """Return enabled product features for the account."""
-    async with request.sdb.connection() as conn:
-        await get_user_account_status(request.uid, id, conn, request.cache)
-        return await _get_account_features(conn, id)
+    await get_user_account_status(request.uid, id, request.sdb, request.cache)
+    return await _get_account_features(request.sdb, id)
 
 
-async def _get_account_features(conn: morcilla.Connection, id: int) -> web.Response:
-    account_features = await conn.fetch_all(
-        select([AccountFeature.feature_id, AccountFeature.parameters])
-        .where(and_(AccountFeature.account_id == id, AccountFeature.enabled)))
-    account_features = {row[0]: row[1] for row in account_features}
-    features = await conn.fetch_all(
-        select([Feature.id, Feature.name, Feature.default_parameters])
-        .where(and_(Feature.id.in_(account_features),
-                    Feature.component == FeatureComponent.webapp,
-                    Feature.enabled)))
-    features = {row[0]: [row[1], row[2]] for row in features}
+async def _get_account_features(sdb: morcilla.Database, id: int) -> web.Response:
+    async def fetch_features():
+        account_features = await sdb.fetch_all(
+            select([AccountFeature.feature_id, AccountFeature.parameters])
+            .where(and_(AccountFeature.account_id == id, AccountFeature.enabled)))
+        account_features = {row[0]: row[1] for row in account_features}
+        features = await sdb.fetch_all(
+            select([Feature.id, Feature.name, Feature.default_parameters])
+            .where(and_(Feature.id.in_(account_features),
+                        Feature.component == FeatureComponent.webapp,
+                        Feature.enabled)))
+        features = {row[0]: [row[1], row[2]] for row in features}
+        return account_features, features
+
+    async def fetch_expires_at():
+        expires_at = await sdb.fetch_val(select([DBAccount.expires_at]).where(DBAccount.id == id))
+        if sdb.url.dialect == "sqlite":
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        return expires_at
+
+    (account_features, features), expires_at = await gather(fetch_features(), fetch_expires_at())
+    features[-1] = DBAccount.expires_at.name, expires_at
+
     for k, v in account_features.items():
         try:
             fk = features[k]
@@ -150,7 +162,7 @@ async def set_account_features(request: AthenianWebRequest, id: int, body: dict)
     async with request.sdb.connection() as conn:
         await get_user_account_status(request.uid, id, conn, request.cache)
         for i, feature in enumerate(features):
-            if feature.name == "expires_at":
+            if feature.name == DBAccount.expires_at.name:
                 try:
                     expires_at = deserialize_datetime(feature.parameters)
                 except (TypeError, ValueError):
@@ -190,7 +202,7 @@ async def set_account_features(request: AthenianWebRequest, id: int, body: dict)
                     enabled=feature.parameters["enabled"],
                     parameters=feature.parameters.get("parameters"),
                 ).create_defaults().explode(with_primary_keys=True)))
-        return await _get_account_features(conn, id)
+    return await _get_account_features(request.sdb, id)
 
 
 async def become_user(request: AthenianWebRequest, id: str = "") -> web.Response:

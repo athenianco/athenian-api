@@ -11,6 +11,7 @@ from athenian.api.controllers.user_controller import get_user
 from athenian.api.models.state.models import Account as DBAccount, AccountFeature, Feature, God
 from athenian.api.models.web import Account, ProductFeature
 from athenian.api.request import AthenianWebRequest
+from athenian.api.serialization import deserialize_datetime
 from tests.conftest import disable_default_user
 
 
@@ -141,11 +142,13 @@ async def test_get_account_features_smoke(client, headers):
     )
     body = json.loads((await response.read()).decode("utf-8"))
     models = [ProductFeature.from_dict(p) for p in body]
-    assert len(models) == 2
-    assert models[0].name == "jira"
-    assert models[0].parameters == {"a": "x", "c": "d"}
-    assert models[1].name == "bare_value"
-    assert models[1].parameters == 28
+    assert len(models) == 3
+    assert models[0].name == DBAccount.expires_at.name
+    assert deserialize_datetime(models[0].parameters) > datetime.now(timezone.utc)
+    assert models[1].name == "jira"
+    assert models[1].parameters == {"a": "x", "c": "d"}
+    assert models[2].name == "bare_value"
+    assert models[2].parameters == 28
 
 
 @pytest.mark.parametrize("account, code", [[3, 404], [4, 404]])
@@ -164,7 +167,8 @@ async def test_get_account_features_disabled(client, headers, sdb):
         method="GET", path="/v1/account/1/features", headers=headers, json={},
     )
     body = json.loads((await response.read()).decode("utf-8"))
-    assert body == []
+    assert len(body) == 1
+    assert body[0]["name"] == DBAccount.expires_at.name
     await sdb.execute(update(Feature).values(
         {Feature.enabled: True, Feature.updated_at: datetime.now(timezone.utc)}))
     await sdb.execute(update(AccountFeature).values(
@@ -173,7 +177,8 @@ async def test_get_account_features_disabled(client, headers, sdb):
         method="GET", path="/v1/account/1/features", headers=headers, json={},
     )
     body = json.loads((await response.read()).decode("utf-8"))
-    assert body == []
+    assert len(body) == 1
+    assert body[0]["name"] == DBAccount.expires_at.name
 
 
 async def test_set_account_features_smoke(client, headers, god, sdb):
@@ -188,9 +193,12 @@ async def test_set_account_features_smoke(client, headers, god, sdb):
     )
     body = json.loads((await response.read()).decode("utf-8"))
     assert isinstance(body, list)
-    assert len(body) == 1
+    assert len(body) == 2
     models = [ProductFeature.from_dict(f) for f in body]
     model = models[0]
+    expires_at = deserialize_datetime(model.parameters)
+    assert expires_at.date() == date(2020, 1, 1)
+    model = models[1]
     expires_at = await sdb.fetch_val(select([DBAccount.expires_at]).where(DBAccount.id == 1))
     assert expires_at.date() == date(2020, 1, 1)
     assert model.parameters == "test"
