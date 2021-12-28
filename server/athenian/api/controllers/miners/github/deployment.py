@@ -1667,38 +1667,3 @@ async def load_jira_issues_for_deployments(deployments: pd.DataFrame,
                 prs[pri] = np.sort(np.array(release_keys, dtype="S"))
 
     return issues
-
-
-async def validate_deployed_prs(pdb: Database,
-                                rdb: Database,
-                                log: logging.Logger,
-                                context: str) -> None:
-    """Check whether all the PRs were deployed only once in each environment."""
-    prs = await read_sql_query(
-        select([GitHubPullRequestDeployment]), pdb, GitHubPullRequestDeployment)
-    dep_cols = [
-        DeploymentNotification.account_id,
-        DeploymentNotification.name,
-        DeploymentNotification.environment,
-    ]
-    deps = await read_sql_query(
-        select(dep_cols)
-        .where(DeploymentNotification.conclusion == DeploymentNotification.CONCLUSION_SUCCESS),
-        rdb, dep_cols,
-        index=[DeploymentNotification.account_id.name, DeploymentNotification.name.name])
-    df = prs.join(
-        deps, how="inner",
-        on=[GitHubPullRequestDeployment.acc_id.name,
-            GitHubPullRequestDeployment.deployment_name.name])
-    pr_env_deps = df.groupby([
-        GitHubPullRequestDeployment.acc_id.name,
-        GitHubPullRequestDeployment.pull_request_id.name,
-        DeploymentNotification.environment.name,
-    ], sort=False).count()
-    failures = np.flatnonzero(
-        pr_env_deps[GitHubPullRequestDeployment.repository_id.name].values > 1)
-    if len(failures) > 0:
-        log.error("%s: ambiguous deployments in %d pr-environment pairs:\n%s",
-                  context,
-                  len(failures),
-                  pr_env_deps.index.take(failures).to_frame(index=False).to_csv())
