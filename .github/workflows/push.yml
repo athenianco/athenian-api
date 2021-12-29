@@ -52,6 +52,9 @@ jobs:
     - name: semgrep security
       working-directory: server
       run: semgrep --config p/r2c-security-audit --severity ERROR --disable-version-check --error
+    - name: semgrep custom
+      working-directory: server
+      run: semgrep --config semgrep.yaml --severity ERROR --disable-version-check --error
   custom_checks:
     name: custom checks
     if: "!contains(github.event.head_commit.message, 'Bump version') || github.event_name != 'push'"

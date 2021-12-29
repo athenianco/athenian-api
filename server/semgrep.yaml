@@ -1,0 +1,8 @@
+rules:
+- id: python-no-debug-pickles
+  pattern: |
+    with open("...", "wb") as $FOBJ:
+        pickle.dump(..., $FOBJ, ...)
+  message: Remove debugging pickles
+  languages: [python3]
+  severity: ERROR
