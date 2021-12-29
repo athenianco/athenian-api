@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from itertools import chain
 import logging
 import pickle
-from typing import Collection, Optional, Tuple
+from typing import Collection, Optional, Tuple, Union
 import warnings
 
 import aiomcache
@@ -16,9 +16,13 @@ from athenian.api.async_utils import gather, read_sql_query, read_sql_query_with
 from athenian.api.cache import cached, CancelCache, short_term_exptime
 from athenian.api.controllers.features.github.check_run_metrics_accelerated import \
     mark_check_suite_types
+from athenian.api.controllers.logical_repos import coerce_logical_repos, contains_logical_repos
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.controllers.miners.github.label import fetch_labels_to_filter
+from athenian.api.controllers.miners.github.logical import split_logical_repositories
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
+from athenian.api.controllers.settings import LogicalRepositorySettings
 from athenian.api.db import Database, DatabaseLike
 from athenian.api.int_to_str import int_to_str
 from athenian.api.models.metadata.github import CheckRun, CheckRunByPR, NodePullRequest, \
@@ -31,6 +35,7 @@ check_suite_completed_column = "check_suite_completed"
 pull_request_started_column = "pull_request_" + NodePullRequest.created_at.name
 pull_request_closed_column = "pull_request_" + NodePullRequest.closed_at.name
 pull_request_merged_column = "pull_request_" + NodePullRequest.merged.name
+pull_request_title_column = "pull_request_" + NodePullRequest.title.name
 
 
 async def mine_check_runs(time_from: datetime,
@@ -40,6 +45,7 @@ async def mine_check_runs(time_from: datetime,
                           labels: LabelFilter,
                           jira: JIRAFilter,
                           only_prs: bool,
+                          logical_settings: LogicalRepositorySettings,
                           meta_ids: Tuple[int, ...],
                           mdb: DatabaseLike,
                           cache: Optional[aiomcache.Client],
@@ -55,17 +61,15 @@ async def mine_check_runs(time_from: datetime,
 
     :param time_from: Check runs must start later than this time.
     :param time_to: Check runs must start earlier than this time.
-    :param repositories: Look for check runs in these repository names.
+    :param repositories: Look for check runs in these repository names (without prefix).
     :param pushers: Check runs must link to the commits with the given pusher logins.
     :param labels: Check runs must link to PRs marked with these labels.
     :param jira: Check runs must link to PRs satisfying this JIRA filter.
-    :param erase_quick_check_run_completed_ats: If the median of a check run type execution time \
-        is less than or equal to 8s (we calculated this threshold by analyzing the available data)\
-        we set `completed_at` to NaT for all check runs of that type. See DEV-3155.
     :return: Pandas DataFrame with columns mapped from CheckRun model.
     """
     df, _ = await _mine_check_runs(
-        time_from, time_to, repositories, pushers, labels, jira, only_prs, meta_ids, mdb, cache)
+        time_from, time_to, repositories, pushers, labels, jira, only_prs, logical_settings,
+        meta_ids, mdb, cache)
     return df
 
 
@@ -86,13 +90,14 @@ def _postprocess_only_prs(result: Tuple[pd.DataFrame, bool],
     exptime=short_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda time_from, time_to, repositories, pushers, labels, jira, **_:  # noqa
+    key=lambda time_from, time_to, repositories, pushers, labels, jira, logical_settings, **_:  # noqa
     (
         time_from.timestamp(), time_to.timestamp(),
         ",".join(sorted(repositories)),
         ",".join(sorted(pushers)),
         labels,
         jira,
+        logical_settings,
     ),
     postprocess=_postprocess_only_prs,
 )
@@ -103,6 +108,7 @@ async def _mine_check_runs(time_from: datetime,
                            labels: LabelFilter,
                            jira: JIRAFilter,
                            only_prs: bool,
+                           logical_settings: LogicalRepositorySettings,
                            meta_ids: Tuple[int, ...],
                            mdb: DatabaseLike,
                            cache: Optional[aiomcache.Client],
@@ -110,10 +116,12 @@ async def _mine_check_runs(time_from: datetime,
     log = logging.getLogger(f"{metadata.__package__}.mine_check_runs")
     assert time_from.tzinfo is not None
     assert time_to.tzinfo is not None
+    coerced_repositories = coerce_logical_repos(repositories)
+    with_logical_repos = contains_logical_repos(repositories)
     repo_nodes = [r[0] for r in await mdb.fetch_all(
         select([NodeRepository.id])
         .where(and_(NodeRepository.acc_id.in_(meta_ids),
-                    NodeRepository.name_with_owner.in_(repositories))))]
+                    NodeRepository.name_with_owner.in_(coerced_repositories))))]
     filters = [
         CheckRun.acc_id.in_(meta_ids),
         CheckRun.started_at.between(time_from, time_to),
@@ -121,9 +129,10 @@ async def _mine_check_runs(time_from: datetime,
             time_from - timedelta(days=14), time_to + timedelta(days=1)),
         CheckRun.repository_node_id.in_(repo_nodes),
     ]
-    # Postgres planner begins to suck at guessing the number of records here => terrible perf
+    # Postgres planner sucks at guessing the number of records here => terrible perf
     # if only_prs:
     #     filters.append(CheckRun.pull_request_node_id.isnot(None))
+    # TODO(vmarkovtsev): hints should mitigate this problem
     if pushers:
         filters.append(CheckRun.author_login.in_(pushers))
     if labels:
@@ -167,7 +176,7 @@ async def _mine_check_runs(time_from: datetime,
         df, time_from, time_to, labels, embedded_labels_query, meta_ids, mdb)
 
     # the same check runs / suites may attach to different PRs, fix that
-    df = await _disambiguate_pull_requests(df, log, meta_ids, mdb)
+    df, *pr_labels = await _disambiguate_pull_requests(df, with_logical_repos, log, meta_ids, mdb)
 
     if only_prs:
         # we don't filter this in SQL (see above) so have to carve the result in code
@@ -191,15 +200,25 @@ async def _mine_check_runs(time_from: datetime,
 
     _postprocess_check_runs(df)
 
+    if with_logical_repos:
+        df = split_logical_repositories(
+            df, *pr_labels, repositories, logical_settings, reindex=False, reset_index=False,
+            repo_column=CheckRun.repository_full_name.name,
+            id_column=CheckRun.pull_request_node_id.name,
+            title_column=pull_request_title_column)
+        df.reset_index(inplace=True, drop=True)
+
     return df, only_prs
 
 
 @sentry_span
 async def _disambiguate_pull_requests(df: pd.DataFrame,
+                                      with_logical_repo_support: bool,
                                       log: logging.Logger,
                                       meta_ids: Tuple[int, ...],
                                       mdb: Database,
-                                      ) -> pd.DataFrame:
+                                      ) -> Union[Tuple[pd.DataFrame],
+                                                 Tuple[pd.DataFrame, pd.DataFrame]]:
     pr_node_ids = df[CheckRun.pull_request_node_id.name].values
     check_run_node_ids = df[CheckRun.check_run_node_id.name].values.astype(int, copy=False)
     unique_node_ids, node_id_counts = np.unique(check_run_node_ids, return_counts=True)
@@ -219,12 +238,14 @@ async def _disambiguate_pull_requests(df: pd.DataFrame,
     # we need all PR lifetimes to check explicit_node_id_indexes
     pr_cols = [NodePullRequest.id, NodePullRequest.author_id, NodePullRequest.merged,
                NodePullRequest.created_at, NodePullRequest.closed_at]
-    pr_lifetimes, pr_commit_counts = await gather(
+    if with_logical_repo_support:
+        pr_cols.append(NodePullRequest.title)
+    unique_pr_ids = np.unique(pr_node_ids[np.not_equal(pr_node_ids, None)])
+    pr_lifetimes, pr_commit_counts, *pr_labels = await gather(
         read_sql_query(
             select(pr_cols)
             .where(and_(NodePullRequest.acc_id.in_(meta_ids),
-                        NodePullRequest.id.in_any_values(
-                            np.unique(pr_node_ids[np.not_equal(pr_node_ids, None)])))),
+                        NodePullRequest.id.in_any_values(unique_pr_ids))),
             mdb, pr_cols, index=NodePullRequest.id.name),
         read_sql_query(
             select([NodePullRequestCommit.pull_request_id,
@@ -235,12 +256,10 @@ async def _disambiguate_pull_requests(df: pd.DataFrame,
             .group_by(NodePullRequestCommit.pull_request_id),
             mdb, [NodePullRequestCommit.pull_request_id.name, "count"],
             index=NodePullRequestCommit.pull_request_id.name),
+        *([fetch_labels_to_filter(unique_pr_ids, meta_ids, mdb)]
+          if with_logical_repo_support else []),
     )
     del unique_ambiguous_pr_node_ids
-    with open("/tmp/pr_lifetimes.pickle", "wb") as fout:
-        pickle.dump(pr_lifetimes, fout)
-    with open("/tmp/pr_commit_counts.pickle", "wb") as fout:
-        pickle.dump(pr_commit_counts, fout)
     pr_lifetimes[NodePullRequest.closed_at.name].fillna(
         datetime.now(timezone.utc), inplace=True)
     df = df.join(
@@ -248,23 +267,27 @@ async def _disambiguate_pull_requests(df: pd.DataFrame,
             NodePullRequest.created_at.name,
             NodePullRequest.closed_at.name,
             NodePullRequest.merged.name,
-        ]],
+        ] + ([NodePullRequest.title.name] if with_logical_repo_support else [])],
         on=CheckRun.pull_request_node_id.name)
     df.rename(columns={
         NodePullRequest.created_at.name: pull_request_started_column,
         NodePullRequest.closed_at.name: pull_request_closed_column,
         NodePullRequest.merged.name: pull_request_merged_column,
+        **({NodePullRequest.title.name: pull_request_title_column}
+           if with_logical_repo_support else {}),
     }, inplace=True)
     df[pull_request_merged_column].fillna(False, inplace=True)
+    if with_logical_repo_support:
+        df[pull_request_title_column].fillna("", inplace=True)
 
     # do not let different check runs belonging to the same suite map to different PRs
     _calculate_check_suite_started(df)
     try:
         check_runs_outside_pr_lifetime_indexes = \
-            np.nonzero(~df[check_suite_started_column].between(
+            np.flatnonzero(~df[check_suite_started_column].between(
                 df[pull_request_started_column],
                 df[pull_request_closed_column] + timedelta(hours=1),
-            ).values)[0]
+            ).values)
     except TypeError:
         # "Cannot compare tz-naive and tz-aware datetime-like objects"
         # all the timestamps are NAT-s
@@ -355,7 +378,7 @@ async def _disambiguate_pull_requests(df: pd.DataFrame,
     pr_node_ids[np.equal(pr_node_ids, None)] = 0
     df[CheckRun.pull_request_node_id.name] = pr_node_ids.astype(int, copy=False)
 
-    return df
+    return df, *pr_labels
 
 
 @sentry_span

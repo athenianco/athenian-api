@@ -726,7 +726,7 @@ async def _load_prs_by_merge_commit_ids(commit_ids: Sequence[str],
     else:
         df_labels = None
     df_prs = split_logical_repositories(
-        df_prs, df_labels, repos, logical_settings, set_index=False)
+        df_prs, df_labels, repos, logical_settings, reindex=False)
     if has_logical_prs:
         df_prs.sort_values(
             [PullRequest.merge_commit_id.name, PullRequest.repository_full_name.name],

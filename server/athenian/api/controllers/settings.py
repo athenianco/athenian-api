@@ -19,7 +19,7 @@ from athenian.api.controllers.logical_repos import coerce_logical_repos, \
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.reposet import resolve_repos
 from athenian.api.db import Database, DatabaseLike
-from athenian.api.models.metadata.github import PullRequest, PullRequestLabel
+from athenian.api.models.metadata.github import PullRequestLabel
 from athenian.api.models.state.models import LogicalRepository, ReleaseSetting
 from athenian.api.models.web import InvalidRequestError, MissingSettingsError, ReleaseMatchStrategy
 from athenian.api.request import AthenianWebRequest
@@ -268,6 +268,8 @@ class LogicalPRSettings:
               prs: pd.DataFrame,
               labels: pd.DataFrame,
               pr_indexes: Sequence[int],
+              id_column: str,
+              title_column: str,
               ) -> Dict[str, List[int]]:
         """
         Map PRs to logical repositories.
@@ -280,7 +282,7 @@ class LogicalPRSettings:
         assert isinstance(prs, pd.DataFrame)
         assert isinstance(labels, pd.DataFrame)
         matched = {}
-        titles = prs[PullRequest.title.name].values
+        titles = prs[title_column].values
         if len(pr_indexes):
             titles = titles[pr_indexes]
         else:
@@ -295,7 +297,7 @@ class LogicalPRSettings:
             matched[repo] = found
         if not labels.empty and self.has_labels:
             matched_by_label = defaultdict(list)
-            pr_ids = prs[PullRequest.node_id.name].values[pr_indexes]
+            pr_ids = prs[id_column].values[pr_indexes]
             order = np.argsort(pr_ids)
             pr_ids = pr_ids[order]
             label_pr_ids = labels.index.get_level_values(0).values

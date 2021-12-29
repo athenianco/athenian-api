@@ -630,12 +630,13 @@ async def _load_failed_check_runs_for_prs(time_from: datetime,
                                           repos: Collection[str],
                                           labels: LabelFilter,
                                           jira: JIRAFilter,
+                                          logical_settings: LogicalRepositorySettings,
                                           meta_ids: Tuple[int, ...],
                                           mdb: Database,
                                           cache: Optional[aiomcache.Client],
                                           ) -> Tuple[np.ndarray, List[np.ndarray]]:
     df = await mine_check_runs(
-        time_from, time_to, repos, [], labels, jira, True, meta_ids, mdb, cache)
+        time_from, time_to, repos, [], labels, jira, True, logical_settings, meta_ids, mdb, cache)
     index, pull_requests, failure_mask = \
         MergedPRsWithFailedChecksCounter.find_prs_merged_with_failed_check_runs(df)
     check_run_names = df[CheckRun.name.name].values[index.values]
@@ -734,7 +735,7 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
         assert updated_max is None
     check_runs_task = asyncio.create_task(_load_failed_check_runs_for_prs(
         updated_min or time_from, updated_max or time_to,
-        repos, labels, jira, meta_ids, mdb, cache))
+        repos, labels, jira, logical_settings, meta_ids, mdb, cache))
     environments_task = asyncio.create_task(fetch_repository_environments(
         repos, prefixer, account, rdb, cache))
     branches, default_branches = await BranchMiner.extract_branches(
@@ -966,7 +967,8 @@ async def _fetch_pull_requests(prs: Dict[str, Set[int]],
         check_runs_task = asyncio.create_task(_load_failed_check_runs_for_prs(
             prs_df[PullRequest.created_at.name].min() - timedelta(hours=1),
             max_merged_at + timedelta(days=1),
-            prs.keys(), LabelFilter.empty(), JIRAFilter.empty(), meta_ids, mdb, cache))
+            prs.keys(), LabelFilter.empty(), JIRAFilter.empty(),
+            logical_settings, meta_ids, mdb, cache))
     else:
         check_runs_task = None
     unwrapped = await unwrap_pull_requests(

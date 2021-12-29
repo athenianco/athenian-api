@@ -2193,6 +2193,40 @@ async def test_code_check_metrics_nasty_input(client, headers, account, repos, m
     assert response.status == code, "Response body is : " + body
 
 
+async def test_code_check_metrics_logical_repos(client, headers, logical_settings_db):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "for": [{
+            "repositories": ["github.com/src-d/go-git/alpha"],
+            "pushers": ["github.com/mcuadros"],
+        }],
+        "metrics": [CodeCheckMetricID.SUITES_COUNT],
+        "granularities": ["all"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/code_checks", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 200, rbody
+    rbody = json.loads(rbody)
+    model = CalculatedCodeCheckMetrics.from_dict(rbody)
+    assert model.to_dict() == {
+        "calculated": [{"for": {"pushers": ["github.com/mcuadros"],
+                                "repositories": ["github.com/src-d/go-git/alpha"]},
+                        "granularity": "all",
+                        "values": [{"date": date(2018, 1, 12),
+                                    "values": [81]}]}],
+        "date_from": date(2018, 1, 12),
+        "date_to": date(2020, 3, 1),
+        "granularities": ["all"],
+        "metrics": ["chk-suites-count"],
+        "split_by_check_runs": None,
+        "timezone": None,
+    }
+
+
 async def test_deployment_metrics_smoke(client, headers, sample_deployments):
     body = {
         "account": 1,

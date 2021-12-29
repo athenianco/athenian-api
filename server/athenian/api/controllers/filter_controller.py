@@ -699,7 +699,7 @@ async def filter_code_checks(request: AthenianWebRequest, body: dict) -> web.Res
     except ValueError as e:
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError("?", detail=str(e)))
-    (time_from, time_to, repos, meta_ids, prefixer, _), jira_ids = await gather(
+    (time_from, time_to, repos, meta_ids, prefixer, logical_settings), jira_ids = await gather(
         _common_filter_preprocess(filt, request, strip_prefix=True),
         get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
     )
@@ -707,11 +707,11 @@ async def filter_code_checks(request: AthenianWebRequest, body: dict) -> web.Res
         time_from, time_to, repos, {d.rsplit("/", 1)[1] for d in (filt.triggered_by or [])},
         LabelFilter.from_iterables(filt.labels_include, filt.labels_exclude),
         JIRAFilter.from_web(filt.jira, jira_ids), filt.quantiles or [0, 1],
-        meta_ids, request.mdb, request.cache)
+        logical_settings, meta_ids, request.mdb, request.cache)
     model = FilteredCodeCheckRuns(timeline=timeline, items=[
         FilteredCodeCheckRun(
             title=cr.title,
-            repository=prefixer.repo_name_to_prefixed_name[cr.repository],
+            repository=prefixer.prefix_logical_repo(cr.repository),
             last_execution_time=cr.last_execution_time,
             last_execution_url=cr.last_execution_url,
             size_groups=cr.size_groups,
