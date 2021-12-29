@@ -641,7 +641,8 @@ async def calc_metrics_code_checks(request: AthenianWebRequest, body: dict) -> w
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError("?", detail=str(e)))
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
-    filters, _, _ = await compile_filters_checks(filt.for_, request, filt.account, meta_ids)
+    filters, _, logical_settings = await compile_filters_checks(
+        filt.for_, request, filt.account, meta_ids)
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
     met = CalculatedCodeCheckMetrics()
@@ -662,7 +663,7 @@ async def calc_metrics_code_checks(request: AthenianWebRequest, body: dict) -> w
         metric_values, group_suite_counts, suite_sizes = \
             await calculator.calc_check_run_metrics_line_github(
                 filt.metrics, time_intervals, filt.quantiles or (0, 1),
-                repos, pusher_groups, filt.split_by_check_runs, labels, jira)
+                repos, pusher_groups, filt.split_by_check_runs, labels, jira, logical_settings)
         mrange = range(len(met.metrics))
         for pushers_group_index, pushers_group in enumerate(metric_values):
             for repos_group_index, repos_group in enumerate(pushers_group):

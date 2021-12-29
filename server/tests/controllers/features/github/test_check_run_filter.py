@@ -14,12 +14,13 @@ def td_list(items: List[Optional[int]]) -> List[timedelta]:
     return [(x if x is None else timedelta(seconds=x)) for x in items]
 
 
-async def test_filter_check_runs_monthly_quantiles(mdb):
+async def test_filter_check_runs_monthly_quantiles(mdb, logical_settings):
     timeline, items = await filter_check_runs(
         datetime(2015, 1, 1, tzinfo=timezone.utc),
         datetime(2020, 1, 1, tzinfo=timezone.utc),
         ["src-d/go-git"], [],
-        LabelFilter.empty(), JIRAFilter.empty(), [0, 0.95], (6366825,), mdb, None)
+        LabelFilter.empty(), JIRAFilter.empty(), [0, 0.95],
+        logical_settings, (6366825,), mdb, None)
     assert len(timeline) == len(set(timeline)) == 61
     assert len(items) == 9
     assert items[0] == CodeCheckRunListItem(
@@ -84,44 +85,60 @@ async def test_filter_check_runs_monthly_quantiles(mdb):
     )
 
 
-async def test_filter_check_runs_daily(mdb):
+async def test_filter_check_runs_daily(mdb, logical_settings):
     timeline, items = await filter_check_runs(
         datetime(2018, 2, 1, tzinfo=timezone.utc), datetime(2018, 2, 12, tzinfo=timezone.utc),
         ["src-d/go-git"], [],
-        LabelFilter.empty(), JIRAFilter.empty(), [0, 1], (6366825,), mdb, None)
+        LabelFilter.empty(), JIRAFilter.empty(), [0, 1],
+        logical_settings, (6366825,), mdb, None)
     assert len(timeline) == len(set(timeline)) == 12
     assert len(items) == 7
 
 
-async def test_filter_check_runs_empty(mdb):
+async def test_filter_check_runs_empty(mdb, logical_settings):
     timeline, items = await filter_check_runs(
         datetime(2018, 2, 1, tzinfo=timezone.utc), datetime(2018, 2, 12, tzinfo=timezone.utc),
         ["src-d/go-git"], ["xxx"],
-        LabelFilter.empty(), JIRAFilter.empty(), [0, 1], (6366825,), mdb, None)
+        LabelFilter.empty(), JIRAFilter.empty(), [0, 1],
+        logical_settings, (6366825,), mdb, None)
     assert len(timeline) == len(set(timeline)) == 12
     assert len(items) == 0
 
 
 @with_defer
-async def test_filter_check_runs_cache(mdb, cache):
+async def test_filter_check_runs_cache(mdb, cache, logical_settings):
     timeline1, items1 = await filter_check_runs(
         datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
         ["src-d/go-git"], [],
-        LabelFilter.empty(), JIRAFilter.empty(), [0, 0.95], (6366825,), mdb, cache)
+        LabelFilter.empty(), JIRAFilter.empty(), [0, 0.95],
+        logical_settings, (6366825,), mdb, cache)
     await wait_deferred()
     timeline2, items2 = await filter_check_runs(
         datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
         ["src-d/go-git"], [],
-        LabelFilter.empty(), JIRAFilter.empty(), [0, 0.95], (6366825,), None, cache)
+        LabelFilter.empty(), JIRAFilter.empty(), [0, 0.95],
+        logical_settings, (6366825,), None, cache)
     assert timeline1 == timeline2
     assert items1 == items2
     timeline2, items2 = await filter_check_runs(
         datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
         ["src-d/go-git"], [],
-        LabelFilter.empty(), JIRAFilter.empty(), [0, 0.05], (6366825,), None, cache)
+        LabelFilter.empty(), JIRAFilter.empty(), [0, 0.05],
+        logical_settings, (6366825,), None, cache)
     assert items1 != items2
     with pytest.raises(Exception):
         await filter_check_runs(
             datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 2, tzinfo=timezone.utc),
             ["src-d/go-git"], [],
-            LabelFilter.empty(), JIRAFilter.empty(), [0, 0.95], (6366825,), None, cache)
+            LabelFilter.empty(), JIRAFilter.empty(), [0, 0.95],
+            logical_settings, (6366825,), None, cache)
+
+
+async def test_filter_check_runs_logical_repos(mdb, logical_settings):
+    timeline, items = await filter_check_runs(
+        datetime(2016, 2, 1, tzinfo=timezone.utc), datetime(2018, 2, 12, tzinfo=timezone.utc),
+        ["src-d/go-git/alpha"], [],
+        LabelFilter.empty(), JIRAFilter.empty(), [0, 1],
+        logical_settings, (6366825,), mdb, None)
+    assert len(timeline) == len(set(timeline)) == 26
+    assert len(items) == 8

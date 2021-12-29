@@ -11,6 +11,7 @@ from athenian.api.controllers.features.github.check_run_metrics_accelerated impo
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.check_run import _postprocess_check_runs, \
     _split_duplicate_check_runs, mine_check_runs
+from athenian.api.controllers.settings import LogicalRepositorySettings
 from athenian.api.int_to_str import int_to_str
 from athenian.api.models.metadata.github import CheckRun
 
@@ -35,10 +36,11 @@ from athenian.api.models.metadata.github import CheckRun
     (datetime(2015, 10, 10, tzinfo=timezone.utc), datetime(2015, 10, 23, tzinfo=timezone.utc),
      ["src-d/go-git"], [], LabelFilter.empty(), JIRAFilter.empty(), 4),
 ])
-async def test_check_run_smoke(mdb, time_from, time_to, repositories, pushers, labels, jira, size):
+async def test_check_run_smoke(
+        mdb, time_from, time_to, repositories, pushers, labels, jira, size, logical_settings):
     df = await mine_check_runs(
         time_from, time_to, repositories, pushers, labels, jira, False,
-        (6366825,), mdb, None)
+        logical_settings, (6366825,), mdb, None)
     assert len(df) == size
     for col in CheckRun.__table__.columns:
         if col.name not in (CheckRun.committed_date_hack.name,):
@@ -50,11 +52,53 @@ async def test_check_run_smoke(mdb, time_from, time_to, repositories, pushers, l
     (datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc), 2766),
     (datetime(2018, 1, 1, tzinfo=timezone.utc), datetime(2019, 1, 1, tzinfo=timezone.utc), 1068),
 ])
-async def test_check_run_only_prs(mdb, time_from, time_to, size):
+async def test_check_run_only_prs(mdb, time_from, time_to, size, logical_settings):
     df = await mine_check_runs(
         time_from, time_to, ["src-d/go-git"], [], LabelFilter.empty(), JIRAFilter.empty(),
-        True, (6366825,), mdb, None)
+        True, logical_settings, (6366825,), mdb, None)
     assert (df[CheckRun.pull_request_node_id.name].values != 0).all()
+    assert len(df) == size
+
+
+@pytest.mark.parametrize("repos, size", [
+    (["src-d/go-git", "src-d/go-git/alpha", "src-d/go-git/beta"], 4662),
+    (["src-d/go-git", "src-d/go-git/alpha"], 3922),
+    (["src-d/go-git", "src-d/go-git/beta"], 3766),
+    (["src-d/go-git"], 4581),
+    (["src-d/go-git/alpha"], 896),
+])
+async def test_check_run_logical_repos_title(
+        mdb, logical_settings, repos, size):
+    df = await mine_check_runs(
+        datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
+        repos, [], LabelFilter.empty(), JIRAFilter.empty(),
+        False, logical_settings, (6366825,), mdb, None)
+    assert set(df[CheckRun.repository_full_name.name].unique()) == set(repos)
+    assert len(df) == size
+
+
+@pytest.fixture(scope="session")
+def logical_settings_mixed():
+    return LogicalRepositorySettings({
+        "src-d/go-git/alpha": {"labels": ["bug", "enhancement"]},
+        "src-d/go-git/beta": {"title": ".*[Aa]dd"},
+    }, {})
+
+
+@pytest.mark.parametrize("repos, size", [
+    (["src-d/go-git", "src-d/go-git/alpha", "src-d/go-git/beta"], 4581),
+    (["src-d/go-git", "src-d/go-git/alpha"], 3841),
+    (["src-d/go-git", "src-d/go-git/beta"], 4572),
+    (["src-d/go-git"], 4581),
+    (["src-d/go-git/alpha"], 9),
+])
+async def test_check_run_logical_repos_label(
+        mdb, logical_settings_mixed, repos, size):
+    df = await mine_check_runs(
+        datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
+        repos, [], LabelFilter.empty(), JIRAFilter.empty(),
+        False, logical_settings_mixed, (6366825,), mdb, None)
+    assert set(df[CheckRun.repository_full_name.name].unique()) == set(repos)
     assert len(df) == size
 
 

@@ -2292,6 +2292,22 @@ async def test_filter_check_runs_filters(client, headers, filters, count):
     assert len(check_runs.items) == count
 
 
+async def test_filter_check_runs_logical_repos(client, headers, logical_settings_db):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-01-12",
+        "timezone": 60,
+        "in": ["github.com/src-d/go-git/alpha"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/code_checks", headers=headers, json=body)
+    response_text = (await response.read()).decode("utf-8")
+    assert response.status == 200, response_text
+    check_runs = FilteredCodeCheckRuns.from_dict(json.loads(response_text))
+    assert len(check_runs.items) == 7
+
+
 @pytest.mark.parametrize("account, date_to, repo, quantiles, status", [
     (2, "2020-01-11", "github.com/src-d/go-git", [0, 1], 422),
     (3, "2020-01-11", "github.com/src-d/go-git", [0, 1], 404),

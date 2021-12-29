@@ -103,7 +103,8 @@ async def calc_histogram_code_checks(request: AthenianWebRequest, body: dict) ->
         # for example, passing a date with day=32
         return ResponseError(InvalidRequestError("?", detail=str(e))).response
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
-    filters, _, _ = await compile_filters_checks(filt.for_, request, filt.account, meta_ids)
+    filters, _, logical_settings = await compile_filters_checks(
+        filt.for_, request, filt.account, meta_ids)
     time_from, time_to = filt.resolve_time_from_and_to()
     calculators = await get_calculators_for_request(
         {s for s, _ in filters}, filt.account, meta_ids, request)
@@ -122,7 +123,7 @@ async def calc_histogram_code_checks(request: AthenianWebRequest, body: dict) ->
             histograms, group_suite_counts, suite_sizes = \
                 await calculator.calc_check_run_histograms_line_github(
                     defs, time_from, time_to, filt.quantiles or (0, 1), repos, pusher_groups,
-                    filt.split_by_check_runs, labels, jira)
+                    filt.split_by_check_runs, labels, jira, logical_settings)
         except ValueError as e:
             raise ResponseError(InvalidRequestError(pointer="?", detail=str(e))) from None
         for pusher_groups in histograms:

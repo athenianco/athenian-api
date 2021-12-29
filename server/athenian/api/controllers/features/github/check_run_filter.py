@@ -14,6 +14,7 @@ from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.check_run import check_suite_completed_column, \
     mine_check_runs
 from athenian.api.controllers.miners.types import CodeCheckRunListItem, CodeCheckRunListStats
+from athenian.api.controllers.settings import LogicalRepositorySettings
 from athenian.api.db import DatabaseLike
 from athenian.api.models.metadata.github import CheckRun
 from athenian.api.tracing import sentry_span
@@ -24,7 +25,7 @@ from athenian.api.tracing import sentry_span
     exptime=short_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda time_from, time_to, repositories, pushers, labels, jira, quantiles, **_:
+    key=lambda time_from, time_to, repositories, pushers, labels, jira, quantiles, logical_settings, **_:  # noqa
     (
         time_from.timestamp(), time_to.timestamp(),
         ",".join(sorted(repositories)),
@@ -32,6 +33,7 @@ from athenian.api.tracing import sentry_span
         labels,
         jira,
         "%s,%s" % tuple(quantiles),
+        logical_settings,
     ),
 )
 async def filter_check_runs(time_from: datetime,
@@ -41,6 +43,7 @@ async def filter_check_runs(time_from: datetime,
                             labels: LabelFilter,
                             jira: JIRAFilter,
                             quantiles: Sequence[float],
+                            logical_settings: LogicalRepositorySettings,
                             meta_ids: Tuple[int, ...],
                             mdb: DatabaseLike,
                             cache: Optional[aiomcache.Client],
@@ -64,7 +67,7 @@ async def filter_check_runs(time_from: datetime,
     """
     df_check_runs = await mine_check_runs(
         time_from, time_to, repositories, pushers, labels, jira, False,
-        meta_ids, mdb, cache)
+        logical_settings, meta_ids, mdb, cache)
     timeline = _build_timeline(time_from, time_to)
     timeline_dates = [d.date() for d in timeline.tolist()]
     if df_check_runs.empty:

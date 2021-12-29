@@ -47,14 +47,14 @@ async def test_check_run_metrics_suite_counts(
         split_by_check_runs: bool,
         suite_freqs: List[int],
         suite_sizes: List[int],
-        metrics):
+        metrics, logical_settings):
     args = [
         [CodeCheckMetricID.SUITES_COUNT, CodeCheckMetricID.SUCCESSFUL_SUITES_COUNT,
          CodeCheckMetricID.FAILED_SUITES_COUNT, CodeCheckMetricID.CANCELLED_SUITES_COUNT,
          CodeCheckMetricID.SUITES_IN_PRS_COUNT],
         [[datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc)]],
         [0, 1], [["src-d/go-git"]], [], split_by_check_runs,
-        LabelFilter.empty(), JIRAFilter.empty(),
+        LabelFilter.empty(), JIRAFilter.empty(), logical_settings,
     ]
 
     def check(result):
@@ -89,29 +89,35 @@ async def test_check_run_metrics_suite_counts(
 @with_defer
 async def test_check_run_metrics_blitz(metrics_calculator: MetricEntriesCalculator,
                                        metric: str,
-                                       value):
+                                       value,
+                                       logical_settings):
     metrics, _, _ = await metrics_calculator.calc_check_run_metrics_line_github(
         [metric],
         [[datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc)]],
-        [0, 1], [["src-d/go-git"]], [], False, LabelFilter.empty(), JIRAFilter.empty())
+        [0, 1], [["src-d/go-git"]], [], False, LabelFilter.empty(), JIRAFilter.empty(),
+        logical_settings)
     assert metrics[0, 0, 0, 0][0][0].value == value
 
 
 @with_defer
-async def test_check_run_metrics_ratio_0_0(metrics_calculator: MetricEntriesCalculator):
+async def test_check_run_metrics_ratio_0_0(
+        metrics_calculator: MetricEntriesCalculator, logical_settings):
     metrics, _, _ = await metrics_calculator.calc_check_run_metrics_line_github(
         [CodeCheckMetricID.SUCCESS_RATIO, CodeCheckMetricID.PRS_MERGED_WITH_FAILED_CHECKS_RATIO],
         [[datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2015, 2, 1, tzinfo=timezone.utc)]],
-        [0, 1], [["src-d/go-git"]], [], False, LabelFilter.empty(), JIRAFilter.empty())
+        [0, 1], [["src-d/go-git"]], [], False, LabelFilter.empty(), JIRAFilter.empty(),
+        logical_settings)
     assert metrics[0, 0, 0, 0][0][0].value is None
 
 
 @with_defer
-async def test_check_run_metrics_robust_empty(metrics_calculator: MetricEntriesCalculator):
+async def test_check_run_metrics_robust_empty(
+        metrics_calculator: MetricEntriesCalculator, logical_settings):
     metrics, _, _ = await metrics_calculator.calc_check_run_metrics_line_github(
         [CodeCheckMetricID.ROBUST_SUITE_TIME],
         [[datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2017, 6, 1, tzinfo=timezone.utc)]],
-        [0.8, 1], [["src-d/go-git"]], [], False, LabelFilter.empty(), JIRAFilter.empty())
+        [0.8, 1], [["src-d/go-git"]], [], False, LabelFilter.empty(), JIRAFilter.empty(),
+        logical_settings)
     assert metrics[0, 0, 0, 0][0][0].value is None
 
 
