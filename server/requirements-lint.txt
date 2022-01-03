@@ -10,4 +10,4 @@ pycodestyle==2.8.0
 semgrep==0.77.0
 sqlalchemy-stubs==0.4
 types-pytz==2021.3.3
-types-croniter==1.0.3
+types-croniter==1.0.4
