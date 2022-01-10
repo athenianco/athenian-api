@@ -113,7 +113,9 @@ unittest:
 endif
 
 upload-symbols.sh:
-	wget https://optimyze.cloud/prodfiler-documentation/scripts/upload-symbols.sh
+	git clone --depth 1 --branch main https://github.com/elastic/prodfiler-documentation /tmp/prodfiler-documentation
+	cp /tmp/prodfiler-documentation/scripts/upload-symbols.sh .
+	rm -rf /tmp/prodfiler-documentation
 	chmod +x upload-symbols.sh
 
 .PHONY: prodfiler-symbols

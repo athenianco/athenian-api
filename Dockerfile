@@ -22,7 +22,7 @@ RUN echo 'deb-src http://archive.ubuntu.com/ubuntu focal-updates main' >>/etc/ap
     apt-get update && \
     apt-get upgrade -y && \
     apt-get install --no-install-suggests --no-install-recommends -y \
-      ca-certificates apt-utils wget locales python3-dev python3-distutils dpkg-dev devscripts && \
+      ca-certificates apt-utils wget git locales python3-dev python3-distutils dpkg-dev devscripts && \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
     locale-gen && \
     mkdir /cpython && \
@@ -117,14 +117,14 @@ ADD server/requirements.txt /server/requirements.txt
 ADD patches /patches
 ARG GKWILLIE_TOKEN
 RUN apt-get update && \
-    apt-get install -y --no-install-suggests --no-install-recommends gcc g++ patch git && \
+    apt-get install -y --no-install-suggests --no-install-recommends gcc g++ patch && \
     sed -i "s/git+ssh:\/\/git@/git+https:\/\/gkwillie:$GKWILLIE_TOKEN@/g" server/requirements.txt && \
     pip3 install --no-cache-dir -r /server/requirements.txt && \
     sed -i "s/git+https:\/\/gkwillie:$GKWILLIE_TOKEN@/git+ssh:\/\/git@/g" server/requirements.txt && \
     pip3 uninstall -y flask && \
     patch /usr/local/lib/python*/dist-packages/prometheus_client/exposition.py /patches/prometheus_client.patch && \
     patch /usr/local/lib/python*/dist-packages/aiomcache/client.py /patches/aiomcache_version.patch && \
-    apt-get purge -y patch git gcc g++ && \
+    apt-get purge -y patch gcc g++ && \
     apt-get autoremove -y --purge && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
