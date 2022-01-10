@@ -175,24 +175,24 @@ def main():
                     return_code = 1
                     num_teams = num_bots = 0
             await match_jira_identities(reposet.owner_id, meta_ids, sdb, mdb, slack, cache)
-            settings = Settings.from_account(reposet.owner_id, sdb, mdb, cache, None)
-            logical_settings = await settings.list_logical_repositories(prefixer, reposet.items)
-            repos = reposet.items
-            release_settings = await settings.list_release_matches(repos)
-            repos = {r.split("/", 1)[1] for r in repos}
             log.info("Heating reposet %d of account %d (%d repos)",
-                     reposet.id, reposet.owner_id, len(repos))
+                     reposet.id, reposet.owner_id, len(reposet.items))
+            settings = Settings.from_account(reposet.owner_id, sdb, mdb, cache, None)
+            repos = {r.split("/", 1)[1] for r in reposet.items}
+            logical_settings, release_settings, (branches, default_branches) = await gather(
+                settings.list_logical_repositories(prefixer, reposet.items),
+                settings.list_release_matches(reposet.items),
+                BranchMiner.extract_branches(repos, prefixer, meta_ids, mdb, None),
+            )
+            branches_count = len(branches)
             try:
                 log.info("Mining the releases")
-                branches, default_branches = await BranchMiner.extract_branches(
-                    repos, prefixer, meta_ids, mdb, None)
                 releases, _, _, _ = await mine_releases(
                     repos, {}, branches, default_branches, no_time_from, time_to,
                     LabelFilter.empty(), JIRAFilter.empty(), release_settings, logical_settings,
                     prefixer, reposet.owner_id, meta_ids, mdb, pdb, rdb, None,
                     force_fresh=True, with_pr_titles=False, with_deployments=False)
                 await wait_deferred()
-                branches_count = len(branches)
                 releases_by_tag = sum(
                     1 for r in releases if r[1].matched_by == ReleaseMatch.tag)
                 releases_by_branch = sum(

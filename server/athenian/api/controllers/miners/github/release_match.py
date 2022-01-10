@@ -744,7 +744,7 @@ class ReleaseToPullRequestMapper:
         exptime=max_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda repos, **_: (",".join(sorted(repos)),),
+        key=lambda meta_ids, repos, **_: (*meta_ids, ",".join(sorted(repos))),
         refresh_on_access=True,
     )
     async def _fetch_repository_first_commit_dates(cls,
@@ -775,24 +775,30 @@ class ReleaseToPullRequestMapper:
                 .where(and_(NodeRepository.name_with_owner.in_(missing),
                             NodeRepository.acc_id.in_(meta_ids)))
                 .group_by(NodeRepository.id))
-            if computed:
-                values = [
-                    GitHubRepository(
-                        acc_id=account,
-                        repository_full_name=r[0],
-                        first_commit=r[1],
-                        node_id=r[2],
-                    ).create_defaults().explode(with_primary_keys=True)
-                    for r in computed
-                ]
-                if mdb.url.dialect == "sqlite":
-                    for v in values:
-                        v[GitHubRepository.first_commit.name] = \
-                            v[GitHubRepository.first_commit.name].replace(tzinfo=timezone.utc)
-                await defer(insert_or_ignore(
-                    GitHubRepository, values, "_fetch_repository_first_commit_dates", pdb,
-                ), "insert_repository_first_commit_dates")
-                rows.extend(computed)
+            values = []
+            for r in computed:
+                missing.remove(repo_name := r[0])
+                values.append(GitHubRepository(
+                    acc_id=account,
+                    repository_full_name=repo_name,
+                    first_commit=r[1],
+                    node_id=r[2],
+                ).create_defaults().explode(with_primary_keys=True))
+            if missing:
+                log = logging.getLogger(
+                    f"{metadata.__package__}._fetch_repository_first_commit_dates")
+                log.warning("some repositories have 0 commits in %s: %s", meta_ids, missing)
+                now = datetime.now(timezone.utc)
+                for r in missing:
+                    rows.append((r, now))
+            if mdb.url.dialect == "sqlite":
+                for v in values:
+                    v[GitHubRepository.first_commit.name] = \
+                        v[GitHubRepository.first_commit.name].replace(tzinfo=timezone.utc)
+            await defer(insert_or_ignore(
+                GitHubRepository, values, "_fetch_repository_first_commit_dates", pdb,
+            ), "insert_repository_first_commit_dates")
+            rows.extend(computed)
         result = {r[0]: r[1] for r in rows}
         if mdb.url.dialect == "sqlite" or pdb.url.dialect == "sqlite":
             for k, v in result.items():
