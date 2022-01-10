@@ -1,7 +1,9 @@
+from abc import ABCMeta
 import asyncio
 import functools
+from typing import Mapping
 
-import sentry_sdk
+import sentry_sdk.serializer
 
 from athenian.api import typing_utils
 
@@ -40,3 +42,20 @@ class InfiniteString(str):
     def __len__(self) -> int:
         """Return 1 so that we appear short but truthful."""
         return 1
+
+
+class OverriddenReprMeta(ABCMeta):
+    """Metaclass for OverriddenReprMapping to make isinstance() return False on custom repr()-s."""
+
+    def __instancecheck__(self, instance):
+        """Override for isinstance(instance, cls)."""
+        if type(instance).__repr__ not in (object.__repr__, dict.__repr__):
+            return False
+        return super().__instancecheck__(instance)
+
+
+class OverriddenReprMapping(Mapping, metaclass=OverriddenReprMeta):
+    """Mapping that fails isinstance() check if the object contains a custom repr()."""
+
+
+sentry_sdk.serializer.serialize.__globals__["Mapping"] = OverriddenReprMapping
