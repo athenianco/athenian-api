@@ -755,6 +755,7 @@ class ReleaseToPullRequestMapper:
                                                    pdb: Database,
                                                    cache: Optional[aiomcache.Client],
                                                    ) -> Dict[str, datetime]:
+        log = logging.getLogger(f"{metadata.__package__}._fetch_repository_first_commit_dates")
         rows = await pdb.fetch_all(
             select([GitHubRepository.repository_full_name,
                     GitHubRepository.first_commit.label("min")])
@@ -777,16 +778,20 @@ class ReleaseToPullRequestMapper:
                 .group_by(NodeRepository.id))
             values = []
             for r in computed:
-                missing.remove(repo_name := r[0])
-                values.append(GitHubRepository(
-                    acc_id=account,
-                    repository_full_name=repo_name,
-                    first_commit=r[1],
-                    node_id=r[2],
-                ).create_defaults().explode(with_primary_keys=True))
+                if (repo_name := r[PushCommit.repository_full_name.name]) in missing:
+                    missing.remove(repo_name)
+                    values.append(GitHubRepository(
+                        acc_id=account,
+                        repository_full_name=repo_name,
+                        first_commit=r["min"],
+                        node_id=r[NodeRepository.id.name],
+                    ).create_defaults().explode(with_primary_keys=True))
+                else:
+                    dupes = [dr[NodeRepository.id.name] for dr in computed
+                             if dr[PushCommit.repository_full_name.name] == repo_name]
+                    log.error("duplicate repositories in %s@%s: %s -> %s",
+                              NodeRepository.__tablename__, meta_ids, repo_name, dupes)
             if missing:
-                log = logging.getLogger(
-                    f"{metadata.__package__}._fetch_repository_first_commit_dates")
                 log.warning("some repositories have 0 commits in %s: %s", meta_ids, missing)
                 now = datetime.now(timezone.utc)
                 for r in missing:
