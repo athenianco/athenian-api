@@ -1,7 +1,7 @@
 from abc import ABCMeta
 import asyncio
 import functools
-from typing import Mapping
+import typing
 
 import sentry_sdk.serializer
 
@@ -44,17 +44,17 @@ class InfiniteString(str):
         return 1
 
 
-class OverriddenReprMeta(ABCMeta):
+class OverriddenReprMappingMeta(ABCMeta):
     """Metaclass for OverriddenReprMapping to make isinstance() return False on custom repr()-s."""
 
-    def __instancecheck__(self, instance):
+    def __instancecheck__(self, instance: typing.Any) -> bool:
         """Override for isinstance(instance, cls)."""
         if type(instance).__repr__ not in (object.__repr__, dict.__repr__):
             return False
-        return super().__instancecheck__(instance)
+        return typing.Mapping.__instancecheck__(instance)
 
 
-class OverriddenReprMapping(Mapping, metaclass=OverriddenReprMeta):
+class OverriddenReprMapping(typing.Mapping, metaclass=OverriddenReprMappingMeta):
     """Mapping that fails isinstance() check if the object contains a custom repr()."""
 
 
