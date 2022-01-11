@@ -416,13 +416,13 @@ jobs:
         echo "$HOME/.local/bin" >> $GITHUB_PATH
         echo 'SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
               SENTRY_ORG=${{ secrets.SENTRY_ORG }}
-              SENTRY_PROJECT=${{ secrets.SENTRY_PROJECT }}' >.env
+              SENTRY_PROJECT=${{ secrets.SENTRY_PROJECT_NAME }}' >.env
     - name: deploy
       run: |
         set -x
         version_file=server/athenian/api/metadata.py
         current_version=$(grep __version__ $version_file | cut -d\" -f2)
-        godotenv -s sentry-cli releases new -p ${{ secrets.SENTRY_PROJECT }} $current_version
+        godotenv -s sentry-cli releases new -p ${{ secrets.SENTRY_PROJECT_NAME }} $current_version
         godotenv -s sentry-cli releases set-commits --auto $current_version
         export IMAGE=gcr.io/${{ secrets.GOOGLE_PROJECT }}/api:$current_version
         GOOGLE_CREDENTIALS=${{ secrets.GOOGLE_CREDENTIALS }} \
