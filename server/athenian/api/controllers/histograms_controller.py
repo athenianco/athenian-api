@@ -4,6 +4,7 @@ from aiohttp import web
 
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
+from athenian.api.cache import expires_header, short_term_exptime
 from athenian.api.controllers.account import get_metadata_account_ids
 from athenian.api.controllers.features.histogram import HistogramParameters, Scale
 from athenian.api.controllers.metrics_controller import check_environments, \
@@ -18,6 +19,7 @@ from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 
 
+@expires_header(short_term_exptime)
 @weight(10)
 async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate histograms over PR distributions."""
@@ -93,6 +95,7 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
     return model_response(result)
 
 
+@expires_header(short_term_exptime)
 @weight(1)
 async def calc_histogram_code_checks(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate histograms on continuous integration runs, such as GitHub Actions, Jenkins, \

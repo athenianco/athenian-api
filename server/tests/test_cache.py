@@ -1,9 +1,11 @@
 import asyncio
 import marshal
 import pickle
+import time
 from typing import Optional
 
 import aiomcache
+from freezegun import freeze_time
 import pytest
 
 from athenian.api.cache import cached, cached_methods, gen_cache_key
@@ -140,3 +142,20 @@ async def test_cached_methods(cache, met_name):
     assert met.__cached__
     await met.reset_cache("yes", "whatever", cache)
     assert isinstance(met.cache_key("yes", "whatever", cache), bytes)
+
+
+@freeze_time("2022-01-01")
+async def test_expires_header(client, headers, client_cache):
+    body = {
+        "account": 1,
+        "repositories": ["{1}"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/labels", headers=headers, json=body)
+    exp1 = response.headers["expires"]
+    assert exp1 == "Sat, 01 Jan 2022 01:00:00 GMT"  # + middle_term_exptime = 1 hour
+    time.sleep(1)
+    response = await client.request(
+        method="POST", path="/v1/filter/labels", headers=headers, json=body)
+    exp2 = response.headers["expires"]
+    assert exp1 == exp2

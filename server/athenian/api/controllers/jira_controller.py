@@ -17,7 +17,7 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 from athenian.api import list_with_yield, metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.balancing import weight
-from athenian.api.cache import cached, short_term_exptime
+from athenian.api.cache import cached, expires_header, short_term_exptime
 from athenian.api.controllers.account import get_account_repositories, get_metadata_account_ids
 from athenian.api.controllers.datetime_utils import split_to_time_intervals
 from athenian.api.controllers.features.entries import MetricEntriesCalculator
@@ -59,6 +59,7 @@ from athenian.api.response import model_response, ResponseError
 from athenian.api.tracing import sentry_span
 
 
+@expires_header(short_term_exptime)
 @weight(2.0)
 async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Response:
     """Find JIRA epics and labels used in the specified date interval."""
@@ -916,6 +917,7 @@ async def _calc_jira_entry(request: AthenianWebRequest,
     return filt, time_intervals, issues, tzoffset, label_filter, stride
 
 
+@expires_header(short_term_exptime)
 @weight(2.5)
 async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate metrics over JIRA issue activities."""
@@ -1027,6 +1029,7 @@ class _IssuesLabelSplitter:
         return groups
 
 
+@expires_header(short_term_exptime)
 @weight(1.5)
 async def calc_histogram_jira(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate histograms over JIRA issue activities."""

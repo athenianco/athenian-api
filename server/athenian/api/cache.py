@@ -1,11 +1,14 @@
 from asyncio import IncompleteReadError
 from contextvars import ContextVar
+from datetime import datetime, timedelta, timezone
 import functools
 import inspect
 import logging
 import pickle
+import struct
 import time
 from typing import Any, Callable, Coroutine, Mapping, Optional, Tuple, Union
+from wsgiref.handlers import format_date_time
 
 from aiohttp import web
 import aiomcache
@@ -16,9 +19,11 @@ import sentry_sdk
 from xxhash import xxh64_hexdigest
 
 from athenian.api import metadata
+from athenian.api.async_utils import gather
 from athenian.api.defer import defer
 from athenian.api.metadata import __package__, __version__
 from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME
+from athenian.api.request import AthenianWebRequest
 from athenian.api.typing_utils import serialize_mutable_fields_in_dataclasses, wraps
 
 pickle.dumps = functools.partial(pickle.dumps, protocol=-1)
@@ -315,3 +320,31 @@ def setup_cache_metrics(app: Union[web.Application, Mapping]) -> None:
         ),
         "context": app["cache_context"],
     }
+
+
+@cached(
+    exptime=lambda duration, **_: duration,
+    serialize=lambda dt: struct.pack("!Q", int(dt.timestamp())),
+    deserialize=lambda s: datetime.fromtimestamp(struct.unpack("!Q", s)[0], timezone.utc),
+    cache=lambda request, **_: request.cache,
+    key=lambda request, duration, **kwargs: (request.method, request.path, kwargs),
+)
+async def _fetch_endpoint_expiration(
+        request: AthenianWebRequest, duration: int, **kwargs) -> datetime:
+    return datetime.now(timezone.utc) + timedelta(seconds=duration)
+
+
+def expires_header(duration: int):
+    """Append "Expires" header to the response according to `duration` in seconds."""
+    def cached_header_decorator(fn):
+        async def wrapped_cached_header(request: AthenianWebRequest, **kwargs) -> web.Response:
+            response, expires = await gather(
+                fn(request, **kwargs),
+                _fetch_endpoint_expiration(request, duration, **kwargs),
+            )
+            response.headers.add("Expires", format_date_time(expires.timestamp()))
+            return response
+
+        return wraps(wrapped_cached_header, fn)
+
+    return cached_header_decorator

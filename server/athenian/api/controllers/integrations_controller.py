@@ -110,7 +110,7 @@ _get_everything_formats = {
 }
 
 
-@weight(4.0)
+@weight(6.0)
 async def get_everything(request: AthenianWebRequest,
                          account: int = 0,
                          format: str = "parquet",

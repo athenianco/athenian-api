@@ -21,7 +21,7 @@ from sqlalchemy import and_, delete, func, insert, select, update
 from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.auth import Auth0, disable_default_user
-from athenian.api.cache import cached, middle_term_exptime
+from athenian.api.cache import cached, expires_header, middle_term_exptime
 from athenian.api.controllers.account import fetch_github_installation_progress, \
     generate_jira_invitation_link, \
     get_metadata_account_ids, get_user_account_status, jira_url_template
@@ -401,7 +401,8 @@ async def _append_precomputed_progress(model: InstallationProgress,
             and model.finished_date is not None \
             and datetime.now(timezone.utc) - model.finished_date > timedelta(hours=2) \
             and datetime.now(timezone.utc) - created > timedelta(hours=2):
-        await _notify_precomputed_failure(slack, uid, account, model, created, cache)
+        expires = await sdb.fetch_val(select([Account.expires_at]).where(Account.id == account))
+        await _notify_precomputed_failure(slack, uid, account, model, created, expires, cache)
     model.tables.append(TableFetchingProgress(
         name="precomputed", fetched=int(precomputed), total=1))
     if not precomputed:
@@ -420,11 +421,19 @@ async def _notify_precomputed_failure(slack: Optional[SlackWebClient],
                                       account: int,
                                       model: InstallationProgress,
                                       created: datetime,
+                                      expires: datetime,
                                       cache: Optional[aiomcache.Client]) -> None:
     await slack.post(
-        "precomputed_failure.jinja2", uid=uid, account=account, model=model, created=created)
+        "precomputed_failure.jinja2",
+        uid=uid,
+        account=account,
+        model=model,
+        created=created,
+        expires=expires,
+    )
 
 
+@expires_header(5)
 async def eval_invitation_progress(request: AthenianWebRequest, id: int) -> web.Response:
     """Return the current Athenian GitHub app installation progress."""
     await get_user_account_status(request.uid, id, request.sdb, request.cache)

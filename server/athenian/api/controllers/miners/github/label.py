@@ -6,7 +6,7 @@ import pandas as pd
 from sqlalchemy import and_, func, select
 
 from athenian.api.async_utils import read_sql_query
-from athenian.api.cache import cached
+from athenian.api.cache import cached, middle_term_exptime
 from athenian.api.db import DatabaseLike
 from athenian.api.models.metadata.github import PullRequestLabel
 from athenian.api.tracing import sentry_span
@@ -25,7 +25,7 @@ class LabelDetails:
 
 @sentry_span
 @cached(
-    exptime=60 * 60,  # 1 hour
+    exptime=middle_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda repos, **_: (",".join(sorted(repos)),),

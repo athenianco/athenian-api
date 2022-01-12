@@ -3,6 +3,7 @@ from sqlalchemy import and_, select
 
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
+from athenian.api.cache import expires_header, short_term_exptime
 from athenian.api.controllers.account import get_account_repositories, get_metadata_account_ids
 from athenian.api.controllers.jira import load_mapped_jira_users
 from athenian.api.controllers.miners.github.contributors import mine_contributors
@@ -15,6 +16,7 @@ from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 
 
+@expires_header(short_term_exptime)
 @weight(0.5)
 async def get_contributors(request: AthenianWebRequest, id: int) -> web.Response:
     """List all the contributors belonging to the specified account.

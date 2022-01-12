@@ -6,6 +6,7 @@ from aiohttp import web
 
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
+from athenian.api.cache import expires_header, short_term_exptime
 from athenian.api.connexion import ADJUST_LOAD_VAR_NAME
 from athenian.api.controllers.account import get_metadata_account_ids
 from athenian.api.controllers.calculator_selector import get_calculators_for_account
@@ -57,6 +58,7 @@ FilterDeployments = Tuple[str, Tuple[List[Set[str]], List[Dict[ReleaseParticipat
 #                                  repositories                                                        environments                           pr_labels_*                          ForSet index  # noqa
 
 
+@expires_header(short_term_exptime)
 @weight(10)
 async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate linear metrics over PRs.
@@ -413,6 +415,7 @@ async def _extract_repos(request: AthenianWebRequest,
     return resolved, prefix, "github"
 
 
+@expires_header(short_term_exptime)
 @weight(1.5)
 async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     """Measure the amount of code that was pushed outside of pull requests."""
@@ -454,6 +457,7 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
     return model_response(model)
 
 
+@expires_header(short_term_exptime)
 @weight(1.5)
 async def calc_metrics_developers(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate metrics over developer activities."""
@@ -552,6 +556,7 @@ async def _compile_repos_releases(request: AthenianWebRequest,
     return filters, all_repos, prefixer, logical_settings
 
 
+@expires_header(short_term_exptime)
 @weight(4)
 async def calc_metrics_releases(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate linear metrics over releases."""
@@ -631,6 +636,7 @@ async def calc_metrics_releases(request: AthenianWebRequest, body: dict) -> web.
     return model_response(met)
 
 
+@expires_header(short_term_exptime)
 @weight(1)
 async def calc_metrics_code_checks(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate metrics on continuous integration runs, such as GitHub Actions, Jenkins, Circle, \
@@ -707,6 +713,7 @@ async def calc_metrics_code_checks(request: AthenianWebRequest, body: dict) -> w
     return model_response(met)
 
 
+@expires_header(short_term_exptime)
 @weight(2)
 async def calc_metrics_deployments(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate metrics on deployments submitted by `/events/deployments`."""
