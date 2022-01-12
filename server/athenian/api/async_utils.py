@@ -63,7 +63,7 @@ async def read_sql_query(sql: ClauseElement,
     return wrap_sql_query(data, columns, index)
 
 
-def wrap_sql_query(data: Iterable[Iterable[Any]],
+def wrap_sql_query(data: Sequence[Iterable[Any]],
                    columns: Union[Sequence[str], Sequence[InstrumentedAttribute],
                                   MetadataBase, StateBase],
                    index: Optional[Union[str, Sequence[str]]] = None,
@@ -79,11 +79,13 @@ def wrap_sql_query(data: Iterable[Iterable[Any]],
         dt_columns = _extract_datetime_columns(columns)
         i_columns = _extract_integer_columns(columns)
         columns = [(c.name if not isinstance(c, str) else c) for c in columns]
-    frame = pd.DataFrame.from_records(data, columns=columns, coerce_float=True)
-    frame = postprocess_datetime(frame, columns=dt_columns)
-    frame = postprocess_integer(frame, columns=i_columns)
-    if index is not None:
-        frame.set_index(index, inplace=True)
+    with sentry_sdk.start_span(op="pd.DataFrame.from_records", description=str(len(data))):
+        frame = pd.DataFrame.from_records(data, columns=columns, coerce_float=True)
+    with sentry_sdk.start_span(op="postprocess"):
+        frame = postprocess_datetime(frame, columns=dt_columns)
+        frame = postprocess_integer(frame, columns=i_columns)
+        if index is not None:
+            frame.set_index(index, inplace=True)
     return frame
 
 
