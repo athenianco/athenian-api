@@ -681,6 +681,7 @@ async def test_pr_mine_by_ids(branches, default_branches, dag, mdb, pdb, rdb, ca
             df.set_index(PullRequest.node_id.name, inplace=True)
         df.sort_index(inplace=True)
         df1.sort_index(inplace=True)
+        df1 = df1[df.columns]
         assert (df.fillna(0) == df1.fillna(0)).all().all()
 
 

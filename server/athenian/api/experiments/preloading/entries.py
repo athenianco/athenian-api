@@ -103,6 +103,8 @@ class PreloadedReleaseLoader(ReleaseLoader):
             & (df[model.published_at.name] < time_to)
         )
         releases = cached_df.filter((account, ), mask)
+        df[Release.author_node_id.name].fillna(0, inplace=True)
+        df[Release.author_node_id.name] = df[Release.author_node_id.name].astype(int)
         releases.sort_values(model.published_at.name, ascending=False, inplace=True)
         releases = set_matched_by_from_release_match(
             releases, True, model.repository_full_name.name)

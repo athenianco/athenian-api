@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from sqlalchemy import and_, func, select
 
+from athenian.api.async_utils import wrap_sql_query
 from athenian.api.controllers.miners.github.check_run import _calculate_check_suite_started, \
     _merge_status_contexts, _postprocess_check_runs, _split_duplicate_check_runs, \
     check_suite_started_column, \
@@ -181,10 +182,10 @@ def test_mine_check_runs_benchmark(benchmark, no_deprecation_warnings):
     with open("/tmp/pr_commit_counts.pickle", "rb") as fin:
         pr_commit_counts = pickle.load(fin)
     log = logging.getLogger("benchmark")
-    benchmark(_benchmark, df, log, pr_lifetimes, pr_commit_counts)
+    benchmark(_benchmark_postprocess, df, log, pr_lifetimes, pr_commit_counts)
 
 
-def _benchmark(df, log, pr_lifetimes, pr_commit_counts):
+def _benchmark_postprocess(df, log, pr_lifetimes, pr_commit_counts):
     # the same check runs / suites may attach to different PRs, fix that
     df = _disambiguate_pull_requests(df, log, pr_lifetimes, pr_commit_counts)
 
@@ -200,3 +201,9 @@ def _benchmark(df, log, pr_lifetimes, pr_commit_counts):
     log.info("split %d / %d", len(df) - df_len, df_len)
 
     _postprocess_check_runs(df)
+
+
+def test_mine_check_runs_wrap(benchmark, no_deprecation_warnings):
+    with open("/tmp/cr_raw.pickle", "rb") as fin:
+        data, columns, index = pickle.load(fin)
+    benchmark(wrap_sql_query, data, columns, index)

@@ -2,6 +2,7 @@ from importlib.machinery import SourceFileLoader
 import os
 from pathlib import Path
 import site
+
 site.ENABLE_USER_SITE = True  # workaround https://github.com/pypa/pip/issues/7953
 
 from setuptools import find_packages, setup  # noqa: E402
@@ -9,6 +10,7 @@ from setuptools import find_packages, setup  # noqa: E402
 # - https://stackoverflow.com/questions/21594925/
 #     error-each-element-of-ext-modules-option-must-be-an-extension-instance-or-2-t
 from Cython.Build import cythonize  # noqa: I100, E402
+import numpy as np  # noqa: I100, E402
 
 project_root = Path(__file__).parent
 code_root = project_root / "athenian" / "api"
@@ -34,7 +36,9 @@ setup(
     ext_modules=cythonize([str(p) for p in (
         code_root / "controllers" / "miners" / "github" / "dag_accelerated.pyx",
         code_root / "controllers" / "features" / "github" / "check_run_metrics_accelerated.pyx",
+        code_root / "to_object_arrays.pyx",
     )]),
+    include_dirs=[np.get_include()],
     namespace_packages=["athenian"],
     keywords=[],
     install_requires=[],  # see requirements.txt

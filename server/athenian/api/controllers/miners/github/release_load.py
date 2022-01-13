@@ -17,7 +17,7 @@ from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.sql import ClauseElement
 
 from athenian.api import metadata
-from athenian.api.async_utils import gather, postprocess_datetime, read_sql_query
+from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached, cached_methods
 from athenian.api.controllers.logical_repos import coerce_logical_repos, contains_logical_repos, \
     drop_logical_repo
@@ -397,6 +397,8 @@ class ReleaseLoader:
                 .order_by(desc(prel.published_at))
                 for item in or_items))
         df = await read_sql_query(query, pdb, prel)
+        df[Release.author_node_id.name].fillna(0, inplace=True)
+        df[Release.author_node_id.name] = df[Release.author_node_id.name].astype(int)
         df = set_matched_by_from_release_match(df, True, prel.repository_full_name.name)
         if index is not None:
             df.set_index(index, inplace=True)
@@ -682,17 +684,24 @@ _tsdt = pd.Timestamp(2000, 1, 1).to_numpy().dtype
 
 
 def _adjust_release_dtypes(df: pd.DataFrame) -> pd.DataFrame:
-    for ic, fillna in ((Release.node_id.name, False),
-                       (Release.author_node_id.name, True),
-                       (Release.commit_id.name, False),
-                       (matched_by_column, False)):
-        if fillna:
-            df[ic] = df[ic].fillna(0)
+    int_cols = (Release.node_id.name, Release.commit_id.name, matched_by_column)
+    if df.empty:
+        for col in (*int_cols, Release.author_node_id.name):
+            try:
+                df[col] = df[col].astype(int)
+            except KeyError:
+                assert col == Release.node_id.name
+        df[Release.published_at.name] = df[Release.published_at.name].astype("datetime64[ns, UTC]")
+        return df
+    for col in int_cols:
         try:
-            df[ic] = df[ic].astype(int, copy=False)
+            assert df[col].dtype == int
         except KeyError:
-            assert ic == Release.node_id.name
-    return postprocess_datetime(df, [Release.published_at.name])
+            assert col == Release.node_id.name
+    assert df[Release.published_at.name].dtype == "datetime64[ns, UTC]"
+    df[Release.author_node_id.name].fillna(0, inplace=True)
+    df[Release.author_node_id.name] = df[Release.author_node_id.name].astype(int, copy=False)
+    return df
 
 
 def group_repos_by_release_match(repos: Iterable[str],
