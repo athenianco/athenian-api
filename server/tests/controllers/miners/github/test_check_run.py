@@ -9,6 +9,7 @@ import pytest
 from athenian.api.controllers.features.github.check_run_metrics_accelerated import \
     mark_check_suite_types
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.controllers.miners.github import check_run
 from athenian.api.controllers.miners.github.check_run import _postprocess_check_runs, \
     _split_duplicate_check_runs, mine_check_runs
 from athenian.api.controllers.settings import LogicalRepositorySettings
@@ -147,3 +148,16 @@ def test_mark_check_suite_types_real_world(alternative_facts):
         counts,
         [1, 1, 110, 1, 275, 1, 928, 369, 2, 1472, 8490,
          1, 707, 213, 354, 205, 190, 61, 731, 251, 475])
+
+
+async def test_check_run_maximum_processed_check_runs(mdb):
+    orig = check_run.maximum_processed_check_runs
+    check_run.maximum_processed_check_runs = 1000
+    try:
+        df = await mine_check_runs(
+            datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
+            ["src-d/go-git"], [], LabelFilter.empty(), JIRAFilter.empty(),
+            False, LogicalRepositorySettings.empty(), (6366825,), mdb, None)
+        assert len(df) <= 1000  # should be >4k without maximum_processed_check_runs
+    finally:
+        check_run.maximum_processed_check_runs = orig

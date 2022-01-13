@@ -30,6 +30,7 @@ from athenian.api.models.metadata.github import CheckRun, CheckRunByPR, NodePull
 from athenian.api.tracing import sentry_span
 
 
+maximum_processed_check_runs = 300_000
 check_suite_started_column = "check_suite_started"
 check_suite_completed_column = "check_suite_completed"
 pull_request_started_column = "pull_request_" + NodePullRequest.created_at.name
@@ -169,7 +170,8 @@ async def _mine_check_runs(time_from: datetime,
         .with_statement_hint("Rows(cr cs *10)") \
         .with_statement_hint("Rows(c_1 sc *1000)")
 
-    df = await read_sql_query_with_join_collapse(query, mdb, CheckRun)
+    df = await read_sql_query_with_join_collapse(
+        query, mdb, CheckRun, soft_limit=maximum_processed_check_runs)
 
     # add check runs mapped to the mentioned PRs even if they are outside of the date range
     df, df_labels = await _append_pull_request_check_runs_outside(

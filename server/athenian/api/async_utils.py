@@ -26,6 +26,7 @@ async def read_sql_query(sql: ClauseElement,
                          columns: Union[Sequence[str], Sequence[InstrumentedAttribute],
                                         MetadataBase, PerdataBase, PrecomputedBase, StateBase],
                          index: Optional[Union[str, Sequence[str]]] = None,
+                         soft_limit: Optional[int] = None,
                          ) -> pd.DataFrame:
     """Read SQL query into a DataFrame.
 
@@ -39,6 +40,8 @@ async def read_sql_query(sql: ClauseElement,
     con     : async SQLAlchemy database engine.
     columns : list of the resulting columns names, column objects or the model if SELECT *
     index   : Name(s) of the index column(s).
+    soft_limit
+            : Load this number of rows at maximum.
 
     Returns
     -------
@@ -60,6 +63,8 @@ async def read_sql_query(sql: ClauseElement,
         logging.getLogger("%s.read_sql_query" % metadata.__package__).error(
             "%s: %s; %s", type(e).__name__, e, sql)
         raise e from None
+    if soft_limit is not None and len(data) > soft_limit:
+        data = data[:soft_limit]
     return wrap_sql_query(data, columns, index)
 
 
@@ -218,7 +223,8 @@ async def read_sql_query_with_join_collapse(
         columns: Union[Sequence[str], Sequence[InstrumentedAttribute],
                        MetadataBase, PerdataBase, PrecomputedBase, StateBase],
         index: Optional[Union[str, Sequence[str]]] = None,
+        soft_limit: Optional[int] = None,
 ) -> pd.DataFrame:
     """Enforce the predefined JOIN order in read_sql_query()."""
     query = query.with_statement_hint("Set(join_collapse_limit 1)")
-    return await read_sql_query(query, db, columns=columns, index=index)
+    return await read_sql_query(query, db, columns=columns, index=index, soft_limit=soft_limit)
