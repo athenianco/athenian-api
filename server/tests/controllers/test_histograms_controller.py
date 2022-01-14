@@ -229,7 +229,7 @@ async def test_calc_histogram_prs_ticks(client, headers):
         }],
         "histograms": [{
             "metric": PullRequestMetricID.PR_RELEASE_TIME,
-            "ticks": ["10000s", "100000s"],
+            "ticks": ["10000s", "100000s", "10000000000000s"],
         }],
         "date_from": "2015-10-13",
         "date_to": "2020-01-23",
@@ -239,13 +239,25 @@ async def test_calc_histogram_prs_ticks(client, headers):
     response = await client.request(
         method="POST", path="/v1/histograms/pull_requests", headers=headers, json=body,
     )
-    body = (await response.read()).decode("utf-8")
-    assert response.status == 200, "Response body is : " + body
-    body = FriendlyJson.loads(body)
-    assert body == [
+    result = (await response.read()).decode("utf-8")
+    assert response.status == 400, "Response body is : " + result
+    body["histograms"][0]["ticks"] = body["histograms"][0]["ticks"][:-1]
+    response = await client.request(
+        method="POST", path="/v1/histograms/pull_requests", headers=headers, json=body,
+    )
+    result = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + result
+    result = FriendlyJson.loads(result)
+    assert result == [
         {"for": {"repositories": ["github.com/src-d/go-git"]}, "metric": "pr-release-time",
          "scale": "linear", "ticks": ["60s", "10000s", "100000s", "2592000s"],
          "frequencies": [39, 29, 346], "interquartile": {"left": "322517s", "right": "2592000s"}}]
+    body["histograms"][0]["ticks"].append(f"{2 * 365 * 24 * 3600}s")
+    response = await client.request(
+        method="POST", path="/v1/histograms/pull_requests", headers=headers, json=body,
+    )
+    result = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + result
 
 
 async def test_calc_histogram_prs_groups(client, headers):

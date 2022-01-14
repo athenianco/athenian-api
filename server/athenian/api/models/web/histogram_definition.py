@@ -1,3 +1,4 @@
+from datetime import timedelta
 from typing import Any, List, Optional, Type
 
 from athenian.api.models.web.base_model_ import Enum, Model
@@ -142,7 +143,14 @@ def HistogramDefinition(M: Enum, module_name: str) -> Type[Model]:
                 raise ValueError("`ticks` must contain at least one element")
 
             if ticks and isinstance(ticks[0], str):
-                ticks = [deserialize_timedelta(s) for s in ticks]
+                parsed_ticks = []
+                max_tick = timedelta(days=365 * 2)
+                for tick in ticks:
+                    parsed_tick = deserialize_timedelta(tick)
+                    if parsed_tick > max_tick:
+                        raise ValueError(f"Too big timedelta {tick}, the max is {max_tick}")
+                    parsed_ticks.append(parsed_tick)
+                ticks = parsed_ticks
 
             self._ticks = ticks
 

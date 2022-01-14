@@ -6,13 +6,15 @@ from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
 from athenian.api.cache import expires_header, short_term_exptime
 from athenian.api.controllers.account import get_metadata_account_ids
+from athenian.api.controllers.features.entries import UnsupportedMetricError
 from athenian.api.controllers.features.histogram import HistogramParameters, Scale
 from athenian.api.controllers.metrics_controller import check_environments, \
     compile_filters_checks, compile_filters_prs, get_calculators_for_request
 from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.settings import Settings
-from athenian.api.models.web import CalculatedCodeCheckHistogram, CalculatedPullRequestHistogram, \
+from athenian.api.models.web import BadRequestError, CalculatedCodeCheckHistogram, \
+    CalculatedPullRequestHistogram, \
     CodeCheckHistogramsRequest, ForSetCodeChecks, Interquartile, InvalidRequestError, \
     PullRequestHistogramsRequest
 from athenian.api.request import AthenianWebRequest
@@ -27,7 +29,7 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
         filt = PullRequestHistogramsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        return ResponseError(InvalidRequestError("?", detail=str(e))).response
+        raise ResponseError(InvalidRequestError("?", detail=str(e)))
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
     filters, repos, prefixer, logical_settings = await compile_filters_prs(
         filt.for_, request, filt.account, meta_ids)
@@ -67,8 +69,8 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
                 environment, repos, withgroups, labels, jira, filt.exclude_inactive,
                 account_bots, release_settings, logical_settings, prefixer,
                 branches, default_branches, fresh=filt.fresh)
-        except ValueError as e:
-            raise ResponseError(InvalidRequestError(str(e))) from None
+        except UnsupportedMetricError as e:
+            raise ResponseError(BadRequestError(str(e))) from None
         for line_groups in histograms:
             for line_group_index, repo_groups in enumerate(line_groups):
                 for repo_group_index, with_groups in enumerate(repo_groups):
@@ -104,7 +106,7 @@ async def calc_histogram_code_checks(request: AthenianWebRequest, body: dict) ->
         filt = CodeCheckHistogramsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        return ResponseError(InvalidRequestError("?", detail=str(e))).response
+        raise ResponseError(InvalidRequestError("?", detail=str(e)))
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
     filters, _, logical_settings = await compile_filters_checks(
         filt.for_, request, filt.account, meta_ids)
@@ -127,7 +129,7 @@ async def calc_histogram_code_checks(request: AthenianWebRequest, body: dict) ->
                 await calculator.calc_check_run_histograms_line_github(
                     defs, time_from, time_to, filt.quantiles or (0, 1), repos, pusher_groups,
                     filt.split_by_check_runs, labels, jira, logical_settings)
-        except ValueError as e:
+        except UnsupportedMetricError as e:
             raise ResponseError(InvalidRequestError(pointer="?", detail=str(e))) from None
         for pusher_groups in histograms:
             for pushers_group_index, pushers_group in enumerate(pusher_groups):
