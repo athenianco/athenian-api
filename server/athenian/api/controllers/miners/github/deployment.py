@@ -1139,6 +1139,8 @@ async def _fetch_components_and_prune_unresolved(notifications: pd.DataFrame,
         unresolved_names,
         assume_unique=True, invert=True,
     )))
+    components[DeployedComponent.resolved_commit_node_id.name] = \
+        components[DeployedComponent.resolved_commit_node_id.name].astype(int)
     components.set_index(DeployedComponent.deployment_name.name, drop=True, inplace=True)
     return notifications, components
 

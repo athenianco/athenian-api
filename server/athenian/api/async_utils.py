@@ -2,12 +2,15 @@ import asyncio
 from datetime import datetime, timezone
 import logging
 import textwrap
-from typing import Any, Collection, Iterable, Optional, Sequence, Tuple, Type, Union
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Type, Union
 
 import numpy as np
 import pandas as pd
+from pandas.core.dtypes.cast import OutOfBoundsDatetime, tslib
+from pandas.core.internals import make_block
+from pandas.core.internals.managers import BlockManager, form_blocks
 import sentry_sdk
-from sqlalchemy import Column, DateTime, Integer
+from sqlalchemy import Boolean, Column, DateTime, Integer
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import ClauseElement
 from sqlalchemy.sql.elements import Label
@@ -18,6 +21,7 @@ from athenian.api.models.metadata.github import Base as MetadataBase
 from athenian.api.models.persistentdata.models import Base as PerdataBase
 from athenian.api.models.precomputed.models import GitHubBase as PrecomputedBase
 from athenian.api.models.state.models import Base as StateBase
+from athenian.api.to_object_arrays import to_object_arrays_split
 from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
 
 
@@ -68,7 +72,23 @@ async def read_sql_query(sql: ClauseElement,
     return wrap_sql_query(data, columns, index)
 
 
-def wrap_sql_query(data: Sequence[Iterable[Any]],
+def _create_block_manager_from_arrays(
+    arrays_typed: List[np.ndarray],
+    arrays_obj: np.ndarray,
+    names_typed: List[str],
+    names_obj: List[str],
+    size: int,
+) -> BlockManager:
+    assert len(arrays_typed) == len(names_typed)
+    assert len(arrays_obj) == len(names_obj)
+    range_index = pd.RangeIndex(stop=size)
+    typed_index = pd.Index(names_typed)
+    blocks = form_blocks(arrays_typed, typed_index, [typed_index, range_index])
+    blocks.append(make_block(arrays_obj, placement=np.arange(len(arrays_obj)) + len(arrays_typed)))
+    return BlockManager(blocks, [pd.Index(names_typed + names_obj), range_index])
+
+
+def wrap_sql_query(data: List[Sequence[Any]],
                    columns: Union[Sequence[str], Sequence[InstrumentedAttribute],
                                   MetadataBase, StateBase],
                    index: Optional[Union[str, Sequence[str]]] = None,
@@ -78,40 +98,99 @@ def wrap_sql_query(data: Sequence[Iterable[Any]],
         columns[0]
     except TypeError:
         dt_columns = _extract_datetime_columns(columns.__table__.columns)
-        i_columns = _extract_integer_columns(columns.__table__.columns)
+        int_columns = _extract_integer_columns(columns.__table__.columns)
+        bool_columns = _extract_boolean_columns(columns.__table__.columns)
         columns = [c.name for c in columns.__table__.columns]
     else:
         dt_columns = _extract_datetime_columns(columns)
-        i_columns = _extract_integer_columns(columns)
+        int_columns = _extract_integer_columns(columns)
+        bool_columns = _extract_boolean_columns(columns)
         columns = [(c.name if not isinstance(c, str) else c) for c in columns]
-    with sentry_sdk.start_span(op="pd.DataFrame.from_records", description=str(len(data))):
-        frame = pd.DataFrame.from_records(data, columns=columns, coerce_float=True)
-    with sentry_sdk.start_span(op="postprocess"):
-        frame = postprocess_datetime(frame, columns=dt_columns)
-        frame = postprocess_integer(frame, columns=i_columns)
+    typed_cols_indexes = []
+    typed_cols_names = []
+    obj_cols_indexes = []
+    obj_cols_names = []
+    for i, column in enumerate(columns):
+        if column in dt_columns or column in int_columns or column in bool_columns:
+            cols_indexes = typed_cols_indexes
+            cols_names = typed_cols_names
+        else:
+            cols_indexes = obj_cols_indexes
+            cols_names = obj_cols_names
+        cols_indexes.append(i)
+        cols_names.append(column)
+    log = logging.getLogger(f"{metadata.__package__}.wrap_sql_query")
+    # we used to have pd.DataFrame.from_records + bunch of convert_*() in relevant columns
+    # the current approach is faster for several reasons:
+    # 1. avoid an expensive copy of the object dtype columns in the BlockManager construction
+    # 2. call tslib.array_to_datetime directly without surrounding Pandas bloat
+    # 3. convert to int in the numpy domain and thus do not have to mess with indexes
+    #
+    # an ideal conversion would be loading columns directly from asyncpg but that requires
+    # quite some changes in their internals
+    with sentry_sdk.start_span(op="wrap_sql_query/convert", description=str(size := len(data))):
+        data_typed, data_obj = to_object_arrays_split(data, typed_cols_indexes, obj_cols_indexes)
+        converted_typed = []
+        discard_mask = None
+        for column, values in zip(typed_cols_names, data_typed):
+            if column in dt_columns:
+                converted_typed.append(_convert_datetime(values))
+            elif column in int_columns:
+                values, discarded = _convert_integer(values, column, int_columns[column], log)
+                converted_typed.append(values)
+                if discarded is not None:
+                    if discard_mask is None:
+                        discard_mask = np.zeros(len(data), dtype=bool)
+                    discard_mask[discarded] = True
+            elif column in bool_columns:
+                converted_typed.append(values.astype(bool))
+            else:
+                raise AssertionError("impossible: typed columns are either dt or int")
+        if discard_mask is not None:
+            left = ~discard_mask
+            size = left.sum()
+            converted_typed = [arr[left] for arr in converted_typed]
+            data_obj = data_obj[:, left]
+    with sentry_sdk.start_span(op="wrap_sql_query/pd.DataFrame()", description=str(size)):
+        block_mgr = _create_block_manager_from_arrays(
+            converted_typed, data_obj, typed_cols_names, obj_cols_names, size)
+        frame = pd.DataFrame(block_mgr, columns=typed_cols_names + obj_cols_names, copy=False)
+        for column in dt_columns:
+            try:
+                frame[column] = frame[column].dt.tz_localize(timezone.utc)
+            except (AttributeError, TypeError):
+                continue
         if index is not None:
             frame.set_index(index, inplace=True)
     return frame
 
 
-def _extract_datetime_columns(columns: Iterable[Union[Column, str]]) -> Collection[str]:
-    return [
+def _extract_datetime_columns(columns: Iterable[Union[Column, str]]) -> Set[str]:
+    return {
         c.name for c in columns
         if not isinstance(c, str) and (
             isinstance(c.type, DateTime) or
             (isinstance(c.type, type) and issubclass(c.type, DateTime))
         )
-    ]
+    }
+
+
+def _extract_boolean_columns(columns: Iterable[Union[Column, str]]) -> Set[str]:
+    return {
+        c.name for c in columns
+        if not isinstance(c, str) and (
+            isinstance(c.type, Boolean) or
+            (isinstance(c.type, type) and issubclass(c.type, Boolean))
+        )
+    }
 
 
 def _extract_integer_columns(columns: Iterable[Union[Column, str]],
-                             ) -> Collection[Tuple[str, bool]]:
-    return [
-        (
-            c.name, getattr(
-                c, "info", {} if not isinstance(c, Label) else getattr(c.element, "info", {}),
-            ).get("erase_nulls", False),
-        )
+                             ) -> Dict[str, bool]:
+    return {
+        c.name: getattr(
+            c, "info", {} if not isinstance(c, Label) else getattr(c.element, "info", {}),
+        ).get("erase_nulls", False)
         for c in columns
         if not isinstance(c, str) and (
             isinstance(c.type, Integer) or
@@ -122,7 +201,26 @@ def _extract_integer_columns(columns: Iterable[Union[Column, str]],
             (not getattr(c.element, "nullable", False))
             and (not getattr(c, "nullable", False))
         ))
-    ]
+    }
+
+
+def _convert_datetime(arr: np.ndarray) -> np.ndarray:
+    # None converts to NaT
+    try:
+        ts, offset = tslib.array_to_datetime(arr, utc=True, errors="raise")
+        assert offset is None
+    except OutOfBoundsDatetime:
+        # TODO(vmarkovtsev): copy the function and set OOB values to NaT
+        # this comparison is very slow but still faster than removing tzinfo and taking np.array()
+        arr[arr == datetime(1, 1, 1)] = None
+        arr[arr == datetime(1, 1, 1, tzinfo=timezone.utc)] = None
+        try:
+            return _convert_datetime(arr)
+        except OutOfBoundsDatetime as e:
+            raise e from None
+    # 0 converts to 1970-01-01T00:00:00
+    ts[ts == np.zeros(1, ts.dtype)[0]] = None
+    return ts
 
 
 def postprocess_datetime(frame: pd.DataFrame,
@@ -154,6 +252,23 @@ def postprocess_datetime(frame: pd.DataFrame,
         except (AttributeError, TypeError):
             continue
     return frame
+
+
+def _convert_integer(arr: np.ndarray,
+                     name: str,
+                     erase_null: bool,
+                     log: logging.Logger,
+                     ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+    nulls = None
+    while True:
+        try:
+            return arr.astype(int), nulls
+        except TypeError as e:
+            nulls = np.equal(arr, None)
+            if not nulls.any() or not erase_null:
+                raise ValueError(f"Column {name} is not all-integer") from e
+            log.error("fetched nulls instead of integers in %s", name)
+            arr[nulls] = 0
 
 
 def postprocess_integer(frame: pd.DataFrame, columns: Iterable[Tuple[str, int]]) -> pd.DataFrame:
