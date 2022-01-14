@@ -508,11 +508,14 @@ class AthenianAioHttpSecurityHandlerFactory(connexion.security.AioHttpSecurityHa
             # check whether the user may access the specified account
             if isinstance(request.json, dict):
                 if (account := request.json.get("account")) is not None:
-                    assert isinstance(account, int)
-                    with sentry_sdk.configure_scope() as scope:
-                        scope.set_tag("account", account)
-                    await get_user_account_status(
-                        context.uid, account, context.sdb, context.cache)
+                    if isinstance(account, int):
+                        with sentry_sdk.configure_scope() as scope:
+                            scope.set_tag("account", account)
+                        await get_user_account_status(
+                            context.uid, account, context.sdb, context.cache)
+                    else:
+                        # we'll report an error later from OpenAPI validator
+                        account = None
                 elif (account := getattr(context, "account", None)) is not None:
                     canonical = context.match_info.route.resource.canonical
                     route_specs = context.app["route_spec"]
