@@ -76,6 +76,10 @@ def _postprocess_cached_facts(result: Tuple[Dict[str, List[PullRequestFacts]], b
     return result
 
 
+class UnsupportedMetricError(Exception):
+    """Raised on attempt to calculate a histogram on a metric that's not possible."""
+
+
 @cached_methods
 class MetricEntriesCalculator:
     """Calculator for different metrics."""
@@ -250,7 +254,7 @@ class MetricEntriesCalculator:
             calc = PullRequestBinnedHistogramCalculator(
                 defs.values(), quantiles, environments=[environment])
         except KeyError as e:
-            raise ValueError("Unsupported metric") from e
+            raise UnsupportedMetricError() from e
         df_facts = await self.calc_pull_request_facts_github(
             time_from, time_to, all_repositories, all_participants, labels, jira,
             exclude_inactive, bots, release_settings, logical_settings, prefixer,
@@ -510,7 +514,7 @@ class MetricEntriesCalculator:
         try:
             calc = CheckRunBinnedHistogramCalculator(defs.values(), quantiles)
         except KeyError as e:
-            raise ValueError("Unsupported metric") from e
+            raise UnsupportedMetricError() from e
         df_check_runs, groups, group_suite_counts, suite_sizes = \
             await self._mine_and_group_check_runs(
                 time_from, time_to, repositories, pushers, split_by_check_runs, labels, jira,

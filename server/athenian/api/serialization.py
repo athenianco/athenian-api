@@ -58,7 +58,7 @@ def _deserialize(
         else:
             return deserialize_model(data, klass)
     except Exception as e:
-        raise ParseError(f"Failed to parse {data} as {klass}") from e
+        raise ParseError(f"Failed to parse {data} as {klass}: {e}") from e
 
 
 def _deserialize_primitive(data, klass: Class) -> Union[Class, int, float, str, bool]:
