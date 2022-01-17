@@ -9,7 +9,7 @@ morcilla[sqlite,asyncpg]==0.5.16
 psycopg2-binary==2.9.3
 xxhash==2.0.2
 # remember to change these versions in Dockerfile, too!
-numpy==1.22.0
+numpy==1.22.1
 scipy==1.7.3
 # end of remember to change in Dockerfile
 sentry-sdk[pure_eval]==1.5.2
