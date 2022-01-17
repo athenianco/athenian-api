@@ -123,7 +123,6 @@ RUN apt-get update && \
     sed -i "s/git+https:\/\/gkwillie:$GKWILLIE_TOKEN@/git+ssh:\/\/git@/g" server/requirements.txt && \
     pip3 uninstall -y flask && \
     patch /usr/local/lib/python*/dist-packages/prometheus_client/exposition.py /patches/prometheus_client.patch && \
-    patch /usr/local/lib/python*/dist-packages/aiomcache/client.py /patches/aiomcache_version.patch && \
     apt-get purge -y patch gcc g++ && \
     apt-get autoremove -y --purge && \
     apt-get clean && \

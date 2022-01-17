@@ -381,8 +381,7 @@ async def _disambiguate_pull_requests(df: pd.DataFrame,
     pr_node_ids[np.equal(pr_node_ids, None)] = 0
     df[CheckRun.pull_request_node_id.name] = pr_node_ids.astype(int, copy=False)
 
-    # TODO(vmarkovtsev): remove () after https://github.com/returntocorp/semgrep/issues/4461 is fixed  # noqa
-    return (df, *pr_labels)
+    return df, *pr_labels
 
 
 @sentry_span
