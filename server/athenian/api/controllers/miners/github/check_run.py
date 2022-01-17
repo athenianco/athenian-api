@@ -167,7 +167,6 @@ async def _mine_check_runs(time_from: datetime,
         .with_statement_hint("IndexScan(pr node_pullrequest_pkey)") \
         .with_statement_hint("IndexScan(sc ath_node_statuscontext_commit_created_at)") \
         .with_statement_hint("IndexScan(cr github_node_check_run_repository_started_at)") \
-        .with_statement_hint("IndexOnlyScan(cs github_node_check_suite_created_at)") \
         .with_statement_hint("Rows(cr cs *400)") \
         .with_statement_hint("Rows(c_1 sc *1000)")
 
