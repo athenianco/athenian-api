@@ -116,7 +116,7 @@ async def _asyncpg_execute(self,
     if _log_sql_re.match(log_sql_probe) and not _testing:
         from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
         if len(description) <= MAX_SENTRY_STRING_LENGTH and args:
-            description += " | " + str(args)
+            description += "\n\n" + ", ".join(str(arg) for arg in args)
         if len(description) > MAX_SENTRY_STRING_LENGTH:
             transaction = sentry_sdk.Hub.current.scope.transaction
             if transaction is not None and transaction.sampled:
