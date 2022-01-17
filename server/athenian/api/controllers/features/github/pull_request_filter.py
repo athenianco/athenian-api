@@ -1030,7 +1030,8 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
             asyncio.create_task(noop(), name="noop"),
         )
     if repositories is None:
-        repositories = logical_settings.all_logical_repos()
+        repositories = logical_settings.with_logical_repos(
+            prs_df[PullRequest.repository_full_name.name].values)
     if resolve_rebased:
         dags = await fetch_precomputed_commit_history_dags(
             prs_df[PullRequest.repository_full_name.name].unique(), account, pdb, cache)

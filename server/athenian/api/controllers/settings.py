@@ -364,13 +364,13 @@ class LogicalRepositorySettings:
         """Initialize clear settings without logical repositories."""
         return LogicalRepositorySettings({}, {})
 
-    def all_logical_repos(self) -> Set[str]:
+    def with_logical_repos(self, repos: Iterable[str]) -> Set[str]:
         """Collect all mentioned logical repositories."""
         return set(chain.from_iterable(
             prs.logical_repositories
             for prs in self._prs.values()
             if prs
-        ))
+        )).union(repos)
 
     def prs(self, repo: str) -> Optional[LogicalPRSettings]:
         """Return PR match rules for the given repository native name."""
