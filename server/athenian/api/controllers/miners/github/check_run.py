@@ -19,7 +19,7 @@ from athenian.api.controllers.features.github.check_run_metrics_accelerated impo
 from athenian.api.controllers.logical_repos import coerce_logical_repos, contains_logical_repos
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.label import fetch_labels_to_filter
-from athenian.api.controllers.miners.github.logical import split_logical_repositories
+from athenian.api.controllers.miners.github.logical import split_logical_prs
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
 from athenian.api.controllers.settings import LogicalRepositorySettings
@@ -203,7 +203,7 @@ async def _mine_check_runs(time_from: datetime,
     _postprocess_check_runs(df)
 
     if with_logical_repos:
-        df = split_logical_repositories(
+        df = split_logical_prs(
             df, *pr_labels, repositories, logical_settings, reindex=False, reset_index=False,
             repo_column=CheckRun.repository_full_name.name,
             id_column=CheckRun.pull_request_node_id.name,

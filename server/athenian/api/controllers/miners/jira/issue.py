@@ -19,7 +19,7 @@ from athenian.api.cache import cached, short_term_exptime
 from athenian.api.controllers.jira import JIRAConfig
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.label import fetch_labels_to_filter
-from athenian.api.controllers.miners.github.logical import split_logical_repositories
+from athenian.api.controllers.miners.github.logical import split_logical_prs
 from athenian.api.controllers.miners.github.precomputed_prs import triage_by_release_match
 from athenian.api.controllers.miners.types import PullRequestFactsMap
 from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch, \
@@ -310,7 +310,7 @@ async def fetch_jira_issues(installation_ids: JIRAConfig,
         _fetch_released_prs(prs.index.values, default_branches, release_settings, account, pdb),
         fetch_labels_to_filter(prs.index.values, meta_ids, mdb),
     )
-    prs = split_logical_repositories(
+    prs = split_logical_prs(
         prs, labels,
         logical_settings.with_logical_repos(prs[PullRequest.repository_full_name.name].values),
         logical_settings)

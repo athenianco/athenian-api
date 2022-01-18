@@ -27,7 +27,7 @@ from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_C
     DAG, fetch_precomputed_commit_history_dags, fetch_repository_commits_no_branch_dates
 from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_inrange
 from athenian.api.controllers.miners.github.label import fetch_labels_to_filter
-from athenian.api.controllers.miners.github.logical import split_logical_repositories
+from athenian.api.controllers.miners.github.logical import split_logical_prs
 from athenian.api.controllers.miners.github.precomputed_prs import \
     discover_inactive_merged_unreleased_prs, MergedPRFactsLoader, OpenPRFactsLoader, \
     update_unreleased_prs
@@ -500,7 +500,7 @@ class PullRequestMiner:
             if v is not None:  # it can be None because the pdb table is filled in two steps
                 facts[k] = v
 
-        dfs.prs = split_logical_repositories(
+        dfs.prs = split_logical_prs(
             dfs.prs, dfs.labels, repositories, logical_settings)
         return dfs, facts, repositories, participants, labels, jira, with_jira_map, matched_bys, \
             unreleased_prs_event
@@ -701,10 +701,10 @@ class PullRequestMiner:
                 if logical_settings.has_prs_by_label(physical_repositories):
                     await fetch_labels_task
                     labels = fetch_labels_task.result()
-                merged_prs = split_logical_repositories(
+                merged_prs = split_logical_prs(
                     merged_prs, labels, logical_repositories, logical_settings)
             else:
-                merged_prs = split_logical_repositories(merged_prs, None, set(), logical_settings)
+                merged_prs = split_logical_prs(merged_prs, None, set(), logical_settings)
             df_facts, other_facts = await gather(
                 cls.mappers.map_prs_to_releases(
                     merged_prs, releases, matched_bys, branches, default_branches, time_to,
@@ -810,7 +810,7 @@ class PullRequestMiner:
                     labels[k] = [v]
             other_unreleased_prs_event = asyncio.Event()
             unreleased_prs_event = AllEvents(unreleased_prs_event, other_unreleased_prs_event)
-            merged_unreleased_prs = split_logical_repositories(
+            merged_unreleased_prs = split_logical_prs(
                 merged_unreleased_prs, dfs.labels, logical_repositories, logical_settings)
             await defer(update_unreleased_prs(
                 merged_unreleased_prs, pd.DataFrame(), time_to, labels, matched_bys,

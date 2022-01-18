@@ -7,16 +7,16 @@ from athenian.api.controllers.settings import LogicalPRSettings, LogicalReposito
 from athenian.api.models.metadata.github import PullRequest
 
 
-def split_logical_repositories(prs: pd.DataFrame,
-                               labels: Optional[pd.DataFrame],
-                               logical_repos: Collection[str],
-                               logical_settings: LogicalRepositorySettings,
-                               reindex: bool = True,
-                               reset_index: bool = True,
-                               repo_column: str = PullRequest.repository_full_name.name,
-                               id_column: str = PullRequest.node_id.name,
-                               title_column: str = PullRequest.title.name,
-                               ) -> pd.DataFrame:
+def split_logical_prs(prs: pd.DataFrame,
+                      labels: Optional[pd.DataFrame],
+                      logical_repos: Collection[str],
+                      logical_settings: LogicalRepositorySettings,
+                      reindex: bool = True,
+                      reset_index: bool = True,
+                      repo_column: str = PullRequest.repository_full_name.name,
+                      id_column: str = PullRequest.node_id.name,
+                      title_column: str = PullRequest.title.name,
+                      ) -> pd.DataFrame:
     """Remove and clone PRs according to the logical repository settings."""
     assert isinstance(prs, pd.DataFrame)
     if labels is None:

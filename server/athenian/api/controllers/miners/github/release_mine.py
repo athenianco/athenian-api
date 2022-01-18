@@ -23,7 +23,7 @@ from athenian.api.controllers.miners.github.commit import fetch_precomputed_comm
 from athenian.api.controllers.miners.github.dag_accelerated import extract_subdag, \
     mark_dag_access, mark_dag_parents, searchsorted_inrange
 from athenian.api.controllers.miners.github.deployment_light import load_included_deployments
-from athenian.api.controllers.miners.github.logical import split_logical_repositories
+from athenian.api.controllers.miners.github.logical import split_logical_prs
 from athenian.api.controllers.miners.github.precomputed_releases import \
     compose_release_match, fetch_precomputed_releases_by_name, load_precomputed_release_facts, \
     reverse_release_settings, store_precomputed_release_facts
@@ -728,7 +728,7 @@ async def _load_prs_by_merge_commit_ids(commit_ids: Sequence[str],
         df_labels = df_labels[0]
     else:
         df_labels = None
-    df_prs = split_logical_repositories(
+    df_prs = split_logical_prs(
         df_prs, df_labels, repos, logical_settings, reindex=False)
     if has_logical_prs:
         df_prs.sort_values(

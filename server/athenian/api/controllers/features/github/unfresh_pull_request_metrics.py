@@ -12,7 +12,7 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.controllers.logical_repos import coerce_logical_repos
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.logical import split_logical_repositories
+from athenian.api.controllers.miners.github.logical import split_logical_prs
 from athenian.api.controllers.miners.github.precomputed_prs import \
     discover_inactive_merged_unreleased_prs, MergedPRFactsLoader, \
     OpenPRFactsLoader, remove_ambiguous_prs
@@ -126,7 +126,7 @@ class UnfreshPullRequestFactsFetcher:
         ) = await gather(*tasks, op="discover PRs")
         add_pdb_misses(pdb, "load_precomputed_done_facts_filters/ambiguous",
                        remove_ambiguous_prs(done_facts, ambiguous, matched_bys))
-        unreleased_prs = split_logical_repositories(
+        unreleased_prs = split_logical_prs(
             unreleased_prs, unreleased_labels, repositories, logical_settings)
         unreleased_pr_node_ids = unreleased_prs.index.get_level_values(0).values
         merged_mask = unreleased_prs[PullRequest.merged_at.name].notnull().values
