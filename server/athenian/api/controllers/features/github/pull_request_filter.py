@@ -36,7 +36,7 @@ from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_C
 from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_inrange
 from athenian.api.controllers.miners.github.deployment_light import \
     fetch_repository_environments, load_included_deployments
-from athenian.api.controllers.miners.github.logical import split_logical_repositories
+from athenian.api.controllers.miners.github.logical import split_logical_prs
 from athenian.api.controllers.miners.github.precomputed_prs import \
     DonePRFactsLoader, MergedPRFactsLoader, remove_ambiguous_prs, \
     store_merged_unreleased_pull_request_facts, store_open_pull_request_facts, \
@@ -1086,7 +1086,7 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
         account, meta_ids, mdb, pdb, rdb, cache),
         name=f"load_included_deployments({len(deployment_names)})")
 
-    dfs.prs = split_logical_repositories(dfs.prs, dfs.labels, repositories, logical_settings)
+    dfs.prs = split_logical_prs(dfs.prs, dfs.labels, repositories, logical_settings)
     prs = await list_with_yield(PullRequestMiner(dfs), "PullRequestMiner.__iter__")
 
     filtered_prs = []

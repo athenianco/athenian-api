@@ -391,7 +391,7 @@ class ReleaseToPullRequestMapper:
         all_observed_repos = []
         all_observed_commits = []
         # find the released commit hashes by two DAG traversals
-        with sentry_sdk.start_span(op="_generate_released_prs_clause"):
+        with sentry_sdk.start_span(op="all_observed_*"):
             for repo, repo_releases in releases.groupby(rrfnk, sort=False):
                 physical_repo = drop_logical_repo(repo)
                 if (repo_releases[rpak] >= time_from).any():
@@ -632,12 +632,17 @@ class ReleaseToPullRequestMapper:
         # reliability: DEV-3333 requires us to skip non-existent repositories
         # according to how SQL works, `null` is ignored in `IN ('whatever', null, 'else')`
         repo_name_to_node = prefixer.repo_name_to_node.get
-        commit_rows = await mdb.fetch_all(select([NodeCommit.node_id]).where(and_(
+        filters = [
             NodeCommit.acc_id.in_(meta_ids),
             NodeCommit.repository_id.in_(
                 [repo_name_to_node(r) for r in np.unique(repos).astype("U")]),
             NodeCommit.sha.in_(np.unique(commits).astype("U40")),
-        )))
+        ]
+        if updated_max is not None:
+            # the PRs may not merge after updated_max because they'll update
+            # the PRs may not merge before updated_min because we don't care about further updates
+            filters.insert(-1, NodeCommit.committed_date.between(updated_min, updated_max))
+        commit_rows = await mdb.fetch_all(select([NodeCommit.node_id]).where(and_(*filters)))
         merge_commit_ids = [r[0] for r in commit_rows]
         filters = [
             PullRequest.merged_at < time_boundary,
