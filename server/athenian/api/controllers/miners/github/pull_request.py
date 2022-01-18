@@ -1498,11 +1498,14 @@ class PullRequestMiner:
             left.append(cls.find_left_by_labels(
                 pr_node_ids, df_labels_index, df_labels_names, jira.labels))
         if jira.epics:
-            left.append(jira_index.take(np.where(
-                dfs.jiras["epic"].isin(jira.epics))[0]).unique())
+            left.append(jira_index.take(np.flatnonzero(
+                dfs.jiras["epic"].isin(jira.epics).values)).unique())
         if jira.issue_types:
-            left.append(dfs.jiras.index.get_level_values(0).take(np.where(
-                dfs.jiras[Issue.type.name].str.lower().isin(jira.issue_types))[0]).unique())
+            left.append(dfs.jiras.index.get_level_values(0).take(np.flatnonzero(
+                dfs.jiras[Issue.type.name].str.lower().isin(jira.issue_types).values)).unique())
+        if jira.custom_projects:
+            left.append(jira_index.take(np.flatnonzero(
+                dfs.jiras[Issue.project_id.name].isin(jira.projects).values)).unique())
         result = left[0]
         for other in left[1:]:
             result = result.intersection(other)
