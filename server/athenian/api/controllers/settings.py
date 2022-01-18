@@ -20,6 +20,7 @@ from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.reposet import resolve_repos
 from athenian.api.db import Database, DatabaseLike
 from athenian.api.models.metadata.github import PullRequestLabel
+from athenian.api.models.persistentdata.models import DeployedLabel, DeploymentNotification
 from athenian.api.models.state.models import LogicalRepository, ReleaseSetting
 from athenian.api.models.web import InvalidRequestError, MissingSettingsError, ReleaseMatchStrategy
 from athenian.api.request import AthenianWebRequest
@@ -176,10 +177,37 @@ class ReleaseSettings:
         return ReleaseSettings({self._coherence[r]: self._map_native[r] for r in repos})
 
 
-class LogicalPRSettings:
-    """Matching rules for PRs in a logical repository."""
+class CommonLogicalSettingsMixin:
+    """Common methods belonging to both LogicalPRSettings and LogicalDeploymentSettings."""
 
     __slots__ = ("_repos", "_title_regexps", "_labels", "_origin")
+
+    def __repr__(self) -> str:
+        """Implement repr()."""
+        return f"{type(self).__name__}({str(self)})"
+
+    def __bool__(self) -> bool:
+        """Return True if there is at least one logical repository, otherwise, False."""
+        return bool(self._labels) or bool(self._title_regexps)
+
+    @property
+    def logical_repositories(self) -> FrozenSet[str]:
+        """Return all known logical repositories."""
+        return self._repos
+
+    @property
+    def has_titles(self) -> bool:
+        """Return value indicating whether there is at least one title filter."""
+        return bool(self._title_regexps)
+
+    @property
+    def has_labels(self) -> bool:
+        """Return value indicating whether there is at least one label filter."""
+        return bool(self._labels)
+
+
+class LogicalPRSettings(CommonLogicalSettingsMixin):
+    """Matching rules for PRs in a logical repository."""
 
     def __init__(self, prs: Mapping[str, Dict[str, Any]], origin: str):
         """Initialize a new instance of LogicalPRSettings class."""
@@ -212,29 +240,6 @@ class LogicalPRSettings:
                else {}),
             **({"labels": sorted(repo_labels)} if (repo_labels := labels.get(r)) else {}),
         }) for r in sorted(self._repos - {self._origin})))
-
-    def __repr__(self) -> str:
-        """Implement repr()."""
-        return f"LogicalPRSettings({str(self)})"
-
-    def __bool__(self) -> bool:
-        """Return True if there is at least one logical repository, otherwise, False."""
-        return bool(self._labels) or bool(self._title_regexps)
-
-    @property
-    def logical_repositories(self) -> FrozenSet[str]:
-        """Return all known logical repositories."""
-        return self._repos
-
-    @property
-    def has_titles(self) -> bool:
-        """Return value indicating whether there is at least one title filter."""
-        return bool(self._title_regexps)
-
-    @property
-    def has_labels(self) -> bool:
-        """Return value indicating whether there is at least one label filter."""
-        return bool(self._labels)
 
     @staticmethod
     def group_by_repo(repos: Sequence[str],
@@ -287,14 +292,15 @@ class LogicalPRSettings:
             titles = titles[pr_indexes]
         else:
             pr_indexes = np.arange(len(prs))
-        lengths = np.fromiter((len(s) for s in titles), int, len(titles)) + 1
-        offsets = np.zeros(len(lengths), dtype=int)
-        np.cumsum(lengths[:-1], out=offsets[1:])
-        concat_titles = "\n".join(titles)  # PR titles are guaranteed to not contain \n
-        for repo, regexp in self._title_regexps.items():
-            found = [m.start() for m in regexp.finditer(concat_titles)]
-            found = pr_indexes[np.in1d(offsets, found, assume_unique=True)]
-            matched[repo] = found
+        if self.has_titles:
+            lengths = np.fromiter((len(s) for s in titles), int, len(titles)) + 1
+            offsets = np.zeros(len(lengths), dtype=int)
+            np.cumsum(lengths[:-1], out=offsets[1:])
+            concat_titles = "\n".join(titles)  # PR titles are guaranteed to not contain \n
+            for repo, regexp in self._title_regexps.items():
+                found = [m.start() for m in regexp.finditer(concat_titles)]
+                found = pr_indexes[np.in1d(offsets, found, assume_unique=True)]
+                matched[repo] = found
         if not labels.empty and self.has_labels:
             matched_by_label = defaultdict(list)
             pr_ids = prs[id_column].values[pr_indexes]
@@ -332,6 +338,84 @@ class LogicalPRSettings:
         return matched
 
 
+class LogicalDeploymentSettings(CommonLogicalSettingsMixin):
+    """Matching rules for deployments in a logical repository."""
+
+    def __init__(self, deps: Mapping[str, Dict[str, Any]], origin: str):
+        """Initialize a new instance of LogicalDeploymentSettings class."""
+        self._origin = origin
+        repos = {origin}
+        self._title_regexps = title_regexps = {}
+        self._labels = labels = {}
+        for repo, obj in deps.items():
+            if pattern := obj.get("title"):
+                repos.add(repo)
+                title_regexps[repo] = re.compile(f"^({pattern})", re.MULTILINE)
+            if obj_labels := obj.get("labels", {}):
+                repos.add(repo)
+                for label, values in obj_labels.items():
+                    label_values = labels.setdefault(label, {})
+                    for value in values:
+                        assert isinstance(value, (str, int))
+                        label_values.setdefault(value, []).append(repo)
+        self._repos = frozenset(repos)
+
+    def __str__(self) -> str:
+        """Implement str()."""
+        labels = defaultdict(dict)
+        for label, label_values in self._labels.items():
+            for value, repos in label_values.items():
+                for repo in repos:
+                    labels[repo].setdefault(label, []).append(value)
+        return str(dict((r, {
+            **({"title": pattern.pattern[2:-1]}
+               if (pattern := self._title_regexps.get(r))
+               else {}),
+            **({"labels": repo_labels} if (repo_labels := labels.get(r)) else {}),
+        }) for r in sorted(self._repos - {self._origin})))
+
+    def match(self,
+              notifications: pd.DataFrame,
+              labels: pd.DataFrame,
+              ) -> Dict[str, Set[str]]:
+        """
+        Split deployed components into logical parts.
+
+        :param notifications: deployment notifications.
+        :param labels: labels of the deployment notifications.
+        :return: logical repository names mapped to the deployment names.
+        """
+        assert isinstance(notifications, pd.DataFrame)
+        assert isinstance(labels, pd.DataFrame)
+        matched = {}
+        if self.has_titles:
+            titles = notifications[DeploymentNotification.name.name].values
+            lengths = np.fromiter((len(s) for s in titles), int, len(titles)) + 1
+            offsets = np.zeros(len(lengths), dtype=int)
+            np.cumsum(lengths[:-1], out=offsets[1:])
+            concat_titles = "\n".join(titles)  # deployment names are guaranteed to not contain \n
+            for repo, regexp in self._title_regexps.items():
+                found = [m.start() for m in regexp.finditer(concat_titles)]
+                found = titles[np.in1d(offsets, found, assume_unique=True)]
+                matched[repo] = set(found)
+        if not labels.empty and self.has_labels:
+            logical_labels = self._labels
+            for deployment_name, label, value in zip(
+                    labels[DeployedLabel.deployment_name.name].values,
+                    labels[DeployedLabel.key.name].values,
+                    labels[DeployedLabel.value.name].values):
+                try:
+                    repo_labels = logical_labels[label]
+                except KeyError:
+                    continue
+                try:
+                    for repo in repo_labels[value]:
+                        matched.setdefault(repo, set()).add(deployment_name)
+                except (KeyError, TypeError):
+                    continue
+        return matched
+
+
 class LogicalRepositorySettings:
     """Rules for matching PRs, releases, deployments to account-defined sub-repositories."""
 
@@ -345,19 +429,31 @@ class LogicalRepositorySettings:
         self._prs = {
             repo: LogicalPRSettings(val, repo) for repo, val in pr_settings.items()
         }
+        dep_settings = defaultdict(dict)
+        for repo, val in deployments.items():
+            dep_settings[drop_logical_repo(repo)][repo] = val
+        self._deployments = {
+            repo: LogicalDeploymentSettings(val, repo) for repo, val in dep_settings.items()
+        }
 
     def __str__(self) -> str:
         """Implement str()."""
         prs = [f"{repo}: {val}" for repo, val in sorted(self._prs.items())]
-        return f"prs: {prs}; deployments: None"
+        deps = [f"{repo}: {val}" for repo, val in sorted(self._deployments.items())]
+        return f"prs: {prs}; deployments: {deps}"
 
     def __repr__(self) -> str:
         """Implement repr()."""
-        return f"LogicalRepositorySettings(prs={repr(self._prs)}, deployments=None)"
+        return f"LogicalRepositorySettings(prs={repr(self._prs)}, " \
+               f"deployments={repr(self._deployments)})"
 
     def has_logical_prs(self) -> bool:
         """Return value indicating whether there are any logical PR settings."""
         return any(self._prs.values())
+
+    def has_logical_deployments(self) -> bool:
+        """Return value indicating whether there are any logical PR settings."""
+        return any(self._deployments.values())
 
     @classmethod
     def empty(cls) -> "LogicalRepositorySettings":

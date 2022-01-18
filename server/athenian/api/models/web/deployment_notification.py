@@ -143,8 +143,13 @@ class DeploymentNotificationUnsealed(Model):
 
         :param name: The name of this DeploymentNotification.
         """
-        if name is not None and not name:
-            raise ValueError("`name` must be either null or at least 1 character long")
+        if name is not None:
+            if not name:
+                raise ValueError("`name` must be either null or at least 1 character long")
+            if "\n" in name:
+                raise ValueError("`name` may not contain new line characters")
+            if len(name) > 100:
+                raise ValueError("`name` may not be longer than 100 characters")
         self._name = name
 
     @property
