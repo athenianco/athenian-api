@@ -254,14 +254,12 @@ async def mine_all_deployments(repos: Collection[str],
                                rdb: Database,
                                cache: Optional[aiomcache.Client]) -> Dict[str, pd.DataFrame]:
     """Extract everything we know about deployments."""
-    repo_name_to_node = prefixer.repo_name_to_node
     now = datetime.now(timezone.utc)
     envs = await rdb.fetch_all(select([distinct(DeploymentNotification.environment)])
                                .where(DeploymentNotification.account_id == account))
     envs = [r[0] for r in envs]
     deps, _ = await mine_deployments(
-        [repo_name_to_node[r] for r in repos if r in repo_name_to_node], {},
-        now - timedelta(days=365 * 10), now,
+        repos, {}, now - timedelta(days=365 * 10), now,
         envs, [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_settings, logical_settings, branches, default_branches, prefixer,
         account, meta_ids, mdb, pdb, rdb, cache)

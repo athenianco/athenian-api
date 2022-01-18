@@ -18,7 +18,7 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached, CancelCache, short_term_exptime
 from athenian.api.controllers.jira import JIRAConfig
-from athenian.api.controllers.logical_repos import drop_logical_repo
+from athenian.api.controllers.logical_repos import coerce_logical_repos, drop_logical_repo
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.commit import COMMIT_FETCH_COMMITS_COLUMNS, DAG, \
     fetch_dags_with_commits, fetch_repository_commits
@@ -55,10 +55,10 @@ from athenian.api.typing_utils import df_from_structs
     exptime=short_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda repo_node_ids, participants, time_from, time_to, environments, conclusions,
+    key=lambda repositories, participants, time_from, time_to, environments, conclusions,
     with_labels, without_labels, pr_labels, jira, release_settings, logical_settings,
     default_branches, **_: (
-        ",".join(map(str, repo_node_ids)),
+        ",".join(sorted(repositories)),
         ",".join("%s: %s" % (k, "+".join(sorted(v))) for k, v in sorted(participants.items())),
         time_from.timestamp(),
         time_to.timestamp(),
@@ -70,7 +70,7 @@ from athenian.api.typing_utils import df_from_structs
         ",".join("%s: %s" % p for p in sorted(default_branches.items())),
     ),
 )
-async def mine_deployments(repo_node_ids: Collection[int],
+async def mine_deployments(repositories: Collection[str],
                            participants: ReleaseParticipants,
                            time_from: datetime,
                            time_to: datetime,
@@ -97,11 +97,17 @@ async def mine_deployments(repo_node_ids: Collection[int],
     :return: 1. Deployment stats with deployed releases sub-dataframes. \
              2. All the people ever mentioned anywhere in (1).
     """
+    repo_name_to_node = prefixer.repo_name_to_node.get
+    repo_node_ids = [repo_name_to_node(r, 0) for r in coerce_logical_repos(repositories)]
     notifications, _, _ = await _fetch_deployment_candidates(
         repo_node_ids, time_from, time_to, environments, conclusions, with_labels, without_labels,
         account, rdb, cache)
     notifications, components = await _fetch_components_and_prune_unresolved(
         notifications, account, rdb)
+    repo_node_to_name = prefixer.repo_node_to_name.get
+    components[DeployedComponent.repository_full_name] = [
+        repo_node_to_name(n) for n in components[DeployedComponent.repository_node_id.name].values
+    ]
     if notifications.empty:
         return pd.DataFrame(), np.array([], dtype="U")
     labels = asyncio.create_task(_fetch_grouped_labels(notifications.index.values, account, rdb),

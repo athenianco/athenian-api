@@ -1571,7 +1571,7 @@ async def test_filter_releases_deployments(
         client, headers, release_match_setting_tag_or_branch, prefixer, branches,
         default_branches, mdb, pdb, rdb, dummy_deployment_label):
     await mine_deployments(
-        [40550], {},
+        ["src-d/go-git"], {},
         datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),

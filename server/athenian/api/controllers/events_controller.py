@@ -230,7 +230,7 @@ async def _drop_precomputed_deployments(account: int,
     )
     today = datetime.now(timezone.utc)
     await mine_deployments(
-        repo_node_ids, {}, today - timedelta(days=730), today, [], [], {}, {}, LabelFilter.empty(),
+        repos, {}, today - timedelta(days=730), today, [], [], {}, {}, LabelFilter.empty(),
         JIRAFilter.empty(), release_settings, logical_settings, branches, default_branches,
         prefixer, account, meta_ids, request.mdb, pdb, rdb, None)
 

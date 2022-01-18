@@ -20,12 +20,13 @@ from athenian.api.models.web import DeploymentMetricID
 @pytest.fixture(scope="module")
 def sample_deps() -> pd.DataFrame:
     rnid = DeployedComponent.repository_node_id.name
+    rpfn = DeployedComponent.repository_full_name
     return pd.DataFrame.from_dict({
-        "components": [pd.DataFrame([{rnid: 1}, {rnid: 2}]),
-                       pd.DataFrame([{rnid: 3}, {rnid: 1}]),
-                       pd.DataFrame([{rnid: 3}, {rnid: 2}]),
-                       pd.DataFrame([{rnid: 1}]),
-                       pd.DataFrame([{rnid: 3}])],
+        "components": [pd.DataFrame([{rnid: 1, rpfn: "1"}, {rnid: 2, rpfn: "2"}]),
+                       pd.DataFrame([{rnid: 3, rpfn: "3"}, {rnid: 1, rpfn: "1"}]),
+                       pd.DataFrame([{rnid: 3, rpfn: "3"}, {rnid: 2, rpfn: "2"}]),
+                       pd.DataFrame([{rnid: 1, rpfn: "1"}]),
+                       pd.DataFrame([{rnid: 3, rpfn: "3"}])],
         "pr_authors": [[1, 2, 3], [1, 4, 5], [2, 4, 6], [], [3]],
         "commit_authors": [[1, 2, 3], [1, 4, 5, 6], [2, 4, 6], [7], [3]],
         "release_authors": [[], [], [1, 2], [], [7]],
@@ -34,15 +35,15 @@ def sample_deps() -> pd.DataFrame:
 
 
 def test_group_deployments_by_repositories_smoke(sample_deps):
-    assert_array_equal(group_deployments_by_repositories([[1, 2], [2, 3]], sample_deps),
+    assert_array_equal(group_deployments_by_repositories([["1", "2"], ["2", "3"]], sample_deps),
                        [[0, 1, 2, 3], [0, 1, 2, 4]])
     assert_array_equal(
         [arr.tolist() for arr in group_deployments_by_repositories(
-            [[1], [2], [1, 2]], sample_deps)],
+            [["1"], ["2"], ["1", "2"]], sample_deps)],
         [[0, 1, 3], [0, 2], [0, 1, 2, 3]])
     assert_array_equal(group_deployments_by_repositories([], sample_deps),
                        [np.arange(len(sample_deps))])
-    assert_array_equal(group_deployments_by_repositories([[1, 2], [2, 3]], pd.DataFrame()),
+    assert_array_equal(group_deployments_by_repositories([["1", "2"], ["2", "3"]], pd.DataFrame()),
                        [np.array([], dtype=int)] * 2)
     assert_array_equal(group_deployments_by_repositories([], pd.DataFrame()),
                        [np.array([], dtype=int)])
@@ -125,7 +126,7 @@ async def test_deployment_metrics_calculators_smoke(
             [[datetime(2015, 1, 1, tzinfo=timezone.utc),
               datetime(2021, 1, 1, tzinfo=timezone.utc)]],
             (0, 1),
-            [[40550]],
+            [["src-d/go-git"]],
             {}, [["staging"], ["production"]],
             LabelFilter.empty(), {}, {}, JIRAFilter.empty(),
             release_match_setting_tag_or_branch,

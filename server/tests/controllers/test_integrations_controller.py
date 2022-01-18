@@ -166,7 +166,8 @@ async def test_get_everything_smoke(client, headers, dummy_deployment_label):
     }
     assert len(depscomps_df) == 1
     assert set(depscomps_df.columns) == {
-        "repository_node_id", "reference", "resolved_commit_node_id", "deployment_name",
+        "repository_node_id", "repository_full_name", "reference", "resolved_commit_node_id",
+        "deployment_name",
     }
     assert len(depsrels_df) == 51
     assert set(depsrels_df.columns) == {

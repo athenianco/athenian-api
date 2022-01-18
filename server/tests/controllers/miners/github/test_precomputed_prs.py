@@ -938,7 +938,7 @@ async def test_discover_update_unreleased_prs_deployments(
         DeploymentNotification.updated_at: datetime.now(timezone.utc),
     }))
     await mine_deployments(
-        [40550], {},
+        ["src-d/go-git"], {},
         datetime(2018, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
