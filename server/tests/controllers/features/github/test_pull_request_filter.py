@@ -627,7 +627,7 @@ async def test_filter_pull_requests_deployments(
     for pr in prs:
         assert pr.deployments is None
     await mine_deployments(
-        [40550], {},
+        ["src-d/go-git"], {},
         time_from, time_to,
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
@@ -679,7 +679,7 @@ async def test_fetch_pull_requests_deployments(
     time_from = datetime(year=2019, month=6, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2019, month=12, day=1, tzinfo=timezone.utc)
     await mine_deployments(
-        [40550], {},
+        ["src-d/go-git"], {},
         time_from, time_to,
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),

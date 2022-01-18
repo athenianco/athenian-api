@@ -239,10 +239,8 @@ def main():
                     prs_open = facts[PullRequestFacts.f.closed].isnull().sum()
                 del facts  # free some memory
                 log.info("Mining deployments")
-                repo_nodes = [prefixer.repo_name_to_node[r] for r in repos
-                              if r in prefixer.repo_name_to_node]
                 await mine_deployments(
-                    repo_nodes, {}, no_time_from, time_to, [], [], {}, {}, LabelFilter.empty(),
+                    repos, {}, no_time_from, time_to, [], [], {}, {}, LabelFilter.empty(),
                     JIRAFilter.empty(), release_settings, logical_settings,
                     branches, default_branches, prefixer, reposet.owner_id, meta_ids,
                     mdb, pdb, rdb, None)  # yes, disable the cache

@@ -196,7 +196,7 @@ async def test_mine_deployments_from_scratch(
     )
     await wait_deferred()
     deps, people = await mine_deployments(
-        [40550], {},
+        ["src-d/go-git"], {},
         time_from, time_to,
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
@@ -226,7 +226,7 @@ async def test_mine_deployments_middle(
     )
     await wait_deferred()
     deps, people = await mine_deployments(
-        [40550], {},
+        ["src-d/go-git"], {},
         time_from, time_to,
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
@@ -257,7 +257,7 @@ async def test_mine_deployments_append(
     time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2019, 11, 2, tzinfo=timezone.utc)
     await mine_deployments(
-        [40550], {},
+        ["src-d/go-git"], {},
         time_from, time_to,
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
@@ -286,7 +286,7 @@ async def test_mine_deployments_append(
         created_at=datetime.now(timezone.utc),
     )))
     deps, _ = await mine_deployments(
-        [40550], {},
+        ["src-d/go-git"], {},
         time_from, time_to + timedelta(days=1),
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
@@ -307,7 +307,7 @@ async def test_mine_deployments_insert_middle(
     time_from = datetime(2018, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2018, 12, 31, tzinfo=timezone.utc)
     await mine_deployments(
-        [40550], {},
+        ["src-d/go-git"], {},
         time_from, time_to,
         ["production"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
@@ -319,7 +319,7 @@ async def test_mine_deployments_insert_middle(
     time_from = datetime(2015, 12, 31, tzinfo=timezone.utc)
     time_to = datetime(2019, 12, 31, tzinfo=timezone.utc)
     await mine_deployments(
-        [40550], {},
+        ["src-d/go-git"], {},
         time_from, time_to,
         ["production"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
@@ -363,7 +363,7 @@ async def test_mine_deployments_only_failed(
     time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2019, 11, 2, tzinfo=timezone.utc)
     deps, _ = await mine_deployments(
-        [40550], {},
+        ["src-d/go-git"], {},
         time_from, time_to,
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
@@ -406,7 +406,7 @@ async def test_mine_deployments_no_prs(
         created_at=datetime.now(timezone.utc),
     )))
     deps, _ = await mine_deployments(
-        [40550], {},
+        ["src-d/go-git"], {},
         time_from, time_to,
         ["production"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
@@ -425,7 +425,7 @@ async def test_mine_deployments_no_release_facts(
     time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
     deps, people = await mine_deployments(
-        [40550], {},
+        ["src-d/go-git"], {},
         time_from, time_to,
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
@@ -1840,7 +1840,7 @@ async def test_mine_deployments_precomputed_dummy(
     time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
     deps1, people1 = await mine_deployments(
-        [40550], {},
+        ["src-d/go-git"], {},
         time_from, time_to,
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
@@ -1850,7 +1850,7 @@ async def test_mine_deployments_precomputed_dummy(
         1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     deps2, people2 = await mine_deployments(
-        [40550], {},
+        ["src-d/go-git"], {},
         time_from, time_to,
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
@@ -1877,7 +1877,7 @@ async def test_mine_deployments_precomputed_sample(
     time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
     deps1, people1 = await mine_deployments(
-        [40550], {},
+        ["src-d/go-git"], {},
         time_from, time_to,
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
@@ -1887,7 +1887,7 @@ async def test_mine_deployments_precomputed_sample(
         1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
     deps2, people2 = await mine_deployments(
-        [40550], {},
+        ["src-d/go-git"], {},
         time_from, time_to,
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
@@ -1921,7 +1921,7 @@ async def test_mine_deployments_empty(
     time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
     deps, people = await mine_deployments(
-        [40550], {},
+        ["src-d/go-git"], {},
         time_from, time_to,
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
@@ -1958,7 +1958,7 @@ async def test_mine_deployments_event_releases(
         )
         await wait_deferred()
     deps, people = await mine_deployments(
-        [40550], {},
+        ["src-d/go-git"], {},
         time_from, time_to,
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),

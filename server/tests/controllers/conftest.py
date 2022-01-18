@@ -434,7 +434,7 @@ async def _precompute_deployments(
     mdb, pdb, rdb,
 ):
     deps, _ = await mine_deployments(
-        [40550], {},
+        ["src-d/go-git"], {},
         datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),

@@ -757,7 +757,7 @@ async def filter_deployments(request: AthenianWebRequest, body: dict) -> web.Res
         extract_release_participants(filt.with_, meta_ids, request.mdb),
     )
     deployments, people = await mine_deployments(
-        repo_node_ids=[prefixer.repo_name_to_node[r] for r in repos],
+        repositories=repos,
         participants=participants,
         time_from=time_from,
         time_to=time_to,

@@ -41,7 +41,7 @@ class DeploymentBinnedMetricCalculator(BinnedMetricCalculator):
     ensemble_class = DeploymentMetricCalculatorEnsemble
 
 
-def group_deployments_by_repositories(repositories: Sequence[Collection[int]],
+def group_deployments_by_repositories(repositories: Sequence[Collection[str]],
                                       df: pd.DataFrame,
                                       ) -> List[np.ndarray]:
     """Group deployments by repository node IDs."""
@@ -49,9 +49,9 @@ def group_deployments_by_repositories(repositories: Sequence[Collection[int]],
         return [np.arange(len(df))]
     if df.empty:
         return [np.array([], dtype=int)] * len(repositories)
-    df_repos = [c[DeployedComponent.repository_node_id.name].values
+    df_repos = [c[DeployedComponent.repository_full_name].values
                 for c in df["components"].values]
-    df_repos_flat = np.concatenate(df_repos)
+    df_repos_flat = np.concatenate(df_repos).astype("U", copy=False)
     offsets = np.zeros(len(df), dtype=int)
     np.cumsum([len(c) for c in df_repos[:-1]], out=offsets[1:])
     repositories = [

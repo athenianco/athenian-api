@@ -100,5 +100,6 @@ class DeployedComponent(create_time_mixin(created_at=True, updated_at=False), Ba
 
     deployment_name = Column(Text(), primary_key=True)
     repository_node_id = Column(BigInteger(), primary_key=True)
+    repository_full_name = "repository_full_name"
     reference = Column(Text(), primary_key=True)  # tag, commit hash 7-char prefix or full
     resolved_commit_node_id = Column(BigInteger())  # de-referenced commit node ID in metadata DB

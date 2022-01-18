@@ -1,6 +1,6 @@
 from collections import defaultdict
 from itertools import chain
-from typing import Any, Collection, Dict, Iterable, List, Mapping, Sequence, Set, Tuple, Union
+from typing import Any, Collection, Dict, Iterable, List, Mapping, Set, Tuple, Union
 
 from aiohttp import web
 
@@ -743,11 +743,10 @@ async def calc_metrics_deployments(request: AthenianWebRequest, body: dict) -> w
     async def calculate_for_set_metrics(
             service, repos, withgroups, envs, labels, pr_labels, jira, for_set, for_set_index):
         calculator = calculators[service]
-        resolved_repos, resolved_withgroups = _resolve_deployed_repos_and_participants(
-            repos, withgroups, prefixer, for_set_index)
+        resolved_withgroups = _resolve_deployment_participants(withgroups, prefixer, for_set_index)
         metric_values = await calculator.calc_deployment_metrics_line_github(
             filt.metrics, time_intervals, filt.quantiles or (0, 1),
-            resolved_repos, resolved_withgroups, envs, pr_labels, *labels, jira,
+            repos, resolved_withgroups, envs, pr_labels, *labels, jira,
             release_settings, logical_settings, prefixer,
             branches, default_branches, jira_ids)
         mrange = range(len(filt.metrics))
@@ -782,14 +781,11 @@ async def calc_metrics_deployments(request: AthenianWebRequest, body: dict) -> w
     return model_response(calculated)
 
 
-def _resolve_deployed_repos_and_participants(
-        repos: Sequence[Collection[str]],
+def _resolve_deployment_participants(
         withgroups: List[Mapping[ReleaseParticipationKind, List[str]]],
         prefixer: Prefixer,
-        for_set_index: int) -> Tuple[List[List[int]], List[ReleaseParticipants]]:
-    repo_name_to_node = prefixer.repo_name_to_node.__getitem__
+        for_set_index: int) -> List[ReleaseParticipants]:
     user_login_to_node = prefixer.user_login_to_node.__getitem__
-    resolved_repos = [[repo_name_to_node(r) for r in rg] for rg in repos]
     resolved_withgroups = []
     for gi, group in enumerate(withgroups):
         resolved_group = {}
@@ -805,4 +801,4 @@ def _resolve_deployed_repos_and_participants(
                     )) from None
             resolved_group[k] = people
         resolved_withgroups.append(resolved_group)
-    return resolved_repos, resolved_withgroups
+    return resolved_withgroups

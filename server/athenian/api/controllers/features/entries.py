@@ -556,7 +556,7 @@ class MetricEntriesCalculator:
                                                   metrics: Sequence[str],
                                                   time_intervals: Sequence[Sequence[datetime]],
                                                   quantiles: Sequence[float],
-                                                  repositories: Sequence[Collection[int]],
+                                                  repositories: Sequence[Collection[str]],
                                                   participants: List[ReleaseParticipants],
                                                   environments: List[List[str]],
                                                   pr_labels: LabelFilter,
@@ -576,9 +576,8 @@ class MetricEntriesCalculator:
         :return: participants x repositories x environments x granularities x time intervals x metrics.
         """  # noqa
         time_from, time_to = self._align_time_min_max(time_intervals, quantiles)
-        all_repositories = set(chain.from_iterable(repositories))
         deps, _ = await mine_deployments(
-            all_repositories,
+            set(chain.from_iterable(repositories)),
             participants[0] if len(participants) == 1 else {},
             time_from, time_to,
             set(chain.from_iterable(environments)), [],
