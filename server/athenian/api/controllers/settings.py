@@ -205,6 +205,34 @@ class CommonLogicalSettingsMixin:
         """Return value indicating whether there is at least one label filter."""
         return bool(self._labels)
 
+    @staticmethod
+    def group_by_repo(repos: Sequence[str],
+                      whitelist: Optional[Collection[str]] = None,
+                      ) -> Generator[Tuple[str, np.ndarray], None, None]:
+        """
+        Iterate over the indexes of repository groups.
+
+        :param whitelist: Ignore the rest of the repositories.
+        """
+        if whitelist is not None:
+            if not len(whitelist):
+                return
+            if not isinstance(whitelist, (list, tuple, np.ndarray)):
+                whitelist = list(whitelist)
+        unique_repos, index_map, counts = np.unique(repos, return_inverse=True, return_counts=True)
+        repo_indexes = np.arange(len(repos))[np.argsort(index_map, kind="stable")]
+        if whitelist is not None:
+            allowed_repos = np.flatnonzero(np.in1d(unique_repos, whitelist, assume_unique=True))
+        else:
+            allowed_repos = np.arange(len(unique_repos))
+        offsets = np.cumsum(counts)
+        for repo_index in allowed_repos:
+            repo = unique_repos[repo_index]
+            end = offsets[repo_index]
+            begin = end - counts[repo_index]
+            indexes = repo_indexes[begin:end]
+            yield repo, indexes
+
 
 class LogicalPRSettings(CommonLogicalSettingsMixin):
     """Matching rules for PRs in a logical repository."""
@@ -240,34 +268,6 @@ class LogicalPRSettings(CommonLogicalSettingsMixin):
                else {}),
             **({"labels": sorted(repo_labels)} if (repo_labels := labels.get(r)) else {}),
         }) for r in sorted(self._repos - {self._origin})))
-
-    @staticmethod
-    def group_by_repo(repos: Sequence[str],
-                      whitelist: Optional[Collection[str]] = None,
-                      ) -> Generator[Tuple[str, np.ndarray], None, None]:
-        """
-        Iterate over the indexes of repository groups.
-
-        :param whitelist: Ignore the rest of the repositories.
-        """
-        if whitelist is not None:
-            if not len(whitelist):
-                return
-            if not isinstance(whitelist, (list, tuple, np.ndarray)):
-                whitelist = list(whitelist)
-        unique_repos, index_map, counts = np.unique(repos, return_inverse=True, return_counts=True)
-        repo_indexes = np.arange(len(repos))[np.argsort(index_map, kind="stable")]
-        if whitelist is not None:
-            allowed_repos = np.flatnonzero(np.in1d(unique_repos, whitelist, assume_unique=True))
-        else:
-            allowed_repos = np.arange(len(unique_repos))
-        offsets = np.cumsum(counts)
-        for repo_index in allowed_repos:
-            repo = unique_repos[repo_index]
-            end = offsets[repo_index]
-            begin = end - counts[repo_index]
-            indexes = repo_indexes[begin:end]
-            yield repo, indexes
 
     def match(self,
               prs: pd.DataFrame,
@@ -400,19 +400,20 @@ class LogicalDeploymentSettings(CommonLogicalSettingsMixin):
                 matched[repo] = set(found)
         if not labels.empty and self.has_labels:
             logical_labels = self._labels
-            for deployment_name, label, value in zip(
-                    labels[DeployedLabel.deployment_name.name].values,
-                    labels[DeployedLabel.key.name].values,
-                    labels[DeployedLabel.value.name].values):
-                try:
-                    repo_labels = logical_labels[label]
-                except KeyError:
-                    continue
-                try:
-                    for repo in repo_labels[value]:
-                        matched.setdefault(repo, set()).add(deployment_name)
-                except (KeyError, TypeError):
-                    continue
+            for deployment_name, deployed_labels_df in zip(
+                    labels["deployment_name"].values,
+                    labels["labels"].values):
+                for label, value in zip(deployed_labels_df[DeployedLabel.key.name].values,
+                                        deployed_labels_df[DeployedLabel.value.name].values):
+                    try:
+                        repo_labels = logical_labels[label]
+                    except KeyError:
+                        continue
+                    try:
+                        for repo in repo_labels[value]:
+                            matched.setdefault(repo, set()).add(deployment_name)
+                    except (KeyError, TypeError):
+                        continue
         return matched
 
 
@@ -471,6 +472,10 @@ class LogicalRepositorySettings:
     def prs(self, repo: str) -> Optional[LogicalPRSettings]:
         """Return PR match rules for the given repository native name."""
         return self._prs[repo]
+
+    def deployments(self, repo: str) -> Optional[LogicalDeploymentSettings]:
+        """Return PR match rules for the given repository native name."""
+        return self._deployments[repo]
 
     def has_prs_by_label(self, repos: Optional[Iterable[str]] = None) -> bool:
         """
