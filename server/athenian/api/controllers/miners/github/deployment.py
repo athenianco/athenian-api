@@ -24,6 +24,7 @@ from athenian.api.controllers.miners.github.commit import COMMIT_FETCH_COMMITS_C
     fetch_dags_with_commits, fetch_repository_commits
 from athenian.api.controllers.miners.github.dag_accelerated import extract_independent_ownership, \
     extract_pr_commits, mark_dag_access, mark_dag_parents, searchsorted_inrange
+from athenian.api.controllers.miners.github.logical import split_logical_deployed_components
 from athenian.api.controllers.miners.github.precomputed_releases import \
     compose_release_match, reverse_release_settings
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
@@ -102,16 +103,14 @@ async def mine_deployments(repositories: Collection[str],
     notifications, _, _ = await _fetch_deployment_candidates(
         repo_node_ids, time_from, time_to, environments, conclusions, with_labels, without_labels,
         account, rdb, cache)
-    notifications, components = await _fetch_components_and_prune_unresolved(
-        notifications, account, rdb)
-    repo_node_to_name = prefixer.repo_node_to_name.get
-    components[DeployedComponent.repository_full_name] = [
-        repo_node_to_name(n) for n in components[DeployedComponent.repository_node_id.name].values
-    ]
+    (notifications, components), labels = await gather(
+        _fetch_components_and_prune_unresolved(notifications, prefixer, account, rdb),
+        _fetch_grouped_labels(notifications.index.values, account, rdb),
+    )
+    components = split_logical_deployed_components(
+        notifications, labels, components, repositories, logical_settings)
     if notifications.empty:
         return pd.DataFrame(), np.array([], dtype="U")
-    labels = asyncio.create_task(_fetch_grouped_labels(notifications.index.values, account, rdb),
-                                 name="_fetch_grouped_labels(%d)" % len(notifications))
     repo_names, release_settings = await _finalize_release_settings(
         notifications, time_from, time_to, release_settings, logical_settings,
         branches, default_branches, prefixer, account, meta_ids, mdb, pdb, rdb, cache)
@@ -129,8 +128,12 @@ async def mine_deployments(repositories: Collection[str],
             # we have to look broader so that we compute the commit ownership correctly
             full_notifications, _, _ = await _fetch_deployment_candidates(
                 repo_node_ids, time_from, time_to, environments, [], {}, {}, account, rdb, cache)
-            full_notifications, full_components = await _fetch_components_and_prune_unresolved(
-                notifications, account, rdb)
+            (full_notifications, full_components), full_labels = await gather(
+                _fetch_components_and_prune_unresolved(full_notifications, prefixer, account, rdb),
+                _fetch_grouped_labels(full_notifications.index.values, account, rdb),
+            )
+            full_components = split_logical_deployed_components(
+                full_notifications, full_labels, full_components, repositories, logical_settings)
             full_facts = await _fetch_precomputed_deployment_facts(
                 full_notifications.index.values, default_branches, release_settings, account, pdb)
         else:
@@ -160,10 +163,9 @@ async def mine_deployments(repositories: Collection[str],
             releases = pd.concat([releases, missed_releases])
         else:
             releases = missed_releases
-    await labels
     joined = notifications \
         .join([components, facts], how="inner") \
-        .join([labels.result()] + ([releases] if not releases.empty else []))
+        .join([labels] + ([releases] if not releases.empty else []))
     joined = _adjust_empty_releases(joined)
     joined["labels"] = joined["labels"].astype(object, copy=False)
     no_labels = joined["labels"].isnull().values
@@ -1120,6 +1122,7 @@ async def _extract_deployed_commits(
 
 @sentry_span
 async def _fetch_components_and_prune_unresolved(notifications: pd.DataFrame,
+                                                 prefixer: Prefixer,
                                                  account: int,
                                                  rdb: Database,
                                                  ) -> Tuple[pd.DataFrame, pd.DataFrame]:
@@ -1148,6 +1151,10 @@ async def _fetch_components_and_prune_unresolved(notifications: pd.DataFrame,
     components[DeployedComponent.resolved_commit_node_id.name] = \
         components[DeployedComponent.resolved_commit_node_id.name].astype(int)
     components.set_index(DeployedComponent.deployment_name.name, drop=True, inplace=True)
+    repo_node_to_name = prefixer.repo_node_to_name.get
+    components[DeployedComponent.repository_full_name] = [
+        repo_node_to_name(n) for n in components[DeployedComponent.repository_node_id.name].values
+    ]
     return notifications, components
 
 
