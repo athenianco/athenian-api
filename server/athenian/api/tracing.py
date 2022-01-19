@@ -16,6 +16,7 @@ def sentry_span(func):
     """Wrap the function in a Sentry span to trace the elapsed time."""
     if asyncio.iscoroutinefunction(func):
         async def wrapped_async_sentry_span(*args, **kwargs):
+            __traceback_hide__ = True  # noqa: F841
             with sentry_sdk.Hub(sentry_sdk.Hub.current):
                 with sentry_sdk.start_span(op=func.__qualname__):
                     return await func(*args, **kwargs)

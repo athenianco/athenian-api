@@ -734,7 +734,7 @@ class PullRequestMiner:
             selected = [
                 PullRequest.node_id, _issue.key, _issue.title, _issue.type, _issue.status,
                 _issue.created, _issue.updated, _issue.resolved, _issue.labels, _issue.components,
-                _issue.acc_id, _issue_epic.key.label("epic"),
+                _issue.acc_id, _issue_epic.key.label("epic"), _issue.project_id,
             ]
             if not with_jira:
                 df = pd.DataFrame(columns=[col.name for col in selected
