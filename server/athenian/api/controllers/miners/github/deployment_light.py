@@ -4,13 +4,16 @@ import pickle
 from typing import Collection, Dict, List, Optional, Tuple
 
 import aiomcache
+import pandas as pd
 from sqlalchemy import and_, join, select
 
-from athenian.api.async_utils import gather
+from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached, middle_term_exptime
+from athenian.api.controllers.miners.github.logical import split_logical_deployed_components
 from athenian.api.controllers.miners.types import DeployedComponent as DeployedComponentDC, \
     Deployment, DeploymentConclusion
 from athenian.api.controllers.prefixer import Prefixer
+from athenian.api.controllers.settings import LogicalRepositorySettings
 from athenian.api.db import Database
 from athenian.api.models.metadata.github import NodeCommit
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
@@ -22,11 +25,13 @@ from athenian.api.tracing import sentry_span
 @cached(
     serialize=pickle.dumps,
     deserialize=pickle.loads,
-    key=lambda names, **_: (",".join(sorted(names)),),
+    key=lambda names, logical_settings, **_: (",".join(sorted(names)), logical_settings),
     exptime=middle_term_exptime,
     refresh_on_access=True,
 )
 async def load_included_deployments(names: Collection[str],
+                                    logical_settings: LogicalRepositorySettings,
+                                    prefixer: Prefixer,
                                     account: int,
                                     meta_ids: Tuple[int, ...],
                                     mdb: Database,
@@ -39,55 +44,77 @@ async def load_included_deployments(names: Collection[str],
     Compared to `mine_deployments()`, this is much more lightweight and is intended for `include`.
     """
     notifications, components, labels = await gather(
-        rdb.fetch_all(
+        read_sql_query(
             select([DeploymentNotification])
             .where(and_(DeploymentNotification.account_id == account,
-                        DeploymentNotification.name.in_any_values(names)))),
-        rdb.fetch_all(
+                        DeploymentNotification.name.in_any_values(names))),
+            rdb, DeploymentNotification,
+        ),
+        read_sql_query(
             select([DeployedComponent])
             .where(and_(DeployedComponent.account_id == account,
-                        DeployedComponent.deployment_name.in_any_values(names)))),
-        rdb.fetch_all(
+                        DeployedComponent.deployment_name.in_any_values(names))),
+            rdb, DeployedComponent,
+        ),
+        read_sql_query(
             select([DeployedLabel])
             .where(and_(DeployedLabel.account_id == account,
-                        DeployedLabel.deployment_name.in_any_values(names)))),
+                        DeployedLabel.deployment_name.in_any_values(names))),
+            rdb, DeployedLabel,
+        ),
     )
-    commit_ids = {c[DeployedComponent.resolved_commit_node_id.name] for c in components} \
-        - {None}
+    repo_node_to_name = prefixer.repo_node_to_name.get
+    components[DeployedComponent.repository_full_name] = [
+        repo_node_to_name(r) for r in components[DeployedComponent.repository_node_id.name].values
+    ]
+    commit_ids = components[DeployedComponent.resolved_commit_node_id.name].unique()
+    if len(commit_ids) and commit_ids[0] is None:
+        commit_ids = commit_ids[1:]
     hashes = await mdb.fetch_all(
         select([NodeCommit.sha, NodeCommit.graph_id])
         .where(and_(NodeCommit.acc_id.in_(meta_ids),
                     NodeCommit.graph_id.in_any_values(commit_ids))))
     hashes = {r[NodeCommit.graph_id.name]: r[NodeCommit.sha.name] for r in hashes}
+    labels = group_deployed_labels_df(labels)
+    labels_by_dep = {
+        name: dict(zip(keyvals[DeployedLabel.key.name].values,
+                       keyvals[DeployedLabel.value.name].values))
+        for name, keyvals in zip(labels.index.values, labels["labels"].values)
+    }
+    components = split_logical_deployed_components(
+        notifications, labels, components,
+        logical_settings.with_logical_deployments([]), logical_settings,
+    )
     comps_by_dep = {}
-    for row in components:
-        comps_by_dep.setdefault(row[DeployedComponent.deployment_name.name], []).append(
+    for name, repo, ref, commit_id in zip(
+            components[DeployedComponent.deployment_name.name].values,
+            components[DeployedComponent.repository_full_name].values,
+            components[DeployedComponent.reference.name].values,
+            components[DeployedComponent.resolved_commit_node_id.name].values):
+        comps_by_dep.setdefault(name, []).append(
             DeployedComponentDC(
-                repository_id=row[DeployedComponent.repository_node_id.name],
-                reference=row[DeployedComponent.reference.name],
-                sha=hashes.get(row[DeployedComponent.resolved_commit_node_id.name])))
-    labels_by_dep = {}
-    for row in labels:
-        labels_by_dep.setdefault(
-            row[DeployedLabel.deployment_name.name], {},
-        )[row[DeployedLabel.key.name]] = row[DeployedLabel.value.name]
-    if rdb.url.dialect == "sqlite":
-        notifications = [dict(r) for r in notifications]
-        for row in notifications:
-            for col in (DeploymentNotification.started_at, DeploymentNotification.finished_at):
-                row[col.name] = row[col.name].replace(tzinfo=timezone.utc)
+                repository_full_name=repo,
+                reference=ref,
+                sha=hashes.get(commit_id)))
     return {
-        (name := row[DeploymentNotification.name.name]): Deployment(
+        name: Deployment(
             name=name,
-            conclusion=DeploymentConclusion[row[DeploymentNotification.conclusion.name]],
-            environment=row[DeploymentNotification.environment.name],
-            url=row[DeploymentNotification.url.name],
-            started_at=row[DeploymentNotification.started_at.name],
-            finished_at=row[DeploymentNotification.finished_at.name],
+            conclusion=DeploymentConclusion[conclusion],
+            environment=env,
+            url=url,
+            started_at=started_at,
+            finished_at=finished_at,
             components=comps_by_dep.get(name, []),
             labels=labels_by_dep.get(name, None),
         )
-        for row in notifications
+        for name, conclusion, env, url, started_at, finished_at in zip(
+            notifications[DeploymentNotification.name.name].values,
+            notifications[DeploymentNotification.conclusion.name].values,
+            notifications[DeploymentNotification.environment.name].values,
+            notifications[DeploymentNotification.url.name].values,
+            notifications[DeploymentNotification.started_at.name],
+            notifications[DeploymentNotification.finished_at.name],
+        )
     }
 
 
@@ -132,3 +159,16 @@ async def fetch_repository_environments(repos: Collection[str],
         env = row[DeploymentNotification.environment.name]
         result[env].append(repo_node_to_name(repo_id))
     return result
+
+
+def group_deployed_labels_df(df: pd.DataFrame) -> pd.DataFrame:
+    """Group the DataFrame with key-value labels by deployment name."""
+    groups = list(df.groupby(DeployedLabel.deployment_name.name, sort=False))
+    grouped_labels = pd.DataFrame({
+        "deployment_name": [g[0] for g in groups],
+        "labels": [g[1] for g in groups],
+    })
+    for df in grouped_labels["labels"].values:
+        df.reset_index(drop=True, inplace=True)
+    grouped_labels.set_index("deployment_name", drop=True, inplace=True)
+    return grouped_labels

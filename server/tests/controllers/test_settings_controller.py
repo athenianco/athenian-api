@@ -797,7 +797,7 @@ async def test_logical_settings_smoke(sdb, mdb, prefixer, with_title, with_label
     logical_settings = await settings.list_logical_repositories(prefixer)
     any_with = with_labels or with_title
     assert logical_settings.has_logical_prs() == any_with
-    assert logical_settings.with_logical_repos([]) == \
+    assert logical_settings.with_logical_prs([]) == \
            ({"src-d/go-git", "src-d/go-git/alpha"} if any_with else set())
     assert logical_settings.has_prs_by_label(["src-d/go-git"]) == with_labels
     if not any_with:

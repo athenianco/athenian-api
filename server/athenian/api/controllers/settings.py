@@ -387,9 +387,10 @@ class LogicalDeploymentSettings(CommonLogicalSettingsMixin):
         """
         assert isinstance(notifications, pd.DataFrame)
         assert isinstance(labels, pd.DataFrame)
+        assert notifications.index.name == DeploymentNotification.name.name
         matched = {}
         if self.has_titles:
-            titles = notifications[DeploymentNotification.name.name].values
+            titles = notifications.index.values
             lengths = np.fromiter((len(s) for s in titles), int, len(titles)) + 1
             offsets = np.zeros(len(lengths), dtype=int)
             np.cumsum(lengths[:-1], out=offsets[1:])
@@ -461,12 +462,20 @@ class LogicalRepositorySettings:
         """Initialize clear settings without logical repositories."""
         return LogicalRepositorySettings({}, {})
 
-    def with_logical_repos(self, repos: Iterable[str]) -> Set[str]:
+    def with_logical_prs(self, repos: Iterable[str]) -> Set[str]:
         """Collect all mentioned logical repositories."""
         return set(chain.from_iterable(
             prs.logical_repositories
             for prs in self._prs.values()
             if prs
+        )).union(repos)
+
+    def with_logical_deployments(self, repos: Iterable[str]) -> Set[str]:
+        """Collect all mentioned logical repositories."""
+        return set(chain.from_iterable(
+            dep.logical_repositories
+            for dep in self._deployments.values()
+            if dep
         )).union(repos)
 
     def prs(self, repo: str) -> Optional[LogicalPRSettings]:

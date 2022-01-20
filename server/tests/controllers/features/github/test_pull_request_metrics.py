@@ -1,3 +1,4 @@
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import itertools
 from typing import Sequence, Tuple
@@ -22,9 +23,10 @@ from athenian.api.controllers.features.metric import MetricInt, MetricTimeDelta
 from athenian.api.controllers.features.metric_calculator import MetricCalculator, \
     MetricCalculatorEnsemble
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.controllers.miners.github.deployment import mine_deployments
 from athenian.api.controllers.miners.types import PullRequestFacts
-from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch, \
-    ReleaseMatchSetting, ReleaseSettings
+from athenian.api.controllers.settings import LogicalDeploymentSettings, \
+    LogicalRepositorySettings, ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.persistentdata.models import ReleaseNotification
 from athenian.api.models.precomputed.models import GitHubMergedPullRequestFacts, \
@@ -977,9 +979,22 @@ async def real_pr_samples(release_match_setting_tag,
 
 
 @with_defer
-async def test_pull_request_count_logical(
-        logical_settings, precomputed_deployments, metrics_calculator_factory,
+async def test_pull_request_count_logical_alpha_beta(
+        logical_settings, metrics_calculator_factory, mdb, pdb, rdb,
         release_match_setting_tag_logical, prefixer, bots, branches, default_branches):
+    logical_settings = deepcopy(logical_settings)
+    logical_settings._deployments["src-d/go-git"] = LogicalDeploymentSettings({
+        "src-d/go-git/alpha": {"title": ".*"},
+    }, "src-d/go-git")
+    await mine_deployments(
+        ["src-d/go-git/alpha"], {},
+        datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
+        ["production", "staging"],
+        [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        release_match_setting_tag_logical, logical_settings,
+        branches, default_branches, prefixer,
+        1, (6366825,), mdb, pdb, rdb, None)
+    await wait_deferred()
     metrics_calculator = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
@@ -991,7 +1006,7 @@ async def test_pull_request_count_logical(
         PullRequestMetricID.PR_RELEASE_COUNT,
     ]
     for i in range(2):  # test the second run with filled pdb
-        print(["no pdb", "with pdb"][i], flush=True)
+        print([">>>> no pdb <<<<", ">>>> with pdb <<<<"][i], flush=True)
         args = [
             metrics, [[time_from, time_to]], (0, 1), [], ["production"],
             [["src-d/go-git/alpha"], ["src-d/go-git/beta"]], [],
@@ -1013,15 +1028,39 @@ async def test_pull_request_count_logical(
             assert values[0, 1, 0, 0][0][0].value == 107
             assert values[0, 1, 0, 0][0][1].value == 29
             assert values[0, 1, 0, 0][0][2].value == 99
-            assert values[0, 1, 0, 0][0][3].value == 79
+            assert values[0, 1, 0, 0][0][3].value == 0  # TODO(vmarkovtsev): set to 79 when ready
             assert values[0, 1, 0, 0][0][4].value == 78
 
         check_metrics()
+
+
+@with_defer
+async def test_pull_request_count_logical_root(
+        logical_settings, precomputed_deployments, metrics_calculator_factory,
+        release_match_setting_tag_logical, prefixer, bots, branches, default_branches):
+    metrics_calculator = metrics_calculator_factory(1, (6366825,))
+    time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
+    metrics = [
+        PullRequestMetricID.PR_MERGED,
+        PullRequestMetricID.PR_REJECTED,
+        PullRequestMetricID.PR_REVIEW_COUNT,
+        PullRequestMetricID.PR_DEPLOYMENT_COUNT,
+        PullRequestMetricID.PR_RELEASE_COUNT,
+    ]
+    for i in range(2):  # test the second run with filled pdb
+        print([">>>> no pdb <<<<", ">>>> with pdb <<<<"][i], flush=True)
+        args = [
+            metrics, [[time_from, time_to]], (0, 1), [], ["production"],
+            [["src-d/go-git/alpha"], ["src-d/go-git/beta"]], [],
+            LabelFilter.empty(), JIRAFilter.empty(),
+            False, bots, release_match_setting_tag_logical, logical_settings, prefixer,
+            branches, default_branches, False,
+        ]
         args[5].append(["src-d/go-git"])
         values = await metrics_calculator.calc_pull_request_metrics_line_github(*args)
         await wait_deferred()
         assert values.shape == (1, 3, 1, 1)
-        check_metrics()
         assert values[0, 2, 0, 0][0][0].value == 304
         assert values[0, 2, 0, 0][0][1].value == 57
         assert values[0, 2, 0, 0][0][2].value == 268

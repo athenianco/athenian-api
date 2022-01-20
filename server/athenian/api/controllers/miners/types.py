@@ -451,7 +451,7 @@ class CodeCheckRunListItem:
 class DeployedComponent:
     """Deployed repository reference."""
 
-    repository_id: int
+    repository_full_name: str
     reference: str
     sha: str
 
@@ -484,7 +484,7 @@ class DeploymentFacts:
         pr_authors: [int]
         commit_authors: [int]
         release_authors: [int]
-        repositories: [int]
+        repositories: [str]
         prs: [int]
         prs_offsets: [np.int32]
         lines_prs: [int]

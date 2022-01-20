@@ -1,6 +1,7 @@
 from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List
 
+import pandas as pd
 import pytest
 from sqlalchemy import delete, select
 
@@ -660,11 +661,11 @@ def check_pr_deployments(prs: List[PullRequestListItem],
             conclusion=DeploymentConclusion.SUCCESS,
             environment="production",
             url=None,
-            started_at=datetime(2019, 11, 1, 12, 0, tzinfo=timezone.utc),
-            finished_at=datetime(2019, 11, 1, 12, 15, tzinfo=timezone.utc),
+            started_at=pd.Timestamp(datetime(2019, 11, 1, 12, 0, tzinfo=timezone.utc)),
+            finished_at=pd.Timestamp(datetime(2019, 11, 1, 12, 15, tzinfo=timezone.utc)),
             components=[
                 DeployedComponent(
-                    repository_id=40550,
+                    repository_full_name="src-d/go-git",
                     reference="v4.13.1",
                     sha="0d1a009cbb604db18be960db5f1525b99a55d727",
                 ),

@@ -430,7 +430,7 @@ async def precomputed_sample_deployments(
 
 
 async def _precompute_deployments(
-    release_match_setting_tag_or_branch, prefixer_promise, branches, default_branches,
+    release_match_setting_tag_or_branch, prefixer, branches, default_branches,
     mdb, pdb, rdb,
 ):
     deps, _ = await mine_deployments(
@@ -439,7 +439,7 @@ async def _precompute_deployments(
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_match_setting_tag_or_branch, LogicalRepositorySettings.empty(),
-        branches, default_branches, prefixer_promise,
+        branches, default_branches, prefixer,
         1, (6366825,), mdb, pdb, rdb, None)
     log = logging.getLogger(f"{metadata.__package__}.precomputed_deployments")
     log.info("Mined %d deployments", len(deps))

@@ -133,7 +133,7 @@ class PullRequestMiner:
             dfs.append(df)
             # our very own groupby() allows us to call take() with reduced overhead
             node_ids = df.index.get_level_values(0).values.astype(int, copy=False)
-            with_repos = k == "release"
+            with_repos = k in ("release", "deployments")
             if df.index.nlevels > 1:
                 # the second level adds determinism to the iteration order
                 second_level = df.index.get_level_values(1).values
@@ -393,7 +393,7 @@ class PullRequestMiner:
                 fetch_branch_dags_task=fetch_branch_dags_task),
             cls.map_deployments_to_prs(
                 physical_repos, time_from, time_to, participants,
-                labels, jira, updated_min, updated_max, prefixer, branches, pdags,
+                labels, jira, updated_min, updated_max, branches, pdags,
                 account, meta_ids, mdb, pdb, cache, pr_blacklist,
                 fetch_branch_dags_task=fetch_branch_dags_task),
         ]
@@ -792,7 +792,7 @@ class PullRequestMiner:
             fetch_review_requests(),
             fetch_comments(),
             _fetch_labels(),
-            cls.fetch_pr_deployments(node_ids, prefixer, account, pdb, rdb),
+            cls.fetch_pr_deployments(node_ids, account, pdb, rdb),
         )
         dfs = PRDataFrames(prs, *dfs)
         if len(merged_unreleased_indexes):
@@ -1304,14 +1304,13 @@ class PullRequestMiner:
     @sentry_span
     async def fetch_pr_deployments(cls,
                                    pr_node_ids: Iterable[int],
-                                   prefixer: Prefixer,
                                    account: int,
                                    pdb: Database,
                                    rdb: Database,
                                    ) -> pd.DataFrame:
         """Load the deployments for each PR node ID."""
         ghprd = GitHubPullRequestDeployment
-        cols = [ghprd.pull_request_id, ghprd.deployment_name, ghprd.repository_id]
+        cols = [ghprd.pull_request_id, ghprd.deployment_name, ghprd.repository_full_name]
         df = await read_sql_query(
             sql.select(cols)
             .where(sql.and_(ghprd.acc_id == account,
@@ -1330,10 +1329,11 @@ class PullRequestMiner:
         details.index.name = ghprd.deployment_name.name
         df = df.join(details)
         df.reset_index(inplace=True)
-        df.set_index([ghprd.pull_request_id.name, ghprd.deployment_name.name], inplace=True)
-        repo_node_to_name = prefixer.repo_node_to_name.get
-        df[PullRequest.repository_full_name.name] = \
-            [repo_node_to_name(r) for r in df[ghprd.repository_id.name].values]
+        df.set_index([
+            ghprd.pull_request_id.name,
+            ghprd.repository_full_name.name,
+            ghprd.deployment_name.name,
+        ], inplace=True)
         return df
 
     @staticmethod
@@ -1529,11 +1529,11 @@ class PullRequestMiner:
         ]
         for df in activities:
             if df.index.nlevels > 1:
-                df.index = df.index.droplevel(1)
+                df.index = df.index.get_level_values(0)
             df.name = "timestamp"
         activities = pd.concat(activities, copy=False)
-        active_prs = activities.index.take(np.where(
-            activities.between(time_from, time_to))[0]).drop_duplicates()
+        active_prs = activities.index.take(np.flatnonzero(
+            activities.between(time_from, time_to).values)).drop_duplicates()
         inactive_prs = dfs.prs.index.get_level_values(0).difference(active_prs)
         return inactive_prs
 
@@ -1628,7 +1628,6 @@ class PullRequestMiner:
                                      jira: JIRAFilter,
                                      updated_min: Optional[datetime],
                                      updated_max: Optional[datetime],
-                                     prefixer: Prefixer,
                                      branches: pd.DataFrame,
                                      dags: Optional[Dict[str, DAG]],
                                      account: int,
@@ -1642,13 +1641,11 @@ class PullRequestMiner:
         """Load PRs which were deployed between `time_from` and `time_to` and merged before \
         `time_from`."""
         assert (updated_min is None) == (updated_max is None)
-        repo_name_to_node = prefixer.repo_name_to_node.get
-        repo_node_ids = {repo_name_to_node(r) for r in repositories} - {None}
         ghprd = GitHubPullRequestDeployment
         precursor_prs = await pdb.fetch_all(
             sql.select([sql.distinct(ghprd.pull_request_id)])
             .where(sql.and_(ghprd.acc_id == account,
-                            ghprd.repository_id.in_(repo_node_ids),
+                            ghprd.repository_full_name.in_(repositories),
                             ghprd.finished_at.between(time_from, time_to))))
         precursor_prs = {r[0] for r in precursor_prs}
         if pr_blacklist:
@@ -1946,7 +1943,7 @@ class PullRequestFactsMiner:
             review_comments=human_review_comments,
             participants=participants,
             jira_ids=pr.jiras.index.values.tolist(),
-            deployments=pr.deployments.index.values,
+            deployments=pr.deployments.index.get_level_values(1).values,
             environments=environments,
             deployment_conclusions=deployment_conclusions,
             deployed=deployed,

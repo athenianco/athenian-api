@@ -312,7 +312,7 @@ async def fetch_jira_issues(installation_ids: JIRAConfig,
     )
     prs = split_logical_prs(
         prs, labels,
-        logical_settings.with_logical_repos(prs[PullRequest.repository_full_name.name].values),
+        logical_settings.with_logical_prs(prs[PullRequest.repository_full_name.name].values),
         logical_settings)
     pr_to_issue = {
         key: ji for key, ji in zip(
