@@ -166,7 +166,7 @@ async def mine_deployments(repositories: Collection[str],
     joined = notifications \
         .join([components, facts], how="inner") \
         .join([labels] + ([releases] if not releases.empty else []))
-    joined = _adjust_empty_releases(joined)
+    joined = _adjust_empty_df(joined, "releases")
     joined["labels"] = joined["labels"].astype(object, copy=False)
     no_labels = joined["labels"].isnull().values
     subst = np.empty(no_labels.sum(), dtype=object)
@@ -497,39 +497,38 @@ async def _compute_deployment_facts(notifications: pd.DataFrame,
     facts = await _generate_deployment_facts(
         notifications, deployed_commits_per_repo_per_env,
         all_mentioned_hashes, commit_stats, releases, account, pdb)
-    await defer(_submit_deployment_facts(facts, releases, default_branches, release_settings,
+    await defer(_submit_deployment_facts(facts, components, default_branches, release_settings,
                                          account, pdb),
                 "_submit_deployment_facts")
     return facts, releases
 
 
-def _adjust_empty_releases(joined: pd.DataFrame) -> pd.DataFrame:
+def _adjust_empty_df(joined: pd.DataFrame, name: str) -> pd.DataFrame:
     try:
-        no_releases = joined["releases"].isnull().values
+        no_df = joined[name].isnull().values
     except KeyError:
-        no_releases = np.ones(len(joined), bool)
-    col = np.full(no_releases.sum(), None, object)
+        no_df = np.ones(len(joined), bool)
+    col = np.full(no_df.sum(), None, object)
     col.fill(pd.DataFrame())
-    joined.loc[no_releases, "releases"] = col
+    joined.loc[no_df, name] = col
     return joined
 
 
 async def _submit_deployment_facts(facts: pd.DataFrame,
-                                   releases: pd.DataFrame,
+                                   components: pd.DataFrame,
                                    default_branches: Dict[str, str],
                                    settings: ReleaseSettings,
                                    account: int,
                                    pdb: Database) -> None:
-    joined = _adjust_empty_releases(facts.join(releases))
+    joined = _adjust_empty_df(facts.join(components), "components")
     values = [
         GitHubDeploymentFacts(
             acc_id=account,
             deployment_name=name,
-            release_matches=json.dumps(dict(zip(
-                subreleases.index.get_level_values(1).values,
-                (settings.native[r].as_db(default_branches[drop_logical_repo(r)])
-                 for r in subreleases.index.get_level_values(1).values),
-            ))) if not subreleases.empty else "{}",
+            release_matches=json.dumps({
+                r: settings.native[r].as_db(default_branches[drop_logical_repo(r)])
+                for r in components[DeployedComponent.repository_full_name].values
+            }) if not components.empty else "{}",
             data=DeploymentFacts.from_fields(
                 pr_authors=pr_authors,
                 commit_authors=commit_authors,
@@ -545,7 +544,7 @@ async def _submit_deployment_facts(facts: pd.DataFrame,
         ).create_defaults().explode(with_primary_keys=True)
         for name, pr_authors, commit_authors, release_authors,
         repos, lines_prs, lines_overall, commits_prs, commits_overall, prs, prs_offsets,
-        subreleases in zip(
+        components in zip(
             joined.index.values,
             joined[DeploymentFacts.f.pr_authors].values,
             joined[DeploymentFacts.f.commit_authors].values,
@@ -557,7 +556,7 @@ async def _submit_deployment_facts(facts: pd.DataFrame,
             joined[DeploymentFacts.f.commits_overall].values,
             joined[DeploymentFacts.f.prs].values,
             joined[DeploymentFacts.f.prs_offsets].values,
-            joined["releases"].values,
+            joined["components"].values,
         )
     ]
     await insert_or_ignore(GitHubDeploymentFacts, values, "_submit_deployment_facts", pdb)
