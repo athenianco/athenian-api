@@ -6,6 +6,7 @@ from typing import Union
 from dateutil.parser import parse as parse_datetime
 from dateutil.tz import tzutc
 import numpy as np
+import pandas as pd
 
 from athenian.api import typing_utils
 
@@ -16,9 +17,14 @@ Class = typing.Type[T]
 class ParseError(ValueError):
     """Value parsing error that is raised in the functions below."""
 
+    def __init__(self, message: str, path: str):
+        """Initialize a new instance of ParseError."""
+        super().__init__(message)
+        self.path = path
+
 
 def _deserialize(
-    data: Union[dict, list, str], klass: Union[Class, str],
+    data: Union[dict, list, str], klass: Union[Class, str], path: str,
 ) -> Union[dict, list, Class, int, float, str, bool, datetime.date, datetime.datetime,
            datetime.timedelta]:
     """Deserializes dict, list, str into an object.
@@ -44,21 +50,21 @@ def _deserialize(
             return deserialize_timedelta(data)
         elif typing_utils.is_generic(klass):
             if typing_utils.is_list(klass):
-                return _deserialize_list(data, klass.__args__[0])
+                return _deserialize_list(data, klass.__args__[0], path)
             if typing_utils.is_dict(klass):
-                return _deserialize_dict(data, klass.__args__[1])
+                return _deserialize_dict(data, klass.__args__[1], path)
             if typing_utils.is_optional(klass):
-                return _deserialize(data, klass.__args__[0])
+                return _deserialize(data, klass.__args__[0], path)
             if typing_utils.is_union(klass):
                 for arg in klass.__args__:
                     try:
-                        return _deserialize(data, arg)
+                        return _deserialize(data, arg, path)
                     except (ValueError, TypeError):
                         continue
         else:
-            return deserialize_model(data, klass)
+            return deserialize_model(data, klass, path)
     except Exception as e:
-        raise ParseError(f"Failed to parse {data} as {klass}: {e}") from e
+        raise ParseError(f"Failed to parse {data} as {klass}: {e}", path) from e
 
 
 def _deserialize_primitive(data, klass: Class) -> Union[Class, int, float, str, bool]:
@@ -90,7 +96,12 @@ def deserialize_date(string: str) -> datetime.date:
     :param string: str.
     :return: date.
     """
-    return parse_datetime(string, ignoretz=True).date()
+    dt = parse_datetime(string, ignoretz=True, yearfirst=True).date()
+    if dt < datetime.date(2000, 1, 1):
+        raise pd.errors.OutOfBoundsDatetime(f"{dt} is too far in the past")
+    if dt > datetime.date.today() + datetime.timedelta(days=365):
+        raise pd.errors.OutOfBoundsDatetime(f"{dt} is too far in the future")
+    return dt
 
 
 def deserialize_datetime(string: str) -> datetime.datetime:
@@ -101,7 +112,12 @@ def deserialize_datetime(string: str) -> datetime.datetime:
     :param string: str.
     :return: datetime.
     """
-    return parse_datetime(string)
+    dt = parse_datetime(string, yearfirst=True)
+    if dt < datetime.datetime(2000, 1, 1, tzinfo=dt.tzinfo):
+        raise pd.errors.OutOfBoundsDatetime(f"{dt} is too far in the past")
+    if dt > datetime.datetime.now(dt.tzinfo) + datetime.timedelta(days=365):
+        raise pd.errors.OutOfBoundsDatetime(f"{dt} is too far in the future")
+    return dt
 
 
 def deserialize_timedelta(string: str) -> datetime.timedelta:
@@ -114,14 +130,16 @@ def deserialize_timedelta(string: str) -> datetime.timedelta:
     """
     if not string.endswith("s"):
         raise ValueError("Unsupported timedelta format: " + string)
-    return datetime.timedelta(seconds=int(string[:-1]))
+    pd.Timedelta(td := datetime.timedelta(seconds=int(string[:-1])))
+    return td
 
 
-def deserialize_model(data: Union[dict, list], klass: Class) -> T:
-    """Deserializes list or dict to model.
+def deserialize_model(data: dict, klass: Class, path: str = "") -> T:
+    """Deserializes dict to model.
 
-    :param data: dict, list.
+    :param data: dict that represents the serialized model.
     :param klass: class literal.
+    :param path: request body path.
     :return: model object.
     """
     instance = klass()
@@ -129,17 +147,17 @@ def deserialize_model(data: Union[dict, list], klass: Class) -> T:
     if not instance.openapi_types:
         return data
 
-    if data is not None and isinstance(data, (list, dict)):
+    if data is not None and isinstance(data, dict):
         for attr, attr_type in instance.openapi_types.items():
             attr_key = instance.attribute_map[attr]
             if attr_key in data:
                 value = data[attr_key]
-                setattr(instance, attr, _deserialize(value, attr_type))
+                setattr(instance, attr, _deserialize(value, attr_type, f"{path}.{attr}"))
 
     return instance
 
 
-def _deserialize_list(data: list, boxed_type) -> list:
+def _deserialize_list(data: list, boxed_type, path: str) -> list:
     """Deserializes a list and its elements.
 
     :param data: list to deserialize.
@@ -147,10 +165,10 @@ def _deserialize_list(data: list, boxed_type) -> list:
 
     :return: deserialized list.
     """
-    return [_deserialize(sub_data, boxed_type) for sub_data in data]
+    return [_deserialize(item, boxed_type, f"{path}[{index}]") for index, item in enumerate(data)]
 
 
-def _deserialize_dict(data: dict, boxed_type) -> dict:
+def _deserialize_dict(data: dict, boxed_type, path: str) -> dict:
     """Deserializes a dict and its elements.
 
     :param data: dict to deserialize.
@@ -158,7 +176,7 @@ def _deserialize_dict(data: dict, boxed_type) -> dict:
 
     :return: deserialized dict.
     """
-    return {k: _deserialize(v, boxed_type) for k, v in data.items()}
+    return {k: _deserialize(v, boxed_type, f"{path}.{k}") for k, v in data.items()}
 
 
 class FriendlyJson:

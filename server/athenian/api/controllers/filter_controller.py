@@ -77,7 +77,7 @@ async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Re
         filt = FilterContributorsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError("?", detail=str(e)))
+        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
     time_from, time_to, repos, meta_ids, prefixer, logical_settings = \
         await _common_filter_preprocess(filt, request, strip_prefix=False)
     settings = Settings.from_request(request, filt.account)
@@ -116,7 +116,7 @@ async def filter_repositories(request: AthenianWebRequest, body: dict) -> web.Re
         filt = FilterRepositoriesRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError("?", detail=str(e)))
+        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
     time_from, time_to, repos, meta_ids, prefixer, logical_settings = \
         await _common_filter_preprocess(filt, request, strip_prefix=False)
     settings = Settings.from_request(request, filt.account)
@@ -216,7 +216,7 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
         filt = FilterPullRequestsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError("?", detail=str(e)))
+        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
     time_from, time_to, repos, events, stages, participants, labels, jira, account_bots, \
         release_settings, logical_settings, prefixer, meta_ids = \
         await resolve_filter_prs_parameters(filt, request)
@@ -300,7 +300,7 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
         filt = FilterCommitsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError("?", detail=str(e)))
+        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
     time_from, time_to, repos, meta_ids, prefixer, _ = \
         await _common_filter_preprocess(filt, request)
     with_author = [s.rsplit("/", 1)[1] for s in (filt.with_author or [])]
@@ -384,7 +384,7 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
         filt = FilterReleasesRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError("?", detail=str(e)))
+        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
     time_from, time_to, repos, meta_ids, prefixer, logical_settings = \
         await _common_filter_preprocess(filt, request, strip_prefix=False)
     stripped_repos = [r.split("/", 1)[1] for r in repos]
@@ -708,7 +708,7 @@ async def filter_code_checks(request: AthenianWebRequest, body: dict) -> web.Res
         filt = FilterCodeChecksRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError("?", detail=str(e)))
+        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
     (time_from, time_to, repos, meta_ids, prefixer, logical_settings), jira_ids = await gather(
         _common_filter_preprocess(filt, request, strip_prefix=True),
         get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
@@ -742,7 +742,7 @@ async def filter_deployments(request: AthenianWebRequest, body: dict) -> web.Res
         filt = FilterDeploymentsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError("?", detail=str(e)))
+        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
     (time_from, time_to, repos, meta_ids, prefixer, logical_settings), jira_ids = await gather(
         _common_filter_preprocess(filt, request, strip_prefix=False),
         get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
