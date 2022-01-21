@@ -45,7 +45,7 @@ async def get_contributors(request: AthenianWebRequest, id: int) -> web.Response
             settings.list_release_matches(repos),
             settings.list_logical_repositories(prefixer, repos),
         )
-        repos = logical_settings.append_logical_repos([r.split("/", 1)[1] for r in repos])
+        repos = logical_settings.append_logical_prs([r.split("/", 1)[1] for r in repos])
         users = await mine_contributors(
             repos, None, None, False, [], release_settings, logical_settings, prefixer,
             account_id, meta_ids, request.mdb, request.pdb, request.rdb, request.cache)

@@ -860,7 +860,7 @@ async def _collect_ids(account: int,
         settings.list_logical_repositories(prefixer, repos),
         op="sdb/branches and releases",
     )
-    repos = logical_settings.append_logical_repos(repos)
+    repos = logical_settings.append_logical_prs(repos)
     release_settings = await settings.list_release_matches(repos)
     return meta_ids, jira_ids, branches, default_branches, release_settings, logical_settings, \
         prefixer

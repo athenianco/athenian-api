@@ -180,8 +180,6 @@ class ReleaseSettings:
 class CommonLogicalSettingsMixin:
     """Common methods belonging to both LogicalPRSettings and LogicalDeploymentSettings."""
 
-    __slots__ = ("_repos", "_title_regexps", "_labels", "_origin")
-
     def __repr__(self) -> str:
         """Implement repr()."""
         return f"{type(self).__name__}({str(self)})"
@@ -189,6 +187,10 @@ class CommonLogicalSettingsMixin:
     def __bool__(self) -> bool:
         """Return True if there is at least one logical repository, otherwise, False."""
         return bool(self._labels) or bool(self._title_regexps)
+
+    def title(self, repo: str) -> re.Pattern:
+        """Return the title regexp for the given logical repository."""
+        return self._title_regexps[repo]
 
     @property
     def logical_repositories(self) -> FrozenSet[str]:
@@ -236,6 +238,8 @@ class CommonLogicalSettingsMixin:
 
 class LogicalPRSettings(CommonLogicalSettingsMixin):
     """Matching rules for PRs in a logical repository."""
+
+    __slots__ = ("_repos", "_title_regexps", "_labels", "_origin")
 
     def __init__(self, prs: Mapping[str, Dict[str, Any]], origin: str):
         """Initialize a new instance of LogicalPRSettings class."""
@@ -341,17 +345,21 @@ class LogicalPRSettings(CommonLogicalSettingsMixin):
 class LogicalDeploymentSettings(CommonLogicalSettingsMixin):
     """Matching rules for deployments in a logical repository."""
 
+    __slots__ = ("_repos", "_title_regexps", "_labels", "_labels_inv", "_origin")
+
     def __init__(self, deps: Mapping[str, Dict[str, Any]], origin: str):
         """Initialize a new instance of LogicalDeploymentSettings class."""
         self._origin = origin
         repos = {origin}
         self._title_regexps = title_regexps = {}
         self._labels = labels = {}
+        self._labels_inv = {}
         for repo, obj in deps.items():
             if pattern := obj.get("title"):
                 repos.add(repo)
                 title_regexps[repo] = re.compile(f"^({pattern})", re.MULTILINE)
             if obj_labels := obj.get("labels", {}):
+                self._labels_inv = obj_labels
                 repos.add(repo)
                 for label, values in obj_labels.items():
                     label_values = labels.setdefault(label, {})
@@ -373,6 +381,10 @@ class LogicalDeploymentSettings(CommonLogicalSettingsMixin):
                else {}),
             **({"labels": repo_labels} if (repo_labels := labels.get(r)) else {}),
         }) for r in sorted(self._repos - {self._origin})))
+
+    def labels(self, repo: str) -> Dict[str, List[str]]:
+        """Return the label key values for the given logical repository."""
+        return self._labels_inv[repo]
 
     def match(self,
               notifications: pd.DataFrame,
@@ -483,7 +495,7 @@ class LogicalRepositorySettings:
         return self._prs[repo]
 
     def deployments(self, repo: str) -> Optional[LogicalDeploymentSettings]:
-        """Return PR match rules for the given repository native name."""
+        """Return deployment match rules for the given repository native name."""
         return self._deployments[repo]
 
     def has_prs_by_label(self, repos: Optional[Iterable[str]] = None) -> bool:
@@ -502,7 +514,7 @@ class LogicalRepositorySettings:
                 continue
         return False
 
-    def append_logical_repos(self, items: Collection[str]) -> Collection[str]:
+    def append_logical_prs(self, items: Collection[str]) -> Collection[str]:
         """
         Extend the physical repositories with their configured logical components.
 
