@@ -124,19 +124,22 @@ class MergedPRFactsLoader:
                         my_selected.add(ghmprf.activity_days)
             else:
                 date_range = set()
+            ghprd = GitHubPullRequestDeployment
             if not deployed:
                 filters.append(not_(exists().where(and_(
-                    ghmprf.acc_id == GitHubPullRequestDeployment.acc_id,
-                    ghmprf.pr_node_id == GitHubPullRequestDeployment.pull_request_id,
-                    GitHubPullRequestDeployment.finished_at < time_to,
+                    ghmprf.acc_id == ghprd.acc_id,
+                    ghmprf.pr_node_id == ghprd.pull_request_id,
+                    ghmprf.repository_full_name == ghprd.repository_full_name,
+                    ghprd.finished_at < time_to,
                 ))))
             else:
                 filters.append(exists().where(and_(
-                    ghmprf.acc_id == GitHubPullRequestDeployment.acc_id,
-                    ghmprf.pr_node_id == GitHubPullRequestDeployment.pull_request_id,
-                    GitHubPullRequestDeployment.finished_at.between(time_from, time_to)
+                    ghmprf.acc_id == ghprd.acc_id,
+                    ghmprf.pr_node_id == ghprd.pull_request_id,
+                    ghmprf.repository_full_name == ghprd.repository_full_name,
+                    ghprd.finished_at.between(time_from, time_to)
                     if exclude_inactive else
-                    GitHubPullRequestDeployment.finished_at < time_to,
+                    ghprd.finished_at < time_to,
                 )))
             return my_selected, filters, date_range
 

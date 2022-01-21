@@ -532,6 +532,7 @@ class DonePRFactsLoader:
         filters.append(not_(exists().where(and_(
             ghprt.acc_id == GitHubPullRequestDeployment.acc_id,
             ghprt.pr_node_id == GitHubPullRequestDeployment.pull_request_id,
+            ghprt.repository_full_name == GitHubPullRequestDeployment.repository_full_name,
             GitHubPullRequestDeployment.finished_at.between(time_from, time_to),
         ))))
         or_items = or_items()
@@ -565,6 +566,7 @@ class DonePRFactsLoader:
         filters.append(exists().where(and_(
             ghprt.acc_id == GitHubPullRequestDeployment.acc_id,
             ghprt.pr_node_id == GitHubPullRequestDeployment.pull_request_id,
+            ghprt.repository_full_name == GitHubPullRequestDeployment.repository_full_name,
             GitHubPullRequestDeployment.finished_at.between(time_from, time_to),
         )))
         if exclude_inactive and not postgres:

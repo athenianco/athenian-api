@@ -642,9 +642,9 @@ async def _issue_flow(return_: Set[str],
                       )
              for row in users] or None
     if deps is not None:
-        repo_node_to_prefixed_name = prefixer.repo_node_to_prefixed_name.get
+        prefix_logical_repo = prefixer.prefix_logical_repo
         deps = {
-            key: webify_deployment(val, repo_node_to_prefixed_name)
+            key: webify_deployment(val, prefix_logical_repo)
             for key, val in sorted(deps.items())
         }
     if issue_types is not None:

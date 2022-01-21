@@ -456,13 +456,13 @@ async def _build_release_set_response(releases: List[Tuple[Dict[str, Any], Relea
                                       mdb: Database,
                                       ) -> web.Response:
     issues = await _load_jira_issues_for_releases(jira_ids, releases, meta_ids, mdb)
-    repo_node_to_prefixed_name = prefixer.repo_node_to_prefixed_name.get
+    prefix_logical_repo = prefixer.prefix_logical_repo
     data = [_filtered_release_from_tuple(t, prefixer) for t in releases]
     model = ReleaseSet(data=data, include=ReleaseSetInclude(
         users={u: IncludedNativeUser(avatar=a) for u, a in avatars},
         jira=issues,
         deployments={
-            key: webify_deployment(val, repo_node_to_prefixed_name)
+            key: webify_deployment(val, prefix_logical_repo)
             for key, val in sorted(deployments.items())
         } or None,
     ))
@@ -572,7 +572,7 @@ async def _check_github_repos(request: AthenianWebRequest,
     return release_settings, logical_settings, prefixer, account_bots, meta_ids, repos
 
 
-def webify_deployment(val: Deployment, repo_node_to_prefixed_name) -> WebDeploymentNotification:
+def webify_deployment(val: Deployment, prefix_logical_repo) -> WebDeploymentNotification:
     """Convert a Deployment to the web representation."""
     return WebDeploymentNotification(
         name=val.name,
@@ -583,7 +583,7 @@ def webify_deployment(val: Deployment, repo_node_to_prefixed_name) -> WebDeploym
         date_finished=val.finished_at,
         components=[
             WebDeployedComponent(
-                repository=repo_node_to_prefixed_name(c.repository_id),
+                repository=prefix_logical_repo(c.repository_full_name),
                 reference=f"{c.reference} ({c.sha})"
                 if not c.sha.startswith(c.reference) else c.sha,
             )
@@ -602,7 +602,7 @@ async def _build_github_prs_response(prs: List[PullRequestListItem],
                                      cache: Optional[aiomcache.Client],
                                      ) -> web.Response:
     log = logging.getLogger(f"{metadata.__package__}._build_github_prs_response")
-    repo_node_to_prefixed_name = prefixer.repo_node_to_prefixed_name.get
+    prefix_logical_repo = prefixer.prefix_logical_repo
     web_prs = sorted(web_pr_from_struct(pr, prefixer, log) for pr in prs)
     users = set(chain.from_iterable(chain.from_iterable(pr.participants.values()) for pr in prs))
     avatars = await mine_user_avatars(users, UserAvatarKeys.PREFIXED_LOGIN, meta_ids, mdb, cache)
@@ -611,7 +611,7 @@ async def _build_github_prs_response(prs: List[PullRequestListItem],
             login: IncludedNativeUser(avatar=avatar) for login, avatar in avatars
         },
         deployments={
-            key: webify_deployment(val, repo_node_to_prefixed_name)
+            key: webify_deployment(val, prefix_logical_repo)
             for key, val in sorted(deployments.items())
         } or None,
     ), data=web_prs)
@@ -796,7 +796,7 @@ async def _build_deployments_response(df: pd.DataFrame,
                                       ) -> [FilteredDeployment]:
     if df.empty:
         return []
-    repo_node_to_prefixed_name = prefixer.repo_node_to_prefixed_name
+    prefix_logical_repo = prefixer.prefix_logical_repo
     user_node_to_prefixed_login = prefixer.user_node_to_prefixed_login
     return FilteredDeployments(deployments=[
         FilteredDeployment(
@@ -807,10 +807,10 @@ async def _build_deployments_response(df: pd.DataFrame,
             date_finished=finished_at,
             conclusion=conclusion,
             components=[
-                WebDeployedComponent(repository=repo_node_to_prefixed_name[repo_node_id],
+                WebDeployedComponent(repository=prefix_logical_repo(repo_name),
                                      reference=ref)
-                for repo_node_id, ref in zip(
-                    components_df[DeployedComponent.repository_node_id.name].values,
+                for repo_name, ref in zip(
+                    components_df[DeployedComponent.repository_full_name].values,
                     components_df[DeployedComponent.reference.name].values)
             ],
             labels={
@@ -819,10 +819,8 @@ async def _build_deployments_response(df: pd.DataFrame,
                     labels_df[DeployedLabel.value.name].values)
             } if not labels_df.empty else None,
             code=DeploymentAnalysisCode(
-                prs=dict(zip(resolved_repos := [
-                    repo_node_to_prefixed_name.get(r, f"unidentified_{i}")
-                    for i, r in enumerate(repos)
-                ], np.diff(prs_offsets, prepend=0, append=len(prs)))),
+                prs=dict(zip(resolved_repos := [prefix_logical_repo(r) for r in repos],
+                             np.diff(prs_offsets, prepend=0, append=len(prs)))),
                 lines_prs=dict(zip(resolved_repos, lines_prs)),
                 lines_overall=dict(zip(resolved_repos, lines_overall)),
                 commits_prs=dict(zip(resolved_repos, commits_prs)),

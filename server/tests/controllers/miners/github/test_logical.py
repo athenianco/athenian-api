@@ -33,6 +33,7 @@ def sample_deployments():
         DeploymentNotification.name.name: ["one", "two", "three", "four"],
         DeploymentNotification.environment.name: ["production"] * 4,
     })
+    deployments.set_index(DeploymentNotification.name.name, inplace=True)
     components = pd.DataFrame({
         DeployedComponent.deployment_name.name: ["one", "one", "two", "two", "three", "four"],
         DeployedComponent.repository_full_name: [

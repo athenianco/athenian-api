@@ -765,7 +765,7 @@ class MetricEntriesCalculator:
             )
         done_deployments_task = asyncio.create_task(
             self.pr_miner.fetch_pr_deployments(
-                precomputed_node_ids, prefixer, self._account, self._pdb, self._rdb),
+                precomputed_node_ids, self._account, self._pdb, self._rdb),
             name="fetch_pr_deployments/done",
         )
         add_pdb_misses(self._pdb, "fresh", 1)
@@ -867,7 +867,6 @@ class MetricEntriesCalculator:
         self.unfresh_pr_facts_fetcher.append_deployments(
             precomputed_facts,
             pd.concat([done_deps, new_deps]),
-            logical_settings.has_logical_prs(),
             self._log)
         all_facts_iter = chain(precomputed_facts.values(), mined_facts.values())
         all_facts_df = df_from_structs(

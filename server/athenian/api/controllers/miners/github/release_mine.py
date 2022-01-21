@@ -176,8 +176,9 @@ async def _mine_releases(repos: Iterable[str],
         )
     if with_deployments:
         deployments = asyncio.create_task(
-            _load_release_deployments(releases_in_time_range, default_branches, release_settings,
-                                      account, meta_ids, mdb, pdb, rdb, cache),
+            _load_release_deployments(
+                releases_in_time_range, default_branches, release_settings, logical_settings,
+                prefixer, account, meta_ids, mdb, pdb, rdb, cache),
             name="_load_release_deployments(%d)" % len(releases_in_time_range))
     precomputed_facts = await load_precomputed_release_facts(
         releases_in_time_range, default_branches, release_settings, account, pdb)
@@ -780,8 +781,9 @@ async def mine_releases_by_name(names: Dict[str, Iterable[str]],
     tag_or_branch = [k for k, v in release_settings.native.items()
                      if v.match == ReleaseMatch.tag_or_branch]
     if not tag_or_branch:
-        tasks.append(_load_release_deployments(releases, default_branches, release_settings,
-                                               account, meta_ids, mdb, pdb, rdb, cache))
+        tasks.append(_load_release_deployments(
+            releases, default_branches, release_settings, logical_settings,
+            prefixer, account, meta_ids, mdb, pdb, rdb, cache))
     else:
         tag_releases = releases[
             (releases[matched_by_column] == ReleaseMatch.tag) &
@@ -800,25 +802,27 @@ async def mine_releases_by_name(names: Dict[str, Iterable[str]],
                 release_settings = ReleaseLoader.disambiguate_release_settings(
                     release_settings.select(tag_or_branch),
                     {r: ReleaseMatch.tag for r in tag_or_branch})
-            tasks.append(_load_release_deployments(releases, default_branches, release_settings,
-                                                   account, meta_ids, mdb, pdb, rdb, cache))
+            tasks.append(_load_release_deployments(
+                releases, default_branches, release_settings, logical_settings,
+                prefixer, account, meta_ids, mdb, pdb, rdb, cache))
         else:
             remainder = releases.loc[~releases.index.isin(
                 tag_releases.index.append(branch_releases.index))]
-            tasks.append(_load_release_deployments(remainder, default_branches, release_settings,
-                                                   account, meta_ids, mdb, pdb, rdb, cache))
+            tasks.append(_load_release_deployments(
+                remainder, default_branches, release_settings, logical_settings,
+                prefixer, account, meta_ids, mdb, pdb, rdb, cache))
             tag_settings = ReleaseLoader.disambiguate_release_settings(
                 release_settings.select(tag_or_branch),
                 {r: ReleaseMatch.tag for r in tag_or_branch})
             tasks.append(_load_release_deployments(
-                tag_releases, default_branches, tag_settings, account, meta_ids,
-                mdb, pdb, rdb, cache))
+                tag_releases, default_branches, tag_settings, logical_settings,
+                prefixer, account, meta_ids, mdb, pdb, rdb, cache))
             branch_settings = ReleaseLoader.disambiguate_release_settings(
                 release_settings.select(tag_or_branch),
                 {r: ReleaseMatch.branch for r in tag_or_branch})
             tasks.append(_load_release_deployments(
-                branch_releases, default_branches, branch_settings, account, meta_ids,
-                mdb, pdb, rdb, cache))
+                branch_releases, default_branches, branch_settings, logical_settings,
+                prefixer, account, meta_ids, mdb, pdb, rdb, cache))
     (releases, avatars), *deployments = await gather(*tasks)
     if len(deployments) == 1:
         full_depmap, full_deployments = deployments[0]
@@ -1170,7 +1174,9 @@ async def diff_releases(borders: Dict[str, List[Tuple[str, str]]],
 @sentry_span
 async def _load_release_deployments(releases_in_time_range: pd.DataFrame,
                                     default_branches: Dict[str, str],
-                                    settings: ReleaseSettings,
+                                    release_settings: ReleaseSettings,
+                                    logical_settings: LogicalRepositorySettings,
+                                    prefixer: Prefixer,
                                     account: int,
                                     meta_ids: Tuple[int, ...],
                                     mdb: Database,
@@ -1183,7 +1189,7 @@ async def _load_release_deployments(releases_in_time_range: pd.DataFrame,
     ghrd = GitHubReleaseDeployment
     reverse_settings = reverse_release_settings(
         releases_in_time_range[Release.repository_full_name.name].unique(),
-        default_branches, settings)
+        default_branches, release_settings)
     release_ids = releases_in_time_range[Release.node_id.name].values
     repo_names = releases_in_time_range[Release.repository_full_name.name].values.astype(
         "U", copy=False)
@@ -1204,5 +1210,5 @@ async def _load_release_deployments(releases_in_time_range: pd.DataFrame,
     dep_name_groups = np.split(dep_names, np.cumsum(counts[:-1]))
     depmap = dict(zip(unique_release_ids, dep_name_groups))
     deployments = await load_included_deployments(
-        np.unique(dep_names), account, meta_ids, mdb, rdb, cache)
+        np.unique(dep_names), logical_settings, prefixer, account, meta_ids, mdb, rdb, cache)
     return depmap, deployments
