@@ -2,7 +2,7 @@ from datetime import date, datetime, timezone
 import json
 
 from aiohttp import web
-import dateutil.parser
+from dateutil.parser import parse as parse_datetime
 import pytest
 from sqlalchemy import insert, select, update
 
@@ -57,7 +57,7 @@ async def test_get_user_smoke(client, headers, app):
                   },
         },
     }
-    assert datetime.utcnow() >= dateutil.parser.parse(updated[:-1])
+    assert datetime.utcnow() >= parse_datetime(updated[:-1])
 
 
 @pytest.mark.parametrize("value", (True, False))
@@ -144,7 +144,7 @@ async def test_get_account_features_smoke(client, headers):
     models = [ProductFeature.from_dict(p) for p in body]
     assert len(models) == 3
     assert models[0].name == DBAccount.expires_at.name
-    assert deserialize_datetime(models[0].parameters) > datetime.now(timezone.utc)
+    assert parse_datetime(models[0].parameters) > datetime.now(timezone.utc)
     assert models[1].name == "jira"
     assert models[1].parameters == {"a": "x", "c": "d"}
     assert models[2].name == "bare_value"

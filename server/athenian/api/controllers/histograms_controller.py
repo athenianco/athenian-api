@@ -29,7 +29,7 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
         filt = PullRequestHistogramsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError("?", detail=str(e)))
+        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
     filters, repos, prefixer, logical_settings = await compile_filters_prs(
         filt.for_, request, filt.account, meta_ids)
@@ -106,7 +106,7 @@ async def calc_histogram_code_checks(request: AthenianWebRequest, body: dict) ->
         filt = CodeCheckHistogramsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError("?", detail=str(e)))
+        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
     filters, _, logical_settings = await compile_filters_checks(
         filt.for_, request, filt.account, meta_ids)
@@ -130,7 +130,7 @@ async def calc_histogram_code_checks(request: AthenianWebRequest, body: dict) ->
                     defs, time_from, time_to, filt.quantiles or (0, 1), repos, pusher_groups,
                     filt.split_by_check_runs, labels, jira, logical_settings)
         except UnsupportedMetricError as e:
-            raise ResponseError(InvalidRequestError(pointer="?", detail=str(e))) from None
+            raise ResponseError(BadRequestError(str(e))) from None
         for pusher_groups in histograms:
             for pushers_group_index, pushers_group in enumerate(pusher_groups):
                 for repos_group_index, repos_group in enumerate(pushers_group):

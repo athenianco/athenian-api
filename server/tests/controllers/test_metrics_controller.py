@@ -265,6 +265,7 @@ async def test_calc_metrics_prs_empty_devs_tight_date(client, devs, date_from, h
                           (1, "2015-10-13", [0, 1], [1, 0], "{1}", 400),
                           (1, "2015-10-13", [0, 1], None, "github.com/athenianco/api", 403),
                           ("1", "2020-02-22", [0, 1], None, "{1}", 400),
+                          (1, "0015-10-13", [0, 1], None, "{1}", 400),
                           ])
 async def test_calc_metrics_prs_nasty_input(
         client, headers, account, date_to, quantiles, lines, in_, code, mdb):
@@ -284,8 +285,8 @@ async def test_calc_metrics_prs_nasty_input(
             },
         ],
         "metrics": [PullRequestMetricID.PR_LEAD_TIME],
-        "date_from": "2015-10-13",
-        "date_to": date_to,
+        "date_from": "2015-10-13" if date_to != "0015-10-13" else "0015-10-13",
+        "date_to": date_to if date_to != "0015-10-13" else "2015-10-13",
         "granularities": ["week"],
         "quantiles": quantiles,
         "exclude_inactive": False,
