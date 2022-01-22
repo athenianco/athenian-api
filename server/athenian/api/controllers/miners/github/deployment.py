@@ -12,7 +12,9 @@ import aiomcache
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, desc, distinct, exists, func, join, not_, or_, select, union_all
+from sqlalchemy import and_, desc, distinct, exists, func, join, literal_column, not_, or_, \
+    select, union_all
+from sqlalchemy.sql import Select
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
@@ -477,7 +479,8 @@ async def _compute_deployment_facts(notifications: pd.DataFrame,
         components.index.values.astype("U"), notifications.index.values.astype("U"))))
     commit_relationship, dags, deployed_commits_df, tainted_envs = \
         await _resolve_commit_relationship(
-            notifications, components, prefixer, account, meta_ids, mdb, pdb, rdb, cache)
+            notifications, components, logical_settings, prefixer,
+            account, meta_ids, mdb, pdb, rdb, cache)
     notifications = notifications[
         ~notifications[DeploymentNotification.environment.name].isin(tainted_envs)
     ]
@@ -1153,7 +1156,7 @@ async def _extract_deployed_commits(
     commits = joined[DeployedComponent.resolved_commit_node_id.name].values
     conclusions = joined[DeploymentNotification.conclusion.name].values.astype("S9")
     deployment_names = joined.index.values.astype("U")
-    deployment_started_ats = joined[DeploymentNotification.started_at.name].values
+    deployment_finished_ats = joined[DeploymentNotification.finished_at.name].values
     deployed_commits_per_repo_per_env = defaultdict(dict)
     all_mentioned_hashes = []
     for (env, repo_name), indexes in joined.groupby(
@@ -1161,12 +1164,11 @@ async def _extract_deployed_commits(
             sort=False).grouper.indices.items():
         dag = dags[drop_logical_repo(repo_name)]
 
-        grouped_deployment_started_ats = deployment_started_ats[indexes]
-        order = np.argsort(grouped_deployment_started_ats)[::-1]
-        # grouped_deployment_started_ats = grouped_deployment_started_ats[order]
+        grouped_deployment_finished_ats = deployment_finished_ats[indexes]
+        order = np.argsort(grouped_deployment_finished_ats)[::-1]
         indexes = indexes[order]
         deployed_commits = commits[indexes]
-        deployed_ats = grouped_deployment_started_ats[order]
+        deployed_ats = grouped_deployment_finished_ats[order]
         grouped_deployment_names = deployment_names[indexes]
         grouped_conclusions = conclusions[indexes]
         deployed_shas = commit_shas_in_df[np.searchsorted(commit_ids_in_df, deployed_commits)]
@@ -1270,6 +1272,7 @@ async def _fetch_components_and_prune_unresolved(notifications: pd.DataFrame,
 async def _resolve_commit_relationship(
         notifications: pd.DataFrame,
         components: pd.DataFrame,
+        logical_settings: LogicalRepositorySettings,
         prefixer: Prefixer,
         account: int,
         meta_ids: Tuple[int, ...],
@@ -1284,7 +1287,7 @@ async def _resolve_commit_relationship(
     log = logging.getLogger(f"{metadata.__package__}._resolve_commit_relationship")
     until_per_repo_env = defaultdict(dict)
     joined = components.join(notifications)
-    started_ats = joined[DeploymentNotification.started_at.name].values
+    finished_ats = joined[DeploymentNotification.finished_at.name].values
     commit_ids = joined[DeployedComponent.resolved_commit_node_id.name].values
     successful = joined[DeploymentNotification.conclusion.name].values \
         == DeploymentNotification.CONCLUSION_SUCCESS
@@ -1293,7 +1296,7 @@ async def _resolve_commit_relationship(
             [DeploymentNotification.environment.name, DeployedComponent.repository_full_name],
             sort=False).grouper.indices.items():
         until_per_repo_env[env][repo_name] = \
-            pd.Timestamp(started_ats[indexes].min(), tzinfo=timezone.utc)
+            pd.Timestamp(finished_ats[indexes].min(), tzinfo=timezone.utc)
 
         # separate successful and unsuccessful deployments
         env_repo_successful = successful[indexes]
@@ -1301,7 +1304,7 @@ async def _resolve_commit_relationship(
         indexes = indexes[env_repo_successful]
 
         # order by deployment date, ascending
-        env_repo_deployed = started_ats[indexes]
+        env_repo_deployed = finished_ats[indexes]
         order = np.argsort(env_repo_deployed)
         env_repo_deployed = env_repo_deployed[order]
         env_repo_commit_ids = commit_ids[indexes[order]]
@@ -1321,10 +1324,10 @@ async def _resolve_commit_relationship(
             env_repo_commit_ids,
             env_repo_deployed,
             commit_ids[failed_indexes],
-            started_ats[failed_indexes],
+            finished_ats[failed_indexes],
         )
     del joined
-    del started_ats
+    del finished_ats
     del commit_ids
     commits_per_physical_repo = {}
     for env_commits_per_repo in commits_per_repo_per_env.values():
@@ -1337,8 +1340,7 @@ async def _resolve_commit_relationship(
         fetch_dags_with_commits(
             commits_per_physical_repo, True, account, meta_ids, mdb, pdb, cache),
         _fetch_latest_deployed_components(
-            until_per_repo_env, prefixer.repo_name_to_node, prefixer.repo_node_to_name,
-            account, meta_ids, mdb, rdb),
+            until_per_repo_env, logical_settings, prefixer, account, meta_ids, mdb, rdb),
         op="_compute_deployment_facts/dags_and_latest",
     )
     del commits_per_physical_repo
@@ -1387,7 +1389,7 @@ async def _resolve_commit_relationship(
         dags = await _extend_dags_with_previous_commits(
             previous, dags, account, meta_ids, mdb, pdb)
         for env, repos in previous.items():
-            for repo_name, (cid, sha, dep_started_at) in repos.items():
+            for repo_name, (cid, sha, dep_finished_at) in repos.items():
                 if sha is None:
                     log.warning("skipped environment %s, repository %s is unresolved",
                                 env, repo_name)
@@ -1404,7 +1406,7 @@ async def _resolve_commit_relationship(
                 all_shas = np.concatenate([successful_shas, root_shas[success_len:]])
                 all_deployed_ats = np.concatenate([
                     root_deployed_ats[:success_len],
-                    np.array([dep_started_at], dtype="datetime64[s]"),
+                    np.array([dep_finished_at], dtype="datetime64[s]"),
                     root_deployed_ats[success_len:],
                 ])
                 reached_root = sha == missing_sha
@@ -1441,8 +1443,7 @@ async def _resolve_commit_relationship(
                 del until_per_repo_env[env]
         if until_per_repo_env:
             previous, env_repo_edges = await _fetch_latest_deployed_components(
-                until_per_repo_env, prefixer.repo_name_to_node, prefixer.repo_node_to_name,
-                account, meta_ids, mdb, rdb)
+                until_per_repo_env, logical_settings, prefixer, account, meta_ids, mdb, rdb)
     return commit_relationship, dags, deployed_commits_df, tainted_envs
 
 
@@ -1457,9 +1458,9 @@ async def _extend_dags_with_previous_commits(
     records = {}
     missing_sha = b"0" * 40
     for repos in previous.values():
-        for repo, (cid, sha, dep_started_at) in repos.items():
+        for repo, (cid, sha, dep_finished_at) in repos.items():
             if sha != missing_sha:
-                records[cid] = (sha.decode(), drop_logical_repo(repo), dep_started_at)
+                records[cid] = (sha.decode(), drop_logical_repo(repo), dep_finished_at)
     if not records:
         return dags
     previous_commits_df = pd.DataFrame.from_dict(records, orient="index")
@@ -1479,64 +1480,162 @@ async def _extend_dags_with_previous_commits(
 @sentry_span
 async def _fetch_latest_deployed_components(
         until_per_repo_env: Dict[str, Dict[str, datetime]],
-        repo_name_to_node: Dict[str, int],
-        repo_node_to_name: Dict[int, str],
+        logical_settings: LogicalRepositorySettings,
+        prefixer: Prefixer,
         account: int,
         meta_ids: Tuple[int, ...],
         mdb: Database,
         rdb: Database,
 ) -> Tuple[Dict[str, Dict[str, Tuple[str, bytes, datetime]]],
            Dict[str, Dict[str, datetime]]]:
-    # FIXME(vmarkovtsev): no logical support
+    until_per_repo_env_logical = {}
+    until_per_repo_env_physical = {}
+    for env, repos in until_per_repo_env.items():
+        for repo, ts in repos.items():
+            try:
+                logical_settings.deployments(physical_repo := drop_logical_repo(repo))
+            except KeyError:
+                assert physical_repo == repo, f"{physical_repo} misses logical deployment settings"
+                until_per_repo_env_physical.setdefault(env, {})[repo] = ts
+            else:
+                until_per_repo_env_logical \
+                    .setdefault(env, {}) \
+                    .setdefault(physical_repo, {})[repo] = ts
     queries = [
-        select([DeploymentNotification.environment,
-                DeployedComponent.repository_node_id,
-                func.max(DeploymentNotification.started_at).label("edge")])
-        .select_from(join(DeploymentNotification, DeployedComponent, and_(
-            DeploymentNotification.account_id == DeployedComponent.account_id,
-            DeploymentNotification.name == DeployedComponent.deployment_name,
-        )))
-        .where(and_(DeploymentNotification.account_id == account,
-                    DeploymentNotification.environment == env,
-                    DeploymentNotification.conclusion == DeploymentNotification.CONCLUSION_SUCCESS,
-                    DeployedComponent.repository_node_id ==
-                    repo_name_to_node[drop_logical_repo(repo)],
-                    DeploymentNotification.started_at < until))
-        .group_by(DeploymentNotification.environment, DeployedComponent.repository_node_id)
-        for env, repos in until_per_repo_env.items()
-        for repo, until in repos.items()
+        *_compose_latest_deployed_components_physical(
+            until_per_repo_env_physical, prefixer, account),
+        *_compose_latest_deployed_components_logical(
+            until_per_repo_env_logical, logical_settings, prefixer, account),
     ]
-    rows = await rdb.fetch_all(union_all(*queries))
-    if not rows:
-        result = {}
-        env_repo_edges = {}
-    else:
-        edges_per_env = defaultdict(lambda: defaultdict(list))
-        env_repo_edges = defaultdict(dict)
-        for row in rows:
-            env = row[DeploymentNotification.environment.name]
-            edge = row["edge"]
-            repo = row[DeployedComponent.repository_node_id.name]
-            edges_per_env[env][edge].append(repo)
-            env_repo_edges[env][repo] = edge
-        queries = [
+    previous, env_repo_edges = await _fetch_latest_deployed_components_queries(
+        queries, meta_ids, mdb, rdb)
+    missing_sha = b"0" * 40
+    for env, repos in until_per_repo_env.items():
+        if env not in previous:
+            previous[env] = {}
+        repo_commits = previous[env]
+        for repo in repos:
+            repo_commits.setdefault(repo, (None, missing_sha, None))
+    return previous, env_repo_edges
+
+
+def _compose_latest_deployed_components_logical(
+        until_per_repo_env: Dict[str, Dict[str, Dict[str, datetime]]],
+        logical_settings: LogicalRepositorySettings,
+        prefixer: Prefixer,
+        account: int,
+) -> List[Select]:
+    if not until_per_repo_env:
+        return []
+    repo_name_to_node = prefixer.repo_name_to_node
+    queries = []
+    CONCLUSION_SUCCESS = DeploymentNotification.CONCLUSION_SUCCESS
+    for env, repos in until_per_repo_env.items():
+        for repo_root, logicals in repos.items():
+            repo_node_id = repo_name_to_node[repo_root]
+            repo_settings = logical_settings.deployments(repo_root)
+            for repo, until in logicals.items():
+                logical_filters = []
+                try:
+                    title_re = repo_settings.title(repo)
+                except KeyError:
+                    pass
+                else:
+                    logical_filters.append(
+                        DeploymentNotification.name.regexp_match(title_re.pattern))
+                try:
+                    labels = repo_settings.labels(repo)
+                except KeyError:
+                    pass
+                else:
+                    logical_filters.append(
+                        exists().where(and_(
+                            DeploymentNotification.acc_id == DeployedLabel.acc_id,
+                            DeploymentNotification.name == DeployedLabel.deployment_name,
+                            or_(*(and_(DeployedLabel.key == key, DeployedLabel.value.in_(vals))
+                                  for key, vals in labels.items())),
+                        )))
+                assert logical_filters
+                queries.append(select(["*"]).select_from(  # use LIMIT inside UNION hack
+                    select([
+                        DeploymentNotification.environment,
+                        literal_column(f"'{repo}'").label(DeployedComponent.repository_full_name),
+                        DeploymentNotification.finished_at,
+                        DeployedComponent.resolved_commit_node_id])
+                    .select_from(join(DeploymentNotification, DeployedComponent, and_(
+                        DeploymentNotification.account_id == DeployedComponent.account_id,
+                        DeploymentNotification.name == DeployedComponent.deployment_name,
+                    )))
+                    .where(and_(
+                        DeploymentNotification.account_id == account,
+                        DeploymentNotification.environment == env,
+                        DeploymentNotification.conclusion == CONCLUSION_SUCCESS,
+                        DeploymentNotification.finished_at < until,
+                        DeployedComponent.repository_node_id == repo_node_id,
+                        *logical_filters))
+                    .order_by(desc(DeploymentNotification.finished_at))
+                    .limit(1)))
+    return queries
+
+
+@sentry_span
+def _compose_latest_deployed_components_physical(
+        until_per_repo_env: Dict[str, Dict[str, datetime]],
+        prefixer: Prefixer,
+        account: int,
+) -> List[Select]:
+    repo_name_to_node = prefixer.repo_name_to_node
+    queries = [
+        select(["*"]).select_from(  # use LIMIT inside UNION hack
             select([DeploymentNotification.environment,
-                    DeployedComponent.repository_node_id,
+                    literal_column(f"'{repo}'").label(DeployedComponent.repository_full_name),
+                    DeploymentNotification.finished_at,
                     DeployedComponent.resolved_commit_node_id])
             .select_from(join(DeploymentNotification, DeployedComponent, and_(
                 DeploymentNotification.account_id == DeployedComponent.account_id,
                 DeploymentNotification.name == DeployedComponent.deployment_name,
             )))
-            .where(and_(DeploymentNotification.account_id == account,
-                        DeploymentNotification.environment == env,
-                        DeploymentNotification.started_at == edge,
-                        DeployedComponent.repository_node_id.in_(repos)))
-            for env, edges in edges_per_env.items()
-            for edge, repos in edges.items()
-        ]
-        rows = await rdb.fetch_all(union_all(*queries))
+            .where(and_(
+                DeploymentNotification.account_id == account,
+                DeploymentNotification.environment == env,
+                DeploymentNotification.conclusion == DeploymentNotification.CONCLUSION_SUCCESS,
+                DeploymentNotification.finished_at < until,
+                DeployedComponent.repository_node_id == repo_name_to_node[repo],
+            ))
+            .order_by(desc(DeploymentNotification.finished_at))
+            .limit(1))
+        for env, repos in until_per_repo_env.items()
+        for repo, until in repos.items()
+    ]
+    return queries
+
+
+@sentry_span
+async def _fetch_latest_deployed_components_queries(
+        queries: List[Select],
+        meta_ids: Tuple[int, ...],
+        mdb: Database,
+        rdb: Database,
+) -> Tuple[Dict[str, Dict[str, Tuple[str, bytes, datetime]]],
+           Dict[str, Dict[str, datetime]]]:
+    if not queries:
+        return {}, {}
+    query = union_all(*queries) if len(queries) > 1 else queries[0]
+    rows = await rdb.fetch_all(query)
+    if not rows:
+        result = {}
+        env_repo_edges = {}
+    else:
         result = defaultdict(dict)
-        commit_ids = {row[DeployedComponent.resolved_commit_node_id.name] for row in rows} - {None}
+        env_repo_edges = defaultdict(dict)
+        commit_ids = set()
+        for row in rows:
+            env = row[DeploymentNotification.environment.name]
+            edge = row[DeploymentNotification.finished_at.name]
+            repo = row[DeployedComponent.repository_full_name]
+            commit_ids.add(row[DeployedComponent.resolved_commit_node_id.name])
+            env_repo_edges[env][repo] = edge
+        commit_ids.discard(None)
         sha_rows = await mdb.fetch_all(
             select([NodeCommit.id, NodeCommit.sha])
             .where(and_(NodeCommit.acc_id.in_(meta_ids),
@@ -1544,23 +1643,12 @@ async def _fetch_latest_deployed_components(
         commit_data_map = {r[0]: r[1].encode() for r in sha_rows}
         for row in rows:
             env = row[DeploymentNotification.environment.name]
-            repo = row[DeployedComponent.repository_node_id.name]
+            repo = row[DeployedComponent.repository_full_name]
             cid = row[DeployedComponent.resolved_commit_node_id.name]
             try:
-                result[env][repo_node_to_name[repo]] = (
-                    cid,
-                    commit_data_map[cid],
-                    env_repo_edges[env][repo],
-                )
+                result[env][repo] = (cid, commit_data_map[cid], env_repo_edges[env][repo])
             except KeyError:
                 continue
-    missing_sha = b"0" * 40
-    for env, repos in until_per_repo_env.items():
-        if env not in result:
-            result[env] = {}
-        repo_commits = result[env]
-        for repo in repos:
-            repo_commits.setdefault(repo, (None, missing_sha, None))
     return result, env_repo_edges
 
 
