@@ -117,6 +117,17 @@ def logical_settings():
     }, {})
 
 
+@pytest.fixture(scope="session")
+def logical_settings_full():
+    return LogicalRepositorySettings({
+        "src-d/go-git/alpha": {"title": ".*[Ff]ix"},
+        "src-d/go-git/beta": {"title": ".*[Aa]dd"},
+    }, {
+        "src-d/go-git/alpha": {"title": ".*(2016|2019)"},
+        "src-d/go-git/beta": {"title": "prod|.*2018"},
+    })
+
+
 @pytest.fixture(scope="function")
 async def logical_settings_db(sdb):
     await sdb.execute(insert(LogicalRepository).values(LogicalRepository(

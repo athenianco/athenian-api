@@ -98,7 +98,13 @@ async def test_match_jira_identities_incremental(sdb, mdb, slack):
 
 @pytest.mark.flaky(reruns=3)
 async def test_match_jira_identities_incomplete_progress(sdb, mdb_rw, slack):
-    await mdb_rw.execute(update(Progress).values({Progress.current.name: 1}))
+    await mdb_rw.execute(insert(Progress).values({
+        Progress.current.name: 1,
+        Progress.total.name: 2,
+        Progress.acc_id.name: 1,
+        Progress.event_id.name: "guid",
+        Progress.event_type.name: "user",
+    }))
     try:
         assert (await match_jira_identities(1, (6366825,), sdb, mdb_rw, slack, None)) is None
     finally:

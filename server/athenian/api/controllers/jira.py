@@ -222,7 +222,8 @@ async def _match_jira_identities(account: int,
         return None
     progress_row = await mdb.fetch_one(
         select([func.sum(Progress.current), func.sum(Progress.total)])
-        .where(Progress.acc_id == jira_id[0]))
+        .where(and_(Progress.acc_id == jira_id[0],
+                    Progress.event_type == "user")))
     if (current := progress_row[0] or 0) < (total := progress_row[1] or 0):
         log.warning("JIRA fetch progress is not 100%%: %d < %d", current, total)
         return None
