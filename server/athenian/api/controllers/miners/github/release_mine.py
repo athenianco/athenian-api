@@ -1198,6 +1198,7 @@ async def _load_release_deployments(releases_in_time_range: pd.DataFrame,
         select(cols)
         .where(and_(ghrd.acc_id == account,
                     ghrd.release_match == compose_release_match(m, v),
+                    ghrd.repository_full_name.in_(repo_names),
                     ghrd.release_id.in_(release_ids[np.in1d(
                         repo_names, np.array(repos_group, dtype=repo_names.dtype))])))
         for (m, v), repos_group in reverse_settings.items()

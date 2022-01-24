@@ -112,8 +112,11 @@ async def mine_deployments(repositories: Collection[str],
         _fetch_components_and_prune_unresolved(notifications, prefixer, account, rdb),
         _fetch_grouped_labels(notifications.index.values, account, rdb),
     )
+    # we must load all logical repositories at once to unambiguously process the residuals
+    # (the root repository minus all the logicals)
     components = split_logical_deployed_components(
-        notifications, labels, components, repositories, logical_settings)
+        notifications, labels, components, logical_settings.with_logical_deployments(repositories),
+        logical_settings)
     if notifications.empty:
         return pd.DataFrame(), np.array([], dtype="U")
     repo_names, release_settings = await _finalize_release_settings(
@@ -272,20 +275,22 @@ async def _fetch_precomputed_deployed_releases(notifications: pd.DataFrame,
                                                ) -> pd.DataFrame:
     assert repo_names
     reverse_settings = reverse_release_settings(repo_names, default_branches, release_settings)
+    ghrd = GitHubReleaseDeployment
     releases = await read_sql_query(union_all(*(
-        select([GitHubReleaseDeployment.deployment_name, PrecomputedRelease])
-        .select_from(join(GitHubReleaseDeployment, PrecomputedRelease, and_(
-            GitHubReleaseDeployment.acc_id == PrecomputedRelease.acc_id,
-            GitHubReleaseDeployment.release_id == PrecomputedRelease.node_id,
-            GitHubReleaseDeployment.release_match == PrecomputedRelease.release_match,
+        select([ghrd.deployment_name, PrecomputedRelease])
+        .select_from(join(ghrd, PrecomputedRelease, and_(
+            ghrd.acc_id == PrecomputedRelease.acc_id,
+            ghrd.release_id == PrecomputedRelease.node_id,
+            ghrd.release_match == PrecomputedRelease.release_match,
+            ghrd.repository_full_name == PrecomputedRelease.repository_full_name,
         )))
-        .where(and_(GitHubReleaseDeployment.acc_id == account,
-                    PrecomputedRelease.repository_full_name.in_(repos),
+        .where(and_(ghrd.acc_id == account,
+                    ghrd.repository_full_name.in_(repos),
                     PrecomputedRelease.release_match == compose_release_match(m, v),
-                    GitHubReleaseDeployment.deployment_name.in_(notifications.index.values)))
+                    ghrd.deployment_name.in_(notifications.index.values)))
         for (m, v), repos in reverse_settings.items()
     )),
-        pdb, [GitHubReleaseDeployment.deployment_name, *PrecomputedRelease.__table__.columns])
+        pdb, [ghrd.deployment_name, *PrecomputedRelease.__table__.columns])
     releases = set_matched_by_from_release_match(releases, False)
     del releases[PrecomputedRelease.acc_id.name]
     return await _postprocess_deployed_releases(
@@ -839,9 +844,10 @@ async def _submit_deployed_commits(
             acc_id=account,
             deployment_name=deployment_name,
             commit_id=sha_to_id[sha],
+            repository_full_name=repo,
         ).explode(with_primary_keys=True)
         for repos in deployed_commits_per_repo_per_env.values()
-        for details in repos.values()
+        for repo, details in repos.items()
         for deployment_name, shas in zip(details.deployments, details.shas)
         for sha in shas
         if sha in sha_to_id
@@ -880,6 +886,7 @@ async def _submit_deployed_releases(releases: pd.DataFrame,
         GitHubReleaseDeployment(
             acc_id=account,
             deployment_name=deployment_name,
+            repository_full_name=repo,
             release_id=release_id,
             release_match=settings.native[repo].as_db(default_branches[drop_logical_repo(repo)]),
         ).explode(with_primary_keys=True)
