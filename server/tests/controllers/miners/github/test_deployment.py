@@ -379,6 +379,32 @@ async def test_mine_deployments_only_failed(
 
 
 @with_defer
+async def test_mine_deployments_logical(
+        sample_deployments, release_match_setting_tag_logical, branches, default_branches,
+        prefixer, logical_settings_full, mdb, pdb, rdb, cache):
+    time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
+    time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    await mine_releases(
+        ["src-d/go-git/alpha", "src-d/go-git/beta", "src-d/go-git"],
+        {}, branches, default_branches, time_from, time_to,
+        LabelFilter.empty(), JIRAFilter.empty(), release_match_setting_tag_logical,
+        logical_settings_full, prefixer, 1, (6366825,), mdb, pdb, rdb, None,
+        with_avatars=False, with_pr_titles=False, with_deployments=False,
+    )
+    await wait_deferred()
+    deps, _ = await mine_deployments(
+        ["src-d/go-git/alpha"], {},
+        time_from, time_to,
+        ["production", "staging"],
+        [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        release_match_setting_tag_logical,
+        LogicalRepositorySettings.empty(),
+        branches, default_branches, prefixer,
+        1, (6366825,), mdb, pdb, rdb, cache)
+    print(deps)
+
+
+@with_defer
 async def test_mine_deployments_no_prs(
         release_match_setting_tag_or_branch, branches, default_branches,
         prefixer, mdb, pdb, rdb, cache):

@@ -918,7 +918,7 @@ async def _calc_jira_entry(request: AthenianWebRequest,
 
 
 @expires_header(short_term_exptime)
-@weight(2.5)
+@weight(5)
 async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate metrics over JIRA issue activities."""
     filt, time_intervals, issues, tzoffset, label_filter, quantile_stride = \

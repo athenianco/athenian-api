@@ -8,6 +8,7 @@ from typing import Any, Collection, Dict, Iterable, List, Mapping, Optional, Tup
 import aiomcache
 import numpy as np
 import pandas as pd
+import sentry_sdk
 from sqlalchemy import sql
 from sqlalchemy.orm import aliased
 from sqlalchemy.orm.attributes import InstrumentedAttribute
@@ -588,7 +589,9 @@ async def _fetch_issues(ids: JIRAConfig,
         for i, issue_commenters in enumerate(df["commenters"].values):
             if len(np.intersect1d(issue_commenters, commenters)):
                 passed[i] = True
-    return df.take(np.nonzero(passed)[0])
+    df = df.take(np.flatnonzero(passed))
+    sentry_sdk.Hub.current.scope.span.description = str(len(df))
+    return df
 
 
 def _validate_and_clean_issues(df: pd.DataFrame, acc_id: int) -> pd.DataFrame:
