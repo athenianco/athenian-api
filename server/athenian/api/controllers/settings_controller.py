@@ -5,7 +5,7 @@ import re
 from typing import Optional
 
 from aiohttp import web
-from sqlalchemy import and_, delete, func, insert, select, update
+from sqlalchemy import and_, delete, distinct, func, insert, select, union, update
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 
 from athenian.api import metadata
@@ -16,15 +16,17 @@ from athenian.api.controllers.account import get_metadata_account_ids, get_user_
     only_admin
 from athenian.api.controllers.jira import ALLOWED_USER_TYPES, get_jira_id, \
     load_jira_identity_mapping_sentinel
+from athenian.api.controllers.logical_repos import drop_logical_repo
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import ReleaseMatch, Settings
 from athenian.api.db import Database, DatabaseLike
 from athenian.api.models.metadata.github import User as GitHubUser
 from athenian.api.models.metadata.jira import Issue, Project, User as JIRAUser
-from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
-    GitHubMergedPullRequestFacts, GitHubOpenPullRequestFacts, GitHubRelease, \
-    GitHubReleaseFacts, GitHubReleaseMatchTimespan
+from athenian.api.models.precomputed.models import GitHubCommitDeployment, GitHubDeploymentFacts, \
+    GitHubDonePullRequestFacts, GitHubMergedPullRequestFacts, GitHubOpenPullRequestFacts, \
+    GitHubPullRequestDeployment, GitHubRelease, GitHubReleaseDeployment, GitHubReleaseFacts, \
+    GitHubReleaseMatchTimespan
 from athenian.api.models.state.models import JIRAProjectSetting, LogicalRepository, \
     MappedJIRAIdentity, ReleaseSetting, RepositorySet, WorkType
 from athenian.api.models.web import BadRequestError, ForbiddenError, InvalidRequestError, \
@@ -455,6 +457,9 @@ async def set_logical_repository(request: AthenianWebRequest, body: dict) -> web
                             web_model.name, full_name, prefixed_name, repo_id,
                             web_model.account, sdb_conn, request.pdb)
                     break
+        else:
+            # new logical repo invalidates logical deployments
+            await _clean_logical_deployments(repo, web_model.account, request.pdb)
         async with sdb_conn.transaction():
             settings._sdb = sdb_conn
             # create the logical repository setting
@@ -484,6 +489,33 @@ async def set_logical_repository(request: AthenianWebRequest, body: dict) -> web
                         }))
     del body["account"]
     return model_response(WebLogicalRepository.from_dict(body))
+
+
+async def _clean_logical_deployments(repo: str,
+                                     account: int,
+                                     pdb: DatabaseLike) -> None:
+    affected_deployments = await pdb.fetch_all(union(*(
+        select([distinct(model.deployment_name)]).where(and_(
+            model.acc_id == account,
+            model.repository_full_name == repo,
+        ))
+        for model in (GitHubCommitDeployment, GitHubPullRequestDeployment, GitHubReleaseDeployment)
+    )))
+    if not affected_deployments:
+        return
+    tasks = [
+        delete(model).where(and_(
+            model.acc_id == account,
+            model.repository_full_name == repo,
+        ))
+        for model in (GitHubCommitDeployment, GitHubPullRequestDeployment, GitHubReleaseDeployment)
+    ] + [
+        delete(GitHubDeploymentFacts).where(and_(
+            GitHubDeploymentFacts.acc_id == account,
+            GitHubDeploymentFacts.deployment_name.in_(affected_deployments),
+        )),
+    ]
+    await gather(*tasks, op="_clean_logical_deployments/sql")
 
 
 async def _delete_logical_repository(name: str,
@@ -527,7 +559,25 @@ async def _delete_logical_repository(name: str,
             model.acc_id == account,
             model.repository_full_name == full_name,
         ))))
-    # TODO(vmarkovtsev): clear logical deployments
+    affected_deployments = await pdb.fetch_all(union(*(
+        select([distinct(model.deployment_name)]).where(and_(
+            model.acc_id == account,
+            model.repository_full_name.in_([full_name, drop_logical_repo(full_name)]),
+        ))
+        for model in (GitHubCommitDeployment, GitHubPullRequestDeployment, GitHubReleaseDeployment)
+    )))
+    if affected_deployments:
+        for model in (GitHubCommitDeployment,
+                      GitHubPullRequestDeployment,
+                      GitHubReleaseDeployment):
+            tasks.append(delete(model).where(and_(
+                model.acc_id == account,
+                model.repository_full_name.in_([full_name, drop_logical_repo(full_name)]),
+            )))
+        tasks.append(delete(GitHubDeploymentFacts).where(and_(
+            GitHubDeploymentFacts.acc_id == account,
+            GitHubDeploymentFacts.deployment_name.in_(affected_deployments),
+        )))
     await gather(*tasks, op="_delete_logical_repository/sql")
 
 
