@@ -50,9 +50,15 @@ async def test_memory_400(client, headers):
     assert response.status == 400
 
 
-async def test_objgraph(client, headers):
+class Foo:
+    pass
+
+
+async def test_objgraph_smoke(client, headers):
+    _ = Foo()
     response = await client.request(
-        method="GET", path="/objgraph?type=uvloop.Loop", headers=headers, json={},
+        method="GET", path="/objgraph?type=tests.controllers.test_status_controller.Foo",
+        headers=headers, json={},
     )
     assert response.status == 200
     body = (await response.read()).decode("utf-8")
@@ -60,10 +66,11 @@ async def test_objgraph(client, headers):
 
 
 @pytest.mark.parametrize("query", ["depth=10",
-                                   "type=uvloop.Loop&depth=50",
-                                   "type=uvloop.Loop&depth=0",
-                                   "type=uvloop.Loop&depth=xxx"])
+                                   "type=tests.controllers.test_status_controller.Foo&depth=50",
+                                   "type=tests.controllers.test_status_controller.Foo&depth=0",
+                                   "type=tests.controllers.test_status_controller.Foo&depth=xxx"])
 async def test_objgraph_400(client, headers, query):
+    _ = Foo()
     response = await client.request(
         method="GET", path="/objgraph?" + query, headers=headers, json={},
     )
