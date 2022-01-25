@@ -792,19 +792,33 @@ async def test_logical_settings_smoke(sdb, mdb, prefixer, with_title, with_label
         repository_id=40550,
         prs={**({"title": ".*[Ff]ix"} if with_title else {}),
              **({"labels": ["bug"]} if with_labels else {})},
+        deployments={**({"title": "prod"} if with_title else {}),
+                     **({"labels": {"repo": ["alpha"]}} if with_labels else {})},
     ).create_defaults().explode()))
     settings = Settings.from_account(1, sdb, mdb, None, None)
     logical_settings = await settings.list_logical_repositories(prefixer)
     any_with = with_labels or with_title
     assert logical_settings.has_logical_prs() == any_with
+    assert logical_settings.has_logical_deployments() == any_with
     assert logical_settings.with_logical_prs([]) == \
+           ({"src-d/go-git", "src-d/go-git/alpha"} if any_with else set())
+    assert logical_settings.with_logical_deployments([]) == \
            ({"src-d/go-git", "src-d/go-git/alpha"} if any_with else set())
     assert logical_settings.has_prs_by_label(["src-d/go-git"]) == with_labels
     if not any_with:
         with pytest.raises(KeyError):
             logical_settings.prs("src-d/go-git")
+        with pytest.raises(KeyError):
+            logical_settings.deployments("src-d/go-git")
         return
     repo_settings = logical_settings.prs("src-d/go-git")
+    assert repo_settings
+    assert repo_settings.has_labels == with_labels
+    assert repo_settings.has_titles == with_title
+    assert repo_settings.logical_repositories == \
+           {"src-d/go-git", "src-d/go-git/alpha"} if any_with else {"src-d/go-git"}
+
+    repo_settings = logical_settings.deployments("src-d/go-git")
     assert repo_settings
     assert repo_settings.has_labels == with_labels
     assert repo_settings.has_titles == with_title
@@ -819,12 +833,14 @@ async def logical_settings_with_labels(sdb):
         name="alpha",
         repository_id=40550,
         prs={"title": ".*[Ff]ix", "labels": ["fix"]},
+        deployments={"title": "test", "labels": {"repo": ["alpha"]}},
     ).create_defaults().explode()))
     await sdb.execute(insert(LogicalRepository).values(LogicalRepository(
         account_id=1,
         name="beta",
         repository_id=40550,
         prs={"title": ".*[Aa]dd"},
+        deployments={"title": "prod"},
     ).create_defaults().explode()))
 
 
@@ -843,6 +859,8 @@ async def test_list_logical_repositories_smoke(
     assert repos[0].parent == "github.com/src-d/go-git"
     assert repos[0].prs.title == ".*[Ff]ix"
     assert repos[0].prs.labels_include == ["fix"]
+    assert repos[0].deployments.title == "test"
+    assert repos[0].deployments.labels_include == {"repo": ["alpha"]}
     assert repos[0].releases.match == ReleaseMatch.tag.name
     assert repos[0].releases.branches == "master"
     assert repos[0].releases.tags == ".*"
@@ -851,6 +869,8 @@ async def test_list_logical_repositories_smoke(
     assert repos[1].parent == "github.com/src-d/go-git"
     assert repos[1].prs.title == ".*[Aa]dd"
     assert repos[1].prs.labels_include is None
+    assert repos[1].deployments.title == "prod"
+    assert repos[1].deployments.labels_include is None
     assert repos[1].releases.match == ReleaseMatch.tag.name
     assert repos[1].releases.branches == "master"
     assert repos[1].releases.tags == r"v4\..*"

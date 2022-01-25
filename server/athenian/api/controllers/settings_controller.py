@@ -30,7 +30,8 @@ from athenian.api.models.precomputed.models import GitHubCommitDeployment, GitHu
 from athenian.api.models.state.models import JIRAProjectSetting, LogicalRepository, \
     MappedJIRAIdentity, ReleaseSetting, RepositorySet, WorkType
 from athenian.api.models.web import BadRequestError, ForbiddenError, InvalidRequestError, \
-    JIRAProject, JIRAProjectsRequest, LogicalPRRules, LogicalRepository as WebLogicalRepository, \
+    JIRAProject, JIRAProjectsRequest, LogicalDeploymentRules, LogicalPRRules, \
+    LogicalRepository as WebLogicalRepository, \
     LogicalRepositoryGetRequest, LogicalRepositoryRequest, \
     MappedJIRAIdentity as WebMappedJIRAIdentity, NotFoundError, \
     ReleaseMatchRequest, ReleaseMatchSetting, SetMappedJIRAIdentitiesRequest, \
@@ -403,6 +404,7 @@ async def list_logical_repositories(request: AthenianWebRequest, id: int) -> web
         name = row[LogicalRepository.name.name]
         full_name = f"{repo}/{name}"
         prs = row[LogicalRepository.prs.name]
+        deployments = row[LogicalRepository.deployments.name]
         models.append(WebLogicalRepository(
             name=name,
             parent=prefixed_repo,
@@ -411,7 +413,10 @@ async def list_logical_repositories(request: AthenianWebRequest, id: int) -> web
                 labels_include=prs.get("labels"),
             ),
             releases=ReleaseMatchSetting.from_dataclass(release_settings.native[full_name]),
-            deployments=None,
+            deployments=LogicalDeploymentRules(
+                title=deployments.get("title"),
+                labels_include=deployments.get("labels"),
+            ),
         ))
     return model_response(models)
 
@@ -424,11 +429,11 @@ async def set_logical_repository(request: AthenianWebRequest, body: dict) -> web
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
     try:
         repo = web_model.parent.split("/", 1)[1]
-    except IndexError:
+    except IndexError as e:
         raise ResponseError(InvalidRequestError(
             ".parent",
             "Repository name must be prefixed (e.g. `github.com/athenianco/athenian-api`).",
-        ))
+        )) from e
     try:
         repo_id = prefixer.repo_name_to_node[repo]
     except KeyError:
@@ -439,7 +444,10 @@ async def set_logical_repository(request: AthenianWebRequest, body: dict) -> web
         name=web_model.name,
         repository_id=repo_id,
         prs={"title": web_model.prs.title, "labels": web_model.prs.labels_include},
-    ).create_defaults().explode()
+    ).create_defaults()
+    if (deployments := web_model.deployments) is not None:
+        db_model.deployments = {"title": deployments.title, "labels": deployments.labels_include}
+    db_model = db_model.explode()
     settings = Settings.from_request(request, web_model.account)
     full_name = f"{repo}/{web_model.name}"
     prefixed_name = f"{web_model.parent}/{web_model.name}"
