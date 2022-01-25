@@ -6,7 +6,7 @@ import json
 import logging
 import pickle
 import re
-from typing import Any, Collection, Dict, List, Mapping, NamedTuple, Optional, Tuple
+from typing import Any, Collection, Dict, List, Mapping, NamedTuple, Optional, Set, Tuple
 
 import aiomcache
 import numpy as np
@@ -15,6 +15,7 @@ import sentry_sdk
 from sqlalchemy import and_, desc, distinct, exists, func, join, literal_column, not_, or_, \
     select, union_all
 from sqlalchemy.sql import Select
+from sqlalchemy.sql.elements import UnaryExpression
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
@@ -41,13 +42,12 @@ from athenian.api.controllers.miners.jira.issue import fetch_jira_issues_for_prs
 from athenian.api.controllers.miners.types import DeploymentConclusion, DeploymentFacts, \
     PullRequestJIRAIssueItem, ReleaseFacts, ReleaseParticipants, ReleaseParticipationKind
 from athenian.api.controllers.prefixer import Prefixer
-from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch, \
-    ReleaseSettings
+from athenian.api.controllers.settings import LogicalDeploymentSettings, \
+    LogicalRepositorySettings, ReleaseMatch, ReleaseSettings
 from athenian.api.db import add_pdb_hits, add_pdb_misses, Database, insert_or_ignore
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import NodeCommit, NodePullRequest, NodeRepository, \
-    PullRequest, \
-    PullRequestLabel, PushCommit, Release
+    PullRequest, PullRequestLabel, PushCommit, Release
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
     DeploymentNotification
 from athenian.api.models.precomputed.models import GitHubCommitDeployment, GitHubDeploymentFacts, \
@@ -237,13 +237,14 @@ async def _finalize_release_settings(notifications: pd.DataFrame,
                                      pdb: Database,
                                      rdb: Database,
                                      cache: Optional[aiomcache.Client],
-                                     ) -> Tuple[List[str], ReleaseSettings]:
+                                     ) -> Tuple[Set[str], ReleaseSettings]:
     assert not notifications.empty
     rows = await rdb.fetch_all(
         select([distinct(DeployedComponent.repository_node_id)])
         .where(and_(DeployedComponent.account_id == account,
                     DeployedComponent.deployment_name.in_any_values(notifications.index.values))))
-    repos = [prefixer.repo_node_to_name[r[0]] for r in rows]
+    repos = logical_settings.with_logical_deployments(
+        prefixer.repo_node_to_name[r[0]] for r in rows)
     need_disambiguate = []
     for repo in repos:
         if release_settings.native[repo].match == ReleaseMatch.tag_or_branch:
@@ -739,27 +740,26 @@ async def _map_releases_to_deployments(
         for repo in repos:
             reverse_settings_ptr[repo] = key
     commits_by_reverse_key = {}
-    all_commit_shas = []
+    all_commit_sha_repos = []
     all_deployment_names = []
     for repos in deployed_commits_per_repo_per_env.values():
         for repo, details in repos.items():
             all_repo_shas = np.concatenate(details.shas)
-            commits_by_reverse_key.setdefault(reverse_settings_ptr[repo], []).append(
-                all_repo_shas.astype("U40"))
-            all_commit_shas.append(all_repo_shas)
+            commits_by_reverse_key.setdefault(reverse_settings_ptr[repo], []).append(all_repo_shas)
+            all_commit_sha_repos.append(np.char.add(all_repo_shas, repo.encode()))
             all_deployment_names.append(np.repeat(
                 details.deployments, [len(shas) for shas in details.shas]))
-    all_commit_shas = np.concatenate(all_commit_shas)
+    all_commit_sha_repos = np.concatenate(all_commit_sha_repos)
     all_deployment_names = np.concatenate(all_deployment_names)
-    order = np.argsort(all_commit_shas)
-    all_commit_shas = all_commit_shas[order]
+    order = np.argsort(all_commit_sha_repos)
+    all_commit_sha_repos = all_commit_sha_repos[order]
     all_deployment_names = all_deployment_names[order]
-    assert all_commit_shas.shape == all_deployment_names.shape
-    _, unique_commit_sha_counts = np.unique(all_commit_shas, return_counts=True)
+    assert all_commit_sha_repos.shape == all_deployment_names.shape
+    _, unique_commit_sha_counts = np.unique(all_commit_sha_repos, return_counts=True)
     offsets = np.zeros(len(unique_commit_sha_counts) + 1, dtype=int)
     np.cumsum(unique_commit_sha_counts, out=offsets[1:])
     for key, val in commits_by_reverse_key.items():
-        commits_by_reverse_key[key] = np.unique(np.concatenate(val))
+        commits_by_reverse_key[key] = np.unique(np.concatenate(val)).astype("U40")
 
     releases = await read_sql_query(union_all(*(
         select([PrecomputedRelease])
@@ -769,7 +769,7 @@ async def _map_releases_to_deployments(
                     PrecomputedRelease.published_at < max_release_time_to,
                     PrecomputedRelease.sha.in_any_values(commit_shas)))
         for (match_id, match_value), commit_shas in commits_by_reverse_key.items()
-    )), pdb, PrecomputedRelease, index=PrecomputedRelease.node_id.name)
+    )), pdb, PrecomputedRelease)
     releases = set_matched_by_from_release_match(releases, remove_ambiguous_tag_or_branch=False)
     if releases.empty:
         time_from = await mdb.fetch_val(
@@ -782,27 +782,22 @@ async def _map_releases_to_deployments(
             time_from = time_from.replace(tzinfo=timezone.utc)
     else:
         time_from = releases[Release.published_at.name].max() + timedelta(seconds=1)
-    logical_names = set()
-    for repo in repo_names:
-        try:
-            logical_names.update(logical_settings.prs(repo).logical_repositories)
-        except KeyError:
-            logical_names.add(repo)
     extra_releases, _ = await ReleaseLoader.load_releases(
-        logical_names, branches, default_branches, time_from, max_release_time_to,
+        repo_names, branches, default_branches, time_from, max_release_time_to,
         release_settings, logical_settings, prefixer, account, meta_ids,
         mdb, pdb, rdb, cache,
-        force_fresh=max_release_time_to > datetime.now(timezone.utc) - unfresh_releases_lag,
-        index=Release.node_id.name)
+        force_fresh=max_release_time_to > datetime.now(timezone.utc) - unfresh_releases_lag)
     if not extra_releases.empty:
-        releases = pd.concat([releases, extra_releases])
-    releases.reset_index(inplace=True)
-    release_commit_shas = releases[Release.sha.name].values.astype("S40")
-    positions = searchsorted_inrange(all_commit_shas, release_commit_shas)
-    if len(all_commit_shas):
-        positions[all_commit_shas[positions] != release_commit_shas] = len(all_commit_shas)
+        releases = pd.concat([releases, extra_releases], copy=False, ignore_index=True)
+    release_commit_shas = np.char.add(
+        releases[Release.sha.name].values.astype("S40"),
+        releases[Release.repository_full_name.name].values.astype("S"))
+    positions = searchsorted_inrange(all_commit_sha_repos, release_commit_shas)
+    if len(all_commit_sha_repos):
+        positions[all_commit_sha_repos[positions] != release_commit_shas] = \
+            len(all_commit_sha_repos)
     else:
-        positions[:] = len(all_commit_shas)
+        positions[:] = len(all_commit_sha_repos)
     unique_commit_sha_counts = np.concatenate([unique_commit_sha_counts, [0]])
     lengths = unique_commit_sha_counts[np.searchsorted(offsets, positions)]
     deployment_names = all_deployment_names[np.repeat(positions + lengths - lengths.cumsum(),
@@ -1526,6 +1521,33 @@ async def _fetch_latest_deployed_components(
     return previous, env_repo_edges
 
 
+def _compose_logical_filters_of_deployments(repo: str,
+                                            repo_settings: LogicalDeploymentSettings,
+                                            ) -> List[UnaryExpression]:
+    logical_filters = []
+    try:
+        title_re = repo_settings.title(repo)
+    except KeyError:
+        pass
+    else:
+        logical_filters.append(
+            DeploymentNotification.name.regexp_match(title_re.pattern))
+    try:
+        labels = repo_settings.labels(repo)
+    except KeyError:
+        pass
+    else:
+        logical_filters.append(
+            exists().where(and_(
+                DeploymentNotification.acc_id == DeployedLabel.acc_id,
+                DeploymentNotification.name == DeployedLabel.deployment_name,
+                or_(*(and_(DeployedLabel.key == key, DeployedLabel.value.in_(vals))
+                      for key, vals in labels.items())),
+            )))
+    assert logical_filters
+    return logical_filters
+
+
 def _compose_latest_deployed_components_logical(
         until_per_repo_env: Dict[str, Dict[str, Dict[str, datetime]]],
         logical_settings: LogicalRepositorySettings,
@@ -1542,27 +1564,13 @@ def _compose_latest_deployed_components_logical(
             repo_node_id = repo_name_to_node[repo_root]
             repo_settings = logical_settings.deployments(repo_root)
             for repo, until in logicals.items():
-                logical_filters = []
-                try:
-                    title_re = repo_settings.title(repo)
-                except KeyError:
-                    pass
+                if repo != repo_root:
+                    logical_filters = _compose_logical_filters_of_deployments(repo, repo_settings)
                 else:
-                    logical_filters.append(
-                        DeploymentNotification.name.regexp_match(title_re.pattern))
-                try:
-                    labels = repo_settings.labels(repo)
-                except KeyError:
-                    pass
-                else:
-                    logical_filters.append(
-                        exists().where(and_(
-                            DeploymentNotification.acc_id == DeployedLabel.acc_id,
-                            DeploymentNotification.name == DeployedLabel.deployment_name,
-                            or_(*(and_(DeployedLabel.key == key, DeployedLabel.value.in_(vals))
-                                  for key, vals in labels.items())),
-                        )))
-                assert logical_filters
+                    logical_filters = [not_(expr) for expr in chain.from_iterable(
+                        _compose_logical_filters_of_deployments(other_repo, repo_settings)
+                        for other_repo in logicals.keys() - {repo}
+                    )]
                 queries.append(select(["*"]).select_from(  # use LIMIT inside UNION hack
                     select([
                         DeploymentNotification.environment,
