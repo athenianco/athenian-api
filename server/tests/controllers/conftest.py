@@ -124,7 +124,7 @@ def logical_settings_full():
         "src-d/go-git/beta": {"title": ".*[Aa]dd"},
     }, {
         "src-d/go-git/alpha": {"title": ".*(2016|2019)"},
-        "src-d/go-git/beta": {"title": "prod|.*2018"},
+        "src-d/go-git/beta": {"title": "prod|.*2019"},
     })
 
 

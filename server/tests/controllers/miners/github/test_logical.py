@@ -170,18 +170,18 @@ async def test_split_logical_deployed_components_title_two(sample_deployments):
             "one",
             "two",
             "two",
+            "three",
             "one",
             "two",
-            "three",
             "four",
         ],
         DeployedComponent.repository_full_name: [
             "src-d/go-git/alpha",
             "src-d/go-git/alpha",
             "src-d/go-git/beta",
+            "src-d/go-git/beta",
             "src-d/hercules",
             "src-d/hercules",
-            "src-d/go-git",
             "src-d/hercules"],
     }))
 

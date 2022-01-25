@@ -87,10 +87,10 @@ def split_logical_deployed_components(notifications: pd.DataFrame,
                 continue
             deployment_names = np.array(
                 list(deployment_names), dtype=component_deployment_names.dtype)
-            indexes = indexes[np.in1d(component_deployment_names[indexes], deployment_names)]
-            if len(indexes):
-                inspected_indexes.append(indexes)
-                sub_df = components.take(indexes)
+            final_indexes = indexes[np.in1d(component_deployment_names[indexes], deployment_names)]
+            if len(final_indexes):
+                inspected_indexes.append(final_indexes)
+                sub_df = components.take(final_indexes)
                 sub_df[DeployedComponent.repository_full_name] = repo
                 chunks.append(sub_df)
     if inspected_indexes:

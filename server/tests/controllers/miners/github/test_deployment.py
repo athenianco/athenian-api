@@ -397,11 +397,41 @@ async def test_mine_deployments_logical(
         time_from, time_to,
         ["production", "staging"],
         [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
-        release_match_setting_tag_logical,
-        LogicalRepositorySettings.empty(),
+        release_match_setting_tag_logical, logical_settings_full,
         branches, default_branches, prefixer,
         1, (6366825,), mdb, pdb, rdb, cache)
-    print(deps)
+    assert len(deps) == 18
+    physical_count = alpha_count = beta_count = beta_releases = 0
+    for deployment_name, components, releases in zip(deps.index.values,
+                                                     deps["components"].values,
+                                                     deps["releases"].values):
+        component_repos = components[DeployedComponent.repository_full_name].unique()
+        release_repos = releases.index.get_level_values(1).unique() \
+            if not releases.empty else np.array([], dtype=object)
+        has_logical = False
+        if "2016" in deployment_name or "2019" in deployment_name:
+            has_logical = True
+            alpha_count += 1
+            assert "src-d/go-git/alpha" in component_repos, deployment_name
+            assert "src-d/go-git" not in component_repos, deployment_name
+            assert "src-d/go-git/alpha" in release_repos, deployment_name
+            assert "src-d/go-git" not in release_repos, deployment_name
+        if "prod" in deployment_name or "2019" in deployment_name:
+            has_logical = True
+            beta_count += 1
+            assert "src-d/go-git/beta" in component_repos, deployment_name
+            assert "src-d/go-git" not in component_repos, deployment_name
+            beta_releases += "src-d/go-git/beta" in release_repos
+            assert "src-d/go-git" not in release_repos, deployment_name
+        if not has_logical:
+            physical_count += 1
+            assert component_repos.tolist() == ["src-d/go-git"]
+            assert release_repos.tolist() in ([], ["src-d/go-git"])
+
+    assert alpha_count == 6
+    assert beta_count == 10
+    assert physical_count == 6
+    assert beta_releases == 6
 
 
 @with_defer
