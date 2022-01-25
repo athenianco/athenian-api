@@ -118,6 +118,7 @@ from athenian.api.models.web.jira_status import JIRAStatus
 from athenian.api.models.web.jira_user import JIRAUser
 from athenian.api.models.web.linked_jira_issue import LinkedJIRAIssue
 from athenian.api.models.web.listed_token import ListedToken
+from athenian.api.models.web.logical_deployment_rules import LogicalDeploymentRules
 from athenian.api.models.web.logical_pr_rules import LogicalPRRules
 from athenian.api.models.web.logical_repository import LogicalRepository
 from athenian.api.models.web.logical_repository_get_request import LogicalRepositoryGetRequest

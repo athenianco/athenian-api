@@ -2,6 +2,7 @@ import re
 from typing import Optional
 
 from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web.logical_deployment_rules import LogicalDeploymentRules
 from athenian.api.models.web.logical_pr_rules import LogicalPRRules
 from athenian.api.models.web.release_match_setting import ReleaseMatchSetting
 
@@ -14,7 +15,7 @@ class _LogicalRepository(Model):
         "parent": str,
         "prs": LogicalPRRules,
         "releases": ReleaseMatchSetting,
-        "deployments": object,
+        "deployments": LogicalDeploymentRules,
     }
 
     attribute_map = {
@@ -31,7 +32,7 @@ class _LogicalRepository(Model):
         parent: Optional[str] = None,
         prs: Optional[LogicalPRRules] = None,
         releases: Optional[ReleaseMatchSetting] = None,
-        deployments: Optional[object] = None,
+        deployments: Optional[LogicalDeploymentRules] = None,
     ):
         """LogicalRepository - a model defined in OpenAPI
 
@@ -145,7 +146,7 @@ class _LogicalRepository(Model):
         self._releases = releases
 
     @property
-    def deployments(self):
+    def deployments(self) -> LogicalDeploymentRules:
         """Gets the deployments of this LogicalRepository.
 
         :return: The deployments of this LogicalRepository.
@@ -153,7 +154,7 @@ class _LogicalRepository(Model):
         return self._deployments
 
     @deployments.setter
-    def deployments(self, deployments):
+    def deployments(self, deployments: LogicalDeploymentRules):
         """Sets the deployments of this LogicalRepository.
 
         :param deployments: The deployments of this LogicalRepository.
