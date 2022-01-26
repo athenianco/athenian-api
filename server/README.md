@@ -107,6 +107,10 @@ Obtain Auth0 credentials for running locally: [webapp docs](https://github.com/a
 
 # [Guide to adding new endpoints.](ADDING_ENDPOINTS.md)
 
+# [Optimizing performance.](PERFORMANCE.md)
+
+# [Debugging a reported problem in production.](DEBUGGING.md)
+
 ### Running tests against a real metadata DB
 
 ```
@@ -170,9 +174,10 @@ You can also run the api server and all the other services with real data using 
 This works by using the staging data. Currently we have the following databases:
 - `state`,
 - `precomputed`,
-- `metadata`.
+- `metadata`,
+- `persistentdata`
 
-Both `state` and `precomputed` are dumped and restored into a local postgres running in docker compose. Since the `metadata` database is big, in order to ease the process instead of dumping and restoring it, it is accessed directly through `cloud_sql_proxy` (at the cost of performance due to network latency).
+`state`, `precomputed`, and `persistentdata` are dumped and restored into a local postgres running in docker compose. Since the `metadata` database is big, in order to ease the process instead of dumping and restoring it, it is accessed directly through `cloud_sql_proxy` (at the cost of performance due to network latency).
 
 Here are the steps:
 1. spin up `cloud_sql_proxy` and `postgres`:
