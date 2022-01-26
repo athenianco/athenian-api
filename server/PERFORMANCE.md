@@ -5,6 +5,9 @@
 Open https://sentry.io/organizations/athenianco/performance/?environment=production&project=1867351
 
 Sort by P95 and choose the victim. Enter that endpoint and open a suspiciously slow example.
+We sample 20% atm, and that ratio may decrease in the future. This means that not every API query
+has a Sentry trace. Repeat the same query several times if you need to catch a trace. Remember
+that the endpoints are most likely cached and you need to disable the cache (`-H 'Cache-Control: no-cache'`).
 
 Every "sql" operation either shows the full SQL query with parameters or the truncated query with GUID in the header.
 
@@ -15,7 +18,7 @@ Copy-paste this GUID to Logs Explorer, set the appropriate time interval for the
 ![Logs Explorer](../docs/logs_explorer.png)
 
 Copy-paste the base64 string to a local file. Note: only the base64 string, no GUIDs, no footers, etc.
-Then execute:
+If there are several base64 chunks, concatenate them together. Then execute:
 
 ```
 cat /tmp/base64 | python3 athenian/api/hacks/show_sql.py >/tmp/query

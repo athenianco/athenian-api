@@ -4,6 +4,7 @@ import lzma
 import pickle
 import sys
 
+import numpy as np
 import pandas as pd
 
 
@@ -25,8 +26,16 @@ def main():
     for i, arg in reversed(args):
         if isinstance(arg, datetime):
             arg = "'%s'" % arg.isoformat(" ")
-        elif isinstance(arg, pd.Series):
-            arg = "ARRAY[" + ",".join("'%s'" % v for v in arg) + "]::text[]"
+        elif isinstance(arg, (list, np.ndarray, pd.Series)):
+            if len(arg) == 0:
+                dtype = "text"  # the best we can do here
+            elif isinstance(arg[0], datetime):
+                dtype = "timestamp with time zone"
+            elif isinstance(arg[0], (int, np.integer)):
+                dtype = "bigint"
+            else:
+                dtype = "text"
+            arg = "ARRAY[" + ",".join("'%s'" % v for v in arg) + f"]::{dtype}[]"
         elif isinstance(arg, str):
             arg = "'%s'" % arg
         else:
