@@ -189,8 +189,6 @@ async def _mine_releases(repos: Iterable[str],
             f["prs_" + PullRequest.node_id.name] for f in precomputed_facts.values()
         ]
     add_pdb_hits(pdb, "release_facts", len(precomputed_facts))
-    missed_releases_count = len(releases_in_time_range) - len(precomputed_facts)
-    add_pdb_misses(pdb, "release_facts", missed_releases_count)
     unfiltered_precomputed_facts = precomputed_facts
     if jira:
         precomputed_facts = await _filter_precomputed_release_facts_by_jira(
@@ -198,15 +196,18 @@ async def _mine_releases(repos: Iterable[str],
     result, mentioned_authors, has_precomputed_facts = _build_mined_releases(
         releases_in_time_range, precomputed_facts, prefixer, True)
 
+    missing_release_indexes = np.flatnonzero(~has_precomputed_facts)
+    missed_releases_count = len(missing_release_indexes)
+    add_pdb_misses(pdb, "release_facts", missed_releases_count)
     missing_repos = releases_in_time_range[Release.repository_full_name.name].take(
-        np.flatnonzero(~has_precomputed_facts)).unique()
+        missing_release_indexes).unique()
     commits_authors = prs_authors = []
     commits_authors_nz = prs_authors_nz = slice(0)
     repo_releases_analyzed = {}
     if missed_releases_count > 0:
-        releases_in_time_range = releases_in_time_range.take(np.where(
+        releases_in_time_range = releases_in_time_range.take(np.flatnonzero(
             releases_in_time_range[Release.repository_full_name.name].isin(missing_repos).values,
-        )[0])
+        ))
         (_, releases, _, _, dags), first_commit_dates = await gather(
             ReleaseToPullRequestMapper._find_releases_for_matching_prs(
                 missing_repos, branches, default_branches, time_from, time_to, False,
