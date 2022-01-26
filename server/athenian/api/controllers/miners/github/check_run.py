@@ -168,7 +168,25 @@ async def _mine_check_runs(time_from: datetime,
         .with_statement_hint("IndexScan(sc ath_node_statuscontext_commit_created_at)") \
         .with_statement_hint("IndexScan(cr github_node_check_run_repository_started_at)") \
         .with_statement_hint("Rows(cr cs *400)") \
-        .with_statement_hint("Rows(c_1 sc *1000)")
+        .with_statement_hint("Rows(c_1 sc *1000)") \
+        .with_statement_hint("Set(enable_parallel_append 0)")
+    """
+    PostgreSQL has no idea about column correlations between tables, and extended statistics
+    only helps with correlations within the same table. That's the ultimate problem that leads
+    to very poor plans.
+    1. We enforce the best JOIN order. Vadim has spent *much* time figuring it out across different
+    accounts.
+    2. Adjust the number of rows in the core INNER JOIN-s of both UNION branches. This decreases
+    the probability of blowing up on NESTED LOOP-s where we should have MERGE JOIN or HASH JOIN.
+    The exact multipliers are a compromise between a few accounts Vadim tested.
+    3. Still, Postgres sucks at choosing the right indexes sometimes. We pin the critical ones.
+    Yet some indexes shouldn't be pinned because of different plans on different accounts
+    (different balance between UNION branches). Particularly, Vadim tried to mess with `cs`and
+    failed: https://github.com/athenianco/athenian-api/commit/4038e75bdd66ab80c4ba0e561ac48c5b71f797f8#diff-2cc6b19d09c47c95d39a3fdf03116425827c3fc942b9be97f66f59722f9430bb
+    It helped a little with one account but completely destroyed the others.
+    4. We disable PARALLEL APPEND. Whatever Vadim tried, Postgres always schedules only one worker,
+    effectively executing UNION branches sequentially.
+    """  # noqa: E501
 
     df = await read_sql_query_with_join_collapse(
         query, mdb, CheckRun, soft_limit=maximum_processed_check_runs)
