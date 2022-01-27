@@ -3,27 +3,28 @@ services:
   api:
     image: ${API_IMAGE:-gcr.io/athenian-1/api:latest}
     restart: unless-stopped
-    entrypoint: ['/bin/sh']
-    command: >
-      -c "python3 -m athenian.api.models.state \
-            postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/state &&
-          python3 -m athenian.api.models.precomputed \
-            postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/precomputed &&
-          python3 -m athenian.api.models.persistentdata \
-            postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/persistentdata &&
-          python3 -m athenian.api.models.metadata \
-            postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/metadata &&
-          python3 -m athenian.api \
-            --log-level=${API_LOG_LEVEL:-INFO} \
-            --host=0.0.0.0 \
-            --port=8080 \
-            --memcached=memcached:11211 \
-            --metadata-db=postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/metadata \
-            --state-db=postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/state \
-            --precomputed-db=postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/precomputed \
-            --persistentdata-db=postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/persistentdata \
-            --ui \
-            --no-google-kms"
+    entrypoint: [
+      "/bin/sh", "-c",
+      "python3 -m athenian.api.models.state \
+        postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/state &&
+       python3 -m athenian.api.models.precomputed \
+        postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/precomputed &&
+       python3 -m athenian.api.models.persistentdata \
+        postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/persistentdata &&
+       python3 -m athenian.api.models.metadata \
+        postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/metadata &&
+       python3 -m athenian.api \
+        --log-level=${API_LOG_LEVEL:-INFO} \
+        --host=0.0.0.0 \
+        --port=8080 \
+        --memcached=memcached:11211 \
+        --metadata-db=postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/metadata \
+        --state-db=postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/state \
+        --precomputed-db=postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/precomputed \
+        --persistentdata-db=postgresql://${POSTGRES_USER:-api}:${POSTGRES_PASSWORD:-api}@postgres:5432/persistentdata \
+        --ui \
+        --no-google-kms"
+    ]
     env_file: .env
     ports:
       - ${API_HOST_PORT:-8080}:8080
