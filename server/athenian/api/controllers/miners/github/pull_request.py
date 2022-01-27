@@ -1296,7 +1296,11 @@ class PullRequestMiner:
         assert jira
         filters = [PullRequest.node_id.in_(pr_node_ids)]
         query = await generate_jira_prs_query(filters, jira, meta_ids, mdb, cache, columns=columns)
-        query = query.with_statement_hint(f"Rows(pr repo #{len(pr_node_ids)})")
+        # pr JOIN repo is always len(pr_node_ids)
+        # speculate that m JOIN pr is ~0.5 of len(pr_node_ids), that is, half of PRs mapped to JIRA
+        query = query \
+            .with_statement_hint(f"Rows(pr repo #{len(pr_node_ids)})") \
+            .with_statement_hint(f"Rows(m pr #{len(pr_node_ids) // 2})")
         return await read_sql_query(
             query, mdb, columns, index=PullRequest.node_id.name)
 
