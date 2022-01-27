@@ -24,6 +24,15 @@ If there are several base64 chunks, concatenate them together. Then execute:
 cat /tmp/base64 | python3 athenian/api/hacks/show_sql.py >/tmp/query
 ```
 
+Execute the query against the production DB:
+
+```
+PGPASSWORD=<password> psql -h 0.0.0.0 -p 5432 --db metadata -U production-cloud-sql </tmp/query | tail -n +4 | sed 's/,MD[a-zA-Z0-9=]\+//g' | sed 's/,[a-z0-9]\{40\}//g' | xclip -selection c
+```
+
+The plan is already in your clipboard. Paste it to your favourite PostgreSQL plan visualizer. Vadim
+uses explain.tensor.ru because it gives very useful hints on what's wrong.
+
 ## API performance notes - September 2020
 
 The API precomputes timestamps of various PR events in the pdb, such as when they were created or released.
