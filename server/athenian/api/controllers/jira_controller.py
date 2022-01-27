@@ -178,6 +178,7 @@ async def _epic_flow(return_: Set[str],
     """Fetch various information related to JIRA epics."""
     if JIRAFilterReturn.EPICS not in return_:
         return None, None, None
+    log = logging.getLogger("%s.filter_jira_stuff/epic" % metadata.__package__)
     extra_columns = [
         Issue.key,
         Issue.title,
@@ -346,8 +347,14 @@ async def _epic_flow(return_: Set[str],
                      columns=[IssueType.id, IssueType.project_id, IssueType.name]),
     ]
     _, priorities, statuses, types = await gather(*tasks, op="epic epilog")
+    invalid_parent_id = []
     for row in subtask_task.result():
-        issue_by_id[row[Issue.parent_id.name]].subtasks = row["subtasks"]
+        try:
+            issue_by_id[(parent_id := row[Issue.parent_id.name])].subtasks = row["subtasks"]
+        except KeyError:
+            invalid_parent_id.append(parent_id)
+    if invalid_parent_id:
+        log.error("issues are parents of children outside of the epics: %s", invalid_parent_id)
     for row in types:
         name = row[IssueType.name.name]
         for child in children_by_type[(row[IssueType.project_id.name], row[IssueType.id.name])]:
@@ -415,7 +422,7 @@ async def _issue_flow(return_: Set[str],
     """Fetch various information related to JIRA issues."""
     if JIRAFilterReturn.ISSUES not in return_:
         return (None,) * 7
-    log = logging.getLogger("%s.filter_jira_stuff" % metadata.__package__)
+    log = logging.getLogger("%s.filter_jira_stuff/issue" % metadata.__package__)
     extra_columns = [
         Issue.project_id,
         Issue.components,
