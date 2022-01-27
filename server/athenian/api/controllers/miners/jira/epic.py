@@ -78,7 +78,7 @@ async def filter_epics(jira_ids: JIRAConfig,
                       .where(and_(Issue.acc_id == jira_ids[0],
                                   Issue.project_id.in_(jira_ids[1]),
                                   Issue.is_deleted.is_(False),
-                                  Issue.parent_id.in_(children.index)))
+                                  Issue.parent_id.in_(children.index.values)))
                       .group_by(Issue.parent_id)),
         name="fetch JIRA subtask counts",
     )
