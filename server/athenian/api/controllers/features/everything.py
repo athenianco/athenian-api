@@ -203,7 +203,7 @@ async def mine_all_check_runs(repos: Collection[str],
     """Extract everything we know about CI check runs."""
     df = await mine_check_runs(
         datetime(1970, 1, 1, tzinfo=timezone.utc), datetime.now(timezone.utc),
-        repos, [], LabelFilter.empty(), JIRAFilter.empty(), False, logical_settings,
+        repos, [], LabelFilter.empty(), JIRAFilter.empty(), logical_settings,
         meta_ids, mdb, cache)
     return {"": df}
 

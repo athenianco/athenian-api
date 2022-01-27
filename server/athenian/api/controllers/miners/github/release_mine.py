@@ -23,11 +23,11 @@ from athenian.api.controllers.miners.github.commit import fetch_precomputed_comm
 from athenian.api.controllers.miners.github.dag_accelerated import extract_subdag, \
     mark_dag_access, mark_dag_parents, searchsorted_inrange
 from athenian.api.controllers.miners.github.deployment_light import load_included_deployments
+from athenian.api.controllers.miners.github.label import find_left_prs_by_labels
 from athenian.api.controllers.miners.github.logical import split_logical_prs
 from athenian.api.controllers.miners.github.precomputed_releases import \
     compose_release_match, fetch_precomputed_releases_by_name, load_precomputed_release_facts, \
     reverse_release_settings, store_precomputed_release_facts
-from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.github.release_load import \
     group_repos_by_release_match, ReleaseLoader
 from athenian.api.controllers.miners.github.release_match import ReleaseToPullRequestMapper
@@ -623,7 +623,7 @@ def _filter_by_labels(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
     key = "prs_" + PullRequest.node_id.name
     pr_node_ids = [r[1][key] for r in releases]
     all_pr_node_ids = np.concatenate(pr_node_ids)
-    left = PullRequestMiner.find_left_by_labels(
+    left = find_left_prs_by_labels(
         pd.Index(all_pr_node_ids),
         labels_df.index,
         labels_df[PullRequestLabel.name.name].values,

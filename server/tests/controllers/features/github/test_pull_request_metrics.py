@@ -63,11 +63,11 @@ def random_dropout(pr, prob):
 
 
 def dt64arr_ns(dt: datetime) -> np.ndarray:
-    return np.array([dt], dtype="datetime64[ns]")
+    return np.array([dt.replace(tzinfo=None)], dtype="datetime64[ns]")
 
 
 def dt64arr_s(dt: datetime) -> np.ndarray:
-    return np.array([dt], dtype="datetime64[s]")
+    return np.array([dt.replace(tzinfo=None)], dtype="datetime64[s]")
 
 
 @pytest.mark.parametrize("cls", [

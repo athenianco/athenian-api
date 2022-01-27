@@ -7,13 +7,14 @@ from itertools import chain, repeat
 import logging
 import pickle
 from typing import Collection, Dict, Generator, Iterable, Iterator, KeysView, List, \
-    Mapping, Optional, Sequence, Set, Tuple, Union
+    Mapping, Optional, Set, Tuple, Union
 
 import aiomcache
 import numpy as np
 import pandas as pd
 from pandas.core.common import flatten
 from sqlalchemy import sql
+from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.orm import aliased
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql.elements import BinaryExpression
@@ -23,10 +24,13 @@ from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached, CancelCache, short_term_exptime
 from athenian.api.controllers.logical_repos import coerce_logical_repos
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.controllers.miners.github.check_run import calculate_check_run_outcome_masks, \
+    check_suite_completed_column, check_suite_started_column, mine_commit_check_runs
 from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_COLUMNS, \
     DAG, fetch_precomputed_commit_history_dags, fetch_repository_commits_no_branch_dates
 from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_inrange
-from athenian.api.controllers.miners.github.label import fetch_labels_to_filter
+from athenian.api.controllers.miners.github.label import fetch_labels_to_filter, \
+    find_left_prs_by_labels
 from athenian.api.controllers.miners.github.logical import split_logical_prs
 from athenian.api.controllers.miners.github.precomputed_prs import \
     discover_inactive_merged_unreleased_prs, MergedPRFactsLoader, OpenPRFactsLoader, \
@@ -37,20 +41,24 @@ from athenian.api.controllers.miners.github.release_match import PullRequestToRe
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
 from athenian.api.controllers.miners.types import DeploymentConclusion, MinedPullRequest, \
-    nonemax, nonemin, PRParticipants, PRParticipationKind, PullRequestFacts, PullRequestFactsMap
+    nonemax, nonemin, PRParticipants, PRParticipationKind, PullRequestCheckRun, PullRequestFacts, \
+    PullRequestFactsMap
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch, \
     ReleaseSettings
-from athenian.api.db import add_pdb_misses, Database, DatabaseLike
+from athenian.api.db import add_pdb_hits, add_pdb_misses, Database, DatabaseLike
 from athenian.api.defer import AllEvents, defer
 from athenian.api.int_to_str import int_to_str
-from athenian.api.models.metadata.github import Base, NodePullRequestJiraIssues, \
-    PullRequest, PullRequestComment, PullRequestCommit, PullRequestLabel, PullRequestReview, \
-    PullRequestReviewComment, PullRequestReviewRequest, PushCommit, Release
+from athenian.api.models.metadata.github import Base, CheckRun, NodePullRequestCommit, \
+    NodePullRequestJiraIssues, PullRequest, PullRequestComment, PullRequestCommit, \
+    PullRequestLabel, PullRequestReview, PullRequestReviewComment, PullRequestReviewRequest, \
+    PushCommit, Release
 from athenian.api.models.metadata.jira import Component, Issue
 from athenian.api.models.persistentdata.models import DeploymentNotification
-from athenian.api.models.precomputed.models import GitHubPullRequestDeployment
+from athenian.api.models.precomputed.models import GitHubPullRequestCheckRuns, \
+    GitHubPullRequestDeployment
 from athenian.api.tracing import sentry_span
+from athenian.api.typing_utils import df_from_structs
 
 
 @dataclass
@@ -67,6 +75,7 @@ class PRDataFrames(Mapping[str, pd.DataFrame]):
     comments: pd.DataFrame
     labels: pd.DataFrame
     deployments: pd.DataFrame
+    check_runs: pd.DataFrame
 
     def __iter__(self) -> Iterator[str]:
         """Implement iter() - return an iterator over the field names."""
@@ -163,7 +172,10 @@ class PullRequestMiner:
                     node_ids[offsets[:-1]], repos[offsets[:-1]], groups)))
             if plural:
                 index_backup.append(df.index)
-                df.index = df.index.droplevel(0)
+                if df.index.nlevels > 1:
+                    df.index = df.index.droplevel(0)
+                else:
+                    df.reset_index(drop=True, inplace=True)
             else:
                 index_backup.append(None)
         try:
@@ -605,7 +617,7 @@ class PullRequestMiner:
                                       PullRequestFactsMap,
                                       asyncio.Event]:
         assert prs.index.nlevels == 1
-        node_ids = prs.index if len(prs) > 0 else set()
+        node_ids = prs.index if len(prs) > 0 else pd.Series([], dtype=int)
         facts = {}  # precomputed PullRequestFacts about merged unreleased PRs
         unreleased_prs_event: asyncio.Event = None
         merged_unreleased_indexes = []
@@ -781,6 +793,13 @@ class PullRequestMiner:
             df.drop([Issue.acc_id.name, Issue.components.name], inplace=True, axis=1)
             return df
 
+        async def fetch_check_runs() -> pd.DataFrame:
+            anyhow_merged_mask = prs[PullRequest.merged_at.name].notnull().values
+            merged_node_ids = node_ids.values[anyhow_merged_mask]
+            open_node_ids = node_ids.values[~anyhow_merged_mask]
+            return await cls.fetch_pr_check_runs(
+                merged_node_ids, open_node_ids, account, meta_ids, mdb, pdb)
+
         # the order is important: it provides the best performance
         # we launch coroutines from the heaviest to the lightest
         dfs = await gather(
@@ -793,6 +812,7 @@ class PullRequestMiner:
             fetch_comments(),
             _fetch_labels(),
             cls.fetch_pr_deployments(node_ids, account, pdb, rdb),
+            fetch_check_runs(),
         )
         dfs = PRDataFrames(prs, *dfs)
         if len(merged_unreleased_indexes):
@@ -1223,7 +1243,7 @@ class PullRequestMiner:
         if not labels or embedded_labels_query:
             return prs, None
         df_labels = await fetch_labels_to_filter(prs.index, meta_ids, mdb)
-        left = cls.find_left_by_labels(
+        left = find_left_prs_by_labels(
             prs.index, df_labels.index, df_labels[PullRequestLabel.name.name].values, labels)
         prs = prs.take(np.flatnonzero(prs.index.isin(left)))
         return prs, df_labels
@@ -1340,6 +1360,171 @@ class PullRequestMiner:
         ], inplace=True)
         return df
 
+    @classmethod
+    @sentry_span
+    async def fetch_pr_check_runs(cls,
+                                  merged_pr_node_ids: Iterable[int],
+                                  open_pr_node_ids: Iterable[int],
+                                  account: int,
+                                  meta_ids: Tuple[int, ...],
+                                  mdb: Database,
+                                  pdb: Database,
+                                  ) -> pd.DataFrame:
+        """Load the check runs for each PR node ID."""
+        prcrs = GitHubPullRequestCheckRuns
+        if not isinstance(merged_pr_node_ids, (set, KeysView)):
+            merged_pr_node_ids = set(merged_pr_node_ids)
+        if not isinstance(open_pr_node_ids, (set, KeysView)):
+            open_pr_node_ids = set(open_pr_node_ids)
+        rows = await pdb.fetch_all(sql.select([prcrs.pr_node_id, prcrs.data]).where(sql.and_(
+            prcrs.acc_id == account,
+            prcrs.format_version == prcrs.__table__.columns[prcrs.format_version.key].default.arg,
+            prcrs.pr_node_id.in_(merged_pr_node_ids),
+        )))
+        precomputed_check_runs = df_from_structs(
+            (PullRequestCheckRun(r[prcrs.data.name]) for r in rows),
+            length=len(rows),
+        )
+        precomputed_check_runs.set_index(
+            np.fromiter((r[prcrs.pr_node_id.name] for r in rows), int, len(rows)),
+            inplace=True)
+        missed_pr_node_ids = \
+            (merged_pr_node_ids - set(precomputed_check_runs.index.values)) | open_pr_node_ids
+        add_pdb_hits(pdb, "PullRequestMiner.fetch_pr_check_runs", len(precomputed_check_runs))
+        add_pdb_misses(pdb, "PullRequestMiner.fetch_pr_check_runs", len(missed_pr_node_ids))
+        if not missed_pr_node_ids:
+            return precomputed_check_runs
+        rows = await mdb.fetch_all(
+            sql.select([NodePullRequestCommit.commit_id])
+            .where(sql.and_(NodePullRequestCommit.acc_id.in_(meta_ids),
+                            NodePullRequestCommit.pull_request_id.in_(missed_pr_node_ids))))
+        missed_commit_ids = [r[0] for r in rows]
+        missed_df = await mine_commit_check_runs(missed_commit_ids, meta_ids, mdb)
+        missed_df = missed_df.take(np.flatnonzero(
+            np.in1d(missed_df[CheckRun.pull_request_node_id.name].values,
+                    list(missed_pr_node_ids))))
+        # there are identical timestamps, order by name and then by timestamp for 100% determinism
+        missed_df.sort_values(
+            CheckRun.name.name, inplace=True, ignore_index=True)
+        missed_df.sort_values(
+            CheckRun.started_at.name, inplace=True, ignore_index=True, kind="stable")
+        # np.unique uses stable sort if and only if return_index=True
+        new_pr_node_ids, _, index_map, map_counts = np.unique(
+            missed_df[CheckRun.pull_request_node_id.name].values,
+            return_index=True, return_inverse=True, return_counts=True)
+        if len(missed_empty_pr_ids := missed_pr_node_ids
+                .difference(new_pr_node_ids)
+                .intersection(merged_pr_node_ids)):
+            await defer(cls._store_empty_pr_check_runs(missed_empty_pr_ids, account, pdb),
+                        f"_store_empty_pr_check_runs({len(missed_empty_pr_ids)})")
+        # store 0 for missed_pr_node_ids - new_pr_node_ids
+        order = np.argsort(index_map, kind="stable")
+        offsets = np.zeros(len(new_pr_node_ids) + 1, dtype=int)
+        np.cumsum(map_counts, out=offsets[1:])
+        started_ats = missed_df[CheckRun.started_at.name].values
+        completed_ats = missed_df[CheckRun.completed_at.name].values
+        check_suite_started_ats = missed_df[check_suite_started_column].values
+        check_suite_completed_ats = missed_df[check_suite_completed_column].values
+        check_suite_node_ids = missed_df[CheckRun.check_suite_node_id.name].values
+        missed_df[CheckRun.conclusion.name].fillna("", inplace=True)
+        conclusions = missed_df[CheckRun.conclusion.name].values.astype("S", copy=False)
+        statuses = missed_df[CheckRun.status.name].values.astype("S", copy=False)
+        missed_df[CheckRun.check_suite_conclusion.name].fillna("", inplace=True)
+        check_suite_conclusions = \
+            missed_df[CheckRun.check_suite_conclusion.name].values.astype("S", copy=False)
+        check_suite_statuses = \
+            missed_df[CheckRun.check_suite_status.name].values.astype("S", copy=False)
+        names = missed_df[CheckRun.name.name].values.astype("U", copy=False)
+        new_structs = []
+        merged_new_pr_node_ids = []
+        merged_new_structs = []
+        for i, pr in enumerate(new_pr_node_ids):
+            indexes = order[offsets[i]:offsets[i + 1]]
+            new_structs.append(struct := PullRequestCheckRun.from_fields(
+                started_at=started_ats[indexes],
+                completed_at=completed_ats[indexes],
+                check_suite_started_at=check_suite_started_ats[indexes],
+                check_suite_completed_at=check_suite_completed_ats[indexes],
+                check_suite_node_id=check_suite_node_ids[indexes],
+                conclusion=conclusions[indexes],
+                status=statuses[indexes],
+                check_suite_conclusion=check_suite_conclusions[indexes],
+                check_suite_status=check_suite_statuses[indexes],
+                name=names[indexes],
+            ))
+            if pr in merged_pr_node_ids:
+                merged_new_pr_node_ids.append(pr)
+                merged_new_structs.append(struct)
+        await defer(
+            cls._store_pr_check_runs(merged_new_pr_node_ids, merged_new_structs, account, pdb),
+            f"_store_pr_check_runs({len(new_structs)})")
+        missed_check_runs = df_from_structs(new_structs)
+        missed_check_runs.set_index(new_pr_node_ids, inplace=True)
+        if precomputed_check_runs.empty:
+            check_runs = missed_check_runs
+        else:
+            check_runs = pd.concat([precomputed_check_runs, missed_check_runs])
+        return check_runs
+
+    @classmethod
+    async def _upsert_pr_check_runs(cls, values: List[dict], pdb: Database):
+        if pdb.url.dialect == "postgresql":
+            expr = postgres_insert(GitHubPullRequestCheckRuns)
+            expr = expr.on_conflict_do_update(
+                constraint=GitHubPullRequestCheckRuns.__table__.primary_key,
+                set_={
+                    GitHubPullRequestCheckRuns.data.name: expr.excluded.data,
+                },
+            )
+        else:
+            expr = sql.insert(GitHubPullRequestCheckRuns).prefix_with("OR REPLACE")
+        await pdb.execute_many(expr, values)
+
+    @classmethod
+    @sentry_span
+    async def _store_empty_pr_check_runs(cls,
+                                         missed_empty_pr_ids: Iterable[int],
+                                         account: int,
+                                         pdb: Database) -> None:
+        empty_struct = PullRequestCheckRun.from_fields(
+            started_at=[],
+            completed_at=[],
+            check_suite_started_at=[],
+            check_suite_completed_at=[],
+            check_suite_node_id=[],
+            conclusion=[],
+            status=[],
+            check_suite_conclusion=[],
+            check_suite_status=[],
+            name=[],
+        ).data
+        values = [
+            GitHubPullRequestCheckRuns(
+                acc_id=account,
+                pr_node_id=pr_node_id,
+                data=empty_struct,
+            ).create_defaults().explode(with_primary_keys=True)
+            for pr_node_id in missed_empty_pr_ids
+        ]
+        await cls._upsert_pr_check_runs(values, pdb)
+
+    @classmethod
+    @sentry_span
+    async def _store_pr_check_runs(cls,
+                                   pr_node_ids: Iterable[int],
+                                   structs: Iterable[PullRequestCheckRun],
+                                   account: int,
+                                   pdb: Database) -> None:
+        values = [
+            GitHubPullRequestCheckRuns(
+                acc_id=account,
+                pr_node_id=pr_node_id,
+                data=struct.data,
+            ).create_defaults().explode(with_primary_keys=True)
+            for pr_node_id, struct in zip(pr_node_ids, structs)
+        ]
+        await cls._upsert_pr_check_runs(values, pdb)
+
     @staticmethod
     def _check_participants_compatibility(cached_participants: PRParticipants,
                                           participants: PRParticipants) -> bool:
@@ -1439,51 +1624,10 @@ class PullRequestMiner:
         df_labels_index = dfs.labels.index.get_level_values(0)
         df_labels_names = dfs.labels[PullRequestLabel.name.name].values
         pr_node_ids = dfs.prs.index.get_level_values(0)
-        left = cls.find_left_by_labels(pr_node_ids, df_labels_index, df_labels_names, labels)
+        left = find_left_prs_by_labels(pr_node_ids, df_labels_index, df_labels_names, labels)
         if not labels.include:
             return df_labels_index.difference(left)
         return pr_node_ids.difference(left)
-
-    @classmethod
-    def find_left_by_labels(cls,
-                            full_index: pd.Index,
-                            df_labels_index: pd.Index,
-                            df_labels_names: Sequence[str],
-                            labels: LabelFilter) -> pd.Index:
-        """
-        Post-filter PRs by their loaded labels.
-
-        :param full_index: All the PR node IDs, not just those that correspond to labeled PRs.
-        :param df_labels_index: (PR node ID, label name) DataFrame index. There may be several \
-                                rows for the same PR node ID.
-        :param df_labels_names: (PR node ID, label name) DataFrame column.
-        """
-        left_include = left_exclude = None
-        if labels.include:
-            singles, multiples = LabelFilter.split(labels.include)
-            left_include = df_labels_index.take(
-                np.nonzero(np.in1d(df_labels_names, singles))[0],
-            ).unique()
-            for group in multiples:
-                passed = df_labels_index
-                for label in group:
-                    passed = passed.intersection(
-                        df_labels_index.take(np.nonzero(df_labels_names == label)[0]))
-                    if passed.empty:
-                        break
-                left_include = left_include.union(passed)
-        if labels.exclude:
-            left_exclude = full_index.difference(df_labels_index.take(
-                np.nonzero(np.in1d(df_labels_names, list(labels.exclude)))[0],
-            ).unique())
-        if labels.include:
-            if labels.exclude:
-                left = left_include.intersection(left_exclude)
-            else:
-                left = left_include
-        else:
-            left = left_exclude
-        return left
 
     @classmethod
     @sentry_span
@@ -1499,7 +1643,7 @@ class PullRequestMiner:
             df_labels_names = list(pd.core.common.flatten(df_labels_names))
             # if jira.labels.include is empty, we effectively drop all unmapped PRs
             # that is the desired behavior
-            left.append(cls.find_left_by_labels(
+            left.append(find_left_prs_by_labels(
                 pr_node_ids, df_labels_index, df_labels_names, jira.labels))
         if jira.epics:
             left.append(jira_index.take(np.flatnonzero(
@@ -1921,6 +2065,22 @@ class PullRequestFactsMiner:
         )
         deployed = pr.deployments[DeploymentNotification.finished_at.name].values.astype(
             "datetime64[s]")
+        check_run_names = pr.check_run[PullRequestCheckRun.f.name]
+        if check_run_names is None or len(check_run_names) == 0 or not merged:
+            merged_with_failed_check_runs = []
+        else:
+            failed_mask = calculate_check_run_outcome_masks(
+                pr.check_run[PullRequestCheckRun.f.status],
+                pr.check_run[PullRequestCheckRun.f.conclusion],
+                pr.check_run[PullRequestCheckRun.f.check_suite_conclusion],
+                with_success=False, with_failure=True, with_skipped=True,
+            )[0]
+            if not failed_mask.any():
+                merged_with_failed_check_runs = []
+            else:
+                names = np.flip(pr.check_run[PullRequestCheckRun.f.name])
+                unique_names, last_encounters = np.unique(names, return_index=True)
+                merged_with_failed_check_runs = unique_names[failed_mask[last_encounters]]
         facts = PullRequestFacts.from_fields(
             created=created,
             first_commit=first_commit,
@@ -1951,6 +2111,7 @@ class PullRequestFactsMiner:
             environments=environments,
             deployment_conclusions=deployment_conclusions,
             deployed=deployed,
+            merged_with_failed_check_runs=merged_with_failed_check_runs,
         )
         self._validate(facts, pr.pr[PullRequest.htmlurl.name])
         return facts

@@ -258,6 +258,7 @@ def pr_samples():
                 done=pd.Timestamp(released_at),
                 review_comments=max(0, randint(-5, 15)),
                 participants=max(randint(-1, 4), 1),
+                merged_with_failed_check_runs=["flake8"] if fake.random.random() > 0.9 else [],
             )
 
         return [random_pr() for _ in range(n)]

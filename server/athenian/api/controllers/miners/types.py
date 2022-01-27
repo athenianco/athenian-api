@@ -170,6 +170,7 @@ class MinedPullRequest:
     labels: pd.DataFrame
     jiras: pd.DataFrame
     deployments: pd.DataFrame
+    check_run: Dict[str, Any]
 
     def participant_logins(self) -> PRParticipants:
         """Collect unique developer logins that are mentioned in this pull request."""
@@ -267,6 +268,7 @@ class PullRequestFacts:
         force_push_dropped: np.bool_
         review_comments: np.uint16
         participants: np.uint16
+        merged_with_failed_check_runs: [str]
 
     class Optional:
         """Mutable fields that are None by default. We do not serialize them."""
@@ -491,3 +493,26 @@ class DeploymentFacts:
         lines_overall: [int]
         commits_prs: [np.int32]
         commits_overall: [np.int32]
+
+
+@numpy_struct
+class PullRequestCheckRun:
+    """Check runs belonging to a pull request."""
+
+    class Immutable:
+        """
+        Immutable fields, we store them in `_data` and mirror in `_arr`.
+
+        We generate `dtype` from this spec.
+        """
+
+        started_at: ["datetime64[s]"]
+        completed_at: ["datetime64[s]"]
+        check_suite_started_at: ["datetime64[s]"]
+        check_suite_completed_at: ["datetime64[s]"]
+        check_suite_node_id: [int]
+        conclusion: [ascii]
+        status: [ascii]
+        check_suite_conclusion: [ascii]
+        check_suite_status: [ascii]
+        name: [str]

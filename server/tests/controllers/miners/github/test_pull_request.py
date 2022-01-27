@@ -7,7 +7,7 @@ from typing import Any, Dict
 
 import pandas as pd
 from pandas.core.dtypes.common import is_datetime64_any_dtype
-from pandas.testing import assert_frame_equal
+from pandas.testing import assert_frame_equal, assert_index_equal
 import pytest
 from sqlalchemy import delete, insert, select, update
 
@@ -17,7 +17,7 @@ from athenian.api.controllers.miners.github.precomputed_prs import \
     store_merged_unreleased_pull_request_facts, store_open_pull_request_facts
 from athenian.api.controllers.miners.github.pull_request import PullRequestFactsMiner
 from athenian.api.controllers.miners.types import DAG, MinedPullRequest, PRParticipationKind, \
-    PullRequestFacts
+    PullRequestCheckRun, PullRequestFacts
 from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch, \
     ReleaseMatchSetting, ReleaseSettings
 import athenian.api.db
@@ -664,25 +664,41 @@ async def test_pr_mine_by_ids(branches, default_branches, dag, mdb, pdb, rdb, ca
         cache,
     )
     for df1, df2 in zip(dfs1.values(), dfs2.values()):
-        assert (df1.fillna(0) == df2.fillna(0)).all().all()
+        assert_frame_equal(df1.fillna(0), df2.fillna(0))
     for field in dataclasses.fields(MinedPullRequest):
         field = field.name
         if field == "release":
             continue
         df1 = getattr(dfs1, field.rstrip("s") + "s")
-        records = [getattr(pr, field) for pr in mined_prs]
+        records = []
+        pr_ids = []
+        for pr in mined_prs:
+            records.append(getattr(pr, field))
+            pr_ids.append(pr.pr[PullRequest.node_id.name])
+        if field == "check_run":
+            ix = [i for i, r in enumerate(records) if r[PullRequestCheckRun.f.name] is not None]
+            records = [records[i] for i in ix]
+            pr_ids = [pr_ids[i] for i in ix]
         if field.endswith("s"):
             df = pd.concat(records)
         else:
             df = pd.DataFrame.from_records(records)
-        if field not in ("pr", "release"):
+        if field not in ("pr", "release", "check_run"):
             df1.index = df1.index.droplevel(0)
-        else:
+        elif field != "check_run":
             df.set_index(PullRequest.node_id.name, inplace=True)
+        else:
+            df.index = pr_ids
         df.sort_index(inplace=True)
         df1.sort_index(inplace=True)
         df1 = df1[df.columns]
-        assert (df.fillna(0) == df1.fillna(0)).all().all()
+        if field == "check_run":
+            assert_index_equal(df.index, df1.index)
+            for i, (name, name1) in enumerate(zip(df[PullRequestCheckRun.f.name].values,
+                                                  df1[PullRequestCheckRun.f.name].values)):
+                assert name.tolist() == name1.tolist(), f"[{i}] {pr_ids[i]}"
+        else:
+            assert_frame_equal(df.fillna(0), df1.fillna(0), obj=field)
 
 
 @with_defer

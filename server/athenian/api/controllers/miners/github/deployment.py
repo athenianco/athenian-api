@@ -27,12 +27,12 @@ from athenian.api.controllers.miners.github.commit import COMMIT_FETCH_COMMITS_C
     fetch_dags_with_commits, fetch_repository_commits
 from athenian.api.controllers.miners.github.dag_accelerated import extract_independent_ownership, \
     extract_pr_commits, mark_dag_access, mark_dag_parents, searchsorted_inrange
-from athenian.api.controllers.miners.github.label import fetch_labels_to_filter
+from athenian.api.controllers.miners.github.label import fetch_labels_to_filter, \
+    find_left_prs_by_labels
 from athenian.api.controllers.miners.github.logical import split_logical_deployed_components, \
     split_logical_prs
 from athenian.api.controllers.miners.github.precomputed_releases import \
     compose_release_match, reverse_release_settings
-from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.github.release_load import ReleaseLoader, \
     set_matched_by_from_release_match, unfresh_releases_lag
 from athenian.api.controllers.miners.github.release_mine import group_hashes_by_ownership, \
@@ -448,7 +448,7 @@ async def _filter_by_prs(df: pd.DataFrame,
     prs = prs_df[PullRequest.node_id.name].values
     if labels and not embedded_labels_query:
         label_df = label_df[0]
-        left = PullRequestMiner.find_left_by_labels(
+        left = find_left_prs_by_labels(
             pd.Index(prs),  # there are `multiples` so we don't care
             label_df.index,
             label_df[PullRequestLabel.name.name].values,
@@ -1618,7 +1618,8 @@ def _compose_latest_deployed_components_physical(
                 DeployedComponent.repository_node_id == repo_name_to_node[repo],
             ))
             .order_by(desc(DeploymentNotification.finished_at))
-            .limit(1))
+            .limit(1)
+            .subquery())
         for env, repos in until_per_repo_env.items()
         for repo, until in repos.items()
     ]

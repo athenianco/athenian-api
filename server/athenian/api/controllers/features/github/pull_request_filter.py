@@ -3,8 +3,8 @@ from dataclasses import fields as dataclass_fields
 from datetime import datetime, timedelta, timezone
 import logging
 import pickle
-from typing import Callable, Collection, Dict, Generator, Iterable, KeysView, List, Optional, \
-    Sequence, Set, Tuple, Union
+from typing import Callable, Dict, Generator, Iterable, KeysView, List, Optional, Sequence, Set, \
+    Tuple, Union
 
 import aiomcache
 import numpy as np
@@ -16,8 +16,6 @@ from athenian.api import COROUTINE_YIELD_EVERY_ITER, list_with_yield, metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached, CancelCache, short_term_exptime
 from athenian.api.controllers.datetime_utils import coarsen_time_interval
-from athenian.api.controllers.features.github.check_run_metrics import \
-    MergedPRsWithFailedChecksCounter
 from athenian.api.controllers.features.github.pull_request_metrics import AllCounter, \
     DeploymentPendingMarker, DeploymentTimeCalculator, EnvironmentsMarker, MergingPendingCounter, \
     MergingTimeCalculator, ReleasePendingCounter, ReleaseTimeCalculator, ReviewPendingCounter, \
@@ -30,7 +28,6 @@ from athenian.api.controllers.features.metric_calculator import MetricCalculator
 from athenian.api.controllers.logical_repos import drop_logical_repo
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import BranchMiner
-from athenian.api.controllers.miners.github.check_run import mine_check_runs
 from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_COLUMNS, \
     fetch_precomputed_commit_history_dags, fetch_repository_commits_no_branch_dates
 from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_inrange
@@ -53,7 +50,7 @@ from athenian.api.controllers.settings import LogicalRepositorySettings, Release
     ReleaseSettings
 from athenian.api.db import add_pdb_misses, Database, set_pdb_hits, set_pdb_misses
 from athenian.api.defer import defer
-from athenian.api.models.metadata.github import CheckRun, PullRequest, PullRequestCommit, \
+from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, \
     PullRequestLabel, PullRequestReview, PullRequestReviewComment, Release
 from athenian.api.models.metadata.jira import Issue
 from athenian.api.tracing import sentry_span
@@ -308,7 +305,7 @@ class PullRequestListMiner:
             review_comments=review_comments,
             reviews=reviews,
             merged=self._dt64_to_pydt(facts_now.merged),
-            merged_with_failed_check_runs=None,  # filled by _append_merged_with_failed_check_runs
+            merged_with_failed_check_runs=facts_now.merged_with_failed_check_runs.tolist(),
             released=self._dt64_to_pydt(facts_now.released),
             release_url=pr.release[Release.url.name],
             events_now=events_now,
@@ -625,58 +622,6 @@ def _filter_by_jira_issue_types(prs: List[PullRequestListItem],
     return new_prs
 
 
-@sentry_span
-async def _load_failed_check_runs_for_prs(time_from: datetime,
-                                          time_to: datetime,
-                                          repos: Collection[str],
-                                          labels: LabelFilter,
-                                          jira: JIRAFilter,
-                                          logical_settings: LogicalRepositorySettings,
-                                          meta_ids: Tuple[int, ...],
-                                          mdb: Database,
-                                          cache: Optional[aiomcache.Client],
-                                          ) -> Tuple[np.ndarray, List[np.ndarray]]:
-    df = await mine_check_runs(
-        time_from, time_to, repos, [], labels, jira, True, logical_settings, meta_ids, mdb, cache)
-    index, pull_requests, failure_mask = \
-        MergedPRsWithFailedChecksCounter.find_prs_merged_with_failed_check_runs(df)
-    check_run_names = df[CheckRun.name.name].values[index.values]
-    failed_check_run_names = check_run_names[failure_mask]
-    failed_pull_requests = pull_requests[failure_mask]
-    unique_prs, index, counts = np.unique(
-        failed_pull_requests, return_counts=True, return_inverse=True)
-    check_runs = np.split(failed_check_run_names[np.argsort(index)], np.cumsum(counts[:-1]))
-    return unique_prs, check_runs
-
-
-@sentry_span
-async def _append_merged_with_failed_check_runs(check_runs_task: Optional[asyncio.Task],
-                                                prs: List[PullRequestListItem],
-                                                ) -> None:
-    if check_runs_task is None:
-        return
-    await check_runs_task
-    failed_prs, check_run_names = check_runs_task.result()
-    if len(failed_prs):
-        node_ids = np.fromiter((pr.node_id for pr in prs), int, len(prs))
-        order = np.argsort(node_ids)
-        node_ids = node_ids[order]
-        order = np.argsort(order)
-        if len(node_ids) > len(failed_prs):
-            found = searchsorted_inrange(node_ids, failed_prs)
-            failed_indexes = np.flatnonzero(node_ids[found] == failed_prs)
-            pr_indexes = found[failed_indexes]
-            check_run_indexes = failed_indexes
-        else:
-            found = searchsorted_inrange(failed_prs, node_ids)
-            failed_indexes = np.flatnonzero(failed_prs[found] == node_ids)
-            pr_indexes = failed_indexes
-            check_run_indexes = found[failed_indexes]
-        for pr_index, check_run_index in zip(pr_indexes, check_run_indexes):
-            prs[order[pr_index]].merged_with_failed_check_runs = \
-                check_run_names[check_run_index].tolist()
-
-
 @cached(
     exptime=short_term_exptime,
     serialize=pickle.dumps,
@@ -734,9 +679,6 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
         coarsen_time_interval(updated_min, updated_max)
     else:
         assert updated_max is None
-    check_runs_task = asyncio.create_task(_load_failed_check_runs_for_prs(
-        updated_min or time_from, updated_max or time_to,
-        repos, labels, jira, logical_settings, meta_ids, mdb, cache))
     environments_task = asyncio.create_task(fetch_repository_environments(
         repos, prefixer, account, rdb, cache))
     branches, default_branches = await BranchMiner.extract_branches(
@@ -854,8 +796,7 @@ async def _filter_pull_requests(events: Set[PullRequestEvent],
             environments_task.result()),
         "PullRequestListMiner.__iter__",
     )
-    await gather(_append_merged_with_failed_check_runs(check_runs_task, prs),
-                 include_deps_task)
+    await include_deps_task
     log.debug("return %d PRs", len(prs))
     return prs, include_deps_task.result(), labels, jira
 
@@ -915,7 +856,7 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
 
     :params prs: For each repository name without the prefix, there is a set of PR numbers to list.
     """
-    (mined_prs, dfs, facts, _, deployments_task, check_runs_task), repo_envs = await gather(
+    (mined_prs, dfs, facts, _, deployments_task), repo_envs = await gather(
         _fetch_pull_requests(
             prs, bots, release_settings, logical_settings, prefixer, account, meta_ids,
             mdb, pdb, rdb, cache),
@@ -928,7 +869,6 @@ async def fetch_pull_requests(prs: Dict[str, Set[int]],
         datetime(1970, 1, 1, tzinfo=timezone.utc), datetime.now(timezone.utc),
         False, environment, repo_envs)
     prs = await list_with_yield(miner, "PullRequestListMiner.__iter__")
-    await _append_merged_with_failed_check_runs(check_runs_task, prs)
     await deployments_task
     return prs, deployments_task.result()
 
@@ -948,7 +888,6 @@ async def _fetch_pull_requests(prs: Dict[str, Set[int]],
                                           PRDataFrames,
                                           PullRequestFactsMap,
                                           Dict[str, ReleaseMatch],
-                                          asyncio.Task,
                                           Optional[asyncio.Task]]:
     branches, default_branches = await BranchMiner.extract_branches(
         prs, prefixer, meta_ids, mdb, cache)
@@ -964,19 +903,10 @@ async def _fetch_pull_requests(prs: Dict[str, Set[int]],
             prs, default_branches, release_settings, prefixer, account, pdb),
     ]
     prs_df, (facts, ambiguous) = await gather(*tasks)
-    if (max_merged_at := prs_df[PullRequest.merged_at.name].max()) == max_merged_at:
-        check_runs_task = asyncio.create_task(_load_failed_check_runs_for_prs(
-            prs_df[PullRequest.created_at.name].min() - timedelta(hours=1),
-            max_merged_at + timedelta(days=1),
-            prs.keys(), LabelFilter.empty(), JIRAFilter.empty(),
-            logical_settings, meta_ids, mdb, cache))
-    else:
-        check_runs_task = None
-    unwrapped = await unwrap_pull_requests(
+    return await unwrap_pull_requests(
         prs_df, facts, ambiguous, True, branches, default_branches,
         bots, release_settings, logical_settings, prefixer, account, meta_ids,
         mdb, pdb, rdb, cache, repositories=prs.keys())
-    return unwrapped + (check_runs_task,)
 
 
 async def unwrap_pull_requests(prs_df: pd.DataFrame,
