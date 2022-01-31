@@ -1005,6 +1005,31 @@ class AverageReviewsCalculator(AverageMetricCalculator[np.float32]):
         return result
 
 
+@register_metric(PullRequestMetricID.PR_COMMENTS_PER)
+class AverageCommentsCalculator(AverageMetricCalculator[np.float32]):
+    """Average number of PR comments (regular and review) in reviewed PRs metric."""
+
+    deps = (AllCounter,)
+    may_have_negative_values = False
+    metric = MetricFloat
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **kwargs,
+                 ) -> np.ndarray:
+        regular_comments = facts[PullRequestFacts.f.regular_comments].values
+        review_comments = facts[PullRequestFacts.f.review_comments].values
+        comments = regular_comments + review_comments
+        empty_mask = review_comments == 0  # only reviewed PRs!
+        comments = comments.astype(self.dtype)
+        comments[empty_mask] = None
+        result = np.repeat(comments[None, :], len(min_times), axis=0)
+        result[self._calcs[0].peek == self._calcs[0].nan] = None
+        return result
+
+
 EnvironmentsMarkerDType = np.dtype([
     ("environments", np.ndarray),
     ("counts", np.ndarray),
