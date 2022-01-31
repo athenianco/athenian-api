@@ -1464,6 +1464,8 @@ class PullRequestMiner:
             check_runs = missed_check_runs
         else:
             check_runs = pd.concat([precomputed_check_runs, missed_check_runs])
+        if check_runs.empty:
+            check_runs = pd.DataFrame({f: [] for f in PullRequestCheckRun.f})
         return check_runs
 
     @classmethod
