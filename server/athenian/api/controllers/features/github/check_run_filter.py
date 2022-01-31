@@ -8,10 +8,9 @@ from dateutil.rrule import MONTHLY, rrule
 import numpy as np
 
 from athenian.api.cache import cached, short_term_exptime
-from athenian.api.controllers.features.github.check_run_metrics import \
-    calculate_check_run_outcome_masks
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.check_run import check_suite_completed_column, \
+from athenian.api.controllers.miners.github.check_run import calculate_check_run_outcome_masks, \
+    check_suite_completed_column, \
     mine_check_runs
 from athenian.api.controllers.miners.types import CodeCheckRunListItem, CodeCheckRunListStats
 from athenian.api.controllers.settings import LogicalRepositorySettings
@@ -66,7 +65,7 @@ async def filter_check_runs(time_from: datetime,
              2. list of the mined check run type's information and statistics.
     """
     df_check_runs = await mine_check_runs(
-        time_from, time_to, repositories, pushers, labels, jira, False,
+        time_from, time_to, repositories, pushers, labels, jira,
         logical_settings, meta_ids, mdb, cache)
     timeline = _build_timeline(time_from, time_to)
     timeline_dates = [d.date() for d in timeline.tolist()]

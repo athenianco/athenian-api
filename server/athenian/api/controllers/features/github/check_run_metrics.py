@@ -13,9 +13,9 @@ from athenian.api.controllers.features.metric_calculator import AverageMetricCal
     BinnedHistogramCalculator, BinnedMetricCalculator, HistogramCalculatorEnsemble, \
     make_register_metric, MaxMetricCalculator, MetricCalculator, MetricCalculatorEnsemble, \
     RatioCalculator, SumMetricCalculator
-from athenian.api.controllers.miners.github.check_run import check_suite_completed_column, \
-    check_suite_started_column, pull_request_closed_column, pull_request_merged_column, \
-    pull_request_started_column
+from athenian.api.controllers.miners.github.check_run import calculate_check_run_outcome_masks, \
+    check_suite_completed_column, check_suite_started_column, pull_request_closed_column, \
+    pull_request_merged_column, pull_request_started_column
 from athenian.api.int_to_str import int_to_str
 from athenian.api.models.metadata.github import CheckRun
 from athenian.api.models.web import CodeCheckMetricID
@@ -495,39 +495,6 @@ class PRsWithChecksCounter(SumMetricCalculator[int]):
         return result
 
 
-def calculate_check_run_outcome_masks(check_run_statuses: np.ndarray,
-                                      check_run_conclusions: np.ndarray,
-                                      check_suite_conclusions: Optional[np.ndarray],
-                                      with_success: bool,
-                                      with_failure: bool,
-                                      with_skipped: bool,
-                                      ) -> List[np.ndarray]:
-    """Calculate the check run success and failure masks."""
-    completed = check_run_statuses == b"COMPLETED"
-    if with_success or with_skipped:
-        neutrals = (check_run_conclusions == b"NEUTRAL")
-    result = []
-    if with_success:
-        result.append(
-            (completed & (
-                (check_run_conclusions == b"SUCCESS") |
-                (check_suite_conclusions == b"NEUTRAL") & neutrals
-            )) |
-            (check_run_statuses == b"SUCCESS") |
-            (check_run_statuses == b"PENDING")  # noqa(C812)
-        )
-    if with_failure:
-        result.append(
-            (completed & np.in1d(check_run_conclusions,
-                                 [b"FAILURE", b"STALE", b"ACTION_REQUIRED"])) |
-            (check_run_statuses == b"FAILURE") |
-            (check_run_statuses == b"ERROR")  # noqa(C812)
-        )
-    if with_skipped:
-        result.append((check_suite_conclusions != b"NEUTRAL") & neutrals)
-    return result
-
-
 @register_metric(CodeCheckMetricID.FLAKY_COMMIT_CHECKS_COUNT)
 class FlakyCommitChecksCounter(SumMetricCalculator[int]):
     """Number of commits with both successful and failed check suites."""
@@ -592,14 +559,13 @@ class MergedPRsWithFailedChecksCounter(SumMetricCalculator[int]):
         names = np.char.encode(df[CheckRun.name.name].values.astype("U"), "UTF-8")
         joint = np.char.add(int_to_str(pull_requests), names)
         _, first_encounters = np.unique(joint, return_index=True)
-        statuses = df[CheckRun.status.name].values.astype("S")
-        conclusions = df[CheckRun.conclusion.name].values.astype("S")
+        statuses = df[CheckRun.status.name].values.astype("S", copy=False)
+        conclusions = df[CheckRun.conclusion.name].values.astype("S", copy=False)
         failure_mask = np.zeros_like(statuses, dtype=bool)
         failure_mask[first_encounters] = True
-        merged_timestamps = df[pull_request_merged_column].values
         failure_mask &= (
             calculate_check_run_outcome_masks(statuses, conclusions, None, False, True, False)[0]
-        ) & (pull_requests != 0) & (merged_timestamps == merged_timestamps)
+        ) & (pull_requests != 0) & df[pull_request_merged_column].values
         return df.index, pull_requests, failure_mask
 
     def _analyze(self,
@@ -634,8 +600,7 @@ class MergedPRsCounter(SumMetricCalculator[int]):
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
         pull_requests = facts[CheckRun.pull_request_node_id.name].values.copy()
-        merged = facts[pull_request_merged_column].values
-        pull_requests[merged != merged] = 0
+        pull_requests[~facts[pull_request_merged_column].values] = 0
         unique_prs, first_encounters = np.unique(pull_requests, return_index=True)
         first_encounters = first_encounters[unique_prs != 0]
         mask_pr_times = (

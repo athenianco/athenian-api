@@ -40,25 +40,13 @@ from athenian.api.models.metadata.github import CheckRun
 async def test_check_run_smoke(
         mdb, time_from, time_to, repositories, pushers, labels, jira, size, logical_settings):
     df = await mine_check_runs(
-        time_from, time_to, repositories, pushers, labels, jira, False,
+        time_from, time_to, repositories, pushers, labels, jira,
         logical_settings, (6366825,), mdb, None)
     assert len(df) == size
     for col in CheckRun.__table__.columns:
         if col.name not in (CheckRun.committed_date_hack.name,):
             assert col.name in df.columns
     assert len(df[CheckRun.check_run_node_id.name].unique()) == len(df)
-
-
-@pytest.mark.parametrize("time_from, time_to, size", [
-    (datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc), 2766),
-    (datetime(2018, 1, 1, tzinfo=timezone.utc), datetime(2019, 1, 1, tzinfo=timezone.utc), 1068),
-])
-async def test_check_run_only_prs(mdb, time_from, time_to, size, logical_settings):
-    df = await mine_check_runs(
-        time_from, time_to, ["src-d/go-git"], [], LabelFilter.empty(), JIRAFilter.empty(),
-        True, logical_settings, (6366825,), mdb, None)
-    assert (df[CheckRun.pull_request_node_id.name].values != 0).all()
-    assert len(df) == size
 
 
 @pytest.mark.parametrize("repos, size", [
@@ -73,7 +61,7 @@ async def test_check_run_logical_repos_title(
     df = await mine_check_runs(
         datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
         repos, [], LabelFilter.empty(), JIRAFilter.empty(),
-        False, logical_settings, (6366825,), mdb, None)
+        logical_settings, (6366825,), mdb, None)
     assert set(df[CheckRun.repository_full_name.name].unique()) == set(repos)
     assert len(df) == size
 
@@ -98,7 +86,7 @@ async def test_check_run_logical_repos_label(
     df = await mine_check_runs(
         datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
         repos, [], LabelFilter.empty(), JIRAFilter.empty(),
-        False, logical_settings_mixed, (6366825,), mdb, None)
+        logical_settings_mixed, (6366825,), mdb, None)
     assert set(df[CheckRun.repository_full_name.name].unique()) == set(repos)
     assert len(df) == size
 
@@ -157,7 +145,7 @@ async def test_check_run_maximum_processed_check_runs(mdb):
         df = await mine_check_runs(
             datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
             ["src-d/go-git"], [], LabelFilter.empty(), JIRAFilter.empty(),
-            False, LogicalRepositorySettings.empty(), (6366825,), mdb, None)
+            LogicalRepositorySettings.empty(), (6366825,), mdb, None)
         assert len(df) <= 1000  # should be >4k without maximum_processed_check_runs
     finally:
         check_run.maximum_processed_check_runs = orig

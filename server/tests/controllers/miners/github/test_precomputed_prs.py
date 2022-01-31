@@ -19,7 +19,7 @@ from athenian.api.controllers.miners.github.release_match import PullRequestToRe
 from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
     new_released_prs_df
 from athenian.api.controllers.miners.types import MinedPullRequest, PRParticipationKind, \
-    PullRequestFacts
+    PullRequestCheckRun, PullRequestFacts
 from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch, \
     ReleaseMatchSetting, ReleaseSettings
 from athenian.api.defer import wait_deferred, with_defer
@@ -87,6 +87,7 @@ async def test_load_store_precomputed_done_smoke(
         labels=pd.DataFrame.from_records(([["bug"]], [["feature"]])[i % 2], columns=["name"]),
         jiras=pd.DataFrame(),
         deployments=None,
+        check_run={PullRequestCheckRun.f.name: None},
     ) for i, s in enumerate(samples)]
 
     def with_mutables(s, repo):
@@ -175,6 +176,7 @@ async def test_load_store_precomputed_done_filters(
                                           [["feature"], ["bad"]])[i % 4], columns=["name"]),
         jiras=pd.DataFrame(),
         deployments=None,
+        check_run={PullRequestCheckRun.f.name: None},
     ) for i, s in enumerate(samples)]
 
     def with_mutables(s, i):
@@ -341,6 +343,7 @@ async def test_load_store_precomputed_done_exclude_inactive(
         labels=pd.DataFrame.from_records([["bug"]], columns=["name"]),
         jiras=pd.DataFrame(),
         deployments=None,
+        check_run={PullRequestCheckRun.f.name: None},
     ) for i, s in enumerate(samples)]
 
     def with_mutables(s):
@@ -414,6 +417,7 @@ async def test_load_precomputed_done_times_reponums_smoke(
         labels=pd.DataFrame.from_records(([["bug"]], [["feature"]])[i % 2], columns=["name"]),
         jiras=pd.DataFrame(),
         deployments=None,
+        check_run={PullRequestCheckRun.f.name: None},
     ) for i, s in enumerate(samples)]
 
     def with_mutables(s, i):
@@ -509,6 +513,7 @@ def _gen_one_pr(pr_samples):
         labels=pd.DataFrame.from_records([["bug"]], columns=["name"]),
         jiras=pd.DataFrame(),
         deployments=None,
+        check_run={PullRequestCheckRun.f.name: None},
     )]
     return samples, prs, settings
 
@@ -1075,6 +1080,7 @@ async def test_store_precomputed_done_none_assert(pdb, pr_samples):
         labels=pd.DataFrame.from_records([["bug"]], columns=["name"]),
         jiras=pd.DataFrame(),
         deployments=None,
+        check_run={PullRequestCheckRun.f.name: None},
     )]
     await store_precomputed_done_facts(prs, [None], default_branches, settings, 1, pdb)
 
@@ -1091,12 +1097,11 @@ async def test_store_precomputed_done_none_assert(pdb, pr_samples):
 @with_defer
 async def test_store_merged_unreleased_pull_request_facts_smoke(
         mdb, pdb, rdb, default_branches, release_match_setting_tag, prefixer, bots):
-    prs, dfs, facts, matched_bys, deps_task, cr_task = await _fetch_pull_requests(
+    prs, dfs, facts, matched_bys, deps_task = await _fetch_pull_requests(
         {"src-d/go-git": set(range(1000, 1010))},
         bots, release_match_setting_tag, LogicalRepositorySettings.empty(),
         prefixer, 1, (6366825,), mdb, pdb, rdb, None)
     deps_task.cancel()
-    cr_task.cancel()
     for pr in prs:
         if pr.pr[PullRequest.merged_at.name] is None:
             pr.pr[PullRequest.merged_at.name] = datetime.now(tz=timezone.utc)
@@ -1148,12 +1153,11 @@ async def test_store_merged_unreleased_pull_request_facts_smoke(
 async def test_store_open_pull_request_facts_smoke(
         mdb, pdb, rdb, release_match_setting_tag, open_prs_facts_loader,
         with_preloading_enabled, prefixer, bots):
-    prs, dfs, facts, _, deps_task, cr_task = await _fetch_pull_requests(
+    prs, dfs, facts, _, deps_task = await _fetch_pull_requests(
         {"src-d/go-git": set(range(1000, 1010))},
         bots, release_match_setting_tag, LogicalRepositorySettings.empty(),
         prefixer, 1, (6366825,), mdb, pdb, rdb, None)
     deps_task.cancel()
-    cr_task.cancel()
     with pytest.raises(AssertionError):
         await store_open_pull_request_facts(
             zip(prs, (facts[(pr.pr[PullRequest.node_id.name], "src-d/go-git")] for pr in prs)),

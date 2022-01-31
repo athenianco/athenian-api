@@ -134,7 +134,7 @@ class FakeCache:
 
 
 @pytest.fixture(scope="function")
-def cache(loop, xapp):
+def cache(event_loop, xapp):
     xapp.app[CACHE_VAR_NAME] = fc = FakeCache()
     setup_cache_metrics(xapp.app)
     for v in fc.metrics["context"].values():
@@ -143,7 +143,7 @@ def cache(loop, xapp):
 
 
 @pytest.fixture(scope="function")
-def client_cache(loop, app):
+def client_cache(event_loop, app):
     app.app[CACHE_VAR_NAME] = fc = FakeCache()
     setup_cache_metrics(app.app)
     for v in fc.metrics["context"].values():
@@ -153,7 +153,7 @@ def client_cache(loop, app):
 
 
 @pytest.fixture(scope="function")
-def memcached(loop, xapp, request):
+def memcached(event_loop, xapp, request):
     old_cache = xapp.app[CACHE_VAR_NAME]
     xapp.app[CACHE_VAR_NAME] = client = create_memcached(
         override_memcached or "0.0.0.0:11211", logging.getLogger("pytest"))
@@ -173,7 +173,7 @@ def memcached(loop, xapp, request):
                 await client.delete(key)
             await client.close()
 
-        loop.run_until_complete(delete_trash())
+        event_loop.run_until_complete(delete_trash())
 
     request.addfinalizer(shutdown)
     try:
@@ -355,17 +355,17 @@ async def app(metadata_db, state_db, precomputed_db, persistentdata_db, slack,
 
 
 @pytest.fixture(scope="function")
-async def xapp(app: AthenianApp, request, loop) -> AthenianApp:
+async def xapp(app: AthenianApp, request, event_loop) -> AthenianApp:
     def shutdown():
-        loop.run_until_complete(app.shutdown())
+        event_loop.run_until_complete(app.shutdown())
 
     request.addfinalizer(shutdown)
     return app
 
 
 @pytest.fixture(scope="function")
-def client(loop, aiohttp_client, app):
-    return loop.run_until_complete(aiohttp_client(app.app))
+def client(event_loop, aiohttp_client, app):
+    return event_loop.run_until_complete(aiohttp_client(app.app))
 
 
 @pytest.fixture(scope="session")
@@ -491,7 +491,7 @@ def precomputed_db(worker_id) -> str:
     })
 
 
-async def _connect_to_db(addr, loop, request):
+async def _connect_to_db(addr, event_loop, request):
     db = measure_db_overhead_and_retry(Database(addr), None, None)
     try:
         await db.connect()
@@ -501,19 +501,19 @@ async def _connect_to_db(addr, loop, request):
         sys.exit(1)
 
     def shutdown():
-        loop.run_until_complete(db.disconnect())
+        event_loop.run_until_complete(db.disconnect())
 
     request.addfinalizer(shutdown)
     return db
 
 
 @pytest.fixture(scope="function")
-async def _mdb(metadata_db, loop, request):
-    return await _connect_to_db(metadata_db, loop, request)
+async def _mdb(metadata_db, event_loop, request):
+    return await _connect_to_db(metadata_db, event_loop, request)
 
 
 @pytest.fixture(scope="function")
-async def mdb(_mdb, worker_id, loop, request):
+async def mdb(_mdb, worker_id, event_loop, request):
     if _mdb.url.dialect != "sqlite":
         return _mdb
     # check whether the database is sane
@@ -525,12 +525,12 @@ async def mdb(_mdb, worker_id, loop, request):
             break
         except OperationalError:
             metadata_db = _metadata_db(worker_id, True)
-            _mdb = await _connect_to_db(metadata_db, loop, request)
+            _mdb = await _connect_to_db(metadata_db, event_loop, request)
     return _mdb
 
 
 @pytest.fixture(scope="function")
-async def mdb_rw(mdb, loop, worker_id, request):
+async def mdb_rw(mdb, event_loop, worker_id, request):
     if mdb.url.dialect != "sqlite":
         return mdb
     # check whether the database is locked
@@ -546,20 +546,20 @@ async def mdb_rw(mdb, loop, worker_id, request):
             break
         except OperationalError:
             metadata_db = _metadata_db(worker_id, True)
-            mdb = await _connect_to_db(metadata_db, loop, request)
+            mdb = await _connect_to_db(metadata_db, event_loop, request)
         finally:
             await mdb.execute(delete(Account).where(Account.id == 777))
     return mdb
 
 
 @pytest.fixture(scope="function")
-async def sdb(state_db, loop, request):
-    return await _connect_to_db(state_db, loop, request)
+async def sdb(state_db, event_loop, request):
+    return await _connect_to_db(state_db, event_loop, request)
 
 
 @pytest.fixture(scope="function")
-async def pdb(precomputed_db, loop, request):
-    db = await _connect_to_db(precomputed_db, loop, request)
+async def pdb(precomputed_db, event_loop, request):
+    db = await _connect_to_db(precomputed_db, event_loop, request)
     db.metrics = {
         "hits": ContextVar("pdb_hits", default=defaultdict(int)),
         "misses": ContextVar("pdb_misses", default=defaultdict(int)),
@@ -568,8 +568,8 @@ async def pdb(precomputed_db, loop, request):
 
 
 @pytest.fixture(scope="function")
-async def rdb(persistentdata_db, loop, request):
-    return await _connect_to_db(persistentdata_db, loop, request)
+async def rdb(persistentdata_db, event_loop, request):
+    return await _connect_to_db(persistentdata_db, event_loop, request)
 
 
 @pytest.fixture(scope="function")

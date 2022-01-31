@@ -116,10 +116,13 @@ class MetricEntriesCalculator:
     @staticmethod
     def align_time_min_max(time_intervals, stride: int) -> Tuple[datetime, datetime]:
         """Widen the min and max timestamp so that it spans an integer number of several days."""
-        ts_arr = np.array(list(time_intervals
-                               if isinstance(time_intervals[0], datetime)
-                               else chain.from_iterable(time_intervals)),
-                          dtype="datetime64[s]")
+        ts_arr = np.array([
+            ts.replace(tzinfo=None) for ts in (
+                time_intervals
+                if isinstance(time_intervals[0], datetime)
+                else chain.from_iterable(time_intervals)
+            )],
+            dtype="datetime64[s]")
         if stride > 4 * 7:
             return (
                 ts_arr.min().item().replace(tzinfo=timezone.utc),
@@ -612,7 +615,7 @@ class MetricEntriesCalculator:
         all_repositories = set(chain.from_iterable(repositories))
         all_pushers = set(chain.from_iterable(pushers))
         df_check_runs = await mine_check_runs(
-            time_from, time_to, all_repositories, all_pushers, labels, jira, False,
+            time_from, time_to, all_repositories, all_pushers, labels, jira,
             logical_settings, self._meta_ids, self._mdb, self._cache)
         repo_grouper = partial(group_by_repo, CheckRun.repository_full_name.name, repositories)
         commit_author_grouper = partial(group_check_runs_by_pushers, pushers)

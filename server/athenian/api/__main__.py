@@ -118,6 +118,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--force-user",
                         help="Bypass user authorization and execute all requests on behalf of "
                              "this user.")
+    parser.add_argument("--no-db-version-check", action="store_true",
+                        help="Do not validate database schema versions on startup.")
     return parser.parse_args()
 
 
@@ -343,11 +345,11 @@ def main() -> Optional[AthenianApp]:
     args = parse_args()
     log = logging.getLogger(metadata.__package__)
     setup_context(log)
-    if not check_schema_versions(args.metadata_db,
-                                 args.state_db,
-                                 args.precomputed_db,
-                                 args.persistentdata_db,
-                                 log):
+    if not args.no_db_version_check and not check_schema_versions(args.metadata_db,
+                                                                  args.state_db,
+                                                                  args.precomputed_db,
+                                                                  args.persistentdata_db,
+                                                                  log):
         return None
     patch_pandas()
     cache = create_memcached(args.memcached, log)
