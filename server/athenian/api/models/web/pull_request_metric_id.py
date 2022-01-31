@@ -55,3 +55,4 @@ class PullRequestMetricID(Model, metaclass=Enum):
     PR_PARTICIPANTS_PER = "pr-participants-per"
     PR_REVIEW_COMMENTS_PER = "pr-review-comments-per"
     PR_REVIEWS_PER = "pr-reviews-per"
+    PR_COMMENTS_PER = "pr-comments-per"

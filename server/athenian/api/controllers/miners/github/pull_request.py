@@ -2043,12 +2043,21 @@ class PullRequestFactsMiner:
         ]).astype(ts_dtype).astype("datetime64[D]")
         activity_days = \
             np.unique(activity_days[activity_days == activity_days]).astype(ts_dtype)
+
         review_comment_authors = \
             pr.review_comments[PullRequestReviewComment.user_login.name].values.astype("S")
         if len(review_comment_authors) > 0:
             human_review_comments = np.in1d(review_comment_authors, self._bots, invert=True).sum()
         else:
             human_review_comments = 0
+        regular_comment_authors = \
+            pr.comments[PullRequestReviewComment.user_login.name].values.astype("S")
+        if len(regular_comment_authors) > 0:
+            human_regular_comments = \
+                np.in1d(regular_comment_authors, self._bots, invert=True).sum()
+        else:
+            human_regular_comments = 0
+
         participants = len(np.setdiff1d(np.unique(np.concatenate([
             np.array([pr.pr[PullRequest.user_login.name], pr.pr[PullRequest.merged_by_login.name]],
                      dtype="S"),
@@ -2107,6 +2116,7 @@ class PullRequestFactsMiner:
             merger=pr.pr[PullRequest.merged_by_login.name],
             releaser=pr.release[Release.author.name],
             review_comments=human_review_comments,
+            regular_comments=human_regular_comments,
             participants=participants,
             jira_ids=pr.jiras.index.values.tolist(),
             deployments=pr.deployments.index.get_level_values(1).values,

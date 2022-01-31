@@ -267,6 +267,7 @@ class PullRequestFacts:
         size: np.int64
         force_push_dropped: np.bool_
         review_comments: np.uint16
+        regular_comments: np.uint16
         participants: np.uint16
         merged_with_failed_check_runs: [str]
 
