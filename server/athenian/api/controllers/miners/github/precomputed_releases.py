@@ -54,7 +54,8 @@ async def load_precomputed_release_facts(releases: pd.DataFrame,
     if releases.empty:
         return {}
     reverse_settings = defaultdict(list)
-    for repo in releases[Release.repository_full_name.name].unique():
+    release_repos = releases[Release.repository_full_name.name].unique()
+    for repo in release_repos:
         setting = settings.native[repo]
         if setting.match == ReleaseMatch.tag:
             value = setting.tags
@@ -80,6 +81,7 @@ async def load_precomputed_release_facts(releases: pd.DataFrame,
                     GitHubReleaseFacts.acc_id == account,
                     GitHubReleaseFacts.id.in_(chain.from_iterable(
                         grouped_releases[i] for i in r if i in grouped_releases)),
+                    GitHubReleaseFacts.repository_full_name.in_(release_repos),
                     GitHubReleaseFacts.release_match == compose_release_match(m, v)))
         for (m, v), r in reverse_settings.items()
     ]
