@@ -7,7 +7,7 @@ flake8-commas==2.1.0
 flake8-debugger==4.0.0
 pydocstyle==6.1.1
 pycodestyle==2.8.0
-semgrep==0.79.0
+semgrep==0.80.0
 sqlalchemy-stubs==0.4
 types-pytz==2021.3.4
 types-croniter==1.0.7
