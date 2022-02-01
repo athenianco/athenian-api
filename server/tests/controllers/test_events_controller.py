@@ -193,8 +193,10 @@ async def test_notify_release_default_user(client, headers, sdb):
     assert response.status == 403
 
 
+@pytest.mark.parametrize("devenv", [False, True])
 @freeze_time("2020-01-01")
-async def test_clear_precomputed_event_releases_smoke(client, headers, pdb, disable_default_user):
+async def test_clear_precomputed_event_releases_smoke(
+        client, headers, pdb, disable_default_user, app, devenv):
     await pdb.execute(insert(GitHubDonePullRequestFacts).values(GitHubDonePullRequestFacts(
         acc_id=1,
         release_match="event",
@@ -234,10 +236,11 @@ async def test_clear_precomputed_event_releases_smoke(client, headers, pdb, disa
         "repositories": ["{1}"],
         "targets": ["release"],
     }
+    app._devenv = devenv
     response = await client.request(
         method="POST", path="/v1/events/clear_cache", headers=headers, json=body,
     )
-    assert response.status == 200
+    assert response.status == 200, (await response.read()).decode("utf-8")
     for table, n in ((GitHubDonePullRequestFacts, 293),
                      (GitHubMergedPullRequestFacts, 246),
                      (GitHubReleaseFacts, 53)):
