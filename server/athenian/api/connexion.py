@@ -663,11 +663,11 @@ class AthenianApp(connexion.AioHttpApp):
             if not aborted:
                 if self._devenv:
                     # block the response until we execute all the deferred coroutines
-                    await wait_deferred()
+                    await wait_deferred(final=True)
                 else:
                     # execute the deferred coroutines in 100ms to not interfere with serving
                     # the parallel requests, but only if not shutting down, otherwise, immediately
-                    launch_defer_from_request(0.1 * (1 - self._shutting_down), request)
+                    launch_defer_from_request(request, delay=0.1 * (1 - self._shutting_down))
             self._requests -= 1
             self._load -= load + custom_load_delta
             if self._requests == 0 and self._shutting_down:
