@@ -385,7 +385,7 @@ def _erase_completed_at_as_needed(df: pd.DataFrame):
     # exclude "too quick" checks from execution time calculation DEV-3155
     cr_types = np.empty(len(df), dtype=[("repo", int), ("name", np.uint64)])
     cr_types["repo"] = df[CheckRun.repository_node_id.name].values.byteswap()
-    cr_names = df[CheckRun.name.name].values.astype("U")
+    cr_names = df[CheckRun.name.name].values.astype("U", copy=False)
     # take the hash to avoid very long names - they lead to bad performance
     cr_types["name"] = np.fromiter(
         (xxh3_64_intdigest(s) for s in cr_names.view(f"S{cr_names.dtype.itemsize}")),
@@ -422,7 +422,8 @@ def _postprocess_check_runs(df: pd.DataFrame) -> None:
     # pd.DataFrame.max(axis=1) does not work correctly because of the NaT-s
     started_ats = df[CheckRun.started_at.name].values
     df[CheckRun.completed_at.name] = np.maximum(df[CheckRun.completed_at.name].values, started_ats)
-    df[CheckRun.completed_at.name] = df[CheckRun.completed_at.name].astype(started_ats.dtype)
+    df[CheckRun.completed_at.name] = \
+        df[CheckRun.completed_at.name].astype(started_ats.dtype, copy=False)
     df[check_suite_completed_column] = df.groupby(
         CheckRun.check_suite_node_id.name, sort=False,
     )[CheckRun.completed_at.name].transform("max")

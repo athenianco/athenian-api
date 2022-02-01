@@ -878,12 +878,12 @@ async def mine_releases_by_ids(releases: pd.DataFrame,
             settings_events[k] = v
         else:
             raise AssertionError("Unsupported ReleaseMatch: %s" % v.match)
-    tag_releases = releases.take(np.nonzero(
-        releases[matched_by_column].values == ReleaseMatch.tag)[0])
-    branch_releases = releases.take(np.nonzero(
-        releases[matched_by_column].values == ReleaseMatch.branch)[0])
-    event_releases = releases.take(np.nonzero(
-        releases[matched_by_column].values == ReleaseMatch.event)[0])
+    tag_releases = releases.take(np.flatnonzero(
+        releases[matched_by_column].values == ReleaseMatch.tag))
+    branch_releases = releases.take(np.flatnonzero(
+        releases[matched_by_column].values == ReleaseMatch.branch))
+    event_releases = releases.take(np.flatnonzero(
+        releases[matched_by_column].values == ReleaseMatch.event))
     precomputed_facts_tags, precomputed_facts_branches, precomputed_facts_events = await gather(
         load_precomputed_release_facts(
             tag_releases, default_branches, ReleaseSettings(settings_tags), account, pdb),
