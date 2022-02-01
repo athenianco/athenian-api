@@ -186,10 +186,9 @@ async def mine_deployments(repositories: Collection[str],
 @sentry_span
 def _reduce_to_missed_notifications_if_possible(
         notifications: pd.DataFrame, missed_mask: np.ndarray) -> pd.DataFrame:
-    _, _, env_indexes, env_counts = np.unique(
+    _, env_indexes, env_counts = np.unique(
         notifications[DeploymentNotification.environment.name].values,
-        return_counts=True, return_index=True, return_inverse=True)
-    # return_index=True enables stable sort
+        return_counts=True, return_inverse=True)
     order = np.argsort(env_indexes, kind="stable")
     effective_missed_mask = np.zeros(len(notifications), dtype=bool)
     pos = 0
