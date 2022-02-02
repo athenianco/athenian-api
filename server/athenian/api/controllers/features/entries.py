@@ -12,8 +12,8 @@ import numpy as np
 import pandas as pd
 import sentry_sdk
 
-from athenian.api import COROUTINE_YIELD_EVERY_ITER, metadata
-from athenian.api.async_utils import gather
+from athenian.api import metadata
+from athenian.api.async_utils import COROUTINE_YIELD_EVERY_ITER, gather
 from athenian.api.cache import cached, cached_methods, CancelCache, short_term_exptime
 from athenian.api.controllers.datetime_utils import coarsen_time_interval
 from athenian.api.controllers.features.code import CodeStats

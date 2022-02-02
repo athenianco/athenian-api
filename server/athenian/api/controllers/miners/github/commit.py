@@ -8,7 +8,7 @@ import aiomcache
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, desc, insert, outerjoin, select, union_all
+from sqlalchemy import and_, desc, func, insert, outerjoin, select, union_all
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
@@ -17,8 +17,9 @@ from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached, middle_term_exptime, short_term_exptime
 from athenian.api.controllers.logical_repos import drop_logical_repo
 from athenian.api.controllers.miners.github.branches import BranchMiner, load_branch_commit_dates
-from athenian.api.controllers.miners.github.dag_accelerated import extract_first_parents, \
-    extract_subdag, join_dags, partition_dag, searchsorted_inrange
+from athenian.api.controllers.miners.github.dag_accelerated import append_missing_heads, \
+    extract_first_parents, extract_subdag, find_orphans, join_dags, partition_dag, \
+    searchsorted_inrange, validate_edges_integrity
 from athenian.api.controllers.miners.types import DAG as DAGStruct
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.db import add_pdb_hits, add_pdb_misses, Database, DatabaseLike
@@ -451,8 +452,9 @@ async def _fetch_commit_history_dag(hashes: np.ndarray,
                                     ) -> Tuple[str, np.ndarray, np.ndarray, np.ndarray]:
     max_stop_heads = 25
     max_inner_partitions = 25
+    log = logging.getLogger("%s._fetch_commit_history_dag" % metadata.__package__)
     # there can be duplicates, remove them
-    head_hashes = np.asarray(head_hashes)
+    head_hashes = np.asarray(head_hashes, dtype="S40")
     head_ids = np.asarray(head_ids)
     _, unique_indexes = np.unique(head_hashes, return_index=True)
     head_hashes = head_hashes[unique_indexes]
@@ -488,8 +490,26 @@ async def _fetch_commit_history_dag(hashes: np.ndarray,
     while len(head_hashes) > 0:
         new_edges = await _fetch_commit_history_edges(
             head_ids[:batch_size], stop_hashes, meta_ids, mdb)
-        if not new_edges:
-            new_edges = [(h, "0" * 40, 0) for h in np.sort(np.unique(head_hashes[:batch_size]))]
+        if not validate_edges_integrity(new_edges):
+            log.warning("skipping because some children are not consistent: %s", new_edges)
+            new_edges = []
+        else:
+            append_missing_heads(new_edges, head_hashes[:batch_size])
+            if len(hashes) and len(orphans := find_orphans(new_edges, hashes)):
+                latest_commit = await mdb.fetch_val(
+                    select([func.max(NodeCommit.committed_date)])
+                    .where(and_(NodeCommit.acc_id.in_(meta_ids),
+                                NodeCommit.oid.in_(orphans.astype("U40")))))
+                if latest_commit is None:
+                    log.error("failed to fetch committed_date of %s", orphans.tolist())
+                    new_edges = []
+                else:
+                    if mdb.url.dialect == "sqlite":
+                        latest_commit = latest_commit.replace(tzinfo=timezone.utc)
+                    if datetime.now(timezone.utc) - latest_commit < timedelta(days=1, hours=6):
+                        log.warning("skipping because some orphans are suspiciously young: %s",
+                                    orphans.tolist())
+                        new_edges = []
         hashes, vertexes, edges = join_dags(hashes, vertexes, edges, new_edges)
         head_hashes = head_hashes[batch_size:]
         head_ids = head_ids[batch_size:]
@@ -514,16 +534,17 @@ async def _fetch_commit_history_edges(commit_ids: Iterable[int],
     Initial SQL credits: @dennwc.
 
     We return nodes in the native DB order, that's the opposite of Git's parent-child.
-    CASE 0000000000000000000000000000000000000000 is required to distinguish between two options:
-    1. node ID is null => we've reached the DAG's end.
-    2. node ID is not null but the hash is null => we hit a temporary DB inconsistency.
+    `stop_hashes` are the recursion terminators so that we don't traverse the full DAG every time.
 
     We don't include the edges from the outside to the first parents (`commit_ids`). This means
     that if some of `commit_ids` do not have children, there will be 0 edges with them.
     """
     assert isinstance(mdb, Database), "fetch_all() must be patched to avoid re-wrapping"
-    rq = "`" if mdb.url.dialect == "sqlite" else ""
-    tq = '"' if mdb.url.dialect == "sqlite" else ""
+    if mdb.url.dialect == "sqlite":
+        rq = "`"
+        tq = '"'
+    else:
+        rq = tq = ""
     if len(meta_ids) == 1:
         meta_id_sql = ("= %d" % meta_ids[0])
     else:
@@ -556,13 +577,10 @@ async def _fetch_commit_history_edges(commit_ids: Iterable[int],
             WHERE h.child_oid NOT IN ('{"', '".join(stop_hashes)}')
     ) SELECT
         parent_oid,
-        CASE
-            WHEN child_id IS NULL THEN '0000000000000000000000000000000000000000'
-            ELSE child_oid
-        END AS child_oid,
+        child_oid,
         parent_index
     FROM
-        commit_history;
+        commit_history
     """  # noqa
     rows = await mdb.fetch_all(query)
     if mdb.url.dialect == "sqlite":

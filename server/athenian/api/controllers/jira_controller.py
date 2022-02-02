@@ -14,8 +14,8 @@ import pandas as pd
 from sqlalchemy import and_, func, select, union_all
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
-from athenian.api import list_with_yield, metadata
-from athenian.api.async_utils import gather, read_sql_query
+from athenian.api import metadata
+from athenian.api.async_utils import gather, list_with_yield, read_sql_query
 from athenian.api.balancing import weight
 from athenian.api.cache import cached, expires_header, short_term_exptime
 from athenian.api.controllers.account import get_account_repositories, get_metadata_account_ids

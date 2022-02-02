@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 import pickle
 from sqlite3 import OperationalError
 
+from freezegun import freeze_time
 import numpy as np
 from numpy.testing import assert_array_equal
 import pandas as pd
@@ -1050,6 +1051,54 @@ async def test__fetch_repository_commits_initial_commit(mdb, pdb, prune):
     assert (edges == np.array([], dtype=np.uint32)).all()
 
 
+@pytest.mark.parametrize("prune", [False, True])
+@with_defer
+@freeze_time("2015-04-05")
+async def test__fetch_repository_commits_orphan_skip(mdb, pdb, prune):
+    dags = await fetch_repository_commits(
+        {"src-d/go-git": (np.array(["7" * 40], dtype="S40"),
+                          np.array([0, 0], dtype=np.uint32),
+                          np.array([], dtype=np.uint32))},
+        pd.DataFrame([
+            ("5d7303c49ac984a9fec60523f2d5297682e16646",
+             2756216,
+             525,
+             "src-d/go-git")],
+            columns=["1", "2", "3", "4"],
+        ),
+        ("1", "2", "3", "4"),
+        prune, 1, (6366825,), mdb, pdb, None)
+    hashes, vertexes, edges = dags["src-d/go-git"]
+    if prune:
+        assert len(hashes) == 0
+    else:
+        assert hashes == np.array(["7" * 40], dtype="S40")
+
+
+@pytest.mark.parametrize("prune", [False, True])
+@with_defer
+async def test__fetch_repository_commits_orphan_include(mdb, pdb, prune):
+    dags = await fetch_repository_commits(
+        {"src-d/go-git": (np.array(["7" * 40], dtype="S40"),
+                          np.array([0, 0], dtype=np.uint32),
+                          np.array([], dtype=np.uint32))},
+        pd.DataFrame([
+            ("5d7303c49ac984a9fec60523f2d5297682e16646",
+             2756216,
+             525,
+             "src-d/go-git")],
+            columns=["1", "2", "3", "4"],
+        ),
+        ("1", "2", "3", "4"),
+        prune, 1, (6366825,), mdb, pdb, None)
+    hashes, vertexes, edges = dags["src-d/go-git"]
+    if prune:
+        assert hashes == np.array(["5d7303c49ac984a9fec60523f2d5297682e16646"], dtype="S40")
+    else:
+        assert_array_equal(
+            hashes, np.array(["5d7303c49ac984a9fec60523f2d5297682e16646", "7" * 40], dtype="S40"))
+
+
 @with_defer
 async def test__fetch_repository_commits_cache(mdb, pdb, cache):
     dags1 = await fetch_repository_commits(
@@ -1313,6 +1362,14 @@ async def test__fetch_commit_history_dag_stops(mdb, dag):
     _, newhashes, newvertexes, newedges = await _fetch_commit_history_dag(
         subhashes, subvertexes, subedges,
         ["f6305131a06bd94ef39e444b60f773db75b054f6"],
+        [2755363],
+        "src-d/go-git", (6366825,), mdb)
+    assert (newhashes == subhashes).all()
+    assert (newvertexes == subvertexes).all()
+    assert (newedges == subedges).all()
+    _, newhashes, newvertexes, newedges = await _fetch_commit_history_dag(
+        subhashes, subvertexes, subedges,
+        ["1a7db85bca7027d90afdb5ce711622aaac9feaed"],
         [2755363],
         "src-d/go-git", (6366825,), mdb)
     assert (newhashes == hashes).all()
