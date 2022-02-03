@@ -636,7 +636,8 @@ async def _generate_deployment_facts(
     for repos in deployed_commits_per_repo_per_env.values():
         repo_indexes = np.searchsorted(unique_repos, list(repos))
         for repo_index, (repo_name, details) in zip(repo_indexes, repos.items()):
-            if len(commit_stats.merge_shas):
+            has_merged_commits = len(commit_stats.merge_shas) and repo_index < len(unique_repos)
+            if has_merged_commits:
                 matched_repo_offset_end = repo_order_offsets[repo_index]
                 matched_repo_offset_beg = matched_repo_offset_end - repo_commit_counts[repo_index]
                 # sort to restore the original order by commit sha
@@ -644,7 +645,7 @@ async def _generate_deployment_facts(
                     repo_order[matched_repo_offset_beg:matched_repo_offset_end])
             for deployment_name, deployed_shas in zip(details.deployments, details.shas):
                 indexes = np.searchsorted(all_mentioned_hashes, deployed_shas)
-                if len(commit_stats.merge_shas):
+                if has_merged_commits:
                     pr_indexes = searchsorted_inrange(
                         commit_stats.merge_shas[matched_repo_indexes], deployed_shas)
                     pr_indexes = matched_repo_indexes[
