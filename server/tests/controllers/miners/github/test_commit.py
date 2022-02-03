@@ -1,9 +1,12 @@
 from datetime import datetime, timezone
 
+import numpy as np
 import pytest
 
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
+from athenian.api.controllers.miners.github.dag_accelerated import find_orphans, \
+    validate_edges_integrity
 from athenian.api.defer import wait_deferred, with_defer
 
 
@@ -49,3 +52,63 @@ async def test_extract_commits_users(mdb, pdb, property, count, cache, prefixer)
     args["only_default_branch"] = True
     commits = await extract_commits(**args)
     assert len(commits) < count
+
+
+def test_validate_edges_integrity_indexes():
+    assert validate_edges_integrity([])
+    edges = [
+        ("1" * 40, "2" * 40, 0),
+        ("2" * 40, "3" * 40, 0),
+    ]
+    assert validate_edges_integrity(edges)
+    edges = [
+        ("1" * 40, "2" * 40, 0),
+        ("2" * 40, "3" * 40, 1),
+    ]
+    assert not validate_edges_integrity(edges)
+    edges = [
+        ("1" * 40, "2" * 40, 0),
+        ("2" * 40, "3" * 40, 1),
+        ("2" * 40, "4" * 40, 0),
+    ]
+    assert validate_edges_integrity(edges)
+    edges = [
+        ("1" * 40, "2" * 40, 0),
+        ("2" * 40, None, 0),
+    ]
+    assert not validate_edges_integrity(edges)
+    edges = [
+        ("1" * 40, "2" * 40, 0),
+        (None, "3" * 40, 0),
+    ]
+    assert not validate_edges_integrity(edges)
+    edges = [
+        ("1" * 40, "2" * 40, 0),
+        ("2" * 40, "", 0),
+    ]
+    assert not validate_edges_integrity(edges)
+    edges = [
+        ("1" * 40, "2" * 40, 0),
+        ("", "3" * 40, 0),
+    ]
+    assert not validate_edges_integrity(edges)
+    edges = [
+        ("1" * 40, "2" * 40, 0),
+        ("2" * 40, "0" * 40, 0),
+    ]
+    assert validate_edges_integrity(edges)
+
+
+def test_find_orphans():
+    hashes = np.array([b"3" * 40], dtype="S40")
+    assert len(find_orphans([], hashes)) == 0
+    edges = [
+        ("1" * 40, "2" * 40, 0),
+        ("2" * 40, "3" * 40, 0),
+    ]
+    assert len(find_orphans(edges, hashes)) == 0
+    edges = [
+        ("1" * 40, "2" * 40, 0),
+        ("2" * 40, "4" * 40, 0),
+    ]
+    assert find_orphans(edges, hashes) == np.array(["4" * 40], dtype="S40")

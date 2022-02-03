@@ -71,11 +71,12 @@ cdef void _calculate_interval_intersections(const uint64_t[:] intervals,
                                             const int64_t[:] borders,
                                             char time_offset,
                                             uint64_t[:] intersections) nogil:
-    cdef int64_t i, j, border_index, group_start, group_finish, ii_open, intersections_offset
-    cdef uint64_t item, index_mask, timestamp, previous_timestamp, delta
-    # set faster than unordered_set because we iterate over all elements on each step
-    cdef set[int64_t] open_intervals
-    cdef set[int64_t].iterator ii
+    cdef:
+        int64_t i, j, border_index, group_start, group_finish, ii_open, intersections_offset
+        uint64_t item, index_mask, timestamp, previous_timestamp, delta
+        # set faster than unordered_set because we iterate over all elements on each step
+        set[int64_t] open_intervals
+        set[int64_t].iterator ii
     index_mask = (1 << time_offset) - 1
     previous_timestamp = 0  # not really needed but removes the warning
     for border_index in range(len(borders)):
@@ -124,10 +125,11 @@ cdef void _mark_check_suite_types(const int64_t[:] check_run_names,
                                   const int64_t[:] check_suite_sizes,
                                   int64_t[:] type_marks,
                                   ) nogil:
-    cdef int64_t pos = 0, local_pos, size, previous_name, current_name
-    cdef bool duplicates
-    cdef unordered_map[string, vector[int64_t]] type_map
-    cdef vector[int64_t] unique_names
+    cdef:
+        int64_t pos = 0, local_pos, size, previous_name, current_name
+        bool duplicates
+        unordered_map[string, vector[int64_t]] type_map
+        vector[int64_t] unique_names
     for index in range(len(check_suite_sizes)):
         size = check_suite_sizes[index]
         duplicates = False

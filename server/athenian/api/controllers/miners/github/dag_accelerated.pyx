@@ -2,14 +2,48 @@
 # cython: warn.maybe_uninitialized=True
 # distutils: language = c++
 
+from cpython cimport PyBytes_FromString, PyObject, Py_INCREF
 cimport cython
-from cython.operator cimport dereference
+from posix.dlfcn cimport dlclose, dlopen, dlsym, RTLD_LAZY
+from cython.operator cimport dereference, postincrement
 from libc.stdint cimport int8_t, int32_t, uint32_t, int64_t, uint64_t
-from libc.string cimport memcpy, memset
+from libc.string cimport memcpy, memset, strncmp, strlen
 from libcpp cimport bool
 from libcpp.vector cimport vector
+from libcpp.string cimport string
+from libcpp.unordered_map cimport unordered_map
+from libcpp.unordered_set cimport unordered_set
+from numpy cimport PyArray_BYTES
+
+import asyncpg
 import numpy as np
 from typing import Any, List, Optional, Sequence, Tuple
+
+
+cdef extern from "../../../asyncpg_recordobj.h":
+    PyObject *ApgRecord_GET_ITEM(PyObject *, int) nogil
+    void ApgRecord_SET_ITEM(object, int, object) nogil
+    PyObject *ApgRecord_GET_DESC(PyObject *) nogil
+
+
+cdef extern from "Python.h":
+    # Cython defines `long PyLong_AsLong(object)` that increases the refcount
+    long PyLong_AsLong(PyObject *) nogil
+    # likewise, avoid refcounting
+    void *PyUnicode_DATA(PyObject *) nogil
+    object PyUnicode_FromString(const char *)
+    # nogil!
+    PyObject *PyList_GET_ITEM(PyObject *, Py_ssize_t) nogil
+    PyObject *PyTuple_GET_ITEM(PyObject *, Py_ssize_t) nogil
+    PyObject *Py_None
+
+
+# ApgRecord_New is not exported from the Python interface of asyncpg
+ctypedef object (*_ApgRecord_New)(type, PyObject *, Py_ssize_t)
+cdef _ApgRecord_New ApgRecord_New
+cdef void *_self = dlopen(NULL, RTLD_LAZY)
+ApgRecord_New = <_ApgRecord_New>dlsym(_self, "ApgRecord_New")
+dlclose(_self)
 
 
 def searchsorted_inrange(a: np.ndarray, v: Any, side="left", sorter=None):
@@ -52,9 +86,10 @@ cdef uint32_t _extract_subdag(const uint32_t[:] vertexes,
                               uint32_t[:] left_vertexes,
                               uint32_t[:] left_edges,
                               bool only_map) nogil:
-    cdef vector[uint32_t] boilerplate
+    cdef:
+        vector[uint32_t] boilerplate
+        uint32_t i, j, head, peek, edge
     boilerplate.reserve(max(1, len(edges) - len(vertexes) + 1))
-    cdef uint32_t i, j, head, peek, edge
     for i in range(len(heads)):
         head = heads[i]
         boilerplate.push_back(head)
@@ -109,15 +144,45 @@ def join_dags(hashes: np.ndarray,
               edges: np.ndarray,
               new_edges: List[Tuple[str, Optional[str], int]],
               ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    new_hashes = {k for k, v, _ in new_edges}.union(v for k, v, _ in new_edges)
-    if "" in new_hashes or None in new_hashes:
-        # temporary DB inconsistency, we should retry later
-        # we *must* check for both the empty string and None
+    cdef:
+        Py_ssize_t size
+        int i, hpos
+        const char *oid
+        PyObject *record
+        PyObject *obj
+        char *new_hashes_data
+    size = len(new_edges)
+    if size == 0:
         return hashes, vertexes, edges
-    the_end = "0" * 40
-    new_hashes.discard(the_end)  # initial commit virtual parents
-    new_hashes = np.sort(np.fromiter(new_hashes, count=len(new_hashes), dtype="S40"))
+    new_hashes_arr = np.empty(size * 2, dtype="S40")
+    new_hashes_data = PyArray_BYTES(new_hashes_arr)
+    hpos = 0
+    if isinstance(new_edges[0], asyncpg.Record):
+        with nogil:
+            for i in range(size):
+                record = PyList_GET_ITEM(<PyObject *>new_edges, i)
+                oid = <const char*>PyUnicode_DATA(ApgRecord_GET_ITEM(record, 0))
+                memcpy(new_hashes_data + hpos, oid, 40)
+                hpos += 40
+                oid = <const char *> PyUnicode_DATA(ApgRecord_GET_ITEM(record, 1))
+                if strncmp(oid, "0" * 40, 40):
+                    memcpy(new_hashes_data + hpos, oid, 40)
+                    hpos += 40
+    else:
+        assert isinstance(new_edges[0], tuple)
+        with nogil:
+            for i in range(size):
+                record = PyList_GET_ITEM(<PyObject *>new_edges, i)
+                oid = <const char *> PyUnicode_DATA(PyTuple_GET_ITEM(record, 0))
+                memcpy(new_hashes_data + hpos, oid, 40)
+                hpos += 40
+                oid = <const char *> PyUnicode_DATA(PyTuple_GET_ITEM(record, 1))
+                if strncmp(oid, "0" * 40, 40):
+                    memcpy(new_hashes_data + hpos, oid, 40)
+                    hpos += 40
+    new_hashes_arr = new_hashes_arr[:hpos // 40]
     if len(hashes) > 0:
+        new_hashes = np.unique(np.concatenate([new_hashes_arr, hashes]))
         found_matches = np.searchsorted(hashes, new_hashes)
         found_matches_in_range = found_matches.copy()
         found_matches_in_range[found_matches == len(hashes)] = 0
@@ -126,6 +191,7 @@ def join_dags(hashes: np.ndarray,
         new_hashes = new_hashes[distinct_mask]
         result_hashes = np.insert(hashes, found_matches, new_hashes)
     else:
+        new_hashes = np.unique(new_hashes_arr)
         found_matches = np.array([], dtype=int)
         result_hashes = new_hashes
     new_hashes_map = {k: i for i, k in enumerate(new_hashes)}
@@ -136,13 +202,14 @@ def join_dags(hashes: np.ndarray,
     del new_hashes
     cdef vector[vector[Edge]] new_edges_lists = vector[vector[Edge]](len(new_hashes_map))
     new_edges_counter = 0
+    the_end = "0" * 40
     for k, v, pos in new_edges:
         if v == the_end:
             # initial commit
             continue
-        i = new_hashes_map.get(k.encode(), None)
-        if i is not None:
-            new_edges_lists[i].push_back(Edge(hashes_map[v.encode()], pos))
+        hi = new_hashes_map.get(k.encode(), None)
+        if hi is not None:
+            new_edges_lists[hi].push_back(Edge(hashes_map[v.encode()], pos))
             new_edges_counter += 1
     old_vertex_map = np.zeros(len(hashes), dtype=np.uint32)
     result_vertexes = np.zeros(len(result_hashes) + 1, dtype=np.uint32)
@@ -164,11 +231,12 @@ cdef void _recalculate_vertices_and_edges(const int64_t[:] found_matches,
                                           uint32_t[:] old_vertex_map,
                                           uint32_t[:] result_vertexes,
                                           uint32_t[:] result_edges) nogil:
-    cdef uint32_t j, left, offset = 0, pos = 0, list_size
-    cdef uint32_t old_edge_i = 0, new_edge_i = 0, size = len(result_vertexes) - 1, i
-    cdef const vector[Edge] *new_edge_list
-    cdef bint has_old = len(vertexes) > 1
-    cdef Edge edge
+    cdef:
+        uint32_t j, left, offset = 0, pos = 0, list_size
+        uint32_t old_edge_i = 0, new_edge_i = 0, size = len(result_vertexes) - 1, i
+        const vector[Edge] *new_edge_list
+        bint has_old = len(vertexes) > 1
+        Edge edge
     if has_old:
         # populate old_vertex_map
         for i in range(size):
@@ -196,6 +264,189 @@ cdef void _recalculate_vertices_and_edges(const int64_t[:] found_matches,
             pos += list_size
             new_edge_i += 1
     result_vertexes[size] = pos
+
+
+@cython.boundscheck(False)
+def append_missing_heads(edges: List[Tuple[str, str, int]],
+                         hashes: np.ndarray) -> None:
+    cdef:
+        unordered_set[string] hashes_set
+        unordered_set[string].const_iterator it
+        Py_ssize_t size
+        int i
+        PyObject *record
+        PyObject *desc = Py_None
+        object new_record, elem
+        const char *hashes_data
+    size = len(hashes)
+    hashes_data = PyArray_BYTES(hashes)
+    with nogil:
+        for i in range(size):
+            hashes_set.insert(string(hashes_data + 40 * i, 40))
+    size = len(edges)
+    if size > 0:
+        if isinstance(edges[0], asyncpg.Record):
+            with nogil:
+                for i in range(size):
+                    record = PyList_GET_ITEM(<PyObject *>edges, i)
+                    hashes_set.erase(<const char *> PyUnicode_DATA(ApgRecord_GET_ITEM(record, 0)))
+                    hashes_set.erase(<const char *> PyUnicode_DATA(ApgRecord_GET_ITEM(record, 1)))
+                desc = ApgRecord_GET_DESC(PyList_GET_ITEM(<PyObject *>edges, 0))
+        else:
+            assert isinstance(edges[0], tuple)
+            with nogil:
+                for i in range(size):
+                    record = PyList_GET_ITEM(<PyObject *>edges, i)
+                    hashes_set.erase(<const char *> PyUnicode_DATA(PyTuple_GET_ITEM(record, 0)))
+                    hashes_set.erase(<const char *> PyUnicode_DATA(PyTuple_GET_ITEM(record, 1)))
+    it = hashes_set.const_begin()
+    while it != hashes_set.const_end():
+        if desc != Py_None:
+            new_record = ApgRecord_New(asyncpg.Record, desc, 3)
+            elem = PyUnicode_FromString(dereference(it).c_str())
+            Py_INCREF(elem)
+            ApgRecord_SET_ITEM(new_record, 0, elem)
+            elem = PyUnicode_FromString("0" * 40)
+            Py_INCREF(elem)
+            ApgRecord_SET_ITEM(new_record, 1, elem)
+            Py_INCREF(0)  # interned
+            ApgRecord_SET_ITEM(new_record, 2, 0)
+        else:
+            new_record = (PyUnicode_FromString(dereference(it).c_str()), "0" * 40, 0)
+        edges.append(new_record)
+        postincrement(it)
+
+
+@cython.boundscheck(False)
+def validate_edges_integrity(edges: List[Tuple[str, str, int]]) -> bool:
+    cdef:
+        Py_ssize_t size
+        const char *oid
+        int indexes_sum, i
+        unordered_map[string, vector[int]] children_indexes
+        unordered_map[string, vector[int]].const_iterator it
+        PyObject *record
+        PyObject *obj
+        const vector[int] *children_range
+        bool result
+
+    size = len(edges)
+    if size == 0:
+        return True
+    result = True
+    if isinstance(edges[0], asyncpg.Record):
+        with nogil:
+            for i in range(size):
+                record = PyList_GET_ITEM(<PyObject *>edges, i)
+                obj = ApgRecord_GET_ITEM(record, 0)
+                if obj == Py_None:
+                    result = False
+                    break
+                oid = <const char*> PyUnicode_DATA(obj)
+                if strlen(oid) != 40:
+                    result = False
+                    break
+                children_indexes[oid].push_back(PyLong_AsLong(ApgRecord_GET_ITEM(record, 2)))
+                obj = ApgRecord_GET_ITEM(record, 1)
+                if obj == Py_None:
+                    result = False
+                    break
+                oid = <const char *> PyUnicode_DATA(obj)
+                if strlen(oid) != 40:
+                    result = False
+                    break
+        if not result:
+            return False
+    else:
+        assert isinstance(edges[0], tuple)
+        with nogil:
+            for i in range(size):
+                record = PyList_GET_ITEM(<PyObject *>edges, i)
+                obj = PyTuple_GET_ITEM(record, 0)
+                if obj == Py_None:
+                    result = False
+                    break
+                oid = <const char *> PyUnicode_DATA(obj)
+                if strlen(oid) != 40:
+                    result = False
+                    break
+                children_indexes[oid].push_back(PyLong_AsLong(PyTuple_GET_ITEM(record, 2)))
+                obj = PyTuple_GET_ITEM(record, 1)
+                if obj == Py_None:
+                    result = False
+                    break
+                oid = <const char *> PyUnicode_DATA(obj)
+                if strlen(oid) != 40:
+                    result = False
+                    break
+        if not result:
+            return False
+    with nogil:
+        result = True
+        it = children_indexes.const_begin()
+        while it != children_indexes.const_end():
+            children_range = &dereference(it).second
+            size = children_range.size()
+            indexes_sum = 0
+            for i in range(size):
+                indexes_sum += dereference(children_range)[i]
+            indexes_sum -= ((size - 1) * size) // 2
+            if indexes_sum != 0:
+                result = False
+                break
+            postincrement(it)
+    return result
+
+
+@cython.boundscheck(False)
+def find_orphans(edges: List[Tuple[str, str, int]],
+                 attach_to: np.ndarray) -> np.ndarray:
+    cdef:
+        Py_ssize_t size
+        const char *child_oid
+        const char *parent_oid
+        int i
+        unordered_set[string] parents
+        PyObject *record
+        PyObject *obj
+        vector[const char *] leaves
+
+    size = len(edges)
+    if size == 0:
+        return np.array([], dtype="S40")
+    if isinstance(edges[0], asyncpg.Record):
+        with nogil:
+            for i in range(size):
+                record = PyList_GET_ITEM(<PyObject *>edges, i)
+                parent_oid = <const char *> PyUnicode_DATA(ApgRecord_GET_ITEM(record, 0))
+                child_oid = <const char *> PyUnicode_DATA(ApgRecord_GET_ITEM(record, 1))
+                if strncmp(child_oid, "0" * 40, 40):
+                    parents.insert(parent_oid)
+                    leaves.push_back(child_oid)
+                else:
+                    leaves.push_back(parent_oid)
+    else:
+        with nogil:
+            for i in range(size):
+                record = PyList_GET_ITEM(<PyObject *> edges, i)
+                parent_oid = <const char *> PyUnicode_DATA(PyTuple_GET_ITEM(record, 0))
+                child_oid = <const char *> PyUnicode_DATA(PyTuple_GET_ITEM(record, 1))
+                if strncmp(child_oid, "0" * 40, 40):
+                    parents.insert(parent_oid)
+                    leaves.push_back(child_oid)
+                else:
+                    leaves.push_back(parent_oid)
+
+    with nogil:
+        size = 0
+        for i in range(<int>leaves.size()):
+            if parents.find(leaves[i]) == parents.end():
+                leaves[size] = leaves[i]
+                size += 1
+    leaves_arr = np.empty(size, dtype="S40")
+    for i in range(size):
+        leaves_arr[i] = PyBytes_FromString(leaves[i])
+    return leaves_arr[attach_to[searchsorted_inrange(attach_to, leaves_arr)] != leaves_arr]
 
 
 def mark_dag_access(hashes: np.ndarray,
@@ -245,12 +496,13 @@ cdef void _toposort(const uint32_t[:] vertexes,
                     int32_t[:] order,
                     ) nogil:
     """Topological sort of `heads`. The order is reversed!"""
-    cdef vector[uint32_t] boilerplate
+    cdef:
+        vector[uint32_t] boilerplate
+        vector[int32_t] visited = vector[int32_t](len(vertexes))
+        uint32_t j, head, peek, edge, missing = len(vertexes)
+        int64_t i, order_pos = 0
+        int32_t status, size = len(heads), vv = size + 1
     boilerplate.reserve(max(1, len(edges) - len(vertexes) + 1))
-    cdef vector[int32_t] visited = vector[int32_t](len(vertexes))
-    cdef uint32_t j, head, peek, edge, missing = len(vertexes)
-    cdef int64_t i, order_pos = 0
-    cdef int32_t status, size = len(heads), vv = size + 1
     for i in range(len(heads)):
         head = heads[i]
         if head == missing:
@@ -294,11 +546,12 @@ cdef void _mark_dag_access(const uint32_t[:] vertexes,
                            const uint32_t[:] heads,
                            const int32_t[:] order,
                            int32_t[:] access) nogil:
-    cdef vector[uint32_t] boilerplate
+    cdef:
+        vector[uint32_t] boilerplate
+        uint32_t j, head, peek, edge, missing = len(vertexes)
+        int64_t i, original_index
+        int32_t size = len(heads)
     boilerplate.reserve(max(1, len(edges) - len(vertexes) + 1))
-    cdef uint32_t j, head, peek, edge, missing = len(vertexes)
-    cdef int64_t i, original_index
-    cdef int32_t size = len(heads)
     for i in range(size):
         head = heads[i]
         if head == missing:
@@ -375,13 +628,14 @@ cdef int _mark_dag_parents(const uint32_t[:] vertexes,
                            const int32_t[:] ownership,
                            bool slay_hydra,
                            vector[vector[uint32_t]] *parents) nogil:
-    cdef uint32_t not_found = len(vertexes), head, peek, edge, peak_owner, parent, beg, end
-    cdef uint64_t timestamp, head_timestamp
-    cdef int64_t i, j, p, sum_len = 0
-    cdef bool reached_root
-    cdef vector[char] visited = vector[char](len(vertexes) - 1)
-    cdef vector[uint32_t] boilerplate
-    cdef vector[uint32_t] *my_parents
+    cdef:
+        uint32_t not_found = len(vertexes), head, peek, edge, peak_owner, parent, beg, end
+        uint64_t timestamp, head_timestamp
+        int64_t i, j, p, sum_len = 0
+        bool reached_root
+        vector[char] visited = vector[char](len(vertexes) - 1)
+        vector[uint32_t] boilerplate
+        vector[uint32_t] *my_parents
     for i in range(len(heads)):
         head = heads[i]
         if head == not_found:
@@ -451,8 +705,9 @@ cdef void _extract_first_parents(const uint32_t[:] vertexes,
                                  const uint32_t[:] heads,
                                  int max_depth,
                                  char[:] first_parents) nogil:
-    cdef uint32_t head
-    cdef int i, depth
+    cdef:
+        uint32_t head
+        int i, depth
     for i in range(len(heads)):
         head = heads[i]
         depth = 0
@@ -488,10 +743,11 @@ cdef void _partition_dag(const uint32_t[:] vertexes,
                          const uint32_t[:] edges,
                          const uint32_t[:] heads,
                          char[:] borders) nogil:
-    cdef vector[uint32_t] boilerplate
-    cdef vector[char] visited = vector[char](len(vertexes) - 1)
-    cdef int i, v
-    cdef uint32_t head, edge, peek, j
+    cdef:
+        vector[uint32_t] boilerplate
+        vector[char] visited = vector[char](len(vertexes) - 1)
+        int i, v
+        uint32_t head, edge, peek, j
     for i in range(len(heads)):
         head = heads[i]
         # traverse the DAG from top to bottom, marking the visited nodes
@@ -544,11 +800,12 @@ cdef void _extract_pr_commits(const uint32_t[:] vertexes,
                               const uint32_t[:] pr_merges,
                               int8_t[:] left_vertexes_map,
                               vector[vector[uint32_t]] *pr_commits) nogil:
-    cdef int i
-    cdef uint32_t first, last, v, j, edge, peek
-    cdef uint32_t oob = len(vertexes)
-    cdef vector[uint32_t] *my_pr_commits
-    cdef vector[uint32_t] boilerplate
+    cdef:
+        int i
+        uint32_t first, last, v, j, edge, peek
+        uint32_t oob = len(vertexes)
+        vector[uint32_t] *my_pr_commits
+        vector[uint32_t] boilerplate
     boilerplate.reserve(max(1, len(edges) - len(vertexes) + 1))
     for i in range(len(pr_merges)):
         v = pr_merges[i]
@@ -639,12 +896,13 @@ cdef void _extract_independent_ownership(const uint32_t[:] vertexes,
                                          uint32_t[:] left_vertexes,
                                          uint32_t[:] left_edges,
                                          vector[vector[uint32_t]] *result) nogil:
-    cdef int64_t i, p
-    cdef uint32_t j, head, parent, count, peek, edge
-    cdef uint32_t oob = len(vertexes)
-    cdef vector[uint32_t] *head_result
-    cdef vector[uint32_t] boilerplate
-    cdef bool has_parent
+    cdef:
+        int64_t i, p
+        uint32_t j, head, parent, count, peek, edge
+        uint32_t oob = len(vertexes)
+        vector[uint32_t] *head_result
+        vector[uint32_t] boilerplate
+        bool has_parent
     boilerplate.reserve(max(1, len(edges) - len(vertexes) + 1))
     for i in range(len(heads)):
         head = heads[i]

@@ -12,8 +12,9 @@ import pandas as pd
 import sentry_sdk
 from sqlalchemy import and_, select, union_all
 
-from athenian.api import COROUTINE_YIELD_EVERY_ITER, list_with_yield, metadata
-from athenian.api.async_utils import gather, read_sql_query
+from athenian.api import metadata
+from athenian.api.async_utils import COROUTINE_YIELD_EVERY_ITER, gather, list_with_yield, \
+    read_sql_query
 from athenian.api.cache import cached, CancelCache, short_term_exptime
 from athenian.api.controllers.datetime_utils import coarsen_time_interval
 from athenian.api.controllers.features.github.pull_request_metrics import AllCounter, \

@@ -16,6 +16,12 @@ cdef extern from "asyncpg_recordobj.h":
     PyObject *ApgRecord_GET_ITEM(PyObject *, int)
 
 
+cdef extern from "Python.h":
+    # nogil!
+    PyObject *PyList_GET_ITEM(PyObject *, Py_ssize_t) nogil
+    PyObject *PyTuple_GET_ITEM(PyObject *, Py_ssize_t) nogil
+
+
 @cython.boundscheck(False)
 def to_object_arrays_split(rows: List[Sequence[Any]],
                            typed_indexes: Sequence[int],
@@ -46,7 +52,6 @@ def to_object_arrays_split(rows: List[Sequence[Any]],
         ndarray[object, ndim=2] result_typed
         ndarray[object, ndim=2] result_obj
         PyObject *record
-        tuple row
         long[:] typed_indexes_arr
         long[:] obj_indexes_arr
 
@@ -64,18 +69,18 @@ def to_object_arrays_split(rows: List[Sequence[Any]],
 
     if isinstance(rows[0], asyncpg.Record):
         for i in range(size):
-            record = <PyObject *>rows[i]
+            record = PyList_GET_ITEM(<PyObject *>rows, i)
             for j in range(cols_typed):
                 result_typed[j, i] = <object>ApgRecord_GET_ITEM(record, typed_indexes_arr[j])
             for j in range(cols_obj):
                 result_obj[j, i] = <object>ApgRecord_GET_ITEM(record, obj_indexes_arr[j])
     elif isinstance(rows[0], tuple):
         for i in range(size):
-            row = rows[i]
+            record = PyList_GET_ITEM(<PyObject *>rows, i)
             for j in range(cols_typed):
-                result_typed[j, i] = row[typed_indexes_arr[j]]
+                result_typed[j, i] = <object>PyTuple_GET_ITEM(record, typed_indexes_arr[j])
             for j in range(cols_obj):
-                result_obj[j, i] = row[obj_indexes_arr[j]]
+                result_obj[j, i] = <object>PyTuple_GET_ITEM(record, obj_indexes_arr[j])
     else:
         # convert to tuple
         for i in range(size):

@@ -343,3 +343,22 @@ async def read_sql_query_with_join_collapse(
     """Enforce the predefined JOIN order in read_sql_query()."""
     query = query.with_statement_hint("Set(join_collapse_limit 1)")
     return await read_sql_query(query, db, columns=columns, index=index, soft_limit=soft_limit)
+
+
+# Allow other coroutines to execute every Nth iteration in long loops
+COROUTINE_YIELD_EVERY_ITER = 250
+
+
+async def list_with_yield(iterable: Iterable[Any], sentry_op: str) -> List[Any]:
+    """Drain an iterable to a list, tracing the loop in Sentry and respecting other coroutines."""
+    with sentry_sdk.start_span(op=sentry_op) as span:
+        things = []
+        for i, thing in enumerate(iterable):
+            if (i + 1) % COROUTINE_YIELD_EVERY_ITER == 0:
+                await asyncio.sleep(0)
+            things.append(thing)
+        try:
+            span.description = str(i)
+        except UnboundLocalError:
+            pass
+    return things
