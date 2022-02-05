@@ -538,8 +538,6 @@ async def _fetch_commit_history_edges(commit_ids: Iterable[int],
     We return nodes in the native DB order, that's the opposite of Git's parent-child.
     `stop_hashes` are the recursion terminators so that we don't traverse the full DAG every time.
 
-    "SELECT DISTINCT" is really needed, otherwise we yield duplicate rows sometimes.
-
     We don't include the edges from the outside to the first parents (`commit_ids`). This means
     that if some of `commit_ids` do not have children, there will be 0 edges with them.
     """
@@ -579,7 +577,7 @@ async def _fetch_commit_history_edges(commit_ids: Iterable[int],
                     INNER JOIN commit_history h ON p.parent_id = h.child_id AND p.acc_id = h.acc_id
                     LEFT JOIN {tq}github.node_commit{tq} cc ON p.child_id = cc.graph_id AND p.acc_id = cc.acc_id
             WHERE h.child_oid NOT IN ('{"', '".join(stop_hashes)}')
-    ) SELECT DISTINCT
+    ) SELECT
         parent_oid,
         child_oid,
         parent_index
