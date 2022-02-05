@@ -382,7 +382,6 @@ def validate_edges_integrity(edges: List[Tuple[str, str, int]]) -> bool:
         if not result:
             return False
     with nogil:
-        result = True
         it = children_indexes.const_begin()
         while it != children_indexes.const_end():
             children_range = &dereference(it).second

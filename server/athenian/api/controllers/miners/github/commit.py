@@ -491,7 +491,9 @@ async def _fetch_commit_history_dag(hashes: np.ndarray,
         new_edges = await _fetch_commit_history_edges(
             head_ids[:batch_size], stop_hashes, meta_ids, mdb)
         if not validate_edges_integrity(new_edges):
-            log.warning("skipping because some children are not consistent: %s", new_edges)
+            log.warning(
+                "skipping because some children are not consistent: heads %s: %s",
+                head_ids[:batch_size].tolist(), new_edges)
             new_edges = []
         else:
             append_missing_heads(new_edges, head_hashes[:batch_size])
@@ -536,6 +538,8 @@ async def _fetch_commit_history_edges(commit_ids: Iterable[int],
     We return nodes in the native DB order, that's the opposite of Git's parent-child.
     `stop_hashes` are the recursion terminators so that we don't traverse the full DAG every time.
 
+    "SELECT DISTINCT" is really needed, otherwise we yield duplicate rows sometimes.
+
     We don't include the edges from the outside to the first parents (`commit_ids`). This means
     that if some of `commit_ids` do not have children, there will be 0 edges with them.
     """
@@ -575,7 +579,7 @@ async def _fetch_commit_history_edges(commit_ids: Iterable[int],
                     INNER JOIN commit_history h ON p.parent_id = h.child_id AND p.acc_id = h.acc_id
                     LEFT JOIN {tq}github.node_commit{tq} cc ON p.child_id = cc.graph_id AND p.acc_id = cc.acc_id
             WHERE h.child_oid NOT IN ('{"', '".join(stop_hashes)}')
-    ) SELECT
+    ) SELECT DISTINCT
         parent_oid,
         child_oid,
         parent_index
