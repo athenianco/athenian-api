@@ -17,7 +17,8 @@ cdef extern from "asyncpg_recordobj.h":
 
 
 cdef extern from "Python.h":
-    # nogil!
+    # added nogil -> from cpython cimport ...
+    # these are the macros that read directly from the internal ob_items
     PyObject *PyList_GET_ITEM(PyObject *, Py_ssize_t) nogil
     PyObject *PyTuple_GET_ITEM(PyObject *, Py_ssize_t) nogil
 

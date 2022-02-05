@@ -73,6 +73,12 @@ def parse_args() -> argparse.Namespace:
                            Enable user action tracking in Segment.
   GOOGLE_ANALYTICS (optional)
                            Track Swagger UI by Google Analytics tag.
+  SLACK_API_TOKEN (optional)
+                           Slack API token enables sending Slack notifications on important events.
+  SLACK_ACCOUNT_CHANNEL (optional)
+                           Name of the Slack channel for sending account event notifications.
+  SLACK_INSTALL_CHANNEL (optional)
+                           Name of the Slack channel for sending installation event notifications.
   """,  # noqa
                                      formatter_class=Formatter)
 

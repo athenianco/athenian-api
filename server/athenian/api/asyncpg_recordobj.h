@@ -6,7 +6,7 @@ typedef struct {
     // asyncpg specifics begin here
     // if they add another field, we will break spectacularly
     Py_hash_t self_hash;
-    PyObject *desc;  // we don't care of the type
+    PyObject *desc;  // we don't care of the actual type
     PyObject *ob_item[1];  // embedded in the tail, the count matches len()
 } ApgRecordObject;
 
