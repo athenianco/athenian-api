@@ -13,6 +13,7 @@ from libcpp.vector cimport vector
 from libcpp.string cimport string
 from libcpp.unordered_map cimport unordered_map
 from libcpp.unordered_set cimport unordered_set
+from libcpp.utility cimport pair
 from numpy cimport PyArray_BYTES
 
 import asyncpg
@@ -146,11 +147,17 @@ def join_dags(hashes: np.ndarray,
               ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     cdef:
         Py_ssize_t size
-        int i, hpos
-        const char *oid
+        int i, hpos, parent_index
+        const char *parent_oid
+        const char *child_oid
         PyObject *record
         PyObject *obj
         char *new_hashes_data
+        unordered_map[string, int] new_hashes_map, hashes_map
+        unordered_map[string, int].iterator it
+        vector[Edge] *found_edges
+        Edge edge
+        bool exists
     size = len(new_edges)
     if size == 0:
         return hashes, vertexes, edges
@@ -161,24 +168,24 @@ def join_dags(hashes: np.ndarray,
         with nogil:
             for i in range(size):
                 record = PyList_GET_ITEM(<PyObject *>new_edges, i)
-                oid = <const char*>PyUnicode_DATA(ApgRecord_GET_ITEM(record, 0))
-                memcpy(new_hashes_data + hpos, oid, 40)
+                parent_oid = <const char*>PyUnicode_DATA(ApgRecord_GET_ITEM(record, 0))
+                memcpy(new_hashes_data + hpos, parent_oid, 40)
                 hpos += 40
-                oid = <const char *> PyUnicode_DATA(ApgRecord_GET_ITEM(record, 1))
-                if strncmp(oid, "0" * 40, 40):
-                    memcpy(new_hashes_data + hpos, oid, 40)
+                child_oid = <const char *> PyUnicode_DATA(ApgRecord_GET_ITEM(record, 1))
+                if strncmp(child_oid, "0" * 40, 40):
+                    memcpy(new_hashes_data + hpos, child_oid, 40)
                     hpos += 40
     else:
         assert isinstance(new_edges[0], tuple)
         with nogil:
             for i in range(size):
                 record = PyList_GET_ITEM(<PyObject *>new_edges, i)
-                oid = <const char *> PyUnicode_DATA(PyTuple_GET_ITEM(record, 0))
-                memcpy(new_hashes_data + hpos, oid, 40)
+                parent_oid = <const char *> PyUnicode_DATA(PyTuple_GET_ITEM(record, 0))
+                memcpy(new_hashes_data + hpos, parent_oid, 40)
                 hpos += 40
-                oid = <const char *> PyUnicode_DATA(PyTuple_GET_ITEM(record, 1))
-                if strncmp(oid, "0" * 40, 40):
-                    memcpy(new_hashes_data + hpos, oid, 40)
+                child_oid = <const char *> PyUnicode_DATA(PyTuple_GET_ITEM(record, 1))
+                if strncmp(child_oid, "0" * 40, 40):
+                    memcpy(new_hashes_data + hpos, child_oid, 40)
                     hpos += 40
     new_hashes_arr = new_hashes_arr[:hpos // 40]
     if len(hashes) > 0:
@@ -194,23 +201,75 @@ def join_dags(hashes: np.ndarray,
         new_hashes = np.unique(new_hashes_arr)
         found_matches = np.array([], dtype=int)
         result_hashes = new_hashes
-    new_hashes_map = {k: i for i, k in enumerate(new_hashes)}
+
+    size = len(new_hashes)
+    new_hashes_data = PyArray_BYTES(new_hashes)
+    with nogil:
+        for i in range(size):
+            new_hashes_map[string(new_hashes_data + i * 40, 40)] = i
     if len(hashes) > 0:
-        hashes_map = {k: i for i, k in enumerate(result_hashes)}
+        size = len(result_hashes)
+        new_hashes_data = PyArray_BYTES(result_hashes)
+        with nogil:
+            for i in range(size):
+                hashes_map[string(new_hashes_data + i * 40, 40)] = i
     else:
         hashes_map = new_hashes_map
     del new_hashes
-    cdef vector[vector[Edge]] new_edges_lists = vector[vector[Edge]](len(new_hashes_map))
-    new_edges_counter = 0
-    the_end = "0" * 40
-    for k, v, pos in new_edges:
-        if v == the_end:
-            # initial commit
-            continue
-        hi = new_hashes_map.get(k.encode(), None)
-        if hi is not None:
-            new_edges_lists[hi].push_back(Edge(hashes_map[v.encode()], pos))
-            new_edges_counter += 1
+
+    cdef:
+        vector[vector[Edge]] new_edges_lists = vector[vector[Edge]](new_hashes_map.size())
+        int new_edges_counter = 0
+    size = len(new_edges)
+    if isinstance(new_edges[0], asyncpg.Record):
+        with nogil:
+            for i in range(size):
+                record = PyList_GET_ITEM(<PyObject *>new_edges, i)
+                child_oid = <const char *> PyUnicode_DATA(ApgRecord_GET_ITEM(record, 1))
+                if not strncmp(child_oid, "0" * 40, 40):
+                    # initial commit
+                    continue
+                parent_oid = <const char *> PyUnicode_DATA(ApgRecord_GET_ITEM(record, 0))
+                it = new_hashes_map.find(parent_oid)
+                if it != new_hashes_map.end():
+                    parent_index = PyLong_AsLong(ApgRecord_GET_ITEM(record, 2))
+                    found_edges = &new_edges_lists[dereference(it).second]
+                    exists = False
+                    for j in range(<int>found_edges.size()):
+                        if <int>dereference(found_edges)[j].position == parent_index:
+                            exists = True
+                            break
+                    if not exists:
+                        # https://github.com/cython/cython/issues/1642
+                        edge.vertex = hashes_map[child_oid]
+                        edge.position = parent_index
+                        found_edges.push_back(edge)
+                        new_edges_counter += 1
+    else:
+        with nogil:
+            for i in range(size):
+                record = PyList_GET_ITEM(<PyObject *>new_edges, i)
+                child_oid = <const char *> PyUnicode_DATA(PyTuple_GET_ITEM(record, 1))
+                if not strncmp(child_oid, "0" * 40, 40):
+                    # initial commit
+                    continue
+                parent_oid = <const char *> PyUnicode_DATA(PyTuple_GET_ITEM(record, 0))
+                it = new_hashes_map.find(parent_oid)
+                if it != new_hashes_map.end():
+                    parent_index = PyLong_AsLong(PyTuple_GET_ITEM(record, 2))
+                    found_edges = &new_edges_lists[dereference(it).second]
+                    exists = False
+                    for j in range(<int>found_edges.size()):
+                        if <int>dereference(found_edges)[j].position == parent_index:
+                            exists = True
+                            break
+                    if not exists:
+                        # https://github.com/cython/cython/issues/1642
+                        edge.vertex = hashes_map[child_oid]
+                        edge.position = parent_index
+                        found_edges.push_back(edge)
+                        new_edges_counter += 1
+
     old_vertex_map = np.zeros(len(hashes), dtype=np.uint32)
     result_vertexes = np.zeros(len(result_hashes) + 1, dtype=np.uint32)
     result_edges = np.zeros(len(edges) + new_edges_counter, dtype=np.uint32)
@@ -317,18 +376,21 @@ def append_missing_heads(edges: List[Tuple[str, str, int]],
         postincrement(it)
 
 
+ctypedef pair[int, const char *] RawEdge
+
+
 @cython.boundscheck(False)
 def validate_edges_integrity(edges: List[Tuple[str, str, int]]) -> bool:
     cdef:
         Py_ssize_t size
         const char *oid
-        int indexes_sum, i
-        unordered_map[string, vector[int]] children_indexes
-        unordered_map[string, vector[int]].const_iterator it
+        int indexes_sum, parent_index, i, j
+        unordered_map[string, vector[RawEdge]] children_indexes
+        unordered_map[string, vector[RawEdge]].iterator it
         PyObject *record
         PyObject *obj
-        const vector[int] *children_range
-        bool result
+        vector[RawEdge] *children_range
+        bool result, exists
 
     size = len(edges)
     if size == 0:
@@ -346,7 +408,9 @@ def validate_edges_integrity(edges: List[Tuple[str, str, int]]) -> bool:
                 if strlen(oid) != 40:
                     result = False
                     break
-                children_indexes[oid].push_back(PyLong_AsLong(ApgRecord_GET_ITEM(record, 2)))
+                parent_index = PyLong_AsLong(ApgRecord_GET_ITEM(record, 2))
+                children_range = &children_indexes[oid]
+
                 obj = ApgRecord_GET_ITEM(record, 1)
                 if obj == Py_None:
                     result = False
@@ -355,6 +419,16 @@ def validate_edges_integrity(edges: List[Tuple[str, str, int]]) -> bool:
                 if strlen(oid) != 40:
                     result = False
                     break
+
+                exists = False
+                for j in range(<int>children_range.size()):
+                    if dereference(children_range)[j].first == parent_index:
+                        exists = True
+                        if strncmp(dereference(children_range)[j].second, oid, 40):
+                            result = False
+                        break
+                if not exists:
+                    children_range.push_back(RawEdge(parent_index, oid))
         if not result:
             return False
     else:
@@ -370,7 +444,9 @@ def validate_edges_integrity(edges: List[Tuple[str, str, int]]) -> bool:
                 if strlen(oid) != 40:
                     result = False
                     break
-                children_indexes[oid].push_back(PyLong_AsLong(PyTuple_GET_ITEM(record, 2)))
+                parent_index = PyLong_AsLong(PyTuple_GET_ITEM(record, 2))
+                children_range = &children_indexes[oid]
+
                 obj = PyTuple_GET_ITEM(record, 1)
                 if obj == Py_None:
                     result = False
@@ -379,16 +455,26 @@ def validate_edges_integrity(edges: List[Tuple[str, str, int]]) -> bool:
                 if strlen(oid) != 40:
                     result = False
                     break
+
+                exists = False
+                for j in range(<int>children_range.size()):
+                    if dereference(children_range)[j].first == parent_index:
+                        exists = True
+                        if strncmp(dereference(children_range)[j].second, oid, 40):
+                            result = False
+                        break
+                if not exists:
+                    children_range.push_back(RawEdge(parent_index, oid))
         if not result:
             return False
     with nogil:
-        it = children_indexes.const_begin()
-        while it != children_indexes.const_end():
+        it = children_indexes.begin()
+        while it != children_indexes.end():
             children_range = &dereference(it).second
             size = children_range.size()
             indexes_sum = 0
             for i in range(size):
-                indexes_sum += dereference(children_range)[i]
+                indexes_sum += dereference(children_range)[i].first
             indexes_sum -= ((size - 1) * size) // 2
             if indexes_sum != 0:
                 result = False
@@ -445,6 +531,7 @@ def find_orphans(edges: List[Tuple[str, str, int]],
     leaves_arr = np.empty(size, dtype="S40")
     for i in range(size):
         leaves_arr[i] = PyBytes_FromString(leaves[i])
+    leaves_arr = np.unique(leaves_arr)
     return leaves_arr[attach_to[searchsorted_inrange(attach_to, leaves_arr)] != leaves_arr]
 
 
