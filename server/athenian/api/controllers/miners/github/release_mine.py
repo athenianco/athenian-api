@@ -703,39 +703,57 @@ async def _load_prs_by_merge_commit_ids(commit_ids: Sequence[str],
     columns = [model.merge_commit_id, *released_prs_columns(model)]
     if has_logical_prs:
         columns.extend((PullRequest.title, PullRequest.repository_full_name))
-    tasks = [
-        read_sql_query(
-            select(columns)
-            .where(and_(model.merge_commit_id.in_(commit_ids),
-                        model.acc_id.in_(meta_ids)))
-            .order_by(model.merge_commit_id),
-            mdb, columns),
-    ]
-    if logical_settings.has_prs_by_label():
+    has_prs_by_label = logical_settings.has_prs_by_label()
+    batch_size = 100_000
+    tasks = []
+    while len(commit_ids):
         tasks.append(
             read_sql_query(
-                select([PullRequestLabel.pull_request_node_id,
-                        func.lower(PullRequestLabel.name).label(PullRequestLabel.name.name)])
-                .select_from(join(NodePullRequest, PullRequestLabel, and_(
-                    NodePullRequest.acc_id == PullRequestLabel.acc_id,
-                    NodePullRequest.node_id == PullRequestLabel.pull_request_node_id,
-                )))
-                .where(and_(NodePullRequest.merge_commit_id.in_(commit_ids),
-                            NodePullRequest.acc_id.in_(meta_ids)))
-                .order_by(PullRequestLabel.pull_request_node_id),
-                mdb, [PullRequestLabel.pull_request_node_id, PullRequestLabel.name]),
+                select(columns)
+                .where(and_(model.merge_commit_id.in_(commit_ids[:batch_size]),
+                            model.acc_id.in_(meta_ids)))
+                .order_by(model.merge_commit_id),
+                mdb, columns),
         )
-    df_prs, *df_labels = await gather(*tasks)
-    if df_labels:
-        df_labels = df_labels[0]
+        if has_prs_by_label:
+            tasks.append(
+                read_sql_query(
+                    select([PullRequestLabel.pull_request_node_id,
+                            func.lower(PullRequestLabel.name).label(PullRequestLabel.name.name)])
+                    .select_from(join(NodePullRequest, PullRequestLabel, and_(
+                        NodePullRequest.acc_id == PullRequestLabel.acc_id,
+                        NodePullRequest.node_id == PullRequestLabel.pull_request_node_id,
+                    )))
+                    .where(and_(NodePullRequest.merge_commit_id.in_(commit_ids[:batch_size]),
+                                NodePullRequest.acc_id.in_(meta_ids)))
+                    .order_by(PullRequestLabel.pull_request_node_id),
+                    mdb, [PullRequestLabel.pull_request_node_id, PullRequestLabel.name]),
+            )
+        commit_ids = commit_ids[batch_size:]
+    if tasks:
+        dfs = await gather(*tasks)
+        if has_prs_by_label:
+            df_prs = dfs[::2]
+            df_labels = dfs[1::2]
+            if len(df_labels) > 1:
+                df_labels = pd.concat(df_labels, copy=False)
+            else:
+                df_labels = df_labels[0]
+        else:
+            df_prs = dfs
+            df_labels = None
+        if len(df_prs) > 1:
+            df_prs = pd.concat(df_prs, copy=False)
+        else:
+            df_prs = df_prs[0]
+        df_prs = split_logical_prs(
+            df_prs, df_labels, repos, logical_settings, reindex=False)
+        if has_logical_prs:
+            df_prs.sort_values(
+                [PullRequest.merge_commit_id.name, PullRequest.repository_full_name.name],
+                inplace=True)
     else:
-        df_labels = None
-    df_prs = split_logical_prs(
-        df_prs, df_labels, repos, logical_settings, reindex=False)
-    if has_logical_prs:
-        df_prs.sort_values(
-            [PullRequest.merge_commit_id.name, PullRequest.repository_full_name.name],
-            inplace=True)
+        df_prs = pd.DataFrame(columns=[c.name for c in columns])
     return df_prs
 
 
