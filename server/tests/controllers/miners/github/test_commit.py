@@ -97,6 +97,20 @@ def test_validate_edges_integrity_indexes():
         ("2" * 40, "0" * 40, 0),
     ]
     assert validate_edges_integrity(edges)
+    edges = [
+        ("1" * 40, "2" * 40, 0),
+        ("2" * 40, "3" * 40, 0),
+        ("2" * 40, "4" * 40, 1),
+        ("2" * 40, "4" * 40, 1),
+    ]
+    assert validate_edges_integrity(edges)
+    edges = [
+        ("1" * 40, "2" * 40, 0),
+        ("2" * 40, "3" * 40, 0),
+        ("2" * 40, "4" * 40, 1),
+        ("2" * 40, "5" * 40, 1),
+    ]
+    assert not validate_edges_integrity(edges)
 
 
 def test_find_orphans():
@@ -109,6 +123,12 @@ def test_find_orphans():
     assert len(find_orphans(edges, hashes)) == 0
     edges = [
         ("1" * 40, "2" * 40, 0),
+        ("2" * 40, "4" * 40, 0),
+    ]
+    assert find_orphans(edges, hashes) == np.array(["4" * 40], dtype="S40")
+    edges = [
+        ("1" * 40, "2" * 40, 0),
+        ("2" * 40, "4" * 40, 0),
         ("2" * 40, "4" * 40, 0),
     ]
     assert find_orphans(edges, hashes) == np.array(["4" * 40], dtype="S40")
