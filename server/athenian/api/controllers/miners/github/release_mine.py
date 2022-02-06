@@ -704,6 +704,7 @@ async def _load_prs_by_merge_commit_ids(commit_ids: Sequence[str],
     if has_logical_prs:
         columns.extend((PullRequest.title, PullRequest.repository_full_name))
     has_prs_by_label = logical_settings.has_prs_by_label()
+    # we can have 7,600,000 commit ids here and the DB breaks
     batch_size = 100_000
     tasks = []
     while len(commit_ids):
