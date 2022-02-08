@@ -23,7 +23,7 @@ from athenian.api.__main__ import check_schema_versions, create_memcached, creat
 from athenian.api.async_utils import gather
 from athenian.api.cache import CACHE_VAR_NAME, setup_cache_metrics
 from athenian.api.controllers.account import copy_teams_as_needed, \
-    generate_jira_invitation_link, get_metadata_account_ids
+    generate_jira_invitation_link, get_metadata_account_ids, get_metadata_account_ids_or_empty
 from athenian.api.controllers.events_controller import resolve_deployed_component_references
 from athenian.api.controllers.features.entries import MetricEntriesCalculator
 from athenian.api.controllers.jira import match_jira_identities
@@ -45,7 +45,8 @@ from athenian.api.db import Database, measure_db_overhead_and_retry
 from athenian.api.defer import enable_defer, wait_deferred
 from athenian.api.faster_pandas import patch_pandas
 from athenian.api.models.metadata import dereference_schemas as dereference_metadata_schemas
-from athenian.api.models.metadata.github import NodePullRequest, PullRequestLabel, User
+from athenian.api.models.metadata.github import Account as GitHubAccount, NodePullRequest, \
+    PullRequestLabel, User
 from athenian.api.models.persistentdata import \
     dereference_schemas as dereference_persistentdata_schemas
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
@@ -130,7 +131,7 @@ def main():
         log.info("Resolving deployed references")
         await gather(
             resolve_deployed_component_references(sdb, mdb, rdb, cache),
-            notify_almost_expired_accounts(sdb, slack),
+            notify_almost_expired_accounts(sdb, mdb, slack, log, cache),
         )
 
         account_progress_settings = {}
@@ -298,24 +299,40 @@ def main():
 
 
 async def notify_almost_expired_accounts(sdb: Database,
+                                         mdb: Database,
                                          slack: Optional[SlackWebClient],
+                                         log: logging.Logger,
+                                         cache: Optional[aiomcache.Client],
                                          ) -> None:
     """Find accounts that will expire in 24h and report them on Slack."""
-    left = datetime.now(timezone.utc) - timedelta(days=1)
-    right = left + timedelta(hours=1)
+    right = datetime.now(timezone.utc) + timedelta(days=1)
+    left = right - timedelta(hours=1)
     accounts = {r[0]: r[1] for r in await sdb.fetch_all(
         select([Account.id, Account.expires_at])
         .where(Account.expires_at.between(left, right)))}
     if not accounts:
         return
-    users = {r[0]: r[1] for r in await sdb.fetch_all(
-        select([UserAccount.account_id, UserAccount.user_id])
-        .where(and_(UserAccount.account_id.in_(accounts),
-                    UserAccount.is_admin)),
-    )}
+    log.info("Notifying about almost expired accounts: %s", sorted(accounts))
+    user_rows, *meta_ids = await gather(
+        sdb.fetch_all(
+            select([UserAccount.account_id, UserAccount.user_id])
+            .where(and_(UserAccount.account_id.in_(accounts),
+                        UserAccount.is_admin)),
+        ),
+        *(get_metadata_account_ids_or_empty(acc, sdb, cache) for acc in accounts),
+    )
+    users = {r[0]: r[1] for r in user_rows}
+    name_rows = await mdb.fetch_all(
+        select([GitHubAccount.id, GitHubAccount.name])
+        .where(GitHubAccount.id.in_(chain.from_iterable(meta_ids))))
+    names = {r[0]: r[1] for r in name_rows}
+    names = {acc: ", ".join(names[i] for i in m) for acc, m in zip(accounts, meta_ids)}
     tasks = [
         slack.post_account("almost_expired.jinja2",
-                           account=acc, user=users[acc], expires=expires)
+                           account=acc,
+                           name=names[acc],
+                           user=users[acc],
+                           expires=expires)
         for acc, expires in accounts.items()
     ]
     await gather(*tasks)
