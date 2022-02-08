@@ -205,10 +205,10 @@ async def _accept_invitation(iid: int,
         if slack is not None:
             async def report_new_account_to_slack():
                 jira_link = await generate_jira_invitation_link(acc_id, sdb)
-                await slack.post("new_account.jinja2",
-                                 user=await request.user(),
-                                 account=acc_id,
-                                 jira_link=jira_link)
+                await slack.post_install("new_account.jinja2",
+                                         user=await request.user(),
+                                         account=acc_id,
+                                         jira_link=jira_link)
 
             await defer(report_new_account_to_slack(), "report_new_account_to_slack")
         status = None
@@ -237,7 +237,10 @@ async def _accept_invitation(iid: int,
                     prefixes = {r.split("/", 2)[1] for r in repos}
                 else:
                     prefixes = {"N/A"}
-                await slack.post("new_user.jinja2", user=user, account=acc_id, prefixes=prefixes)
+                await slack.post_install("new_user.jinja2",
+                                         user=user,
+                                         account=acc_id,
+                                         prefixes=prefixes)
 
             await defer(report_new_user_to_slack(), "report_new_user_to_slack")
         values = {Invitation.accepted.name: inv[Invitation.accepted.name] + 1}
@@ -423,7 +426,7 @@ async def _notify_precomputed_failure(slack: Optional[SlackWebClient],
                                       created: datetime,
                                       expires: datetime,
                                       cache: Optional[aiomcache.Client]) -> None:
-    await slack.post(
+    await slack.post_install(
         "precomputed_failure.jinja2",
         uid=uid,
         account=account,

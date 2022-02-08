@@ -14,6 +14,7 @@ import aiomcache
 from flogging import flogging
 import numpy as np
 import sentry_sdk
+from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import and_, desc, func, insert, select, update
 from tqdm import tqdm
 
@@ -49,7 +50,7 @@ from athenian.api.models.persistentdata import \
     dereference_schemas as dereference_persistentdata_schemas
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
     GitHubMergedPullRequestFacts
-from athenian.api.models.state.models import Account, RepositorySet, Team
+from athenian.api.models.state.models import Account, RepositorySet, Team, UserAccount
 from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME
 from athenian.precomputer.db import dereference_schemas as dereference_precomputed_schemas
 
@@ -127,7 +128,10 @@ def main():
         nonlocal return_code
         return_code = await sync_labels(log, mdb, pdb)
         log.info("Resolving deployed references")
-        await resolve_deployed_component_references(sdb, mdb, rdb, cache)
+        await gather(
+            resolve_deployed_component_references(sdb, mdb, rdb, cache),
+            notify_almost_expired_accounts(sdb, slack),
+        )
 
         account_progress_settings = {}
         accounts = [r[0] for r in await sdb.fetch_all(
@@ -247,22 +251,23 @@ def main():
                 if not reposet.precomputed:
                     if slack is not None:
                         jira_link = await generate_jira_invitation_link(reposet.owner_id, sdb)
-                        await slack.post("precomputed_account.jinja2",
-                                         account=reposet.owner_id,
-                                         prefixes={r.split("/", 2)[1] for r in reposet.items},
-                                         prs=prs,
-                                         prs_done=prs_done,
-                                         prs_merged=prs_merged,
-                                         prs_open=prs_open,
-                                         releases=releases_count,
-                                         releases_by_tag=releases_by_tag,
-                                         releases_by_branch=releases_by_branch,
-                                         branches=branches_count,
-                                         repositories=len(repos),
-                                         bots_team_name=Team.BOTS,
-                                         bots=num_bots,
-                                         teams=num_teams,
-                                         jira_link=jira_link)
+                        await slack.post_install(
+                            "precomputed_account.jinja2",
+                            account=reposet.owner_id,
+                            prefixes={r.split("/", 2)[1] for r in reposet.items},
+                            prs=prs,
+                            prs_done=prs_done,
+                            prs_merged=prs_merged,
+                            prs_open=prs_open,
+                            releases=releases_count,
+                            releases_by_tag=releases_by_tag,
+                            releases_by_branch=releases_by_branch,
+                            branches=branches_count,
+                            repositories=len(repos),
+                            bots_team_name=Team.BOTS,
+                            bots=num_bots,
+                            teams=num_teams,
+                            jira_link=jira_link)
             except Exception as e:
                 log.warning("reposet %d: %s: %s\n%s", reposet.id, type(e).__name__, e,
                             "".join(traceback.format_exception(*sys.exc_info())[:-1]))
@@ -290,6 +295,30 @@ def main():
 
     asyncio.run(sentry_wrapper())
     return return_code
+
+
+async def notify_almost_expired_accounts(sdb: Database,
+                                         slack: Optional[SlackWebClient],
+                                         ) -> None:
+    """Find accounts that will expire in 24h and report them on Slack."""
+    left = datetime.now(timezone.utc) - timedelta(days=1)
+    right = left + timedelta(hours=1)
+    accounts = {r[0]: r[1] for r in await sdb.fetch_all(
+        select([Account.id, Account.expires_at])
+        .where(Account.expires_at.between(left, right)))}
+    if not accounts:
+        return
+    users = {r[0]: r[1] for r in await sdb.fetch_all(
+        select([UserAccount.account_id, UserAccount.user_id])
+        .where(and_(UserAccount.account_id.in_(accounts),
+                    UserAccount.is_admin)),
+    )}
+    tasks = [
+        slack.post_account("almost_expired.jinja2",
+                           account=acc, user=users[acc], expires=expires)
+        for acc, expires in accounts.items()
+    ]
+    await gather(*tasks)
 
 
 async def create_teams(account: int,
@@ -331,7 +360,7 @@ async def create_teams(account: int,
 
 
 async def sync_labels(log: logging.Logger, mdb: Database, pdb: Database) -> int:
-    """Update the labels in `github_done_pull_request_times` and `github_merged_pull_requests`."""
+    """Update the labels in `github.{done,merged}_pull_request_facts`."""
     log.info("Syncing labels")
     tasks = []
     all_prs = await mdb.fetch_all(select([NodePullRequest.id, NodePullRequest.acc_id]))

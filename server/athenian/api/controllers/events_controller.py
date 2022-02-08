@@ -2,7 +2,6 @@ import asyncio
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from itertools import chain
-import os
 import re
 import sqlite3
 from typing import Collection, Dict, Iterable, List, Mapping, Optional, Tuple, Union
@@ -49,7 +48,6 @@ from athenian.api.tracing import sentry_span
 
 
 commit_hash_re = re.compile(r"[a-f0-9]{7}([a-f0-9]{33})?")
-SLACK_CHANNEL = os.getenv("ATHENIAN_EVENTS_SLACK_CHANNEL", "")
 
 
 @disable_default_user
@@ -183,8 +181,7 @@ async def notify_releases(request: AthenianWebRequest, body: List[dict]) -> web.
         await rdb.execute_many(sql, inserted)
     if (slack := request.app["slack"]) is not None:
         async def report_new_release_event_to_slack():
-            await slack.post("new_release_event.jinja2",
-                             channel=SLACK_CHANNEL, account=account, repos=repos)
+            await slack.post_event("new_release_event.jinja2", account=account, repos=repos)
 
         await defer(report_new_release_event_to_slack(), "report_new_release_event_to_slack")
     return web.Response(status=200)
