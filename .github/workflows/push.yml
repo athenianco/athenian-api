@@ -230,7 +230,8 @@ jobs:
         echo 'SENTRY_PROJECT=${{ secrets.SENTRY_PROJECT }}' >>.env
         echo 'SENTRY_KEY=${{ secrets.SENTRY_KEY }}' >>.env
         echo 'SLACK_API_TOKEN=${{ secrets.SLACK_API_TOKEN }}' >>.env
-        echo 'SLACK_CHANNEL="${{ secrets.SLACK_CHANNEL }}"' >>.env
+        echo 'SLACK_ACCOUNT_CHANNEL="${{ secrets.SLACK_ACCOUNT_CHANNEL }}"' >>.env
+        echo 'SLACK_INSTALL_CHANNEL="${{ secrets.SLACK_INSTALL_CHANNEL }}"' >>.env
     - name: test slim
       if: matrix.type == 'slim'
       working-directory: server

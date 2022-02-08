@@ -112,12 +112,12 @@ async def match_metadata_installation(account: int,
             metadata_accounts = [(r[0], r[1]) for r in await mdb.fetch_all(
                 select([MetadataAccount.id, MetadataAccount.owner_login])
                 .where(MetadataAccount.id.in_(meta_ids)))]
-            await slack.post("new_installation.jinja2",
-                             account=account,
-                             all_reposet_name=RepositorySet.ALL,
-                             metadata_accounts=metadata_accounts,
-                             login=login,
-                             )
+            await slack.post_install("new_installation.jinja2",
+                                     account=account,
+                                     all_reposet_name=RepositorySet.ALL,
+                                     metadata_accounts=metadata_accounts,
+                                     login=login,
+                                     )
         await defer(report_new_installation(), "report_new_installation")
     return meta_ids
 

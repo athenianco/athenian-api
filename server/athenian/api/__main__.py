@@ -79,6 +79,8 @@ def parse_args() -> argparse.Namespace:
                            Name of the Slack channel for sending account event notifications.
   SLACK_INSTALL_CHANNEL (optional)
                            Name of the Slack channel for sending installation event notifications.
+  ATHENIAN_EVENTS_SLACK_CHANNEL (optional)
+                           Release and deployment event notification channel.
   """,  # noqa
                                      formatter_class=Formatter)
 
@@ -288,9 +290,13 @@ def create_slack(log: logging.Logger) -> Optional[SlackWebClient]:
     if not slack_token:
         return None
     slack_client = SlackWebClient(token=slack_token)
-    general_channel = os.getenv("SLACK_CHANNEL", "#updates-installations")
-    if not general_channel:
-        raise ValueError("SLACK_CHANNEL may not be empty if SLACK_API_TOKEN exists")
+    account_channel = os.getenv("SLACK_ACCOUNT_CHANNEL")
+    install_channel = os.getenv("SLACK_INSTALL_CHANNEL")
+    event_channel = os.getenv("ATHENIAN_EVENTS_SLACK_CHANNEL")
+    if not account_channel:
+        raise ValueError("SLACK_ACCOUNT_CHANNEL may not be empty if SLACK_API_TOKEN exists")
+    if not install_channel:
+        raise ValueError("SLACK_INSTALL_CHANNEL may not be empty if SLACK_API_TOKEN exists")
     slack_client.jinja2 = jinja2.Environment(
         loader=jinja2.FileSystemLoader(Path(__file__).parent / "slack"),
         autoescape=False, trim_blocks=True, lstrip_blocks=True,
@@ -298,10 +304,12 @@ def create_slack(log: logging.Logger) -> Optional[SlackWebClient]:
     slack_client.jinja2.globals["env"] = os.getenv("SENTRY_ENV", "development")
     slack_client.jinja2.globals["now"] = lambda: datetime.now(timezone.utc)
 
-    async def post(template, channel="", **kwargs) -> None:
+    async def post(template: str, channel: str, **kwargs) -> None:
+        if not channel:
+            return
         try:
             response = await slack_client.chat_postMessage(
-                channel=channel or general_channel,
+                channel=channel,
                 text=slack_client.jinja2.get_template(template).render(**kwargs))
             error_name = error_data = ""
         except Exception as e:
@@ -315,8 +323,19 @@ def create_slack(log: logging.Logger) -> Optional[SlackWebClient]:
             log.error("Could not send a Slack message to %s: %s: %s",
                       channel, error_name, error_data)
 
-    slack_client.post = post
-    log.info("Slack messaging to %s is enabled 👍", general_channel)
+    async def post_account(template: str, **kwargs) -> None:
+        return await post(template, account_channel, **kwargs)
+
+    async def post_install(template: str, **kwargs) -> None:
+        return await post(template, install_channel, **kwargs)
+
+    async def post_event(template: str, **kwargs) -> None:
+        return await post(template, event_channel, **kwargs)
+
+    slack_client.post_account = post_account
+    slack_client.post_install = post_install
+    slack_client.post_event = post_event
+    log.info("Slack messaging to %s is enabled 👍", [account_channel, install_channel])
     return slack_client
 
 

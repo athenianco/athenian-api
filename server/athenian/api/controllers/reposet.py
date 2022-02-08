@@ -333,13 +333,13 @@ async def _load_account_reposets(account: int,
                      rs.id, account, len(repos))
         if slack is not None:
             prefixes = {r.split("/", 2)[1] for r in repos}
-            await defer(slack.post("installation_goes_on.jinja2",
-                                   account=account,
-                                   repos=len(repos),
-                                   prefixes=prefixes,
-                                   all_reposet_name=RepositorySet.ALL,
-                                   reposet=rs.id,
-                                   ),
+            await defer(slack.post_install("installation_goes_on.jinja2",
+                                           account=account,
+                                           repos=len(repos),
+                                           prefixes=prefixes,
+                                           all_reposet_name=RepositorySet.ALL,
+                                           reposet=rs.id,
+                                           ),
                         "report_installation_goes_on")
         return [rs.explode(with_primary_keys=True)]
     except (UniqueViolationError, IntegrityError, OperationalError) as e:
