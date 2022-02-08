@@ -992,15 +992,14 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
             account, meta_ids, mdb, pdb, rdb, cache)
         add_pdb_misses(pdb, "load_precomputed_done_facts_reponums/ambiguous",
                        remove_ambiguous_prs(facts, ambiguous, matched_bys))
-        tasks = [
+        dags, unreleased = await gather(
             load_commit_dags(
                 releases.append(milestone_releases), account, meta_ids, mdb, pdb, cache),
             # not nonemax() here! we want NaT-s inside load_merged_unreleased_pull_request_facts
             MergedPRFactsLoader.load_merged_unreleased_pull_request_facts(
                 prs_df, releases[Release.published_at.name].max(), LabelFilter.empty(),
                 matched_bys, default_branches, release_settings, prefixer, account, pdb),
-        ]
-        dags, unreleased = await gather(*tasks)
+        )
     else:
         releases, matched_bys, unreleased = dummy_releases_df(), {}, {}
         dags = await fetch_precomputed_commit_history_dags(
