@@ -542,6 +542,7 @@ async def mdb_rw(mdb, event_loop, worker_id, request):
                 Account.id: 777,
                 Account.owner_id: 1,
                 Account.owner_login: "xxx",
+                Account.name: "src-d",
             }))
             break
         except OperationalError:

@@ -237,7 +237,7 @@ async def _accept_invitation(iid: int,
                     prefixes = {r.split("/", 2)[1] for r in repos}
                 else:
                     prefixes = {"N/A"}
-                await slack.post_install("new_user.jinja2",
+                await slack.post_account("new_user.jinja2",
                                          user=user,
                                          account=acc_id,
                                          prefixes=prefixes)

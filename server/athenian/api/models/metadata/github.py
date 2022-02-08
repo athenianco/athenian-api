@@ -81,6 +81,7 @@ class Account(Base,
     id = Column(BigInteger, primary_key=True)
     owner_id = Column(BigInteger, nullable=False)
     owner_login = Column(Text, nullable=False)
+    name = Column(Text, nullable=False)
 
 
 class AccountRepository(Base,
