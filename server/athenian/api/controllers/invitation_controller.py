@@ -65,7 +65,8 @@ def validate_env():
 async def gen_invitation(request: AthenianWebRequest, id: int) -> web.Response:
     """Generate a new regular member invitation URL."""
     async with request.sdb.connection() as sdb_conn:
-        await get_user_account_status(request.uid, id, sdb_conn, request.cache)
+        await get_user_account_status(request.uid, id, request.sdb, request.mdb, request.user,
+                                      request.app["slack"], request.cache)
         existing = await sdb_conn.fetch_one(
             select([Invitation.id, Invitation.salt])
             .where(and_(Invitation.is_active, Invitation.account_id == id)))
@@ -439,7 +440,8 @@ async def _notify_precomputed_failure(slack: Optional[SlackWebClient],
 @expires_header(5)
 async def eval_invitation_progress(request: AthenianWebRequest, id: int) -> web.Response:
     """Return the current Athenian GitHub app installation progress."""
-    await get_user_account_status(request.uid, id, request.sdb, request.cache)
+    await get_user_account_status(request.uid, id, request.sdb, request.mdb, request.user,
+                                  request.app["slack"], request.cache)
     async with request.mdb.connection() as mdb_conn:
         model = await fetch_github_installation_progress(id, request.sdb, mdb_conn, request.cache)
 

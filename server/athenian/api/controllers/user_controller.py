@@ -111,7 +111,8 @@ async def _get_account_jira(account: int,
 
 async def get_account_features(request: AthenianWebRequest, id: int) -> web.Response:
     """Return enabled product features for the account."""
-    await get_user_account_status(request.uid, id, request.sdb, request.cache)
+    await get_user_account_status(request.uid, id, request.sdb, request.mdb, request.user,
+                                  request.app["slack"], request.cache)
     return await _get_account_features(request.sdb, id)
 
 
@@ -160,7 +161,8 @@ async def set_account_features(request: AthenianWebRequest, id: int, body: dict)
             detail="User %s is not allowed to set features of accounts" % request.uid))
     features = [ProductFeature.from_dict(f) for f in body]
     async with request.sdb.connection() as conn:
-        await get_user_account_status(request.uid, id, conn, request.cache)
+        await get_user_account_status(request.uid, id, conn, request.mdb, request.user,
+                                      request.app["slack"], request.cache)
         for i, feature in enumerate(features):
             if feature.name == DBAccount.expires_at.name:
                 try:

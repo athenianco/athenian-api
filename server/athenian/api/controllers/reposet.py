@@ -94,7 +94,7 @@ async def fetch_reposet(
     if rs is None or len(rs) == 0:
         raise ResponseError(NotFoundError(detail="Repository set %d does not exist" % id))
     account = rs[RepositorySet.owner_id.name]
-    adm = await get_user_account_status(uid, account, sdb, cache)
+    adm = await get_user_account_status(uid, account, sdb, None, None, None, cache)
     return RepositorySet(**rs), adm
 
 

@@ -6,7 +6,7 @@ import os
 import pickle
 from sqlite3 import IntegrityError
 import struct
-from typing import Any, Collection, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Collection, Coroutine, List, Mapping, Optional, Tuple
 
 from aiohttp import web
 import aiomcache
@@ -18,6 +18,7 @@ from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import and_, func, insert, select
 
 from athenian.api import metadata
+from athenian.api.async_utils import gather
 from athenian.api.cache import cached, max_exptime
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.db import Connection, Database, DatabaseLike
@@ -28,7 +29,7 @@ from athenian.api.models.state.models import Account, AccountGitHubAccount, Repo
     Team as StateTeam, UserAccount
 from athenian.api.models.web import ForbiddenError, InstallationProgress, NoSourceDataError, \
     NotFoundError, \
-    TableFetchingProgress
+    TableFetchingProgress, User
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError
 from athenian.api.typing_utils import wraps
@@ -123,6 +124,27 @@ async def match_metadata_installation(account: int,
 
 
 @cached(
+    exptime=max_exptime,
+    serialize=lambda name: name.encode(),
+    deserialize=lambda name: name.decode(),
+    key=lambda account, **_: (account,),
+    refresh_on_access=True,
+)
+async def get_account_name(account: int,
+                           sdb: DatabaseLike,
+                           mdb: DatabaseLike,
+                           cache: Optional[aiomcache.Client],
+                           meta_ids: Optional[Tuple[int, ...]] = None,
+                           ) -> str:
+    """Load the human-readable name of the account."""
+    if meta_ids is None:
+        meta_ids = await get_metadata_account_ids(account, sdb, cache)
+    rows = await mdb.fetch_all(select([MetadataAccount.name])
+                               .where(MetadataAccount.id.in_(meta_ids)))
+    return ", ".join(r[0] for r in rows)
+
+
+@cached(
     exptime=60,
     serialize=lambda is_admin: b"1" if is_admin else b"0",
     deserialize=lambda buf: buf == b"1",
@@ -130,14 +152,39 @@ async def match_metadata_installation(account: int,
 )
 async def get_user_account_status(user: str,
                                   account: int,
-                                  sdb: DatabaseLike,
+                                  sdb: Database,
+                                  mdb: Optional[Database],
+                                  user_info: Optional[Callable[..., Coroutine]],
+                                  slack: Optional[SlackWebClient],
                                   cache: Optional[aiomcache.Client],
                                   ) -> bool:
-    """Return the value indicating whether the given user is an admin of the given account."""
+    """
+    Return the value indicating whether the given user is an admin of the given account.
+
+    `mdb` must exist if `slack` exists. We await `user_info()` only if it exists.
+    """
     status = await sdb.fetch_val(
         select([UserAccount.is_admin])
         .where(and_(UserAccount.user_id == user, UserAccount.account_id == account)))
     if status is None:
+        async def report_user_rejected():
+            async def dummy_user():
+                return User(login="N/A")
+
+            nonlocal user_info
+            name, user_info = await gather(
+                get_account_name(account, sdb, mdb, cache),
+                user_info() if user_info is not None else dummy_user(),
+            )
+            await slack.post_account("user_rejected.jinja2",
+                                     user=user,
+                                     user_name=user_info.login,
+                                     user_email=user_info.email,
+                                     account=account,
+                                     account_name=name)
+
+        if slack is not None:
+            await defer(report_user_rejected(), "report_user_rejected_to_slack")
         raise ResponseError(NotFoundError(
             detail="Account %d does not exist or user %s is not a member." % (account, user)))
     return status
@@ -147,7 +194,9 @@ def only_admin(func):
     """Enforce the admin access level to an API handler."""
     async def wrapped_only_admin(request: AthenianWebRequest, body: dict) -> web.Response:
         account = body["account"]
-        if not await get_user_account_status(request.uid, account, request.sdb, request.cache):
+        if not await get_user_account_status(
+                request.uid, account, request.sdb, request.mdb, request.user,
+                request.app["slack"], request.cache):
             raise ResponseError(ForbiddenError(
                 f'User "{request.uid}" must be an admin of account {account}'))
         return await func(request, body)

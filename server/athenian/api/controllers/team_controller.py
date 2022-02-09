@@ -62,7 +62,8 @@ async def delete_team(request: AthenianWebRequest, id: int) -> web.Response:
         account = await sdb_conn.fetch_val(select([Team.owner_id]).where(Team.id == id))
         if account is None:
             return ResponseError(NotFoundError("Team %d was not found." % id)).response
-        await get_user_account_status(user, account, sdb_conn, request.cache)
+        await get_user_account_status(user, account, request.sdb, request.mdb, request.user,
+                                      request.app["slack"], request.cache)
         await sdb_conn.execute(update(Team)
                                .where(Team.parent_id == id)
                                .values({Team.parent_id: None,
@@ -82,7 +83,8 @@ async def get_team(request: AthenianWebRequest, id: int) -> web.Response:
         if team is None:
             return ResponseError(NotFoundError("Team %d was not found." % id)).response
         account = team[Team.owner_id.name]
-        await get_user_account_status(user, account, sdb_conn, request.cache)
+        await get_user_account_status(user, account, request.sdb, request.mdb, request.user,
+                                      request.app["slack"], request.cache)
         meta_ids = await get_metadata_account_ids(account, sdb_conn, request.cache)
     members = await _get_all_team_members(
         [team], account, meta_ids, request.mdb, request.sdb, request.cache)
@@ -102,7 +104,8 @@ async def list_teams(request: AthenianWebRequest, id: int) -> web.Response:
     """
     account = id
     async with request.sdb.connection() as sdb_conn:
-        await get_user_account_status(request.uid, account, sdb_conn, request.cache)
+        await get_user_account_status(request.uid, account, request.sdb, request.mdb, request.user,
+                                      request.app["slack"], request.cache)
         teams, meta_ids = await gather(
             sdb_conn.fetch_all(
                 select([Team]).where(Team.owner_id == account).order_by(Team.name)),
@@ -142,7 +145,8 @@ async def update_team(request: AthenianWebRequest, id: int,
         account = await sdb_conn.fetch_val(select([Team.owner_id]).where(Team.id == id))
         if account is None:
             return ResponseError(NotFoundError("Team %d was not found." % id)).response
-        await get_user_account_status(user, account, sdb_conn, request.cache)
+        await get_user_account_status(user, account, request.sdb, request.mdb, request.user,
+                                      request.app["slack"], request.cache)
         if id == body.parent:
             raise ResponseError(BadRequestError(detail="Team cannot be a the parent of itself."))
         meta_ids = await get_metadata_account_ids(account, sdb_conn, request.cache)
@@ -259,8 +263,9 @@ async def resync_teams(request: AthenianWebRequest, id: int) -> web.Response:
     :param id: Numeric identifier of the account.
     """
     account = id
+    await get_user_account_status(request.uid, account, request.sdb, request.mdb, request.user,
+                                  request.app["slack"], request.cache)
     async with request.sdb.connection() as sdb_conn:
-        await get_user_account_status(request.uid, account, sdb_conn, request.cache)
         meta_ids = await get_metadata_account_ids(account, sdb_conn, request.cache)
         async with sdb_conn.transaction():
             await sdb_conn.execute(delete(Team).where(and_(Team.owner_id == account,

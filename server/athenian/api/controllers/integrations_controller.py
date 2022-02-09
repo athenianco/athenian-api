@@ -127,7 +127,8 @@ async def get_everything(request: AthenianWebRequest,
             ))
         account = rows[0][0]
     else:
-        await get_user_account_status(request.uid, account, request.sdb, request.cache)
+        await get_user_account_status(request.uid, account, request.sdb, request.mdb, request.user,
+                                      request.app["slack"], request.cache)
     meta_ids = await get_metadata_account_ids(account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
     settings = Settings.from_request(request, account)

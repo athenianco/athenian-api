@@ -24,11 +24,14 @@ with warnings.catch_warnings():
     from jose import jwt
 from multidict import CIMultiDict
 import sentry_sdk
+from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import select
 
 from athenian.api.async_utils import gather
-from athenian.api.cache import cached
-from athenian.api.controllers.account import get_user_account_status
+from athenian.api.cache import cached, middle_term_exptime
+from athenian.api.controllers.account import get_account_name, get_user_account_status
+from athenian.api.db import Database
+from athenian.api.defer import defer
 from athenian.api.kms import AthenianKMS
 from athenian.api.models.state.models import Account, God, UserToken
 from athenian.api.models.web import ForbiddenError, GenericError
@@ -506,13 +509,15 @@ class AthenianAioHttpSecurityHandlerFactory(connexion.security.AioHttpSecurityHa
             # token_info = {"token": <token>, "method": "bearer" or "apikey"}
             await auth._set_user(context := request.context, **token_info)
             # check whether the user may access the specified account
+            slack = context.app["slack"]
             if isinstance(request.json, dict):
                 if (account := request.json.get("account")) is not None:
                     if isinstance(account, int):
                         with sentry_sdk.configure_scope() as scope:
                             scope.set_tag("account", account)
                         await get_user_account_status(
-                            context.uid, account, context.sdb, context.cache)
+                            context.uid, account, context.sdb, context.mdb, context.user,
+                            slack, context.cache)
                     else:
                         # we'll report an error later from OpenAPI validator
                         account = None
@@ -536,6 +541,12 @@ class AthenianAioHttpSecurityHandlerFactory(connexion.security.AioHttpSecurityHa
                     select([Account.expires_at]).where(Account.id == context.account))
                 if not getattr(context, "god_id", False) and (
                         expires_at is None or expires_at < datetime.now(expires_at.tzinfo)):
+                    if slack is not None:
+                        await defer(
+                            _report_user_account_expired(
+                                context.uid, context.account, expires_at, context.sdb, context.mdb,
+                                context.user, slack, context.cache),
+                            "report_user_account_expired_to_slack")
                     auth.log.warning("Attempt to use an expired account %d by user %s",
                                      context.account, context.uid)
                     raise Unauthorized("Your account has expired.")
@@ -543,6 +554,37 @@ class AthenianAioHttpSecurityHandlerFactory(connexion.security.AioHttpSecurityHa
             return await function(request)
 
         return wrapper
+
+
+@cached(
+    exptime=middle_term_exptime,
+    serialize=lambda x: x,
+    deserialize=lambda x: x,
+    key=lambda user, account, **_: (user, account),
+)
+async def _report_user_account_expired(user: str,
+                                       account: int,
+                                       expired_at: datetime,
+                                       sdb: Database,
+                                       mdb: Database,
+                                       user_info: Callable[..., Coroutine],
+                                       slack: Optional[SlackWebClient],
+                                       cache: Optional[aiomcache.Client]):
+    async def dummy_user():
+        return User(login="N/A")
+
+    name, user_info = await gather(
+        get_account_name(account, sdb, mdb, cache),
+        user_info() if user_info is not None else dummy_user(),
+    )
+    await slack.post_account("user_account_expired.jinja2",
+                             user=user,
+                             user_name=user_info.login,
+                             user_email=user_info.email,
+                             account=account,
+                             account_name=name,
+                             expired_at=expired_at)
+    return b"1"
 
 
 def disable_default_user(func):

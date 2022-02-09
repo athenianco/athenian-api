@@ -908,3 +908,8 @@ async def _build_deployments_response(df: pd.DataFrame,
         users={u: IncludedNativeUser(avatar=a) for u, a in people},
         jira={k: LinkedJIRAIssue(**v) for k, v in issues.items()},
     ))
+
+
+async def filter_environments(request: AthenianWebRequest, body: dict) -> web.Response:
+    """List the deployment environments."""
+    raise NotImplementedError
