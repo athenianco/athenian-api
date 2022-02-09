@@ -97,7 +97,8 @@ async def list_tokens(request: AthenianWebRequest, id: int) -> web.Response:
     """List Personal Access Tokens of the user in the account."""
     sqlite = request.sdb.url.dialect == "sqlite"
     async with request.sdb.connection() as conn:
-        await get_user_account_status(request.uid, id, conn, request.cache)
+        await get_user_account_status(request.uid, id, request.sdb, request.mdb, request.user,
+                                      request.app["slack"], request.cache)
         rows = await conn.fetch_all(
             select([UserToken.id, UserToken.name, UserToken.last_used_at])
             .where(and_(UserToken.user_id == request.uid,
@@ -121,7 +122,8 @@ async def _check_token_access(request: AthenianWebRequest,
         raise ResponseError(NotFoundError(detail="Token %d was not found" % id))
     try:
         await get_user_account_status(
-            request.uid, token[UserToken.account_id.name], conn, request.cache)
+            request.uid, token[UserToken.account_id.name], request.sdb, request.mdb, request.user,
+            request.app["slack"], request.cache)
     except ResponseError:
         # do not leak the account number
         raise ResponseError(NotFoundError(detail="Token %d was not found" % id)) from None

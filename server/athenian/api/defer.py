@@ -114,6 +114,7 @@ async def defer(coroutine: Awaitable, name: str) -> None:
     if isinstance(coroutine, Coroutine):
         for key, val in coroutine.cr_frame.f_locals.items():
             try:
+                # because we will use this connection in the deferred task but it's already closed
                 assert not isinstance(val, morcilla.core.Connection), \
                     f"{key} must not be visible to {coroutine.__qualname__}"
             except AssertionError as e:

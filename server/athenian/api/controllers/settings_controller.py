@@ -43,7 +43,8 @@ from athenian.api.response import model_response, ResponseError
 async def list_release_match_settings(request: AthenianWebRequest, id: int) -> web.Response:
     """List the current release matching settings."""
     # Check the user separately beforehand to avoid security problems.
-    await get_user_account_status(request.uid, id, request.sdb, request.cache)
+    await get_user_account_status(request.uid, id, request.sdb, request.mdb, request.user,
+                                  request.app["slack"], request.cache)
 
     async def load_prefixer():
         meta_ids = await get_metadata_account_ids(id, request.sdb, request.cache)
@@ -86,7 +87,8 @@ async def get_jira_projects(request: AthenianWebRequest,
     """List the current enabled JIRA project settings."""
     mdb, sdb = request.mdb, request.sdb
     if jira_id is None:
-        await get_user_account_status(request.uid, id, sdb, request.cache)
+        await get_user_account_status(request.uid, id, sdb, request.mdb, request.user,
+                                      request.app["slack"], request.cache)
         jira_id = await get_jira_id(id, sdb, request.cache)
     projects, stats = await gather(
         mdb.fetch_all(
@@ -249,7 +251,8 @@ async def get_jira_identities(request: AthenianWebRequest,
                               ) -> web.Response:
     """Fetch the GitHub<>JIRA user identity mapping."""
     if jira_acc is None:
-        await get_user_account_status(request.uid, id, request.sdb, request.cache)
+        await get_user_account_status(request.uid, id, request.sdb, request.mdb, request.user,
+                                      request.app["slack"], request.cache)
         jira_acc = await get_jira_id(id, request.sdb, request.cache)
     tasks = [
         request.sdb.fetch_all(
@@ -369,9 +372,9 @@ async def delete_work_type(request: AthenianWebRequest, body: dict) -> web.Respo
 async def list_work_types(request: AthenianWebRequest, id: int) -> web.Response:
     """List the current work types - rule sets to group PRs, releases, etc. together."""
     account = id
-    async with request.sdb.connection() as sdb_conn:
-        await get_user_account_status(request.uid, account, sdb_conn, request.cache)
-        rows = await sdb_conn.fetch_all(select([WorkType]).where(WorkType.account_id == account))
+    await get_user_account_status(request.uid, account, request.sdb, request.mdb, request.user,
+                                  request.app["slack"], request.cache)
+    rows = await request.sdb.fetch_all(select([WorkType]).where(WorkType.account_id == account))
     models = [WebWorkType(
         name=row[WorkType.name.name],
         color=row[WorkType.color.name],
@@ -382,7 +385,8 @@ async def list_work_types(request: AthenianWebRequest, id: int) -> web.Response:
 
 async def list_logical_repositories(request: AthenianWebRequest, id: int) -> web.Response:
     """List the currently configured logical repositories."""
-    await get_user_account_status(request.uid, id, request.sdb, request.cache)
+    await get_user_account_status(request.uid, id, request.sdb, request.mdb, request.user,
+                                  request.app["slack"], request.cache)
     settings = Settings.from_request(request, id)
 
     async def load_prefixer():

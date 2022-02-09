@@ -2,9 +2,10 @@ import pytest
 from sqlalchemy import delete, select
 
 from athenian.api.controllers.account import copy_teams_as_needed, get_metadata_account_ids, \
-    match_metadata_installation
+    get_user_account_status, match_metadata_installation
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.state.models import AccountGitHubAccount, Team
+from athenian.api.models.web import User
 from athenian.api.response import ResponseError
 
 
@@ -63,3 +64,12 @@ async def test_copy_teams_as_needed(sdb, mdb):
     created_teams, n = await copy_teams_as_needed(1, (6366825,), sdb, mdb, None)
     assert created_teams == []
     assert n == len(loaded_teams)
+
+
+@with_defer
+async def test_get_user_account_status_slack(sdb, mdb, slack):
+    async def user():
+        return User(login="gkwillie", email="bot@athenian.co")
+
+    with pytest.raises(ResponseError):
+        await get_user_account_status("github|60340680", 1, sdb, mdb, user, slack, None)

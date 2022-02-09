@@ -24,7 +24,8 @@ async def paginate_prs(request: AthenianWebRequest, body: dict) -> web.Response:
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
     await get_user_account_status(
-        request.uid, filt.request.account, request.sdb, request.cache)
+        request.uid, filt.request.account, request.sdb, request.mdb, request.user,
+        request.app["slack"], request.cache)
     # we ignore events and stages because we cannot do anything with them
     time_from, time_to, repos, _, _, participants, labels, jira, _, \
         release_settings, logical_settings, prefixer, meta_ids = \
