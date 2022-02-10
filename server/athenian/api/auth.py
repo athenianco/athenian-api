@@ -515,9 +515,14 @@ class AthenianAioHttpSecurityHandlerFactory(connexion.security.AioHttpSecurityHa
                     if isinstance(account, int):
                         with sentry_sdk.configure_scope() as scope:
                             scope.set_tag("account", account)
+                        if getattr(context, "god_id", False):
+                            effective_slack = None
+                        else:
+                            effective_slack = slack
                         await get_user_account_status(
                             context.uid, account, context.sdb, context.mdb, context.user,
-                            slack, context.cache, context=f"{context.method} {context.path}")
+                            effective_slack, context.cache,
+                            context=f"{context.method} {context.path}")
                     else:
                         # we'll report an error later from OpenAPI validator
                         account = None
