@@ -52,12 +52,11 @@ async def delete_reposet(request: AthenianWebRequest, id: int) -> web.Response:
     """Delete a repository set.
 
     :param id: Numeric identifier of the repository set to delete.
-    :type id: int
     """
     _, is_admin = await fetch_reposet(id, [], request.uid, request.sdb, request.cache)
     if not is_admin:
-        return ResponseError(ForbiddenError(
-            detail="User %s may not modify reposet %d" % (request.uid, id))).response
+        raise ResponseError(ForbiddenError(
+            detail="User %s may not modify reposet %d" % (request.uid, id)))
     await request.sdb.execute(delete(RepositorySet).where(RepositorySet.id == id))
     return web.Response(status=200)
 

@@ -328,6 +328,13 @@ async def test_resync_teams_wrong_user(client, headers, disable_default_user):
     assert response.status == 404, "Response body is : " + body
 
 
+async def test_resync_teams_regular_user(client, headers, disable_default_user):
+    response = await client.request(method="DELETE", path="/v1/teams/2", headers=headers)
+
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 403, "Response body is : " + body
+
+
 async def test_update_team_smoke(client, headers, sdb, disable_default_user):
     await sdb.execute(insert(Team).values(Team(
         owner_id=1, name="Test", members=["github.com/vmarkovtsev"],
