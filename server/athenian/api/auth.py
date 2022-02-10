@@ -517,7 +517,7 @@ class AthenianAioHttpSecurityHandlerFactory(connexion.security.AioHttpSecurityHa
                             scope.set_tag("account", account)
                         await get_user_account_status(
                             context.uid, account, context.sdb, context.mdb, context.user,
-                            slack, context.cache)
+                            slack, context.cache, context=f"{context.method} {context.path}")
                     else:
                         # we'll report an error later from OpenAPI validator
                         account = None
