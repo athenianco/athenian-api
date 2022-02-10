@@ -22,7 +22,8 @@ from athenian.api.db import DatabaseLike
 from athenian.api.models.metadata.github import User
 from athenian.api.models.state.models import Team
 from athenian.api.models.web import BadRequestError, Contributor, CreatedIdentifier, \
-    DatabaseConflict, NotFoundError, Team as TeamListItem, TeamCreateRequest, TeamUpdateRequest
+    DatabaseConflict, ForbiddenError, NotFoundError, Team as TeamListItem, TeamCreateRequest, \
+    TeamUpdateRequest
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 
@@ -263,8 +264,10 @@ async def resync_teams(request: AthenianWebRequest, id: int) -> web.Response:
     :param id: Numeric identifier of the account.
     """
     account = id
-    await get_user_account_status(request.uid, account, request.sdb, request.mdb, request.user,
-                                  request.app["slack"], request.cache)
+    if not await get_user_account_status(request.uid, account, request.sdb, request.mdb,
+                                         request.user, request.app["slack"], request.cache):
+        raise ResponseError(ForbiddenError(
+            detail="User %s may not resynchronize teams %d" % (request.uid, account)))
     async with request.sdb.connection() as sdb_conn:
         meta_ids = await get_metadata_account_ids(account, sdb_conn, request.cache)
         async with sdb_conn.transaction():
