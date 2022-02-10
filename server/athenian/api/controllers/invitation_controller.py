@@ -97,6 +97,8 @@ async def _check_admin_access(uid: str, account: int, sdb_conn: morcilla.core.Co
 
 def encode_slug(iid: int, salt: int, key: str) -> str:
     """Encode an invitation ID and some extra data to 8 chars."""
+    assert 0 <= salt < (1 << 16)
+    assert 0 < iid < (1 << 24)
     part1 = struct.pack("!H", salt)  # 2 bytes
     part2 = struct.pack("!I", iid)[1:]  # 3 bytes
     binseq = part1 + part2  # 5 bytes, 10 hex chars
