@@ -20,7 +20,7 @@ from athenian.api.db import DatabaseLike
 from athenian.api.models.metadata.jira import Installation as JIRAInstallation, \
     Project as JIRAProject
 from athenian.api.models.state.models import Account as DBAccount, AccountFeature, Feature, \
-    FeatureComponent, God, UserAccount
+    FeatureComponent, God, Invitation, UserAccount
 from athenian.api.models.web import Account, AccountUserChangeRequest, ForbiddenError, \
     InvalidRequestError, JIRAInstallation as WebJIRAInstallation, NotFoundError, Organization, \
     ProductFeature, UserChangeStatus
@@ -268,7 +268,11 @@ async def change_user(request: AthenianWebRequest, body: dict) -> web.Response:
                 raise ResponseError(ForbiddenError(
                     detail="Forbidden to banish the last admin of account %d" % aucr.account),
                 )
-            await conn.execute(delete(UserAccount)
-                               .where(and_(UserAccount.user_id == aucr.user,
-                                           UserAccount.account_id == aucr.account)))
+            async with conn.transaction():
+                await conn.execute(delete(UserAccount)
+                                   .where(and_(UserAccount.user_id == aucr.user,
+                                               UserAccount.account_id == aucr.account)))
+                await conn.execute(update(Invitation)
+                                   .where(Invitation.account_id == aucr.account)
+                                   .values({Invitation.is_active: False}))
     return await get_account_details(request, aucr.account)

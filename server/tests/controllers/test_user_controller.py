@@ -4,11 +4,12 @@ import json
 from aiohttp import web
 from dateutil.parser import parse as parse_datetime
 import pytest
-from sqlalchemy import insert, select, update
+from sqlalchemy import and_, func, insert, select, update
 
 from athenian.api.async_utils import gather
 from athenian.api.controllers.user_controller import get_user
-from athenian.api.models.state.models import Account as DBAccount, AccountFeature, Feature, God
+from athenian.api.models.state.models import Account as DBAccount, AccountFeature, Feature, God, \
+    Invitation
 from athenian.api.models.web import Account, ProductFeature
 from athenian.api.request import AthenianWebRequest
 from athenian.api.serialization import deserialize_datetime
@@ -377,7 +378,14 @@ async def test_change_user_admin(client, headers):
     assert items["admins"][1]["id"] == "auth0|5e1f6e2e8bfa520ea5290741"
 
 
-async def test_change_user_banish(client, headers):
+async def test_change_user_banish(client, headers, sdb):
+    response = await client.request(
+        method="GET", path="/v1/invite/generate/1", headers=headers, json={},
+    )
+    link1 = json.loads((await response.read()).decode("utf-8"))
+    assert 1 == (await sdb.fetch_val(
+        select([func.count(Invitation.id)])
+        .where(and_(Invitation.is_active, Invitation.account_id == 1))))
     body = {
         "account": 1,
         "user": "auth0|5e1f6e2e8bfa520ea5290741",
@@ -391,6 +399,17 @@ async def test_change_user_banish(client, headers):
     assert len(items["admins"]) == 1
     assert items["admins"][0]["id"] == "auth0|5e1f6dfb57bc640ea390557b"
     assert len(items["regulars"]) == 0
+    assert 0 == (await sdb.fetch_val(
+        select([func.count(Invitation.id)])
+        .where(and_(Invitation.is_active, Invitation.account_id == 1))))
+    response = await client.request(
+        method="GET", path="/v1/invite/generate/1", headers=headers, json={},
+    )
+    link2 = json.loads((await response.read()).decode("utf-8"))
+    assert 1 == (await sdb.fetch_val(
+        select([func.count(Invitation.id)])
+        .where(and_(Invitation.is_active, Invitation.account_id == 1))))
+    assert link1 != link2
 
 
 @pytest.mark.parametrize("account, user, status, code", [
