@@ -157,11 +157,13 @@ async def get_user_account_status(user: str,
                                   user_info: Optional[Callable[..., Coroutine]],
                                   slack: Optional[SlackWebClient],
                                   cache: Optional[aiomcache.Client],
+                                  context: str = "",
                                   ) -> bool:
     """
     Return the value indicating whether the given user is an admin of the given account.
 
     `mdb` must exist if `slack` exists. We await `user_info()` only if it exists.
+    `context` is an optional string to pass in the user rejection Slack message.
     """
     status = await sdb.fetch_val(
         select([UserAccount.is_admin])
@@ -176,12 +178,14 @@ async def get_user_account_status(user: str,
                 get_account_name(account, sdb, mdb, cache),
                 user_info() if user_info is not None else dummy_user(),
             )
-            await slack.post_account("user_rejected.jinja2",
-                                     user=user,
-                                     user_name=user_info.login,
-                                     user_email=user_info.email,
-                                     account=account,
-                                     account_name=name)
+            await slack.post_account(
+                "user_rejected.jinja2",
+                user=user,
+                user_name=user_info.login,
+                user_email=user_info.email if user_info.email != User.EMPTY_EMAIL else "",
+                account=account,
+                account_name=name,
+                context=context)
 
         if slack is not None:
             await defer(report_user_rejected(), "report_user_rejected_to_slack")

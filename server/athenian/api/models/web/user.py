@@ -36,6 +36,8 @@ class User(Model):
         "impersonated_by": "impersonated_by",
     }
 
+    EMPTY_EMAIL = "<empty email>"
+
     def __init__(
         self,
         id: Optional[str] = None,
@@ -83,7 +85,7 @@ class User(Model):
         else:
             native_id = id.rsplit("|", 1)[1]
         if not email:
-            email = "<empty email>"
+            email = cls.EMPTY_EMAIL
         else:
             try:
                 salt = struct.pack("!I", int(native_id))

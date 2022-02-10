@@ -61,6 +61,7 @@ from athenian.api.models.web.filter_code_checks_request import FilterCodeChecksR
 from athenian.api.models.web.filter_commits_request import FilterCommitsRequest
 from athenian.api.models.web.filter_contributors_request import FilterContributorsRequest
 from athenian.api.models.web.filter_deployments_request import FilterDeploymentsRequest
+from athenian.api.models.web.filter_environments_request import FilterEnvironmentsRequest
 from athenian.api.models.web.filter_jira_common import FilterJIRACommon
 from athenian.api.models.web.filter_jira_stuff import FilterJIRAStuff, FilterJIRAStuffSpecials
 from athenian.api.models.web.filter_labels_request import FilterLabelsRequest
@@ -71,6 +72,7 @@ from athenian.api.models.web.filtered_code_check_run import FilteredCodeCheckRun
 from athenian.api.models.web.filtered_code_check_runs import FilteredCodeCheckRuns
 from athenian.api.models.web.filtered_deployment import FilteredDeployment
 from athenian.api.models.web.filtered_deployments import FilteredDeployments
+from athenian.api.models.web.filtered_environment import FilteredEnvironment
 from athenian.api.models.web.filtered_jira_stuff import FilteredJIRAStuff
 from athenian.api.models.web.filtered_label import FilteredLabel
 from athenian.api.models.web.filtered_release import FilteredRelease
