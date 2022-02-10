@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from itertools import chain
 import logging
 import operator
-from typing import Any, Dict, List, Mapping, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Mapping, Optional, Set, Tuple
 
 from aiohttp import web
 import aiomcache
@@ -30,6 +30,8 @@ from athenian.api.controllers.miners.github.commit import extract_commits, Filte
 from athenian.api.controllers.miners.github.contributors import mine_contributors
 from athenian.api.controllers.miners.github.deployment import load_jira_issues_for_deployments, \
     mine_deployments
+from athenian.api.controllers.miners.github.deployment_light import mine_environments, \
+    NoDeploymentNotificationsError
 from athenian.api.controllers.miners.github.label import mine_labels
 from athenian.api.controllers.miners.github.release_mine import \
     diff_releases as mine_diff_releases, mine_releases, mine_releases_by_name
@@ -48,15 +50,17 @@ from athenian.api.models.metadata.github import PullRequest, PushCommit, Release
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
     DeploymentNotification
 from athenian.api.models.web import BadRequestError, Commit, CommitSignature, CommitsList, \
-    DeployedComponent as WebDeployedComponent, DeploymentAnalysisCode, \
+    CommonFilterProperties, DeployedComponent as WebDeployedComponent, DeploymentAnalysisCode, \
     DeploymentNotification as WebDeploymentNotification, DeveloperSummary, \
     DeveloperUpdates, FilterCommitsRequest, FilterContributorsRequest, FilterDeploymentsRequest, \
-    FilteredDeployment, FilteredLabel, FilteredRelease, FilterLabelsRequest, \
-    FilterPullRequestsRequest, FilterReleasesRequest, FilterRepositoriesRequest, ForbiddenError, \
-    GetPullRequestsRequest, GetReleasesRequest, IncludedNativeUser, IncludedNativeUsers, \
-    InvalidRequestError, LinkedJIRAIssue, PullRequest as WebPullRequest, PullRequestLabel, \
-    PullRequestParticipant, PullRequestSet, PullRequestSetInclude, ReleasedPullRequest, \
-    ReleaseSet, ReleaseSetInclude, StageTimings
+    FilteredDeployment, FilteredEnvironment, FilteredLabel, FilteredRelease, \
+    FilterEnvironmentsRequest, FilterLabelsRequest, FilterPullRequestsRequest, \
+    FilterReleasesRequest, FilterRepositoriesRequest, ForbiddenError, GetPullRequestsRequest, \
+    GetReleasesRequest, IncludedNativeUser, IncludedNativeUsers, InvalidRequestError, \
+    LinkedJIRAIssue, NoSourceDataError, PullRequest as WebPullRequest, PullRequestLabel, \
+    PullRequestParticipant, \
+    PullRequestSet, PullRequestSetInclude, ReleasedPullRequest, ReleaseSet, ReleaseSetInclude, \
+    StageTimings
 from athenian.api.models.web.code_check_run_statistics import CodeCheckRunStatistics
 from athenian.api.models.web.diff_releases_request import DiffReleasesRequest
 from athenian.api.models.web.diffed_releases import DiffedReleases
@@ -77,9 +81,9 @@ async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Re
         filt = FilterContributorsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
+        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e))) from e
     time_from, time_to, repos, meta_ids, prefixer, logical_settings = \
-        await _common_filter_preprocess(filt, request, strip_prefix=False)
+        await _common_filter_preprocess(filt, filt.in_, request, strip_prefix=False)
     settings = Settings.from_request(request, filt.account)
     release_settings = await settings.list_release_matches(repos)
     repos = [r.split("/", 1)[1] for r in repos]
@@ -116,9 +120,9 @@ async def filter_repositories(request: AthenianWebRequest, body: dict) -> web.Re
         filt = FilterRepositoriesRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
+        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e))) from e
     time_from, time_to, repos, meta_ids, prefixer, logical_settings = \
-        await _common_filter_preprocess(filt, request, strip_prefix=False)
+        await _common_filter_preprocess(filt, filt.in_, request, strip_prefix=False)
     settings = Settings.from_request(request, filt.account)
     release_settings = await settings.list_release_matches(repos)
     repos = [r.split("/", 1)[1] for r in repos]
@@ -129,12 +133,8 @@ async def filter_repositories(request: AthenianWebRequest, body: dict) -> web.Re
     return web.json_response(repos)
 
 
-async def _common_filter_preprocess(filt: Union[FilterReleasesRequest,
-                                                FilterRepositoriesRequest,
-                                                FilterPullRequestsRequest,
-                                                FilterCommitsRequest,
-                                                FilterCodeChecksRequest,
-                                                FilterDeploymentsRequest],
+async def _common_filter_preprocess(filt: CommonFilterProperties,
+                                    repos: Optional[List[str]],
                                     request: AthenianWebRequest,
                                     strip_prefix=True,
                                     ) -> Tuple[datetime,
@@ -155,20 +155,31 @@ async def _common_filter_preprocess(filt: Union[FilterReleasesRequest,
         tzoffset = timedelta(minutes=-filt.timezone)
         time_from += tzoffset
         time_to += tzoffset
+    repos, meta_ids, prefixer, logical_settings = await _repos_preprocess(
+        repos, filt.account, request, strip_prefix=strip_prefix)
+    return time_from, time_to, repos, meta_ids, prefixer, logical_settings
 
+
+async def _repos_preprocess(repos: Optional[List[str]],
+                            account: int,
+                            request: AthenianWebRequest,
+                            strip_prefix=True,
+                            ) -> Tuple[Set[str],
+                                       Tuple[int, ...],
+                                       Prefixer,
+                                       LogicalRepositorySettings]:
     async def login_loader() -> str:
         return (await request.user()).login
 
-    meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
+    meta_ids = await get_metadata_account_ids(account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
-    settings = Settings.from_request(request, filt.account)
+    settings = Settings.from_request(request, account)
     logical_settings = await settings.list_logical_repositories(prefixer)
     repos, _ = await resolve_repos(
-        filt.in_, filt.account, request.uid, login_loader, logical_settings, meta_ids,
-        request.sdb, request.mdb, request.cache, request.app["slack"],
+        repos, account, request.uid, login_loader, logical_settings,
+        meta_ids, request.sdb, request.mdb, request.cache, request.app["slack"],
         strip_prefix=strip_prefix)
-    prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
-    return time_from, time_to, repos, meta_ids, prefixer, logical_settings
+    return repos, meta_ids, prefixer, logical_settings
 
 
 async def resolve_filter_prs_parameters(filt: FilterPullRequestsRequest,
@@ -183,7 +194,7 @@ async def resolve_filter_prs_parameters(filt: FilterPullRequestsRequest,
                                                    Tuple[int, ...]]:
     """Infer all the required PR filters from the request."""
     time_from, time_to, repos, meta_ids, prefixer, logical_settings = \
-        await _common_filter_preprocess(filt, request, strip_prefix=False)
+        await _common_filter_preprocess(filt, filt.in_, request, strip_prefix=False)
     events = set(getattr(PullRequestEvent, e.upper()) for e in (filt.events or []))
     stages = set(getattr(PullRequestStage, s.upper()) for s in (filt.stages or []))
     if not events and not stages:
@@ -216,7 +227,7 @@ async def filter_prs(request: AthenianWebRequest, body: dict) -> web.Response:
         filt = FilterPullRequestsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
+        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e))) from e
     time_from, time_to, repos, events, stages, participants, labels, jira, account_bots, \
         release_settings, logical_settings, prefixer, meta_ids = \
         await resolve_filter_prs_parameters(filt, request)
@@ -300,9 +311,9 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
         filt = FilterCommitsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
+        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e))) from e
     time_from, time_to, repos, meta_ids, prefixer, _ = \
-        await _common_filter_preprocess(filt, request)
+        await _common_filter_preprocess(filt, filt.in_, request)
     with_author = [s.rsplit("/", 1)[1] for s in (filt.with_author or [])]
     with_committer = [s.rsplit("/", 1)[1] for s in (filt.with_committer or [])]
     log = logging.getLogger("filter_commits")
@@ -384,9 +395,9 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
         filt = FilterReleasesRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
+        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e))) from e
     time_from, time_to, repos, meta_ids, prefixer, logical_settings = \
-        await _common_filter_preprocess(filt, request, strip_prefix=False)
+        await _common_filter_preprocess(filt, filt.in_, request, strip_prefix=False)
     stripped_repos = [r.split("/", 1)[1] for r in repos]
     settings = Settings.from_request(request, filt.account)
     release_settings, jira_ids, (branches, default_branches), participants = \
@@ -622,18 +633,11 @@ async def _build_github_prs_response(prs: List[PullRequestListItem],
 @weight(0.5)
 async def filter_labels(request: AthenianWebRequest, body: dict) -> web.Response:
     """Find labels used in the given repositories."""
-    body = FilterLabelsRequest.from_dict(body)
-
-    async def login_loader() -> str:
-        return (await request.user()).login
-
-    meta_ids = await get_metadata_account_ids(body.account, request.sdb, request.cache)
-    prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
-    settings = Settings.from_request(request, body.account)
-    logical_settings = await settings.list_logical_repositories(prefixer)
-    repos, _ = await resolve_repos(
-        body.repositories, body.account, request.uid, login_loader, logical_settings, meta_ids,
-        request.sdb, request.mdb, request.cache, request.app["slack"])
+    try:
+        filt = FilterLabelsRequest.from_dict(body)
+    except ValueError as e:
+        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e))) from e
+    repos, meta_ids, _, _ = await _repos_preprocess(filt.repositories, filt.account, request)
     labels = await mine_labels(repos, meta_ids, request.mdb, request.cache)
     labels = [FilteredLabel(**label) for label in labels]
     return model_response(labels)
@@ -708,9 +712,9 @@ async def filter_code_checks(request: AthenianWebRequest, body: dict) -> web.Res
         filt = FilterCodeChecksRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
+        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e))) from e
     (time_from, time_to, repos, meta_ids, prefixer, logical_settings), jira_ids = await gather(
-        _common_filter_preprocess(filt, request, strip_prefix=True),
+        _common_filter_preprocess(filt, filt.in_, request, strip_prefix=True),
         get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
     )
     timeline, check_runs = await filter_check_runs(
@@ -742,9 +746,9 @@ async def filter_deployments(request: AthenianWebRequest, body: dict) -> web.Res
         filt = FilterDeploymentsRequest.from_dict(body)
     except ValueError as e:
         # for example, passing a date with day=32
-        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
+        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e))) from e
     (time_from, time_to, repos, meta_ids, prefixer, logical_settings), jira_ids = await gather(
-        _common_filter_preprocess(filt, request, strip_prefix=False),
+        _common_filter_preprocess(filt, filt.in_, request, strip_prefix=False),
         get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
     )
     repos = [r.split("/", 1)[1] for r in repos]
@@ -912,4 +916,19 @@ async def _build_deployments_response(df: pd.DataFrame,
 
 async def filter_environments(request: AthenianWebRequest, body: dict) -> web.Response:
     """List the deployment environments."""
-    raise NotImplementedError
+    try:
+        filt = FilterEnvironmentsRequest.from_dict(body)
+    except ValueError as e:
+        # for example, passing a date with day=32
+        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e))) from e
+    time_from, time_to, repos, _, prefixer, _ = await _common_filter_preprocess(
+        filt, filt.repositories, request)
+    try:
+        envs = await mine_environments(repos if filt.repositories else None, time_from, time_to,
+                                       prefixer, filt.account, request.rdb, request.cache)
+    except NoDeploymentNotificationsError as e:
+        raise ResponseError(NoSourceDataError(
+            detail="Submit at least one deployment notification with `/events/deployments`.",
+        )) from e
+    envs = [FilteredEnvironment(**env) for env in envs]
+    return model_response(envs)

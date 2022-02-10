@@ -517,3 +517,12 @@ class PullRequestCheckRun:
         check_suite_conclusion: [ascii]
         check_suite_status: [ascii]
         name: [str]
+
+
+@dataclass(slots=True, frozen=True)
+class Environment:
+    """Mined deployment environment facts."""
+
+    name: str
+    deployments_count: int
+    last_conclusion: str

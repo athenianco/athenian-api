@@ -5,13 +5,14 @@ from typing import Collection, Dict, List, Optional, Tuple
 
 import aiomcache
 import pandas as pd
-from sqlalchemy import and_, join, select
+from sqlalchemy import and_, func, join, select, union_all
 
 from athenian.api.async_utils import gather, read_sql_query
-from athenian.api.cache import cached, middle_term_exptime
+from athenian.api.cache import cached, middle_term_exptime, short_term_exptime
+from athenian.api.controllers.logical_repos import drop_logical_repo
 from athenian.api.controllers.miners.github.logical import split_logical_deployed_components
 from athenian.api.controllers.miners.types import DeployedComponent as DeployedComponentDC, \
-    Deployment, DeploymentConclusion
+    Deployment, DeploymentConclusion, Environment
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import LogicalRepositorySettings
 from athenian.api.db import Database
@@ -172,3 +173,85 @@ def group_deployed_labels_df(df: pd.DataFrame) -> pd.DataFrame:
         df.reset_index(drop=True, inplace=True)
     grouped_labels.set_index("deployment_name", drop=True, inplace=True)
     return grouped_labels
+
+
+class NoDeploymentNotificationsError(Exception):
+    """Indicate 0 deployment notifications for the account in total."""
+
+
+@sentry_span
+@cached(
+    exptime=short_term_exptime,
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda repos, time_from, time_to, **_: (
+        ",".join(sorted(repos if repos else [])),
+        time_from.timestamp(),
+        time_to.timestamp(),
+    ),
+)
+async def mine_environments(repos: Optional[List[str]],
+                            time_from: datetime,
+                            time_to: datetime,
+                            prefixer: Prefixer,
+                            account: int,
+                            rdb: Database,
+                            cache: Optional[aiomcache.Client],
+                            ) -> List[Environment]:
+    """
+    Fetch unique deployment environments according to the filters.
+
+    The output should be sorted by environment name.
+    """
+    filters = [
+        DeploymentNotification.account_id == account,
+        DeploymentNotification.started_at >= time_from,
+        DeploymentNotification.finished_at < time_to,
+    ]
+    if repos:
+        repo_name_to_node = prefixer.repo_name_to_node.__getitem__
+        repo_node_ids = {repo_name_to_node(drop_logical_repo(r)) for r in repos}
+        core = join(DeploymentNotification, DeployedComponent, and_(
+            DeploymentNotification.account_id == DeployedComponent.account_id,
+            DeploymentNotification.name == DeployedComponent.deployment_name,
+        ))
+        filters.append(DeployedComponent.repository_node_id.in_(repo_node_ids))
+    else:
+        core = DeploymentNotification
+    query = (
+        select([
+            DeploymentNotification.environment,
+            func.count(DeploymentNotification.name).label("deployments_count"),
+            func.max(DeploymentNotification.finished_at).label("latest_finished_at"),
+        ])
+        .select_from(core)
+        .where(and_(*filters))
+        .group_by(DeploymentNotification.environment)
+        .order_by(DeploymentNotification.environment)
+    )
+    rows = await rdb.fetch_all(query)
+    envs = {r[0]: r for r in rows}
+    if not envs:
+        has_notifications = await rdb.fetch_val(
+            select([func.count(DeploymentNotification.name)])
+            .where(DeploymentNotification.account_id == account))
+        if not has_notifications:
+            raise NoDeploymentNotificationsError()
+    queries = [
+        select([
+            DeploymentNotification.environment,
+            DeploymentNotification.conclusion,
+        ]).where(and_(
+            DeploymentNotification.account_id == account,
+            DeploymentNotification.environment == env,
+            DeploymentNotification.finished_at == envs[env]["latest_finished_at"],
+        ))
+        for env in envs
+    ]
+    query = union_all(*queries) if len(queries) > 1 else queries[0]
+    rows = await rdb.fetch_all(query)
+    conclusions = {r[0]: r[1] for r in rows}
+    return [Environment(name=key,
+                        deployments_count=val["deployments_count"],
+                        last_conclusion=conclusions[key])
+            for key, val in envs.items()]

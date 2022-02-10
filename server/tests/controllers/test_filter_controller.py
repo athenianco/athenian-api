@@ -17,12 +17,13 @@ from athenian.api.controllers.miners.github.release_mine import mine_releases
 from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import Release
-from athenian.api.models.persistentdata.models import ReleaseNotification
+from athenian.api.models.persistentdata.models import DeployedComponent as DBDeployedComponent, \
+    DeploymentNotification as DBDeploymentNotification, ReleaseNotification
 from athenian.api.models.precomputed.models import GitHubRelease
 from athenian.api.models.state.models import AccountJiraInstallation, ReleaseSetting
 from athenian.api.models.web import CommitsList, DeployedComponent, DeploymentNotification, \
-    FilteredCodeCheckRuns, FilteredLabel, PullRequestEvent, PullRequestParticipant, \
-    PullRequestSet, PullRequestStage, ReleaseSet
+    FilteredCodeCheckRuns, FilteredEnvironment, FilteredLabel, PullRequestEvent, \
+    PullRequestParticipant, PullRequestSet, PullRequestStage, ReleaseSet
 from athenian.api.models.web.diffed_releases import DiffedReleases
 from athenian.api.models.web.filtered_deployments import FilteredDeployments
 from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME
@@ -2383,3 +2384,63 @@ async def test_filter_deployments_nasty_input(
         method="POST", path="/v1/filter/deployments", headers=headers, json=body)
     response_text = (await response.read()).decode("utf-8")
     assert response.status == status, response_text
+
+
+@pytest.mark.parametrize("repos", [None, ["github.com/src-d/go-git"]])
+async def test_filter_environments_smoke(client, headers, repos, sample_deployments, rdb):
+    body = {
+        "account": 1,
+        "date_from": "2017-01-01",
+        "date_to": "2018-06-01",
+        **({"repositories": repos} if repos else {}),
+    }
+    await rdb.execute(delete(DBDeployedComponent)
+                      .where(DBDeployedComponent.deployment_name == "canary_2018_01_12"))
+    await rdb.execute(delete(DBDeploymentNotification)
+                      .where(DBDeploymentNotification.name == "canary_2018_01_12"))
+    response = await client.request(
+        method="POST", path="/v1/filter/environments", headers=headers, json=body)
+    response_text = (await response.read()).decode("utf-8")
+    assert response.status == 200, response_text
+    envs = [FilteredEnvironment.from_dict(x) for x in json.loads(response_text)]
+    assert envs == [
+        FilteredEnvironment(name="canary", deployments_count=2, last_conclusion="SUCCESS"),
+        FilteredEnvironment(name="production", deployments_count=3, last_conclusion="FAILURE"),
+        FilteredEnvironment(name="staging", deployments_count=3, last_conclusion="FAILURE"),
+    ]
+
+
+@pytest.mark.parametrize("account, date_from, date_to, repos, status", [
+    (1, "2018-01-12", "2020-01-12", ["github.com/athenianco/athenian-api"], 403),
+    (3, "2018-01-12", "2020-01-12", ["github.com/src-d/go-git"], 404),
+    (1, "2020-01-12", "2018-01-12", ["github.com/src-d/go-git"], 400),
+    (1, "2018-01-12", "2020-01-12", None, 400),
+    (2, "2018-01-12", "2020-01-12", [], 422),
+    (None, "2018-01-12", "2020-01-12", ["github.com/src-d/go-git"], 400),
+])
+async def test_filter_environments_nasty_input(
+        client, headers, sample_deployments, account, date_from, date_to, repos, status):
+    body = {
+        "account": account,
+        "date_from": date_from,
+        "date_to": date_to,
+        "repositories": repos,
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/environments", headers=headers, json=body)
+    response_text = (await response.read()).decode("utf-8")
+    assert response.status == status, response_text
+
+
+async def test_filter_environments_422(client, headers, rdb):
+    body = {
+        "account": 1,
+        "date_from": "2016-01-01",
+        "date_to": "2020-01-01",
+    }
+    await rdb.execute(delete(DBDeployedComponent))
+    await rdb.execute(delete(DBDeploymentNotification))
+    response = await client.request(
+        method="POST", path="/v1/filter/environments", headers=headers, json=body)
+    response_text = (await response.read()).decode("utf-8")
+    assert response.status == 422, response_text
