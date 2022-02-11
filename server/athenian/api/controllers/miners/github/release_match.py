@@ -736,8 +736,7 @@ class ReleaseToPullRequestMapper:
             .where(and_(item, prel.acc_id == account))
             .group_by(prel.repository_full_name)
             for item in or_items))
-        rows = await pdb.fetch_all(query)
-        result = {r[0]: r[1] for r in rows}
+        result = dict(await pdb.fetch_all(query))
         if pdb.url.dialect == "sqlite":
             for key, val in result.items():
                 result[key] = val.replace(tzinfo=timezone.utc)
@@ -808,8 +807,8 @@ class ReleaseToPullRequestMapper:
             await defer(insert_or_ignore(
                 GitHubRepository, values, "_fetch_repository_first_commit_dates", pdb,
             ), "insert_repository_first_commit_dates")
-            rows.extend(computed)
-        result = {r[0]: r[1] for r in rows}
+            rows.extend((r[:2] for r in computed))
+        result = dict(rows)
         if mdb.url.dialect == "sqlite" or pdb.url.dialect == "sqlite":
             for k, v in result.items():
                 result[k] = v.replace(tzinfo=timezone.utc)

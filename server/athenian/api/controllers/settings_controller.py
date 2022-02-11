@@ -110,11 +110,10 @@ async def get_jira_projects(request: AthenianWebRequest,
         for r in stats
     }
     keys = [r[Project.key.name] for r in projects]
-    settings = await sdb.fetch_all(
+    settings = dict(await sdb.fetch_all(
         select([JIRAProjectSetting.key, JIRAProjectSetting.enabled])
         .where(and_(JIRAProjectSetting.account_id == id,
-                    JIRAProjectSetting.key.in_(keys))))
-    settings = {r[0]: r[1] for r in settings}
+                    JIRAProjectSetting.key.in_(keys)))))
     models = [
         JIRAProject(name=r[Project.name.name],
                     key=r[Project.key.name],
