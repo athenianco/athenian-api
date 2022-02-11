@@ -3,7 +3,7 @@ from functools import lru_cache, wraps
 from typing import List, Optional
 
 import numpy as np
-from pandas import Index, MultiIndex, Series, set_option
+from pandas import DataFrame, Index, MultiIndex, Series, set_option
 from pandas.core import algorithms
 from pandas.core.arrays import DatetimeArray, datetimes
 from pandas.core.arrays.datetimelike import DatetimeLikeArrayMixin
@@ -31,6 +31,11 @@ def nan_to_none_return(func):
     return wrapped_nan_to_none_return
 
 
+def _disable_consolidate(self):
+    self._consolidate_inplace = lambda: None
+    self._mgr._consolidate_inplace = lambda: None
+
+
 def patch_pandas():
     """
     Patch pandas internals to increase performance on small DataFrame-s.
@@ -46,7 +51,9 @@ def patch_pandas():
     set_option("mode.chained_assignment", "raise")
     obj_dtype = np.dtype("O")
 
-    # nor required for 1.3.0+
+    DataFrame.disable_consolidate = _disable_consolidate
+
+    # not required for 1.3.0+
     # backport https://github.com/pandas-dev/pandas/pull/34414
     _MergeOperation._maybe_add_join_keys = _maybe_add_join_keys
 

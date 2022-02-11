@@ -1,15 +1,16 @@
 # cython: language_level=3, boundscheck=False, nonecheck=False, optimize.unpack_method_calls=True
 # cython: warn.maybe_uninitialized=True
 # distutils: language = c++
+# distutils: extra_compile_args = -mavx2 -ftree-vectorize
 
 from typing import Any, List, Sequence, Tuple
 
-import asyncpg
-import numpy as np
-
 cimport cython
 from cpython cimport PyObject
-from numpy cimport ndarray
+from numpy cimport ndarray, npy_bool, PyArray_DATA
+
+import asyncpg
+import numpy as np
 
 
 cdef extern from "asyncpg_recordobj.h":
@@ -21,6 +22,7 @@ cdef extern from "Python.h":
     # these are the macros that read directly from the internal ob_items
     PyObject *PyList_GET_ITEM(PyObject *, Py_ssize_t) nogil
     PyObject *PyTuple_GET_ITEM(PyObject *, Py_ssize_t) nogil
+    PyObject *Py_True
 
 
 @cython.boundscheck(False)
@@ -92,3 +94,25 @@ def to_object_arrays_split(rows: List[Sequence[Any]],
                 result_obj[j, i] = row[obj_indexes_arr[j]]
 
     return result_typed, result_obj
+
+
+def as_bool(arr: np.ndarray) -> np.ndarray:
+    if arr.dtype == bool:
+        return arr
+    assert arr.dtype == object
+    assert arr.data.c_contiguous
+    assert len(arr.shape) == 1
+    new_arr = np.empty(len(arr), dtype=bool)
+    _as_bool(<const PyObject **>PyArray_DATA(arr), len(arr), <npy_bool *>PyArray_DATA(new_arr))
+    return new_arr
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef void _as_bool(const PyObject **obj_arr,
+                   const int size,
+                   npy_bool *out_arr) nogil:
+    cdef int i
+    for i in range(size):
+        # Py_None and Py_False become 0
+        out_arr[i] = obj_arr[i] == Py_True
