@@ -178,6 +178,7 @@ async def mine_check_runs(time_from: datetime,
             title_column=pull_request_title_column)
         df.reset_index(inplace=True, drop=True)
 
+    df._consolidate_inplace()
     return df
 
 
@@ -650,6 +651,7 @@ async def mine_commit_check_runs(commit_ids: Iterable[int],
     df[CheckRun.completed_at.name] = df[CheckRun.completed_at.name].astype(
         df[CheckRun.started_at.name].dtype)
     df, *_ = await _disambiguate_pull_requests(df, False, log, meta_ids, mdb)
+    df._consolidate_inplace()
     return _finalize_check_runs(df, log)
 
 
