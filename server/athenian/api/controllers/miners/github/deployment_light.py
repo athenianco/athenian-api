@@ -249,8 +249,7 @@ async def mine_environments(repos: Optional[List[str]],
         for env in envs
     ]
     query = union_all(*queries) if len(queries) > 1 else queries[0]
-    rows = await rdb.fetch_all(query)
-    conclusions = {r[0]: r[1] for r in rows}
+    conclusions = dict(await rdb.fetch_all(query))
     return [Environment(name=key,
                         deployments_count=val["deployments_count"],
                         last_conclusion=conclusions[key])

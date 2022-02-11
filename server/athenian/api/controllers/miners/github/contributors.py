@@ -1,6 +1,5 @@
 from collections import Counter, defaultdict
-from datetime import datetime, timedelta, timezone
-from itertools import chain
+from datetime import datetime
 import logging
 import marshal
 from typing import Any, Collection, Dict, List, Optional, Tuple
@@ -8,19 +7,21 @@ from typing import Any, Collection, Dict, List, Optional, Tuple
 import aiomcache
 import morcilla
 import sentry_sdk
-from sqlalchemy import and_, func, not_, select, union
+from sqlalchemy import and_, false, func, not_, or_, select, union, union_all
 from sqlalchemy.sql.functions import coalesce
 
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached, short_term_exptime
 from athenian.api.controllers.miners.github.bots import bots as fetch_bots
 from athenian.api.controllers.miners.github.branches import BranchMiner
-from athenian.api.controllers.miners.github.release_load import ReleaseLoader
+from athenian.api.controllers.miners.github.release_load import group_repos_by_release_match, \
+    match_groups_to_sql, ReleaseLoader
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseSettings
 from athenian.api.models.metadata.github import NodeCommit, NodeRepository, OrganizationMember, \
     PullRequest, PullRequestComment, PullRequestReview, PushCommit, Release, User
-from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts
+from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
+    GitHubRelease as PrecomputedRelease
 from athenian.api.models.state.models import Team
 from athenian.api.tracing import sentry_span
 
@@ -91,23 +92,24 @@ async def mine_contributors(repos: Collection[str],
         else:
             prs_opts = [True]
         tasks = [
-            pdb.fetch_all(select([ghdprf.author, ghdprf.pr_node_id])
+            pdb.fetch_all(select([ghdprf.author, func.count(ghdprf.pr_node_id)])
                           .where(and_(ghdprf.format_version == format_version,
                                       ghdprf.repository_full_name.in_(repos),
                                       ghdprf.acc_id == account,
                                       ghdprf.pr_done_at.between(time_from, time_to)
                                       if has_times else True))
-                          .distinct()),
-            mdb.fetch_all(union(*(select([PullRequest.user_login, PullRequest.node_id])
+                          .group_by(ghdprf.author)),
+            mdb.fetch_all(union(*(select([PullRequest.user_login, func.count(PullRequest.node_id)])
                                   .where(and_(*common_prs_where(), prs_opt))
+                                  .group_by(PullRequest.user_login)
                                   for prs_opt in prs_opts))),
         ]
         released, main = await gather(*tasks)
         user_node_to_login_get = prefixer.user_node_to_login.get
         return {
-            "author": Counter(user for user, _ in set(chain(
-                ((user_node_to_login_get(r[0]), r[1]) for r in released),
-                ((r[0], r[1]) for r in main)))
+            "author": (
+                Counter({user_node_to_login_get(r[0]): r[1] for r in released})
+                + Counter(dict(main))
             ).items(),
         }
 
@@ -144,14 +146,10 @@ async def mine_contributors(repos: Collection[str],
                 .group_by(NodeCommit.committer_user_id)),
         ]
         authors, committers = await gather(*tasks)
-        user_ids = set(r[0] for r in authors).union(r[0] for r in committers)
-        logins = await mdb.fetch_all(select([User.node_id, User.login])
-                                     .where(and_(User.node_id.in_(user_ids),
-                                                 User.acc_id.in_(meta_ids))))
-        logins = {r[0]: r[1] for r in logins}
+        user_node_to_login = prefixer.user_node_to_login.get
         return {
-            "commit_committer": [(logins[r[0]], r[1]) for r in committers if r[0] in logins],
-            "commit_author": [(logins[r[0]], r[1]) for r in authors if r[0] in logins],
+            "commit_committer": [(user_node_to_login(r[0]), r[1]) for r in committers],
+            "commit_author": [(user_node_to_login(r[0]), r[1]) for r in authors],
         }
 
     @sentry_span
@@ -184,17 +182,36 @@ async def mine_contributors(repos: Collection[str],
     async def fetch_releaser():
         if has_times:
             rt_from, rt_to = time_from, time_to
+            releases, _ = await ReleaseLoader.load_releases(
+                repos, branches, default_branches, rt_from, rt_to,
+                release_settings, logical_settings, prefixer,
+                account, meta_ids, mdb, pdb, rdb, cache,
+                force_fresh=force_fresh_releases)
+            counts = releases[Release.author.name].value_counts()
+            counts = zip(counts.index.values, counts.values)
         else:
-            rt_from = datetime(1970, 1, 1, tzinfo=timezone.utc)
-            now = datetime.now(timezone.utc) + timedelta(days=1)
-            rt_to = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
-        releases, _ = await ReleaseLoader.load_releases(
-            repos, branches, default_branches, rt_from, rt_to,
-            release_settings, logical_settings, prefixer, account, meta_ids, mdb, pdb, rdb, cache,
-            force_fresh=force_fresh_releases)
-        counts = releases[Release.author.name].value_counts()
+            # we may load 200,000 releases here, must optimize and sacrifice precision
+            prel = PrecomputedRelease
+            or_items, _ = match_groups_to_sql(group_repos_by_release_match(
+                repos, default_branches, release_settings)[0], prel)
+            if pdb.url.dialect == "sqlite":
+                query = (
+                    select([prel.author_node_id, func.count(prel.node_id)])
+                    .where(and_(or_(*or_items) if or_items else false(),
+                                prel.acc_id == account))
+                    .group_by(prel.author_node_id)
+                )
+            else:
+                query = union_all(*(
+                    select([prel.author_node_id, func.count(prel.node_id)])
+                    .where(and_(item, prel.acc_id == account))
+                    .group_by(prel.author_node_id)
+                    for item in or_items))
+            rows = await pdb.fetch_all(query)
+            user_node_to_login = prefixer.user_node_to_login.get
+            counts = [(user_node_to_login(r[0]), r[1]) for r in rows]
         return {
-            "releaser": zip(counts.index.values, counts.values),
+            "releaser": counts,
         }
 
     fetchers_mapping = {

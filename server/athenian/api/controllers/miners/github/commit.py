@@ -89,10 +89,9 @@ async def extract_commits(prop: FilterCommitsProperty,
     if with_committer:
         user_logins.update(with_committer)
     if user_logins:
-        rows = await mdb.fetch_all(
+        user_ids = dict(await mdb.fetch_all(
             select([User.login, User.node_id])
-            .where(and_(User.login.in_(user_logins), User.acc_id.in_(meta_ids))))
-        user_ids = {r[0]: r[1] for r in rows}
+            .where(and_(User.login.in_(user_logins), User.acc_id.in_(meta_ids)))))
         del user_logins
     else:
         user_ids = {}

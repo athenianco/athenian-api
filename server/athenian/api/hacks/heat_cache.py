@@ -307,9 +307,9 @@ async def notify_almost_expired_accounts(sdb: Database,
     """Find accounts that will expire in 24h and report them on Slack."""
     right = datetime.now(timezone.utc) + timedelta(days=1)
     left = right - timedelta(hours=1)
-    accounts = {r[0]: r[1] for r in await sdb.fetch_all(
+    accounts = dict(await sdb.fetch_all(
         select([Account.id, Account.expires_at])
-        .where(Account.expires_at.between(left, right)))}
+        .where(Account.expires_at.between(left, right))))
     if not accounts:
         return
     log.info("Notifying about almost expired accounts: %s", sorted(accounts))
@@ -321,11 +321,11 @@ async def notify_almost_expired_accounts(sdb: Database,
         ),
         *(get_metadata_account_ids_or_empty(acc, sdb, cache) for acc in accounts),
     )
-    users = {r[0]: r[1] for r in user_rows}
+    users = dict(user_rows)
     name_rows = await mdb.fetch_all(
         select([GitHubAccount.id, GitHubAccount.name])
         .where(GitHubAccount.id.in_(chain.from_iterable(meta_ids))))
-    names = {r[0]: r[1] for r in name_rows}
+    names = dict(name_rows)
     names = {acc: ", ".join(names[i] for i in m) for acc, m in zip(accounts, meta_ids)}
     tasks = [
         slack.post_account("almost_expired.jinja2",

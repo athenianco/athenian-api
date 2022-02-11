@@ -90,11 +90,10 @@ class BranchMiner:
             pos = next_pos
         if ambiguous_defaults:
             commit_ids = np.concatenate([rb[0] for rb in ambiguous_defaults.values()])
-            committed_dates = await mdb.fetch_all(
+            committed_dates = dict(await mdb.fetch_all(
                 select([NodeCommit.id, NodeCommit.committed_date])
                 .where(and_(NodeCommit.id.in_(commit_ids),
-                            NodeCommit.acc_id.in_(meta_ids))))
-            committed_dates = {r[0]: r[1] for r in committed_dates}
+                            NodeCommit.acc_id.in_(meta_ids)))))
             for repo, (repo_commit_ids, repo_branch_names) in ambiguous_defaults.items():
                 default_branch = max_date = None
                 for name, commit_id in zip(repo_branch_names, repo_commit_ids):
@@ -110,10 +109,10 @@ class BranchMiner:
                 default_branches[repo] = default_branch
         zero_branch_repos = [repo for repo in repos if repo not in default_branches]
         if zero_branch_repos:
-            rows = await mdb.fetch_all(select([Repository.node_id, Repository.full_name])
-                                       .where(and_(Repository.full_name.in_(zero_branch_repos),
-                                                   Repository.acc_id.in_(meta_ids))))
-            existing_zero_branch_repos = {r[0]: r[1] for r in rows}
+            existing_zero_branch_repos = dict(
+                await mdb.fetch_all(select([Repository.node_id, Repository.full_name])
+                                    .where(and_(Repository.full_name.in_(zero_branch_repos),
+                                                Repository.acc_id.in_(meta_ids)))))
             deleted_repos = set(zero_branch_repos) - set(existing_zero_branch_repos.values())
             if deleted_repos:
                 for repo in deleted_repos:
@@ -167,11 +166,10 @@ async def load_branch_commit_dates(branches: pd.DataFrame,
         branches[Branch.commit_date] = []
         return
     branch_commit_ids = branches[Branch.commit_id.name].values
-    rows = await mdb.fetch_all(
+    branch_commit_dates = dict(await mdb.fetch_all(
         select([NodeCommit.id, NodeCommit.committed_date])
         .where(and_(NodeCommit.id.in_(branch_commit_ids),
-                    NodeCommit.acc_id.in_(meta_ids))))
-    branch_commit_dates = {r[0]: r[1] for r in rows}
+                    NodeCommit.acc_id.in_(meta_ids)))))
     if mdb.url.dialect == "sqlite":
         branch_commit_dates = {k: v.replace(tzinfo=timezone.utc)
                                for k, v in branch_commit_dates.items()}
