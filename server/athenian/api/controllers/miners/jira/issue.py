@@ -30,6 +30,7 @@ from athenian.api.models.metadata.github import NodePullRequest, NodePullRequest
     NodeRepository, PullRequest
 from athenian.api.models.metadata.jira import AthenianIssue, Component, Epic, Issue, Status
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts
+from athenian.api.to_object_arrays import is_not_null
 from athenian.api.tracing import sentry_span
 
 
@@ -298,8 +299,8 @@ async def fetch_jira_issues(installation_ids: JIRAConfig,
         mdb, pr_cols, index=NodePullRequestJiraIssues.node_id.name,
     )
     # TODO(vmarkovtsev): load the "fresh" released PRs
-    existing_repos = np.flatnonzero(np.not_equal(
-        prs[PullRequest.repository_full_name.name].values, None))
+    existing_repos = np.flatnonzero(is_not_null(
+        prs[PullRequest.repository_full_name.name].values))
     if len(existing_repos) < len(prs):
         log.error(
             "Repositories referenced by github.node_pullrequest do not exist in "

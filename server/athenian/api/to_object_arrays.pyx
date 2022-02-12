@@ -22,6 +22,7 @@ cdef extern from "Python.h":
     # these are the macros that read directly from the internal ob_items
     PyObject *PyList_GET_ITEM(PyObject *, Py_ssize_t) nogil
     PyObject *PyTuple_GET_ITEM(PyObject *, Py_ssize_t) nogil
+    PyObject *Py_None
     PyObject *Py_True
 
 
@@ -116,3 +117,43 @@ cdef void _as_bool(const PyObject **obj_arr,
     for i in range(size):
         # Py_None and Py_False become 0
         out_arr[i] = obj_arr[i] == Py_True
+
+
+def is_null(arr: np.ndarray) -> np.ndarray:
+    if arr.dtype != object:
+        return np.zeros(len(arr), dtype=bool)
+    assert arr.data.c_contiguous
+    assert len(arr.shape) == 1
+    new_arr = np.zeros(len(arr), dtype=bool)
+    _is_null(<const PyObject **>PyArray_DATA(arr), len(arr), <npy_bool *>PyArray_DATA(new_arr))
+    return new_arr
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef void _is_null(const PyObject **obj_arr,
+                   const int size,
+                   npy_bool *out_arr) nogil:
+    cdef int i
+    for i in range(size):
+        out_arr[i] = obj_arr[i] == Py_None
+
+
+def is_not_null(arr: np.ndarray) -> np.ndarray:
+    if arr.dtype != object:
+        return np.ones(len(arr), dtype=bool)
+    assert arr.data.c_contiguous
+    assert len(arr.shape) == 1
+    new_arr = np.zeros(len(arr), dtype=bool)
+    _is_not_null(<const PyObject **>PyArray_DATA(arr), len(arr), <npy_bool *>PyArray_DATA(new_arr))
+    return new_arr
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef void _is_not_null(const PyObject **obj_arr,
+                       const int size,
+                       npy_bool *out_arr) nogil:
+    cdef int i
+    for i in range(size):
+        out_arr[i] = obj_arr[i] != Py_None

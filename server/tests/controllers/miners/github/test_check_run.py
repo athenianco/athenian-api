@@ -116,7 +116,7 @@ def alternative_facts() -> pd.DataFrame:
                 CheckRun.pull_request_closed_at,
                 CheckRun.committed_date):
         df[col.name] = df[col.name].astype(np.datetime64)
-    df = _split_duplicate_check_runs(df)
+    _split_duplicate_check_runs(df)
     _postprocess_check_runs(df)
     return df
 
@@ -131,11 +131,11 @@ def test_mark_check_suite_types_real_world(alternative_facts):
     assert (suite_indexes < len(alternative_facts)).all()
     assert (suite_indexes >= 0).all()
     unique_groups, counts = np.unique(group_ids, return_counts=True)
-    assert_array_equal(unique_groups, np.arange(21))
+    assert_array_equal(unique_groups, np.arange(29))
     assert_array_equal(
         counts,
-        [1, 1, 110, 1, 275, 1, 928, 369, 2, 1472, 8490,
-         1, 707, 213, 354, 205, 190, 61, 731, 251, 475])
+        [1, 2, 1, 2, 595, 1, 351, 1, 1, 364, 312, 1, 11478, 230, 1, 183, 66, 251,
+         1, 759, 1, 247, 441, 1, 3, 973, 1202, 2, 1997])
 
 
 async def test_check_run_maximum_processed_check_runs(mdb):

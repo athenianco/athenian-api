@@ -14,7 +14,7 @@ from athenian.api.controllers.miners.github.check_run import _calculate_check_su
     pull_request_merged_column, pull_request_started_column, pull_request_title_column
 from athenian.api.int_to_str import int_to_str
 from athenian.api.models.metadata.github import CheckRun, NodePullRequest, NodePullRequestCommit
-from athenian.api.to_object_arrays import as_bool
+from athenian.api.to_object_arrays import as_bool, is_null
 
 
 def _disambiguate_pull_requests(df: pd.DataFrame,
@@ -25,7 +25,7 @@ def _disambiguate_pull_requests(df: pd.DataFrame,
     with_logical_repo_support = False
     # cast pull_request_node_id to int
     pr_node_ids = df[CheckRun.pull_request_node_id.name].values
-    pr_node_ids[np.equal(pr_node_ids, None)] = 0
+    pr_node_ids[is_null(pr_node_ids)] = 0
     df[CheckRun.pull_request_node_id.name] = pr_node_ids = pr_node_ids.astype(int, copy=False)
 
     check_run_node_ids = df[CheckRun.check_run_node_id.name].values.astype(int, copy=False)
@@ -202,9 +202,8 @@ def _benchmark_postprocess(df, log, pr_lifetimes, pr_commit_counts):
 
     # "Re-run jobs" may produce duplicate check runs in the same check suite, split them
     # in separate artificial check suites by enumerating in chronological order
-    df_len = len(df)
-    df = _split_duplicate_check_runs(df)
-    log.info("split %d / %d", len(df) - df_len, df_len)
+    split = _split_duplicate_check_runs(df)
+    log.info("split %d / %d", split, len(df))
 
     _postprocess_check_runs(df)
 

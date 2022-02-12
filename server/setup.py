@@ -35,6 +35,7 @@ setup(
     packages=find_packages(exclude=["tests"]),
     ext_modules=cythonize([str(p) for p in (
         code_root / "controllers" / "miners" / "github" / "dag_accelerated.pyx",
+        code_root / "controllers" / "miners" / "github" / "check_run_accelerated.pyx",
         code_root / "controllers" / "features" / "github" / "check_run_metrics_accelerated.pyx",
         code_root / "to_object_arrays.pyx",
     )]),
