@@ -1,5 +1,5 @@
 aiohttp==3.8.1
-connexion[aiohttp,swagger-ui]==2.9.0
+connexion[aiohttp,swagger-ui]==2.11.1
 openapi-spec-validator==0.3.2
 aiohttp_cors==0.7.0
 swagger-ui-bundle==0.0.9
