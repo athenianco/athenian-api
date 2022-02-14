@@ -27,7 +27,7 @@ async def test_filter_check_runs_monthly_quantiles(mdb, logical_settings):
         title="DCO", repository="src-d/go-git",
         last_execution_time=pd.Timestamp("2019-12-30T09:41:10+00").to_pydatetime(),
         last_execution_url="https://github.com/src-d/go-git/runs/367607194",
-        size_groups=[1, 3, 4, 5, 6],
+        size_groups=[1, 2, 3, 4, 5, 6],
         total_stats=CodeCheckRunListStats(
             count=383, successes=361, skips=0, critical=False, flaky_count=0,
             mean_execution_time=timedelta(seconds=0),

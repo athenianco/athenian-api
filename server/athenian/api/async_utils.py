@@ -21,7 +21,7 @@ from athenian.api.models.metadata.github import Base as MetadataBase
 from athenian.api.models.persistentdata.models import Base as PerdataBase
 from athenian.api.models.precomputed.models import GitHubBase as PrecomputedBase
 from athenian.api.models.state.models import Base as StateBase
-from athenian.api.to_object_arrays import to_object_arrays_split
+from athenian.api.to_object_arrays import is_null, to_object_arrays_split
 from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
 
 
@@ -264,7 +264,7 @@ def _convert_integer(arr: np.ndarray,
         try:
             return arr.astype(int), nulls
         except TypeError as e:
-            nulls = np.equal(arr, None)
+            nulls = is_null(arr)
             if not nulls.any() or not erase_null:
                 raise ValueError(f"Column {name} is not all-integer") from e
             log.error("fetched nulls instead of integers in %s", name)

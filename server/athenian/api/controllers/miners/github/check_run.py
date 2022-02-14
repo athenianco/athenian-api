@@ -18,6 +18,7 @@ from athenian.api.controllers.features.github.check_run_metrics_accelerated impo
     mark_check_suite_types
 from athenian.api.controllers.logical_repos import coerce_logical_repos, contains_logical_repos
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.controllers.miners.github.check_run_accelerated import split_duplicate_check_runs
 from athenian.api.controllers.miners.github.label import fetch_labels_to_filter, \
     find_left_prs_by_labels
 from athenian.api.controllers.miners.github.logical import split_logical_prs
@@ -27,7 +28,7 @@ from athenian.api.db import Database, DatabaseLike
 from athenian.api.int_to_str import int_to_str
 from athenian.api.models.metadata.github import CheckRun, CheckRunByPR, NodePullRequest, \
     NodePullRequestCommit, NodeRepository, PullRequestLabel
-from athenian.api.to_object_arrays import as_bool
+from athenian.api.to_object_arrays import as_bool, is_null
 from athenian.api.tracing import sentry_span
 
 
@@ -190,9 +191,8 @@ def _finalize_check_runs(df: pd.DataFrame, log: logging.Logger) -> pd.DataFrame:
 
     # "Re-run jobs" may produce duplicate check runs in the same check suite, split them
     # in separate artificial check suites by enumerating in chronological order
-    df_len = len(df)
-    df = _split_duplicate_check_runs(df)
-    log.info("split %d / %d", len(df) - df_len, df_len)
+    split = _split_duplicate_check_runs(df)
+    log.info("split %d / %d", split, len(df))
 
     _postprocess_check_runs(df)
 
@@ -209,7 +209,7 @@ async def _disambiguate_pull_requests(df: pd.DataFrame,
                                                  Tuple[pd.DataFrame, pd.DataFrame]]:
     # cast pull_request_node_id to int
     pr_node_ids = df[CheckRun.pull_request_node_id.name].values
-    pr_node_ids[np.equal(pr_node_ids, None)] = 0
+    pr_node_ids[is_null(pr_node_ids)] = 0
     df[CheckRun.pull_request_node_id.name] = pr_node_ids = pr_node_ids.astype(int, copy=False)
 
     check_run_node_ids = df[CheckRun.check_run_node_id.name].values.astype(int, copy=False)
@@ -547,10 +547,10 @@ def _merge_status_contexts(df: pd.DataFrame) -> pd.DataFrame:
     order = np.argsort(np.char.add(int_to_str(starteds.view(int)), statuses))
     df.disable_consolidate()
     df = df.take(order)
+    df.reset_index(inplace=True, drop=True)
     statuses = statuses[order]
     starteds = starteds[order]
     del order
-    df.reset_index(inplace=True, drop=True)
     # Important: we must sort in any case
     no_finish = np.flatnonzero(df[CheckRun.completed_at.name].isnull().values)
     if len(no_finish) == 0:
@@ -581,8 +581,8 @@ def _merge_status_contexts(df: pd.DataFrame) -> pd.DataFrame:
 
     # calculate the indexes of removed (merged) check runs
     drop_mask = np.zeros(len(no_finish_original), bool)
-    lengths = matched_lasts - 1 - matched_firsts
-    dropped = np.repeat(matched_lasts - 1 - lengths.cumsum(), lengths) + np.arange(lengths.sum())
+    lengths = matched_lasts - matched_firsts
+    dropped = np.repeat(matched_lasts - lengths.cumsum(), lengths) + np.arange(lengths.sum())
     drop_mask[dropped] = True
     dropped = no_finish_original[drop_mask]
 
@@ -591,22 +591,25 @@ def _merge_status_contexts(df: pd.DataFrame) -> pd.DataFrame:
     df[CheckRun.started_at.name].values[matched_indexes] = matched_first_starteds
     df[CheckRun.completed_at.name].values[matched_indexes] = starteds[matched_indexes]
     if len(dropped):
+        df.disable_consolidate()
         df.drop(index=dropped, inplace=True)
         df.reset_index(inplace=True, drop=True)
     return df
 
 
 @sentry_span
-def _split_duplicate_check_runs(df: pd.DataFrame) -> pd.DataFrame:
+def _split_duplicate_check_runs(df: pd.DataFrame) -> int:
     # DEV-2612 split older re-runs to artificial check suites
     # we require the df to be sorted by CheckRun.started_at
     if df.empty:
-        return df
-    dupe_index = df.groupby(
-        [CheckRun.check_suite_node_id.name, CheckRun.name.name], sort=False,
-    ).cumcount().values
-    check_suite_node_ids = (dupe_index << (64 - 8)) | df[CheckRun.check_suite_node_id.name].values
-    df[CheckRun.check_suite_node_id.name] = check_suite_node_ids
+        return 0
+    check_suite_node_ids = df[CheckRun.check_suite_node_id.name].values
+    split = split_duplicate_check_runs(
+        check_suite_node_ids,
+        df[CheckRun.name.name].values,
+        df[CheckRun.started_at.name].values.astype("datetime64[s]"))
+    if split == 0:
+        return 0
     check_run_conclusions = df[CheckRun.conclusion.name].values.astype("S")
     check_suite_conclusions = df[CheckRun.check_suite_conclusion.name].values
     successful = (
@@ -614,7 +617,6 @@ def _split_duplicate_check_runs(df: pd.DataFrame) -> pd.DataFrame:
     )
     # override the successful conclusion of the check suite if at least one check run's conclusion
     # does not agree
-    changed = False
     for c in ("TIMED_OUT", "CANCELLED", "FAILURE"):  # the order matters
         mask = successful & np.in1d(
             check_suite_node_ids,
@@ -622,11 +624,8 @@ def _split_duplicate_check_runs(df: pd.DataFrame) -> pd.DataFrame:
         )
         if mask.any():
             df[CheckRun.check_suite_conclusion.name].values[mask] = c
-            changed = True
-    if changed:
-        _calculate_check_suite_started(df)
-        df.reset_index(inplace=True, drop=True)
-    return df
+    _calculate_check_suite_started(df)
+    return split
 
 
 async def mine_commit_check_runs(commit_ids: Iterable[int],

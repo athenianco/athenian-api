@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import logging
 from pathlib import Path
 from typing import List
 
@@ -13,8 +14,8 @@ from athenian.api.controllers.features.github.check_run_metrics_accelerated impo
     calculate_interval_intersections
 from athenian.api.controllers.features.histogram import Histogram, Scale
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.check_run import _postprocess_check_runs, \
-    _split_duplicate_check_runs
+from athenian.api.controllers.miners.github.check_run import _finalize_check_runs, \
+    check_suite_started_column
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import CheckRun
 from athenian.api.models.web import CodeCheckMetricID
@@ -31,14 +32,14 @@ def metrics_calculator_force_cache(cache):
 
 
 @pytest.mark.parametrize("split_by_check_runs, suite_freqs, suite_sizes, metrics", [
-    (True, [[[983, 399, 495, 302, 7, 12]]], [1, 2, 3, 4, 5, 6],
-     [[982, 649, 333, 0, 591],
-      [399, 56, 343, 0, 188],
-      [495, 345, 150, 0, 314],
-      [302, 133, 169, 0, 194],
-      [7, 1, 6, 0, 4],
-      [12, 1, 11, 0, 10]]),
-    (False, [[[0]]], [], [[2197, 1185, 1012, 0, 1301]]),
+    (True, [[[1177, 558, 475, 193, 5, 11]]], [1, 2, 3, 4, 5, 6],
+     [[1176, 722, 454, 0, 687],
+      [558, 126, 432, 0, 298],
+      [475, 326, 149, 0, 305],
+      [193, 94, 99, 0, 123],
+      [5, 1, 4, 0, 3],
+      [11, 1, 10, 0, 10]]),
+    (False, [[[0]]], [], [[2418, 1270, 1148, 0, 1426]]),
 ])
 @with_defer
 async def test_check_run_metrics_suite_counts(
@@ -72,8 +73,8 @@ async def test_check_run_metrics_suite_counts(
 @pytest.mark.parametrize("metric, value", [
     (CodeCheckMetricID.SUITE_TIME, None),
     (CodeCheckMetricID.SUITE_TIME_PER_PR, None),
-    (CodeCheckMetricID.SUITES_PER_PR, 1.9682300090789795),
-    (CodeCheckMetricID.SUCCESS_RATIO, 0.5393718481063843),
+    (CodeCheckMetricID.SUITES_PER_PR, 2.1573374271392822),
+    (CodeCheckMetricID.SUCCESS_RATIO, 0.5252274870872498),
     (CodeCheckMetricID.PRS_WITH_CHECKS_COUNT, 661),
     (CodeCheckMetricID.FLAKY_COMMIT_CHECKS_COUNT, 0),
     (CodeCheckMetricID.PRS_MERGED_WITH_FAILED_CHECKS_COUNT, 238),
@@ -131,8 +132,8 @@ async def test_check_run_metrics_robust_quantiles(alternative_facts):
         [np.arange(len(alternative_facts))],
         )
     values = cls.values()[CodeCheckMetricID.ROBUST_SUITE_TIME]
-    assert values[0][0].value == timedelta(seconds=1919)
-    assert values[1][0].value == timedelta(seconds=18152)
+    assert values[0][0].value == timedelta(seconds=1806)
+    assert values[1][0].value == timedelta(seconds=2040)
 
 
 ii_starts = np.array([
@@ -243,27 +244,33 @@ def test_elapsed_time_per_concurrency_histogram():
 
 @pytest.fixture(scope="module")
 def alternative_facts() -> pd.DataFrame:
-    df = pd.read_csv(Path(__file__).parent / "check_runs.csv.gz")
+    df = pd.read_csv(Path(__file__).parent / "check_runs.csv.gz", index_col=0)
     for col in (CheckRun.started_at,
                 CheckRun.completed_at,
                 CheckRun.pull_request_created_at,
                 CheckRun.pull_request_closed_at,
-                CheckRun.committed_date):
-        df[col.name] = df[col.name].astype(np.datetime64)
-    df = _split_duplicate_check_runs(df)
-    _postprocess_check_runs(df)
+                CheckRun.committed_date,
+                check_suite_started_column):
+        col_name = col.name if not isinstance(col, str) else col
+        df[col_name] = df[col_name].astype(np.datetime64)
+    for col in [CheckRun.conclusion,
+                CheckRun.check_suite_conclusion,
+                CheckRun.author_user_id,
+                CheckRun.author_login]:
+        df[col.name].replace([np.nan], [None], inplace=True)
+    df = _finalize_check_runs(df, logging.getLogger("pytest.alternative_facts"))
     return df
 
 
 @pytest.mark.parametrize("metric, value", [
-    (CodeCheckMetricID.SUITE_TIME, timedelta(seconds=822)),
-    (CodeCheckMetricID.SUITE_TIME_PER_PR, timedelta(seconds=822)),
-    (CodeCheckMetricID.ROBUST_SUITE_TIME, timedelta(seconds=9770)),
-    (CodeCheckMetricID.CONCURRENCY, 1.497145652770996),
-    (CodeCheckMetricID.CONCURRENCY_MAX, 10),
+    (CodeCheckMetricID.SUITE_TIME, timedelta(seconds=807)),
+    (CodeCheckMetricID.SUITE_TIME_PER_PR, timedelta(seconds=876)),
+    (CodeCheckMetricID.ROBUST_SUITE_TIME, timedelta(seconds=822)),
+    (CodeCheckMetricID.CONCURRENCY, 1.4170825481414795),
+    (CodeCheckMetricID.CONCURRENCY_MAX, 8),
     (CodeCheckMetricID.ELAPSED_TIME_PER_CONCURRENCY, None),
-    (CodeCheckMetricID.SUITE_OCCUPANCY, 0.4226307272911072),
-    (CodeCheckMetricID.SUITE_CRITICAL_OCCUPANCY, 0.3870483636856079),
+    (CodeCheckMetricID.SUITE_OCCUPANCY, 0.42105716466903687),
+    (CodeCheckMetricID.SUITE_CRITICAL_OCCUPANCY, 0.42263346910476685),
     (CodeCheckMetricID.SUITE_IMBALANCE, timedelta(seconds=10)),
 ])
 def test_check_run_metrics_alternative_blitz(alternative_facts, metric, value):
