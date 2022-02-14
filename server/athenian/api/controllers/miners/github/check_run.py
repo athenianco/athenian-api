@@ -542,9 +542,14 @@ def _merge_status_contexts(df: pd.DataFrame) -> pd.DataFrame:
     # Required order:
     # PENDING, ERROR, FAILURE, SUCCESS
     statuses = df[CheckRun.status.name].values.astype("S", copy=False).copy()
-    statuses[statuses == b"PENDING"] = b"A"
+    statuses[statuses == b"PENDING"] = b"AAAAAAA"
     starteds = df[CheckRun.started_at.name].values
-    order = np.argsort(np.char.add(int_to_str(starteds.view(int)), statuses))
+    # we *must* sort by the these:
+    # 1. check run start time - general sequence
+    # 2. check run status, PENDING must be the first - for merges
+    # 3. check run name - for splits
+    names32 = np.array([s[:32] for s in df[CheckRun.name.name].values], dtype="U32").view("S128")
+    order = np.argsort(np.char.add(np.char.add(int_to_str(starteds.view(int)), statuses), names32))
     df.disable_consolidate()
     df = df.take(order)
     df.reset_index(inplace=True, drop=True)
