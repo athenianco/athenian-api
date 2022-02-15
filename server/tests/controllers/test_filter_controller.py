@@ -327,6 +327,7 @@ async def test_filter_contributors_merger_only(client, headers):
     assert mergers_logins == expected_mergers
 
 
+@pytest.mark.flaky(reruns=3, reruns_delay=1)
 @pytest.mark.filter_contributors
 async def test_filter_contributors_with_empty_and_full_roles(client, headers):
     all_roles = ["author", "reviewer", "commit_author", "commit_committer",
