@@ -106,12 +106,11 @@ async def mine_contributors(repos: Collection[str],
         ]
         released, main = await gather(*tasks)
         user_node_to_login_get = prefixer.user_node_to_login.get
-        return {
-            "author": (
-                Counter({user_node_to_login_get(r[0]): r[1] for r in released})
-                + Counter(dict(main))
-            ).items(),
-        }
+        sum_stats = (
+            Counter({user_node_to_login_get(r[0]): r[1] for r in released})
+            + Counter(dict(main))
+        )
+        return {"author": sum_stats.items()}
 
     @sentry_span
     async def fetch_reviewer():
