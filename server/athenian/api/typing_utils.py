@@ -326,6 +326,10 @@ class NumpyStruct(Mapping[str, Any]):
             kwargs_str = ""
         return f"{type(self).__name__}({kwargs_str}data={repr(self._data)})"
 
+    def sentry_repr(self) -> str:
+        """Override {}.__repr__() in Sentry."""
+        return repr(self)
+
     def __eq__(self, other) -> bool:
         """Compare this object to another."""
         if self is other:

@@ -59,6 +59,10 @@ class ReleaseMatchSetting:
         return 'ReleaseMatchSetting(branches="%s", tags="%s", events="%s", match=Match["%s"])' % (
             self.branches, self.tags, self.events, self.match.name)
 
+    def sentry_repr(self) -> str:
+        """Override {}.__repr__() in Sentry."""
+        return repr(self)
+
     def with_match(self, match: ReleaseMatch) -> "ReleaseMatchSetting":
         """Clone self and override the effective `match`."""
         return ReleaseMatchSetting(
@@ -132,6 +136,10 @@ class ReleaseSettings:
         """Implement repr(). Sentry requires very short summaries."""
         return f"<ReleaseSettings(...{len(self)} repositories...)>"
 
+    def sentry_repr(self) -> str:
+        """Override {}.__repr__() in Sentry."""
+        return repr(self)
+
     def __str__(self) -> str:
         """Implement str()."""
         return f"ReleaseSettings({repr(self._map_prefixed)})"
@@ -183,6 +191,10 @@ class CommonLogicalSettingsMixin:
     def __repr__(self) -> str:
         """Implement repr()."""
         return f"{type(self).__name__}({str(self)})"
+
+    def sentry_repr(self) -> str:
+        """Override {}.__repr__() in Sentry."""
+        return repr(self)
 
     def __bool__(self) -> bool:
         """Return True if there is at least one logical repository, otherwise, False."""
@@ -460,6 +472,10 @@ class LogicalRepositorySettings:
         """Implement repr()."""
         return f"LogicalRepositorySettings(prs={repr(self._prs)}, " \
                f"deployments={repr(self._deployments)})"
+
+    def sentry_repr(self) -> str:
+        """Override {}.__repr__() in Sentry."""
+        return repr(self)
 
     def has_logical_prs(self) -> bool:
         """Return value indicating whether there are any logical PR settings."""

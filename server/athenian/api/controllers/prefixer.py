@@ -134,3 +134,7 @@ class Prefixer:
         """Avoid spamming Sentry stacks."""
         return f"<Prefixer with {len(self.repo_node_to_name)} repos, " \
                f"{len(self.user_node_to_login)} users>"
+
+    def sentry_repr(self) -> str:
+        """Override {}.__repr__() in Sentry."""
+        return repr(self)

@@ -122,6 +122,10 @@ class JIRAFilter:
             self.account, self.labels, self.epics, self.issue_types, self.custom_projects,
             self.unmapped)
 
+    def sentry_repr(self) -> str:
+        """Override {}.__repr__() in Sentry."""
+        return repr(self)
+
     def compatible_with(self, other: "JIRAFilter") -> bool:
         """Check whether the `other` filter can be applied to the items filtered by `self`."""
         if self.unmapped != other.unmapped:
