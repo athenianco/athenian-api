@@ -111,7 +111,7 @@ def cached(exptime: Union[int, Callable[..., int]],
         # no functool.wraps() shit here! It discards the coroutine status and aiohttp notices that
         async def wrapped_cached(*args, **kwargs) -> Any:
             start_time = time.time()
-            __traceback_hide__ = True  # noqa: F841
+            __tracebackhide__ = True  # noqa: F841
             args_dict = signature.bind(*args, **kwargs).arguments
             client = discover_cache(**args_dict)
             cache_key = None
@@ -247,7 +247,7 @@ def cached_methods(cls):
         def generate_cls_method_shim(f):
             def cls_method_shim(self):
                 async def cached_wrapper(*args, **kwargs):
-                    __traceback_hide__ = True  # noqa: F841
+                    __tracebackhide__ = True  # noqa: F841
                     return await f(self, *args, **kwargs)
 
                 async def reset_cache(*args, **kwargs):
