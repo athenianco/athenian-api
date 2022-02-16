@@ -251,7 +251,8 @@ async def _accept_invitation(iid: int,
                                       .where(Invitation.id == iid).values(values))
     if user is None:
         user = await request.user()
-    user.accounts = await load_user_accounts(user.id, sdb_transaction, mdb, rdb, cache)
+    user.accounts = await load_user_accounts(
+        user.id, sdb_transaction, mdb, rdb, slack, request.user, cache)
     return acc_id, user
 
 

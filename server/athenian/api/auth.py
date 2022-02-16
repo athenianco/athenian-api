@@ -24,13 +24,12 @@ with warnings.catch_warnings():
     from jose import jwt
 from multidict import CIMultiDict
 import sentry_sdk
-from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import select
 
 from athenian.api.async_utils import gather
-from athenian.api.cache import cached, middle_term_exptime
-from athenian.api.controllers.account import get_account_name, get_user_account_status
-from athenian.api.db import Database
+from athenian.api.cache import cached
+from athenian.api.controllers.account import get_user_account_status
+from athenian.api.controllers.user import report_user_account_expired
 from athenian.api.defer import defer
 from athenian.api.kms import AthenianKMS
 from athenian.api.models.state.models import Account, God, UserToken
@@ -544,11 +543,11 @@ class AthenianAioHttpSecurityHandlerFactory(connexion.security.AioHttpSecurityHa
             if context.account is not None:
                 expires_at = await context.sdb.fetch_val(
                     select([Account.expires_at]).where(Account.id == context.account))
-                if not getattr(context, "god_id", False) and (
+                if getattr(context, "god_id", context.uid) == context.uid and (
                         expires_at is None or expires_at < datetime.now(expires_at.tzinfo)):
                     if slack is not None:
                         await defer(
-                            _report_user_account_expired(
+                            report_user_account_expired(
                                 context.uid, context.account, expires_at, context.sdb, context.mdb,
                                 context.user, slack, context.cache),
                             "report_user_account_expired_to_slack")
@@ -559,37 +558,6 @@ class AthenianAioHttpSecurityHandlerFactory(connexion.security.AioHttpSecurityHa
             return await function(request)
 
         return wrapper
-
-
-@cached(
-    exptime=middle_term_exptime,
-    serialize=lambda x: x,
-    deserialize=lambda x: x,
-    key=lambda user, account, **_: (user, account),
-)
-async def _report_user_account_expired(user: str,
-                                       account: int,
-                                       expired_at: datetime,
-                                       sdb: Database,
-                                       mdb: Database,
-                                       user_info: Callable[..., Coroutine],
-                                       slack: Optional[SlackWebClient],
-                                       cache: Optional[aiomcache.Client]):
-    async def dummy_user():
-        return User(login="N/A")
-
-    name, user_info = await gather(
-        get_account_name(account, sdb, mdb, cache),
-        user_info() if user_info is not None else dummy_user(),
-    )
-    await slack.post_account("user_account_expired.jinja2",
-                             user=user,
-                             user_name=user_info.login,
-                             user_email=user_info.email,
-                             account=account,
-                             account_name=name,
-                             expired_at=expired_at)
-    return b"1"
 
 
 def disable_default_user(func):
