@@ -643,11 +643,14 @@ async def mine_commit_check_runs(commit_ids: Iterable[int],
         CheckRun.acc_id.in_(meta_ids),
         CheckRun.commit_node_id.in_(commit_ids),
     ]
+    # IndexScan(c node_commit_pkey) -> DEV-3667
     query = select([CheckRun]).where(and_(*filters)) \
         .with_statement_hint("IndexOnlyScan(p github_node_push_redux)") \
         .with_statement_hint("IndexOnlyScan(prc node_pull_request_commit_commit_pr)") \
         .with_statement_hint("IndexScan(pr node_pullrequest_pkey)") \
+        .with_statement_hint("IndexScan(c node_commit_pkey)") \
         .with_statement_hint("Rows(cr c *100)") \
+        .with_statement_hint("Rows(cr cs *100)") \
         .with_statement_hint("Rows(cr cs c *2000)") \
         .with_statement_hint("Rows(c_1 sc *20)") \
         .with_statement_hint("Set(enable_parallel_append 0)")
