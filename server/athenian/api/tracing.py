@@ -20,15 +20,15 @@ def sentry_span(func):
                     return await func(*args, **kwargs)
 
         # forward the @cached service sub-routines
-        reset_cache = getattr(func, "reset_cache", None)
-        if reset_cache is not None:
-            wrapped_async_sentry_span.reset_cache = reset_cache
+        if hasattr(func, "reset_cache"):
+            wrapped_async_sentry_span.reset_cache = func.reset_cache
             wrapped_async_sentry_span.cache_key = func.cache_key
 
         return typing_utils.wraps(wrapped_async_sentry_span, func)
 
     @functools.wraps(func)
     def wrapped_sync_sentry_span(*args, **kwargs):
+        __traceback_hide__ = True  # noqa: F841
         with sentry_sdk.start_span(op=func.__qualname__):
             return func(*args, **kwargs)
 
