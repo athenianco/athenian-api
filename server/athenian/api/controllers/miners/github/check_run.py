@@ -541,8 +541,9 @@ def _merge_status_contexts(df: pd.DataFrame) -> pd.DataFrame:
     #
     # Required order:
     # PENDING, ERROR, FAILURE, SUCCESS
+    pending_repl = b"AAAAAAA"
     statuses = df[CheckRun.status.name].values.astype("S", copy=False).copy()
-    statuses[statuses == b"PENDING"] = b"AAAAAAA"
+    statuses[statuses == b"PENDING"] = pending_repl
     starteds = df[CheckRun.started_at.name].values
     # we *must* sort by the these:
     # 1. check run start time - general sequence
@@ -578,7 +579,7 @@ def _merge_status_contexts(df: pd.DataFrame) -> pd.DataFrame:
     indexes_original = np.argsort(indexes, kind="stable")
     no_finish_original = no_finish[indexes_original]
     no_finish_original_statuses = statuses[no_finish_original]
-    matched_beg = no_finish_original_statuses[firsts] == b"A"  # replaced b"PENDING" earlier
+    matched_beg = no_finish_original_statuses[firsts] == pending_repl  # replaced b"PENDING"
     matched_end = counts > 1  # the status does not matter
     matched = matched_beg & matched_end
     matched_firsts = firsts[matched]
