@@ -69,10 +69,20 @@ class UserAccount(create_time_mixin(created_at=True), Base):
 
     __tablename__ = "user_accounts"
 
-    user_id = Column(String(256), primary_key=True)
+    user_id = Column(String(), primary_key=True)
     account_id = Column(Integer(), ForeignKey("accounts.id", name="fk_user_account"),
                         nullable=False, primary_key=True)
     is_admin = Column(Boolean(), nullable=False, default=False)
+
+
+class BanishedUserAccount(create_time_mixin(created_at=True), Base):
+    """Deleted user<>account many-to-many relations."""
+
+    __tablename__ = "banished_user_accounts"
+
+    user_id = Column(String(), primary_key=True)
+    account_id = Column(Integer(), ForeignKey("accounts.id", name="fk_banished_user_account"),
+                        nullable=False, primary_key=True)
 
 
 class Account(create_time_mixin(created_at=True), Base):
@@ -136,7 +146,7 @@ class Invitation(create_time_mixin(created_at=True), Base):
         "accounts.id", name="fk_invitation_account"), nullable=False)
     is_active = Column(Boolean, nullable=False, default=True)
     accepted = Column(Integer(), nullable=False, default=0)
-    created_by = Column(String(256))
+    created_by = Column(String())
 
 
 class God(create_time_mixin(updated_at=True), Base):
@@ -144,8 +154,8 @@ class God(create_time_mixin(updated_at=True), Base):
 
     __tablename__ = "gods"
 
-    user_id = Column(String(256), primary_key=True)
-    mapped_id = Column(String(256), nullable=True)
+    user_id = Column(String(), primary_key=True)
+    mapped_id = Column(String(), nullable=True)
 
 
 class ReleaseSetting(create_time_mixin(updated_at=True), Base):
@@ -212,7 +222,7 @@ class UserToken(create_time_mixin(updated_at=True), Base):
 
     id = Column(BigInteger().with_variant(Integer(), "sqlite"), primary_key=True)
     account_id = Column(Integer(), nullable=False)
-    user_id = Column(String(256), nullable=False)
+    user_id = Column(String(), nullable=False)
     name = Column(String(256), nullable=False)
     last_used_at = Column(TIMESTAMP(timezone=True), nullable=False,
                           default=lambda: datetime.now(timezone.utc), server_default=func.now())

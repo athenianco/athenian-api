@@ -8,8 +8,8 @@ from sqlalchemy import and_, func, insert, select, update
 
 from athenian.api.async_utils import gather
 from athenian.api.controllers.user_controller import get_user
-from athenian.api.models.state.models import Account as DBAccount, AccountFeature, Feature, God, \
-    Invitation
+from athenian.api.models.state.models import Account as DBAccount, AccountFeature, \
+    BanishedUserAccount, Feature, FeatureComponent, Invitation
 from athenian.api.models.web import Account, ProductFeature
 from athenian.api.request import AthenianWebRequest
 from athenian.api.serialization import deserialize_datetime
@@ -18,13 +18,6 @@ from tests.conftest import disable_default_user
 
 vadim_email = "af253b50a4d7b2c9841f436fbe4c635f270f4388653649b0971f2751a441a556fe63a9dabfa150a444dd"  # noqa
 eiso_email = "18fe5f66fce88e4791d0117a311c6c2b2102216e18585c1199f90516186aa4461df7a2453857d781b6"  # noqa
-
-
-@pytest.fixture(scope="function")
-async def god(sdb) -> None:
-    await sdb.execute(insert(God).values(God(
-        user_id="auth0|5e1f6dfb57bc640ea390557b",
-    ).create_defaults().explode(with_primary_keys=True)))
 
 
 async def test_get_user_smoke(client, headers, app):
@@ -378,7 +371,8 @@ async def test_change_user_admin(client, headers):
     assert items["admins"][1]["id"] == "auth0|5e1f6e2e8bfa520ea5290741"
 
 
-async def test_change_user_banish(client, headers, sdb):
+@pytest.mark.parametrize("membership_check", [False, True])
+async def test_change_user_banish(client, headers, sdb, membership_check):
     response = await client.request(
         method="GET", path="/v1/invite/generate/1", headers=headers, json={},
     )
@@ -386,6 +380,16 @@ async def test_change_user_banish(client, headers, sdb):
     assert 1 == (await sdb.fetch_val(
         select([func.count(Invitation.id)])
         .where(and_(Invitation.is_active, Invitation.account_id == 1))))
+    if not membership_check:
+        check_fid = await sdb.fetch_val(
+            select([Feature.id])
+            .where(and_(Feature.name == Feature.USER_ORG_MEMBERSHIP_CHECK,
+                        Feature.component == FeatureComponent.server)))
+        await sdb.execute(insert(AccountFeature).values(AccountFeature(
+            account_id=1,
+            feature_id=check_fid,
+            enabled=False,
+        ).create_defaults().explode(with_primary_keys=True)))
     body = {
         "account": 1,
         "user": "auth0|5e1f6e2e8bfa520ea5290741",
@@ -399,17 +403,24 @@ async def test_change_user_banish(client, headers, sdb):
     assert len(items["admins"]) == 1
     assert items["admins"][0]["id"] == "auth0|5e1f6dfb57bc640ea390557b"
     assert len(items["regulars"]) == 0
-    assert 0 == (await sdb.fetch_val(
-        select([func.count(Invitation.id)])
-        .where(and_(Invitation.is_active, Invitation.account_id == 1))))
-    response = await client.request(
-        method="GET", path="/v1/invite/generate/1", headers=headers, json={},
-    )
-    link2 = json.loads((await response.read()).decode("utf-8"))
-    assert 1 == (await sdb.fetch_val(
-        select([func.count(Invitation.id)])
-        .where(and_(Invitation.is_active, Invitation.account_id == 1))))
-    assert link1 != link2
+    assert "auth0|5e1f6e2e8bfa520ea5290741" == \
+           await sdb.fetch_val(select([BanishedUserAccount.user_id]))
+    if not membership_check:
+        assert 0 == (await sdb.fetch_val(
+            select([func.count(Invitation.id)])
+            .where(and_(Invitation.is_active, Invitation.account_id == 1))))
+        response = await client.request(
+            method="GET", path="/v1/invite/generate/1", headers=headers, json={},
+        )
+        link2 = json.loads((await response.read()).decode("utf-8"))
+        assert 1 == (await sdb.fetch_val(
+            select([func.count(Invitation.id)])
+            .where(and_(Invitation.is_active, Invitation.account_id == 1))))
+        assert link1 != link2
+    else:
+        assert 1 == (await sdb.fetch_val(
+            select([func.count(Invitation.id)])
+            .where(and_(Invitation.is_active, Invitation.account_id == 1))))
 
 
 @pytest.mark.parametrize("account, user, status, code", [
