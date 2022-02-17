@@ -1,16 +1,15 @@
 from datetime import datetime, timedelta, timezone
 import logging
+from pathlib import Path
 import pickle
 
 import numpy as np
 import pandas as pd
 from sqlalchemy import and_, func, select
 
-from athenian.api.async_utils import wrap_sql_query
 from athenian.api.controllers.miners.github.check_run import _calculate_check_suite_started, \
-    _merge_status_contexts, _postprocess_check_runs, _split_duplicate_check_runs, \
-    check_suite_started_column, \
-    pull_request_closed_column, \
+    _finalize_check_runs, _merge_status_contexts, _postprocess_check_runs, \
+    _split_duplicate_check_runs, check_suite_started_column, pull_request_closed_column, \
     pull_request_merged_column, pull_request_started_column, pull_request_title_column
 from athenian.api.int_to_str import int_to_str
 from athenian.api.models.metadata.github import CheckRun, NodePullRequest, NodePullRequestCommit
@@ -209,6 +208,20 @@ def _benchmark_postprocess(df, log, pr_lifetimes, pr_commit_counts):
 
 
 def test_mine_check_runs_wrap(benchmark, no_deprecation_warnings):
-    with open("/tmp/cr_raw.pickle", "rb") as fin:
-        data, columns, index = pickle.load(fin)
-    benchmark(wrap_sql_query, data, columns, index)
+    df = pd.read_csv(
+        Path(__file__).parent.parent.parent / "features" / "github" / "check_runs.csv.gz",
+        index_col=0)
+    for col in (CheckRun.started_at,
+                CheckRun.completed_at,
+                CheckRun.pull_request_created_at,
+                CheckRun.pull_request_closed_at,
+                CheckRun.committed_date,
+                check_suite_started_column):
+        col_name = col.name if not isinstance(col, str) else col
+        df[col_name] = df[col_name].astype(np.datetime64)
+    for col in [CheckRun.conclusion,
+                CheckRun.check_suite_conclusion,
+                CheckRun.author_user_id,
+                CheckRun.author_login]:
+        df[col.name].replace([np.nan], [None], inplace=True)
+    benchmark(_finalize_check_runs, df, logging.getLogger("pytest.alternative_facts"))

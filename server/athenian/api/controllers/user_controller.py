@@ -13,13 +13,14 @@ from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached, max_exptime
 from athenian.api.controllers.account import get_account_organizations, get_user_account_status, \
-    only_admin
+    is_membership_check_enabled, only_admin, only_god
 from athenian.api.controllers.jira import get_jira_id
 from athenian.api.controllers.user import load_user_accounts
 from athenian.api.db import DatabaseLike
 from athenian.api.models.metadata.jira import Installation as JIRAInstallation, \
     Project as JIRAProject
-from athenian.api.models.state.models import Account as DBAccount, AccountFeature, Feature, \
+from athenian.api.models.state.models import Account as DBAccount, AccountFeature, \
+    BanishedUserAccount, Feature, \
     FeatureComponent, God, Invitation, UserAccount
 from athenian.api.models.web import Account, AccountUserChangeRequest, ForbiddenError, \
     InvalidRequestError, JIRAInstallation as WebJIRAInstallation, NotFoundError, Organization, \
@@ -208,12 +209,11 @@ async def set_account_features(request: AthenianWebRequest, id: int, body: dict)
     return await _get_account_features(request.sdb, id)
 
 
+@only_god
 async def become_user(request: AthenianWebRequest, id: str = "") -> web.Response:
     """God mode ability to turn into any user. The current user must be marked internally as \
     a super admin."""
-    if (user_id := getattr(request, "god_id", None)) is None:
-        raise ResponseError(ForbiddenError(
-            detail="User %s is not allowed to mutate" % request.uid))
+    user_id = request.god_id
     async with request.sdb.connection() as conn:
         if id and (await conn.fetch_one(
                 select([UserAccount]).where(UserAccount.user_id == id))) is None:
@@ -274,7 +274,12 @@ async def change_user(request: AthenianWebRequest, body: dict) -> web.Response:
                 await conn.execute(delete(UserAccount)
                                    .where(and_(UserAccount.user_id == aucr.user,
                                                UserAccount.account_id == aucr.account)))
-                await conn.execute(update(Invitation)
-                                   .where(Invitation.account_id == aucr.account)
-                                   .values({Invitation.is_active: False}))
+                await conn.execute(insert(BanishedUserAccount).values(BanishedUserAccount(
+                    user_id=aucr.user,
+                    account_id=aucr.account,
+                ).create_defaults().explode(with_primary_keys=True)))
+                if not await is_membership_check_enabled(aucr.account, conn):
+                    await conn.execute(update(Invitation)
+                                       .where(Invitation.account_id == aucr.account)
+                                       .values({Invitation.is_active: False}))
     return await get_account_details(request, aucr.account)

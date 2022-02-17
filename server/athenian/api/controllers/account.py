@@ -25,7 +25,9 @@ from athenian.api.db import Connection, Database, DatabaseLike
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import Account as MetadataAccount, AccountRepository, \
     FetchProgress, NodeUser, Organization, Team as MetadataTeam, TeamMember
-from athenian.api.models.state.models import Account, AccountGitHubAccount, RepositorySet, \
+from athenian.api.models.state.models import Account, AccountFeature, AccountGitHubAccount, \
+    Feature, \
+    FeatureComponent, RepositorySet, \
     Team as StateTeam, UserAccount
 from athenian.api.models.web import ForbiddenError, InstallationProgress, NoSourceDataError, \
     NotFoundError, \
@@ -205,6 +207,15 @@ def only_admin(func):
                 f'User "{request.uid}" must be an admin of account {account}'))
         return await func(request, body)
     return wraps(wrapped_only_admin, func)
+
+
+def only_god(func):
+    """Enforce the god access level to an API handler."""
+    async def wrapped_only_god(request: AthenianWebRequest, **kwargs) -> web.Response:
+        if not hasattr(request, "god_id"):
+            raise ResponseError(ForbiddenError(detail=f"User {request.uid} must be a god"))
+        return await func(request, **kwargs)
+    return wraps(wrapped_only_god, func)
 
 
 async def get_account_repositories(account: int,
@@ -455,3 +466,22 @@ async def fetch_github_installation_progress(account: int,
                                  repositories=sum(m.repositories for m in models),
                                  tables=sorted(tables.values()))
     return model
+
+
+async def is_membership_check_enabled(account: int, sdb: DatabaseLike) -> bool:
+    """Check whether the user registration requires the organization membership."""
+    enabled = False
+    user_org_membership_check_row = await sdb.fetch_one(
+        select([Feature.id, Feature.enabled])
+        .where(and_(Feature.name == Feature.USER_ORG_MEMBERSHIP_CHECK,
+                    Feature.component == FeatureComponent.server)))
+    if user_org_membership_check_row is not None:
+        user_org_membership_check_feature_id = user_org_membership_check_row[Feature.id.name]
+        default_enabled = user_org_membership_check_row[Feature.enabled.name]
+        enabled = await sdb.fetch_val(
+            select([AccountFeature.enabled]).where(and_(
+                AccountFeature.account_id == account,
+                AccountFeature.feature_id == user_org_membership_check_feature_id,
+            )))
+        enabled = (enabled is None and default_enabled) or enabled
+    return enabled

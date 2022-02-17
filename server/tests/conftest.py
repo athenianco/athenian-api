@@ -64,7 +64,7 @@ from athenian.api.models.metadata.github import Account, Base as GithubBase, Nod
 from athenian.api.models.metadata.jira import Base as JiraBase
 from athenian.api.models.persistentdata.models import Base as PersistentdataBase
 from athenian.api.models.precomputed.models import GitHubBase as PrecomputedBase
-from athenian.api.models.state.models import Base as StateBase
+from athenian.api.models.state.models import Base as StateBase, God
 from athenian.api.preloading.cache import MemoryCachePreloader
 from athenian.api.request import AthenianWebRequest
 from athenian.precomputer.db import dereference_schemas as dereference_precomputed_schemas
@@ -301,6 +301,13 @@ def disable_default_user(app):
 
     app._auth0._extract_bearer_token = hacked_extract_token
     app._auth0._extract_api_key = hacked_extract_api_key
+
+
+@pytest.fixture(scope="function")
+async def god(sdb) -> None:
+    await sdb.execute(insert(God).values(God(
+        user_id="auth0|5e1f6dfb57bc640ea390557b",
+    ).create_defaults().explode(with_primary_keys=True)))
 
 
 @pytest.fixture(scope="function")

@@ -16,23 +16,23 @@ import aiosqlite.core
 from asyncpg import IntegrityConstraintViolationError
 import morcilla.core
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
-from sqlalchemy import and_, delete, func, insert, select, update
+from sqlalchemy import and_, delete, func, insert, select, text, update
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.auth import Auth0, disable_default_user
 from athenian.api.cache import cached, expires_header, middle_term_exptime
 from athenian.api.controllers.account import fetch_github_installation_progress, \
-    generate_jira_invitation_link, \
-    get_metadata_account_ids, get_user_account_status, jira_url_template
+    generate_jira_invitation_link, get_account_name, get_metadata_account_ids, \
+    get_user_account_status, is_membership_check_enabled, jira_url_template, only_god
 from athenian.api.controllers.ffx import decrypt, encrypt
 from athenian.api.controllers.reposet import load_account_reposets
 from athenian.api.controllers.user import load_user_accounts
 from athenian.api.db import Connection, Database, DatabaseLike
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import NodeUser, OrganizationMember
-from athenian.api.models.state.models import Account, AccountFeature, Feature, FeatureComponent, \
-    Invitation, RepositorySet, UserAccount
+from athenian.api.models.state.models import Account, BanishedUserAccount, Invitation, \
+    RepositorySet, UserAccount
 from athenian.api.models.web import BadRequestError, ForbiddenError, GenericError, \
     NotFoundError, User
 from athenian.api.models.web.generic_error import DatabaseConflict, TooManyRequestsError
@@ -62,7 +62,7 @@ def validate_env():
             "ATHENIAN_JIRA_INSTALLATION_URL_TEMPLATE environment variable must be set")
 
 
-async def gen_invitation(request: AthenianWebRequest, id: int) -> web.Response:
+async def gen_user_invitation(request: AthenianWebRequest, id: int) -> web.Response:
     """Generate a new regular member invitation URL."""
     async with request.sdb.connection() as sdb_conn:
         await get_user_account_status(request.uid, id, request.sdb, request.mdb, request.user,
@@ -81,6 +81,20 @@ async def gen_invitation(request: AthenianWebRequest, id: int) -> web.Response:
         slug = encode_slug(invitation_id, salt, request.app["auth"].key)
         model = InvitationLink(url=url_prefix + slug)
         return model_response(model)
+
+
+@only_god
+async def gen_account_invitation(request: AthenianWebRequest) -> web.Response:
+    """Generate a new account invitation URL."""
+    async with request.sdb.connection() as conn:
+        async with conn.transaction():
+            salt = randint(0, (1 << 16) - 1)  # 0:65535 - 2 bytes
+            acc = await create_new_account(conn, request.app["auth"].key)
+            inv = Invitation(salt=salt, account_id=acc, created_by=request.uid).create_defaults()
+            invitation_id = await conn.execute(insert(Invitation).values(inv.explode()))
+    slug = encode_slug(invitation_id, salt, request.app["auth"].key)
+    model = InvitationLink(url=url_prefix + slug)
+    return model_response(model)
 
 
 async def _check_admin_access(uid: str, account: int, sdb_conn: morcilla.core.Connection):
@@ -175,7 +189,9 @@ async def _accept_invitation(iid: int,
     if not inv[Invitation.is_active.name]:
         raise ResponseError(ForbiddenError(detail="This invitation is disabled."))
     acc_id = inv[Invitation.account_id.name]
-    is_admin = acc_id == admin_backdoor
+    if not (is_admin := acc_id == admin_backdoor):
+        is_admin = 0 == await sdb_transaction.fetch_val(select([func.count(text("*"))])
+                                                        .where(UserAccount.account_id == acc_id))
     slack = request.app["slack"]  # type: SlackWebClient
     if is_admin:
         other_accounts = await sdb_transaction.fetch_all(
@@ -195,16 +211,12 @@ async def _accept_invitation(iid: int,
                     type="/errors/DuplicateAccountRegistrationError",
                     detail="You cannot accept new admin invitations until your account's "
                            "installation finishes."))
-        # create a new account for the admin user
-        acc_id = await create_new_account(sdb_transaction, request.app["auth"].key)
-        if acc_id >= admin_backdoor:
-            await sdb_transaction.execute(delete(Account).where(Account.id == acc_id))
-            raise ResponseError(GenericError(
-                type="/errors/LockedError",
-                title=HTTPStatus.LOCKED.phrase,
-                status=HTTPStatus.LOCKED,
-                detail="Invitation was not found."))
-        log.info("Created new account %d", acc_id)
+        if acc_id == admin_backdoor:
+            # create a new account for the admin user
+            acc_id = await create_new_account(sdb_transaction, request.app["auth"].key)
+            log.info("Created new account %d", acc_id)
+        else:
+            log.info("Activated new account %d", acc_id)
         if slack is not None:
             async def report_new_account_to_slack():
                 jira_link = await generate_jira_invitation_link(acc_id, sdb)
@@ -225,7 +237,22 @@ async def _accept_invitation(iid: int,
         if is_admin or (user := await _check_user_org_membership(
                 request, acc_id, sdb_transaction, log)) is None:
             user = await request.user()
-        # create the user<>account record
+        # create the user<>account record if not blocked
+        if await sdb_transaction.fetch_val(
+                select([func.count(text("*"))])
+                .where(and_(BanishedUserAccount.user_id == request.uid,
+                            BanishedUserAccount.account_id == acc_id))):
+            if slack is not None:
+                async def report_blocked_registration():
+                    account_name = await get_account_name(acc_id, sdb, mdb, request.cache)
+                    await slack.post_account("blocked_registration.jinja2",
+                                             user=user,
+                                             account_id=acc_id,
+                                             account_name=account_name)
+                await defer(report_blocked_registration(), "report_blocked_registration_to_slack")
+            log.warning("Did not allow blocked user %s to register in account %d",
+                        request.uid, acc_id)
+            raise ResponseError(ForbiddenError(detail="You were deleted from this account."))
         await sdb_transaction.execute(insert(UserAccount).values(UserAccount(
             user_id=request.uid,
             account_id=acc_id,
@@ -234,16 +261,11 @@ async def _accept_invitation(iid: int,
         log.info("Assigned user %s to account %d (admin: %s)", request.uid, acc_id, is_admin)
         if slack is not None:
             async def report_new_user_to_slack():
-                repos = await request.sdb.fetch_val(select([RepositorySet.items]).where(and_(
-                    RepositorySet.owner_id == acc_id, RepositorySet.name == RepositorySet.ALL)))
-                if repos is not None:
-                    prefixes = {r.split("/", 2)[1] for r in repos}
-                else:
-                    prefixes = {"N/A"}
+                account_name = await get_account_name(acc_id, sdb, mdb, request.cache)
                 await slack.post_account("new_user.jinja2",
                                          user=user,
-                                         account=acc_id,
-                                         prefixes=prefixes)
+                                         account_id=acc_id,
+                                         account_name=account_name)
 
             await defer(report_new_user_to_slack(), "report_new_user_to_slack")
         values = {Invitation.accepted.name: inv[Invitation.accepted.name] + 1}
@@ -261,20 +283,8 @@ async def _check_user_org_membership(request: AthenianWebRequest,
                                      sdb_conn: DatabaseLike,
                                      log: logging.Logger,
                                      ) -> Optional[User]:
-    user_org_membership_check_row = await sdb_conn.fetch_one(
-        select([Feature.id, Feature.enabled])
-        .where(and_(Feature.name == Feature.USER_ORG_MEMBERSHIP_CHECK,
-                    Feature.component == FeatureComponent.server)))
-    if user_org_membership_check_row is not None:
-        user_org_membership_check_feature_id = user_org_membership_check_row[Feature.id.name]
-        global_enabled = user_org_membership_check_row[Feature.enabled.name]
-        enabled = await sdb_conn.fetch_val(
-            select([AccountFeature.enabled]).where(and_(
-                AccountFeature.account_id == acc_id,
-                AccountFeature.feature_id == user_org_membership_check_feature_id,
-            )))
-        if (enabled is None and not global_enabled) or (enabled is not None and not enabled):
-            return None
+    if not await is_membership_check_enabled(acc_id, sdb_conn):
+        return None
 
     mdb = request.mdb
     cache = request.cache
@@ -308,8 +318,18 @@ async def create_new_account(conn: DatabaseLike, secret: str) -> int:
         async with conn.raw_connection() as raw_connection:
             slow = isinstance(raw_connection, aiosqlite.core.Connection)
     if slow:
-        return await _create_new_account_slow(conn, secret)
-    return await _create_new_account_fast(conn, secret)
+        acc_id = await _create_new_account_slow(conn, secret)
+    else:
+        acc_id = await _create_new_account_fast(conn, secret)
+    if acc_id >= admin_backdoor:
+        # overflow, we are not ready for you
+        await conn.execute(delete(Account).where(Account.id == acc_id))
+        raise ResponseError(GenericError(
+            type="/errors/LockedError",
+            title=HTTPStatus.LOCKED.phrase,
+            status=HTTPStatus.LOCKED,
+            detail="Invitation was not found."))
+    return acc_id
 
 
 async def _create_new_account_fast(conn: DatabaseLike, secret: str) -> int:

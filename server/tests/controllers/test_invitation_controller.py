@@ -11,7 +11,8 @@ from athenian.api.controllers.invitation_controller import admin_backdoor, decod
     encode_slug, jira_url_template, url_prefix
 from athenian.api.models.metadata.github import FetchProgress
 from athenian.api.models.state.models import Account, AccountFeature, AccountGitHubAccount, \
-    AccountJiraInstallation, Feature, FeatureComponent, God, Invitation, ReleaseSetting, \
+    AccountJiraInstallation, BanishedUserAccount, Feature, FeatureComponent, God, Invitation, \
+    ReleaseSetting, \
     RepositorySet, UserAccount, UserToken, WorkType
 
 
@@ -77,7 +78,7 @@ async def test_empty_db_account_creation(client, headers, sdb, eiso, disable_def
     assert "github.com/src-d/go-git" in reposets[0]["items"]
 
 
-async def test_gen_invitation_new(client, headers, sdb, app):
+async def test_gen_user_invitation_new(client, headers, sdb, app):
     response = await client.request(
         method="GET", path="/v1/invite/generate/1", headers=headers, json={},
     )
@@ -100,21 +101,21 @@ async def test_gen_invitation_new(client, headers, sdb, app):
         assert inv[Invitation.created_at.name] > datetime.utcnow() - timedelta(minutes=1)
 
 
-async def test_gen_invitation_no_admin(client, headers):
+async def test_gen_user_invitation_no_admin(client, headers):
     response = await client.request(
         method="GET", path="/v1/invite/generate/2", headers=headers, json={},
     )
     assert response.status == 200
 
 
-async def test_gen_invitation_no_member(client, headers):
+async def test_gen_user_invitation_no_member(client, headers):
     response = await client.request(
         method="GET", path="/v1/invite/generate/3", headers=headers, json={},
     )
     assert response.status == 404
 
 
-async def test_gen_invitation_existing(client, eiso, headers, app):
+async def test_gen_user_invitation_existing(client, eiso, headers, app):
     response = await client.request(
         method="GET", path="/v1/invite/generate/3", headers=headers, json={},
     )
@@ -125,6 +126,33 @@ async def test_gen_invitation_existing(client, eiso, headers, app):
     iid, salt = decode_slug(x, app.app["auth"].key)
     assert iid == 1
     assert salt == 777
+
+
+async def test_gen_account_invitation_no_god(client, headers, sdb):
+    response = await client.request(
+        method="GET", path="/v1/invite/generate", headers=headers, json={},
+    )
+    assert response.status == 403, (await response.read()).decode("utf-8")
+
+
+async def test_gen_account_invitation_e2e(client, headers, sdb, god, disable_default_user):
+    response = await client.request(
+        method="GET", path="/v1/invite/generate", headers=headers, json={},
+    )
+    assert response.status == 200
+    body = json.loads((await response.read()).decode("utf-8"))
+    response = await client.request(
+        method="PUT", path="/v1/invite/accept", headers=headers, json=body,
+    )
+    body = json.loads((await response.read()).decode("utf-8"))
+    assert response.status == 200, body
+    assert body["user"]["accounts"]["4"] == {
+        "is_admin": True,
+        "expired": False,
+        "has_ci": False,
+        "has_jira": False,
+        "has_deployments": False,
+    }
 
 
 async def test_accept_invitation_smoke(client, headers, sdb, disable_default_user, app):
@@ -229,6 +257,33 @@ async def test_accept_invitation_enabled_membership_check(
     assert response.status == 422, rbody
 
 
+async def test_accept_invitation_banished(
+        client, headers, sdb, disable_default_user, app):
+    app._auth0._default_user = app._auth0._default_user.copy()
+    app._auth0._default_user.login = "vmarkovtsev"
+    check_fid = await sdb.fetch_val(
+        select([Feature.id])
+        .where(and_(Feature.name == Feature.USER_ORG_MEMBERSHIP_CHECK,
+                    Feature.component == FeatureComponent.server)))
+    await sdb.execute(insert(AccountFeature).values(AccountFeature(
+        account_id=3,
+        feature_id=check_fid,
+        enabled=False,
+    ).create_defaults().explode(with_primary_keys=True)))
+    await sdb.execute(insert(BanishedUserAccount).values(BanishedUserAccount(
+        user_id="auth0|5e1f6dfb57bc640ea390557b",
+        account_id=3,
+    ).create_defaults().explode(with_primary_keys=True)))
+    body = {
+        "url": url_prefix + encode_slug(1, 777, app.app["auth"].key),
+    }
+    response = await client.request(
+        method="PUT", path="/v1/invite/accept", headers=headers, json=body,
+    )
+    rbody = json.loads((await response.read()).decode("utf-8"))
+    assert response.status == 403, rbody
+
+
 async def test_accept_invitation_default_user(client, headers, app):
     body = {
         "url": url_prefix + encode_slug(1, 777, app.app["auth"].key),
@@ -298,7 +353,7 @@ async def test_accept_invitation_inactive(client, headers, sdb, disable_default_
     assert response.status == 403
 
 
-async def test_accept_invitation_admin(client, headers, sdb, disable_default_user, app):
+async def test_accept_invitation_admin_smoke(client, headers, sdb, disable_default_user, app):
     num_accounts_before = len(await sdb.fetch_all(select([Account])))
     iid = await sdb.execute(
         insert(Invitation).values(

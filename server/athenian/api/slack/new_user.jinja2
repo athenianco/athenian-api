@@ -1,5 +1,7 @@
 *New user on {{ env }}*
 
-*{{ user.login }}* has joined account *{{ account }}* (`{{ prefixes | join(", ") }}`)
-`{{ user.id }}`: {{ user.name }}
+User *{{ user.id }}* - `{{ user.login }}` has joined account *{{ account_id }}* - `{{ account_name }}`.
+
+name: {{ user.name }}
+
 email: `{{ user.email }}`
