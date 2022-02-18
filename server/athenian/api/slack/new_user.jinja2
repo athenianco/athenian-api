@@ -1,7 +1,5 @@
 *New user on {{ env }}*
 
 User *{{ user.id }}* - `{{ user.login }}` has joined account *{{ account_id }}* - `{{ account_name }}`.
-
-name: {{ user.name }}
-
+{% if user.name %}name: {{ user.name }}{% endif %}
 email: `{{ user.email }}`

@@ -88,7 +88,7 @@ async def load_user_accounts(uid: str,
         if expired := expires_at < now and slack is not None:
             await defer(
                 report_user_account_expired(
-                    uid, account, expires_at, sdb, mdb, user_info, slack, cache),
+                    uid, account_id, expires_at, sdb, mdb, user_info, slack, cache),
                 "report_user_account_expired_to_slack")
         result[account_id] = AccountStatus(
             is_admin=account[UserAccount.is_admin.name],
