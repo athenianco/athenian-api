@@ -24,9 +24,10 @@ from athenian.api.controllers.miners.github.release_load import group_repos_by_r
 from athenian.api.controllers.miners.github.release_match import PullRequestToReleaseMapper, \
     ReleaseToPullRequestMapper
 from athenian.api.controllers.miners.github.release_mine import mine_releases, \
-    mine_releases_by_name
+    mine_releases_by_name, override_first_releases
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
-from athenian.api.controllers.miners.types import released_prs_columns
+from athenian.api.controllers.miners.types import PullRequestFacts, released_prs_columns, \
+    ReleaseFacts
 from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch, \
     ReleaseMatchSetting, ReleaseSettings
 from athenian.api.db import Database
@@ -35,7 +36,7 @@ from athenian.api.models.metadata.github import Branch, NodeCommit, PullRequest,
     PullRequestLabel, Release
 from athenian.api.models.persistentdata.models import ReleaseNotification
 from athenian.api.models.precomputed.models import GitHubCommitHistory, \
-    GitHubRelease as PrecomputedRelease
+    GitHubDonePullRequestFacts, GitHubRelease as PrecomputedRelease, GitHubReleaseFacts
 from tests.conftest import _metadata_db
 from tests.controllers.test_filter_controller import force_push_dropped_go_git_pr_numbers
 
@@ -1780,6 +1781,65 @@ async def test_mine_releases_logical(
             "github.com/src-d/go-git/alpha": 92,
             "github.com/src-d/go-git/beta": 58,
         }
+
+
+@with_defer
+async def test_override_first_releases_smoke(
+        mdb, pdb, rdb, release_match_setting_tag, pr_miner, prefixer, branches, default_branches,
+        metrics_calculator_factory, bots):
+    time_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2017, month=12, day=1, tzinfo=timezone.utc)
+    metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
+    await metrics_calculator_no_cache.calc_pull_request_facts_github(
+        time_from, time_to,
+        {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        True, bots, release_match_setting_tag, LogicalRepositorySettings.empty(),
+        prefixer, False, False,
+    )
+    time_from = datetime(year=2017, month=6, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
+    releases, _, _, _ = await mine_releases(
+        ["src-d/go-git"], {}, None, default_branches, time_from, time_to, LabelFilter.empty(),
+        JIRAFilter.empty(), release_match_setting_tag, LogicalRepositorySettings.empty(),
+        prefixer, 1, (6366825,), mdb, pdb, rdb, None, with_deployments=False)
+    await wait_deferred()
+
+    data = await pdb.fetch_val(select([GitHubReleaseFacts.data])
+                               .where(GitHubReleaseFacts.id == 41512))
+    facts = ReleaseFacts(data)
+    checked = 0
+    for key in ReleaseFacts.f:
+        if key.startswith("prs_"):
+            checked += 1
+            if key not in ("prs_title", "prs_jira"):
+                assert len(facts[key] if facts[key] is not None else []) > 0, key
+    assert checked == 7
+    rows = await pdb.fetch_all(select([GitHubDonePullRequestFacts.data])
+                               .where(GitHubDonePullRequestFacts.release_node_id == 41512))
+    assert len(rows) == 14
+    for row in rows:
+        assert not PullRequestFacts(row[0]).release_ignored
+
+    ignored = await override_first_releases(
+        releases, {}, release_match_setting_tag, 1, pdb, threshold_factor=0)
+    assert ignored == 1
+
+    data = await pdb.fetch_val(select([GitHubReleaseFacts.data])
+                               .where(GitHubReleaseFacts.id == 41512))
+    facts = ReleaseFacts(data)
+    checked = 0
+    for key in ReleaseFacts.f:
+        if key.startswith("prs_"):
+            checked += 1
+            assert facts[key] is None or len(facts[key]) == 0, key
+    assert checked == 7
+    rows = await pdb.fetch_all(select([GitHubDonePullRequestFacts.data])
+                               .where(GitHubDonePullRequestFacts.release_node_id == 41512))
+    assert len(rows) == 14
+    for row in rows:
+        facts = PullRequestFacts(row[0])
+        assert facts.released is None
+        assert facts.release_ignored
 
 
 @pytest.mark.parametrize("settings_index", [0, 1])

@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 import json
 
 import numpy as np
@@ -7,7 +7,12 @@ import pandas as pd
 import pytest
 from sqlalchemy import delete, insert
 
+from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github import developer
+from athenian.api.controllers.miners.github.release_mine import mine_releases, \
+    override_first_releases
+from athenian.api.controllers.settings import LogicalRepositorySettings
+from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel
 from athenian.api.models.state.models import Team
 from athenian.api.models.web import CalculatedCodeCheckMetrics, CalculatedDeploymentMetric, \
@@ -1008,6 +1013,47 @@ async def test_calc_metrics_prs_logical(
     body = FriendlyJson.loads((await response.read()).decode("utf-8"))
     values = [v["values"] for v in body["calculated"][0]["values"]]
     assert values == [[266, 52, 205, 197]]
+
+
+@with_defer
+async def test_calc_metrics_prs_release_ignored(
+        client, headers, mdb, pdb, rdb, release_match_setting_tag, pr_miner, prefixer,
+        branches, default_branches):
+    body = {
+        "for": [{"repositories": ["{1}"]}],
+        "metrics": [PullRequestMetricID.PR_RELEASE_TIME,
+                    PullRequestMetricID.PR_RELEASE_COUNT,
+                    PullRequestMetricID.PR_RELEASE_PENDING_COUNT,
+                    PullRequestMetricID.PR_REJECTED,
+                    PullRequestMetricID.PR_DONE],
+        "date_from": "2017-06-01",
+        "date_to": "2018-01-01",
+        "granularities": ["all"],
+        "exclude_inactive": True,
+        "account": 1,
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
+    )
+    assert response.status == 200, response.text()
+    result = FriendlyJson.loads((await response.read()).decode("utf-8"))
+    assert result["calculated"][0]["values"][0]["values"] == ["763080s", 79, 61, 21, 102]
+    time_from = datetime(year=2017, month=6, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2017, month=12, day=31, tzinfo=timezone.utc)
+    releases, _, _, _ = await mine_releases(
+        ["src-d/go-git"], {}, None, default_branches, time_from, time_to, LabelFilter.empty(),
+        JIRAFilter.empty(), release_match_setting_tag, LogicalRepositorySettings.empty(),
+        prefixer, 1, (6366825,), mdb, pdb, rdb, None, with_deployments=False)
+    await wait_deferred()
+    ignored = await override_first_releases(
+        releases, {}, release_match_setting_tag, 1, pdb, threshold_factor=0)
+    assert ignored == 1
+    response = await client.request(
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
+    )
+    assert response.status == 200, response.text()
+    result = FriendlyJson.loads((await response.read()).decode("utf-8"))
+    assert result["calculated"][0]["values"][0]["values"] == ["779385s", 65, 61, 21, 102]
 
 
 async def test_code_bypassing_prs_smoke(client, headers):

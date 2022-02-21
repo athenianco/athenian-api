@@ -746,8 +746,9 @@ class DoneCalculator(SumMetricCalculator[int]):
         rejected_mask = (
             facts[PullRequestFacts.f.closed].notnull().values
             &
-            (facts[PullRequestFacts.f.merged].isnull().values |
-             facts[PullRequestFacts.f.force_push_dropped].values)
+            (facts[PullRequestFacts.f.merged].isnull().values
+             | facts[PullRequestFacts.f.force_push_dropped].values
+             | facts[PullRequestFacts.f.release_ignored].values)
         )
         closed = facts[PullRequestFacts.f.closed].values
         result[(min_times[:, None] <= closed) & (closed < max_times[:, None]) & rejected_mask] = 1

@@ -13,7 +13,8 @@ from sqlalchemy import delete, insert, select
 from athenian.api.cache import CACHE_VAR_NAME, setup_cache_metrics
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.deployment import mine_deployments
-from athenian.api.controllers.miners.github.release_mine import mine_releases
+from athenian.api.controllers.miners.github.release_mine import mine_releases, \
+    override_first_releases
 from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import Release
@@ -390,7 +391,8 @@ def filter_prs_single_cache():
 
 
 @pytest.mark.filter_pull_requests
-@pytest.mark.parametrize("stage", sorted(PullRequestStage))
+@pytest.mark.parametrize("stage",
+                         sorted(set(PullRequestStage) - {PullRequestStage.RELEASE_IGNORED}))
 @with_only_master_branch
 async def test_filter_prs_single_stage(
         # do not remove "mdb_rw", it is required by the decorators
@@ -1191,6 +1193,57 @@ async def test_filter_prs_exclude_inactive(client, headers):
     obj = json.loads((await response.read()).decode("utf-8"))
     prs = PullRequestSet.from_dict(obj)
     assert len(prs.data) == 6
+
+
+@pytest.mark.filter_pull_requests
+@with_defer
+async def test_filter_prs_release_ignored(
+        client, headers, mdb, pdb, rdb, release_match_setting_tag, pr_miner, prefixer,
+        branches, default_branches, metrics_calculator_factory, bots):
+    time_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2017, month=12, day=1, tzinfo=timezone.utc)
+    metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
+    await metrics_calculator_no_cache.calc_pull_request_facts_github(
+        time_from, time_to,
+        {"src-d/go-git"}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        True, bots, release_match_setting_tag, LogicalRepositorySettings.empty(),
+        prefixer, False, False,
+    )
+    time_from = datetime(year=2017, month=6, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
+    releases, _, _, _ = await mine_releases(
+        ["src-d/go-git"], {}, None, default_branches, time_from, time_to, LabelFilter.empty(),
+        JIRAFilter.empty(), release_match_setting_tag, LogicalRepositorySettings.empty(),
+        prefixer, 1, (6366825,), mdb, pdb, rdb, None, with_deployments=False)
+    await wait_deferred()
+    ignored = await override_first_releases(
+        releases, {}, release_match_setting_tag, 1, pdb, threshold_factor=0)
+    assert ignored == 1
+
+    body = {
+        "date_from": "2017-06-01",
+        "date_to": "2018-01-01",
+        "account": 1,
+        "in": [],
+        "events": [PullRequestEvent.MERGED],
+        "exclude_inactive": True,
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
+    text = (await response.read()).decode("utf-8")
+    assert response.status == 200, text
+    prs = PullRequestSet.from_dict(json.loads(text))
+    assert len(prs.data) == 141
+    release_ignored = 0
+    for pr in prs.data:
+        if PullRequestStage.RELEASE_IGNORED not in pr.stages_now:
+            continue
+        release_ignored += 1
+        assert pr.released is None
+        assert PullRequestStage.DONE in pr.stages_now
+        assert PullRequestStage.RELEASING not in pr.stages_now
+        assert PullRequestStage.RELEASE_IGNORED in pr.stages_time_machine
+    assert release_ignored == 14
 
 
 def _test_cached_mdb_pdb(func):

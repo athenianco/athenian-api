@@ -1590,7 +1590,8 @@ def _compose_latest_deployed_components_logical(
                         DeployedComponent.repository_node_id == repo_node_id,
                         *logical_filters))
                     .order_by(desc(DeploymentNotification.finished_at))
-                    .limit(1)))
+                    .limit(1)
+                    .subquery()))
     return queries
 
 

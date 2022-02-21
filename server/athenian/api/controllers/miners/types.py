@@ -88,6 +88,7 @@ class PullRequestStage(IntEnum):
     FORCE_PUSH_DROPPED = auto()
     DONE = auto()
     DEPLOYED = auto()
+    RELEASE_IGNORED = auto()
 
 
 @dataclass(slots=True, frozen=True)
@@ -262,6 +263,7 @@ class PullRequestFacts:
         last_review: "datetime64[s]"
         released: "datetime64[s]"
         done: np.bool_
+        release_ignored: np.bool_
         reviews: ["datetime64[s]"]
         activity_days: ["datetime64[s]"]
         size: np.int64

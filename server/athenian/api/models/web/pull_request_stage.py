@@ -9,5 +9,6 @@ class PullRequestStage(Model, metaclass=Enum):
     MERGING = "merging"
     RELEASING = "releasing"
     FORCE_PUSH_DROPPED = "force_push_dropped"
+    RELEASE_IGNORED = "release_ignored"
     DONE = "done"
     DEPLOYED = "deployed"

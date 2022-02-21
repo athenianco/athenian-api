@@ -2111,6 +2111,7 @@ class PullRequestFactsMiner:
             activity_days=activity_days,
             size=size,
             force_push_dropped=force_push_dropped,
+            release_ignored=False,  # to be set independently in the heater
             repository_full_name=pr.pr[PullRequest.repository_full_name.name],
             author=pr.pr[PullRequest.user_login.name],
             merger=pr.pr[PullRequest.merged_by_login.name],

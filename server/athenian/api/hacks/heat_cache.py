@@ -35,7 +35,8 @@ from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_
 from athenian.api.controllers.miners.github.deployment import mine_deployments
 from athenian.api.controllers.miners.github.precomputed_prs import \
     delete_force_push_dropped_prs
-from athenian.api.controllers.miners.github.release_mine import mine_releases
+from athenian.api.controllers.miners.github.release_mine import mine_releases, \
+    override_first_releases
 from athenian.api.controllers.miners.types import PullRequestFacts
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.reposet import load_account_state
@@ -203,7 +204,6 @@ def main():
                 releases_by_branch = sum(
                     1 for r in releases if r[1].matched_by == ReleaseMatch.branch)
                 releases_count = len(releases)
-                del releases
                 if reposet.precomputed:
                     log.info("Scanning for force push dropped PRs")
                     await delete_force_push_dropped_prs(
@@ -243,6 +243,10 @@ def main():
                     ).sum()
                     prs_open = facts[PullRequestFacts.f.closed].isnull().sum()
                 del facts  # free some memory
+                await wait_deferred()
+                ignored_first_releases = await override_first_releases(
+                    releases, default_branches, release_settings, account, pdb)
+                del releases
                 log.info("Mining deployments")
                 await mine_deployments(
                     repos, {}, no_time_from, time_to, [], [], {}, {}, LabelFilter.empty(),
@@ -261,6 +265,7 @@ def main():
                             prs_merged=prs_merged,
                             prs_open=prs_open,
                             releases=releases_count,
+                            ignored_first_releases=ignored_first_releases,
                             releases_by_tag=releases_by_tag,
                             releases_by_branch=releases_by_branch,
                             branches=branches_count,
