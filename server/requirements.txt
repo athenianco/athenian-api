@@ -43,4 +43,4 @@ flogging==0.0.14
 unidecode==1.3.3
 pluralizer==1.1.0
 pyarrow==7.0.0
-croniter==1.2.0
+croniter==1.3.4
