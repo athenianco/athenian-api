@@ -85,9 +85,10 @@ def parse_args() -> argparse.Namespace:
                                      formatter_class=Formatter)
 
     def level_from_msg(msg: str) -> Optional[str]:
-        if "GET /status" in msg or "before send dropped event" in msg:
-            # these aiohttp access logs are annoying
-            return "debug"
+        for s in ("GET /status", "GET /prometheus", "before send dropped event"):
+            if s in msg:
+                # these aiohttp access and sentry logs are annoying
+                return "debug"
         return None
 
     flogging.add_logging_args(parser, level_from_msg=level_from_msg)

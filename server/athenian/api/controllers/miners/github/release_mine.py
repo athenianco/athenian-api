@@ -10,7 +10,8 @@ import aiomcache
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, func, join, select, union_all
+from sqlalchemy import and_, func, insert, join, select, union_all
+from sqlalchemy.dialects.postgresql import insert as postgres_insert
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
@@ -34,8 +35,8 @@ from athenian.api.controllers.miners.github.release_match import ReleaseToPullRe
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.github.user import mine_user_avatars, UserAvatarKeys
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
-from athenian.api.controllers.miners.types import Deployment, released_prs_columns, ReleaseFacts, \
-    ReleaseParticipants, ReleaseParticipationKind
+from athenian.api.controllers.miners.types import Deployment, PullRequestFacts, \
+    released_prs_columns, ReleaseFacts, ReleaseParticipants, ReleaseParticipationKind
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch, \
     ReleaseMatchSetting, ReleaseSettings
@@ -44,7 +45,8 @@ from athenian.api.defer import defer
 from athenian.api.int_to_str import int_to_str
 from athenian.api.models.metadata.github import NodeCommit, NodePullRequest, PullRequest, \
     PullRequestLabel, PushCommit, Release
-from athenian.api.models.precomputed.models import GitHubReleaseDeployment
+from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
+    GitHubReleaseDeployment
 from athenian.api.tracing import sentry_span
 
 
@@ -1233,3 +1235,117 @@ async def _load_release_deployments(releases_in_time_range: pd.DataFrame,
     deployments = await load_included_deployments(
         np.unique(dep_names), logical_settings, prefixer, account, meta_ids, mdb, rdb, cache)
     return depmap, deployments
+
+
+async def override_first_releases(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
+                                  default_branches: Dict[str, str],
+                                  release_settings: ReleaseSettings,
+                                  account: int,
+                                  pdb: Database,
+                                  threshold_factor=100) -> int:
+    """Exclude outlier first releases from calculating PR and release metrics."""
+    log = logging.getLogger(f"{metadata.__package__}.override_first_releases")
+    oldest_release_by_repo = {}
+    indexes_by_repo = defaultdict(list)
+    for i, (_, facts) in enumerate(releases):
+        repo = facts.repository_full_name
+        indexes_by_repo[repo].append(i)
+        ts = facts.published
+        try:
+            _, min_ts = oldest_release_by_repo[repo]
+        except KeyError:
+            min_ts = ts
+        if min_ts >= ts:
+            oldest_release_by_repo[repo] = i, ts
+    overridden = 0
+    data = []
+    prs = {}
+    for repo, (i, _) in oldest_release_by_repo.items():
+        release, facts = releases[i]
+        log.warning("- %s %s", repo, release[Release.url.name])
+        ages = np.array([releases[j][1].age for j in indexes_by_repo[repo] if j != i])
+        if len(ages) < 2:
+            continue
+        if facts.age < np.median(ages) * threshold_factor:
+            continue
+        args = dict(facts)
+        for key, val in args.items():
+            if key.startswith("prs_"):
+                if val is not None:
+                    args[key] = val[:0]
+        data.append((release, ReleaseFacts.from_fields(**args)))
+        if len(pr_node_ids := facts["prs_" + PullRequest.node_id.name]):
+            prs[repo] = pr_node_ids
+        overridden += 1
+
+    async def set_pr_release_ignored(repo: str, node_ids: np.ndarray):
+        ghdprf = GitHubDonePullRequestFacts
+        format_version = ghdprf.__table__.columns[ghdprf.format_version.key].default.arg
+        if pdb.url.dialect == "sqlite":
+            extra_cols = [
+                ghdprf.pr_created_at, ghdprf.number, ghdprf.reviewers, ghdprf.commenters,
+                ghdprf.commit_authors, ghdprf.commit_committers, ghdprf.labels,
+                ghdprf.activity_days, ghdprf.release_node_id, ghdprf.release_url,
+                ghdprf.author, ghdprf.merger, ghdprf.releaser,
+            ]
+        else:
+            extra_cols = [ghdprf.pr_created_at, ghdprf.number]
+        rows = await pdb.fetch_all(
+            select([ghdprf.pr_node_id, ghdprf.release_match, ghdprf.data] + extra_cols)
+            .where(and_(
+                ghdprf.acc_id == account,
+                ghdprf.format_version == format_version,
+                ghdprf.repository_full_name == repo,
+                ghdprf.pr_node_id.in_(node_ids),
+            )))
+        updates = []
+        now = datetime.now(timezone.utc)
+        for row in rows:
+            args = dict(PullRequestFacts(row[ghdprf.data.name]))
+            args[PullRequestFacts.f.release_ignored] = True
+            args[PullRequestFacts.f.released] = None
+            updates.append({
+                ghdprf.acc_id.name: account,
+                ghdprf.format_version.name: format_version,
+                ghdprf.release_match.name: row[ghdprf.release_match.name],
+                ghdprf.repository_full_name.name: repo,
+                ghdprf.pr_node_id.name: row[ghdprf.pr_node_id.name],
+                ghdprf.data.name: PullRequestFacts.from_fields(**args).data,
+                ghdprf.pr_done_at.name: args[PullRequestFacts.f.merged].item(),
+                ghdprf.updated_at.name: now,
+                **{k.name: row[k.name] for k in extra_cols},
+            })
+        if pdb.url.dialect == "postgresql":
+            sql = postgres_insert(ghdprf)
+            sql = sql.on_conflict_do_update(
+                constraint=ghdprf.__table__.primary_key,
+                set_={
+                    col.name: getattr(sql.excluded, col.name)
+                    for col in (
+                        ghdprf.pr_done_at,
+                        ghdprf.updated_at,
+                        ghdprf.data,
+                    )
+                },
+            )
+        elif pdb.url.dialect == "sqlite":
+            sql = insert(ghdprf).prefix_with("OR REPLACE")
+        else:
+            raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
+        if pdb.url.dialect == "sqlite":
+            async with pdb.connection() as pdb_conn:
+                async with pdb_conn.transaction():
+                    await pdb_conn.execute_many(sql, updates)
+        else:
+            # don't require a transaction in Postgres, executemany() is atomic in new asyncpg
+            await pdb.execute_many(sql, updates)
+
+    with sentry_sdk.start_span(op="store_precomputed_done_facts/execute_many"):
+        await gather(
+            store_precomputed_release_facts(
+                data, default_branches, release_settings, account, pdb, on_conflict_replace=True),
+            *(set_pr_release_ignored(repo, node_ids) for repo, node_ids in prs.items()),
+            op=f"override_first_releases/update({len(data)} + "
+               f"{len(prs)}/{sum(len(n) for n in prs.values())})",
+        )
+    return overridden

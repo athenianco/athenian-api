@@ -179,6 +179,8 @@ class PullRequestListMiner:
         if facts.done:
             if facts.force_push_dropped:
                 stages.add(PullRequestStage.FORCE_PUSH_DROPPED)
+            elif facts.release_ignored:
+                stages.add(PullRequestStage.RELEASE_IGNORED)
             stages.add(PullRequestStage.DONE)
         elif facts.merged:
             stages.add(PullRequestStage.RELEASING)

@@ -255,6 +255,7 @@ def pr_samples():
                 closed=pd.Timestamp(closed_at),
                 size=randint(10, 1000),
                 force_push_dropped=False,
+                release_ignored=False,
                 done=pd.Timestamp(released_at),
                 review_comments=max(0, randint(-5, 15)),
                 regular_comments=max(0, randint(-5, 15)),

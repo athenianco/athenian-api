@@ -115,7 +115,8 @@ async def store_precomputed_release_facts(releases: List[Tuple[Dict[str, Any], R
                                           default_branches: Dict[str, str],
                                           settings: ReleaseSettings,
                                           account: int,
-                                          pdb: morcilla.Database) -> None:
+                                          pdb: morcilla.Database,
+                                          on_conflict_replace: bool = False) -> None:
     """Put the new release facts to the pdb."""
     values = []
     for dikt, facts in releases:
@@ -139,9 +140,20 @@ async def store_precomputed_release_facts(releases: List[Tuple[Dict[str, Any], R
             data=facts.data,
         ).create_defaults().explode(with_primary_keys=True))
     if pdb.url.dialect == "postgresql":
-        sql = postgres_insert(GitHubReleaseFacts).on_conflict_do_nothing()
+        sql = postgres_insert(GitHubReleaseFacts)
+        if on_conflict_replace:
+            sql = sql.on_conflict_do_update(
+                constraint=GitHubReleaseFacts.__table__.primary_key,
+                set_={GitHubReleaseFacts.data.name: sql.excluded.data},
+            )
+        else:
+            sql = sql.on_conflict_do_nothing()
     else:
-        sql = insert(GitHubReleaseFacts).prefix_with("OR IGNORE")
+        sql = insert(GitHubReleaseFacts)
+        if on_conflict_replace:
+            sql = sql.prefix_with("OR REPLACE")
+        else:
+            sql = sql.prefix_with("OR IGNORE")
     with sentry_sdk.start_span(op="store_precomputed_release_facts/execute_many"):
         if pdb.url.dialect == "sqlite":
             async with pdb.connection() as pdb_conn:
