@@ -32,7 +32,7 @@ class GitHubAccessChecker(AccessChecker):
         key=lambda metadata_ids, **_: tuple(metadata_ids),
         cache=lambda self, **_: self.cache,
     )
-    async def _fetch_installed_repos(self, metadata_ids: Iterable[int]) -> Dict[str, str]:
+    async def _fetch_installed_repos(self, metadata_ids: Iterable[int]) -> Dict[str, int]:
         rows = await self.mdb.fetch_all(
             select([AccountRepository.repo_full_name, AccountRepository.repo_graph_id])
             .where(AccountRepository.acc_id.in_(metadata_ids)))

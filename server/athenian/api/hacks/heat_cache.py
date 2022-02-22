@@ -169,6 +169,7 @@ def main():
                 fetch_bots(reposet.owner_id, mdb, sdb, None),
             )
             log.info("Loaded %d bots", len(bots))
+            reposet.items = [r[0] for r in reposet.items]
             if not reposet.precomputed:
                 log.info("Considering account %d as brand new, creating the teams",
                          reposet.owner_id)

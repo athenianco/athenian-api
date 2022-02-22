@@ -228,7 +228,9 @@ async def get_account_repositories(account: int,
         raise ResponseError(NoSourceDataError(
             detail="The installation of account %d has not finished yet." % account))
     if not with_prefix:
-        repos = [r.split("/", 1)[1] for r in repos]
+        repos = [r[0].split("/", 1)[1] for r in repos]
+    else:
+        repos = [r[0] for r in repos]
     return repos
 
 

@@ -126,7 +126,7 @@ async def notify_releases(request: AthenianWebRequest, body: List[dict]) -> web.
             resolved_users[row[User.login.name]] = row[User.node_id.name]
         return (resolved_full_commits,
                 resolved_prefixed_commits,
-                checker.installed_repos(),
+                checker.installed_repos,
                 resolved_users,
                 meta_ids)
 
@@ -340,14 +340,13 @@ async def notify_deployments(request: AthenianWebRequest, body: List[dict]) -> w
                 f"Access denied to some repositories in [{i}].components: {denied_repos}"))
         if notification.name is None:
             notification.name = _compose_name(notification)
-    repo_nodes = checker.installed_repos()
     resolved = await _resolve_references(
         chain.from_iterable(((c.repository, c.reference)
                              for c in n.components)
                             for n in notifications),
         meta_ids, mdb, False)
     tasks = [
-        _notify_deployment(notification, account, rdb, resolved, repo_nodes)
+        _notify_deployment(notification, account, rdb, resolved, checker.installed_repos)
         for notification in notifications
     ]
     try:
@@ -464,7 +463,7 @@ async def _notify_deployment(notification: WebDeploymentNotification,
                              account: int,
                              rdb: Database,
                              resolved_refs: Mapping[str, Mapping[str, str]],
-                             repo_nodes: Mapping[str, str],
+                             repo_nodes: Mapping[str, int],
                              ) -> None:
     async with rdb.connection() as rdb_conn:
         async with rdb_conn.transaction():

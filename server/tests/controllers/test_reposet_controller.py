@@ -290,5 +290,4 @@ async def test_load_account_reposets_bad_installation(sdb, mdb, user_id):
         return user_id
 
     with pytest.raises(ResponseError):
-        await load_account_reposets(
-            4, login, [RepositorySet.items], sdb, mdb, None, None)
+        await load_account_reposets(4, login, [RepositorySet.items], sdb, mdb, None, None)

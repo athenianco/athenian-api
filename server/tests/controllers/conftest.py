@@ -144,10 +144,10 @@ async def logical_settings_db(sdb):
     ).create_defaults().explode()))
     await sdb.execute(update(RepositorySet).where(RepositorySet.owner_id == 1).values({
         RepositorySet.items: [
-            "github.com/src-d/gitbase",
-            "github.com/src-d/go-git",
-            "github.com/src-d/go-git/alpha",
-            "github.com/src-d/go-git/beta",
+            ["github.com/src-d/gitbase", 39652769],
+            ["github.com/src-d/go-git", 40550],
+            ["github.com/src-d/go-git/alpha", 40550],
+            ["github.com/src-d/go-git/beta", 40550],
         ],
         RepositorySet.updates_count: RepositorySet.updates_count + 1,
         RepositorySet.updated_at: datetime.now(timezone.utc),
@@ -187,10 +187,10 @@ async def release_match_setting_tag_logical_db(sdb):
 async def logical_reposet(sdb):
     await sdb.execute(update(RepositorySet).where(RepositorySet.id == 1).values({
         RepositorySet.items: [
-            "github.com/src-d/gitbase",
-            "github.com/src-d/go-git",
-            "github.com/src-d/go-git/alpha",
-            "github.com/src-d/go-git/beta",
+            ["github.com/src-d/gitbase", 39652769],
+            ["github.com/src-d/go-git", 40550],
+            ["github.com/src-d/go-git/alpha", 40550],
+            ["github.com/src-d/go-git/beta", 40550],
         ],
         RepositorySet.updated_at: datetime.now(timezone.utc),
         RepositorySet.updates_count: 2,

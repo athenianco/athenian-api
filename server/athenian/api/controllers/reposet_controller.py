@@ -1,17 +1,19 @@
 from datetime import timezone
 from sqlite3 import IntegrityError, OperationalError
-from typing import List, Optional
+from typing import List, Optional, Sequence, Tuple, Type, Union
 
 from aiohttp import web
+import aiomcache
 from asyncpg import UniqueViolationError
-import morcilla.core
 from sqlalchemy import and_, delete, insert, select, update
+from sqlalchemy.orm import InstrumentedAttribute
 
 from athenian.api.auth import disable_default_user
 from athenian.api.controllers.account import get_metadata_account_ids, \
     get_user_account_status, only_admin
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.reposet import fetch_reposet, load_account_reposets
+from athenian.api.db import DatabaseLike
 from athenian.api.models.state.models import RepositorySet
 from athenian.api.models.web import CreatedIdentifier, DatabaseConflict, ForbiddenError, \
     InvalidRequestError, RepositorySetWithName
@@ -37,7 +39,8 @@ async def create_reposet(request: AthenianWebRequest, body: dict) -> web.Respons
         if dupe_id is not None:
             raise ResponseError(DatabaseConflict(
                 detail="there is an existing reposet %s with the same name" % dupe_id))
-        items = await _check_reposet(request, sdb_conn, body.account, body.items)
+        items = await _ensure_reposet(
+            body.account, body.items, sdb_conn, request.mdb, request.cache)
         rs = RepositorySet(name=body.name, owner_id=account, items=items).create_defaults()
         try:
             rid = await sdb_conn.execute(insert(RepositorySet).values(rs.explode()))
@@ -47,13 +50,25 @@ async def create_reposet(request: AthenianWebRequest, body: dict) -> web.Respons
         return model_response(CreatedIdentifier(rid))
 
 
+async def _fetch_reposet_with_owner(
+    id: int,
+    columns: Union[Sequence[Type[RepositorySet]], Sequence[InstrumentedAttribute]],
+    uid: str,
+    sdb: DatabaseLike,
+    cache: Optional[aiomcache.Client],
+):
+    rs = await fetch_reposet(id, columns, sdb)
+    is_admin = await get_user_account_status(uid, rs.owner_id, sdb, None, None, None, cache)
+    return rs, is_admin
+
+
 @disable_default_user
 async def delete_reposet(request: AthenianWebRequest, id: int) -> web.Response:
     """Delete a repository set.
 
     :param id: Numeric identifier of the repository set to delete.
     """
-    _, is_admin = await fetch_reposet(id, [], request.uid, request.sdb, request.cache)
+    _, is_admin = await _fetch_reposet_with_owner(id, [], request.uid, request.sdb, request.cache)
     if not is_admin:
         raise ResponseError(ForbiddenError(
             detail="User %s may not modify reposet %d" % (request.uid, id)))
@@ -73,28 +88,27 @@ async def get_reposet(request: AthenianWebRequest, id: int) -> web.Response:
         RepositorySet.precomputed,
         RepositorySet.tracking_re,
     ]
-    rs, _ = await fetch_reposet(id, rs_cols, request.uid, request.sdb, request.cache)
+    rs, _ = await _fetch_reposet_with_owner(id, rs_cols, request.uid, request.sdb, request.cache)
     return model_response(RepositorySetWithName(
-        name=rs.name, items=rs.items, precomputed=rs.precomputed))
+        name=rs.name, items=[r[0] for r in rs.items], precomputed=rs.precomputed))
 
 
-async def _check_reposet(request: AthenianWebRequest,
-                         sdb_conn: Optional[morcilla.core.Connection],
-                         account: int,
-                         body: List[str],
-                         ) -> List[str]:
+async def _ensure_reposet(account: int,
+                          body: List[str],
+                          sdb: DatabaseLike,
+                          mdb: DatabaseLike,
+                          cache: Optional[aiomcache.Client],
+                          ) -> List[Tuple[str, int]]:
     repos = {repo.split("/", 1)[1] for repo in body}
-    meta_ids = await get_metadata_account_ids(account, sdb_conn, request.cache)
-    checker = await access_classes["github"](
-        account, meta_ids, sdb_conn, request.mdb, request.cache,
-    ).load()
+    meta_ids = await get_metadata_account_ids(account, sdb, cache)
+    checker = await access_classes["github"](account, meta_ids, sdb, mdb, cache).load()
     denied = await checker.check(repos)
     if denied:
         raise ResponseError(ForbiddenError(
             detail="the following repositories are access denied for account %d: %s" %
                    (account, denied),
         ))
-    return sorted(set(body))
+    return sorted((name, checker.installed_repos[name.split("/", 1)[1]]) for name in set(body))
 
 
 @disable_default_user
@@ -117,13 +131,14 @@ async def update_reposet(request: AthenianWebRequest, id: int, body: dict) -> we
             pointer=".name",
         ))
     async with request.sdb.connection() as sdb_conn:
-        rs, is_admin = await fetch_reposet(
+        rs, is_admin = await _fetch_reposet_with_owner(
             id, [RepositorySet], request.uid, sdb_conn, request.cache)
         if not is_admin:
             raise ResponseError(ForbiddenError(
                 detail="User %s may not modify reposet %d" % (request.uid, id)))
         if body.items is not None:
-            new_items = await _check_reposet(request, sdb_conn, rs.owner_id, body.items)
+            new_items = await _ensure_reposet(
+                rs.owner_id, body.items, sdb_conn, request.mdb, request.cache)
         else:
             new_items = None
         changed = False
@@ -151,7 +166,7 @@ async def update_reposet(request: AthenianWebRequest, id: int, body: dict) -> we
                     detail="there is an existing reposet with the same items"))
         return model_response(RepositorySetWithName(
             name=rs.name,
-            items=rs.items,
+            items=[r[0] for r in rs.items],
             precomputed=rs.precomputed,
         ))
 
