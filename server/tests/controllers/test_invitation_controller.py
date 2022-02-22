@@ -10,10 +10,10 @@ from sqlalchemy import and_, delete, insert, select, update
 from athenian.api.controllers.invitation_controller import admin_backdoor, decode_slug, \
     encode_slug, jira_url_template, url_prefix
 from athenian.api.models.metadata.github import FetchProgress
+from athenian.api.models.metadata.jira import Progress as JIRAProgress
 from athenian.api.models.state.models import Account, AccountFeature, AccountGitHubAccount, \
     AccountJiraInstallation, BanishedUserAccount, Feature, FeatureComponent, God, Invitation, \
-    ReleaseSetting, \
-    RepositorySet, UserAccount, UserToken, WorkType
+    ReleaseSetting, RepositorySet, UserAccount, UserToken, WorkType
 
 
 async def clean_state(sdb: morcilla.Database) -> int:
@@ -645,6 +645,47 @@ async def test_progress_no_precomputed(client, headers, sdb):
     progress["finished_date"] = None
     progress["tables"][-1]["fetched"] = 0
     assert body == progress
+
+
+async def test_jira_progress_200(client, headers, app, client_cache):
+    for _ in range(2):
+        response = await client.request(
+            method="GET", path="/v1/invite/jira_progress/1", headers=headers, json={},
+        )
+        assert response.status == 200
+        body = json.loads((await response.read()).decode("utf-8"))
+        assert body == {
+            "started_date": "2020-01-22T13:29:00Z",
+            "finished_date": "2020-01-23T13:29:00Z",
+            "tables": [{"fetched": 10, "name": "issue", "total": 10}],
+        }
+
+
+async def test_jira_progress_not_finished(client, headers, mdb_rw):
+    await mdb_rw.execute(update(JIRAProgress).values({
+        JIRAProgress.total: JIRAProgress.total * 2}))
+    try:
+        response = await client.request(
+            method="GET", path="/v1/invite/jira_progress/1", headers=headers, json={},
+        )
+        assert response.status == 200
+        body = json.loads((await response.read()).decode("utf-8"))
+        assert body == {
+            "started_date": "2020-01-22T13:29:00Z",
+            "finished_date": None,
+            "tables": [{"fetched": 10, "name": "issue", "total": 20}],
+        }
+    finally:
+        await mdb_rw.execute(update(JIRAProgress).values({
+            JIRAProgress.total: JIRAProgress.total / 2}))
+
+
+@pytest.mark.parametrize("account, code", [(2, 422), (3, 404)])
+async def test_jira_progress_errors(client, headers, account, code):
+    response = await client.request(
+        method="GET", path="/v1/invite/jira_progress/%d" % account, headers=headers, json={},
+    )
+    assert response.status == code
 
 
 async def test_gen_jira_link_smoke(client, headers):

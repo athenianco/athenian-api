@@ -11,8 +11,8 @@ class InstallationProgress(Model):
     openapi_types = {
         "started_date": datetime,
         "finished_date": datetime,
-        "owner": str,
-        "repositories": int,
+        "owner": Optional[str],
+        "repositories": Optional[int],
         "tables": List[TableFetchingProgress],
     }
 
@@ -90,7 +90,7 @@ class InstallationProgress(Model):
         self._finished_date = finished_date
 
     @property
-    def owner(self) -> str:
+    def owner(self) -> Optional[str]:
         """Gets the owner of this InstallationProgress.
 
         Login of the person who installed the metadata.
@@ -100,20 +100,17 @@ class InstallationProgress(Model):
         return self._owner
 
     @owner.setter
-    def owner(self, owner: str):
+    def owner(self, owner: Optional[str]):
         """Sets the owner of this InstallationProgress.
 
         Login of the person who installed the metadata.
 
         :param owner: The owner of this InstallationProgress.
         """
-        if owner is None:
-            raise ValueError("Invalid value for `owner`, must not be `None`")
-
         self._owner = owner
 
     @property
-    def repositories(self) -> int:
+    def repositories(self) -> Optional[int]:
         """Gets the repositories of this InstallationProgress.
 
         Number of discovered repositories.
@@ -123,16 +120,13 @@ class InstallationProgress(Model):
         return self._repositories
 
     @repositories.setter
-    def repositories(self, repositories: int):
+    def repositories(self, repositories: Optional[int]):
         """Sets the repositories of this InstallationProgress.
 
         Number of discovered repositories.
 
         :param repositories: The repositories of this InstallationProgress.
         """
-        if repositories is None:
-            raise ValueError("Invalid value for `repositories`, must not be `None`")
-
         self._repositories = repositories
 
     @property

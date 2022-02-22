@@ -1,5 +1,7 @@
+from datetime import timezone
 import logging
 import marshal
+import pickle
 import re
 from typing import Dict, Iterable, Optional, Set, Tuple
 
@@ -18,7 +20,7 @@ from athenian.api.db import DatabaseLike
 from athenian.api.models.metadata.jira import Progress, Project, User as JIRAUser
 from athenian.api.models.state.models import AccountJiraInstallation, JIRAProjectSetting, \
     MappedJIRAIdentity
-from athenian.api.models.web import NoSourceDataError
+from athenian.api.models.web import InstallationProgress, NoSourceDataError, TableFetchingProgress
 from athenian.api.response import ResponseError
 from athenian.api.tracing import sentry_span
 
@@ -97,6 +99,44 @@ async def get_jira_installation_or_none(account: int,
         return await get_jira_installation(account, sdb, mdb, cache)
     except ResponseError:
         return None
+
+
+@cached(exptime=5,  # matches the webapp poll interval
+        serialize=pickle.dumps,
+        deserialize=pickle.loads,
+        key=lambda account, **_: (account,))
+async def fetch_jira_installation_progress(account: int,
+                                           sdb: DatabaseLike,
+                                           mdb: DatabaseLike,
+                                           cache: Optional[aiomcache.Client],
+                                           ) -> InstallationProgress:
+    """Load the JIRA installation progress for the specified account."""
+    jira_id, _ = await get_jira_installation(account, sdb, mdb, cache)
+    rows = await mdb.fetch_all(select([Progress]).where(and_(
+        Progress.acc_id == jira_id,
+        Progress.is_initial,
+    )))
+    tables = [
+        TableFetchingProgress(fetched=r[Progress.current.name],
+                              total=r[Progress.total.name],
+                              name=r[Progress.event_type.name])
+        for r in rows
+    ]
+    started_at = min(r[Progress.started_at.name] for r in rows)
+    if not all(t.total == t.fetched for t in tables):
+        finished_at = None
+    else:
+        finished_at = max(r[Progress.end_at.name] for r in rows)
+    if mdb.url.dialect == "sqlite":
+        started_at = started_at.replace(tzinfo=timezone.utc)
+        if finished_at is not None:
+            finished_at = finished_at.replace(tzinfo=timezone.utc)
+    model = InstallationProgress(
+        started_date=started_at,
+        finished_date=finished_at,
+        tables=tables,
+    )
+    return model
 
 
 @sentry_span

@@ -26,6 +26,7 @@ from athenian.api.controllers.account import fetch_github_installation_progress,
     generate_jira_invitation_link, get_account_name, get_metadata_account_ids, \
     get_user_account_status, is_membership_check_enabled, jira_url_template, only_god
 from athenian.api.controllers.ffx import decrypt, encrypt
+from athenian.api.controllers.jira import fetch_jira_installation_progress
 from athenian.api.controllers.reposet import load_account_reposets
 from athenian.api.controllers.user import load_user_accounts
 from athenian.api.db import Connection, Database, DatabaseLike
@@ -461,8 +462,8 @@ async def _notify_precomputed_failure(slack: Optional[SlackWebClient],
 
 
 @expires_header(5)
-async def eval_invitation_progress(request: AthenianWebRequest, id: int) -> web.Response:
-    """Return the current Athenian GitHub app installation progress."""
+async def eval_metadata_progress(request: AthenianWebRequest, id: int) -> web.Response:
+    """Return the current GitHub installation progress in Athenian."""
     await get_user_account_status(request.uid, id, request.sdb, request.mdb, request.user,
                                   request.app["slack"], request.cache)
     async with request.mdb.connection() as mdb_conn:
@@ -475,6 +476,15 @@ async def eval_invitation_progress(request: AthenianWebRequest, id: int) -> web.
         await _append_precomputed_progress(
             model, id, request.uid, login_loader, request.sdb, request.mdb,
             request.cache, request.app["slack"])
+    return model_response(model)
+
+
+@expires_header(2)
+async def eval_jira_progress(request: AthenianWebRequest, id: int) -> web.Response:
+    """Return the current JIRA installation progress in Athenian."""
+    await get_user_account_status(request.uid, id, request.sdb, request.mdb, request.user,
+                                  request.app["slack"], request.cache)
+    model = await fetch_jira_installation_progress(id, request.sdb, request.mdb, request.cache)
     return model_response(model)
 
 
