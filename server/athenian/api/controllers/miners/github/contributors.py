@@ -243,17 +243,21 @@ async def mine_contributors(repos: Collection[str],
     contribs = []
     for ud in user_details:
         c = dict(ud)
-        c["stats"] = stats[c[User.login.name]]
-        if user_roles and sum(c["stats"].get(role, 0) for role in user_roles) == 0:
+        try:
+            user_stats = stats[(login := c[User.login.name])]
+        except KeyError:
+            # may happen on multiple GitHub installations with the same user
+            continue
+        del stats[login]
+        if user_roles and sum(user_stats.get(role, 0) for role in user_roles) == 0:
             continue
 
-        if "author" in c["stats"]:
-            # We could get rid of these re-mapping, maybe worth looking at it along with the
-            # definition of `DeveloperUpdates`
-            c["stats"]["prs"] = c["stats"].pop("author")
-
-        if not with_stats:
-            c.pop("stats")
+        if with_stats:
+            if "author" in user_stats:
+                # We could get rid of these re-mapping, maybe worth looking at it along with the
+                # definition of `DeveloperUpdates`
+                user_stats["prs"] = user_stats.pop("author")
+            c["stats"] = user_stats
 
         contribs.append(c)
 

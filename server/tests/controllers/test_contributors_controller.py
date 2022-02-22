@@ -36,6 +36,7 @@ async def _test_get_contributors(client, cached, headers, app, client_cache):
     assert all(c.login.startswith("github.com/") for c in contribs)
 
     contribs = {c.login: c for c in contribs}
+    assert len(contribs) == 206
     assert "github.com/mcuadros" in contribs
     assert "github.com/author_login" not in contribs
     assert "github.com/committer_login" not in contribs
