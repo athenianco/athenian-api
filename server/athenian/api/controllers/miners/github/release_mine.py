@@ -1237,14 +1237,17 @@ async def _load_release_deployments(releases_in_time_range: pd.DataFrame,
     return depmap, deployments
 
 
-async def override_first_releases(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
-                                  default_branches: Dict[str, str],
-                                  release_settings: ReleaseSettings,
-                                  account: int,
-                                  pdb: Database,
-                                  threshold_factor=100) -> int:
-    """Exclude outlier first releases from calculating PR and release metrics."""
-    log = logging.getLogger(f"{metadata.__package__}.override_first_releases")
+def discover_first_releases(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
+                            threshold_factor=100,
+                            ) -> Tuple[List[Tuple[Dict[str, Any], ReleaseFacts]],
+                                       Dict[str, Sequence[int]]]:
+    """
+    Apply heuristics to find first releases that should be hidden from the metrics.
+
+    :param releases: Releases in the format of `mine_releases()`.
+    :param threshold_factor: We consider the first release as an outlier if it's age is bigger \
+                             than the median age of the others multiplied by this number.
+    """
     oldest_release_by_repo = {}
     indexes_by_repo = defaultdict(list)
     for i, (_, facts) in enumerate(releases):
@@ -1257,12 +1260,10 @@ async def override_first_releases(releases: List[Tuple[Dict[str, Any], ReleaseFa
             min_ts = ts
         if min_ts >= ts:
             oldest_release_by_repo[repo] = i, ts
-    overridden = 0
-    data = []
+    outlier_releases = []
     prs = {}
     for repo, (i, _) in oldest_release_by_repo.items():
         release, facts = releases[i]
-        log.warning("- %s %s", repo, release[Release.url.name])
         ages = np.array([releases[j][1].age for j in indexes_by_repo[repo] if j != i])
         if len(ages) < 2:
             continue
@@ -1273,10 +1274,28 @@ async def override_first_releases(releases: List[Tuple[Dict[str, Any], ReleaseFa
             if key.startswith("prs_"):
                 if val is not None:
                     args[key] = val[:0]
-        data.append((release, ReleaseFacts.from_fields(**args)))
+        outlier_releases.append((release, ReleaseFacts.from_fields(**args)))
         if len(pr_node_ids := facts["prs_" + PullRequest.node_id.name]):
             prs[repo] = pr_node_ids
-        overridden += 1
+    return outlier_releases, prs
+
+
+async def hide_first_releases(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
+                              prs: Dict[str, Sequence[int]],
+                              default_branches: Dict[str, str],
+                              release_settings: ReleaseSettings,
+                              account: int,
+                              pdb: Database,
+                              ) -> None:
+    """
+    Hide the specified releases from calculating the metrics.
+
+    :param releases: First releases detected by `discover_first_releases()`.
+    :param prs: Pull requests belonging to the first releases.
+    """
+    log = logging.getLogger(f"{metadata.__package__}.hide_first_releases")
+    logged_releases = {f.repository_full_name: r[Release.url.name] for r, f in releases}
+    log.info("hiding %d first releases: %s", len(logged_releases), logged_releases)
 
     async def set_pr_release_ignored(repo: str, node_ids: np.ndarray):
         ghdprf = GitHubDonePullRequestFacts
@@ -1343,9 +1362,22 @@ async def override_first_releases(releases: List[Tuple[Dict[str, Any], ReleaseFa
     with sentry_sdk.start_span(op="store_precomputed_done_facts/execute_many"):
         await gather(
             store_precomputed_release_facts(
-                data, default_branches, release_settings, account, pdb, on_conflict_replace=True),
+                releases, default_branches, release_settings, account, pdb,
+                on_conflict_replace=True),
             *(set_pr_release_ignored(repo, node_ids) for repo, node_ids in prs.items()),
-            op=f"override_first_releases/update({len(data)} + "
+            op=f"override_first_releases/update({len(releases)} + "
                f"{len(prs)}/{sum(len(n) for n in prs.values())})",
         )
-    return overridden
+
+
+async def override_first_releases(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
+                                  default_branches: Dict[str, str],
+                                  release_settings: ReleaseSettings,
+                                  account: int,
+                                  pdb: Database,
+                                  threshold_factor=100) -> int:
+    """Exclude outlier first releases from calculating PR and release metrics."""
+    first_releases, prs = discover_first_releases(releases, threshold_factor)
+    await hide_first_releases(
+        first_releases, prs, default_branches, release_settings, account, pdb)
+    return len(first_releases)
