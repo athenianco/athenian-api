@@ -35,6 +35,7 @@ from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_
 from athenian.api.controllers.miners.github.deployment import mine_deployments
 from athenian.api.controllers.miners.github.precomputed_prs import \
     delete_force_push_dropped_prs
+from athenian.api.controllers.miners.github.release_load import ReleaseLoader
 from athenian.api.controllers.miners.github.release_mine import discover_first_releases, \
     hide_first_releases, mine_releases
 from athenian.api.controllers.miners.types import PullRequestFacts
@@ -193,12 +194,11 @@ def main():
             branches_count = len(branches)
             try:
                 log.info("Mining the releases")
-                releases, _, _, _ = await mine_releases(
+                releases, _, matches, _ = await mine_releases(
                     repos, {}, branches, default_branches, no_time_from, time_to,
                     LabelFilter.empty(), JIRAFilter.empty(), release_settings, logical_settings,
                     prefixer, reposet.owner_id, meta_ids, mdb, pdb, rdb, None,
                     force_fresh=True, with_pr_titles=False, with_deployments=False)
-                await wait_deferred()
                 releases_by_tag = sum(
                     1 for r in releases if r[1].matched_by == ReleaseMatch.tag)
                 releases_by_branch = sum(
@@ -206,6 +206,8 @@ def main():
                 releases_count = len(releases)
                 ignored_first_releases, ignored_released_prs = discover_first_releases(releases)
                 del releases
+                release_settings = ReleaseLoader.disambiguate_release_settings(
+                    release_settings, matches)
                 if reposet.precomputed:
                     log.info("Scanning for force push dropped PRs")
                     await delete_force_push_dropped_prs(
