@@ -492,7 +492,8 @@ async def _fetch_commit_history_dag(hashes: np.ndarray,
         if not validate_edges_integrity(new_edges):
             log.warning(
                 "skipping because some children are not consistent: heads %s: %s",
-                head_ids[:batch_size].tolist(), new_edges)
+                head_ids[:batch_size].tolist(),
+                new_edges if len(new_edges) < 100 else f"<{len(new_edges)} new edges>")
             new_edges = []
         else:
             append_missing_heads(new_edges, head_hashes[:batch_size])
