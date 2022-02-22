@@ -142,3 +142,6 @@ class Progress(Base):
     event_type = Column(Text, primary_key=True)
     current = Column(BigInteger, nullable=False)
     total = Column(BigInteger, nullable=False)
+    is_initial = Column(Boolean, nullable=False)
+    started_at = Column(TIMESTAMP(timezone=True), nullable=False)
+    end_at = Column(TIMESTAMP(timezone=True))

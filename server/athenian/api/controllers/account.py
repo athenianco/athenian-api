@@ -26,12 +26,9 @@ from athenian.api.defer import defer
 from athenian.api.models.metadata.github import Account as MetadataAccount, AccountRepository, \
     FetchProgress, NodeUser, Organization, Team as MetadataTeam, TeamMember
 from athenian.api.models.state.models import Account, AccountFeature, AccountGitHubAccount, \
-    Feature, \
-    FeatureComponent, RepositorySet, \
-    Team as StateTeam, UserAccount
+    Feature, FeatureComponent, RepositorySet, Team as StateTeam, UserAccount
 from athenian.api.models.web import ForbiddenError, InstallationProgress, NoSourceDataError, \
-    NotFoundError, \
-    TableFetchingProgress, User
+    NotFoundError, TableFetchingProgress, User
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError
 from athenian.api.typing_utils import wraps

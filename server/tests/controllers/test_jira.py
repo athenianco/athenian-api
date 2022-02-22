@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 import pytest
 from sqlalchemy import delete, distinct, insert, select, update
 from sqlalchemy.sql.functions import count
@@ -104,6 +106,9 @@ async def test_match_jira_identities_incomplete_progress(sdb, mdb_rw, slack):
         Progress.acc_id.name: 1,
         Progress.event_id.name: "guid",
         Progress.event_type.name: "user",
+        Progress.started_at.name: datetime.now(timezone.utc),
+        Progress.end_at.name: datetime.now(timezone.utc),
+        Progress.is_initial.name: True,
     }))
     try:
         assert (await match_jira_identities(1, (6366825,), sdb, mdb_rw, slack, None)) is None
