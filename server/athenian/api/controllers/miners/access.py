@@ -31,7 +31,8 @@ class AccessChecker:
         self.cache_ttl = cache_ttl
         self._installed_repos = {}
 
-    def installed_repos(self) -> Dict[str, str]:
+    @property
+    def installed_repos(self) -> Dict[str, int]:
         """Get the currently installed repository names *without* the service prefix mapped to \
         node IDs."""
         return self._installed_repos

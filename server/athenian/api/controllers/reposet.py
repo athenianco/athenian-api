@@ -16,7 +16,7 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.controllers.account import fetch_github_installation_progress, \
-    get_metadata_account_ids, get_user_account_status, match_metadata_installation
+    get_metadata_account_ids, match_metadata_installation
 from athenian.api.controllers.logical_repos import coerce_logical_repos
 from athenian.api.controllers.miners.access import AccessChecker
 from athenian.api.controllers.miners.access_classes import access_classes
@@ -60,28 +60,24 @@ async def resolve_reposet(repo: str,
             detail="repository set identifier is invalid: %s" % repo,
             pointer=pointer,
         ))
-    rs, _ = await fetch_reposet(
-        set_id, [RepositorySet.items, RepositorySet.tracking_re], uid, sdb, cache)
+    rs = await fetch_reposet(set_id, [RepositorySet.items, RepositorySet.tracking_re], sdb)
     if rs.owner_id != account:
         raise ResponseError(ForbiddenError(
             detail="User %s is not allowed to reference reposet %d in this query" %
                    (uid, set_id)))
-    return rs.items
+    return [r[0] for r in rs.items]
 
 
 @sentry_span
 async def fetch_reposet(
     id: int,
     columns: Union[Sequence[Type[RepositorySet]], Sequence[InstrumentedAttribute]],
-    uid: str,
     sdb: DatabaseLike,
-    cache: Optional[aiomcache.Client],
-) -> Tuple[RepositorySet, bool]:
+) -> RepositorySet:
     """
     Retrieve a repository set by ID and check the access for the given user.
 
-    :return: Loaded RepositorySet and `is_admin` flag that indicates whether the user has \
-             RW access to that set.
+    :return: Loaded RepositorySet with `columns`.
     """
     if not columns or columns[0] is not RepositorySet:
         for col in columns:
@@ -92,10 +88,8 @@ async def fetch_reposet(
             columns.append(RepositorySet.owner_id)
     rs = await sdb.fetch_one(select(columns).where(RepositorySet.id == id))
     if rs is None or len(rs) == 0:
-        raise ResponseError(NotFoundError(detail="Repository set %d does not exist" % id))
-    account = rs[RepositorySet.owner_id.name]
-    adm = await get_user_account_status(uid, account, sdb, None, None, None, cache)
-    return RepositorySet(**rs), adm
+        raise ResponseError(NotFoundError(detail=f"Repository set {id} does not exist"))
+    return RepositorySet(**rs)
 
 
 @sentry_span
@@ -114,7 +108,7 @@ async def load_all_reposet(account: int,
         sdb, mdb, cache, slack)
     for rs in rss:
         if rs[RepositorySet.name.name] == RepositorySet.ALL:
-            return [rs[RepositorySet.items.name]]
+            return [[r[0] for r in rs[RepositorySet.items.name]]]
     raise ResponseError(NoSourceDataError(detail=f'No "{RepositorySet.ALL}" reposet exists.'))
 
 
@@ -196,7 +190,7 @@ async def resolve_repos(repositories: List[str],
     if denied := await checker.check(coerce_logical_repos(checked_repos).keys()):
         log = logging.getLogger(f"{metadata.__package__}.resolve_repos")
         log.warning("access denied account %d%s: user sent %s we've got %s",
-                    account, meta_ids, denied, list(checker.installed_repos()))
+                    account, meta_ids, denied, list(checker.installed_repos))
         raise ResponseError(ForbiddenError(
             detail='The following repositories are access denied for account %d (missing "'
                    'github.com/" prefix?): %s' % (account, denied),
@@ -318,7 +312,7 @@ async def _load_account_reposets(account: int,
             missing = []
             for r in repo_node_ids:
                 try:
-                    repos.append(prefixer.repo_node_to_prefixed_name[r[0]])
+                    repos.append([prefixer.repo_node_to_prefixed_name[r[0]], r[0]])
                 except KeyError:
                     missing.append(r[0])
             if missing:
@@ -332,7 +326,7 @@ async def _load_account_reposets(account: int,
             log.info("Created the first reposet %d for account %d with %d repos",
                      rs.id, account, len(repos))
         if slack is not None:
-            prefixes = {r.split("/", 2)[1] for r in repos}
+            prefixes = {r[0].split("/", 2)[1] for r in repos}
             await defer(slack.post_install("installation_goes_on.jinja2",
                                            account=account,
                                            repos=len(repos),

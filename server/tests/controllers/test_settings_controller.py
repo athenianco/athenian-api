@@ -908,9 +908,9 @@ async def test_delete_logical_repository_smoke(
     assert rows[0][0] == "beta"
     row = await sdb.fetch_one(select([RepositorySet]).where(RepositorySet.id == 1))
     assert row[RepositorySet.items.name] == [
-        "github.com/src-d/gitbase",
-        "github.com/src-d/go-git",
-        "github.com/src-d/go-git/beta",
+        ["github.com/src-d/gitbase", 39652769],
+        ["github.com/src-d/go-git", 40550],
+        ["github.com/src-d/go-git/beta", 40550],
     ]
     row = await sdb.fetch_one(select([ReleaseSetting])
                               .where(ReleaseSetting.repository == "github.com/src-d/go-git/alpha"))
@@ -977,9 +977,9 @@ async def _test_set_logical_repository(client, headers, sdb, n):
     }
     row = await sdb.fetch_one(select([RepositorySet]).where(RepositorySet.id == 1))
     assert row[RepositorySet.items.name][:3] == [
-        "github.com/src-d/gitbase",
-        "github.com/src-d/go-git",
-        "github.com/src-d/go-git/alpha",
+        ["github.com/src-d/gitbase", 39652769],
+        ["github.com/src-d/go-git", 40550],
+        ["github.com/src-d/go-git/alpha", 40550],
     ]
     assert len(row[RepositorySet.items.name]) == 2 + n
     row = await sdb.fetch_one(select([ReleaseSetting])

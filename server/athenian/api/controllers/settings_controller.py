@@ -489,7 +489,8 @@ async def set_logical_repository(request: AthenianWebRequest, body: dict) -> web
             for row in rows:
                 if re.fullmatch(row[RepositorySet.tracking_re.name], prefixed_name):
                     items = row[RepositorySet.items.name]
-                    items.insert(bisect_right(items, prefixed_name), prefixed_name)
+                    items.insert(bisect_right([r[0] for r in items], prefixed_name),
+                                 (prefixed_name, repo_id))
                     await sdb_conn.execute(
                         update(RepositorySet)
                         .where(RepositorySet.id == row[RepositorySet.id.name])
@@ -540,8 +541,9 @@ async def _delete_logical_repository(name: str,
         rows = await sdb.fetch_all(
             select([RepositorySet]).where(RepositorySet.owner_id == account))
         for row in rows:
-            index = bisect_left((items := row[RepositorySet.items.name]), prefixed_name)
-            if index < len(items) and items[index] == prefixed_name:
+            items = row[RepositorySet.items.name]
+            index = bisect_left([r[0] for r in items], prefixed_name)
+            if index < len(items) and items[index][0] == prefixed_name:
                 items.pop(index)
                 await sdb.execute(
                     update(RepositorySet)
