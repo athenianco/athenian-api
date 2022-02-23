@@ -402,7 +402,11 @@ class Auth0:
                     status=HTTPStatus.SERVICE_UNAVAILABLE,
                     detail=key,
                 ))
-            sentry_sdk.set_user({"username": user_info.login, "email": user_info.email})
+            if user_info.email and user_info.email != User.EMPTY_EMAIL:
+                email = {"email": user_info.email}
+            else:
+                email = {}
+            sentry_sdk.set_user({"id": request.uid, "username": user_info.login, **email})
             return user_info
 
         request.user = get_user_info
