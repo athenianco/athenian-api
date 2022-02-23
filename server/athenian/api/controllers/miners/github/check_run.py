@@ -150,6 +150,12 @@ async def mine_check_runs(time_from: datetime,
     effectively executing UNION branches sequentially.
     """  # noqa: E501
 
+    """
+    I had to disable IndexOnlyScan(p github_node_push_redux) in DEV-3730 because Postgres schedules
+    `Parallel Index Only Scan using github_node_push_redux on node_push p`
+    *without* index conditions. A crazy anomaly.
+    """
+
     df = await read_sql_query_with_join_collapse(
         query, mdb, CheckRun, soft_limit=maximum_processed_check_runs)
 
