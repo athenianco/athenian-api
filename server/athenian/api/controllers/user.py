@@ -26,6 +26,7 @@ MANNEQUIN_PREFIX = "mannequin"
 
 
 async def load_user_accounts(uid: str,
+                             god_id: str,
                              sdb: DatabaseLike,
                              mdb: DatabaseLike,
                              rdb: DatabaseLike,
@@ -85,7 +86,7 @@ async def load_user_accounts(uid: str,
             accounts, jira_ids, check_runs, results[2 * len(accounts):]):
         account_id = account[UserAccount.account_id.name]
         expires_at = account[Account.expires_at.name]
-        if expired := expires_at < now and slack is not None:
+        if expired := expires_at < now and slack is not None and uid == god_id:
             await defer(
                 report_user_account_expired(
                     uid, account_id, expires_at, sdb, mdb, user_info, slack, cache),
