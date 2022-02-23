@@ -123,13 +123,13 @@ async def mine_check_runs(time_from: datetime,
             on=(CheckRun.pull_request_node_id, CheckRun.acc_id))
     query = query \
         .with_statement_hint("IndexOnlyScan(c_1 github_node_commit_check_runs)") \
-        .with_statement_hint("IndexOnlyScan(p github_node_push_redux)") \
+        .with_statement_hint("IndexScan(p node_push_pkey)") \
         .with_statement_hint("IndexOnlyScan(prc node_pull_request_commit_commit_pr)") \
         .with_statement_hint("IndexScan(pr node_pullrequest_pkey)") \
         .with_statement_hint("IndexScan(sc ath_node_statuscontext_commit_created_at)") \
         .with_statement_hint("IndexScan(cr github_node_check_run_repository_started_at)") \
         .with_statement_hint("Rows(cr cs *400)") \
-        .with_statement_hint("Rows(cr cs c *10)") \
+        .with_statement_hint("Rows(cr cs c *2)") \
         .with_statement_hint("Rows(c_1 sc *1000)") \
         .with_statement_hint("Set(enable_parallel_append 0)")
     """
