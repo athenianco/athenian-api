@@ -34,7 +34,8 @@ async def get_user(request: AthenianWebRequest) -> web.Response:
     """Return details about the current user."""
     user = await request.user()
     user.accounts = await load_user_accounts(
-        user.id, request.sdb, request.mdb, request.rdb, request.app["slack"],
+        user.id, getattr(request, "god_id", user.id),
+        request.sdb, request.mdb, request.rdb, request.app["slack"],
         request.user, request.cache)
     if (god_id := getattr(request, "god_id", request.uid)) != request.uid:
         user.impersonated_by = god_id
@@ -224,7 +225,8 @@ async def become_user(request: AthenianWebRequest, id: str = "") -> web.Response
         await conn.execute(update(God).where(God.user_id == user_id).values(god.explode()))
     user = await request.app["auth"].get_user(id or user_id)
     user.accounts = await load_user_accounts(
-        user.id, request.sdb, request.mdb, request.rdb, request.app["slack"],
+        user.id, getattr(request, "god_id", user.id),
+        request.sdb, request.mdb, request.rdb, request.app["slack"],
         request.user, request.cache)
     return model_response(user)
 

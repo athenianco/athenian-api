@@ -236,7 +236,7 @@ async def _accept_invitation(iid: int,
     user = None
     if status is None:
         if is_admin or (user := await _check_user_org_membership(
-                request, acc_id, sdb_transaction, log)) is None:
+                request, acc_id, sdb_transaction, sdb, slack, log)) is None:
             user = await request.user()
         # create the user<>account record if not blocked
         if await sdb_transaction.fetch_val(
@@ -246,7 +246,7 @@ async def _accept_invitation(iid: int,
             if slack is not None:
                 async def report_blocked_registration():
                     account_name = await get_account_name(acc_id, sdb, mdb, request.cache)
-                    await slack.post_account("blocked_registration.jinja2",
+                    await slack.post_account("blocked_registration_banished.jinja2",
                                              user=user,
                                              account_id=acc_id,
                                              account_name=account_name)
@@ -275,13 +275,16 @@ async def _accept_invitation(iid: int,
     if user is None:
         user = await request.user()
     user.accounts = await load_user_accounts(
-        user.id, sdb_transaction, mdb, rdb, slack, request.user, cache)
+        user.id, getattr(request, "god_id", user.id),
+        sdb_transaction, mdb, rdb, slack, request.user, cache)
     return acc_id, user
 
 
 async def _check_user_org_membership(request: AthenianWebRequest,
                                      acc_id: int,
                                      sdb_conn: DatabaseLike,
+                                     sdb: Database,
+                                     slack: Optional[SlackWebClient],
                                      log: logging.Logger,
                                      ) -> Optional[User]:
     if not await is_membership_check_enabled(acc_id, sdb_conn):
@@ -306,6 +309,15 @@ async def _check_user_org_membership(request: AthenianWebRequest,
                                        .where(and_(NodeUser.acc_id.in_(meta_ids),
                                                    NodeUser.login == user.login)))
     if user_node_id not in user_node_ids:
+        if slack is not None:
+            async def report_blocked_registration():
+                account_name = await get_account_name(acc_id, sdb, mdb, request.cache)
+                await slack.post_account("blocked_registration_membership.jinja2",
+                                         user=user,
+                                         account_id=acc_id,
+                                         account_name=account_name)
+
+            await defer(report_blocked_registration(), "report_blocked_registration_to_slack")
         raise ResponseError(ForbiddenError(
             detail="User %s does not belong to the GitHub organization." % request.uid))
     return user
