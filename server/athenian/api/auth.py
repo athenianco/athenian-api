@@ -228,12 +228,15 @@ class Auth0:
                 try:
                     resp = await self._session.get(
                         "https://%s/api/v2/users?q=%s" % (self._domain, query),
-                        headers={"Authorization": "Bearer " + token})
-                except aiohttp.ClientOSError as e:
-                    if e.errno in (-3, 101, 103, 104):
+                        headers={"Authorization": "Bearer " + token},
+                        timeout=aiohttp.ClientTimeout(total=2))
+                except (aiohttp.ClientOSError, asyncio.TimeoutError) as e:
+                    if isinstance(e, asyncio.TimeoutError) or e.errno in (-3, 101, 103, 104):
                         self.log.warning("Auth0 Management API: %s", e)
                         # -3: Temporary failure in name resolution
                         # 101: Network is unreachable
+                        # 103: Connection aborted
+                        # 104: Connection reset by peer
                         await asyncio.sleep(0.1)
                         continue
                     raise e from None
