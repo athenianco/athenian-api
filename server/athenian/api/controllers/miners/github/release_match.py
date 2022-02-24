@@ -612,7 +612,7 @@ class ReleaseToPullRequestMapper:
     @sentry_span
     async def _find_old_released_prs(cls,
                                      commits: np.ndarray,
-                                     repos: np.ndarray,  # physical
+                                     repos: np.ndarray,
                                      time_boundary: datetime,
                                      authors: Collection[str],
                                      mergers: Collection[str],
@@ -629,7 +629,10 @@ class ReleaseToPullRequestMapper:
                                      ) -> pd.DataFrame:
         assert len(commits) == len(repos)
         assert len(commits) > 0
-        unique_physical_repos = {drop_logical_repo(r.decode()) for r in np.unique(repos)}
+        repo_name_to_node = prefixer.repo_name_to_node.get
+        unique_repo_ids = {
+            repo_name_to_node(drop_logical_repo(r.decode())) for r in np.unique(repos)
+        }
         if updated_min is not None:
             assert updated_max is not None
             # DEV-3730: load all the PRs and intersect merge commit shas with `commits`
@@ -640,11 +643,9 @@ class ReleaseToPullRequestMapper:
             # instead of PullRequest.merge_commit_sha.in_(np.unique(commits).astype("U40")),
             # reliability: DEV-3333 requires us to skip non-existent repositories
             # according to how SQL works, `null` is ignored in `IN ('whatever', null, 'else')`
-            repo_name_to_node = prefixer.repo_name_to_node.get
             filters = [
                 NodeCommit.acc_id.in_(meta_ids),
-                NodeCommit.repository_id.in_(
-                    [repo_name_to_node(r) for r in unique_physical_repos]),
+                NodeCommit.repository_id.in_(unique_repo_ids),
                 NodeCommit.sha.in_(np.unique(commits).astype("U40")),
             ]
             commit_rows = await mdb.fetch_all(select([NodeCommit.node_id]).where(and_(*filters)))
@@ -657,7 +658,8 @@ class ReleaseToPullRequestMapper:
         if merge_commit_ids is not None:
             filters.append(PullRequest.merge_commit_id.in_(merge_commit_ids))
         else:
-            filters.append(PullRequest.updated_at.between(updated_min, updated_max))
+            filters.extend([PullRequest.updated_at.between(updated_min, updated_max),
+                            PullRequest.repository_node_id.in_(unique_repo_ids)])
         if len(authors) and len(mergers):
             filters.append(or_(
                 PullRequest.user_login.in_any_values(authors),
