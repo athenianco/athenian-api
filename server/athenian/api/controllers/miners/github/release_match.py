@@ -22,6 +22,8 @@ from athenian.api.controllers.miners.github.commit import DAG, \
     fetch_precomputed_commit_history_dags, fetch_repository_commits, RELEASE_FETCH_COMMITS_COLUMNS
 from athenian.api.controllers.miners.github.dag_accelerated import extract_subdag, \
     mark_dag_access, mark_dag_parents, searchsorted_inrange
+from athenian.api.controllers.miners.github.label import fetch_labels_to_filter
+from athenian.api.controllers.miners.github.logical import split_logical_prs
 from athenian.api.controllers.miners.github.precomputed_prs import \
     DonePRFactsLoader, MergedPRFactsLoader, update_unreleased_prs
 from athenian.api.controllers.miners.github.release_load import dummy_releases_df, \
@@ -341,7 +343,7 @@ class ReleaseToPullRequestMapper:
         if len(all_observed_commits):
             prs = await cls._find_old_released_prs(
                 all_observed_commits, all_observed_repos, time_from, authors, mergers, jira,
-                updated_min, updated_max, pr_blacklist, pr_whitelist,
+                updated_min, updated_max, pr_blacklist, pr_whitelist, logical_settings,
                 prefixer, meta_ids, mdb, cache)
         else:
             prs = pd.DataFrame(columns=[c.name for c in PullRequest.__table__.columns
@@ -393,14 +395,13 @@ class ReleaseToPullRequestMapper:
         # find the released commit hashes by two DAG traversals
         with sentry_sdk.start_span(op="all_observed_*"):
             for repo, repo_releases in releases.groupby(rrfnk, sort=False):
-                physical_repo = drop_logical_repo(repo)
                 if (repo_releases[rpak] >= time_from).any():
                     observed_commits = cls._extract_released_commits(
-                        repo_releases, dags[physical_repo], time_from)
+                        repo_releases, dags[drop_logical_repo(repo)], time_from)
                     if len(observed_commits):
                         all_observed_commits.append(observed_commits)
                         all_observed_repos.append(np.full(
-                            len(observed_commits), physical_repo, dtype=f"S{len(physical_repo)}"))
+                            len(observed_commits), repo, dtype=f"S{len(repo)}"))
         if all_observed_commits:
             all_observed_repos = np.concatenate(all_observed_repos)
             all_observed_commits = np.concatenate(all_observed_commits)
@@ -620,6 +621,7 @@ class ReleaseToPullRequestMapper:
                                      updated_max: Optional[datetime],
                                      pr_blacklist: Optional[BinaryExpression],
                                      pr_whitelist: Optional[BinaryExpression],
+                                     logical_settings: LogicalRepositorySettings,
                                      prefixer: Prefixer,
                                      meta_ids: Tuple[int, ...],
                                      mdb: Database,
@@ -627,30 +629,34 @@ class ReleaseToPullRequestMapper:
                                      ) -> pd.DataFrame:
         assert len(commits) == len(repos)
         assert len(commits) > 0
-        # performance: first find out the merge commit IDs, then use them to query PullRequest
-        # instead of PullRequest.merge_commit_sha.in_(np.unique(commits).astype("U40")),
-        # reliability: DEV-3333 requires us to skip non-existent repositories
-        # according to how SQL works, `null` is ignored in `IN ('whatever', null, 'else')`
-        repo_name_to_node = prefixer.repo_name_to_node.get
-        filters = [
-            NodeCommit.acc_id.in_(meta_ids),
-            NodeCommit.repository_id.in_(
-                [repo_name_to_node(r) for r in np.unique(repos).astype("U")]),
-            NodeCommit.sha.in_(np.unique(commits).astype("U40")),
-        ]
-        if updated_max is not None:
-            # the PRs may not merge after updated_max because they'll update
-            # the PRs may not merge before updated_min because we don't care about further updates
-            filters.insert(-1, NodeCommit.committed_date.between(updated_min, updated_max))
-        commit_rows = await mdb.fetch_all(select([NodeCommit.node_id]).where(and_(*filters)))
-        merge_commit_ids = [r[0] for r in commit_rows]
+        unique_physical_repos = {drop_logical_repo(r.decode()) for r in np.unique(repos)}
+        if updated_min is not None:
+            assert updated_max is not None
+            # DEV-3730: load all the PRs and intersect merge commit shas with `commits`
+            merge_commit_ids = None
+        else:
+            assert updated_max is None
+            # performance: first find out the merge commit IDs, then use them to query PullRequest
+            # instead of PullRequest.merge_commit_sha.in_(np.unique(commits).astype("U40")),
+            # reliability: DEV-3333 requires us to skip non-existent repositories
+            # according to how SQL works, `null` is ignored in `IN ('whatever', null, 'else')`
+            repo_name_to_node = prefixer.repo_name_to_node.get
+            filters = [
+                NodeCommit.acc_id.in_(meta_ids),
+                NodeCommit.repository_id.in_(
+                    [repo_name_to_node(r) for r in unique_physical_repos]),
+                NodeCommit.sha.in_(np.unique(commits).astype("U40")),
+            ]
+            commit_rows = await mdb.fetch_all(select([NodeCommit.node_id]).where(and_(*filters)))
+            merge_commit_ids = [r[0] for r in commit_rows]
         filters = [
             PullRequest.merged_at < time_boundary,
             PullRequest.hidden.is_(False),
             PullRequest.acc_id.in_(meta_ids),
-            PullRequest.merge_commit_id.in_(merge_commit_ids),
         ]
-        if updated_min is not None:
+        if merge_commit_ids is not None:
+            filters.append(PullRequest.merge_commit_id.in_(merge_commit_ids))
+        else:
             filters.append(PullRequest.updated_at.between(updated_min, updated_max))
         if len(authors) and len(mergers):
             filters.append(or_(
@@ -670,16 +676,31 @@ class ReleaseToPullRequestMapper:
         else:
             query = await generate_jira_prs_query(filters, jira, None, mdb, cache)
         query = query.order_by(PullRequest.merge_commit_sha.name)
-        prs = await read_sql_query(
-            query, mdb, PullRequest, index=PullRequest.node_id.name)
+        prs = await read_sql_query(query, mdb, PullRequest, index=PullRequest.node_id.name)
         if prs.empty:
             return prs
+        if logical_settings.has_logical_prs():
+            if logical_settings.has_prs_by_label():
+                labels = await fetch_labels_to_filter(prs.index.values, meta_ids, mdb)
+            else:
+                labels = pd.DataFrame()
+            prs = split_logical_prs(
+                prs, labels,
+                logical_settings.with_logical_prs(
+                    prs[PullRequest.repository_full_name.name].unique()),
+                logical_settings)
+            prs.reset_index(PullRequest.repository_full_name.name, inplace=True)
         pr_commits = prs[PullRequest.merge_commit_sha.name].values.astype("S40")
         pr_repos = prs[PullRequest.repository_full_name.name].values.astype("S")
-        indexes = np.searchsorted(commits, pr_commits)
-        checked = np.flatnonzero(pr_repos == repos[indexes])
-        if len(checked) < len(prs):
-            prs = prs.take(checked)
+        mask = np.in1d(commits, pr_commits)
+        commits = commits[mask]
+        repos = repos[mask]
+        pr_commit_repos = np.char.add(pr_commits, pr_repos)
+        commit_repos = np.char.add(commits, repos)
+        mask = np.in1d(pr_commit_repos, commit_repos, assume_unique=True)
+        indexes = np.flatnonzero(mask)
+        if len(indexes) < len(prs):
+            prs = prs.take(indexes)
         return prs
 
     @classmethod
