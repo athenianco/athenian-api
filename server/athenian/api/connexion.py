@@ -36,6 +36,7 @@ from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from werkzeug.exceptions import Unauthorized
 
 from athenian.api import metadata
+from athenian.api.aiohttp_addons import create_aiohttp_closed_event
 from athenian.api.async_utils import gather
 from athenian.api.auth import AthenianAioHttpSecurityHandlerFactory, Auth0
 from athenian.api.balancing import extract_handler_weight
@@ -46,6 +47,7 @@ from athenian.api.db import add_pdb_metrics_context, Database, measure_db_overhe
 from athenian.api.defer import defer, enable_defer, launch_defer_from_request, wait_all_deferred, \
     wait_deferred
 from athenian.api.kms import AthenianKMS
+from athenian.api.mandrill import MandrillClient
 from athenian.api.models.metadata import dereference_schemas as dereference_metadata_schemas
 from athenian.api.models.persistentdata import \
     dereference_schemas as dereference_persistentdata_schemas
@@ -250,6 +252,7 @@ class AthenianApp(connexion.AioHttpApp):
                  kms_cls: Callable[[], AthenianKMS] = AthenianKMS,
                  cache: Optional[aiomcache.Client] = None,
                  slack: Optional[SlackWebClient] = None,
+                 mandrill: Optional[MandrillClient] = None,
                  with_pdb_schema_checks: bool = True,
                  segment: Optional[SegmentClient] = None,
                  google_analytics: Optional[str] = ""):
@@ -273,6 +276,7 @@ class AthenianApp(connexion.AioHttpApp):
                         `None` disables KMS and, effectively, API Key authentication.
         :param cache: memcached client for caching auxiliary data.
         :param slack: Slack API client to post messages.
+        :param mandrill: Mailchimp Transactional API client to send emails.
         :param with_pdb_schema_checks: Enable or disable periodic pdb schema version checks.
         :param segment: User action tracker.
         :param google_analytics: Google Analytics tag to track Swagger UI.
@@ -399,6 +403,7 @@ class AthenianApp(connexion.AioHttpApp):
         if node_name is not None:
             self.server_name = node_name + "/" + self.server_name
         self._slack = self.app["slack"] = slack
+        self._mandrill = self.app["mandrill"] = mandrill
         self._boot_time = psutil.boot_time()
         self._report_ready_task = asyncio.ensure_future(self._report_ready())
         self._report_ready_task.set_name("_report_ready")
@@ -493,6 +498,12 @@ class AthenianApp(connexion.AioHttpApp):
             await self._segment.close()
         if self._kms is not None:
             await self._kms.close()
+        if self._slack is not None and self._slack.session is not None:
+            close_event = create_aiohttp_closed_event(self._slack.session)
+            await self._slack.session.close()
+            await close_event.wait()
+        if self._mandrill is not None:
+            await self._mandrill.close()
         for task in self._on_dbs_connected_callbacks:
             task.cancel()
         for k, f in self._db_futures.items():

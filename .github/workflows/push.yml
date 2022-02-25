@@ -231,6 +231,7 @@ jobs:
         echo 'SENTRY_ORG=${{ secrets.SENTRY_ORG }}' >>.env
         echo 'SENTRY_PROJECT=${{ secrets.SENTRY_PROJECT }}' >>.env
         echo 'SENTRY_KEY=${{ secrets.SENTRY_KEY }}' >>.env
+        echo 'MANDRILL_API_KEY=${{ secrets.MANDRILL_API_KEY }}' >>.env
         echo 'SLACK_API_TOKEN=${{ secrets.SLACK_API_TOKEN }}' >>.env
         echo 'SLACK_ACCOUNT_CHANNEL="${{ secrets.SLACK_ACCOUNT_CHANNEL }}"' >>.env
         echo 'SLACK_INSTALL_CHANNEL="${{ secrets.SLACK_INSTALL_CHANNEL }}"' >>.env
@@ -241,6 +242,7 @@ jobs:
         set -x
         if [ ${{ matrix.db }} = "sqlite" ]; then
           export SLACK_API_TOKEN=xxx
+          export MANDRILL_API_KEY=
         fi
         godotenv -s pytest -n 4 --log-level=info --benchmark-skip --cov-report=xml --cov=athenian.api --durations=20 --timeout 300 --ignore=tests/controllers/test_filter_controller.py --ignore=tests/controllers/test_metrics_controller.py --ignore=tests/controllers/test_histograms_controller.py --ignore=tests/controllers/test_pagination_controller.py --ignore=tests/controllers/test_jira_controller.py --ignore=tests/controllers/test_integrations_controller.py --ignore=tests/controllers/test_contributors_controller.py --ignore=tests/controllers/test_settings_controller.py --ignore=tests/controllers/test_user_controller.py --ignore=tests/test_auth.py --ignore=tests/controllers/test_events_controller.py
     - name: test fat1
@@ -250,6 +252,7 @@ jobs:
         set -x
         if [ ${{ matrix.db }} = "sqlite" ]; then
           export SLACK_API_TOKEN=
+          export MANDRILL_API_KEY=
         fi
         godotenv -s pytest -n 4 $LIMIT --log-level=info --cov-report=xml --cov=athenian.api --durations=10 --timeout 300 tests/controllers/test_contributors_controller.py tests/controllers/test_filter_controller.py tests/controllers/test_pagination_controller.py tests/controllers/test_integrations_controller.py tests/controllers/test_settings_controller.py tests/test_auth.py tests/controllers/test_events_controller.py
     - name: test fat2
@@ -261,6 +264,7 @@ jobs:
         #   export LIMIT="--limit 0.9"  # choose 90% of the tests by random
         # fi
         export SLACK_API_TOKEN=
+        export MANDRILL_API_KEY=
         godotenv -s pytest -n 4 $LIMIT --log-level=info --cov-report=xml --cov=athenian.api --durations=10 --timeout 300 tests/controllers/test_metrics_controller.py  tests/controllers/test_histograms_controller.py tests/controllers/test_jira_controller.py
     - name: test user
       if: matrix.type == 'user'
@@ -269,6 +273,7 @@ jobs:
         set -x
         if [ ${{ matrix.db }} = "sqlite" ]; then
           export SLACK_API_TOKEN=
+          export MANDRILL_API_KEY=
         fi
         godotenv -s pytest -n 2 --log-level=info --cov-report=xml --cov=athenian.api --durations=10 --timeout 300 tests/controllers/test_user_controller.py
     - name: test heater

@@ -26,6 +26,7 @@ from multidict import CIMultiDict
 import sentry_sdk
 from sqlalchemy import select
 
+from athenian.api.aiohttp_addons import create_aiohttp_closed_event
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached
 from athenian.api.controllers.account import get_user_account_status
@@ -168,40 +169,9 @@ class Auth0:
         if self._mgmt_loop is not None:  # this may happen if lazy_mgmt=True
             self._mgmt_loop.cancel()
         session = self._session
-        # FIXME(vmarkovtsev): remove this bloody mess when this issue is resolved:
-        # https://github.com/aio-libs/aiohttp/issues/1925#issuecomment-575754386
-        transports = 0
-        all_is_lost = asyncio.Event()
-        if session.connector is not None:
-            for conn in session.connector._conns.values():
-                for handler, _ in conn:
-                    proto = getattr(handler.transport, "_ssl_protocol", None)
-                    if proto is None:
-                        continue
-                    transports += 1
-
-                    def connection_lost(orig_lost, exc):
-                        orig_lost(exc)
-                        nonlocal transports
-                        transports -= 1
-                        if transports == 0:
-                            all_is_lost.set()
-
-                    def eof_received(orig_eof_received):
-                        try:
-                            orig_eof_received()
-                        except AttributeError:
-                            # It may happen that eof_received() is called after
-                            # _app_protocol and _transport are set to None.
-                            # Jeez, asyncio sucks sometimes.
-                            pass
-
-                    proto.connection_lost = functools.partial(
-                        connection_lost, proto.connection_lost)
-                    proto.eof_received = functools.partial(eof_received, proto.eof_received)
+        all_is_lost = create_aiohttp_closed_event(session)
         await session.close()
-        if transports > 0:
-            await all_is_lost.wait()
+        await all_is_lost.wait()
 
     async def get_user(self, user: str) -> Optional[User]:
         """Retrieve a user using Auth0 mgmt API by ID."""

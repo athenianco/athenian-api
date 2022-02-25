@@ -35,6 +35,7 @@ from athenian.api.connexion import AthenianApp
 from athenian.api.db import check_schema_versions
 from athenian.api.faster_pandas import patch_pandas
 from athenian.api.kms import AthenianKMS
+from athenian.api.mandrill import MandrillClient
 from athenian.api.preloading.cache import MemoryCachePreloader
 from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME
 from athenian.api.segment import SegmentClient
@@ -81,6 +82,7 @@ def parse_args() -> argparse.Namespace:
                            Name of the Slack channel for sending installation event notifications.
   ATHENIAN_EVENTS_SLACK_CHANNEL (optional)
                            Release and deployment event notification channel.
+  MANDRILL_API_KEY         Mailchimp Transactional API key. Enables sending emails.
   """,  # noqa
                                      formatter_class=Formatter)
 
@@ -290,7 +292,12 @@ def create_slack(log: logging.Logger) -> Optional[SlackWebClient]:
     slack_token = os.getenv("SLACK_API_TOKEN")
     if not slack_token:
         return None
-    slack_client = SlackWebClient(token=slack_token)
+    slack_client = SlackWebClient(
+        token=slack_token,
+        session=aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=10),
+        ),
+    )
     account_channel = os.getenv("SLACK_ACCOUNT_CHANNEL")
     install_channel = os.getenv("SLACK_INSTALL_CHANNEL")
     event_channel = os.getenv("ATHENIAN_EVENTS_SLACK_CHANNEL")
@@ -347,6 +354,13 @@ def create_segment() -> Optional[SegmentClient]:
     return None
 
 
+def create_mandrill() -> Optional[MandrillClient]:
+    """Initialize the Mailchimp Transactional client to send emails."""
+    if key := os.getenv("MANDRILL_API_KEY"):
+        return MandrillClient(key)
+    return None
+
+
 PRELOADER_VAR_NAME = "mc_preloader"
 
 
@@ -371,23 +385,25 @@ def main() -> Optional[AthenianApp]:
     args = parse_args()
     log = logging.getLogger(metadata.__package__)
     setup_context(log)
-    if not args.no_db_version_check and not check_schema_versions(args.metadata_db,
-                                                                  args.state_db,
-                                                                  args.precomputed_db,
-                                                                  args.persistentdata_db,
-                                                                  log):
+    if not args.no_db_version_check \
+            and not check_schema_versions(args.metadata_db,
+                                          args.state_db,
+                                          args.precomputed_db,
+                                          args.persistentdata_db,
+                                          log):
         return None
     patch_pandas()
-    cache = create_memcached(args.memcached, log)
-    auth0_cls = create_auth0_factory(args.force_user)
-    kms_cls = None if args.no_google_kms else AthenianKMS
-    slack = create_slack(log)
     app = AthenianApp(
         mdb_conn=args.metadata_db,
         sdb_conn=args.state_db,
         pdb_conn=args.precomputed_db,
         rdb_conn=args.persistentdata_db,
-        ui=args.ui, auth0_cls=auth0_cls, kms_cls=kms_cls, cache=cache, slack=slack,
+        ui=args.ui,
+        auth0_cls=create_auth0_factory(args.force_user),
+        kms_cls=None if args.no_google_kms else AthenianKMS,
+        cache=create_memcached(args.memcached, log),
+        slack=create_slack(log),
+        mandrill=create_mandrill(),
         client_max_size=int(os.getenv("ATHENIAN_MAX_CLIENT_SIZE", 256 * 1024)),
         max_load=float(os.getenv("ATHENIAN_MAX_LOAD", 12)),
         segment=create_segment(),
