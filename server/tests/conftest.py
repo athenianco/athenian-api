@@ -41,7 +41,7 @@ import uvloop
 # This must stay before any athenian.api import to override any external ATHENIAN_INVITATION_KEY
 os.environ["ATHENIAN_INVITATION_KEY"] = "vadim"
 
-from athenian.api.__main__ import create_memcached, create_slack
+from athenian.api.__main__ import create_mandrill, create_memcached, create_slack
 from athenian.api.auth import Auth0, User
 from athenian.api.cache import CACHE_VAR_NAME, setup_cache_metrics
 from athenian.api.connexion import AthenianApp
@@ -322,6 +322,16 @@ def headers() -> Dict[str, str]:
 @pytest.fixture(scope="session")
 def slack():
     return create_slack(logging.getLogger("pytest"))
+
+
+@pytest.fixture(scope="function")
+async def mandrill(request, event_loop):
+    if (client := create_mandrill()) is not None:
+        def shutdown():
+            event_loop.run_until_complete(client.close())
+
+        request.addfinalizer(shutdown)
+    return client
 
 
 @pytest.fixture(scope="session")
