@@ -4,7 +4,7 @@ from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.included_native_user import IncludedNativeUser
 
 
-class _IncludedNativeUsers(Model):
+class _IncludedNativeUsers(Model, sealed=False):
     """Mapping user login -> user details.
 
     The users are mentioned in PRs in "PullRequestSet.data".
@@ -12,7 +12,6 @@ class _IncludedNativeUsers(Model):
 
     openapi_types = {"users": Dict[str, IncludedNativeUser]}
     attribute_map = {"users": "users"}
-    __enable_slots__ = False
 
     def __init__(self, users: Optional[Dict[str, IncludedNativeUser]] = None):
         """IncludedNativeUsers - a model defined in OpenAPI
@@ -50,5 +49,3 @@ class IncludedNativeUsers(_IncludedNativeUsers):
 
     The users are mentioned in PRs in "PullRequestSet.data".
     """
-
-    __enable_slots__ = True

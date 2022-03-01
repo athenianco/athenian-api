@@ -4,7 +4,7 @@ from athenian.api.models.web.base_model_ import AllOf, Model
 from athenian.api.models.web.common_filter_properties import CommonFilterProperties
 
 
-class _FilterJIRACommon(Model):
+class _FilterJIRACommon(Model, sealed=False):
     """Common properies if a JIRA issue or epic."""
 
     openapi_types = {
@@ -24,8 +24,6 @@ class _FilterJIRACommon(Model):
         "labels_exclude": "labels_exclude",
         "exclude_inactive": "exclude_inactive",
     }
-
-    __enable_slots__ = False
 
     def __init__(
         self,

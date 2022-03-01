@@ -4,12 +4,11 @@ from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.linked_jira_issue import LinkedJIRAIssue
 
 
-class _IncludedJIRAIssues(Model):
+class _IncludedJIRAIssues(Model, sealed=False):
     """Mentioned JIRA issues."""
 
     openapi_types = {"jira": Optional[Dict[str, LinkedJIRAIssue]]}
     attribute_map = {"jira": "jira"}
-    __enable_slots__ = False
 
     def __init__(self, jira: Optional[Dict[str, LinkedJIRAIssue]] = None):
         """IncludedJIRAIssues - a model defined in OpenAPI
@@ -41,5 +40,3 @@ class _IncludedJIRAIssues(Model):
 
 class IncludedJIRAIssues(_IncludedJIRAIssues):
     """Mentioned JIRA issues."""
-
-    __enable_slots__ = True

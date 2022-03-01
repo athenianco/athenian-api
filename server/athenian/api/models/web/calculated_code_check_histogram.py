@@ -7,7 +7,7 @@ from athenian.api.models.web.histogram_scale import HistogramScale
 from athenian.api.models.web.interquartile import Interquartile
 
 
-class _CalculatedCodeCheckHistogram(Model):
+class _CalculatedCodeCheckHistogram(Model, sealed=False):
     """Calculated histogram over code checks (CI)."""
 
     openapi_types = {
@@ -25,8 +25,6 @@ class _CalculatedCodeCheckHistogram(Model):
         "frequencies": "frequencies",
         "interquartile": "interquartile",
     }
-
-    __enable_slots__ = False
 
     def __init__(
         self,

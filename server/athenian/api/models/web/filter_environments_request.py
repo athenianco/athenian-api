@@ -4,7 +4,7 @@ from athenian.api.models.web.base_model_ import AllOf, Model
 from athenian.api.models.web.common_filter_properties import CommonFilterProperties
 
 
-class _FilterEnvironmentsRequest(Model):
+class _FilterEnvironmentsRequest(Model, sealed=False):
     """Request body of `/filter/environments`. Filters for deployment environments."""
 
     openapi_types = {
@@ -14,8 +14,6 @@ class _FilterEnvironmentsRequest(Model):
     attribute_map = {
         "repositories": "repositories",
     }
-
-    __enable_slots__ = False
 
     def __init__(
         self,

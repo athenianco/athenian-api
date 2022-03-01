@@ -6,7 +6,7 @@ from athenian.api.models.web.for_set import CommonPullRequestFilters
 from athenian.api.models.web.release_with import ReleaseWith
 
 
-class _FilterReleasesRequest(Model):
+class _FilterReleasesRequest(Model, sealed=False):
     """Structure to specify the filter traits of releases."""
 
     openapi_types = {
@@ -18,8 +18,6 @@ class _FilterReleasesRequest(Model):
         "in_": "in",
         "with_": "with",
     }
-
-    __enable_slots__ = False
 
     def __init__(
         self,

@@ -4,11 +4,8 @@ from athenian.api.models.web.account import _Account
 from athenian.api.models.web.base_model_ import AllOf, Model
 
 
-class _LogicalRepositoryGetRequest(Model):
-    __enable_slots__ = False
-
+class _LogicalRepositoryGetRequest(Model, sealed=False):
     openapi_types = {"name": str}
-
     attribute_map = {"name": "name"}
 
     def __init__(

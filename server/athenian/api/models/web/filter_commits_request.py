@@ -13,7 +13,7 @@ class _FilterCommitsProperty(Enum):
     BYPASSING_PRS = "bypassing_prs"
 
 
-class _FilterCommitsRequest(Model):
+class _FilterCommitsRequest(Model, sealed=False):
     """Filter for listing commits."""
 
     openapi_types = {
@@ -23,8 +23,6 @@ class _FilterCommitsRequest(Model):
     attribute_map = {
         "property": "property",
     }
-
-    __enable_slots__ = False
 
     def __init__(
         self,

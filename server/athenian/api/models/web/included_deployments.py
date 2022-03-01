@@ -4,12 +4,11 @@ from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.deployment_notification import DeploymentNotification
 
 
-class _IncludedDeployments(Model):
+class _IncludedDeployments(Model, sealed=False):
     """Mentioned deployments."""
 
     openapi_types = {"deployments": Optional[Dict[str, DeploymentNotification]]}
     attribute_map = {"deployments": "deployments"}
-    __enable_slots__ = False
 
     def __init__(self, deployments: Optional[Dict[str, DeploymentNotification]] = None):
         """IncludedDeployments - a model defined in OpenAPI
@@ -41,5 +40,3 @@ class _IncludedDeployments(Model):
 
 class IncludedDeployments(_IncludedDeployments):
     """Mentioned deployments."""
-
-    __enable_slots__ = False

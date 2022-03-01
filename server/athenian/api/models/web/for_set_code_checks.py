@@ -4,7 +4,7 @@ from athenian.api.models.web.base_model_ import AllOf, Model
 from athenian.api.models.web.for_set import CommonPullRequestFilters, RepositoryGroupsMixin
 
 
-class _ForSetCodeChecks(Model, RepositoryGroupsMixin):
+class _ForSetCodeChecks(Model, RepositoryGroupsMixin, sealed=False):
     """Filters for `/metrics/code_checks` and `/histograms/code_checks`."""
 
     openapi_types = {
@@ -20,8 +20,6 @@ class _ForSetCodeChecks(Model, RepositoryGroupsMixin):
         "pushers": "pushers",
         "pusher_groups": "pusher_groups",
     }
-
-    __enable_slots__ = False
 
     def __init__(
         self,
@@ -105,7 +103,7 @@ ForSetCodeChecks = AllOf(_ForSetCodeChecks, CommonPullRequestFilters,
                          name="ForSetCodeChecks", module=__name__)
 
 
-class _CalculatedCodeCheckCommon(Model):
+class _CalculatedCodeCheckCommon(Model, sealed=False):
     openapi_types = {
         "for_": ForSetCodeChecks,
         "check_runs": Optional[int],
@@ -117,8 +115,6 @@ class _CalculatedCodeCheckCommon(Model):
         "check_runs": "check_runs",
         "suites_ratio": "suites_ratio",
     }
-
-    __enable_slots__ = False
 
     def __init__(
         self,

@@ -7,7 +7,7 @@ from athenian.api.models.web.jira_filter_return import JIRAFilterReturn
 from athenian.api.models.web.jira_filter_with import JIRAFilterWith
 
 
-class FilterJIRAStuffSpecials(Model):
+class FilterJIRAStuffSpecials(Model, sealed=False):
     """Request of `/filter/jira` to retrieve epics and labels."""
 
     openapi_types = {
@@ -19,8 +19,6 @@ class FilterJIRAStuffSpecials(Model):
         "with_": "with",
         "return_": "return",
     }
-
-    __enable_slots__ = False
 
     def __init__(self,
                  with_: Optional[JIRAFilterWith] = None,

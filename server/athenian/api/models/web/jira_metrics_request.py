@@ -7,7 +7,7 @@ from athenian.api.models.web.jira_filter_with import JIRAFilterWith
 from athenian.api.models.web.jira_metric_id import JIRAMetricID
 
 
-class JIRAMetricsRequestSpecials(Model):
+class JIRAMetricsRequestSpecials(Model, sealed=False):
     """Request body of `/metrics/jira`."""
 
     openapi_types = {
@@ -23,8 +23,6 @@ class JIRAMetricsRequestSpecials(Model):
         "epics": "epics",
         "group_by_jira_label": "group_by_jira_label",
     }
-
-    __enable_slots__ = False
 
     def __init__(
         self,

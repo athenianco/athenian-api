@@ -7,7 +7,7 @@ from athenian.api.models.web.jira_filter_with import JIRAFilterWith
 from athenian.api.models.web.jira_histogram_definition import JIRAHistogramDefinition
 
 
-class _JIRAHistogramsRequest(Model, QuantilesMixin):
+class _JIRAHistogramsRequest(Model, QuantilesMixin, sealed=False):
     """Request of `/histograms/jira`."""
 
     openapi_types = {
@@ -23,7 +23,6 @@ class _JIRAHistogramsRequest(Model, QuantilesMixin):
         "histograms": "histograms",
         "quantiles": "quantiles",
     }
-    __enable_slots__ = False
 
     def __init__(
         self,

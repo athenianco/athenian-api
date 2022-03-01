@@ -181,6 +181,47 @@ class Auth0:
         return next(iter(users.values()))
 
     @sentry_span
+    async def _mgmt_call(self,
+                         url: str,
+                         timeout: float,
+                         action: str,
+                         attempt: int,
+                         data: Optional[dict] = None,
+                         method: str = "",
+                         ) -> Optional[aiohttp.ClientResponse]:
+        token = await self.mgmt_token()
+        headers = {"Authorization": "Bearer " + token}
+        timeout = aiohttp.ClientTimeout(total=timeout)
+        try:
+            if data is None:
+                response = await self._session.get(url, headers=headers, timeout=timeout)
+            else:
+                response = await getattr(self._session, method, "post")(
+                    url, json=data, headers=headers, timeout=timeout)
+        except (aiohttp.ClientOSError, asyncio.TimeoutError) as e:
+            if isinstance(e, asyncio.TimeoutError) or e.errno in (-3, 101, 103, 104):
+                self.log.warning("Auth0 Management API: %s", e)
+                # -3: Temporary failure in name resolution
+                # 101: Network is unreachable
+                # 103: Connection aborted
+                # 104: Connection reset by peer
+                await asyncio.sleep(0.1)
+                return None
+            raise e from None
+        if response.status == HTTPStatus.TOO_MANY_REQUESTS:
+            self.log.warning("Auth0 Management API rate limit hit while %s, retry %d",
+                             action, attempt)
+            await asyncio.sleep(0.5 + random())
+            return None
+        elif response.status == HTTPStatus.UNAUTHORIZED:
+            # force refresh the token
+            self._mgmt_loop.cancel()
+            self._mgmt_loop = None
+            self._mgmt_token = None
+            return None
+        return response
+
+    @sentry_span
     async def get_users(self, users: Sequence[str]) -> Dict[str, User]:
         """
         Retrieve several users using Auth0 mgmt API by ID.
@@ -188,68 +229,86 @@ class Auth0:
         :return: Mapping from user ID to the found user details. Some users may be not found, \
                  some users may be duplicates.
         """
-        token = await self.mgmt_token()
         assert len(users) >= 0  # we need __len__
 
         async def get_batch(batch: List[str]) -> List[User]:
-            nonlocal token
             query = "user_id:(%s)" % " ".join('"%s"' % u for u in batch)
-            for retries in range(1, 31):
+            for retry in range(1, 31):
                 try:
-                    resp = await self._session.get(
-                        "https://%s/api/v2/users?q=%s" % (self._domain, query),
-                        headers={"Authorization": "Bearer " + token},
-                        timeout=aiohttp.ClientTimeout(total=2))
-                except (aiohttp.ClientOSError, asyncio.TimeoutError) as e:
-                    if isinstance(e, asyncio.TimeoutError) or e.errno in (-3, 101, 103, 104):
-                        self.log.warning("Auth0 Management API: %s", e)
-                        # -3: Temporary failure in name resolution
-                        # 101: Network is unreachable
-                        # 103: Connection aborted
-                        # 104: Connection reset by peer
-                        await asyncio.sleep(0.1)
-                        continue
-                    raise e from None
+                    response = await self._mgmt_call(
+                        f"https://{self._domain}/api/v2/users?q={query}",
+                        2,
+                        f"while listing {len(batch)}/{len(users)} users",
+                        retry,
+                    )
                 except RuntimeError:
                     # our loop is closed and we are doomed
                     return []
-                if resp.status == HTTPStatus.TOO_MANY_REQUESTS:
-                    self.log.warning("Auth0 Management API rate limit hit while listing "
-                                     "%d/%d users, retry %d",
-                                     len(batch), len(users), retries)
-                    await asyncio.sleep(0.5 + random())
-                elif resp.status in (HTTPStatus.REQUEST_URI_TOO_LONG, HTTPStatus.BAD_REQUEST):
+                if response is None:
+                    continue
+                elif response.status in (HTTPStatus.REQUEST_URI_TOO_LONG, HTTPStatus.BAD_REQUEST):
                     if len(batch) == 1:
                         return []
                     m = len(batch) // 2
                     self.log.warning("Auth0 Management API /users raised HTTP %d, bisecting "
                                      "%d/%d -> %d, %d",
-                                     resp.status, len(batch), len(users), m, len(batch) - m)
+                                     response.status, len(batch), len(users), m, len(batch) - m)
                     b1, b2 = await gather(get_batch(batch[:m]), get_batch(batch[m:]))
                     return b1 + b2
-                elif resp.status == HTTPStatus.UNAUTHORIZED:
-                    # force refresh the token
-                    self._mgmt_loop.cancel()
-                    self._mgmt_loop = None
-                    self._mgmt_token = None
-                    token = await self.mgmt_token()
                 else:
-                    if resp.status >= 400:
+                    if response.status >= 400:
                         try:
-                            response_body = await resp.json()
+                            response_body = await response.json()
                         except aiohttp.ContentTypeError:
-                            response_body = await resp.text()
+                            response_body = await response.text()
                         self.log.error("Auth0 Management API /users raised HTTP %d: %s",
-                                       resp.status, response_body)
+                                       response.status, response_body)
                     break
-            else:  # for retries in range
+            else:  # for retry in range
                 return []
-            if resp.status != HTTPStatus.OK:
+            if response.status != HTTPStatus.OK:
                 return []
-            found = await resp.json()
+            found = await response.json()
             return [User.from_auth0(**u, encryption_key=self.key) for u in found]
 
         return {u.id: u for u in await get_batch(list(users))}
+
+    @sentry_span
+    async def update_user_profile(self,
+                                  uid: str,
+                                  *,
+                                  name: Optional[str] = None,
+                                  email: Optional[str] = None,
+                                  ) -> bool:
+        """Overwrite user's name and/or email."""
+        for retry in range(1, 11):
+            try:
+                response = await self._mgmt_call(
+                    f"https://{self._domain}/api/v2/users/{uid}",
+                    10,
+                    f"while updating user {uid}",
+                    retry,
+                    data={
+                        **({"name": name} if name else {}),
+                        **({"email": email} if name else {}),
+                    },
+                    method="patch",
+                )
+            except RuntimeError:
+                # our loop is closed and we are doomed
+                return False
+            if response is None:
+                continue
+            if response.status >= 400:
+                try:
+                    response_body = await response.json()
+                except aiohttp.ContentTypeError:
+                    response_body = await response.text()
+                self.log.error("Auth0 Management API /users/{id} raised HTTP %d: %s",
+                               response.status, response_body)
+            return response.status == HTTPStatus.OK
+        else:  # for retry in range
+            return False
 
     async def _fetch_jwks_loop(self) -> None:
         while True:

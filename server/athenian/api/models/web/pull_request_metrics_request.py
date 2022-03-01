@@ -7,7 +7,7 @@ from athenian.api.models.web.for_set import ForSet
 from athenian.api.models.web.pull_request_metric_id import PullRequestMetricID
 
 
-class _PullRequestMetricsRequest(Model):
+class _PullRequestMetricsRequest(Model, sealed=False):
     """Request for calculating metrics on top of pull requests data."""
 
     openapi_types = {
@@ -23,8 +23,6 @@ class _PullRequestMetricsRequest(Model):
         "exclude_inactive": "exclude_inactive",
         "fresh": "fresh",
     }
-
-    __enable_slots__ = False
 
     def __init__(
         self,

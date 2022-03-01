@@ -4,7 +4,7 @@ from typing import Optional
 from athenian.api.models.web.base_model_ import Model
 
 
-class JIRAEpicIssueCommon(Model):
+class JIRAEpicIssueCommon(Model, sealed=False):
     """Common JIRA issue fields."""
 
     openapi_types = {
@@ -40,8 +40,6 @@ class JIRAEpicIssueCommon(Model):
         "status": "status",
         "url": "url",
     }
-
-    __enable_slots__ = False
 
     def __init__(self,
                  id: Optional[str] = None,

@@ -61,7 +61,7 @@ class QuantilesMixin:
         self._quantiles = quantiles
 
 
-class CommonMetricsProperties(Model, GranularitiesMixin, QuantilesMixin):
+class CommonMetricsProperties(Model, GranularitiesMixin, QuantilesMixin, sealed=False):
     """Define `account`, `date_from`, `date_to`, and `timezone` properties."""
 
     openapi_types = {
@@ -73,8 +73,6 @@ class CommonMetricsProperties(Model, GranularitiesMixin, QuantilesMixin):
         "granularities": "granularities",
         "quantiles": "quantiles",
     }
-
-    __enable_slots__ = False
 
     def __init__(
         self,

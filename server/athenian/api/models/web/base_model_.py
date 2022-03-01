@@ -40,7 +40,7 @@ VerbatimOptional = _VerbatimOptional()
 class Slots(ABCMeta):
     """Set __slots__ according to the declared `openapi_types`."""
 
-    def __new__(mcs, name, bases, dikt):
+    def __new__(mcs, name, bases, dikt, sealed=True):
         """Insert __slots__ to the class' __dict__."""
         try:
             openapi_types = dikt["openapi_types"]
@@ -52,8 +52,10 @@ class Slots(ABCMeta):
                     continue
                 else:
                     break
-        if dikt.get("__enable_slots__", True):
-            dikt["__slots__"] = ["_" + k for k in openapi_types]
+        if sealed:
+            dikt["__slots__"] = tuple("_" + k for k in openapi_types)
+        else:
+            dikt["__slots__"] = ()  # this is required for the magic to work
         return type.__new__(mcs, name, bases, dikt)
 
     def __instancecheck__(cls, instance):
@@ -190,7 +192,7 @@ def AllOf(*mixed: typing.Type[Model],
             cls.__dict__
         except AttributeError:
             raise TypeError(
-                "%s must have __dict__ (set __enable_slots__ to False)" % cls.__name__) from None
+                "%s must have __dict__ (set sealed=False)" % cls.__name__) from None
 
     def __init__(self, **kwargs):
         consumed = set()
@@ -201,13 +203,12 @@ def AllOf(*mixed: typing.Type[Model],
             raise TypeError("%s does not support these keyword arguments: %s",
                             type(self).__name__, extra)
 
-    allOf = type(name, mixed, {
+    allOf = Slots(name, mixed, {
         "openapi_types": dict(chain.from_iterable(cls.openapi_types.items() for cls in mixed)),
         "attribute_map": dict(chain.from_iterable(cls.attribute_map.items() for cls in mixed)),
         "__init__": __init__,
-        "__enable_slots__": sealed,
         "__module__": module,
-    })
+    }, sealed=sealed)
     if len(allOf.openapi_types) < sum(len(cls.openapi_types) for cls in mixed):
         raise TypeError("There are conflicting openapi_types in AllOf classes")
     return allOf

@@ -15,6 +15,7 @@ import aiomcache
 import aiosqlite.core
 from asyncpg import IntegrityConstraintViolationError
 import morcilla.core
+import sentry_sdk
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import and_, delete, func, insert, select, text, update
 
@@ -34,14 +35,10 @@ from athenian.api.defer import defer
 from athenian.api.models.metadata.github import NodeUser, OrganizationMember
 from athenian.api.models.state.models import Account, BanishedUserAccount, Invitation, \
     RepositorySet, UserAccount
-from athenian.api.models.web import BadRequestError, ForbiddenError, GenericError, \
-    NotFoundError, User
-from athenian.api.models.web.generic_error import DatabaseConflict, TooManyRequestsError
-from athenian.api.models.web.installation_progress import InstallationProgress
-from athenian.api.models.web.invitation_check_result import InvitationCheckResult
-from athenian.api.models.web.invitation_link import InvitationLink
-from athenian.api.models.web.invited_user import InvitedUser
-from athenian.api.models.web.table_fetching_progress import TableFetchingProgress
+from athenian.api.models.web import AcceptedInvitation, BadRequestError, DatabaseConflict, \
+    ForbiddenError, GenericError, InstallationProgress, InvalidRequestError, \
+    InvitationCheckResult, InvitationLink, InvitedUser, NotFoundError, \
+    ServiceUnavailableError, TableFetchingProgress, TooManyRequestsError, User
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 from athenian.api.tracing import sentry_span
@@ -146,7 +143,21 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
         raise ResponseError(BadRequestError(detail="Invalid invitation URL")) from None
 
     sdb = request.sdb
-    url = InvitationLink.from_dict(body).url
+    try:
+        invitation = AcceptedInvitation.from_dict(body)
+    except ValueError as e:
+        raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
+    if invitation.name or invitation.email:
+        if not await request.app["auth"].update_user_profile(
+                request.uid, name=invitation.name, email=invitation.email):
+            event_id = sentry_sdk.capture_message(
+                "Auth0 update_user_profile() failure", level="error")
+            raise ResponseError(ServiceUnavailableError(
+                type="/errors/Auth0Error",
+                detail="Unable to update user profile in Auth0.",
+                instance=event_id,
+            ))
+    url = invitation.url
     if not url.startswith(url_prefix):
         bad_req()
     x = url[len(url_prefix):].strip("/")

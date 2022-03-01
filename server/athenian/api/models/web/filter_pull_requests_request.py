@@ -9,7 +9,7 @@ from athenian.api.models.web.pull_request_stage import PullRequestStage
 from athenian.api.models.web.pull_request_with import PullRequestWith
 
 
-class _FilterPullRequestsRequest(Model):
+class _FilterPullRequestsRequest(Model, sealed=False):
     """PR filters for /filter/pull_requests."""
 
     openapi_types = {
@@ -35,8 +35,6 @@ class _FilterPullRequestsRequest(Model):
         "limit": "limit",
         "environment": "environment",
     }
-
-    __enable_slots__ = False
 
     def __init__(
         self,
