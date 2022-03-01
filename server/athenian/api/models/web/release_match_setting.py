@@ -5,9 +5,7 @@ from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.release_match_strategy import ReleaseMatchStrategy
 
 
-class _ReleaseMatchSetting(Model):
-    __enable_slots__ = False
-
+class _ReleaseMatchSetting(Model, sealed=False):
     openapi_types = {
         "branches": str,
         "tags": str,
@@ -176,8 +174,6 @@ class _ReleaseMatchSetting(Model):
 
 class ReleaseMatchSetting(_ReleaseMatchSetting):
     """Release matching setting for a specific repository."""
-
-    __enable_slots__ = True
 
     @classmethod
     def from_dataclass(cls, struct) -> "ReleaseMatchSetting":

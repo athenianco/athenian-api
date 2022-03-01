@@ -7,6 +7,7 @@ import morcilla
 import pytest
 from sqlalchemy import and_, delete, insert, select, update
 
+from athenian.api.controllers.ffx import decrypt
 from athenian.api.controllers.invitation_controller import admin_backdoor, decode_slug, \
     encode_slug, jira_url_template, url_prefix
 from athenian.api.models.metadata.github import FetchProgress
@@ -155,7 +156,7 @@ async def test_gen_account_invitation_e2e(client, headers, sdb, god, disable_def
     }
 
 
-async def test_accept_invitation_smoke(client, headers, sdb, disable_default_user, app):
+async def test_accept_invitation_smoke(client, headers, sdb, disable_default_user, app, faker):
     app._auth0._default_user = app._auth0._default_user.copy()
     app._auth0._default_user.login = "vmarkovtsev"
     num_accounts_before = len(await sdb.fetch_all(select([Account])))
@@ -168,13 +169,15 @@ async def test_accept_invitation_smoke(client, headers, sdb, disable_default_use
     rbody = json.loads((await response.read()).decode("utf-8"))
     assert response.status == 422, rbody
 
-    await sdb.execute(update(AccountGitHubAccount).values({AccountGitHubAccount.account_id: 3}))
+    await sdb.execute(update(AccountGitHubAccount)
+                      .values({AccountGitHubAccount.account_id: 3}))
 
     response = await client.request(
         method="PUT", path="/v1/invite/accept", headers=headers, json=body,
     )
     rbody = json.loads((await response.read()).decode("utf-8"))
     assert response.status == 200, rbody
+    assert rbody["user"]["updated"]
     del rbody["user"]["updated"]
     assert rbody == {
         "account": 3,
@@ -209,6 +212,55 @@ async def test_accept_invitation_smoke(client, headers, sdb, disable_default_use
     }
     num_accounts_after = len(await sdb.fetch_all(select([Account])))
     assert num_accounts_after == num_accounts_before
+
+
+@pytest.mark.flaky(reruns=5)
+async def test_accept_invitation_user_profile(
+        client, headers, disable_default_user, sdb, app, faker):
+    app._auth0._default_user = app._auth0._default_user.copy()
+    app._auth0._default_user.login = "vmarkovtsev"
+    name = faker.name()
+    email = faker.email()
+    body = {
+        "url": url_prefix + encode_slug(1, 777, app.app["auth"].key),
+        "name": name,
+        "email": email,
+    }
+    await sdb.execute(update(AccountGitHubAccount)
+                      .values({AccountGitHubAccount.account_id: 3}))
+    try:
+        response = await client.request(
+            method="PUT", path="/v1/invite/accept", headers=headers, json=body,
+        )
+        rbody = json.loads((await response.read()).decode("utf-8"))
+        app._auth0._default_user_id = "auth0|5e1f6dfb57bc640ea390557b"
+        app._auth0._default_user = None
+        user = await app._auth0.default_user()
+    finally:
+        await app._auth0.update_user_profile(
+            "auth0|5e1f6dfb57bc640ea390557b", name="Vadim Markovtsev",
+            email="vadim@athenian.co")
+
+    assert response.status == 200, rbody
+    assert user.name == name
+    decrypted = decrypt(user.email, b"vadim")
+    assert decrypted.split(b"|")[0].decode() == email
+
+
+async def test_accept_invitation_bad_email(
+        client, headers, disable_default_user, sdb, app):
+    app._auth0._default_user = app._auth0._default_user.copy()
+    app._auth0._default_user.login = "vmarkovtsev"
+    body = {
+        "url": url_prefix + encode_slug(1, 777, app.app["auth"].key),
+        "email": "!!!",
+    }
+    await sdb.execute(update(AccountGitHubAccount)
+                      .values({AccountGitHubAccount.account_id: 3}))
+    response = await client.request(
+        method="PUT", path="/v1/invite/accept", headers=headers, json=body,
+    )
+    assert response.status == 400
 
 
 async def test_accept_invitation_disabled_membership_check(
@@ -366,6 +418,7 @@ async def test_accept_invitation_admin_smoke(client, headers, sdb, disable_defau
         method="PUT", path="/v1/invite/accept", headers=headers, json=body,
     )
     body = json.loads((await response.read()).decode("utf-8"))
+    assert body["user"]["updated"]
     del body["user"]["updated"]
     assert body == {
         "account": 4,

@@ -3,7 +3,7 @@ from typing import Any, Dict, Optional
 from athenian.api.models.web.base_model_ import Model
 
 
-class CommonDeploymentProperties(Model):
+class CommonDeploymentProperties(Model, sealed=False):
     """Define `with_labels` and `without_labels` properties."""
 
     openapi_types = {
@@ -15,8 +15,6 @@ class CommonDeploymentProperties(Model):
         "with_labels": "with_labels",
         "without_labels": "without_labels",
     }
-
-    __enable_slots__ = False
 
     def __init__(
             self,

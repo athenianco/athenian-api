@@ -113,11 +113,8 @@ class Account(Model):
         self._jira = jira
 
 
-class _Account(Model):
-    __enable_slots__ = False
-
+class _Account(Model, sealed=False):
     openapi_types = {"account": int}
-
     attribute_map = {"account": "account"}
 
     def __init__(

@@ -200,6 +200,21 @@ class DatabaseConflict(GenericError):
                          status=HTTPStatus.CONFLICT, detail=detail)
 
 
+class TooManyRequestsError(GenericError):
+    """HTTP 429."""
+
+    def __init__(self,
+                 detail: Optional[str] = None,
+                 type="/errors/TooManyRequestsError"):
+        """Initialize a new instance of TooManyRequestsError.
+
+        :param detail: The details about this error.
+        :param type: The type identifier of this error.
+        """
+        super().__init__(type=type, title=HTTPStatus.TOO_MANY_REQUESTS.phrase,
+                         status=HTTPStatus.TOO_MANY_REQUESTS, detail=detail)
+
+
 class ServerNotImplementedError(GenericError):
     """HTTP 501."""
 
@@ -214,16 +229,18 @@ class ServerNotImplementedError(GenericError):
                          detail=detail)
 
 
-class TooManyRequestsError(GenericError):
-    """HTTP 429."""
+class ServiceUnavailableError(GenericError):
+    """HTTP 503."""
 
-    def __init__(self,
-                 detail: Optional[str] = None,
-                 type="/errors/TooManyRequestsError"):
-        """Initialize a new instance of TooManyRequestsError.
+    def __init__(self, type: str, detail: Optional[str], instance: Optional[str] = None):
+        """Initialize a new instance of ServiceUnavailableError.
 
         :param detail: The details about this error.
         :param type: The type identifier of this error.
+        :param instance: Sentry event ID of this error.
         """
-        super().__init__(type=type, title=HTTPStatus.TOO_MANY_REQUESTS.phrase,
-                         status=HTTPStatus.TOO_MANY_REQUESTS, detail=detail)
+        super().__init__(type=type,
+                         title=HTTPStatus.SERVICE_UNAVAILABLE.phrase,
+                         status=HTTPStatus.SERVICE_UNAVAILABLE,
+                         detail=detail,
+                         instance=instance)

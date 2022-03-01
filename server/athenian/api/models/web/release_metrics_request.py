@@ -8,7 +8,7 @@ from athenian.api.models.web.release_metric_id import ReleaseMetricID
 from athenian.api.models.web.release_with import ReleaseWith
 
 
-class _ReleaseMetricsRequest(Model):
+class _ReleaseMetricsRequest(Model, sealed=False):
     """Request of `/metrics/releases` to calculate metrics on releases."""
 
     openapi_types = {
@@ -22,8 +22,6 @@ class _ReleaseMetricsRequest(Model):
         "with_": "with",
         "metrics": "metrics",
     }
-
-    __enable_slots__ = False
 
     def __init__(
         self,

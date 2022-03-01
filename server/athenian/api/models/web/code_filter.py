@@ -6,7 +6,7 @@ from athenian.api.models.web.common_filter_properties import CommonFilterPropert
 from athenian.api.models.web.granularity import Granularity
 
 
-class _CodeFilter(Model):
+class _CodeFilter(Model, sealed=False):
     """Filter for revealing code bypassing PRs."""
 
     openapi_types = {
@@ -16,8 +16,6 @@ class _CodeFilter(Model):
     attribute_map = {
         "granularity": "granularity",
     }
-
-    __enable_slots__ = False
 
     def __init__(
         self,

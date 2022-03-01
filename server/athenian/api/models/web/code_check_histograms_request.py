@@ -8,7 +8,7 @@ from athenian.api.models.web.common_metrics_properties import QuantilesMixin
 from athenian.api.models.web.for_set_code_checks import ForSetCodeChecks
 
 
-class _CodeCheckHistogramsRequest(Model, QuantilesMixin):
+class _CodeCheckHistogramsRequest(Model, QuantilesMixin, sealed=False):
     """Request of `/histograms/code_checks`."""
 
     openapi_types = {
@@ -24,8 +24,6 @@ class _CodeCheckHistogramsRequest(Model, QuantilesMixin):
         "quantiles": "quantiles",
         "split_by_check_runs": "split_by_check_runs",
     }
-
-    __enable_slots__ = False
 
     def __init__(
         self,

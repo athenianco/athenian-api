@@ -7,7 +7,7 @@ from athenian.api.models.web.for_set_code_checks import _CalculatedCodeCheckComm
 from athenian.api.models.web.granularity import GranularityMixin
 
 
-class _CalculatedCodeCheckMetricsItem(Model, GranularityMixin):
+class _CalculatedCodeCheckMetricsItem(Model, GranularityMixin, sealed=False):
     """Series of calculated metrics for a specific set of repositories and commit authors."""
 
     openapi_types = {
@@ -19,8 +19,6 @@ class _CalculatedCodeCheckMetricsItem(Model, GranularityMixin):
         "granularity": "granularity",
         "values": "values",
     }
-
-    __enable_slots__ = False
 
     def __init__(
         self,

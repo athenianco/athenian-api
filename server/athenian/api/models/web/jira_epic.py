@@ -5,7 +5,7 @@ from athenian.api.models.web.jira_epic_child import JIRAEpicChild
 from athenian.api.models.web.jira_epic_issue_common import JIRAEpicIssueCommon
 
 
-class _JIRAEpicSpecials(Model):
+class _JIRAEpicSpecials(Model, sealed=False):
     """Details specific to JIRA epics."""
 
     openapi_types = {
@@ -19,8 +19,6 @@ class _JIRAEpicSpecials(Model):
         "children": "children",
         "prs": "prs",
     }
-
-    __enable_slots__ = False
 
     def __init__(
         self,

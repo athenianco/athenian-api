@@ -4,7 +4,7 @@ from athenian.api.models.web import CommonFilterProperties
 from athenian.api.models.web.base_model_ import AllOf, Model
 
 
-class _FilterContributorsRequest(Model):
+class _FilterContributorsRequest(Model, sealed=False):
     """Filters for `/filter/contributors`."""
 
     openapi_types = {
@@ -16,8 +16,6 @@ class _FilterContributorsRequest(Model):
         "in_": "in",
         "as_": "as",
     }
-
-    __enable_slots__ = False
 
     def __init__(
             self,

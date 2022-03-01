@@ -6,7 +6,7 @@ from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.response import ResponseError
 
 
-class CommonFilterProperties(Model):
+class CommonFilterProperties(Model, sealed=False):
     """Define `account`, `date_from`, `date_to`, and `timezone` properties."""
 
     openapi_types = {
@@ -22,8 +22,6 @@ class CommonFilterProperties(Model):
         "timezone": "timezone",
         "account": "account",
     }
-
-    __enable_slots__ = False
 
     def __init__(
         self,

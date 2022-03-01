@@ -8,7 +8,7 @@ from athenian.api.models.web.deployment_with import DeploymentWith
 from athenian.api.models.web.for_set import make_common_pull_request_filters
 
 
-class _FilterDeploymentsRequest(Model):
+class _FilterDeploymentsRequest(Model, sealed=False):
     """Filters to select the deployments in `/filter/deployments`."""
 
     openapi_types = {
@@ -24,8 +24,6 @@ class _FilterDeploymentsRequest(Model):
         "environments": "environments",
         "conclusions": "conclusions",
     }
-
-    __enable_slots__ = False
 
     def __init__(
         self,

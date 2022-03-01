@@ -7,9 +7,7 @@ from athenian.api.models.web.logical_pr_rules import LogicalPRRules
 from athenian.api.models.web.release_match_setting import ReleaseMatchSetting
 
 
-class _LogicalRepository(Model):
-    __enable_slots__ = False
-
+class _LogicalRepository(Model, sealed=False):
     openapi_types = {
         "name": str,
         "parent": str,
@@ -169,5 +167,3 @@ class LogicalRepository(_LogicalRepository):
 
     Release settings are also visible in `/settings/release_match`.
     """
-
-    __enable_slots__ = True

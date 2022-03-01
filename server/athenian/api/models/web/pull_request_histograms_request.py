@@ -8,7 +8,7 @@ from athenian.api.models.web.pull_request_histogram_definition import \
     PullRequestHistogramDefinition
 
 
-class _PullRequestHistogramsRequest(Model, QuantilesMixin):
+class _PullRequestHistogramsRequest(Model, QuantilesMixin, sealed=False):
     """Request of `/histograms/pull_requests`."""
 
     openapi_types = {
@@ -26,8 +26,6 @@ class _PullRequestHistogramsRequest(Model, QuantilesMixin):
         "quantiles": "quantiles",
         "fresh": "fresh",
     }
-
-    __enable_slots__ = False
 
     def __init__(
         self,

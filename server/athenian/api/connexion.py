@@ -53,6 +53,7 @@ from athenian.api.models.persistentdata import \
     dereference_schemas as dereference_persistentdata_schemas
 from athenian.api.models.precomputed.schema_monitor import schedule_pdb_schema_check
 from athenian.api.models.web import GenericError
+from athenian.api.models.web.generic_error import ServiceUnavailableError
 from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME, setup_prometheus
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError
@@ -208,23 +209,6 @@ class ServerCrashedError(GenericError):
         super().__init__(type="/errors/InternalServerError",
                          title=HTTPStatus.INTERNAL_SERVER_ERROR.phrase,
                          status=HTTPStatus.INTERNAL_SERVER_ERROR,
-                         instance=instance)
-
-
-class ServiceUnavailableError(GenericError):
-    """HTTP 503."""
-
-    def __init__(self, type: str, detail: Optional[str], instance: Optional[str] = None):
-        """Initialize a new instance of ServiceUnavailableError.
-
-        :param detail: The details about this error.
-        :param type: The type identifier of this error.
-        :param instance: Sentry event ID of this error.
-        """
-        super().__init__(type=type,
-                         title=HTTPStatus.SERVICE_UNAVAILABLE.phrase,
-                         status=HTTPStatus.SERVICE_UNAVAILABLE,
-                         detail=detail,
                          instance=instance)
 
 

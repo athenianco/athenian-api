@@ -5,7 +5,7 @@ from athenian.api.models.web.deployment_analysis_code import DeploymentAnalysisC
 from athenian.api.models.web.filtered_release import FilteredRelease
 
 
-class DeploymentAnalysisUnsealed(Model):
+class DeploymentAnalysisUnsealed(Model, sealed=False):
     """Statistics and contents of the deployment."""
 
     openapi_types = {
@@ -14,8 +14,6 @@ class DeploymentAnalysisUnsealed(Model):
     }
 
     attribute_map = {"code": "code", "releases": "releases"}
-
-    __enable_slots__ = False
 
     def __init__(self,
                  code: Optional[DeploymentAnalysisCode] = None,
@@ -69,5 +67,3 @@ class DeploymentAnalysisUnsealed(Model):
 
 class DeploymentAnalysis(DeploymentAnalysisUnsealed):
     """Result the analysis of the deployment."""
-
-    __enable_slots__ = True

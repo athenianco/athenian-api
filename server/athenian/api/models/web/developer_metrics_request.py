@@ -7,7 +7,7 @@ from athenian.api.models.web.developer_metric_id import DeveloperMetricID
 from athenian.api.models.web.for_set_developers import ForSetDevelopers
 
 
-class _DeveloperMetricsRequest(Model, GranularitiesMixin):
+class _DeveloperMetricsRequest(Model, GranularitiesMixin, sealed=False):
     """Request for calculating metrics on developer activities."""
 
     openapi_types = {
@@ -21,8 +21,6 @@ class _DeveloperMetricsRequest(Model, GranularitiesMixin):
         "metrics": "metrics",
         "granularities": "granularities",
     }
-
-    __enable_slots__ = False
 
     def __init__(
         self,

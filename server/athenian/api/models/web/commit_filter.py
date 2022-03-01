@@ -4,7 +4,7 @@ from athenian.api.models.web.base_model_ import AllOf, Model
 from athenian.api.models.web.common_filter_properties import CommonFilterProperties
 
 
-class _CommitFilter(Model):
+class _CommitFilter(Model, sealed=False):
     """Specific parts of the commit filter."""
 
     openapi_types = {
@@ -20,8 +20,6 @@ class _CommitFilter(Model):
         "with_committer": "with_committer",
         "only_default_branch": "only_default_branch",
     }
-
-    __enable_slots__ = False
 
     def __init__(
         self,

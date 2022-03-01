@@ -4,7 +4,7 @@ from athenian.api.models.web.base_model_ import AllOf, Model
 from athenian.api.models.web.for_set import CommonPullRequestFilters, RepositoryGroupsMixin
 
 
-class _ForSetDevelopers(Model, RepositoryGroupsMixin):
+class _ForSetDevelopers(Model, RepositoryGroupsMixin, sealed=False):
     """Filter for `/metrics/developers`."""
 
     openapi_types = {
@@ -20,8 +20,6 @@ class _ForSetDevelopers(Model, RepositoryGroupsMixin):
         "developers": "developers",
         "aggregate_devgroups": "aggregate_devgroups",
     }
-
-    __enable_slots__ = False
 
     def __init__(
         self,

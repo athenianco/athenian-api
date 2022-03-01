@@ -7,7 +7,7 @@ from athenian.api.models.web.common_metrics_properties import CommonMetricsPrope
 from athenian.api.models.web.for_set_code_checks import ForSetCodeChecks
 
 
-class _CodeCheckMetricsRequest(Model):
+class _CodeCheckMetricsRequest(Model, sealed=False):
     """Request for calculating metrics on top of code check runs (CI) data."""
 
     openapi_types = {
@@ -21,8 +21,6 @@ class _CodeCheckMetricsRequest(Model):
         "metrics": "metrics",
         "split_by_check_runs": "split_by_check_runs",
     }
-
-    __enable_slots__ = False
 
     def __init__(
         self,

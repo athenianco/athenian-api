@@ -6,7 +6,7 @@ from athenian.api.models.web.common_metrics_properties import QuantilesMixin
 from athenian.api.models.web.for_set import CommonPullRequestFilters
 
 
-class _FilterCodeChecksRequest(Model, QuantilesMixin):
+class _FilterCodeChecksRequest(Model, QuantilesMixin, sealed=False):
     """Request body of `/filter/code_checks`."""
 
     openapi_types = {
@@ -20,8 +20,6 @@ class _FilterCodeChecksRequest(Model, QuantilesMixin):
         "triggered_by": "triggered_by",
         "quantiles": "quantiles",
     }
-
-    __enable_slots__ = False
 
     def __init__(
         self,
