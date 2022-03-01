@@ -30,3 +30,11 @@ def coerce_prefixed_logical_repos(repos: Iterable[str]) -> Dict[str, Set[str]]:
 def contains_logical_repos(repos: Iterable[str]) -> bool:
     """Check whether at least one repository name is logical."""
     return any(r.count("/") > 1 for r in repos)
+
+
+def extract_logical_repo(repo: str, offset: int = 2) -> str:
+    """Return the logical part of the repository name."""
+    try:
+        return repo.split("/", offset)[offset]
+    except IndexError:
+        return ""

@@ -101,7 +101,9 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
                 if table == "jira.issue":
                     kwargs["url"] = "https://athenianco.atlassian.net/browse/" + kwargs["key"]
                 if table == "github.node_repository":
-                    kwargs["name"] = kwargs["name_with_owner"].split("/", 1)[1]
+                    name_with_owner = kwargs["name_with_owner"]
+                    kwargs["name"] = name_with_owner.split("/", 1)[1]
+                    kwargs["url"] = "https://github.com/" + name_with_owner
                 session.add(model(**kwargs))
                 if table == "github.api_pull_requests":
                     session.add(NodePullRequest(graph_id=kwargs["node_id"],

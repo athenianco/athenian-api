@@ -377,6 +377,7 @@ class NodeRepository(Base,
     __tablename__ = "node_repository"
 
     name_with_owner = Column(Text, nullable=False)
+    url = Column(Text, nullable=False)
     name = Column(Text, nullable=False)
 
 
