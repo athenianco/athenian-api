@@ -2,9 +2,10 @@ import asyncio
 from datetime import datetime, timezone
 
 import pytest
-from sqlalchemy import delete, update
+from sqlalchemy import delete, select, update
 
-from athenian.api.controllers.reposet import load_account_reposets, load_account_state
+from athenian.api.controllers.reposet import load_account_reposets, load_account_state, \
+    refresh_repository_names
 from athenian.api.models.metadata.github import FetchProgress
 from athenian.api.models.state.models import RepositorySet
 from athenian.api.response import ResponseError
@@ -52,3 +53,28 @@ async def test_load_account_state_no_reposet(sdb, mdb):
     await sdb.execute(delete(RepositorySet))
     state = await load_account_state(1, sdb, mdb, None, None)
     assert state is not None
+
+
+async def test_refresh_repository_names_smoke(sdb, mdb):
+    await sdb.execute(
+        update(RepositorySet)
+        .where(RepositorySet.id == 1)
+        .values({RepositorySet.items: [["xxx", 40550],
+                                       ["github.com/src-d/go-git/alpha", 40550],
+                                       ["github.com/src-d/zzz/beta", 40550],
+                                       ["yyy", 100500],
+                                       ["github.com/src-d/gitbase", 39652769]],
+                 RepositorySet.updated_at: datetime.now(timezone.utc),
+                 RepositorySet.updates_count: RepositorySet.updates_count + 1}))
+    items = await refresh_repository_names(1, (6366825,), sdb, mdb)
+    assert items == ["github.com/src-d/gitbase",
+                     "github.com/src-d/go-git",
+                     "github.com/src-d/go-git/alpha",
+                     "github.com/src-d/go-git/beta",
+                     "yyy"]
+    items = await sdb.fetch_val(select([RepositorySet.items]).where(RepositorySet.id == 1))
+    assert items == [["github.com/src-d/gitbase", 39652769],
+                     ["github.com/src-d/go-git", 40550],
+                     ["github.com/src-d/go-git/alpha", 40550],
+                     ["github.com/src-d/go-git/beta", 40550],
+                     ["yyy", 100500]]

@@ -11,6 +11,11 @@ from athenian.api.models.metadata.github import Repository, User
 from athenian.api.typing_utils import dataclass
 
 
+def strip_proto(url: str) -> str:
+    """Remove https:// string prefix."""
+    return url.split("://", 1)[1]
+
+
 @dataclass(slots=True, frozen=True, repr=False)
 class Prefixer:
     """
@@ -54,9 +59,6 @@ class Prefixer:
             ),
             op="Prefixer",
         )
-
-        def strip_proto(url: str) -> str:
-            return url.split("://", 1)[1]
 
         repo_node_to_prefixed_name = {
             r[Repository.node_id.name]: strip_proto(r[Repository.html_url.name])

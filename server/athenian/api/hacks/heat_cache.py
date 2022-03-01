@@ -40,7 +40,7 @@ from athenian.api.controllers.miners.github.release_mine import discover_first_r
     hide_first_releases, mine_releases
 from athenian.api.controllers.miners.types import PullRequestFacts
 from athenian.api.controllers.prefixer import Prefixer
-from athenian.api.controllers.reposet import load_account_state
+from athenian.api.controllers.reposet import load_account_state, refresh_repository_names
 from athenian.api.controllers.settings import ReleaseMatch, Settings
 import athenian.api.db
 from athenian.api.db import Database, measure_db_overhead_and_retry
@@ -164,12 +164,13 @@ def main():
                             reposet.owner_id, reposet.id)
                 continue
             meta_ids = await get_metadata_account_ids(reposet.owner_id, sdb, cache)
-            prefixer, bots = await gather(
+            prefixer, bots, new_items = await gather(
                 Prefixer.load(meta_ids, mdb, cache),
                 fetch_bots(reposet.owner_id, mdb, sdb, None),
+                refresh_repository_names(reposet.owner_id, meta_ids, sdb, mdb),
             )
+            reposet.items = new_items
             log.info("Loaded %d bots", len(bots))
-            reposet.items = [r[0] for r in reposet.items]
             if not reposet.precomputed:
                 log.info("Considering account %d as brand new, creating the teams",
                          reposet.owner_id)

@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timezone
 from http import HTTPStatus
 import logging
 from sqlite3 import IntegrityError, OperationalError
@@ -10,20 +11,20 @@ import asyncpg
 from asyncpg import UniqueViolationError
 import sentry_sdk
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
-from sqlalchemy import and_, desc, func, insert, select
+from sqlalchemy import and_, desc, func, insert, select, update
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.controllers.account import fetch_github_installation_progress, \
     get_metadata_account_ids, match_metadata_installation
-from athenian.api.controllers.logical_repos import coerce_logical_repos
+from athenian.api.controllers.logical_repos import coerce_logical_repos, extract_logical_repo
 from athenian.api.controllers.miners.access import AccessChecker
 from athenian.api.controllers.miners.access_classes import access_classes
-from athenian.api.controllers.prefixer import Prefixer
+from athenian.api.controllers.prefixer import Prefixer, strip_proto
 from athenian.api.db import Connection, Database, DatabaseLike
 from athenian.api.defer import defer
-from athenian.api.models.metadata.github import AccountRepository, NodeUser
+from athenian.api.models.metadata.github import AccountRepository, NodeRepository, NodeUser
 from athenian.api.models.state.models import RepositorySet, UserAccount
 from athenian.api.models.web import ForbiddenError, InstallationProgress, InvalidRequestError, \
     NoSourceDataError, NotFoundError
@@ -417,3 +418,61 @@ async def load_account_state(account: int,
         if reposets:
             return progress
     return None
+
+
+async def refresh_repository_names(account: int,
+                                   meta_ids: Tuple[int, ...],
+                                   sdb: DatabaseLike,
+                                   mdb: DatabaseLike) -> List[str]:
+    """
+    Update repository names in the account's reposets according to github.node_repository.
+
+    github.account_repos updates faster but we don't care if we are missing some rename during one
+    hour.
+
+    :return: List of repository names belonging to the "ALL" reposet.
+    """
+    log = logging.getLogger(f"{metadata.__package__}.refresh_repository_names")
+    reposet_rows = await sdb.fetch_all(
+        select([RepositorySet.id, RepositorySet.items, RepositorySet.name])
+        .where(RepositorySet.owner_id == account))
+    repo_ids = set()
+    for row in reposet_rows:
+        repo_ids.update(r[1] for r in row[RepositorySet.items.name])
+    name_rows = await mdb.fetch_all(
+        select([NodeRepository.node_id, NodeRepository.url])
+        .where(NodeRepository.acc_id.in_(meta_ids),
+               NodeRepository.node_id.in_(repo_ids)))
+    name_map = {r[0]: strip_proto(r[1]) for r in name_rows}
+    updates = []
+    all_reposet_names = []
+    for row in reposet_rows:
+        dirty = False
+        new_items = []
+        is_all = row[RepositorySet.name.name] == RepositorySet.ALL
+        for old_name, node_id in row[RepositorySet.items.name]:
+            try:
+                new_name = name_map[node_id]
+            except KeyError:
+                new_name = old_name
+            if logical := extract_logical_repo(old_name, 3):
+                new_name += "/" + logical
+            if old_name != new_name:
+                dirty = True
+                log.info("[%d] rename %s -> %s", account, old_name, new_name)
+            new_items.append([new_name, node_id])
+            if is_all:
+                all_reposet_names.append(new_name)
+        if dirty:
+            new_items.sort()
+            updates.append(sdb.execute(
+                update(RepositorySet)
+                .where(RepositorySet.id == row[RepositorySet.id.name])
+                .values({
+                    RepositorySet.items: new_items,
+                    RepositorySet.updates_count: RepositorySet.updates_count + 1,
+                    RepositorySet.updated_at: datetime.now(timezone.utc),
+                })))
+    await gather(*updates)
+    all_reposet_names.sort()
+    return all_reposet_names
