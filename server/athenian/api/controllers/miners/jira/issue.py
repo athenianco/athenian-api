@@ -308,9 +308,10 @@ async def fetch_jira_issues(installation_ids: JIRAConfig,
             meta_ids, np.unique(prs[NodePullRequest.repository_id.name].values[np.setdiff1d(
                 np.arange(len(prs)), existing_repos, assume_unique=True)]).tolist())
         prs = prs.take(existing_repos)
+    unique_pr_node_ids = prs.index.unique()
     released_prs, labels = await gather(
-        _fetch_released_prs(prs.index.values, default_branches, release_settings, account, pdb),
-        fetch_labels_to_filter(prs.index.values, meta_ids, mdb),
+        _fetch_released_prs(unique_pr_node_ids, default_branches, release_settings, account, pdb),
+        fetch_labels_to_filter(unique_pr_node_ids, meta_ids, mdb),
     )
     prs = split_logical_prs(
         prs, labels,

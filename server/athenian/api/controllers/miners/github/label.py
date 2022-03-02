@@ -53,6 +53,7 @@ async def mine_labels(repos: Set[str],
     return result
 
 
+@sentry_span
 async def fetch_labels_to_filter(prs: Collection[int],
                                  meta_ids: Tuple[int, ...],
                                  mdb: DatabaseLike,
@@ -69,7 +70,9 @@ async def fetch_labels_to_filter(prs: Collection[int],
     return await read_sql_query(
         select(lcols)
         .where(and_(PullRequestLabel.pull_request_node_id.in_(prs),
-                    PullRequestLabel.acc_id.in_(meta_ids))),
+                    PullRequestLabel.acc_id.in_(meta_ids)))
+        .with_statement_hint(f"Rows(prl repo label #{len(prs)})")
+        .with_statement_hint("Leading((prl (repo label)))"),
         mdb, lcols, index=PullRequestLabel.pull_request_node_id.name)
 
 
