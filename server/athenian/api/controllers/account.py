@@ -1,5 +1,6 @@
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+from itertools import chain
 import logging
 import marshal
 import os
@@ -87,8 +88,12 @@ async def match_metadata_installation(account: int,
     sdb_conn must be in a transaction!
     """
     log = logging.getLogger(f"{metadata.__package__}.match_metadata_installation")
-    meta_ids = {r[0] for r in await mdb_conn.fetch_all(
-        select([NodeUser.acc_id]).where(NodeUser.login == login))}
+    user_rows, owner_rows = await gather(
+        mdb_conn.fetch_all(select([NodeUser.acc_id]).where(NodeUser.login == login)),
+        mdb.fetch_all(select([MetadataAccount.id]).where(MetadataAccount.owner_login == login)),
+    )
+    meta_ids = set(chain((r[0] for r in user_rows), (r[0] for r in owner_rows)))
+    del user_rows, owner_rows
     if not meta_ids:
         log.warning("account %d: no installations found for %s", account, login)
         return ()
