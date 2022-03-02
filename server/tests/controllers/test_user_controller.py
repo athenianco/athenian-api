@@ -240,6 +240,7 @@ async def test_get_users_rate_limit(xapp):
         assert u.email == vadim_email
 
 
+@pytest.mark.flaky(reruns=5, reruns_delay=1)
 async def test_become_db(client, headers, sdb, god):
     response = await client.request(
         method="GET", path="/v1/become?id=auth0|5e1f6e2e8bfa520ea5290741", headers=headers,
