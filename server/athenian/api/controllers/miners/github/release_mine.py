@@ -1264,10 +1264,10 @@ def discover_first_releases(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
     prs = {}
     for repo, (i, _) in oldest_release_by_repo.items():
         release, facts = releases[i]
-        ages = np.array([releases[j][1].age for j in indexes_by_repo[repo] if j != i])
-        if len(ages) < 2:
+        if len(pr_node_ids := facts["prs_" + PullRequest.node_id.name]) == 0:
             continue
-        if facts.age < np.median(ages) * threshold_factor:
+        ages = np.array([releases[j][1].age for j in indexes_by_repo[repo] if j != i])
+        if len(ages) < 2 or facts.age < np.median(ages) * threshold_factor:
             continue
         args = dict(facts)
         for key, val in args.items():
@@ -1275,8 +1275,7 @@ def discover_first_releases(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
                 if val is not None:
                     args[key] = val[:0]
         outlier_releases.append((release, ReleaseFacts.from_fields(**args)))
-        if len(pr_node_ids := facts["prs_" + PullRequest.node_id.name]):
-            prs[repo] = pr_node_ids
+        prs[repo] = pr_node_ids
     return outlier_releases, prs
 
 

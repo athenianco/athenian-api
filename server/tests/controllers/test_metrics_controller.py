@@ -2524,3 +2524,28 @@ async def test_deployment_metrics_environments(
     assert model[0].values[0].values[0] == 3
     assert model[1].for_.environments == [["production"]]
     assert model[1].values[0].values[0] == 4
+
+
+async def test_deployment_metrics_with(client, headers, sample_deployments):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "for": [{
+            "with": {"pr_author": ["github.com/mcuadros"]},
+            "environments": [["production"]],
+        }],
+        "metrics": [DeploymentMetricID.DEP_SUCCESS_COUNT,
+                    DeploymentMetricID.DEP_DURATION_SUCCESSFUL],
+        "granularities": ["all"],
+    }
+
+    response = await client.request(
+        method="POST", path="/v1/metrics/deployments", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + rbody
+    model = [CalculatedDeploymentMetric.from_dict(obj) for obj in json.loads(rbody)]
+
+    assert len(model) == 1
+    assert model[0].values[0].values[0] == 3
