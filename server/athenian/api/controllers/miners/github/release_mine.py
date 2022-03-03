@@ -15,7 +15,7 @@ from sqlalchemy.dialects.postgresql import insert as postgres_insert
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
-from athenian.api.cache import cached, CancelCache, short_term_exptime
+from athenian.api.cache import cached, CancelCache, middle_term_exptime, short_term_exptime
 from athenian.api.controllers.logical_repos import coerce_logical_repos, drop_logical_repo
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import BranchMiner
@@ -127,7 +127,7 @@ def _triage_flags(result: Tuple[List[Tuple[Dict[str, Any], ReleaseFacts]],
 
 @sentry_span
 @cached(
-    exptime=60 * 60,  # 1 hour
+    exptime=middle_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda repos, participants, time_from, time_to, labels, jira, release_settings, logical_settings, **_: (  # noqa
@@ -232,7 +232,7 @@ async def _mine_releases(repos: Iterable[str],
             if len(hashes) == 0:
                 log.error("%s has an empty commit DAG, skipped from mining releases", repo)
                 continue
-            release_hashes = repo_releases[Release.sha.name].values.astype("S40")
+            release_hashes = repo_releases[Release.sha.name].values.astype("S40", copy=False)
             release_timestamps = repo_releases[Release.published_at.name].values
             ownership = mark_dag_access(hashes, vertexes, edges, release_hashes, True)
             parents = mark_dag_parents(
@@ -243,16 +243,15 @@ async def _mine_releases(repos: Iterable[str],
             ), unfiltered_precomputed_facts_keys)
             out_of_range_mask = release_timestamps < np.array(time_from.replace(tzinfo=None),
                                                               dtype=release_timestamps.dtype)
-            relevant = np.nonzero(~(precomputed_mask | out_of_range_mask))[0]
-            if len(relevant) == 0:
+            if len(relevant := np.flatnonzero(~(precomputed_mask | out_of_range_mask))) == 0:
                 continue
-            if len(removed := np.nonzero(np.in1d(ownership, relevant, invert=True))[0]) > 0:
+            if len(removed := np.flatnonzero(np.in1d(ownership, relevant, invert=True))) > 0:
                 hashes = np.delete(hashes, removed)
                 ownership = np.delete(ownership, removed)
 
             def on_missing(missing: np.ndarray) -> None:
-                if len(really_missing := np.nonzero(np.in1d(
-                        missing, relevant, assume_unique=True))[0]):
+                if len(really_missing := np.flatnonzero(np.in1d(
+                        missing, relevant, assume_unique=True))):
                     log.warning("%s has %d / %d releases with 0 commits",
                                 repo, len(really_missing), len(repo_releases))
                     log.debug("%s", repo_releases.take(really_missing))
@@ -331,20 +330,23 @@ async def _mine_releases(repos: Iterable[str],
         has_logical_prs = logical_settings.has_logical_prs()
         for repo, (repo_releases, owned_hashes, parents) in repo_releases_analyzed.items():
             computed_release_info_by_commit = {}
+            repo_data = []
+            # iterate in the reversed order to correctly handle multiple releases at the same tag
             for i, (my_id, my_name, my_tag, my_url, my_author, my_published_at,
                     my_matched_by, my_commit) in \
-                    enumerate(zip(repo_releases[Release.node_id.name].values,
-                                  repo_releases[Release.name.name].values,
-                                  repo_releases[Release.tag.name].values,
-                                  repo_releases[Release.url.name].values,
-                                  repo_releases[Release.author_node_id.name].values,
-                                  repo_releases[Release.published_at.name],  # no values
-                                  repo_releases[matched_by_column].values,
-                                  repo_releases[Release.sha.name].values)):
+                    enumerate(zip(repo_releases[Release.node_id.name].values[::-1],
+                                  repo_releases[Release.name.name].values[::-1],
+                                  repo_releases[Release.tag.name].values[::-1],
+                                  repo_releases[Release.url.name].values[::-1],
+                                  repo_releases[Release.author_node_id.name].values[::-1],
+                                  repo_releases[Release.published_at.name][::-1],  # no values
+                                  repo_releases[matched_by_column].values[::-1],
+                                  repo_releases[Release.sha.name].values[::-1]),
+                              start=1):
+                i = len(repo_releases) - i
                 if my_published_at < time_from or (my_id, repo) in unfiltered_precomputed_facts:
                     continue
-                dupe = computed_release_info_by_commit.get(my_commit)
-                if dupe is None:
+                if (dupe := computed_release_info_by_commit.get(my_commit)) is None:
                     if len(commits_index) > 0:
                         found_indexes = searchsorted_inrange(commits_index, owned_hashes[i])
                         found_indexes = \
@@ -400,7 +402,7 @@ async def _mine_releases(repos: Iterable[str],
                         my_age, my_additions, my_deletions, commits_count, my_prs,
                         my_commit_authors,
                     ) = dupe
-                data.append((
+                repo_data.append((
                     {
                         Release.node_id.name: my_id,
                         Release.name.name: my_name or my_tag,
@@ -418,8 +420,10 @@ async def _mine_releases(repos: Iterable[str],
                                              commit_authors=my_commit_authors,
                                              **my_prs,
                                              repository_full_name=repo)))
-                if len(data) % 500 == 0:
+                if (len(data) + len(repo_data)) % 500 == 0:
                     await asyncio.sleep(0)
+            repo_data.reverse()
+            data += repo_data
         if data:
             await defer(
                 store_precomputed_release_facts(
