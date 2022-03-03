@@ -158,7 +158,7 @@ async def mine_deployments(repositories: Collection[str],
             facts = pd.concat([facts, missed_facts])
     else:
         missed_releases = pd.DataFrame()
-    facts = await _filter_by_participants(facts, participants, prefixer)
+    facts = await _filter_by_participants(facts, participants)
     if pr_labels or jira:
         facts = await _filter_by_prs(facts, pr_labels, jira, meta_ids, mdb, cache)
     components = _group_components(components)
@@ -365,15 +365,9 @@ def _group_components(df: pd.DataFrame) -> pd.DataFrame:
 @sentry_span
 async def _filter_by_participants(df: pd.DataFrame,
                                   participants: ReleaseParticipants,
-                                  prefixer: Prefixer,
                                   ) -> pd.DataFrame:
     if df.empty or not participants:
         return df
-    user_login_to_node_get = prefixer.user_login_to_node.__getitem__
-    participants = {
-        k: list(chain.from_iterable(user_login_to_node_get(u) for u in people))
-        for k, people in participants.items()
-    }
     mask = np.zeros(len(df), dtype=bool)
     for pkind, col in zip(ReleaseParticipationKind, [DeploymentFacts.f.pr_authors,
                                                      DeploymentFacts.f.commit_authors,
@@ -389,6 +383,7 @@ async def _filter_by_participants(df: pd.DataFrame,
         passing = np.bitwise_or.reduceat(np.in1d(values, people), offsets)[:-1]
         passing[lengths == 0] = False
         mask[passing] = True
+    df.disable_consolidate()
     return df.take(np.flatnonzero(mask))
 
 
