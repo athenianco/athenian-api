@@ -150,6 +150,39 @@ async def get_account_name(account: int,
 
 @cached(
     exptime=60,
+    serialize=lambda _: b"1",
+    deserialize=lambda _: False,
+    key=lambda user, account, **_: (user, account),
+)
+async def _report_user_rejected(user: str,
+                                user_info: Optional[Callable[..., Coroutine]],
+                                account: int,
+                                context: str,
+                                sdb: DatabaseLike,
+                                mdb: DatabaseLike,
+                                slack: SlackWebClient,
+                                cache: Optional[aiomcache.Client],
+                                ) -> bool:
+    async def dummy_user():
+        return User(login="N/A")
+
+    name, user_info = await gather(
+        get_account_name(account, sdb, mdb, cache),
+        user_info() if user_info is not None else dummy_user(),
+    )
+    await slack.post_account(
+        "user_rejected.jinja2",
+        user=user,
+        user_name=user_info.login,
+        user_email=user_info.email if user_info.email != User.EMPTY_EMAIL else "",
+        account=account,
+        account_name=name,
+        context=context)
+    return True
+
+
+@cached(
+    exptime=60,
     serialize=lambda is_admin: b"1" if is_admin else b"0",
     deserialize=lambda buf: buf == b"1",
     key=lambda user, account, **_: (user, account),
@@ -173,26 +206,10 @@ async def get_user_account_status(user: str,
         select([UserAccount.is_admin])
         .where(and_(UserAccount.user_id == user, UserAccount.account_id == account)))
     if status is None:
-        async def report_user_rejected():
-            async def dummy_user():
-                return User(login="N/A")
-
-            nonlocal user_info
-            name, user_info = await gather(
-                get_account_name(account, sdb, mdb, cache),
-                user_info() if user_info is not None else dummy_user(),
-            )
-            await slack.post_account(
-                "user_rejected.jinja2",
-                user=user,
-                user_name=user_info.login,
-                user_email=user_info.email if user_info.email != User.EMPTY_EMAIL else "",
-                account=account,
-                account_name=name,
-                context=context)
-
         if slack is not None:
-            await defer(report_user_rejected(), "report_user_rejected_to_slack")
+            await defer(
+                _report_user_rejected(user, user_info, account, context, sdb, mdb, slack, cache),
+                "report_user_rejected_to_slack")
         raise ResponseError(NotFoundError(
             detail="Account %d does not exist or user %s is not a member." % (account, user)))
     return status
