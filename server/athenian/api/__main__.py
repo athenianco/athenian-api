@@ -292,12 +292,18 @@ def create_slack(log: logging.Logger) -> Optional[SlackWebClient]:
     slack_token = os.getenv("SLACK_API_TOKEN")
     if not slack_token:
         return None
-    slack_client = SlackWebClient(
-        token=slack_token,
-        session=aiohttp.ClientSession(
+    slack_client = SlackWebClient(token=slack_token)
+
+    # we must set the session inside the loop, two reasons:
+    # 1. avoid the warning
+    # 2. timeouts don't work otherwise
+    async def set_slack_client_session():
+        slack_client.session = aiohttp.ClientSession(
             timeout=aiohttp.ClientTimeout(total=10),
-        ),
-    )
+        )
+
+    asyncio.ensure_future(set_slack_client_session())
+
     account_channel = os.getenv("SLACK_ACCOUNT_CHANNEL")
     install_channel = os.getenv("SLACK_INSTALL_CHANNEL")
     event_channel = os.getenv("ATHENIAN_EVENTS_SLACK_CHANNEL")
