@@ -1,6 +1,7 @@
 from collections import defaultdict
 from datetime import timezone
 from itertools import chain
+import logging
 from typing import Any, Dict, Iterable, List, Tuple
 
 import morcilla
@@ -9,6 +10,7 @@ import sentry_sdk
 from sqlalchemy import and_, desc, insert, or_, select, union_all
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 
+from athenian.api import metadata
 from athenian.api.async_utils import read_sql_query
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.types import ReleaseFacts
@@ -119,10 +121,14 @@ async def store_precomputed_release_facts(releases: List[Tuple[Dict[str, Any], R
                                           on_conflict_replace: bool = False) -> None:
     """Put the new release facts to the pdb."""
     values = []
+    skipped = defaultdict(int)
     for dikt, facts in releases:
-        repo = dikt[Release.repository_full_name.name]
-        setting = settings.prefixed[repo]
-        repo = repo.split("/", 1)[1]
+        repo = facts.repository_full_name
+        if dikt[Release.repository_full_name.name] is None:
+            # could not prefix => gone
+            skipped[repo] += 1
+            continue
+        setting = settings.native[repo]
         if setting.match == ReleaseMatch.tag:
             value = setting.tags
         elif setting.match == ReleaseMatch.branch:
@@ -139,6 +145,9 @@ async def store_precomputed_release_facts(releases: List[Tuple[Dict[str, Any], R
             published_at=facts.published.item().replace(tzinfo=timezone.utc),
             data=facts.data,
         ).create_defaults().explode(with_primary_keys=True))
+    if skipped:
+        log = logging.getLogger(f"{metadata.__package__}.store_precomputed_release_facts")
+        log.warning("Ignored mined releases: %s", dict(skipped))
     if pdb.url.dialect == "postgresql":
         sql = postgres_insert(GitHubReleaseFacts)
         if on_conflict_replace:

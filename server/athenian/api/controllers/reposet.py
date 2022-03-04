@@ -442,7 +442,8 @@ async def refresh_repository_names(account: int,
     name_rows = await mdb.fetch_all(
         select([NodeRepository.node_id, NodeRepository.url])
         .where(NodeRepository.acc_id.in_(meta_ids),
-               NodeRepository.node_id.in_(repo_ids)))
+               NodeRepository.node_id.in_(repo_ids),
+               NodeRepository.url.isnot(None)))
     name_map = {r[0]: strip_proto(r[1]) for r in name_rows}
     updates = []
     all_reposet_names = []
