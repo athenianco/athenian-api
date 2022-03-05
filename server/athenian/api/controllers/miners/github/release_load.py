@@ -37,6 +37,7 @@ from athenian.api.models.precomputed.models import GitHubRelease as PrecomputedR
     GitHubReleaseMatchTimespan
 from athenian.api.models.web import NoSourceDataError
 from athenian.api.response import ResponseError
+from athenian.api.to_object_arrays import is_null
 from athenian.api.tracing import sentry_span
 
 tag_by_branch_probe_lookaround = timedelta(weeks=4)
@@ -249,6 +250,8 @@ class ReleaseLoader:
             await defer(store_precomputed_releases(),
                         "store_precomputed_releases(%d, %d)" % (len(missings), repos_count))
 
+        if Release.acc_id.name in releases:
+            del releases[Release.acc_id.name]
         if not releases.empty:
             releases = _adjust_release_dtypes(releases)
             # we could have loaded both branch and tag releases for `tag_or_branch`,
@@ -262,9 +265,21 @@ class ReleaseLoader:
                     errors |= (repos_vec == repo.encode()) & (matched_by_vec != match)
             include = \
                 ~errors & (published_at >= time_from).values & (published_at < time_to).values
-            releases = releases.take(np.nonzero(include)[0])
-        if Release.acc_id.name in releases:
-            del releases[Release.acc_id.name]
+
+            # remove duplicate tags, this may happen  on a pair of tag + GitHub release
+            tag_null = is_null(releases[Release.tag.name].values)
+            tag_notnull_indexes = np.flatnonzero(~tag_null)
+            tag_names = np.char.add(
+                releases[Release.repository_full_name.name].values[tag_notnull_indexes].astype("U"),  # noqa
+                releases[Release.tag.name].values[tag_notnull_indexes].astype("U"),
+            )
+            _, tag_uniques = np.unique(tag_names[::-1], return_index=True)
+            tag_null[tag_notnull_indexes[len(tag_notnull_indexes) - tag_uniques - 1]] = True
+            include &= tag_null
+
+            if not include.all():
+                releases.disable_consolidate()
+                releases = releases.take(np.flatnonzero(include))
         if not event_releases.empty:
             # append the pushed releases
             releases = pd.concat([releases, event_releases], copy=False)
