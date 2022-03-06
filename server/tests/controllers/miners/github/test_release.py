@@ -1783,8 +1783,10 @@ async def test_mine_releases_logical(
         }
 
 
+@pytest.mark.parametrize("tag, count", [("v4.0.0", 7), ("v4.0.0~post1", 8)])
 @with_defer
-async def test_mine_releases_twins(mdb_rw, pdb, rdb, release_match_setting_tag, prefixer):
+async def test_mine_releases_twins(
+        mdb_rw, pdb, rdb, release_match_setting_tag, prefixer, tag, count):
     time_from = datetime(year=2017, month=6, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2018, month=2, day=1, tzinfo=timezone.utc)
     await mdb_rw.execute(insert(Release).values({
@@ -1796,7 +1798,7 @@ async def test_mine_releases_twins(mdb_rw, pdb, rdb, release_match_setting_tag, 
         Release.author_node_id: 39789,
         Release.name: "v4.0.0",
         Release.published_at: datetime(2018, 1, 9, tzinfo=timezone.utc),
-        Release.tag: "v4.0.0",
+        Release.tag: tag,
         Release.url: "https://github.com/src-d/go-git/commit/tag/v4.0.0",
         Release.sha: "bf3b1f1fb9e0a04d0f87511a7ded2562b48a19d8",
         Release.commit_id: 2757510,
@@ -1806,6 +1808,7 @@ async def test_mine_releases_twins(mdb_rw, pdb, rdb, release_match_setting_tag, 
             ["src-d/go-git"], {}, None, {}, time_from, time_to, LabelFilter.empty(),
             JIRAFilter.empty(), release_match_setting_tag, LogicalRepositorySettings.empty(),
             prefixer, 1, (6366825,), mdb_rw, pdb, rdb, None, with_deployments=False)
+        assert len(releases) == count
         passed = False
         for dikt, facts in releases:
             if dikt[Release.node_id.name] != 41518:

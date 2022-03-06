@@ -329,14 +329,13 @@ async def _mine_releases(repos: Iterable[str],
             log.info("Processing %d repos", len(repo_releases_analyzed))
         has_logical_prs = logical_settings.has_logical_prs()
         for repo, (repo_releases, owned_hashes, parents) in repo_releases_analyzed.items():
-            computed_release_info_by_commit = {}
+            computed_release_info_by_commit = set()
             repo_data = []
             # iterate in the reversed order to correctly handle multiple releases at the same tag
-            for i, (my_id, my_name, my_tag, my_url, my_author, my_published_at,
-                    my_matched_by, my_commit) in \
+            for i, (my_id, my_name, my_url, my_author, my_published_at, my_matched_by,
+                    my_commit) in \
                     enumerate(zip(repo_releases[Release.node_id.name].values[::-1],
                                   repo_releases[Release.name.name].values[::-1],
-                                  repo_releases[Release.tag.name].values[::-1],
                                   repo_releases[Release.url.name].values[::-1],
                                   repo_releases[Release.author_node_id.name].values[::-1],
                                   repo_releases[Release.published_at.name][::-1],  # no values
@@ -346,7 +345,8 @@ async def _mine_releases(repos: Iterable[str],
                 i = len(repo_releases) - i
                 if my_published_at < time_from or (my_id, repo) in unfiltered_precomputed_facts:
                     continue
-                if (dupe := computed_release_info_by_commit.get(my_commit)) is None:
+                my_parents = parents[i]
+                if my_commit not in computed_release_info_by_commit:
                     if len(commits_index) > 0:
                         found_indexes = searchsorted_inrange(commits_index, owned_hashes[i])
                         found_indexes = \
@@ -383,7 +383,6 @@ async def _mine_releases(repos: Iterable[str],
 
                     my_commit_authors = np.unique(my_commit_authors[my_commit_authors > 0])
                     mentioned_authors.update(my_commit_authors)
-                    my_parents = parents[i]
                     if len(my_parents):
                         my_age = (
                             my_published_at
@@ -393,19 +392,26 @@ async def _mine_releases(repos: Iterable[str],
                         my_age = my_published_at - first_commit_dates[drop_logical_repo(repo)]
                     if my_author is not None:
                         mentioned_authors.add(my_author)
-                    computed_release_info_by_commit[my_commit] = (
-                        my_age, my_additions, my_deletions, commits_count, my_prs,
-                        my_commit_authors,
+                    computed_release_info_by_commit.add(my_commit)
+                else:
+                    my_additions = my_deletions = commits_count = 0
+                    my_commit_authors = commits_authors[:0]
+                    my_prs = dict(zip(
+                        ["prs_" + c.name for c in released_prs_columns(PullRequest)],
+                        [prs_node_ids[:0],
+                         prs_numbers[:0],
+                         prs_additions[:0],
+                         prs_deletions[:0],
+                         prs_authors[:0]]))
+                    assert len(my_parents)
+                    my_age = (
+                        my_published_at
+                        - repo_releases[Release.published_at.name]._ixs(my_parents[0])
                     )
-                else:  # dupe
-                    (
-                        my_age, my_additions, my_deletions, commits_count, my_prs,
-                        my_commit_authors,
-                    ) = dupe
                 repo_data.append((
                     {
                         Release.node_id.name: my_id,
-                        Release.name.name: my_name or my_tag,
+                        Release.name.name: my_name,
                         Release.repository_full_name.name: prefixer.prefix_logical_repo(repo),
                         Release.url.name: my_url,
                         Release.sha.name: my_commit,
