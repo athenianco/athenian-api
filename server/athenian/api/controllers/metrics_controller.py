@@ -585,7 +585,7 @@ async def calc_metrics_releases(request: AthenianWebRequest, body: dict) -> web.
                 repos, prefixer, meta_ids, request.mdb, request.cache, strip=True),
             get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
             get_calculators_for_request(grouped_repos.keys(), filt.account, meta_ids, request),
-            *(extract_release_participants(with_, meta_ids, request.mdb, position=i)
+            *(extract_release_participants(with_, prefixer, position=i)
               for i, with_ in enumerate(filt.with_ or [])))
     met = []
 
@@ -791,12 +791,12 @@ def _resolve_deployment_participants(
         resolved_group = {}
         for k, v in group.items():
             people = []
-            for u in v:
+            for i, u in enumerate(v):
                 try:
                     people.extend(user_login_to_node(u))
                 except KeyError:
                     raise ResponseError(InvalidRequestError(
-                        pointer=f".for[{for_set_index}].withgroups[{gi}].{k.name.lower()}",
+                        pointer=f".for[{for_set_index}].withgroups[{gi}].{k.name.lower()}[{i}]",
                         detail=f'User "{u}" does not exist.',
                     )) from None
             resolved_group[k] = people

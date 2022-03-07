@@ -220,6 +220,7 @@ async def test_set_account_features_nasty(client, headers, god):
     assert response.status == 400
 
 
+@pytest.mark.flaky(reruns=10, reruns_delay=1)
 async def test_get_users_query_size_limit(xapp):
     users = await xapp._auth0.get_users(
         ["auth0|5e1f6dfb57bc640ea390557b"] * 200 + ["auth0|5e1f6e2e8bfa520ea5290741"] * 200)
