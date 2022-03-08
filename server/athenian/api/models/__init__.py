@@ -9,12 +9,14 @@ from alembic import script
 from alembic.migration import MigrationContext
 from flogging import flogging
 from mako.template import Template
-from sqlalchemy import any_, create_engine
+import numpy as np
+from sqlalchemy import all_, any_, ARRAY, cast, create_engine, Text
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.sql import operators, Values
 from sqlalchemy.sql.compiler import OPERATORS
-from sqlalchemy.sql.elements import BinaryExpression, BindParameter, Grouping
-from sqlalchemy.sql.operators import ColumnOperators, in_op, notin_op
+from sqlalchemy.sql.elements import BinaryExpression, BindParameter, Grouping, literal
+from sqlalchemy.sql.operators import ColumnOperators, in_op, not_in_op
+from sqlalchemy.sql.sqltypes import BigInteger, NullType
 
 from athenian.precomputer.db import always_unequal, create_base  # noqa: F401
 
@@ -45,7 +47,7 @@ def compile_binary(binary, compiler, override_operator=None, **kw):
     """  # noqa: D200
     operator = override_operator or binary.operator
 
-    if operator is not in_op and operator is not notin_op:
+    if operator is not in_op and operator is not not_in_op:
         return compiler.visit_binary(binary, override_operator=override_operator, **kw)
 
     if isinstance(binary.right, BindParameter):
@@ -53,19 +55,41 @@ def compile_binary(binary, compiler, override_operator=None, **kw):
     else:
         right_len = 0
     if right_len >= 10:
+        postgres = compiler.dialect.name == "postgresql"
         left = compiler.process(binary.left, **kw)
-        kw["literal_binds"] = True
-        use_any = getattr(binary, "any_values", False) and compiler.dialect.name == "postgresql"
-        negate = use_any and operator is notin_op
+        use_any = getattr(binary, "any_values", False) and postgres
+        negate = use_any and operator is not_in_op
         if use_any:
             # ANY(VALUES ...) seems to be performing the best among these three:
             # 1. IN (...)
             # 2. IN(ARRAY[...])
-            # 3. IN(VALUES ...)
+            # 3. ANY(VALUES ...)
+            kw["literal_binds"] = True
+            operator = operators.eq
             right = any_(Grouping(Values(
                 binary.left, literal_binds=True,
             ).data(TupleWrapper(binary.right.value))))
-            operator = operators.eq
+        elif postgres:
+            if operator is not_in_op:
+                operator = operators.ne
+                agg = all_
+            else:
+                operator = operators.eq
+                agg = any_
+            values = ",".join(str(i) for i in binary.right.value)
+            if values.count(",") >= len(binary.right.value) or "\\" in values:
+                # we have to escape commas as \, and backslashes as \\
+                values = ",".join(i.replace("\\", "\\\\").replace(",", "\\,")
+                                  for i in binary.right.value)
+            # not exactly correct: \,None, will match
+            # but faster than checking each element
+            values = values.replace(",None,", ",")
+            if isinstance((left_type := binary.left.type), NullType):
+                if isinstance(values[0], (int, np.integer)):
+                    left_type = BigInteger
+                else:
+                    left_type = Text
+            right = agg(cast(cast(literal(f"{{{values}}}"), Text), ARRAY(left_type)))
         else:
             right = binary.right
         right = compiler.process(right, **kw)

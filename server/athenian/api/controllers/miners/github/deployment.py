@@ -395,7 +395,7 @@ async def _filter_by_prs(df: pd.DataFrame,
                          mdb: Database,
                          cache: Optional[aiomcache.Client],
                          ) -> pd.DataFrame:
-    pr_node_ids = np.concatenate(df[DeploymentFacts.f.prs].values)
+    pr_node_ids = np.concatenate(df[DeploymentFacts.f.prs].values, dtype=int, casting="unsafe")
     unique_pr_node_ids = np.unique(pr_node_ids)
     lengths = np.array([len(arr) for arr in df[DeploymentFacts.f.prs].values] + [0], dtype=int)
     offsets = np.zeros(len(lengths), dtype=int)
