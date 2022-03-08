@@ -362,9 +362,4 @@ async def insert_or_ignore(model,
 
 def extract_registered_models(base: Any) -> Mapping[str, Any]:
     """Return the mapping from declarative model names to their classes."""
-    try:
-        # 1.3
-        return base._decl_class_registry
-    except AttributeError:
-        # 1.4+
-        return base.registry._class_registry
+    return base.registry._class_registry

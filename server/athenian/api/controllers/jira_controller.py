@@ -489,7 +489,7 @@ async def _issue_flow(return_: Set[str],
         issue_type_counts = issue_type_projects = None
     if JIRAFilterReturn.ISSUE_BODIES in return_:
         if not issues.empty:
-            pr_ids = np.concatenate(issues[ISSUE_PR_IDS].values)
+            pr_ids = np.concatenate(issues[ISSUE_PR_IDS].values, dtype=int, casting="unsafe")
         else:
             pr_ids = []
     else:
