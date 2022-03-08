@@ -1099,21 +1099,24 @@ class EnvironmentsMarker(MetricCalculator[np.ndarray]):
         not_found_mask = unique_fact_envs[my_env_indexes] != envs
         my_env_indexes[not_found_mask] = np.arange(-1, -1 - not_found_mask.sum(), -1)
         imap = imap.astype(np.uint64)
-        unused = np.setdiff1d(np.arange(len(unique_fact_envs)), my_env_indexes, assume_unique=True)
-        if len(unused):
-            imap[np.in1d(imap, unused)] = 0
+        unused = np.in1d(
+            imap,
+            np.setdiff1d(np.arange(len(unique_fact_envs)), my_env_indexes, assume_unique=True))
+        imap[unused] = 0
 
         lengths = np.array([len(v) for v in fact_envs])
         offsets = np.zeros(len(lengths) + 1, dtype=int)
         np.cumsum(lengths, out=offsets[1:])
         offsets = offsets[:np.argmax(offsets)]
         no_deps = lengths == 0
-
         successful_conclusions = all_conclusions == DeploymentConclusion.SUCCESS
+
         for pos, ix in enumerate(my_env_indexes[::-1], 1):
             pos = len(my_env_indexes) - pos
             if ix >= 0:
                 ix_mask = imap == ix
+                if ix == 0:
+                    ix_mask[unused] = False
                 imap[ix_mask] = 1 << pos
                 finished_by_env[pos] = all_finished[ix_mask]
                 # one PR should not fail to deploy more than (1 << 16) times, seems legit
