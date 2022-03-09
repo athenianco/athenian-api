@@ -597,8 +597,8 @@ class AthenianApp(connexion.AioHttpApp):
         if request.method != "OPTIONS":
             load = extract_handler_weight(handler)
             if (new_load := self._load + load) > self._max_load:
-                self.log.warning("Rejecting the request, too much load: %.1f > %.1f",
-                                 new_load, self._max_load)
+                self.log.warning("Rejecting the request, too much load: %.1f > %.1f %s",
+                                 new_load, self._max_load, self._requests)
                 # no "raise"! the "except" does not exist yet
                 response = ResponseError(ServiceUnavailableError(
                     type="/errors/HeavyLoadError",
@@ -620,7 +620,7 @@ class AthenianApp(connexion.AioHttpApp):
             self._load = new_load  # GIL + no await-s => no races
         else:
             load = custom_load_delta = 0
-        self._requests += 1
+        self._requests.append(request.path)
 
         enable_defer(explicit_launch=not self._devenv)
         traced = self._set_request_sentry_context(request)
@@ -667,9 +667,9 @@ class AthenianApp(connexion.AioHttpApp):
                     # execute the deferred coroutines in 100ms to not interfere with serving
                     # the parallel requests, but only if not shutting down, otherwise, immediately
                     launch_defer_from_request(request, delay=0.1 * (1 - self._shutting_down))
-            self._requests -= 1
+            self._requests.remove(request.path)
             self._load -= load + custom_load_delta
-            if self._requests == 0 and self._shutting_down:
+            if not self._requests and self._shutting_down:
                 asyncio.ensure_future(self._raise_graceful_exit())
 
     @aiohttp.web.middleware
@@ -699,7 +699,7 @@ class AthenianApp(connexion.AioHttpApp):
 
     def _setup_survival(self):
         self._shutting_down = False
-        self._requests = 0
+        self._requests = []
         self._load = 0
 
         def initiate_graceful_shutdown(signame: str):
@@ -708,7 +708,7 @@ class AthenianApp(connexion.AioHttpApp):
             sentry_sdk.add_breadcrumb(category="signal", message=signame, level="warning")
             self._shutting_down = True
             self._set_unready()
-            if self._requests == 0:
+            if not self._requests:
                 asyncio.ensure_future(self._raise_graceful_exit())
 
         loop = asyncio.get_event_loop()

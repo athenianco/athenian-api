@@ -329,9 +329,11 @@ def main():
             sentry_sdk.capture_exception(e)
             return_code = 1
 
-    asyncio.run(sentry_wrapper())
-    log.info("Successful accounts: %d", len(successful_accounts))
-    log.info("Failed accounts: %s", sorted(failed_accounts))
+    try:
+        asyncio.run(sentry_wrapper())
+    finally:
+        log.info("Successful accounts: %d", len(successful_accounts))
+        log.info("Failed accounts: %s", sorted(failed_accounts))
     return return_code
 
 
