@@ -119,6 +119,8 @@ def main():
     no_time_from = datetime(1970, 1, 1, tzinfo=timezone.utc)
     time_from = (time_to - timedelta(days=365 * 2)) if not os.getenv("CI") else no_time_from
     return_code = 0
+    successful_accounts = set()
+    failed_accounts = set()
 
     async def async_run():
         enable_defer(False)
@@ -163,12 +165,19 @@ def main():
                 log.warning("Skipped account %d / reposet %d because the progress is not 100%%",
                             reposet.owner_id, reposet.id)
                 continue
-            meta_ids = await get_metadata_account_ids(reposet.owner_id, sdb, cache)
-            prefixer, bots, new_items = await gather(
-                Prefixer.load(meta_ids, mdb, cache),
-                fetch_bots(reposet.owner_id, mdb, sdb, None),
-                refresh_repository_names(reposet.owner_id, meta_ids, sdb, mdb),
-            )
+            try:
+                meta_ids = await get_metadata_account_ids(reposet.owner_id, sdb, cache)
+                prefixer, bots, new_items = await gather(
+                    Prefixer.load(meta_ids, mdb, cache),
+                    fetch_bots(reposet.owner_id, mdb, sdb, None),
+                    refresh_repository_names(reposet.owner_id, meta_ids, sdb, mdb),
+                )
+            except Exception as e:
+                log.error("prolog %d: %s: %s", reposet.owner_id, type(e).__name__, e)
+                sentry_sdk.capture_exception(e)
+                return_code = 1
+                failed_accounts.add(reposet.owner_id)
+                continue
             reposet.items = new_items
             log.info("Loaded %d bots", len(bots))
             if not reposet.precomputed:
@@ -182,19 +191,30 @@ def main():
                     log.warning("teams %d: %s: %s", reposet.owner_id, type(e).__name__, e)
                     sentry_sdk.capture_exception(e)
                     return_code = 1
+                    failed_accounts.add(reposet.owner_id)
                     num_teams = num_bots = 0
-            await match_jira_identities(reposet.owner_id, meta_ids, sdb, mdb, slack, cache)
+                    # no continue
+            try:
+                await match_jira_identities(reposet.owner_id, meta_ids, sdb, mdb, slack, cache)
+            except Exception as e:
+                log.warning("match_jira_identities %d: %s: %s",
+                            reposet.owner_id, type(e).__name__, e)
+                sentry_sdk.capture_exception(e)
+                return_code = 1
+                failed_accounts.add(reposet.owner_id)
+                # no continue
             log.info("Heating reposet %d of account %d (%d repos)",
                      reposet.id, reposet.owner_id, len(reposet.items))
-            settings = Settings.from_account(reposet.owner_id, sdb, mdb, cache, None)
-            repos = {r.split("/", 1)[1] for r in reposet.items}
-            logical_settings, release_settings, (branches, default_branches) = await gather(
-                settings.list_logical_repositories(prefixer, reposet.items),
-                settings.list_release_matches(reposet.items),
-                BranchMiner.extract_branches(repos, prefixer, meta_ids, mdb, None),
-            )
-            branches_count = len(branches)
             try:
+                settings = Settings.from_account(reposet.owner_id, sdb, mdb, cache, None)
+                repos = {r.split("/", 1)[1] for r in reposet.items}
+                logical_settings, release_settings, (branches, default_branches) = await gather(
+                    settings.list_logical_repositories(prefixer, reposet.items),
+                    settings.list_release_matches(reposet.items),
+                    BranchMiner.extract_branches(repos, prefixer, meta_ids, mdb, None),
+                )
+                branches_count = len(branches)
+
                 log.info("Mining the releases")
                 releases, _, matches, _ = await mine_releases(
                     repos, {}, branches, default_branches, no_time_from, time_to,
@@ -287,6 +307,7 @@ def main():
                             "".join(traceback.format_exception(*sys.exc_info())[:-1]))
                 sentry_sdk.capture_exception(e)
                 return_code = 1
+                failed_accounts.add(reposet.owner_id)
             else:
                 if not reposet.precomputed:
                     await sdb.execute(
@@ -297,6 +318,7 @@ def main():
                                  RepositorySet.updated_at: datetime.now(timezone.utc)}))
             finally:
                 await wait_deferred()
+            successful_accounts.add(reposet.owner_id)
 
     async def sentry_wrapper():
         nonlocal return_code
@@ -308,6 +330,8 @@ def main():
             return_code = 1
 
     asyncio.run(sentry_wrapper())
+    log.info("Successful accounts: %d", len(successful_accounts))
+    log.info("Failed accounts: %s", sorted(failed_accounts))
     return return_code
 
 
