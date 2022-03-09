@@ -321,7 +321,7 @@ class AthenianApp(connexion.AioHttpApp):
             self.log.warning("Google Key Management Service is disabled, PATs will not work")
             self.app["kms"] = self._kms = None
         self.app[CACHE_VAR_NAME] = cache
-        self._max_load = max_load
+        self._max_load = self.app["max_load"] = max_load
         self.app[ADJUST_LOAD_VAR_NAME] = ContextVar(ADJUST_LOAD_VAR_NAME, default=None)
         setup_prometheus(self.app)
         setup_status(self.app)
@@ -420,6 +420,19 @@ class AthenianApp(connexion.AioHttpApp):
         await gather(*self._db_futures.values())
         flags = await gather(*self._on_dbs_connected_callbacks)
         return not flags or all(flags)
+
+    @property
+    def load(self) -> float:
+        """Return the current server load in abstract units."""
+        return self._load
+
+    @load.setter
+    def load(self, value: float) -> None:
+        """Set the current server load in abstract units."""
+        self.app["load"] \
+            .labels(metadata.__package__, metadata.__version__) \
+            .set(value)
+        self._load = value
 
     def __del__(self):
         """Check that shutdown() was called."""
@@ -596,15 +609,15 @@ class AthenianApp(connexion.AioHttpApp):
 
         if request.method != "OPTIONS":
             load = extract_handler_weight(handler)
-            if (new_load := self._load + load) > self._max_load:
-                self.log.warning("Rejecting the request, too much load: %.1f > %.1f",
-                                 new_load, self._max_load)
+            if (new_load := self.load + load) > self._max_load:
+                self.log.warning("Rejecting the request, too much load: %.1f > %.1f %s",
+                                 new_load, self._max_load, self._requests)
                 # no "raise"! the "except" does not exist yet
                 response = ResponseError(ServiceUnavailableError(
                     type="/errors/HeavyLoadError",
                     detail="This server is serving too much load, please repeat your request.",
                 )).response
-                response.headers.add("X-Serving-Load", "%.1f" % self._load)
+                response.headers.add("X-Serving-Load", "%.1f" % self.load)
                 response.headers.add("X-Requested-Load", "%.1f" % new_load)
                 return response
 
@@ -614,13 +627,13 @@ class AthenianApp(connexion.AioHttpApp):
                 nonlocal custom_load_delta
                 custom_load_delta += value
                 assert load + custom_load_delta >= 0, "you cannot lower the load below 0"
-                self._load += value
+                self.load += value
 
             self.app[ADJUST_LOAD_VAR_NAME].set(adjust_load)
-            self._load = new_load  # GIL + no await-s => no races
+            self.load = new_load  # GIL + no await-s => no races
         else:
             load = custom_load_delta = 0
-        self._requests += 1
+        self._requests.append(request.path)
 
         enable_defer(explicit_launch=not self._devenv)
         traced = self._set_request_sentry_context(request)
@@ -667,9 +680,9 @@ class AthenianApp(connexion.AioHttpApp):
                     # execute the deferred coroutines in 100ms to not interfere with serving
                     # the parallel requests, but only if not shutting down, otherwise, immediately
                     launch_defer_from_request(request, delay=0.1 * (1 - self._shutting_down))
-            self._requests -= 1
-            self._load -= load + custom_load_delta
-            if self._requests == 0 and self._shutting_down:
+            self._requests.remove(request.path)
+            self.load -= load + custom_load_delta
+            if not self._requests and self._shutting_down:
                 asyncio.ensure_future(self._raise_graceful_exit())
 
     @aiohttp.web.middleware
@@ -699,16 +712,16 @@ class AthenianApp(connexion.AioHttpApp):
 
     def _setup_survival(self):
         self._shutting_down = False
-        self._requests = 0
-        self._load = 0
+        self._requests = []
+        self.load = 0
 
         def initiate_graceful_shutdown(signame: str):
             self.log.warning("Received %s, waiting for pending %d requests to finish...",
-                             signame, self._requests)
+                             signame, len(self._requests))
             sentry_sdk.add_breadcrumb(category="signal", message=signame, level="warning")
             self._shutting_down = True
             self._set_unready()
-            if self._requests == 0:
+            if not self._requests:
                 asyncio.ensure_future(self._raise_graceful_exit())
 
         loop = asyncio.get_event_loop()
@@ -799,7 +812,7 @@ class AthenianApp(connexion.AioHttpApp):
                     )
                 sampler[1].append(request)
             scope.set_extra("concurrent requests", self._requests)
-            scope.set_extra("load", self._load)
+            scope.set_extra("load", self.load)
             scope.set_extra("uptime", timedelta(seconds=time.time() - self._boot_time))
             if (resource := request.match_info.route.resource) is not None:
                 try:
