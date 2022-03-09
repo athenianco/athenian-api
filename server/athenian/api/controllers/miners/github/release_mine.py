@@ -331,7 +331,7 @@ async def _mine_releases(repos: Iterable[str],
             log.info("Processing %d repos", len(repo_releases_analyzed))
         has_logical_prs = logical_settings.has_logical_prs()
         for repo, (repo_releases, owned_hashes, parents) in repo_releases_analyzed.items():
-            computed_release_info_by_commit = set()
+            computed_release_info_by_commit = {}
             repo_data = []
             # iterate in the reversed order to correctly handle multiple releases at the same tag
             for i, (my_id, my_name, my_url, my_author, my_published_at, my_matched_by,
@@ -348,7 +348,7 @@ async def _mine_releases(repos: Iterable[str],
                 if my_published_at < time_from or (my_id, repo) in unfiltered_precomputed_facts:
                     continue
                 my_parents = parents[i]
-                if my_commit not in computed_release_info_by_commit:
+                if (first_published_at := computed_release_info_by_commit.get(my_commit)) is None:
                     if len(commits_index) > 0:
                         found_indexes = searchsorted_inrange(commits_index, owned_hashes[i])
                         found_indexes = \
@@ -394,7 +394,7 @@ async def _mine_releases(repos: Iterable[str],
                         my_age = my_published_at - first_commit_dates[drop_logical_repo(repo)]
                     if my_author is not None:
                         mentioned_authors.add(my_author)
-                    computed_release_info_by_commit.add(my_commit)
+                    computed_release_info_by_commit[my_commit] = my_published_at
                 else:
                     my_additions = my_deletions = commits_count = 0
                     my_commit_authors = commits_authors[:0]
@@ -405,11 +405,7 @@ async def _mine_releases(repos: Iterable[str],
                          prs_additions[:0],
                          prs_deletions[:0],
                          prs_authors[:0]]))
-                    assert len(my_parents)
-                    my_age = (
-                        my_published_at
-                        - repo_releases[Release.published_at.name]._ixs(my_parents[0])
-                    )
+                    my_age = my_published_at - first_published_at
                 repo_data.append((
                     {
                         Release.node_id.name: my_id,
