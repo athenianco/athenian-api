@@ -113,6 +113,11 @@ def setup_prometheus(app: web.Application) -> None:
     registry = prometheus_client.CollectorRegistry(auto_describe=True)
     app[PROMETHEUS_REGISTRY_VAR_NAME] = registry
     app[METRICS_CALCULATOR_VAR_NAME] = ContextVar(METRICS_CALCULATOR_VAR_NAME, default=None)
+    app["load"] = prometheus_client.Gauge(
+        "load", "Current server load in abstract units",
+        ["app_name", "version"],
+        registry=registry,
+    )
     app["request_count"] = prometheus_client.Counter(
         "requests_total", "Total request count",
         ["app_name", "version", "method", "endpoint", "http_status", "account"],
@@ -156,5 +161,6 @@ def setup_prometheus(app: web.Application) -> None:
         "version": __version__,
         "commit": getattr(metadata, "__commit__", "null"),
         "build_date": getattr(metadata, "__date__", "null"),
+        "max_load": str(app["max_load"]),
     })
     app.middlewares.insert(0, instrument)
