@@ -33,6 +33,12 @@ PGPASSWORD=<password> psql -h 0.0.0.0 -p 5432 --db metadata -U production-cloud-
 The plan is already in your clipboard. Paste it to your favourite PostgreSQL plan visualizer. Vadim
 uses explain.tensor.ru because it gives very useful hints on what's wrong.
 
+## Debugging memory leaks
+
+Execute locally in `fil-profile`. Docs: https://pythonspeed.com/articles/python-server-memory-leaks/
+
+Debug endpoints: `/objgraph` and `/memory`.
+
 ## API performance notes - September 2020
 
 The API precomputes timestamps of various PR events in the pdb, such as when they were created or released.

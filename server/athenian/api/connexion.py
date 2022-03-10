@@ -27,7 +27,7 @@ from connexion.apis import aiohttp_api
 from connexion.exceptions import ConnexionException
 import connexion.lifecycle
 import connexion.security
-from connexion.spec import OpenAPISpecification
+from connexion.spec import OpenAPISpecification, Swagger2Specification
 from flogging import flogging
 import prometheus_client
 import psutil
@@ -69,10 +69,12 @@ flogging.trailing_dot_exceptions.update((
 ))
 
 
+del OpenAPISpecification.schema_string
+del Swagger2Specification.schema_string
+
+
 class AthenianConnexionRequest(connexion.lifecycle.ConnexionRequest):
     """Optimize memory consumption and avoid parsing JSON more than once."""
-
-    __slots__ = ("_json", *connexion.lifecycle.ConnexionRequest.__init__.__code__.co_varnames[1:])
 
     @property
     def json(self):

@@ -1,6 +1,6 @@
 aiohttp==3.8.1
-connexion[aiohttp,swagger-ui]==2.9.0
-openapi-spec-validator==0.3.2
+connexion[aiohttp,swagger-ui]==2.12.0
+jsonschema==4.4.0
 aiohttp_cors==0.7.0
 swagger-ui-bundle==0.0.9
 sqlalchemy==1.4.32
