@@ -1,3 +1,5 @@
+import asyncio
+from http import HTTPStatus
 import logging
 from typing import Iterable, List, Tuple
 
@@ -32,13 +34,15 @@ class MandrillClient:
 
     def __init__(self,
                  key: str,
-                 timeout: float = 10):
+                 timeout: float = 10,
+                 retries: int = 5):
         """Initialize a new instance of Mandrill class."""
         self.key = key
         self._session = aiohttp.ClientSession(
             base_url="https://mandrillapp.com",
             timeout=aiohttp.ClientTimeout(total=timeout),
         )
+        self.retries = retries
 
     async def close(self):
         """Free resources and close connections associated with the object."""
@@ -48,10 +52,26 @@ class MandrillClient:
         await all_is_lost.wait()
 
     async def _call(self, url: str, body: dict) -> dict:
-        response = await self._session.post("/api/1.0" + url, json={
-            "key": self.key,
-            **body,
-        })
+        response = last_err = None
+        for _ in range(self.retries):
+            try:
+                response = await self._session.post("/api/1.0" + url, json={
+                    "key": self.key,
+                    **body,
+                })
+            except (aiohttp.ClientOSError, asyncio.TimeoutError) as e:
+                last_err = e
+                if isinstance(e, asyncio.TimeoutError) or e.errno in (-3, 101, 103, 104):
+                    self.log.warning("Mandrill API: %s", e)
+                    # -3: Temporary failure in name resolution
+                    # 101: Network is unreachable
+                    # 103: Connection aborted
+                    # 104: Connection reset by peer
+                    await asyncio.sleep(0.1)
+            else:
+                break
+        if response is None:
+            raise MandrillError(HTTPStatus.SERVICE_UNAVAILABLE, str(last_err))
         if response.ok:
             return await response.json()
         raise MandrillError(response.status, (await response.read()).decode("utf-8"))
