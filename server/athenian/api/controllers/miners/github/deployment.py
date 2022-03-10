@@ -65,7 +65,8 @@ from athenian.api.typing_utils import df_from_structs
     with_labels, without_labels, pr_labels, jira, release_settings, logical_settings,
     default_branches, **_: (
         ",".join(sorted(repositories)),
-        ",".join("%s: %s" % (k, "+".join(sorted(v))) for k, v in sorted(participants.items())),
+        ",".join("%s: %s" % (
+            k, "+".join(str(p) for p in sorted(v))) for k, v in sorted(participants.items())),
         time_from.timestamp(),
         time_to.timestamp(),
         ",".join(sorted(environments)),
