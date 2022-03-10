@@ -17,6 +17,7 @@ from athenian.api.controllers.features.metric import Metric, MetricFloat, Metric
     NumpyMetric, T
 from athenian.api.controllers.features.statistics import mean_confidence_interval, \
     median_confidence_interval
+from athenian.api.sparse_mask import SparseMask
 from athenian.api.tracing import sentry_span
 
 
@@ -132,7 +133,8 @@ class MetricCalculator(Generic[T], ABC):
         if facts.empty:
             self._peek = np.empty((len(min_times), 0), object)
             ts_dim = quantiles_mounted_at or len(min_times)
-            self._grouped_notnull = np.empty((len(groups_mask), ts_dim, 0), dtype=bool)
+            self._grouped_notnull = self._grouped_sample_mask = \
+                SparseMask(np.empty((len(groups_mask), ts_dim, 0), dtype=bool))
             self._samples = np.empty((len(groups_mask), ts_dim, 0), self.dtype)
             return
         assert groups_mask.shape[1] == len(facts)
@@ -147,13 +149,16 @@ class MetricCalculator(Generic[T], ABC):
             peek = peek[:quantiles_mounted_at]
         notnull = self._find_notnull(peek)
         notnull = np.broadcast_to(notnull[None, :], (len(groups_mask), *notnull.shape))
-        self._grouped_notnull = group_sample_mask = notnull & groups_mask[:, None, :]
+        group_sample_mask = notnull & groups_mask[:, None, :]
+        del notnull
+        self._grouped_notnull = SparseMask(group_sample_mask)
         if self._quantiles != (0, 1):
             group_sample_mask = group_sample_mask.copy()
             discard_mask = np.broadcast_to(discard_mask[:, None, :], group_sample_mask.shape)
             group_sample_mask[discard_mask] = False
-        self._grouped_sample_mask = group_sample_mask
-        flat_samples = np.broadcast_to(peek[None, :], notnull.shape)[group_sample_mask] \
+            del discard_mask
+        self._grouped_sample_mask = SparseMask(group_sample_mask)
+        flat_samples = np.broadcast_to(peek[None, :], group_sample_mask.shape)[group_sample_mask] \
             .astype(self.dtype, copy=False).ravel()
         group_sample_lengths = np.sum(group_sample_mask, axis=-1)
         self._samples = np.full(len(groups_mask) * len(peek), None, object)
@@ -190,7 +195,7 @@ class MetricCalculator(Generic[T], ABC):
         return self._samples
 
     @property
-    def grouped_notnull(self) -> np.ndarray:
+    def grouped_notnull(self) -> SparseMask:
         """Return the last calculated boolean mask of shape groups x time intervals x facts \
         that selects non-None samples *before discarding outliers by quantiles*.
 
@@ -199,7 +204,7 @@ class MetricCalculator(Generic[T], ABC):
         return self._grouped_notnull
 
     @property
-    def grouped_sample_mask(self) -> np.ndarray:
+    def grouped_sample_mask(self) -> SparseMask:
         """Return the last calculated boolean mask of shape groups x time intervals x facts \
         that selects non-None samples *after discarding outliers by quantiles*."""
         return self._grouped_sample_mask
@@ -208,7 +213,8 @@ class MetricCalculator(Generic[T], ABC):
         """Clear the current state of the calculator."""
         self._samples = np.empty((0, 0), dtype=object)
         self._peek = np.empty((0, 0), dtype=object)
-        self._grouped_notnull = self._grouped_sample_mask = np.empty((0, 0, 0), dtype=bool)
+        self._grouped_notnull = self._grouped_sample_mask = \
+            SparseMask(np.empty((0, 0, 0), dtype=bool))
         self._last_values = None
 
     def split(self) -> List["MetricCalculator"]:
@@ -417,7 +423,7 @@ class Counter(MetricCalculator[int], ABC):
                     for gs in self.samples]
         # otherwise, ignore the upstream quantiles
         return [[self.metric.from_fields(True, s, None, None) for s in gs]
-                for gs in self.grouped_notnull.sum(axis=-1)]
+                for gs in self.grouped_notnull.dense().sum(axis=-1)]
 
     def _value(self, samples: np.ndarray) -> Metric[int]:
         raise AssertionError("this must be never called")
