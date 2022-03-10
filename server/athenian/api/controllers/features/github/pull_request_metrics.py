@@ -507,13 +507,13 @@ class CycleCounterWithQuantiles(Counter):
         if self._quantiles == (0, 1):
             return super()._values()
         if self._calcs[0].only_complete:
-            mask = np.ones_like(self._calcs[0].grouped_sample_mask)
+            mask = np.ones(self._calcs[0].grouped_sample_mask.shape, dtype=bool)
             for calc in self._calcs[0]._calcs:
-                mask &= calc.grouped_sample_mask
+                mask &= calc.grouped_sample_mask.dense()
         else:
-            mask = np.zeros_like(self._calcs[0].grouped_sample_mask)
+            mask = np.zeros(self._calcs[0].grouped_sample_mask.shape, dtype=bool)
             for calc in self._calcs[0]._calcs:
-                mask |= calc.grouped_sample_mask
+                mask |= calc.grouped_sample_mask.dense()
         return [[self.metric.from_fields(True, s, None, None) for s in gs]
                 for gs in mask.sum(axis=-1)]
 
