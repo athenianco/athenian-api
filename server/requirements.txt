@@ -28,7 +28,7 @@ tqdm==4.63.0
 slack_sdk[optional]==3.15.2
 gcloud-aio-kms==3.2.0
 # gcloud-aio-kms does not pin the exact versions of the following packages
-gcloud-aio-auth==3.7.1
+gcloud-aio-auth==3.8.0
 backoff==1.11.1
 # end of gcloud-aio-kms unpinned deps
 pympler==1.0.1
