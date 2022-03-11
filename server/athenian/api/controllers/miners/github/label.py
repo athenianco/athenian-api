@@ -71,8 +71,7 @@ async def fetch_labels_to_filter(prs: Collection[int],
         select(lcols)
         .where(and_(PullRequestLabel.pull_request_node_id.in_(prs),
                     PullRequestLabel.acc_id.in_(meta_ids)))
-        .with_statement_hint(f"Rows(prl repo label #{len(prs)})")
-        .with_statement_hint("Leading((prl (repo label)))"),
+        .with_statement_hint(f"Rows(prl label #{len(prs)})"),
         mdb, lcols, index=PullRequestLabel.pull_request_node_id.name)
 
 
