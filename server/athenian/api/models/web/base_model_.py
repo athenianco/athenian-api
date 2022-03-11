@@ -128,7 +128,7 @@ class Model(metaclass=Slots):
         return "%s(%s)" % (type(self).__name__, ", ".join(
             "%s=%r" % (k, getattr(self, k)) for k in self.openapi_types))
 
-    def sentry_repr(self) -> str:
+    def __sentry_repr__(self) -> str:
         """Override {}.__repr__() in Sentry."""
         return repr(self)
 
