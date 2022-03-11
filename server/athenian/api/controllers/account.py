@@ -181,6 +181,15 @@ async def _report_user_rejected(user: str,
     return True
 
 
+async def get_user_account_status_from_request(request: AthenianWebRequest,
+                                               account: int) -> bool:
+    """Return the value indicating whether the requesting user is an admin of the given account."""
+    return await get_user_account_status(
+        request.uid, account, request.sdb, request.mdb, request.user, request.app["slack"],
+        request.cache, context=f"{request.method} {request.path}",
+        is_god=hasattr(request, "god_id"))
+
+
 @cached(
     exptime=60,
     serialize=lambda is_admin: b"1" if is_admin else b"0",
@@ -195,6 +204,7 @@ async def get_user_account_status(user: str,
                                   slack: Optional[SlackWebClient],
                                   cache: Optional[aiomcache.Client],
                                   context: str = "",
+                                  is_god: bool = False,
                                   ) -> bool:
     """
     Return the value indicating whether the given user is an admin of the given account.
@@ -206,7 +216,7 @@ async def get_user_account_status(user: str,
         select([UserAccount.is_admin])
         .where(and_(UserAccount.user_id == user, UserAccount.account_id == account)))
     if status is None:
-        if slack is not None:
+        if slack is not None and not is_god:
             await defer(
                 _report_user_rejected(user, user_info, account, context, sdb, mdb, slack, cache),
                 "report_user_rejected_to_slack")
@@ -219,9 +229,7 @@ def only_admin(func):
     """Enforce the admin access level to an API handler."""
     async def wrapped_only_admin(request: AthenianWebRequest, body: dict) -> web.Response:
         account = body["account"]
-        if not await get_user_account_status(
-                request.uid, account, request.sdb, request.mdb, request.user,
-                request.app["slack"], request.cache):
+        if not await get_user_account_status_from_request(request, account):
             raise ResponseError(ForbiddenError(
                 f'User "{request.uid}" must be an admin of account {account}'))
         return await func(request, body)

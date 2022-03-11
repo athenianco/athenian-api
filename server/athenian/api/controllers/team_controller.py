@@ -15,7 +15,7 @@ from athenian.api.async_utils import gather
 from athenian.api.auth import disable_default_user
 from athenian.api.balancing import weight
 from athenian.api.controllers.account import copy_teams_as_needed, get_metadata_account_ids, \
-    get_user_account_status
+    get_user_account_status_from_request
 from athenian.api.controllers.jira import load_mapped_jira_users
 from athenian.api.controllers.miners.github.user import mine_users
 from athenian.api.db import DatabaseLike
@@ -58,13 +58,11 @@ async def delete_team(request: AthenianWebRequest, id: int) -> web.Response:
 
     :param id: Numeric identifier of the team to delete.
     """
-    user = request.uid
     async with request.sdb.connection() as sdb_conn:
         account = await sdb_conn.fetch_val(select([Team.owner_id]).where(Team.id == id))
         if account is None:
             return ResponseError(NotFoundError("Team %d was not found." % id)).response
-        await get_user_account_status(user, account, request.sdb, request.mdb, request.user,
-                                      request.app["slack"], request.cache)
+        await get_user_account_status_from_request(request, account)
         await sdb_conn.execute(update(Team)
                                .where(Team.parent_id == id)
                                .values({Team.parent_id: None,
@@ -78,14 +76,12 @@ async def get_team(request: AthenianWebRequest, id: int) -> web.Response:
 
     :param id: Numeric identifier of the team to list.
     """
-    user = request.uid
     async with request.sdb.connection() as sdb_conn:
         team = await sdb_conn.fetch_one(select([Team]).where(Team.id == id))
         if team is None:
             return ResponseError(NotFoundError("Team %d was not found." % id)).response
         account = team[Team.owner_id.name]
-        await get_user_account_status(user, account, request.sdb, request.mdb, request.user,
-                                      request.app["slack"], request.cache)
+        await get_user_account_status_from_request(request, account)
         meta_ids = await get_metadata_account_ids(account, sdb_conn, request.cache)
     members = await _get_all_team_members(
         [team], account, meta_ids, request.mdb, request.sdb, request.cache)
@@ -105,8 +101,7 @@ async def list_teams(request: AthenianWebRequest, id: int) -> web.Response:
     """
     account = id
     async with request.sdb.connection() as sdb_conn:
-        await get_user_account_status(request.uid, account, request.sdb, request.mdb, request.user,
-                                      request.app["slack"], request.cache)
+        await get_user_account_status_from_request(request, account)
         teams, meta_ids = await gather(
             sdb_conn.fetch_all(
                 select([Team]).where(Team.owner_id == account).order_by(Team.name)),
@@ -140,14 +135,12 @@ async def update_team(request: AthenianWebRequest, id: int,
     :param body: Team update request body.
     """
     body = TeamUpdateRequest.from_dict(body)
-    user = request.uid
     name = _check_name(body.name)
     async with request.sdb.connection() as sdb_conn:
         account = await sdb_conn.fetch_val(select([Team.owner_id]).where(Team.id == id))
         if account is None:
             return ResponseError(NotFoundError("Team %d was not found." % id)).response
-        await get_user_account_status(user, account, request.sdb, request.mdb, request.user,
-                                      request.app["slack"], request.cache)
+        await get_user_account_status_from_request(request, account)
         if id == body.parent:
             raise ResponseError(BadRequestError(detail="Team cannot be a the parent of itself."))
         meta_ids = await get_metadata_account_ids(account, sdb_conn, request.cache)
@@ -264,8 +257,7 @@ async def resync_teams(request: AthenianWebRequest, id: int) -> web.Response:
     :param id: Numeric identifier of the account.
     """
     account = id
-    if not await get_user_account_status(request.uid, account, request.sdb, request.mdb,
-                                         request.user, request.app["slack"], request.cache):
+    if not await get_user_account_status_from_request(request, account):
         raise ResponseError(ForbiddenError(
             detail="User %s may not resynchronize teams %d" % (request.uid, account)))
     async with request.sdb.connection() as sdb_conn:

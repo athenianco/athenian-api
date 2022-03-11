@@ -12,8 +12,8 @@ from sqlalchemy.dialects.postgresql import insert as postgres_insert
 
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached, max_exptime
-from athenian.api.controllers.account import get_account_organizations, get_user_account_status, \
-    is_membership_check_enabled, only_admin, only_god
+from athenian.api.controllers.account import get_account_organizations, \
+    get_user_account_status_from_request, is_membership_check_enabled, only_admin, only_god
 from athenian.api.controllers.jira import get_jira_id
 from athenian.api.controllers.user import load_user_accounts
 from athenian.api.db import DatabaseLike
@@ -114,8 +114,7 @@ async def _get_account_jira(account: int,
 
 async def get_account_features(request: AthenianWebRequest, id: int) -> web.Response:
     """Return enabled product features for the account."""
-    await get_user_account_status(request.uid, id, request.sdb, request.mdb, request.user,
-                                  request.app["slack"], request.cache)
+    await get_user_account_status_from_request(request, id)
     return await _get_account_features(request.sdb, id)
 
 
@@ -164,8 +163,7 @@ async def set_account_features(request: AthenianWebRequest, id: int, body: dict)
             detail="User %s is not allowed to set features of accounts" % request.uid))
     features = [ProductFeature.from_dict(f) for f in body]
     async with request.sdb.connection() as conn:
-        await get_user_account_status(request.uid, id, conn, request.mdb, request.user,
-                                      request.app["slack"], request.cache)
+        await get_user_account_status_from_request(request, id)
         for i, feature in enumerate(features):
             if feature.name == DBAccount.expires_at.name:
                 try:

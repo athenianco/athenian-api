@@ -29,7 +29,7 @@ from sqlalchemy import select
 from athenian.api.aiohttp_addons import create_aiohttp_closed_event
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached
-from athenian.api.controllers.account import get_user_account_status
+from athenian.api.controllers.account import get_user_account_status_from_request
 from athenian.api.controllers.user import report_user_account_expired
 from athenian.api.defer import defer
 from athenian.api.kms import AthenianKMS
@@ -544,20 +544,12 @@ class AthenianAioHttpSecurityHandlerFactory(connexion.security.AioHttpSecurityHa
             # token_info = {"token": <token>, "method": "bearer" or "apikey"}
             await auth._set_user(context := request.context, **token_info)
             # check whether the user may access the specified account
-            slack = context.app["slack"]
             if isinstance(request.json, dict):
                 if (account := request.json.get("account")) is not None:
                     if isinstance(account, int):
                         with sentry_sdk.configure_scope() as scope:
                             scope.set_tag("account", account)
-                        if getattr(context, "god_id", False):
-                            effective_slack = None
-                        else:
-                            effective_slack = slack
-                        await get_user_account_status(
-                            context.uid, account, context.sdb, context.mdb, context.user,
-                            effective_slack, context.cache,
-                            context=f"{context.method} {context.path}")
+                        await get_user_account_status_from_request(context, account)
                     else:
                         # we'll report an error later from OpenAPI validator
                         account = None
@@ -567,8 +559,7 @@ class AthenianAioHttpSecurityHandlerFactory(connexion.security.AioHttpSecurityHa
                     if (spec := route_specs.get(canonical, None)) is not None:
                         try:
                             required = "account" in deep_get(spec, [
-                                "requestBody", "content", "application/json", "schema",
-                                "required",
+                                "requestBody", "content", "application/json", "schema", "required",
                             ])
                         except KeyError:
                             required = False
@@ -581,7 +572,7 @@ class AthenianAioHttpSecurityHandlerFactory(connexion.security.AioHttpSecurityHa
                     select([Account.expires_at]).where(Account.id == context.account))
                 if getattr(context, "god_id", context.uid) == context.uid and (
                         expires_at is None or expires_at < datetime.now(expires_at.tzinfo)):
-                    if slack is not None:
+                    if (slack := context.app["slack"]) is not None:
                         await defer(
                             report_user_account_expired(
                                 context.uid, context.account, expires_at, context.sdb, context.mdb,
