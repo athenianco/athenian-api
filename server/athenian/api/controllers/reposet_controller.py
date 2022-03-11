@@ -10,7 +10,7 @@ from sqlalchemy.orm import InstrumentedAttribute
 
 from athenian.api.auth import disable_default_user
 from athenian.api.controllers.account import get_metadata_account_ids, \
-    get_user_account_status, only_admin
+    get_user_account_status, get_user_account_status_from_request, only_admin
 from athenian.api.controllers.miners.access_classes import access_classes
 from athenian.api.controllers.reposet import fetch_reposet, load_account_reposets
 from athenian.api.db import DatabaseLike
@@ -173,8 +173,7 @@ async def update_reposet(request: AthenianWebRequest, id: int, body: dict) -> we
 
 async def list_reposets(request: AthenianWebRequest, id: int) -> web.Response:
     """List the current user's repository sets."""
-    await get_user_account_status(request.uid, id, request.sdb, request.mdb, request.user,
-                                  request.app["slack"], request.cache)
+    await get_user_account_status_from_request(request, id)
 
     async def login_loader() -> str:
         return (await request.user()).login

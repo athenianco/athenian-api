@@ -3,7 +3,7 @@ import numpy as np
 
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
-from athenian.api.controllers.account import get_user_account_status
+from athenian.api.controllers.account import get_user_account_status_from_request
 from athenian.api.controllers.filter_controller import resolve_filter_prs_parameters
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.precomputed_prs import DonePRFactsLoader
@@ -23,9 +23,7 @@ async def paginate_prs(request: AthenianWebRequest, body: dict) -> web.Response:
     except ValueError as e:
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
-    await get_user_account_status(
-        request.uid, filt.request.account, request.sdb, request.mdb, request.user,
-        request.app["slack"], request.cache)
+    await get_user_account_status_from_request(request, filt.request.account)
     # we ignore events and stages because we cannot do anything with them
     time_from, time_to, repos, _, _, participants, labels, jira, _, \
         release_settings, logical_settings, prefixer, meta_ids = \

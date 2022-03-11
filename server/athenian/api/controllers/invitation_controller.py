@@ -25,7 +25,7 @@ from athenian.api.auth import Auth0, disable_default_user
 from athenian.api.cache import cached, expires_header, middle_term_exptime
 from athenian.api.controllers.account import fetch_github_installation_progress, \
     generate_jira_invitation_link, get_account_name, get_metadata_account_ids, \
-    get_user_account_status, is_membership_check_enabled, jira_url_template, only_god
+    get_user_account_status_from_request, is_membership_check_enabled, jira_url_template, only_god
 from athenian.api.controllers.ffx import decrypt, encrypt
 from athenian.api.controllers.jira import fetch_jira_installation_progress
 from athenian.api.controllers.reposet import load_account_reposets
@@ -63,8 +63,7 @@ def validate_env():
 async def gen_user_invitation(request: AthenianWebRequest, id: int) -> web.Response:
     """Generate a new regular member invitation URL."""
     async with request.sdb.connection() as sdb_conn:
-        await get_user_account_status(request.uid, id, request.sdb, request.mdb, request.user,
-                                      request.app["slack"], request.cache)
+        await get_user_account_status_from_request(request, id)
         existing = await sdb_conn.fetch_one(
             select([Invitation.id, Invitation.salt])
             .where(and_(Invitation.is_active, Invitation.account_id == id)))
@@ -487,8 +486,7 @@ async def _notify_precomputed_failure(slack: Optional[SlackWebClient],
 @expires_header(5)
 async def eval_metadata_progress(request: AthenianWebRequest, id: int) -> web.Response:
     """Return the current GitHub installation progress in Athenian."""
-    await get_user_account_status(request.uid, id, request.sdb, request.mdb, request.user,
-                                  request.app["slack"], request.cache)
+    await get_user_account_status_from_request(request, id)
     async with request.mdb.connection() as mdb_conn:
         model = await fetch_github_installation_progress(id, request.sdb, mdb_conn, request.cache)
 
@@ -505,8 +503,7 @@ async def eval_metadata_progress(request: AthenianWebRequest, id: int) -> web.Re
 @expires_header(2)
 async def eval_jira_progress(request: AthenianWebRequest, id: int) -> web.Response:
     """Return the current JIRA installation progress in Athenian."""
-    await get_user_account_status(request.uid, id, request.sdb, request.mdb, request.user,
-                                  request.app["slack"], request.cache)
+    await get_user_account_status_from_request(request, id)
     model = await fetch_jira_installation_progress(id, request.sdb, request.mdb, request.cache)
     return model_response(model)
 

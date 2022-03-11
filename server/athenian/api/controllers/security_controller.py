@@ -8,7 +8,7 @@ from asyncpg import UniqueViolationError
 import morcilla.core
 from sqlalchemy import and_, delete, insert, select, update
 
-from athenian.api.controllers.account import get_user_account_status
+from athenian.api.controllers.account import get_user_account_status_from_request
 from athenian.api.models.state.models import UserToken
 from athenian.api.models.web import BadRequestError, ForbiddenError, NotFoundError
 from athenian.api.models.web.create_token_request import CreateTokenRequest
@@ -97,8 +97,7 @@ async def list_tokens(request: AthenianWebRequest, id: int) -> web.Response:
     """List Personal Access Tokens of the user in the account."""
     sqlite = request.sdb.url.dialect == "sqlite"
     async with request.sdb.connection() as conn:
-        await get_user_account_status(request.uid, id, request.sdb, request.mdb, request.user,
-                                      request.app["slack"], request.cache)
+        await get_user_account_status_from_request(request, id)
         rows = await conn.fetch_all(
             select([UserToken.id, UserToken.name, UserToken.last_used_at])
             .where(and_(UserToken.user_id == request.uid,
@@ -121,9 +120,7 @@ async def _check_token_access(request: AthenianWebRequest,
     if token is None:
         raise ResponseError(NotFoundError(detail="Token %d was not found" % id))
     try:
-        await get_user_account_status(
-            request.uid, token[UserToken.account_id.name], request.sdb, request.mdb, request.user,
-            request.app["slack"], request.cache)
+        await get_user_account_status_from_request(request, token[UserToken.account_id.name])
     except ResponseError:
         # do not leak the account number
         raise ResponseError(NotFoundError(detail="Token %d was not found" % id)) from None
