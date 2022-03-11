@@ -1,3 +1,4 @@
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from itertools import chain
 import logging
@@ -89,73 +90,90 @@ async def mine_check_runs(time_from: datetime,
     assert time_to.tzinfo is not None
     coerced_repositories = coerce_logical_repos(repositories)
     with_logical_repos = contains_logical_repos(repositories)
-    repo_nodes = [r[0] for r in await mdb.fetch_all(
-        select([NodeRepository.id])
+    rows = await mdb.fetch_all(
+        select([NodeRepository.acc_id, NodeRepository.id])
         .where(and_(NodeRepository.acc_id.in_(meta_ids),
-                    NodeRepository.name_with_owner.in_(coerced_repositories))))]
-    filters = [
-        CheckRun.acc_id.in_(meta_ids),
-        CheckRun.started_at.between(time_from, time_to),
-        CheckRun.committed_date_hack.between(
-            time_from - timedelta(days=14), time_to + timedelta(days=1)),
-        CheckRun.repository_node_id.in_(repo_nodes),
-    ]
-    if pushers:
-        filters.append(CheckRun.author_login.in_(pushers))
-    if labels:
-        singles, multiples = LabelFilter.split(labels.include)
-        embedded_labels_query = not multiples and not labels.exclude
-        if not labels.exclude:
-            all_in_labels = set(singles + list(chain.from_iterable(multiples)))
-            filters.append(
-                exists().where(and_(
-                    PullRequestLabel.acc_id == CheckRun.acc_id,
-                    PullRequestLabel.pull_request_node_id == CheckRun.pull_request_node_id,
-                    func.lower(PullRequestLabel.name).in_(all_in_labels),
-                )))
+                    NodeRepository.name_with_owner.in_(coerced_repositories))))
+    if len(meta_ids) == 1:
+        repo_nodes = {meta_ids[0]: [r[NodeRepository.id.name] for r in rows]}
     else:
-        embedded_labels_query = False
-    if not jira:
-        query = select([CheckRun]).where(and_(*filters))
-    else:
-        query = await generate_jira_prs_query(
-            filters, jira, None, mdb, cache, columns=CheckRun.__table__.columns, seed=CheckRun,
-            on=(CheckRun.pull_request_node_id, CheckRun.acc_id))
-    query = query \
-        .with_statement_hint("IndexOnlyScan(c_1 github_node_commit_check_runs)") \
-        .with_statement_hint("IndexScan(p node_push_pkey)") \
-        .with_statement_hint("IndexOnlyScan(prc node_pull_request_commit_commit_pr)") \
-        .with_statement_hint("IndexScan(pr node_pullrequest_pkey)") \
-        .with_statement_hint("IndexScan(sc ath_node_statuscontext_commit_created_at)") \
-        .with_statement_hint("IndexScan(cr github_node_check_run_repository_started_at)") \
-        .with_statement_hint("Rows(cr cs *400)") \
-        .with_statement_hint("Rows(cr cs c *2)") \
-        .with_statement_hint("Rows(c_1 sc *1000)") \
-        .with_statement_hint("Set(enable_parallel_append 0)")
-    """
-    PostgreSQL has no idea about column correlations between tables, and extended statistics
-    only helps with correlations within the same table. That's the ultimate problem that leads
-    to very poor plans.
-    1. We enforce the best JOIN order. Vadim has spent *much* time figuring it out across different
-    accounts.
-    2. Adjust the number of rows in the core INNER JOIN-s of both UNION branches. This decreases
-    the probability of blowing up on NESTED LOOP-s where we should have MERGE JOIN or HASH JOIN.
-    The exact multipliers are a compromise between a few accounts Vadim tested.
-    3. Still, Postgres sucks at choosing the right indexes sometimes. We pin the critical ones.
-    Yet some indexes shouldn't be pinned because of different plans on different accounts
-    (different balance between UNION branches). Particularly, Vadim tried to mess with `cs`and
-    failed: https://github.com/athenianco/athenian-api/commit/4038e75bdd66ab80c4ba0e561ac48c5b71f797f8#diff-2cc6b19d09c47c95d39a3fdf03116425827c3fc942b9be97f66f59722f9430bb
-    It helped a little with one account but completely destroyed the others.
-    4. We disable PARALLEL APPEND. Whatever Vadim tried, Postgres always schedules only one worker,
-    effectively executing UNION branches sequentially.
-    """  # noqa: E501
+        repo_nodes = defaultdict(list)
+        for row in rows:
+            repo_nodes[row[NodeRepository.acc_id.name]].append(row[NodeRepository.id.name])
+    del rows
 
-    """
-    I had to disable IndexOnlyScan(p github_node_push_redux) in DEV-3730 because Postgres schedules
-    `Parallel Index Only Scan using github_node_push_redux on node_push p`
-    *without* index conditions. A crazy anomaly.
-    """
+    queries = []
+    _common_filters = []
 
+    def common_filters():
+        nonlocal _common_filters
+        if not _common_filters or mdb.url.dialect == "sqlite":
+            _common_filters = [
+                CheckRun.started_at.between(time_from, time_to),
+                CheckRun.committed_date_hack.between(
+                    time_from - timedelta(days=14), time_to + timedelta(days=1)),
+            ]
+            if pushers:
+                _common_filters.append(CheckRun.author_login.in_(pushers))
+        return _common_filters
+
+    for acc_id, acc_repo_nodes in repo_nodes.items():
+        # our usual acc_id.in_(meta_ids) breaks the planner here and we explode
+        filters = [
+            CheckRun.acc_id == acc_id,
+            CheckRun.repository_node_id.in_(acc_repo_nodes),
+            *common_filters(),
+        ]
+        if labels:
+            singles, multiples = LabelFilter.split(labels.include)
+            embedded_labels_query = not multiples and not labels.exclude
+            if not labels.exclude:
+                all_in_labels = set(singles + list(chain.from_iterable(multiples)))
+                filters.append(
+                    exists().where(and_(
+                        PullRequestLabel.acc_id == CheckRun.acc_id,
+                        PullRequestLabel.pull_request_node_id == CheckRun.pull_request_node_id,
+                        func.lower(PullRequestLabel.name).in_(all_in_labels),
+                    )))
+        else:
+            embedded_labels_query = False
+        if not jira:
+            query = select([CheckRun]).where(and_(*filters))
+        else:
+            query = await generate_jira_prs_query(
+                filters, jira, None, mdb, cache, columns=CheckRun.__table__.columns, seed=CheckRun,
+                on=(CheckRun.pull_request_node_id, CheckRun.acc_id))
+        query = query \
+            .with_statement_hint("IndexOnlyScan(c_1 github_node_commit_check_runs)") \
+            .with_statement_hint("IndexOnlyScan(p github_node_push_redux)") \
+            .with_statement_hint("IndexOnlyScan(prc node_pull_request_commit_commit_pr)") \
+            .with_statement_hint("IndexScan(pr node_pullrequest_pkey)") \
+            .with_statement_hint("IndexScan(sc ath_node_statuscontext_commit_created_at)") \
+            .with_statement_hint("IndexScan(cr github_node_check_run_repository_started_at)") \
+            .with_statement_hint("Rows(cr cs *400)") \
+            .with_statement_hint("Rows(cr cs c *2)") \
+            .with_statement_hint("Rows(c_1 sc *1000)") \
+            .with_statement_hint("Set(enable_parallel_append 0)")
+        """
+        PostgreSQL has no idea about column correlations between tables, and extended statistics
+        only helps with correlations within the same table. That's the ultimate problem that leads
+        to very poor plans.
+        1. We enforce the best JOIN order. Vadim has spent *much* time figuring it out across different
+        accounts.
+        2. Adjust the number of rows in the core INNER JOIN-s of both UNION branches. This decreases
+        the probability of blowing up on NESTED LOOP-s where we should have MERGE JOIN or HASH JOIN.
+        The exact multipliers are a compromise between a few accounts Vadim tested.
+        3. Still, Postgres sucks at choosing the right indexes sometimes. We pin the critical ones.
+        Yet some indexes shouldn't be pinned because of different plans on different accounts
+        (different balance between UNION branches). Particularly, Vadim tried to mess with `cs`and
+        failed: https://github.com/athenianco/athenian-api/commit/4038e75bdd66ab80c4ba0e561ac48c5b71f797f8#diff-2cc6b19d09c47c95d39a3fdf03116425827c3fc942b9be97f66f59722f9430bb
+        It helped a little with one account but completely destroyed the others.
+        4. We disable PARALLEL APPEND. Whatever Vadim tried, Postgres always schedules only one worker,
+        effectively executing UNION branches sequentially.
+        """  # noqa: E501
+        queries.append(query)
+
+    query = queries[0] if len(queries) == 1 else union_all(*queries)
     df = await read_sql_query_with_join_collapse(
         query, mdb, CheckRun, soft_limit=maximum_processed_check_runs)
 
