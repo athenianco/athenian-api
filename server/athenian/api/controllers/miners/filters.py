@@ -122,7 +122,7 @@ class JIRAFilter:
             self.account, self.labels, self.epics, self.issue_types, self.custom_projects,
             self.unmapped)
 
-    def sentry_repr(self) -> str:
+    def __sentry_repr__(self) -> str:
         """Override {}.__repr__() in Sentry."""
         return repr(self)
 
