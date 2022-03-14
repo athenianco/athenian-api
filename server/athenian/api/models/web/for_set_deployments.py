@@ -14,7 +14,8 @@ class _ForSetDeployments(Model, RepositoryGroupsMixin):
         "repogroups": Optional[List[List[int]]],
         "with_": Optional[DeploymentWith],
         "withgroups": Optional[List[DeploymentWith]],
-        "environments": Optional[List[List[str]]],
+        "environments": Optional[List[str]],
+        "envgroups": Optional[List[List[str]]],
     }
 
     attribute_map = {
@@ -23,6 +24,7 @@ class _ForSetDeployments(Model, RepositoryGroupsMixin):
         "with_": "with",
         "withgroups": "withgroups",
         "environments": "environments",
+        "envgroups": "envgroups",
     }
 
     def __init__(
@@ -31,7 +33,8 @@ class _ForSetDeployments(Model, RepositoryGroupsMixin):
         repogroups: Optional[List[List[int]]] = None,
         with_: Optional[DeploymentWith] = None,
         withgroups: Optional[List[DeploymentWith]] = None,
-        environments: Optional[List[List[str]]] = None,
+        environments: Optional[List[str]] = None,
+        envgroups: Optional[List[List[str]]] = None,
     ):
         """ForSetDeployments - a model defined in OpenAPI
 
@@ -40,12 +43,14 @@ class _ForSetDeployments(Model, RepositoryGroupsMixin):
         :param with_: The with_ of this ForSetDeployments.
         :param withgroups: The withgroups of this ForSetDeployments.
         :param environments: The environments of this ForSetDeployments.
+        :param envgroups: The envgroups of this ForSetDeployments.
         """
         self._repositories = repositories
         self._repogroups = repogroups
         self._with_ = with_
         self._withgroups = withgroups
         self._environments = environments
+        self._envgroups = envgroups
 
     @property
     def with_(self) -> Optional[DeploymentWith]:
@@ -84,7 +89,7 @@ class _ForSetDeployments(Model, RepositoryGroupsMixin):
         self._withgroups = withgroups
 
     @property
-    def environments(self) -> Optional[List[List[str]]]:
+    def environments(self) -> Optional[List[str]]:
         """Gets the environments of this ForSetDeployments.
 
         List of environment groups for which to calculate the metrics.
@@ -94,7 +99,7 @@ class _ForSetDeployments(Model, RepositoryGroupsMixin):
         return self._environments
 
     @environments.setter
-    def environments(self, environments: Optional[List[List[str]]]):
+    def environments(self, environments: Optional[List[str]]):
         """Sets the environments of this ForSetDeployments.
 
         List of environment groups for which to calculate the metrics.
@@ -102,6 +107,26 @@ class _ForSetDeployments(Model, RepositoryGroupsMixin):
         :param environments: The environments of this ForSetDeployments.
         """
         self._environments = environments
+
+    @property
+    def envgroups(self) -> Optional[List[List[str]]]:
+        """Gets the envgroups of this ForSetDeployments.
+
+        List of environment groups for which to calculate the metrics.
+
+        :return: The envgroups of this ForSetDeployments.
+        """
+        return self._envgroups
+
+    @envgroups.setter
+    def envgroups(self, envgroups: Optional[List[List[str]]]):
+        """Sets the envgroups of this ForSetDeployments.
+
+        List of environment groups for which to calculate the metrics.
+
+        :param envgroups: The envgroups of this ForSetDeployments.
+        """
+        self._envgroups = envgroups
 
     def select_withgroup(self, index: int) -> "ForSetDeployments":
         """Change `with` to point at the specified group and clear `withgroups`."""
@@ -119,13 +144,19 @@ class _ForSetDeployments(Model, RepositoryGroupsMixin):
     def select_envgroup(self, index: int) -> "ForSetDeployments":
         """Change `environments` to contain only the specified group."""
         fs = self.copy()
-        if not self.environments:
-            if index > 0:
-                raise IndexError("%d is out of range (no environments)" % index)
+        if self.environments:
+            if index >= len(self.environments):
+                raise IndexError(
+                    "%d is out of range (max is %d)" % (index, len(self.environments)))
+            fs.environments = [self.environments[index]]
             return fs
-        if index >= len(self.environments):
-            raise IndexError("%d is out of range (max is %d)" % (index, len(self.environments)))
-        fs.environments = [self.environments[index]]
+        if self.envgroups:
+            if index >= len(self.envgroups):
+                raise IndexError("%d is out of range (max is %d)" % (index, len(self.envgroups)))
+            fs.environments = self.envgroups[index]
+            return fs
+        if index > 0:
+            raise IndexError("%d is out of range (no environments/envgroups)" % index)
         return fs
 
 
