@@ -32,14 +32,14 @@ def metrics_calculator_force_cache(cache):
 
 
 @pytest.mark.parametrize("split_by_check_runs, suite_freqs, suite_sizes, metrics", [
-    (True, [[[1177, 558, 475, 193, 5, 11]]], [1, 2, 3, 4, 5, 6],
+    (True, [[[[1177, 558, 475, 193, 5, 11]]]], [1, 2, 3, 4, 5, 6],
      [[1176, 722, 454, 0, 687],
       [558, 126, 432, 0, 298],
       [475, 326, 149, 0, 305],
       [193, 94, 99, 0, 123],
       [5, 1, 4, 0, 3],
       [11, 1, 10, 0, 10]]),
-    (False, [[[0]]], [], [[2418, 1270, 1148, 0, 1426]]),
+    (False, [[[[0]]]], [], [[2418, 1270, 1148, 0, 1426]]),
 ])
 @with_defer
 async def test_check_run_metrics_suite_counts(
@@ -55,14 +55,14 @@ async def test_check_run_metrics_suite_counts(
          CodeCheckMetricID.SUITES_IN_PRS_COUNT],
         [[datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc)]],
         [0, 1], [["src-d/go-git"]], [], split_by_check_runs,
-        LabelFilter.empty(), JIRAFilter.empty(), logical_settings,
+        LabelFilter.empty(), JIRAFilter.empty(), [], logical_settings,
     ]
 
     def check(result):
         assert result[1].tolist() == suite_freqs
         assert result[2].tolist() == suite_sizes
-        assert result[0].shape == (1, 1, max(len(suite_sizes), 1), 1)
-        mm = [[m.value for m in result[0][0, 0, i, 0][0]] for i in range(result[0].shape[2])]
+        assert result[0].shape == (1, 1, 1, max(len(suite_sizes), 1), 1)
+        mm = [[m.value for m in result[0][0, 0, 0, i, 0][0]] for i in range(result[0].shape[3])]
         assert mm == metrics
 
     check(await metrics_calculator.calc_check_run_metrics_line_github(*args))
@@ -95,9 +95,9 @@ async def test_check_run_metrics_blitz(metrics_calculator: MetricEntriesCalculat
     metrics, _, _ = await metrics_calculator.calc_check_run_metrics_line_github(
         [metric],
         [[datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc)]],
-        [0, 1], [["src-d/go-git"]], [], False, LabelFilter.empty(), JIRAFilter.empty(),
+        [0, 1], [["src-d/go-git"]], [], False, LabelFilter.empty(), JIRAFilter.empty(), [],
         logical_settings)
-    assert metrics[0, 0, 0, 0][0][0].value == value
+    assert metrics[0, 0, 0, 0][0][0][0].value == value
 
 
 @with_defer
@@ -106,9 +106,9 @@ async def test_check_run_metrics_ratio_0_0(
     metrics, _, _ = await metrics_calculator.calc_check_run_metrics_line_github(
         [CodeCheckMetricID.SUCCESS_RATIO, CodeCheckMetricID.PRS_MERGED_WITH_FAILED_CHECKS_RATIO],
         [[datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2015, 2, 1, tzinfo=timezone.utc)]],
-        [0, 1], [["src-d/go-git"]], [], False, LabelFilter.empty(), JIRAFilter.empty(),
+        [0, 1], [["src-d/go-git"]], [], False, LabelFilter.empty(), JIRAFilter.empty(), [],
         logical_settings)
-    assert metrics[0, 0, 0, 0][0][0].value is None
+    assert metrics[0, 0, 0, 0][0][0][0].value is None
 
 
 @with_defer
@@ -117,9 +117,9 @@ async def test_check_run_metrics_robust_empty(
     metrics, _, _ = await metrics_calculator.calc_check_run_metrics_line_github(
         [CodeCheckMetricID.ROBUST_SUITE_TIME],
         [[datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2017, 6, 1, tzinfo=timezone.utc)]],
-        [0.8, 1], [["src-d/go-git"]], [], False, LabelFilter.empty(), JIRAFilter.empty(),
+        [0.8, 1], [["src-d/go-git"]], [], False, LabelFilter.empty(), JIRAFilter.empty(), [],
         logical_settings)
-    assert metrics[0, 0, 0, 0][0][0].value is None
+    assert metrics[0, 0, 0, 0][0][0][0].value is None
 
 
 @with_defer

@@ -147,8 +147,7 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
                                 v.confidence_scores = None
                         met.calculated.append(cm)
     await gather(*(
-        calculate_for_set_metrics(service, repos, withgroups, labels, jira, for_index, for_set)
-        for service, (repos, withgroups, labels, jira, for_index, for_set) in filters
+        calculate_for_set_metrics(service, *args) for service, args in filters
     ))
     return model_response(met)
 
@@ -675,46 +674,51 @@ async def calc_metrics_code_checks(request: AthenianWebRequest, body: dict) -> w
         metric_values, group_suite_counts, suite_sizes = \
             await calculator.calc_check_run_metrics_line_github(
                 filt.metrics, time_intervals, filt.quantiles or (0, 1),
-                repos, pusher_groups, filt.split_by_check_runs, labels, jira, logical_settings)
+                repos, pusher_groups, filt.split_by_check_runs, labels, jira,
+                for_set.lines or [], logical_settings)
         mrange = range(len(met.metrics))
         for pushers_group_index, pushers_group in enumerate(metric_values):
             for repos_group_index, repos_group in enumerate(pushers_group):
-                my_suite_counts = group_suite_counts[pushers_group_index, repos_group_index]
-                total_group_suites = my_suite_counts.sum()
-                for suite_size_group_index, suite_size_group in enumerate(repos_group):
-                    group_for_set = for_set \
-                        .select_pushers_group(pushers_group_index) \
-                        .select_repogroup(repos_group_index)  # type: ForSetCodeChecks
-                    if filt.split_by_check_runs:
-                        suite_size = suite_sizes[suite_size_group_index]
-                        group_suites_count_ratio = \
-                            my_suite_counts[suite_size_group_index] / total_group_suites
-                    else:
-                        suite_size = group_suites_count_ratio = None
-                    for granularity, ts, mvs in zip(
-                            filt.granularities, time_intervals, suite_size_group):
-                        cm = CalculatedCodeCheckMetricsItem(
-                            for_=group_for_set,
-                            granularity=granularity,
-                            check_runs=suite_size,
-                            suites_ratio=group_suites_count_ratio,
-                            values=[CalculatedLinearMetricValues(
-                                date=(d - tzoffset).date(),
-                                values=[mvs[i][m].value for m in mrange],
-                                confidence_mins=[mvs[i][m].confidence_min for m in mrange],
-                                confidence_maxs=[mvs[i][m].confidence_max for m in mrange],
-                                confidence_scores=[mvs[i][m].confidence_score() for m in mrange],
-                            ) for i, d in enumerate(ts[:-1])])
-                        for v in cm.values:
-                            if sum(1 for c in v.confidence_scores if c is not None) == 0:
-                                v.confidence_mins = None
-                                v.confidence_maxs = None
-                                v.confidence_scores = None
-                        met.calculated.append(cm)
+                for lines_group_index, lines_group in enumerate(repos_group):
+                    my_suite_counts = group_suite_counts[
+                        pushers_group_index, repos_group_index, lines_group_index]
+                    total_group_suites = my_suite_counts.sum()
+                    for suite_size_group_index, suite_size_group in enumerate(lines_group):
+                        group_for_set = for_set \
+                            .select_pushers_group(pushers_group_index) \
+                            .select_repogroup(repos_group_index) \
+                            .select_lines(lines_group_index)  # type: ForSetCodeChecks
+                        if filt.split_by_check_runs:
+                            suite_size = suite_sizes[suite_size_group_index]
+                            group_suites_count_ratio = \
+                                my_suite_counts[suite_size_group_index] / total_group_suites
+                        else:
+                            suite_size = group_suites_count_ratio = None
+                        for granularity, ts, mvs in zip(
+                                filt.granularities, time_intervals, suite_size_group):
+                            cm = CalculatedCodeCheckMetricsItem(
+                                for_=group_for_set,
+                                granularity=granularity,
+                                check_runs=suite_size,
+                                suites_ratio=group_suites_count_ratio,
+                                values=[CalculatedLinearMetricValues(
+                                    date=(d - tzoffset).date(),
+                                    values=[mvs[i][m].value for m in mrange],
+                                    confidence_mins=[mvs[i][m].confidence_min for m in mrange],
+                                    confidence_maxs=[mvs[i][m].confidence_max for m in mrange],
+                                    confidence_scores=[
+                                        mvs[i][m].confidence_score() for m in mrange
+                                    ],
+                                ) for i, d in enumerate(ts[:-1])])
+                            for v in cm.values:
+                                if sum(1 for c in v.confidence_scores if c is not None) == 0:
+                                    v.confidence_mins = None
+                                    v.confidence_maxs = None
+                                    v.confidence_scores = None
+                            met.calculated.append(cm)
 
     await gather(*(
-        calculate_for_set_metrics(service, repos, ca_groups, labels, jira, for_set)
-        for service, (repos, ca_groups, labels, jira, for_set) in filters
+        calculate_for_set_metrics(service, *args) for service, args in filters
     ))
     return model_response(met)
 
@@ -783,7 +787,7 @@ async def calc_metrics_deployments(request: AthenianWebRequest, body: dict) -> w
                                 v.confidence_scores = None
                         calculated.append(cm)
 
-    await gather(*(calculate_for_set_metrics(service, *rest) for service, rest in filters))
+    await gather(*(calculate_for_set_metrics(service, *args) for service, args in filters))
     return model_response(calculated)
 
 

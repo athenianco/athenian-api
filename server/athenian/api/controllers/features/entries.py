@@ -19,7 +19,7 @@ from athenian.api.controllers.datetime_utils import coarsen_time_interval
 from athenian.api.controllers.features.code import CodeStats
 from athenian.api.controllers.features.github.check_run_metrics import \
     CheckRunBinnedHistogramCalculator, CheckRunBinnedMetricCalculator, \
-    group_check_runs_by_pushers, make_check_runs_count_grouper
+    group_check_runs_by_lines, group_check_runs_by_pushers, make_check_runs_count_grouper
 from athenian.api.controllers.features.github.code import calc_code_stats
 from athenian.api.controllers.features.github.deployment_metrics import \
     DeploymentBinnedMetricCalculator, group_deployments_by_environments, \
@@ -27,7 +27,7 @@ from athenian.api.controllers.features.github.deployment_metrics import \
 from athenian.api.controllers.features.github.developer_metrics import \
     DeveloperBinnedMetricCalculator, group_actions_by_developers
 from athenian.api.controllers.features.github.pull_request_metrics import \
-    group_by_lines, group_prs_by_participants, need_jira_mapping, \
+    group_prs_by_lines, group_prs_by_participants, need_jira_mapping, \
     PullRequestBinnedHistogramCalculator, PullRequestBinnedMetricCalculator
 from athenian.api.controllers.features.github.release_metrics import \
     group_releases_by_participants, merge_release_participants, ReleaseBinnedMetricCalculator
@@ -199,7 +199,7 @@ class MetricEntriesCalculator:
             time_from, time_to, all_repositories, all_participants, labels, jira, exclude_inactive,
             bots, release_settings, logical_settings, prefixer, fresh, need_jira_mapping(metrics),
             branches, default_branches)
-        lines_grouper = partial(group_by_lines, lines)
+        lines_grouper = partial(group_prs_by_lines, lines)
         repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.name, repositories)
         with_grouper = partial(group_prs_by_participants, participants)
         groups = group_to_indexes(df_facts, lines_grouper, repo_grouper, with_grouper)
@@ -262,7 +262,7 @@ class MetricEntriesCalculator:
             time_from, time_to, all_repositories, all_participants, labels, jira,
             exclude_inactive, bots, release_settings, logical_settings, prefixer,
             fresh, False, branches, default_branches)
-        lines_grouper = partial(group_by_lines, lines)
+        lines_grouper = partial(group_prs_by_lines, lines)
         repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.name, repositories)
         with_grouper = partial(group_prs_by_participants, participants)
         groups = group_to_indexes(df_facts, lines_grouper, repo_grouper, with_grouper)
@@ -436,7 +436,7 @@ class MetricEntriesCalculator:
         exptime=short_term_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda metrics, time_intervals, quantiles, repositories, pushers, labels, jira, logical_settings, **_:  # noqa
+        key=lambda metrics, time_intervals, quantiles, repositories, pushers, labels, jira, lines, logical_settings, **_:  # noqa
         (
             ",".join(sorted(metrics)),
             ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
@@ -445,6 +445,7 @@ class MetricEntriesCalculator:
             ";".join(",".join(g) for g in pushers),
             labels,
             jira,
+            ",".join(str(i) for i in lines),
             logical_settings,
         ),
         cache=lambda self, **_: self._cache,
@@ -458,12 +459,13 @@ class MetricEntriesCalculator:
                                                  split_by_check_runs: bool,
                                                  labels: LabelFilter,
                                                  jira: JIRAFilter,
+                                                 lines: Sequence[int],
                                                  logical_settings: LogicalRepositorySettings,
                                                  ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Calculate the check run metrics on GitHub.
 
-        :return: 1. pushers x repositories x check runs count groups x granularities x time intervals x metrics.
+        :return: 1. pushers x repositories x lines x check runs count groups x granularities x time intervals x metrics.
                  2. how many suites in each check runs count group (meaningful only if split_by_check_runs=True).
                  3. suite sizes (meaningful only if split_by_check_runs=True).
         """  # noqa
@@ -472,7 +474,7 @@ class MetricEntriesCalculator:
         df_check_runs, groups, group_suite_counts, suite_sizes = \
             await self._mine_and_group_check_runs(
                 time_from, time_to, repositories, pushers, split_by_check_runs, labels, jira,
-                logical_settings)
+                lines, logical_settings)
         values = calc(df_check_runs, time_intervals, groups)
         return values, group_suite_counts, suite_sizes
 
@@ -481,7 +483,7 @@ class MetricEntriesCalculator:
         exptime=short_term_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda defs, time_from, time_to, quantiles, repositories, pushers, labels, jira, split_by_check_runs, logical_settings, **_:  # noqa
+        key=lambda defs, time_from, time_to, quantiles, repositories, pushers, labels, jira, lines, split_by_check_runs, logical_settings, **_:  # noqa
         (
             ",".join("%s:%s" % (k, sorted(v)) for k, v in sorted(defs.items())),
             time_from.timestamp(), time_to.timestamp(),
@@ -490,6 +492,7 @@ class MetricEntriesCalculator:
             ";".join(",".join(g) for g in pushers),
             labels,
             jira,
+            ",".join(str(i) for i in lines),
             split_by_check_runs,
             logical_settings,
         ),
@@ -505,12 +508,13 @@ class MetricEntriesCalculator:
                                                     split_by_check_runs: bool,
                                                     labels: LabelFilter,
                                                     jira: JIRAFilter,
+                                                    lines: Sequence[int],
                                                     logical_settings: LogicalRepositorySettings,
                                                     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Calculate the check run metrics on GitHub.
 
-        :return: 1. defs x pushers x repositories x check runs count groups -> List[Tuple[metric ID, Histogram]].
+        :return: 1. defs x pushers x repositories x lines x check runs count groups -> List[Tuple[metric ID, Histogram]].
                  2. how many suites in each check runs count group (meaningful only if split_by_check_runs=True).
                  3. suite sizes (meaningful only if split_by_check_runs=True).
         """  # noqa
@@ -521,17 +525,20 @@ class MetricEntriesCalculator:
         df_check_runs, groups, group_suite_counts, suite_sizes = \
             await self._mine_and_group_check_runs(
                 time_from, time_to, repositories, pushers, split_by_check_runs, labels, jira,
-                logical_settings)
+                lines, logical_settings)
         hists = calc(df_check_runs, [[time_from, time_to]], groups, defs)
         reshaped = np.full(hists.shape[:-1], None, object)
         reshaped_seq = reshaped.ravel()
         pos = 0
         for commit_author_group, metrics in zip(hists, defs.values()):
             for repo_group in commit_author_group:
-                for check_runs_group in repo_group:
-                    for ts_group in check_runs_group:
-                        reshaped_seq[pos] = [(m, hist) for hist, m in zip(ts_group[0][0], metrics)]
-                        pos += 1
+                for lines_group in repo_group:
+                    for check_runs_group in lines_group:
+                        for ts_group in check_runs_group:
+                            reshaped_seq[pos] = [
+                                (m, hist) for hist, m in zip(ts_group[0][0], metrics)
+                            ]
+                            pos += 1
         return reshaped, group_suite_counts, suite_sizes
 
     @sentry_span
@@ -607,6 +614,7 @@ class MetricEntriesCalculator:
                                          split_by_check_runs: bool,
                                          labels: LabelFilter,
                                          jira: JIRAFilter,
+                                         lines: Sequence[int],
                                          logical_settings: LogicalRepositorySettings,
                                          ) -> Tuple[pd.DataFrame,
                                                     np.ndarray,   # groups
@@ -627,8 +635,9 @@ class MetricEntriesCalculator:
 
             def check_runs_grouper(df: pd.DataFrame) -> List[np.ndarray]:
                 return [np.arange(len(df))]
+        lines_grouper = partial(group_check_runs_by_lines, lines)
         groups = group_to_indexes(
-            df_check_runs, commit_author_grouper, repo_grouper, check_runs_grouper)
+            df_check_runs, commit_author_grouper, repo_grouper, lines_grouper, check_runs_grouper)
         group_suite_counts = np.zeros_like(groups, dtype=int)
         flat_group_suite_counts = group_suite_counts.ravel()
         if split_by_check_runs:

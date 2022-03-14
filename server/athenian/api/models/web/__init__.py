@@ -77,7 +77,7 @@ from athenian.api.models.web.filtered_environment import FilteredEnvironment
 from athenian.api.models.web.filtered_jira_stuff import FilteredJIRAStuff
 from athenian.api.models.web.filtered_label import FilteredLabel
 from athenian.api.models.web.filtered_release import FilteredRelease
-from athenian.api.models.web.for_set import CommonPullRequestFilters, ForSet, \
+from athenian.api.models.web.for_set import CommonPullRequestFilters, ForSet, ForSetLines, \
     make_common_pull_request_filters, RepositoryGroupsMixin
 from athenian.api.models.web.for_set_code_checks import ForSetCodeChecks
 from athenian.api.models.web.for_set_deployments import ForSetDeployments
