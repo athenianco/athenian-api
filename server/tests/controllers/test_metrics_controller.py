@@ -2285,7 +2285,7 @@ async def test_deployment_metrics_smoke(client, headers, sample_deployments):
             "repositories": ["{1}"],
             "withgroups": [{"releaser": ["github.com/mcuadros"]},
                            {"pr_author": ["github.com/mcuadros"]}],
-            "environments": [["staging"], ["production"], ["mirror"]],
+            "environments": ["staging", "production", "mirror"],
         }],
         "metrics": [DeploymentMetricID.DEP_SUCCESS_COUNT,
                     DeploymentMetricID.DEP_DURATION_SUCCESSFUL],
@@ -2301,7 +2301,7 @@ async def test_deployment_metrics_smoke(client, headers, sample_deployments):
         "for": {
             "repositories": ["{1}"],
             "with": {"releaser": ["github.com/mcuadros"]},
-            "environments": [["staging"]],
+            "environments": ["staging"],
         },
         "metrics": ["dep-success-count", "dep-duration-successful"],
         "granularity": "all",
@@ -2315,7 +2315,7 @@ async def test_deployment_metrics_smoke(client, headers, sample_deployments):
         "for": {
             "repositories": ["{1}"],
             "with": {"releaser": ["github.com/mcuadros"]},
-            "environments": [["production"]],
+            "environments": ["production"],
         },
         "metrics": ["dep-success-count", "dep-duration-successful"],
         "granularity": "all",
@@ -2329,7 +2329,7 @@ async def test_deployment_metrics_smoke(client, headers, sample_deployments):
         "for": {
             "repositories": ["{1}"],
             "with": {"releaser": ["github.com/mcuadros"]},
-            "environments": [["mirror"]],
+            "environments": ["mirror"],
         },
         "metrics": ["dep-success-count", "dep-duration-successful"],
         "granularity": "all",
@@ -2340,7 +2340,7 @@ async def test_deployment_metrics_smoke(client, headers, sample_deployments):
         "for": {
             "repositories": ["{1}"],
             "with": {"pr_author": ["github.com/mcuadros"]},
-            "environments": [["staging"]],
+            "environments": ["staging"],
         },
         "metrics": ["dep-success-count", "dep-duration-successful"],
         "granularity": "all",
@@ -2354,7 +2354,7 @@ async def test_deployment_metrics_smoke(client, headers, sample_deployments):
         "for": {
             "repositories": ["{1}"],
             "with": {"pr_author": ["github.com/mcuadros"]},
-            "environments": [["production"]],
+            "environments": ["production"],
         },
         "metrics": ["dep-success-count", "dep-duration-successful"],
         "granularity": "all",
@@ -2368,7 +2368,7 @@ async def test_deployment_metrics_smoke(client, headers, sample_deployments):
         "for": {
             "repositories": ["{1}"],
             "with": {"pr_author": ["github.com/mcuadros"]},
-            "environments": [["mirror"]],
+            "environments": ["mirror"],
         },
         "metrics": ["dep-success-count", "dep-duration-successful"],
         "granularity": "all",
@@ -2498,7 +2498,7 @@ async def test_deployment_metrics_environments(
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
         "for": [{
-            "environments": [["production"]],
+            "envgroups": [["production"]],
         }],
         "metrics": [DeploymentMetricID.DEP_SUCCESS_COUNT,
                     DeploymentMetricID.DEP_DURATION_SUCCESSFUL],
@@ -2517,12 +2517,12 @@ async def test_deployment_metrics_environments(
     model = await request()
     assert len(model) == 1
     assert model[0].values[0].values[0] == 4
-    body["for"][0]["environments"] = [["staging"], ["production"]]
+    body["for"][0]["envgroups"] = [["staging"], ["production"]]
     model = await request()
     assert len(model) == 2
-    assert model[0].for_.environments == [["staging"]]
+    assert model[0].for_.environments == ["staging"]
     assert model[0].values[0].values[0] == 3
-    assert model[1].for_.environments == [["production"]]
+    assert model[1].for_.environments == ["production"]
     assert model[1].values[0].values[0] == 4
 
 
@@ -2533,7 +2533,7 @@ async def test_deployment_metrics_with(client, headers, sample_deployments):
         "date_to": "2020-03-01",
         "for": [{
             "with": {"pr_author": ["github.com/mcuadros"]},
-            "environments": [["production"]],
+            "environments": ["production"],
         }],
         "metrics": [DeploymentMetricID.DEP_SUCCESS_COUNT,
                     DeploymentMetricID.DEP_DURATION_SUCCESSFUL],

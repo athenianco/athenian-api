@@ -355,8 +355,14 @@ async def _compile_filters_deployments(for_sets: List[ForSetDeployments],
         pr_labels = LabelFilter.from_iterables(
             for_set.pr_labels_include, for_set.pr_labels_exclude)
         jira = await _compile_jira(for_set, account, request)
+        if for_set.environments:
+            envs = [[env] for env in for_set.environments]
+        elif for_set.envgroups:
+            envs = for_set.envgroups
+        else:
+            envs = []
         filters.append((service, (
-            repogroups, withgroups, for_set.environments or [],
+            repogroups, withgroups, envs,
             (for_set.with_labels or {}, for_set.without_labels or {}),
             pr_labels, jira, for_set, i)))
     return filters, all_repos, prefixer, logical_settings
