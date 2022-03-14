@@ -10,9 +10,9 @@ from athenian.api.controllers.features.histogram import calculate_histogram, His
 from athenian.api.controllers.features.metric import make_metric, Metric, MetricFloat, MetricInt, \
     MetricTimeDelta
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
-    BinnedHistogramCalculator, BinnedMetricCalculator, HistogramCalculatorEnsemble, \
-    make_register_metric, MaxMetricCalculator, MetricCalculator, MetricCalculatorEnsemble, \
-    RatioCalculator, SumMetricCalculator
+    BinnedHistogramCalculator, BinnedMetricCalculator, group_by_lines, \
+    HistogramCalculatorEnsemble, make_register_metric, MaxMetricCalculator, MetricCalculator, \
+    MetricCalculatorEnsemble, RatioCalculator, SumMetricCalculator
 from athenian.api.controllers.miners.github.check_run import calculate_check_run_outcome_masks, \
     check_suite_completed_column, check_suite_started_column, pull_request_closed_column, \
     pull_request_merged_column, pull_request_started_column
@@ -73,6 +73,14 @@ def group_check_runs_by_pushers(pushers: List[List[str]],
         included_indexes = np.nonzero(np.in1d(pushers, group))[0]
         indexes.append(included_indexes)
     return indexes
+
+
+def group_check_runs_by_lines(lines: Sequence[int],
+                              df: pd.DataFrame,
+                              ) -> List[np.ndarray]:
+    """Group check runs by the overall number of changed lines in the matched PR."""
+    column = df[CheckRun.additions.name].values + df[CheckRun.deletions.name].values
+    return group_by_lines(lines, column)
 
 
 def make_check_runs_count_grouper(df: pd.DataFrame) -> Tuple[

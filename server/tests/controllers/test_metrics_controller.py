@@ -2215,6 +2215,47 @@ async def test_code_check_metrics_authorgroups(client, headers):
     }
 
 
+async def test_code_check_metrics_lines(client, headers):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "for": [{
+            "repositories": ["github.com/src-d/go-git"],
+            "lines": [0, 10, 1000],
+        }],
+        "metrics": [CodeCheckMetricID.SUITES_COUNT],
+        "granularities": ["all"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/code_checks", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 200, rbody
+    rbody = json.loads(rbody)
+    model = CalculatedCodeCheckMetrics.from_dict(rbody)
+    assert model.to_dict() == {
+        "calculated": [
+            {"for": {"lines": [0, 10],
+                     "repositories": ["github.com/src-d/go-git"]},
+             "granularity": "all",
+             "values": [{"date": date(2018, 1, 12),
+                         "values": [299]}]},
+            {"for": {"lines": [10, 1000],
+                     "repositories": ["github.com/src-d/go-git"]},
+             "granularity": "all",
+             "values": [{"date": date(2018, 1, 12),
+                         "values": [666]}]},
+        ],
+        "date_from": date(2018, 1, 12),
+        "date_to": date(2020, 3, 1),
+        "granularities": ["all"],
+        "metrics": ["chk-suites-count"],
+        "split_by_check_runs": None,
+        "timezone": None,
+    }
+
+
 @pytest.mark.parametrize("account, repos, metrics, code", [
     (3, ["{1}"], [CodeCheckMetricID.SUITES_COUNT], 404),
     (2, ["github.com/src-d/go-git"], [CodeCheckMetricID.SUITES_COUNT], 422),

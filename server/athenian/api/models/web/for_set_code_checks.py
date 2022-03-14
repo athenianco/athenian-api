@@ -1,42 +1,32 @@
 from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import AllOf, Model
-from athenian.api.models.web.for_set import CommonPullRequestFilters, RepositoryGroupsMixin
+from athenian.api.models.web.for_set import CommonPullRequestFilters, ForSetLines
 
 
-class _ForSetCodeChecks(Model, RepositoryGroupsMixin, sealed=False):
+class _ForSetCodeChecks(Model, sealed=False):
     """Filters for `/metrics/code_checks` and `/histograms/code_checks`."""
 
     openapi_types = {
-        "repositories": List[str],
-        "repogroups": Optional[List[List[int]]],
         "pushers": Optional[List[str]],
         "pusher_groups": Optional[List[List[str]]],
     }
 
     attribute_map = {
-        "repositories": "repositories",
-        "repogroups": "repogroups",
         "pushers": "pushers",
         "pusher_groups": "pusher_groups",
     }
 
     def __init__(
         self,
-        repositories: Optional[List[str]] = None,
-        repogroups: Optional[List[List[int]]] = None,
         pushers: Optional[List[str]] = None,
         pusher_groups: Optional[List[List[str]]] = None,
     ):
         """ForSetCodeChecks - a model defined in OpenAPI
 
-        :param repositories: The repositories of this ForSetCodeChecks.
-        :param repogroups: The repogroups of this ForSetCodeChecks.
         :param pushers: The pushers of this ForSetCodeChecks.
         :param pusher_groups: The pusher_groups of this ForSetCodeChecks.
         """
-        self._repositories = repositories
-        self._repogroups = repogroups
         self._pushers = pushers
         self._pusher_groups = pusher_groups
 
@@ -99,7 +89,7 @@ class _ForSetCodeChecks(Model, RepositoryGroupsMixin, sealed=False):
         return fs
 
 
-ForSetCodeChecks = AllOf(_ForSetCodeChecks, CommonPullRequestFilters,
+ForSetCodeChecks = AllOf(_ForSetCodeChecks, ForSetLines, CommonPullRequestFilters,
                          name="ForSetCodeChecks", module=__name__)
 
 

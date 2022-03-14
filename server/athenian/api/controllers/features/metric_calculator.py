@@ -849,6 +849,39 @@ def group_by_repo(repository_full_name_column_name: str,
     return result
 
 
+def group_by_lines(lines: Sequence[int],
+                   column: np.ndarray) -> List[np.ndarray]:
+    """
+    Bin items by the number of changed `lines` represented by `column`.
+
+    We throw away the ends: PRs with fewer lines than `lines[0]` and with more lines than \
+    `lines[-1]`.
+
+    :param lines: Either an empty sequence or one with at least 2 elements. The numbers must \
+                  monotonically increase.
+    """
+    lines = np.asarray(lines)
+    if len(lines) and len(column):
+        assert len(lines) >= 2
+        assert (np.diff(lines) > 0).all()
+    else:
+        return [np.arange(len(column))]
+    line_group_assignments = np.digitize(column, lines)
+    line_group_assignments[line_group_assignments == len(lines)] = 0
+    line_group_assignments -= 1
+    order = np.argsort(line_group_assignments)
+    existing_groups, existing_group_counts = np.unique(
+        line_group_assignments[order], return_counts=True)
+    line_groups = np.split(np.arange(len(column))[order], np.cumsum(existing_group_counts)[:-1])
+    if line_group_assignments[order[0]] < 0:
+        line_groups = line_groups[1:]
+        existing_groups = existing_groups[1:]
+    full_line_groups = [np.array([], dtype=int)] * (len(lines) - 1)
+    for i, g in zip(existing_groups, line_groups):
+        full_line_groups[i] = g
+    return full_line_groups
+
+
 class RatioCalculator(WithoutQuantilesMixin, MetricCalculator[float]):
     """Calculate the ratio of two counts from the dependencies."""
 

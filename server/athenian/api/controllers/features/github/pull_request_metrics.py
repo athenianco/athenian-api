@@ -10,9 +10,10 @@ from athenian.api import metadata
 from athenian.api.controllers.features.metric import make_metric, Metric, MetricFloat, MetricInt, \
     MetricTimeDelta, T
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
-    BinnedHistogramCalculator, BinnedMetricCalculator, Counter, HistogramCalculator, \
-    HistogramCalculatorEnsemble, make_register_metric, MedianMetricCalculator, MetricCalculator, \
-    MetricCalculatorEnsemble, RatioCalculator, SumMetricCalculator, WithoutQuantilesMixin
+    BinnedHistogramCalculator, BinnedMetricCalculator, Counter, group_by_lines, \
+    HistogramCalculator, HistogramCalculatorEnsemble, make_register_metric, \
+    MedianMetricCalculator, MetricCalculator, MetricCalculatorEnsemble, RatioCalculator, \
+    SumMetricCalculator, WithoutQuantilesMixin
 from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_inrange
 from athenian.api.controllers.miners.types import DeploymentConclusion, PRParticipants, \
     PullRequestFacts
@@ -51,7 +52,7 @@ class PullRequestHistogramCalculatorEnsemble(HistogramCalculatorEnsemble):
                          **kwargs)
 
 
-def group_by_lines(lines: Sequence[int], items: pd.DataFrame) -> List[np.ndarray]:
+def group_prs_by_lines(lines: Sequence[int], items: pd.DataFrame) -> List[np.ndarray]:
     """
     Bin PRs by number of changed `lines`.
 
@@ -61,27 +62,7 @@ def group_by_lines(lines: Sequence[int], items: pd.DataFrame) -> List[np.ndarray
     :param lines: Either an empty sequence or one with at least 2 elements. The numbers must \
                   monotonically increase.
     """
-    lines = np.asarray(lines)
-    if len(lines) and not items.empty:
-        assert len(lines) >= 2
-        assert (np.diff(lines) > 0).all()
-    else:
-        return [np.arange(len(items))]
-    values = items["size"].values
-    line_group_assignments = np.digitize(values, lines)
-    line_group_assignments[line_group_assignments == len(lines)] = 0
-    line_group_assignments -= 1
-    order = np.argsort(line_group_assignments)
-    existing_groups, existing_group_counts = np.unique(
-        line_group_assignments[order], return_counts=True)
-    line_groups = np.split(np.arange(len(items))[order], np.cumsum(existing_group_counts)[:-1])
-    if line_group_assignments[order[0]] < 0:
-        line_groups = line_groups[1:]
-        existing_groups = existing_groups[1:]
-    full_line_groups = [np.array([], dtype=int)] * (len(lines) - 1)
-    for i, g in zip(existing_groups, line_groups):
-        full_line_groups[i] = g
-    return full_line_groups
+    return group_by_lines(lines, items["size"].values)
 
 
 def group_prs_by_participants(participants: List[PRParticipants],
