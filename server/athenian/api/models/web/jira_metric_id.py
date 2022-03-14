@@ -13,3 +13,5 @@ class JIRAMetricID(Model, metaclass=Enum):
     JIRA_LEAD_TIME = "jira-lead-time"
     JIRA_ACKNOWLEDGE_TIME = "jira-acknowledge-time"
     JIRA_RESOLUTION_RATE = "jira-resolution-rate"
+    JIRA_PR_LAG_TIME = "jira-pr-lag-time"
+    JIRA_BACKLOG_TIME = "jira-backlog-time"

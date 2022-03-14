@@ -1097,6 +1097,8 @@ async def test_jira_metrics_counts(client, headers, metric, exclude_inactive, n)
     (JIRAMetricID.JIRA_LIFE_TIME, "3360382s", 51, "2557907s", "4227690s"),
     (JIRAMetricID.JIRA_LEAD_TIME, "2922288s", 43, "2114455s", "3789853s"),
     (JIRAMetricID.JIRA_ACKNOWLEDGE_TIME, "450250s", 66, "369809s", "527014s"),
+    (JIRAMetricID.JIRA_PR_LAG_TIME, "0s", 100, "0s", "0s"),
+    (JIRAMetricID.JIRA_BACKLOG_TIME, "450856s", 66, "370707s", "527781s"),
 ])
 @with_defer
 async def test_jira_metrics_bug_times(

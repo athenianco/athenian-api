@@ -241,3 +241,64 @@ class AcknowledgedWithQuantiles(Counter):
     the quantiles."""
 
     deps = (AcknowledgeTimeCalculator,)
+
+
+@register_metric(JIRAMetricID.JIRA_PR_LAG_TIME)
+class PRLagTimeCalculator(AverageMetricCalculator[timedelta]):
+    """
+    Issue PR Lag Time calculator.
+
+    The time between when the issue transitioned to "In Progress" and the first PR was created.
+    It equals to 0 if the difference is negative or no PRs are mapped to the issue.
+    """
+
+    may_have_negative_values = False
+    metric = MetricTimeDelta
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **_) -> np.ndarray:
+        result = np.full((len(min_times), len(facts)), None, self.dtype)
+        work_began = facts[AthenianIssue.work_began.name].values.astype(min_times.dtype)
+        prs_began = facts[ISSUE_PRS_BEGAN].values.astype(min_times.dtype)
+        diff = prs_began - work_began
+        zero = diff.dtype.type(0)
+        diff[diff < zero] = zero
+        statuses = facts[Status.category_name.name].values
+        diff[(statuses != Status.CATEGORY_IN_PROGRESS) &
+             (statuses != Status.CATEGORY_DONE)] = None
+        focus_mask = (min_times[:, None] <= prs_began) & (prs_began < max_times[:, None])
+        result[:] = diff
+        result[~focus_mask] = None
+        return result
+
+
+@register_metric(JIRAMetricID.JIRA_BACKLOG_TIME)
+class BacklogTimeCalculator(AverageMetricCalculator[timedelta]):
+    """
+    Issue Backlog Time calculator.
+
+    The time between when the issue was created and transitioned to "In Progress".
+    """
+
+    may_have_negative_values = False
+    metric = MetricTimeDelta
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 **_) -> np.ndarray:
+        result = np.full((len(min_times), len(facts)), None, self.dtype)
+        created = facts[Issue.created.name].values.astype(min_times.dtype)
+        work_began = facts[AthenianIssue.work_began.name].values.astype(min_times.dtype)
+        diff = work_began - created
+        statuses = facts[Status.category_name.name].values
+        diff[(statuses != Status.CATEGORY_IN_PROGRESS) &
+             (statuses != Status.CATEGORY_DONE)] = None
+        focus_mask = (min_times[:, None] <= work_began) & (work_began < max_times[:, None])
+        result[:] = diff
+        result[~focus_mask] = None
+        return result
