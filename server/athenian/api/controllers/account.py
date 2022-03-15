@@ -148,6 +148,19 @@ async def get_account_name(account: int,
     return ", ".join(r[0] for r in rows)
 
 
+async def get_account_name_or_stub(account: int,
+                                   sdb: DatabaseLike,
+                                   mdb: DatabaseLike,
+                                   cache: Optional[aiomcache.Client],
+                                   meta_ids: Optional[Tuple[int, ...]] = None,
+                                   ) -> str:
+    """Load the human-readable name of the account or a placeholder if no name exists."""
+    try:
+        return await get_account_name(account, sdb, mdb, cache, meta_ids)
+    except ResponseError as e:
+        return f"N/A ({int(e.response.status)})"
+
+
 @cached(
     exptime=60,
     serialize=lambda _: b"1",
@@ -167,7 +180,7 @@ async def _report_user_rejected(user: str,
         return User(login="N/A")
 
     name, user_info = await gather(
-        get_account_name(account, sdb, mdb, cache),
+        get_account_name_or_stub(account, sdb, mdb, cache),
         user_info() if user_info is not None else dummy_user(),
     )
     await slack.post_account(

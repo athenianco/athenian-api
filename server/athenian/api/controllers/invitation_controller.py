@@ -24,7 +24,7 @@ from athenian.api.async_utils import gather
 from athenian.api.auth import Auth0, disable_default_user
 from athenian.api.cache import cached, expires_header, middle_term_exptime
 from athenian.api.controllers.account import fetch_github_installation_progress, \
-    generate_jira_invitation_link, get_account_name, get_metadata_account_ids, \
+    generate_jira_invitation_link, get_account_name_or_stub, get_metadata_account_ids, \
     get_user_account_status_from_request, is_membership_check_enabled, jira_url_template, only_god
 from athenian.api.controllers.ffx import decrypt, encrypt
 from athenian.api.controllers.jira import fetch_jira_installation_progress
@@ -255,7 +255,7 @@ async def _accept_invitation(iid: int,
                             BanishedUserAccount.account_id == acc_id))):
             if slack is not None:
                 async def report_blocked_registration():
-                    account_name = await get_account_name(acc_id, sdb, mdb, request.cache)
+                    account_name = await get_account_name_or_stub(acc_id, sdb, mdb, request.cache)
                     await slack.post_account("blocked_registration_banished.jinja2",
                                              user=user,
                                              account_id=acc_id,
@@ -272,7 +272,7 @@ async def _accept_invitation(iid: int,
         log.info("Assigned user %s to account %d (admin: %s)", request.uid, acc_id, is_admin)
         if slack is not None:
             async def report_new_user_to_slack():
-                account_name = await get_account_name(acc_id, sdb, mdb, request.cache)
+                account_name = await get_account_name_or_stub(acc_id, sdb, mdb, request.cache)
                 await slack.post_account("new_user.jinja2",
                                          user=user,
                                          account_id=acc_id,
@@ -321,7 +321,7 @@ async def _check_user_org_membership(request: AthenianWebRequest,
     if user_node_id not in user_node_ids:
         if slack is not None:
             async def report_blocked_registration():
-                account_name = await get_account_name(acc_id, sdb, mdb, request.cache)
+                account_name = await get_account_name_or_stub(acc_id, sdb, mdb, request.cache)
                 await slack.post_account("blocked_registration_membership.jinja2",
                                          user=user,
                                          account_id=acc_id,

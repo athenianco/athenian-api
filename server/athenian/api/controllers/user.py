@@ -8,7 +8,8 @@ from sqlalchemy import func, join, select, union_all
 
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached, middle_term_exptime
-from athenian.api.controllers.account import get_account_name, get_metadata_account_ids_or_empty
+from athenian.api.controllers.account import get_account_name_or_stub, \
+    get_metadata_account_ids_or_empty
 from athenian.api.controllers.jira import get_jira_installation_or_none
 from athenian.api.db import Database, DatabaseLike
 from athenian.api.defer import defer
@@ -124,7 +125,7 @@ async def report_user_account_expired(user: str,
         return User(login="N/A")
 
     name, user_info = await gather(
-        get_account_name(account, sdb, mdb, cache),
+        get_account_name_or_stub(account, sdb, mdb, cache),
         user_info() if user_info is not None else dummy_user(),
     )
     await slack.post_account("user_account_expired.jinja2",
