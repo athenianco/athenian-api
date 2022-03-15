@@ -1968,6 +1968,53 @@ async def test_mine_deployments_precomputed_sample(
 
 
 @with_defer
+async def test_mine_deployments_reversed(
+        sample_deployments, release_match_setting_tag, branches, default_branches,
+        prefixer, mdb, pdb, rdb):
+    time_from = datetime(2018, 1, 1, tzinfo=timezone.utc)
+    time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    deps1, people1 = await mine_deployments(
+        ["src-d/go-git"], {}, time_from, time_to, ["production"],
+        [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        release_match_setting_tag, LogicalRepositorySettings.empty(),
+        branches, default_branches, prefixer,
+        1, (6366825,), mdb, pdb, rdb, None)
+    await wait_deferred()
+
+    name = "%s_%d_%02d_%02d" % ("production", 2019, 12, 1)
+    await rdb.execute(insert(DeploymentNotification).values(dict(
+        account_id=1,
+        name=name,
+        conclusion="SUCCESS",
+        environment="production",
+        started_at=datetime(2019, 12, 1, tzinfo=timezone.utc),
+        finished_at=datetime(2019, 12, 1, 0, 10, tzinfo=timezone.utc),
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+    )))
+    await rdb.execute(insert(DeployedComponent).values(dict(
+        account_id=1,
+        deployment_name=name,
+        repository_node_id=40550,
+        reference="v4.13.0",
+        resolved_commit_node_id=2756276,
+        created_at=datetime.now(timezone.utc),
+    )))
+
+    deps2, people2 = await mine_deployments(
+        ["src-d/go-git"], {}, time_from, time_to, ["production"],
+        [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        release_match_setting_tag, LogicalRepositorySettings.empty(),
+        branches, default_branches, prefixer,
+        1, (6366825,), mdb, pdb, rdb, None)
+    assert len(deps2) == len(deps1) + 1
+    assert deps1.index.tolist() == deps2.index.tolist()[1:]
+    assert deps2.iloc[0][DeploymentFacts.f.commits_overall][0] == 0
+    assert deps2.iloc[0][DeploymentFacts.f.commits_prs][0] == 0
+    assert len(deps2.iloc[0][DeploymentFacts.f.prs]) == 0
+
+
+@with_defer
 async def test_mine_deployments_empty(
         release_match_setting_tag_or_branch, branches, default_branches,
         prefixer, mdb, pdb, rdb, cache):
