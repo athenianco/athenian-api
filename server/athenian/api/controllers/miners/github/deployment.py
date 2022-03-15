@@ -1196,7 +1196,7 @@ async def _extract_deployed_commits(
                 all_shas = successful_deployed_shas
             # if there are same commits in `successful_deployed_shas` and `parent_shas`,
             # mark_dag_access() guarantees that `parent_shas` have the priority
-            ownership = mark_dag_access(*dag, all_shas, False)
+            ownership = mark_dag_access(*dag, all_shas, True)
             # we have to add np.flatnonzero due to numpy's quirks
             grouped_deployed_shas[np.flatnonzero(successful)] = group_hashes_by_ownership(
                 ownership, dag[0], len(all_shas), None)[:len(successful_deployed_shas)]
@@ -1363,7 +1363,8 @@ async def _resolve_commit_relationship(
             successful_shas = commit_shas_in_df[found_successful_indexes]
             failed_shas = commit_shas_in_df[found_failed_indexes]
             dag = dags[drop_logical_repo(repo_name)]
-            ownership = mark_dag_access(*dag, successful_shas, False)
+            # commits deployed earlier must steal the ownership despite the DAG relationships
+            ownership = mark_dag_access(*dag, successful_shas, True)
             all_shas = np.concatenate([successful_shas, failed_shas])
             all_deployed_ats = np.concatenate([successful_deployed_ats, failed_deployed_ats])
             parents = mark_dag_parents(*dag, all_shas, all_deployed_ats, ownership)
@@ -1401,7 +1402,8 @@ async def _resolve_commit_relationship(
                     root_details_per_repo[env][repo_name]
                 dag = dags[drop_logical_repo(repo_name)]
                 successful_shas = np.concatenate([root_shas[:success_len], [sha]])
-                ownership = mark_dag_access(*dag, successful_shas, False)
+                # even if `sha` is a child, it was deployed earlier, hence must steal the ownership
+                ownership = mark_dag_access(*dag, successful_shas, True)
                 all_shas = np.concatenate([successful_shas, root_shas[success_len:]])
                 all_deployed_ats = np.concatenate([
                     root_deployed_ats[:success_len],
