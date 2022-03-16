@@ -573,7 +573,7 @@ async def _issue_flow(return_: Set[str],
             DonePRFactsLoader.load_precomputed_done_facts_ids(
                 pr_ids, default_branches, release_settings, prefixer, account, pdb,
                 panic_on_missing_repositories=False),
-            bots(account, mdb, sdb, cache),
+            bots(account, meta_ids, mdb, sdb, cache),
         )
         existing_mask = prs_df[PullRequest.repository_full_name.name].isin(
             release_settings.native).values

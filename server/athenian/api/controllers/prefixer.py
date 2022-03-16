@@ -115,7 +115,10 @@ class Prefixer:
 
     def prefix_user_logins(self, user_logins: Iterable[str]) -> List[str]:
         """Lookup each user login in user_login_to_prefixed_login."""
-        return [self.user_login_to_prefixed_login[name] for name in user_logins]
+        return [
+            pl for name in user_logins
+            if (pl := self.user_login_to_prefixed_login.get(name)) is not None
+        ]
 
     def prefix_logical_repo(self, repo: str) -> Optional[str]:
         """Lookup the repository name prefix for the given logical repository."""

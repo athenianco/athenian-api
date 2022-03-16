@@ -37,7 +37,7 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
         Settings.from_request(request, filt.account).list_release_matches(repos),
         BranchMiner.extract_branches(
             repos, prefixer, meta_ids, request.mdb, request.cache, strip=True),
-        bots(filt.account, request.mdb, request.sdb, request.cache),
+        bots(filt.account, meta_ids, request.mdb, request.sdb, request.cache),
         get_calculators_for_request({s for s, _ in filters}, filt.account, meta_ids, request),
     )
     result = []

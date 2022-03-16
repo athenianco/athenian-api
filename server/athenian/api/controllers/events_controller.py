@@ -244,8 +244,9 @@ async def _drop_precomputed_event_releases(account: int,
                                            meta_ids: Tuple[int, ...],
                                            ) -> None:
     pdb = request.pdb
-    bots_task = asyncio.create_task(bots(account, request.mdb, request.sdb, request.cache),
-                                    name="_drop_precomputed_event_releases/bots")
+    bots_task = asyncio.create_task(
+        bots(account, meta_ids, request.mdb, request.sdb, request.cache),
+        name="_drop_precomputed_event_releases/bots")
     await gather(*(
         pdb.execute(delete(table).where(and_(
             table.release_match == ReleaseMatch.event.name,

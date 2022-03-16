@@ -91,7 +91,7 @@ async def mine_contributors(repos: Collection[str],
             ]
         else:
             prs_opts = [True]
-        tasks = [
+        released, main = await gather(
             pdb.fetch_all(select([ghdprf.author, func.count(ghdprf.pr_node_id)])
                           .where(and_(ghdprf.format_version == format_version,
                                       ghdprf.repository_full_name.in_(repos),
@@ -102,9 +102,9 @@ async def mine_contributors(repos: Collection[str],
             mdb.fetch_all(union(*(select([PullRequest.user_login, func.count(PullRequest.node_id)])
                                   .where(and_(*common_prs_where(), prs_opt))
                                   .group_by(PullRequest.user_login)
+                                  .with_statement_hint("Rows(repo pr *100)")
                                   for prs_opt in prs_opts))),
-        ]
-        released, main = await gather(*tasks)
+        )
         user_node_to_login_get = prefixer.user_node_to_login.get
         sum_stats = (
             Counter({user_node_to_login_get(r[0]): r[1] for r in released})
@@ -121,7 +121,8 @@ async def mine_contributors(repos: Collection[str],
                             PullRequestReview.acc_id.in_(meta_ids),
                             PullRequestReview.submitted_at.between(time_from, time_to)
                             if has_times else True))
-                .group_by(PullRequestReview.user_login)),
+                .group_by(PullRequestReview.user_login)
+                .with_statement_hint("Rows(repo pr *100)")),
         }
 
     @sentry_span
@@ -161,7 +162,8 @@ async def mine_contributors(repos: Collection[str],
                             PullRequestComment.created_at.between(time_from, time_to)
                             if has_times else True,
                             ))
-                .group_by(PullRequestComment.user_login)),
+                .group_by(PullRequestComment.user_login)
+                .with_statement_hint("Rows(repo ic *200)")),
         }
 
     @sentry_span
@@ -174,7 +176,8 @@ async def mine_contributors(repos: Collection[str],
                             PullRequest.merged_at.between(time_from, time_to)
                             if has_times else PullRequest.merged,
                             ))
-                .group_by(PullRequest.merged_by_login)),
+                .group_by(PullRequest.merged_by_login)
+                .with_statement_hint("Rows(repo pr *100)")),
         }
 
     @sentry_span
@@ -283,18 +286,17 @@ async def load_organization_members(account: int,
                                           .where(OrganizationMember.acc_id.in_(meta_ids)))
     ]
     log.info("Discovered %d organization members", len(user_ids))
-    tasks = [
+    user_rows, bots, team_bots = await gather(
         mdb.fetch_all(select([User.node_id, User.name, User.login, User.html_url, User.email])
                       .where(and_(User.acc_id.in_(meta_ids),
                                   User.node_id.in_(user_ids),
                                   User.name.isnot(None)))),
-        fetch_bots(account, mdb, sdb, cache),
+        fetch_bots(account, meta_ids, mdb, sdb, cache),
         sdb.fetch_val(select([Team.members]).where(and_(
             Team.owner_id == account,
             Team.name == Team.BOTS,
         ))),
-    ]
-    user_rows, bots, team_bots = await gather(*tasks)
+    )
     if team_bots:
         bots = bots.union(u.rsplit("/", 1)[1] for u in team_bots)
     log.info("Detailed %d GitHub users", len(user_rows))

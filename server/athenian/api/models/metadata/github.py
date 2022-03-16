@@ -410,8 +410,16 @@ class PullRequestLabel(Base,
     color = Column(Text, nullable=False)
 
 
-class Bot(Base):
-    __tablename__ = "github_bots_compat"
+class Bot(Base,
+          GitHubSchemaMixin,
+          AccountMixin):
+    __tablename__ = "node_bot"
+
+    login = Column(Text, primary_key=True)
+
+
+class ExtraBot(Base):
+    __tablename__ = "github_bots_extra"
 
     login = Column(Text, primary_key=True)
 
