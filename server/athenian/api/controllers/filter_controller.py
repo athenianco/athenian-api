@@ -207,7 +207,7 @@ async def resolve_filter_prs_parameters(filt: FilterPullRequestsRequest,
     release_settings, jira, account_bots = await gather(
         settings.list_release_matches(repos),
         get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
-        bots(filt.account, request.mdb, request.sdb, request.cache),
+        bots(filt.account, meta_ids, request.mdb, request.sdb, request.cache),
     )
     repos = {r.split("/", 1)[1] for r in repos}
     labels = LabelFilter.from_iterables(filt.labels_include, filt.labels_exclude)
@@ -577,7 +577,7 @@ async def _check_github_repos(request: AthenianWebRequest,
         check(),
         settings.list_release_matches(prefixed_repos),
         settings.list_logical_repositories(prefixer, prefixed_repos, pointer=pointer),
-        bots(account, request.mdb, request.sdb, request.cache),
+        bots(account, meta_ids, request.mdb, request.sdb, request.cache),
         op="_check_github_repos",
     )
     return release_settings, logical_settings, prefixer, account_bots, meta_ids, repos

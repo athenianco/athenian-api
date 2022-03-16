@@ -8,7 +8,7 @@ import logging
 import os
 import sys
 import traceback
-from typing import Collection, Optional, Set, Tuple
+from typing import Optional, Set, Tuple
 
 import aiomcache
 from flogging import flogging
@@ -30,7 +30,6 @@ from athenian.api.controllers.jira import match_jira_identities
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.bots import bots as fetch_bots
 from athenian.api.controllers.miners.github.branches import BranchMiner
-from athenian.api.controllers.miners.github.contributors import mine_contributors
 from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_inrange
 from athenian.api.controllers.miners.github.deployment import mine_deployments
 from athenian.api.controllers.miners.github.precomputed_prs import \
@@ -48,7 +47,7 @@ from athenian.api.defer import enable_defer, wait_deferred
 from athenian.api.faster_pandas import patch_pandas
 from athenian.api.models.metadata import dereference_schemas as dereference_metadata_schemas
 from athenian.api.models.metadata.github import Account as GitHubAccount, NodePullRequest, \
-    PullRequestLabel, User
+    PullRequestLabel
 from athenian.api.models.persistentdata import \
     dereference_schemas as dereference_persistentdata_schemas
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
@@ -169,7 +168,7 @@ def main():
                 meta_ids = await get_metadata_account_ids(reposet.owner_id, sdb, cache)
                 prefixer, bots, new_items = await gather(
                     Prefixer.load(meta_ids, mdb, cache),
-                    fetch_bots(reposet.owner_id, mdb, sdb, None),
+                    fetch_bots(reposet.owner_id, meta_ids, mdb, sdb, None),
                     refresh_repository_names(reposet.owner_id, meta_ids, sdb, mdb),
                 )
             except Exception as e:
@@ -185,8 +184,7 @@ def main():
                          reposet.owner_id)
                 try:
                     num_teams, num_bots = await create_teams(
-                        reposet.owner_id, meta_ids, reposet.items, bots, prefixer,
-                        sdb, mdb, pdb, rdb, cache)
+                        reposet.owner_id, meta_ids, bots, prefixer, sdb, mdb, cache)
                 except Exception as e:
                     log.warning("teams %d: %s: %s", reposet.owner_id, type(e).__name__, e)
                     sentry_sdk.capture_exception(e)
@@ -379,13 +377,10 @@ async def notify_almost_expired_accounts(sdb: Database,
 
 async def create_teams(account: int,
                        meta_ids: Tuple[int, ...],
-                       repos: Collection[str],
-                       all_bots: Set[str],
+                       bots: Set[str],
                        prefixer: Prefixer,
                        sdb: Database,
                        mdb: Database,
-                       pdb: Database,
-                       rdb: Database,
                        cache: Optional[aiomcache.Client]) -> Tuple[int, int]:
     """Copy the existing teams from GitHub and create a new team with all the involved bots \
     for the specified account.
@@ -398,20 +393,11 @@ async def create_teams(account: int,
                                                Team.owner_id == account)))
     if bot_team is not None:
         return num_teams, len(bot_team[Team.members.name])
-    settings = Settings.from_account(account, sdb, mdb, None, None)
-    release_settings, logical_settings = await gather(
-        settings.list_release_matches(repos),
-        settings.list_logical_repositories(prefixer, repos),
-    )
-    contributors = await mine_contributors(
-        {r.split("/", 1)[1] for r in repos}, None, None, False, [],
-        release_settings, logical_settings, prefixer, account, meta_ids, mdb, pdb, rdb, None,
-        force_fresh_releases=True)
-    if bots := {u[User.login.name] for u in contributors}.intersection(all_bots):
-        bots = prefixer.prefix_user_logins(bots)
-        await sdb.execute(insert(Team).values(
-            Team(id=account, name=Team.BOTS, owner_id=account, members=sorted(bots))
-            .create_defaults().explode()))
+    bots -= await fetch_bots.extra(mdb)
+    bots = prefixer.prefix_user_logins(bots)
+    await sdb.execute(insert(Team).values(
+        Team(id=account, name=Team.BOTS, owner_id=account, members=sorted(bots))
+        .create_defaults().explode()))
     return num_teams, len(bots)
 
 
