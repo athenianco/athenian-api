@@ -203,14 +203,17 @@ async def compile_filters_prs(for_sets: List[ForSet],
         else:
             repogroups = [set(chain.from_iterable(repos))]
         withgroups = []
-        for with_ in (for_set.withgroups or []) + ([for_set.with_] if for_set.with_ else []):
+        for with_ in for_set.withgroups or ([for_set.with_] if for_set.with_ else []):
             withgroup = {}
             for k, v in with_.items():
                 if not v:
                     continue
                 withgroup[PRParticipationKind[k.upper()]] = _compile_dev_logins(
-                    v, prefix, ".for[%d].%s" % (
-                        i, "withgroups" if i < len(for_set.withgroups or []) else "with"))
+                    v, prefix, ".for[%d].%s.%s" % (
+                        i,
+                        "withgroups" if i < len(for_set.withgroups or []) else "with",
+                        k,
+                    ))
             if withgroup:
                 withgroups.append(withgroup)
         labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
@@ -341,14 +344,17 @@ async def _compile_filters_deployments(for_sets: List[ForSetDeployments],
         else:
             repogroups = [set(chain.from_iterable(repos))]
         withgroups = []
-        for with_ in (for_set.withgroups or []) + ([for_set.with_] if for_set.with_ else []):
+        for with_ in for_set.withgroups or ([for_set.with_] if for_set.with_ else []):
             withgroup = {}
             for k, v in with_.items():
                 if not v:
                     continue
                 withgroup[ReleaseParticipationKind[k.upper()]] = _compile_dev_logins(
-                    v, prefix, ".for[%d].%s" % (
-                        i, "withgroups" if i < len(for_set.withgroups or []) else "with"))
+                    v, prefix, ".for[%d].%s.%s" % (
+                        i,
+                        "withgroups" if i < len(for_set.withgroups or []) else "with",
+                        k,
+                    ))
             if withgroup:
                 withgroups.append(withgroup)
         pr_labels = LabelFilter.from_iterables(
