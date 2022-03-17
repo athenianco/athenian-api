@@ -307,7 +307,8 @@ for dtype in (np.uint32, np.int32, np.uint64, np.int64):
 
 
 def _with_statement_hint(self, text, dialect_name="*"):
-    self._statement_hints += ((dialect_name, text),)
+    if text:
+        self._statement_hints += ((dialect_name, text),)
     return self
 
 
