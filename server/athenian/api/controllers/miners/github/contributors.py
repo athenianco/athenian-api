@@ -1,7 +1,9 @@
 from collections import Counter, defaultdict
 from datetime import datetime
+from functools import reduce
 import logging
 import marshal
+import operator
 from typing import Any, Collection, Dict, List, Optional, Tuple
 
 import aiomcache
@@ -84,14 +86,18 @@ async def mine_contributors(repos: Collection[str],
         format_version = ghdprf.__table__.columns[ghdprf.format_version.key].default.arg
         if has_times:
             prs_opts = [
-                PullRequest.created_at.between(time_from, time_to),
-                and_(PullRequest.created_at < time_to,
-                     not_(coalesce(PullRequest.closed, False))),
-                PullRequest.closed_at.between(time_from, time_to),
+                (PullRequest.created_at.between(time_from, time_to),
+                 "IndexScan(pr github_node_pull_request_main)"),
+                (and_(PullRequest.created_at < time_to,
+                      not_(coalesce(PullRequest.closed, False))),
+                 "IndexScan(pr node_pullrequest_open_created_at)"),
+                (and_(PullRequest.closed,
+                      PullRequest.closed_at.between(time_from, time_to)),
+                 "IndexScan(pr github_node_pull_request_repo_closed_at)"),
             ]
         else:
-            prs_opts = [True]
-        released, main = await gather(
+            prs_opts = [(True, "")]
+        released, *main = await gather(
             pdb.fetch_all(select([ghdprf.author, func.count(ghdprf.pr_node_id)])
                           .where(and_(ghdprf.format_version == format_version,
                                       ghdprf.repository_full_name.in_(repos),
@@ -99,17 +105,18 @@ async def mine_contributors(repos: Collection[str],
                                       ghdprf.pr_done_at.between(time_from, time_to)
                                       if has_times else True))
                           .group_by(ghdprf.author)),
-            mdb.fetch_all(union(*(select([PullRequest.user_login, func.count(PullRequest.node_id)])
-                                  .where(and_(*common_prs_where(), prs_opt))
-                                  .group_by(PullRequest.user_login)
-                                  .with_statement_hint("Rows(repo pr *100)")
-                                  for prs_opt in prs_opts))),
+            *(mdb.fetch_all(select([PullRequest.user_login, func.count(PullRequest.node_id)])
+                            .where(and_(*common_prs_where(), prs_opt))
+                            .group_by(PullRequest.user_login)
+                            .with_statement_hint("Rows(repo pr *100)")
+                            .with_statement_hint(hint_opt))
+              for prs_opt, hint_opt in prs_opts),
         )
         user_node_to_login_get = prefixer.user_node_to_login.get
-        sum_stats = (
-            Counter({user_node_to_login_get(r[0]): r[1] for r in released})
-            + Counter(dict(main))
-        )
+        sum_stats = reduce(operator.add, (
+            Counter({user_node_to_login_get(r[0]): r[1] for r in released}),
+            *(Counter(dict(m)) for m in main),
+        ))
         return {"author": sum_stats.items()}
 
     @sentry_span

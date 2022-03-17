@@ -500,7 +500,7 @@ async def eval_metadata_progress(request: AthenianWebRequest, id: int) -> web.Re
     return model_response(model)
 
 
-@expires_header(2)
+@expires_header(5)
 async def eval_jira_progress(request: AthenianWebRequest, id: int) -> web.Response:
     """Return the current JIRA installation progress in Athenian."""
     await get_user_account_status_from_request(request, id)
