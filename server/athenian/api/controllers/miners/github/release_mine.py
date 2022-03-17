@@ -311,7 +311,7 @@ async def _mine_releases(repos: Iterable[str],
                                      description=str(len(commit_ids)))
         if jira:
             filtered_prs_commit_ids = rest[0][PullRequest.merge_commit_id.name].unique()
-        originl_prs_commit_ids = prs_commit_ids = prs_df[PullRequest.merge_commit_id.name].values
+        original_prs_commit_ids = prs_commit_ids = prs_df[PullRequest.merge_commit_id.name].values
         if logical_settings.has_logical_prs():
             prs_commit_ids = np.char.add(
                 int_to_str(prs_commit_ids.astype(int, copy=False)),
@@ -366,7 +366,7 @@ async def _mine_releases(repos: Iterable[str],
                     else:
                         my_prs_indexes = np.array([], dtype=int)
                     if jira and not len(np.intersect1d(
-                            filtered_prs_commit_ids, originl_prs_commit_ids[my_prs_indexes],
+                            filtered_prs_commit_ids, original_prs_commit_ids[my_prs_indexes],
                             assume_unique=True)):
                         continue
                     commits_count = len(found_indexes)

@@ -129,7 +129,7 @@ async def mine_contributors(repos: Collection[str],
                             PullRequestReview.submitted_at.between(time_from, time_to)
                             if has_times else True))
                 .group_by(PullRequestReview.user_login)
-                .with_statement_hint("Rows(repo pr *100)")),
+                .with_statement_hint("Rows(repo prr *100)")),
         }
 
     @sentry_span
