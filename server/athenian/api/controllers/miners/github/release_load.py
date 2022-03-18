@@ -25,6 +25,7 @@ from athenian.api.controllers.miners.github.branches import load_branch_commit_d
 from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_COLUMNS, \
     fetch_precomputed_commit_history_dags, fetch_repository_commits
 from athenian.api.controllers.miners.github.dag_accelerated import extract_first_parents
+from athenian.api.controllers.miners.github.precomputed_releases import compose_release_match
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import default_branch_alias, LogicalRepositorySettings, \
@@ -812,9 +813,12 @@ def set_matched_by_from_release_match(df: pd.DataFrame,
     :param repo_column: Required if `remove_ambiguous_tag_or_branch` is True.
     """
     release_matches = df[PrecomputedRelease.release_match.name].values.astype("S")
-    matched_by_tag_mask = np.char.startswith(release_matches, b"tag|")
-    matched_by_branch_mask = np.char.startswith(release_matches, b"branch|")
-    matched_by_event_mask = release_matches == b"event|"
+    matched_by_tag_mask = np.char.startswith(
+        release_matches, compose_release_match(ReleaseMatch.tag, "").encode())
+    matched_by_branch_mask = np.char.startswith(
+        release_matches, compose_release_match(ReleaseMatch.branch, "").encode())
+    matched_by_event_mask = release_matches == \
+        compose_release_match(ReleaseMatch.event, "").encode()
     if remove_ambiguous_tag_or_branch:
         assert repo_column is not None
         repos = df[repo_column].values
@@ -826,6 +830,7 @@ def set_matched_by_from_release_match(df: pd.DataFrame,
     matched_values[matched_by_branch_mask] = ReleaseMatch.branch
     matched_values[matched_by_event_mask] = ReleaseMatch.event
     df[matched_by_column] = matched_values
+    df.disable_consolidate()
     df.drop(PrecomputedRelease.release_match.name, inplace=True, axis=1)
     df = df.take(np.flatnonzero(df[matched_by_column].values != ReleaseMatch.rejected))
     return df

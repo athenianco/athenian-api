@@ -237,6 +237,7 @@ async def mine_environments(repos: Optional[List[str]],
             .where(DeploymentNotification.account_id == account))
         if not has_notifications:
             raise NoDeploymentNotificationsError()
+        return []
     queries = [
         select([
             DeploymentNotification.environment,

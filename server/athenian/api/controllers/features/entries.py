@@ -100,7 +100,11 @@ class MetricEntriesCalculator:
                  pdb: Database,
                  rdb: Database,
                  cache: Optional[aiomcache.Client]):
-        """Create a `MetricEntriesCalculator`."""
+        """
+        Create a `MetricEntriesCalculator`.
+
+        :param quantile_stride: The cell size of the quantile grid in days.
+        """
         self._account = account
         self._meta_ids = meta_ids
         self._quantile_stride = quantile_stride
