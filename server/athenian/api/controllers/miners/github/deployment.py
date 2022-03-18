@@ -33,7 +33,7 @@ from athenian.api.controllers.miners.github.logical import split_logical_deploye
     split_logical_prs
 from athenian.api.controllers.miners.github.precomputed_releases import \
     compose_release_match, reverse_release_settings
-from athenian.api.controllers.miners.github.release_load import ReleaseLoader, \
+from athenian.api.controllers.miners.github.release_load import dummy_releases_df, ReleaseLoader, \
     set_matched_by_from_release_match, unfresh_releases_lag
 from athenian.api.controllers.miners.github.release_mine import group_hashes_by_ownership, \
     mine_releases_by_ids
@@ -49,7 +49,7 @@ from athenian.api.defer import defer
 from athenian.api.models.metadata.github import NodeCommit, NodePullRequest, NodeRepository, \
     PullRequest, PullRequestLabel, PushCommit, Release
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
-    DeploymentNotification
+    DeploymentNotification, ReleaseNotification
 from athenian.api.models.precomputed.models import GitHubCommitDeployment, GitHubDeploymentFacts, \
     GitHubPullRequestDeployment, GitHubRelease as PrecomputedRelease, GitHubReleaseDeployment
 from athenian.api.tracing import sentry_span
@@ -755,18 +755,69 @@ async def _map_releases_to_deployments(
     _, unique_commit_sha_counts = np.unique(all_commit_sha_repos, return_counts=True)
     offsets = np.zeros(len(unique_commit_sha_counts) + 1, dtype=int)
     np.cumsum(unique_commit_sha_counts, out=offsets[1:])
+    event_hashes = []
     for key, val in commits_by_reverse_key.items():
-        commits_by_reverse_key[key] = np.unique(np.concatenate(val)).astype("U40")
+        if key[0] == ReleaseMatch.event:
+            event_hashes.extend(val)
+        else:
+            commits_by_reverse_key[key] = np.unique(np.concatenate(val)).astype("U40")
+    if event_hashes:
+        event_hashes = np.concatenate(event_hashes).astype("U40")
+    commits_by_reverse_key = {
+        k: v for k, v in commits_by_reverse_key.items() if k[0] != ReleaseMatch.event
+    }
 
-    releases = await read_sql_query(union_all(*(
-        select([PrecomputedRelease])
-        .where(and_(PrecomputedRelease.acc_id == account,
-                    PrecomputedRelease.release_match ==
-                    compose_release_match(match_id, match_value),
-                    PrecomputedRelease.published_at < max_release_time_to,
-                    PrecomputedRelease.sha.in_any_values(commit_shas)))
-        for (match_id, match_value), commit_shas in commits_by_reverse_key.items()
-    )), pdb, PrecomputedRelease)
+    async def dummy():
+        df = dummy_releases_df()
+        df[PrecomputedRelease.release_match.name] = []
+        return df
+
+    releases, event_releases = await gather(
+        read_sql_query(union_all(*(
+            select([PrecomputedRelease])
+            .where(and_(PrecomputedRelease.acc_id == account,
+                        PrecomputedRelease.release_match ==
+                        compose_release_match(match_id, match_value),
+                        PrecomputedRelease.published_at < max_release_time_to,
+                        PrecomputedRelease.sha.in_any_values(commit_shas)))
+            for (match_id, match_value), commit_shas in commits_by_reverse_key.items()
+        )), pdb, PrecomputedRelease) if commits_by_reverse_key else dummy(),
+        read_sql_query(
+            select([ReleaseNotification])
+            .where(and_(ReleaseNotification.account_id == account,
+                        ReleaseNotification.published_at < max_release_time_to,
+                        ReleaseNotification.resolved_commit_hash.in_any_values(event_hashes))),
+            rdb, ReleaseNotification),
+    )
+    if not event_releases.empty:
+        event_releases.disable_consolidate()
+        for rename_from, rename_to in [
+            (ReleaseNotification.account_id, PrecomputedRelease.acc_id),
+            (ReleaseNotification.resolved_commit_hash, PrecomputedRelease.sha),
+            (ReleaseNotification.resolved_commit_node_id, PrecomputedRelease.commit_id),
+            (ReleaseNotification.cloned, None),
+            (ReleaseNotification.commit_hash_prefix, None),
+            (ReleaseNotification.created_at, None),
+            (ReleaseNotification.updated_at, None),
+        ]:
+            if rename_to is not None:
+                event_releases[rename_to.name] = event_releases[rename_from.name]
+            del event_releases[rename_from.name]
+        repo_node_to_name = prefixer.repo_node_to_name.get
+        event_releases[PrecomputedRelease.repository_full_name.name] = [
+            repo_node_to_name(r)
+            for r in event_releases[ReleaseNotification.repository_node_id.name].values
+        ]
+        event_releases[PrecomputedRelease.release_match.name] = ReleaseMatch.event.name
+        event_releases[PrecomputedRelease.tag.name] = None
+        event_releases[PrecomputedRelease.node_id.name] = \
+            event_releases[PrecomputedRelease.commit_id.name] = \
+            event_releases[PrecomputedRelease.commit_id.name].astype(int)
+        if releases.empty:
+            releases = event_releases
+        else:
+            releases.disable_consolidate()
+            releases = pd.concat([releases, event_releases], ignore_index=True, copy=False)
     releases = set_matched_by_from_release_match(releases, remove_ambiguous_tag_or_branch=False)
     if releases.empty:
         time_from = await mdb.fetch_val(
