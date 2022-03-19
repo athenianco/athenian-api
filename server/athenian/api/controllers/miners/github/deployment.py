@@ -52,6 +52,7 @@ from athenian.api.models.persistentdata.models import DeployedComponent, Deploye
     DeploymentNotification, ReleaseNotification
 from athenian.api.models.precomputed.models import GitHubCommitDeployment, GitHubDeploymentFacts, \
     GitHubPullRequestDeployment, GitHubRelease as PrecomputedRelease, GitHubReleaseDeployment
+from athenian.api.to_object_arrays import is_not_null
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
 
@@ -215,12 +216,13 @@ def _reduce_to_missed_notifications_if_possible(
 def _extract_mentioned_people(df: pd.DataFrame) -> np.ndarray:
     if df.empty:
         return np.array([], dtype=int)
-    return np.unique(np.concatenate([
+    everybody = np.concatenate([
         *df[DeploymentFacts.f.pr_authors].values,
         *df[DeploymentFacts.f.commit_authors].values,
         *((rdf[Release.author_node_id.name].values if not rdf.empty else [])
           for rdf in df["releases"].values),
-    ]))
+    ])
+    return np.unique(everybody[is_not_null(everybody)].astype(int, copy=False))
 
 
 @sentry_span
