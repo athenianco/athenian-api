@@ -464,11 +464,14 @@ async def _fetch_issues(ids: JIRAConfig,
         Issue.project_id.in_(ids[1]),
         Issue.is_deleted.is_(False),
     ]
+    filter_by_athenian_issue = False
     if time_from is not None:
+        filter_by_athenian_issue = True
         and_filters.append(sql.func.coalesce(AthenianIssue.resolved, far_away_future) >= time_from)
     if time_to is not None:
         and_filters.append(Issue.created < time_to)
     if exclude_inactive and time_from is not None:
+        filter_by_athenian_issue = True
         and_filters.append(AthenianIssue.acc_id == ids[0])
         and_filters.append(AthenianIssue.updated >= time_from)
     if len(priorities):
@@ -496,6 +499,7 @@ async def _fetch_issues(ids: JIRAConfig,
             # NULL IN (NULL) = false
             or_filters.append(sql.func.lower(Issue.assignee_display_name).is_(None))
         if nested_assignees:
+            filter_by_athenian_issue = True
             or_filters.append(AthenianIssue.nested_assignee_display_names.has_any(assignees))
         else:
             or_filters.append(sql.func.lower(Issue.assignee_display_name).in_(assignees))
@@ -560,12 +564,31 @@ async def _fetch_issues(ids: JIRAConfig,
                      for start in query_starts()]
     else:
         query = [start.where(sql.and_(*and_filters)) for start in query_starts()]
+
+    def hint(q):
+        return q \
+            .with_statement_hint("Leading(((athenian_issue issue) (s c)))") \
+            .with_statement_hint("Rows(athenian_issue issue *1000)") \
+            .with_statement_hint("Rows(s c *200)")
+
     if postgres:
         if len(query) == 1:
             query = query[0]
-        else:
+            if filter_by_athenian_issue:
+                query = hint(query)
+        elif not filter_by_athenian_issue:
             query = sql.union(*query)
-        df = await read_sql_query(query, mdb, columns, index=Issue.id.name)
+        else:
+            query = [hint(q) for q in query]
+        if isinstance(query, list):
+            df = await gather(*(read_sql_query(q, mdb, columns, index=Issue.id.name)
+                                for q in query))
+            df = pd.concat(df, copy=False)
+            df.disable_consolidate()
+            _, unique = np.unique(df.index.values, return_index=True)
+            df = df.take(unique)
+        else:
+            df = await read_sql_query(query, mdb, columns, index=Issue.id.name)
     else:
         # SQLite does not allow to use parameters multiple times
         df = pd.concat(await gather(*(read_sql_query(q, mdb, columns, index=Issue.id.name)
@@ -591,6 +614,7 @@ async def _fetch_issues(ids: JIRAConfig,
         for i, issue_commenters in enumerate(df["commenters"].values):
             if len(np.intersect1d(issue_commenters, commenters)):
                 passed[i] = True
+    df.disable_consolidate()
     df = df.take(np.flatnonzero(passed))
     sentry_sdk.Hub.current.scope.span.description = str(len(df))
     return df
