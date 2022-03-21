@@ -10,5 +10,5 @@ pycodestyle==2.8.0
 semgrep==0.85.0
 sqlalchemy-stubs==0.4
 types-pytz==2021.3.6
-types-croniter==1.0.7
+types-croniter==1.0.8
 attrs==21.4.0
