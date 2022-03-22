@@ -31,17 +31,18 @@ async def _test_get_contributors(client, cached, headers, app, client_cache):
     contribs = [Contributor.from_dict(c) for c in json.loads(
         (await response.read()).decode("utf-8"))]
 
-    assert len(contribs) == 206
+    assert len(contribs) == 212
     assert len(set(c.login for c in contribs)) == len(contribs)
     assert all(c.login.startswith("github.com/") for c in contribs)
 
     contribs = {c.login: c for c in contribs}
-    assert len(contribs) == 206
+    assert len(contribs) == 212
     assert "github.com/mcuadros" in contribs
     assert "github.com/author_login" not in contribs
     assert "github.com/committer_login" not in contribs
     assert contribs["github.com/mcuadros"].picture
     assert contribs["github.com/mcuadros"].name == "Máximo Cuadros"
+    assert "github.com/warenlg" in contribs
 
 
 async def test_get_contributors_no_installation(client, headers, sdb):

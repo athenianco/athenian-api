@@ -223,6 +223,22 @@ async def mine_contributors(repos: Collection[str],
             "releaser": counts,
         }
 
+    @sentry_span
+    async def fetch_organization_member():
+        if time_from is None:
+            # only load org members if we request the entire lifetime
+            user_node_ids = [
+                r[0] for r in await mdb.fetch_all(
+                    select([OrganizationMember.child_id])
+                    .where(OrganizationMember.acc_id.in_(meta_ids)))
+            ]
+        else:
+            user_node_ids = []
+        user_node_to_login = prefixer.user_node_to_login.get
+        return {
+            "member": [(user_node_to_login(u), 1) for u in user_node_ids],
+        }
+
     fetchers_mapping = {
         "author": fetch_author,
         "reviewer": fetch_reviewer,
@@ -231,6 +247,7 @@ async def mine_contributors(repos: Collection[str],
         "commenter": fetch_commenter,
         "merger": fetch_merger,
         "releaser": fetch_releaser,
+        "member": fetch_organization_member,
     }
 
     user_roles = user_roles or fetchers_mapping.keys()
