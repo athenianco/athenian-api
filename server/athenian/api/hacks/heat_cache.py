@@ -154,6 +154,8 @@ def main():
         reposets = [RepositorySet(**r) for r in reposets]
         log.info("Heating %d reposets", len(reposets))
         for reposet in tqdm(reposets):
+            with sentry_sdk.Hub.current.configure_scope() as scope:
+                scope.set_tag("account", reposet.owner_id)
             try:
                 progress = account_progress_settings[reposet.owner_id]
             except KeyError:
