@@ -57,7 +57,7 @@ async def test_mine_contributors_with_empty_and_all_roles(
     contribs_with_all_roles = await mine_contributors(
         ["src-d/go-git"], None, None, True,
         ["author", "reviewer", "commit_author", "commit_committer",
-         "commenter", "merger", "releaser"],
+         "commenter", "merger", "releaser", "member"],
         release_match_setting_tag, LogicalRepositorySettings.empty(),
         prefixer, 1, (6366825,), mdb, pdb, rdb, None)
 
