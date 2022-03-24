@@ -71,7 +71,7 @@ from athenian.api.typing_utils import df_from_structs
         time_from.timestamp(),
         time_to.timestamp(),
         ",".join(sorted(environments)),
-        ",".join(sorted(conclusions)),
+        ",".join(sorted(str(c) for c in conclusions)),
         ",".join(f"{k}:{v}" for k, v in sorted(with_labels.items())),
         ",".join(f"{k}:{v}" for k, v in sorted(without_labels.items())),
         pr_labels, jira, release_settings, logical_settings,
