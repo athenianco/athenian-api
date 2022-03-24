@@ -2023,15 +2023,26 @@ async def test_mine_deployments_empty(
     await rdb.execute(delete(DeploymentNotification))
     time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
-    deps, people = await mine_deployments(
+    deps, _ = await mine_deployments(
         ["src-d/go-git"], {},
         time_from, time_to,
         ["production", "staging"],
-        [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        [DeploymentConclusion.SUCCESS], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_match_setting_tag_or_branch,
         LogicalRepositorySettings.empty(),
         branches, default_branches, prefixer,
         1, (6366825,), mdb, pdb, rdb, cache)
+    assert len(deps) == 0
+    await wait_deferred()
+    deps, _ = await mine_deployments(
+        ["src-d/go-git"], {},
+        time_from, time_to,
+        ["production", "staging"],
+        [DeploymentConclusion.SUCCESS], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
+        release_match_setting_tag_or_branch,
+        LogicalRepositorySettings.empty(),
+        branches, default_branches, prefixer,
+        1, (6366825,), None, None, None, cache)
     assert len(deps) == 0
 
 
