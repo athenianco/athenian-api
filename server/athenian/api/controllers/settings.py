@@ -318,6 +318,7 @@ class LogicalPRSettings(CommonLogicalSettingsMixin):
                 found = pr_indexes[np.in1d(offsets, found, assume_unique=True)]
                 matched[repo] = found
         if not labels.empty and self.has_labels:
+            assert not isinstance(labels.index, pd.RangeIndex)
             matched_by_label = defaultdict(list)
             pr_ids = prs[id_column].values[pr_indexes]
             order = np.argsort(pr_ids)

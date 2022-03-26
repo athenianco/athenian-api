@@ -306,16 +306,13 @@ async def _mine_releases(repos: Iterable[str],
             query = query.with_statement_hint(f"Rows(pr repo #{len(commit_ids)})")
             tasks.append(read_sql_query(
                 query, mdb, columns=[PullRequest.merge_commit_id]))
-        prs_df, *rest = await gather(*tasks,
-                                     op="mine_releases/fetch_pull_requests",
-                                     description=str(len(commit_ids)))
+        (prs_df, prs_commit_ids), *rest = await gather(
+            *tasks,
+            op="mine_releases/fetch_pull_requests",
+            description=str(len(commit_ids)))
         if jira:
             filtered_prs_commit_ids = rest[0][PullRequest.merge_commit_id.name].unique()
-        original_prs_commit_ids = prs_commit_ids = prs_df[PullRequest.merge_commit_id.name].values
-        if logical_settings.has_logical_prs():
-            prs_commit_ids = np.char.add(
-                int_to_str(prs_commit_ids.astype(int, copy=False)),
-                prs_df[PullRequest.repository_full_name.name].values.astype("S"))
+        original_prs_commit_ids = prs_df[PullRequest.merge_commit_id.name].values
         prs_authors, prs_authors_nz = _null_to_zero_int(prs_df, PullRequest.user_node_id.name)
         prs_node_ids = prs_df[PullRequest.node_id.name].values
         if with_pr_titles or labels:
@@ -707,7 +704,8 @@ async def _load_prs_by_merge_commit_ids(commit_ids: Sequence[str],
                                         logical_settings: LogicalRepositorySettings,
                                         meta_ids: Tuple[int, ...],
                                         mdb: Database,
-                                        ) -> pd.DataFrame:
+                                        ) -> Tuple[pd.DataFrame, np.ndarray]:
+    log = logging.getLogger(f"{metadata.__package__}._load_prs_by_merge_commit_ids")
     has_logical_prs = logical_settings.has_logical_prs()
     model = PullRequest if has_logical_prs else NodePullRequest
     columns = [model.merge_commit_id, *released_prs_columns(model)]
@@ -738,7 +736,8 @@ async def _load_prs_by_merge_commit_ids(commit_ids: Sequence[str],
                     .where(and_(NodePullRequest.merge_commit_id.in_(commit_ids[:batch_size]),
                                 NodePullRequest.acc_id.in_(meta_ids)))
                     .order_by(PullRequestLabel.pull_request_node_id),
-                    mdb, [PullRequestLabel.pull_request_node_id, PullRequestLabel.name]),
+                    mdb, [PullRequestLabel.pull_request_node_id, PullRequestLabel.name],
+                    index=PullRequestLabel.pull_request_node_id.name),
             )
         commit_ids = commit_ids[batch_size:]
     if tasks:
@@ -754,18 +753,27 @@ async def _load_prs_by_merge_commit_ids(commit_ids: Sequence[str],
             df_prs = dfs
             df_labels = None
         if len(df_prs) > 1:
-            df_prs = pd.concat(df_prs, copy=False)
+            df_prs = pd.concat(df_prs, copy=False, ignore_index=True)
         else:
             df_prs = df_prs[0]
+        original_prs_count = len(df_prs)
         df_prs = split_logical_prs(
-            df_prs, df_labels, repos, logical_settings, reindex=False)
+            df_prs, df_labels, repos, logical_settings, reset_index=False, reindex=False)
         if has_logical_prs:
-            df_prs.sort_values(
-                [PullRequest.merge_commit_id.name, PullRequest.repository_full_name.name],
-                inplace=True)
+            log.info("Logical PRs: %d -> %d", original_prs_count, len(df_prs))
+        prs_commit_ids = df_prs[PullRequest.merge_commit_id.name].values.astype(int, copy=False)
+        if has_logical_prs:
+            prs_commit_ids = np.char.add(
+                int_to_str(prs_commit_ids),
+                df_prs[PullRequest.repository_full_name.name].values.astype("S"))
+            order = np.argsort(prs_commit_ids)
+            prs_commit_ids = prs_commit_ids[order]
+            df_prs.disable_consolidate()
+            df_prs = df_prs.take(order)
     else:
         df_prs = pd.DataFrame(columns=[c.name for c in columns])
-    return df_prs
+        prs_commit_ids = np.array([], dtype=int)
+    return df_prs, prs_commit_ids
 
 
 @sentry_span
