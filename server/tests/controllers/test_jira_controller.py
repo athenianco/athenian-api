@@ -763,6 +763,10 @@ async def test_filter_jira_deleted_repositories(client, headers, mdb_rw):
         head_ref="head_ref",
         number=100500,
         closed=True,
+        additions=0,
+        deletions=0,
+        changed_files=0,
+        commits=1,
     )))
     try:
         body = {

@@ -16,7 +16,8 @@ from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached, CancelCache, middle_term_exptime, short_term_exptime
-from athenian.api.controllers.logical_repos import coerce_logical_repos, drop_logical_repo
+from athenian.api.controllers.logical_repos import coerce_logical_repos, drop_logical_repo, \
+    is_logical_repo
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.commit import fetch_precomputed_commit_history_dags, \
@@ -176,6 +177,7 @@ async def _mine_releases(repos: Iterable[str],
             [], [], {r: v.match for r, v in release_settings.prefixed.items()}, {},
             with_avatars, with_pr_titles, with_deployments,
         )
+    has_logical_prs = logical_settings.has_logical_prs()
     if with_deployments:
         deployments = asyncio.create_task(
             _load_release_deployments(
@@ -320,15 +322,18 @@ async def _mine_releases(repos: Iterable[str],
         prs_numbers = prs_df[PullRequest.number.name].values
         prs_additions = prs_df[PullRequest.additions.name].values
         prs_deletions = prs_df[PullRequest.deletions.name].values
+        if has_logical_prs:
+            prs_commits = prs_df[PullRequest.commits.name].values
 
     @sentry_span
     async def main_flow():
         data = []
         if repo_releases_analyzed:
             log.info("Processing %d repos", len(repo_releases_analyzed))
-        has_logical_prs = logical_settings.has_logical_prs()
+
         for repo, (repo_releases, owned_hashes, parents) in repo_releases_analyzed.items():
             computed_release_info_by_commit = {}
+            is_logical = is_logical_repo(repo)
             repo_data = []
             # iterate in the reversed order to correctly handle multiple releases at the same tag
             for i, (my_id, my_name, my_url, my_author, my_published_at, my_matched_by,
@@ -366,11 +371,18 @@ async def _mine_releases(repos: Iterable[str],
                             filtered_prs_commit_ids, original_prs_commit_ids[my_prs_indexes],
                             assume_unique=True)):
                         continue
-                    commits_count = len(found_indexes)
-                    my_additions = commits_additions[found_indexes].sum()
-                    my_deletions = commits_deletions[found_indexes].sum()
-                    my_commit_authors = commits_authors[found_indexes]
                     my_prs_authors = prs_authors[my_prs_indexes]
+                    if is_logical:
+                        commits_count = prs_commits[my_prs_indexes].sum()
+                        my_additions = prs_additions[my_prs_indexes].sum()
+                        my_deletions = prs_deletions[my_prs_indexes].sum()
+                        # not exactly correct, but we more care about the performance
+                        my_commit_authors = my_prs_authors
+                    else:
+                        commits_count = len(found_indexes)
+                        my_additions = commits_additions[found_indexes].sum()
+                        my_deletions = commits_deletions[found_indexes].sum()
+                        my_commit_authors = commits_authors[found_indexes]
                     mentioned_authors.update(np.unique(my_prs_authors[my_prs_authors > 0]))
                     my_prs = dict(zip(
                         ["prs_" + c.name for c in released_prs_columns(PullRequest)],
@@ -710,7 +722,7 @@ async def _load_prs_by_merge_commit_ids(commit_ids: Sequence[str],
     model = PullRequest if has_logical_prs else NodePullRequest
     columns = [model.merge_commit_id, *released_prs_columns(model)]
     if has_logical_prs:
-        columns.extend((PullRequest.title, PullRequest.repository_full_name))
+        columns.extend((PullRequest.title, PullRequest.repository_full_name, PullRequest.commits))
     has_prs_by_label = logical_settings.has_prs_by_label()
     # we can have 7,600,000 commit ids here and the DB breaks
     batch_size = 100_000
