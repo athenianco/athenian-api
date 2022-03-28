@@ -313,8 +313,7 @@ async def load_organization_members(account: int,
     user_rows, bots, team_bots = await gather(
         mdb.fetch_all(select([User.node_id, User.name, User.login, User.html_url, User.email])
                       .where(and_(User.acc_id.in_(meta_ids),
-                                  User.node_id.in_(user_ids),
-                                  User.name.isnot(None)))),
+                                  User.node_id.in_(user_ids)))),
         fetch_bots(account, meta_ids, mdb, sdb, cache),
         sdb.fetch_val(select([Team.members]).where(and_(
             Team.owner_id == account,
@@ -361,6 +360,8 @@ async def load_organization_members(account: int,
         github_prefixed_logins[node_id] = row[User.html_url.name].split("://", 1)[1]
         if name := row[User.name.name]:
             github_names[node_id].add(name)
+        elif node_id not in github_names:
+            github_names[node_id].add(row[User.login.name])
         if email := row[User.email.name]:
             github_emails[node_id].add(email)
     log.info("GitHub set size: %d", len(github_names))
