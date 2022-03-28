@@ -136,7 +136,7 @@ def wrap_sql_query(data: List[Sequence[Any]],
             if column in dt_columns:
                 converted_typed.append(_convert_datetime(values))
             elif column in int_columns:
-                values, discarded = _convert_integer(values, column, int_columns[column], log)
+                values, discarded = _convert_integer(values, column, *int_columns[column], log)
                 converted_typed.append(values)
                 if discarded is not None:
                     if discard_mask is None:
@@ -186,11 +186,11 @@ def _extract_boolean_columns(columns: Iterable[Union[Column, str]]) -> Set[str]:
 
 
 def _extract_integer_columns(columns: Iterable[Union[Column, str]],
-                             ) -> Dict[str, bool]:
+                             ) -> Dict[str, Tuple[bool, bool]]:
     return {
-        c.name: getattr(
+        c.name: ((info := getattr(
             c, "info", {} if not isinstance(c, Label) else getattr(c.element, "info", {}),
-        ).get("erase_nulls", False)
+        )).get("erase_nulls", False), info.get("reset_nulls", False))
         for c in columns
         if not isinstance(c, str) and (
             isinstance(c.type, Integer) or
@@ -257,48 +257,19 @@ def postprocess_datetime(frame: pd.DataFrame,
 def _convert_integer(arr: np.ndarray,
                      name: str,
                      erase_null: bool,
+                     reset_null: bool,
                      log: logging.Logger,
                      ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
     nulls = None
     while True:
         try:
-            return arr.astype(int), nulls
+            return arr.astype(int), nulls if not reset_null else None
         except TypeError as e:
             nulls = is_null(arr)
-            if not nulls.any() or not erase_null:
+            if not (nulls.any() and (erase_null or reset_null)):
                 raise ValueError(f"Column {name} is not all-integer") from e
-            log.error("fetched nulls instead of integers in %s", name)
+            log.warning("fetched nulls instead of integers in %s", name)
             arr[nulls] = 0
-
-
-def postprocess_integer(frame: pd.DataFrame, columns: Iterable[Tuple[str, int]]) -> pd.DataFrame:
-    """Ensure *inplace* that all the integers inside the dataframe are not objects.
-
-    :return: Fixed dataframe, a potentially different instance.
-    """
-    dirty_index = False
-    log = None
-    for col, erase_null in columns:
-        while True:
-            try:
-                frame[col] = frame[col].astype(int, copy=False)
-                break
-            except TypeError as e:
-                nulls = frame[col].isnull().values
-                if not nulls.any():
-                    raise ValueError(f"Column {col} is not all-integer") from e
-                if not erase_null:
-                    raise ValueError(f"Column {col} is not all-integer\n"
-                                     f"{frame.loc[nulls].to_dict('records')}") from e
-                if log is None:
-                    log = logging.getLogger(f"{metadata.__package__}.read_sql_query")
-                log.error("fetched nulls instead of integers in %s: %s",
-                          col, frame.loc[nulls].to_dict("records"))
-                frame = frame.take(np.flatnonzero(~nulls))
-                dirty_index = True
-    if dirty_index:
-        frame.reset_index(drop=True, inplace=True)
-    return frame
 
 
 async def gather(*coros_or_futures,
