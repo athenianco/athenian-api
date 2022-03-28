@@ -1753,7 +1753,7 @@ async def test_mine_releases_cache(
 
 
 @with_defer
-async def test_mine_releases_logical(
+async def test_mine_releases_logical_title(
         mdb, pdb, rdb, release_match_setting_tag_logical, prefixer, logical_settings):
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2018, month=11, day=1, tzinfo=timezone.utc)
@@ -1780,6 +1780,49 @@ async def test_mine_releases_logical(
         assert prs == {
             "github.com/src-d/go-git/alpha": 92,
             "github.com/src-d/go-git/beta": 58,
+        }
+
+
+@with_defer
+async def test_mine_releases_logical_label(
+        mdb, pdb, rdb, release_match_setting_tag_logical, prefixer, logical_settings_labels):
+    time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
+    time_to = datetime(year=2020, month=11, day=1, tzinfo=timezone.utc)
+    for _ in range(2):  # test pdb
+        releases, _, _, _ = await mine_releases(
+            ["src-d/go-git/alpha", "src-d/go-git/beta"], {}, None, {}, time_from, time_to,
+            LabelFilter.empty(), JIRAFilter.empty(),
+            release_match_setting_tag_logical, logical_settings_labels,
+            prefixer, 1, (6366825,), mdb, pdb, rdb, None,
+            with_avatars=False, with_pr_titles=False, with_deployments=False)
+        await wait_deferred()
+        counts = {
+            "github.com/src-d/go-git/alpha": 0,
+            "github.com/src-d/go-git/beta": 0,
+        }
+        prs = counts.copy()
+        deltas = counts.copy()
+        commits = counts.copy()
+        for r, f in releases:
+            counts[(repo := r[Release.repository_full_name.name])] += 1
+            prs[repo] += len(f["prs_" + PullRequest.number.name])
+            deltas[repo] += f.additions + f.deletions
+            commits[repo] += f.commits_count
+        assert counts == {
+            "github.com/src-d/go-git/alpha": 53,
+            "github.com/src-d/go-git/beta": 37,
+        }
+        assert prs == {
+            "github.com/src-d/go-git/alpha": 8,
+            "github.com/src-d/go-git/beta": 5,
+        }
+        assert deltas == {
+            "github.com/src-d/go-git/alpha": 5564,
+            "github.com/src-d/go-git/beta": 271,
+        }
+        assert commits == {
+            "github.com/src-d/go-git/alpha": 49,
+            "github.com/src-d/go-git/beta": 6,
         }
 
 

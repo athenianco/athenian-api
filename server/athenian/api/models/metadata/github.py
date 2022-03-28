@@ -217,12 +217,13 @@ class PullRequest(Base,
                   ):
     __tablename__ = "api_pull_requests"
 
-    additions = Column(BigInteger)
+    additions = Column(BigInteger, nullable=False)
     base_ref = Column(Text, nullable=False)
-    changed_files = Column(BigInteger)
+    changed_files = Column(BigInteger, nullable=False)
     closed_at = Column(TIMESTAMP(timezone=True))
     closed = Column(Boolean)
-    deletions = Column(BigInteger)
+    deletions = Column(BigInteger, nullable=False)
+    commits = Column(Integer, nullable=False)
     head_ref = Column(Text, nullable=False)
     hidden = Column(Boolean)
     htmlurl = Column(Text)

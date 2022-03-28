@@ -1,6 +1,11 @@
 from typing import Dict, Iterable, Set
 
 
+def is_logical_repo(repo: str) -> bool:
+    """Return the value indicating whether the repository name is logical."""
+    return repo.count("/") > 1
+
+
 def drop_logical_repo(repo: str) -> str:
     """Remove the logical part of the repository name."""
     return "/".join(repo.split("/", 2)[:2])

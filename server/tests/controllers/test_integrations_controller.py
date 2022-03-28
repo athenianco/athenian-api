@@ -135,7 +135,7 @@ async def test_get_everything_smoke(client, headers, dummy_deployment_label):
         "head_ref", "jira_ids", "merger", "done", "size", "reviews", "release_url",
         "release_node_id", "review_comments", "participants", "deployments", "deployed",
         "environments", "deployment_conclusions", "merged_with_failed_check_runs",
-        "regular_comments", "release_ignored",
+        "regular_comments", "release_ignored", "commits",
     }
     assert len(releases_df) == 53
     assert set(releases_df) == {
