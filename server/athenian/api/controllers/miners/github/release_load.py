@@ -32,7 +32,8 @@ from athenian.api.controllers.settings import default_branch_alias, LogicalRepos
     ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
 from athenian.api.db import add_pdb_hits, add_pdb_misses, Database, greatest, least
 from athenian.api.defer import defer
-from athenian.api.models.metadata.github import Branch, NodeCommit, PushCommit, Release, User
+from athenian.api.models.metadata.github import Branch, NodeCommit, PullRequest, PushCommit, \
+    Release, User
 from athenian.api.models.persistentdata.models import ReleaseNotification
 from athenian.api.models.precomputed.models import GitHubRelease as PrecomputedRelease, \
     GitHubReleaseMatchTimespan
@@ -107,6 +108,9 @@ class ReleaseLoader:
                 match_groups[ReleaseMatch.event], account, meta_ids, time_from, time_to,
                 logical_settings, prefixer, mdb, rdb, index=index),
         )
+        # Uncomment to ignore pdb
+        # releases = releases.iloc[:0]
+        # spans = {}
 
         def gather_applied_matches() -> Dict[str, ReleaseMatch]:
             # nlargest(1) puts `tag` in front of `branch` for `tag_or_branch` repositories with
@@ -867,17 +871,80 @@ class ReleaseMatcher:
                         Release.acc_id.in_(self._meta_ids),
                         Release.published_at.between(time_from, time_to),
                         Release.repository_full_name.in_(coerce_logical_repos(repos)),
-                        Release.commit_id.isnot(None)))
+                    ))
                     .order_by(desc(Release.published_at)),
                     self._mdb, Release)
-        releases = releases[~releases.index.duplicated(keep="first")]
-        if (missing_sha := releases[Release.sha.name].isnull().values).any():
+        if (duplicated := releases.index.duplicated(keep="first")).any():
+            releases = releases.take(np.flatnonzero(~duplicated))
+            releases.reset_index(inplace=True, drop=True)
+        missing_commit = releases[Release.commit_id.name].values == 0
+        if (missing_sha := is_null(releases[Release.sha.name].values) & ~missing_commit).any():
             raise ResponseError(NoSourceDataError(
                 detail="There are missing commit hashes for releases %s" %
                        releases[Release.node_id.name].values[missing_sha].tolist()))
+        release_index_repos = releases[Release.repository_full_name.name].values.astype("U")
+        if (missing_count := missing_commit.sum()) > 0:
+            log = logging.getLogger(f"{metadata.__package__}.match_releases_by_tag")
+            published_col = releases[Release.published_at.name].values
+            missing_repos = np.unique(release_index_repos[missing_commit])
+            threshold = 1800  # 30 min
+            max_missing_ts = \
+                pd.Timestamp(published_col[missing_commit].max()).replace(tzinfo=timezone.utc)
+            min_missing_ts = \
+                pd.Timestamp(published_col[missing_commit].min()).replace(tzinfo=timezone.utc) \
+                - timedelta(seconds=threshold)
+            log.warning("%d releases in %d repositories miss tags within [%s, %s], applying "
+                        "the timestamp heuristic",
+                        missing_count, len(missing_repos), min_missing_ts, max_missing_ts)
+            # they deleted the tag that the release references
+            columns = [PullRequest.merge_commit_id, PullRequest.merge_commit_sha,
+                       PullRequest.merged_at, PullRequest.repository_full_name]
+            commits = await read_sql_query(
+                select(columns)
+                .where(and_(PullRequest.acc_id.in_(self._meta_ids),
+                            PullRequest.merged_at.between(min_missing_ts, max_missing_ts),
+                            PullRequest.repository_full_name.in_(missing_repos)))
+                .order_by(PullRequest.merged_at),
+                self._mdb, columns)
+            commits_repos, commits_map, commits_counts = np.unique(
+                commits[PullRequest.repository_full_name.name].values,
+                return_inverse=True, return_counts=True)
+            commits_order = np.argsort(commits_map, kind="stable")
+            commits_ts = commits[PullRequest.merged_at.name].values
+            pos = 0
+            commits_ids = commits[PullRequest.merge_commit_id.name].values
+            commits_shas = commits[PullRequest.merge_commit_sha.name].values
+            release_commits = releases[Release.commit_id.name].values
+            release_shas = releases[Release.sha.name].values
+            missing_ix = np.flatnonzero(missing_commit)
+            for i, repo in enumerate(commits_repos):
+                repo_commits_ix = commits_order[pos:pos + commits_counts[i]]
+                pos += commits_counts[i]
+                repo_commits_ts = commits_ts[repo_commits_ix]
+                repo_release_ix = missing_ix[release_index_repos[missing_ix] == repo]
+                missing_pubs = published_col[repo_release_ix]
+                indexes = np.searchsorted(repo_commits_ts, missing_pubs) - 1
+                indexes[indexes < 0] = 0
+                matched = \
+                    (missing_pubs - repo_commits_ts[indexes]) < np.timedelta64(threshold, "s")
+                if not matched.any():
+                    continue
+                repo_commits_ix = repo_commits_ix[indexes[matched]]
+                repo_release_ix = repo_release_ix[matched]
+                missing_commit[repo_release_ix] = False
+                release_commits[repo_release_ix] = commits_ids[repo_commits_ix]
+                release_shas[repo_release_ix] = commits_shas[repo_commits_ix]
+            log.info("mapped commits to %d / %d releases",
+                     missing_count - missing_commit.sum(), missing_count)
+            if missing_commit.any():
+                releases.disable_consolidate()
+                indexes = np.flatnonzero(~missing_commit)
+                releases = releases.take(indexes)
+                releases.reset_index(inplace=True, drop=True)
+                release_index_repos = release_index_repos[indexes]
+
         regexp_cache = {}
         df_parts = []
-        release_index_repos = releases[Release.repository_full_name.name].values.astype("U")
         release_index_tags = releases[Release.tag.name].values
         for repo in repos:
             physical_repo = drop_logical_repo(repo)

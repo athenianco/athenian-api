@@ -310,7 +310,7 @@ class Release(Base,
     tag = Column(Text)
     url = Column(Text)
     sha = Column(Text, nullable=False)
-    commit_id = Column(BigInteger, nullable=False)
+    commit_id = Column(BigInteger, nullable=False, info={"reset_nulls": True})
 
 
 class NodeCommit(Base,
