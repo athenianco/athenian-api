@@ -859,7 +859,10 @@ async def delete_force_push_dropped_prs(repos: Iterable[str],
     ]
     del pr_node_ids
     pr_merges, dags = await gather(*tasks, op="fetch merges + prune dags")
-    accessible_hashes = np.sort(np.concatenate([dag[0] for dag in dags.values()]))
+    if dags:
+        accessible_hashes = np.sort(np.concatenate([dag[0] for dag in dags.values()]))
+    else:
+        accessible_hashes = np.array([], dtype="S40")
     merge_hashes = np.fromiter((r[0] for r in pr_merges), "S40", len(pr_merges))
     if len(accessible_hashes) > 0:
         found = searchsorted_inrange(accessible_hashes, merge_hashes)
