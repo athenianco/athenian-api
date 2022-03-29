@@ -127,12 +127,16 @@ class BranchMiner:
                     .group_by(NodeRepositoryRef.parent_id))
                 refs = {r[NodeRepositoryRef.parent_id.name]: r["numrefs"] for r in rows}
                 reported_repos = set()
+                warnings = []
+                errors = []
                 for node_id, full_name in existing_zero_branch_repos.items():
                     if full_name not in reported_repos:
-                        (log.warning if refs.get(node_id, 0) == 0 else log.error)(
-                            "repository %s has 0 branches", full_name)
+                        (warnings if refs.get(node_id, 0) == 0 else errors).append(full_name)
                         default_branches[full_name] = "master"
                         reported_repos.add(full_name)
+                for report, items in ((log.warning, warnings), (log.error, errors)):
+                    if items:
+                        report("the following repositories have 0 branches: %s", items)
         return branches, default_branches
 
     @classmethod
