@@ -374,7 +374,10 @@ async def notify_almost_expired_accounts(sdb: Database,
                            expires=expires)
         for acc, expires in accounts.items()
     ]
-    await gather(*tasks)
+    try:
+        await gather(*tasks)
+    except Exception:
+        log.exception("Exception while reporting expired accounts (%s)", accounts)
 
 
 async def create_teams(account: int,
