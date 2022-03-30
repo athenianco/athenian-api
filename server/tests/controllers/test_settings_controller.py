@@ -10,9 +10,11 @@ from athenian.api.async_utils import read_sql_query
 from athenian.api.controllers.logical_repos import coerce_logical_repos, contains_logical_repos, \
     drop_logical_repo
 from athenian.api.controllers.settings import ReleaseMatch, Settings
-from athenian.api.models.state.models import AccountGitHubAccount, LogicalRepository, \
+from athenian.api.models.state.models import AccountGitHubAccount, \
+    JIRAEpicSetting as JIRAEpicSettingDB, LogicalRepository, \
     MappedJIRAIdentity, ReleaseSetting, RepositorySet, UserAccount, WorkType
-from athenian.api.models.web import JIRAProject, LogicalRepository as WebLogicalRepository, \
+from athenian.api.models.web import JIRAEpicSetting, JIRAProject, \
+    LogicalRepository as WebLogicalRepository, \
     MappedJIRAIdentity as WebMappedJIRAIdentity, ReleaseMatchSetting, ReleaseMatchStrategy, \
     WorkType as WebWorkType
 from athenian.api.response import ResponseError
@@ -383,6 +385,111 @@ async def test_set_jira_projects_nasty_input(
     }
     response = await client.request(
         method="PUT", path="/v1/settings/jira/projects", json=body, headers=headers)
+    assert response.status == code
+
+BUGGY_EPIC_SETTINGS = {
+    "PRO": [JIRAEpicSetting(
+        name="Epic",
+        description="Epics track collections of related bugs, stories, and tasks.",
+        normalized_name="epic",
+        icon="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10307&avatarType=issuetype")],  # noqa
+    "OPS": [JIRAEpicSetting(
+        name="Epic",
+        description="Epics track collections of related bugs, stories, and tasks.",
+        normalized_name="epic",
+        icon="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10307&avatarType=issuetype")],  # noqa
+    "ENG": [JIRAEpicSetting(
+        name="Epic",
+        description="Epics track collections of related bugs, stories, and tasks.",
+        normalized_name="epic",
+        icon="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10307&avatarType=issuetype")],  # noqa
+    "GRW": [JIRAEpicSetting(
+        name="Epic",
+        description="Epics track collections of related bugs, stories, and tasks.",
+        normalized_name="epic",
+        icon="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10307&avatarType=issuetype")],  # noqa
+    "DEV": [
+        JIRAEpicSetting(
+            name="Bug",
+            description="A problem or error.",
+            normalized_name="bug",
+            icon="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10303&avatarType=issuetype"),  # noqa
+        JIRAEpicSetting(
+            name="Epic",
+            description="A big user story that needs to be broken down. Created by Jira Software - do not edit or delete.",  # noqa
+            normalized_name="epic",
+            icon="https://athenianco.atlassian.net/images/icons/issuetypes/epic.svg")],
+    "CS": [],
+    "CON": [JIRAEpicSetting(
+        name="Epic",
+        description="Epics track collections of related bugs, stories, and tasks.",
+        normalized_name="epic",
+        icon="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10307&avatarType=issuetype")],  # noqa
+}
+
+
+async def test_get_jira_epics_smoke(client, headers, disabled_dev, sdb):
+    await sdb.execute(insert(JIRAEpicSettingDB).values({
+        JIRAEpicSettingDB.account_id: 1,
+        JIRAEpicSettingDB.project_key: "DEV",
+        JIRAEpicSettingDB.name: "bug",
+        JIRAEpicSettingDB.created_at: datetime.now(timezone.utc),
+    }))
+    response = await client.request(
+        method="GET", path="/v1/settings/jira/epics/1", headers=headers)
+    assert response.status == 200
+    body = {k: [JIRAEpicSetting.from_dict(i) for i in v]
+            for k, v in json.loads((await response.read()).decode("utf-8")).items()}
+    assert body == BUGGY_EPIC_SETTINGS
+
+
+@pytest.mark.parametrize("account, code", [[2, 422], [3, 404], [4, 404]])
+async def test_get_jira_epics_nasty_input(client, headers, account, code):
+    response = await client.request(
+        method="GET", path="/v1/settings/jira/epics/%d" % account, headers=headers)
+    assert response.status == code
+
+
+@pytest.mark.parametrize("types", [["bug"], ["epic", "bug"]])
+async def test_set_jira_epics_smoke(client, headers, disable_default_user, types):
+    body = {
+        "account": 1,
+        "types": {
+            "DEV": types,
+        },
+    }
+    response = await client.request(
+        method="PUT", path="/v1/settings/jira/epics", json=body, headers=headers)
+    assert response.status == 200
+    body = {k: [JIRAEpicSetting.from_dict(i) for i in v]
+            for k, v in json.loads((await response.read()).decode("utf-8")).items()}
+    assert body == BUGGY_EPIC_SETTINGS
+
+
+async def test_set_jira_epics_default_user(client, headers):
+    body = {
+        "account": 1,
+        "types": {
+            "DEV": ["bug"],
+        },
+    }
+    response = await client.request(
+        method="PUT", path="/v1/settings/jira/epics", json=body, headers=headers)
+    assert response.status == 403
+
+
+@pytest.mark.parametrize("account, project, code",
+                         [[2, "DEV", 403], [3, "DEV", 404], [1, "XXX", 400]])
+async def test_set_jira_epics_nasty_input(
+        client, headers, disable_default_user, account, project, code):
+    body = {
+        "account": account,
+        "types": {
+            project: ["bug"],
+        },
+    }
+    response = await client.request(
+        method="PUT", path="/v1/settings/jira/epics", json=body, headers=headers)
     assert response.status == code
 
 

@@ -5,6 +5,7 @@ import re
 from typing import Optional
 
 from aiohttp import web
+import sentry_sdk
 from sqlalchemy import and_, delete, distinct, func, insert, select, union, update
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 
@@ -22,18 +23,18 @@ from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import ReleaseMatch, Settings
 from athenian.api.db import Database, DatabaseLike
 from athenian.api.models.metadata.github import User as GitHubUser
-from athenian.api.models.metadata.jira import Issue, Project, User as JIRAUser
+from athenian.api.models.metadata.jira import Issue, IssueType, Project, User as JIRAUser
 from athenian.api.models.precomputed.models import GitHubCommitDeployment, GitHubDeploymentFacts, \
     GitHubDonePullRequestFacts, GitHubMergedPullRequestFacts, GitHubOpenPullRequestFacts, \
     GitHubPullRequestDeployment, GitHubRelease, GitHubReleaseDeployment, GitHubReleaseFacts, \
     GitHubReleaseMatchTimespan
-from athenian.api.models.state.models import JIRAProjectSetting, LogicalRepository, \
-    MappedJIRAIdentity, ReleaseSetting, RepositorySet, WorkType
+from athenian.api.models.state.models import JIRAEpicSetting, JIRAProjectSetting, \
+    LogicalRepository, MappedJIRAIdentity, ReleaseSetting, RepositorySet, WorkType
 from athenian.api.models.web import BadRequestError, ForbiddenError, InvalidRequestError, \
-    JIRAProject, JIRAProjectsRequest, LogicalDeploymentRules, LogicalPRRules, \
-    LogicalRepository as WebLogicalRepository, \
-    LogicalRepositoryGetRequest, LogicalRepositoryRequest, \
-    MappedJIRAIdentity as WebMappedJIRAIdentity, NotFoundError, \
+    JIRAEpicSetting as WebJIRAEpicSetting, JIRAEpicsSettingsRequest, JIRAProject, \
+    JIRAProjectsRequest, LogicalDeploymentRules, LogicalPRRules, \
+    LogicalRepository as WebLogicalRepository, LogicalRepositoryGetRequest, \
+    LogicalRepositoryRequest, MappedJIRAIdentity as WebMappedJIRAIdentity, NotFoundError, \
     ReleaseMatchRequest, ReleaseMatchSetting, SetMappedJIRAIdentitiesRequest, \
     WorkType as WebWorkType, WorkTypeGetRequest, WorkTypePutRequest, WorkTypeRule
 from athenian.api.request import AthenianWebRequest
@@ -129,6 +130,67 @@ async def get_jira_projects(request: AthenianWebRequest,
     return model_response(models)
 
 
+@weight(0.5)
+async def get_jira_epics(request: AthenianWebRequest, id: int, secure=False) -> web.Response:
+    """List the current JIRA issue types to be considered epics."""
+    mdb, sdb = request.mdb, request.sdb
+    if not secure:
+        await get_user_account_status_from_request(request, id)
+    jira_id, epic_rows = await gather(
+        get_jira_id(id, sdb, request.cache),
+        sdb.fetch_all(select([JIRAEpicSetting]).where(JIRAEpicSetting.account_id == id)),
+    )
+    all_names = {row[JIRAEpicSetting.name.name] for row in epic_rows}.union({"epic"})
+    type_rows, project_rows = await gather(
+        mdb.fetch_all(select([IssueType]).where(and_(
+            IssueType.acc_id == jira_id,
+            IssueType.normalized_name.in_(all_names),
+        ))),
+        mdb.fetch_all(select([Project.key, Project.id])
+                      .where(and_(Project.acc_id == jira_id,
+                                  Project.is_deleted.is_(False)))),
+    )
+    projects_map = {row[Project.key.name]: row[Project.id.name] for row in project_rows}
+    types_map = {
+        (row[IssueType.project_id.name], row[IssueType.normalized_name.name]): row
+        for row in type_rows
+    }
+    result = {}
+    for row in epic_rows:
+        project_key = row[JIRAEpicSetting.project_key.name]
+        try:
+            type_row = types_map[(projects_map[project_key], row[JIRAEpicSetting.name.name])]
+        except KeyError:
+            continue
+        result.setdefault(project_key, []).append(WebJIRAEpicSetting(
+            name=type_row[IssueType.name.name],
+            description=type_row[IssueType.description.name],
+            normalized_name=type_row[IssueType.normalized_name.name],
+            icon=type_row[IssueType.icon_url.name],
+        ))
+    for project_key, project_id in projects_map.items():
+        types = result.setdefault(project_key, [])
+        exists = False
+        for es in types:
+            if es.normalized_name == "epic":
+                exists = True
+                break
+        if not exists:
+            try:
+                type_row = types_map[(project_id, "epic")]
+            except KeyError:
+                continue
+            types.append(WebJIRAEpicSetting(
+                name=type_row[IssueType.name.name],
+                description=type_row[IssueType.description.name],
+                normalized_name=type_row[IssueType.normalized_name.name],
+                icon=type_row[IssueType.icon_url.name],
+            ))
+    for val in result.values():
+        val.sort()
+    return model_response(result)
+
+
 @disable_default_user
 @only_admin
 async def set_jira_projects(request: AthenianWebRequest, body: dict) -> web.Response:
@@ -155,6 +217,49 @@ async def set_jira_projects(request: AthenianWebRequest, body: dict) -> web.Resp
                                            JIRAProjectSetting.key.in_(projects))))
             await conn.execute_many(insert(JIRAProjectSetting), values)
     return await get_jira_projects(request, model.account, jira_id=jira_id)
+
+
+@disable_default_user
+@only_admin
+async def set_jira_epics(request: AthenianWebRequest, body: dict) -> web.Response:
+    """Set the JIRA issue types to be considered epics."""
+    model = JIRAEpicsSettingsRequest.from_dict(body)
+    sdb = request.sdb
+    jira_id = await get_jira_id(model.account, sdb, request.cache)
+    project_rows = await request.mdb.fetch_all(
+        select([Project.key, Project.id])
+        .where(and_(Project.acc_id == jira_id,
+                    Project.is_deleted.is_(False))))
+    project_map = {row[Project.key.name]: row[Project.id.name] for row in project_rows}
+    mentioned_projects = []
+    missing_projects = []
+    for key in model.types:
+        if key in project_map:
+            mentioned_projects.append(key)
+        else:
+            missing_projects.append(key)
+    if missing_projects:
+        raise ResponseError(InvalidRequestError(
+            detail="The following JIRA projects do not exist: %s" % missing_projects,
+            pointer=".types"))
+    values = []
+    for project_key, types in model.types.items():
+        for issue_type in types:
+            values.append(JIRAEpicSetting(
+                account_id=model.account,
+                project_key=project_key,
+                name=issue_type,
+            ).create_defaults().explode(with_primary_keys=True))
+    with sentry_sdk.Hub(sentry_sdk.Hub.current):
+        with sentry_sdk.start_span(op="set_jira_epics/transaction"):
+            async with sdb.connection() as conn:
+                async with conn.transaction():
+                    await conn.execute(
+                        delete(JIRAEpicSetting)
+                        .where(and_(JIRAEpicSetting.account_id == model.account,
+                                    JIRAEpicSetting.project_key.in_(mentioned_projects))))
+                    await conn.execute_many(insert(JIRAEpicSetting), values)
+    return await get_jira_epics(request, model.account, secure=True)
 
 
 @only_admin

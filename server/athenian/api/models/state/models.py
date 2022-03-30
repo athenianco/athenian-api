@@ -239,6 +239,17 @@ class JIRAProjectSetting(create_time_mixin(updated_at=True), Base):
     enabled = Column(Boolean(), nullable=False)
 
 
+class JIRAEpicSetting(create_time_mixin(created_at=True), Base):
+    """JIRA issue types that we consider epics."""
+
+    __tablename__ = "jira_epics"
+
+    account_id = Column(Integer(), ForeignKey("accounts.id", name="fk_jira_epics_account"),
+                        primary_key=True)
+    project_key = Column(Text(), primary_key=True)
+    name = Column(Text(), primary_key=True)
+
+
 class MappedJIRAIdentity(create_time_mixin(created_at=True, updated_at=True), Base):
     """JIRA identity mapping."""
 

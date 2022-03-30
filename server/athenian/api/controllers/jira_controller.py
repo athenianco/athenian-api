@@ -72,8 +72,12 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         prefixer = await _collect_ids(
             filt.account, request, request.sdb, request.mdb, request.cache)
     if filt.projects is not None:
-        jira_ids = (jira_ids[0], list(set(jira_ids[1]).intersection(
-            await resolve_projects(filt.projects, jira_ids[0], request.mdb))))
+        jira_ids = JIRAConfig(
+            jira_ids.acc_id,
+            list(jira_ids.projects.keys() & (
+                await resolve_projects(filt.projects, jira_ids.acc_id, request.mdb))),
+            jira_ids.epics,
+        )
     if filt.date_from is None or filt.date_to is None:
         if (filt.date_from is None) != (filt.date_to is None):
             raise ResponseError(InvalidRequestError(
@@ -854,12 +858,11 @@ async def _collect_ids(account: int,
                                   ReleaseSettings,
                                   LogicalRepositorySettings,
                                   Prefixer]:
-    tasks = [
+    repos, jira_ids, meta_ids = await gather(
         get_account_repositories(account, True, sdb),
         get_jira_installation(account, sdb, mdb, cache),
         get_metadata_account_ids(account, sdb, cache),
-    ]
-    repos, jira_ids, meta_ids = await gather(*tasks, op="sdb/ids")
+        op="sdb/ids")
     settings = Settings.from_request(request, account)
     prefixer = await Prefixer.load(meta_ids, mdb, cache)
     (branches, default_branches), logical_settings = await gather(
@@ -892,8 +895,12 @@ async def _calc_jira_entry(request: AthenianWebRequest,
         await _collect_ids(
             filt.account, request, request.sdb, request.mdb, request.cache)
     if filt.projects is not None:
-        jira_ids = (jira_ids[0], list(set(jira_ids[1]).intersection(
-            await resolve_projects(filt.projects, jira_ids[0], request.mdb))))
+        jira_ids = JIRAConfig(
+            jira_ids.acc_id,
+            list(jira_ids.projects.keys() & (
+                await resolve_projects(filt.projects, jira_ids.acc_id, request.mdb))),
+            jira_ids.epics,
+        )
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, getattr(filt, "granularities", ["all"]), filt.timezone)
     reporters = list(set(chain.from_iterable(

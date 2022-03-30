@@ -460,8 +460,8 @@ async def _fetch_issues(ids: JIRAConfig,
     # this is backed with a DB index
     far_away_future = datetime(3000, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
     and_filters = [
-        Issue.acc_id == ids[0],
-        Issue.project_id.in_(ids[1]),
+        Issue.acc_id == ids.acc_id,
+        Issue.project_id.in_(ids.projects),
         Issue.is_deleted.is_(False),
     ]
     filter_by_athenian_issue = False
@@ -472,7 +472,7 @@ async def _fetch_issues(ids: JIRAConfig,
         and_filters.append(Issue.created < time_to)
     if exclude_inactive and time_from is not None:
         filter_by_athenian_issue = True
-        and_filters.append(AthenianIssue.acc_id == ids[0])
+        and_filters.append(AthenianIssue.acc_id == ids.acc_id)
         and_filters.append(AthenianIssue.updated >= time_from)
     if len(priorities):
         and_filters.append(sql.func.lower(Issue.priority_name).in_(priorities))

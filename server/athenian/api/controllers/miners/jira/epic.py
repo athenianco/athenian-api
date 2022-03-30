@@ -49,9 +49,12 @@ async def filter_epics(jira_ids: JIRAConfig,
              4. map from epic_id to the indexes of the corresponding children in (2)
     """
     # filter the epics according to the passed filters
+    candidate_types = jira_ids.epic_candidate_types()
+    if candidate_types != {"epic"} and Issue.project_id not in extra_columns:
+        extra_columns = (*extra_columns, Issue.project_id)
     epics = await fetch_jira_issues(
         jira_ids, time_from, time_to, exclude_inactive, labels,
-        priorities, ["epic"], [], reporters, assignees, commenters, True,
+        priorities, candidate_types, [], reporters, assignees, commenters, True,
         default_branches, release_settings, logical_settings, account, meta_ids, mdb, pdb, cache,
         extra_columns=extra_columns)
     if epics.empty:
@@ -63,6 +66,14 @@ async def filter_epics(jira_ids: JIRAConfig,
                     Issue.priority_id.name, Issue.status_id.name, Issue.project_id.name]),
                 asyncio.create_task(noop()),
                 {})
+    if candidate_types != {"epic"}:
+        projects = epics[Issue.project_id.name].values.astype("S")
+        types = epics[Issue.type.name].values.astype("S")
+        df_pairs = np.char.add(np.char.add(projects, "/"), types)
+        indexes = np.flatnonzero(np.in1d(df_pairs, jira_ids.project_epic_pairs()))
+        if len(indexes) < len(epics):
+            epics.disable_consolidate()
+            epics = epics.take(indexes)
     # discover the issues belonging to those epics
     extra_columns = list(extra_columns)
     if Issue.parent_id not in extra_columns:
@@ -75,8 +86,8 @@ async def filter_epics(jira_ids: JIRAConfig,
     # plan to fetch the subtask counts, but not await it now
     subtasks = asyncio.create_task(
         mdb.fetch_all(select([Issue.parent_id, func.count(Issue.id).label("subtasks")])
-                      .where(and_(Issue.acc_id == jira_ids[0],
-                                  Issue.project_id.in_(jira_ids[1]),
+                      .where(and_(Issue.acc_id == jira_ids.acc_id,
+                                  Issue.project_id.in_(jira_ids.projects),
                                   Issue.is_deleted.is_(False),
                                   Issue.parent_id.in_(children.index.values)))
                       .group_by(Issue.parent_id)),
