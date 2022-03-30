@@ -655,6 +655,7 @@ class ReleaseToPullRequestMapper:
             PullRequest.hidden.is_(False),
             PullRequest.acc_id.in_(meta_ids),
         ]
+        hints = ["Rows(pr repo *1000)"]
         if merge_commit_ids is not None:
             filters.append(PullRequest.merge_commit_id.in_(merge_commit_ids))
         else:
@@ -662,22 +663,28 @@ class ReleaseToPullRequestMapper:
                             PullRequest.repository_node_id.in_(unique_repo_ids)])
         if len(authors) and len(mergers):
             filters.append(or_(
-                PullRequest.user_login.in_any_values(authors),
-                PullRequest.merged_by_login.in_any_values(mergers),
+                PullRequest.user_login.in_(authors),
+                PullRequest.merged_by_login.in_(mergers),
             ))
+            hints.append(f"Rows(pr ath math *{10 * len(set(authors).intersection(mergers))})")
         elif len(authors):
-            filters.append(PullRequest.user_login.in_any_values(authors))
+            filters.append(PullRequest.user_login.in_(authors))
+            hints.append("Rows(pr ath *1000)")
         elif len(mergers):
-            filters.append(PullRequest.merged_by_login.in_any_values(mergers))
+            filters.append(PullRequest.merged_by_login.in_(mergers))
+            hints.append("Rows(pr math *1000)")
         if pr_blacklist is not None:
             filters.append(pr_blacklist)
         if pr_whitelist is not None:
             filters.append(pr_whitelist)
         if not jira:
             query = select([PullRequest]).where(and_(*filters))
+            hints.append("IndexScan(pr github_node_pull_request_merge_commit)")
         else:
             query = await generate_jira_prs_query(filters, jira, None, mdb, cache)
         query = query.order_by(PullRequest.merge_commit_sha.name)
+        for hint in hints:
+            query = query.with_statement_hint(hint)
         prs = await read_sql_query(query, mdb, PullRequest, index=PullRequest.node_id.name)
         if prs.empty:
             return prs
