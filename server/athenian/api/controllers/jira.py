@@ -1,12 +1,14 @@
 from datetime import timezone
+from itertools import chain
 import logging
 import marshal
 import pickle
 import re
-from typing import Dict, Iterable, Optional, Set, Tuple
+from typing import Dict, Iterable, List, NamedTuple, Optional, Set, Tuple
 
 import aiomcache
 from names_matcher import NamesMatcher
+import numpy as np
 from pluralizer import Pluralizer
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import and_, func, insert, select
@@ -18,7 +20,8 @@ from athenian.api.cache import cached, CancelCache, max_exptime
 from athenian.api.controllers.miners.github.contributors import load_organization_members
 from athenian.api.db import DatabaseLike
 from athenian.api.models.metadata.jira import Progress, Project, User as JIRAUser
-from athenian.api.models.state.models import AccountJiraInstallation, JIRAProjectSetting, \
+from athenian.api.models.state.models import AccountJiraInstallation, JIRAEpicSetting, \
+    JIRAProjectSetting, \
     MappedJIRAIdentity
 from athenian.api.models.web import InstallationProgress, NoSourceDataError, TableFetchingProgress
 from athenian.api.response import ResponseError
@@ -52,7 +55,28 @@ async def get_jira_id(account: int,
     return jira_id
 
 
-JIRAConfig = Tuple[int, Dict[str, str]]
+class JIRAConfig(NamedTuple("JIRAConfig", [
+    ("acc_id", int),
+    ("projects", Dict[str, str]),
+    ("epics", Dict[str, List[str]]),
+])):
+    """JIRA attributes: account ID, project id -> key mapping, epic issue types."""
+
+    def epic_candidate_types(self) -> Set[str]:
+        """Return all possible issue types that can be epics."""
+        return set(chain.from_iterable(self.epics.values())).union({"epic"})
+
+    def project_epic_pairs(self) -> np.ndarray:
+        """Return project-epic issue types as numpy byte array."""
+        rows = []
+        for project_id, project_key in self.projects.items():
+            types = self.epics.get(project_key, [])
+            if "epic" not in types:
+                types.append("epic")
+            for val in types:
+                rows.append(f"{project_id}/{val}")
+
+        return np.array(rows, dtype="S")
 
 
 @sentry_span
@@ -69,18 +93,23 @@ async def get_jira_installation(account: int,
     :return: JIRA installation ID and the list of enabled JIRA project IDs.
     """
     jira_id = await get_jira_id(account, sdb, cache)
-    tasks = [
+    projects, disabled, epic_rows = await gather(
         mdb.fetch_all(select([Project.id, Project.key])
                       .where(and_(Project.acc_id == jira_id,
                                   Project.is_deleted.is_(False)))),
         sdb.fetch_all(select([JIRAProjectSetting.key])
                       .where(and_(JIRAProjectSetting.account_id == account,
                                   JIRAProjectSetting.enabled.is_(False)))),
-    ]
-    projects, disabled = await gather(*tasks, op="load JIRA projects")
+        sdb.fetch_all(select([JIRAEpicSetting.project_key, JIRAEpicSetting.name])
+                      .where(JIRAEpicSetting.account_id == account)),
+        op="load JIRA projects")
     disabled = {r[0] for r in disabled}
     projects = {r[0]: r[1] for r in projects if r[1] not in disabled}
-    return jira_id, projects
+    epics = {}
+    for row in epic_rows:
+        epics.setdefault(row[JIRAEpicSetting.project_key.name], []).append(
+            row[JIRAEpicSetting.name.name])
+    return JIRAConfig(jira_id, projects, epics)
 
 
 async def get_jira_installation_or_none(account: int,
@@ -111,7 +140,7 @@ async def fetch_jira_installation_progress(account: int,
                                            cache: Optional[aiomcache.Client],
                                            ) -> InstallationProgress:
     """Load the JIRA installation progress for the specified account."""
-    jira_id, _ = await get_jira_installation(account, sdb, mdb, cache)
+    jira_id = (await get_jira_installation(account, sdb, mdb, cache)).acc_id
     rows = await mdb.fetch_all(select([Progress]).where(and_(
         Progress.acc_id == jira_id,
         Progress.is_initial,

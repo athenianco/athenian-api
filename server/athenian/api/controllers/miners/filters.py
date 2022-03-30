@@ -149,11 +149,11 @@ class JIRAFilter:
             return cls.empty()
         labels = LabelFilter.from_iterables(model.labels_include, model.labels_exclude)
         if not (custom_projects := bool(model.projects)):
-            projects = sorted(ids[1])
+            projects = sorted(ids.projects)
         else:
             reverse_map = {v: k for k, v in ids[1].items()}
             projects = sorted(reverse_map[k] for k in model.projects if k in reverse_map)
-        return JIRAFilter(account=ids[0],
+        return JIRAFilter(account=ids.acc_id,
                           projects=projects,
                           labels=labels,
                           epics={s.upper() for s in (model.epics or [])},

@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from pandas._testing import assert_frame_equal
 
+from athenian.api.controllers.jira import JIRAConfig
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.jira.issue import fetch_jira_issues, ISSUE_PRS_BEGAN, \
     ISSUE_PRS_RELEASED
@@ -22,7 +23,7 @@ async def test_fetch_jira_issues_releases(
         False, bots, release_match_setting_tag, LogicalRepositorySettings.empty(),
         prefixer, False, False)
     await wait_deferred()
-    args = [(1, ["10003", "10009"]), time_from, time_to, False,
+    args = [JIRAConfig(1, ["10003", "10009"], {}), time_from, time_to, False,
             LabelFilter.empty(), [], [], [], [], [], [], False,
             default_branches, release_match_setting_tag, LogicalRepositorySettings.empty(),
             1, (6366825,), mdb, pdb, cache]
@@ -40,7 +41,7 @@ async def test_fetch_jira_issues_releases(
 @with_defer
 async def test_fetch_jira_issues_no_times(
         mdb, pdb, default_branches, release_match_setting_tag, cache):
-    args = [(1, ["10003", "10009"]), None, None, False,
+    args = [JIRAConfig(1, ["10003", "10009"], {}), None, None, False,
             LabelFilter.empty(), [], [], [], [], [], [], False,
             default_branches, release_match_setting_tag, LogicalRepositorySettings.empty(),
             1, (6366825,), mdb, pdb, cache]
@@ -53,7 +54,7 @@ async def test_fetch_jira_issues_no_times(
 @with_defer
 async def test_fetch_jira_issues_none_assignee(
         mdb, pdb, default_branches, release_match_setting_tag, cache):
-    args = [(1, ["10003", "10009"]), None, None, False,
+    args = [JIRAConfig(1, ["10003", "10009"], {}), None, None, False,
             LabelFilter.empty(), [], [], [], [], ["vadim markovtsev", None], [], False,
             default_branches, release_match_setting_tag, LogicalRepositorySettings.empty(),
             1, (6366825,), mdb, pdb, cache]
