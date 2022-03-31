@@ -366,16 +366,15 @@ async def notify_almost_expired_accounts(sdb: Database,
         .where(GitHubAccount.id.in_(chain.from_iterable(meta_ids))))
     names = dict(name_rows)
     names = {acc: ", ".join(names[i] for i in m) for acc, m in zip(accounts, meta_ids)}
-    tasks = [
-        slack.post_account("almost_expired.jinja2",
-                           account=acc,
-                           name=names[acc],
-                           user=users[acc],
-                           expires=expires)
-        for acc, expires in accounts.items()
-    ]
     try:
-        await gather(*tasks)
+        await gather(*(
+            slack.post_account("almost_expired.jinja2",
+                               account=acc,
+                               name=names[acc],
+                               user=users[acc],
+                               expires=expires)
+            for acc, expires in accounts.items()
+        ))
     except Exception:
         log.exception("Exception while reporting expired accounts (%s)", accounts)
 
