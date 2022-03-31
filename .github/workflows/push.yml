@@ -59,6 +59,9 @@ jobs:
     - name: semgrep custom
       working-directory: server
       run: semgrep --config semgrep.yaml --severity ERROR --disable-version-check --error
+    - name: bandit
+      working-directory: server
+      run: bandit --severity-level high -r athenian/api
   custom_checks:
     name: custom checks
     if: "!contains(github.event.head_commit.message, 'Bump version') || github.event_name != 'push'"

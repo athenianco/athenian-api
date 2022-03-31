@@ -11,4 +11,4 @@ semgrep==0.86.5
 sqlalchemy-stubs==0.4
 types-pytz==2021.3.6
 types-croniter==1.0.8
-attrs==21.4.0
+bandit==1.7.4
