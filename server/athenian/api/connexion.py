@@ -35,8 +35,9 @@ import sentry_sdk
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from werkzeug.exceptions import Unauthorized
 
-from athenian.api import metadata
+from athenian.api import align, metadata
 from athenian.api.aiohttp_addons import create_aiohttp_closed_event
+from athenian.api.ariadne import GraphQL
 from athenian.api.async_utils import gather
 from athenian.api.auth import AthenianAioHttpSecurityHandlerFactory, Auth0
 from athenian.api.balancing import extract_handler_weight
@@ -269,6 +270,12 @@ class AthenianApp(connexion.AioHttpApp):
             r"/memory/?$",
             r"/objgraph/?$",
         ], cache=cache)
+        middlewares = [
+            self.i_will_survive,
+            self.with_db,
+            self.postprocess_response,
+            self.manhole,
+        ]
         self.add_api(
             "openapi.yaml",
             base_path="/v1",
@@ -282,9 +289,7 @@ class AthenianApp(connexion.AioHttpApp):
             },
             pass_context_arg_name="request",
             options={
-                "middlewares": [
-                    self.i_will_survive, self.with_db, self.postprocess_response, self.manhole,
-                ],
+                "middlewares": middlewares,
                 "auth": self._auth0,
                 "google_analytics": google_analytics,
                 "swagger_ui_config": {
@@ -301,6 +306,7 @@ class AthenianApp(connexion.AioHttpApp):
                 },
             },
         )
+        GraphQL(align.create_graphql_schema()).attach(self.app, "/align", middlewares)
         if kms_cls is not None:
             self.app["kms"] = self._kms = kms_cls()
         else:

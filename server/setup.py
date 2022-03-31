@@ -48,6 +48,7 @@ setup(
         "": ["*.md", "*.jinja2", "*.mako"],
         "athenian": ["../requirements.txt"],
         "athenian.api": ["openapi"],
+        "athenian.api.align": ["spec.gql"],
     },
     classifiers=[
         "Development Status :: 5 - Production/Stable",
