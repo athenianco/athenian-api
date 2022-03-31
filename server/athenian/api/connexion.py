@@ -27,7 +27,7 @@ from connexion.apis import aiohttp_api
 from connexion.exceptions import ConnexionException
 import connexion.lifecycle
 import connexion.security
-from connexion.spec import OpenAPISpecification, Swagger2Specification
+from connexion.spec import OpenAPISpecification
 from flogging import flogging
 import prometheus_client
 import psutil
@@ -69,21 +69,6 @@ flogging.trailing_dot_exceptions.update((
 ))
 
 
-del OpenAPISpecification.schema_string
-del Swagger2Specification.schema_string
-
-
-class AthenianConnexionRequest(connexion.lifecycle.ConnexionRequest):
-    """Optimize memory consumption and avoid parsing JSON more than once."""
-
-    @property
-    def json(self):
-        """Avoid parsing JSON multiple times, as in the original code."""
-        if getattr(self, "_json", None) is None:
-            self._json = self.json_getter()
-        return self._json
-
-
 class AthenianOperation(connexion.spec.OpenAPIOperation):
     """Patched OpenAPIOperation with proper support of incoming "allOf"."""
 
@@ -103,7 +88,6 @@ class AthenianAioHttpApi(connexion.AioHttpApi):
 
     - Provide the server description from the original spec.
     - Log big request bodies so that we don't fear truncation in Sentry.
-    - Apply AthenianConnexionRequest.
     - Re-route the security checks to our own class.
     - Serve custom CSS in Swagger UI.
     """
@@ -128,7 +112,7 @@ class AthenianAioHttpApi(connexion.AioHttpApi):
     async def get_request(self, req: aiohttp.web.Request) -> connexion.lifecycle.ConnexionRequest:
         """Override the parent's method to ensure that we can access the full request body in \
         Sentry."""
-        api_req = AthenianConnexionRequest(**vars(await super().get_request(req)))
+        api_req = await super().get_request(req)
 
         if sentry_sdk.Hub.current.scope.transaction is not None:
             body = req._read_bytes

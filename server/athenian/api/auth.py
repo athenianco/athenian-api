@@ -512,7 +512,7 @@ class AthenianAioHttpSecurityHandlerFactory(connexion.security.AioHttpSecurityHa
         super().__init__(pass_context_arg_name=pass_context_arg_name)
         self.auth = auth
 
-    def verify_security(self, auth_funcs, required_scopes, function,
+    def verify_security(self, auth_funcs, function,
                         ) -> Callable[[ConnexionRequest], Coroutine[None, None, Any]]:
         """
         Decorate the request pipeline to check the security, either JWT or APIKey.
@@ -524,7 +524,7 @@ class AthenianAioHttpSecurityHandlerFactory(connexion.security.AioHttpSecurityHa
         async def get_token_info(request: ConnexionRequest):
             token_info = self.no_value
             for func in auth_funcs:
-                token_info = func(request, required_scopes)
+                token_info = func(request)
                 while asyncio.iscoroutine(token_info):
                     token_info = await token_info
                 if token_info is not self.no_value:
