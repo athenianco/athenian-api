@@ -33,7 +33,7 @@ from athenian.api.controllers.account import get_user_account_status_from_reques
 from athenian.api.controllers.user import report_user_account_expired
 from athenian.api.defer import defer
 from athenian.api.kms import AthenianKMS
-from athenian.api.models.state.models import Account, God, UserToken
+from athenian.api.models.state.models import Account, God, UserAccount, UserToken
 from athenian.api.models.web import ForbiddenError, GenericError
 from athenian.api.models.web.user import User
 from athenian.api.request import AthenianWebRequest
@@ -480,6 +480,10 @@ class Auth0:
             raise OAuthProblem(description="Unable to parse the authentication token: %s" % e)
 
     async def _extract_api_key(self, token: str, request: AthenianWebRequest) -> Tuple[str, int]:
+        if token == "null":
+            user = self.force_user or self._default_user_id
+            return user, await request.sdb.fetch_val(
+                select([UserAccount.account_id]).where(UserAccount.user_id == user))
         kms = request.app["kms"]  # type: AthenianKMS
         if kms is None:
             raise AuthenticationProblem(
@@ -537,7 +541,10 @@ class AthenianAioHttpSecurityHandlerFactory(connexion.security.AioHttpSecurityHa
             if token_info is self.no_value:
                 # "null" is the "magic" JWT that loads the default or forced user
                 request.headers = CIMultiDict(request.headers)
-                request.headers["Authorization"] = "Bearer null"
+                if request.headers.get("X-API-Key"):
+                    request.headers["X-API-Key"] = "null"
+                else:
+                    request.headers["Authorization"] = "Bearer null"
                 token_info = await get_token_info(request)
             if token_info is self.no_value:
                 raise Unauthorized("The endpoint you are calling requires X-API-Key header.")
