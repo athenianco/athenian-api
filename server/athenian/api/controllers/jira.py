@@ -11,7 +11,7 @@ from names_matcher import NamesMatcher
 import numpy as np
 from pluralizer import Pluralizer
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
-from sqlalchemy import and_, func, insert, select
+from sqlalchemy import and_, func, insert, join, select
 from unidecode import unidecode
 
 from athenian.api import metadata
@@ -19,9 +19,8 @@ from athenian.api.async_utils import gather
 from athenian.api.cache import cached, CancelCache, max_exptime
 from athenian.api.controllers.miners.github.contributors import load_organization_members
 from athenian.api.db import DatabaseLike
-from athenian.api.models.metadata.jira import Progress, Project, User as JIRAUser
-from athenian.api.models.state.models import AccountJiraInstallation, JIRAEpicSetting, \
-    JIRAProjectSetting, \
+from athenian.api.models.metadata.jira import Epic, Issue, Progress, Project, User as JIRAUser
+from athenian.api.models.state.models import AccountJiraInstallation, JIRAProjectSetting, \
     MappedJIRAIdentity
 from athenian.api.models.web import InstallationProgress, NoSourceDataError, TableFetchingProgress
 from athenian.api.response import ResponseError
@@ -100,15 +99,22 @@ async def get_jira_installation(account: int,
         sdb.fetch_all(select([JIRAProjectSetting.key])
                       .where(and_(JIRAProjectSetting.account_id == account,
                                   JIRAProjectSetting.enabled.is_(False)))),
-        sdb.fetch_all(select([JIRAEpicSetting.project_key, JIRAEpicSetting.name])
-                      .where(JIRAEpicSetting.account_id == account)),
+        mdb.fetch_all(
+            select([Issue.project_id, Issue.type])
+            .select_from(join(Epic, Issue, and_(Epic.acc_id == Issue.acc_id,
+                                                Epic.id == Issue.id),
+                              isouter=True))
+            .distinct()),
         op="load JIRA projects")
     disabled = {r[0] for r in disabled}
     projects = {r[0]: r[1] for r in projects if r[1] not in disabled}
     epics = {}
     for row in epic_rows:
-        epics.setdefault(row[JIRAEpicSetting.project_key.name], []).append(
-            row[JIRAEpicSetting.name.name])
+        try:
+            epics.setdefault(projects[row[Issue.project_id.name]], []).append(row[Issue.type.name])
+        except KeyError:
+            # disabled project
+            continue
     return JIRAConfig(jira_id, projects, epics)
 
 
