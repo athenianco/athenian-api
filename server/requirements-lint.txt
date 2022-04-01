@@ -5,6 +5,7 @@ flake8-import-order==0.18.1
 flake8-quotes==3.3.1
 flake8-commas==2.1.0
 flake8-debugger==4.0.0
+flake8-sfs==0.0.3
 pydocstyle==6.1.1
 pycodestyle==2.8.0
 semgrep==0.86.5
