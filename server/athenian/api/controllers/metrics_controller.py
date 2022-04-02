@@ -7,7 +7,6 @@ from aiohttp import web
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
 from athenian.api.cache import expires_header, short_term_exptime
-from athenian.api.connexion import ADJUST_LOAD_VAR_NAME
 from athenian.api.controllers.account import get_metadata_account_ids
 from athenian.api.controllers.calculator_selector import get_calculators_for_account
 from athenian.api.controllers.datetime_utils import split_to_time_intervals
@@ -27,6 +26,7 @@ from athenian.api.controllers.release import extract_release_participants
 from athenian.api.controllers.reposet import resolve_repos
 from athenian.api.controllers.settings import LogicalRepositorySettings, Settings
 from athenian.api.controllers.user import MANNEQUIN_PREFIX
+from athenian.api.especifico import ADJUST_LOAD_VAR_NAME
 from athenian.api.models.web import CalculatedCodeCheckMetrics, CalculatedCodeCheckMetricsItem, \
     CalculatedDeploymentMetric, CalculatedDeveloperMetrics, CalculatedDeveloperMetricsItem, \
     CalculatedLinearMetricValues, CalculatedPullRequestMetrics, CalculatedPullRequestMetricsItem, \
@@ -85,7 +85,7 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
     accept the params at all or that it does not default to None. :man_shrugging:
 
     @vmarkovtsev:
-    This is exactly what I did the other day. That zalando/connexion thingie which glues OpenAPI
+    This is exactly what I did the other day. That zalando/especifico thingie which glues OpenAPI
     and asyncio together constructs all the models by calling their __init__ without any args and
     then setting individual attributes. So we crash somewhere in from_dict() or to_dict() if we
     make something required.

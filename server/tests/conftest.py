@@ -44,7 +44,6 @@ os.environ["ATHENIAN_INVITATION_KEY"] = "vadim"
 from athenian.api.__main__ import create_mandrill, create_memcached, create_slack
 from athenian.api.auth import Auth0, User
 from athenian.api.cache import CACHE_VAR_NAME, setup_cache_metrics
-from athenian.api.connexion import AthenianApp
 from athenian.api.controllers import account, invitation_controller
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.miners.github.precomputed_prs import DonePRFactsLoader, \
@@ -53,6 +52,7 @@ from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.github.release_load import ReleaseLoader
 from athenian.api.controllers.miners.github.release_match import ReleaseToPullRequestMapper
 from athenian.api.db import Database, db_retry_intervals, measure_db_overhead_and_retry
+from athenian.api.especifico import AthenianApp
 from athenian.api.experiments.preloading.entries import PreloadedBranchMiner, \
     PreloadedDonePRFactsLoader, PreloadedMergedPRFactsLoader, PreloadedOpenPRFactsLoader, \
     PreloadedPullRequestMiner, PreloadedReleaseLoader, PreloadedReleaseToPullRequestMapper
@@ -353,7 +353,7 @@ async def with_preloading(sdb, mdb, mdb_rw, pdb, rdb, with_preloading_enabled):
 @pytest.fixture(scope="function")
 async def app(metadata_db, state_db, precomputed_db, persistentdata_db, slack,
               with_preloading_enabled) -> AthenianApp:
-    logging.getLogger("connexion.operation").setLevel("WARNING")
+    logging.getLogger("especifico.operation").setLevel("WARNING")
     app = AthenianApp(mdb_conn=metadata_db,
                       sdb_conn=state_db,
                       pdb_conn=precomputed_db,

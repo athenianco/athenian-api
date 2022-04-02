@@ -14,10 +14,10 @@ import warnings
 import aiohttp.web
 from aiohttp.web_runner import GracefulExit
 import aiomcache
-from connexion.exceptions import AuthenticationProblem, OAuthProblem, Unauthorized
-from connexion.lifecycle import ConnexionRequest
-import connexion.security
-from connexion.utils import deep_get
+from especifico.exceptions import AuthenticationProblem, OAuthProblem, Unauthorized
+from especifico.lifecycle import EspecificoRequest
+import especifico.security
+from especifico.utils import deep_get
 with warnings.catch_warnings():
     # this will suppress all warnings in this block
     warnings.filterwarnings("ignore", message="int_from_bytes is deprecated")
@@ -508,7 +508,7 @@ class Auth0:
         return uid, account
 
 
-class AthenianAioHttpSecurityHandlerFactory(connexion.security.AioHttpSecurityHandlerFactory):
+class AthenianAioHttpSecurityHandlerFactory(especifico.security.AioHttpSecurityHandlerFactory):
     """Override verify_security() to re-route the security affairs to our Auth0 class."""
 
     def __init__(self, auth: Auth0, pass_context_arg_name):
@@ -517,7 +517,7 @@ class AthenianAioHttpSecurityHandlerFactory(connexion.security.AioHttpSecurityHa
         self.auth = auth
 
     def verify_security(self, auth_funcs, function,
-                        ) -> Callable[[ConnexionRequest], Coroutine[None, None, Any]]:
+                        ) -> Callable[[EspecificoRequest], Coroutine[None, None, Any]]:
         """
         Decorate the request pipeline to check the security, either JWT or APIKey.
 
@@ -525,7 +525,7 @@ class AthenianAioHttpSecurityHandlerFactory(connexion.security.AioHttpSecurityHa
         """
         auth = self.auth  # type: Auth0
 
-        async def get_token_info(request: ConnexionRequest):
+        async def get_token_info(request: EspecificoRequest):
             token_info = self.no_value
             for func in auth_funcs:
                 token_info = func(request)
@@ -536,7 +536,7 @@ class AthenianAioHttpSecurityHandlerFactory(connexion.security.AioHttpSecurityHa
             return token_info
 
         @functools.wraps(function)
-        async def wrapper(request: ConnexionRequest):
+        async def wrapper(request: EspecificoRequest):
             token_info = self.no_value if auth.force_user else await get_token_info(request)
             if token_info is self.no_value:
                 # "null" is the "magic" JWT that loads the default or forced user
