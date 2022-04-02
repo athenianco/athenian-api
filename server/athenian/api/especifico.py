@@ -23,11 +23,11 @@ from aiohttp.web_runner import GracefulExit
 import aiohttp_cors
 import aiomcache
 from asyncpg import InterfaceError, OperatorInterventionError, PostgresConnectionError
-from connexion.apis import aiohttp_api
-from connexion.exceptions import ConnexionException
-import connexion.lifecycle
-import connexion.security
-from connexion.spec import OpenAPISpecification
+from especifico.apis import aiohttp_api
+from especifico.exceptions import EspecificoException
+import especifico.lifecycle
+import especifico.security
+from especifico.spec import OpenAPISpecification
 from flogging import flogging
 import prometheus_client
 import psutil
@@ -65,12 +65,12 @@ from athenian.precomputer.db import dereference_schemas as dereference_precomput
 
 
 flogging.trailing_dot_exceptions.update((
-    "connexion.api.security",
-    "connexion.apis.aiohttp_api",
+    "especifico.api.security",
+    "especifico.apis.aiohttp_api",
 ))
 
 
-class AthenianOperation(connexion.spec.OpenAPIOperation):
+class AthenianOperation(especifico.spec.OpenAPIOperation):
     """Patched OpenAPIOperation with proper support of incoming "allOf"."""
 
     def _get_val_from_param(self, value, query_defn):
@@ -83,9 +83,9 @@ class AthenianOperation(connexion.spec.OpenAPIOperation):
         return super()._get_val_from_param(value, query_defn)
 
 
-class AthenianAioHttpApi(connexion.AioHttpApi):
+class AthenianAioHttpApi(especifico.AioHttpApi):
     """
-    Hack connexion internals to solve our problems.
+    Hack especifico internals to solve our problems.
 
     - Provide the server description from the original spec.
     - Log big request bodies so that we don't fear truncation in Sentry.
@@ -103,14 +103,15 @@ class AthenianAioHttpApi(connexion.AioHttpApi):
             self.base_path = base_path
         else:
             self.base_path = self.specification.base_path
-        self._api_name = connexion.AioHttpApi.normalize_string(self.base_path)
+        self._api_name = especifico.AioHttpApi.normalize_string(self.base_path)
 
     def make_security_handler_factory(self, pass_context_arg_name):
         """Return our own SecurityHandlerFactory to create all security check handlers."""
         return AthenianAioHttpSecurityHandlerFactory(
             self.options.as_dict()["auth"], pass_context_arg_name)
 
-    async def get_request(self, req: aiohttp.web.Request) -> connexion.lifecycle.ConnexionRequest:
+    async def get_request(self, req: aiohttp.web.Request,
+                          ) -> especifico.lifecycle.EspecificoRequest:
         """Override the parent's method to ensure that we can access the full request body in \
         Sentry."""
         api_req = await super().get_request(req)
@@ -202,8 +203,8 @@ class ServerCrashedError(GenericError):
 ADJUST_LOAD_VAR_NAME = "adjust_load"
 
 
-class AthenianApp(connexion.AioHttpApp):
-    """Athenian API connexion application, everything roots here."""
+class AthenianApp(especifico.AioHttpApp):
+    """Athenian API especifico application, everything roots here."""
 
     log = logging.getLogger(metadata.__package__)
 
@@ -228,7 +229,7 @@ class AthenianApp(connexion.AioHttpApp):
                  segment: Optional[SegmentClient] = None,
                  google_analytics: Optional[str] = ""):
         """
-        Initialize the underlying connexion -> aiohttp application.
+        Initialize the underlying especifico -> aiohttp application.
 
         :param mdb_conn: SQLAlchemy connection string for the readonly metadata DB.
         :param sdb_conn: SQLAlchemy connection string for the writeable server state DB.
@@ -637,7 +638,7 @@ class AthenianApp(connexion.AioHttpApp):
             raise GracefulExit() from None
         except ResponseError as e:
             return e.response
-        except (ConnexionException,
+        except (EspecificoException,
                 HTTPClientError,   # 4xx
                 Unauthorized,      # 401
                 HTTPRedirection,   # 3xx

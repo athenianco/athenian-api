@@ -14,7 +14,7 @@ from typing import Callable, Optional
 import aiohttp.web
 from aiohttp.web_runner import GracefulExit
 import aiomcache
-from connexion.decorators import validation
+from especifico.decorators import validation
 from flogging import flogging
 import jinja2
 import morcilla
@@ -31,8 +31,8 @@ import uvloop
 
 from athenian.api import metadata
 from athenian.api.auth import Auth0
-from athenian.api.connexion import AthenianApp
 from athenian.api.db import check_schema_versions
+from athenian.api.especifico import AthenianApp
 from athenian.api.faster_pandas import patch_pandas
 from athenian.api.kms import AthenianKMS
 from athenian.api.mandrill import MandrillClient

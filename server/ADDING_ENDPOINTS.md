@@ -17,7 +17,7 @@ Things to remember:
 
 Gotchas:
 
-* Python server [does not support `oneOf` pointing at other `components/schemas`](https://github.com/zalando/connexion/issues/691).
+* Python server [does not support `oneOf` pointing at other `components/schemas`](https://github.com/spec-first/connexion/issues/691).
 * JavaScript client does not support `oneOf` and `anyOf`. We are using a workaround with `allOf` and Jinja2 conditionals.
 * Forgetting `security:\n- bearerAuth: []` will lead to obscure error messages at server startup.
 * Forgetting `additionalProperties: false` in `components/schemas` allows the frontend to send any weird shit that the server silently discards.
