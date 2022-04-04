@@ -176,7 +176,6 @@ def measure_db_overhead_and_retry(db: Union[morcilla.Database, Database],
             async def wrapped_measure_method_overhead_and_retry(*args, **kwargs):
                 start_time = time.time()
                 wait_intervals = []
-                raw_connection = None
                 try:
                     raw_connection = connection.raw_connection
                     if (
