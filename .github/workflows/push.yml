@@ -372,8 +372,7 @@ jobs:
         $run xml
         docker rmi test
         sed -i 's/[\./]server[\./]//g' coverage.xml
-        workspace=${GITHUB_WORKSPACE//\//\\\/}
-        sed -i "s/<source><\/source>/<source>$workspace\/server<\/source>/g" coverage.xml
+        sed -i "s\<source></source>\<source>$GITHUB_WORKSPACE/server</source>\g" coverage.xml
         rm .coverage
     - uses: codecov/codecov-action@v1
       name: codecov
