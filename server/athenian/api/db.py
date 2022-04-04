@@ -21,6 +21,7 @@ import sentry_sdk
 from sqlalchemy import insert
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import CompoundSelect, Select
 from sqlalchemy.sql.functions import ReturnTypeFromArgs
 
@@ -40,6 +41,12 @@ def add_pdb_metrics_context(app: aiohttp.web.Application) -> dict:
     }
     return ctx
 
+
+def _repr_instrumented_attribute(attr: InstrumentedAttribute) -> str:
+    return f"<{attr.property}>"
+
+
+InstrumentedAttribute.__sentry_repr__ = _repr_instrumented_attribute
 
 pdb_metrics_logger = logging.getLogger("%s.pdb" % metadata.__package__)
 
