@@ -69,7 +69,7 @@ async def filter_epics(jira_ids: JIRAConfig,
     if candidate_types != {"epic"}:
         projects = epics[Issue.project_id.name].values.astype("S")
         types = epics[Issue.type.name].values.astype("S")
-        df_pairs = np.char.add(np.char.add(projects, "/"), types)
+        df_pairs = np.char.add(np.char.add(projects, b"/"), types)
         indexes = np.flatnonzero(np.in1d(df_pairs, jira_ids.project_epic_pairs()))
         if len(indexes) < len(epics):
             epics.disable_consolidate()
