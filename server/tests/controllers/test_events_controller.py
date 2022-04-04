@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import json
 
 from freezegun import freeze_time
 import pytest
@@ -10,6 +11,7 @@ from athenian.api.models.persistentdata.models import DeployedComponent, Deploye
 from athenian.api.models.precomputed.models import GitHubDeploymentFacts, \
     GitHubDonePullRequestFacts, GitHubMergedPullRequestFacts, GitHubReleaseFacts
 from athenian.api.models.state.models import AccountGitHubAccount, UserToken
+from athenian.api.models.web import ReleaseNotificationStatus
 
 
 @pytest.fixture(scope="function")
@@ -41,7 +43,10 @@ async def test_notify_release_smoke(client, headers, sdb, rdb, token, disable_de
         method="POST", path="/v1/events/releases", headers=headers, json=body,
     )
     assert response.status == 200
-    assert (await response.read()).decode("utf-8") == ""
+    statuses = json.loads((await response.read()).decode("utf-8"))
+    assert isinstance(statuses, list)
+    assert len(statuses) == 1
+    assert statuses[0] == ReleaseNotificationStatus.ACCEPTED_RESOLVED
     rows = await rdb.fetch_all(select([ReleaseNotification]))
     assert len(rows) == 1
     columns = dict(rows[0])
@@ -103,9 +108,9 @@ async def test_notify_release_smoke(client, headers, sdb, rdb, token, disable_de
     assert rows[0][ReleaseNotification.author_node_id.name] == 39936
 
 
-@pytest.mark.parametrize("status, body", [
+@pytest.mark.parametrize("status, body, statuses", [
     # duplicates
-    (400, [
+    (200, [
         {
             "commit": "abcdef0",
             "repository": "github.com/src-d/go-git",
@@ -114,28 +119,46 @@ async def test_notify_release_smoke(client, headers, sdb, rdb, token, disable_de
             "commit": "abcdef0",
             "repository": "github.com/src-d/go-git",
         },
-    ]),
+    ], [ReleaseNotificationStatus.ACCEPTED_PENDING, ReleaseNotificationStatus.IGNORED_DUPLICATE]),
+    # duplicates
+    (200, [
+        {
+            "name": "xxx",
+            "commit": "abcdef0",
+            "repository": "github.com/src-d/go-git",
+        },
+        {
+            "name": "xxx",
+            "commit": "abcdef1",
+            "repository": "github.com/src-d/go-git",
+        },
+    ], [ReleaseNotificationStatus.ACCEPTED_PENDING, ReleaseNotificationStatus.IGNORED_DUPLICATE]),
+    # not duplicates
+    (200, [
+        {
+            "commit": "abcdef0",
+            "repository": "github.com/src-d/go-git",
+        },
+        {
+            "name": "xxx",
+            "commit": "abcdef0",
+            "repository": "github.com/src-d/go-git",
+        },
+    ], [ReleaseNotificationStatus.ACCEPTED_PENDING, ReleaseNotificationStatus.ACCEPTED_PENDING]),
     # wrong hash
     (400, [
         {
             "commit": "abcdef01",
             "repository": "github.com/src-d/go-git",
         },
-    ]),
+    ], []),
     # denied repo
     (403, [
         {
             "commit": "abcdef0",
             "repository": "github.com/athenianco/metadata",
         },
-    ]),
-    # wrong hash, but we register it
-    (200, [
-        {
-            "commit": "abcdef0",
-            "repository": "github.com/src-d/go-git",
-        },
-    ]),
+    ], []),
     # bad date
     (400, [
         {
@@ -143,10 +166,10 @@ async def test_notify_release_smoke(client, headers, sdb, rdb, token, disable_de
             "repository": "github.com/src-d/go-git",
             "published_at": "date",
         },
-    ]),
+    ], []),
 ])
 async def test_notify_release_nasty_input(
-        client, headers, token, rdb, body, status, disable_default_user):
+        client, headers, token, rdb, body, status, statuses, disable_default_user):
     headers = headers.copy()
     headers["X-API-Key"] = token
     response = await client.request(
@@ -154,6 +177,7 @@ async def test_notify_release_nasty_input(
     )
     assert response.status == status
     if status == 200:
+        assert json.loads((await response.read()).decode("utf-8")) == statuses
         rows = await rdb.fetch_all(select([ReleaseNotification]))
         assert len(rows) == 1
         assert rows[0][ReleaseNotification.commit_hash_prefix.name] == body[0]["commit"]

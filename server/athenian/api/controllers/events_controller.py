@@ -40,9 +40,9 @@ from athenian.api.models.precomputed.models import GitHubCommitDeployment, GitHu
     GitHubReleaseDeployment, GitHubReleaseFacts
 from athenian.api.models.web import BadRequestError, DatabaseConflict, DeleteEventsCacheRequest, \
     DeploymentNotification as WebDeploymentNotification, ForbiddenError, \
-    InvalidRequestError, ReleaseNotification as WebReleaseNotification
+    InvalidRequestError, ReleaseNotification as WebReleaseNotification, ReleaseNotificationStatus
 from athenian.api.request import AthenianWebRequest
-from athenian.api.response import ResponseError
+from athenian.api.response import model_response, ResponseError
 from athenian.api.serialization import ParseError
 from athenian.api.tracing import sentry_span
 
@@ -68,6 +68,7 @@ async def notify_releases(request: AthenianWebRequest, body: List[dict]) -> web.
             author = author.rsplit("/", 1)[1]  # remove github.com/ or any other prefix
         authors.append(author)
     unique_authors = set(authors) - {None}
+    statuses = [None] * len(notifications)
 
     async def main_flow():
         repos = set()
@@ -87,9 +88,9 @@ async def notify_releases(request: AthenianWebRequest, body: List[dict]) -> web.
                 prefixed_commits[repo].add(n.commit)
             else:
                 full_commits.add(n.commit)
-            if (key := (n.commit, n.repository)) in unique_notifications:
-                raise ResponseError(InvalidRequestError(
-                    "[%d]" % i, detail="duplicate release notification"))
+            if (key := (n.name or n.commit, n.repository)) in unique_notifications:
+                statuses[i] = ReleaseNotificationStatus.IGNORED_DUPLICATE
+                continue
             unique_notifications.add(key)
         meta_ids = await get_metadata_account_ids(account, sdb, request.cache)
         checker = await access_classes["github"](account, meta_ids, sdb, mdb, request.cache).load()
@@ -143,11 +144,18 @@ async def notify_releases(request: AthenianWebRequest, body: List[dict]) -> web.
                         User.login == user.login)))
     inserted = []
     repos = set()
-    for n, author in zip(notifications, authors):
+    for i, (n, author, status) in enumerate(zip(notifications, authors, statuses)):
+        if status == ReleaseNotificationStatus.IGNORED_DUPLICATE:
+            continue
         repos.add(repo := n.repository.split("/", 1)[1])
-        resolved_commits = (
-            resolved_full_commits if len(n.commit) == 40 else resolved_prefixed_commits
-        ).get((n.commit, repo), {PushCommit.sha.name: None, PushCommit.node_id.name: None})
+        try:
+            resolved_commits = (
+                resolved_full_commits if len(n.commit) == 40 else resolved_prefixed_commits
+            )[(n.commit, repo)]
+            statuses[i] = ReleaseNotificationStatus.ACCEPTED_RESOLVED
+        except KeyError:
+            resolved_commits = {PushCommit.sha.name: None, PushCommit.node_id.name: None}
+            statuses[i] = ReleaseNotificationStatus.ACCEPTED_PENDING
         inserted.append(ReleaseNotification(
             account_id=account,
             repository_node_id=installed_repos[repo],
@@ -184,7 +192,7 @@ async def notify_releases(request: AthenianWebRequest, body: List[dict]) -> web.
             await slack.post_event("new_release_event.jinja2", account=account, repos=repos)
 
         await defer(report_new_release_event_to_slack(), "report_new_release_event_to_slack")
-    return web.Response(status=200)
+    return model_response(statuses)
 
 
 @sentry_span
