@@ -159,6 +159,7 @@ from athenian.api.models.web.release_metric_id import ReleaseMetricID
 from athenian.api.models.web.release_metrics_request import ReleaseMetricsRequest
 from athenian.api.models.web.release_names import ReleaseNames
 from athenian.api.models.web.release_notification import ReleaseNotification
+from athenian.api.models.web.release_notification_status import ReleaseNotificationStatus
 from athenian.api.models.web.release_pair import ReleasePair
 from athenian.api.models.web.release_set import ReleaseSet, ReleaseSetInclude
 from athenian.api.models.web.release_with import ReleaseWith
