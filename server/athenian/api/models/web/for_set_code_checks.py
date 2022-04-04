@@ -1,7 +1,7 @@
 from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import AllOf, Model
-from athenian.api.models.web.for_set import CommonPullRequestFilters, ForSetLines
+from athenian.api.models.web.for_set_pull_requests import CommonPullRequestFilters, ForSetLines
 
 
 class _ForSetCodeChecks(Model, sealed=False):

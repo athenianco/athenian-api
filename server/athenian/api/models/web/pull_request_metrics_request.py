@@ -3,7 +3,7 @@ from typing import List, Optional
 from athenian.api.models.web.base_model_ import AllOf, Model
 from athenian.api.models.web.common_filter_properties import CommonFilterProperties
 from athenian.api.models.web.common_metrics_properties import CommonMetricsProperties
-from athenian.api.models.web.for_set import ForSet
+from athenian.api.models.web.for_set_pull_requests import ForSet
 from athenian.api.models.web.pull_request_metric_id import PullRequestMetricID
 
 

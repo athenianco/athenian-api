@@ -2,7 +2,7 @@ from datetime import timedelta
 from typing import List, Optional, Union
 
 from athenian.api.models.web.base_model_ import Model
-from athenian.api.models.web.for_set import ForSet
+from athenian.api.models.web.for_set_pull_requests import ForSet
 from athenian.api.models.web.histogram_scale import HistogramScale
 from athenian.api.models.web.interquartile import Interquartile
 from athenian.api.models.web.pull_request_metric_id import PullRequestMetricID

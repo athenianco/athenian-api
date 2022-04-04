@@ -5,7 +5,7 @@ from athenian.api.models.web.common_deployment_properties import CommonDeploymen
 from athenian.api.models.web.common_filter_properties import CommonFilterProperties
 from athenian.api.models.web.deployment_conclusion import DeploymentConclusion
 from athenian.api.models.web.deployment_with import DeploymentWith
-from athenian.api.models.web.for_set import make_common_pull_request_filters
+from athenian.api.models.web.for_set_pull_requests import make_common_pull_request_filters
 
 
 class _FilterDeploymentsRequest(Model, sealed=False):
