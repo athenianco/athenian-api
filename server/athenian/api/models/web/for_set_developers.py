@@ -29,7 +29,7 @@ class _ForSetDevelopers(Model, RepositoryGroupsMixin, sealed=False):
         developers: Optional[List[str]] = None,
         aggregate_devgroups: Optional[List[List[int]]] = None,
     ):
-        """ForSet - a model defined in OpenAPI
+        """_ForSetDevelopers - a model defined in OpenAPI
 
         :param repositories: The repositories of this ForSetDevelopers.
         :param repogroups: The repogroups of this ForSetDevelopers.

@@ -2,7 +2,7 @@ from datetime import timedelta
 from typing import List, Optional, Union
 
 from athenian.api.models.web.base_model_ import Model
-from athenian.api.models.web.for_set_pull_requests import ForSet
+from athenian.api.models.web.for_set_pull_requests import ForSetPullRequests
 from athenian.api.models.web.histogram_scale import HistogramScale
 from athenian.api.models.web.interquartile import Interquartile
 from athenian.api.models.web.pull_request_metric_id import PullRequestMetricID
@@ -12,7 +12,7 @@ class CalculatedPullRequestHistogram(Model):
     """Response from `/histograms/pull_requests`."""
 
     openapi_types = {
-        "for_": ForSet,
+        "for_": ForSetPullRequests,
         "metric": str,
         "scale": str,
         "ticks": List[Union[float, timedelta]],
@@ -31,7 +31,7 @@ class CalculatedPullRequestHistogram(Model):
 
     def __init__(
         self,
-        for_: Optional[ForSet] = None,
+        for_: Optional[ForSetPullRequests] = None,
         metric: Optional[str] = None,
         scale: Optional[str] = None,
         ticks: Optional[List[Union[float, timedelta]]] = None,
@@ -55,7 +55,7 @@ class CalculatedPullRequestHistogram(Model):
         self._interquartile = interquartile
 
     @property
-    def for_(self) -> ForSet:
+    def for_(self) -> ForSetPullRequests:
         """Gets the for_ of this CalculatedPullRequestHistogram.
 
         :return: The for_ of this CalculatedPullRequestHistogram.
@@ -63,7 +63,7 @@ class CalculatedPullRequestHistogram(Model):
         return self._for_
 
     @for_.setter
-    def for_(self, for_: ForSet):
+    def for_(self, for_: ForSetPullRequests):
         """Sets the for_ of this CalculatedPullRequestHistogram.
 
         :param for_: The for_ of this CalculatedPullRequestHistogram.

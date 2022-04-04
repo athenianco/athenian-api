@@ -80,8 +80,8 @@ from athenian.api.models.web.filtered_release import FilteredRelease
 from athenian.api.models.web.for_set_code_checks import ForSetCodeChecks
 from athenian.api.models.web.for_set_deployments import ForSetDeployments
 from athenian.api.models.web.for_set_developers import ForSetDevelopers
-from athenian.api.models.web.for_set_pull_requests import CommonPullRequestFilters, ForSet, \
-    ForSetLines, make_common_pull_request_filters, RepositoryGroupsMixin
+from athenian.api.models.web.for_set_pull_requests import CommonPullRequestFilters, ForSetLines, \
+    ForSetPullRequests, make_common_pull_request_filters, RepositoryGroupsMixin
 from athenian.api.models.web.generic_error import BadRequestError, DatabaseConflict, \
     ForbiddenError, GenericError, NotFoundError, ServerNotImplementedError, \
     ServiceUnavailableError, TooManyRequestsError

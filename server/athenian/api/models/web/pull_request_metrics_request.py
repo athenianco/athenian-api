@@ -3,7 +3,7 @@ from typing import List, Optional
 from athenian.api.models.web.base_model_ import AllOf, Model
 from athenian.api.models.web.common_filter_properties import CommonFilterProperties
 from athenian.api.models.web.common_metrics_properties import CommonMetricsProperties
-from athenian.api.models.web.for_set_pull_requests import ForSet
+from athenian.api.models.web.for_set_pull_requests import ForSetPullRequests
 from athenian.api.models.web.pull_request_metric_id import PullRequestMetricID
 
 
@@ -11,7 +11,7 @@ class _PullRequestMetricsRequest(Model, sealed=False):
     """Request for calculating metrics on top of pull requests data."""
 
     openapi_types = {
-        "for_": List[ForSet],
+        "for_": List[ForSetPullRequests],
         "metrics": List[PullRequestMetricID],
         "exclude_inactive": bool,
         "fresh": bool,
@@ -26,7 +26,7 @@ class _PullRequestMetricsRequest(Model, sealed=False):
 
     def __init__(
         self,
-        for_: Optional[List[ForSet]] = None,
+        for_: Optional[List[ForSetPullRequests]] = None,
         metrics: Optional[List[PullRequestMetricID]] = None,
         exclude_inactive: Optional[bool] = None,
         fresh: Optional[bool] = None,
@@ -44,7 +44,7 @@ class _PullRequestMetricsRequest(Model, sealed=False):
         self._fresh = fresh
 
     @property
-    def for_(self) -> List[ForSet]:
+    def for_(self) -> List[ForSetPullRequests]:
         """Gets the for_ of this PullRequestMetricsRequest.
 
         Sets of developers and repositories to calculate the metrics for.
@@ -54,7 +54,7 @@ class _PullRequestMetricsRequest(Model, sealed=False):
         return self._for_
 
     @for_.setter
-    def for_(self, for_: List[ForSet]):
+    def for_(self, for_: List[ForSetPullRequests]):
         """Sets the for_ of this PullRequestMetricsRequest.
 
         Sets of developers and repositories to calculate the metrics for.
