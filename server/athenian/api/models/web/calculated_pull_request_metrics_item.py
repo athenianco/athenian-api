@@ -22,53 +22,32 @@ class CalculatedPullRequestMetricsItem(Model, GranularityMixin):
                  for_: Optional[ForSetPullRequests] = None,
                  granularity: Optional[str] = None,
                  values: Optional[List[CalculatedLinearMetricValues]] = None):
-        """CalculatedPullRequestMetricsItem - a model defined in OpenAPI
-
-        :param for_: The for_ of this CalculatedPullRequestMetricsItem.
-        :param granularity: The granularity of this CalculatedPullRequestMetricsItem.
-        :param values: The values of this CalculatedPullRequestMetricsItem.
-        """
+        """CalculatedPullRequestMetricsItem - a model defined in OpenAPI."""
         self._for_ = for_
         self._granularity = granularity
         self._values = values
 
     @property
-    def for_(self):
-        """Gets the for_ of this CalculatedPullRequestMetricsItem.
-
-        :return: The for of this CalculatedPullRequestMetricsItem.
-        :rtype: ForSetPullRequests
-        """
+    def for_(self) -> ForSetPullRequests:
+        """Gets the for_ of this CalculatedPullRequestMetricsItem."""
         return self._for_
 
     @for_.setter
-    def for_(self, for_):
-        """Sets the for_ of this CalculatedPullRequestMetricsItem.
-
-        :param for_: The for of this CalculatedPullRequestMetricsItem.
-        :type for_: ForSetPullRequests
-        """
+    def for_(self, for_: ForSetPullRequests) -> None:
+        """Sets the for_ of this CalculatedPullRequestMetricsItem."""
         if for_ is None:
             raise ValueError("Invalid value for `for`, must not be `None`")
 
         self._for_ = for_
 
     @property
-    def values(self):
-        """Gets the values of this CalculatedPullRequestMetricsItem.
-
-        :return: The values of this CalculatedPullRequestMetricsItem.
-        :rtype: List[CalculatedLinearMetricValues]
-        """
+    def values(self) -> List[CalculatedLinearMetricValues]:
+        """Gets the values of this CalculatedPullRequestMetricsItem."""
         return self._values
 
     @values.setter
-    def values(self, values):
-        """Sets the values of this CalculatedPullRequestMetricsItem.
-
-        :param values: The values of this CalculatedPullRequestMetricsItem.
-        :type values: List[CalculatedLinearMetricValues]
-        """
+    def values(self, values: List[CalculatedLinearMetricValues]) -> None:
+        """Sets the values of this CalculatedPullRequestMetricsItem."""
         if values is None:
             raise ValueError("Invalid value for `values`, must not be `None`")
 
