@@ -1,9 +1,14 @@
 from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import AllOf, Model
-from athenian.api.models.web.common_deployment_properties import CommonDeploymentProperties
+from athenian.api.models.web.common_deployment_properties import (
+    CommonDeploymentProperties,
+)
 from athenian.api.models.web.deployment_with import DeploymentWith
-from athenian.api.models.web.for_set import make_common_pull_request_filters, RepositoryGroupsMixin
+from athenian.api.models.web.for_set_common import (
+    make_common_pull_request_filters,
+    RepositoryGroupsMixin,
+)
 
 
 class _ForSetDeployments(Model, RepositoryGroupsMixin):

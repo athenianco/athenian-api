@@ -31,8 +31,8 @@ from athenian.api.models.web import CalculatedCodeCheckMetrics, CalculatedCodeCh
     CalculatedDeploymentMetric, CalculatedDeveloperMetrics, CalculatedDeveloperMetricsItem, \
     CalculatedLinearMetricValues, CalculatedPullRequestMetrics, CalculatedPullRequestMetricsItem, \
     CalculatedReleaseMetric, CodeBypassingPRsMeasurement, CodeCheckMetricsRequest, CodeFilter, \
-    DeploymentMetricsRequest, DeveloperMetricsRequest, ForSet, ForSetCodeChecks, \
-    ForSetDeployments, ForSetDevelopers, PullRequestMetricID, ReleaseMetricsRequest
+    DeploymentMetricsRequest, DeveloperMetricsRequest, ForSetCodeChecks, ForSetDeployments, \
+    ForSetDevelopers, ForSetPullRequests, PullRequestMetricID, ReleaseMetricsRequest
 from athenian.api.models.web.invalid_request_error import InvalidRequestError
 from athenian.api.models.web.pull_request_metrics_request import PullRequestMetricsRequest
 from athenian.api.request import AthenianWebRequest
@@ -40,7 +40,7 @@ from athenian.api.response import model_response, ResponseError
 from athenian.api.tracing import sentry_span
 
 #               service                          developers                                    originals  # noqa
-FilterPRs = Tuple[str, Tuple[List[Set[str]], List[PRParticipants], LabelFilter, JIRAFilter, int, ForSet]]  # noqa
+FilterPRs = Tuple[str, Tuple[List[Set[str]], List[PRParticipants], LabelFilter, JIRAFilter, int, ForSetPullRequests]]  # noqa
 #                             repositories                                              for's index
 
 #                service                     developers
@@ -55,7 +55,7 @@ DeploymentLabelFilter = Tuple[Dict[str, Any], Dict[str, Any]]
 
 #                       service                                       withgroups                                         with(out)_labels                                  originals             # noqa
 FilterDeployments = Tuple[str, Tuple[List[Set[str]], List[Dict[ReleaseParticipationKind, List[str]]], List[List[str]], DeploymentLabelFilter, LabelFilter, JIRAFilter, ForSetDeployments, int]]  # noqa
-#                                  repositories                                                        environments                           pr_labels_*                          ForSet index  # noqa
+#                                  repositories                                                        environments                           pr_labels_*                          ForSetPullRequests index  # noqa
 
 
 @expires_header(short_term_exptime)
@@ -168,7 +168,7 @@ async def get_calculators_for_request(services: Iterable[str],
     return calcs
 
 
-async def compile_filters_prs(for_sets: List[ForSet],
+async def compile_filters_prs(for_sets: List[ForSetPullRequests],
                               request: AthenianWebRequest,
                               account: int,
                               meta_ids: Tuple[int, ...],
@@ -222,7 +222,10 @@ async def compile_filters_prs(for_sets: List[ForSet],
     return filters, all_repos, prefixer, logical_settings
 
 
-def check_environments(metrics: Collection[str], for_index: int, for_set: ForSet) -> None:
+def check_environments(metrics: Collection[str],
+                       for_index: int,
+                       for_set: ForSetPullRequests,
+                       ) -> None:
     """Raise InvalidRequestError if there are deployment metrics and no environments."""
     if dep_metrics := set(metrics).intersection(
             {m for m in PullRequestMetricID if "deployment" in m}) \

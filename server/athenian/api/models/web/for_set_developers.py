@@ -1,7 +1,7 @@
 from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import AllOf, Model
-from athenian.api.models.web.for_set import CommonPullRequestFilters, RepositoryGroupsMixin
+from athenian.api.models.web.for_set_common import CommonPullRequestFilters, RepositoryGroupsMixin
 
 
 class _ForSetDevelopers(Model, RepositoryGroupsMixin, sealed=False):
@@ -28,7 +28,7 @@ class _ForSetDevelopers(Model, RepositoryGroupsMixin, sealed=False):
         developers: Optional[List[str]] = None,
         aggregate_devgroups: Optional[List[List[int]]] = None,
     ):
-        """ForSet - a model defined in OpenAPI
+        """_ForSetDevelopers - a model defined in OpenAPI
 
         :param repositories: The repositories of this ForSetDevelopers.
         :param repogroups: The repogroups of this ForSetDevelopers.

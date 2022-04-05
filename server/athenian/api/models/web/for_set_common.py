@@ -1,29 +1,30 @@
+from __future__ import annotations
+
 from typing import List, Optional, Type, TypeVar
 
-from athenian.api.models.web.base_model_ import AllOf, Model
+from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.jira_filter import JIRAFilter
-from athenian.api.models.web.pull_request_with import PullRequestWith
 
 
 ForSetLike = TypeVar("ForSetLike", bound=Model)
 
 
 class RepositoryGroupsMixin:
-    """ForSet mixin to add support for `repositories` and `repogroups`."""
+    """Mixin to add support for `repositories` and `repogroups`."""
 
     @property
     def repositories(self) -> List[str]:
-        """Gets the repositories of this ForSet.
+        """Gets the repositories of this ForSetPullRequests.
 
-        :return: The repositories of this ForSet.
+        :return: The repositories of this ForSetPullRequests.
         """
         return self._repositories
 
     @repositories.setter
     def repositories(self, repositories: List[str]):
-        """Sets the repositories of this ForSet.
+        """Sets the repositories of this ForSetPullRequests.
 
-        :param repositories: The repositories of this ForSet.
+        :param repositories: The repositories of this ForSetPullRequests.
         """
         if repositories is None:
             raise ValueError("Invalid value for `repositories`, must not be `None`")
@@ -41,17 +42,17 @@ class RepositoryGroupsMixin:
 
     @property
     def repogroups(self) -> Optional[List[List[int]]]:
-        """Gets the repogroups of this ForSet.
+        """Gets the repogroups of this ForSetPullRequests.
 
-        :return: The repogroups of this ForSet.
+        :return: The repogroups of this ForSetPullRequests.
         """
         return self._repogroups
 
     @repogroups.setter
     def repogroups(self, repogroups: Optional[List[List[int]]]):
-        """Sets the repogroups of this ForSet.
+        """Sets the repogroups of this ForSetPullRequests.
 
-        :param repogroups: The repogroups of this ForSet.
+        :param repogroups: The repogroups of this ForSetPullRequests.
         """
         if repogroups is not None:
             if len(repogroups) == 0:
@@ -117,7 +118,7 @@ def make_common_pull_request_filters(prefix_labels: str) -> Type[Model]:
             """
             return getattr(self, f"_{prefix_labels}labels_include")
 
-        def _set_labels_include(self, labels_include: Optional[List[str]]):
+        def _set_labels_include(self, labels_include: Optional[List[str]]) -> None:
             """Sets the labels_include of this CommonPullRequestFilters.
 
             :param labels_include: The labels_include of this CommonPullRequestFilters.
@@ -131,7 +132,7 @@ def make_common_pull_request_filters(prefix_labels: str) -> Type[Model]:
             """
             return getattr(self, f"_{prefix_labels}labels_exclude")
 
-        def _set_labels_exclude(self, labels_exclude: Optional[List[str]]):
+        def _set_labels_exclude(self, labels_exclude: Optional[List[str]]) -> None:
             """Sets the labels_exclude of this CommonPullRequestFilters.
 
             :param labels_exclude: The labels_exclude of this CommonPullRequestFilters.
@@ -147,7 +148,7 @@ def make_common_pull_request_filters(prefix_labels: str) -> Type[Model]:
             return self._jira
 
         @jira.setter
-        def jira(self, jira: Optional[JIRAFilter]):
+        def jira(self, jira: Optional[JIRAFilter]) -> None:
             """Sets the jira of this CommonPullRequestFilters.
 
             :param jira: The jira of this CommonPullRequestFilters.
@@ -201,9 +202,9 @@ class ForSetLines(Model, RepositoryGroupsMixin, sealed=False):
     ):
         """ForSetLines - support for splitting metrics by the number of changed lines.
 
-        :param repositories: The repositories of this ForSet.
-        :param repogroups: The repogroups of this ForSet.
-        :param lines: The lines of this ForSet.
+        :param repositories: The repositories of this ForSetPullRequests.
+        :param repogroups: The repogroups of this ForSetPullRequests.
+        :param lines: The lines of this ForSetPullRequests.
         """
         self._repositories = repositories
         self._repogroups = repogroups
@@ -211,17 +212,17 @@ class ForSetLines(Model, RepositoryGroupsMixin, sealed=False):
 
     @property
     def lines(self) -> Optional[List[int]]:
-        """Gets the lines of this ForSet.
+        """Gets the lines of this ForSetPullRequests.
 
-        :return: The lines of this ForSet.
+        :return: The lines of this ForSetPullRequests.
         """
         return self._lines
 
     @lines.setter
     def lines(self, lines: Optional[List[int]]):
-        """Sets the lines of this ForSet.
+        """Sets the lines of this ForSetPullRequests.
 
-        :param lines: The lines of this ForSet.
+        :param lines: The lines of this ForSetPullRequests.
         """
         if lines is not None:
             if len(lines) < 2:
@@ -233,7 +234,7 @@ class ForSetLines(Model, RepositoryGroupsMixin, sealed=False):
                     raise ValueError("`lines` must monotonically increase")
         self._lines = lines
 
-    def select_lines(self, index: int) -> "ForSet":
+    def select_lines(self, index: int) -> ForSetLines:
         """Change `lines` to point at the specified line range."""
         fs = self.copy()
         if self.lines is None:
@@ -244,107 +245,3 @@ class ForSetLines(Model, RepositoryGroupsMixin, sealed=False):
             raise IndexError("%d is out of range (max is %d)" % (index, len(self.lines) - 1))
         fs.lines = [fs.lines[index], fs.lines[index + 1]]
         return fs
-
-
-class _ForSet(Model, sealed=False):
-    """This class is auto generated by OpenAPI Generator (https://openapi-generator.tech)."""
-
-    openapi_types = {
-        "with_": Optional[PullRequestWith],
-        "withgroups": Optional[List[PullRequestWith]],
-        "environments": Optional[List[str]],
-    }
-
-    attribute_map = {
-        "with_": "with",
-        "withgroups": "withgroups",
-        "environments": "environments",
-    }
-
-    def __init__(
-        self,
-        with_: Optional[PullRequestWith] = None,
-        withgroups: Optional[List[PullRequestWith]] = None,
-        environments: Optional[List[str]] = None,
-    ):
-        """ForSet - a model defined in OpenAPI
-
-        :param with_: The with of this ForSet.
-        :param withgroups: The withgroups of this ForSet.
-        :param environments: The environments of this ForSet.
-        """
-        self._with_ = with_
-        self._withgroups = withgroups
-        self._environments = environments
-
-    @property
-    def with_(self) -> Optional[PullRequestWith]:
-        """Gets the with_ of this PullRequest.
-
-        List of developers related to this PR.
-
-        :return: The with_ of this PullRequest.
-        """
-        return self._with_
-
-    @with_.setter
-    def with_(self, with_: Optional[PullRequestWith]):
-        """Sets the with_ of this PullRequest.
-
-        List of developers related to this PR.
-
-        :param with_: The with_ of this PullRequest.
-        """
-        self._with_ = with_
-
-    @property
-    def withgroups(self) -> Optional[List[PullRequestWith]]:
-        """Gets the withgroups of this PullRequest.
-
-        List of developers related to this PR.
-
-        :return: The withgroups of this PullRequest.
-        """
-        return self._withgroups
-
-    @withgroups.setter
-    def withgroups(self, withgroups: Optional[List[PullRequestWith]]):
-        """Sets the withgroups of this PullRequest.
-
-        List of developers related to this PR.
-
-        :param withgroups: The withgroups of this PullRequest.
-        """
-        self._withgroups = withgroups
-
-    @property
-    def environments(self) -> Optional[List[int]]:
-        """Gets the environments of this ForSet.
-
-        :return: The environments of this ForSet.
-        """
-        return self._environments
-
-    @environments.setter
-    def environments(self, environments: Optional[List[int]]):
-        """Sets the environments of this ForSet.
-
-        :param environments: The environments of this ForSet.
-        """
-        self._environments = environments
-
-    def select_withgroup(self, index: int) -> "ForSet":
-        """Change `with` to point at the specified `withgroup`."""
-        fs = self.copy()
-        if self.withgroups is None:
-            if index > 0:
-                raise IndexError("%d is out of range (no withgroups)" % index)
-            return fs
-        if index >= len(self.withgroups):
-            raise IndexError("%d is out of range (max is %d)" % (index, len(self.withgroups) - 1))
-        fs.with_ = self.withgroups[index]
-        fs.withgroups = None
-        return fs
-
-
-ForSet = AllOf(_ForSet, ForSetLines, CommonPullRequestFilters, name="ForSet", module=__name__)

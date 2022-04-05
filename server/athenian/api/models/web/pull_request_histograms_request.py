@@ -3,7 +3,7 @@ from typing import List, Optional
 from athenian.api.models.web.base_model_ import AllOf, Model
 from athenian.api.models.web.common_filter_properties import CommonFilterProperties
 from athenian.api.models.web.common_metrics_properties import QuantilesMixin
-from athenian.api.models.web.for_set import ForSet
+from athenian.api.models.web.for_set_pull_requests import ForSetPullRequests
 from athenian.api.models.web.pull_request_histogram_definition import \
     PullRequestHistogramDefinition
 
@@ -12,7 +12,7 @@ class _PullRequestHistogramsRequest(Model, QuantilesMixin, sealed=False):
     """Request of `/histograms/pull_requests`."""
 
     openapi_types = {
-        "for_": List[ForSet],
+        "for_": List[ForSetPullRequests],
         "histograms": List[PullRequestHistogramDefinition],
         "exclude_inactive": bool,
         "quantiles": List[float],
@@ -29,7 +29,7 @@ class _PullRequestHistogramsRequest(Model, QuantilesMixin, sealed=False):
 
     def __init__(
         self,
-        for_: Optional[List[ForSet]] = None,
+        for_: Optional[List[ForSetPullRequests]] = None,
         histograms: Optional[List[PullRequestHistogramDefinition]] = None,
         exclude_inactive: Optional[bool] = None,
         quantiles: Optional[List[float]] = None,
@@ -50,7 +50,7 @@ class _PullRequestHistogramsRequest(Model, QuantilesMixin, sealed=False):
         self._fresh = fresh
 
     @property
-    def for_(self) -> List[ForSet]:
+    def for_(self) -> List[ForSetPullRequests]:
         """Gets the for_ of this PullRequestHistogramsRequest.
 
         Sets of developers and repositories for which to calculate the histograms.
@@ -62,7 +62,7 @@ class _PullRequestHistogramsRequest(Model, QuantilesMixin, sealed=False):
         return self._for_
 
     @for_.setter
-    def for_(self, for_: List[ForSet]):
+    def for_(self, for_: List[ForSetPullRequests]):
         """Sets the for_ of this PullRequestHistogramsRequest.
 
         Sets of developers and repositories for which to calculate the histograms.
