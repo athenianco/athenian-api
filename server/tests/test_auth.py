@@ -83,6 +83,13 @@ async def test_set_account_from_token(client, headers, sdb):
     assert response.status == 200
 
 
+async def test_broken_json(client, headers):
+    response = await client.request(
+        method="POST", path="/v1/filter/repositories", headers=headers, data=b"hola",
+    )
+    assert response.status == 400
+
+
 async def test_account_expiration_regular(client, headers, sdb):
     await sdb.execute(update(Account).values({Account.expires_at: datetime.now(timezone.utc)}))
     body = {
