@@ -1,8 +1,7 @@
 from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import AllOf, Model
-from athenian.api.models.web.for_set_pull_requests import \
-    CommonPullRequestFilters, RepositoryGroupsMixin
+from athenian.api.models.web.for_set_common import CommonPullRequestFilters, RepositoryGroupsMixin
 
 
 class _ForSetDevelopers(Model, RepositoryGroupsMixin, sealed=False):
