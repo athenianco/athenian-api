@@ -80,7 +80,7 @@ python3 -m athenian.api.models.metadata postgresql://${POSTGRES_USER}:${POSTGRES
 Install the linters:
 
 ```
-pip install -r requirements-list.txt
+pip install -r server/requirements-lint.txt
 ```
 
 Validate your changes:
