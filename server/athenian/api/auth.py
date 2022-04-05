@@ -2,6 +2,7 @@ import asyncio
 from datetime import datetime, timedelta
 import functools
 from http import HTTPStatus
+from json import JSONDecodeError
 import logging
 import os
 import pickle
@@ -551,8 +552,12 @@ class AthenianAioHttpSecurityHandlerFactory(especifico.security.AioHttpSecurityH
             # token_info = {"token": <token>, "method": "bearer" or "apikey"}
             await auth._set_user(context := request.context, **token_info)
             # check whether the user may access the specified account
-            if isinstance(request.json, dict):
-                if (account := request.json.get("account")) is not None:
+            try:
+                request_json = request.json
+            except JSONDecodeError:
+                request_json = None
+            if isinstance(request_json, dict):
+                if (account := request_json.get("account")) is not None:
                     if isinstance(account, int):
                         with sentry_sdk.configure_scope() as scope:
                             scope.set_tag("account", account)
@@ -571,7 +576,7 @@ class AthenianAioHttpSecurityHandlerFactory(especifico.security.AioHttpSecurityH
                         except KeyError:
                             required = False
                         if required:
-                            request.json["account"] = account
+                            request_json["account"] = account
                 context.account = account
             # check whether the account is enabled
             if context.account is not None:
