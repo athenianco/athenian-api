@@ -66,6 +66,8 @@ def _parse_args() -> argparse.Namespace:
                           help="Schedule the eligible accounts for precomputing")
     accounts_parser = subparsers.add_parser("accounts", help="Precompute one or more accounts")
     accounts_parser.add_argument("account", nargs="+", help="Account IDs to precompute")
+    accounts_parser.add_argument("--skip-jira-identity-map", action="store_true",
+                                 help="Do not match JIRA identities")
     return parser.parse_args()
 
 
@@ -113,6 +115,7 @@ def _main() -> int:
             for v in cache.metrics["context"].values():
                 v.set(defaultdict(int))
             sdb, mdb, pdb, rdb = await _connect_to_dbs(args)
+            log.info("Executing %s", args.command)
             result = await commands[args.command](PrecomputeContext(
                 log=log,
                 sdb=sdb,
