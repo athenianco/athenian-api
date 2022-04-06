@@ -272,7 +272,7 @@ def main():
                 await wait_deferred()
                 await hide_first_releases(
                     ignored_first_releases, ignored_released_prs, default_branches,
-                    release_settings, account, pdb)
+                    release_settings, reposet.owner_id, pdb)
                 ignored_releases_count = len(ignored_first_releases)
                 del ignored_first_releases, ignored_released_prs
                 log.info("Mining deployments")

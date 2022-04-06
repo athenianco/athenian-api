@@ -1,7 +1,232 @@
 import argparse
+from datetime import date, datetime, timedelta, timezone
+import os
+import sys
+import traceback
+from typing import Optional, Set, Tuple
 
+import aiomcache
+import sentry_sdk
+from sqlalchemy import and_, insert, select, update
+from tqdm import tqdm
+
+from athenian.api.async_utils import gather
+from athenian.api.controllers.account import copy_teams_as_needed, generate_jira_invitation_link, \
+    get_metadata_account_ids
+from athenian.api.controllers.features.entries import MetricEntriesCalculator
+from athenian.api.controllers.jira import match_jira_identities
+from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.controllers.miners.github.bots import bots as fetch_bots
+from athenian.api.controllers.miners.github.branches import BranchMiner
+from athenian.api.controllers.miners.github.deployment import mine_deployments
+from athenian.api.controllers.miners.github.precomputed_prs import delete_force_push_dropped_prs
+from athenian.api.controllers.miners.github.release_load import ReleaseLoader
+from athenian.api.controllers.miners.github.release_mine import discover_first_releases, \
+    hide_first_releases, mine_releases
+from athenian.api.controllers.miners.types import PullRequestFacts
+from athenian.api.controllers.prefixer import Prefixer
+from athenian.api.controllers.reposet import refresh_repository_names
+from athenian.api.controllers.settings import ReleaseMatch, Settings
+from athenian.api.db import Database
+from athenian.api.defer import wait_deferred
+from athenian.api.models.state.models import RepositorySet, Team
 from athenian.api.precompute.context import PrecomputeContext
 
 
 async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
     """Precompute several accounts."""
+    log, sdb, mdb, pdb, rdb, cache, slack = (
+        context.log, context.sdb, context.mdb, context.pdb, context.rdb, context.cache,
+        context.slack,
+    )
+    successful_accounts = set()
+    failed_accounts = set()
+    time_to = datetime.combine(date.today() + timedelta(days=1),
+                               datetime.min.time(),
+                               tzinfo=timezone.utc)
+    no_time_from = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    time_from = (time_to - timedelta(days=365 * 2)) if not os.getenv("CI") else no_time_from
+    accounts = [int(s) for s in args.account]
+    reposets = await sdb.fetch_all(
+        select([RepositorySet])
+        .where(and_(RepositorySet.name == RepositorySet.ALL,
+                    RepositorySet.owner_id.in_(accounts))))
+    reposets = [RepositorySet(**r) for r in reposets]
+    log.info("Heating %d reposets", len(reposets))
+    for reposet in tqdm(reposets):
+        try:
+            meta_ids = await get_metadata_account_ids(reposet.owner_id, sdb, cache)
+            prefixer, bots, new_items = await gather(
+                Prefixer.load(meta_ids, mdb, cache),
+                fetch_bots(reposet.owner_id, meta_ids, mdb, sdb, None),
+                refresh_repository_names(reposet.owner_id, meta_ids, sdb, mdb),
+            )
+        except Exception as e:
+            log.error("prolog %d: %s: %s", reposet.owner_id, type(e).__name__, e)
+            sentry_sdk.capture_exception(e)
+            failed_accounts.add(reposet.owner_id)
+            continue
+        reposet.items = new_items
+        log.info("Loaded %d bots", len(bots))
+        if not reposet.precomputed:
+            log.info("Considering account %d as brand new, creating the teams",
+                     reposet.owner_id)
+            try:
+                num_teams, num_bots = await create_teams(
+                    reposet.owner_id, meta_ids, bots, prefixer, sdb, mdb, cache)
+            except Exception as e:
+                log.warning("teams %d: %s: %s", reposet.owner_id, type(e).__name__, e)
+                sentry_sdk.capture_exception(e)
+                failed_accounts.add(reposet.owner_id)
+                num_teams = num_bots = 0
+                # no continue
+        if not args.skip_jira_identity_map:
+            try:
+                await match_jira_identities(reposet.owner_id, meta_ids, sdb, mdb, slack, cache)
+            except Exception as e:
+                log.warning("match_jira_identities %d: %s: %s",
+                            reposet.owner_id, type(e).__name__, e)
+                sentry_sdk.capture_exception(e)
+                failed_accounts.add(reposet.owner_id)
+                # no continue
+        log.info("Heating reposet %d of account %d (%d repos)",
+                 reposet.id, reposet.owner_id, len(reposet.items))
+        try:
+            settings = Settings.from_account(reposet.owner_id, sdb, mdb, cache, None)
+            repos = {r.split("/", 1)[1] for r in reposet.items}
+            logical_settings, release_settings, (branches, default_branches) = await gather(
+                settings.list_logical_repositories(prefixer, reposet.items),
+                settings.list_release_matches(reposet.items),
+                BranchMiner.extract_branches(repos, prefixer, meta_ids, mdb, None),
+            )
+            branches_count = len(branches)
+
+            log.info("Mining the releases")
+            releases, _, matches, _ = await mine_releases(
+                repos, {}, branches, default_branches, no_time_from, time_to,
+                LabelFilter.empty(), JIRAFilter.empty(), release_settings, logical_settings,
+                prefixer, reposet.owner_id, meta_ids, mdb, pdb, rdb, None,
+                force_fresh=True, with_pr_titles=False, with_deployments=False)
+            releases_by_tag = sum(
+                1 for r in releases if r[1].matched_by == ReleaseMatch.tag)
+            releases_by_branch = sum(
+                1 for r in releases if r[1].matched_by == ReleaseMatch.branch)
+            releases_count = len(releases)
+            ignored_first_releases, ignored_released_prs = discover_first_releases(releases)
+            del releases
+            release_settings = ReleaseLoader.disambiguate_release_settings(
+                release_settings, matches)
+            if reposet.precomputed:
+                log.info("Scanning for force push dropped PRs")
+                await delete_force_push_dropped_prs(
+                    repos, branches, reposet.owner_id, meta_ids, mdb, pdb, None)
+            log.info("Extracting PR facts")
+            facts = await MetricEntriesCalculator(
+                reposet.owner_id,
+                meta_ids,
+                0,
+                mdb,
+                pdb,
+                rdb,
+                None,  # yes, disable the cache
+            ).calc_pull_request_facts_github(
+                time_from,
+                time_to,
+                repos,
+                {},
+                LabelFilter.empty(),
+                JIRAFilter.empty(),
+                False,
+                bots,
+                release_settings,
+                logical_settings,
+                prefixer,
+                True,
+                False,
+                branches=branches,
+                default_branches=default_branches,
+            )
+            if not reposet.precomputed and slack is not None:
+                prs = len(facts)
+                prs_done = facts[PullRequestFacts.f.done].sum()
+                prs_merged = (
+                    facts[PullRequestFacts.f.merged].notnull()
+                    & ~facts[PullRequestFacts.f.done]
+                ).sum()
+                prs_open = facts[PullRequestFacts.f.closed].isnull().sum()
+            del facts  # free some memory
+            await wait_deferred()
+            await hide_first_releases(
+                ignored_first_releases, ignored_released_prs, default_branches,
+                release_settings, reposet.owner_id, pdb)
+            ignored_releases_count = len(ignored_first_releases)
+            del ignored_first_releases, ignored_released_prs
+            log.info("Mining deployments")
+            await mine_deployments(
+                repos, {}, no_time_from, time_to, [], [], {}, {}, LabelFilter.empty(),
+                JIRAFilter.empty(), release_settings, logical_settings,
+                branches, default_branches, prefixer, reposet.owner_id, meta_ids,
+                mdb, pdb, rdb, None)  # yes, disable the cache
+            if not reposet.precomputed:
+                if slack is not None:
+                    jira_link = await generate_jira_invitation_link(reposet.owner_id, sdb)
+                    await slack.post_install(
+                        "precomputed_account.jinja2",
+                        account=reposet.owner_id,
+                        prefixes={r.split("/", 2)[1] for r in reposet.items},
+                        prs=prs,
+                        prs_done=prs_done,
+                        prs_merged=prs_merged,
+                        prs_open=prs_open,
+                        releases=releases_count,
+                        ignored_first_releases=ignored_releases_count,
+                        releases_by_tag=releases_by_tag,
+                        releases_by_branch=releases_by_branch,
+                        branches=branches_count,
+                        repositories=len(repos),
+                        bots_team_name=Team.BOTS,
+                        bots=num_bots,
+                        teams=num_teams,
+                        jira_link=jira_link)
+        except Exception as e:
+            log.warning("reposet %d: %s: %s\n%s", reposet.id, type(e).__name__, e,
+                        "".join(traceback.format_exception(*sys.exc_info())[:-1]))
+            sentry_sdk.capture_exception(e)
+            failed_accounts.add(reposet.owner_id)
+        else:
+            if not reposet.precomputed:
+                await sdb.execute(
+                    update(RepositorySet)
+                    .where(RepositorySet.id == reposet.id)
+                    .values({RepositorySet.precomputed: True,
+                             RepositorySet.updates_count: RepositorySet.updates_count,
+                             RepositorySet.updated_at: datetime.now(timezone.utc)}))
+        finally:
+            await wait_deferred()
+        successful_accounts.add(reposet.owner_id)
+
+
+async def create_teams(account: int,
+                       meta_ids: Tuple[int, ...],
+                       bots: Set[str],
+                       prefixer: Prefixer,
+                       sdb: Database,
+                       mdb: Database,
+                       cache: Optional[aiomcache.Client]) -> Tuple[int, int]:
+    """Copy the existing teams from GitHub and create a new team with all the involved bots \
+    for the specified account.
+
+    :return: Number of copied teams and the number of noticed bots.
+    """
+    _, num_teams = await copy_teams_as_needed(account, meta_ids, sdb, mdb, cache)
+    bot_team = await sdb.fetch_one(select([Team.id, Team.members])
+                                   .where(and_(Team.name == Team.BOTS,
+                                               Team.owner_id == account)))
+    if bot_team is not None:
+        return num_teams, len(bot_team[Team.members.name])
+    bots -= await fetch_bots.extra(mdb)
+    bots = prefixer.prefix_user_logins(bots)
+    await sdb.execute(insert(Team).values(
+        Team(id=account, name=Team.BOTS, owner_id=account, members=sorted(bots))
+        .create_defaults().explode()))
+    return num_teams, len(bots)
