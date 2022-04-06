@@ -134,7 +134,7 @@ ADD README.md /
 RUN apt-get update && \
     apt-get install -y --no-install-suggests --no-install-recommends gcc g++ && \
     echo "Installing Python packages" && \
-    pip3 install -e /server && \
+    pip3 install --no-deps -e /server && \
     apt-get purge -y gcc g++ && \
     apt-get autoremove -y --purge && \
     apt-get upgrade -y && \
