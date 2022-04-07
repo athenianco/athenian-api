@@ -54,8 +54,8 @@ def _parse_args() -> argparse.Namespace:
                              "postgresql://0.0.0.0:5432/persistentdata")
     parser.add_argument("--memcached", required=False,
                         help="memcached address, e.g. 0.0.0.0:11211")
-    parser.add_argument("--skip-xcom", action="store_true",
-                        help="Do not write the result to /airflow/xcom/return.json")
+    parser.add_argument("--xcom", default="/airflow/xcom/return.json",
+                        help="xcom target file path")
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("sync-labels", help="Update the labels in the precomputed PRs")
     subparsers.add_parser("resolve-deployments",
@@ -131,8 +131,8 @@ def _main() -> int:
             sentry_sdk.capture_exception(e)
             return 1
         log.info("result: %s", result)
-        if result is not None and not args.skip_xcom:
-            with open("/airflow/xcom/return.json", "w") as fout:
+        if result is not None and args.xcom:
+            with open(args.xcom, "w") as fout:
                 json.dump(result, fout)
         return 0
 
