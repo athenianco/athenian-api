@@ -450,7 +450,8 @@ async def _mine_releases(repos: Iterable[str],
         all_authors = np.unique(np.concatenate([
             commits_authors[commits_authors_nz],
             prs_authors[prs_authors_nz],
-            mentioned_authors]))
+            mentioned_authors,
+        ], dtype=int, casting="unsafe"))
         user_node_to_login = prefixer.user_node_to_login
         all_author_logins = []
         missing_nodes = []
