@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 import argparse
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import logging
 from random import randint
 
@@ -37,7 +37,9 @@ def main(conn_str: str, force_new: bool = False) -> None:
         session.add(Account(id=invitation_controller.admin_backdoor,
                             secret_salt=0,
                             secret=Account.missing_secret,
-                            expires_at=datetime.now(timezone.utc) + timedelta(days=14, hours=4)))
+                            expires_at=datetime.now(
+                                timezone.utc,
+                            ) + invitation_controller.TRIAL_PERIOD))
         session.commit()
         max_id = session.query(func.max(Account.id)).filter(Account.id < admin_backdoor).first()
         if max_id is None or max_id[0] is None:

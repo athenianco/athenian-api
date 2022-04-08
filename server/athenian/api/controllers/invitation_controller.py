@@ -14,6 +14,7 @@ from aiohttp import web
 import aiomcache
 import aiosqlite.core
 from asyncpg import IntegrityConstraintViolationError
+from dateutil.relativedelta import relativedelta
 import morcilla.core
 import sentry_sdk
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
@@ -46,7 +47,7 @@ from athenian.api.tracing import sentry_span
 admin_backdoor = (1 << 24) - 1
 url_prefix = os.getenv("ATHENIAN_INVITATION_URL_PREFIX")
 # we add 4 hours to compensate the installation time
-trial_period = timedelta(days=14, hours=4)
+TRIAL_PERIOD = relativedelta(months=1, hours=4)
 
 
 def validate_env():
@@ -363,7 +364,7 @@ async def _create_new_account_fast(conn: DatabaseLike, secret: str) -> int:
     account_id = await conn.execute(
         insert(Account).values(Account(secret_salt=0,
                                        secret=Account.missing_secret,
-                                       expires_at=datetime.now(timezone.utc) + trial_period)
+                                       expires_at=datetime.now(timezone.utc) + TRIAL_PERIOD)
                                .create_defaults().explode()))
     salt, secret = _generate_account_secret(account_id, secret)
     await conn.execute(update(Account).where(Account.id == account_id).values({
@@ -381,7 +382,7 @@ async def _create_new_account_slow(conn: DatabaseLike, secret: str) -> int:
     """
     acc = Account(secret_salt=0,
                   secret=Account.missing_secret,
-                  expires_at=datetime.now() + trial_period).create_defaults()
+                  expires_at=datetime.now() + TRIAL_PERIOD).create_defaults()
     max_id = (await conn.fetch_one(select([func.max(Account.id)])
                                    .where(Account.id < admin_backdoor)))[0] or 0
     acc.id = max_id + 1
