@@ -1,5 +1,4 @@
 from datetime import date, datetime, timezone
-import json
 
 from aiohttp import web
 from dateutil.parser import parse as parse_datetime
@@ -25,8 +24,7 @@ async def test_get_user_smoke(client, headers, app):
         method="GET", path="/v1/user", headers=headers, json={},
     )
     assert response.status == 200
-    body = (await response.read()).decode("utf-8")
-    items = json.loads(body)
+    items = await response.json()
     updated = items["updated"]
     del items["updated"]
     assert items == {
@@ -75,7 +73,7 @@ async def test_is_default_user(client, headers, app, value):
         method="GET", path="/v1/user", headers=headers, json={},
     )
     assert response.status == 200
-    items = json.loads((await response.read()).decode("utf-8"))
+    items = await response.json()
     assert items == {"is_default_user": value}
 
 
@@ -84,8 +82,7 @@ async def test_get_default_user(client, headers, lazy_gkwillie):
         method="GET", path="/v1/user", headers=headers, json={},
     )
     assert response.status == 200
-    body = (await response.read()).decode("utf-8")
-    items = json.loads(body)
+    items = await response.json()
     del items["updated"]
     assert items == {
         "id": "github|60340680",
@@ -102,7 +99,7 @@ async def test_get_account_details_smoke(client, headers):
     response = await client.request(
         method="GET", path="/v1/account/1/details", headers=headers, json={},
     )
-    body = Account.from_dict(json.loads((await response.read()).decode("utf-8")))
+    body = Account.from_dict(await response.json())
     assert len(body.admins) == 1
     assert body.admins[0].name == "Vadim Markovtsev"
     assert body.admins[0].email == vadim_email
@@ -124,17 +121,19 @@ async def test_get_account_details_nasty_input(client, headers, account, code):
     response = await client.request(
         method="GET", path="/v1/account/%d/details" % account, headers=headers, json={},
     )
-    body = json.loads((await response.read()).decode("utf-8"))
+    body = await response.json()
     assert response.status == code, body
     if code == 200:
         assert "jira" not in body
 
 
+@pytest.mark.app_validate_responses(False)
 async def test_get_account_features_smoke(client, headers):
     response = await client.request(
         method="GET", path="/v1/account/1/features", headers=headers, json={},
     )
-    body = json.loads((await response.read()).decode("utf-8"))
+    assert response.status == 200
+    body = await response.json()
     models = [ProductFeature.from_dict(p) for p in body]
     assert len(models) == 3
     assert models[0].name == DBAccount.expires_at.name
@@ -150,7 +149,7 @@ async def test_get_account_features_nasty_input(client, headers, account, code):
     response = await client.request(
         method="GET", path="/v1/account/%d/features" % account, headers=headers, json={},
     )
-    body = json.loads((await response.read()).decode("utf-8"))
+    body = await response.json()
     assert response.status == code, body
 
 
@@ -160,7 +159,7 @@ async def test_get_account_features_disabled(client, headers, sdb):
     response = await client.request(
         method="GET", path="/v1/account/1/features", headers=headers, json={},
     )
-    body = json.loads((await response.read()).decode("utf-8"))
+    body = await response.json()
     assert len(body) == 1
     assert body[0]["name"] == DBAccount.expires_at.name
     await sdb.execute(update(Feature).values(
@@ -170,7 +169,7 @@ async def test_get_account_features_disabled(client, headers, sdb):
     response = await client.request(
         method="GET", path="/v1/account/1/features", headers=headers, json={},
     )
-    body = json.loads((await response.read()).decode("utf-8"))
+    body = await response.json()
     assert len(body) == 1
     assert body[0]["name"] == DBAccount.expires_at.name
 
@@ -185,7 +184,7 @@ async def test_set_account_features_smoke(client, headers, god, sdb):
     response = await client.request(
         method="POST", path="/v1/account/1/features", headers=headers, json=body,
     )
-    body = json.loads((await response.read()).decode("utf-8"))
+    body = await response.json()
     assert isinstance(body, list)
     assert len(body) == 2
     models = [ProductFeature.from_dict(f) for f in body]
@@ -247,11 +246,11 @@ async def test_become_db(client, headers, sdb, god):
         method="GET", path="/v1/become?id=auth0|5e1f6e2e8bfa520ea5290741", headers=headers,
         json={},
     )
-    body1 = json.loads((await response.read()).decode("utf-8"))
+    body1 = await response.json()
     response = await client.request(
         method="GET", path="/v1/user", headers=headers, json={},
     )
-    body2 = json.loads((await response.read()).decode("utf-8"))
+    body2 = await response.json()
     assert body2["impersonated_by"] == "auth0|5e1f6dfb57bc640ea390557b"
     del body2["impersonated_by"]
     assert body1 == body2
@@ -281,7 +280,7 @@ async def test_become_db(client, headers, sdb, god):
     response = await client.request(
         method="GET", path="/v1/become", headers=headers, json={},
     )
-    body3 = json.loads((await response.read()).decode("utf-8"))
+    body3 = await response.json()
     del body3["updated"]
     assert body3 == {
         "id": "auth0|5e1f6dfb57bc640ea390557b",
@@ -313,7 +312,7 @@ async def test_become_header(client, headers, sdb, god):
     response = await client.request(
         method="GET", path="/v1/user", headers=headers, json={},
     )
-    body = json.loads((await response.read()).decode("utf-8"))
+    body = await response.json()
     del body["updated"]
     assert body == {
         "id": "auth0|5e1f6e2e8bfa520ea5290741",
@@ -350,7 +349,7 @@ async def test_change_user_regular(client, headers):
         method="PUT", path="/v1/account/user", headers=headers, json=body,
     )
     assert response.status == 200
-    items = json.loads((await response.read()).decode("utf-8"))
+    items = await response.json()
     assert len(items["admins"]) == 1
     assert items["admins"][0]["id"] == "auth0|5e1f6dfb57bc640ea390557b"
     assert len(items["regulars"]) == 1
@@ -367,7 +366,7 @@ async def test_change_user_admin(client, headers):
         method="PUT", path="/v1/account/user", headers=headers, json=body,
     )
     assert response.status == 200
-    items = json.loads((await response.read()).decode("utf-8"))
+    items = await response.json()
     assert len(items["admins"]) == 2
     assert items["admins"][0]["id"] == "auth0|5e1f6dfb57bc640ea390557b"
     assert items["admins"][1]["id"] == "auth0|5e1f6e2e8bfa520ea5290741"
@@ -378,7 +377,7 @@ async def test_change_user_banish(client, headers, sdb, membership_check):
     response = await client.request(
         method="GET", path="/v1/invite/generate/1", headers=headers, json={},
     )
-    link1 = json.loads((await response.read()).decode("utf-8"))
+    link1 = await response.json()
     assert 1 == (await sdb.fetch_val(
         select([func.count(Invitation.id)])
         .where(and_(Invitation.is_active, Invitation.account_id == 1))))
@@ -401,7 +400,7 @@ async def test_change_user_banish(client, headers, sdb, membership_check):
         method="PUT", path="/v1/account/user", headers=headers, json=body,
     )
     assert response.status == 200
-    items = json.loads((await response.read()).decode("utf-8"))
+    items = await response.json()
     assert len(items["admins"]) == 1
     assert items["admins"][0]["id"] == "auth0|5e1f6dfb57bc640ea390557b"
     assert len(items["regulars"]) == 0
@@ -414,7 +413,7 @@ async def test_change_user_banish(client, headers, sdb, membership_check):
         response = await client.request(
             method="GET", path="/v1/invite/generate/1", headers=headers, json={},
         )
-        link2 = json.loads((await response.read()).decode("utf-8"))
+        link2 = await response.json()
         assert 1 == (await sdb.fetch_val(
             select([func.count(Invitation.id)])
             .where(and_(Invitation.is_active, Invitation.account_id == 1))))
