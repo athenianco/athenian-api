@@ -71,7 +71,6 @@ from athenian.precomputer.db import dereference_schemas as dereference_precomput
 from tests.sample_db_data import fill_metadata_session, fill_persistentdata_session, \
     fill_state_session
 
-
 if os.getenv("NEST_ASYNCIO"):
     nest_asyncio.apply()
 uvloop.install()
@@ -352,8 +351,26 @@ async def with_preloading(sdb, mdb, mdb_rw, pdb, rdb, with_preloading_enabled):
 
 @pytest.fixture(scope="function")
 async def app(metadata_db, state_db, precomputed_db, persistentdata_db, slack,
-              with_preloading_enabled) -> AthenianApp:
+              with_preloading_enabled, request) -> AthenianApp:
+    """Build the especifico App to be used during tests
+
+    By default handler responses will be validated against oas spec,
+    `app_validate_response` mark can be applied to disable this behavior:
+
+    ```
+    @pytest.mark.app_validate_response(False)
+    def my_test(app):
+        ...
+    ```
+    """
     logging.getLogger("especifico.operation").setLevel("WARNING")
+
+    validate_responses_mark = request.node.get_closest_marker("app_validate_responses")
+    if validate_responses_mark is None:
+        validate_responses = False
+    else:
+        validate_responses = validate_responses_mark.args[0]
+
     app = AthenianApp(mdb_conn=metadata_db,
                       sdb_conn=state_db,
                       pdb_conn=precomputed_db,
@@ -364,7 +381,8 @@ async def app(metadata_db, state_db, precomputed_db, persistentdata_db, slack,
                       slack=slack,
                       client_max_size=256 * 1024,
                       max_load=15,
-                      with_pdb_schema_checks=False)
+                      with_pdb_schema_checks=False,
+                      validate_responses=validate_responses)
     if with_preloading_enabled:
         app.on_dbs_connected(MemoryCachePreloader(60, None, False).preload)
     await app.ready()

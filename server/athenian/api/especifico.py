@@ -227,7 +227,8 @@ class AthenianApp(especifico.AioHttpApp):
                  mandrill: Optional[MandrillClient] = None,
                  with_pdb_schema_checks: bool = True,
                  segment: Optional[SegmentClient] = None,
-                 google_analytics: Optional[str] = ""):
+                 google_analytics: Optional[str] = "",
+                 validate_responses: bool = False):
         """
         Initialize the underlying especifico -> aiohttp application.
 
@@ -252,6 +253,7 @@ class AthenianApp(especifico.AioHttpApp):
         :param with_pdb_schema_checks: Enable or disable periodic pdb schema version checks.
         :param segment: User action tracker.
         :param google_analytics: Google Analytics tag to track Swagger UI.
+        :param validate_responses: validate responses bodies against spec schema
         """
         options = {"swagger_ui": ui}
         specification_dir = str(Path(__file__).parent / "openapi")
@@ -306,6 +308,7 @@ class AthenianApp(especifico.AioHttpApp):
                     "validatorUrl": "null, filter: true",
                 },
             },
+            validate_responses=validate_responses,
         )
         GraphQL(align.create_graphql_schema()).attach(self.app, "/align", middlewares)
         if kms_cls is not None:
