@@ -367,7 +367,7 @@ async def app(metadata_db, state_db, precomputed_db, persistentdata_db, slack,
 
     validate_responses_mark = request.node.get_closest_marker("app_validate_responses")
     if validate_responses_mark is None:
-        validate_responses = False
+        validate_responses = True
     else:
         validate_responses = validate_responses_mark.args[0]
 
