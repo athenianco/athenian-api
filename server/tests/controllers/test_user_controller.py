@@ -1,6 +1,7 @@
 from datetime import date, datetime, timezone
 
 from aiohttp import web
+from aiohttp.test_utils import TestClient
 from dateutil.parser import parse as parse_datetime
 import pytest
 from sqlalchemy import and_, func, insert, select, update
@@ -52,8 +53,10 @@ async def test_get_user_smoke(client, headers, app):
     assert datetime.utcnow() >= parse_datetime(updated[:-1])
 
 
+# the handler is a mock with custom response so validation must be skipped
+@pytest.mark.app_validate_responses(False)
 @pytest.mark.parametrize("value", (True, False))
-async def test_is_default_user(client, headers, app, value):
+async def test_is_default_user(client: TestClient, headers: dict, app, value) -> None:
     async def get_is_default_user(request: AthenianWebRequest) -> web.Response:
         return web.json_response({"is_default_user": request.is_default_user})
 
@@ -339,7 +342,7 @@ async def test_become_header(client, headers, sdb, god):
     }
 
 
-async def test_change_user_regular(client, headers):
+async def test_change_user_regular(client: TestClient, headers: dict) -> None:
     body = {
         "account": 1,
         "user": "auth0|5e1f6e2e8bfa520ea5290741",
@@ -354,6 +357,20 @@ async def test_change_user_regular(client, headers):
     assert items["admins"][0]["id"] == "auth0|5e1f6dfb57bc640ea390557b"
     assert len(items["regulars"]) == 1
     assert items["regulars"][0]["id"] == "auth0|5e1f6e2e8bfa520ea5290741"
+
+
+async def test_change_user_invalid_status(client: TestClient, headers: dict) -> None:
+    body = {
+        "account": 1,
+        "user": "auth0|5e1f6e2e8bfa520ea5290741",
+        "status": "attacker",
+    }
+    response = await client.request(
+        method="PUT", path="/v1/account/user", headers=headers, json=body,
+    )
+    assert response.status == 400
+    response_body = await response.json()
+    assert "attacker" in response_body["detail"]
 
 
 async def test_change_user_admin(client, headers):
