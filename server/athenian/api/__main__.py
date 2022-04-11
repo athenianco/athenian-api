@@ -3,6 +3,7 @@ import argparse
 import asyncio
 from datetime import datetime, timezone
 import getpass
+import json
 import logging
 import os
 from pathlib import Path
@@ -31,6 +32,7 @@ import uvloop
 
 from athenian.api import metadata
 from athenian.api.auth import Auth0
+from athenian.api.balancing import endpoint_weights
 from athenian.api.db import check_schema_versions
 from athenian.api.especifico import AthenianApp
 from athenian.api.faster_pandas import patch_pandas
@@ -131,6 +133,7 @@ def parse_args() -> argparse.Namespace:
                              "this user.")
     parser.add_argument("--no-db-version-check", action="store_true",
                         help="Do not validate database schema versions on startup.")
+    parser.add_argument("--weights", help="JSON file with endpoint weights.")
     return parser.parse_args()
 
 
@@ -385,6 +388,15 @@ def setup_preloading(app: AthenianApp, preload_refresh_frequency: int,
     app.app.on_shutdown.insert(0, shutdown)
 
 
+def set_endpoint_weights(file_name: str, log: logging.Logger) -> None:
+    """Change the API endpoint weights from their default values."""
+    if file_name is None:
+        return
+    with open(file_name) as fin:
+        endpoint_weights.update(json.load(fin))
+    log.info("loaded %d endpoint weights from %s", len(endpoint_weights), file_name)
+
+
 def main() -> Optional[AthenianApp]:
     """Server's entry point."""
     uvloop.install()
@@ -399,6 +411,7 @@ def main() -> Optional[AthenianApp]:
                                           log):
         return None
     patch_pandas()
+    set_endpoint_weights(args.weights, log)
     app = AthenianApp(
         mdb_conn=args.metadata_db,
         sdb_conn=args.state_db,
