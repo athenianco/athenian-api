@@ -10,6 +10,7 @@ pydocstyle==6.1.1
 pycodestyle==2.8.0
 semgrep==0.86.5
 sqlalchemy-stubs==0.4
-types-pytz==2021.3.6
 types-croniter==1.0.8
+types-python-dateutil==2.8.10
+types-pytz==2021.3.6
 bandit==1.7.4

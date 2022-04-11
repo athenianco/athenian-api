@@ -3,6 +3,7 @@ import json
 from random import randint
 import re
 
+from freezegun import freeze_time
 import morcilla
 import pytest
 from sqlalchemy import and_, delete, insert, select, update
@@ -15,6 +16,7 @@ from athenian.api.models.metadata.jira import Progress as JIRAProgress
 from athenian.api.models.state.models import Account, AccountFeature, AccountGitHubAccount, \
     AccountJiraInstallation, BanishedUserAccount, Feature, FeatureComponent, God, Invitation, \
     ReleaseSetting, RepositorySet, UserAccount, UserToken, WorkType
+from athenian.api.models.web import InvitedUser
 
 
 async def clean_state(sdb: morcilla.Database) -> int:
@@ -136,17 +138,29 @@ async def test_gen_account_invitation_no_god(client, headers, sdb):
     assert response.status == 403, (await response.read()).decode("utf-8")
 
 
+@freeze_time("2012-10-23T10:00:00")
 async def test_gen_account_invitation_e2e(client, headers, sdb, god, disable_default_user):
     response = await client.request(
         method="GET", path="/v1/invite/generate", headers=headers, json={},
     )
     assert response.status == 200
-    body = json.loads((await response.read()).decode("utf-8"))
+    body = await response.json()
     response = await client.request(
         method="PUT", path="/v1/invite/accept", headers=headers, json=body,
     )
-    body = json.loads((await response.read()).decode("utf-8"))
+    body = await response.json()
     assert response.status == 200, body
+    invited_user = InvitedUser.from_dict(body)
+
+    new_account_row = await sdb.fetch_one(
+        select([Account]).where(Account.id == invited_user.account),
+    )
+    # expiration for the created account is based on TRIAL_PERIOD
+    account_expires = new_account_row[Account.expires_at.name]
+    if sdb.url.dialect == "sqlite":
+        account_expires = account_expires.replace(tzinfo=timezone.utc)
+    assert account_expires == datetime(2012, 11, 23, 14, tzinfo=timezone.utc)
+
     assert body["user"]["accounts"]["4"] == {
         "is_admin": True,
         "expired": False,
