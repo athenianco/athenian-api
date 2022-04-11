@@ -1,7 +1,7 @@
-import datetime
+from datetime import date, datetime, timedelta, timezone
 import json
 import typing
-from typing import Union
+from typing import Optional, Union
 
 from dateutil.parser import parse as parse_datetime
 from dateutil.tz import tzutc
@@ -25,8 +25,7 @@ class ParseError(ValueError):
 
 def _deserialize(
     data: Union[dict, list, str], klass: Union[Class, str], path: str,
-) -> Union[dict, list, Class, int, float, str, bool, datetime.date, datetime.datetime,
-           datetime.timedelta]:
+) -> Union[dict, list, Class, int, float, str, bool, date, datetime, timedelta]:
     """Deserializes dict, list, str into an object.
 
     :param data: dict, list or str.
@@ -42,11 +41,11 @@ def _deserialize(
             return _deserialize_primitive(data, klass)
         elif klass in (object, dict):
             return _deserialize_object(data)
-        elif klass == datetime.date:
+        elif klass == date:
             return deserialize_date(data)
-        elif klass == datetime.datetime:
+        elif klass == datetime:
             return deserialize_datetime(data)
-        elif klass == datetime.timedelta:
+        elif klass == timedelta:
             return deserialize_timedelta(data)
         elif typing_utils.is_generic(klass):
             if typing_utils.is_list(klass):
@@ -90,37 +89,52 @@ def _deserialize_object(value: T) -> T:
     return value
 
 
-def deserialize_date(string: str) -> datetime.date:
+# default bounds for deserialize_date and deserialize_datetime
+_DATETIME_MIN = datetime(2000, 1, 1)
+_DATE_MIN = _DATETIME_MIN.date()
+_DATETIME_MAX_FUTURE_DELTA = timedelta(days=365)
+
+
+def deserialize_date(
+    string: str,
+    *,
+    min_: Optional[date] = _DATE_MIN,
+    max_future_delta: Optional[timedelta] = _DATETIME_MAX_FUTURE_DELTA,
+) -> date:
     """Deserializes string to date.
 
-    :param string: str.
-    :return: date.
+    Using `min_` and `max_future_delta` parameters the date can be validated
+    for inclusion in the given bounds.
     """
-    dt = parse_datetime(string, ignoretz=True, yearfirst=True).date()
-    if dt < datetime.date(2000, 1, 1):
-        raise pd.errors.OutOfBoundsDatetime(f"{dt} is too far in the past")
-    if dt > datetime.date.today() + datetime.timedelta(days=365):
-        raise pd.errors.OutOfBoundsDatetime(f"{dt} is too far in the future")
-    return dt
+    d = parse_datetime(string, ignoretz=True, yearfirst=True).date()
+    if min_ is not None and d < min_:
+        raise pd.errors.OutOfBoundsDatetime(f"{d} is too far in the past")
+    if max_future_delta is not None and d > date.today() + max_future_delta:
+        raise pd.errors.OutOfBoundsDatetime(f"{d} is too far in the future")
+    return d
 
 
-def deserialize_datetime(string: str) -> datetime.datetime:
+def deserialize_datetime(
+    string: str,
+    *,
+    min_: Optional[datetime] = _DATETIME_MIN,
+    max_future_delta: Optional[timedelta] = _DATETIME_MAX_FUTURE_DELTA,
+) -> datetime:
     """Deserializes string to datetime.
 
     The string should be in iso8601 datetime format.
-
-    :param string: str.
-    :return: datetime.
+    Using `min_` and `max_future_delta` parameters the datetime can be validated
+    for inclusion in the given bounds.
     """
     dt = parse_datetime(string, yearfirst=True)
-    if dt < datetime.datetime(2000, 1, 1, tzinfo=dt.tzinfo):
+    if min_ is not None and dt < min_.replace(tzinfo=dt.tzinfo):
         raise pd.errors.OutOfBoundsDatetime(f"{dt} is too far in the past")
-    if dt > datetime.datetime.now(dt.tzinfo) + datetime.timedelta(days=365):
+    if max_future_delta is not None and dt > datetime.now(dt.tzinfo) + max_future_delta:
         raise pd.errors.OutOfBoundsDatetime(f"{dt} is too far in the future")
     return dt
 
 
-def deserialize_timedelta(string: str) -> datetime.timedelta:
+def deserialize_timedelta(string: str) -> timedelta:
     """Deserializes string to datetime.
 
     The string should be in iso8601 datetime format.
@@ -130,7 +144,7 @@ def deserialize_timedelta(string: str) -> datetime.timedelta:
     """
     if not string.endswith("s"):
         raise ValueError("Unsupported timedelta format: " + string)
-    pd.Timedelta(td := datetime.timedelta(seconds=int(string[:-1])))
+    pd.Timedelta(td := timedelta(seconds=int(string[:-1])))
     return td
 
 
@@ -198,19 +212,19 @@ class FriendlyJson:
     @classmethod
     def serialize(klass, obj):
         """Format timedeltas and dates according to https://athenianco.atlassian.net/browse/ENG-125"""  # noqa
-        if isinstance(obj, (datetime.timedelta, np.timedelta64)):
+        if isinstance(obj, (timedelta, np.timedelta64)):
             if isinstance(obj, np.timedelta64):
                 obj = obj.astype("timedelta64[s]").item()
             return "%ds" % obj.total_seconds()
-        if isinstance(obj, datetime.datetime):
+        if isinstance(obj, datetime):
             if obj != obj:
                 # NaT
                 return None
             tz = obj.tzinfo
-            assert tz == datetime.timezone.utc or tz == tzutc(), \
+            assert tz == timezone.utc or tz == tzutc(), \
                 "all timestamps must be UTC: %s" % obj
             return obj.strftime("%Y-%m-%dT%H:%M:%SZ")  # RFC3339
-        if isinstance(obj, datetime.date):
+        if isinstance(obj, date):
             return obj.strftime("%Y-%m-%d")
         if isinstance(obj, np.integer):
             return int(obj)
