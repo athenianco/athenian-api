@@ -1,10 +1,13 @@
 from typing import Callable, Coroutine
 
 
+endpoint_weights = {}
+
+
 def weight(value: float) -> Callable[[Callable[..., Coroutine]], Callable[..., Coroutine]]:
     """Assign some resource consumption value to the decorated endpoint handler."""
     def set_weight(func: Callable[..., Coroutine]) -> Callable[..., Coroutine]:
-        func.weight = value
+        func.weight = endpoint_weights.get(func.__name__, value)
         return func
 
     return set_weight
