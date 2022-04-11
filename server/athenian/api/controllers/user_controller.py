@@ -20,8 +20,7 @@ from athenian.api.db import DatabaseLike
 from athenian.api.models.metadata.jira import Installation as JIRAInstallation, \
     Project as JIRAProject
 from athenian.api.models.state.models import Account as DBAccount, AccountFeature, \
-    BanishedUserAccount, Feature, \
-    FeatureComponent, God, Invitation, UserAccount
+    BanishedUserAccount, Feature, FeatureComponent, God, Invitation, UserAccount
 from athenian.api.models.web import Account, AccountUserChangeRequest, ForbiddenError, \
     InvalidRequestError, JIRAInstallation as WebJIRAInstallation, NotFoundError, Organization, \
     ProductFeature, UserChangeStatus
@@ -167,7 +166,7 @@ async def set_account_features(request: AthenianWebRequest, id: int, body: dict)
         for i, feature in enumerate(features):
             if feature.name == DBAccount.expires_at.name:
                 try:
-                    expires_at = deserialize_datetime(feature.parameters)
+                    expires_at = deserialize_datetime(feature.parameters, max_future_delta=None)
                 except (TypeError, ValueError):
                     raise ResponseError(InvalidRequestError(
                         pointer=f".[{i}].parameters",
