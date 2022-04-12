@@ -2,3 +2,6 @@
 requires = ["setuptools!=60.6.0", "wheel", "Cython", "numpy==1.22.3"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+markers = [
+    "app_validate_responses",
+]
