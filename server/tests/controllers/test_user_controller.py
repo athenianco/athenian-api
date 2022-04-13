@@ -15,7 +15,6 @@ from athenian.api.request import AthenianWebRequest
 from athenian.api.serialization import deserialize_datetime
 from tests.conftest import disable_default_user
 
-
 vadim_email = "af253b50a4d7b2c9841f436fbe4c635f270f4388653649b0971f2751a441a556fe63a9dabfa150a444dd"  # noqa
 eiso_email = "18fe5f66fce88e4791d0117a311c6c2b2102216e18585c1199f90516186aa4461df7a2453857d781b6"  # noqa
 
@@ -187,6 +186,7 @@ async def test_set_account_features_smoke(client, headers, god, sdb):
     response = await client.request(
         method="POST", path="/v1/account/1/features", headers=headers, json=body,
     )
+    assert response.status == 200
     body = await response.json()
     assert isinstance(body, list)
     assert len(body) == 2
@@ -198,6 +198,39 @@ async def test_set_account_features_smoke(client, headers, god, sdb):
     expires_at = await sdb.fetch_val(select([DBAccount.expires_at]).where(DBAccount.id == 1))
     assert expires_at.date() == date(2020, 1, 1)
     assert model.parameters == "test"
+
+
+# TODO: response validation fails because
+# ProductFeatures.properties.parameters.oneOf has both type number and type integer
+@pytest.mark.app_validate_responses(False)
+async def test_set_account_expires_far_future(client, headers, god, sdb) -> None:
+    body = [{"name": "expires_at", "parameters": "2112-05-12T16:00:00Z"}]
+    response = await client.request(
+        method="POST", path="/v1/account/1/features", headers=headers, json=body,
+    )
+
+    assert response.status == 200
+    res_body = await response.json()
+    res_expires_feat = next(feat for feat in res_body if feat["name"] == "expires_at")
+    assert res_expires_feat["parameters"] == "2112-05-12T16:00:00Z"
+
+    expires_at = await sdb.fetch_val(select([DBAccount.expires_at]).where(DBAccount.id == 1))
+    if sdb.url.dialect == "sqlite":
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    assert expires_at == datetime(2112, 5, 12, 16, tzinfo=timezone.utc)
+
+
+@pytest.mark.app_validate_responses(False)
+async def test_set_account_expires_far_past(client, headers, god, sdb) -> None:
+    orig_expires_at = await sdb.fetch_val(select([DBAccount.expires_at]).where(DBAccount.id == 1))
+    body = [{"name": "expires_at", "parameters": "1984-05-01T06:00:00Z"}]
+    response = await client.request(
+        method="POST", path="/v1/account/1/features", headers=headers, json=body,
+    )
+    assert response.status == 400
+    # expires_at hasn't changed
+    expires_at = await sdb.fetch_val(select([DBAccount.expires_at]).where(DBAccount.id == 1))
+    assert expires_at == orig_expires_at
 
 
 async def test_set_account_features_nongod(client, headers, sdb):
