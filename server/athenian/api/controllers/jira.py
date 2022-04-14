@@ -101,7 +101,8 @@ async def get_jira_installation(account: int,
                                   JIRAProjectSetting.enabled.is_(False)))),
         mdb.fetch_all(
             select([Issue.project_id, Issue.type])
-            .select_from(join(Epic, Issue, and_(Epic.acc_id == Issue.acc_id,
+            .select_from(join(Epic, Issue, and_(Epic.acc_id == jira_id,
+                                                Issue.acc_id == jira_id,
                                                 Epic.id == Issue.id),
                               isouter=True))
             .distinct()),
