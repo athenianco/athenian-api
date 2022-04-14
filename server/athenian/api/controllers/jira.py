@@ -101,11 +101,12 @@ async def get_jira_installation(account: int,
                                   JIRAProjectSetting.enabled.is_(False)))),
         mdb.fetch_all(
             select([Issue.project_id, Issue.type])
-            .select_from(join(Epic, Issue, and_(Epic.acc_id == jira_id,
-                                                Issue.acc_id == jira_id,
+            .select_from(join(Epic, Issue, and_(Epic.acc_id == Issue.acc_id,
                                                 Epic.id == Issue.id),
                               isouter=True))
-            .distinct()),
+            .where(Epic.acc_id == jira_id)
+            .distinct(),
+        ),
         op="load JIRA projects")
     disabled = {r[0] for r in disabled}
     projects = {r[0]: r[1] for r in projects if r[1] not in disabled}
