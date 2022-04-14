@@ -10,8 +10,10 @@ from athenian.api.async_utils import read_sql_query
 from athenian.api.controllers.logical_repos import coerce_logical_repos, contains_logical_repos, \
     drop_logical_repo
 from athenian.api.controllers.settings import ReleaseMatch, Settings
-from athenian.api.models.state.models import AccountGitHubAccount, \
-    LogicalRepository, MappedJIRAIdentity, ReleaseSetting, RepositorySet, UserAccount, WorkType
+from athenian.api.models.precomputed.models import GitHubDeploymentFacts, \
+    GitHubPullRequestDeployment, GitHubReleaseDeployment
+from athenian.api.models.state.models import AccountGitHubAccount, LogicalRepository, \
+    MappedJIRAIdentity, ReleaseSetting, RepositorySet, UserAccount, WorkType
 from athenian.api.models.web import JIRAProject, LogicalRepository as WebLogicalRepository, \
     MappedJIRAIdentity as WebMappedJIRAIdentity, ReleaseMatchSetting, ReleaseMatchStrategy, \
     WorkType as WebWorkType
@@ -941,6 +943,74 @@ async def test_delete_logical_repository_smoke(
     assert row is None
 
 
+@pytest.mark.app_validate_responses(False)
+async def test_delete_logical_repository_clean_deployments(
+    client, headers, sdb, pdb, logical_settings_db, release_match_setting_tag_logical_db,
+) -> None:
+    body = {"account": 1, "name": "github.com/src-d/go-git/alpha"}
+    # create some deployments in pdb
+    await pdb.execute(
+        insert(GitHubReleaseDeployment).values(
+            acc_id=1,
+            repository_full_name="src-d/go-git/alpha",
+            release_match="v1.2.3",
+            deployment_name="my-deployment",
+            release_id=1,
+        ),
+    )
+    await pdb.execute(
+        insert(GitHubPullRequestDeployment).values(
+            acc_id=1,
+            repository_full_name="src-d/go-git",
+            deployment_name="my-deployment2",
+            pull_request_id=123,
+            finished_at=datetime(2012, 1, 1),
+        ),
+    )
+    await pdb.execute(
+        insert(GitHubDeploymentFacts).values(
+            acc_id=1,
+            deployment_name="my-deployment",
+            release_matches="v1.23",
+            data=b"",
+            format_version=2,
+        ),
+    )
+
+    response = await client.request(
+        method="POST",
+        path="/v1/settings/logical_repository/delete",
+        headers=headers,
+        json=body,
+    )
+    assert response.status == 200
+    logical_repo_row = await sdb.fetch_one(
+        select([LogicalRepository]).where(LogicalRepository.name == "alpha"),
+    )
+    assert logical_repo_row is None
+
+    rel_depl_row = await pdb.fetch_one(
+        select(GitHubReleaseDeployment).where(
+            GitHubReleaseDeployment.repository_full_name == "src-d/go-git/alpha",
+        ),
+    )
+    assert rel_depl_row is None
+
+    pr_depl_row = await pdb.fetch_one(
+        select(GitHubPullRequestDeployment).where(
+            GitHubPullRequestDeployment.repository_full_name == "src-d/go-git",
+        ),
+    )
+    assert pr_depl_row is None
+
+    depl_facts_row = await pdb.fetch_one(
+        select(GitHubDeploymentFacts).where(
+            GitHubDeploymentFacts.deployment_name == "my-deployment",
+        ),
+    )
+    assert depl_facts_row is None
+
+
 @pytest.mark.parametrize("account, name, code", [
     (2, "", 403),
     (3, "", 404),
@@ -1020,6 +1090,72 @@ async def _test_set_logical_repository(client, headers, sdb, n):
 async def test_set_logical_repository_replace(
         client, headers, logical_settings_db, release_match_setting_tag_logical_db, sdb):
     await _test_set_logical_repository(client, headers, sdb, 2)
+
+
+# TODO: replacing existing identical logical repository is not supported
+@pytest.mark.xfail
+async def test_set_logical_repository_replace_identical(client, headers, sdb, logical_settings_db):
+    # make the logical repositiry equal to the body
+    await sdb.execute(update(LogicalRepository).where(
+        LogicalRepository.name == "alpha",
+    ).values(
+        prs={"title": ".*[Aa]argh", "labels": ["bug", "fix"]},
+        updated_at=LogicalRepository.updated_at,
+    ))
+
+    body = {
+        "account": 1,
+        "name": "alpha",
+        "parent": "github.com/src-d/go-git",
+        "prs": {"title": ".*[Aa]argh", "labels_include": ["bug", "fix"]},
+        "releases": {"branches": "master", "tags": "v.*", "match": "tag"},
+    }
+    response = await client.request(
+        method="PUT",
+        path="/v1/settings/logical_repository",
+        headers=headers,
+        json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200
+
+
+@pytest.mark.app_validate_responses(False)
+async def test_set_logical_repository_clean_deployments(
+    client, headers, sdb, logical_settings_db, pdb,
+) -> None:
+    await pdb.execute(
+        insert(GitHubPullRequestDeployment).values(
+            acc_id=1,
+            repository_full_name="src-d/go-git",
+            deployment_name="my-deployment2",
+            pull_request_id=123,
+            finished_at=datetime(2012, 1, 1),
+        ),
+    )
+
+    body = {
+        "account": 1,
+        "name": "gamma",
+        "parent": "github.com/src-d/go-git",
+        "prs": {"title": ".*[Aa]argh"},
+        "releases": {"branches": "master", "tags": "v.*", "match": "tag"},
+    }
+    response = await client.request(
+        method="PUT",
+        path="/v1/settings/logical_repository",
+        headers=headers,
+        json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200
+
+    pr_depl_row = await pdb.fetch_one(
+        select(GitHubPullRequestDeployment).where(
+            GitHubPullRequestDeployment.repository_full_name == "src-d/go-git",
+        ),
+    )
+    assert pr_depl_row is None
 
 
 @pytest.mark.parametrize("account, name, parent, match, code", [
