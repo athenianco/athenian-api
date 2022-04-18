@@ -177,15 +177,8 @@ async def test_accept_invitation_smoke(client, headers, sdb, disable_default_use
     body = {
         "url": url_prefix + encode_slug(1, 777, app.app["auth"].key),
     }
-    response = await client.request(
-        method="PUT", path="/v1/invite/accept", headers=headers, json=body,
-    )
-    rbody = json.loads((await response.read()).decode("utf-8"))
-    assert response.status == 422, rbody
-
     await sdb.execute(update(AccountGitHubAccount)
                       .values({AccountGitHubAccount.account_id: 3}))
-
     response = await client.request(
         method="PUT", path="/v1/invite/accept", headers=headers, json=body,
     )
@@ -277,10 +270,11 @@ async def test_accept_invitation_bad_email(
     assert response.status == 400
 
 
+@pytest.mark.parametrize("installed", [False, True])
 async def test_accept_invitation_disabled_membership_check(
-        client, headers, sdb, disable_default_user, app):
+        client, headers, sdb, disable_default_user, app, installed):
     app._auth0._default_user = app._auth0._default_user.copy()
-    app._auth0._default_user.login = "vmarkovtsev"
+    app._auth0._default_user.login = "panzerxxx"
     check_fid = await sdb.fetch_val(
         select([Feature.id])
         .where(and_(Feature.name == Feature.USER_ORG_MEMBERSHIP_CHECK,
@@ -290,6 +284,10 @@ async def test_accept_invitation_disabled_membership_check(
         feature_id=check_fid,
         enabled=False,
     ).create_defaults().explode(with_primary_keys=True)))
+    if installed:
+        await sdb.execute(update(AccountGitHubAccount)
+                          .where(AccountGitHubAccount.account_id == 1)
+                          .values({AccountGitHubAccount.account_id: 3}))
     body = {
         "url": url_prefix + encode_slug(1, 777, app.app["auth"].key),
     }
@@ -300,10 +298,11 @@ async def test_accept_invitation_disabled_membership_check(
     assert response.status == 200, rbody
 
 
+@pytest.mark.parametrize("installed", [False, True])
 async def test_accept_invitation_enabled_membership_check(
-        client, headers, sdb, disable_default_user, app):
+        client, headers, sdb, disable_default_user, app, installed):
     app._auth0._default_user = app._auth0._default_user.copy()
-    app._auth0._default_user.login = "vmarkovtsev"
+    app._auth0._default_user.login = "panzerxxx"
     check_fid = await sdb.fetch_val(
         select([Feature.id])
         .where(and_(Feature.name == Feature.USER_ORG_MEMBERSHIP_CHECK,
@@ -313,6 +312,10 @@ async def test_accept_invitation_enabled_membership_check(
         feature_id=check_fid,
         enabled=True,
     ).create_defaults().explode(with_primary_keys=True)))
+    if installed:
+        await sdb.execute(update(AccountGitHubAccount)
+                          .where(AccountGitHubAccount.account_id == 1)
+                          .values({AccountGitHubAccount.account_id: 3}))
     body = {
         "url": url_prefix + encode_slug(1, 777, app.app["auth"].key),
     }
@@ -320,7 +323,7 @@ async def test_accept_invitation_enabled_membership_check(
         method="PUT", path="/v1/invite/accept", headers=headers, json=body,
     )
     rbody = json.loads((await response.read()).decode("utf-8"))
-    assert response.status == 422, rbody
+    assert response.status == 403 if installed else 200, rbody
 
 
 async def test_accept_invitation_banished(

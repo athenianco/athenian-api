@@ -8,7 +8,7 @@ import os
 from random import randint
 from sqlite3 import IntegrityError, OperationalError
 import struct
-from typing import Callable, Coroutine, Optional, Tuple
+from typing import Callable, Coroutine, List, Optional, Tuple
 
 from aiohttp import web
 import aiomcache
@@ -25,7 +25,7 @@ from athenian.api.async_utils import gather
 from athenian.api.auth import Auth0, disable_default_user
 from athenian.api.cache import cached, expires_header, middle_term_exptime
 from athenian.api.controllers.account import fetch_github_installation_progress, \
-    generate_jira_invitation_link, get_account_name_or_stub, get_metadata_account_ids, \
+    generate_jira_invitation_link, get_account_name_or_stub, get_metadata_account_ids_or_empty, \
     get_user_account_status_from_request, is_membership_check_enabled, jira_url_template, only_god
 from athenian.api.controllers.ffx import decrypt, encrypt
 from athenian.api.controllers.jira import fetch_jira_installation_progress
@@ -246,9 +246,7 @@ async def _accept_invitation(iid: int,
                         UserAccount.account_id == acc_id)))
     user = None
     if status is None:
-        if is_admin or (user := await _check_user_org_membership(
-                request, acc_id, sdb_transaction, sdb, slack, log)) is None:
-            user = await request.user()
+        user = await _check_user_org_membership(request, acc_id, sdb_transaction, sdb, slack, log)
         # create the user<>account record if not blocked
         if await sdb_transaction.fetch_val(
                 select([func.count(text("*"))])
@@ -297,16 +295,20 @@ async def _check_user_org_membership(request: AthenianWebRequest,
                                      sdb: Database,
                                      slack: Optional[SlackWebClient],
                                      log: logging.Logger,
-                                     ) -> Optional[User]:
+                                     ) -> User:
     if not await is_membership_check_enabled(acc_id, sdb_conn):
-        return None
+        return await request.user()
 
     mdb = request.mdb
     cache = request.cache
 
     # check whether the user is a member of the GitHub org
-    async def load_org_members():
-        meta_ids = await get_metadata_account_ids(acc_id, sdb_conn, cache)
+    async def load_org_members() -> Tuple[Tuple[int, ...], List[int]]:
+        if not (meta_ids := await get_metadata_account_ids_or_empty(acc_id, sdb_conn, cache)):
+            log.warning("Could not check the organization membership of %s because "
+                        "no metadata installation exists in account %d",
+                        request.uid, acc_id)
+            return (), []
         user_node_ids = [
             r[0] for r in await mdb.fetch_all(
                 select([OrganizationMember.child_id])
@@ -316,6 +318,8 @@ async def _check_user_org_membership(request: AthenianWebRequest,
         return meta_ids, user_node_ids
 
     user, (meta_ids, user_node_ids) = await gather(request.user(), load_org_members())
+    if not meta_ids:
+        return user
     user_node_id = await mdb.fetch_val(select([NodeUser.node_id])
                                        .where(and_(NodeUser.acc_id.in_(meta_ids),
                                                    NodeUser.login == user.login)))
