@@ -1146,9 +1146,14 @@ class DeploymentMetricBase(MetricCalculator[T]):
         ]
         return clones
 
-    def _calc_deployed(self, facts: pd.DataFrame) -> np.ndarray:
-        finished = np.full(len(facts), None, "datetime64[s]")
+    def calc_deployed(self) -> np.ndarray:
+        """
+        Return the first successful deployment time for each PR in the analyzed `facts`.
+
+        NaT corresponds to 0 successful deployments.
+        """
         peek = self._calcs[0].peek
+        finished = np.full(len(peek.environments.item()), None, "datetime64[s]")
         nnz_finished = peek.finished.item()[self.environment]
         if nnz_finished is not None:
             mask = (peek.environments.item() & (1 << self.environment)).astype(bool)
@@ -1184,7 +1189,7 @@ class DeploymentTimeCalculator(DeploymentMetricBase, AverageMetricCalculator[tim
                  override_event_indexes: Optional[np.ndarray] = None,
                  **kwargs,
                  ) -> np.ndarray:
-        finished = self._calc_deployed(facts)
+        finished = self.calc_deployed()
         if override_event_time is not None:
             finished[override_event_indexes] = override_event_time
         started = facts[PullRequestFacts.f.merged].values.copy()
@@ -1223,7 +1228,7 @@ class DeploymentPendingMarker(DeploymentMetricBase):
                  max_times: np.ndarray,
                  **kwargs,
                  ) -> np.ndarray:
-        finished = self._calc_deployed(facts)
+        finished = self.calc_deployed()
         repo_mask = np.in1d(facts[PullRequestFacts.f.repository_full_name].values,
                             self.repositories[self.environment])
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
@@ -1258,7 +1263,7 @@ class LeadDeploymentTimeCalculator(DeploymentMetricBase, AverageMetricCalculator
                  **kwargs,
                  ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
-        finished = self._calc_deployed(facts)
+        finished = self.calc_deployed()
         work_began = facts[PullRequestFacts.f.work_began].values
         delta = finished - work_began
         finished_in_range = (min_times[:, None] <= finished) & (finished < max_times[:, None])

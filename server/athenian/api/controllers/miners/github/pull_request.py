@@ -97,6 +97,10 @@ class PRDataFrames(Mapping[str, pd.DataFrame]):
             raise KeyError(key)
         setattr(self, key, value)
 
+    def __sentry_repr__(self) -> str:
+        """Format object in Sentry."""
+        return "\n".join(f"{f.name}[{len(self[f.name])}]" for f in dataclass_fields(self))
+
     def __len__(self) -> int:
         """Implement len()."""
         return len(dataclass_fields(self))
