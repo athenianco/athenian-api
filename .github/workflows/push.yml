@@ -186,8 +186,7 @@ jobs:
       run: |
         set -x
         sed -i "s/git+ssh:\/\/git@/git+https:\/\/gkwillie:${{ secrets.GKWILLIE_TOKEN }}@/g" server/requirements.txt
-        pip3 install -r server/requirements.txt --no-warn-script-location
-        pip3 install -r server/requirements-test.txt --no-warn-script-location
+        pip3 install -r server/requirements.txt -r server/requirements-test.txt --no-warn-script-location
         pip3 install --user --no-deps -e server/
         patch --forward $HOME/.local/lib/python3.*/site-packages/aiomcache/client.py patches/aiomcache_version.patch || true
         patch --forward $HOME/.local/lib/python3.*/site-packages/prometheus_client/exposition.py patches/prometheus_client.patch || true

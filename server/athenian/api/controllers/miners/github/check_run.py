@@ -619,7 +619,10 @@ def _merge_status_contexts(df: pd.DataFrame) -> pd.DataFrame:
     matched_first_starteds = starteds[no_finish_original[matched_firsts]]
     matched_indexes = no_finish_original[matched_lasts]
     df[CheckRun.started_at.name].values[matched_indexes] = matched_first_starteds
-    df[CheckRun.completed_at.name].values[matched_indexes] = starteds[matched_indexes]
+    completed_ats = starteds[matched_indexes]
+    # DEV-4001
+    completed_ats[(completed_ats - matched_first_starteds) > np.timedelta64(24, "h")] = None
+    df[CheckRun.completed_at.name].values[matched_indexes] = completed_ats
     if len(dropped):
         df.disable_consolidate()
         df.drop(index=dropped, inplace=True)
