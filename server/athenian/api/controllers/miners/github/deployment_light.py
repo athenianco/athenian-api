@@ -209,8 +209,8 @@ async def mine_environments(repos: Optional[List[str]],
         DeploymentNotification.finished_at < time_to,
     ]
     if repos:
-        repo_name_to_node = prefixer.repo_name_to_node.__getitem__
-        repo_node_ids = {repo_name_to_node(drop_logical_repo(r)) for r in repos}
+        repo_name_to_node = prefixer.repo_name_to_node.get
+        repo_node_ids = {repo_name_to_node(drop_logical_repo(r)) for r in repos} - {None}
         core = join(DeploymentNotification, DeployedComponent, and_(
             DeploymentNotification.account_id == DeployedComponent.account_id,
             DeploymentNotification.name == DeployedComponent.deployment_name,
