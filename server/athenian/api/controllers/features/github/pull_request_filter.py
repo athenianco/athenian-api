@@ -43,7 +43,7 @@ from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRe
     PRDataFrames, PullRequestFactsMiner, PullRequestMiner, ReviewResolution
 from athenian.api.controllers.miners.github.release_load import dummy_releases_df, ReleaseLoader
 from athenian.api.controllers.miners.github.release_match import load_commit_dags
-from athenian.api.controllers.miners.types import Deployment, DeploymentConclusion, Label, \
+from athenian.api.controllers.miners.types import Deployment, Label, \
     MinedPullRequest, PRParticipants, PullRequestEvent, PullRequestFacts, \
     PullRequestFactsMap, PullRequestJIRAIssueItem, PullRequestListItem, PullRequestStage
 from athenian.api.controllers.prefixer import Prefixer
@@ -460,14 +460,10 @@ class PullRequestListMiner:
             dep_index = searchsorted_inrange(self._environments, [self._environment])[0]
         if self._environments[dep_index] == self._environment:
             prs = dfs.prs.index.values
-            deployed = np.full(len(prs), None, "datetime64[s]")
-            dep_peek = self._calcs["deploy"]["time"][dep_index].calcs[0].peek
-            mask = (dep_peek.environments.item() & (1 << dep_index)).astype(bool)
-            successful = dep_peek.conclusions.item()[dep_index] == DeploymentConclusion.SUCCESS
-            deployed[mask] = dep_peek.finished.item()[dep_index][successful]
+            deployed = self._calcs["deploy"]["time"][dep_index].calc_deployed()
             events_time_machine[PullRequestEvent.DEPLOYED] = \
                 set(prs[deployed < np.array(self._time_to, dtype=deployed.dtype)])
-            events_now[PullRequestEvent.DEPLOYED] = set(prs[mask])
+            events_now[PullRequestEvent.DEPLOYED] = set(prs[deployed == deployed])
         else:
             events_time_machine[PullRequestEvent.DEPLOYED] = \
                 events_now[PullRequestEvent.DEPLOYED] = set()
