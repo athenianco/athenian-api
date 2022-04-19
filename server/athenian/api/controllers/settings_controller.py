@@ -2,9 +2,10 @@ from bisect import bisect_left, bisect_right
 from datetime import datetime, timezone
 import logging
 import re
-from typing import Optional
+from typing import Optional, Sequence, Tuple
 
 from aiohttp import web
+from morcilla import Connection
 from sqlalchemy import and_, delete, distinct, func, insert, select, union, update
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 
@@ -27,8 +28,8 @@ from athenian.api.models.precomputed.models import GitHubCommitDeployment, GitHu
     GitHubDonePullRequestFacts, GitHubMergedPullRequestFacts, GitHubOpenPullRequestFacts, \
     GitHubPullRequestDeployment, GitHubRelease, GitHubReleaseDeployment, GitHubReleaseFacts, \
     GitHubReleaseMatchTimespan
-from athenian.api.models.state.models import JIRAProjectSetting, \
-    LogicalRepository, MappedJIRAIdentity, ReleaseSetting, RepositorySet, WorkType
+from athenian.api.models.state.models import JIRAProjectSetting, LogicalRepository, \
+    MappedJIRAIdentity, ReleaseSetting, RepositorySet, WorkType
 from athenian.api.models.web import BadRequestError, ForbiddenError, InvalidRequestError, \
     JIRAProject, JIRAProjectsRequest, LogicalDeploymentRules, LogicalPRRules, \
     LogicalRepository as WebLogicalRepository, LogicalRepositoryGetRequest, \
@@ -273,7 +274,7 @@ async def get_jira_identities(request: AthenianWebRequest,
     github_details = {r[GitHubUser.node_id.name]: r for r in github_rows}
     jira_details = {r[JIRAUser.id.name]: r for r in jira_rows}
     models = []
-    log = logging.getLogger("%s.get_jira_identities" % metadata.__package__)
+    log = logging.getLogger(f"{metadata.__package__}.get_jira_identities")
     mentioned_jira_user_ids = set()
     for map_row in map_rows:
         try:
@@ -444,31 +445,37 @@ async def set_logical_repository(request: AthenianWebRequest, body: dict) -> web
     ).create_defaults()
     if (deployments := web_model.deployments) is not None:
         db_model.deployments = {"title": deployments.title, "labels": deployments.labels_include}
-    db_model = db_model.explode()
     settings = Settings.from_request(request, web_model.account)
     full_name = f"{repo}/{web_model.name}"
     prefixed_name = f"{web_model.parent}/{web_model.name}"
+
+    del body["account"]
+    response = model_response(WebLogicalRepository.from_dict(body))
+
     async with request.sdb.connection() as sdb_conn:
-        existing = await sdb_conn.fetch_one(select([LogicalRepository]).where(and_(
-            LogicalRepository.account_id == web_model.account,
-            LogicalRepository.name == web_model.name,
-            LogicalRepository.repository_id == repo_id,
-        )))
-        if existing is not None:
-            for col in (LogicalRepository.prs, LogicalRepository.deployments):
-                if existing[col.name] != db_model[col.name]:
-                    async with sdb_conn.transaction():
-                        await _delete_logical_repository(
-                            web_model.name, full_name, prefixed_name, repo_id,
-                            web_model.account, sdb_conn, request.pdb)
-                    break
+        existing, equal = await _find_matching_logical_repository(
+            db_model, web_model.parent, web_model.releases, sdb_conn,
+        )
+        if existing:
+            if equal:
+                # equal logical repository exists, nothing to do
+                return response
+            else:
+                # existing logical repository is different, delete it
+                async with sdb_conn.transaction():
+                    await _delete_logical_repository(
+                        web_model.name, full_name, prefixed_name, repo_id,
+                        web_model.account, sdb_conn, request.pdb)
+
         else:
             # new logical repo invalidates logical deployments
-            await _clean_logical_deployments(repo, web_model.account, request.pdb)
+            await _clean_logical_deployments(
+                [repo], web_model.account, request.pdb, op="_clean_logical_deployments/sql",
+            )
         async with sdb_conn.transaction():
             settings._sdb = sdb_conn
             # create the logical repository setting
-            await sdb_conn.execute(insert(LogicalRepository).values(db_model))
+            await sdb_conn.execute(insert(LogicalRepository).values(db_model.explode()))
             # create the release settings
             await settings.set_release_matches(
                 [prefixed_name],
@@ -493,35 +500,45 @@ async def set_logical_repository(request: AthenianWebRequest, body: dict) -> web
                             RepositorySet.updated_at: datetime.now(timezone.utc),
                             RepositorySet.items: items,
                         }))
-    del body["account"]
-    return model_response(WebLogicalRepository.from_dict(body))
+    return response
 
 
-async def _clean_logical_deployments(repo: str,
-                                     account: int,
-                                     pdb: DatabaseLike) -> None:
-    affected_deployments = await pdb.fetch_all(union(*(
-        select([distinct(model.deployment_name)]).where(and_(
-            model.acc_id == account,
-            model.repository_full_name == repo,
-        ))
-        for model in (GitHubCommitDeployment, GitHubPullRequestDeployment, GitHubReleaseDeployment)
+async def _find_matching_logical_repository(
+    logical_repo: LogicalRepository,
+    parent_name: str,
+    release_match_setting: ReleaseMatchSetting,
+    sdb_conn: Connection,
+) -> Tuple[Optional[LogicalRepository], bool]:
+    """Find a logical repository matching `logical_repo`.
+
+    Properties matched are `account_id`, `name` and parent `repository_id`.
+
+    Return the matched logical repo row, if any, and a boolean telling if the
+    existing logical repo is identical to the compared logical repo also considering
+    extra properties and `release_match_setting`
+
+
+    """
+    existing = await sdb_conn.fetch_one(select([LogicalRepository]).where(and_(
+        LogicalRepository.account_id == logical_repo.account_id,
+        LogicalRepository.name == logical_repo.name,
+        LogicalRepository.repository_id == logical_repo.repository_id,
     )))
-    if not affected_deployments:
-        return
-    tasks = [
-        delete(model).where(and_(
-            model.acc_id == account,
-            model.repository_full_name == repo,
-        ))
-        for model in (GitHubCommitDeployment, GitHubPullRequestDeployment, GitHubReleaseDeployment)
-    ] + [
-        delete(GitHubDeploymentFacts).where(and_(
-            GitHubDeploymentFacts.acc_id == account,
-            GitHubDeploymentFacts.deployment_name.in_(affected_deployments),
-        )),
-    ]
-    await gather(*tasks, op="_clean_logical_deployments/sql")
+    if existing is None:
+        return None, False
+    for col in (LogicalRepository.prs, LogicalRepository.deployments):
+        if existing[col.name] != getattr(logical_repo, col.name):
+            return existing, False
+
+    matching_release_setting = await sdb_conn.fetch_one(select(ReleaseSetting).where(
+        ReleaseSetting.repository == f"{parent_name}/{logical_repo.name}",
+        ReleaseSetting.account_id == logical_repo.account_id,
+        ReleaseSetting.branches == release_match_setting.branches,
+        ReleaseSetting.tags == release_match_setting.tags,
+        ReleaseSetting.events == release_match_setting.events,
+        ReleaseSetting.match == ReleaseMatch[release_match_setting.match],
+    ))
+    return existing, matching_release_setting is not None
 
 
 async def _delete_logical_repository(name: str,
@@ -566,26 +583,46 @@ async def _delete_logical_repository(name: str,
             model.acc_id == account,
             model.repository_full_name == full_name,
         ))))
+    clean_deployments_coro = _clean_logical_deployments(
+        [full_name, drop_logical_repo(full_name)], account, pdb,
+    )
+    await gather(*tasks, clean_deployments_coro, op="_delete_logical_repository/sql")
+
+
+async def _clean_logical_deployments(
+    repos: Sequence[str], account: int, pdb: DatabaseLike, op: str = None,
+) -> None:
+    """Delete all deployments info about `repos` from pdb."""
+    deployment_models = (
+        GitHubCommitDeployment, GitHubPullRequestDeployment, GitHubReleaseDeployment,
+    )
     affected_deployments = await pdb.fetch_all(union(*(
         select([distinct(model.deployment_name)]).where(and_(
             model.acc_id == account,
-            model.repository_full_name.in_([full_name, drop_logical_repo(full_name)]),
+            model.repository_full_name.in_(repos),
         ))
-        for model in (GitHubCommitDeployment, GitHubPullRequestDeployment, GitHubReleaseDeployment)
+        for model in deployment_models
     )))
+    tasks = []
     if affected_deployments:
-        for model in (GitHubCommitDeployment,
-                      GitHubPullRequestDeployment,
-                      GitHubReleaseDeployment):
-            tasks.append(delete(model).where(and_(
-                model.acc_id == account,
-                model.repository_full_name.in_([full_name, drop_logical_repo(full_name)]),
-            )))
-        tasks.append(delete(GitHubDeploymentFacts).where(and_(
-            GitHubDeploymentFacts.acc_id == account,
-            GitHubDeploymentFacts.deployment_name.in_(affected_deployments),
-        )))
-    await gather(*tasks, op="_delete_logical_repository/sql")
+        affected_deployment_names = [r[0] for r in affected_deployments]
+        log = logging.getLogger(f"{metadata.__package__}._clean_logical_deployments")
+        log.info(
+            "Cleaning deployments %s for repos %s", affected_deployment_names, repos,
+        )
+        for model in deployment_models:
+            delete_stmt = delete(model).where(
+                and_(model.acc_id == account, model.repository_full_name.in_(repos)),
+            )
+            tasks.append(pdb.execute(delete_stmt))
+        facts_delete_stmt = delete(GitHubDeploymentFacts).where(
+            and_(
+                GitHubDeploymentFacts.acc_id == account,
+                GitHubDeploymentFacts.deployment_name.in_(affected_deployment_names),
+            ),
+        )
+        tasks.append(pdb.execute(facts_delete_stmt))
+    await gather(*tasks, op=op)
 
 
 @only_admin
