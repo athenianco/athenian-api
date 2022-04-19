@@ -576,16 +576,15 @@ async def _delete_logical_repository(name: str,
         ))),
         clean_repository_sets(),
     ]
+    physical_repo = drop_logical_repo(full_name)
     for model in (
             GitHubDonePullRequestFacts, GitHubMergedPullRequestFacts, GitHubOpenPullRequestFacts,
             GitHubRelease, GitHubReleaseFacts, GitHubReleaseMatchTimespan):
         tasks.append(pdb.execute(delete(model).where(and_(
             model.acc_id == account,
-            model.repository_full_name == full_name,
+            model.repository_full_name.in_([full_name, physical_repo]),
         ))))
-    clean_deployments_coro = _clean_logical_deployments(
-        [full_name, drop_logical_repo(full_name)], account, pdb,
-    )
+    clean_deployments_coro = _clean_logical_deployments([full_name, physical_repo], account, pdb)
     await gather(*tasks, clean_deployments_coro, op="_delete_logical_repository/sql")
 
 

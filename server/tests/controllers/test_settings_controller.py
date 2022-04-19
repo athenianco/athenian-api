@@ -11,7 +11,8 @@ from athenian.api.controllers.logical_repos import coerce_logical_repos, contain
     drop_logical_repo
 from athenian.api.controllers.settings import ReleaseMatch, Settings
 from athenian.api.models.precomputed.models import GitHubDeploymentFacts, \
-    GitHubPullRequestDeployment, GitHubReleaseDeployment
+    GitHubDonePullRequestFacts, GitHubOpenPullRequestFacts, GitHubPullRequestDeployment, \
+    GitHubRelease, GitHubReleaseDeployment
 from athenian.api.models.state.models import AccountGitHubAccount, LogicalRepository, \
     MappedJIRAIdentity, ReleaseSetting, RepositorySet, UserAccount, WorkType
 from athenian.api.models.web import JIRAProject, LogicalRepository as WebLogicalRepository, \
@@ -19,6 +20,9 @@ from athenian.api.models.web import JIRAProject, LogicalRepository as WebLogical
     WorkType as WebWorkType
 from athenian.api.response import ResponseError
 from athenian.api.serialization import FriendlyJson
+from tests.testutils.db import assert_missing_row, model_insert_stmt
+from tests.testutils.factory import GitHubDonePullRequestFactsFactory, \
+    GitHubOpenPullRequestFactsFactory, GitHubReleaseFactory, LogicalRepositoryFactory
 
 
 async def validate_release_settings(body, response, sdb, exhaustive: bool):
@@ -1009,6 +1013,76 @@ async def test_delete_logical_repository_clean_deployments(
         ),
     )
     assert depl_facts_row is None
+
+
+@pytest.mark.app_validate_responses(False)
+async def test_delete_logical_repo_clean_physical_repo_facts(client, headers, sdb, pdb) -> None:
+    logical_repo = LogicalRepositoryFactory(
+        name="alpha", repository_id=40550, prs={"title": ".*[Ff]ix"},
+    )
+    await sdb.execute(model_insert_stmt(logical_repo, with_primary_keys=False))
+    await sdb.execute(update(RepositorySet).where(RepositorySet.owner_id == 1).values({
+        RepositorySet.items: [
+            ["github.com/src-d/go-git", 40550],
+            ["github.com/src-d/go-git/alpha", 40550],
+        ],
+        RepositorySet.updated_at: datetime.now(timezone.utc),
+        RepositorySet.updates_count: RepositorySet.updates_count + 1,
+    }))
+
+    done_pr_facts = [
+        GitHubDonePullRequestFactsFactory(repository_full_name="src-d/go-git"),
+        GitHubDonePullRequestFactsFactory(repository_full_name="src-d/go-git/alpha"),
+        GitHubDonePullRequestFactsFactory(repository_full_name="src-d/go-git/beta"),
+    ]
+    for done_pr_fact in done_pr_facts:
+        await pdb.execute(model_insert_stmt(done_pr_fact))
+
+    open_pr_facts = [
+        GitHubOpenPullRequestFactsFactory(repository_full_name="src-d/go-git"),
+        GitHubOpenPullRequestFactsFactory(repository_full_name="src-d/go-git/alpha"),
+        GitHubOpenPullRequestFactsFactory(repository_full_name="src-d/go-git2"),
+    ]
+    for open_pr_fact in open_pr_facts:
+        await pdb.execute(model_insert_stmt(open_pr_fact))
+
+    await pdb.execute(model_insert_stmt(GitHubReleaseFactory(repository_full_name="src-d/go-git")))
+
+    body = {"account": 1, "name": "github.com/src-d/go-git/alpha"}
+    response = await client.request(
+        method="POST",
+        path="/v1/settings/logical_repository/delete",
+        headers=headers,
+        json=body,
+    )
+    assert response.status == 200
+
+    await assert_missing_row(
+        pdb, GitHubDonePullRequestFacts, repository_full_name="src-d/go-git/alpha",
+    )
+    row = pdb.fetch_one(select(GitHubDonePullRequestFacts).where(
+        GitHubDonePullRequestFacts.repository_full_name == "src-d/go-git/beta",
+    ))
+    assert row is not None
+    await assert_missing_row(
+        pdb, GitHubDonePullRequestFacts, repository_full_name="src-d/go-git",
+    )
+
+    await assert_missing_row(
+        pdb, GitHubOpenPullRequestFacts, repository_full_name="src-d/go-git/alpha",
+    )
+    row = pdb.fetch_one(select(GitHubOpenPullRequestFacts).where(
+        GitHubOpenPullRequestFacts.repository_full_name == "src-d/go-git2",
+    ))
+    assert row is not None
+    await assert_missing_row(
+        pdb, GitHubOpenPullRequestFacts, repository_full_name="src-d/go-git",
+    )
+
+    row = await pdb.fetch_one(select(GitHubRelease).where(
+        GitHubRelease.repository_full_name == "src-d/go-git",
+    ))
+    assert row is None
 
 
 @pytest.mark.parametrize("account, name, code", [
