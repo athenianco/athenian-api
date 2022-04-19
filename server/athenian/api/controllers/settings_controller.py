@@ -2,7 +2,7 @@ from bisect import bisect_left, bisect_right
 from datetime import datetime, timezone
 import logging
 import re
-from typing import Optional
+from typing import Optional, Sequence
 
 from aiohttp import web
 from sqlalchemy import and_, delete, distinct, func, insert, select, union, update
@@ -273,7 +273,7 @@ async def get_jira_identities(request: AthenianWebRequest,
     github_details = {r[GitHubUser.node_id.name]: r for r in github_rows}
     jira_details = {r[JIRAUser.id.name]: r for r in jira_rows}
     models = []
-    log = logging.getLogger("%s.get_jira_identities" % metadata.__package__)
+    log = logging.getLogger(f"{metadata.__package__}.get_jira_identities")
     mentioned_jira_user_ids = set()
     for map_row in map_rows:
         try:
@@ -467,7 +467,9 @@ async def set_logical_repository(request: AthenianWebRequest, body: dict) -> web
                 # TODO: what happens here ?? no deletion and there's a following insert
         else:
             # new logical repo invalidates logical deployments
-            await _clean_logical_deployments(repo, web_model.account, request.pdb)
+            await _clean_logical_deployments(
+                [repo], web_model.account, request.pdb, op="_clean_logical_deployments/sql",
+            )
         async with sdb_conn.transaction():
             settings._sdb = sdb_conn
             # create the logical repository setting
@@ -498,33 +500,6 @@ async def set_logical_repository(request: AthenianWebRequest, body: dict) -> web
                         }))
     del body["account"]
     return model_response(WebLogicalRepository.from_dict(body))
-
-
-async def _clean_logical_deployments(repo: str,
-                                     account: int,
-                                     pdb: DatabaseLike) -> None:
-    affected_deployments = await pdb.fetch_all(union(*(
-        select([distinct(model.deployment_name)]).where(and_(
-            model.acc_id == account,
-            model.repository_full_name == repo,
-        ))
-        for model in (GitHubCommitDeployment, GitHubPullRequestDeployment, GitHubReleaseDeployment)
-    )))
-    if not affected_deployments:
-        return
-    tasks = [
-        pdb.execute(delete(model).where(and_(
-            model.acc_id == account,
-            model.repository_full_name == repo,
-        )))
-        for model in (GitHubCommitDeployment, GitHubPullRequestDeployment, GitHubReleaseDeployment)
-    ] + [
-        pdb.execute(delete(GitHubDeploymentFacts).where(and_(
-            GitHubDeploymentFacts.acc_id == account,
-            GitHubDeploymentFacts.deployment_name.in_([r[0] for r in affected_deployments]),
-        ))),
-    ]
-    await gather(*tasks, op="_clean_logical_deployments/sql")
 
 
 async def _delete_logical_repository(name: str,
@@ -569,26 +544,46 @@ async def _delete_logical_repository(name: str,
             model.acc_id == account,
             model.repository_full_name == full_name,
         ))))
+    clean_deployments_coro = _clean_logical_deployments(
+        [full_name, drop_logical_repo(full_name)], account, pdb,
+    )
+    await gather(*tasks, clean_deployments_coro, op="_delete_logical_repository/sql")
+
+
+async def _clean_logical_deployments(
+    repos: Sequence[str], account: int, pdb: DatabaseLike, op: str = None,
+) -> None:
+    """Delete all deployments info about `repos` from pdb."""
+    deployment_models = (
+        GitHubCommitDeployment, GitHubPullRequestDeployment, GitHubReleaseDeployment,
+    )
     affected_deployments = await pdb.fetch_all(union(*(
         select([distinct(model.deployment_name)]).where(and_(
             model.acc_id == account,
-            model.repository_full_name.in_([full_name, drop_logical_repo(full_name)]),
+            model.repository_full_name.in_(repos),
         ))
-        for model in (GitHubCommitDeployment, GitHubPullRequestDeployment, GitHubReleaseDeployment)
+        for model in deployment_models
     )))
+    tasks = []
     if affected_deployments:
-        for model in (GitHubCommitDeployment,
-                      GitHubPullRequestDeployment,
-                      GitHubReleaseDeployment):
-            tasks.append(pdb.execute(delete(model).where(and_(
-                model.acc_id == account,
-                model.repository_full_name.in_([full_name, drop_logical_repo(full_name)]),
-            ))))
-        tasks.append(pdb.execute(delete(GitHubDeploymentFacts).where(and_(
-            GitHubDeploymentFacts.acc_id == account,
-            GitHubDeploymentFacts.deployment_name.in_([r[0] for r in affected_deployments]),
-        ))))
-    await gather(*tasks, op="_delete_logical_repository/sql")
+        affected_deployment_names = [r[0] for r in affected_deployments]
+        log = logging.getLogger(f"{metadata.__package__}._clean_logical_deployments")
+        log.info(
+            "Cleaning deployments %s for repos %s", affected_deployment_names, repos,
+        )
+        for model in deployment_models:
+            delete_stmt = delete(model).where(
+                and_(model.acc_id == account, model.repository_full_name.in_(repos)),
+            )
+            tasks.append(pdb.execute(delete_stmt))
+        facts_delete_stmt = delete(GitHubDeploymentFacts).where(
+            and_(
+                GitHubDeploymentFacts.acc_id == account,
+                GitHubDeploymentFacts.deployment_name.in_(affected_deployment_names),
+            ),
+        )
+        tasks.append(pdb.execute(facts_delete_stmt))
+    await gather(*tasks, op=op)
 
 
 @only_admin
