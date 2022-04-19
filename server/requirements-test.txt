@@ -11,3 +11,4 @@ faker==13.3.4
 freezegun==1.2.1
 nest_asyncio==1.5.5
 codecov==2.1.12
+factory-boy==3.2.1
