@@ -2,9 +2,10 @@ from bisect import bisect_left, bisect_right
 from datetime import datetime, timezone
 import logging
 import re
-from typing import Optional, Sequence
+from typing import Optional, Sequence, Tuple
 
 from aiohttp import web
+from morcilla import Connection
 from sqlalchemy import and_, delete, distinct, func, insert, select, union, update
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 
@@ -444,27 +445,28 @@ async def set_logical_repository(request: AthenianWebRequest, body: dict) -> web
     ).create_defaults()
     if (deployments := web_model.deployments) is not None:
         db_model.deployments = {"title": deployments.title, "labels": deployments.labels_include}
-    db_model = db_model.explode()
     settings = Settings.from_request(request, web_model.account)
     full_name = f"{repo}/{web_model.name}"
     prefixed_name = f"{web_model.parent}/{web_model.name}"
+
+    del body["account"]
+    response = model_response(WebLogicalRepository.from_dict(body))
+
     async with request.sdb.connection() as sdb_conn:
-        existing = await sdb_conn.fetch_one(select([LogicalRepository]).where(and_(
-            LogicalRepository.account_id == web_model.account,
-            LogicalRepository.name == web_model.name,
-            LogicalRepository.repository_id == repo_id,
-        )))
-        if existing is not None:
-            for col in (LogicalRepository.prs, LogicalRepository.deployments):
-                if existing[col.name] != db_model[col.name]:
-                    async with sdb_conn.transaction():
-                        await _delete_logical_repository(
-                            web_model.name, full_name, prefixed_name, repo_id,
-                            web_model.account, sdb_conn, request.pdb)
-                    break
+        existing, equal = await _find_matching_logical_repository(
+            db_model, web_model.parent, web_model.releases, sdb_conn,
+        )
+        if existing:
+            if equal:
+                # equal logical repository exists, nothing to do
+                return response
             else:
-                pass
-                # TODO: what happens here ?? no deletion and there's a following insert
+                # existing logical repository is different, delete it
+                async with sdb_conn.transaction():
+                    await _delete_logical_repository(
+                        web_model.name, full_name, prefixed_name, repo_id,
+                        web_model.account, sdb_conn, request.pdb)
+
         else:
             # new logical repo invalidates logical deployments
             await _clean_logical_deployments(
@@ -473,7 +475,7 @@ async def set_logical_repository(request: AthenianWebRequest, body: dict) -> web
         async with sdb_conn.transaction():
             settings._sdb = sdb_conn
             # create the logical repository setting
-            await sdb_conn.execute(insert(LogicalRepository).values(db_model))
+            await sdb_conn.execute(insert(LogicalRepository).values(db_model.explode()))
             # create the release settings
             await settings.set_release_matches(
                 [prefixed_name],
@@ -498,8 +500,45 @@ async def set_logical_repository(request: AthenianWebRequest, body: dict) -> web
                             RepositorySet.updated_at: datetime.now(timezone.utc),
                             RepositorySet.items: items,
                         }))
-    del body["account"]
-    return model_response(WebLogicalRepository.from_dict(body))
+    return response
+
+
+async def _find_matching_logical_repository(
+    logical_repo: LogicalRepository,
+    parent_name: str,
+    release_match_setting: ReleaseMatchSetting,
+    sdb_conn: Connection,
+) -> Tuple[Optional[LogicalRepository], bool]:
+    """Find a logical repository matching `logical_repo`.
+
+    Properties matched are `account_id`, `name` and parent `repository_id`.
+
+    Return the matched logical repo row, if any, and a boolean telling if the
+    existing logical repo is identical to the compared logical repo also considering
+    extra properties and `release_match_setting`
+
+
+    """
+    existing = await sdb_conn.fetch_one(select([LogicalRepository]).where(and_(
+        LogicalRepository.account_id == logical_repo.account_id,
+        LogicalRepository.name == logical_repo.name,
+        LogicalRepository.repository_id == logical_repo.repository_id,
+    )))
+    if existing is None:
+        return None, False
+    for col in (LogicalRepository.prs, LogicalRepository.deployments):
+        if existing[col.name] != getattr(logical_repo, col.name):
+            return existing, False
+
+    matching_release_setting = await sdb_conn.fetch_one(select(ReleaseSetting).where(
+        ReleaseSetting.repository == f"{parent_name}/{logical_repo.name}",
+        ReleaseSetting.account_id == logical_repo.account_id,
+        ReleaseSetting.branches == release_match_setting.branches,
+        ReleaseSetting.tags == release_match_setting.tags,
+        ReleaseSetting.events == release_match_setting.events,
+        ReleaseSetting.match == ReleaseMatch[release_match_setting.match],
+    ))
+    return existing, matching_release_setting is not None
 
 
 async def _delete_logical_repository(name: str,
