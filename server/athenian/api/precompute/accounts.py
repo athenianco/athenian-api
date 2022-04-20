@@ -46,7 +46,7 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
                                tzinfo=timezone.utc)
     no_time_from = datetime(1970, 1, 1, tzinfo=timezone.utc)
     time_from = (time_to - timedelta(days=365 * 2)) if not os.getenv("CI") else no_time_from
-    accounts = [int(s) for s in args.account]
+    accounts = [int(p) for s in args.account for p in s.split()]
     reposets = await sdb.fetch_all(
         select([RepositorySet])
         .where(and_(RepositorySet.name == RepositorySet.ALL,
