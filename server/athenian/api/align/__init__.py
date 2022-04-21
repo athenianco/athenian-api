@@ -1,7 +1,7 @@
 from pathlib import Path
 import sys
 
-from ariadne import gql, make_executable_schema
+from ariadne import gql, make_executable_schema, SchemaBindable
 from graphql import GraphQLSchema
 
 from athenian.api import metadata
@@ -10,7 +10,10 @@ from athenian.api import metadata
 def create_graphql_schema() -> GraphQLSchema:
     """Dynamically import all the children modules and compile a GraphQL schema."""
     self_path = Path(__file__)
-    spec = gql(self_path.with_name("spec.gql").read_text())
+    amalgamation = "\n".join(
+        p.read_text() for p in Path(self_path.with_name("spec")).glob("**/*.graphql")
+    )
+    spec = gql(amalgamation)
     bindables = []
     for pkg in ("queries", "scalars"):
         for file_path in (self_path.parent / pkg).glob("*.py"):
@@ -18,9 +21,7 @@ def create_graphql_schema() -> GraphQLSchema:
                 continue
             __import__(package := f"{metadata.__package__}.align.{pkg}.{file_path.stem}")
             for var in sys.modules[package].__dict__.values():
-                # isinstance(var, SchemaBindable)
-                # https://github.com/mirumee/ariadne/pull/828
-                if hasattr(var, "bind_to_schema") and not isinstance(var, type):
+                if isinstance(var, SchemaBindable):
                     bindables.append(var)
     directives = {}
     for file_path in (self_path.parent / "directives").glob("*.py"):

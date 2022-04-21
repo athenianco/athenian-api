@@ -26,6 +26,8 @@ jobs:
     steps:
     - name: actions/checkout
       uses: actions/checkout@v2
+      with:
+        token: ${{ secrets.GKWILLIE_TOKEN }}
 
     - name: Initialize CodeQL
       uses: github/codeql-action/init@v1
