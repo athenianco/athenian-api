@@ -20,7 +20,7 @@ from sqlalchemy import and_, func, insert, select
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather
-from athenian.api.cache import cached, max_exptime
+from athenian.api.cache import cached, max_exptime, middle_term_exptime
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.db import Connection, Database, DatabaseLike
 from athenian.api.defer import defer
@@ -55,7 +55,8 @@ async def get_metadata_account_ids(account: int,
     if len(ids) == 0:
         acc_exists = await sdb.fetch_val(select([Account.id]).where(Account.id == account))
         if not acc_exists:
-            raise ResponseError(NotFoundError(detail=f"Account {account} does not exist"))
+            raise ResponseError(NotFoundError(detail=f"Account {account} does not exist",
+                                              type_="/errors/AccountNotFound"))
         raise ResponseError(NoSourceDataError(
             detail="The installation of account %d has not finished yet." % account))
     return tuple(r[0] for r in ids)
@@ -234,7 +235,8 @@ async def get_user_account_status(user: str,
                 _report_user_rejected(user, user_info, account, context, sdb, mdb, slack, cache),
                 "report_user_rejected_to_slack")
         raise ResponseError(NotFoundError(
-            detail="Account %d does not exist or user %s is not a member." % (account, user)))
+            detail="Account %d does not exist or user %s is not a member." % (account, user),
+            type_="/errors/AccountNotFound"))
     return status
 
 
@@ -527,3 +529,53 @@ async def is_membership_check_enabled(account: int, sdb: DatabaseLike) -> bool:
             )))
         enabled = (enabled is None and default_enabled) or enabled
     return enabled
+
+
+async def check_account_expired(context: AthenianWebRequest, log: logging.Logger) -> bool:
+    """Return the value indicating whether the account's expiration datetime is in the past."""
+    expires_at = await context.sdb.fetch_val(
+        select([Account.expires_at]).where(Account.id == context.account))
+    if getattr(context, "god_id", context.uid) == context.uid and (
+            expires_at is None or expires_at < datetime.now(expires_at.tzinfo)):
+        if (slack := context.app["slack"]) is not None:
+            await defer(
+                report_user_account_expired(
+                    context.uid, context.account, expires_at, context.sdb, context.mdb,
+                    context.user, slack, context.cache),
+                "report_user_account_expired_to_slack")
+        log.warning("Attempt to use an expired account %d by user %s",
+                    context.account, context.uid)
+        return True
+    return False
+
+
+@cached(
+    exptime=middle_term_exptime,
+    serialize=lambda x: x,
+    deserialize=lambda x: x,
+    key=lambda user, account, **_: (user, account),
+)
+async def report_user_account_expired(user: str,
+                                      account: int,
+                                      expired_at: datetime,
+                                      sdb: Database,
+                                      mdb: Database,
+                                      user_info: Callable[..., Coroutine],
+                                      slack: Optional[SlackWebClient],
+                                      cache: Optional[aiomcache.Client]):
+    """Send a Slack message about the user who accessed an expired account."""
+    async def dummy_user():
+        return User(login="N/A")
+
+    name, user_info = await gather(
+        get_account_name_or_stub(account, sdb, mdb, cache),
+        user_info() if user_info is not None else dummy_user(),
+    )
+    await slack.post_account("user_account_expired.jinja2",
+                             user=user,
+                             user_name=user_info.login,
+                             user_email=user_info.email,
+                             account=account,
+                             account_name=name,
+                             expired_at=expired_at)
+    return b"1"

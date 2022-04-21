@@ -2,6 +2,7 @@ from typing import Iterable, Optional, Union
 
 from aiohttp import web
 from aiohttp.typedefs import LooseHeaders
+import aiohttp.web
 
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.generic_error import GenericError
@@ -26,4 +27,9 @@ class ResponseError(Exception):
 
     def __init__(self, model: GenericError):
         """Initialize a new instance of `ResponseError`."""
-        self.response = model_response(model, status=model.status)
+        self.model = model
+
+    @property
+    def response(self) -> aiohttp.web.Response:
+        """Generate HTTP response for the error."""
+        return model_response(self.model, status=self.model.status)

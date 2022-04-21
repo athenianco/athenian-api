@@ -42,6 +42,7 @@ import uvloop
 os.environ["ATHENIAN_INVITATION_KEY"] = "vadim"
 
 from athenian.api.__main__ import create_mandrill, create_memcached, create_slack
+from athenian.api.application import AthenianApp
 from athenian.api.auth import Auth0, User
 from athenian.api.cache import CACHE_VAR_NAME, setup_cache_metrics
 from athenian.api.controllers import account, invitation_controller
@@ -52,7 +53,6 @@ from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.github.release_load import ReleaseLoader
 from athenian.api.controllers.miners.github.release_match import ReleaseToPullRequestMapper
 from athenian.api.db import Database, db_retry_intervals, measure_db_overhead_and_retry
-from athenian.api.especifico import AthenianApp
 from athenian.api.experiments.preloading.entries import PreloadedBranchMiner, \
     PreloadedDonePRFactsLoader, PreloadedMergedPRFactsLoader, PreloadedOpenPRFactsLoader, \
     PreloadedPullRequestMiner, PreloadedReleaseLoader, PreloadedReleaseToPullRequestMapper
