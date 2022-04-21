@@ -17,7 +17,11 @@ class SQLAlchemyModelFactoryMetaClass(FactoryMetaClass):
             # iterate Model fields, skipping those private and those already
             # explicitly defined in factory class
             for field_name, model_field in Model.__dict__.items():
-                if field_name.startswith("_") or field_name in attrs:
+                if (
+                        field_name.startswith("_")
+                        or field_name in attrs
+                        or not isinstance(model_field, InstrumentedAttribute)
+                ):
                     continue
                 # if a factory declaration can be extracted from the the model attribute
                 # then set it as a factory class field
