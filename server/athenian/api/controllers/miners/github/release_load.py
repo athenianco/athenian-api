@@ -865,15 +865,20 @@ class ReleaseMatcher:
         """Return the releases matched by tag."""
         if releases is None:
             with sentry_sdk.start_span(op="fetch_tags"):
-                releases = await read_sql_query(
-                    select([Release])
-                    .where(and_(
-                        Release.acc_id.in_(self._meta_ids),
-                        Release.published_at.between(time_from, time_to),
-                        Release.repository_full_name.in_(coerce_logical_repos(repos)),
-                    ))
-                    .order_by(desc(Release.published_at)),
-                    self._mdb, Release)
+                query = select([Release]).where(and_(
+                    Release.acc_id.in_(self._meta_ids),
+                    Release.published_at.between(time_from, time_to),
+                    Release.repository_full_name.in_(coerce_logical_repos(repos)),
+                )).order_by(desc(Release.published_at))
+                for hint in (
+                    "Rows(ref_2 repo_2 *250)",
+                    "Rows(ref_3 repo_3 *250)",
+                    "Rows(rel rrs *250)",
+                    "Leading(rel rrs)",
+                    "IndexScan(rel github_node_release_published_at)",
+                ):
+                    query = query.with_statement_hint(hint)
+                releases = await read_sql_query(query, self._mdb, Release)
         if (duplicated := releases.index.duplicated(keep="first")).any():
             releases = releases.take(np.flatnonzero(~duplicated))
             releases.reset_index(inplace=True, drop=True)
