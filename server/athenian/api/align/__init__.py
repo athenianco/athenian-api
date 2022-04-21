@@ -21,7 +21,7 @@ def create_graphql_schema() -> GraphQLSchema:
                 continue
             __import__(package := f"{metadata.__package__}.align.{pkg}.{file_path.stem}")
             for var in sys.modules[package].__dict__.values():
-                if isinstance(var, SchemaBindable):
+                if isinstance(var, SchemaBindable) and not isinstance(var, type):
                     bindables.append(var)
     directives = {}
     for file_path in (self_path.parent / "directives").glob("*.py"):

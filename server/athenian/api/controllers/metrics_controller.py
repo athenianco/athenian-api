@@ -4,6 +4,7 @@ from typing import Any, Collection, Dict, Iterable, List, Mapping, Set, Tuple, U
 
 from aiohttp import web
 
+from athenian.api.application import ADJUST_LOAD_VAR_NAME
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
 from athenian.api.cache import expires_header, short_term_exptime
@@ -26,7 +27,6 @@ from athenian.api.controllers.release import extract_release_participants
 from athenian.api.controllers.reposet import resolve_repos
 from athenian.api.controllers.settings import LogicalRepositorySettings, Settings
 from athenian.api.controllers.user import MANNEQUIN_PREFIX
-from athenian.api.especifico import ADJUST_LOAD_VAR_NAME
 from athenian.api.models.web import CalculatedCodeCheckMetrics, CalculatedCodeCheckMetricsItem, \
     CalculatedDeploymentMetric, CalculatedDeveloperMetrics, CalculatedDeveloperMetricsItem, \
     CalculatedLinearMetricValues, CalculatedPullRequestMetrics, CalculatedPullRequestMetricsItem, \

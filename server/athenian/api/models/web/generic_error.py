@@ -167,12 +167,12 @@ class BadRequestError(GenericError):
 class NotFoundError(GenericError):
     """HTTP 404."""
 
-    def __init__(self, detail: Optional[str] = None):
+    def __init__(self, detail: Optional[str] = None, type_: str = "/errors/NotFoundError"):
         """Initialize a new instance of NotFoundError.
 
         :param detail: The details about this error.
         """
-        super().__init__(type="/errors/NotFoundError", title=HTTPStatus.NOT_FOUND.phrase,
+        super().__init__(type=type_, title=HTTPStatus.NOT_FOUND.phrase,
                          status=HTTPStatus.NOT_FOUND, detail=detail)
 
 
@@ -186,6 +186,18 @@ class ForbiddenError(GenericError):
         """
         super().__init__(type="/errors/ForbiddenError", title=HTTPStatus.FORBIDDEN.phrase,
                          status=HTTPStatus.FORBIDDEN, detail=detail)
+
+
+class UnauthorizedError(GenericError):
+    """HTTP 401."""
+
+    def __init__(self, detail: Optional[str] = None):
+        """Initialize a new instance of UnauthorizedError.
+
+        :param detail: The details about this error.
+        """
+        super().__init__(type="/errors/Unauthorized", title=HTTPStatus.UNAUTHORIZED.phrase,
+                         status=HTTPStatus.UNAUTHORIZED, detail=detail)
 
 
 class DatabaseConflict(GenericError):

@@ -85,7 +85,7 @@ from athenian.api.models.web.for_set_developers import ForSetDevelopers
 from athenian.api.models.web.for_set_pull_requests import ForSetPullRequests
 from athenian.api.models.web.generic_error import BadRequestError, DatabaseConflict, \
     ForbiddenError, GenericError, NotFoundError, ServerNotImplementedError, \
-    ServiceUnavailableError, TooManyRequestsError
+    ServiceUnavailableError, TooManyRequestsError, UnauthorizedError
 from athenian.api.models.web.get_pull_requests_request import GetPullRequestsRequest
 from athenian.api.models.web.get_releases_request import GetReleasesRequest
 from athenian.api.models.web.granularity import Granularity, GranularityMixin

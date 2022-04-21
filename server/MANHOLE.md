@@ -4,7 +4,7 @@ API backdoor to execute arbitrary code in the requests.
 
 ### Where the code executes
 
-See `async def manhole()` in [athenian/api/\_\_init\_\_.py](athenian/api/especifico.py).
+See `async def manhole()` in [athenian/api/\_\_init\_\_.py](athenian/api/application.py).
 
 ### Writing the code
 

@@ -7,16 +7,15 @@ from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import func, join, select, union_all
 
 from athenian.api.async_utils import gather
-from athenian.api.cache import cached, middle_term_exptime
-from athenian.api.controllers.account import get_account_name_or_stub, \
-    get_metadata_account_ids_or_empty
+from athenian.api.controllers.account import get_metadata_account_ids_or_empty, \
+    report_user_account_expired
 from athenian.api.controllers.jira import get_jira_installation_or_none
-from athenian.api.db import Database, DatabaseLike
+from athenian.api.db import DatabaseLike
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import NodeCheckRun, NodeStatusContext
 from athenian.api.models.persistentdata.models import DeploymentNotification
 from athenian.api.models.state.models import Account, UserAccount
-from athenian.api.models.web import AccountStatus, User
+from athenian.api.models.web import AccountStatus
 
 # There are three GitHub user types:
 # 1. Regular.
@@ -104,35 +103,3 @@ async def load_user_accounts(uid: str,
 
 async def _return_none() -> None:
     return None
-
-
-@cached(
-    exptime=middle_term_exptime,
-    serialize=lambda x: x,
-    deserialize=lambda x: x,
-    key=lambda user, account, **_: (user, account),
-)
-async def report_user_account_expired(user: str,
-                                      account: int,
-                                      expired_at: datetime,
-                                      sdb: Database,
-                                      mdb: Database,
-                                      user_info: Callable[..., Coroutine],
-                                      slack: Optional[SlackWebClient],
-                                      cache: Optional[aiomcache.Client]):
-    """Send a Slack message about the user who accessed an expired account."""
-    async def dummy_user():
-        return User(login="N/A")
-
-    name, user_info = await gather(
-        get_account_name_or_stub(account, sdb, mdb, cache),
-        user_info() if user_info is not None else dummy_user(),
-    )
-    await slack.post_account("user_account_expired.jinja2",
-                             user=user,
-                             user_name=user_info.login,
-                             user_email=user_info.email,
-                             account=account,
-                             account_name=name,
-                             expired_at=expired_at)
-    return b"1"
