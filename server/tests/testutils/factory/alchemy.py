@@ -1,3 +1,5 @@
+"""Tools for factories targeting SQLAlchemy models."""
+
 from typing import Any, Optional
 
 from factory.base import BaseFactory, FactoryMetaClass, resolve_attribute

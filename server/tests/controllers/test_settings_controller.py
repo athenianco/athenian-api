@@ -21,8 +21,9 @@ from athenian.api.models.web import JIRAProject, LogicalRepository as WebLogical
 from athenian.api.response import ResponseError
 from athenian.api.serialization import FriendlyJson
 from tests.testutils.db import assert_missing_row, model_insert_stmt
-from tests.testutils.factory import GitHubDonePullRequestFactsFactory, \
-    GitHubOpenPullRequestFactsFactory, GitHubReleaseFactory, LogicalRepositoryFactory
+from tests.testutils.factory.precomputed import GitHubDonePullRequestFactsFactory, \
+    GitHubOpenPullRequestFactsFactory, GitHubReleaseFactory
+from tests.testutils.factory.state import LogicalRepositoryFactory
 
 
 async def validate_release_settings(body, response, sdb, exhaustive: bool):
