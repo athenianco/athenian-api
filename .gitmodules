@@ -1,3 +1,6 @@
 [submodule "server/athenian/api/openapi"]
 	path = server/athenian/api/openapi
 	url = https://github.com/athenianco/api-spec
+[submodule "server/athenian/api/align/spec"]
+	path = server/athenian/api/align/spec
+	url = https://github.com/athenianco/align-api-spec
