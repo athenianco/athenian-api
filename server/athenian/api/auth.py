@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timedelta
+from datetime import timedelta
 import functools
 from http import HTTPStatus
 from json import JSONDecodeError
@@ -30,13 +30,11 @@ from sqlalchemy import select
 from athenian.api.aiohttp_addons import create_aiohttp_closed_event
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached
-from athenian.api.controllers.account import get_user_account_status_from_request
-from athenian.api.controllers.user import report_user_account_expired
-from athenian.api.defer import defer
+from athenian.api.controllers.account import check_account_expired, \
+    get_user_account_status_from_request
 from athenian.api.kms import AthenianKMS
-from athenian.api.models.state.models import Account, God, UserAccount, UserToken
-from athenian.api.models.web import ForbiddenError, GenericError
-from athenian.api.models.web.user import User
+from athenian.api.models.state.models import God, UserAccount, UserToken
+from athenian.api.models.web import ForbiddenError, GenericError, User
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError
 from athenian.api.tracing import sentry_span
@@ -121,7 +119,7 @@ class Auth0:
             self._mgmt_loop = None  # type: Optional[asyncio.Future]
 
     async def kids(self) -> Dict[str, Any]:
-        """Return the mapping kid -> Auth0 jwks record with that kid; wait until fetched."""
+        """Return the mapping key id -> Auth0 jwks record with that kid; wait until fetched."""
         if self._jwks_loop is None:
             self._jwks_loop = asyncio.ensure_future(self._fetch_jwks_loop())
         await self._kids_event.wait()
@@ -454,10 +452,10 @@ class Auth0:
             unverified_header = jwt.get_unverified_header(token)
         except jwt.JWTError as e:
             raise OAuthProblem(
-                description="Invalid header: %s. Use an RS256 signed JWT Access Token." % e)
+                description="Invalid header: %s Use an RS256 signed JWT Access Token." % e)
         if unverified_header["alg"] != "RS256":
             raise OAuthProblem(
-                description="Invalid algorithm %s. Use an RS256 signed JWT Access Token." %
+                description="Invalid algorithm %s Use an RS256 signed JWT Access Token." %
                 unverified_header["alg"])
 
         kids = await self.kids()
@@ -507,6 +505,28 @@ class Auth0:
         uid = token_obj[UserToken.user_id.name]
         account = token_obj[UserToken.account_id.name]
         return uid, account
+
+    @aiohttp.web.middleware
+    async def authenticate(self, request: AthenianWebRequest, handler) -> aiohttp.web.Response:
+        """
+        Direct request authentication outside of Especifico's context.
+
+        We are currently using this middleware to authenticate GraphQL/Ariadne queries.
+        """
+        if "Authorization" not in (headers := request.headers):
+            headers = CIMultiDict(request.headers)
+            headers["Authorization"] = "Bearer null"
+        authorization = headers["Authorization"]
+        try:
+            auth_type, value = authorization.split(None, 1)
+        except ValueError as e:
+            raise Unauthorized("Invalid authorization header") from e
+        auth_type = auth_type.lower()
+        if auth_type != "bearer":
+            raise Unauthorized(
+                "Invalid authorization header, the value must start with Bearer")
+        await self._set_user(request, value, auth_type)
+        return await handler(request)
 
 
 class AthenianAioHttpSecurityHandlerFactory(especifico.security.AioHttpSecurityHandlerFactory):
@@ -579,20 +599,8 @@ class AthenianAioHttpSecurityHandlerFactory(especifico.security.AioHttpSecurityH
                             request_json["account"] = account
                 context.account = account
             # check whether the account is enabled
-            if context.account is not None:
-                expires_at = await context.sdb.fetch_val(
-                    select([Account.expires_at]).where(Account.id == context.account))
-                if getattr(context, "god_id", context.uid) == context.uid and (
-                        expires_at is None or expires_at < datetime.now(expires_at.tzinfo)):
-                    if (slack := context.app["slack"]) is not None:
-                        await defer(
-                            report_user_account_expired(
-                                context.uid, context.account, expires_at, context.sdb, context.mdb,
-                                context.user, slack, context.cache),
-                            "report_user_account_expired_to_slack")
-                    auth.log.warning("Attempt to use an expired account %d by user %s",
-                                     context.account, context.uid)
-                    raise Unauthorized("Your account has expired.")
+            if context.account is not None and await check_account_expired(context, auth.log):
+                raise Unauthorized(f"Account {context.account} has expired.")
             # finish the auth processing and chain forward
             return await function(request)
 

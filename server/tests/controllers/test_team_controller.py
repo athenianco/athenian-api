@@ -81,7 +81,7 @@ async def test_create_team_wrong_account(client, headers, sdb, account, disable_
     assert response.status == 404, "Response body is : " + body
     parsed = json.loads((await response.read()).decode("utf-8"))
     assert parsed == {
-        "type": "/errors/NotFoundError",
+        "type": "/errors/AccountNotFound",
         "title": "Not Found",
         "status": 404,
         "detail": (f"Account {account} does not exist or user auth0|5e1f6dfb57bc640ea390557b "
@@ -278,7 +278,7 @@ async def test_list_teams_wrong_account(client, headers, sdb, account, initial_t
     assert response.status == 404, "Response body is : " + body
     parsed = json.loads((await response.read()).decode("utf-8"))
     assert parsed == {
-        "type": "/errors/NotFoundError",
+        "type": "/errors/AccountNotFound",
         "title": "Not Found",
         "status": 404,
         "detail": (f"Account {account} does not exist or user auth0|5e1f6dfb57bc640ea390557b "

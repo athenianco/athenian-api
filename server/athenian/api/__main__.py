@@ -31,10 +31,10 @@ from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 import uvloop
 
 from athenian.api import metadata
+from athenian.api.application import AthenianApp
 from athenian.api.auth import Auth0
 from athenian.api.balancing import endpoint_weights
 from athenian.api.db import check_schema_versions
-from athenian.api.especifico import AthenianApp
 from athenian.api.faster_pandas import patch_pandas
 from athenian.api.kms import AthenianKMS
 from athenian.api.mandrill import MandrillClient

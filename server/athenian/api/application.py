@@ -22,6 +22,7 @@ from aiohttp.web_exceptions import HTTPClientError, HTTPFound, HTTPNoContent, HT
 from aiohttp.web_runner import GracefulExit
 import aiohttp_cors
 import aiomcache
+import ariadne
 from asyncpg import InterfaceError, OperatorInterventionError, PostgresConnectionError
 from especifico.apis import aiohttp_api
 from especifico.exceptions import EspecificoException
@@ -37,7 +38,7 @@ from werkzeug.exceptions import Unauthorized
 
 from athenian.api import align, metadata
 from athenian.api.aiohttp_addons import create_aiohttp_closed_event
-from athenian.api.ariadne import GraphQL
+from athenian.api.ariadne import AriadneException, GraphQL
 from athenian.api.async_utils import gather
 from athenian.api.auth import AthenianAioHttpSecurityHandlerFactory, Auth0
 from athenian.api.balancing import extract_handler_weight
@@ -310,7 +311,8 @@ class AthenianApp(especifico.AioHttpApp):
             },
             validate_responses=validate_responses,
         )
-        GraphQL(align.create_graphql_schema()).attach(self.app, "/align", middlewares)
+        GraphQL(align.create_graphql_schema()).attach(
+            self.app, "/align", middlewares + [self._auth0.authenticate])
         if kms_cls is not None:
             self.app["kms"] = self._kms = kms_cls()
         else:
@@ -636,19 +638,39 @@ class AthenianApp(especifico.AioHttpApp):
         aborted = False
         try:
             return await handler(request)
-        except bdb.BdbQuit:
-            # breakpoint() helper
-            raise GracefulExit() from None
         except ResponseError as e:
             return e.response
+        except AriadneException as e:
+            body = ariadne.format_error(e.args[0])
+            real_error = e.args[0].original_error.model
+            body["message"] = real_error.title
+            body.setdefault("extensions", {})["status"] = real_error.status
+            body["extensions"]["type"] = real_error.type
+            body["extensions"]["detail"] = real_error.detail
+            return aiohttp.web.json_response({"errors": [body]})
         except (EspecificoException,
                 HTTPClientError,   # 4xx
-                Unauthorized,      # 401
                 HTTPRedirection,   # 3xx
                 HTTPNoContent,     # 204
                 HTTPResetContent,  # 205
                 ) as e:
             raise e from None
+        except Unauthorized as e:  # 401
+            if request.path.startswith("/align/graphql"):
+                return aiohttp.web.json_response({
+                    "errors": [{
+                        "message": HTTPStatus(e.code).phrase,
+                        "extensions": {
+                            "status": e.code,
+                            "type": "/errors/Unauthorized",
+                            "detail": e.description,
+                        },
+                    }],
+                })
+            raise e from None
+        except bdb.BdbQuit:
+            # breakpoint() helper
+            raise GracefulExit() from None
         except GeneratorExit:
             # DEV-3413
             # our defer context is likely broken at this point

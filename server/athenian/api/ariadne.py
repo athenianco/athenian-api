@@ -1,22 +1,16 @@
-from typing import Any, Callable, Iterable, List, Optional, Union
+from typing import Any, Callable, Iterable, Optional
 
 import aiohttp.web
 from aiohttp.web_exceptions import HTTPPermanentRedirect
 from aiohttp.web_middlewares import normalize_path_middleware
 from ariadne import format_error, graphql
-from ariadne.types import ContextValue, ErrorFormatter, ExtensionList, RootValue, ValidationRules
-from graphql import GraphQLSchema, Middleware
+from ariadne.types import Extension, Resolver
+from graphql import GraphQLResolveInfo, GraphQLSchema, located_error
+import sentry_sdk
 
 from athenian.api.request import AthenianWebRequest
+from athenian.api.response import ResponseError
 from athenian.api.serialization import FriendlyJson
-
-Extensions = Union[
-    Callable[[Any, Optional[ContextValue]], ExtensionList], ExtensionList,
-]
-MiddlewareList = Optional[List[Middleware]]
-Middlewares = Union[
-    Callable[[Any, Optional[ContextValue]], MiddlewareList], MiddlewareList,
-]
 
 
 class GraphQL:
@@ -26,23 +20,13 @@ class GraphQL:
         self,
         schema: GraphQLSchema,
         *,
-        root_value: Optional[RootValue] = None,
         debug: bool = False,
-        validation_rules: Optional[ValidationRules] = None,
         logger: Optional[str] = None,
-        error_formatter: ErrorFormatter = format_error,
-        extensions: Optional[Extensions] = None,
-        middleware: Optional[Middlewares] = None,
         dumps: Optional[Callable[[Any], str]] = FriendlyJson.dumps,
     ):
         """Initialize a new instance of GraphQL class."""
-        self.root_value = root_value
         self.debug = debug
-        self.validation_rules = validation_rules
         self.logger = logger
-        self.error_formatter = error_formatter
-        self.extensions = extensions
-        self.middleware = middleware
         self.schema = schema
         self.dumps = dumps
 
@@ -69,6 +53,7 @@ class GraphQL:
             "POST", "/graphql", self.process, name="GraphQL",
         )
         app.add_subapp(base_path, subapp)
+        subapp._state = app._state
 
     async def process(self, request: AthenianWebRequest) -> aiohttp.web.Response:
         """Serve a GraphQL request."""
@@ -76,16 +61,41 @@ class GraphQL:
             self.schema,
             await request.json(),
             context_value=request,
-            root_value=self.root_value,
-            validation_rules=self.validation_rules,
+            root_value=None,
+            validation_rules=None,
             debug=self.debug,
             introspection=False,
             logger=self.logger,
-            error_formatter=self.error_formatter,
-            extensions=self.extensions,
-            middleware=self.middleware,
+            error_formatter=format_error,
+            extensions=[HandleErrorExtension],
+            middleware=None,
         )
-        return aiohttp.web.json_response(
-            self.dumps(response),
+        return aiohttp.web.Response(
+            body=self.dumps(response),
+            content_type="application/json",
             status=200 if success else 400,
         )
+
+
+class AriadneException(BaseException):  # note: BaseException to trick Ariadne
+    """Bypass the built-in Ariadne catch-them-all error handler."""
+
+
+class HandleErrorExtension(Extension):
+    """
+    Intercept all the errors inside resolvers and re-raise.
+
+    AriadneException is invisible to `except Exception` and we handle it in AthenianApp._shielded.
+    """
+
+    async def resolve(self, next_: Resolver, parent: Any, info: GraphQLResolveInfo, **kwargs,
+                      ) -> Any:
+        """Wrap the resolution flow in try-except."""
+        try:
+            return await super().resolve(next_, parent, info, **kwargs)
+        except ResponseError as e:
+            error = located_error(e, info.field_nodes, info.path.as_list())
+            raise AriadneException(error)
+        except Exception as e:
+            sentry_sdk.capture_exception()
+            raise e from None
