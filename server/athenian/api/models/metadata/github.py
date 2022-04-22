@@ -150,7 +150,8 @@ class PullRequestCommit(Base,
                         ):
     __tablename__ = "api_pull_request_commits"
 
-    sha = Column(Text, nullable=False)
+    # TODO(vmarkovtsev): DEV-3527 switch to S40
+    sha = Column(Text, nullable=False, info={"dtype": "U40"})
     commit_node_id = Column(BigInteger, nullable=False)
     author_login = Column(Text)
     author_user_id = Column(BigInteger)
@@ -253,7 +254,8 @@ class PushCommit(Base,
     author_date = Column(Text, nullable=False)
     authored_date = Column(TIMESTAMP(timezone=True), nullable=False)
     url = Column(Text)
-    sha = Column(Text, nullable=False)
+    # TODO(vmarkovtsev): DEV-3527 switch to S40
+    sha = Column(Text, nullable=False, info={"dtype": "U40"})
     committer_login = Column(Text)
     committer_user_id = Column(BigInteger)
     committer_avatar_url = Column(Text)
@@ -309,7 +311,8 @@ class Release(Base,
     published_at = Column(TIMESTAMP(timezone=True))
     tag = Column(Text)
     url = Column(Text)
-    sha = Column(Text, nullable=False)
+    # TODO(vmarkovtsev): DEV-3527 switch to S40
+    sha = Column(Text, nullable=False, info={"dtype": "U40"})
     commit_id = Column(BigInteger, nullable=False, info={"reset_nulls": True})
 
 
@@ -319,7 +322,8 @@ class NodeCommit(Base,
                  ):
     __tablename__ = "node_commit"
 
-    oid = Column(Text, nullable=False)
+    # TODO(vmarkovtsev): DEV-3527 switch to S40
+    oid = Column(Text, nullable=False, info={"dtype": "U40"})
     sha = synonym("oid")
     repository_id = Column(BigInteger, nullable=False)
     message = Column(Text, nullable=False)
@@ -393,7 +397,8 @@ class Branch(Base,
     branch_name = Column(Text, nullable=False)
     is_default = Column(Boolean, nullable=False)
     commit_id = Column(BigInteger, nullable=False)
-    commit_sha = Column(Text, nullable=False)
+    # TODO(vmarkovtsev): DEV-3527 switch to S40
+    commit_sha = Column(Text, nullable=False, info={"dtype": "U40"})
     commit_date = "commit_date"
 
 
@@ -509,7 +514,8 @@ class CommonCheckRunMixin(RepositoryMixin):
 
     acc_id = Column(BigInteger)
     commit_node_id = Column(BigInteger, nullable=False, info={"erase_nulls": True})
-    sha = Column(Text, nullable=False)
+    # TODO(vmarkovtsev): DEV-3527 switch to S40
+    sha = Column(Text, nullable=False, info={"dtype": "U40"})
     author_user_id = Column(BigInteger)
     author_login = Column(Text)
     authored_date = Column(TIMESTAMP(timezone=True), nullable=False)

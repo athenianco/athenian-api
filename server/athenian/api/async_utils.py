@@ -10,7 +10,7 @@ from pandas.core.dtypes.cast import OutOfBoundsDatetime, tslib
 from pandas.core.internals import make_block
 from pandas.core.internals.managers import BlockManager, form_blocks
 import sentry_sdk
-from sqlalchemy import Boolean, Column, DateTime, Integer
+from sqlalchemy import Boolean, Column, DateTime, Integer, String
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import ClauseElement
 from sqlalchemy.sql.elements import Label
@@ -100,18 +100,21 @@ def wrap_sql_query(data: List[Sequence[Any]],
         dt_columns = _extract_datetime_columns(columns.__table__.columns)
         int_columns = _extract_integer_columns(columns.__table__.columns)
         bool_columns = _extract_boolean_columns(columns.__table__.columns)
+        fixed_str_columns = _extract_fixed_string_columns(columns.__table__.columns)
         columns = [c.name for c in columns.__table__.columns]
     else:
         dt_columns = _extract_datetime_columns(columns)
         int_columns = _extract_integer_columns(columns)
         bool_columns = _extract_boolean_columns(columns)
+        fixed_str_columns = _extract_fixed_string_columns(columns)
         columns = [(c.name if not isinstance(c, str) else c) for c in columns]
     typed_cols_indexes = []
     typed_cols_names = []
     obj_cols_indexes = []
     obj_cols_names = []
     for i, column in enumerate(columns):
-        if column in dt_columns or column in int_columns or column in bool_columns:
+        if column in dt_columns or column in int_columns or column in bool_columns \
+                or column in fixed_str_columns:
             cols_indexes = typed_cols_indexes
             cols_names = typed_cols_names
         else:
@@ -144,6 +147,12 @@ def wrap_sql_query(data: List[Sequence[Any]],
                     discard_mask[discarded] = True
             elif column in bool_columns:
                 converted_typed.append(values.astype(bool))
+            elif column in fixed_str_columns:
+                if discard_mask is None:
+                    discard_mask = np.zeros(len(data), dtype=bool)
+                is_null_mask = is_null(values)
+                discard_mask[is_null_mask] = True
+                converted_typed.append(values.astype(fixed_str_columns[column])[~is_null_mask])
             else:
                 raise AssertionError("impossible: typed columns are either dt or int")
         if discard_mask is not None:
@@ -201,6 +210,27 @@ def _extract_integer_columns(columns: Iterable[Union[Column, str]],
             (not getattr(c.element, "nullable", False))
             and (not getattr(c, "nullable", False))
         ))
+    }
+
+
+def _extract_fixed_string_columns(columns: Iterable[Union[Column, str]],
+                                  ) -> Dict[str, Tuple[str, bool]]:
+    return {
+        c.name: info["dtype"] for c in columns
+        if (
+            not isinstance(c, str) and (
+                isinstance(c.type, String) or
+                (isinstance(c.type, type) and issubclass(c.type, String))
+            )
+            and not getattr(c, "nullable", False)
+            and (not isinstance(c, Label) or (
+                (not getattr(c.element, "nullable", False))
+                and (not getattr(c, "nullable", False))
+            ))
+            and (info := getattr(
+                c, "info", {} if not isinstance(c, Label) else getattr(c.element, "info", {}),
+            )).get("dtype", False)
+        )
     }
 
 
