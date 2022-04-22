@@ -27,7 +27,6 @@ from athenian.api.precompute.context import PrecomputeContext
 from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME
 from athenian.precomputer.db import dereference_schemas as dereference_precomputed_schemas
 
-
 commands = {
     "sync-labels": sync_labels.main,
     "resolve-deployments": resolve_deployments.main,
@@ -56,14 +55,23 @@ def _parse_args() -> argparse.Namespace:
                         help="memcached address, e.g. 0.0.0.0:11211")
     parser.add_argument("--xcom", default="/airflow/xcom/return.json",
                         help="xcom target file path")
+
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("sync-labels", help="Update the labels in the precomputed PRs")
     subparsers.add_parser("resolve-deployments",
                           help="Fill missing commit references in the deployed components")
     subparsers.add_parser("notify-almost-expired-accounts",
                           help="Send Slack messages about accounts which are about to expire")
-    subparsers.add_parser("discover-accounts",
-                          help="Schedule the eligible accounts for precomputing")
+
+    discover_accounts_parser = subparsers.add_parser(
+        "discover-accounts", help="Schedule the eligible accounts for precomputing",
+    )
+    discover_accounts_parser.add_argument(
+        "--partition",
+        action="store_true",
+        help="Emit two different lists for fresh and already precomputed accounts",
+    )
+
     accounts_parser = subparsers.add_parser("accounts", help="Precompute one or more accounts")
     accounts_parser.add_argument("account", nargs="+", help="Account IDs to precompute")
     accounts_parser.add_argument("--skip-jira-identity-map", action="store_true",

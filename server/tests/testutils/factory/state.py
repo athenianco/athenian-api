@@ -37,7 +37,7 @@ class RepositorySetFactory(SQLAlchemyModelFactory):
         model = RepositorySet
 
     id = factory.Sequence(lambda n: n)
-    name = factory.Sequence(lambda n: f"reposet-{n}")
+    name = RepositorySet.ALL
     owner_id = DEFAULT_ACCOUNT_ID
     created_at = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=50))
     updated_at = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=50))
