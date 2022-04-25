@@ -1,7 +1,4 @@
-"""Test factories for models used by application.
-
-Factories are implemented using factory_boy library.
-"""
+"""Test factories for models in state precomputed DB."""
 
 from datetime import datetime, timedelta, timezone
 import hashlib
@@ -10,17 +7,16 @@ import factory
 
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
     GitHubOpenPullRequestFacts, GitHubRelease
-from athenian.api.models.state.models import LogicalRepository
-from tests.testutils.factory_alchemy import SQLAlchemyModelFactory
 
-_DEFAULT_ACCOUNT_ID = 1
+from .alchemy import SQLAlchemyModelFactory
+from .common import DEFAULT_ACCOUNT_ID
 
 
 class GitHubDonePullRequestFactsFactory(SQLAlchemyModelFactory):
     class Meta:
         model = GitHubDonePullRequestFacts
 
-    acc_id = _DEFAULT_ACCOUNT_ID
+    acc_id = DEFAULT_ACCOUNT_ID
     pr_node_id = factory.Sequence(lambda n: n)
     release_match = "branch|master"
     repository_full_name = factory.Sequence(lambda n: f"athenianco/repo-{n}")
@@ -34,7 +30,7 @@ class GitHubOpenPullRequestFactsFactory(SQLAlchemyModelFactory):
     class Meta:
         model = GitHubOpenPullRequestFacts
 
-    acc_id = _DEFAULT_ACCOUNT_ID
+    acc_id = DEFAULT_ACCOUNT_ID
     pr_node_id = factory.Sequence(lambda n: n)
     repository_full_name = factory.Sequence(lambda n: f"athenianco/repo-{n}")
     pr_created_at = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=1))
@@ -43,20 +39,11 @@ class GitHubOpenPullRequestFactsFactory(SQLAlchemyModelFactory):
     data = b""
 
 
-class LogicalRepositoryFactory(SQLAlchemyModelFactory):
-    class Meta:
-        model = LogicalRepository
-
-    account_id = _DEFAULT_ACCOUNT_ID
-    name = factory.Sequence(lambda n: f"logical-repo-{n}")
-    repository_id = factory.Sequence(lambda n: n)
-
-
 class GitHubReleaseFactory(SQLAlchemyModelFactory):
     class Meta:
         model = GitHubRelease
 
-    acc_id = _DEFAULT_ACCOUNT_ID
+    acc_id = DEFAULT_ACCOUNT_ID
     node_id = factory.Sequence(lambda n: n)
     release_match = "branch|master"
     repository_full_name = factory.Sequence(lambda n: f"athenianco/repo-{n}")
