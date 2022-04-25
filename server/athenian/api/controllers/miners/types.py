@@ -519,6 +519,7 @@ class PullRequestCheckRun:
         check_suite_conclusion: [ascii]
         check_suite_status: [ascii]
         name: [str]
+        commit_ids: [int]
 
 
 @dataclass(slots=True, frozen=True)

@@ -1383,15 +1383,23 @@ class PullRequestMiner:
         rows = await pdb.fetch_all(sql.select([prcrs.pr_node_id, prcrs.data]).where(sql.and_(
             prcrs.acc_id == account,
             prcrs.format_version == prcrs.__table__.columns[prcrs.format_version.key].default.arg,
-            prcrs.pr_node_id.in_(merged_pr_node_ids),
+            prcrs.pr_node_id.in_(merged_pr_node_ids | open_pr_node_ids),
         )))
-        precomputed_check_runs = df_from_structs(
-            (PullRequestCheckRun(r[prcrs.data.name]) for r in rows),
-            length=len(rows),
-        )
+        if rows:
+            precomputed_check_runs = df_from_structs(
+                (PullRequestCheckRun(r[prcrs.data.name]) for r in rows),
+                length=len(rows),
+            )
+        else:
+            precomputed_check_runs = pd.DataFrame(columns=PullRequestCheckRun.f)
         precomputed_check_runs.set_index(
             np.fromiter((r[prcrs.pr_node_id.name] for r in rows), int, len(rows)),
             inplace=True)
+        if len(open_pr_commit_ids :=
+                precomputed_check_runs[PullRequestCheckRun.f.commit_ids].values[np.in1d(
+                    precomputed_check_runs.index.values, sorted(open_pr_node_ids),
+                )]):
+            open_pr_commit_ids = np.concatenate(open_pr_commit_ids, casting="unsafe")
         missed_pr_node_ids = \
             (merged_pr_node_ids - set(precomputed_check_runs.index.values)) | open_pr_node_ids
         add_pdb_hits(pdb, "PullRequestMiner.fetch_pr_check_runs", len(precomputed_check_runs))
@@ -1401,8 +1409,9 @@ class PullRequestMiner:
         rows = await mdb.fetch_all(
             sql.select([NodePullRequestCommit.commit_id])
             .where(sql.and_(NodePullRequestCommit.acc_id.in_(meta_ids),
+                            NodePullRequestCommit.commit_id.notin_(open_pr_commit_ids),
                             NodePullRequestCommit.pull_request_id.in_(missed_pr_node_ids))))
-        missed_commit_ids = [r[0] for r in rows]
+        missed_commit_ids = {r[0] for r in rows}
         missed_df = await mine_commit_check_runs(missed_commit_ids, meta_ids, mdb)
         missed_df = missed_df.take(np.flatnonzero(
             np.in1d(missed_df[CheckRun.pull_request_node_id.name].values,
@@ -1433,6 +1442,7 @@ class PullRequestMiner:
         missed_df[CheckRun.conclusion.name].fillna("", inplace=True)
         conclusions = missed_df[CheckRun.conclusion.name].values.astype("S", copy=False)
         statuses = missed_df[CheckRun.status.name].values.astype("S", copy=False)
+        commit_ids = missed_df[CheckRun.commit_node_id.name].values
         missed_df[CheckRun.check_suite_conclusion.name].fillna("", inplace=True)
         check_suite_conclusions = \
             missed_df[CheckRun.check_suite_conclusion.name].values.astype("S", copy=False)
@@ -1440,10 +1450,12 @@ class PullRequestMiner:
             missed_df[CheckRun.check_suite_status.name].values.astype("S", copy=False)
         names = missed_df[CheckRun.name.name].values.astype("U", copy=False)
         new_structs = []
-        merged_new_pr_node_ids = []
-        merged_new_structs = []
+        stored_new_pr_node_ids = []
+        stored_new_structs = []
+        now = np.datetime64(datetime.utcnow())
         for i, pr in enumerate(new_pr_node_ids):
             indexes = order[offsets[i]:offsets[i + 1]]
+            pr_commit_ids = commit_ids[indexes]
             new_structs.append(struct := PullRequestCheckRun.from_fields(
                 started_at=started_ats[indexes],
                 completed_at=completed_ats[indexes],
@@ -1455,12 +1467,39 @@ class PullRequestMiner:
                 check_suite_conclusion=check_suite_conclusions[indexes],
                 check_suite_status=check_suite_statuses[indexes],
                 name=names[indexes],
+                commit_ids=np.unique(pr_commit_ids),
             ))
-            if pr in merged_pr_node_ids:
-                merged_new_pr_node_ids.append(pr)
-                merged_new_structs.append(struct)
+            if pr in open_pr_node_ids:
+                # indexes are already sorted by time
+                # if the last started_at happened more than 24h ago,
+                # assume that nothing will change
+                if now - started_ats[indexes[-1]] < np.timedelta64(24, "h"):
+                    # otherwise, exclude the head commit
+                    pr_commit_ids, firsts, index_map = np.unique(
+                        pr_commit_ids, return_index=True, return_inverse=True)
+                    head = np.argmax(firsts)
+                    indexes = indexes[index_map != head]
+                    if len(indexes) == 0:
+                        continue
+                    pr_commit_ids = np.delete(pr_commit_ids, head)
+                    struct = PullRequestCheckRun.from_fields(
+                        started_at=started_ats[indexes],
+                        completed_at=completed_ats[indexes],
+                        check_suite_started_at=check_suite_started_ats[indexes],
+                        check_suite_completed_at=check_suite_completed_ats[indexes],
+                        check_suite_node_id=check_suite_node_ids[indexes],
+                        conclusion=conclusions[indexes],
+                        status=statuses[indexes],
+                        check_suite_conclusion=check_suite_conclusions[indexes],
+                        check_suite_status=check_suite_statuses[indexes],
+                        name=names[indexes],
+                        commit_ids=pr_commit_ids,
+                    )
+
+            stored_new_pr_node_ids.append(pr)
+            stored_new_structs.append(struct)
         await defer(
-            cls._store_pr_check_runs(merged_new_pr_node_ids, merged_new_structs, account, pdb),
+            cls._store_pr_check_runs(stored_new_pr_node_ids, stored_new_structs, account, pdb),
             f"_store_pr_check_runs({len(new_structs)})")
         missed_check_runs = df_from_structs(new_structs)
         missed_check_runs.set_index(new_pr_node_ids, inplace=True)
@@ -1503,6 +1542,7 @@ class PullRequestMiner:
             check_suite_conclusion=[],
             check_suite_status=[],
             name=[],
+            commit_ids=[],
         ).data
         values = [
             GitHubPullRequestCheckRuns(
