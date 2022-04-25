@@ -150,9 +150,8 @@ def wrap_sql_query(data: List[Sequence[Any]],
             elif column in fixed_str_columns:
                 if discard_mask is None:
                     discard_mask = np.zeros(len(data), dtype=bool)
-                is_null_mask = is_null(values)
-                discard_mask[is_null_mask] = True
-                converted_typed.append(values.astype(fixed_str_columns[column])[~is_null_mask])
+                discard_mask[is_null(values)] = True
+                converted_typed.append(values.astype(fixed_str_columns[column]))
             else:
                 raise AssertionError("impossible: typed columns are either dt or int")
         if discard_mask is not None:
