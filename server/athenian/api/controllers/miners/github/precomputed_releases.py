@@ -96,7 +96,7 @@ async def load_precomputed_release_facts(releases: pd.DataFrame,
                     GitHubReleaseFacts.repository_full_name,
                     GitHubReleaseFacts.data])
             .where(and_(*filters))
-            .with_statement_hint(f"Rows(release_facts {len(ids)})"),
+            .with_statement_hint(f"Rows(release_facts #{len(ids)})"),
         )
 
     with sentry_sdk.start_span(op="load_precomputed_release_facts/fetch",
