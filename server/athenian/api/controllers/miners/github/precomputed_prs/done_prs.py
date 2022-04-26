@@ -11,8 +11,10 @@ import morcilla
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, delete, exists, false, insert, not_, or_, select, true, union_all
+from sqlalchemy import and_, delete, exists, false, insert, join, not_, or_, select, true, \
+    union_all
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
+from sqlalchemy.orm import aliased
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import ClauseElement, Select
 
@@ -37,7 +39,8 @@ from athenian.api.controllers.miners.types import MinedPullRequest, PRParticipan
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.db import Database
-from athenian.api.models.metadata.github import PullRequest, PullRequestLabel, Release
+from athenian.api.models.metadata.github import NodeCommit, NodePullRequest, PullRequest, \
+    PullRequestLabel, Release
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
     GitHubPullRequestDeployment
 from athenian.api.tracing import sentry_span
@@ -848,13 +851,21 @@ async def delete_force_push_dropped_prs(repos: Iterable[str],
     rows, _, dags = await gather(*tasks, op="fetch prs + branches + dags")
     pr_node_ids = [r[0] for r in rows]
     del rows
+    node_commit = aliased(NodeCommit, name="c")
+    node_pr = aliased(NodePullRequest, name="pr")
     tasks = [
-        mdb.fetch_all(select([PullRequest.merge_commit_sha, PullRequest.node_id])
-                      .where(and_(PullRequest.acc_id.in_(meta_ids),
-                                  PullRequest.node_id.in_any_values(pr_node_ids)))
-                      .order_by(PullRequest.merge_commit_sha)
-                      .with_statement_hint("Leading(*VALUES* pr repo)")
-                      .with_statement_hint(f"Rows(pr repo #{len(pr_node_ids)})")),
+        mdb.fetch_all(
+            select([node_commit.sha, node_pr.node_id])
+            .select_from(join(node_pr, node_commit, and_(
+                node_pr.acc_id == node_commit.acc_id,
+                node_pr.merge_commit_id == node_commit.graph_id,
+            )))
+            .where(and_(node_pr.acc_id.in_(meta_ids),
+                        node_pr.node_id.in_any_values(pr_node_ids)))
+            .order_by(node_commit.sha)
+            .with_statement_hint("Leading(((*VALUES* pr) c))")
+            .with_statement_hint(f"Rows(*VALUES* pr #{len(pr_node_ids)})")
+            .with_statement_hint(f"Rows(*VALUES* pr c #{len(pr_node_ids)})")),
         fetch_repository_commits(
             dags, branches, BRANCH_FETCH_COMMITS_COLUMNS, True, account, meta_ids,
             mdb, pdb, cache),
