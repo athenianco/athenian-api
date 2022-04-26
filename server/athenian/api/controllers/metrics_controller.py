@@ -239,10 +239,9 @@ async def _compile_filters_devs(for_sets: List[ForSetDevelopers],
                                 request: AthenianWebRequest,
                                 account: int,
                                 meta_ids: Tuple[int, ...],
-                                ) -> Tuple[List[FilterDevs],
-                                           List[str],
-                                           Prefixer,
-                                           LogicalRepositorySettings]:
+                                prefixer: Prefixer,
+                                logical_settings: LogicalRepositorySettings,
+                                ) -> Tuple[List[FilterDevs], List[str]]:
     """
     Build the list of filters for a given list of ForSetDevelopers'.
 
@@ -258,9 +257,6 @@ async def _compile_filters_devs(for_sets: List[ForSetDevelopers],
     filters = []
     checkers = {}
     all_repos = set()
-    prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
-    settings = Settings.from_request(request, account)
-    logical_settings = await settings.list_logical_repositories(prefixer)
     for i, for_set in enumerate(for_sets):
         repos, prefix, service = await _extract_repos(
             request, logical_settings, account, meta_ids, for_set.repositories,
@@ -275,7 +271,7 @@ async def _compile_filters_devs(for_sets: List[ForSetDevelopers],
         labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
         jira = await _compile_jira(for_set, account, request)
         filters.append((service, (repogroups, devs, labels, jira, for_set)))
-    return filters, all_repos, prefixer, logical_settings
+    return filters, all_repos
 
 
 async def compile_filters_checks(for_sets: List[ForSetCodeChecks],
@@ -480,9 +476,15 @@ async def calc_metrics_developers(request: AthenianWebRequest, body: dict) -> we
     except ValueError as e:
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
+
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
-    filters, all_repos, prefixer, logical_settings = await _compile_filters_devs(
-        filt.for_, request, filt.account, meta_ids)
+    prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
+    settings = Settings.from_request(request, filt.account)
+    logical_settings = await settings.list_logical_repositories(prefixer)
+
+    filters, all_repos = await _compile_filters_devs(
+        filt.for_, request, filt.account, meta_ids, prefixer, logical_settings,
+    )
     if filt.date_to < filt.date_from:
         raise ResponseError(InvalidRequestError(
             detail="date_from may not be greater than date_to",
