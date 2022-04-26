@@ -18,17 +18,17 @@ from athenian.api.cache import cached, cached_methods, CancelCache, short_term_e
 from athenian.api.controllers.datetime_utils import coarsen_time_interval
 from athenian.api.controllers.features.code import CodeStats
 from athenian.api.controllers.features.github.check_run_metrics import \
-    CheckRunBinnedHistogramCalculator, CheckRunBinnedMetricCalculator, \
-    group_check_runs_by_lines, group_check_runs_by_pushers, make_check_runs_count_grouper
+    CheckRunBinnedHistogramCalculator, CheckRunBinnedMetricCalculator, group_check_runs_by_lines, \
+    group_check_runs_by_pushers, make_check_runs_count_grouper
 from athenian.api.controllers.features.github.code import calc_code_stats
 from athenian.api.controllers.features.github.deployment_metrics import \
     DeploymentBinnedMetricCalculator, group_deployments_by_environments, \
     group_deployments_by_participants, group_deployments_by_repositories
 from athenian.api.controllers.features.github.developer_metrics import \
     DeveloperBinnedMetricCalculator, group_actions_by_developers
-from athenian.api.controllers.features.github.pull_request_metrics import \
-    group_prs_by_lines, group_prs_by_participants, need_jira_mapping, \
-    PullRequestBinnedHistogramCalculator, PullRequestBinnedMetricCalculator
+from athenian.api.controllers.features.github.pull_request_metrics import group_prs_by_lines, \
+    group_prs_by_participants, need_jira_mapping, PullRequestBinnedHistogramCalculator, \
+    PullRequestBinnedMetricCalculator
 from athenian.api.controllers.features.github.release_metrics import \
     group_releases_by_participants, merge_release_participants, ReleaseBinnedMetricCalculator
 from athenian.api.controllers.features.github.unfresh_pull_request_metrics import \
@@ -43,10 +43,10 @@ from athenian.api.controllers.miners.github.check_run import mine_check_runs
 from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
 from athenian.api.controllers.miners.github.deployment import load_jira_issues_for_deployments, \
     mine_deployments
-from athenian.api.controllers.miners.github.developer import \
-    developer_repository_column, DeveloperTopic, mine_developer_activities
-from athenian.api.controllers.miners.github.precomputed_prs import \
-    DonePRFactsLoader, remove_ambiguous_prs, store_merged_unreleased_pull_request_facts, \
+from athenian.api.controllers.miners.github.developer import developer_repository_column, \
+    DeveloperTopic, mine_developer_activities
+from athenian.api.controllers.miners.github.precomputed_prs import DonePRFactsLoader, \
+    remove_ambiguous_prs, store_merged_unreleased_pull_request_facts, \
     store_open_pull_request_facts, store_precomputed_done_facts
 from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRequest, \
     PullRequestFactsMiner, PullRequestMiner
@@ -62,7 +62,6 @@ from athenian.api.defer import defer
 from athenian.api.models.metadata.github import CheckRun, PullRequest, PushCommit, Release
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
-
 
 unfresh_prs_threshold = 1000
 unfresh_participants_threshold = 50
@@ -814,7 +813,7 @@ class MetricEntriesCalculator:
         precomputed_unreleased_prs = miner.drop(unreleased_facts)
         remove_ambiguous_prs(precomputed_facts, ambiguous, matched_bys)
         add_pdb_hits(self._pdb, "precomputed_unreleased_facts", len(precomputed_unreleased_prs))
-        for key in precomputed_unreleased_prs.values:
+        for key in precomputed_unreleased_prs:
             precomputed_facts[key] = unreleased_facts[key]
         facts_miner = PullRequestFactsMiner(bots)
         mined_prs = []

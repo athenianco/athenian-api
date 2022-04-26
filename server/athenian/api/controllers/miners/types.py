@@ -335,7 +335,9 @@ class PullRequestFacts:
         return self.created < other.created
 
 
-PullRequestFactsMap = Dict[Tuple[int, str], PullRequestFacts]
+# a PullRequest is identified by the couple (pull_request_node_id, repository_full_name)
+PullRequestID = Tuple[int, str]
+PullRequestFactsMap = Dict[PullRequestID, PullRequestFacts]
 
 
 def nonemin(*args: Union[pd.Timestamp, type(None)]) -> Optional[pd.Timestamp]:
