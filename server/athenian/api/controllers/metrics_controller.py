@@ -40,9 +40,21 @@ from athenian.api.response import model_response, ResponseError
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import dataclass
 
-#               service                          developers                                    originals  # noqa
-FilterPRs = Tuple[str, Tuple[List[Set[str]], List[PRParticipants], LabelFilter, JIRAFilter, int, ForSetPullRequests]]  # noqa
-#                             repositories                                              for's index
+
+@dataclass(slots=True, frozen=True)
+class FilterPRs:
+    """Compiled pull requests filter."""
+
+    service: str
+    repogroups: List[Set[str]]
+    participants: List[str]
+    labels: LabelFilter
+    jira: JIRAFilter
+    for_set_index: int
+    """Index of `for_set` inside its containing sequence."""
+    for_set: ForSetPullRequests
+    """The original ForSetPullRequests used to compile this object."""
+
 
 @dataclass(slots=True, frozen=True)
 class FilterDevs:
@@ -50,7 +62,7 @@ class FilterDevs:
 
     service: str
     repogroups: List[Set[str]]
-    developers: List[str]
+    developers: List[PRParticipants]
     labels: LabelFilter
     jira: JIRAFilter
     for_set: ForSetDevelopers
@@ -121,19 +133,21 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
         BranchMiner.extract_branches(
             repos, prefixer, meta_ids, request.mdb, request.cache, strip=True),
         bots(filt.account, meta_ids, request.mdb, request.sdb, request.cache),
-        get_calculators_for_request({s for s, _ in filters}, filt.account, meta_ids, request),
+        get_calculators_for_request({f.service for f in filters}, filt.account, meta_ids, request),
     )
 
     @sentry_span
-    async def calculate_for_set_metrics(
-            service, repos, withgroups, labels, jira, for_index, for_set):
-        calculator = calculators[service]
-        check_environments(filt.metrics, for_index, for_set)
+    async def calculate_for_set_metrics(filter_prs: FilterPRs):
+        calculator = calculators[filter_prs.service]
+        for_set = filter_prs.for_set
+        check_environments(filt.metrics, filter_prs.for_set_index, for_set)
         metric_values = await calculator.calc_pull_request_metrics_line_github(
             filt.metrics, time_intervals, filt.quantiles or (0, 1), for_set.lines or [],
-            for_set.environments or [], repos, withgroups, labels, jira, filt.exclude_inactive,
-            account_bots, release_settings, logical_settings, prefixer, branches, default_branches,
-            filt.fresh)
+            for_set.environments or [], filter_prs.repogroups, filter_prs.participants,
+            filter_prs.labels, filter_prs.jira, filt.exclude_inactive, account_bots,
+            release_settings, logical_settings, prefixer, branches, default_branches,
+            filt.fresh,
+        )
         mrange = range(len(met.metrics))
         for lines_group_index, lines_group in enumerate(metric_values):
             for repos_group_index, with_groups in enumerate(lines_group):
@@ -161,9 +175,7 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
                                 v.confidence_maxs = None
                                 v.confidence_scores = None
                         met.calculated.append(cm)
-    await gather(*(
-        calculate_for_set_metrics(service, *args) for service, args in filters
-    ))
+    await gather(*(calculate_for_set_metrics(filter_prs) for filter_prs in filters))
     return model_response(met)
 
 
@@ -191,7 +203,7 @@ async def compile_filters_prs(for_sets: List[ForSetPullRequests],
                               logical_settings: LogicalRepositorySettings,
                               ) -> Tuple[List[FilterPRs], Set[str]]:
     """
-    Build the list of filters for a given list of ForSet-s.
+    Build the list of filters for a given list of ForSetPullRequests-s.
 
     We dereference repository sets and validate access permissions.
 
@@ -229,7 +241,7 @@ async def compile_filters_prs(for_sets: List[ForSetPullRequests],
                 withgroups.append(withgroup)
         labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
         jira = await _compile_jira(for_set, account, request)
-        filters.append((service, (repogroups, withgroups, labels, jira, i, for_set)))
+        filters.append(FilterPRs(service, repogroups, withgroups, labels, jira, i, for_set))
     return filters, all_repos
 
 
