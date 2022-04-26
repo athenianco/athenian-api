@@ -38,14 +38,23 @@ from athenian.api.models.web.pull_request_metrics_request import PullRequestMetr
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 from athenian.api.tracing import sentry_span
+from athenian.api.typing_utils import dataclass
 
 #               service                          developers                                    originals  # noqa
 FilterPRs = Tuple[str, Tuple[List[Set[str]], List[PRParticipants], LabelFilter, JIRAFilter, int, ForSetPullRequests]]  # noqa
 #                             repositories                                              for's index
 
-#                service                     developers
-FilterDevs = Tuple[str, Tuple[List[Set[str]], List[str], ForSetDevelopers]]
-#                              repositories                  originals
+@dataclass(slots=True, frozen=True)
+class FilterDevs:
+    """Compiled developers filter."""
+
+    service: str
+    repogroups: List[Set[str]]
+    developers: List[str]
+    labels: LabelFilter
+    jira: JIRAFilter
+    for_set: ForSetDevelopers
+    """The original ForSetDevelopers used to compile this object."""
 
 #                  service                      pusher groups
 FilterChecks = Tuple[str, Tuple[List[Set[str]], List[List[str]], LabelFilter, JIRAFilter, ForSetCodeChecks]]  # noqa
@@ -241,7 +250,7 @@ async def _compile_filters_devs(for_sets: List[ForSetDevelopers],
                                 meta_ids: Tuple[int, ...],
                                 prefixer: Prefixer,
                                 logical_settings: LogicalRepositorySettings,
-                                ) -> Tuple[List[FilterDevs], List[str]]:
+                                ) -> Tuple[List[FilterDevs], Set[str]]:
     """
     Build the list of filters for a given list of ForSetDevelopers'.
 
@@ -270,7 +279,7 @@ async def _compile_filters_devs(for_sets: List[ForSetDevelopers],
             for_set.developers, prefix, ".for[%d].developers" % i, unique=False)
         labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
         jira = await _compile_jira(for_set, account, request)
-        filters.append((service, (repogroups, devs, labels, jira, for_set)))
+        filters.append(FilterDevs(service, repogroups, devs, labels, jira, for_set))
     return filters, all_repos
 
 
@@ -495,7 +504,7 @@ async def calc_metrics_developers(request: AthenianWebRequest, body: dict) -> we
     settings = Settings.from_request(request, filt.account)
     release_settings, calculators = await gather(
         settings.list_release_matches(all_repos),
-        get_calculators_for_request({s for s, _ in filters}, filt.account, meta_ids, request),
+        get_calculators_for_request({f.service for f in filters}, filt.account, meta_ids, request),
     )
 
     met = CalculatedDeveloperMetrics()
@@ -509,16 +518,20 @@ async def calc_metrics_developers(request: AthenianWebRequest, body: dict) -> we
     tasks = []
     for_sets = []
 
-    for service, (repos, devs, labels, jira, for_set) in filters:
-        if for_set.aggregate_devgroups:
-            dev_groups = [[devs[i] for i in group] for group in for_set.aggregate_devgroups]
+    for devs_filter in filters:
+        if devs_filter.for_set.aggregate_devgroups:
+            dev_groups = [
+                [devs_filter.developers[i] for i in group]
+                for group in devs_filter.for_set.aggregate_devgroups
+            ]
         else:
-            dev_groups = [[dev] for dev in devs]
-        calculator = calculators[service]
+            dev_groups = [[dev] for dev in devs_filter.developers]
+        calculator = calculators[devs_filter.service]
         tasks.append(calculator.calc_developer_metrics_github(
-            dev_groups, repos, time_intervals, topics, labels, jira,
+            dev_groups, devs_filter.repogroups, time_intervals, topics,
+            devs_filter.labels, devs_filter.jira,
             release_settings, logical_settings, prefixer))
-        for_sets.append(for_set)
+        for_sets.append(devs_filter.for_set)
     all_stats = await gather(*tasks)
     for (stats_metrics, stats_topics), for_set in zip(all_stats, for_sets):
         topic_order = [stats_topics.index(DeveloperTopic(t)) for t in filt.metrics]
