@@ -33,7 +33,7 @@ from athenian.api.controllers.miners.github.release_load import group_repos_by_r
 from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
     new_released_prs_df
 from athenian.api.controllers.miners.types import MinedPullRequest, PRParticipants, \
-    PRParticipationKind, PullRequestFacts, PullRequestFactsMap
+    PRParticipationKind, PullRequestFacts, PullRequestFactsMap, PullRequestID
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.db import Database
@@ -171,12 +171,12 @@ class DonePRFactsLoader:
                                                       prefixer: Prefixer,
                                                       account: int,
                                                       pdb: morcilla.Database,
-                                                      ) -> Tuple[Dict[Tuple[int, str], datetime],
+                                                      ) -> Tuple[Dict[PullRequestID, datetime],
                                                                  Dict[str, List[int]]]:
         """
         Fetch precomputed done PR "pr_done_at" timestamps.
 
-        :return: 1. map from PR node IDs to their release timestamps. \
+        :return: 1. map from PR IDs to their release timestamps. \
                  2. Map from repository name to ambiguous PR node IDs which are released by \
                  branch with tag_or_branch strategy and without tags on the time interval.
         """
@@ -429,7 +429,7 @@ class DonePRFactsLoader:
                                              prefixer: Prefixer,
                                              account: int,
                                              pdb: morcilla.Database,
-                                             ) -> Tuple[Dict[Tuple[int, str], Mapping[str, Any]],
+                                             ) -> Tuple[Dict[PullRequestID, Mapping[str, Any]],
                                                         Dict[str, List[int]]]:
         """
         Load some data belonging to released or rejected PRs from the precomputed DB.

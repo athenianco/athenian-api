@@ -6,8 +6,8 @@ from enum import Enum
 from itertools import chain, repeat
 import logging
 import pickle
-from typing import Collection, Dict, Generator, Iterable, Iterator, KeysView, List, \
-    Mapping, Optional, Set, Tuple, Union
+from typing import Collection, Dict, Generator, Iterable, Iterator, KeysView, List, Mapping, \
+    Optional, Set, Tuple, Union
 
 import aiomcache
 import numpy as np
@@ -26,8 +26,8 @@ from athenian.api.controllers.logical_repos import coerce_logical_repos
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.check_run import calculate_check_run_outcome_masks, \
     check_suite_completed_column, check_suite_started_column, mine_commit_check_runs
-from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_COLUMNS, \
-    DAG, fetch_precomputed_commit_history_dags, fetch_repository_commits_no_branch_dates
+from athenian.api.controllers.miners.github.commit import BRANCH_FETCH_COMMITS_COLUMNS, DAG, \
+    fetch_precomputed_commit_history_dags, fetch_repository_commits_no_branch_dates
 from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_inrange
 from athenian.api.controllers.miners.github.label import fetch_labels_to_filter, \
     find_left_prs_by_labels
@@ -42,7 +42,7 @@ from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.jira.issue import generate_jira_prs_query
 from athenian.api.controllers.miners.types import DeploymentConclusion, MinedPullRequest, \
     nonemax, nonemin, PRParticipants, PRParticipationKind, PullRequestCheckRun, PullRequestFacts, \
-    PullRequestFactsMap
+    PullRequestFactsMap, PullRequestID
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch, \
     ReleaseSettings
@@ -233,22 +233,23 @@ class PullRequestMiner:
                 if index is not None:
                     df.index = index
 
-    def drop(self, node_ids: Collection[int]) -> pd.Index:
+    def drop(self, node_ids: Collection[PullRequestID]) -> Collection[PullRequestID]:
         """
-        Remove PRs from the given collection of PR node IDs in-place.
+        Remove PRs by ID from the built collections.
 
-        Node IDs don't have to be all present.
+        PR IDs don't have to be all present.
 
-        :return: Actually removed node IDs.
+        :return: Actually removed PR IDs.
         """
-        removed = self._dfs.prs.index.get_level_values(0).intersection(node_ids)
-        if removed.empty:
-            return removed
-        self._dfs.prs.drop(removed, inplace=True)
-        for df in self._dfs.values():
-            df.drop(removed, inplace=True, errors="ignore",
-                    level=0 if isinstance(df.index, pd.MultiIndex) else None)
-        return removed
+        # remove just from the dataframes indexed on PullRequestID
+        toremove = self._dfs.prs.index.intersection(node_ids)
+        if toremove.empty:
+            return []
+        self._dfs.prs.drop(index=toremove, inplace=True)
+        for df in (self._dfs.deployments, self._dfs.releases):
+            df.drop(index=toremove, inplace=True, errors="ignore")
+
+        return toremove.values
 
     def _deserialize_mine_cache(buffer: bytes) -> Tuple[PRDataFrames,
                                                         PullRequestFactsMap,
@@ -550,7 +551,7 @@ class PullRequestMiner:
     )
     async def mine_by_ids(cls,
                           prs: pd.DataFrame,
-                          unreleased: Collection[Tuple[int, str]],
+                          unreleased: Collection[PullRequestID],
                           logical_repositories: Union[Set[str], KeysView[str]],
                           time_to: datetime,
                           releases: pd.DataFrame,
@@ -596,7 +597,7 @@ class PullRequestMiner:
     @sentry_span
     async def _mine_by_ids(cls,
                            prs: pd.DataFrame,
-                           unreleased: Collection[Tuple[int, str]],
+                           unreleased: Collection[PullRequestID],
                            logical_repositories: Union[Set[str], KeysView[str]],
                            time_to: datetime,
                            releases: pd.DataFrame,

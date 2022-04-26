@@ -21,25 +21,22 @@ from athenian.api.controllers.features.github.unfresh_pull_request_metrics impor
     UnfreshPullRequestFactsFetcher
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github.branches import BranchMiner
-from athenian.api.controllers.miners.github.precomputed_prs import \
-    DonePRFactsLoader, MergedPRFactsLoader, OpenPRFactsLoader, triage_by_release_match
+from athenian.api.controllers.miners.github.precomputed_prs import DonePRFactsLoader, \
+    MergedPRFactsLoader, OpenPRFactsLoader, triage_by_release_match
 from athenian.api.controllers.miners.github.precomputed_prs.utils import extract_release_match
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
-from athenian.api.controllers.miners.github.release_load import \
-    group_repos_by_release_match, match_groups_to_conditions, ReleaseLoader
-from athenian.api.controllers.miners.github.release_load import \
-    set_matched_by_from_release_match
+from athenian.api.controllers.miners.github.release_load import group_repos_by_release_match, \
+    match_groups_to_conditions, ReleaseLoader, set_matched_by_from_release_match
 from athenian.api.controllers.miners.github.release_match import ReleaseToPullRequestMapper
 from athenian.api.controllers.miners.jira.issue import PullRequestJiraMapper
 from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind, \
-    PullRequestFacts, PullRequestFactsMap
+    PullRequestFacts, PullRequestFactsMap, PullRequestID
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
-from athenian.api.models.metadata.github import Base as MetadataGitHubBase, \
-    Branch, NodePullRequestJiraIssues, PullRequest, Release
-from athenian.api.models.precomputed.models import \
-    GitHubBase as PrecomputedGitHubBase, GitHubDonePullRequestFacts, \
-    GitHubMergedPullRequestFacts, GitHubOpenPullRequestFacts, \
+from athenian.api.models.metadata.github import Base as MetadataGitHubBase, Branch, \
+    NodePullRequestJiraIssues, PullRequest, Release
+from athenian.api.models.precomputed.models import GitHubBase as PrecomputedGitHubBase, \
+    GitHubDonePullRequestFacts, GitHubMergedPullRequestFacts, GitHubOpenPullRequestFacts, \
     GitHubRelease as PrecomputedRelease, \
     GitHubReleaseMatchTimespan as PrecomputedGitHubReleaseMatchTimespan
 from athenian.api.preloading.cache import MCID, PCID
@@ -194,7 +191,7 @@ class PreloadedDonePRFactsLoader(DonePRFactsLoader):
                                              prefixer: Prefixer,
                                              account: int,
                                              pdb: morcilla.Database,
-                                             ) -> Tuple[Dict[Tuple[int, str], Mapping[str, Any]],
+                                             ) -> Tuple[Dict[PullRequestID, Mapping[str, Any]],
                                                         Dict[str, List[int]]]:
         """
         Load some data belonging to released or rejected PRs from the preloaded precomputed DB.
