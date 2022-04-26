@@ -850,9 +850,11 @@ async def delete_force_push_dropped_prs(repos: Iterable[str],
     del rows
     tasks = [
         mdb.fetch_all(select([PullRequest.merge_commit_sha, PullRequest.node_id])
-                      .where(and_(PullRequest.node_id.in_(pr_node_ids),
-                                  PullRequest.acc_id.in_(meta_ids)))
-                      .order_by(PullRequest.merge_commit_sha)),
+                      .where(and_(PullRequest.acc_id.in_(meta_ids),
+                                  PullRequest.node_id.in_any_values(pr_node_ids)))
+                      .order_by(PullRequest.merge_commit_sha)
+                      .with_statement_hint("Leading(*VALUES* pr repo)")
+                      .with_statement_hint(f"Rows(pr repo #{len(pr_node_ids)})")),
         fetch_repository_commits(
             dags, branches, BRANCH_FETCH_COMMITS_COLUMNS, True, account, meta_ids,
             mdb, pdb, cache),
