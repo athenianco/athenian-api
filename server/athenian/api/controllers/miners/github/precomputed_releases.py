@@ -11,7 +11,7 @@ from sqlalchemy import and_, desc, insert, or_, select, union_all
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 
 from athenian.api import metadata
-from athenian.api.async_utils import read_sql_query
+from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.types import ReleaseFacts
 from athenian.api.controllers.settings import default_branch_alias, ReleaseMatch, ReleaseSettings
@@ -74,23 +74,37 @@ async def load_precomputed_release_facts(releases: pd.DataFrame,
         grouped_releases[repo].add(rid)
     default_version = \
         GitHubReleaseFacts.__table__.columns[GitHubReleaseFacts.format_version.key].default.arg
+    queries = []
+    total_ids = 0
+    threshold_in_values = 1000
+    threshold_total = 1000
+    for (m, v), r in reverse_settings.items():
+        ids = list(chain.from_iterable(grouped_releases[i] for i in r if i in grouped_releases))
+        filters = [
+            GitHubReleaseFacts.format_version == default_version,
+            GitHubReleaseFacts.acc_id == account,
+            GitHubReleaseFacts.repository_full_name.in_(release_repos),
+            GitHubReleaseFacts.release_match == compose_release_match(m, v),
+        ]
+        if len(ids) >= threshold_in_values:
+            filters.append(GitHubReleaseFacts.id.in_any_values(ids))
+        else:
+            filters.append(GitHubReleaseFacts.id.in_(ids))
+        total_ids += len(ids)
+        queries.append(
+            select([GitHubReleaseFacts.id,
+                    GitHubReleaseFacts.repository_full_name,
+                    GitHubReleaseFacts.data])
+            .where(and_(*filters))
+            .with_statement_hint(f"Rows(release_facts {len(ids)})"),
+        )
 
-    queries = [
-        select([GitHubReleaseFacts.id,
-                GitHubReleaseFacts.repository_full_name,
-                GitHubReleaseFacts.data])
-        .where(and_(GitHubReleaseFacts.format_version == default_version,
-                    GitHubReleaseFacts.acc_id == account,
-                    GitHubReleaseFacts.id.in_(chain.from_iterable(
-                        grouped_releases[i] for i in r if i in grouped_releases)),
-                    GitHubReleaseFacts.repository_full_name.in_(release_repos),
-                    GitHubReleaseFacts.release_match == compose_release_match(m, v)))
-        for (m, v), r in reverse_settings.items()
-    ]
-    query = union_all(*queries)
     with sentry_sdk.start_span(op="load_precomputed_release_facts/fetch",
                                description=str(len(releases))):
-        rows = await pdb.fetch_all(query)
+        if total_ids < threshold_total:
+            rows = await pdb.fetch_all(union_all(*queries))
+        else:
+            rows = chain.from_iterable(await gather(*(pdb.fetch_all(q) for q in queries)))
     result = {}
     for row in rows:
         node_id, repo = \
