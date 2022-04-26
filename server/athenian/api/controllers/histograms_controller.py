@@ -9,9 +9,10 @@ from athenian.api.controllers.account import get_metadata_account_ids
 from athenian.api.controllers.features.entries import UnsupportedMetricError
 from athenian.api.controllers.features.histogram import HistogramParameters, Scale
 from athenian.api.controllers.metrics_controller import check_environments, \
-    compile_filters_checks, compile_filters_prs, get_calculators_for_request
+    compile_filters_checks, compile_filters_prs, FilterPRs, get_calculators_for_request
 from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import BranchMiner
+from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import Settings
 from athenian.api.models.web import BadRequestError, CalculatedCodeCheckHistogram, \
     CalculatedPullRequestHistogram, CodeCheckHistogramsRequest, ForSetCodeChecks, Interquartile, \
@@ -30,25 +31,30 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
-    filters, repos, prefixer, logical_settings = await compile_filters_prs(
-        filt.for_, request, filt.account, meta_ids)
+    prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
+    settings = Settings.from_request(request, filt.account)
+    logical_settings = await settings.list_logical_repositories(prefixer)
+
+    filters, repos = await compile_filters_prs(
+        filt.for_, request, filt.account, meta_ids, prefixer, logical_settings,
+    )
     time_from, time_to = filt.resolve_time_from_and_to()
     release_settings, (branches, default_branches), account_bots, calculators = await gather(
         Settings.from_request(request, filt.account).list_release_matches(repos),
         BranchMiner.extract_branches(
             repos, prefixer, meta_ids, request.mdb, request.cache, strip=True),
         bots(filt.account, meta_ids, request.mdb, request.sdb, request.cache),
-        get_calculators_for_request({s for s, _ in filters}, filt.account, meta_ids, request),
+        get_calculators_for_request({s.service for s in filters}, filt.account, meta_ids, request),
     )
     result = []
 
-    async def calculate_for_set_histograms(
-            service, repos, withgroups, labels, jira, for_index, for_set):
-        check_environments([h.metric for h in filt.histograms], for_index, for_set)
+    async def calculate_for_set_histograms(filter_prs: FilterPRs):
+        for_set = filter_prs.for_set
+        check_environments([h.metric for h in filt.histograms], filter_prs.for_set_index, for_set)
         if for_set.environments is not None:
             if len(for_set.environments) > 1:
                 raise ResponseError(InvalidRequestError(
-                    f".for[{for_index}].environments",
+                    f".for[{filter_prs.for_set_index}].environments",
                     "`environments` cannot contain more than one item to calculate histograms"),
                 )
             environment = for_set.environments[0]
@@ -61,11 +67,12 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
                 bins=h.bins,
                 ticks=tuple(h.ticks) if h.ticks is not None else None,
             )].append(h.metric)
-        calculator = calculators[service]
+        calculator = calculators[filter_prs.service]
         try:
             histograms = await calculator.calc_pull_request_histograms_github(
                 defs, time_from, time_to, filt.quantiles or (0, 1), for_set.lines or [],
-                environment, repos, withgroups, labels, jira, filt.exclude_inactive,
+                environment, filter_prs.repogroups, filter_prs.participants,
+                filter_prs.labels, filter_prs.jira, filt.exclude_inactive,
                 account_bots, release_settings, logical_settings, prefixer,
                 branches, default_branches, fresh=filt.fresh)
         except UnsupportedMetricError as e:
@@ -88,10 +95,7 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
                                 interquartile=Interquartile(*histogram.interquartile),
                             ))
 
-    tasks = [
-        calculate_for_set_histograms(service, *args) for service, args in filters
-    ]
-    await gather(*tasks)
+    await gather(*(calculate_for_set_histograms(filter_prs) for filter_prs in filters))
     return model_response(result)
 
 

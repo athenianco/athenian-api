@@ -81,9 +81,15 @@ async def calc_metrics_prs(request: AthenianWebRequest, body: dict) -> web.Respo
     except ValueError as e:
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
+
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
-    filters, repos, prefixer, logical_settings = await compile_filters_prs(
-        filt.for_, request, filt.account, meta_ids)
+    prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
+    settings = Settings.from_request(request, filt.account)
+    logical_settings = await settings.list_logical_repositories(prefixer)
+
+    filters, repos = await compile_filters_prs(
+        filt.for_, request, filt.account, meta_ids, prefixer, logical_settings,
+    )
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
 
@@ -181,10 +187,9 @@ async def compile_filters_prs(for_sets: List[ForSetPullRequests],
                               request: AthenianWebRequest,
                               account: int,
                               meta_ids: Tuple[int, ...],
-                              ) -> Tuple[List[FilterPRs],
-                                         Set[str],
-                                         Prefixer,
-                                         LogicalRepositorySettings]:
+                              prefixer: Prefixer,
+                              logical_settings: LogicalRepositorySettings,
+                              ) -> Tuple[List[FilterPRs], Set[str]]:
     """
     Build the list of filters for a given list of ForSet-s.
 
@@ -199,9 +204,6 @@ async def compile_filters_prs(for_sets: List[ForSetPullRequests],
     filters = []
     checkers = {}
     all_repos = set()
-    prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
-    settings = Settings.from_request(request, account)
-    logical_settings = await settings.list_logical_repositories(prefixer)
     for i, for_set in enumerate(for_sets):
         repos, prefix, service = await _extract_repos(
             request, logical_settings, account, meta_ids, for_set.repositories,
@@ -228,7 +230,7 @@ async def compile_filters_prs(for_sets: List[ForSetPullRequests],
         labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
         jira = await _compile_jira(for_set, account, request)
         filters.append((service, (repogroups, withgroups, labels, jira, i, for_set)))
-    return filters, all_repos, prefixer, logical_settings
+    return filters, all_repos
 
 
 def check_environments(metrics: Collection[str],
