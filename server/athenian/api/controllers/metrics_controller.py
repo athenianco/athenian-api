@@ -301,9 +301,8 @@ async def compile_filters_checks(for_sets: List[ForSetCodeChecks],
                                  request: AthenianWebRequest,
                                  account: int,
                                  meta_ids: Tuple[int, ...],
-                                 ) -> Tuple[List[FilterChecks],
-                                            Prefixer,
-                                            LogicalRepositorySettings]:
+                                 logical_settings: LogicalRepositorySettings,
+                                 ) -> List[FilterChecks]:
     """
     Build the list of filters for a given list of ForSetCodeChecks'.
 
@@ -317,9 +316,6 @@ async def compile_filters_checks(for_sets: List[ForSetCodeChecks],
     filters = []
     checkers = {}
     all_repos = set()
-    prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
-    settings = Settings.from_request(request, account)
-    logical_settings = await settings.list_logical_repositories(prefixer)
     for i, for_set in enumerate(for_sets):
         repos, prefix, service = await _extract_repos(
             request, logical_settings, account, meta_ids, for_set.repositories,
@@ -339,7 +335,7 @@ async def compile_filters_checks(for_sets: List[ForSetCodeChecks],
         labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
         jira = await _compile_jira(for_set, account, request)
         filters.append((service, (repogroups, commit_author_groups, labels, jira, for_set)))
-    return filters, prefixer, logical_settings
+    return filters
 
 
 async def _compile_filters_deployments(for_sets: List[ForSetDeployments],
@@ -689,9 +685,15 @@ async def calc_metrics_code_checks(request: AthenianWebRequest, body: dict) -> w
     except ValueError as e:
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
+
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
-    filters, _, logical_settings = await compile_filters_checks(
-        filt.for_, request, filt.account, meta_ids)
+    prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
+    settings = Settings.from_request(request, filt.account)
+    logical_settings = await settings.list_logical_repositories(prefixer)
+
+    filters = await compile_filters_checks(
+        filt.for_, request, filt.account, meta_ids, logical_settings,
+    )
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
     met = CalculatedCodeCheckMetrics()

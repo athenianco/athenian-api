@@ -109,9 +109,15 @@ async def calc_histogram_code_checks(request: AthenianWebRequest, body: dict) ->
     except ValueError as e:
         # for example, passing a date with day=32
         raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e)))
+
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
-    filters, _, logical_settings = await compile_filters_checks(
-        filt.for_, request, filt.account, meta_ids)
+    prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
+    settings = Settings.from_request(request, filt.account)
+    logical_settings = await settings.list_logical_repositories(prefixer)
+
+    filters = await compile_filters_checks(
+        filt.for_, request, filt.account, meta_ids, logical_settings,
+    )
     time_from, time_to = filt.resolve_time_from_and_to()
     calculators = await get_calculators_for_request(
         {s for s, _ in filters}, filt.account, meta_ids, request)
