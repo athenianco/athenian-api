@@ -355,7 +355,7 @@ async def _compile_filters_deployments(for_sets: List[ForSetDeployments],
                                        account: int,
                                        meta_ids: Tuple[int, ...],
                                        logical_settings: LogicalRepositorySettings,
-                                       ) -> Tuple[List[FilterDeployments], Set[str]]:
+                                       ) -> List[FilterDeployments]:
     filters = []
     checkers = {}
     all_repos = set()
@@ -395,7 +395,7 @@ async def _compile_filters_deployments(for_sets: List[ForSetDeployments],
             repogroups, withgroups, envs,
             (for_set.with_labels or {}, for_set.without_labels or {}),
             pr_labels, jira, for_set, i)))
-    return filters, all_repos
+    return filters
 
 
 def _compile_dev_logins(developers: Iterable[str],
@@ -787,7 +787,7 @@ async def calc_metrics_deployments(request: AthenianWebRequest, body: dict) -> w
     settings = Settings.from_request(request, filt.account)
     logical_settings = await settings.list_logical_repositories(prefixer)
 
-    filters, _ = await _compile_filters_deployments(
+    filters = await _compile_filters_deployments(
         filt.for_, request, filt.account, meta_ids, logical_settings,
     )
     time_intervals, tzoffset = split_to_time_intervals(
