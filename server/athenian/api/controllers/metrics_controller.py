@@ -354,16 +354,11 @@ async def _compile_filters_deployments(for_sets: List[ForSetDeployments],
                                        request: AthenianWebRequest,
                                        account: int,
                                        meta_ids: Tuple[int, ...],
-                                       ) -> Tuple[List[FilterDeployments],
-                                                  Set[str],
-                                                  Prefixer,
-                                                  LogicalRepositorySettings]:
+                                       logical_settings: LogicalRepositorySettings,
+                                       ) -> Tuple[List[FilterDeployments], Set[str]]:
     filters = []
     checkers = {}
     all_repos = set()
-    prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
-    settings = Settings.from_request(request, account)
-    logical_settings = await settings.list_logical_repositories(prefixer)
     for i, for_set in enumerate(for_sets):
         repos, prefix, service = await _extract_repos(
             request, logical_settings, account, meta_ids,
@@ -400,7 +395,7 @@ async def _compile_filters_deployments(for_sets: List[ForSetDeployments],
             repogroups, withgroups, envs,
             (for_set.with_labels or {}, for_set.without_labels or {}),
             pr_labels, jira, for_set, i)))
-    return filters, all_repos, prefixer, logical_settings
+    return filters, all_repos
 
 
 def _compile_dev_logins(developers: Iterable[str],
@@ -789,8 +784,12 @@ async def calc_metrics_deployments(request: AthenianWebRequest, body: dict) -> w
         get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
     )
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
-    filters, _, prefixer, logical_settings = await _compile_filters_deployments(
-        filt.for_, request, filt.account, meta_ids)
+    settings = Settings.from_request(request, filt.account)
+    logical_settings = await settings.list_logical_repositories(prefixer)
+
+    filters, _ = await _compile_filters_deployments(
+        filt.for_, request, filt.account, meta_ids, logical_settings,
+    )
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, filt.granularities, filt.timezone)
     calculated = []
