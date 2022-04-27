@@ -1089,29 +1089,33 @@ class ReleaseMatcher:
                              commit_shas: Sequence[str],
                              time_from: datetime,
                              time_to: datetime) -> pd.DataFrame:
-        if (min(time_to, datetime.now(timezone.utc)) - time_from) > timedelta(hours=6):
-            query = \
-                select([PushCommit]) \
-                .where(and_(PushCommit.sha.in_(commit_shas),
-                            PushCommit.committed_date.between(time_from, time_to),
-                            PushCommit.acc_id.in_(self._meta_ids))) \
-                .order_by(desc(PushCommit.committed_date))
+        filters = [
+            PushCommit.acc_id.in_(self._meta_ids),
+            PushCommit.committed_date.between(time_from, time_to),
+        ]
+        if len(commit_shas) < 100:
+            filters.append(PushCommit.sha.in_(commit_shas))
         else:
-            # Postgres planner sucks in this case and we have to be inventive.
-            # Important: do not merge these two queries together using a nested JOIN or IN.
-            # The planner will go crazy and you'll end up with the wrong order of the filters.
-            rows = await self._mdb.fetch_all(
-                select([NodeCommit.id])
-                .where(and_(NodeCommit.oid.in_any_values(commit_shas),
-                            NodeCommit.acc_id.in_(self._meta_ids),
-                            NodeCommit.committed_date.between(time_from, time_to))))
-            if not rows:
-                return pd.DataFrame(columns=[c.name for c in PushCommit.__table__.columns])
-            ids = [r[0] for r in rows]
-            assert len(ids) <= len(commit_shas), len(ids)
-            query = \
-                select([PushCommit]) \
-                .where(and_(PushCommit.node_id.in_(ids),
-                            PushCommit.acc_id.in_(self._meta_ids))) \
-                .order_by(desc(PushCommit.committed_date))
+            filters.append(PushCommit.sha.in_any_values(commit_shas))
+        query = (
+            select([PushCommit])
+            .where(and_(*filters))
+            .order_by(desc(PushCommit.committed_date))
+        )
+        if len(commit_shas) < 100:
+            query = (
+                query
+                .with_statement_hint("IndexScan(cmm github_node_commit_sha)")
+                .with_statement_hint(f"Rows(cmm repo #{len(commit_shas)})")
+            )
+        else:
+            query = (
+                query
+                .with_statement_hint("Leading(((*VALUES* cmm) repo))")
+                .with_statement_hint("Rows(cmm repo *1000)")
+                .with_statement_hint(f"Rows(*VALUES* cmm #{len(commit_shas)})")
+                .with_statement_hint(f"Rows(*VALUES* cmm repo #{len(commit_shas)})")
+                .with_statement_hint("IndexScan(cmm github_node_commit_committed_date)")
+            )
+
         return await read_sql_query(query, self._mdb, PushCommit)
