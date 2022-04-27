@@ -43,7 +43,6 @@ from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME
 from athenian.api.segment import SegmentClient
 from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
 
-
 # Global Sentry tracing sample rate override
 trace_sample_rate_manhole = lambda request: None  # noqa(E731)
 
@@ -202,19 +201,22 @@ def setup_context(log: logging.Logger) -> None:
     api_path_re = re.compile(r"/v\d+/")
 
     def sample_trace(context) -> float:
-        request: aiohttp.web.Request = context["aiohttp_request"]
-        if (override_sample_rate := trace_sample_rate_manhole(request)) is not None:
-            return override_sample_rate
-        if request.method == "OPTIONS":
-            return 0
-        path = request.path
-        if not (match := api_path_re.match(path)):
-            return 0
-        path = path[match.end():]
-        if disabled_transactions_re.match(path):
-            return 0
-        if throttled_transactions_re.match(path):
-            return traces_sample_rate / 100
+        # aiohttp request doesn't exist if we are inside a script
+        request: Optional[aiohttp.web.Request] = context.get("aiohttp_request")
+
+        if request is not None:
+            if (override_sample_rate := trace_sample_rate_manhole(request)) is not None:
+                return override_sample_rate
+            if request.method == "OPTIONS":
+                return 0
+            path = request.path
+            if not (match := api_path_re.match(path)):
+                return 0
+            path = path[match.end():]
+            if disabled_transactions_re.match(path):
+                return 0
+            if throttled_transactions_re.match(path):
+                return traces_sample_rate / 100
         return traces_sample_rate
 
     sentry_log = logging.getLogger("sentry_sdk.errors")
