@@ -9,7 +9,8 @@ from athenian.api.controllers.account import get_metadata_account_ids
 from athenian.api.controllers.features.entries import UnsupportedMetricError
 from athenian.api.controllers.features.histogram import HistogramParameters, Scale
 from athenian.api.controllers.metrics_controller import check_environments, \
-    compile_filters_checks, compile_filters_prs, FilterPRs, get_calculators_for_request
+    compile_filters_checks, compile_filters_prs, FilterChecks, FilterPRs, \
+    get_calculators_for_request
 from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.prefixer import Prefixer
@@ -120,10 +121,11 @@ async def calc_histogram_code_checks(request: AthenianWebRequest, body: dict) ->
     )
     time_from, time_to = filt.resolve_time_from_and_to()
     calculators = await get_calculators_for_request(
-        {s for s, _ in filters}, filt.account, meta_ids, request)
+        {f.service for f in filters}, filt.account, meta_ids, request)
     result = []
 
-    async def calculate_for_set_histograms(service, repos, pusher_groups, labels, jira, for_set):
+    async def calculate_for_set_histograms(filter_checks: FilterChecks):
+        for_set = filter_checks.for_set
         defs = defaultdict(list)
         for h in filt.histograms:
             defs[HistogramParameters(
@@ -131,12 +133,13 @@ async def calc_histogram_code_checks(request: AthenianWebRequest, body: dict) ->
                 bins=h.bins,
                 ticks=tuple(h.ticks) if h.ticks is not None else None,
             )].append(h.metric)
-        calculator = calculators[service]
+        calculator = calculators[filter_checks.service]
         try:
             histograms, group_suite_counts, suite_sizes = \
                 await calculator.calc_check_run_histograms_line_github(
-                    defs, time_from, time_to, filt.quantiles or (0, 1), repos, pusher_groups,
-                    filt.split_by_check_runs, labels, jira, for_set.lines or [], logical_settings)
+                    defs, time_from, time_to, filt.quantiles or (0, 1), filter_checks.repogroups,
+                    filter_checks.pusher_groups, filt.split_by_check_runs, filter_checks.labels,
+                    filter_checks.jira, for_set.lines or [], logical_settings)
         except UnsupportedMetricError as e:
             raise ResponseError(BadRequestError(str(e))) from None
         for pusher_groups in histograms:
@@ -169,8 +172,5 @@ async def calc_histogram_code_checks(request: AthenianWebRequest, body: dict) ->
                                     interquartile=Interquartile(*histogram.interquartile),
                                 ))
 
-    tasks = [
-        calculate_for_set_histograms(service, *args) for service, args in filters
-    ]
-    await gather(*tasks)
+    await gather(*(calculate_for_set_histograms(filter_checks) for filter_checks in filters))
     return model_response(result)

@@ -68,9 +68,19 @@ class FilterDevs:
     for_set: ForSetDevelopers
     """The original ForSetDevelopers used to compile this object."""
 
-#                  service                      pusher groups
-FilterChecks = Tuple[str, Tuple[List[Set[str]], List[List[str]], LabelFilter, JIRAFilter, ForSetCodeChecks]]  # noqa
-#                               repositories                                                  originals       # noqa
+
+@dataclass(slots=True, frozen=True)
+class FilterChecks:
+    """Compiled checks filter."""
+
+    service: str
+    repogroups: List[Set[str]]
+    pusher_groups: List[List[str]]
+    labels: LabelFilter
+    jira: JIRAFilter
+    for_set: ForSetCodeChecks
+    """The original ForSetCodeChecks used to compile this object ."""
+
 
 DeploymentLabelFilter = Tuple[Dict[str, Any], Dict[str, Any]]
 
@@ -334,7 +344,9 @@ async def compile_filters_checks(for_sets: List[ForSetCodeChecks],
                 commit_author_groups.append(sorted(ca_group))
         labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
         jira = await _compile_jira(for_set, account, request)
-        filters.append((service, (repogroups, commit_author_groups, labels, jira, for_set)))
+        filters.append(
+            FilterChecks(service, repogroups, commit_author_groups, labels, jira, for_set),
+        )
     return filters
 
 
@@ -706,15 +718,17 @@ async def calc_metrics_code_checks(request: AthenianWebRequest, body: dict) -> w
     met.split_by_check_runs = filt.split_by_check_runs
     met.calculated = []
     calculators = await get_calculators_for_request(
-        {s for s, _ in filters}, filt.account, meta_ids, request)
+        {f.service for f in filters}, filt.account, meta_ids, request)
 
     @sentry_span
-    async def calculate_for_set_metrics(service, repos, pusher_groups, labels, jira, for_set):
-        calculator = calculators[service]
+    async def calculate_for_set_metrics(filter_checks: FilterChecks):
+        for_set = filter_checks.for_set
+        calculator = calculators[filter_checks.service]
         metric_values, group_suite_counts, suite_sizes = \
             await calculator.calc_check_run_metrics_line_github(
                 filt.metrics, time_intervals, filt.quantiles or (0, 1),
-                repos, pusher_groups, filt.split_by_check_runs, labels, jira,
+                filter_checks.repogroups, filter_checks.pusher_groups,
+                filt.split_by_check_runs, filter_checks.labels, filter_checks.jira,
                 for_set.lines or [], logical_settings)
         mrange = range(len(met.metrics))
         for pushers_group_index, pushers_group in enumerate(metric_values):
@@ -757,9 +771,7 @@ async def calc_metrics_code_checks(request: AthenianWebRequest, body: dict) -> w
                                     v.confidence_scores = None
                             met.calculated.append(cm)
 
-    await gather(*(
-        calculate_for_set_metrics(service, *args) for service, args in filters
-    ))
+    await gather(*(calculate_for_set_metrics(filter_checks) for filter_checks in filters))
     return model_response(met)
 
 
