@@ -1881,9 +1881,11 @@ class PullRequestFactsMiner:
     """Extract the pull request event timestamps from MinedPullRequest-s."""
 
     log = logging.getLogger("%s.PullRequestFactsMiner" % metadata.__package__)
-    dummy_reviews = pd.Series(["INVALID", pd.NaT],
-                              index=[PullRequestReview.state.name,
-                                     PullRequestReview.submitted_at.name])
+    ts_dtype = "datetime64[ns]"
+    empty_dt_series = pd.Series([], dtype=f"{ts_dtype[:-1]}, UTC]")
+    empty_s_array = np.array([], dtype="S")
+    empty_u_array = np.array([], dtype="U")
+    empty_bool_array = np.array([], dtype=bool)
 
     def __init__(self, bots: Set[str]):
         """Require the set of bots to be preloaded."""
@@ -1912,9 +1914,6 @@ class PullRequestFactsMiner:
                            pr.pr[PullRequest.number.name],
                            merged)
             closed = merged
-        # we don't need these indexes
-        pr.comments.reset_index(inplace=True, drop=True)
-        pr.reviews.reset_index(inplace=True, drop=True)
         # first_commit usually points at min(authored_date)
         # last_commit usually points at max(committed_date)
         # but DEV-2734 has taught that authored_date may be greater than committed_date
@@ -1926,25 +1925,74 @@ class PullRequestFactsMiner:
             pr.commits[PullRequestCommit.committed_date.name].nonemax(),
             pr.commits[PullRequestCommit.authored_date.name].nonemax(),
         )
-        # convert to "S" dtype to enable sorting in np.in1d
-        authored_comments = \
-            pr.comments[PullRequestReviewComment.user_login.name].values.astype("S")
         if (author_login := pr.pr[PullRequest.user_login.name]) is not None:
             author_login = author_login.encode()
-        external_comments_times = pr.comments[PullRequestComment.created_at.name].take(
-            np.flatnonzero((authored_comments != author_login) &
-                           np.in1d(authored_comments, self._bots, invert=True)))
+
+        if exist := not pr.comments.empty:
+            comment_authors = \
+                pr.comments[PullRequestReviewComment.user_login.name].values.astype("S")
+            external_comments_mask = (
+                np.in1d(comment_authors, self._bots, invert=True)
+                & (comment_authors != author_login)
+            )
+            if exist := external_comments_mask.any():
+                comment_authors = comment_authors[external_comments_mask]
+                comment_created_ats = pr.comments[PullRequestComment.created_at.name].take(
+                    np.flatnonzero(external_comments_mask))
+        if not exist:
+            comment_authors = self.empty_s_array
+            comment_created_ats = self.empty_dt_series
+            external_comments_mask = self.empty_bool_array
+
+        if exist := not pr.reviews.empty:
+            review_submitted_ats = pr.reviews[PullRequestReview.submitted_at.name]
+            review_authors = pr.reviews[PullRequestReview.user_login.name].values.astype("S")
+            external_reviews_mask = (
+                np.in1d(review_authors, self._bots, invert=True)
+                & (review_authors != author_login)
+            )
+            if exist := external_reviews_mask.any():
+                review_authors = review_authors[external_reviews_mask]
+                review_submitted_ats = \
+                    review_submitted_ats.take(np.flatnonzero(external_reviews_mask))
+                review_states = \
+                    pr.reviews[PullRequestReview.state.name].values[external_reviews_mask]
+        if not exist:
+            review_authors = self.empty_s_array
+            review_submitted_ats = self.empty_dt_series
+            review_states = self.empty_u_array
+
+        if exist := not pr.review_comments.empty:
+            review_comment_authors = \
+                pr.review_comments[PullRequestReviewComment.user_login.name].values.astype("S")
+            external_review_comments_mask = (
+                np.in1d(review_comment_authors, self._bots, invert=True)
+                & (review_comment_authors != author_login)
+            )
+            if exist := external_review_comments_mask.any():
+                review_comments_created_ats = \
+                    pr.review_comments[PullRequestReviewComment.created_at.name]
+                first_review_comment = review_comments_created_ats.iloc[
+                    np.flatnonzero(external_review_comments_mask)[
+                        review_comments_created_ats.values[external_review_comments_mask].argmin()
+                    ]
+                ]
+        if not exist:
+            review_comment_authors = self.empty_s_array
+            first_review_comment = None
+            external_review_comments_mask = self.empty_bool_array
+
         first_comment = nonemin(
-            pr.review_comments[PullRequestReviewComment.created_at.name].nonemin(),
-            pr.reviews[PullRequestReview.submitted_at.name].nonemin(),
-            external_comments_times.nonemin())
+            first_review_comment,
+            review_submitted_ats.nonemin(),
+            comment_created_ats.nonemin())
         if closed and first_comment and first_comment > closed:
             first_comment = None
         first_comment_on_first_review = first_comment or merged
         if first_comment_on_first_review:
             committed_dates = pr.commits[PullRequestCommit.committed_date.name]
-            last_commit_before_first_review = committed_dates.take(np.where(
-                committed_dates <= first_comment_on_first_review)[0]).nonemax()
+            last_commit_before_first_review = committed_dates.take(np.flatnonzero(
+                committed_dates <= first_comment_on_first_review)).nonemax()
             if not (last_commit_before_first_review_own := bool(last_commit_before_first_review)):
                 last_commit_before_first_review = first_comment_on_first_review
             # force pushes that were lost
@@ -1974,93 +2022,81 @@ class PullRequestFactsMiner:
         if last_commit_before_first_review_own and \
                 last_commit_before_first_review > first_review_request:
             first_review_request = last_commit_before_first_review or first_review_request
-        if closed and first_review_request and first_review_request > closed:
-            first_review_request = None
-        review_submitted_ats = pr.reviews[PullRequestReview.submitted_at.name]
 
         if closed:
+            if first_review_request and first_review_request > closed:
+                first_review_request = None
             # it is possible to approve/reject after closing the PR
             # you start the review, then somebody closes the PR, then you submit the review
-            try:
-                last_review = pd.Timestamp(review_submitted_ats.values[
-                    (review_submitted_ats.values <= closed.to_numpy())
-                ].max(), tz=timezone.utc)
-            except ValueError:
+            min_merged_closed = nonemin(merged, closed).to_numpy()
+            reviews_before_close_mask = review_submitted_ats.values <= min_merged_closed
+            if not reviews_before_close_mask.all():
+                review_authors = review_authors[reviews_before_close_mask]
+                review_submitted_ats = review_submitted_ats.take(np.flatnonzero(
+                    reviews_before_close_mask))
+                review_states = review_states[reviews_before_close_mask]
+            if len(review_submitted_ats) == 0:
                 last_review = None
+            else:
+                last_review = review_submitted_ats.nonemax()
             last_review = nonemax(
                 last_review,
-                external_comments_times.take(np.flatnonzero(
-                    external_comments_times <= closed)).nonemax())
+                comment_created_ats.take(np.flatnonzero(
+                    comment_created_ats <= closed)).nonemax())
         else:
-            last_review = review_submitted_ats.nonemax() or \
-                nonemin(external_comments_times.nonemax())
+            last_review = nonemax(
+                review_submitted_ats.nonemax(),
+                comment_created_ats.nonemax(),
+            )
         if not first_review_request:
             assert not last_review, pr.pr[PullRequest.node_id.name]
-        if closed:
-            min_merged_closed = nonemin(merged, closed).to_numpy()
-            reviews_before_close = \
-                pr.reviews[PullRequestReview.submitted_at.name].values <= min_merged_closed
-            if reviews_before_close.all():
-                reviews_before_close = pr.reviews
-            else:
-                reviews_before_close = pr.reviews.take(np.where(reviews_before_close)[0])
-                reviews_before_close.reset_index(drop=True, inplace=True)
-        else:
-            reviews_before_close = pr.reviews
-        # the most recent review for each reviewer
-        if reviews_before_close.empty:
-            # express lane
-            grouped_reviews = self.dummy_reviews
-        else:
-            review_logins = \
-                reviews_before_close[PullRequestReview.user_login.name].values.astype("S")
-            human_review_mask = np.in1d(review_logins, self._bots, invert=True)
-            if not human_review_mask.all():
-                reviews_before_close = reviews_before_close.take(np.nonzero(human_review_mask)[0])
-                reviews_before_close.reset_index(inplace=True, drop=True)
-                review_logins = review_logins[human_review_mask]
-            if len(np.unique(review_logins)) == 1:
-                # fast lane
-                grouped_reviews = reviews_before_close._ixs(
-                    reviews_before_close[PullRequestReview.submitted_at.name].values.argmax())
-            else:
-                # the most recent review for each reviewer
-                latest_review_ixs = [
-                    ixs[0] for ixs in
-                    reviews_before_close[[PullRequestReview.user_login.name,
-                                          PullRequestReview.submitted_at.name]]
-                    .take(np.where(reviews_before_close[PullRequestReview.state.name] !=
-                                   ReviewResolution.COMMENTED.value)[0])
-                    .sort_values([PullRequestReview.submitted_at.name], ascending=False)
-                    .groupby(PullRequestReview.user_login.name, sort=False)
-                    .grouper.groups.values()
-                ]
-                grouped_reviews = {
-                    k: reviews_before_close[k].take(latest_review_ixs)
-                    for k in (PullRequestReview.state.name, PullRequestReview.submitted_at.name)}
-        grouped_reviews_states = grouped_reviews[PullRequestReview.state.name]
-        if isinstance(grouped_reviews_states, str):
-            changes_requested = grouped_reviews_states == ReviewResolution.CHANGES_REQUESTED.value
-        else:
-            changes_requested = (
-                grouped_reviews_states.values == ReviewResolution.CHANGES_REQUESTED.value
-            ).any()
-        if changes_requested:
-            # merged with negative reviews
-            approved = None
-        else:
-            if isinstance(grouped_reviews_states, str):
-                if grouped_reviews_states == ReviewResolution.APPROVED.value:
-                    approved = grouped_reviews[PullRequestReview.submitted_at.name]
-                else:
-                    approved = None
-            else:
-                approved = grouped_reviews[PullRequestReview.submitted_at.name].take(
-                    np.where(grouped_reviews_states == ReviewResolution.APPROVED.value)[0],
-                ).nonemax()
+        reviews = np.sort(review_submitted_ats.values).astype(self.ts_dtype, copy=False)
         released = pr.release[Release.published_at.name]
         if released != released:
             released = None
+        activity_days = np.concatenate([
+            np.array([created.to_numpy() if created is not None else None,
+                      closed.to_numpy() if closed is not None else None,
+                      released.to_numpy() if released is not None else None],
+                     dtype=self.ts_dtype),
+            pr.commits[PullRequestCommit.committed_date.name].values,
+            pr.review_requests[PullRequestReviewRequest.created_at.name].values,
+            review_submitted_ats,
+            comment_created_ats,
+        ]).astype(self.ts_dtype, copy=False).astype("datetime64[D]")
+        activity_days = np.unique(
+            activity_days[activity_days == activity_days],
+        ).astype(self.ts_dtype, copy=False)
+        participants = len(np.setdiff1d(np.unique(np.concatenate([
+            np.array([pr.pr[PullRequest.user_login.name], pr.pr[PullRequest.merged_by_login.name]],
+                     dtype="S"),
+            pr.commits[PullRequestCommit.author_login.name].values.astype("S"),
+            pr.commits[PullRequestCommit.committer_login.name].values.astype("S"),
+            review_comment_authors,
+            comment_authors,
+            review_authors,
+        ])), self._bots, assume_unique=True))
+        # the most recent review for each reviewer
+        if len(review_authors) == 0:
+            # express lane
+            grouped_reviews_states = first_review_authors = []
+        else:
+            non_review_comment_mask = review_states != ReviewResolution.COMMENTED.value
+            review_authors = review_authors[non_review_comment_mask]
+            review_states = review_states[non_review_comment_mask]
+            time_order = np.argsort(review_submitted_ats.values[non_review_comment_mask])[::-1]
+            review_authors = review_authors[time_order]
+            review_submitted_ats = review_submitted_ats.take(
+                np.flatnonzero(non_review_comment_mask)[time_order])
+            review_states = review_states[time_order]
+            _, first_review_authors = np.unique(review_authors, return_index=True)
+            grouped_reviews_states = review_states[first_review_authors]
+        if len(grouped_reviews_states) == 0 or \
+                (grouped_reviews_states == ReviewResolution.CHANGES_REQUESTED.value).any():
+            # merged with negative reviews
+            approved = None
+        else:
+            approved = review_submitted_ats.take(first_review_authors).nonemax()
         additions = pr.pr[PullRequest.additions.name]
         deletions = pr.pr[PullRequest.deletions.name]
         if additions is None or deletions is None:
@@ -2074,44 +2110,11 @@ class PullRequestFactsMiner:
         force_push_dropped = pr.release[matched_by_column] == ReleaseMatch.force_push_drop
         done = bool(released or force_push_dropped or (closed and not merged))
         work_began = nonemin(created, first_commit)
-        ts_dtype = "datetime64[ns]"
-        reviews = np.sort(reviews_before_close[PullRequestReview.submitted_at.name].values) \
-            .astype(ts_dtype)
-        activity_days = np.concatenate([
-            np.array([created.to_numpy() if created is not None else None,
-                      closed.to_numpy() if closed is not None else None,
-                      released.to_numpy() if released is not None else None], dtype=ts_dtype),
-            pr.commits[PullRequestCommit.committed_date.name].values,
-            pr.review_requests[PullRequestReviewRequest.created_at.name].values,
-            pr.reviews[PullRequestReview.created_at.name].values,
-            pr.comments[PullRequestComment.created_at.name].values,
-        ]).astype(ts_dtype).astype("datetime64[D]")
-        activity_days = \
-            np.unique(activity_days[activity_days == activity_days]).astype(ts_dtype)
-
-        review_comment_authors = \
-            pr.review_comments[PullRequestReviewComment.user_login.name].values.astype("S")
         if len(review_comment_authors) > 0:
-            human_review_comments = np.in1d(review_comment_authors, self._bots, invert=True).sum()
+            human_review_comments = external_review_comments_mask.sum()
         else:
             human_review_comments = 0
-        regular_comment_authors = \
-            pr.comments[PullRequestReviewComment.user_login.name].values.astype("S")
-        if len(regular_comment_authors) > 0:
-            human_regular_comments = \
-                np.in1d(regular_comment_authors, self._bots, invert=True).sum()
-        else:
-            human_regular_comments = 0
-
-        participants = len(np.setdiff1d(np.unique(np.concatenate([
-            np.array([pr.pr[PullRequest.user_login.name], pr.pr[PullRequest.merged_by_login.name]],
-                     dtype="S"),
-            pr.commits[PullRequestCommit.author_login.name].values.astype("S"),
-            pr.commits[PullRequestCommit.committer_login.name].values.astype("S"),
-            review_comment_authors,
-            pr.comments[PullRequestComment.user_login.name].values.astype("S"),
-            pr.reviews[PullRequestReview.user_login.name].values.astype("S"),
-        ])), self._bots, assume_unique=True))
+        human_regular_comments = external_comments_mask.sum()
         environments = \
             pr.deployments[DeploymentNotification.environment.name].values.astype("U", copy=False)
         deployment_conclusions = np.fromiter(

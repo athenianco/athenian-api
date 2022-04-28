@@ -1021,7 +1021,7 @@ async def test_pull_request_count_logical_alpha_beta(
         def check_metrics():
             assert values[0, 0, 0, 0][0][0].value == 159
             assert values[0, 0, 0, 0][0][1].value == 24
-            assert values[0, 0, 0, 0][0][2].value == 106
+            assert values[0, 0, 0, 0][0][2].value == 105
             assert values[0, 0, 0, 0][0][3].value == 119
             assert values[0, 0, 0, 0][0][4].value == 119
 
@@ -1063,7 +1063,7 @@ async def test_pull_request_count_logical_root(
         assert values.shape == (1, 3, 1, 1)
         assert values[0, 2, 0, 0][0][0].value == 304
         assert values[0, 2, 0, 0][0][1].value == 57
-        assert values[0, 2, 0, 0][0][2].value == 268
+        assert values[0, 2, 0, 0][0][2].value == 267
         assert values[0, 2, 0, 0][0][3].value == 231
         assert values[0, 2, 0, 0][0][4].value == 228
         args[5] = [["src-d/go-git"]]
@@ -1072,7 +1072,7 @@ async def test_pull_request_count_logical_root(
         assert values.shape == (1, 1, 1, 1)
         assert values[0, 0, 0, 0][0][0].value == 554
         assert values[0, 0, 0, 0][0][1].value == 107
-        assert values[0, 0, 0, 0][0][2].value == 463
+        assert values[0, 0, 0, 0][0][2].value == 461
         assert values[0, 0, 0, 0][0][3].value == 418
         assert values[0, 0, 0, 0][0][4].value == 414
 
@@ -1091,9 +1091,9 @@ async def test_pull_request_stage_times(precomputed_deployments, real_pr_samples
     time_from, time_to, samples = real_pr_samples
     ensemble(samples, dt64arr_ns(time_from), dt64arr_ns(time_to), [np.arange(len(samples))])
     values = ensemble.values()
-    for metric, td in [(PullRequestMetricID.PR_WIP_TIME, timedelta(days=3, seconds=57804)),
-                       (PullRequestMetricID.PR_REVIEW_TIME, timedelta(days=5, seconds=5063)),
-                       (PullRequestMetricID.PR_MERGING_TIME, timedelta(days=4, seconds=83622)),
+    for metric, td in [(PullRequestMetricID.PR_WIP_TIME, timedelta(days=3, seconds=58592)),
+                       (PullRequestMetricID.PR_REVIEW_TIME, timedelta(days=4, seconds=85421)),
+                       (PullRequestMetricID.PR_MERGING_TIME, timedelta(days=5, seconds=1952)),
                        (PullRequestMetricID.PR_RELEASE_TIME, timedelta(days=29, seconds=50065)),
                        (PullRequestMetricID.PR_DEPLOYMENT_TIME,
                         [None, None, timedelta(days=663, seconds=69791)]),
@@ -1136,7 +1136,7 @@ async def test_pull_request_cycle_deployment_time(
     ensemble(samples, dt64arr_ns(time_from), dt64arr_ns(time_to), [np.arange(len(samples))])
     values = ensemble.values()
     for metric, td in [(PullRequestMetricID.PR_CYCLE_DEPLOYMENT_TIME,
-                        [None, None, timedelta(days=660, seconds=28)]),
+                        [None, None, timedelta(days=659, seconds=86161)]),
                        (PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT, [0, 0, 418]),
                        (PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT_Q, [0, 0, 377])]:
         assert values[metric][0][0].value == td, metric

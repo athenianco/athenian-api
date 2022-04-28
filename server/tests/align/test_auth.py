@@ -40,8 +40,9 @@ async def test_auth_failure(client, headers):
 
 async def test_auth_account_mismatch(client, headers):
     body = {
-        "query": "query goals($account: Int!){goals(accountId: $account){id}}",
-        "variables": {"account": 3},
+        "query": "query goals($account: Int!, $team: Int!)"
+                 "{goals(accountId: $account, teamId: $team){id}}",
+        "variables": {"account": 3, "team": 1},
     }
     response = await client.request(
         method="POST", path="/align/graphql", headers=headers, json=body)
@@ -50,7 +51,7 @@ async def test_auth_account_mismatch(client, headers):
     assert response == {
         "errors": [{
             "message": "Not Found",
-            "locations": [{"line": 1, "column": 29}],
+            "locations": [{"line": 1, "column": 42}],
             "path": ["goals"],
             "extensions": {
                 "status": 404,
@@ -64,8 +65,9 @@ async def test_auth_account_mismatch(client, headers):
 
 async def test_auth_account_expired(client, headers, sdb):
     body = {
-        "query": "query goals($account: Int!){goals(accountId: $account){id}}",
-        "variables": {"account": 1},
+        "query": "query goals($account: Int!, $team: Int!)"
+                 "{goals(accountId: $account, teamId: $team){id}}",
+        "variables": {"account": 1, "team": 1},
     }
     await sdb.execute(update(Account).values({Account.expires_at: datetime.now(timezone.utc)}))
     response = await client.request(
@@ -75,7 +77,7 @@ async def test_auth_account_expired(client, headers, sdb):
     assert response == {
         "errors": [{
             "message": "Unauthorized",
-            "locations": [{"line": 1, "column": 29}],
+            "locations": [{"line": 1, "column": 42}],
             "path": ["goals"],
             "extensions": {
                 "status": 401,

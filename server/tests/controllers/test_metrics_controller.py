@@ -344,14 +344,14 @@ async def test_calc_metrics_prs_reposet(client, headers):
 @pytest.mark.app_validate_responses(False)
 @pytest.mark.parametrize("metric, count", [
     (PullRequestMetricID.PR_WIP_COUNT, 596),
-    (PullRequestMetricID.PR_REVIEW_COUNT, 434),
+    (PullRequestMetricID.PR_REVIEW_COUNT, 433),
     (PullRequestMetricID.PR_MERGING_COUNT, 589),
     (PullRequestMetricID.PR_RELEASE_COUNT, 408),
     (PullRequestMetricID.PR_LEAD_COUNT, 408),
-    (PullRequestMetricID.PR_CYCLE_COUNT, 931),
+    (PullRequestMetricID.PR_CYCLE_COUNT, 932),
     (PullRequestMetricID.PR_OPENED, 596),
-    (PullRequestMetricID.PR_REVIEWED, 375),
-    (PullRequestMetricID.PR_NOT_REVIEWED, 274),
+    (PullRequestMetricID.PR_REVIEWED, 373),
+    (PullRequestMetricID.PR_NOT_REVIEWED, 276),
     (PullRequestMetricID.PR_CLOSED, 589),
     (PullRequestMetricID.PR_MERGED, 538),
     (PullRequestMetricID.PR_REJECTED, 51),
@@ -397,15 +397,15 @@ async def test_calc_metrics_prs_counts_sums(client, headers, metric, count):
 @pytest.mark.app_validate_responses(False)
 @pytest.mark.parametrize("with_bots, values", [
     (False, [[2.461538553237915, None, None, None],
-             [2.8358209133148193, 3.8701298236846924, 10.055999755859375, 11.704000473022461],
-             [3.003115177154541, 3.751295328140259, 7.915887832641602, 9.90654182434082],
-             [2.9247312545776367, 3.8782050609588623, 8.620689392089844, 10.310344696044922],
-             [2.660493850708008, 4.161616325378418, 10.92727279663086, 11.818181991577148]]),
+             [2.8328359127044678, 2.452173948287964, 7.439024448394775, 8.300812721252441],
+             [3.003115177154541, 2.5336787700653076, 5.616822242736816, 6.504673004150391],
+             [2.9247312545776367, 2.4838709831237793, 6.034883499145508, 6.813953399658203],
+             [2.660493850708008, 2.5050504207611084, 7.74545431137085, 8.163636207580566]]),
     (True, [[1.4807692766189575, None, None, None],
-            [1.9432835578918457, 3.1481480598449707, 8.55555534362793, 9.572649955749512],
-            [2.121495246887207, 3.124293804168701, 6.418367385864258, 7.86734676361084],
-            [2.0465950965881348, 3.178082227706909, 6.865853786468506, 8.195121765136719],
-            [1.814814805984497, 3.471909999847412, 8.72549057006836, 9.29411792755127]]),
+            [1.9402985572814941, 2.2058823108673096, 7.699999809265137, 8.050000190734863],
+            [2.121495246887207, 2.3231706619262695, 5.641975402832031, 6.111111164093018],
+            [2.0465950965881348, 2.2727272510528564, 6.234375, 6.75],
+            [1.814814805984497, 2.4146342277526855, 7.767441749572754, 7.860465049743652]]),
 ])
 async def test_calc_metrics_prs_averages(client, headers, with_bots, values, sdb):
     if with_bots:
@@ -1029,7 +1029,7 @@ async def test_calc_metrics_prs_deployments_smoke(client, headers, precomputed_d
     assert response.status == 200, response.text()
     body = FriendlyJson.loads((await response.read()).decode("utf-8"))
     values = [v["values"] for v in body["calculated"][0]["values"]]
-    assert values == [[[None, "57352991s"], [None, "60558816s"], [None, "61067133s"], [0, 418]]]
+    assert values == [[[None, "57352991s"], [None, "60558816s"], [None, "61066621s"], [0, 418]]]
 
 
 # TODO: fix response validation against the schema
@@ -1060,7 +1060,7 @@ async def test_calc_metrics_prs_logical(
     assert response.status == 200, response.text()
     body = FriendlyJson.loads((await response.read()).decode("utf-8"))
     values = [v["values"] for v in body["calculated"][0]["values"]]
-    assert values == [[266, 52, 205, 197]]
+    assert values == [[266, 52, 204, 197]]
 
 
 # TODO: fix response validation against the schema

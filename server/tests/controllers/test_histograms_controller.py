@@ -31,8 +31,8 @@ from athenian.api.serialization import FriendlyJson
                       (["60s", "128s", "275s", "590s", "1266s", "2714s", "5818s", "12470s",
                         "26730s", "57293s", "122803s", "263218s", "564186s", "1209285s",
                         "2591999s"],
-                       [174, 65, 69, 42, 37, 35, 42, 27, 41, 40, 34, 28, 20, 24],
-                       {"left": "120s", "right": "38479s"}))]))
+                       [175, 65, 67, 42, 37, 35, 41, 26, 40, 42, 35, 29, 20, 24],
+                       {"left": "119s", "right": "43877s"}))]))
 async def test_calc_histogram_prs_smoke(
         client, headers, metric, cached, app, client_cache, result):
     if cached:
@@ -434,8 +434,8 @@ async def test_calc_histogram_prs_logical(
         "metric": "pr-review-time", "scale": "log",
         "ticks": ["60s", "146s", "355s", "865s", "2105s", "5123s", "12470s",
                   "30351s", "73870s", "179789s", "437576s", "1064987s", "2591999s"],
-        "frequencies": [17, 2, 9, 10, 5, 18, 10, 33, 36, 30, 15, 20],
-        "interquartile": {"left": "7950s", "right": "290128s"},
+        "frequencies": [17, 4, 12, 8, 5, 18, 11, 32, 34, 28, 15, 20],
+        "interquartile": {"left": "7297s", "right": "290319s"},
     }
 
 
