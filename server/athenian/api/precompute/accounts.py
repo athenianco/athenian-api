@@ -45,7 +45,12 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
     context.log.info("Heating %d reposets", len(reposets))
 
     for reposet in tqdm(reposets):
-        await precompute_reposet(reposet, context, args, time_to, no_time_from, time_from)
+        # there's at most one reposet per account, so a single scope is created per account
+        with sentry_sdk.start_span(
+            op=f"reposet[{reposet.owner_id}]",
+            description=str(reposet.items),
+        ):
+            await precompute_reposet(reposet, context, args, time_to, no_time_from, time_from)
 
 
 async def _get_reposets(sdb: Database, accounts: Sequence[int]) -> Sequence[RepositorySet]:
