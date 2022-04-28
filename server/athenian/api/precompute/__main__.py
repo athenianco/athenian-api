@@ -100,10 +100,10 @@ async def _connect_to_dbs(args: argparse.Namespace,
 
 
 def _main() -> int:
-    args = _parse_args()
     athenian.api.db._testing = True
     patch_pandas()
     log = logging.getLogger("precomputer")
+    args = _parse_args()
     setup_context(log)
 
     with sentry_sdk.start_transaction(
