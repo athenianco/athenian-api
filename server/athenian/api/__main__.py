@@ -43,7 +43,6 @@ from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME
 from athenian.api.segment import SegmentClient
 from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
 
-
 # Global Sentry tracing sample rate override
 trace_sample_rate_manhole = lambda request: None  # noqa(E731)
 
@@ -189,10 +188,15 @@ def setup_context(log: logging.Logger) -> None:
     sentry_env = os.getenv("SENTRY_ENV", "development")
     log.info("Sentry: https://[secure]@sentry.io/%s#%s" % (sentry_project, sentry_env))
 
-    traces_sample_rate = float(os.getenv(
+    aiohttp_traces_sample_rate = float(os.getenv(
         "SENTRY_SAMPLING_RATE", "0.2" if sentry_env != "development" else "0"))
-    if traces_sample_rate > 0:
-        log.info("Sentry tracing is ON: sampling rate %.2f", traces_sample_rate)
+    if aiohttp_traces_sample_rate > 0:
+        log.info(
+            "Sentry tracing for aiohttp is ON: sampling rate %.2f", aiohttp_traces_sample_rate,
+        )
+    script_traces_sample_rate = float(os.getenv(
+        "SENTRY_SAMPLING_RATE", "1.0" if sentry_env != "development" else "0"))
+
     disabled_transactions_re = re.compile("|".join([
         "openapi.json", "ui(/|$)",
     ]))
@@ -202,7 +206,12 @@ def setup_context(log: logging.Logger) -> None:
     api_path_re = re.compile(r"/v\d+/")
 
     def sample_trace(context) -> float:
-        request: aiohttp.web.Request = context["aiohttp_request"]
+        # aiohttp request doesn't exist if we are inside a script
+        request: Optional[aiohttp.web.Request] = context.get("aiohttp_request")
+
+        if request is None:
+            return script_traces_sample_rate
+
         if (override_sample_rate := trace_sample_rate_manhole(request)) is not None:
             return override_sample_rate
         if request.method == "OPTIONS":
@@ -214,8 +223,8 @@ def setup_context(log: logging.Logger) -> None:
         if disabled_transactions_re.match(path):
             return 0
         if throttled_transactions_re.match(path):
-            return traces_sample_rate / 100
-        return traces_sample_rate
+            return aiohttp_traces_sample_rate / 100
+        return aiohttp_traces_sample_rate
 
     sentry_log = logging.getLogger("sentry_sdk.errors")
     sentry_log.handlers.clear()

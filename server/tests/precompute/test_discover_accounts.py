@@ -1,48 +1,33 @@
 from argparse import Namespace
 from datetime import datetime, timezone
-from functools import partialmethod
-import logging
-from typing import Any, Iterator
-from unittest import mock
 
-import pytest
 from sqlalchemy import delete, insert, update
-import tqdm
 
-from athenian.api.db import Database
 from athenian.api.models.metadata.github import Account as MetaAccount, \
     AccountRepository as MetaAccountRepository, FetchProgress
-from athenian.api.models.state.models import Account, AccountFeature, AccountGitHubAccount, \
-    AccountJiraInstallation, Invitation, RepositorySet, UserAccount, WorkType
-from athenian.api.precompute.context import PrecomputeContext
+from athenian.api.models.state.models import AccountGitHubAccount, RepositorySet
 from athenian.api.precompute.discover_accounts import main
 from tests.testutils.db import model_insert_stmt
 from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.state import AccountFactory, RepositorySetFactory
 
-
-@pytest.fixture
-def tqdm_disable() -> Iterator[None]:
-    orig_init = tqdm.tqdm.__init__
-    tqdm.tqdm.__init__ = partialmethod(orig_init, disable=True)
-    yield
-    tqdm.tqdm.__init__ = orig_init
+from .conftest import build_context, clear_all_accounts
 
 
 async def test_no_accounts(sdb, mdb_rw, tqdm_disable) -> None:
-    await _clear_all_accounts(sdb)
-    ctx = _build_context(sdb=sdb, mdb=mdb_rw)
+    await clear_all_accounts(sdb)
+    ctx = build_context(sdb=sdb, mdb=mdb_rw)
     accounts = await main(ctx, Namespace(partition=False))
     assert accounts == []
 
 
 async def test_some_accounts(sdb, mdb_rw, tqdm_disable) -> None:
-    await _clear_all_accounts(sdb)
+    await clear_all_accounts(sdb)
     await sdb.execute(model_insert_stmt(AccountFactory(id=11)))
 
     try:
         await _make_installed_account(sdb, mdb_rw, 10, 110)
-        ctx = _build_context(sdb=sdb, mdb=mdb_rw)
+        ctx = build_context(sdb=sdb, mdb=mdb_rw)
         accounts = await main(ctx, Namespace(partition=False))
     finally:
         await _clear_account_from_meta(mdb_rw, 110)
@@ -52,7 +37,7 @@ async def test_some_accounts(sdb, mdb_rw, tqdm_disable) -> None:
 
 
 async def test_partition(sdb, mdb_rw, tqdm_disable) -> None:
-    await _clear_all_accounts(sdb)
+    await clear_all_accounts(sdb)
     await sdb.execute(model_insert_stmt(AccountFactory(id=10)))
 
     try:
@@ -64,7 +49,7 @@ async def test_partition(sdb, mdb_rw, tqdm_disable) -> None:
             precomputed=True, updated_at=datetime.now(timezone.utc), updates_count=1,
         )
         await sdb.execute(update_stmt)
-        ctx = _build_context(sdb=sdb, mdb=mdb_rw)
+        ctx = build_context(sdb=sdb, mdb=mdb_rw)
         accounts = await main(ctx, Namespace(partition=True))
     finally:
         await _clear_account_from_meta(mdb_rw, 111)
@@ -102,28 +87,3 @@ async def _clear_account_from_meta(mdb, meta_acc_id) -> None:
     )
     await mdb.execute(delete(MetaAccount).where(MetaAccount.id == meta_acc_id))
     await mdb.execute(delete(FetchProgress).where(FetchProgress.acc_id == meta_acc_id))
-
-
-async def _clear_all_accounts(sdb: Database) -> None:
-    """Drop from state DB all accounts and related objects."""
-    for model in (
-        RepositorySet,
-        UserAccount,
-        AccountGitHubAccount,
-        AccountJiraInstallation,
-        AccountFeature,
-        WorkType,
-        Invitation,
-        Account,
-    ):
-        await sdb.execute(delete(model))
-
-
-def _build_context(**kwargs: Any) -> PrecomputeContext:
-    kwargs.setdefault("log", logging.getLogger(__name__))
-    for db_field in ("sdb", "mdb", "pdb", "rdb"):
-        if db_field not in kwargs:
-            kwargs[db_field] = mock.Mock(Database)
-    kwargs.setdefault("cache", None)
-    kwargs.setdefault("slack", None)
-    return PrecomputeContext(**kwargs)

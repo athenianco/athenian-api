@@ -105,8 +105,15 @@ def _main() -> int:
     log = logging.getLogger("precomputer")
     args = _parse_args()
     setup_context(log)
-    with sentry_sdk.Hub.current.configure_scope() as scope:
-        scope.transaction = f"precomputer[{args.command}]"
+
+    with sentry_sdk.start_transaction(
+        name=f"precomputer[{args.command}]",
+        op=f"precomputer[{args.command}]",
+    ):
+        return _execute_command(args, log)
+
+
+def _execute_command(args: argparse.Namespace, log: logging.Logger) -> int:
     if not check_schema_versions(args.metadata_db,
                                  args.state_db,
                                  args.precomputed_db,
