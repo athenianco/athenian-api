@@ -276,6 +276,7 @@ class PullRequestFacts:
     class Optional:
         """Mutable fields that are None by default. We do not serialize them."""
 
+        node_id: int
         jira_ids: List[str]
         repository_full_name: str
         author: str
@@ -324,9 +325,12 @@ class PullRequestFacts:
             deployed = deployed[deps_passed]
             deployments = [self.deployments[i] for i in deps_passed]
             environments = [self.environments[i] for i in deps_passed]
-            return PullRequestFacts(
-                data, deployed=deployed, deployments=deployments, environments=environments)
-        return PullRequestFacts(data)
+            return PullRequestFacts(data,
+                                    node_id=self.node_id,
+                                    deployed=deployed,
+                                    deployments=deployments,
+                                    environments=environments)
+        return PullRequestFacts(data, node_id=self.node_id)
 
     def __lt__(self, other: "PullRequestFacts") -> bool:
         """Order by `work_began`."""
@@ -395,6 +399,7 @@ class ReleaseFacts:
     class Optional:
         """Mutable fields that are None by default. We do not serialize them."""
 
+        node_id: int
         repository_full_name: str
         prs_title: List[str]
         prs_jira: np.ndarray
@@ -499,6 +504,11 @@ class DeploymentFacts:
         commits_prs: [np.int32]
         commits_overall: [np.int32]
 
+    class Optional:
+        """Mutable fields that are None by default. We do not serialize them."""
+
+        name: str
+
 
 @numpy_struct
 class PullRequestCheckRun:
@@ -522,6 +532,11 @@ class PullRequestCheckRun:
         check_suite_status: [ascii]
         name: [str]
         commit_ids: [int]
+
+    class Optional:
+        """Mutable fields that are None by default. We do not serialize them."""
+
+        node_id: int  # PullRequest node ID
 
 
 @dataclass(slots=True, frozen=True)

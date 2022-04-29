@@ -640,7 +640,10 @@ class MetricEntriesCalculator:
                 return [np.arange(len(df))]
         lines_grouper = partial(group_check_runs_by_lines, lines)
         groups = group_to_indexes(
-            df_check_runs, commit_author_grouper, repo_grouper, lines_grouper, check_runs_grouper)
+            df_check_runs, commit_author_grouper, repo_grouper, lines_grouper, check_runs_grouper,
+            deduplicate_key=CheckRun.check_run_node_id.name
+            if logical_settings.has_logical_prs()
+            else None)
         group_suite_counts = np.zeros_like(groups, dtype=int)
         flat_group_suite_counts = group_suite_counts.ravel()
         if split_by_check_runs:

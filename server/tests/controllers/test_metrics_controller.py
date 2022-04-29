@@ -1034,12 +1034,18 @@ async def test_calc_metrics_prs_deployments_smoke(client, headers, precomputed_d
 
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
+@pytest.mark.parametrize("second_repo, counts", [
+    ("/beta", [266, 52, 204, 197]),
+    ("", [463, 81, 372, 347]),
+])
 async def test_calc_metrics_prs_logical(
-        client, headers, logical_settings_db, release_match_setting_tag_logical_db):
+        client, headers, logical_settings_db, release_match_setting_tag_logical_db,
+        second_repo, counts):
     body = {
         "for": [
             {
-                "repositories": ["github.com/src-d/go-git/alpha", "github.com/src-d/go-git/beta"],
+                "repositories": ["github.com/src-d/go-git/alpha",
+                                 "github.com/src-d/go-git" + second_repo],
             },
         ],
         "metrics": [
@@ -1060,7 +1066,7 @@ async def test_calc_metrics_prs_logical(
     assert response.status == 200, response.text()
     body = FriendlyJson.loads((await response.read()).decode("utf-8"))
     values = [v["values"] for v in body["calculated"][0]["values"]]
-    assert values == [[266, 52, 204, 197]]
+    assert values == [counts]
 
 
 # TODO: fix response validation against the schema
@@ -1956,13 +1962,18 @@ async def test_release_metrics_labels(client, headers):
     assert models[0].values[0].values == [22, 234]
 
 
+@pytest.mark.parametrize("second_repo, counts", [
+    ("/beta", [44, 118]),
+    ("", [44, 191]),
+])
 async def test_release_metrics_logical(
-        client, headers, logical_settings_db, release_match_setting_tag_logical_db):
+        client, headers, logical_settings_db, release_match_setting_tag_logical_db,
+        second_repo, counts):
     body = {
         "account": 1,
         "date_from": "2018-01-01",
         "date_to": "2020-03-01",
-        "for": [["github.com/src-d/go-git/alpha", "github.com/src-d/go-git/beta"]],
+        "for": [["github.com/src-d/go-git/alpha", "github.com/src-d/go-git" + second_repo]],
         "metrics": [ReleaseMetricID.RELEASE_COUNT, ReleaseMetricID.RELEASE_PRS],
         "granularities": ["all"],
     }
@@ -1974,7 +1985,7 @@ async def test_release_metrics_logical(
     rbody = json.loads(rbody)
     models = [CalculatedReleaseMetric.from_dict(i) for i in rbody]
     assert len(models) == 1
-    assert models[0].values[0].values == [44, 118]
+    assert models[0].values[0].values == counts
 
 
 async def test_release_metrics_participants_many_participants(client, headers):

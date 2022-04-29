@@ -156,6 +156,7 @@ class DonePRFactsLoader:
         for (node_id, repo), row in result.items():
             result[(node_id, repo)] = PullRequestFacts(
                 data=row[ghdprf.data.name],
+                node_id=node_id,
                 releaser=user_node_to_login_get(row[ghdprf.releaser.name]))
             raw[node_id] = row
         return result, raw
@@ -719,6 +720,7 @@ class DonePRFactsLoader:
         ghdprf = GitHubDonePullRequestFacts
         return PullRequestFacts(
             data=row[ghdprf.data.name],
+            node_id=row[ghdprf.pr_node_id.name],
             repository_full_name=row[ghdprf.repository_full_name.name],
             author=user_node_to_login_get(row[ghdprf.author.name]),
             merger=user_node_to_login_get(row[ghdprf.merger.name]),

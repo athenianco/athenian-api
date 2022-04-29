@@ -106,13 +106,14 @@ async def load_precomputed_release_facts(releases: pd.DataFrame,
             rows = await pdb.fetch_all(union_all(*queries))
         else:
             rows = chain.from_iterable(await gather(*(pdb.fetch_all(q) for q in queries)))
-    result = {}
-    for row in rows:
-        node_id, repo = \
-            row[GitHubReleaseFacts.id.name], row[GitHubReleaseFacts.repository_full_name.name]
-        f = ReleaseFacts(row[GitHubReleaseFacts.data.name])
-        f.repository_full_name = repo
-        result[(node_id, repo)] = f
+    result = {
+        ((node_id := row[GitHubReleaseFacts.id.name]),
+         (repo := row[GitHubReleaseFacts.repository_full_name.name])): ReleaseFacts(
+            row[GitHubReleaseFacts.data.name],
+            node_id=node_id,
+            repository_full_name=repo)
+        for row in rows
+    }
     return result
 
 

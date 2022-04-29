@@ -1139,8 +1139,9 @@ async def test_store_merged_unreleased_pull_request_facts_smoke(
         assert len(row[ghmprf.activity_days.name]) > 0
 
     new_dict = {
-        r[ghmprf.pr_node_id.name]: PullRequestFacts(
+        (node_id := r[ghmprf.pr_node_id.name]): PullRequestFacts(
             data=r[ghmprf.data.name],
+            node_id=node_id,
             repository_full_name="src-d/go-git",
             author=r[ghmprf.author.name],
             merger=r[ghmprf.merger.name])
@@ -1190,8 +1191,10 @@ async def test_store_open_pull_request_facts_smoke(
     for row in rows:
         assert isinstance(row[ghoprf.activity_days.name], list)
         assert len(row[ghoprf.activity_days.name]) > 0
-        new_dict[(row[ghoprf.pr_node_id.name], "src-d/go-git")] = PullRequestFacts(
+        node_id = row[ghoprf.pr_node_id.name]
+        new_dict[(node_id, "src-d/go-git")] = PullRequestFacts(
             data=row[ghoprf.data.name],
+            node_id=node_id,
             repository_full_name="src-d/go-git",
             author=authors[row[ghoprf.pr_node_id.name]])
     assert true_dict == new_dict

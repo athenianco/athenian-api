@@ -66,6 +66,7 @@ class OpenPRFactsLoader:
             repo = row[ghoprf.repository_full_name.name]
             facts[(node_id, repo)] = PullRequestFacts(
                 data=row[ghoprf.data.name],
+                node_id=node_id,
                 repository_full_name=repo,
                 author=authors[node_id])
         return facts
@@ -122,6 +123,7 @@ class OpenPRFactsLoader:
                 remove_physical.add((node_id, physical_repo))
             facts[(node_id, repo)] = PullRequestFacts(
                 data=row[ghoprf.data.name],
+                node_id=node_id,
                 repository_full_name=repo,
                 author=authors[node_id])
         for pair in remove_physical:
@@ -163,8 +165,9 @@ class OpenPRFactsLoader:
         with sentry_sdk.start_span(op="load_open_pull_request_facts_all/fetch"):
             rows = await pdb.fetch_all(query)
         facts = {
-            (row[ghoprf.pr_node_id.name], row[ghoprf.repository_full_name.name]):
-                PullRequestFacts(row[ghoprf.data.name])
+            ((node_id := row[ghoprf.pr_node_id.name]),
+             (repo := row[ghoprf.repository_full_name.name])): PullRequestFacts(
+                row[ghoprf.data.name], node_id=node_id, repository_full_name=repo)
             for row in rows
         }
         return facts

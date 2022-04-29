@@ -198,6 +198,7 @@ class MergedPRFactsLoader:
             if node_id in pr_ids_by_repo[(repo := row[ghmprf.repository_full_name.name])]:
                 facts[(node_id, repo)] = PullRequestFacts(
                     data=data,
+                    node_id=node_id,
                     repository_full_name=repo,
                     author=user_node_map_get(row[ghmprf.author.name]),
                     merger=user_node_map_get(row[ghmprf.merger.name]))
@@ -252,7 +253,9 @@ class MergedPRFactsLoader:
                 # 2. "Impossible" PRs that are merged.
                 missing_facts.append(node_id)
                 continue
-            facts[(node_id, row[ghmprf.repository_full_name.name])] = PullRequestFacts(data)
+            repo = row[ghmprf.repository_full_name.name]
+            facts[(node_id, repo)] = PullRequestFacts(
+                data, node_id=node_id, repository_full_name=repo)
         if missing_facts:
             log.warning("No precomputed facts on account %d for merged %s", account, missing_facts)
         return facts
