@@ -167,10 +167,12 @@ def _validate_deployments(deps, count, with_2016):
     assert set(releases["production_2019_11_01"]["tag"]) == {
         "v4.13.0", "v4.12.0", "v4.13.1", "v4.9.0", "v4.9.1", "v4.11.0", "v4.10.0",
     }
+    del pdeps["name"]
     del pdeps["environment"]
     pdeps.sort_index(inplace=True)
     pdeps.reset_index(drop=True, inplace=True)
     sdeps = deps[deps["environment"] == "staging"].copy()
+    del sdeps["name"]
     del sdeps["environment"]
     sdeps.sort_index(inplace=True)
     sdeps.reset_index(drop=True, inplace=True)

@@ -804,8 +804,13 @@ class BinnedHistogramCalculator(BinnedEnsemblesCalculator[Histogram]):
 
 def group_to_indexes(items: pd.DataFrame,
                      *groupers: Callable[[pd.DataFrame], List[np.ndarray]],
+                     deduplicate_key: Optional[str] = None,
                      ) -> np.ndarray:
-    """Apply a chain of grouping functions to a table and return the tensor with group indexes."""
+    """
+    Apply a chain of grouping functions to a table and return the tensor with group indexes.
+
+    :param deduplicate_key: Column name in `items` to scan for duplicates in each group.
+    """
     if not groupers:
         return np.arange(len(items))[None, :]
     groups = [grouper(items) for grouper in groupers]
@@ -814,8 +819,18 @@ def group_to_indexes(items: pd.DataFrame,
         return reduce(lambda x, y: np.intersect1d(x, y, assume_unique=True),
                       [group[i] for group, i in zip(groups, coordinates)])
 
-    return np.fromfunction(np.vectorize(intersect, otypes=[object]),
-                           [len(g) for g in groups], dtype=object)
+    indexes = np.fromfunction(np.vectorize(intersect, otypes=[object]),
+                              [len(g) for g in groups], dtype=object)
+    if deduplicate_key is None:
+        return indexes
+    deduped_indexes = indexes.copy()
+    deduped_indexes_flat = deduped_indexes.ravel()
+    key_column = items[deduplicate_key].values
+    for i, group in enumerate(indexes.ravel()):
+        _, group_indexes = np.unique(key_column[group], return_index=True)
+        if len(group_indexes) < len(group):
+            deduped_indexes_flat[i] = group[group_indexes]
+    return deduped_indexes
 
 
 def group_by_repo(repository_full_name_column_name: str,

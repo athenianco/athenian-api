@@ -432,6 +432,7 @@ async def _mine_releases(repos: Iterable[str],
                                              commits_count=commits_count,
                                              commit_authors=my_commit_authors,
                                              **my_prs,
+                                             node_id=my_id,
                                              repository_full_name=repo)))
                 if (len(data) + len(repo_data)) % 500 == 0:
                     await asyncio.sleep(0)

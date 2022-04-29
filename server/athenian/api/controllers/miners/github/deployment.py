@@ -671,9 +671,7 @@ async def _generate_deployment_facts(
                 for pr in prs:
                     pr_inserts.append((deployment_name, finished, repo_name, pr))
     facts = []
-    deployment_names = []
     for deployment_name, repos in facts_per_repo_per_deployment.items():
-        deployment_names.append(deployment_name)
         repo_index = []
         pr_authors = []
         commit_authors = []
@@ -708,10 +706,11 @@ async def _generate_deployment_facts(
             commits_overall=commits_overall,
             prs=np.concatenate(prs) if prs else [],
             prs_offsets=prs_offsets,
+            name=deployment_name,
         ))
     await defer(_submit_deployed_prs(pr_inserts, account, pdb), "_submit_deployed_prs")
     facts = df_from_structs(facts)
-    facts.index = deployment_names
+    facts.index = facts[DeploymentNotification.name.name].values
     return facts
 
 
@@ -1739,16 +1738,15 @@ async def _fetch_precomputed_deployment_facts(names: Collection[str],
                     GitHubDeploymentFacts.deployment_name.in_any_values(names))))
     if not dep_rows:
         return pd.DataFrame(columns=DeploymentFacts.f)
-    index = []
     structs = []
     for row in dep_rows:
         if not _settings_are_compatible(
                 row[GitHubDeploymentFacts.release_matches.name], settings, default_branches):
             continue
-        index.append(row[GitHubDeploymentFacts.deployment_name.name])
-        structs.append(DeploymentFacts(row[GitHubDeploymentFacts.data.name]))
+        structs.append(DeploymentFacts(row[GitHubDeploymentFacts.data.name],
+                                       name=row[GitHubDeploymentFacts.deployment_name.name]))
     facts = df_from_structs(structs)
-    facts.index = index
+    facts.index = facts[DeploymentNotification.name.name].values
     return facts
 
 

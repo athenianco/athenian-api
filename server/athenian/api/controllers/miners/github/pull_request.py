@@ -1388,7 +1388,8 @@ class PullRequestMiner:
         )))
         if rows:
             precomputed_check_runs = df_from_structs(
-                (PullRequestCheckRun(r[prcrs.data.name]) for r in rows),
+                (PullRequestCheckRun(r[prcrs.data.name], node_id=r[prcrs.pr_node_id.name])
+                 for r in rows),
                 length=len(rows),
             )
         else:
@@ -1469,6 +1470,7 @@ class PullRequestMiner:
                 check_suite_status=check_suite_statuses[indexes],
                 name=names[indexes],
                 commit_ids=np.unique(pr_commit_ids),
+                node_id=pr,
             ))
             if pr in open_pr_node_ids:
                 # indexes are already sorted by time
@@ -1495,6 +1497,7 @@ class PullRequestMiner:
                         check_suite_status=check_suite_statuses[indexes],
                         name=names[indexes],
                         commit_ids=pr_commit_ids,
+                        node_id=pr,
                     )
 
             stored_new_pr_node_ids.append(pr)
@@ -2160,6 +2163,7 @@ class PullRequestFactsMiner:
             size=size,
             force_push_dropped=force_push_dropped,
             release_ignored=False,  # to be set independently in the heater
+            node_id=pr.pr[PullRequest.node_id.name],
             repository_full_name=pr.pr[PullRequest.repository_full_name.name],
             author=pr.pr[PullRequest.user_login.name],
             merger=pr.pr[PullRequest.merged_by_login.name],

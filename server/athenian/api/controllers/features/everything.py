@@ -98,10 +98,9 @@ async def mine_all_prs(repos: Collection[str],
     for col in (ghdprf.release_url.name, ghdprf.release_node_id.name):
         df_facts[col] = [raw_done_rows.get(k, dummy)[col] for k in facts]
     del raw_done_rows
-    df_facts[PullRequest.node_id.name] = list(facts)
     del facts
-    df_facts.set_index(PullRequest.node_id.name, inplace=True)
     if not df_facts.empty:
+        df_facts.set_index(PullRequest.node_id.name, inplace=True)
         stage_timings = PullRequestListMiner.calc_stage_timings(
             df_facts, *PullRequestListMiner.create_stage_calcs(envs))
         for stage, timings in stage_timings.items():
@@ -176,6 +175,7 @@ async def mine_all_releases(repos: Collection[str],
         mdb, pdb, rdb, cache, with_avatars=False, with_pr_titles=True))[0]
     df_gen = pd.DataFrame.from_records([r[0] for r in releases])
     df_facts = df_from_structs([r[1] for r in releases])
+    del df_facts[Release.node_id.name]
     del df_facts[Release.repository_full_name.name]
     result = df_gen.join(df_facts)
     result.set_index(Release.node_id.name, inplace=True)
@@ -262,6 +262,7 @@ async def mine_all_deployments(repos: Collection[str],
         envs, [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
         release_settings, logical_settings, branches, default_branches, prefixer,
         account, meta_ids, mdb, pdb, rdb, cache)
+    del deps[DeploymentNotification.name.name]  # it is the index
     split_cols = ["releases", "components", "labels"]
     for name, *dfs in zip(deps.index.values, *(deps[col].values for col in split_cols)):
         for df in dfs:
