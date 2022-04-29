@@ -241,10 +241,10 @@ class AthenianApp(especifico.AioHttpApp):
         :param client_max_size: Maximum incoming request body size.
         :param max_load: Maximum load the server is allowed to serve. The unit is abstract, see \
                          `balancing.py`.
-        :param mdb_options: Extra databases.Database() kwargs for the metadata DB.
-        :param sdb_options: Extra databases.Database() kwargs for the state DB.
-        :param pdb_options: Extra databases.Database() kwargs for the precomputed objects DB.
-        :param rdb_options: Extra databases.Database() kwargs for the push/pull events DB.
+        :param mdb_options: Extra morcilla.Database() kwargs for the metadata DB.
+        :param sdb_options: Extra morcilla.Database() kwargs for the state DB.
+        :param pdb_options: Extra morcilla.Database() kwargs for the precomputed objects DB.
+        :param rdb_options: Extra morcilla.Database() kwargs for the push/pull events DB.
         :param auth0_cls: Injected authorization class, simplifies unit testing.
         :param kms_cls: Injected Google Key Management Service class, simplifies unit testing. \
                         `None` disables KMS and, effectively, API Key authentication.
