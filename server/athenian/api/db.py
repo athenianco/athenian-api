@@ -142,6 +142,8 @@ async def _asyncpg_execute(self,
 
 
 async def _asyncpg_executemany(self, query, args, timeout, **kwargs):
+    if timeout is None:
+        timeout = float(10 * 60)  # twice as much the default
     with sentry_sdk.start_span(op="sql", description="<= %d\n%s" % (len(args), query)):
         return await self._executemany_original(query, args, timeout, **kwargs)
 
@@ -204,22 +206,28 @@ def measure_db_overhead_and_retry(db: Union[morcilla.Database, Database],
                     for i, wait_time in enumerate(wait_intervals):
                         try:
                             if need_acquire:
+                                log.warning("Reconnecting to %s", db_id)
                                 await connection.acquire()
+                                log.info("Connected to %s", db_id)
                             return await func(*args, **kwargs)
                         except (OSError,
                                 asyncpg.PostgresConnectionError,
                                 asyncpg.OperatorInterventionError,
                                 asyncpg.InsufficientResourcesError,
-                                sqlite3.OperationalError) as e:
+                                sqlite3.OperationalError,
+                                asyncio.TimeoutError) as e:
                             if wait_time is None:
                                 raise e from None
                             log.warning("[%d] %s: %s", i + 1, type(e).__name__, e)
                             if need_acquire := isinstance(e, asyncpg.PostgresConnectionError):
+                                log.warning("Disconnecting from %s", db_id)
                                 try:
                                     await connection.release()
                                 except Exception as e:
                                     log.warning("connection.release() raised %s: %s",
                                                 type(e).__name__, e)
+                                else:
+                                    log.info("Disconnected from %s", db_id)
                             await asyncio.sleep(wait_time)
                         finally:
                             if app is not None:
@@ -241,6 +249,8 @@ def measure_db_overhead_and_retry(db: Union[morcilla.Database, Database],
         connection.fetch_one = measure_method_overhead_and_retry(connection.fetch_one)
         connection.execute = measure_method_overhead_and_retry(connection.execute)
         connection.execute_many = measure_method_overhead_and_retry(connection.execute_many)
+        connection.execute_many_native = \
+            measure_method_overhead_and_retry(connection.execute_many_native)
 
         original_transaction = connection.transaction
 
