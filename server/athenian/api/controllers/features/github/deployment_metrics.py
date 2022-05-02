@@ -52,6 +52,11 @@ def group_deployments_by_repositories(repositories: Sequence[Collection[str]],
     df_repos = [c[DeployedComponent.repository_full_name].values
                 for c in df["components"].values]
     df_repos_flat = np.concatenate(df_repos).astype("U", copy=False)
+    # DEV-4112 exclude empty deployments
+    df_commits = np.concatenate(df[DeploymentFacts.f.commits_overall].values,
+                                dtype=int, casting="unsafe")
+    df_repos_flat[df_commits == 0] = ""
+
     offsets = np.zeros(len(df), dtype=int)
     np.cumsum([len(c) for c in df_repos[:-1]], out=offsets[1:])
     repositories = [
