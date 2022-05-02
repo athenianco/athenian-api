@@ -2525,7 +2525,7 @@ async def test_deployment_metrics_empty_for(client, headers, sample_deployments)
         "metrics": [DeploymentMetricID.DEP_SUCCESS_COUNT],
         "values": [{
             "date": date(2018, 1, 12),
-            "values": [12]}]}]
+            "values": [9]}]}]
 
 
 @pytest.mark.parametrize("account, date_from, date_to, repos, withgroups, metrics, code", [
@@ -2642,14 +2642,14 @@ async def test_deployment_metrics_environments(
 
     model = await request()
     assert len(model) == 1
-    assert model[0].values[0].values[0] == 4
+    assert model[0].values[0].values[0] == 3
     body["for"][0]["envgroups"] = [["staging"], ["production"]]
     model = await request()
     assert len(model) == 2
     assert model[0].for_.environments == ["staging"]
     assert model[0].values[0].values[0] == 3
     assert model[1].for_.environments == ["production"]
-    assert model[1].values[0].values[0] == 4
+    assert model[1].values[0].values[0] == 3
 
 
 async def test_deployment_metrics_with(client, headers, sample_deployments):
