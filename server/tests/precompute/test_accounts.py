@@ -26,7 +26,7 @@ async def test_reposets_grouping(sdb, mdb, tqdm_disable) -> None:
     with mock.patch(
         f"{main.__module__}.precompute_reposet", wraps=precompute_reposet,
     ) as precompute_mock:
-        await main(ctx, namespace)
+        await main(ctx, namespace, isolate=False)
 
     assert precompute_mock.call_count == 2
     # real precompute_reposet calls order is undefined, order calls by account id

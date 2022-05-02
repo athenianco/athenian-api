@@ -1,31 +1,21 @@
 import argparse
 import asyncio
-from collections import defaultdict
-from contextvars import ContextVar
 import json
 import logging
+import os
+import resource
 import traceback
-from typing import Tuple
+from typing import Any, Callable, Union
 
 from flogging import flogging
 import sentry_sdk
 
-from athenian.api.__main__ import check_schema_versions, create_memcached, create_slack, \
-    setup_context
-from athenian.api.async_utils import gather
-from athenian.api.cache import CACHE_VAR_NAME, setup_cache_metrics
+from athenian.api.__main__ import check_schema_versions, setup_context
 import athenian.api.db
-from athenian.api.db import Database, measure_db_overhead_and_retry
-from athenian.api.defer import enable_defer
 from athenian.api.faster_pandas import patch_pandas
-from athenian.api.models.metadata import dereference_schemas as dereference_metadata_schemas
-from athenian.api.models.persistentdata import \
-    dereference_schemas as dereference_persistentdata_schemas
 from athenian.api.precompute import accounts, discover_accounts, notify_almost_expired_accounts, \
     resolve_deployments, sync_labels
 from athenian.api.precompute.context import PrecomputeContext
-from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME
-from athenian.precomputer.db import dereference_schemas as dereference_precomputed_schemas
 
 commands = {
     "sync-labels": sync_labels.main,
@@ -55,6 +45,7 @@ def _parse_args() -> argparse.Namespace:
                         help="memcached address, e.g. 0.0.0.0:11211")
     parser.add_argument("--xcom", default="/airflow/xcom/return.json",
                         help="xcom target file path")
+    parser.add_argument("--max-mem", type=int, default=0, help="Process memory limit in bytes.")
 
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("sync-labels", help="Update the labels in the precomputed PRs")
@@ -76,27 +67,9 @@ def _parse_args() -> argparse.Namespace:
     accounts_parser.add_argument("account", nargs="+", help="Account IDs to precompute")
     accounts_parser.add_argument("--skip-jira-identity-map", action="store_true",
                                  help="Do not match JIRA identities")
+    accounts_parser.add_argument("--timeout", type=int, default=20 * 60,
+                                 help="Maximum processing time for one account")
     return parser.parse_args()
-
-
-async def _connect_to_dbs(args: argparse.Namespace,
-                          ) -> Tuple[Database, Database, Database, Database]:
-    sdb = measure_db_overhead_and_retry(Database(args.state_db))
-    mdb = measure_db_overhead_and_retry(Database(args.metadata_db))
-    pdb = measure_db_overhead_and_retry(Database(args.precomputed_db))
-    rdb = measure_db_overhead_and_retry(Database(args.persistentdata_db))
-    await gather(sdb.connect(), mdb.connect(), pdb.connect(), rdb.connect())
-    pdb.metrics = {
-        "hits": ContextVar("pdb_hits", default=defaultdict(int)),
-        "misses": ContextVar("pdb_misses", default=defaultdict(int)),
-    }
-    if mdb.url.dialect == "sqlite":
-        dereference_metadata_schemas()
-    if rdb.url.dialect == "sqlite":
-        dereference_persistentdata_schemas()
-    if pdb.url.dialect == "sqlite":
-        dereference_precomputed_schemas()
-    return sdb, mdb, pdb, rdb
 
 
 def _main() -> int:
@@ -105,6 +78,8 @@ def _main() -> int:
     log = logging.getLogger("precomputer")
     args = _parse_args()
     setup_context(log)
+    if args.max_mem:
+        resource.setrlimit(resource.RLIMIT_AS, (args.max_mem,) * 2)
 
     with sentry_sdk.start_transaction(
         name=f"precomputer[{args.command}]",
@@ -120,38 +95,34 @@ def _execute_command(args: argparse.Namespace, log: logging.Logger) -> int:
                                  args.persistentdata_db,
                                  log):
         return 1
-    slack = create_slack(log)
 
-    async def async_entry():
+    async def command(context: PrecomputeContext) -> Any:
+        log.info("Executing %s", args.command)
+        return await commands[args.command](context, args)
+
+    async def async_entry() -> Union[int, Callable]:
         try:
-            enable_defer(False)
-            cache = create_memcached(args.memcached, log)
-            setup_cache_metrics({CACHE_VAR_NAME: cache, PROMETHEUS_REGISTRY_VAR_NAME: None})
-            for v in cache.metrics["context"].values():
-                v.set(defaultdict(int))
-            sdb, mdb, pdb, rdb = await _connect_to_dbs(args)
-            log.info("Executing %s", args.command)
-            result = await commands[args.command](PrecomputeContext(
-                log=log,
-                sdb=sdb,
-                mdb=mdb,
-                pdb=pdb,
-                rdb=rdb,
-                cache=cache,
-                slack=slack,
-            ), args)
+            result = await command(await PrecomputeContext.create(args, log))
         except Exception as e:
             # warning so that we don't report in Sentry twice
             log.warning("unhandled error: %s: %s\n%s", type(e).__name__, e, traceback.format_exc())
             sentry_sdk.capture_exception(e)
             return 1
-        log.info("result: %s", result)
-        if result is not None and args.xcom:
-            with open(args.xcom, "w") as fout:
-                json.dump(result, fout)
+        if result is not None:
+            if callable(result):
+                return result
+            log.info("result: %s", result)
+            if args.xcom:
+                with open(args.xcom, "w") as fout:
+                    json.dump(result, fout)
         return 0
 
-    return asyncio.run(async_entry())
+    try:
+        while callable(command):
+            command = asyncio.run(async_entry())
+        return command
+    finally:
+        log.info("[%d] return", os.getpid())
 
 
 if __name__ == "__main__":

@@ -1,9 +1,11 @@
 import argparse
+import asyncio
 from datetime import date, datetime, timedelta, timezone
 import os
+import signal
 import sys
 import traceback
-from typing import Optional, Sequence, Set, Tuple
+from typing import Callable, Optional, Sequence, Set, Tuple
 
 import aiomcache
 import sentry_sdk
@@ -31,26 +33,56 @@ from athenian.api.db import Database
 from athenian.api.defer import wait_deferred
 from athenian.api.models.state.models import RepositorySet, Team
 from athenian.api.precompute.context import PrecomputeContext
+from athenian.api.tracing import sentry_span
 
 
-async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
+async def main(context: PrecomputeContext,
+               args: argparse.Namespace,
+               *, isolate: bool = True,
+               ) -> Optional[Callable]:
     """Precompute several accounts."""
     time_to = datetime.combine(date.today() + timedelta(days=1),
                                datetime.min.time(),
                                tzinfo=timezone.utc)
     no_time_from = datetime(1970, 1, 1, tzinfo=timezone.utc)
-    time_from = (time_to - timedelta(days=365 * 2)) if not os.getenv("CI") else no_time_from
+    time_from = \
+        (time_to - timedelta(days=365 * 2)) if not os.getenv("CI") else no_time_from
     accounts = [int(p) for s in args.account for p in s.split()]
     reposets = await _get_reposets(context.sdb, accounts)
     context.log.info("Heating %d reposets", len(reposets))
+    failed = 0
+    log = context.log
 
     for reposet in tqdm(reposets):
-        # there's at most one reposet per account, so a single scope is created per account
-        with sentry_sdk.start_span(
-            op=f"reposet[{reposet.owner_id}]",
-            description=str(reposet.items),
-        ):
+        if not isolate:
             await precompute_reposet(reposet, context, args, time_to, no_time_from, time_from)
+            continue
+        pid = os.fork()
+        if pid == 0:
+            log.info("sandbox %d", os.getpid())
+
+            # must execute `callback` in a new event loop
+            async def callback(context: PrecomputeContext):
+                await precompute_reposet(
+                    reposet, context, args, time_to, no_time_from, time_from)
+
+            return callback
+        else:
+            log.info("supervisor: waiting for %d", pid)
+            status = 0, 0
+            try:
+                for _ in range(args.timeout * 100):
+                    if (status := os.waitpid(pid, os.WNOHANG)) != (0, 0):
+                        break
+                    await asyncio.sleep(0.01)
+                else:
+                    log.error("supervisor: child has timed out, killing")
+                    os.kill(pid, signal.SIGKILL)
+            finally:
+                if status == (0, 0):
+                    status = os.wait()
+                failed += status[1] != 0
+    log.info("failed: %d / %d", failed, len(reposets))
 
 
 async def _get_reposets(sdb: Database, accounts: Sequence[int]) -> Sequence[RepositorySet]:
@@ -64,6 +96,7 @@ async def _get_reposets(sdb: Database, accounts: Sequence[int]) -> Sequence[Repo
     return [RepositorySet(**row) for row in rows]
 
 
+@sentry_span
 async def precompute_reposet(
     reposet: RepositorySet,
     context: PrecomputeContext,
@@ -72,7 +105,12 @@ async def precompute_reposet(
     no_time_from: datetime,
     time_from: datetime,
 ) -> None:
-    """Execute precomputations for a single reposet."""
+    """
+    Execute precomputations for a single reposet.
+
+    There's at most one reposet per account, so a single Sentry scope is created per account.
+    """
+    sentry_sdk.Hub.current.scope.span.description = str(reposet.items)
     log, sdb, mdb, pdb, rdb, cache, slack = (
         context.log, context.sdb, context.mdb, context.pdb, context.rdb, context.cache,
         context.slack,
