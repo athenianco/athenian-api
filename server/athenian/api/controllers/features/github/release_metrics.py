@@ -1,18 +1,19 @@
 from collections import defaultdict
 from datetime import timedelta
-from typing import Dict, Generic, List, Sequence, Type, TypeVar
+from typing import Dict, Generic, List, Optional, Sequence, Type, TypeVar
 
 import numpy as np
 import pandas as pd
 
 from athenian.api.controllers.features.metric import MetricInt, MetricTimeDelta
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
-    BinnedMetricCalculator, make_register_metric, MetricCalculator, MetricCalculatorEnsemble, \
-    SumMetricCalculator
+    BinnedMetricCalculator, calculate_logical_duplication_mask, make_register_metric, \
+    MetricCalculator, MetricCalculatorEnsemble, SumMetricCalculator
 from athenian.api.controllers.miners.github.released_pr import matched_by_column
 from athenian.api.controllers.miners.types import ReleaseFacts, ReleaseParticipants, \
     ReleaseParticipationKind
-from athenian.api.controllers.settings import ReleaseMatch
+from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch, \
+    ReleaseSettings
 from athenian.api.models.metadata.github import PullRequest
 from athenian.api.models.web import ReleaseMetricID
 
@@ -64,6 +65,18 @@ def group_releases_by_participants(participants: List[ReleaseParticipants],
         mask[missing_indexes] = False
         indexes.append(np.flatnonzero(mask))
     return indexes
+
+
+def calculate_logical_release_duplication_mask(
+        items: pd.DataFrame,
+        release_settings: ReleaseSettings,
+        logical_settings: LogicalRepositorySettings,
+) -> Optional[np.ndarray]:
+    """Assign indexes to releases with the same settings for each logical repository."""
+    if not logical_settings.has_logical_prs():
+        return None
+    repos_column = items[ReleaseFacts.f.repository_full_name].values.astype("S", copy=False)
+    return calculate_logical_duplication_mask(repos_column, release_settings, logical_settings)
 
 
 class ReleaseMetricCalculatorEnsemble(MetricCalculatorEnsemble):

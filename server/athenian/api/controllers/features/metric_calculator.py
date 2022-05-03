@@ -17,6 +17,9 @@ from athenian.api.controllers.features.metric import Metric, MetricFloat, Metric
     NumpyMetric, T
 from athenian.api.controllers.features.statistics import mean_confidence_interval, \
     median_confidence_interval
+from athenian.api.controllers.logical_repos import coerce_logical_repos
+from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseSettings
+from athenian.api.int_to_str import int_to_str
 from athenian.api.sparse_mask import SparseMask
 from athenian.api.tracing import sentry_span
 
@@ -805,11 +808,13 @@ class BinnedHistogramCalculator(BinnedEnsemblesCalculator[Histogram]):
 def group_to_indexes(items: pd.DataFrame,
                      *groupers: Callable[[pd.DataFrame], List[np.ndarray]],
                      deduplicate_key: Optional[str] = None,
+                     deduplicate_mask: Optional[np.ndarray] = None,
                      ) -> np.ndarray:
     """
     Apply a chain of grouping functions to a table and return the tensor with group indexes.
 
-    :param deduplicate_key: Column name in `items` to scan for duplicates in each group.
+    :param deduplicate_key: Integer column name in `items` to scan for duplicates in each group.
+    :param deduplicate_mask: Additional values to compare beside `deduplicate_key`.
     """
     if not groupers:
         return np.arange(len(items))[None, :]
@@ -823,13 +828,18 @@ def group_to_indexes(items: pd.DataFrame,
                               [len(g) for g in groups], dtype=object)
     if deduplicate_key is None:
         return indexes
-    deduped_indexes = indexes.copy()
+    deduped_indexes = np.empty_like(indexes)
     deduped_indexes_flat = deduped_indexes.ravel()
-    key_column = items[deduplicate_key].values
+    key_arr = items[deduplicate_key].values
+    if deduplicate_mask is not None:
+        key_arr = int_to_str(key_arr, deduplicate_mask)
     for i, group in enumerate(indexes.ravel()):
-        _, group_indexes = np.unique(key_column[group], return_index=True)
+        _, group_indexes = np.unique(key_arr[group], return_index=True)
         if len(group_indexes) < len(group):
-            deduped_indexes_flat[i] = group[group_indexes]
+            group_indexes = group[group_indexes]
+        else:
+            group_indexes = group
+        deduped_indexes_flat[i] = group_indexes
     return deduped_indexes
 
 
@@ -895,6 +905,52 @@ def group_by_lines(lines: Sequence[int],
     for i, g in zip(existing_groups, line_groups):
         full_line_groups[i] = g
     return full_line_groups
+
+
+def calculate_logical_duplication_mask(repos_column: np.ndarray,
+                                       release_settings: ReleaseSettings,
+                                       logical_settings: LogicalRepositorySettings,
+                                       ) -> Optional[np.ndarray]:
+    """
+    Assign indexes to same logical settings for each logical repository.
+
+    Each logical repository with the same logical settings (releases, deployments) gets
+    assigned to the same index.
+    Physical repos and unique logicals get index 0.
+    """
+    # maximum 255 logical releases for each repo -> uint8
+    mask = np.zeros(len(repos_column), dtype=np.uint8)
+    actual_unique_repos = np.unique(repos_column).astype("U")
+    for root, children in coerce_logical_repos(actual_unique_repos).items():
+        if len(children) == 1:
+            continue
+        groups = defaultdict(list)
+        counter = 1
+        try:
+            deployments = logical_settings.deployments(root)
+        except KeyError:
+            deployments = None
+        for child in children:
+            child_releases = release_settings.native[child]
+            if deployments is None:
+                child_deployments = ("", ())
+            else:
+                try:
+                    dep_re = deployments.title(child).pattern
+                except KeyError:
+                    dep_re = ""
+                try:
+                    dep_labels = tuple(sorted(
+                        (k, tuple(v)) for k, v in deployments.labels(child).items()))
+                except KeyError:
+                    dep_labels = ()
+                child_deployments = dep_re, dep_labels
+            child_key = (child_releases, child_deployments)
+            groups[child_key].append(child)
+        for group in groups.values():
+            mask[np.in1d(repos_column, np.array(group, dtype="S"))] = counter
+            counter += 1
+    return mask
 
 
 class RatioCalculator(WithoutQuantilesMixin, MetricCalculator[float]):

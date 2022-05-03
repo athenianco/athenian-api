@@ -26,11 +26,13 @@ from athenian.api.controllers.features.github.deployment_metrics import \
     group_deployments_by_participants, group_deployments_by_repositories
 from athenian.api.controllers.features.github.developer_metrics import \
     DeveloperBinnedMetricCalculator, group_actions_by_developers
-from athenian.api.controllers.features.github.pull_request_metrics import group_prs_by_lines, \
+from athenian.api.controllers.features.github.pull_request_metrics import \
+    calculate_logical_prs_duplication_mask, group_prs_by_lines, \
     group_prs_by_participants, need_jira_mapping, PullRequestBinnedHistogramCalculator, \
     PullRequestBinnedMetricCalculator
 from athenian.api.controllers.features.github.release_metrics import \
-    group_releases_by_participants, merge_release_participants, ReleaseBinnedMetricCalculator
+    calculate_logical_release_duplication_mask, group_releases_by_participants, \
+    merge_release_participants, ReleaseBinnedMetricCalculator
 from athenian.api.controllers.features.github.unfresh_pull_request_metrics import \
     UnfreshPullRequestFactsFetcher
 from athenian.api.controllers.features.histogram import HistogramParameters
@@ -53,7 +55,7 @@ from athenian.api.controllers.miners.github.pull_request import ImpossiblePullRe
 from athenian.api.controllers.miners.github.release_mine import mine_releases
 from athenian.api.controllers.miners.jira.issue import PullRequestJiraMapper
 from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind, \
-    PullRequestFacts, ReleaseParticipants
+    PullRequestFacts, ReleaseFacts, ReleaseParticipants
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch, \
     ReleaseSettings
@@ -205,7 +207,12 @@ class MetricEntriesCalculator:
         lines_grouper = partial(group_prs_by_lines, lines)
         repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.name, repositories)
         with_grouper = partial(group_prs_by_participants, participants)
-        groups = group_to_indexes(df_facts, lines_grouper, repo_grouper, with_grouper)
+        dedupe_mask = calculate_logical_prs_duplication_mask(
+            df_facts, release_settings, logical_settings)
+        groups = group_to_indexes(
+            df_facts, lines_grouper, repo_grouper, with_grouper,
+            deduplicate_key=PullRequestFacts.f.node_id if dedupe_mask is not None else None,
+            deduplicate_mask=dedupe_mask)
         return calc(df_facts, time_intervals, groups)
 
     @sentry_span
@@ -268,7 +275,13 @@ class MetricEntriesCalculator:
         lines_grouper = partial(group_prs_by_lines, lines)
         repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.name, repositories)
         with_grouper = partial(group_prs_by_participants, participants)
-        groups = group_to_indexes(df_facts, lines_grouper, repo_grouper, with_grouper)
+        dedupe_mask = calculate_logical_prs_duplication_mask(
+            df_facts, release_settings, logical_settings)
+        groups = group_to_indexes(
+            df_facts, lines_grouper, repo_grouper, with_grouper,
+            deduplicate_key=PullRequestFacts.f.node_id if dedupe_mask is not None else None,
+            deduplicate_mask=dedupe_mask,
+        )
         hists = calc(df_facts, [[time_from, time_to]], groups, defs)
         reshaped = np.full(hists.shape[:-1], None, object)
         reshaped_seq = reshaped.ravel()
@@ -430,7 +443,12 @@ class MetricEntriesCalculator:
         df_facts = df_from_structs([f for _, f in releases])
         repo_grouper = partial(group_by_repo, Release.repository_full_name.name, repositories)
         participant_grouper = partial(group_releases_by_participants, participants)
-        groups = group_to_indexes(df_facts, participant_grouper, repo_grouper)
+        dedupe_mask = calculate_logical_release_duplication_mask(
+            df_facts, release_settings, logical_settings)
+        groups = group_to_indexes(
+            df_facts, participant_grouper, repo_grouper,
+            deduplicate_key=ReleaseFacts.f.node_id if dedupe_mask is not None else None,
+            deduplicate_mask=dedupe_mask)
         values = calc(df_facts, time_intervals, groups)
         return values, matched_bys
 

@@ -11,10 +11,10 @@ from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.controllers.miners.github import developer
 from athenian.api.controllers.miners.github.release_mine import mine_releases, \
     override_first_releases
-from athenian.api.controllers.settings import LogicalRepositorySettings
+from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel
-from athenian.api.models.state.models import Team
+from athenian.api.models.state.models import ReleaseSetting, Team
 from athenian.api.models.web import CalculatedCodeCheckMetrics, CalculatedDeploymentMetric, \
     CalculatedDeveloperMetrics, CalculatedLinearMetricValues, CalculatedPullRequestMetrics, \
     CalculatedReleaseMetric, CodeBypassingPRsMeasurement, CodeCheckMetricID, DeploymentMetricID, \
@@ -1038,7 +1038,7 @@ async def test_calc_metrics_prs_deployments_smoke(client, headers, precomputed_d
     ("/beta", [266, 52, 204, 197]),
     ("", [463, 81, 372, 347]),
 ])
-async def test_calc_metrics_prs_logical(
+async def test_calc_metrics_prs_logical_smoke(
         client, headers, logical_settings_db, release_match_setting_tag_logical_db,
         second_repo, counts):
     body = {
@@ -1067,6 +1067,50 @@ async def test_calc_metrics_prs_logical(
     body = FriendlyJson.loads((await response.read()).decode("utf-8"))
     values = [v["values"] for v in body["calculated"][0]["values"]]
     assert values == [counts]
+
+
+@pytest.mark.app_validate_responses(False)
+async def test_calc_metrics_prs_logical_dupes(client, headers, logical_settings_db, sdb):
+    await sdb.execute(insert(ReleaseSetting).values(
+        ReleaseSetting(repository="github.com/src-d/go-git/alpha",
+                       account_id=1,
+                       branches="master",
+                       tags=".*",
+                       events=".*",
+                       match=ReleaseMatch.tag).create_defaults().explode(with_primary_keys=True)))
+    await sdb.execute(insert(ReleaseSetting).values(
+        ReleaseSetting(repository="github.com/src-d/go-git/beta",
+                       account_id=1,
+                       branches="master",
+                       tags=".*",
+                       events=".*",
+                       match=ReleaseMatch.tag).create_defaults().explode(with_primary_keys=True)))
+    body = {
+        "for": [
+            {
+                "repositories": ["github.com/src-d/go-git/alpha",
+                                 "github.com/src-d/go-git/beta"],
+            },
+        ],
+        "metrics": [
+            PullRequestMetricID.PR_MERGED,
+            PullRequestMetricID.PR_REJECTED,
+            PullRequestMetricID.PR_REVIEW_COUNT,
+            PullRequestMetricID.PR_RELEASE_COUNT,
+        ],
+        "date_from": "2015-10-13",
+        "date_to": "2020-01-23",
+        "granularities": ["all"],
+        "exclude_inactive": False,
+        "account": 1,
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
+    )
+    assert response.status == 200, response.text()
+    body = FriendlyJson.loads((await response.read()).decode("utf-8"))
+    values = [v["values"] for v in body["calculated"][0]["values"]]
+    assert values == [[250, 49, 194, 186]]
 
 
 # TODO: fix response validation against the schema
