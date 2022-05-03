@@ -14,6 +14,7 @@ from urllib.parse import quote
 import aiohttp.web
 import aiosqlite
 import asyncpg
+from flogging import flogging
 import morcilla.core
 from morcilla.interfaces import ConnectionBackend, TransactionBackend
 import numpy as np
@@ -48,6 +49,7 @@ def _repr_instrumented_attribute(attr: InstrumentedAttribute) -> str:
 
 InstrumentedAttribute.__sentry_repr__ = _repr_instrumented_attribute
 
+flogging.trailing_dot_exceptions.add("asyncpg.pool")
 pdb_metrics_logger = logging.getLogger("%s.pdb" % metadata.__package__)
 
 
