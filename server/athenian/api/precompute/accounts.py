@@ -83,7 +83,10 @@ async def main(context: PrecomputeContext,
             finally:
                 if status == (0, 0):
                     status = os.wait()
-                failed += status[1] != 0
+                if status[1] != 0:
+                    failed += 1
+                    log.error("failed to precompute account %d: exit code %d",
+                              reposet.owner_id, status[1])
     log.info("failed: %d / %d", failed, len(reposets))
 
 
