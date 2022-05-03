@@ -493,10 +493,12 @@ class AthenianApp(especifico.AioHttpApp):
             await self._segment.close()
         if self._kms is not None:
             await self._kms.close()
-        if self._slack is not None and self._slack.session is not None:
-            close_event = create_aiohttp_closed_event(self._slack.session)
-            await self._slack.session.close()
-            await close_event.wait()
+        if self._slack is not None:
+            self._slack.session_future.cancel()
+            if self._slack.session is not None:
+                close_event = create_aiohttp_closed_event(self._slack.session)
+                await self._slack.session.close()
+                await close_event.wait()
         if self._mandrill is not None:
             await self._mandrill.close()
         for task in self._on_dbs_connected_callbacks:
