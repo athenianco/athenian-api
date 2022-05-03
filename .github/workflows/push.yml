@@ -299,9 +299,9 @@ jobs:
         export OVERRIDE_PDB=$PDB
         export OVERRIDE_RDB=$RDB
         PYTHONPATH=. PRECOMPUTED=0 godotenv -s python3 tests/gen_mock_db.py
-        godotenv -s coverage run --source athenian.api -m athenian.api.hacks.heat_cache --metadata-db=$MDB --state-db=$SDB --precomputed-db=$PDB --persistentdata-db=$RDB --memcached=0.0.0.0:11211
+        godotenv -s coverage run --source athenian.api -m athenian.api.precompute --metadata-db=$MDB --state-db=$SDB --precomputed-db=$PDB --persistentdata-db=$RDB --memcached=0.0.0.0:11211 accounts 1
         # the second run should not crash
-        godotenv -s python3 -m athenian.api.hacks.heat_cache --metadata-db=$MDB --state-db=$SDB --precomputed-db=$PDB --persistentdata-db=$RDB --memcached=0.0.0.0:11211
+        godotenv -s python3 -m athenian.api.precompute --metadata-db=$MDB --state-db=$SDB --precomputed-db=$PDB --persistentdata-db=$RDB --memcached=0.0.0.0:11211 accounts 1
         coverage xml
     - name: clear env
       working-directory: server
