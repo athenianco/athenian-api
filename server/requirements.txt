@@ -43,6 +43,6 @@ flogging==0.0.21
 unidecode==1.3.4
 pluralizer==1.1.0
 pyarrow==7.0.0
-email-validator==1.1.3
+email-validator==1.2.1
 croniter==1.3.4
 ariadne==0.15.1
