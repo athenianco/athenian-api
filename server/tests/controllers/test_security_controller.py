@@ -8,6 +8,7 @@ from athenian.api.models.state.models import UserToken
 from athenian.api.models.web import CreatedToken, ListedToken
 
 
+@pytest.mark.flaky(reruns=5, reruns_delay=1)
 async def test_create_token_auth(client, headers, app):
     body = {
         "account": 1,

@@ -182,6 +182,7 @@ def measure_db_overhead_and_retry(db: Union[morcilla.Database, Database],
     def wrapped_backend_connection() -> ConnectionBackend:
         connection = backend_connection()
         connection._retry_lock = asyncio.Lock()
+        direct_acquire = connection.acquire
 
         def measure_method_overhead_and_retry(func) -> callable:
             async def wrapped_measure_method_overhead_and_retry(*args, **kwargs):
@@ -209,8 +210,10 @@ def measure_db_overhead_and_retry(db: Union[morcilla.Database, Database],
                         try:
                             if need_acquire:
                                 log.warning("Reconnecting to %s", db.url)
-                                await connection.acquire()
+                                await direct_acquire()
                                 log.info("Connected to %s", db.url)
+                            if func == direct_acquire and need_acquire:
+                                return
                             return await func(*args, **kwargs)
                         except (OSError,
                                 asyncpg.PostgresConnectionError,
@@ -222,14 +225,20 @@ def measure_db_overhead_and_retry(db: Union[morcilla.Database, Database],
                                 raise e from None
                             log.warning("[%d] %s: %s", i + 1, type(e).__name__, e)
                             if need_acquire := isinstance(e, asyncpg.PostgresConnectionError):
-                                log.warning("Disconnecting from %s", db.url)
                                 try:
-                                    await connection.release()
-                                except Exception as e:
-                                    log.warning("connection.release() raised %s: %s",
-                                                type(e).__name__, e)
+                                    connection.raw_connection is not None  # noqa: B015
+                                except AssertionError:
+                                    # already disconnected
+                                    pass
                                 else:
-                                    log.info("Disconnected from %s", db.url)
+                                    log.warning("Disconnecting from %s", db.url)
+                                    try:
+                                        await connection.release()
+                                    except Exception as e:
+                                        log.warning("connection.release() raised %s: %s",
+                                                    type(e).__name__, e)
+                                    else:
+                                        log.info("Disconnected from %s", db.url)
                             await asyncio.sleep(wait_time)
                         finally:
                             if app is not None:
