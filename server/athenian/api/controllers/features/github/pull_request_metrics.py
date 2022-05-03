@@ -10,13 +10,14 @@ from athenian.api import metadata
 from athenian.api.controllers.features.metric import make_metric, Metric, MetricFloat, MetricInt, \
     MetricTimeDelta, T
 from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
-    BinnedHistogramCalculator, BinnedMetricCalculator, Counter, group_by_lines, \
-    HistogramCalculator, HistogramCalculatorEnsemble, make_register_metric, \
-    MedianMetricCalculator, MetricCalculator, MetricCalculatorEnsemble, RatioCalculator, \
-    SumMetricCalculator, WithoutQuantilesMixin
+    BinnedHistogramCalculator, BinnedMetricCalculator, calculate_logical_duplication_mask, \
+    Counter, group_by_lines, HistogramCalculator, HistogramCalculatorEnsemble, \
+    make_register_metric, MedianMetricCalculator, MetricCalculator, MetricCalculatorEnsemble, \
+    RatioCalculator, SumMetricCalculator, WithoutQuantilesMixin
 from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_inrange
 from athenian.api.controllers.miners.types import DeploymentConclusion, PRParticipants, \
     PullRequestFacts
+from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseSettings
 from athenian.api.models.web import PullRequestMetricID
 
 
@@ -88,6 +89,18 @@ def group_prs_by_participants(participants: List[PRParticipants],
                 log.warning("Unsupported participation kind: %s", name)
         groups.append(np.nonzero(group)[0])
     return groups
+
+
+def calculate_logical_prs_duplication_mask(
+        items: pd.DataFrame,
+        release_settings: ReleaseSettings,
+        logical_settings: LogicalRepositorySettings,
+) -> Optional[np.ndarray]:
+    """Assign indexes to PRs with the same logical settings for each logical repository."""
+    if not logical_settings.has_logical_prs():
+        return None
+    repos_column = items[PullRequestFacts.f.repository_full_name].values.astype("S", copy=False)
+    return calculate_logical_duplication_mask(repos_column, release_settings, logical_settings)
 
 
 class PullRequestBinnedMetricCalculator(BinnedMetricCalculator):

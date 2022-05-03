@@ -372,7 +372,7 @@ class LogicalDeploymentSettings(CommonLogicalSettingsMixin):
                 repos.add(repo)
                 title_regexps[repo] = re.compile(f"^({pattern})", re.MULTILINE)
             if obj_labels := obj.get("labels", {}):
-                self._labels_inv = obj_labels
+                self._labels_inv[repo] = obj_labels
                 repos.add(repo)
                 for label, values in obj_labels.items():
                     label_values = labels.setdefault(label, {})
@@ -394,6 +394,10 @@ class LogicalDeploymentSettings(CommonLogicalSettingsMixin):
                else {}),
             **({"labels": repo_labels} if (repo_labels := labels.get(r)) else {}),
         }) for r in sorted(self._repos - {self._origin})))
+
+    def title(self, repo: str) -> re.Pattern:
+        """Return the title regexp for the given logical repository."""
+        return self._title_regexps[repo]
 
     def labels(self, repo: str) -> Dict[str, List[str]]:
         """Return the label key values for the given logical repository."""
