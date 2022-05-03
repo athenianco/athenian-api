@@ -98,8 +98,10 @@ class PrecomputeContext:
             await self.mdb.disconnect()
             await self.pdb.disconnect()
             await self.rdb.disconnect()
-            if self.slack is not None and self.slack.session is not None:
-                await self.slack.session.close()
+            if self.slack is not None:
+                self.slack.session_future.cancel()
+                if self.slack.session is not None:
+                    await self.slack.session.close()
         except Exception as e:
             self.log.warning("failed to dispose the context: %s: %s", type(e).__name__, e)
             sentry_sdk.capture_exception(e)

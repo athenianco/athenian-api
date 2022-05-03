@@ -314,7 +314,7 @@ def create_slack(log: logging.Logger) -> Optional[SlackWebClient]:
             timeout=aiohttp.ClientTimeout(total=10),
         )
 
-    asyncio.ensure_future(set_slack_client_session())
+    slack_client.session_future = asyncio.ensure_future(set_slack_client_session())
 
     account_channel = os.getenv("SLACK_ACCOUNT_CHANNEL")
     install_channel = os.getenv("SLACK_INSTALL_CHANNEL")
