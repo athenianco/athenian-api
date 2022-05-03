@@ -49,6 +49,8 @@ async def main(context: PrecomputeContext,
         (time_to - timedelta(days=365 * 2)) if not os.getenv("CI") else no_time_from
     accounts = [int(p) for s in args.account for p in s.split()]
     reposets = await _get_reposets(context.sdb, accounts)
+    if isolate:
+        await context.close()
     context.log.info("Heating %d reposets", len(reposets))
     failed = 0
     log = context.log

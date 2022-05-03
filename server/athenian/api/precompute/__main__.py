@@ -101,13 +101,18 @@ def _execute_command(args: argparse.Namespace, log: logging.Logger) -> int:
         return await commands[args.command](context, args)
 
     async def async_entry() -> Union[int, Callable]:
+        context = None
         try:
-            result = await command(await PrecomputeContext.create(args, log))
+            context = await PrecomputeContext.create(args, log)
+            result = await command(context)
         except Exception as e:
             # warning so that we don't report in Sentry twice
             log.warning("unhandled error: %s: %s\n%s", type(e).__name__, e, traceback.format_exc())
             sentry_sdk.capture_exception(e)
             return 1
+        finally:
+            if context is not None:
+                await context.close()
         if result is not None:
             if callable(result):
                 return result
