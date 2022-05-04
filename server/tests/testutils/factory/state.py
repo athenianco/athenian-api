@@ -5,7 +5,7 @@ from typing import Any
 import factory
 
 from athenian.api.controllers.invitation_controller import _generate_account_secret
-from athenian.api.models.state.models import Account, LogicalRepository, RepositorySet
+from athenian.api.models.state.models import Account, LogicalRepository, RepositorySet, Team
 
 from .alchemy import SQLAlchemyModelFactory
 from .common import DEFAULT_ACCOUNT_ID
@@ -42,3 +42,14 @@ class RepositorySetFactory(SQLAlchemyModelFactory):
     created_at = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=50))
     updated_at = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=50))
     items = []
+
+
+class TeamFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = Team
+
+    id = factory.Sequence(lambda n: n)
+    owner_id = DEFAULT_ACCOUNT_ID
+    parent_id = None
+    name = factory.Sequence(lambda n: f"team-{n}")
+    members = []
