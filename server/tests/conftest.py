@@ -14,6 +14,7 @@ import tempfile
 import time
 import traceback
 from typing import Dict, List, Optional, Union
+import warnings
 
 from filelock import FileLock
 try:
@@ -24,6 +25,7 @@ except ImportError:
         def apply():
             pass
 import numpy as np
+import pandas as pd
 try:
     import pytest
 except ImportError:
@@ -75,6 +77,7 @@ if os.getenv("NEST_ASYNCIO"):
     nest_asyncio.apply()
 uvloop.install()
 np.seterr(all="raise")
+warnings.simplefilter(action="error", category=pd.errors.PerformanceWarning)
 patch_pandas()
 db_dir = Path(os.getenv("DB_DIR", os.path.dirname(__file__)))
 sdb_backup = tempfile.NamedTemporaryFile(prefix="athenian.api.state.", suffix=".sqlite")

@@ -245,9 +245,27 @@ class PullRequestMiner:
         toremove = self._dfs.prs.index.intersection(node_ids)
         if toremove.empty:
             return []
-        self._dfs.prs.drop(index=toremove, inplace=True)
-        for df in (self._dfs.deployments, self._dfs.releases):
-            df.drop(index=toremove, inplace=True, errors="ignore")
+
+        def consolidate_index(index: pd.Index) -> np.ndarray:
+            if index.empty:
+                return np.array([], dtype="S")
+            nodes = int_to_str(index.get_level_values(0).values)
+            repos = index.get_level_values(1).values.astype("S", copy=False)
+            return np.char.add(nodes, repos)
+
+        toremove_flat = consolidate_index(toremove)
+
+        def drop_df(df: pd.DataFrame) -> pd.DataFrame:
+            df_index = consolidate_index(df.index)
+            passed = np.flatnonzero(np.in1d(df_index, toremove_flat, invert=True))
+            if len(passed) == len(df):
+                return df
+            df.disable_consolidate()
+            return df.take(passed)
+
+        self._dfs.prs = drop_df(self._dfs.prs)
+        self._dfs.deployments = drop_df(self._dfs.deployments)
+        self._dfs.releases = drop_df(self._dfs.releases)
 
         return toremove.values
 
@@ -1352,7 +1370,7 @@ class PullRequestMiner:
         details = await read_sql_query(
             sql.select(cols)
             .where(sql.and_(DeploymentNotification.account_id == account,
-                            DeploymentNotification.name.in_(df.index.values))),
+                            DeploymentNotification.name.in_(df.index.unique()))),
             con=rdb, columns=cols, index=DeploymentNotification.name.name,
         )
         details.index.name = ghprd.deployment_name.name

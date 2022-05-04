@@ -126,6 +126,7 @@ class UnfreshPullRequestFactsFetcher:
         ) = await gather(*tasks, op="discover PRs")
         add_pdb_misses(pdb, "load_precomputed_done_facts_filters/ambiguous",
                        remove_ambiguous_prs(done_facts, ambiguous, matched_bys))
+        unique_unreleased_pr_node_ids = unreleased_prs.index.values
         unreleased_prs = split_logical_prs(
             unreleased_prs, unreleased_labels, repositories, logical_settings)
         unreleased_pr_node_ids = unreleased_prs.index.get_level_values(0).values
@@ -145,7 +146,7 @@ class UnfreshPullRequestFactsFetcher:
                 LabelFilter.empty(), matched_bys,
                 default_branches, release_settings, prefixer, account, pdb,
                 time_from=time_from, exclude_inactive=exclude_inactive),
-            miner.fetch_pr_deployments(unreleased_pr_node_ids, account, pdb, rdb),
+            miner.fetch_pr_deployments(unique_unreleased_pr_node_ids, account, pdb, rdb),
             done_deployments_task,
         ]
         if pr_jira_mapper is not None:
