@@ -8,7 +8,6 @@ from sqlalchemy.dialects.postgresql import JSONB
 
 from athenian.api.models import always_unequal, create_base
 
-
 Base = create_base()
 
 
@@ -284,3 +283,39 @@ class LogicalRepository(create_time_mixin(created_at=True, updated_at=True), Bas
     repository_id = Column(BigInteger(), nullable=False)
     prs = Column(JSON, nullable=False, default={}, server_default="{}")
     deployments = Column(JSON, nullable=False, default={}, server_default="{}")
+
+
+class Goal(create_time_mixin(created_at=True, updated_at=True), Base):
+    """Goal - A metric target for a team."""
+
+    __tablename__ = "goals"
+
+    id = Column(Integer(), primary_key=True)
+    account_id = Column(
+        Integer(),
+        ForeignKey("accounts.id", name="fk_goal_account"),
+        nullable=False,
+    )
+    template_id = Column(Integer(), nullable=False)
+    valid_from = Column(TIMESTAMP(timezone=True), nullable=False)
+    expires_at = Column(TIMESTAMP(timezone=True), nullable=False)
+
+
+class TeamGoal(create_time_mixin(created_at=True, updated_at=True), Base):
+    """A Goal applied to a Team, with a specific target."""
+
+    __tablename__ = "team_goals"
+
+    goal_id = Column(
+        BigInteger().with_variant(Integer(), "sqlite"),
+        ForeignKey("goals.id", name="fk_team_goal_goal", ondelete="CASCADE"),
+        nullable=False,
+        primary_key=True,
+    )
+    team_id = Column(
+        Integer(),
+        ForeignKey("teams.id", name="fk_team_goal_team", ondelete="CASCADE"),
+        nullable=False,
+        primary_key=True,
+    )
+    target = Column(JSON, nullable=False)
