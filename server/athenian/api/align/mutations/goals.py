@@ -4,9 +4,10 @@ from typing import Any, Dict, Tuple
 from ariadne import MutationType
 from graphql import GraphQLResolveInfo
 
-from athenian.api.align.goals.dbaccess import GoalCreationInfo, insert_goal
+from athenian.api.align.goals.dbaccess import delete_goal, GoalCreationInfo, insert_goal
 from athenian.api.align.goals.exceptions import GoalMutationError
 from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
+from athenian.api.align.models import GoalRemoveStatus
 from athenian.api.models.state.models import Goal, TeamGoal
 
 mutation = MutationType()
@@ -18,7 +19,7 @@ async def resolve_create_goal(
     info: GraphQLResolveInfo,
     accountId: int,
     input: Dict[str, Any],
-):
+) -> Dict[str, Any]:
     """Create a Goal."""
     creation_info = _parse_create_goal_input(input, accountId)
 
@@ -28,6 +29,21 @@ async def resolve_create_goal(
 
     # TODO: return the complete response
     return {"goal": {"id": new_goal_id}}
+
+
+@mutation.field("removeGoal")
+async def resolve_remove_goal(
+    _: Any,
+    info: GraphQLResolveInfo,
+    accountId: int,
+    id: int,
+) -> Dict[str, Any]:
+    """Remove a Goal and referring TeamGoal-s."""
+    async with info.context.sdb.connection() as sdb_conn:
+        async with sdb_conn.transaction():
+            await delete_goal(accountId, id, sdb_conn)
+    remove_status = GoalRemoveStatus(success=True)
+    return remove_status.to_dict()
 
 
 def _parse_create_goal_input(input: Dict[str, Any], account_id: int) -> GoalCreationInfo:

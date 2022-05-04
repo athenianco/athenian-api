@@ -5,7 +5,8 @@ from typing import Any
 import factory
 
 from athenian.api.controllers.invitation_controller import _generate_account_secret
-from athenian.api.models.state.models import Account, LogicalRepository, RepositorySet, Team
+from athenian.api.models.state.models import Account, Goal, LogicalRepository, RepositorySet, \
+    Team, TeamGoal
 
 from .alchemy import SQLAlchemyModelFactory
 from .common import DEFAULT_ACCOUNT_ID
@@ -53,3 +54,25 @@ class TeamFactory(SQLAlchemyModelFactory):
     parent_id = None
     name = factory.Sequence(lambda n: f"team-{n}")
     members = []
+
+
+class GoalFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = Goal
+
+    id = factory.Sequence(lambda n: n)
+    account_id = DEFAULT_ACCOUNT_ID
+    template_id = 1
+    valid_from = factory.LazyFunction(
+        lambda: datetime(2022, 1, 1).replace(tzinfo=timezone.utc),
+    )
+    expires_at = factory.LazyFunction(
+        lambda: datetime(2022, 4, 1).replace(tzinfo=timezone.utc),
+    )
+
+
+class TeamGoalFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = TeamGoal
+
+    target = 0

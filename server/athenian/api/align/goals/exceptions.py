@@ -7,11 +7,11 @@ from athenian.api.response import ResponseError
 class GoalMutationError(ResponseError):
     """An error during a goal mutation handling."""
 
-    def __init__(self, text):
+    def __init__(self, text, status_code=HTTPStatus.BAD_REQUEST):
         """Init the GoalMutationError."""
         wrapped_error = GenericError(
             type="/errors/align/GoalMutationError",
-            status=HTTPStatus.BAD_REQUEST,
+            status=status_code,
             detail=text,
             title="Goal mutation error",
         )
