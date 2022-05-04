@@ -24,7 +24,6 @@ from athenian.api.models.metadata.github import NodeCommit, NodeRepository, Orga
     PullRequest, PullRequestComment, PullRequestReview, PushCommit, Release, User
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
     GitHubRelease as PrecomputedRelease
-from athenian.api.models.state.models import Team
 from athenian.api.tracing import sentry_span
 
 
@@ -310,18 +309,12 @@ async def load_organization_members(account: int,
                                           .where(OrganizationMember.acc_id.in_(meta_ids)))
     ]
     log.info("Discovered %d organization members", len(user_ids))
-    user_rows, bots, team_bots = await gather(
+    user_rows, bots = await gather(
         mdb.fetch_all(select([User.node_id, User.name, User.login, User.html_url, User.email])
                       .where(and_(User.acc_id.in_(meta_ids),
                                   User.node_id.in_(user_ids)))),
         fetch_bots(account, meta_ids, mdb, sdb, cache),
-        sdb.fetch_val(select([Team.members]).where(and_(
-            Team.owner_id == account,
-            Team.name == Team.BOTS,
-        ))),
     )
-    if team_bots:
-        bots = bots.union(u.rsplit("/", 1)[1] for u in team_bots)
     log.info("Detailed %d GitHub users", len(user_rows))
     bot_ids = set()
     new_user_rows = []

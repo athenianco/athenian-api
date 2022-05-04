@@ -287,7 +287,7 @@ async def create_teams(account: int,
     if bot_team is not None:
         return num_teams, len(bot_team[Team.members.name])
     bots -= await fetch_bots.extra(mdb)
-    bots = prefixer.prefix_user_logins(bots)
+    bots = {prefixer.user_login_to_node.get(u) for u in bots} - {None}
     await sdb.execute(insert(Team).values(
         Team(id=account, name=Team.BOTS, owner_id=account, members=sorted(bots))
         .create_defaults().explode()))

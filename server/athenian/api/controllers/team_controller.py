@@ -17,7 +17,6 @@ from athenian.api.balancing import weight
 from athenian.api.controllers.account import copy_teams_as_needed, get_metadata_account_ids, \
     get_user_account_status_from_request
 from athenian.api.controllers.jira import load_mapped_jira_users
-from athenian.api.controllers.miners.github.user import mine_users
 from athenian.api.db import DatabaseLike
 from athenian.api.models.metadata.github import User
 from athenian.api.models.state.models import Team
@@ -40,7 +39,7 @@ async def create_team(request: AthenianWebRequest, body: dict) -> web.Response:
     name = _check_name(body.name)
     async with request.sdb.connection() as sdb_conn:
         meta_ids = await get_metadata_account_ids(body.account, sdb_conn, request.cache)
-        members = await _check_members(body.members, meta_ids, request.mdb)
+        members = await _resolve_members(body.members, meta_ids, request.mdb)
         await _check_parent(account, parent, sdb_conn)
         t = Team(owner_id=account, name=name, members=members, parent_id=parent).create_defaults()
         try:
@@ -144,7 +143,7 @@ async def update_team(request: AthenianWebRequest, id: int,
         if id == body.parent:
             raise ResponseError(BadRequestError(detail="Team cannot be a the parent of itself."))
         meta_ids = await get_metadata_account_ids(account, sdb_conn, request.cache)
-        members = await _check_members(body.members, meta_ids, request.mdb)
+        members = await _resolve_members(body.members, meta_ids, request.mdb)
         await _check_parent(account, body.parent, sdb_conn)
         await _check_parent_cycle(id, body.parent, sdb_conn)
         t = Team(
@@ -171,19 +170,20 @@ def _check_name(name: str) -> str:
     return name
 
 
-async def _check_members(members: List[str],
-                         meta_ids: Tuple[int, ...],
-                         mdb: DatabaseLike,
-                         ) -> List[str]:
+async def _resolve_members(members: List[str],
+                           meta_ids: Tuple[int, ...],
+                           mdb: DatabaseLike,
+                           ) -> List[int]:
     to_fetch = set()
     members = set(members)
     for m in members:
         if len(splitted := m.rsplit("/", 1)) == 2:
             to_fetch.add(splitted[1])
 
-    rows = await mdb.fetch_all(select([User.html_url])
+    rows = await mdb.fetch_all(select([User.html_url, User.node_id])
                                .where(and_(User.acc_id.in_(meta_ids),
-                                           User.login.in_(to_fetch))))
+                                           User.login.in_(to_fetch)))
+                               .order_by(User.node_id))
     exist = {r[0].split("://", 1)[1] for r in rows}
     invalid_members = sorted(members - exist)
 
@@ -191,7 +191,7 @@ async def _check_members(members: List[str],
         raise ResponseError(BadRequestError(
             detail="Invalid members of the team: %s" % ", ".join(invalid_members)))
 
-    return sorted(members)
+    return [r[1] for r in rows]
 
 
 async def _check_parent(account: int, parent_id: Optional[int], sdb: DatabaseLike) -> None:
@@ -216,31 +216,35 @@ async def _get_all_team_members(teams: Iterable[Mapping],
                                 meta_ids: Tuple[int, ...],
                                 mdb: morcilla.Database,
                                 sdb: morcilla.Database,
-                                cache: Optional[aiomcache.Client]) -> Dict[str, Contributor]:
-    all_members_prefixed = set(chain.from_iterable([t[Team.members.name] for t in teams]))
-    all_members = {m.rsplit("/", 1)[1]: m for m in all_members_prefixed}
-    user_by_login = {
-        u[User.login.name]: u for u in await mine_users(all_members, meta_ids, mdb, cache)
-    }
-    mapped_jira = await load_mapped_jira_users(
-        account, [u[User.node_id.name] for u in user_by_login.values()], sdb, mdb, cache)
+                                cache: Optional[aiomcache.Client],
+                                ) -> Dict[int, Contributor]:
+    all_members = set(chain.from_iterable([t[Team.members.name] for t in teams]))
+    user_rows, mapped_jira = await gather(
+        mdb.fetch_all(select([User]).where(and_(
+            User.acc_id.in_(meta_ids),
+            User.node_id.in_(all_members),
+        ))),
+        load_mapped_jira_users(account, all_members, sdb, mdb, cache),
+    )
+    user_by_node = {u[User.node_id.name]: u for u in user_rows}
     all_contributors = {}
+    missing = []
     for m in all_members:
         try:
-            ud = user_by_login[m]
+            ud = user_by_node[m]
         except KeyError:
-            login = all_members[m]
-            c = Contributor(login=login)
+            missing.append(m)
+            c = Contributor(login=str(m))
         else:
             login = ud[User.html_url.name].split("://", 1)[1]
             c = Contributor(login=login,
                             name=ud[User.name.name],
                             email=ud[User.email.name],
                             picture=ud[User.avatar_url.name],
-                            jira_user=mapped_jira.get(ud[User.node_id.name]))
-        all_contributors[login] = c
+                            jira_user=mapped_jira.get(m))
+        all_contributors[m] = c
 
-    if missing := all_members_prefixed - all_contributors.keys():
+    if missing:
         logging.getLogger("%s._get_all_team_members" % metadata.__package__).error(
             "Some users are missing in %s: %s", meta_ids, missing)
     return all_contributors

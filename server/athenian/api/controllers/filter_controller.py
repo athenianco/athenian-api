@@ -40,11 +40,13 @@ from athenian.api.controllers.miners.github.user import mine_user_avatars, UserA
 from athenian.api.controllers.miners.jira.issue import fetch_jira_issues_for_prs
 from athenian.api.controllers.miners.types import Deployment, DeploymentConclusion, \
     DeploymentFacts, PRParticipants, PRParticipationKind, PullRequestEvent, \
-    PullRequestJIRAIssueItem, PullRequestListItem, PullRequestStage, ReleaseFacts
+    PullRequestJIRAIssueItem, PullRequestListItem, PullRequestStage, ReleaseFacts, \
+    ReleaseParticipationKind
 from athenian.api.controllers.prefixer import Prefixer
-from athenian.api.controllers.release import extract_release_participants
 from athenian.api.controllers.reposet import resolve_repos
 from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseSettings, Settings
+from athenian.api.controllers.with_ import compile_developers, fetch_teams_map, \
+    resolve_withgroups, scan_for_teams
 from athenian.api.db import Database
 from athenian.api.models.metadata.github import PullRequest, PushCommit, Release, User
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
@@ -201,8 +203,18 @@ async def resolve_filter_prs_parameters(filt: FilterPullRequestsRequest,
         raise ResponseError(InvalidRequestError(
             detail="Either `events` or `stages` must be specified and be not empty.",
             pointer=".stages"))
-    participants = {PRParticipationKind[k.upper()]: {d.rsplit("/", 1)[1] for d in v}
-                    for k, v in (filt.with_ or {}).items() if v}
+    participants = await resolve_withgroups(
+        [filt.with_],
+        PRParticipationKind,
+        False,
+        filt.account,
+        None,
+        ".with",
+        prefixer,
+        request.sdb,
+        group_type=set,
+    )
+    participants = participants[0] if participants else {}
     settings = Settings.from_request(request, filt.account)
     release_settings, jira, account_bots = await gather(
         settings.list_release_matches(repos),
@@ -314,8 +326,14 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
         raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e))) from e
     time_from, time_to, repos, meta_ids, prefixer, _ = \
         await _common_filter_preprocess(filt, filt.in_, request)
-    with_author = [s.rsplit("/", 1)[1] for s in (filt.with_author or [])]
-    with_committer = [s.rsplit("/", 1)[1] for s in (filt.with_committer or [])]
+    teams = set()
+    scan_for_teams(filt.with_author, teams, ".with_author")
+    scan_for_teams(filt.with_committer, teams, ".with_committer")
+    teams_map = await fetch_teams_map(teams, filt.account, request.sdb)
+    with_author = compile_developers(
+        filt.with_author, teams_map, None, False, prefixer, ".with_author")
+    with_committer = compile_developers(
+        filt.with_committer, teams_map, None, False, prefixer, ".with_committer")
     log = logging.getLogger("filter_commits")
     commits = await extract_commits(
         FilterCommitsProperty(filt.property), time_from, time_to, repos,
@@ -398,15 +416,25 @@ async def filter_releases(request: AthenianWebRequest, body: dict) -> web.Respon
         raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e))) from e
     time_from, time_to, repos, meta_ids, prefixer, logical_settings = \
         await _common_filter_preprocess(filt, filt.in_, request, strip_prefix=False)
+    participants = await resolve_withgroups(
+        [filt.with_],
+        ReleaseParticipationKind,
+        True,
+        filt.account,
+        None,
+        ".with",
+        prefixer,
+        request.sdb,
+    )
+    participants = participants[0] if participants else {}
     stripped_repos = [r.split("/", 1)[1] for r in repos]
     settings = Settings.from_request(request, filt.account)
-    release_settings, jira_ids, (branches, default_branches), participants = \
+    release_settings, jira_ids, (branches, default_branches) = \
         await gather(
             settings.list_release_matches(repos),
             get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
             BranchMiner.extract_branches(
                 stripped_repos, prefixer, meta_ids, request.mdb, request.cache),
-            extract_release_participants(filt.with_, prefixer),
     )
     releases, avatars, _, deployments = await mine_releases(
         repos=stripped_repos,
@@ -717,8 +745,13 @@ async def filter_code_checks(request: AthenianWebRequest, body: dict) -> web.Res
         _common_filter_preprocess(filt, filt.in_, request, strip_prefix=True),
         get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
     )
+    teams = set()
+    scan_for_teams(filt.triggered_by, teams, ".triggered_by")
+    teams_map = await fetch_teams_map(teams, filt.account, request.sdb)
+    triggered_by = compile_developers(
+        filt.triggered_by, teams_map, None, False, prefixer, ".triggered_by")
     timeline, check_runs = await filter_check_runs(
-        time_from, time_to, repos, {d.rsplit("/", 1)[1] for d in (filt.triggered_by or [])},
+        time_from, time_to, repos, triggered_by,
         LabelFilter.from_iterables(filt.labels_include, filt.labels_exclude),
         JIRAFilter.from_web(filt.jira, jira_ids), filt.quantiles or [0, 1],
         logical_settings, meta_ids, request.mdb, request.cache)
@@ -752,13 +785,22 @@ async def filter_deployments(request: AthenianWebRequest, body: dict) -> web.Res
         get_jira_installation_or_none(filt.account, request.sdb, request.mdb, request.cache),
     )
     repos = [r.split("/", 1)[1] for r in repos]
+    participants = await resolve_withgroups(
+        [filt.with_],
+        ReleaseParticipationKind,
+        True,
+        filt.account,
+        None,
+        ".with",
+        prefixer,
+        request.sdb,
+    )
+    participants = participants[0] if participants else {}
     settings = Settings.from_request(request, filt.account)
     # all the repos, because we don't know what else is released in the matched deployments
-    release_settings, (branches, default_branches), \
-        participants = await gather(
+    release_settings, (branches, default_branches) = await gather(
         settings.list_release_matches(),
         BranchMiner.extract_branches(None, prefixer, meta_ids, request.mdb, request.cache),
-        extract_release_participants(filt.with_, prefixer),
     )
     deployments, people = await mine_deployments(
         repositories=repos,

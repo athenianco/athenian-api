@@ -412,7 +412,7 @@ async def test_calc_metrics_prs_averages(client, headers, with_bots, values, sdb
         await sdb.execute(insert(Team).values(Team(
             owner_id=1,
             name=Team.BOTS,
-            members=["github.com/mcuadros"],
+            members=[39789],
         ).create_defaults().explode()))
     body = {
         "for": [

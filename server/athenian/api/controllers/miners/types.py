@@ -36,7 +36,7 @@ class ReleaseParticipationKind(IntEnum):
     RELEASER = auto()
 
 
-ReleaseParticipants = Mapping[ReleaseParticipationKind, List[int]]
+ReleaseParticipants = Mapping[ReleaseParticipationKind, Sequence[int]]
 
 
 class Property(IntEnum):

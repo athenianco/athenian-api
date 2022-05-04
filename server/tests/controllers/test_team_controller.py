@@ -25,7 +25,7 @@ async def test_create_team_smoke(client, headers, sdb, account, disable_default_
     team = await sdb.fetch_one(select([Team]).where(Team.id == json.loads(rbody)["id"]))
     _test_same_team(team, {
         "id": 1,
-        "members": ["github.com/se7entyse7en"],
+        "members": [51],
         "name": "Engineering",
         "owner_id": account,
         "parent_id": None,
@@ -42,7 +42,7 @@ async def test_create_team_smoke(client, headers, sdb, account, disable_default_
     team = await sdb.fetch_one(select([Team]).where(Team.id == json.loads(rbody)["id"]))
     _test_same_team(team, {
         "id": 2,
-        "members": ["github.com/vmarkovtsev"],
+        "members": [40020],
         "name": "Management",
         "owner_id": account,
         "parent_id": 1,
@@ -63,7 +63,7 @@ async def test_create_team_bot(client, headers, sdb, disable_default_user):
     team = await sdb.fetch_one(select([Team]).where(Team.id == json.loads(rbody)["id"]))
     _test_same_team(team, {
         "id": 1,
-        "members": ["github.com/apps/dependabot"],
+        "members": [17019778],
         "name": "Engineering",
         "owner_id": 1,
         "parent_id": None,
@@ -199,7 +199,7 @@ async def test_create_team_same_name(client, headers, sdb, disable_default_user)
     assert len(teams) == 1
     _test_same_team(teams[0], {
         "id": 1,
-        "members": ["github.com/se7entyse7en"],
+        "members": [51],
         "name": "Engineering",
         "owner_id": 1,
         "parent_id": None,
@@ -211,8 +211,8 @@ async def test_create_team_same_name(client, headers, sdb, disable_default_user)
     [
         [],
         [
-            {"owner_id": 1, "name": "Team 1", "members": ["github.com/se7entyse7en"]},
-            {"owner_id": 1, "name": "Team 2", "members": ["github.com/vmarkovtsev"],
+            {"owner_id": 1, "name": "Team 1", "members": [51]},
+            {"owner_id": 1, "name": "Team 2", "members": [40020],
              "parent_id": 1},
         ],
     ],
@@ -311,7 +311,7 @@ async def test_resync_teams_smoke(client, headers, sdb, disable_default_user):
     assert teams.keys() == {
         "team", "engineering", "business", "operations", "product", "admin", "automation",
     }
-    assert [m.login for m in teams["product"].members] == ["github.com/eiso", "github.com/warenlg"]
+    assert [m.login for m in teams["product"].members] == ["github.com/warenlg", "github.com/eiso"]
 
 
 async def test_resync_teams_default_user(client, headers):
@@ -339,7 +339,7 @@ async def test_resync_teams_regular_user(client, headers, disable_default_user):
 @pytest.mark.app_validate_responses(False)
 async def test_update_team_smoke(client, headers, sdb, disable_default_user):
     await sdb.execute(insert(Team).values(Team(
-        owner_id=1, name="Test", members=["github.com/vmarkovtsev"],
+        owner_id=1, name="Test", members=[40020],
     ).create_defaults().explode()))
     body = TeamCreateRequest(1, "Engineering", ["github.com/se7entyse7en"]).to_dict()
     response = await client.request(
@@ -355,7 +355,7 @@ async def test_update_team_smoke(client, headers, sdb, disable_default_user):
     assert response.status == 200, "Response body is : " + rbody
     team = await sdb.fetch_one(select([Team]).where(Team.id == 2))
     assert team[Team.name.name] == "Dream"
-    assert team[Team.members.name] == ["github.com/warenlg"]
+    assert team[Team.members.name] == [29]
     assert team[Team.parent_id.name] == 1
 
 
@@ -499,7 +499,7 @@ async def test_get_team_smoke(client, headers, sdb, vadim_id_mapping):
     await sdb.execute(insert(Team).values(Team(
         owner_id=1,
         name="Engineering",
-        members=["github.com/vmarkovtsev", "github.com/mcuadros"],
+        members=[40020, 39789],
     ).create_defaults().explode()))
     response = await client.request(
         method="GET", path="/v1/team/1", headers=headers, json={},

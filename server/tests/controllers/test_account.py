@@ -59,7 +59,7 @@ async def test_copy_teams_as_needed(sdb, mdb):
     assert loaded_teams.keys() == {
         "team", "engineering", "business", "operations", "product", "admin", "automation",
     }
-    assert loaded_teams["product"][Team.members.name] == ["github.com/eiso", "github.com/warenlg"]
+    assert loaded_teams["product"][Team.members.name] == [29, 39936]
     assert loaded_teams["product"][Team.parent_id.name] == 1
     created_teams, n = await copy_teams_as_needed(1, (6366825,), sdb, mdb, None)
     assert created_teams == []
