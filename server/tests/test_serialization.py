@@ -58,6 +58,11 @@ def test_deserialize_datatime_custom_bounds() -> None:
         deserialize_datetime("2022-01-30T05:00:00", max_future_delta=timedelta(days=10))
 
 
+def test_serialize_date() -> None:
+    obj = date(1984, 5, 1)
+    assert FriendlyJson.dumps(obj) == '"1984-05-01"'
+
+
 def test_serialize_datetime() -> None:
     obj = [
         pd.Timestamp(0, tzinfo=timezone.utc),
