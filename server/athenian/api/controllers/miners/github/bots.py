@@ -9,7 +9,7 @@ from sqlalchemy import and_, select
 
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached, middle_term_exptime, short_term_exptime
-from athenian.api.models.metadata.github import Bot, ExtraBot
+from athenian.api.models.metadata.github import Bot, ExtraBot, User
 from athenian.api.models.state.models import Team
 
 
@@ -70,8 +70,12 @@ class Bots:
             Team.owner_id == account,
             Team.name == Team.BOTS,
         )))) or []
+        team_logins = await mdb.fetch_all(select([User.login]).where(and_(
+            User.acc_id.in_(meta_ids),
+            User.node_id.in_(team),
+        )))
         bots = frozenset(self._bots[0].union(
-            (u.rsplit("/", 1)[1] for u in team),
+            (r[0] for r in team_logins),
             *(self._bots.get(mid, set()) for mid in meta_ids),
         ))
         return bots

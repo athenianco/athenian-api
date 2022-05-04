@@ -21,7 +21,6 @@ from sqlalchemy import and_, func, insert, select
 from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached, max_exptime, middle_term_exptime
-from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.db import Connection, Database, DatabaseLike
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import Account as MetadataAccount, AccountRepository, \
@@ -308,7 +307,6 @@ async def copy_teams_as_needed(account: int,
     :return: <list of created teams if nothing exists>, <final number of teams>.
     """
     log = logging.getLogger("%s.create_teams_as_needed" % metadata.__package__)
-    prefixer = await Prefixer.load(meta_ids, mdb, cache)
     existing = await sdb.fetch_val(select([func.count(StateTeam.id)])
                                    .where(and_(StateTeam.owner_id == account,
                                                StateTeam.name != StateTeam.BOTS)))
@@ -343,11 +341,7 @@ async def copy_teams_as_needed(account: int,
         .where(and_(TeamMember.parent_id.in_(teams), TeamMember.acc_id.in_(meta_ids))))
     members = defaultdict(list)
     for row in member_rows:
-        try:
-            members[row[TeamMember.parent_id.name]].append(
-                prefixer.user_node_to_prefixed_login[row[TeamMember.child_id.name]])
-        except KeyError:
-            log.error("Could not resolve user %s", row[TeamMember.child_id.name])
+        members[row[TeamMember.parent_id.name]].append(row[TeamMember.child_id.name])
     db_ids = {}
     created_teams = []
     for node_id in reversed(list(nx.topological_sort(dig))):

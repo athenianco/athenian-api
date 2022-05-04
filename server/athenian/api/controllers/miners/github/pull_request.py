@@ -2084,7 +2084,8 @@ class PullRequestFactsMiner:
             pr.review_requests[PullRequestReviewRequest.created_at.name].values,
             review_submitted_ats,
             comment_created_ats,
-        ]).astype(self.ts_dtype, copy=False).astype("datetime64[D]")
+        ], casting="unsafe",
+        ).astype(self.ts_dtype, copy=False).astype("datetime64[D]")
         activity_days = np.unique(
             activity_days[activity_days == activity_days],
         ).astype(self.ts_dtype, copy=False)

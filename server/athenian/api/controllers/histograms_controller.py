@@ -35,10 +35,8 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
     settings = Settings.from_request(request, filt.account)
     logical_settings = await settings.list_logical_repositories(prefixer)
-
     filters, repos = await compile_filters_prs(
-        filt.for_, request, filt.account, meta_ids, prefixer, logical_settings,
-    )
+        filt.for_, request, filt.account, meta_ids, prefixer, logical_settings)
     time_from, time_to = filt.resolve_time_from_and_to()
     release_settings, (branches, default_branches), account_bots, calculators = await gather(
         Settings.from_request(request, filt.account).list_release_matches(repos),
@@ -115,9 +113,8 @@ async def calc_histogram_code_checks(request: AthenianWebRequest, body: dict) ->
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
     settings = Settings.from_request(request, filt.account)
     logical_settings = await settings.list_logical_repositories(prefixer)
-
     filters = await compile_filters_checks(
-        filt.for_, request, filt.account, meta_ids, logical_settings,
+        filt.for_, request, filt.account, meta_ids, prefixer, logical_settings,
     )
     time_from, time_to = filt.resolve_time_from_and_to()
     calculators = await get_calculators_for_request(
