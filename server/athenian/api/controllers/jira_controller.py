@@ -72,12 +72,9 @@ async def filter_jira_stuff(request: AthenianWebRequest, body: dict) -> web.Resp
         prefixer = await _collect_ids(
             filt.account, request, request.sdb, request.mdb, request.cache)
     if filt.projects is not None:
-        jira_ids = JIRAConfig(
-            jira_ids.acc_id,
-            list(jira_ids.projects.keys() & (
-                await resolve_projects(filt.projects, jira_ids.acc_id, request.mdb))),
-            jira_ids.epics,
-        )
+        projects = await resolve_projects(filt.projects, jira_ids.acc_id, request.mdb)
+        projects = {k: projects[k] for k in jira_ids.projects if k in projects}
+        jira_ids = JIRAConfig(jira_ids.acc_id, projects, jira_ids.epics)
     if filt.date_from is None or filt.date_to is None:
         if (filt.date_from is None) != (filt.date_to is None):
             raise ResponseError(InvalidRequestError(
@@ -213,10 +210,11 @@ async def _epic_flow(return_: Set[str],
     issue_by_id = {}
     issue_type_ids = {}
     children_by_type = defaultdict(list)
+    epics_by_type = defaultdict(list)
     now = datetime.utcnow()
     for epic_id, project_id, epic_key, epic_title, epic_created, epic_updated, epic_prs_began,\
         epic_work_began, epic_prs_released, epic_resolved, epic_reporter, epic_assignee, \
-        epic_priority, epic_status, epic_prs, epic_comments, epic_url in zip(
+        epic_priority, epic_status, epic_type, epic_prs, epic_comments, epic_url in zip(
             epics_df.index.values, *(epics_df[column].values for column in (
             Issue.project_id.name,
             Issue.key.name,
@@ -231,6 +229,7 @@ async def _epic_flow(return_: Set[str],
             Issue.assignee_display_name.name,
             Issue.priority_name.name,
             Issue.status.name,
+            Issue.type_id.name,
             ISSUE_PRS_COUNT,
             Issue.comments_count.name,
             Issue.url.name,
@@ -251,11 +250,14 @@ async def _epic_flow(return_: Set[str],
             comments=epic_comments,
             priority=epic_priority,
             status=epic_status,
+            type=epic_type,
             prs=epic_prs,
             url=epic_url,
         ))
+        epics_by_type[(project_id, epic_type)].append(epic)
         children_indexes = epic_children_map.get(epic_id, [])
         project_type_ids = issue_type_ids.setdefault(project_id, set())
+        project_type_ids.add(epic_type)
         for child_id, child_key, child_title, child_created, child_updated, child_prs_began, \
             child_work_began, child_prs_released, child_resolved, child_comments, child_reporter, \
             child_assignee, child_priority, child_status, child_prs, child_type, child_url \
@@ -361,7 +363,10 @@ async def _epic_flow(return_: Set[str],
         log.error("issues are parents of children outside of the epics: %s", invalid_parent_id)
     for row in types:
         name = row[IssueType.name.name]
-        for child in children_by_type[(row[IssueType.project_id.name], row[IssueType.id.name])]:
+        key = row[IssueType.project_id.name], row[IssueType.id.name]
+        for epic in epics_by_type.get(key, []):
+            epic.type = name
+        for child in children_by_type.get(key, []):
             child.type = name
     return epics, priorities, statuses
 
@@ -676,6 +681,7 @@ async def _issue_flow(return_: Set[str],
                                                row[IssueType.id.name])],
                       project=row[IssueType.project_id.name],
                       is_subtask=row[IssueType.is_subtask.name],
+                      is_epic=row[IssueType.is_epic.name],
                       normalized_name=row[IssueType.normalized_name.name])
         for row in issue_types] or None
     if JIRAFilterReturn.LABELS in return_:
@@ -822,6 +828,7 @@ async def _fetch_types(issue_type_projects: Mapping[str, Collection[str]],
             IssueType.name, IssueType.normalized_name,
             IssueType.id, IssueType.project_id,
             IssueType.icon_url, IssueType.is_subtask,
+            IssueType.is_epic,
         ]
     queries = [
         select(columns)
@@ -895,12 +902,9 @@ async def _calc_jira_entry(request: AthenianWebRequest,
         await _collect_ids(
             filt.account, request, request.sdb, request.mdb, request.cache)
     if filt.projects is not None:
-        jira_ids = JIRAConfig(
-            jira_ids.acc_id,
-            list(jira_ids.projects.keys() & (
-                await resolve_projects(filt.projects, jira_ids.acc_id, request.mdb))),
-            jira_ids.epics,
-        )
+        projects = await resolve_projects(filt.projects, jira_ids.acc_id, request.mdb)
+        projects = {k: projects[k] for k in jira_ids.projects if k in projects}
+        jira_ids = JIRAConfig(jira_ids.acc_id, projects, jira_ids.epics)
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, getattr(filt, "granularities", ["all"]), filt.timezone)
     reporters = list(set(chain.from_iterable(

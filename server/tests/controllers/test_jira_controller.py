@@ -107,6 +107,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
                      lead_time=timedelta(0), life_time=timedelta(days=181, seconds=61141),
                      reporter="Lou Marvin Caraig", assignee="Waren Long", comments=0,
                      priority="Medium", status="Done", prs=0, project="10003", children=[],
+                     type="Epic",
                      url="https://athenianco.atlassian.net/browse/ENG-1"),
             JIRAEpic(id="DEV-70", title="Show the installation progress in the waiting page",
                      created=datetime(2020, 1, 22, 16, 57, 10, 253),
@@ -117,7 +118,7 @@ async def test_filter_jira_return(client, headers, return_, checked):
                      life_time=timedelta(days=173, seconds=2928),
                      reporter="Lou Marvin Caraig", assignee="David Pordomingo",
                      url="https://athenianco.atlassian.net/browse/DEV-70",
-                     comments=8, priority="Low", status="Released",
+                     comments=8, priority="Low", status="Released", type="Epic",
                      prs=0, project="10009", children=[
                          JIRAEpicChild(
                              id="DEV-183",
@@ -187,24 +188,24 @@ async def test_filter_jira_return(client, headers, return_, checked):
     if "issue_types" in checked:
         assert model.issue_types == [
             JIRAIssueType(name="Design document", count=10, project="10003", is_subtask=False,
-                          normalized_name="designdocument",
+                          normalized_name="designdocument", is_epic=False,
                           image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10322&avatarType=issuetype"),  # noqa
             JIRAIssueType(name="Epic", count=1, project="10003", is_subtask=False,
-                          normalized_name="epic",
+                          normalized_name="epic", is_epic=True,
                           image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10307&avatarType=issuetype"),  # noqa
-            JIRAIssueType(name="Epic", count=1,
+            JIRAIssueType(name="Epic", count=1, is_epic=True,
                           image="https://athenianco.atlassian.net/images/icons/issuetypes/epic.svg",  # noqa
                           project="10009", is_subtask=False, normalized_name="epic"),
             JIRAIssueType(name="Story", count=49, project="10003", is_subtask=False,
-                          normalized_name="story",
+                          normalized_name="story", is_epic=False,
                           image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10315&avatarType=issuetype"),  # noqa
             JIRAIssueType(name="Subtask", count=98, project="10003", is_subtask=True,
-                          normalized_name="subtask",
+                          normalized_name="subtask", is_epic=False,
                           image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10316&avatarType=issuetype"),  # noqa
             JIRAIssueType(name="Task", count=4, project="10003", is_subtask=False,
-                          normalized_name="task",
+                          normalized_name="task", is_epic=False,
                           image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10318&avatarType=issuetype"),  # noqa
-            JIRAIssueType(name="Task", count=5,
+            JIRAIssueType(name="Task", count=5, is_epic=False,
                           image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10318&avatarType=issuetype",  # noqa
                           project="10009", is_subtask=False, normalized_name="task"),
         ]
@@ -371,60 +372,60 @@ async def test_filter_jira_epics_deleted(client, headers, ikey, mdb_rw):
 @pytest.mark.app_validate_responses(False)
 @pytest.mark.parametrize("exclude_inactive, labels, epics, types, users, priorities", [
     [False, 32, 13, [
-        JIRAIssueType(name="Bug", count=2,
+        JIRAIssueType(name="Bug", count=2, is_epic=False,
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10303&avatarType=issuetype",  # noqa
                       project="10003", is_subtask=False, normalized_name="bug"),
         JIRAIssueType(name="Bug", count=88, project="10009", is_subtask=False,
-                      normalized_name="bug",
+                      normalized_name="bug", is_epic=False,
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10303&avatarType=issuetype"),  # noqa
         JIRAIssueType(name="Design Document", count=4, project="10009", is_subtask=False,
-                      normalized_name="designdocument",
+                      normalized_name="designdocument", is_epic=False,
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10322&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Epic", count=2,
+        JIRAIssueType(name="Epic", count=2, is_epic=True,
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10307&avatarType=issuetype",  # noqa
                       project="10003", is_subtask=False, normalized_name="epic"),
         JIRAIssueType(name="Epic", count=11, project="10009", is_subtask=False,
-                      normalized_name="epic",
+                      normalized_name="epic", is_epic=True,
                       image="https://athenianco.atlassian.net/images/icons/issuetypes/epic.svg"),
         JIRAIssueType(name="Incident", count=2, project="10009", is_subtask=False,
-                      normalized_name="incident",
+                      normalized_name="incident", is_epic=False,
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10304&avatarType=issuetype"),  # noqa
         JIRAIssueType(name="Story", count=25, project="10009", is_subtask=False,
-                      normalized_name="story",
+                      normalized_name="story", is_epic=False,
                       image="https://athenianco.atlassian.net/images/icons/issuetypes/story.svg"),
         JIRAIssueType(name="Subtask", count=1, project="10003", is_subtask=True,
-                      normalized_name="subtask",
+                      normalized_name="subtask", is_epic=False,
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10316&avatarType=issuetype"),  # noqa
         JIRAIssueType(name="Sub-task", count=20, project="10009", is_subtask=True,
-                      normalized_name="subtask",
+                      normalized_name="subtask", is_epic=False,
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10316&avatarType=issuetype"),  # noqa
         JIRAIssueType(name="Task", count=166, project="10009", is_subtask=False,
-                      normalized_name="task",
+                      normalized_name="task", is_epic=False,
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10318&avatarType=issuetype")],  # noqa
      14, 6],
     [True, 31, 11, [
-        JIRAIssueType(name="Bug", count=1,
+        JIRAIssueType(name="Bug", count=1, is_epic=False,
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10303&avatarType=issuetype",  # noqa
                       project="10003", is_subtask=False, normalized_name="bug"),
         JIRAIssueType(name="Bug", count=78, project="10009", is_subtask=False,
-                      normalized_name="bug",
+                      normalized_name="bug", is_epic=False,
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10303&avatarType=issuetype"),  # noqa
         JIRAIssueType(name="Design Document", count=1, project="10009", is_subtask=False,
-                      normalized_name="designdocument",
+                      normalized_name="designdocument", is_epic=False,
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10322&avatarType=issuetype"),  # noqa
         JIRAIssueType(name="Epic", count=11, project="10009", is_subtask=False,
-                      normalized_name="epic",
+                      normalized_name="epic", is_epic=True,
                       image="https://athenianco.atlassian.net/images/icons/issuetypes/epic.svg"),
         JIRAIssueType(name="Incident", count=2, project="10009", is_subtask=False,
-                      normalized_name="incident",
+                      normalized_name="incident", is_epic=False,
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10304&avatarType=issuetype"),  # noqa
         JIRAIssueType(name="Story", count=13, project="10009", is_subtask=False,
-                      normalized_name="story",
+                      normalized_name="story", is_epic=False,
                       image="https://athenianco.atlassian.net/images/icons/issuetypes/story.svg"),
         JIRAIssueType(name="Sub-task", count=20, project="10009", is_subtask=True,
-                      normalized_name="subtask",
+                      normalized_name="subtask", is_epic=False,
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10316&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Task", count=128,
+        JIRAIssueType(name="Task", count=128, is_epic=False,
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10318&avatarType=issuetype",  # noqa
                       project="10009", is_subtask=False, normalized_name="task")],
      12, 6],
@@ -520,25 +521,25 @@ def _check_filter_jira_no_dev_project(model: FilteredJIRAStuff) -> None:
                  resolved=datetime(2020, 6, 1, 7, 19, 0, 335),
                  lead_time=timedelta(0),
                  life_time=timedelta(days=181, seconds=61141),
-                 reporter="Lou Marvin Caraig", assignee="Waren Long",
+                 reporter="Lou Marvin Caraig", assignee="Waren Long", type="Epic",
                  comments=0, priority="Medium", status="Done", prs=0, project="10003",
                  children=[], url="https://athenianco.atlassian.net/browse/ENG-1"),
     ]
     assert model.issue_types == [
         JIRAIssueType(name="Design document", count=10, project="10003", is_subtask=False,
-                      normalized_name="designdocument",
+                      normalized_name="designdocument", is_epic=False,
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10322&avatarType=issuetype"),  # noqa
         JIRAIssueType(name="Epic", count=1, project="10003", is_subtask=False,
-                      normalized_name="epic",
+                      normalized_name="epic", is_epic=True,
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10307&avatarType=issuetype"),  # noqa
         JIRAIssueType(name="Story", count=49, project="10003", is_subtask=False,
-                      normalized_name="story",
+                      normalized_name="story", is_epic=False,
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10315&avatarType=issuetype"),  # noqa
         JIRAIssueType(name="Subtask", count=98, project="10003", is_subtask=True,
-                      normalized_name="subtask",
+                      normalized_name="subtask", is_epic=False,
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10316&avatarType=issuetype"),  # noqa
         JIRAIssueType(name="Task", count=4, project="10003", is_subtask=False,
-                      normalized_name="task",
+                      normalized_name="task", is_epic=False,
                       image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10318&avatarType=issuetype"),  # noqa
     ]
 

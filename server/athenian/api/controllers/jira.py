@@ -11,7 +11,7 @@ from names_matcher import NamesMatcher
 import numpy as np
 from pluralizer import Pluralizer
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
-from sqlalchemy import and_, func, insert, join, select
+from sqlalchemy import and_, func, insert, select
 from unidecode import unidecode
 
 from athenian.api import metadata
@@ -19,7 +19,8 @@ from athenian.api.async_utils import gather
 from athenian.api.cache import cached, CancelCache, max_exptime
 from athenian.api.controllers.miners.github.contributors import load_organization_members
 from athenian.api.db import DatabaseLike
-from athenian.api.models.metadata.jira import Epic, Issue, Progress, Project, User as JIRAUser
+from athenian.api.models.metadata.jira import IssueType, Progress, Project, \
+    User as JIRAUser
 from athenian.api.models.state.models import AccountJiraInstallation, JIRAProjectSetting, \
     MappedJIRAIdentity
 from athenian.api.models.web import InstallationProgress, NoSourceDataError, TableFetchingProgress
@@ -100,12 +101,8 @@ async def get_jira_installation(account: int,
                       .where(and_(JIRAProjectSetting.account_id == account,
                                   JIRAProjectSetting.enabled.is_(False)))),
         mdb.fetch_all(
-            select([Issue.project_id, Issue.type])
-            .select_from(join(Epic, Issue, and_(Epic.acc_id == Issue.acc_id,
-                                                Epic.id == Issue.id),
-                              isouter=True))
-            .where(Epic.acc_id == jira_id)
-            .distinct(),
+            select([IssueType.project_id, IssueType.name])
+            .where(and_(IssueType.acc_id == jira_id, IssueType.is_epic)),
         ),
         op="load JIRA projects")
     disabled = {r[0] for r in disabled}
@@ -113,7 +110,8 @@ async def get_jira_installation(account: int,
     epics = {}
     for row in epic_rows:
         try:
-            epics.setdefault(projects[row[Issue.project_id.name]], []).append(row[Issue.type.name])
+            epics.setdefault(projects[row[IssueType.project_id.name]], []).append(
+                row[IssueType.name.name])
         except KeyError:
             # disabled project
             continue
@@ -180,12 +178,12 @@ async def fetch_jira_installation_progress(account: int,
 async def resolve_projects(keys: Iterable[str],
                            jira_acc: int,
                            mdb: DatabaseLike,
-                           ) -> Set[str]:
+                           ) -> Dict[str, str]:
     """Lookup JIRA project IDs by their keys."""
-    rows = await mdb.fetch_all(select([Project.id])
+    rows = await mdb.fetch_all(select([Project.id, Project.key])
                                .where(and_(Project.acc_id == jira_acc,
                                            Project.key.in_(keys))))
-    return {r[0] for r in rows}
+    return {r[0]: r[1] for r in rows}
 
 
 @sentry_span
