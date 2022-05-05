@@ -831,7 +831,7 @@ def group_to_indexes(items: pd.DataFrame,
     deduped_indexes = np.empty_like(indexes)
     deduped_indexes_flat = deduped_indexes.ravel()
     key_arr = items[deduplicate_key].values
-    if deduplicate_mask is not None:
+    if deduplicate_mask is not None and len(key_arr):
         key_arr = int_to_str(key_arr, deduplicate_mask)
     for i, group in enumerate(indexes.ravel()):
         _, group_indexes = np.unique(key_arr[group], return_index=True)
