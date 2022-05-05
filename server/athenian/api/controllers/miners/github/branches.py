@@ -29,7 +29,10 @@ class BranchMiner:
         exptime=60 * 60,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda repos, **_: (",".join(sorted(repos if repos is not None else [])),),
+        key=lambda meta_ids, repos, **_: (
+            ",".join(map(str, meta_ids)),
+            ",".join(sorted(repos if repos is not None else [])),
+        ),
     )
     async def extract_branches(cls,
                                repos: Optional[Iterable[str]],
