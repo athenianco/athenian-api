@@ -193,6 +193,11 @@ def _deserialize_dict(data: dict, boxed_type, path: str) -> dict:
     return {k: _deserialize(v, boxed_type, f"{path}.{k}") for k, v in data.items()}
 
 
+def serialize_date(d: date) -> str:
+    """Serialize a date object into a string."""
+    return d.isoformat()
+
+
 class FriendlyJson:
     """Allows to serialize datetime.datetime and datetime.date to JSON."""
 
@@ -225,7 +230,7 @@ class FriendlyJson:
                 "all timestamps must be UTC: %s" % obj
             return obj.strftime("%Y-%m-%dT%H:%M:%SZ")  # RFC3339
         if isinstance(obj, date):
-            return obj.strftime("%Y-%m-%d")
+            return serialize_date(obj)
         if isinstance(obj, np.integer):
             return int(obj)
         if isinstance(obj, np.floating):
