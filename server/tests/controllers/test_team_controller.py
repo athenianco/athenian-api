@@ -137,7 +137,7 @@ async def test_create_team_wrong_parent(client, headers, sdb, disable_default_us
     assert response.status == 400, "Response body is : " + rbody
 
     await sdb.execute(insert(Team).values(Team(
-        owner_id=3, name="Test", members=["github.com/vmarkovtsev"],
+        owner_id=3, name="Test", members=[40020],
     ).create_defaults().explode()))
     response = await client.request(
         method="POST", path="/v1/team/create", headers=headers, json=body,
@@ -361,7 +361,7 @@ async def test_update_team_smoke(client, headers, sdb, disable_default_user):
 
 async def test_update_team_default_user(client, headers, sdb):
     await sdb.execute(insert(Team).values(Team(
-        owner_id=1, name="Test", members=["github.com/vmarkovtsev"],
+        owner_id=1, name="Test", members=[40020],
     ).create_defaults().explode()))
     body = TeamCreateRequest(1, "Engineering", ["github.com/se7entyse7en"]).to_dict()
     response = await client.request(
@@ -394,12 +394,12 @@ async def test_update_team_nasty_input(
     await sdb.execute(insert(Team).values(Team(
         owner_id=owner,
         name="Engineering",
-        members=["github.com/se7entyse7en"],
+        members=[51],
     ).create_defaults().explode()))
     await sdb.execute(insert(Team).values(Team(
         owner_id=1,
         name="Dream",
-        members=["github.com/eiso"],
+        members=[39936],
     ).create_defaults().explode()))
     body = TeamUpdateRequest(name, members, parent).to_dict()
     response = await client.request(
@@ -413,12 +413,12 @@ async def test_update_team_parent_cycle(client, headers, sdb, disable_default_us
     await sdb.execute(insert(Team).values(Team(
         owner_id=1,
         name="Engineering",
-        members=["github.com/se7entyse7en"],
+        members=[51],
     ).create_defaults().explode()))
     await sdb.execute(insert(Team).values(Team(
         owner_id=1,
         name="Dream",
-        members=["github.com/eiso"],
+        members=[39936],
         parent_id=1,
     ).create_defaults().explode()))
     body = TeamUpdateRequest("Engineering", ["github.com/se7entyse7en"], 2).to_dict()
@@ -436,12 +436,12 @@ async def test_delete_team_smoke(client, headers, sdb, disable_default_user):
     await sdb.execute(insert(Team).values(Team(
         owner_id=1,
         name="Engineering",
-        members=["github.com/se7entyse7en"],
+        members=[51],
     ).create_defaults().explode()))
     await sdb.execute(insert(Team).values(Team(
         owner_id=1,
         name="Test",
-        members=["github.com/vmarkovtsev"],
+        members=[40020],
         parent_id=1,
     ).create_defaults().explode()))
     response = await client.request(
@@ -459,12 +459,12 @@ async def test_delete_team_default_user(client, headers, sdb):
     await sdb.execute(insert(Team).values(Team(
         owner_id=1,
         name="Engineering",
-        members=["github.com/se7entyse7en"],
+        members=[51],
     ).create_defaults().explode()))
     await sdb.execute(insert(Team).values(Team(
         owner_id=1,
         name="Test",
-        members=["github.com/vmarkovtsev"],
+        members=[40020],
         parent_id=1,
     ).create_defaults().explode()))
     response = await client.request(
@@ -486,7 +486,7 @@ async def test_delete_team_nasty_input(client, headers, sdb, disable_default_use
     await sdb.execute(insert(Team).values(Team(
         owner_id=owner,
         name="Engineering",
-        members=["github.com/se7entyse7en"],
+        members=[51],
     ).create_defaults().explode()))
     response = await client.request(
         method="DELETE", path="/v1/team/%d" % id, headers=headers, json={},
@@ -529,7 +529,7 @@ async def test_get_team_nasty_input(client, headers, sdb, owner, id, status):
     await sdb.execute(insert(Team).values(Team(
         owner_id=owner,
         name="Engineering",
-        members=["github.com/se7entyse7en", "github.com/mcuadros"],
+        members=[51, 39789],
     ).create_defaults().explode()))
     response = await client.request(
         method="GET", path="/v1/team/%d" % id, headers=headers, json={},

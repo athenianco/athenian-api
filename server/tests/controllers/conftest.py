@@ -26,7 +26,7 @@ from athenian.api.models.metadata.github import Branch
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
     DeploymentNotification
 from athenian.api.models.state.models import AccountJiraInstallation, JIRAProjectSetting, \
-    LogicalRepository, MappedJIRAIdentity, ReleaseSetting, RepositorySet
+    LogicalRepository, MappedJIRAIdentity, ReleaseSetting, RepositorySet, Team
 from athenian.api.typing_utils import wraps
 
 
@@ -484,3 +484,13 @@ def pytest_configure(config):
     for mark in ("filter_repositories", "filter_contributors", "filter_pull_requests",
                  "filter_commits", "filter_releases", "filter_labels"):
         config.addinivalue_line("markers", mark)
+
+
+@pytest.fixture(scope="function")
+async def sample_team(sdb):
+    return await sdb.execute(insert(Team).values(Team(
+        owner_id=1,
+        name="Sample",
+        members=[51, 40020, 39789, 40070],
+        parent_id=None,
+    ).create_defaults().explode()))

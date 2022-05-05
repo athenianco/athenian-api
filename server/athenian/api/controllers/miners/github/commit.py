@@ -51,8 +51,8 @@ DAG = Tuple[np.ndarray, np.ndarray, np.ndarray]
         prop.value,
         date_from.timestamp(), date_to.timestamp(),
         ",".join(sorted(repos)),
-        ",".join(sorted(with_author)) if len(with_author) else "",
-        ",".join(sorted(with_committer)) if len(with_committer) else "",
+        ",".join(sorted(with_author)) if with_author is not None and len(with_author) else "",
+        ",".join(sorted(with_committer)) if with_committer is not None and len(with_committer) else "",  # noqa
         "" if kwargs.get("columns") is None else ",".join(c.name for c in kwargs["columns"]),
         only_default_branch,
     ),
@@ -84,9 +84,9 @@ async def extract_commits(prop: FilterCommitsProperty,
         PushCommit.committer_email != "noreply@github.com",
     ]
     user_logins = set()
-    if with_author:
+    if with_author is not None and len(with_author):
         user_logins.update(with_author)
-    if with_committer:
+    if with_committer is not None and len(with_committer):
         user_logins.update(with_committer)
     if user_logins:
         user_ids = dict(await mdb.fetch_all(
@@ -95,7 +95,7 @@ async def extract_commits(prop: FilterCommitsProperty,
         del user_logins
     else:
         user_ids = {}
-    if with_author:
+    if with_author is not None and len(with_author):
         author_ids = []
         for u in with_author:
             try:
@@ -103,7 +103,7 @@ async def extract_commits(prop: FilterCommitsProperty,
             except KeyError:
                 continue
         sql_filters.append(PushCommit.author_user_id.in_(author_ids))
-    if with_committer:
+    if with_committer is not None and len(with_committer):
         committer_ids = []
         for u in with_committer:
             try:

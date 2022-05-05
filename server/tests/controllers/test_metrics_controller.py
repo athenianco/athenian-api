@@ -632,6 +632,33 @@ async def test_calc_metrics_prs_filter_authors(client, headers):
     assert cm.calculated[0].values[0].values[0] == 1
 
 
+@pytest.mark.app_validate_responses(False)
+async def test_calc_metrics_prs_filter_team(client, headers, sample_team):
+    body = {
+        "date_from": "2017-01-01",
+        "date_to": "2017-01-11",
+        "for": [{
+            "repositories": [
+                "github.com/src-d/go-git",
+            ],
+            "with": {
+                "author": ["{%d}" % sample_team],
+            },
+        }],
+        "granularities": ["all"],
+        "account": 1,
+        "metrics": [PullRequestMetricID.PR_ALL_COUNT],
+        "exclude_inactive": False,
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(body))
+    assert cm.calculated[0].values[0].values[0] == 4
+
+
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
 async def test_calc_metrics_prs_group_authors(client, headers):
@@ -667,6 +694,44 @@ async def test_calc_metrics_prs_group_authors(client, headers):
     assert not cm.calculated[0].for_.with_.merger
     assert cm.calculated[1].values[0].values[0] == 49
     assert cm.calculated[1].for_.with_.merger == ["github.com/mcuadros"]
+    assert not cm.calculated[1].for_.with_.author
+
+
+@pytest.mark.app_validate_responses(False)
+async def test_calc_metrics_prs_group_team(client, headers, sample_team):
+    team_str = "{%d}" % sample_team
+    body = {
+        "date_from": "2017-01-01",
+        "date_to": "2017-04-11",
+        "for": [{
+            "repositories": [
+                "github.com/src-d/go-git",
+            ],
+            "withgroups": [
+                {
+                    "author": [team_str],
+                },
+                {
+                    "merger": [team_str],
+                },
+            ],
+        }],
+        "granularities": ["all"],
+        "account": 1,
+        "metrics": [PullRequestMetricID.PR_ALL_COUNT],
+        "exclude_inactive": False,
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    cm = CalculatedPullRequestMetrics.from_dict(FriendlyJson.loads(body))
+    assert cm.calculated[0].values[0].values[0] == 21
+    assert cm.calculated[0].for_.with_.author == [team_str]
+    assert not cm.calculated[0].for_.with_.merger
+    assert cm.calculated[1].values[0].values[0] == 61
+    assert cm.calculated[1].for_.with_.merger == [team_str]
     assert not cm.calculated[1].for_.with_.author
 
 
@@ -1840,6 +1905,29 @@ async def test_release_metrics_participants_multiple(client, headers):
     assert models[0].values[0].values[0] == 12
 
 
+async def test_release_metrics_participants_team(client, headers, sample_team):
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "for": [["github.com/src-d/go-git"]],
+        "with": [{"releaser": ["{%d}" % sample_team],
+                  "pr_author": ["{%d}" % sample_team],
+                  "commit_author": ["{%d}" % sample_team]}],
+        "metrics": [ReleaseMetricID.RELEASE_COUNT],
+        "granularities": ["all"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/releases", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 200, rbody
+    rbody = json.loads(rbody)
+    models = [CalculatedReleaseMetric.from_dict(i) for i in rbody]
+    assert len(models) == 1
+    assert models[0].values[0].values[0] == 21
+
+
 async def test_release_metrics_participants_groups(client, headers):
     body = {
         "account": 1,
@@ -2719,3 +2807,57 @@ async def test_deployment_metrics_with(client, headers, sample_deployments):
 
     assert len(model) == 1
     assert model[0].values[0].values[0] == 3
+
+
+@pytest.mark.app_validate_responses(False)
+async def test_deployment_metrics_team(client, headers, sample_deployments, sample_team):
+    team_str = "{%d}" % sample_team
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "for": [{
+            "repositories": ["{1}"],
+            "withgroups": [{"releaser": [team_str]},
+                           {"pr_author": [team_str]}],
+            "environments": ["production"],
+        }],
+        "metrics": [DeploymentMetricID.DEP_SUCCESS_COUNT,
+                    DeploymentMetricID.DEP_DURATION_SUCCESSFUL],
+        "granularities": ["all"],
+    }
+    response = await client.request(
+        method="POST", path="/v1/metrics/deployments", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    model = [CalculatedDeploymentMetric.from_dict(obj) for obj in json.loads(body)]
+    assert [m.to_dict() for m in model] == [{
+        "for": {
+            "repositories": ["{1}"],
+            "with": {"releaser": [team_str]},
+            "environments": ["production"],
+        },
+        "metrics": ["dep-success-count", "dep-duration-successful"],
+        "granularity": "all",
+        "values": [{
+            "date": date(2018, 1, 12),
+            "values": [3, "600s"],
+            "confidence_maxs": [None, "600s"],
+            "confidence_mins": [None, "600s"],
+            "confidence_scores": [None, 100],
+        }]}, {
+        "for": {
+            "repositories": ["{1}"],
+            "with": {"pr_author": [team_str]},
+            "environments": ["production"],
+        },
+        "metrics": ["dep-success-count", "dep-duration-successful"],
+        "granularity": "all",
+        "values": [{
+            "date": date(2018, 1, 12),
+            "values": [3, "600s"],
+            "confidence_maxs": [None, "600s"],
+            "confidence_mins": [None, "600s"],
+            "confidence_scores": [None, 100],
+        }]}]
