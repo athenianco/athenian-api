@@ -12,6 +12,7 @@ class JIRAIssueType(Model):
         "image": str,
         "project": str,
         "is_subtask": bool,
+        "is_epic": bool,
         "normalized_name": str,
     }
     attribute_map = {
@@ -20,6 +21,7 @@ class JIRAIssueType(Model):
         "image": "image",
         "project": "project",
         "is_subtask": "is_subtask",
+        "is_epic": "is_epic",
         "normalized_name": "normalized_name",
     }
 
@@ -29,6 +31,7 @@ class JIRAIssueType(Model):
                  image: Optional[str] = None,
                  project: Optional[str] = None,
                  is_subtask: Optional[bool] = None,
+                 is_epic: Optional[bool] = None,
                  normalized_name: Optional[str] = None):
         """JIRAIssueType - a model defined in OpenAPI
 
@@ -36,6 +39,7 @@ class JIRAIssueType(Model):
         :param count: The count of this JIRAIssueType.
         :param image: The image of this JIRAIssueType.
         :param is_subtask: The is_subtask of this JIRAIssueType.
+        :param is_epic: The is_epic of this JIRAIssueType.
         :param normalized_name: The normalized_name of this JIRAIssueType.
         """
         self._name = name
@@ -43,6 +47,7 @@ class JIRAIssueType(Model):
         self._image = image
         self._project = project
         self._is_subtask = is_subtask
+        self._is_epic = is_epic
         self._normalized_name = normalized_name
 
     @property
@@ -162,6 +167,29 @@ class JIRAIssueType(Model):
             raise ValueError("Invalid value for `is_subtask`, must not be `None`")
 
         self._is_subtask = is_subtask
+
+    @property
+    def is_epic(self) -> bool:
+        """Gets the is_epic of this JIRAIssueType.
+
+        Value indicating whether this issue type refers to an epic.
+
+        :return: The is_epic of this JIRAIssueType.
+        """
+        return self._is_epic
+
+    @is_epic.setter
+    def is_epic(self, is_epic: bool):
+        """Sets the is_epic of this JIRAIssueType.
+
+        Value indicating whether this issue type refers to an epic.
+
+        :param is_epic: The is_epic of this JIRAIssueType.
+        """
+        if is_epic is None:
+            raise ValueError("Invalid value for `is_epic`, must not be `None`")
+
+        self._is_epic = is_epic
 
     @property
     def normalized_name(self) -> str:

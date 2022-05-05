@@ -21,6 +21,7 @@ class JIRAEpicIssueCommon(Model, sealed=False):
         "comments": int,
         "priority": str,
         "status": str,
+        "type": str,
         "url": str,
     }
 
@@ -38,6 +39,7 @@ class JIRAEpicIssueCommon(Model, sealed=False):
         "comments": "comments",
         "priority": "priority",
         "status": "status",
+        "type": "type",
         "url": "url",
     }
 
@@ -55,6 +57,7 @@ class JIRAEpicIssueCommon(Model, sealed=False):
                  comments: Optional[int] = None,
                  priority: Optional[str] = None,
                  status: Optional[str] = None,
+                 type: Optional[str] = None,
                  url: Optional[str] = None,
                  ):
         """JIRAEpicChild - a model defined in OpenAPI
@@ -72,6 +75,7 @@ class JIRAEpicIssueCommon(Model, sealed=False):
         :param comments: The comments of this JIRAEpicIssueCommon.
         :param priority: The priority of this JIRAEpicIssueCommon.
         :param status: The status of this JIRAEpicIssueCommon.
+        :param type: The type of this JIRAEpicIssueCommon.
         :param url: The url of this JIRAEpicIssueCommon.
         """
         self._id = id
@@ -87,6 +91,7 @@ class JIRAEpicIssueCommon(Model, sealed=False):
         self._comments = comments
         self._priority = priority
         self._status = status
+        self._type = type
         self._url = url
 
     def __lt__(self, other: "JIRAEpicIssueCommon") -> bool:
@@ -387,6 +392,29 @@ class JIRAEpicIssueCommon(Model, sealed=False):
             raise ValueError("Invalid value for `status`, must not be `None`")
 
         self._status = status
+
+    @property
+    def type(self) -> str:
+        """Gets the type of this JIRAEpicIssueCommon.
+
+        Name of the type. The details are returned in `FilteredJIRAStuff.types`.
+
+        :return: The type of this JIRAEpicIssueCommon.
+        """
+        return self._type
+
+    @type.setter
+    def type(self, type: str):
+        """Sets the type of this JIRAEpicIssueCommon.
+
+        Name of the type. The details are returned in `FilteredJIRAStuff.types`.
+
+        :param type: The type of this JIRAEpicIssueCommon.
+        """
+        if type is None:
+            raise ValueError("Invalid value for `type`, must not be `None`")
+
+        self._type = type
 
     @property
     def url(self) -> str:

@@ -132,6 +132,7 @@ class IssueType(Base):
     description = Column(Text)
     icon_url = Column(Text, nullable=False)
     is_subtask = Column(Boolean, nullable=False)
+    is_epic = Column(Boolean, nullable=False)
     normalized_name = Column(Text, nullable=False)
 
 
