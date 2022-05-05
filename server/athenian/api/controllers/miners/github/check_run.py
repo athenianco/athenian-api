@@ -113,7 +113,7 @@ async def mine_check_runs(time_from: datetime,
                 CheckRun.committed_date_hack.between(
                     time_from - timedelta(days=14), time_to + timedelta(days=1)),
             ]
-            if pushers:
+            if len(pushers):
                 _common_filters.append(CheckRun.author_login.in_(pushers))
         return _common_filters
 

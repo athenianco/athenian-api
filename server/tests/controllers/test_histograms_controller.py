@@ -187,6 +187,47 @@ async def test_calc_histogram_prs_multiple(client, headers):
             assert body[i] != body[j], "%d == %d" % (i, j)
 
 
+async def test_calc_histogram_prs_team(client, headers, sample_team):
+    team_str = "{%d}" % sample_team
+    body = {
+        "for": [
+            {
+                "with": {"merger": [team_str]},
+                "repositories": [
+                    "github.com/src-d/go-git",
+                ],
+            },
+        ],
+        "histograms": [{
+            "metric": PullRequestMetricID.PR_RELEASE_TIME,
+            "scale": "linear",
+            "bins": 10,
+        }],
+        "date_from": "2015-10-13",
+        "date_to": "2020-01-23",
+        "exclude_inactive": False,
+        "account": 1,
+    }
+    response = await client.request(
+        method="POST", path="/v1/histograms/pull_requests", headers=headers, json=body,
+    )
+    body = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + body
+    body = FriendlyJson.loads(body)
+    assert body == [{
+        "for": {
+            "with": {"merger": [team_str]},
+            "repositories": ["github.com/src-d/go-git"],
+        },
+        "metric": PullRequestMetricID.PR_RELEASE_TIME,
+        "scale": "linear",
+        "ticks": [
+            "60s", "259254s", "518448s", "777642s", "1036836s", "1296030s", "1555224s", "1814418s",
+            "2073612s", "2332806s", "2592000s"],
+        "frequencies": [91, 33, 25, 21, 8, 14, 21, 9, 20, 146],
+        "interquartile": {"left": "283986s", "right": "2592000s"}}]
+
+
 async def test_calc_histogram_prs_size(client, headers):
     body = {
         "for": [
@@ -507,6 +548,37 @@ async def test_calc_histogram_code_checks_labels_jira(client, headers):
         "interquartile": {"left": 1.25, "right": 2.0},
         "for": {"repositories": ["github.com/src-d/go-git"],
                 "labels_include": ["bug", "plumbing", "enhancement"]},
+    }]
+
+
+async def test_calc_histogram_code_checks_team(client, headers, sample_team):
+    team_str = "{%d}" % sample_team
+    body = {
+        "account": 1,
+        "date_from": "2018-01-12",
+        "date_to": "2020-03-01",
+        "histograms": [{
+            "metric": CodeCheckMetricID.SUITES_PER_PR,
+            "ticks": [0, 1, 2, 3, 4, 5, 10, 50],
+        }],
+        "for": [{
+            "repositories": ["github.com/src-d/go-git"],
+            "pushers": [team_str],
+        }],
+    }
+    response = await client.request(
+        method="POST", path="/v1/histograms/code_checks", headers=headers, json=body,
+    )
+    rbody = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + rbody
+    rbody = FriendlyJson.loads(rbody)
+    assert rbody == [{
+        "metric": "chk-suites-per-pr", "scale": "linear",
+        "ticks": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 50.0, 68.0],
+        "frequencies": [0, 3, 16, 0, 1, 3, 0, 1],
+        "interquartile": {"left": 2.0, "right": 2.0},
+        "for": {"repositories": ["github.com/src-d/go-git"],
+                "pushers": [team_str]},
     }]
 
 

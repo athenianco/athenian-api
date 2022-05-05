@@ -558,6 +558,34 @@ async def test_filter_prs_shot_updated(
     # it is 75 without the constraints
 
 
+@pytest.mark.app_validate_responses(False)
+@pytest.mark.filter_pull_requests
+@with_only_master_branch
+async def test_filter_prs_shot_team(
+        client, headers, mdb_rw, release_match_setting_tag_logical_db, sample_team):
+    # release_match_setting_tag_logical_db is here to save time and test that everything works
+    team_str = "{%d}" % sample_team
+    body = {
+        "date_from": "2016-10-13",
+        "date_to": "2018-01-23",
+        "timezone": 60,
+        "account": 1,
+        "in": [],
+        "events": [PullRequestEvent.MERGED],
+        "with": {
+            "author": [team_str],
+        },
+        "updated_from": "2017-01-01",
+        "updated_to": "2018-01-24",
+        "exclude_inactive": False,
+    }
+    time_to = datetime(year=2018, month=1, day=24, tzinfo=timezone.utc)
+    response = await client.request(
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=body)
+    await validate_prs_response(response, set(), {PullRequestEvent.MERGED},
+                                {"author": [team_str]}, time_to, 83)
+
+
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
 @pytest.mark.filter_pull_requests
@@ -1095,6 +1123,8 @@ async def validate_prs_response(response: ClientResponse,
         if parts:
             passed = False
             for role, p in parts.items():
+                if p == ["{1}"]:  # very dirty but works
+                    p = ["github.com/mcuadros", "github.com/vmarkovtsev", "github.com/smola"]
                 passed |= bool(inverse_participants[role].intersection(set(p)))
             assert passed
         if pr.merged_with_failed_check_runs:
@@ -1370,6 +1400,48 @@ async def test_filter_commits_no_pr_merges_mcuadros(client, headers):
     for c in commits.data:
         assert c.author.login == "github.com/mcuadros"
         assert c.committer.login == "github.com/mcuadros"
+
+
+@pytest.mark.filter_commits
+@_test_cached_mdb_pdb
+async def test_filter_commits_bypassing_prs_team(
+        client, headers, app, client_cache, sample_team):
+    team_str = "{%d}" % sample_team
+    body = {
+        "account": 1,
+        "date_from": "2019-01-12",
+        "date_to": "2020-02-22",
+        "in": ["{1}"],
+        "property": "bypassing_prs",
+        "with_author": [team_str],
+        "with_committer": [team_str],
+    }
+    response = await client.request(
+        method="POST", path="/v1/filter/commits", headers=headers, json=body)
+    assert response.status == 200
+    commits = CommitsList.from_dict(json.loads((await response.read()).decode("utf-8")))
+    assert commits.to_dict() == {
+        "data": [{"author": {"email": "mcuadros@gmail.com",
+                             "login": "github.com/mcuadros",
+                             "name": "Máximo Cuadros",
+                             "timestamp": datetime(2019, 4, 24, 13, 20, 51, tzinfo=timezone.utc),
+                             "timezone": 2.0},
+                  "committer": {"email": "mcuadros@gmail.com",
+                                "login": "github.com/mcuadros",
+                                "name": "Máximo Cuadros",
+                                "timestamp": datetime(2019, 4, 24, 13, 20, 51,
+                                                      tzinfo=timezone.utc),
+                                "timezone": 2.0},
+                  "files_changed": 1,
+                  "hash": "5c6d199dc675465f5e103ea36c0bfcb9d3ebc565",
+                  "message": "plumbing: commit.Stats, fix panic on empty chucks\n\n"
+                             "Signed-off-by: Máximo Cuadros <mcuadros@gmail.com>",
+                  "repository": "github.com/src-d/go-git",
+                  "size_added": 4,
+                  "size_removed": 0}],
+        "include": {"users": {
+            "github.com/mcuadros": {
+                "avatar": "https://avatars0.githubusercontent.com/u/1573114?s=600&v=4"}}}}
 
 
 @pytest.mark.filter_commits
@@ -2406,9 +2478,10 @@ async def test_filter_check_runs_no_jira(client, headers, sdb):
 @pytest.mark.parametrize("filters, count", [
     ({"labels_include": ["bug", "plumbing", "enhancement"]}, 4),
     ({"triggered_by": ["github.com/mcuadros"]}, 7),
+    ({"triggered_by": ["{1}"]}, 7),
     ({"jira": {"labels_include": ["bug", "onboarding", "performance"]}}, 5),
 ])
-async def test_filter_check_runs_filters(client, headers, filters, count):
+async def test_filter_check_runs_filters(client, headers, filters, count, sample_team):
     body = {
         "account": 1,
         "date_from": "2018-01-12",

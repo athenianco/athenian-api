@@ -360,8 +360,8 @@ async def compile_filters_checks(for_sets: List[ForSetCodeChecks],
         teams_map = await fetch_teams_map(teams, account, request.sdb)
         commit_author_groups = []
         for j, pushers in enumerate(pusher_groups):
-            if ca_group := compile_developers(
-                    pushers, teams_map, prefix, False, prefixer, ptr(j)):
+            if len(ca_group := compile_developers(
+                    pushers, teams_map, prefix, False, prefixer, ptr(j))):
                 commit_author_groups.append(sorted(ca_group))
         labels = LabelFilter.from_iterables(for_set.labels_include, for_set.labels_exclude)
         jira = await _compile_jira(for_set, account, request)
