@@ -170,6 +170,7 @@ from athenian.api.models.web.repository_set_list_item import RepositorySetListIt
 from athenian.api.models.web.repository_set_with_name import RepositorySetWithName
 from athenian.api.models.web.set_mapped_jira_identities_request import \
     SetMappedJIRAIdentitiesRequest
+from athenian.api.models.web.share import Share
 from athenian.api.models.web.stage_timings import StageTimings
 from athenian.api.models.web.table_fetching_progress import TableFetchingProgress
 from athenian.api.models.web.team import Team
