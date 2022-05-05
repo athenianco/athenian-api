@@ -419,32 +419,29 @@ async def _resolve_references(components: Iterable[Tuple[Union[int, str], str]],
             releases[repo].add(reference[1:])
         else:
             releases[repo].add("v" + reference)
+
+    def select_repo(model):
+        return model.repository_node_id if repository_node_ids else model.repository_full_name
+
+    def filter_repo(model, repo):
+        return (
+            model.repository_node_id == repo
+            if repository_node_ids else
+            model.repository_full_name == repo
+        )
+
     queries = [
-        select([text("'commit_f'"),
-                PushCommit.sha, PushCommit.node_id,
-                PushCommit.repository_node_id
-                if repository_node_ids else
-                PushCommit.repository_full_name])
+        select([text("'commit_f'"), PushCommit.sha, PushCommit.node_id, select_repo(PushCommit)])
         .where(and_(PushCommit.acc_id.in_(meta_ids),
                     PushCommit.sha.in_(full_commits))),
-        *(select([text("'commit_p'"),
-                  PushCommit.sha, PushCommit.node_id,
-                  PushCommit.repository_node_id
-                  if repository_node_ids else
-                  PushCommit.repository_full_name])
+        *(select([text("'commit_p'"), PushCommit.sha, PushCommit.node_id, select_repo(PushCommit)])
           .where(and_(PushCommit.acc_id.in_(meta_ids),
-                      PushCommit.repository_full_name == repo,
+                      filter_repo(PushCommit, repo),
                       func.substr(PushCommit.sha, 1, 7).in_(prefixes)))
           for repo, prefixes in prefix_commits.items()),
-        *(select([text("'release'"),
-                  Release.name, Release.commit_id,
-                  Release.repository_node_id
-                  if repository_node_ids else
-                  Release.repository_full_name])
+        *(select([text("'release'"), Release.name, Release.commit_id, select_repo(Release)])
           .where(and_(Release.acc_id.in_(meta_ids),
-                      (Release.repository_node_id == repo)
-                      if repository_node_ids else
-                      (Release.repository_full_name == repo),
+                      filter_repo(Release, repo),
                       Release.name.in_(names)))
           for repo, names in releases.items()),
     ]
