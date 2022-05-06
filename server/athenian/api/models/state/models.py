@@ -4,6 +4,7 @@ import enum
 from sqlalchemy import BigInteger, Boolean, CheckConstraint, Column, Enum, Float, ForeignKey, \
     ForeignKeyConstraint, func, Integer, JSON, SmallInteger, String, Text, TIMESTAMP, \
     UniqueConstraint
+from sqlalchemy.dialects import sqlite
 from sqlalchemy.dialects.postgresql import JSONB
 
 from athenian.api.models import always_unequal, create_base
@@ -17,8 +18,9 @@ def create_collection_mixin(name: str) -> type:
     class CollectionMixin:
         name = Column(String(256), nullable=False)
 
-    setattr(CollectionMixin, name, Column(always_unequal(JSONB().with_variant(JSON(), "sqlite")),
-                                          nullable=False))
+    setattr(CollectionMixin, name, Column(
+        always_unequal(JSONB().with_variant(JSON(), sqlite.dialect.name)),
+        nullable=False))
 
     return CollectionMixin
 
@@ -187,13 +189,15 @@ class Feature(create_time_mixin(updated_at=True), Base):
                       {"sqlite_autoincrement": True})
 
     USER_ORG_MEMBERSHIP_CHECK = "user_org_membership_check"
+    GITHUB_LOGIN_ENABLED = "github_login_enabled"
     QUANTILE_STRIDE = "quantile_stride"
 
     id = Column(Integer(), primary_key=True)
-    name = Column(String(128), nullable=False)
+    name = Column(String(), nullable=False)
     component = Column(Enum(FeatureComponent), nullable=False)
     enabled = Column(Boolean(), nullable=False, default=False, server_default="false")
-    default_parameters = Column(JSON(), nullable=False, default={}, server_default="{}")
+    default_parameters = Column(JSONB().with_variant(JSON(), sqlite.dialect.name),
+                                nullable=False, default={}, server_default="{}")
 
 
 class AccountFeature(create_time_mixin(updated_at=True), Base):
@@ -206,7 +210,7 @@ class AccountFeature(create_time_mixin(updated_at=True), Base):
     feature_id = Column(Integer(), ForeignKey(
         "features.id", name="fk_account_features_feature"), primary_key=True)
     enabled = Column(Boolean(), nullable=False, default=False, server_default="false")
-    parameters = Column(JSON())
+    parameters = Column(JSONB().with_variant(JSON(), sqlite.dialect.name))
 
 
 class UserToken(create_time_mixin(updated_at=True), Base):
@@ -219,7 +223,7 @@ class UserToken(create_time_mixin(updated_at=True), Base):
                                            name="fk_account_tokens_user"),
                       {"sqlite_autoincrement": True})
 
-    id = Column(BigInteger().with_variant(Integer(), "sqlite"), primary_key=True)
+    id = Column(BigInteger().with_variant(Integer(), sqlite.dialect.name), primary_key=True)
     account_id = Column(Integer(), nullable=False)
     user_id = Column(String(), nullable=False)
     name = Column(String(256), nullable=False)
@@ -258,7 +262,7 @@ class WorkType(create_time_mixin(created_at=True, updated_at=True), Base):
     __table_args__ = (UniqueConstraint("account_id", "name", name="uc_work_type"),
                       {"sqlite_autoincrement": True})
 
-    id = Column(BigInteger().with_variant(Integer(), "sqlite"), primary_key=True)
+    id = Column(BigInteger().with_variant(Integer(), sqlite.dialect.name), primary_key=True)
     account_id = Column(Integer(),
                         ForeignKey("accounts.id", name="fk_work_type_account"),
                         nullable=False)
@@ -275,7 +279,7 @@ class LogicalRepository(create_time_mixin(created_at=True, updated_at=True), Bas
                                        name="uc_logical_repository"),
                       {"sqlite_autoincrement": True})
 
-    id = Column(BigInteger().with_variant(Integer(), "sqlite"), primary_key=True)
+    id = Column(BigInteger().with_variant(Integer(), sqlite.dialect.name), primary_key=True)
     account_id = Column(Integer(),
                         ForeignKey("accounts.id", name="fk_logical_repository_account"),
                         nullable=False)
@@ -307,7 +311,7 @@ class TeamGoal(create_time_mixin(created_at=True, updated_at=True), Base):
     __tablename__ = "team_goals"
 
     goal_id = Column(
-        BigInteger().with_variant(Integer(), "sqlite"),
+        BigInteger().with_variant(Integer(), sqlite.dialect.name),
         ForeignKey("goals.id", name="fk_team_goal_goal", ondelete="CASCADE"),
         nullable=False,
         primary_key=True,
@@ -327,6 +331,6 @@ class Share(create_time_mixin(created_at=True), Base):
     __tablename__ = "shares"
     __table_args__ = {"sqlite_autoincrement": True}
 
-    id = Column(BigInteger().with_variant(Integer(), "sqlite"), primary_key=True)
+    id = Column(BigInteger().with_variant(Integer(), sqlite.dialect.name), primary_key=True)
     created_by = Column(String(), nullable=False)
-    data = Column(JSON, nullable=False)
+    data = Column(JSONB().with_variant(JSON(), sqlite.dialect.name), nullable=False)
