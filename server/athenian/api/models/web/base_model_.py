@@ -53,7 +53,8 @@ class Slots(ABCMeta):
                 else:
                     break
         if sealed:
-            dikt["__slots__"] = tuple("_" + k for k in openapi_types)
+            dikt["__slots__"] = \
+                tuple("_" + k for k in openapi_types) + dikt.get("__extra_slots__", ())
         else:
             dikt["__slots__"] = ()  # this is required for the magic to work
         return type.__new__(mcs, name, bases, dikt)

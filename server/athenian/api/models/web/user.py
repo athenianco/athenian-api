@@ -12,6 +12,8 @@ from athenian.api.models.web.base_model_ import Model, VerbatimOptional
 class User(Model):
     """User profile from Auth0."""
 
+    __extra_slots__ = ("account",)
+
     openapi_types = {
         "id": str,
         "native_id": str,
@@ -71,11 +73,13 @@ class User(Model):
         self._updated = updated
         self._accounts = accounts
         self._impersonated_by = impersonated_by
+        self.account = None
 
     @classmethod
     def from_auth0(cls, name: str, nickname: str, picture: str, updated_at: str,
                    encryption_key: str, email: Optional[str] = None, sub: Optional[str] = None,
-                   user_id: Optional[str] = None, identities: Optional[List[dict]] = None, **_):
+                   user_id: Optional[str] = None, identities: Optional[List[dict]] = None,
+                   account: Optional[int] = None, **_):
         """Create a new User object from Auth0 /userinfo."""
         if sub is None and user_id is None:
             raise TypeError('Either "sub" or "user_id" must be set to create a User.')
@@ -92,7 +96,7 @@ class User(Model):
             except ValueError:
                 salt = native_id.encode()
             email = encrypt(email.encode() + b"|" + salt, encryption_key.encode())
-        return cls(
+        user = cls(
             id=id,
             native_id=native_id,
             login=nickname,
@@ -101,6 +105,8 @@ class User(Model):
             picture=picture,
             updated=dateutil.parser.parse(updated_at),
         )
+        user.account = account
+        return user
 
     def __hash__(self) -> int:
         """Hash the object."""

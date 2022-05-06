@@ -396,6 +396,8 @@ class Auth0:
             raise ResponseError(GenericError(
                 "/errors/Auth0", title=resp.reason, status=resp.status,
                 detail=user.get("description", str(user))))
+        if (account := user.pop("https://api.athenian.co/v1/account", 0)) > 0:
+            user["account"] = account
         return User.from_auth0(**user, encryption_key=self.key)
 
     async def _set_user(self, request: AthenianWebRequest, token: str, method: str) -> None:
