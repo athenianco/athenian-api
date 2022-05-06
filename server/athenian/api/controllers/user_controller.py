@@ -14,6 +14,7 @@ from athenian.api.async_utils import gather
 from athenian.api.cache import cached, max_exptime
 from athenian.api.controllers.account import get_account_organizations, \
     get_user_account_status_from_request, is_membership_check_enabled, only_admin, only_god
+from athenian.api.controllers.invitation_controller import join_account
 from athenian.api.controllers.jira import get_jira_id
 from athenian.api.controllers.user import load_user_accounts
 from athenian.api.db import DatabaseLike
@@ -36,6 +37,9 @@ async def get_user(request: AthenianWebRequest) -> web.Response:
         user.id, getattr(request, "god_id", user.id),
         request.sdb, request.mdb, request.rdb, request.app["slack"],
         request.user, request.cache)
+    if not user.accounts and user.account is not None:
+        # join account by SSO, disable the org membership check
+        user = await join_account(user.account, request, user=user, check_org_membership=False)
     if (god_id := getattr(request, "god_id", request.uid)) != request.uid:
         user.impersonated_by = god_id
     return model_response(user)

@@ -4,12 +4,12 @@ from aiohttp import web
 from aiohttp.test_utils import TestClient
 from dateutil.parser import parse as parse_datetime
 import pytest
-from sqlalchemy import and_, func, insert, select, update
+from sqlalchemy import and_, delete, func, insert, select, update
 
 from athenian.api.async_utils import gather
 from athenian.api.controllers.user_controller import get_user
 from athenian.api.models.state.models import Account as DBAccount, AccountFeature, \
-    BanishedUserAccount, Feature, FeatureComponent, Invitation
+    BanishedUserAccount, Feature, FeatureComponent, Invitation, UserAccount
 from athenian.api.models.web import Account, ProductFeature
 from athenian.api.request import AthenianWebRequest
 from athenian.api.serialization import deserialize_datetime
@@ -74,8 +74,8 @@ async def test_is_default_user(client: TestClient, headers: dict, app, value) ->
     response = await client.request(
         method="GET", path="/v1/user", headers=headers, json={},
     )
-    assert response.status == 200
     items = await response.json()
+    assert response.status == 200, items
     assert items == {"is_default_user": value}
 
 
@@ -83,8 +83,8 @@ async def test_get_default_user(client, headers, lazy_gkwillie):
     response = await client.request(
         method="GET", path="/v1/user", headers=headers, json={},
     )
-    assert response.status == 200
     items = await response.json()
+    assert response.status == 200, items
     del items["updated"]
     assert items == {
         "id": "github|60340680",
@@ -95,6 +95,35 @@ async def test_get_default_user(client, headers, lazy_gkwillie):
         "picture": "https://avatars0.githubusercontent.com/u/60340680?v=4",
         "accounts": {},
     }
+
+
+async def test_get_user_sso_join(client, headers, app, sdb):
+    await sdb.execute(delete(UserAccount))
+    app.app["auth"]._default_user.account = 1
+    response = await client.request(
+        method="GET", path="/v1/user", headers=headers, json={},
+    )
+    items = await response.json()
+    assert response.status == 200, items
+    updated = items["updated"]
+    del items["updated"]
+    assert items == {
+        "id": "auth0|5e1f6dfb57bc640ea390557b",
+        "email": "vadim@athenian.co",
+        "login": "vadim",
+        "name": "Vadim Markovtsev",
+        "native_id": "5e1f6dfb57bc640ea390557b",
+        "picture": "https://s.gravatar.com/avatar/d7fb46e4e35ecf7c22a1275dd5dbd303?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fva.png",  # noqa
+        "accounts": {
+            "1": {"is_admin": True,
+                  "expired": False,
+                  "has_ci": True,
+                  "has_jira": True,
+                  "has_deployments": True,
+                  },
+        },
+    }
+    assert datetime.utcnow() >= parse_datetime(updated[:-1])
 
 
 async def test_get_account_details_smoke(client, headers):

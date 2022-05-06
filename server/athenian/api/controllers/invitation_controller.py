@@ -8,7 +8,7 @@ import os
 from random import randint
 from sqlite3 import IntegrityError, OperationalError
 import struct
-from typing import Callable, Coroutine, List, Optional, Tuple
+from typing import Any, Callable, Coroutine, List, Mapping, Optional, Tuple
 
 from aiohttp import web
 import aiomcache
@@ -167,40 +167,62 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
         iid, salt = decode_slug(x, request.app["auth"].key)
     except binascii.Error:
         bad_req()
-    async with sdb.connection() as conn:
+    async with sdb.connection() as sdb_conn:
         try:
-            async with conn.transaction():
-                acc_id, user = await _accept_invitation(
-                    iid, salt, request, conn, sdb, request.mdb, request.rdb, request.cache)
+            async with sdb_conn.transaction():
+                inv = await sdb_conn.fetch_one(
+                    select([Invitation.id, Invitation.account_id, Invitation.accepted,
+                            Invitation.is_active])
+                    .where(and_(Invitation.id == iid, Invitation.salt == salt)))
+                if inv is None:
+                    raise ResponseError(NotFoundError(detail="Invitation was not found."))
+                if not inv[Invitation.is_active.name]:
+                    raise ResponseError(ForbiddenError(detail="This invitation is disabled."))
+                acc_id, user = await _join_account(
+                    inv[Invitation.account_id.name], request, sdb_conn, invitation=inv)
         except (IntegrityConstraintViolationError, IntegrityError, OperationalError) as e:
             raise ResponseError(DatabaseConflict(detail=str(e)))
     return model_response(InvitedUser(account=acc_id, user=user))
 
 
-async def _accept_invitation(iid: int,
-                             salt: int,
-                             request: AthenianWebRequest,
-                             sdb_transaction: Connection,
-                             sdb: Database,
-                             mdb: Database,
-                             rdb: Database,
-                             cache: Optional[aiomcache.Client],
-                             ) -> Tuple[int, User]:
+async def join_account(acc_id: int,
+                       request: AthenianWebRequest,
+                       user: Optional[User] = None,
+                       check_org_membership: bool = True,
+                       ) -> User:
     """
+    Join the `request`-ing user to the account `acc_id`.
+
+    :param user: Prefetched `request.user()` for better performance.
+    """
+    async with request.sdb.connection() as sdb_conn:
+        try:
+            async with sdb_conn.transaction():
+                return (await _join_account(
+                    acc_id, request, sdb_conn, user=user,
+                    check_org_membership=check_org_membership,
+                ))[1]
+        except (IntegrityConstraintViolationError, IntegrityError, OperationalError) as e:
+            raise ResponseError(DatabaseConflict(detail=str(e)))
+
+
+async def _join_account(acc_id: int,
+                        request: AthenianWebRequest,
+                        sdb_transaction: Connection,
+                        user: Optional[User] = None,
+                        invitation: Optional[Mapping[str, Any]] = None,
+                        check_org_membership: bool = True,
+                        ) -> Tuple[int, User]:
+    """
+    Join the `request`-ing user to the account `acc_id`.
+
     We need both `sdb_conn` and `sdb` because `sdb` is required in the deferred code outside of
     the transaction.
     You should work with `sdb_conn` in the code that blocks the request flow and with `sdb`
     in the code that defer()-s.
-    """  # noqa: D
-    log = logging.getLogger(metadata.__package__)
-    inv = await sdb_transaction.fetch_one(
-        select([Invitation.account_id, Invitation.accepted, Invitation.is_active])
-        .where(and_(Invitation.id == iid, Invitation.salt == salt)))
-    if inv is None:
-        raise ResponseError(NotFoundError(detail="Invitation was not found."))
-    if not inv[Invitation.is_active.name]:
-        raise ResponseError(ForbiddenError(detail="This invitation is disabled."))
-    acc_id = inv[Invitation.account_id.name]
+    """
+    sdb, mdb, rdb, cache = request.sdb, request.mdb, request.rdb, request.cache
+    log = logging.getLogger(f"{metadata.__package__}.join_account")
     if not (is_admin := acc_id == admin_backdoor):
         is_admin = 0 == await sdb_transaction.fetch_val(select([func.count(text("*"))])
                                                         .where(UserAccount.account_id == acc_id))
@@ -244,9 +266,12 @@ async def _accept_invitation(iid: int,
             select([UserAccount.is_admin])
             .where(and_(UserAccount.user_id == request.uid,
                         UserAccount.account_id == acc_id)))
-    user = None
     if status is None:
-        user = await _check_user_org_membership(request, acc_id, sdb_transaction, sdb, slack, log)
+        if check_org_membership:
+            user = await _check_user_org_membership(
+                request, user, acc_id, sdb_transaction, sdb, slack, log)
+        elif user is None:
+            user = await request.user()
         # create the user<>account record if not blocked
         if await sdb_transaction.fetch_val(
                 select([func.count(text("*"))])
@@ -278,9 +303,12 @@ async def _accept_invitation(iid: int,
                                          account_name=account_name)
 
             await defer(report_new_user_to_slack(), "report_new_user_to_slack")
-        values = {Invitation.accepted.name: inv[Invitation.accepted.name] + 1}
-        await sdb_transaction.execute(update(Invitation)
-                                      .where(Invitation.id == iid).values(values))
+        if invitation is not None:
+            values = {Invitation.accepted.name: invitation[Invitation.accepted.name] + 1}
+            await sdb_transaction.execute(
+                update(Invitation)
+                .where(Invitation.id == invitation[Invitation.id.name])
+                .values(values))
     if user is None:
         user = await request.user()
     user.accounts = await load_user_accounts(
@@ -290,14 +318,20 @@ async def _accept_invitation(iid: int,
 
 
 async def _check_user_org_membership(request: AthenianWebRequest,
+                                     user: Optional[User],
                                      acc_id: int,
                                      sdb_conn: DatabaseLike,
                                      sdb: Database,
                                      slack: Optional[SlackWebClient],
                                      log: logging.Logger,
                                      ) -> User:
-    if not await is_membership_check_enabled(acc_id, sdb_conn):
+    async def _load_user():
+        if user is not None:
+            return user
         return await request.user()
+
+    if not await is_membership_check_enabled(acc_id, sdb_conn):
+        return await _load_user()
 
     mdb = request.mdb
     cache = request.cache
@@ -317,7 +351,7 @@ async def _check_user_org_membership(request: AthenianWebRequest,
         log.debug("Discovered %d organization members", len(user_node_ids))
         return meta_ids, user_node_ids
 
-    user, (meta_ids, user_node_ids) = await gather(request.user(), load_org_members())
+    user, (meta_ids, user_node_ids) = await gather(_load_user(), load_org_members())
     if not meta_ids:
         return user
     user_node_id = await mdb.fetch_val(select([NodeUser.node_id])
