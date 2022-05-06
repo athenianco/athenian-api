@@ -319,3 +319,14 @@ class TeamGoal(create_time_mixin(created_at=True, updated_at=True), Base):
         primary_key=True,
     )
     target = Column(JSON, nullable=False)
+
+
+class Share(create_time_mixin(created_at=True), Base):
+    """Saved UI views state."""
+
+    __tablename__ = "shares"
+    __table_args__ = {"sqlite_autoincrement": True}
+
+    id = Column(BigInteger().with_variant(Integer(), "sqlite"), primary_key=True)
+    created_by = Column(String(), nullable=False)
+    data = Column(JSON, nullable=False)
