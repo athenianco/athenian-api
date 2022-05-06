@@ -508,18 +508,27 @@ async def fetch_github_installation_progress(account: int,
 
 async def is_membership_check_enabled(account: int, sdb: DatabaseLike) -> bool:
     """Check whether the user registration requires the organization membership."""
+    return await _get_feature_bool(account, Feature.USER_ORG_MEMBERSHIP_CHECK, sdb)
+
+
+async def is_github_login_enabled(account: int, sdb: DatabaseLike) -> bool:
+    """Check whether we accept invitations for GitHub users."""
+    return await _get_feature_bool(account, Feature.GITHUB_LOGIN_ENABLED, sdb)
+
+
+async def _get_feature_bool(account: int, name: str, sdb: DatabaseLike) -> bool:
     enabled = False
-    user_org_membership_check_row = await sdb.fetch_one(
+    global_row = await sdb.fetch_one(
         select([Feature.id, Feature.enabled])
-        .where(and_(Feature.name == Feature.USER_ORG_MEMBERSHIP_CHECK,
+        .where(and_(Feature.name == name,
                     Feature.component == FeatureComponent.server)))
-    if user_org_membership_check_row is not None:
-        user_org_membership_check_feature_id = user_org_membership_check_row[Feature.id.name]
-        default_enabled = user_org_membership_check_row[Feature.enabled.name]
+    if global_row is not None:
+        feature_id = global_row[Feature.id.name]
+        default_enabled = global_row[Feature.enabled.name]
         enabled = await sdb.fetch_val(
             select([AccountFeature.enabled]).where(and_(
                 AccountFeature.account_id == account,
-                AccountFeature.feature_id == user_org_membership_check_feature_id,
+                AccountFeature.feature_id == feature_id,
             )))
         enabled = (enabled is None and default_enabled) or enabled
     return enabled

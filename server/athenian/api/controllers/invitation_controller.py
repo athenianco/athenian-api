@@ -26,7 +26,8 @@ from athenian.api.auth import Auth0, disable_default_user
 from athenian.api.cache import cached, expires_header, middle_term_exptime
 from athenian.api.controllers.account import fetch_github_installation_progress, \
     generate_jira_invitation_link, get_account_name_or_stub, get_metadata_account_ids_or_empty, \
-    get_user_account_status_from_request, is_membership_check_enabled, jira_url_template, only_god
+    get_user_account_status_from_request, is_github_login_enabled, is_membership_check_enabled, \
+    jira_url_template, only_god
 from athenian.api.controllers.ffx import decrypt, encrypt
 from athenian.api.controllers.jira import fetch_jira_installation_progress
 from athenian.api.controllers.reposet import load_account_reposets
@@ -167,8 +168,8 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
         iid, salt = decode_slug(x, request.app["auth"].key)
     except binascii.Error:
         bad_req()
-    async with sdb.connection() as sdb_conn:
-        try:
+    try:
+        async with sdb.connection() as sdb_conn:
             async with sdb_conn.transaction():
                 inv = await sdb_conn.fetch_one(
                     select([Invitation.id, Invitation.account_id, Invitation.accepted,
@@ -178,11 +179,20 @@ async def accept_invitation(request: AthenianWebRequest, body: dict) -> web.Resp
                     raise ResponseError(NotFoundError(detail="Invitation was not found."))
                 if not inv[Invitation.is_active.name]:
                     raise ResponseError(ForbiddenError(detail="This invitation is disabled."))
-                acc_id, user = await _join_account(
-                    inv[Invitation.account_id.name], request, sdb_conn, invitation=inv)
-        except (IntegrityConstraintViolationError, IntegrityError, OperationalError) as e:
-            raise ResponseError(DatabaseConflict(detail=str(e)))
+                acc_id = inv[Invitation.account_id.name]
+                await _check_disabled_github_logins(acc_id, request.uid, sdb_conn)
+                acc_id, user = await _join_account(acc_id, request, sdb_conn, invitation=inv)
+    except (IntegrityConstraintViolationError, IntegrityError, OperationalError) as e:
+        raise ResponseError(DatabaseConflict(detail=str(e)))
     return model_response(InvitedUser(account=acc_id, user=user))
+
+
+async def _check_disabled_github_logins(acc_id: int, user_id: str, sdb: DatabaseLike) -> None:
+    if not user_id.startswith("github|"):
+        return
+    if not await is_github_login_enabled(acc_id, sdb):
+        raise ResponseError(ForbiddenError(
+            f"Joining account {acc_id} from GitHub is disabled by the administrator."))
 
 
 async def join_account(acc_id: int,

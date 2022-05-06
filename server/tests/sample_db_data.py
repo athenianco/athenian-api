@@ -199,14 +199,15 @@ def fill_state_session(session: sqlalchemy.orm.Session):
                         enabled=True,
                         default_parameters=365))
     session.flush()
-    feature = session.query(Feature).filter(and_(
-        Feature.name == Feature.USER_ORG_MEMBERSHIP_CHECK,
-        Feature.component == FeatureComponent.server,
-    )).one_or_none()
-    if feature is None:
-        session.add(Feature(name=Feature.USER_ORG_MEMBERSHIP_CHECK,
-                            component=FeatureComponent.server,
-                            enabled=True))
+    for name in (Feature.USER_ORG_MEMBERSHIP_CHECK, Feature.GITHUB_LOGIN_ENABLED):
+        feature = session.query(Feature).filter(and_(
+            Feature.name == name,
+            Feature.component == FeatureComponent.server,
+        )).one_or_none()
+        if feature is None:
+            session.add(Feature(name=name,
+                                component=FeatureComponent.server,
+                                enabled=True))
     session.add(AccountFeature(account_id=1, feature_id=1000, enabled=True,
                                parameters={"a": "x"}))
     session.add(AccountFeature(account_id=1, feature_id=1001, enabled=True,

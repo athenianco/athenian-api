@@ -422,6 +422,30 @@ async def test_accept_invitation_inactive(client, headers, sdb, disable_default_
     assert response.status == 403
 
 
+@pytest.mark.parametrize("as_github", [True, False])
+async def test_accept_invitation_github_disabled(
+        client, headers, sdb, disable_default_user, app, as_github):
+    if as_github:
+        app._auth0._default_user_id = "github|123456"
+        await sdb.execute(
+            update(Feature).where(Feature.name == Feature.USER_ORG_MEMBERSHIP_CHECK).values({
+                Feature.enabled: False,
+                Feature.updated_at: datetime.now(timezone.utc),
+            }))
+
+    await sdb.execute(update(Feature).where(Feature.name == Feature.GITHUB_LOGIN_ENABLED).values({
+        Feature.enabled: False,
+        Feature.updated_at: datetime.now(timezone.utc),
+    }))
+    body = {
+        "url": url_prefix + encode_slug(1, 777, app.app["auth"].key),
+    }
+    response = await client.request(
+        method="PUT", path="/v1/invite/accept", headers=headers, json=body,
+    )
+    assert response.status == (403 if as_github else 200), (await response.read()).decode()
+
+
 async def test_accept_invitation_admin_smoke(client, headers, sdb, disable_default_user, app):
     num_accounts_before = len(await sdb.fetch_all(select([Account])))
     iid = await sdb.execute(
