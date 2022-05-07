@@ -37,7 +37,7 @@ async def get_user(request: AthenianWebRequest) -> web.Response:
         user.id, getattr(request, "god_id", user.id),
         request.sdb, request.mdb, request.rdb, request.app["slack"],
         request.user, request.cache)
-    if not user.accounts and user.account is not None:
+    if user.account is not None and user.account not in user.accounts:
         # join account by SSO, disable the org membership check
         user = await join_account(user.account, request, user=user, check_org_membership=False)
     if (god_id := getattr(request, "god_id", request.uid)) != request.uid:
