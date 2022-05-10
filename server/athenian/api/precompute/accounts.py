@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 from datetime import date, datetime, timedelta, timezone
+from itertools import chain
 import os
 import signal
 import sys
@@ -13,8 +14,7 @@ from sqlalchemy import and_, insert, select, update
 from tqdm import tqdm
 
 from athenian.api.async_utils import gather
-from athenian.api.controllers.account import copy_teams_as_needed, generate_jira_invitation_link, \
-    get_metadata_account_ids
+from athenian.api.controllers.account import copy_teams_as_needed, get_metadata_account_ids
 from athenian.api.controllers.features.entries import MetricEntriesCalculator
 from athenian.api.controllers.jira import match_jira_identities
 from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
@@ -30,7 +30,7 @@ from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.reposet import refresh_repository_names
 from athenian.api.controllers.settings import ReleaseMatch, Settings
 from athenian.api.db import Database
-from athenian.api.defer import wait_deferred
+from athenian.api.defer import defer, wait_deferred
 from athenian.api.models.state.models import RepositorySet, Team
 from athenian.api.precompute.context import PrecomputeContext
 from athenian.api.tracing import sentry_span
@@ -231,9 +231,8 @@ async def precompute_reposet(
             JIRAFilter.empty(), release_settings, logical_settings,
             branches, default_branches, prefixer, reposet.owner_id, meta_ids,
             mdb, pdb, rdb, None)  # yes, disable the cache
-        if not reposet.precomputed:
-            if slack is not None:
-                jira_link = await generate_jira_invitation_link(reposet.owner_id, sdb)
+        if not reposet.precomputed and slack is not None:
+            async def report_precompute_success():
                 await slack.post_install(
                     "precomputed_account.jinja2",
                     account=reposet.owner_id,
@@ -250,8 +249,10 @@ async def precompute_reposet(
                     repositories=len(repos),
                     bots_team_name=Team.BOTS,
                     bots=num_bots,
-                    teams=num_teams,
-                    jira_link=jira_link)
+                    teams=num_teams)
+
+            await defer(report_precompute_success(),
+                        f"report precompute success {reposet.owner_id}")
     except Exception as e:
         log.warning("reposet %d: %s: %s\n%s", reposet.id, type(e).__name__, e,
                     "".join(traceback.format_exception(*sys.exc_info())[:-1]))
@@ -287,7 +288,7 @@ async def create_teams(account: int,
     if bot_team is not None:
         return num_teams, len(bot_team[Team.members.name])
     bots -= await fetch_bots.extra(mdb)
-    bots = {prefixer.user_login_to_node.get(u) for u in bots} - {None}
+    bots = set(chain.from_iterable(prefixer.user_login_to_node.get(u) for u in bots)) - {None}
     await sdb.execute(insert(Team).values(
         Team(id=account, name=Team.BOTS, owner_id=account, members=sorted(bots))
         .create_defaults().explode()))
