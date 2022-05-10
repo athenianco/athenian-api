@@ -7,6 +7,7 @@ import os
 import pickle
 from sqlite3 import IntegrityError
 import struct
+import time
 from typing import Any, Callable, Collection, Coroutine, List, Mapping, Optional, Tuple
 
 from aiohttp import web
@@ -20,7 +21,7 @@ from sqlalchemy import and_, func, insert, select
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather
-from athenian.api.cache import cached, max_exptime, middle_term_exptime
+from athenian.api.cache import cached, max_exptime, middle_term_exptime, short_term_exptime
 from athenian.api.db import Connection, Database, DatabaseLike
 from athenian.api.defer import defer
 from athenian.api.models.metadata.github import Account as MetadataAccount, AccountRepository, \
@@ -419,16 +420,41 @@ async def get_installation_owner(metadata_account_id: int,
     return user_login
 
 
-@cached(exptime=5,  # matches the webapp poll interval
-        serialize=pickle.dumps,
-        deserialize=pickle.loads,
-        key=lambda account, **_: (account,))
 async def fetch_github_installation_progress(account: int,
                                              sdb: DatabaseLike,
-                                             mdb_conn: Connection,
+                                             mdb: DatabaseLike,
                                              cache: Optional[aiomcache.Client],
                                              ) -> InstallationProgress:
     """Load the GitHub installation progress for the specified account."""
+    return (await _fetch_github_installation_progress_timed(account, sdb, mdb, cache))[0]
+
+
+@cached(exptime=lambda result, **_: 5 if result[1] < 1 else short_term_exptime,
+        serialize=pickle.dumps,
+        deserialize=pickle.loads,
+        key=lambda account, **_: (account,))
+async def _fetch_github_installation_progress_timed(
+        account: int,
+        sdb: DatabaseLike,
+        mdb: DatabaseLike,
+        cache: Optional[aiomcache.Client],
+) -> Tuple[InstallationProgress, float]:
+    start_time = time.time()
+    if isinstance(mdb, Database):
+        async with mdb.connection() as mdb_conn:
+            progress = await _fetch_github_installation_progress_db(account, sdb, mdb_conn, cache)
+    else:
+        progress = await _fetch_github_installation_progress_db(account, sdb, mdb, cache)
+    elapsed = time.time() - start_time
+    return progress, elapsed
+
+
+async def _fetch_github_installation_progress_db(
+        account: int,
+        sdb: DatabaseLike,
+        mdb_conn: Connection,
+        cache: Optional[aiomcache.Client],
+) -> InstallationProgress:
     log = logging.getLogger("%s.fetch_github_installation_progress" % metadata.__package__)
     assert isinstance(mdb_conn, Connection)
     async with mdb_conn.raw_connection() as raw_connection:

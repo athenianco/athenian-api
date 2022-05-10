@@ -536,8 +536,7 @@ async def _notify_precomputed_failure(slack: Optional[SlackWebClient],
 async def eval_metadata_progress(request: AthenianWebRequest, id: int) -> web.Response:
     """Return the current GitHub installation progress in Athenian."""
     await get_user_account_status_from_request(request, id)
-    async with request.mdb.connection() as mdb_conn:
-        model = await fetch_github_installation_progress(id, request.sdb, mdb_conn, request.cache)
+    model = await fetch_github_installation_progress(id, request.sdb, request.mdb, request.cache)
 
     async def login_loader() -> str:
         return (await request.user()).login
