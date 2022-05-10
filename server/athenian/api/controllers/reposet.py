@@ -387,8 +387,7 @@ async def load_account_state(account: int,
                                 account, auth0_id)
                     return None
     try:
-        async with mdb.connection() as mdb_conn:
-            progress = await fetch_github_installation_progress(account, sdb, mdb_conn, cache)
+        progress = await fetch_github_installation_progress(account, sdb, mdb, cache)
     except ResponseError as e1:
         if e1.response.status != HTTPStatus.UNPROCESSABLE_ENTITY:
             sentry_sdk.capture_exception(e1)
