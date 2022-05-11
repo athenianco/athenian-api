@@ -184,19 +184,12 @@ def measure_db_overhead_and_retry(db: Union[morcilla.Database, Database],
         connection._retry_lock = asyncio.Lock()
         direct_acquire = connection.acquire
 
-        def measure_method_overhead_and_retry(func) -> callable:
+        def measure_method_overhead_and_retry(func) -> Callable:
             async def wrapped_measure_method_overhead_and_retry(*args, **kwargs):
                 start_time = time.time()
                 wait_intervals = []
                 try:
-                    raw_connection = connection.raw_connection
-                    if (
-                        (isinstance(raw_connection, asyncpg.Connection) and
-                         raw_connection.is_in_transaction())
-                        or
-                        (isinstance(raw_connection, aiosqlite.Connection) and
-                         raw_connection.in_transaction)
-                    ):
+                    if _conn_backend_in_transaction(connection):
                         # it is pointless to retry, the transaction has already failed
                         wait_intervals = [None]
                 except AssertionError:
@@ -391,3 +384,18 @@ async def insert_or_ignore(model,
 def extract_registered_models(base: Any) -> Mapping[str, Any]:
     """Return the mapping from declarative model names to their classes."""
     return base.registry._class_registry
+
+
+def conn_in_transaction(conn: Connection) -> bool:
+    """Return True if the connection is inside a transaction."""
+    return _conn_backend_in_transaction(conn._connection)
+
+
+def _conn_backend_in_transaction(conn_backend: ConnectionBackend) -> bool:
+    """Return True if the connection backend is inside a transaction."""
+    raw_connection = conn_backend.raw_connection
+    if isinstance(raw_connection, asyncpg.Connection):
+        return raw_connection.is_in_transaction()
+    if isinstance(raw_connection, aiosqlite.Connection):
+        return raw_connection.in_transaction
+    raise ValueError(f"Unhandled db connection type {type(raw_connection)}")
