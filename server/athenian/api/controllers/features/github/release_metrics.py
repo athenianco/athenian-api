@@ -73,7 +73,7 @@ def calculate_logical_release_duplication_mask(
         logical_settings: LogicalRepositorySettings,
 ) -> Optional[np.ndarray]:
     """Assign indexes to releases with the same settings for each logical repository."""
-    if not logical_settings.has_logical_prs():
+    if items.empty or not logical_settings.has_logical_prs():
         return None
     repos_column = items[ReleaseFacts.f.repository_full_name].values.astype("S", copy=False)
     return calculate_logical_duplication_mask(repos_column, release_settings, logical_settings)
