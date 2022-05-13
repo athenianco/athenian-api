@@ -153,6 +153,7 @@ async def mine_check_runs(time_from: datetime,
             .with_statement_hint("Rows(cr cs *400)") \
             .with_statement_hint("Rows(cr cs c *2)") \
             .with_statement_hint("Rows(c_1 sc *1000)") \
+            .with_statement_hint("HashJoin(cr cs)") \
             .with_statement_hint("Set(enable_parallel_append 0)")
         """
         PostgreSQL has no idea about column correlations between tables, and extended statistics
@@ -170,6 +171,9 @@ async def mine_check_runs(time_from: datetime,
         It helped a little with one account but completely destroyed the others.
         4. We disable PARALLEL APPEND. Whatever Vadim tried, Postgres always schedules only one worker,
         effectively executing UNION branches sequentially.
+        5. We enforce the hash join between cr and cs, no matter the number of rows. This is required
+        to let committed_date_hack pre-filter check suites. Otherwise, it becomes a considerable overhead
+        on bigger row counts.
         """  # noqa: E501
         queries.append(query)
 
