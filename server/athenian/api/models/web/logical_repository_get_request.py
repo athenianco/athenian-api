@@ -5,7 +5,7 @@ from athenian.api.models.web.base_model_ import AllOf, Model
 
 
 class _LogicalRepositoryGetRequest(Model, sealed=False):
-    openapi_types = {"name": str}
+    attribute_types = {"name": str}
     attribute_map = {"name": "name"}
 
     def __init__(

@@ -7,7 +7,7 @@ from athenian.api.models.web.base_model_ import AllOf, Model
 class _FilterContributorsRequest(Model, sealed=False):
     """Filters for `/filter/contributors`."""
 
-    openapi_types = {
+    attribute_types = {
         "in_": List[str],
         "as_": List[str],
     }

@@ -7,7 +7,7 @@ from athenian.api.models.web.linked_jira_issue import LinkedJIRAIssue
 class _IncludedJIRAIssues(Model, sealed=False):
     """Mentioned JIRA issues."""
 
-    openapi_types = {"jira": Optional[Dict[str, LinkedJIRAIssue]]}
+    attribute_types = {"jira": Optional[Dict[str, LinkedJIRAIssue]]}
     attribute_map = {"jira": "jira"}
 
     def __init__(self, jira: Optional[Dict[str, LinkedJIRAIssue]] = None):

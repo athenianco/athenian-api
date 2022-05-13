@@ -7,7 +7,7 @@ from athenian.api.models.web.work_type import WorkType
 class WorkTypePutRequest(Model):
     """Request body of `PUT /settings/work_type`."""
 
-    openapi_types = {"account": int, "work_type": WorkType}
+    attribute_types = {"account": int, "work_type": WorkType}
 
     attribute_map = {"account": "account", "work_type": "work_type"}
 

@@ -11,7 +11,7 @@ from athenian.api.response import ResponseError
 class DeploymentNotificationUnsealed(Model, sealed=False):
     """Push message about a deployment. We remove unresolved components after 24h."""
 
-    openapi_types = {
+    attribute_types = {
         "components": List[DeployedComponent],
         "environment": str,
         "name": Optional[str],

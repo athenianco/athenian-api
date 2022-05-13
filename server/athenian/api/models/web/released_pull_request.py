@@ -6,7 +6,7 @@ from athenian.api.models.web.base_model_ import Model
 class ReleasedPullRequest(Model):
     """Details about a pull request listed in `/filter/releases`."""
 
-    openapi_types = {
+    attribute_types = {
         "number": int,
         "title": str,
         "additions": int,

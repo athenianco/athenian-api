@@ -366,7 +366,7 @@ async def test_calc_metrics_prs_counts_sums(client, headers, metric, count):
         "for": [
             {
                 "with": {k: ["github.com/vmarkovtsev", "github.com/mcuadros"]
-                         for k in PullRequestWith().openapi_types},
+                         for k in PullRequestWith().attribute_types},
                 "repositories": ["{1}"],
             },
         ],

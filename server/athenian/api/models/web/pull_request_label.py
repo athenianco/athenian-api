@@ -6,7 +6,7 @@ from athenian.api.models.web.base_model_ import Model
 class PullRequestLabel(Model):
     """Pull request label."""
 
-    openapi_types = {"name": str, "description": str, "color": str}
+    attribute_types = {"name": str, "description": str, "color": str}
 
     attribute_map = {
         "name": "name",

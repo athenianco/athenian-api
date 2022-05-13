@@ -8,7 +8,7 @@ from athenian.api.models.web.release_match_setting import ReleaseMatchSetting
 
 
 class _LogicalRepository(Model, sealed=False):
-    openapi_types = {
+    attribute_types = {
         "name": str,
         "parent": str,
         "prs": LogicalPRRules,

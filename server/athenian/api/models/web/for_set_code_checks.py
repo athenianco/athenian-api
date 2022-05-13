@@ -7,7 +7,7 @@ from athenian.api.models.web.for_set_common import CommonPullRequestFilters, For
 class _ForSetCodeChecks(Model, sealed=False):
     """Filters for `/metrics/code_checks` and `/histograms/code_checks`."""
 
-    openapi_types = {
+    attribute_types = {
         "pushers": Optional[List[str]],
         "pusher_groups": Optional[List[List[str]]],
     }
@@ -94,7 +94,7 @@ ForSetCodeChecks = AllOf(_ForSetCodeChecks, ForSetLines, CommonPullRequestFilter
 
 
 class _CalculatedCodeCheckCommon(Model, sealed=False):
-    openapi_types = {
+    attribute_types = {
         "for_": ForSetCodeChecks,
         "check_runs": Optional[int],
         "suites_ratio": Optional[float],

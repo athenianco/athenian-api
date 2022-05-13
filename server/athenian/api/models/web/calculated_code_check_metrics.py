@@ -10,7 +10,7 @@ from athenian.api.models.web.code_check_metric_id import CodeCheckMetricID
 class CalculatedCodeCheckMetrics(Model):
     """Response from `/metrics/code_checks`."""
 
-    openapi_types = {
+    attribute_types = {
         "calculated": List[CalculatedCodeCheckMetricsItem],
         "metrics": List[CodeCheckMetricID],
         "date_from": date,

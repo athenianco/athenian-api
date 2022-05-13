@@ -7,7 +7,7 @@ from athenian.api.models.web.invitation_link import _InvitationLink
 
 
 class _AcceptedInvitation(Model):
-    openapi_types = {"name": str, "email": str}
+    attribute_types = {"name": str, "email": str}
     attribute_map = {"name": "name", "email": "email"}
 
     def __init__(self,

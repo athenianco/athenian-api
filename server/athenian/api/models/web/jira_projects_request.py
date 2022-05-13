@@ -6,7 +6,7 @@ from athenian.api.models.web.base_model_ import Model
 class JIRAProjectsRequest(Model):
     """Enable or disable a JIRA project."""
 
-    openapi_types = {
+    attribute_types = {
         "account": int,
         "projects": Dict[str, bool],
     }

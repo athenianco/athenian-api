@@ -9,7 +9,7 @@ class FilteredCodeCheckRuns(Model):
     """Response from `/filter/code_checks`, found code check runs ordered by repository name and \
     then by title. Note: we always consider the completed run executions only."""
 
-    openapi_types = {
+    attribute_types = {
         "timeline": List[date],
         "items": List[FilteredCodeCheckRun],
     }

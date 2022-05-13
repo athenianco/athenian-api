@@ -14,7 +14,7 @@ class User(Model):
 
     __extra_slots__ = ("account",)
 
-    openapi_types = {
+    attribute_types = {
         "id": str,
         "native_id": str,
         "login": str,

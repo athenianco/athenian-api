@@ -9,7 +9,7 @@ from athenian.api.models.web.granularity import Granularity
 class _CodeFilter(Model, sealed=False):
     """Filter for revealing code bypassing PRs."""
 
-    openapi_types = {
+    attribute_types = {
         "granularity": str,
     }
 

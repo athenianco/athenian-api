@@ -10,7 +10,7 @@ class FilterLabelsRequest(Model):
     Defines the account and the repositories where to look for the labels.
     """
 
-    openapi_types = {"account": int, "repositories": List[str]}
+    attribute_types = {"account": int, "repositories": List[str]}
     attribute_map = {"account": "account", "repositories": "repositories"}
 
     def __init__(self, account: Optional[int] = None, repositories: Optional[List[str]] = None):

@@ -8,7 +8,7 @@ from athenian.api.models.web.code_check_run_statistics import CodeCheckRunStatis
 class FilteredCodeCheckRun(Model):
     """Mined information about a code check run."""
 
-    openapi_types = {
+    attribute_types = {
         "title": str,
         "repository": str,
         "last_execution_time": datetime,

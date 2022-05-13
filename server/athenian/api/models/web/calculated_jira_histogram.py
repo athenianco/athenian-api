@@ -11,7 +11,7 @@ from athenian.api.models.web.jira_metric_id import JIRAMetricID
 class CalculatedJIRAHistogram(Model):
     """Calculated histogram over JIRA issue activities."""
 
-    openapi_types = {
+    attribute_types = {
         "with_": Optional[JIRAFilterWith],
         "metric": str,
         "scale": str,

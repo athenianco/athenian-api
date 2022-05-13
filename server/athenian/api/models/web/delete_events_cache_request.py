@@ -6,7 +6,7 @@ from athenian.api.models.web.base_model_ import Model
 class DeleteEventsCacheRequest(Model):
     """Definition of the cache reset operation."""
 
-    openapi_types = {
+    attribute_types = {
         "account": int,
         "repositories": List[str],
         "targets": List[str],

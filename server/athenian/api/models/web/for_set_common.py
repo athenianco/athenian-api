@@ -93,7 +93,7 @@ def make_common_pull_request_filters(prefix_labels: str) -> Type[Model]:
     class CommonPullRequestFilters(Model, sealed=False):
         """A few filters that are specific to filtering PR-related entities."""
 
-        openapi_types = {
+        attribute_types = {
             prefix_labels + "labels_include": Optional[List[str]],
             prefix_labels + "labels_exclude": Optional[List[str]],
             "jira": Optional[JIRAFilter],
@@ -182,7 +182,7 @@ CommonPullRequestFilters = make_common_pull_request_filters("")
 class ForSetLines(Model, RepositoryGroupsMixin, sealed=False):
     """Support for splitting metrics by the number of changed lines."""
 
-    openapi_types = {
+    attribute_types = {
         "repositories": List[str],
         "repogroups": Optional[List[List[int]]],
         "lines": Optional[List[int]],

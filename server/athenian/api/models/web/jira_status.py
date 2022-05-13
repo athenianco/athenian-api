@@ -6,7 +6,7 @@ from athenian.api.models.web.base_model_ import Model
 class JIRAStatus(Model):
     """JIRA issue status details."""
 
-    openapi_types = {
+    attribute_types = {
         "name": str,
         "stage": str,
         "project": str,

@@ -8,7 +8,7 @@ from athenian.api.models.web.table_fetching_progress import TableFetchingProgres
 class InstallationProgress(Model):
     """Data fetching progress of the Athenian metadata retrieval app."""
 
-    openapi_types = {
+    attribute_types = {
         "started_date": datetime,
         "finished_date": datetime,
         "owner": Optional[str],

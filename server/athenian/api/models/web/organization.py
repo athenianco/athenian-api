@@ -6,7 +6,7 @@ from athenian.api.models.web.base_model_ import Model
 class Organization(Model):
     """GitHub organization details."""
 
-    openapi_types = {
+    attribute_types = {
         "name": str,
         "avatar_url": str,
         "login": str,

@@ -6,7 +6,7 @@ from athenian.api.models.web.base_model_ import Model
 class JIRAInstallation(Model):
     """Information about a link with JIRA."""
 
-    openapi_types = {"url": str, "projects": List[str]}
+    attribute_types = {"url": str, "projects": List[str]}
     attribute_map = {"url": "url", "projects": "projects"}
 
     def __init__(self,

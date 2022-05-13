@@ -11,7 +11,7 @@ from athenian.api.models.web.pull_request_metric_id import PullRequestMetricID
 class CalculatedPullRequestHistogram(Model):
     """Response from `/histograms/pull_requests`."""
 
-    openapi_types = {
+    attribute_types = {
         "for_": ForSetPullRequests,
         "metric": str,
         "scale": str,

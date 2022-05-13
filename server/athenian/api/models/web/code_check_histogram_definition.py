@@ -8,7 +8,7 @@ from athenian.api.models.web.histogram_scale import HistogramScale
 class CodeCheckHistogramDefinition(Model):
     """Histogram parameters: topic, bins."""
 
-    openapi_types = {
+    attribute_types = {
         "metric": str,
         "scale": Optional[str],
         "bins": Optional[int],

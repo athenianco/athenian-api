@@ -12,7 +12,7 @@ from athenian.api.models.web.pull_request_with import PullRequestWith
 class _FilterPullRequestsRequest(Model, sealed=False):
     """PR filters for /filter/pull_requests."""
 
-    openapi_types = {
+    attribute_types = {
         "in_": List[str],
         "events": List[str],
         "stages": List[str],

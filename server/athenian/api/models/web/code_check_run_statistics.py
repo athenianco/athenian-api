@@ -7,7 +7,7 @@ from athenian.api.models.web.base_model_ import Model
 class CodeCheckRunStatistics(Model):
     """Gathered statistics about a group of check runs."""
 
-    openapi_types = {
+    attribute_types = {
         "count": int,
         "successes": int,
         "critical": bool,

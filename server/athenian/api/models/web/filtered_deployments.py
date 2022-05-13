@@ -8,7 +8,7 @@ from athenian.api.models.web.release_set import ReleaseSetInclude
 class FilteredDeployments(Model):
     """Found deployments, response from `/filter/deployments`."""
 
-    openapi_types = {
+    attribute_types = {
         "include": ReleaseSetInclude,
         "deployments": List[FilteredDeployment],
     }

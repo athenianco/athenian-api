@@ -10,7 +10,7 @@ from athenian.api.models.web.for_set_code_checks import ForSetCodeChecks
 class _CodeCheckMetricsRequest(Model, sealed=False):
     """Request for calculating metrics on top of code check runs (CI) data."""
 
-    openapi_types = {
+    attribute_types = {
         "for_": List[ForSetCodeChecks],
         "metrics": List[CodeCheckMetricID],
         "split_by_check_runs": Optional[bool],

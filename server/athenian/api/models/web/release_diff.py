@@ -7,7 +7,7 @@ from athenian.api.models.web.filtered_release import FilteredRelease
 class ReleaseDiff(Model):
     """Inner releases between `old` and `new`, including the latter."""
 
-    openapi_types = {"old": str, "new": str, "releases": List[FilteredRelease]}
+    attribute_types = {"old": str, "new": str, "releases": List[FilteredRelease]}
     attribute_map = {"old": "old", "new": "new", "releases": "releases"}
 
     def __init__(self,

@@ -7,7 +7,7 @@ from athenian.api.models.web.pull_request_numbers import PullRequestNumbers
 class GetPullRequestsRequest(Model):
     """Request body of `/get/pull_requests`. Declaration of which PRs the user wants to analyze."""
 
-    openapi_types = {
+    attribute_types = {
         "account": int,
         "prs": List[PullRequestNumbers],
         "environment": Optional[str],

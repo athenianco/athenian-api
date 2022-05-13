@@ -7,7 +7,7 @@ from athenian.api.models.web.deployment_notification import DeploymentNotificati
 class _IncludedDeployments(Model, sealed=False):
     """Mentioned deployments."""
 
-    openapi_types = {"deployments": Optional[Dict[str, DeploymentNotification]]}
+    attribute_types = {"deployments": Optional[Dict[str, DeploymentNotification]]}
     attribute_map = {"deployments": "deployments"}
 
     def __init__(self, deployments: Optional[Dict[str, DeploymentNotification]] = None):

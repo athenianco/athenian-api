@@ -11,7 +11,7 @@ from athenian.api.models.web.release_with import ReleaseWith
 class _ReleaseMetricsRequest(Model, sealed=False):
     """Request of `/metrics/releases` to calculate metrics on releases."""
 
-    openapi_types = {
+    attribute_types = {
         "for_": List[List[str]],
         "with_": Optional[List[ReleaseWith]],
         "metrics": List[str],

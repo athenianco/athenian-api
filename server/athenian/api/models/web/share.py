@@ -7,7 +7,7 @@ from athenian.api.models.web.base_model_ import Model
 class Share(Model):
     """Saved UI views state with metadata."""
 
-    openapi_types = {"author": str, "created": datetime, "data": object}
+    attribute_types = {"author": str, "created": datetime, "data": object}
     attribute_map = {"author": "author", "created": "created", "data": "data"}
 
     def __init__(

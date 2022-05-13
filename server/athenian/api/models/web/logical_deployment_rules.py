@@ -6,7 +6,7 @@ from athenian.api.models.web.base_model_ import Model
 class LogicalDeploymentRules(Model):
     """Rules to match deployments to logical repository."""
 
-    openapi_types = {"title": str, "labels_include": Dict[str, List[str]]}
+    attribute_types = {"title": str, "labels_include": Dict[str, List[str]]}
 
     attribute_map = {"title": "title", "labels_include": "labels_include"}
 

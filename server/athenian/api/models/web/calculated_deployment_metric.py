@@ -10,7 +10,7 @@ from athenian.api.models.web.for_set_deployments import ForSetDeployments
 class CalculatedDeploymentMetric(Model):
     """Calculated metrics for a deployments group."""
 
-    openapi_types = {
+    attribute_types = {
         "for_": ForSetDeployments,
         "metrics": List[DeploymentMetricID],
         "granularity": str,

@@ -6,7 +6,7 @@ from athenian.api.models.web.base_model_ import Model
 class DeploymentAnalysisCode(Model):
     """Summary of the deployed code."""
 
-    openapi_types = {
+    attribute_types = {
         "prs": Dict[str, int],
         "lines_prs": Dict[str, int],
         "lines_overall": Dict[str, int],

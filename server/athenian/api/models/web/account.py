@@ -9,7 +9,7 @@ from athenian.api.models.web.user import User
 class Account(Model):
     """Account members: admins and regular users."""
 
-    openapi_types = {
+    attribute_types = {
         "admins": List[User],
         "regulars": List[User],
         "organizations": List[Organization],
@@ -114,7 +114,7 @@ class Account(Model):
 
 
 class _Account(Model, sealed=False):
-    openapi_types = {"account": int}
+    attribute_types = {"account": int}
     attribute_map = {"account": "account"}
 
     def __init__(

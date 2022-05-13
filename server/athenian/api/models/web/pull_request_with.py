@@ -6,7 +6,7 @@ from athenian.api.models.web.base_model_ import MappingModel
 class PullRequestWith(MappingModel):
     """Triage PRs by various developer participation."""
 
-    openapi_types = {
+    attribute_types = {
         "author": Optional[List[str]],
         "reviewer": Optional[List[str]],
         "commit_author": Optional[List[str]],

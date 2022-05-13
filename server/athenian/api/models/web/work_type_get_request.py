@@ -6,7 +6,7 @@ from athenian.api.models.web.base_model_ import Model
 class WorkTypeGetRequest(Model):
     """Identifier of a work type - a set of rules to group PRs, releases, etc. together."""
 
-    openapi_types = {"account": int, "name": str}
+    attribute_types = {"account": int, "name": str}
 
     attribute_map = {"account": "account", "name": "name"}
 

@@ -10,7 +10,7 @@ from athenian.api.models.web.release_with import ReleaseWith
 class CalculatedReleaseMetric(Model, GranularityMixin):
     """Response from `/metrics/releases`."""
 
-    openapi_types = {
+    attribute_types = {
         "for_": List[str],
         "with_": Optional[ReleaseWith],
         "matches": Dict[str, str],

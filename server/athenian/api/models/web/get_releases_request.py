@@ -7,7 +7,7 @@ from athenian.api.models.web.release_names import ReleaseNames
 class GetReleasesRequest(Model):
     """Request body of `/get/releases`. Declaration of which releases the user wants to list."""
 
-    openapi_types = {"account": int, "releases": List[ReleaseNames]}
+    attribute_types = {"account": int, "releases": List[ReleaseNames]}
     attribute_map = {"account": "account", "releases": "releases"}
 
     def __init__(self,

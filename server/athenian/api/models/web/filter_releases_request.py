@@ -9,7 +9,7 @@ from athenian.api.models.web.release_with import ReleaseWith
 class _FilterReleasesRequest(Model, sealed=False):
     """Structure to specify the filter traits of releases."""
 
-    openapi_types = {
+    attribute_types = {
         "in_": List[str],
         "with_": Optional[ReleaseWith],
     }

@@ -10,7 +10,7 @@ from athenian.api.models.web.jira_filter_with import JIRAFilterWith
 class CalculatedJIRAMetricValues(Model, GranularityMixin):
     """Calculated JIRA metrics for a specific granularity."""
 
-    openapi_types = {
+    attribute_types = {
         "granularity": str,
         "jira_label": Optional[str],
         "with_": Optional[JIRAFilterWith],

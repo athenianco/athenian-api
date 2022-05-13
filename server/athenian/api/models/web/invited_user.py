@@ -8,7 +8,7 @@ class InvitedUser(Model):
     Do not edit the class manually.
     """
 
-    openapi_types = {"account": int, "user": User}
+    attribute_types = {"account": int, "user": User}
     attribute_map = {"account": "account", "user": "user"}
 
     def __init__(self, account: int = None, user: User = None):

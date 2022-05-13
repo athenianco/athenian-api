@@ -7,7 +7,7 @@ from athenian.api.models.web.base_model_ import Model
 class Interquartile(Model):
     """Middle 50% range."""
 
-    openapi_types = {"left": Union[float, timedelta], "right": Union[float, timedelta]}
+    attribute_types = {"left": Union[float, timedelta], "right": Union[float, timedelta]}
     attribute_map = {"left": "left", "right": "right"}
 
     def __init__(self,

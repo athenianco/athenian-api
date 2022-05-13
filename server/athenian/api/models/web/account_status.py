@@ -6,7 +6,7 @@ from athenian.api.models.web.base_model_ import Model
 class AccountStatus(Model):
     """Status of the user's account membership."""
 
-    openapi_types = {
+    attribute_types = {
         "is_admin": bool,
         "expired": bool,
         "has_ci": bool,

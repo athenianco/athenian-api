@@ -15,7 +15,7 @@ class FilteredJIRAStuff(Model):
     """Response from `/filter/jira`: found JIRA epics, labels, issue types, priorities, and \
     mentioned users."""
 
-    openapi_types = {
+    attribute_types = {
         "epics": VerbatimOptional[List[JIRAEpic]],
         "issues": VerbatimOptional[List[JIRAIssue]],
         "labels": VerbatimOptional[List[JIRALabel]],

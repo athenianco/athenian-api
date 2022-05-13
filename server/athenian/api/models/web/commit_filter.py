@@ -7,7 +7,7 @@ from athenian.api.models.web.common_filter_properties import CommonFilterPropert
 class _CommitFilter(Model, sealed=False):
     """Specific parts of the commit filter."""
 
-    openapi_types = {
+    attribute_types = {
         "in_": List[str],
         "with_author": List[str],
         "with_committer": List[str],

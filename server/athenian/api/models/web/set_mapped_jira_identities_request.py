@@ -8,7 +8,7 @@ class SetMappedJIRAIdentitiesRequest(Model):
     """Request body of `/settings/jira/identities`. Describes a patch to the GitHub<>JIRA \
     identity mapping."""
 
-    openapi_types = {
+    attribute_types = {
         "account": int,
         "changes": List[MappedJIRAIdentityChange],
     }

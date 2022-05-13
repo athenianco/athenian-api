@@ -13,7 +13,7 @@ class CalculatedDeveloperMetricsItem(Model, GranularityMixin):
     Each repository group maps to a distinct `CalculatedDeveloperMetricsItem`.
     """
 
-    openapi_types = {
+    attribute_types = {
         "for_": ForSetDevelopers,
         "granularity": str,
         "values": List[List[CalculatedLinearMetricValues]],

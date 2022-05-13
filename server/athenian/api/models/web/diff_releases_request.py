@@ -8,7 +8,7 @@ class DiffReleasesRequest(Model):
     """Request of `/diff/releases`. Define pairs of releases for several repositories to find \
     the releases in between."""
 
-    openapi_types = {"account": int, "borders": Dict[str, List[ReleasePair]]}
+    attribute_types = {"account": int, "borders": Dict[str, List[ReleasePair]]}
     attribute_map = {"account": "account", "borders": "borders"}
 
     def __init__(self,

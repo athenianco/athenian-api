@@ -11,7 +11,7 @@ from athenian.api.models.web.pull_request_histogram_definition import \
 class _PullRequestHistogramsRequest(Model, QuantilesMixin, sealed=False):
     """Request of `/histograms/pull_requests`."""
 
-    openapi_types = {
+    attribute_types = {
         "for_": List[ForSetPullRequests],
         "histograms": List[PullRequestHistogramDefinition],
         "exclude_inactive": bool,

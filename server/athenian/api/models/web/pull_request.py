@@ -18,7 +18,7 @@ class PullRequest(Model):
     the PR stages `wip`, `reviewing`, `merging`, `releasing`*, which correspond to `date_to`.
     """
 
-    openapi_types = {
+    attribute_types = {
         "repository": str,
         "number": int,
         "title": str,

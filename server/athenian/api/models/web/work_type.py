@@ -8,7 +8,7 @@ from athenian.api.models.web.work_type_rule import WorkTypeRule
 class WorkType(Model):
     """Definition of a work type - a set of rules to group PRs, releases, etc. together."""
 
-    openapi_types = {"name": str, "color": str, "rules": List[WorkTypeRule]}
+    attribute_types = {"name": str, "color": str, "rules": List[WorkTypeRule]}
 
     attribute_map = {"name": "name", "color": "color", "rules": "rules"}
 

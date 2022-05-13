@@ -9,7 +9,7 @@ from athenian.api.models.web.for_set_common import CommonPullRequestFilters
 class _FilterCodeChecksRequest(Model, QuantilesMixin, sealed=False):
     """Request body of `/filter/code_checks`."""
 
-    openapi_types = {
+    attribute_types = {
         "in_": List[str],
         "triggered_by": Optional[List[str]],
         "quantiles": Optional[List[float]],

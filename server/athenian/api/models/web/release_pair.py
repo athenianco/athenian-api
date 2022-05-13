@@ -6,7 +6,7 @@ from athenian.api.models.web.base_model_ import Model
 class ReleasePair(Model):
     """A pair of release names within the same repository."""
 
-    openapi_types = {"old": str, "new": str}
+    attribute_types = {"old": str, "new": str}
     attribute_map = {"old": "old", "new": "new"}
 
     def __init__(self, old: Optional[str] = None, new: Optional[str] = None):

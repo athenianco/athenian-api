@@ -6,7 +6,7 @@ from athenian.api.models.web.base_model_ import Model
 class CreatedToken(Model):
     """Value and ID of the generated Personal Access Token."""
 
-    openapi_types = {"id": int, "token": str}
+    attribute_types = {"id": int, "token": str}
     attribute_map = {"id": "id", "token": "token"}
 
     def __init__(self, id: Optional[int] = None, token: Optional[str] = None):

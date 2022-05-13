@@ -9,7 +9,7 @@ class RepositorySetCreateRequest(Model):
     Do not edit the class manually.
     """
 
-    openapi_types = {
+    attribute_types = {
         "account": int,
         "items": List[str],
         "name": str,

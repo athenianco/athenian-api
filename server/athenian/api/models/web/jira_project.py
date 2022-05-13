@@ -7,7 +7,7 @@ from athenian.api.models.web.base_model_ import Model
 class JIRAProject(Model):
     """JIRA project setting."""
 
-    openapi_types = {
+    attribute_types = {
         "name": str,
         "key": str,
         "id": str,

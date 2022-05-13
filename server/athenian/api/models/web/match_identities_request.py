@@ -7,7 +7,7 @@ from athenian.api.models.web.contributor_identity import ContributorIdentity
 class MatchIdentitiesRequest(Model):
     """Request body of `/match/identities`."""
 
-    openapi_types = {"account": int, "identities": List[ContributorIdentity]}
+    attribute_types = {"account": int, "identities": List[ContributorIdentity]}
 
     attribute_map = {"account": "account", "identities": "identities"}
 

@@ -6,7 +6,7 @@ from athenian.api.models.web.base_model_ import Model
 class JIRAPriority(Model):
     """JIRA issue priority details."""
 
-    openapi_types = {
+    attribute_types = {
         "name": str,
         "image": str,
         "rank": int,

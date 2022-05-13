@@ -6,7 +6,7 @@ from athenian.api.models.web.base_model_ import Model
 class TeamUpdateRequest(Model):
     """Team update request."""
 
-    openapi_types = {
+    attribute_types = {
         "name": str,
         "members": List[str],
         "parent": int,

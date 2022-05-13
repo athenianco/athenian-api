@@ -6,7 +6,7 @@ from athenian.api.models.web.base_model_ import Model
 class PullRequestNumbers(Model):
     """Repository name and a list of PR numbers in that repository."""
 
-    openapi_types = {"repository": str, "numbers": List[int]}
+    attribute_types = {"repository": str, "numbers": List[int]}
     attribute_map = {"repository": "repository", "numbers": "numbers"}
 
     def __init__(self, repository: str = None, numbers: List[int] = None):

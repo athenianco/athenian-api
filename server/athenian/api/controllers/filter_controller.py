@@ -105,7 +105,7 @@ async def filter_contributors(request: AthenianWebRequest, body: dict) -> web.Re
             updates=DeveloperUpdates(**{
                 k: v for k, v in u["stats"].items()
                 # TODO(se7entyse7en): make `DeveloperUpdates` support all the stats we can get instead of doing this filtering. See also `mine_contributors`.  # noqa
-                if k in DeveloperUpdates.openapi_types
+                if k in DeveloperUpdates.attribute_types
             }),
             jira_user=mapped_jira.get(u[User.node_id.name]),
         )

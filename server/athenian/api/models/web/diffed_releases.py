@@ -8,7 +8,7 @@ from athenian.api.models.web.release_set import ReleaseSetInclude
 class DiffedReleases(Model):
     """Response of `/diff/releases` - the found inner releases for each repository."""
 
-    openapi_types = {
+    attribute_types = {
         "include": ReleaseSetInclude,
         "data": Dict[str, List[ReleaseDiff]],
     }

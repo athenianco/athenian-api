@@ -7,7 +7,7 @@ from athenian.api.models.web.for_set_common import CommonPullRequestFilters, Rep
 class _ForSetDevelopers(Model, RepositoryGroupsMixin, sealed=False):
     """Filter for `/metrics/developers`."""
 
-    openapi_types = {
+    attribute_types = {
         "repositories": List[str],
         "repogroups": Optional[List[List[int]]],
         "developers": List[str],

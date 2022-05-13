@@ -9,7 +9,7 @@ class CreatedIdentifier(Model):
     Do not edit the class manually.
     """
 
-    openapi_types = {"id": int}
+    attribute_types = {"id": int}
     attribute_map = {"id": "id"}
 
     def __init__(self, id: Optional[int] = None):

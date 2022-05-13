@@ -7,7 +7,7 @@ from athenian.api.models.web.base_model_ import Model
 class PullRequestPaginationPlan(Model):
     """Response of `/paginate/pull_requests`. Computed split of the PR updated timestamp range."""
 
-    openapi_types = {"updated": List[date]}
+    attribute_types = {"updated": List[date]}
     attribute_map = {"updated": "updated"}
 
     def __init__(self, updated: Optional[List[date]] = None):

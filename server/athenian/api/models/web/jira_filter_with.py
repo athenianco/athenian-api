@@ -6,7 +6,7 @@ from athenian.api.models.web.base_model_ import Model
 class JIRAFilterWith(Model):
     """Group of JIRA issue participant names split by role."""
 
-    openapi_types = {
+    attribute_types = {
         "assignees": Optional[List[Optional[str]]],
         "reporters": Optional[List[str]],
         "commenters": Optional[List[str]],
