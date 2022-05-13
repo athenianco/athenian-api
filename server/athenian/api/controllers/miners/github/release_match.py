@@ -646,9 +646,18 @@ class ReleaseToPullRequestMapper:
             filters = [
                 NodeCommit.acc_id.in_(meta_ids),
                 NodeCommit.repository_id.in_(unique_repo_ids),
-                NodeCommit.sha.in_(np.unique(commits).astype("U40")),
             ]
-            commit_rows = await mdb.fetch_all(select([NodeCommit.node_id]).where(and_(*filters)))
+            unique_commits = np.unique(commits).astype("U40")
+            if len(unique_commits) <= 100:
+                filters.append(NodeCommit.sha.in_(unique_commits))
+            else:
+                # this reduces the planning time (DEV-4176)
+                filters.append(NodeCommit.sha.in_any_values(unique_commits))
+            query = select([NodeCommit.node_id]).where(and_(*filters))
+            if len(unique_commits) > 100:
+                query = query.with_statement_hint(
+                    f"Rows({NodeCommit.__tablename__} *VALUES* #{len(unique_commits)})")
+            commit_rows = await mdb.fetch_all(query)
             merge_commit_ids = [r[0] for r in commit_rows]
         filters = [
             PullRequest.merged_at < time_boundary,

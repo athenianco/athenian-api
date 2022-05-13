@@ -277,7 +277,8 @@ async def _mine_releases(repos: Iterable[str],
                 .where(and_(NodeCommit.sha.in_any_values(all_hashes),
                             NodeCommit.acc_id.in_(meta_ids)))
                 .order_by(NodeCommit.sha)
-                .with_statement_hint(f"Rows({NodeCommit.__tablename__} #{len(all_hashes)})")
+                .with_statement_hint(
+                    f"Rows({NodeCommit.__tablename__} *VALUES* #{len(all_hashes)})")
                 .with_statement_hint(f"Leading(*VALUES* {NodeCommit.__tablename__})"),
                 mdb, commits_df_columns, index=NodeCommit.sha.name)
         log.info("Loaded %d commits", len(commits_df))
