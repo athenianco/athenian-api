@@ -3,7 +3,8 @@ from athenian.api.models.web.account import Account
 from athenian.api.models.web.account_status import AccountStatus
 from athenian.api.models.web.account_user_change_request import AccountUserChangeRequest, \
     UserChangeStatus
-from athenian.api.models.web.base_model_ import AllOf, Enum, MappingModel, Model, Slots
+from athenian.api.models.web.base_model_ import AllOf, BaseModel, Enum, MappingModel, Model, \
+    OpenAPIModel, OpenAPIModelMeta, Slots
 from athenian.api.models.web.calculated_code_check_histogram import CalculatedCodeCheckHistogram
 from athenian.api.models.web.calculated_code_check_metrics import CalculatedCodeCheckMetrics
 from athenian.api.models.web.calculated_code_check_metrics_item import \
