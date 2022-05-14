@@ -1,14 +1,18 @@
+from __future__ import annotations
+
 from datetime import date, datetime, time, timedelta, timezone
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Sequence, Tuple, Union
 
 from ariadne import MutationType
 from graphql import GraphQLResolveInfo
 
-from athenian.api.align.goals.dbaccess import delete_goal, GoalCreationInfo, insert_goal
+from athenian.api.align.goals.dbaccess import assign_team_goals, delete_goal, delete_team_goals, \
+    GoalCreationInfo, insert_goal, TeamGoalTargetAssignment
 from athenian.api.align.goals.exceptions import GoalMutationError
 from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
 from athenian.api.align.models import GoalRemoveStatus
 from athenian.api.models.state.models import Goal, TeamGoal
+from athenian.api.typing_utils import dataclass
 
 mutation = MutationType()
 
@@ -46,6 +50,33 @@ async def resolve_remove_goal(
     return remove_status.to_dict()
 
 
+@mutation.field("updateGoal")
+async def resolve_update_goal(
+    _: Any,
+    info: GraphQLResolveInfo,
+    accountId: int,
+    input: dict,
+) -> dict:
+    """Update an existing Goal."""
+    update = _parse_update_goal_input(input, accountId)
+    goal_id = input["goalId"]
+    result = {"goal": {"id": goal_id}}
+
+    deletions = update.team_goal_deletions
+    assignments = update.team_goal_assignments
+    if not deletions and not assignments:
+        return result
+
+    async with info.context.sdb.connection() as sdb_conn:
+        async with sdb_conn.transaction():
+            if deletions:
+                await delete_team_goals(accountId, goal_id, deletions, sdb_conn)
+            if assignments:
+                await assign_team_goals(accountId, goal_id, assignments, sdb_conn)
+
+    return result
+
+
 def _parse_create_goal_input(input: Dict[str, Any], account_id: int) -> GoalCreationInfo:
     """Parse CreateGoalInput into GoalCreationInfo."""
     template_id = input["templateId"]
@@ -73,12 +104,16 @@ def _parse_create_goal_input(input: Dict[str, Any], account_id: int) -> GoalCrea
 def _parse_team_goal_input(team_goal_input: dict) -> TeamGoal:
     """Parse TeamGoalInput into a Team model."""
     try:
-        # get the first non null value in GoalTargetInput
-        target = next(tgt for tgt in team_goal_input["target"].values() if tgt is not None)
+        target = _parse_team_goal_target(team_goal_input["target"])
     except StopIteration:
         raise GoalMutationError(f'Invalid target for teamId {team_goal_input["teamId"]}')
 
     return TeamGoal(team_id=team_goal_input["teamId"], target=target)
+
+
+def _parse_team_goal_target(team_goal_target: dict) -> Union[int, float, str]:
+    """Get the first non null value in GoalTargetInput."""
+    return next(tgt for tgt in team_goal_target.values() if tgt is not None)
 
 
 def _convert_goal_dates(valid_from: date, expires_at: date) -> Tuple[datetime, datetime]:
@@ -88,3 +123,57 @@ def _convert_goal_dates(valid_from: date, expires_at: date) -> Tuple[datetime, d
     # following day
     expires_at = datetime.combine(expires_at + timedelta(days=1), time.min, tzinfo=timezone.utc)
     return (valid_from, expires_at)
+
+
+@dataclass(frozen=True)
+class GoalUpdateInfo:
+    """The information to update an existing Goal."""
+
+    team_goal_deletions: Sequence[int]
+    team_goal_assignments: Sequence[TeamGoalTargetAssignment]
+
+
+def _parse_update_goal_input(input: Dict[str, Any], account_id: int) -> GoalUpdateInfo:
+    deletions = []
+    assignments = []
+
+    duplicates = []
+    both = []
+    invalid_targets = []
+    seen = set()
+    for change in input.get("teamGoalChanges", ()):
+        team_id = change["teamId"]
+        if team_id in seen:
+            duplicates.append(team_id)
+        if change.get("remove") and change.get("target"):
+            both.append(team_id)
+
+        seen.add(team_id)
+
+        if change.get("remove"):
+            deletions.append(team_id)
+        elif change.get("target") is not None:
+            try:
+                target = _parse_team_goal_target(change["target"])
+            except StopIteration:
+                invalid_targets.append(team_id)
+            else:
+                assignments.append(TeamGoalTargetAssignment(team_id, target))
+        else:
+            invalid_targets.append(team_id)
+
+    def _ids_repr(ids: Sequence[int]) -> str:
+        return ",".join(map(str, ids))
+
+    errors = []
+    if duplicates:
+        errors.append(f"Multiple changes for teamId-s: {_ids_repr(duplicates)}")
+    if both:
+        errors.append(f"Both remove and new target present for teamId-s: {_ids_repr(both)}")
+    if invalid_targets:
+        errors.append(f"Invalid target for teamId-s: {_ids_repr(invalid_targets)}")
+
+    if errors:
+        raise GoalMutationError("; ".join(errors))
+
+    return GoalUpdateInfo(deletions, assignments)

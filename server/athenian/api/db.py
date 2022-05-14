@@ -15,12 +15,15 @@ import aiohttp.web
 import aiosqlite
 import asyncpg
 from flogging import flogging
+from morcilla.backends.asyncpg import PostgresConnection
+from morcilla.backends.sqlite import SQLiteConnection
 import morcilla.core
 from morcilla.interfaces import ConnectionBackend, TransactionBackend
 import numpy as np
 import sentry_sdk
 from sqlalchemy import insert
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import CompoundSelect, Select
@@ -399,3 +402,12 @@ def _conn_backend_in_transaction(conn_backend: ConnectionBackend) -> bool:
     if isinstance(raw_connection, aiosqlite.Connection):
         return raw_connection.in_transaction
     raise AssertionError(f"Unhandled db connection type {type(raw_connection)}")
+
+
+def dialect_specific_insert(conn: Connection) -> Callable:
+    """Return the specific insertion function for the connection's SQL dialect."""
+    if isinstance(conn._connection, SQLiteConnection):
+        return sqlite_insert
+    if isinstance(conn._connection, PostgresConnection):
+        return postgres_insert
+    raise AssertionError(f"Unhandled morcilla connection type {type(conn)}")
