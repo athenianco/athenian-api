@@ -12,12 +12,14 @@ from athenian.api.align.goals.exceptions import GoalMutationError
 from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
 from athenian.api.align.models import GoalRemoveStatus
 from athenian.api.models.state.models import Goal, TeamGoal
+from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import dataclass
 
 mutation = MutationType()
 
 
 @mutation.field("createGoal")
+@sentry_span
 async def resolve_create_goal(
     _: Any,
     info: GraphQLResolveInfo,
@@ -36,6 +38,7 @@ async def resolve_create_goal(
 
 
 @mutation.field("removeGoal")
+@sentry_span
 async def resolve_remove_goal(
     _: Any,
     info: GraphQLResolveInfo,
@@ -51,6 +54,7 @@ async def resolve_remove_goal(
 
 
 @mutation.field("updateGoal")
+@sentry_span
 async def resolve_update_goal(
     _: Any,
     info: GraphQLResolveInfo,
