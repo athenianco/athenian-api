@@ -6,11 +6,10 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 
+from athenian.api.align.exceptions import GoalMutationError
 from athenian.api.db import conn_in_transaction, Connection, DatabaseLike, dialect_specific_insert
 from athenian.api.models.state.models import Goal, Team, TeamGoal
 from athenian.api.typing_utils import dataclass
-
-from .exceptions import GoalMutationError
 
 
 @dataclass(frozen=True)
