@@ -1,3 +1,8 @@
+from __future__ import annotations
+
+from itertools import chain
+from typing import Sequence
+
 from athenian.api.models.web.base_model_ import Enum, Model
 
 
@@ -81,6 +86,80 @@ class TeamGoalChangeFields(metaclass=Enum):
     teamId = "teamId"
     target = "target"
     remove = "remove"
+
+
+class TeamTree(Model):
+    """A team with the tree of child teams."""
+
+    attribute_types = {
+        "id": int,
+        "name": str,
+        "total_teams_count": int,
+        "total_members_count": int,
+        "children": Sequence[Model],  # Sequence[Team],
+        "members": Sequence[int],
+        "total_members": Sequence[int],
+    }
+
+    attribute_map = {
+        "total_teams_count": "totalTeamsCount",
+        "total_members_count": "totalMembersCount",
+    }
+
+    def __init__(
+        self,
+        id: int,
+        name: str,
+        children: Sequence[TeamTree],
+        members: Sequence[int],
+    ):
+        """Init the TeamTree."""
+        self._id = id
+        self._name = name
+        self._members = members
+        self._children = children
+
+        self._total_members = sorted(
+            set(chain(members, *(child.total_members for child in children))),
+        )
+        self._total_teams_count = sum(
+            child.total_teams_count for child in children
+        ) + len(children)
+
+    @property
+    def id(self) -> int:
+        """Get the identifier of the team."""
+        return self._id
+
+    @property
+    def name(self) -> str:
+        """Get the name of the team."""
+        return self._name
+
+    @property
+    def total_teams_count(self) -> int:
+        """Get the number of teams included in the team tree."""
+        return self._total_teams_count
+
+    @property
+    def total_members_count(self) -> int:
+        """Get the number of team members included in the team tree."""
+        return len(self._total_members)
+
+    @property
+    def children(self) -> Sequence[TeamTree]:
+        """Get the direct child teams of the team."""
+        return self._children
+
+    @property
+    def total_members(self) -> Sequence[int]:
+        """Get the team members recursively included in the team tree."""
+        return self._total_members
+
+    @property
+    def members(self) -> Sequence[int]:
+        """Get the directly contained members of the team."""
+        return self._members
 
 
 class MetricParamsFields(metaclass=Enum):
