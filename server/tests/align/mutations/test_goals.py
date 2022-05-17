@@ -281,7 +281,7 @@ class TestCreateGoals(BaseCreateGoalTest):
 class BaseRemoveGoalTest(BaseGoalTest):
     _QUERY = """
         mutation ($accountId: Int!, $goalId: Int!) {
-          removeGoal(accountId: $accountId, id: $goalId) {
+          removeGoal(accountId: $accountId, goalId: $goalId) {
             success
           }
         }

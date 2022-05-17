@@ -40,12 +40,12 @@ async def resolve_remove_goal(
     _: Any,
     info: GraphQLResolveInfo,
     accountId: int,
-    id: int,
+    goalId: int,
 ) -> Dict[str, Any]:
     """Remove a Goal and referring TeamGoal-s."""
     async with info.context.sdb.connection() as sdb_conn:
         async with sdb_conn.transaction():
-            await delete_goal(accountId, id, sdb_conn)
+            await delete_goal(accountId, goalId, sdb_conn)
     remove_status = GoalRemoveStatus(success=True)
     return remove_status.to_dict()
 
