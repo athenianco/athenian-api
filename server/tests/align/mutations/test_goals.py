@@ -6,11 +6,19 @@ import sqlalchemy as sa
 
 from athenian.api.db import Database
 from athenian.api.models.state.models import Goal, TeamGoal
-from tests.testutils.db import db_datetime_equals, model_insert_stmt
-from tests.testutils.factory.state import TeamFactory
+from tests.testutils.db import assert_existing_row, assert_missing_row, db_datetime_equals, \
+    model_insert_stmt
+from tests.testutils.factory.state import GoalFactory, TeamFactory, TeamGoalFactory
 
 
-class BaseCreateGoalTest:
+class BaseGoalTest:
+    @classmethod
+    async def _assert_no_goal_exists(cls, sdb: Database) -> None:
+        assert await sdb.fetch_one(sa.select([Goal])) is None
+        assert await sdb.fetch_one(sa.select([TeamGoal])) is None
+
+
+class BaseCreateGoalTest(BaseGoalTest):
     async def _request(
         self, variables: dict, client: TestClient, headers: dict,
     ) -> dict:
@@ -42,11 +50,6 @@ class BaseCreateGoalTest:
         kwargs.setdefault("expiresAt", "2022-03-31")
         kwargs.setdefault("teamGoals", [])
         return kwargs
-
-    @classmethod
-    async def _assert_no_goal_exists(cls, sdb: Database) -> None:
-        assert await sdb.fetch_one(sa.select([Goal])) is None
-        assert await sdb.fetch_one(sa.select([TeamGoal])) is None
 
 
 class TestCreateGoalErrors(BaseCreateGoalTest):
@@ -282,3 +285,78 @@ class TestCreateGoals(BaseCreateGoalTest):
             goal_row["valid_from"],
             datetime(2022, 5, 4, tzinfo=timezone.utc),
         )
+
+
+class BaseRemoveGoalTest(BaseGoalTest):
+    _QUERY = """
+        mutation ($accountId: Int!, $goalId: Int!) {
+          removeGoal(accountId: $accountId, id: $goalId) {
+            success
+          }
+        }
+    """
+
+    async def _request(
+        self, accountId: int, goalId: int, client: TestClient, headers: dict,
+    ) -> dict:
+        variables = {"accountId": accountId, "goalId": goalId}
+        body = {"query": self._QUERY, "variables": variables}
+        response = await client.request(
+            method="POST",
+            path="/align/graphql",
+            headers=headers,
+            json=body,
+        )
+        assert response.status == 200
+        return await response.json()
+
+
+class TestRemoveGoalErrors(BaseRemoveGoalTest):
+    async def test_non_existing_goal(self, client: TestClient, headers: dict) -> None:
+        res = await self._request(1, 999, client, headers)
+        assert res["errors"][0]["extensions"]["detail"] == "Goal 999 not found"
+
+    async def test_account_mismatch(
+        self, client: TestClient, headers: dict, sdb: Database,
+    ) -> None:
+        await sdb.execute(model_insert_stmt(GoalFactory(id=100, account_id=2)))
+
+        res = await self._request(1, 100, client, headers)
+        assert res["errors"][0]["extensions"]["detail"] == "Goal 100 not found"
+        await assert_existing_row(sdb, Goal, id=100)
+
+
+class TestRemoveGoal(BaseRemoveGoalTest):
+    async def test_remove(self, client: TestClient, headers: dict, sdb: Database):
+        await sdb.execute(model_insert_stmt(GoalFactory(id=100, account_id=1)))
+
+        res = await self._request(1, 100, client, headers)
+        assert "errors" not in res
+        assert res["data"]["removeGoal"]["success"]
+        await self._assert_no_goal_exists(sdb)
+
+    async def test_remove_with_team_goals(
+        self, client: TestClient, headers: dict, sdb: Database,
+    ):
+        for model in (
+            TeamFactory(owner_id=1, id=10),
+            TeamFactory(owner_id=1, id=20),
+            GoalFactory(id=100, account_id=1),
+            GoalFactory(id=200, account_id=1),
+            GoalFactory(id=300, account_id=2),
+            TeamGoalFactory(team_id=10, goal_id=100),
+            TeamGoalFactory(team_id=20, goal_id=100),
+            TeamGoalFactory(team_id=20, goal_id=200),
+        ):
+            await sdb.execute(model_insert_stmt(model))
+
+        res = await self._request(1, 100, client, headers)
+        assert "errors" not in res
+        assert res["data"]["removeGoal"]["success"]
+
+        await assert_missing_row(sdb, Goal, id=100, account_id=1)
+        await assert_missing_row(sdb, TeamGoal, goal_id=100)
+
+        await assert_existing_row(sdb, Goal, id=200)
+        await assert_existing_row(sdb, Goal, id=300)
+        await assert_existing_row(sdb, TeamGoal, goal_id=200)

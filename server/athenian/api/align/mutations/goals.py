@@ -1,17 +1,14 @@
 from datetime import date, datetime, time, timedelta, timezone
-from http import HTTPStatus
-from typing import Any, Dict, Sequence, Tuple
+from typing import Any, Dict, Tuple
 
 from ariadne import MutationType
 from graphql import GraphQLResolveInfo
-from morcilla import Connection
-import sqlalchemy as sa
 
+from athenian.api.align.goals.dbaccess import delete_goal, GoalCreationInfo, insert_goal
+from athenian.api.align.goals.exceptions import GoalMutationError
 from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
-from athenian.api.models.state.models import Goal, Team, TeamGoal
-from athenian.api.models.web import GenericError
-from athenian.api.response import ResponseError
-from athenian.api.typing_utils import dataclass
+from athenian.api.align.models import GoalRemoveStatus
+from athenian.api.models.state.models import Goal, TeamGoal
 
 mutation = MutationType()
 
@@ -22,44 +19,35 @@ async def resolve_create_goal(
     info: GraphQLResolveInfo,
     accountId: int,
     input: Dict[str, Any],
-):
+) -> Dict[str, Any]:
     """Create a Goal."""
-    parse_result = _parse_create_goal_input(input, accountId)
+    creation_info = _parse_create_goal_input(input, accountId)
 
     async with info.context.sdb.connection() as sdb_conn:
         async with sdb_conn.transaction():
-            await _parse_result_db_validation(parse_result, sdb_conn)
-            new_goal_id = await _insert_db_goal(parse_result, sdb_conn)
+            new_goal_id = await insert_goal(creation_info, sdb_conn)
 
     # TODO: return the complete response
     return {"goal": {"id": new_goal_id}}
 
 
-class GoalMutationError(ResponseError):
-    """An error during a goal mutation handling."""
-
-    def __init__(self, text):
-        """Init the GoalMutationError."""
-        wrapped_error = GenericError(
-            type="/errors/align/GoalMutationError",
-            status=HTTPStatus.BAD_REQUEST,
-            detail=text,
-            title="Goal mutation error",
-        )
-        super().__init__(wrapped_error)
-
-
-@dataclass(frozen=True)
-class _CreateGoalInputParseResult:
-    goal: Goal
-    team_goals: Sequence[TeamGoal]
+@mutation.field("removeGoal")
+async def resolve_remove_goal(
+    _: Any,
+    info: GraphQLResolveInfo,
+    accountId: int,
+    id: int,
+) -> Dict[str, Any]:
+    """Remove a Goal and referring TeamGoal-s."""
+    async with info.context.sdb.connection() as sdb_conn:
+        async with sdb_conn.transaction():
+            await delete_goal(accountId, id, sdb_conn)
+    remove_status = GoalRemoveStatus(success=True)
+    return remove_status.to_dict()
 
 
-def _parse_create_goal_input(
-    input: Dict[str, Any],
-    account_id: int,
-) -> _CreateGoalInputParseResult:
-    """Parse CreateGoalInput into Goal and TeamGoal application models."""
+def _parse_create_goal_input(input: Dict[str, Any], account_id: int) -> GoalCreationInfo:
+    """Parse CreateGoalInput into GoalCreationInfo."""
     template_id = input["templateId"]
     if template_id not in TEMPLATES_COLLECTION:
         raise GoalMutationError(f"Invalid templateId {template_id}")
@@ -79,7 +67,7 @@ def _parse_create_goal_input(
         valid_from=valid_from,
         expires_at=expires_at,
     )
-    return _CreateGoalInputParseResult(goal, team_goals)
+    return GoalCreationInfo(goal, team_goals)
 
 
 def _parse_team_goal_input(team_goal_input: dict) -> TeamGoal:
@@ -100,37 +88,3 @@ def _convert_goal_dates(valid_from: date, expires_at: date) -> Tuple[datetime, d
     # following day
     expires_at = datetime.combine(expires_at + timedelta(days=1), time.min, tzinfo=timezone.utc)
     return (valid_from, expires_at)
-
-
-async def _parse_result_db_validation(
-    parse_result: _CreateGoalInputParseResult, sdb_conn: Connection,
-) -> None:
-    """Execute validation on parse result using the DB."""
-    # check that all team exist and belong to the right account
-    team_ids = {team_goal.team_id for team_goal in parse_result.team_goals}
-    teams_stmt = sa.select([Team.id]).where(
-        sa.and_(Team.id.in_(team_ids), Team.owner_id == parse_result.goal.account_id),
-    )
-    existing_team_ids_rows = await sdb_conn.fetch_all(teams_stmt)
-    existing_team_ids = {r[0] for r in existing_team_ids_rows}
-
-    if team_ids != existing_team_ids:
-        missing = [team_id for team_id in team_ids if team_id not in existing_team_ids]
-        missing_repr = ",".join(str(team_id) for team_id in missing)
-        raise GoalMutationError(f"Some teamId-s don't exist or access denied: {missing_repr}")
-
-
-async def _insert_db_goal(parse_result: _CreateGoalInputParseResult, sdb_conn: Connection) -> int:
-    """Insert the goal and related objects into DB."""
-    goal_value = parse_result.goal.create_defaults().explode()
-    new_goal_id = await sdb_conn.execute(sa.insert(Goal).values(goal_value))
-    team_goals_values = [
-        {
-            **team_goal.create_defaults().explode(with_primary_keys=True),
-            # goal_id can only be set now that Goal has been inserted
-            "goal_id": new_goal_id,
-        }
-        for team_goal in parse_result.team_goals
-    ]
-    await sdb_conn.execute_many(sa.insert(TeamGoal), team_goals_values)
-    return new_goal_id
