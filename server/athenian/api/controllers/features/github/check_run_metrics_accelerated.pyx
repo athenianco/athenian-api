@@ -21,7 +21,7 @@ def calculate_interval_intersections(starts: np.ndarray,
                                      finishes: np.ndarray,
                                      borders: np.ndarray,
                                      ) -> np.ndarray:
-    cdef unsigned long max_intervals, groups_count
+    cdef unsigned long max_intervals, groups_count, time_offset
     assert len(starts) == len(finishes)
     assert starts.dtype == np.uint64
     assert finishes.dtype == np.uint64
@@ -60,7 +60,12 @@ def calculate_interval_intersections(starts: np.ndarray,
     # remove the group indexes
     intervals &= (1 << group_offset) - 1
     raw = np.zeros(size, dtype=np.uint64)
-    _calculate_interval_intersections(intervals, borders * 2, time_offset, raw)
+    cdef:
+        const uint64_t[:] intervals_view = intervals
+        const int64_t[:] borders_view = borders * 2
+        uint64_t[:] raw_view = raw
+    with nogil:
+        _calculate_interval_intersections(intervals_view, borders_view, time_offset, raw_view)
     result = raw.astype(float) / (finishes - starts)
     return result
 
@@ -115,7 +120,12 @@ def mark_check_suite_types(check_run_names: np.ndarray,
     order = np.argsort(fused.view("S16"))  # sort first by suite ID, then by name
     name_indexes = name_indexes[order]
     type_marks = np.full(len(suite_sizes), -1, int)
-    _mark_check_suite_types(name_indexes, suite_sizes, type_marks)
+    cdef:
+        int64_t[:] name_indexes_view = name_indexes
+        int64_t[:] suite_sizes_view = suite_sizes
+        int64_t[:] type_marks_view = type_marks
+    with nogil:
+        _mark_check_suite_types(name_indexes_view, suite_sizes_view, type_marks_view)
     return first_suite_encounters, type_marks
 
 

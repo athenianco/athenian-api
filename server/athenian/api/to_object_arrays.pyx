@@ -118,12 +118,20 @@ def as_bool(arr: np.ndarray) -> np.ndarray:
     assert arr.data.c_contiguous
     assert len(arr.shape) == 1
     new_arr = np.empty(len(arr), dtype=bool)
+    cdef:
+        const PyObject **arr_obj
+        int size
+        npy_bool *out_bools = <npy_bool *>PyArray_DATA(new_arr)
+        const npy_uintp[:] arr_view
     if arr.data.c_contiguous:
-        _as_bool_vec(<const PyObject **>PyArray_DATA(arr),
-                     len(arr),
-                     <npy_bool *>PyArray_DATA(new_arr))
+        arr_obj = <const PyObject **> PyArray_DATA(arr)
+        size = len(arr)
+        with nogil:
+            _as_bool_vec(arr_obj, size, out_bools)
     else:
-        _as_bool_uintp(as_uintp(arr), <npy_bool *> PyArray_DATA(new_arr))
+        arr_view = as_uintp(arr)
+        with nogil:
+            _as_bool_uintp(arr_view, out_bools)
     return new_arr
 
 
@@ -155,12 +163,20 @@ def is_null(arr: np.ndarray) -> np.ndarray:
         return np.zeros(len(arr), dtype=bool)
     assert len(arr.shape) == 1
     new_arr = np.zeros(len(arr), dtype=bool)
+    cdef:
+        const PyObject **arr_obj
+        int size
+        npy_bool *out_bools = <npy_bool *> PyArray_DATA(new_arr)
+        const npy_uintp[:] arr_view
     if arr.data.c_contiguous:
-        _is_null_vec(<const PyObject **>PyArray_DATA(arr),
-                     len(arr),
-                     <npy_bool *>PyArray_DATA(new_arr))
+        arr_obj = <const PyObject **> PyArray_DATA(arr)
+        size = len(arr)
+        with nogil:
+            _is_null_vec(arr_obj, size, out_bools)
     else:
-        _is_null_uintp(as_uintp(arr), <npy_bool *> PyArray_DATA(new_arr))
+        arr_view = as_uintp(arr)
+        with nogil:
+            _is_null_uintp(arr_view, out_bools)
     return new_arr
 
 
@@ -191,7 +207,12 @@ def is_not_null(arr: np.ndarray) -> np.ndarray:
     assert arr.data.c_contiguous
     assert len(arr.shape) == 1
     new_arr = np.zeros(len(arr), dtype=bool)
-    _is_not_null(<const PyObject **>PyArray_DATA(arr), len(arr), <npy_bool *>PyArray_DATA(new_arr))
+    cdef:
+        const PyObject **arr_obj = <const PyObject **> PyArray_DATA(arr)
+        int size = len(arr)
+        npy_bool *out_bools = <npy_bool *> PyArray_DATA(new_arr)
+    with nogil:
+        _is_not_null(arr_obj, size, out_bools)
     return new_arr
 
 
