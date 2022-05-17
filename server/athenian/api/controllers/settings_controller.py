@@ -279,13 +279,19 @@ async def get_jira_identities(request: AthenianWebRequest,
     for map_row in map_rows:
         try:
             github_user = github_details[map_row[MappedJIRAIdentity.github_user_id.name]]
+        except KeyError:
+            log.error("Identity mapping %s -> %s misses GitHub details",
+                      map_row[MappedJIRAIdentity.github_user_id.name],
+                      map_row[MappedJIRAIdentity.jira_user_id.name])
+            continue
+        try:
             jira_user = jira_details[
                 (jira_user_id := map_row[MappedJIRAIdentity.jira_user_id.name])
             ]
         except KeyError:
-            log.error("Identity mapping %s -> %s misses details" % (
-                map_row[MappedJIRAIdentity.github_user_id.name],
-                map_row[MappedJIRAIdentity.jira_user_id.name]))
+            log.error("Identity mapping %s -> %s misses JIRA details",
+                      map_row[MappedJIRAIdentity.github_user_id.name],
+                      map_row[MappedJIRAIdentity.jira_user_id.name])
             continue
         mentioned_jira_user_ids.add(jira_user_id)
         models.append(WebMappedJIRAIdentity(
