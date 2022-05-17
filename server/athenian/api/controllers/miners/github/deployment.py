@@ -14,6 +14,7 @@ import pandas as pd
 import sentry_sdk
 from sqlalchemy import and_, desc, distinct, exists, func, join, literal_column, not_, or_, \
     select, union_all
+from sqlalchemy.orm import aliased
 from sqlalchemy.sql import Select
 from sqlalchemy.sql.elements import UnaryExpression
 
@@ -279,22 +280,29 @@ async def _fetch_precomputed_deployed_releases(notifications: pd.DataFrame,
                                                ) -> pd.DataFrame:
     assert repo_names
     reverse_settings = reverse_release_settings(repo_names, default_branches, release_settings)
-    ghrd = GitHubReleaseDeployment
-    releases = await read_sql_query(union_all(*(
-        select([ghrd.deployment_name, PrecomputedRelease])
-        .select_from(join(ghrd, PrecomputedRelease, and_(
-            ghrd.acc_id == PrecomputedRelease.acc_id,
-            ghrd.release_id == PrecomputedRelease.node_id,
-            ghrd.release_match == PrecomputedRelease.release_match,
-            ghrd.repository_full_name == PrecomputedRelease.repository_full_name,
-        )))
-        .where(and_(ghrd.acc_id == account,
-                    ghrd.repository_full_name.in_(repos),
-                    PrecomputedRelease.release_match == compose_release_match(m, v),
-                    ghrd.deployment_name.in_(notifications.index.values)))
-        for (m, v), repos in reverse_settings.items()
-    )),
-        pdb, [ghrd.deployment_name, *PrecomputedRelease.__table__.columns])
+    queries = []
+    for i, ((m, v), repos) in enumerate(reverse_settings.items(), start=1):
+        ghrd = aliased(GitHubReleaseDeployment, name=f"ghrd{i}")
+        prel = aliased(PrecomputedRelease, name=f"prel{i}")
+        queries.append(
+            select([ghrd.deployment_name, prel])
+            .select_from(join(ghrd, prel, and_(
+                ghrd.acc_id == prel.acc_id,
+                ghrd.release_id == prel.node_id,
+                ghrd.release_match == prel.release_match,
+                ghrd.repository_full_name == prel.repository_full_name,
+            )))
+            .where(and_(ghrd.acc_id == account,
+                        ghrd.repository_full_name.in_(repos),
+                        prel.release_match == compose_release_match(m, v),
+                        ghrd.deployment_name.in_(notifications.index.values))),
+        )
+    query = union_all(*queries)
+    for i in range(1, len(reverse_settings) + 1):
+        query = query.with_statement_hint(f"HashJoin(ghrd{i} prel{i})")
+    releases = await read_sql_query(
+        query, pdb, [GitHubReleaseDeployment.deployment_name,
+                     *PrecomputedRelease.__table__.columns])
     releases = set_matched_by_from_release_match(releases, False)
     del releases[PrecomputedRelease.acc_id.name]
     return await _postprocess_deployed_releases(

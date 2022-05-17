@@ -13,6 +13,7 @@ import aiomcache
 import numpy as np
 import pandas as pd
 from pandas.core.common import flatten
+import sentry_sdk
 from sqlalchemy import sql
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.orm import aliased
@@ -1350,19 +1351,27 @@ class PullRequestMiner:
     @classmethod
     @sentry_span
     async def fetch_pr_deployments(cls,
-                                   pr_node_ids: Iterable[int],
+                                   pr_node_ids: Collection[int],
                                    account: int,
                                    pdb: Database,
                                    rdb: Database,
                                    ) -> pd.DataFrame:
         """Load the deployments for each PR node ID."""
         ghprd = GitHubPullRequestDeployment
+        sentry_sdk.Hub.current.scope.span.description = str(len(pr_node_ids))
         cols = [ghprd.pull_request_id, ghprd.deployment_name, ghprd.repository_full_name]
-        df = await read_sql_query(
+        query = (
             sql.select(cols)
-            .where(sql.and_(ghprd.acc_id == account,
-                            ghprd.pull_request_id.in_any_values(pr_node_ids))),
-            con=pdb, columns=cols, index=ghprd.deployment_name.name)
+            .where(sql.and_(
+                ghprd.acc_id == account,
+                ghprd.pull_request_id.in_any_values(pr_node_ids))
+                if len(pr_node_ids) >= 100
+                else ghprd.pull_request_id.in_(pr_node_ids))
+        )
+        if len(pr_node_ids) >= 100:
+            query = query.with_statement_hint(
+                f"Rows({ghprd.__tablename__} *VALUES* #{len(pr_node_ids)})")
+        df = await read_sql_query(query, con=pdb, columns=cols, index=ghprd.deployment_name.name)
         cols = [DeploymentNotification.name,
                 DeploymentNotification.environment,
                 DeploymentNotification.conclusion,
