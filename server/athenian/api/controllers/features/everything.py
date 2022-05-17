@@ -273,9 +273,11 @@ async def mine_all_deployments(repos: Collection[str],
                 pass
     result = {"": deps}
     for col in split_cols:
-        df = pd.concat(deps[col].values)
+        children = deps[col].values
         del deps[col]
-        if not df.empty:
+        children = children[[not child.empty for child in children]]
+        if len(children):
+            df = pd.concat(children)
             if col == "labels":
                 df["value"] = [json.dumps(v) for v in df["value"].values]
             result["_" + col] = df
