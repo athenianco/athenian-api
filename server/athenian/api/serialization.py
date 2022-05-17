@@ -158,11 +158,11 @@ def deserialize_model(data: dict, klass: Class, path: str = "") -> T:
     """
     instance = klass()
 
-    if not instance.openapi_types:
+    if not instance.attribute_types:
         return data
 
     if data is not None and isinstance(data, dict):
-        for attr, attr_type in instance.openapi_types.items():
+        for attr, attr_type in instance.attribute_types.items():
             attr_key = instance.attribute_map[attr]
             if attr_key in data:
                 value = data[attr_key]

@@ -7,7 +7,7 @@ from athenian.api.models.web.contributor_identity import ContributorIdentity
 class MatchedIdentity(Model):
     """Identity mapping of a specific contributor."""
 
-    openapi_types = {
+    attribute_types = {
         "from_": ContributorIdentity,
         "to": str,
         "confidence": float,

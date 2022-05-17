@@ -10,7 +10,7 @@ from athenian.api.models.web.jira_filter_with import JIRAFilterWith
 class FilterJIRAStuffSpecials(Model, sealed=False):
     """Request of `/filter/jira` to retrieve epics and labels."""
 
-    openapi_types = {
+    attribute_types = {
         "with_": Optional[JIRAFilterWith],
         "return_": Optional[List[str]],
     }

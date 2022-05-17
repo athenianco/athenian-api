@@ -7,7 +7,7 @@ from athenian.api.models.web.base_model_ import Model
 class CalculatedLinearMetricValues(Model):
     """Calculated metrics: date, values, confidences."""
 
-    openapi_types = {
+    attribute_types = {
         "date": datetime.date,
         "values": List[object],
         "confidence_scores": Optional[List[int]],

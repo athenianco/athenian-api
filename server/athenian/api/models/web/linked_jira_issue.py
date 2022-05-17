@@ -6,7 +6,7 @@ from athenian.api.models.web.base_model_ import Model
 class LinkedJIRAIssue(Model):
     """Brief details about a JIRA issue."""
 
-    openapi_types = {
+    attribute_types = {
         "id": str,
         "title": str,
         "epic": Optional[str],
@@ -22,7 +22,7 @@ class LinkedJIRAIssue(Model):
         "type": "type",
     }
 
-    __slots__ = ["_" + k for k in openapi_types]
+    __slots__ = ["_" + k for k in attribute_types]
 
     def __init__(
         self,

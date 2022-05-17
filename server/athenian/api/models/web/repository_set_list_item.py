@@ -10,7 +10,7 @@ class RepositorySetListItem(Model):
     Do not edit the class manually.
     """
 
-    openapi_types = {
+    attribute_types = {
         "id": int,
         "name": str,
         "created": datetime,

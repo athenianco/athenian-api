@@ -10,7 +10,7 @@ class DeveloperUpdates(Model):
     Note: any of these properties may be missing if there was no such activity.
     """
 
-    openapi_types = {
+    attribute_types = {
         "prs": int,
         "reviewer": int,
         "commit_author": int,

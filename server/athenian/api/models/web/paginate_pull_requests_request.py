@@ -11,7 +11,7 @@ class PaginatePullRequestsRequest(Model):
     According to the target batch size, compute the optimal PR updated timestamp ranges.
     """
 
-    openapi_types = {"batch": int, "request": FilterPullRequestsRequest}
+    attribute_types = {"batch": int, "request": FilterPullRequestsRequest}
     attribute_map = {"batch": "batch", "request": "request"}
 
     def __init__(self,

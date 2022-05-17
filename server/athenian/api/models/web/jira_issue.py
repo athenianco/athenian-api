@@ -8,7 +8,7 @@ from athenian.api.models.web.pull_request import PullRequest
 class _JIRAIssueSpecials(Model, sealed=False):
     """Details specific to JIRA issues."""
 
-    openapi_types = {
+    attribute_types = {
         "project": str,
         "prs": Optional[List[PullRequest]],
     }

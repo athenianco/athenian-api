@@ -10,7 +10,7 @@ from athenian.api.models.web.granularity import GranularityMixin
 class _CalculatedCodeCheckMetricsItem(Model, GranularityMixin, sealed=False):
     """Series of calculated metrics for a specific set of repositories and commit authors."""
 
-    openapi_types = {
+    attribute_types = {
         "granularity": str,
         "values": List[CalculatedLinearMetricValues],
     }

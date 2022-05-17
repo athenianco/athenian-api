@@ -6,7 +6,7 @@ from athenian.api.models.web.base_model_ import Model
 class MappedJIRAIdentityChange(Model):
     """Individual GitHub<>JIRA user mapping change."""
 
-    openapi_types = {"developer_id": str, "jira_name": str}
+    attribute_types = {"developer_id": str, "jira_name": str}
 
     attribute_map = {"developer_id": "developer_id", "jira_name": "jira_name"}
 

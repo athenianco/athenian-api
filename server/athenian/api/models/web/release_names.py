@@ -6,7 +6,7 @@ from athenian.api.models.web.base_model_ import Model
 class ReleaseNames(Model):
     """Repository name and a list of release names in that repository."""
 
-    openapi_types = {"repository": str, "names": List[str]}
+    attribute_types = {"repository": str, "names": List[str]}
     attribute_map = {"repository": "repository", "names": "names"}
 
     def __init__(self,

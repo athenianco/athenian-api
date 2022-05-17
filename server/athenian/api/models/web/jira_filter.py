@@ -6,7 +6,7 @@ from athenian.api.models.web.base_model_ import Model
 class JIRAFilter(Model):
     """PR filters related to JIRA traits. The aggregation between each filter type is *AND*."""
 
-    openapi_types = {
+    attribute_types = {
         "epics": Optional[List[str]],
         "labels_include": Optional[List[str]],
         "labels_exclude": Optional[List[str]],

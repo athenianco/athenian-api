@@ -10,7 +10,7 @@ from athenian.api.models.web.jira_histogram_definition import JIRAHistogramDefin
 class _JIRAHistogramsRequest(Model, QuantilesMixin, sealed=False):
     """Request of `/histograms/jira`."""
 
-    openapi_types = {
+    attribute_types = {
         "epics": Optional[List[str]],
         "with_": Optional[List[JIRAFilterWith]],
         "histograms": List[JIRAHistogramDefinition],

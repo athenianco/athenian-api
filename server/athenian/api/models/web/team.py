@@ -7,7 +7,7 @@ from athenian.api.models.web.contributor import Contributor
 class Team(Model):
     """Definition of a team of several developers."""
 
-    openapi_types = {
+    attribute_types = {
         "id": int,
         "name": str,
         "members": List[Contributor],

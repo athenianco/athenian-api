@@ -10,7 +10,7 @@ from athenian.api.models.web.pull_request_metric_id import PullRequestMetricID
 class _PullRequestMetricsRequest(Model, sealed=False):
     """Request for calculating metrics on top of pull requests data."""
 
-    openapi_types = {
+    attribute_types = {
         "for_": List[ForSetPullRequests],
         "metrics": List[PullRequestMetricID],
         "exclude_inactive": bool,

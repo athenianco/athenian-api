@@ -7,7 +7,7 @@ from athenian.api.models.web.deployment_conclusion import DeploymentConclusion
 class FilteredEnvironment(Model):
     """Details about a deployment environment."""
 
-    openapi_types = {
+    attribute_types = {
         "name": str,
         "deployments_count": int,
         "last_conclusion": str,

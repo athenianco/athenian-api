@@ -10,7 +10,7 @@ from athenian.api.models.web.interquartile import Interquartile
 class _CalculatedCodeCheckHistogram(Model, sealed=False):
     """Calculated histogram over code checks (CI)."""
 
-    openapi_types = {
+    attribute_types = {
         "metric": str,
         "scale": str,
         "ticks": List[float],

@@ -17,7 +17,7 @@ def HistogramDefinition(M: Enum, module_name: str) -> Type[Model]:
     class HistogramDefinition(Model):
         """Histogram parameters for each measured topic."""
 
-        openapi_types = {
+        attribute_types = {
             "metric": M,
             "scale": Optional[HistogramScale],
             "bins": Optional[int],

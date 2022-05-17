@@ -7,7 +7,7 @@ from athenian.api.models.web.commit_signature import CommitSignature
 class Commit(Model):
     """Information about a commit."""
 
-    openapi_types = {
+    attribute_types = {
         "repository": str,
         "hash": str,
         "author": CommitSignature,

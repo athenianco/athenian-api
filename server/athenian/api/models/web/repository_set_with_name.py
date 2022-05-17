@@ -9,7 +9,7 @@ class RepositorySetWithName(Model):
     Do not edit the class manually.
     """
 
-    openapi_types = {"name": Optional[str], "items": List[str], "precomputed": Optional[bool]}
+    attribute_types = {"name": Optional[str], "items": List[str], "precomputed": Optional[bool]}
     attribute_map = {"name": "name", "items": "items", "precomputed": "precomputed"}
 
     def __init__(self,

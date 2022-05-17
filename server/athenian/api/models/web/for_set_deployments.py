@@ -14,7 +14,7 @@ from athenian.api.models.web.for_set_common import (
 class _ForSetDeployments(Model, RepositoryGroupsMixin):
     """Request body of `/metrics/deployments`, the deployments selector."""
 
-    openapi_types = {
+    attribute_types = {
         "repositories": Optional[List[str]],
         "repogroups": Optional[List[List[int]]],
         "with_": Optional[DeploymentWith],

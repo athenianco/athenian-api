@@ -8,7 +8,7 @@ from athenian.api.models.web.included_native_users import IncludedNativeUsers
 class CommitsList(Model):
     """Lists of commits for each time interval."""
 
-    openapi_types = {
+    attribute_types = {
         "data": List[Commit],
         "include": IncludedNativeUsers,
     }

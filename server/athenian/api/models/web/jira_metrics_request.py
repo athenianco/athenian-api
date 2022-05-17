@@ -10,7 +10,7 @@ from athenian.api.models.web.jira_metric_id import JIRAMetricID
 class JIRAMetricsRequestSpecials(Model, sealed=False):
     """Request body of `/metrics/jira`."""
 
-    openapi_types = {
+    attribute_types = {
         "with_": List[JIRAFilterWith],
         "metrics": List[str],
         "epics": List[str],

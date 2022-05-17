@@ -11,7 +11,7 @@ from athenian.api.models.web.for_set_code_checks import ForSetCodeChecks
 class _CodeCheckHistogramsRequest(Model, QuantilesMixin, sealed=False):
     """Request of `/histograms/code_checks`."""
 
-    openapi_types = {
+    attribute_types = {
         "for_": List[ForSetCodeChecks],
         "histograms": List[CodeCheckHistogramDefinition],
         "quantiles": List[float],

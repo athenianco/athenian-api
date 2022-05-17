@@ -7,7 +7,7 @@ from athenian.api.models.web.base_model_ import Model
 class JIRALabel(Model):
     """Details about a JIRA label."""
 
-    openapi_types = {
+    attribute_types = {
         "title": str,
         "last_used": datetime,
         "issues_count": int,

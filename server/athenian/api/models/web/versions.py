@@ -6,7 +6,7 @@ from athenian.api.models.web.base_model_ import Model
 class Versions(Model):
     """Versions of the backend components."""
 
-    openapi_types = {"api": str, "metadata": str}
+    attribute_types = {"api": str, "metadata": str}
     attribute_map = {"api": "api", "metadata": "metadata"}
 
     def __init__(self, api: Optional[str] = None, metadata: Optional[str] = None):

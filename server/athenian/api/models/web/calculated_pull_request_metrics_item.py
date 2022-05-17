@@ -10,7 +10,7 @@ from athenian.api.models.web.granularity import GranularityMixin
 class CalculatedPullRequestMetricsItem(Model, GranularityMixin):
     """Series of calculated metrics for a specific set of repositories and developers."""
 
-    openapi_types = {
+    attribute_types = {
         "for_": ForSetPullRequests,
         "granularity": str,
         "values": List[CalculatedLinearMetricValues],

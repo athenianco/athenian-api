@@ -64,7 +64,7 @@ class QuantilesMixin:
 class CommonMetricsProperties(Model, GranularitiesMixin, QuantilesMixin, sealed=False):
     """Define `account`, `date_from`, `date_to`, and `timezone` properties."""
 
-    openapi_types = {
+    attribute_types = {
         "granularities": List[str],
         "quantiles": Optional[List[float]],
     }

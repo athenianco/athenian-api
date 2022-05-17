@@ -16,7 +16,7 @@ class _FilterCommitsProperty(Enum):
 class _FilterCommitsRequest(Model, sealed=False):
     """Filter for listing commits."""
 
-    openapi_types = {
+    attribute_types = {
         "property": str,
     }
 

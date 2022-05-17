@@ -10,7 +10,7 @@ class GenericError(Model):
     Do not edit the class manually.
     """
 
-    openapi_types = {
+    attribute_types = {
         "type": str,
         "title": str,
         "status": Optional[int],

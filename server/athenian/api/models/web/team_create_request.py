@@ -6,7 +6,7 @@ from athenian.api.models.web.base_model_ import Model
 class TeamCreateRequest(Model):
     """Team creation request."""
 
-    openapi_types = {
+    attribute_types = {
         "account": int,
         "name": str,
         "members": List[str],

@@ -12,7 +12,7 @@ class UserChangeStatus(metaclass=Enum):
 class AccountUserChangeRequest(Model):
     """Request to change an account member's status."""
 
-    openapi_types = {"account": int, "user": str, "status": str}
+    attribute_types = {"account": int, "user": str, "status": str}
     attribute_map = {"account": "account", "user": "user", "status": "status"}
 
     def __init__(self, account: int = None, user: str = None, status: str = None):

@@ -6,7 +6,7 @@ from athenian.api.models.web.base_model_ import Model
 class DeployedComponent(Model):
     """Definition of the deployed software unit."""
 
-    openapi_types = {"repository": str, "reference": str}
+    attribute_types = {"repository": str, "reference": str}
 
     attribute_map = {"repository": "repository", "reference": "reference"}
 

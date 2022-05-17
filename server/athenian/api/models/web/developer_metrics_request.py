@@ -10,7 +10,7 @@ from athenian.api.models.web.for_set_developers import ForSetDevelopers
 class _DeveloperMetricsRequest(Model, GranularitiesMixin, sealed=False):
     """Request for calculating metrics on developer activities."""
 
-    openapi_types = {
+    attribute_types = {
         "for_": List[ForSetDevelopers],
         "metrics": List[str],
         "granularities": List[str],

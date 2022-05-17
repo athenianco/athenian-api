@@ -6,7 +6,7 @@ from athenian.api.models.web.base_model_ import Model
 class Contributor(Model):
     """Details about a developer who contributed to some repositories owned by the account."""
 
-    openapi_types = {
+    attribute_types = {
         "login": str,
         "name": Optional[str],
         "email": Optional[str],

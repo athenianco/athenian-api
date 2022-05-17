@@ -11,7 +11,7 @@ from athenian.api.models.web.for_set_common import make_common_pull_request_filt
 class _FilterDeploymentsRequest(Model, sealed=False):
     """Filters to select the deployments in `/filter/deployments`."""
 
-    openapi_types = {
+    attribute_types = {
         "in_": List[str],
         "with_": DeploymentWith,
         "environments": List[str],

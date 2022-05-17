@@ -6,7 +6,7 @@ from athenian.api.models.web.base_model_ import MappingModel
 class ReleaseWith(MappingModel):
     """Release contribution roles."""
 
-    openapi_types = {
+    attribute_types = {
         "pr_author": Optional[List[str]],
         "commit_author": Optional[List[str]],
         "releaser": Optional[List[str]],

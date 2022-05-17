@@ -7,7 +7,7 @@ from athenian.api.models.web.base_model_ import Model
 class JIRAEpicIssueCommon(Model, sealed=False):
     """Common JIRA issue fields."""
 
-    openapi_types = {
+    attribute_types = {
         "id": str,
         "title": str,
         "created": datetime,

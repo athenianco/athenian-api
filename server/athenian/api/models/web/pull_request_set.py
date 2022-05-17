@@ -13,7 +13,7 @@ PullRequestSetInclude = AllOf(_IncludedNativeUsers, _IncludedDeployments,
 class PullRequestSet(Model):
     """List of pull requests together with the participant profile pictures."""
 
-    openapi_types = {
+    attribute_types = {
         "include": PullRequestSetInclude,
         "data": List[PullRequest],
     }

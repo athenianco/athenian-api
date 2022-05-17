@@ -7,7 +7,7 @@ from athenian.api.models.web.base_model_ import Model
 class ReleaseNotification(Model):
     """Push message about a custom release event."""
 
-    openapi_types = {
+    attribute_types = {
         "repository": str,
         "commit": str,
         "name": Optional[str],

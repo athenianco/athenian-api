@@ -7,7 +7,7 @@ from athenian.api.models.web.developer_updates import DeveloperUpdates
 class DeveloperSummary(Model):
     """Developer activity statistics and profile details."""
 
-    openapi_types = {
+    attribute_types = {
         "login": str,
         "name": str,
         "avatar": str,

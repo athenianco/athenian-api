@@ -6,7 +6,7 @@ from athenian.api.models.web.release_match_setting import _ReleaseMatchSetting
 
 
 class _ReleaseMatchRequest(Model):
-    openapi_types = {"repositories": List[str]}
+    attribute_types = {"repositories": List[str]}
     attribute_map = {"repositories": "repositories"}
 
     def __init__(self, repositories: Optional[List[str]] = None):

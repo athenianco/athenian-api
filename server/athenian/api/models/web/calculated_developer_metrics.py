@@ -10,7 +10,7 @@ from athenian.api.models.web.granularity import Granularity
 class CalculatedDeveloperMetrics(Model):
     """The dates start from `date_from` and end earlier or equal to `date_to`."""
 
-    openapi_types = {
+    attribute_types = {
         "calculated": List[CalculatedDeveloperMetricsItem],
         "metrics": List[str],
         "date_from": date,

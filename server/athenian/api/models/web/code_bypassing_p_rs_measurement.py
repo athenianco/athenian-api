@@ -7,7 +7,7 @@ from athenian.api.models.web.base_model_ import Model
 class CodeBypassingPRsMeasurement(Model):
     """Statistics about code pushed outside of pull requests in a certain time interval."""
 
-    openapi_types = {
+    attribute_types = {
         "date": datetime.date,
         "bypassed_commits": int,
         "bypassed_lines": int,

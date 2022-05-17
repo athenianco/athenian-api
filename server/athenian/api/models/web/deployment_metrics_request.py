@@ -10,7 +10,7 @@ from athenian.api.models.web.for_set_deployments import ForSetDeployments
 class _DeploymentMetricsRequest(Model):
     """Request body of `/metrics/deployments`, the deployments selector."""
 
-    openapi_types = {
+    attribute_types = {
         "for_": List[ForSetDeployments],
         "metrics": List[str],
     }

@@ -8,7 +8,7 @@ from athenian.api.models.web.filtered_release import FilteredRelease
 class DeploymentAnalysisUnsealed(Model, sealed=False):
     """Statistics and contents of the deployment."""
 
-    openapi_types = {
+    attribute_types = {
         "code": DeploymentAnalysisCode,
         "releases": Optional[List[FilteredRelease]],
     }

@@ -6,8 +6,8 @@ from athenian.api.models.web.pull_request_label import PullRequestLabel
 class FilteredLabel(PullRequestLabel):
     """Details about a label and some basic stats."""
 
-    openapi_types = PullRequestLabel.openapi_types.copy()
-    openapi_types["used_prs"] = int
+    attribute_types = PullRequestLabel.attribute_types.copy()
+    attribute_types["used_prs"] = int
     attribute_map = PullRequestLabel.attribute_map.copy()
     attribute_map["used_prs"] = "used_prs"
 

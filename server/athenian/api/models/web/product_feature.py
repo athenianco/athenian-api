@@ -6,7 +6,7 @@ from athenian.api.models.web.base_model_ import Model
 class ProductFeature(Model):
     """Client-side product feature definition."""
 
-    openapi_types = {"name": str, "parameters": object}
+    attribute_types = {"name": str, "parameters": object}
     attribute_map = {"name": "name", "parameters": "parameters"}
 
     def __init__(self, name: Optional[str] = None, parameters: Optional[object] = None):

@@ -6,7 +6,7 @@ from athenian.api.models.web.base_model_ import Model
 class IncludedNativeUser(Model):
     """User traits such as the avatar URL."""
 
-    openapi_types = {"avatar": str}
+    attribute_types = {"avatar": str}
     attribute_map = {"avatar": "avatar"}
 
     def __init__(self, avatar: Optional[str] = None):

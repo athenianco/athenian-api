@@ -7,7 +7,7 @@ from athenian.api.models.web.base_model_ import Model
 class ListedToken(Model):
     """Details about a token - without the token itself, which is not stored."""
 
-    openapi_types = {"id": int, "name": str, "last_used": datetime}
+    attribute_types = {"id": int, "name": str, "last_used": datetime}
     attribute_map = {"id": "id", "name": "name", "last_used": "last_used"}
 
     def __init__(self,

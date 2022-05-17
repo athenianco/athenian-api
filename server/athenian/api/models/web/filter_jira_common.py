@@ -7,7 +7,7 @@ from athenian.api.models.web.common_filter_properties import CommonFilterPropert
 class _FilterJIRACommon(Model, sealed=False):
     """Common properies if a JIRA issue or epic."""
 
-    openapi_types = {
+    attribute_types = {
         "priorities": Optional[List[str]],
         "types": Optional[List[str]],
         "projects": Optional[List[str]],

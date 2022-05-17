@@ -14,7 +14,7 @@ ReleaseSetInclude = AllOf(_IncludedNativeUsers, _IncludedJIRAIssues, _IncludedDe
 class ReleaseSet(Model):
     """Release metadata and contributor user details."""
 
-    openapi_types = {
+    attribute_types = {
         "include": ReleaseSetInclude,
         "data": List[FilteredRelease],
     }

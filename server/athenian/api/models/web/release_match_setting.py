@@ -6,7 +6,7 @@ from athenian.api.models.web.release_match_strategy import ReleaseMatchStrategy
 
 
 class _ReleaseMatchSetting(Model, sealed=False):
-    openapi_types = {
+    attribute_types = {
         "branches": str,
         "tags": str,
         "events": Optional[str],

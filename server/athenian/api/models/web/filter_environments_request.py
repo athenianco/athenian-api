@@ -7,7 +7,7 @@ from athenian.api.models.web.common_filter_properties import CommonFilterPropert
 class _FilterEnvironmentsRequest(Model, sealed=False):
     """Request body of `/filter/environments`. Filters for deployment environments."""
 
-    openapi_types = {
+    attribute_types = {
         "repositories": List[str],
     }
 

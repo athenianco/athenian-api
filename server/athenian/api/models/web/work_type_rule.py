@@ -6,7 +6,7 @@ from athenian.api.models.web.base_model_ import Model
 class WorkTypeRule(Model):
     """Specific rule details: name and parameters."""
 
-    openapi_types = {"name": str, "body": object}
+    attribute_types = {"name": str, "body": object}
 
     attribute_map = {"name": "name", "body": "body"}
 

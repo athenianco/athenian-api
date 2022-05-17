@@ -9,7 +9,7 @@ from athenian.api.response import ResponseError
 class CommonFilterProperties(Model, sealed=False):
     """Define `account`, `date_from`, `date_to`, and `timezone` properties."""
 
-    openapi_types = {
+    attribute_types = {
         "date_from": date,
         "date_to": date,
         "timezone": int,

@@ -7,7 +7,7 @@ from athenian.api.models.web.base_model_ import Model
 class StageTimings(Model):
     """Time spent by the PR in each pipeline stage."""
 
-    openapi_types = {
+    attribute_types = {
         "wip": timedelta,
         "review": Optional[timedelta],
         "merge": Optional[timedelta],

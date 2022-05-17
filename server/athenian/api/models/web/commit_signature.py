@@ -7,7 +7,7 @@ from athenian.api.models.web.base_model_ import Model
 class CommitSignature(Model):
     """Git commit signature."""
 
-    openapi_types = {
+    attribute_types = {
         "login": str,
         "name": str,
         "email": str,

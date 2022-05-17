@@ -8,7 +8,7 @@ from athenian.api.models.web.released_pull_request import ReleasedPullRequest
 class FilteredRelease(Model):
     """Various information about a repository release."""
 
-    openapi_types = {
+    attribute_types = {
         "name": str,
         "repository": str,
         "url": str,

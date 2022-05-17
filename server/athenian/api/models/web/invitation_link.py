@@ -4,7 +4,7 @@ from athenian.api.models.web.base_model_ import Model
 
 
 class _InvitationLink(Model, sealed=False):
-    openapi_types = {"url": str}
+    attribute_types = {"url": str}
     attribute_map = {"url": "url"}
 
     def __init__(self, url: Optional[str] = None):

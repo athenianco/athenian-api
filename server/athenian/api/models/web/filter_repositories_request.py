@@ -7,7 +7,7 @@ from athenian.api.models.web.common_filter_properties import CommonFilterPropert
 class _FilterRepositoriesRequest(Model, sealed=False):
     """Structure to specify the filter traits of repositories."""
 
-    openapi_types = {
+    attribute_types = {
         "in_": List[str],
         "exclude_inactive": bool,
     }
