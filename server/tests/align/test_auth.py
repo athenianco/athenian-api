@@ -1,31 +1,21 @@
 from datetime import datetime, timezone
-import json
 
 from sqlalchemy import update
 
 from athenian.api.models.state.models import Account
+from tests.align.utils import align_graphql_request
 
 
 async def test_auth_default(client, headers):
-    body = {
-        "query": "{__typename}",
-    }
-    response = await client.request(
-        method="POST", path="/align/graphql", headers=headers, json=body)
-    assert response.status == 200
-    response = json.loads((await response.read()).decode("utf-8"))
+    body = {"query": "{__typename}"}
+    response = await align_graphql_request(client, headers=headers, json=body)
     assert response == {"data": {"__typename": "Query"}}
 
 
 async def test_auth_failure(client, headers):
     headers["Authorization"] = "Bearer invalid"
-    body = {
-        "query": "{__typename}",
-    }
-    response = await client.request(
-        method="POST", path="/align/graphql", headers=headers, json=body)
-    assert response.status == 200
-    response = json.loads((await response.read()).decode("utf-8"))
+    body = {"query": "{__typename}"}
+    response = await align_graphql_request(client, headers=headers, json=body)
     assert response == {
         "errors": [{
             "extensions": {
@@ -44,10 +34,7 @@ async def test_auth_account_mismatch(client, headers):
                  "{goals(accountId: $account, teamId: $team){id}}",
         "variables": {"account": 3, "team": 1},
     }
-    response = await client.request(
-        method="POST", path="/align/graphql", headers=headers, json=body)
-    assert response.status == 200
-    response = json.loads((await response.read()).decode("utf-8"))
+    response = await align_graphql_request(client, headers=headers, json=body)
     assert response == {
         "errors": [{
             "message": "Not Found",
@@ -70,10 +57,7 @@ async def test_auth_account_expired(client, headers, sdb):
         "variables": {"account": 1, "team": 1},
     }
     await sdb.execute(update(Account).values({Account.expires_at: datetime.now(timezone.utc)}))
-    response = await client.request(
-        method="POST", path="/align/graphql", headers=headers, json=body)
-    assert response.status == 200
-    response = json.loads((await response.read()).decode("utf-8"))
+    response = await align_graphql_request(client, headers=headers, json=body)
     assert response == {
         "errors": [{
             "message": "Unauthorized",
