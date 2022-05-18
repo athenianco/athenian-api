@@ -115,7 +115,10 @@ async def precompute_reposet(
 
     There's at most one reposet per account, so a single Sentry scope is created per account.
     """
-    sentry_sdk.Hub.current.scope.span.description = str(reposet.items)
+    with sentry_sdk.Hub.current.configure_scope() as scope:
+        scope.set_tag("account", reposet.owner_id)
+        if scope.span is not None:
+            scope.span.description = str(reposet.items)
     log, sdb, mdb, pdb, rdb, cache, slack = (
         context.log, context.sdb, context.mdb, context.pdb, context.rdb, context.cache,
         context.slack,

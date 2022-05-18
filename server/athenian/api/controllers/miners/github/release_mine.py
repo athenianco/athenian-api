@@ -1351,6 +1351,10 @@ async def hide_first_releases(releases: List[Tuple[Dict[str, Any], ReleaseFacts]
         now = datetime.now(timezone.utc)
         for row in rows:
             args = dict(PullRequestFacts(row[ghdprf.data.name]))
+            if args[PullRequestFacts.f.merged] is None:
+                log.error("Attempted to ignore release of an unmerged PR %s#%d",
+                          repo, row[ghdprf.number.name])
+                continue
             args[PullRequestFacts.f.release_ignored] = True
             args[PullRequestFacts.f.released] = None
             updates.append({
