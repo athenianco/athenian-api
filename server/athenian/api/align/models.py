@@ -1,4 +1,4 @@
-from athenian.api.models.web.base_model_ import Model
+from athenian.api.models.web.base_model_ import Enum, Model
 
 
 class GoalRemoveStatus(Model):
@@ -50,3 +50,34 @@ class MutateGoalResult(Model):
     def goal(self) -> MutateGoalResultGoal:
         """Get the id of the goal."""
         return self._goal
+
+
+class CreateGoalInputFields(metaclass=Enum):
+    """Fields definitions for GraphQL CreateGoalInput type."""
+
+    templateId = "templateId"
+    teamGoals = "teamGoals"
+    validFrom = "validFrom"
+    expiresAt = "expiresAt"
+
+
+class TeamGoalInputFields(metaclass=Enum):
+    """Fields definitions for GraphQL TeamGoalInput type."""
+
+    teamId = "teamId"
+    target = "target"
+
+
+class UpdateGoalInputFields(metaclass=Enum):
+    """Fields definitions for GraphQL UpdateGoalInput type."""
+
+    goalId = "goalId"
+    teamGoalChanges = "teamGoalChanges"
+
+
+class TeamGoalChangeFields(metaclass=Enum):
+    """Fields definitions for GraphQL TeamGoalChange type."""
+
+    teamId = "teamId"
+    target = "target"
+    remove = "remove"

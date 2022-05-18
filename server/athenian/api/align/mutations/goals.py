@@ -10,7 +10,8 @@ from athenian.api.align.goals.dbaccess import assign_team_goals, delete_goal, de
     GoalCreationInfo, insert_goal, TeamGoalTargetAssignment
 from athenian.api.align.goals.exceptions import GoalMutationError
 from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
-from athenian.api.align.models import GoalRemoveStatus, MutateGoalResult, MutateGoalResultGoal
+from athenian.api.align.models import CreateGoalInputFields, GoalRemoveStatus, MutateGoalResult, \
+    MutateGoalResultGoal, TeamGoalChangeFields, TeamGoalInputFields, UpdateGoalInputFields
 from athenian.api.models.state.models import Goal, TeamGoal
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import dataclass
@@ -63,7 +64,7 @@ async def resolve_update_goal(
 ) -> dict:
     """Update an existing Goal."""
     update = _parse_update_goal_input(input, accountId)
-    goal_id = input["goalId"]
+    goal_id = input[UpdateGoalInputFields.goalId]
     result = MutateGoalResult(MutateGoalResultGoal(goal_id)).to_dict()
 
     deletions = update.team_goal_deletions
@@ -83,18 +84,23 @@ async def resolve_update_goal(
 
 def _parse_create_goal_input(input: Dict[str, Any], account_id: int) -> GoalCreationInfo:
     """Parse CreateGoalInput into GoalCreationInfo."""
-    template_id = input["templateId"]
+    template_id = input[CreateGoalInputFields.templateId]
     if template_id not in TEMPLATES_COLLECTION:
         raise GoalMutationError(f"Invalid templateId {template_id}")
 
-    team_goals = [_parse_team_goal_input(tg_input) for tg_input in input["teamGoals"]]
+    team_goals = [
+        _parse_team_goal_input(tg_input)
+        for tg_input in input[CreateGoalInputFields.teamGoals]
+    ]
     if not team_goals:
         raise GoalMutationError("At least one teamGoals is required")
 
     if len({team_goal.team_id for team_goal in team_goals}) < len(team_goals):
         raise GoalMutationError("More than one team goal with the same teamId")
 
-    valid_from, expires_at = _convert_goal_dates(input["validFrom"], input["expiresAt"])
+    valid_from, expires_at = _convert_goal_dates(
+        input[CreateGoalInputFields.validFrom], input[CreateGoalInputFields.expiresAt],
+    )
 
     goal = Goal(
         account_id=account_id,
@@ -107,12 +113,13 @@ def _parse_create_goal_input(input: Dict[str, Any], account_id: int) -> GoalCrea
 
 def _parse_team_goal_input(team_goal_input: dict) -> TeamGoal:
     """Parse TeamGoalInput into a Team model."""
+    team_id = team_goal_input[TeamGoalInputFields.teamId]
     try:
-        target = _parse_team_goal_target(team_goal_input["target"])
+        target = _parse_team_goal_target(team_goal_input[TeamGoalInputFields.target])
     except StopIteration:
-        raise GoalMutationError(f'Invalid target for teamId {team_goal_input["teamId"]}')
+        raise GoalMutationError(f"Invalid target for teamId {team_id}")
 
-    return TeamGoal(team_id=team_goal_input["teamId"], target=target)
+    return TeamGoal(team_id=team_id, target=target)
 
 
 def _parse_team_goal_target(team_goal_target: dict) -> Union[int, float, str]:
@@ -145,20 +152,20 @@ def _parse_update_goal_input(input: Dict[str, Any], account_id: int) -> GoalUpda
     both = []
     invalid_targets = []
     seen = set()
-    for change in input.get("teamGoalChanges", ()):
-        team_id = change["teamId"]
+    for change in input.get(UpdateGoalInputFields.teamGoalChanges, ()):
+        team_id = change[TeamGoalChangeFields.teamId]
         if team_id in seen:
             duplicates.append(team_id)
-        if change.get("remove") and change.get("target"):
+        if change.get(TeamGoalChangeFields.remove) and change.get(TeamGoalChangeFields.target):
             both.append(team_id)
 
         seen.add(team_id)
 
-        if change.get("remove"):
+        if change.get(TeamGoalChangeFields.remove):
             deletions.append(team_id)
-        elif change.get("target") is not None:
+        elif change.get(TeamGoalChangeFields.target) is not None:
             try:
-                target = _parse_team_goal_target(change["target"])
+                target = _parse_team_goal_target(change[TeamGoalChangeFields.target])
             except StopIteration:
                 invalid_targets.append(team_id)
             else:
