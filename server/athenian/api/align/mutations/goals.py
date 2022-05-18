@@ -10,7 +10,7 @@ from athenian.api.align.goals.dbaccess import assign_team_goals, delete_goal, de
     GoalCreationInfo, insert_goal, TeamGoalTargetAssignment
 from athenian.api.align.goals.exceptions import GoalMutationError
 from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
-from athenian.api.align.models import GoalRemoveStatus
+from athenian.api.align.models import GoalRemoveStatus, MutateGoalResult, MutateGoalResultGoal
 from athenian.api.models.state.models import Goal, TeamGoal
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import dataclass
@@ -34,7 +34,7 @@ async def resolve_create_goal(
             new_goal_id = await insert_goal(creation_info, sdb_conn)
 
     # TODO: return the complete response
-    return {"goal": {"id": new_goal_id}}
+    return MutateGoalResult(MutateGoalResultGoal(new_goal_id)).to_dict()
 
 
 @mutation.field("removeGoal")
@@ -64,7 +64,7 @@ async def resolve_update_goal(
     """Update an existing Goal."""
     update = _parse_update_goal_input(input, accountId)
     goal_id = input["goalId"]
-    result = {"goal": {"id": goal_id}}
+    result = MutateGoalResult(MutateGoalResultGoal(goal_id)).to_dict()
 
     deletions = update.team_goal_deletions
     assignments = update.team_goal_assignments
