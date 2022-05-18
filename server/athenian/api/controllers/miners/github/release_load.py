@@ -12,7 +12,7 @@ import morcilla
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, desc, false, func, insert, or_, select, union_all, update
+from sqlalchemy import and_, desc, false, func, insert, or_, select, true, union_all, update
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.sql import ClauseElement
 
@@ -327,7 +327,7 @@ class ReleaseLoader:
             query = (
                 select([ghrts.repository_full_name, ghrts.release_match,
                         ghrts.time_from, ghrts.time_to])
-                .where(and_(or_(*or_items), ghrts.acc_id == account))
+                .where(and_(ghrts.acc_id == account, or_(*or_items) if or_items else true))
             )
         else:
             query = union_all(*(

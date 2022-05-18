@@ -29,10 +29,18 @@ def split_duplicate_check_runs(suite_ids: np.ndarray,
     assert len(suite_ids) == len(names) == len(started_ats)
     started_ats[started_ats != started_ats] = 0
     suite_order = np.argsort(suite_ids, kind="stable")
-    return _split_duplicate_check_runs(suite_ids,
-                                       <PyObject **>PyArray_DATA(names),
-                                       started_ats.view(np.int64),
-                                       suite_order)
+    cdef:
+        int result
+        PyObject **data_obj = <PyObject **> PyArray_DATA(names)
+        int64_t[:] suite_ids_view = suite_ids
+        const int64_t[:] started_ats_int64 = started_ats.view(np.int64)
+        const int64_t[:] suite_order_view = suite_order
+    with nogil:
+        result = _split_duplicate_check_runs(suite_ids_view,
+                                             data_obj,
+                                             started_ats_int64,
+                                             suite_order_view)
+    return result
 
 
 cdef struct CheckSuiteState:
