@@ -111,7 +111,7 @@ class Team(create_time_mixin(created_at=True, updated_at=True),
 
     id = Column(Integer(), primary_key=True)
     owner_id = Column(Integer(), ForeignKey("accounts.id", name="fk_reposet_owner"),
-                      nullable=False)
+                      nullable=False, index=True)
     parent_id = Column(Integer(), ForeignKey("teams.id", name="fk_team_parent"))
 
 
@@ -299,6 +299,7 @@ class Goal(create_time_mixin(created_at=True, updated_at=True), Base):
         Integer(),
         ForeignKey("accounts.id", name="fk_goal_account"),
         nullable=False,
+        index=True,
     )
     template_id = Column(Integer(), nullable=False)
     valid_from = Column(TIMESTAMP(timezone=True), nullable=False)
