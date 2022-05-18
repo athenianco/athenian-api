@@ -101,8 +101,9 @@ async def get_jira_installation(account: int,
                       .where(and_(JIRAProjectSetting.account_id == account,
                                   JIRAProjectSetting.enabled.is_(False)))),
         mdb.fetch_all(
-            select([IssueType.project_id, IssueType.name])
-            .where(and_(IssueType.acc_id == jira_id, IssueType.is_epic)),
+            select([IssueType.project_id, IssueType.normalized_name])
+            .where(and_(IssueType.acc_id == jira_id, IssueType.is_epic))
+            .distinct(),
         ),
         op="load JIRA projects")
     disabled = {r[0] for r in disabled}
@@ -111,7 +112,7 @@ async def get_jira_installation(account: int,
     for row in epic_rows:
         try:
             epics.setdefault(projects[row[IssueType.project_id.name]], []).append(
-                row[IssueType.name.name])
+                row[IssueType.normalized_name.name])
         except KeyError:
             # disabled project
             continue
