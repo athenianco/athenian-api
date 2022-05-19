@@ -285,14 +285,27 @@ async def create_teams(account: int,
     :return: Number of copied teams and the number of noticed bots.
     """
     _, num_teams = await copy_teams_as_needed(account, meta_ids, sdb, mdb, cache)
+    num_bots = await _ensure_bot_team(account, meta_ids, bots, prefixer, sdb, mdb)
+    return num_teams, num_bots
+
+
+async def _ensure_bot_team(
+    account: int,
+    meta_ids: Sequence[int],
+    bots: Set[str],
+    prefixer: Prefixer,
+    sdb: Database,
+    mdb: Database,
+) -> int:
     bot_team = await sdb.fetch_one(select([Team.id, Team.members])
                                    .where(and_(Team.name == Team.BOTS,
                                                Team.owner_id == account)))
     if bot_team is not None:
-        return num_teams, len(bot_team[Team.members.name])
+        return len(bot_team[Team.members.name])
+
     bots -= await fetch_bots.extra(mdb)
-    bots = set(chain.from_iterable(prefixer.user_login_to_node.get(u) for u in bots)) - {None}
+    bot_ids = set(chain.from_iterable(prefixer.user_login_to_node.get(u, ()) for u in bots))
     await sdb.execute(insert(Team).values(
-        Team(id=account, name=Team.BOTS, owner_id=account, members=sorted(bots))
+        Team(name=Team.BOTS, owner_id=account, members=sorted(bot_ids))
         .create_defaults().explode()))
-    return num_teams, len(bots)
+    return len(bot_ids)
