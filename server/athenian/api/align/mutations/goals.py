@@ -6,9 +6,9 @@ from typing import Any, Dict, Sequence, Tuple, Union
 from ariadne import MutationType
 from graphql import GraphQLResolveInfo
 
+from athenian.api.align.exceptions import GoalMutationError
 from athenian.api.align.goals.dbaccess import assign_team_goals, delete_goal, delete_team_goals, \
     GoalCreationInfo, insert_goal, TeamGoalTargetAssignment
-from athenian.api.align.goals.exceptions import GoalMutationError
 from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
 from athenian.api.align.models import CreateGoalInputFields, GoalRemoveStatus, MutateGoalResult, \
     MutateGoalResultGoal, TeamGoalChangeFields, TeamGoalInputFields, UpdateGoalInputFields

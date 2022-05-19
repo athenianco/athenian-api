@@ -18,7 +18,7 @@ class LogicalRepositoryFactory(SQLAlchemyModelFactory):
 
     account_id = DEFAULT_ACCOUNT_ID
     name = factory.Sequence(lambda n: f"logical-repo-{n}")
-    repository_id = factory.Sequence(lambda n: n)
+    repository_id = factory.Sequence(lambda n: n + 1)
 
 
 class AccountFactory(SQLAlchemyModelFactory):
@@ -37,7 +37,7 @@ class RepositorySetFactory(SQLAlchemyModelFactory):
     class Meta:
         model = RepositorySet
 
-    id = factory.Sequence(lambda n: n)
+    id = factory.Sequence(lambda n: n + 1)
     name = RepositorySet.ALL
     owner_id = DEFAULT_ACCOUNT_ID
     created_at = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=50))
@@ -49,7 +49,7 @@ class TeamFactory(SQLAlchemyModelFactory):
     class Meta:
         model = Team
 
-    id = factory.Sequence(lambda n: n)
+    id = factory.Sequence(lambda n: n + 1)
     owner_id = DEFAULT_ACCOUNT_ID
     parent_id = None
     name = factory.Sequence(lambda n: f"team-{n}")
@@ -60,7 +60,7 @@ class GoalFactory(SQLAlchemyModelFactory):
     class Meta:
         model = Goal
 
-    id = factory.Sequence(lambda n: n)
+    id = factory.Sequence(lambda n: n + 1)
     account_id = DEFAULT_ACCOUNT_ID
     template_id = 1
     valid_from = factory.LazyFunction(

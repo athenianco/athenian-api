@@ -4,10 +4,15 @@ from operator import attrgetter
 import pytest
 from sqlalchemy import insert, select, update
 
+from athenian.api.controllers.team_controller import get_root_team, get_team_from_db, \
+    MultipleRootTeamsError, TeamNotFoundError
+from athenian.api.db import Database
 from athenian.api.models.state.models import AccountGitHubAccount, Team
 from athenian.api.models.web import TeamUpdateRequest
 from athenian.api.models.web.team import Team as TeamListItem
 from athenian.api.models.web.team_create_request import TeamCreateRequest
+from tests.testutils.db import model_insert_stmt
+from tests.testutils.factory.state import TeamFactory
 
 
 @pytest.mark.parametrize("account", [1, 2], ids=["as admin", "as non-admin"])
@@ -536,3 +541,33 @@ async def test_get_team_nasty_input(client, headers, sdb, owner, id, status):
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == status, "Response body is : " + body
+
+
+class TestGetRootTeam:
+    async def test_existing(self, sdb: Database) -> None:
+        await sdb.execute(model_insert_stmt(TeamFactory(id=99, name="ROOT")))
+        root_team = await get_root_team(1, sdb)
+        assert root_team["id"] == 99
+        assert root_team["name"] == "ROOT"
+
+    async def test_not_existing(self, sdb: Database) -> None:
+        with pytest.raises(TeamNotFoundError):
+            await get_root_team(1, sdb)
+
+    async def test_multiple_root_teams(self, sdb: Database) -> None:
+        for model in (TeamFactory(), TeamFactory()):
+            await sdb.execute(model_insert_stmt(model))
+        with pytest.raises(MultipleRootTeamsError):
+            await get_root_team(1, sdb)
+
+
+class TestGetTeamFromDB:
+    async def test_found(self, sdb: Database) -> None:
+        await sdb.execute(model_insert_stmt(TeamFactory(id=99, name="TEAM 99")))
+        team = await get_team_from_db(1, 99, sdb)
+        assert team["name"] == "TEAM 99"
+
+    async def test_not_found(self, sdb: Database) -> None:
+        await sdb.execute(model_insert_stmt(TeamFactory(id=99, owner_id=2)))
+        with pytest.raises(TeamNotFoundError):
+            await get_team_from_db(1, 99, sdb)

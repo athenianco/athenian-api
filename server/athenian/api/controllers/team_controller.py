@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from http import HTTPStatus
 from itertools import chain
 import logging
 from sqlite3 import IntegrityError, OperationalError
@@ -8,6 +9,7 @@ from aiohttp import web
 import aiomcache
 from asyncpg import UniqueViolationError
 import morcilla
+import sqlalchemy as sa
 from sqlalchemy import and_, delete, insert, select, update
 
 from athenian.api import metadata
@@ -21,8 +23,8 @@ from athenian.api.db import DatabaseLike
 from athenian.api.models.metadata.github import User
 from athenian.api.models.state.models import Team
 from athenian.api.models.web import BadRequestError, Contributor, CreatedIdentifier, \
-    DatabaseConflict, ForbiddenError, NotFoundError, Team as TeamListItem, TeamCreateRequest, \
-    TeamUpdateRequest
+    DatabaseConflict, ForbiddenError, GenericError, NotFoundError, Team as TeamListItem, \
+    TeamCreateRequest, TeamUpdateRequest
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 
@@ -82,8 +84,8 @@ async def get_team(request: AthenianWebRequest, id: int) -> web.Response:
         account = team[Team.owner_id.name]
         await get_user_account_status_from_request(request, account)
         meta_ids = await get_metadata_account_ids(account, sdb_conn, request.cache)
-    members = await _get_all_team_members(
-        [team], account, meta_ids, request.mdb, request.sdb, request.cache)
+    members = await get_all_team_members(
+        team[Team.members.name], account, meta_ids, request.mdb, request.sdb, request.cache)
     model = TeamListItem(id=team[Team.id.name],
                          name=team[Team.name.name],
                          parent=team[Team.parent_id.name],
@@ -114,8 +116,9 @@ async def _list_loaded_teams(teams: List[Mapping[str, Any]],
                              meta_ids: Tuple[int, ...],
                              request: AthenianWebRequest,
                              ) -> web.Response:
-    all_members = await _get_all_team_members(
-        teams, account, meta_ids, request.mdb, request.sdb, request.cache)
+    gh_user_ids = set(chain.from_iterable([t[Team.members.name] for t in teams]))
+    all_members = await get_all_team_members(
+        gh_user_ids, account, meta_ids, request.mdb, request.sdb, request.cache)
     items = [TeamListItem(id=t[Team.id.name],
                           name=t[Team.name.name],
                           parent=t[Team.parent_id.name],
@@ -211,25 +214,25 @@ async def _check_parent_cycle(team_id: int, parent_id: Optional[int], sdb: Datab
         raise ResponseError(BadRequestError(detail="Detected a team parent cycle: %s." % visited))
 
 
-async def _get_all_team_members(teams: Iterable[Mapping],
-                                account: int,
-                                meta_ids: Tuple[int, ...],
-                                mdb: morcilla.Database,
-                                sdb: morcilla.Database,
-                                cache: Optional[aiomcache.Client],
-                                ) -> Dict[int, Contributor]:
-    all_members = set(chain.from_iterable([t[Team.members.name] for t in teams]))
+async def get_all_team_members(gh_user_ids: Iterable[int],
+                               account: int,
+                               meta_ids: Tuple[int, ...],
+                               mdb: morcilla.Database,
+                               sdb: morcilla.Database,
+                               cache: Optional[aiomcache.Client],
+                               ) -> Dict[int, Contributor]:
+    """Return contributor objects for given github user identifiers."""
     user_rows, mapped_jira = await gather(
         mdb.fetch_all(select([User]).where(and_(
             User.acc_id.in_(meta_ids),
-            User.node_id.in_(all_members),
+            User.node_id.in_(gh_user_ids),
         ))),
-        load_mapped_jira_users(account, all_members, sdb, mdb, cache),
+        load_mapped_jira_users(account, gh_user_ids, sdb, mdb, cache),
     )
     user_by_node = {u[User.node_id.name]: u for u in user_rows}
     all_contributors = {}
     missing = []
-    for m in all_members:
+    for m in gh_user_ids:
         try:
             ud = user_by_node[m]
         except KeyError:
@@ -245,7 +248,7 @@ async def _get_all_team_members(teams: Iterable[Mapping],
         all_contributors[m] = c
 
     if missing:
-        logging.getLogger("%s._get_all_team_members" % metadata.__package__).error(
+        logging.getLogger("%s.get_all_team_members" % metadata.__package__).error(
             "Some users are missing in %s: %s", meta_ids, missing)
     return all_contributors
 
@@ -272,3 +275,53 @@ async def resync_teams(request: AthenianWebRequest, id: int) -> web.Response:
             teams, _ = await copy_teams_as_needed(
                 account, meta_ids, sdb_conn, request.mdb, request.cache)
     return await _list_loaded_teams(teams, account, meta_ids, request)
+
+
+async def get_root_team(account_id: int, sdb_conn: DatabaseLike) -> Mapping[Union[int, str], Any]:
+    """Return the root team for the account."""
+    stmt = sa.select(Team).where(sa.and_(Team.owner_id == account_id, Team.parent_id == None))  # noqa F821
+    root_teams = await sdb_conn.fetch_all(stmt)
+    if not root_teams:
+        raise TeamNotFoundError(0)
+    if len(root_teams) > 1:
+        raise MultipleRootTeamsError(account_id)
+    return root_teams[0]
+
+
+async def get_team_from_db(
+    account_id: int, team_id: int, sdb_conn: DatabaseLike,
+) -> Mapping[Union[int, str], Any]:
+    """Return a team owned by an account."""
+    stmt = sa.select(Team).where(sa.and_(Team.owner_id == account_id, Team.id == team_id))  # noqa F821
+    team = await sdb_conn.fetch_one(stmt)
+    if team is None:
+        raise TeamNotFoundError(team_id)
+    return team
+
+
+class TeamNotFoundError(ResponseError):
+    """A team was not found."""
+
+    def __init__(self, team_id: int):
+        """Init the TeamNotFoundError."""
+        wrapped_error = GenericError(
+            type="/errors/teams/TeamNotFound",
+            status=HTTPStatus.NOT_FOUND,
+            detail=f"Team {team_id} not found or access denied",
+            title="Team not found",
+        )
+        super().__init__(wrapped_error)
+
+
+class MultipleRootTeamsError(ResponseError):
+    """An account has multiple root teams."""
+
+    def __init__(self, account_id: int):
+        """Init the MultipleRootTeamsError."""
+        wrapped_error = GenericError(
+            type="/errors/teams/MultipleRootTeamsError",
+            status=HTTPStatus.INTERNAL_SERVER_ERROR,
+            detail=f"Account {account_id} has multiple root teams",
+            title="Multiple root teams",
+        )
+        super().__init__(wrapped_error)

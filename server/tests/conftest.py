@@ -54,7 +54,7 @@ from athenian.api.controllers.miners.github.precomputed_prs import DonePRFactsLo
 from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.github.release_load import ReleaseLoader
 from athenian.api.controllers.miners.github.release_match import ReleaseToPullRequestMapper
-from athenian.api.db import Database, db_retry_intervals, measure_db_overhead_and_retry
+from athenian.api.db import Connection, Database, db_retry_intervals, measure_db_overhead_and_retry
 from athenian.api.experiments.preloading.entries import PreloadedBranchMiner, \
     PreloadedDonePRFactsLoader, PreloadedMergedPRFactsLoader, PreloadedOpenPRFactsLoader, \
     PreloadedPullRequestMiner, PreloadedReleaseLoader, PreloadedReleaseToPullRequestMapper
@@ -594,6 +594,12 @@ async def mdb_rw(mdb, event_loop, worker_id, request):
 @pytest.fixture(scope="function")
 async def sdb(state_db, event_loop, request):
     return await _connect_to_db(state_db, event_loop, request)
+
+
+@pytest.fixture(scope="function")
+async def sdb_conn(sdb: Database) -> Connection:
+    async with sdb.connection() as sdb_conn:
+        yield sdb_conn
 
 
 @pytest.fixture(scope="function")
