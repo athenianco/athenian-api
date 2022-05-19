@@ -30,7 +30,7 @@ from athenian.api.controllers.features.metric_calculator import DEFAULT_QUANTILE
     group_to_indexes
 from athenian.api.controllers.filter_controller import web_pr_from_struct, webify_deployment
 from athenian.api.controllers.jira import get_jira_installation, JIRAConfig, \
-    normalize_issue_type, normalize_user_type, resolve_projects
+    load_mapped_jira_users, normalize_issue_type, normalize_user_type, resolve_projects
 from athenian.api.controllers.logical_repos import drop_logical_repo
 from athenian.api.controllers.miners.filters import LabelFilter
 from athenian.api.controllers.miners.github.bots import bots
@@ -43,6 +43,7 @@ from athenian.api.controllers.miners.jira.issue import fetch_jira_issues, ISSUE_
 from athenian.api.controllers.miners.types import Deployment
 from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseSettings, Settings
+from athenian.api.controllers.with_ import fetch_teams_map
 from athenian.api.db import Database
 from athenian.api.models.metadata.github import Branch, PullRequest
 from athenian.api.models.metadata.jira import AthenianIssue, Component, Issue, IssueType, \
@@ -888,6 +889,7 @@ async def _calc_jira_entry(request: AthenianWebRequest,
                            model: Union[Type[JIRAMetricsRequest], Type[JIRAHistogramsRequest]],
                            align_quantile_stride: bool,
                            ) -> Tuple[Union[JIRAMetricsRequest, JIRAHistogramsRequest],
+                                      Optional[List[JIRAFilterWith]],
                                       List[List[datetime]],
                                       pd.DataFrame,
                                       timedelta,
@@ -907,13 +909,15 @@ async def _calc_jira_entry(request: AthenianWebRequest,
         jira_ids = JIRAConfig(jira_ids.acc_id, projects, jira_ids.epics)
     time_intervals, tzoffset = split_to_time_intervals(
         filt.date_from, filt.date_to, getattr(filt, "granularities", ["all"]), filt.timezone)
+    with_ = await _dereference_teams(
+        filt.with_, filt.account, request.sdb, request.mdb, request.cache)
     reporters = list(set(chain.from_iterable(
-        ([p.lower() for p in (g.reporters or [])]) for g in (filt.with_ or []))))
+        ([p.lower() for p in (g.reporters or [])]) for g in (with_ or []))))
     assignees = list(set(chain.from_iterable(
         ([(p.lower() if p is not None else None) for p in (g.assignees or [])])
-        for g in (filt.with_ or []))))
+        for g in (with_ or []))))
     commenters = list(set(chain.from_iterable(
-        ([p.lower() for p in (g.commenters or [])]) for g in (filt.with_ or []))))
+        ([p.lower() for p in (g.commenters or [])]) for g in (with_ or []))))
     label_filter = LabelFilter.from_iterables(filt.labels_include, filt.labels_exclude)
     if align_quantile_stride and (filt.quantiles or [0, 1]) != [0, 1]:
         stride = DEFAULT_QUANTILE_STRIDE
@@ -930,20 +934,20 @@ async def _calc_jira_entry(request: AthenianWebRequest,
         reporters, assignees, commenters, False,
         default_branches, release_settings, logical_settings,
         filt.account, meta_ids, request.mdb, request.pdb, request.cache,
-        extra_columns=participant_columns if len(filt.with_ or []) > 1 else (),
+        extra_columns=participant_columns if len(with_ or []) > 1 else (),
     )
-    return filt, time_intervals, issues, tzoffset, label_filter, stride
+    return filt, with_, time_intervals, issues, tzoffset, label_filter, stride
 
 
 @expires_header(short_term_exptime)
 @weight(5)
 async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate metrics over JIRA issue activities."""
-    filt, time_intervals, issues, tzoffset, label_filter, quantile_stride = \
+    filt, with_, time_intervals, issues, tzoffset, label_filter, quantile_stride = \
         await _calc_jira_entry(request, body, JIRAMetricsRequest, True)
     calc = JIRABinnedMetricCalculator(filt.metrics, filt.quantiles or [0, 1], quantile_stride)
     label_splitter = _IssuesLabelSplitter(filt.group_by_jira_label, label_filter)
-    groupers = partial(_split_issues_by_with, filt.with_), label_splitter
+    groupers = partial(_split_issues_by_with, with_), label_splitter
     groups = group_to_indexes(issues, *groupers)
     metric_values = calc(issues, time_intervals, groups)
     mets = list(chain.from_iterable((
@@ -962,6 +966,59 @@ async def calc_metrics_jira_linear(request: AthenianWebRequest, body: dict) -> w
                                               group_metric_values)
     ) for with_group, label_metric_values in zip(filt.with_ or [None], metric_values)))
     return model_response(mets)
+
+
+async def _dereference_teams(with_: Optional[List[JIRAFilterWith]],
+                             account: int,
+                             sdb: Database,
+                             mdb: Database,
+                             cache: Optional[aiomcache.Client],
+                             ) -> Optional[List[JIRAFilterWith]]:
+    if not with_:
+        return with_
+    teams = set()
+    for i, group in enumerate(with_):
+        for topic in ("assignees", "reporters", "commenters"):
+            for j, dev in enumerate(getattr(group, topic, []) or []):
+                if dev is not None and dev.startswith("{"):
+                    try:
+                        if not dev.endswith("}"):
+                            raise ValueError
+                        teams.add(int(dev[1:-1]))
+                    except ValueError:
+                        raise ResponseError(InvalidRequestError(
+                            pointer=f".with[{i}].{topic}[{j}]",
+                            detail=f"Invalid team ID: {dev}",
+                        ))
+    teams_map = await fetch_teams_map(teams, account, sdb)
+    all_team_members = set(chain.from_iterable(teams_map.values()))
+    jira_map = await load_mapped_jira_users(account, all_team_members, sdb, mdb, cache)
+    del all_team_members
+    deref = []
+    for group in with_:
+        new_group = {}
+        changed = False
+        for topic in ("assignees", "reporters", "commenters"):
+            if topic_devs := getattr(group, topic):
+                new_topic_devs = []
+                topic_changed = False
+                for dev in topic_devs:
+                    if dev is not None and dev.startswith("{"):
+                        topic_changed = True
+                        for member in teams_map[int(dev[1:-1])]:
+                            try:
+                                new_topic_devs.append(jira_map[member])
+                            except KeyError:
+                                continue
+                    else:
+                        new_topic_devs.append(dev)
+                if topic_changed:
+                    changed = True
+                    new_group[topic] = new_topic_devs
+                else:
+                    new_group[topic] = topic_devs
+        deref.append(JIRAFilterWith(**new_group) if changed else group)
+    return deref
 
 
 def _split_issues_by_with(with_: Optional[List[JIRAFilterWith]],
@@ -1051,7 +1108,7 @@ class _IssuesLabelSplitter:
 @weight(1.5)
 async def calc_histogram_jira(request: AthenianWebRequest, body: dict) -> web.Response:
     """Calculate histograms over JIRA issue activities."""
-    filt, time_intervals, issues, _, _, _ = await _calc_jira_entry(
+    filt, deref_with_, time_intervals, issues, _, _, _ = await _calc_jira_entry(
         request, body, JIRAHistogramsRequest, False)
     defs = defaultdict(list)
     for h in (filt.histograms or []):
@@ -1064,7 +1121,7 @@ async def calc_histogram_jira(request: AthenianWebRequest, body: dict) -> web.Re
         calc = JIRABinnedHistogramCalculator(defs.values(), filt.quantiles or [0, 1])
     except KeyError as e:
         raise ResponseError(InvalidRequestError("Unsupported metric: %s" % e)) from None
-    with_groups = group_to_indexes(issues, partial(_split_issues_by_with, filt.with_))
+    with_groups = group_to_indexes(issues, partial(_split_issues_by_with, deref_with_))
     histograms = calc(issues, time_intervals, with_groups, defs)
     result = []
     for metrics, def_hists in zip(defs.values(), histograms):
