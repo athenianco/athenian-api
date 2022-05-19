@@ -12,6 +12,7 @@ from athenian.api.controllers.settings import LogicalRepositorySettings
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import NodePullRequestJiraIssues, PullRequest
 from athenian.api.models.metadata.jira import Issue
+from athenian.api.models.state.models import MappedJIRAIdentity
 from athenian.api.models.web import CalculatedJIRAHistogram, CalculatedJIRAMetricValues, \
     CalculatedLinearMetricValues, DeployedComponent, DeploymentNotification, FilteredJIRAStuff, \
     JIRAEpic, JIRAEpicChild, JIRAFilterReturn, JIRAIssueType, JIRALabel, JIRAMetricID, \
@@ -1010,12 +1011,22 @@ async def test_jira_metrics_labels(client, headers):
 @pytest.mark.parametrize("assignees, reporters, commenters, count", [
     (["Vadim markovtsev"], ["waren long"], ["lou Marvin caraig"], 1136),
     (["Vadim markovtsev"], [], [], 529),
+    ([], [], ["{1}"], 236),
     ([None, "Vadim MARKOVTSEV"], [], [], 694),
     ([], ["waren long"], [], 539),
     ([], [], ["lou Marvin caraig"], 236),
     ([None], [], ["lou Marvin caraig"], 381),
 ])
-async def test_jira_metrics_people(client, headers, assignees, reporters, commenters, count):
+async def test_jira_metrics_people(
+        client, headers, assignees, reporters, commenters, count, sample_team, sdb):
+    await sdb.execute(insert(MappedJIRAIdentity).values({
+        MappedJIRAIdentity.account_id: 1,
+        MappedJIRAIdentity.confidence: 1,
+        MappedJIRAIdentity.github_user_id: 51,
+        MappedJIRAIdentity.jira_user_id: "5ddec0b9be6c1f0d071ff82d",
+        MappedJIRAIdentity.created_at: datetime.now(timezone.utc),
+        MappedJIRAIdentity.updated_at: datetime.now(timezone.utc),
+    }))
     body = {
         "date_from": "2020-01-01",
         "date_to": "2020-10-20",
