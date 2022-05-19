@@ -8,7 +8,7 @@ import os
 from random import randint
 from sqlite3 import IntegrityError, OperationalError
 import struct
-from typing import Any, Callable, Coroutine, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Coroutine, Mapping, Optional, Sequence, Tuple
 
 from aiohttp import web
 import aiomcache
@@ -39,8 +39,8 @@ from athenian.api.models.state.models import Account, BanishedUserAccount, Invit
     RepositorySet, UserAccount
 from athenian.api.models.web import AcceptedInvitation, BadRequestError, DatabaseConflict, \
     ForbiddenError, GenericError, InstallationProgress, InvalidRequestError, \
-    InvitationCheckResult, InvitationLink, InvitedUser, NotFoundError, \
-    ServiceUnavailableError, TableFetchingProgress, TooManyRequestsError, User
+    InvitationCheckResult, InvitationLink, InvitedUser, NotFoundError, ServiceUnavailableError, \
+    TableFetchingProgress, TooManyRequestsError, User
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 from athenian.api.tracing import sentry_span
@@ -347,17 +347,13 @@ async def _check_user_org_membership(request: AthenianWebRequest,
     cache = request.cache
 
     # check whether the user is a member of the GitHub org
-    async def load_org_members() -> Tuple[Tuple[int, ...], List[int]]:
+    async def load_org_members() -> Tuple[Tuple[int, ...], Sequence[int]]:
         if not (meta_ids := await get_metadata_account_ids_or_empty(acc_id, sdb_conn, cache)):
             log.warning("Could not check the organization membership of %s because "
                         "no metadata installation exists in account %d",
                         request.uid, acc_id)
             return (), []
-        user_node_ids = [
-            r[0] for r in await mdb.fetch_all(
-                select([OrganizationMember.child_id])
-                .where(OrganizationMember.acc_id.in_(meta_ids)))
-        ]
+        user_node_ids = await get_organizations_members(meta_ids, mdb)
         log.debug("Discovered %d organization members", len(user_node_ids))
         return meta_ids, user_node_ids
 
@@ -380,6 +376,15 @@ async def _check_user_org_membership(request: AthenianWebRequest,
         raise ResponseError(ForbiddenError(
             detail="User %s does not belong to the GitHub organization." % request.uid))
     return user
+
+
+async def get_organizations_members(meta_ids: Sequence[int], mdb: DatabaseLike) -> Sequence[int]:
+    """Return all account organizations members as github user ID-s."""
+    return [
+        r[0] for r in await mdb.fetch_all(
+            select([OrganizationMember.child_id])
+            .where(OrganizationMember.acc_id.in_(meta_ids)))
+    ]
 
 
 async def create_new_account(conn: DatabaseLike, secret: str) -> int:
