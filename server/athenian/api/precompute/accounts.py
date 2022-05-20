@@ -14,7 +14,6 @@ from sqlalchemy import and_, insert, select, update
 from tqdm import tqdm
 
 from athenian.api.async_utils import gather
-from athenian.api.controllers.team_controller import get_root_team, TeamNotFoundError
 from athenian.api.db import Database
 from athenian.api.defer import defer, wait_deferred
 from athenian.api.internal.account import copy_teams_as_needed, get_metadata_account_ids
@@ -32,6 +31,7 @@ from athenian.api.internal.miners.types import PullRequestFacts
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.reposet import refresh_repository_names
 from athenian.api.internal.settings import ReleaseMatch, Settings
+from athenian.api.internal.team import get_root_team, RootTeamNotFoundError
 from athenian.api.models.state.models import RepositorySet, Team
 from athenian.api.precompute.context import PrecomputeContext
 from athenian.api.tracing import sentry_span
@@ -317,7 +317,7 @@ async def _ensure_root_team(account: int, sdb: Database) -> int:
     """Ensure that the Root team exists in DB and return its id."""
     try:
         team_row = await get_root_team(account, sdb)
-    except TeamNotFoundError:
+    except RootTeamNotFoundError:
         pass
     else:
         return team_row[Team.id.name]

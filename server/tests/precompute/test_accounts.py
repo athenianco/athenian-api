@@ -81,7 +81,7 @@ class TestEnsureBotTeam:
         assert len(bot_team[Team.members.name]) == 1
 
 
-class TestEnsureROotTeam:
+class TestEnsureRootTeam:
     # tests for private function _ensure_root_team
     async def test_already_existing(self, sdb: Database) -> None:
         await sdb.execute(model_insert_stmt(TeamFactory(parent_id=None, name=Team.ROOT, id=97)))
@@ -89,7 +89,6 @@ class TestEnsureROotTeam:
 
     async def test_not_existing(self, sdb: Database) -> None:
         root_team_id = await _ensure_root_team(1, sdb)
-        import pprint; pprint.pprint(root_team_id)
         root_team_row = await assert_existing_row(
             sdb, Team, id=root_team_id, name=Team.ROOT, parent_id=None,
         )

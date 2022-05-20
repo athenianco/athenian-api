@@ -4,7 +4,7 @@ import pytest
 
 from athenian.api.db import Database
 from athenian.api.internal.team import fetch_teams_recursively, get_root_team, get_team_from_db, \
-    MultipleRootTeamsError, TeamNotFoundError
+    MultipleRootTeamsError, RootTeamNotFoundError, TeamNotFoundError
 from athenian.api.models.state.models import Team
 from tests.testutils.db import model_insert_stmt
 from tests.testutils.factory.state import TeamFactory
@@ -18,7 +18,7 @@ class TestGetRootTeam:
         assert root_team["name"] == "ROOT"
 
     async def test_not_existing(self, sdb: Database) -> None:
-        with pytest.raises(TeamNotFoundError):
+        with pytest.raises(RootTeamNotFoundError):
             await get_root_team(1, sdb)
 
     async def test_multiple_root_teams(self, sdb: Database) -> None:
