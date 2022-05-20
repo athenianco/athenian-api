@@ -183,6 +183,7 @@ async def set_jira_identities(request: AthenianWebRequest, body: dict) -> web.Re
                                   GitHubUser.login.in_(github_logins)))),
         mdb.fetch_all(select([JIRAUser.id, JIRAUser.display_name])
                       .where(and_(JIRAUser.acc_id == jira_acc,
+                                  JIRAUser.type.in_(ALLOWED_USER_TYPES),
                                   JIRAUser.display_name.in_(jira_names)))),
     ]
     github_id_rows, jira_id_rows = await gather(*tasks)
@@ -289,9 +290,9 @@ async def get_jira_identities(request: AthenianWebRequest,
                 (jira_user_id := map_row[MappedJIRAIdentity.jira_user_id.name])
             ]
         except KeyError:
-            log.error("Identity mapping %s -> %s misses JIRA details",
-                      map_row[MappedJIRAIdentity.github_user_id.name],
-                      map_row[MappedJIRAIdentity.jira_user_id.name])
+            log.warning("Identity mapping %s -> %s misses JIRA details",
+                        map_row[MappedJIRAIdentity.github_user_id.name],
+                        map_row[MappedJIRAIdentity.jira_user_id.name])
             continue
         mentioned_jira_user_ids.add(jira_user_id)
         models.append(WebMappedJIRAIdentity(
