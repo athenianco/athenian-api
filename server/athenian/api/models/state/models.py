@@ -108,6 +108,7 @@ class Team(create_time_mixin(created_at=True, updated_at=True),
                       CheckConstraint("id != parent_id", name="cc_parent_self_reference"),
                       {"sqlite_autoincrement": True})
     BOTS = "Bots"  # the name of the special team which contains bots
+    ROOT = "Root"  # the name of the special artificial unique root team
 
     id = Column(Integer(), primary_key=True)
     owner_id = Column(Integer(), ForeignKey("accounts.id", name="fk_reposet_owner"),

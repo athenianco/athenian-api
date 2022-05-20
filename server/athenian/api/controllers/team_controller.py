@@ -18,11 +18,12 @@ from athenian.api.db import DatabaseLike
 from athenian.api.internal.account import copy_teams_as_needed, get_metadata_account_ids, \
     get_user_account_status_from_request
 from athenian.api.internal.jira import load_mapped_jira_users
+from athenian.api.internal.team import get_root_team
 from athenian.api.models.metadata.github import User
 from athenian.api.models.state.models import Team
 from athenian.api.models.web import BadRequestError, Contributor, CreatedIdentifier, \
-    DatabaseConflict, ForbiddenError, NotFoundError, Team as TeamListItem, \
-    TeamCreateRequest, TeamUpdateRequest
+    DatabaseConflict, ForbiddenError, NotFoundError, Team as TeamListItem, TeamCreateRequest, \
+    TeamUpdateRequest
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 
@@ -262,8 +263,9 @@ async def get_all_team_members(gh_user_ids: Iterable[int],
 async def resync_teams(request: AthenianWebRequest, id: int) -> web.Response:
     """Delete all the teams belonging to the account and then clone from GitHub.
 
-    The "Bots" team will remain intact. The rest of the teams will be identical to what's
-    on GitHub.
+    The "Bots" team and the "Root" artificial team will remain intact.
+    The rest of the teams will be identical to what's on GitHub.
+    "Root" team will need to be already present for this operation to succeed.
 
     :param id: Numeric identifier of the account.
     """
@@ -273,9 +275,11 @@ async def resync_teams(request: AthenianWebRequest, id: int) -> web.Response:
             detail="User %s may not resynchronize teams %d" % (request.uid, account)))
     async with request.sdb.connection() as sdb_conn:
         meta_ids = await get_metadata_account_ids(account, sdb_conn, request.cache)
+        root_team_id = (await get_root_team(account, sdb_conn))[Team.id.name]
         async with sdb_conn.transaction():
             await sdb_conn.execute(delete(Team).where(and_(Team.owner_id == account,
-                                                           Team.name != Team.BOTS)))
+                                                           Team.name != Team.BOTS,
+                                                           Team.id != root_team_id)))
             teams, _ = await copy_teams_as_needed(
-                account, meta_ids, sdb_conn, request.mdb, request.cache)
+                account, meta_ids, root_team_id, sdb_conn, request.mdb, request.cache)
     return await _list_loaded_teams(teams, account, meta_ids, request)

@@ -7,8 +7,9 @@ from athenian.api.db import Database
 from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.models.state.models import RepositorySet, Team
-from athenian.api.precompute.accounts import _ensure_bot_team, main, precompute_reposet
-from tests.testutils.db import model_insert_stmt
+from athenian.api.precompute.accounts import _ensure_bot_team, _ensure_root_team, main, \
+    precompute_reposet
+from tests.testutils.db import assert_existing_row, model_insert_stmt
 from tests.testutils.factory.state import AccountFactory, RepositorySetFactory, TeamFactory
 
 from .conftest import build_context, clear_all_accounts
@@ -78,3 +79,18 @@ class TestEnsureBotTeam:
         bot_team = await sdb.fetch_one(sa.select(Team).where(Team.name == "Bots"))
         assert bot_team[Team.owner_id.name] == 1
         assert len(bot_team[Team.members.name]) == 1
+
+
+class TestEnsureROotTeam:
+    # tests for private function _ensure_root_team
+    async def test_already_existing(self, sdb: Database) -> None:
+        await sdb.execute(model_insert_stmt(TeamFactory(parent_id=None, name=Team.ROOT, id=97)))
+        assert await _ensure_root_team(1, sdb) == 97
+
+    async def test_not_existing(self, sdb: Database) -> None:
+        root_team_id = await _ensure_root_team(1, sdb)
+        import pprint; pprint.pprint(root_team_id)
+        root_team_row = await assert_existing_row(
+            sdb, Team, id=root_team_id, name=Team.ROOT, parent_id=None,
+        )
+        assert root_team_row[Team.members.name] == []

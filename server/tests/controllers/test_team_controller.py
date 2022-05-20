@@ -305,13 +305,13 @@ def _test_same_team(actual, expected, no_timings=True):
 
 
 async def test_resync_teams_smoke(client, headers, sdb, disable_default_user):
+    await sdb.execute(model_insert_stmt(TeamFactory(parent_id=None)))
     response = await client.request(method="DELETE", path="/v1/teams/1", headers=headers)
-
-    body = (await response.read()).decode("utf-8")
+    body = await response.json()
     assert response.status == 200, "Response body is : " + body
-    teams = {t["name"]: TeamListItem.from_dict(t) for t in json.loads(body)}
+    teams = {t["name"]: TeamListItem.from_dict(t) for t in body}
     actual_teams = await sdb.fetch_all(select([Team]).where(Team.owner_id == 1))
-    assert len(teams) == len(actual_teams)
+    assert len(teams) == len(actual_teams) - 1  # root team is not included in the response
 
     assert teams.keys() == {
         "team", "engineering", "business", "operations", "product", "admin", "automation",

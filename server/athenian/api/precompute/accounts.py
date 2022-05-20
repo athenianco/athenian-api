@@ -14,6 +14,7 @@ from sqlalchemy import and_, insert, select, update
 from tqdm import tqdm
 
 from athenian.api.async_utils import gather
+from athenian.api.controllers.team_controller import get_root_team, TeamNotFoundError
 from athenian.api.db import Database
 from athenian.api.defer import defer, wait_deferred
 from athenian.api.internal.account import copy_teams_as_needed, get_metadata_account_ids
@@ -284,7 +285,8 @@ async def create_teams(account: int,
 
     :return: Number of copied teams and the number of noticed bots.
     """
-    _, num_teams = await copy_teams_as_needed(account, meta_ids, sdb, mdb, cache)
+    root_team_id = await _ensure_root_team(account, sdb)
+    _, num_teams = await copy_teams_as_needed(account, meta_ids, root_team_id, sdb, mdb, cache)
     num_bots = await _ensure_bot_team(account, meta_ids, bots, prefixer, sdb, mdb)
     return num_teams, num_bots
 
@@ -309,3 +311,16 @@ async def _ensure_bot_team(
         Team(name=Team.BOTS, owner_id=account, members=sorted(bot_ids))
         .create_defaults().explode()))
     return len(bot_ids)
+
+
+async def _ensure_root_team(account: int, sdb: Database) -> int:
+    """Ensure that the Root team exists in DB and return its id."""
+    try:
+        team_row = await get_root_team(account, sdb)
+    except TeamNotFoundError:
+        pass
+    else:
+        return team_row[Team.id.name]
+
+    team = Team(name=Team.ROOT, owner_id=account, members=[], parent_id=None)
+    return await sdb.execute(insert(Team).values(team.create_defaults().explode()))
