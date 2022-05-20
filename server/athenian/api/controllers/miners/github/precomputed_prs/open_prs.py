@@ -74,7 +74,7 @@ class OpenPRFactsLoader:
     @classmethod
     @sentry_span
     async def load_open_pull_request_facts_unfresh(cls,
-                                                   prs: Iterable[str],
+                                                   prs: Iterable[int],
                                                    time_from: datetime,
                                                    time_to: datetime,
                                                    repositories: Collection[str],

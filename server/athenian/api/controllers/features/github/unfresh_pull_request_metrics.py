@@ -127,13 +127,15 @@ class UnfreshPullRequestFactsFetcher:
         add_pdb_misses(pdb, "load_precomputed_done_facts_filters/ambiguous",
                        remove_ambiguous_prs(done_facts, ambiguous, matched_bys))
         unique_unreleased_pr_node_ids = unreleased_prs.index.values
+        unmerged_mask = unreleased_prs[PullRequest.merged_at.name].isnull().values
+        open_prs = unique_unreleased_pr_node_ids[unmerged_mask]
+        open_pr_authors = dict(zip(
+            open_prs, unreleased_prs[PullRequest.user_login.name].values[unmerged_mask]))
+
         unreleased_prs = split_logical_prs(
             unreleased_prs, unreleased_labels, repositories, logical_settings)
         unreleased_pr_node_ids = unreleased_prs.index.get_level_values(0).values
         merged_mask = unreleased_prs[PullRequest.merged_at.name].notnull().values
-        open_prs = unreleased_pr_node_ids[~merged_mask]
-        open_pr_authors = dict(zip(
-            open_prs, unreleased_prs[PullRequest.user_login.name].values[~merged_mask]))
         merged_prs = \
             unreleased_prs.index.take(np.flatnonzero(merged_mask)).union(inactive_merged_prs)
         tasks = [
@@ -246,7 +248,11 @@ class UnfreshPullRequestFactsFetcher:
             return
         log.info("appending %d deployments", len(deps))
         assert deps.index.nlevels == 3  # pr, repo, deployment name
-        assert deps.index.duplicated().sum() == 0
+        try:
+            assert deps.index.is_unique
+        except AssertionError as e:
+            log.error("duplicated deployments: %s", deps.index[deps.index.duplicated()].tolist())
+            raise e from None
         pr_node_ids = deps.index.get_level_values(0).values
         repos = deps.index.get_level_values(1).values
         names = deps.index.get_level_values(2).values.astype("U", copy=False)
