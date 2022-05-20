@@ -922,7 +922,7 @@ async def test_pr_miner_labels_unreleased(mdb, pdb, rdb, release_match_setting_t
 @with_explicit_defer
 async def test_pr_miner_unreleased_facts(
         branches, default_branches, mdb, pdb, rdb, release_match_setting_tag,
-        merged_prs_facts_loader, pr_miner, with_preloading_enabled, prefixer, bots):
+        merged_prs_facts_loader, pr_miner, prefixer, bots):
     date_from = date(year=2018, month=1, day=1)
     date_to = date(year=2020, month=4, day=1)
     time_from = datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc)
@@ -957,8 +957,6 @@ async def test_pr_miner_unreleased_facts(
     assert not event.is_set()
     launch_defer(0, "enable_defer")
     await wait_deferred()
-    if with_preloading_enabled:
-        await pdb.cache.refresh()
     await event.wait()
     assert unreleased_facts == {}
     open_prs_and_facts = []
@@ -981,8 +979,6 @@ async def test_pr_miner_unreleased_facts(
         GitHubMergedPullRequestFacts.data: pickle.dumps(FakeFacts()),
         GitHubMergedPullRequestFacts.updated_at: datetime.now(timezone.utc),
     }))
-    if with_preloading_enabled:
-        await pdb.cache.refresh()
 
     discovered = await merged_prs_facts_loader.load_merged_unreleased_pull_request_facts(
         miner._dfs.prs, time_to, LabelFilter.empty(), matched_bys, default_branches,
@@ -993,8 +989,6 @@ async def test_pr_miner_unreleased_facts(
     await store_merged_unreleased_pull_request_facts(
         merged_unreleased_prs_and_facts, matched_bys, default_branches,
         release_match_setting_tag, 1, pdb, event)
-    if with_preloading_enabled:
-        await pdb.cache.refresh()
 
     miner, unreleased_facts, _, _ = await pr_miner.mine(*args)
     true_pr_node_set = {pr.pr[PullRequest.node_id.name] for pr, _ in chain(

@@ -1,7 +1,6 @@
 import asyncio
 from datetime import datetime, timezone
 from functools import partial, reduce
-import importlib
 from itertools import chain
 import logging
 import pickle
@@ -933,52 +932,14 @@ def _compose_cache_key_participants(participants: List[PRParticipants]) -> str:
                     for p in participants)
 
 
-class CalculatorNotReadyException(Exception):
-    """Raised whenever a calculator is not ready."""
-
-    pass
-
-
 def make_calculator(
-    variation: Optional[str],
     account: int,
     meta_ids: Tuple[int, ...],
     mdb: Database,
     pdb: Database,
     rdb: Database,
     cache: Optional[aiomcache.Client],
-    base_module: Optional[str] = None,
 ) -> MetricEntriesCalculator:
     """Get the metrics calculator according to the account's features."""
-    def build_calculator(cls):
-        calculator = cls(account, meta_ids, DEFAULT_QUANTILE_STRIDE, mdb, pdb, rdb, cache)
-        if not calculator.is_ready_for(account, meta_ids):
-            log.error("Cannot make calculator for variation '%s'", variation)
-            raise CalculatorNotReadyException(
-                f"Calculator not ready for account '{account}' and "
-                f"meta ids '{meta_ids}'")
-        return calculator
-
-    default_cls = MetricEntriesCalculator
-    log = logging.getLogger(__name__)
-    if not variation:
-        return build_calculator(default_cls)
-
-    cls = default_cls
-    try:
-        mod = importlib.import_module(f"{base_module}.{variation}")
-    except ModuleNotFoundError:
-        log.error(
-            "Invalid variation '%s' calculator, using the default implementation",
-            variation,
-        )
-    else:
-        try:
-            cls = mod.MetricEntriesCalculator
-        except AttributeError:
-            log.error(
-                "Variation '%s' doesn't provide `MetricEntriesCalculator`, "
-                "using the default implementation",
-                variation,
-            )
-    return build_calculator(cls)
+    return MetricEntriesCalculator(
+        account, meta_ids, DEFAULT_QUANTILE_STRIDE, mdb, pdb, rdb, cache)

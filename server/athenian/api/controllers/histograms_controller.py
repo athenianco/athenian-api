@@ -6,11 +6,10 @@ from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
 from athenian.api.cache import expires_header, short_term_exptime
 from athenian.api.controllers.account import get_metadata_account_ids
-from athenian.api.controllers.features.entries import UnsupportedMetricError
+from athenian.api.controllers.features.entries import make_calculator, UnsupportedMetricError
 from athenian.api.controllers.features.histogram import HistogramParameters, Scale
 from athenian.api.controllers.metrics_controller import check_environments, \
-    compile_filters_checks, compile_filters_prs, FilterChecks, FilterPRs, \
-    get_calculators_for_request
+    compile_filters_checks, compile_filters_prs, FilterChecks, FilterPRs
 from athenian.api.controllers.miners.github.bots import bots
 from athenian.api.controllers.miners.github.branches import BranchMiner
 from athenian.api.controllers.prefixer import Prefixer
@@ -38,12 +37,11 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
     filters, repos = await compile_filters_prs(
         filt.for_, request, filt.account, meta_ids, prefixer, logical_settings)
     time_from, time_to = filt.resolve_time_from_and_to()
-    release_settings, (branches, default_branches), account_bots, calculators = await gather(
+    release_settings, (branches, default_branches), account_bots = await gather(
         Settings.from_request(request, filt.account).list_release_matches(repos),
         BranchMiner.extract_branches(
             repos, prefixer, meta_ids, request.mdb, request.cache, strip=True),
         bots(filt.account, meta_ids, request.mdb, request.sdb, request.cache),
-        get_calculators_for_request({s.service for s in filters}, filt.account, meta_ids, request),
     )
     result = []
 
@@ -66,7 +64,8 @@ async def calc_histogram_prs(request: AthenianWebRequest, body: dict) -> web.Res
                 bins=h.bins,
                 ticks=tuple(h.ticks) if h.ticks is not None else None,
             )].append(h.metric)
-        calculator = calculators[filter_prs.service]
+        calculator = make_calculator(
+            filt.account, meta_ids, request.mdb, request.pdb, request.rdb, request.cache)
         try:
             histograms = await calculator.calc_pull_request_histograms_github(
                 defs, time_from, time_to, filt.quantiles or (0, 1), for_set.lines or [],
@@ -117,8 +116,6 @@ async def calc_histogram_code_checks(request: AthenianWebRequest, body: dict) ->
         filt.for_, request, filt.account, meta_ids, prefixer, logical_settings,
     )
     time_from, time_to = filt.resolve_time_from_and_to()
-    calculators = await get_calculators_for_request(
-        {f.service for f in filters}, filt.account, meta_ids, request)
     result = []
 
     async def calculate_for_set_histograms(filter_checks: FilterChecks):
@@ -130,7 +127,8 @@ async def calc_histogram_code_checks(request: AthenianWebRequest, body: dict) ->
                 bins=h.bins,
                 ticks=tuple(h.ticks) if h.ticks is not None else None,
             )].append(h.metric)
-        calculator = calculators[filter_checks.service]
+        calculator = make_calculator(
+            filt.account, meta_ids, request.mdb, request.pdb, request.rdb, request.cache)
         try:
             histograms, group_suite_counts, suite_sizes = \
                 await calculator.calc_check_run_histograms_line_github(

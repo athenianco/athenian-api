@@ -27,7 +27,6 @@ from athenian.api.models.metadata.github import Branch, PullRequest, PullRequest
 from athenian.api.models.persistentdata.models import DeploymentNotification
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
     GitHubMergedPullRequestFacts, GitHubOpenPullRequestFacts
-from tests.conftest import with_preloading_env
 from tests.controllers.conftest import FakeFacts, with_only_master_branch
 
 
@@ -38,7 +37,7 @@ def gen_dummy_df(dt: datetime) -> pd.DataFrame:
 
 
 async def test_load_store_precomputed_done_smoke(
-        pdb, pr_samples, done_prs_facts_loader, with_preloading_enabled, prefixer):
+        pdb, pr_samples, done_prs_facts_loader, prefixer):
     samples = pr_samples(200)  # type: Sequence[PullRequestFacts]
     for i in range(1, 6):
         # merged but unreleased
@@ -106,8 +105,6 @@ async def test_load_store_precomputed_done_smoke(
         prs, [with_mutables(s, names[i % len(names)])
               for i, s in enumerate(samples)],
         default_branches, settings, 1, pdb)
-    if with_preloading_enabled:
-        await pdb.cache.refresh()
     released_ats = sorted((t.released, i) for i, t in enumerate(samples[:-10]))
     time_from = released_ats[len(released_ats) // 2][0].item().replace(tzinfo=timezone.utc)
     time_to = released_ats[-1][0].item().replace(tzinfo=timezone.utc)
@@ -135,7 +132,7 @@ async def test_load_store_precomputed_done_smoke(
 
 
 async def test_load_store_precomputed_done_filters(
-        pr_samples, pdb, done_prs_facts_loader, with_preloading_enabled, prefixer):
+        pr_samples, pdb, done_prs_facts_loader, prefixer):
     samples = pr_samples(102)  # type: Sequence[PullRequestFacts]
     names = ["one", "two", "three"]
     settings = ReleaseSettings({
@@ -189,8 +186,6 @@ async def test_load_store_precomputed_done_filters(
     await store_precomputed_done_facts(
         prs, [with_mutables(s, i) for i, s in enumerate(samples)],
         default_branches, settings, 1, pdb)
-    if with_preloading_enabled:
-        await pdb.cache.refresh()
     time_from = min(s.created for s in samples).item().replace(tzinfo=timezone.utc)
     time_to = max(s.max_timestamp() for s in samples).item().replace(tzinfo=timezone.utc)
     loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_filters(
@@ -219,8 +214,7 @@ async def test_load_store_precomputed_done_filters(
 
 
 async def test_load_store_precomputed_done_match_by(
-        pr_samples, default_branches, pdb, done_prs_facts_loader,
-        with_preloading_enabled, prefixer):
+        pr_samples, default_branches, pdb, done_prs_facts_loader, prefixer):
     samples, prs, settings = _gen_one_pr(pr_samples)
 
     def with_mutables(s):
@@ -233,8 +227,6 @@ async def test_load_store_precomputed_done_match_by(
     await store_precomputed_done_facts(
         prs, [with_mutables(s) for s in samples],
         default_branches, settings, 1, pdb)
-    if with_preloading_enabled:
-        await pdb.cache.refresh()
     time_from = samples[0].created.item().replace(tzinfo=timezone.utc) - timedelta(days=365)
     time_to = samples[0].released.item().replace(tzinfo=timezone.utc) + timedelta(days=1)
     loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_filters(
@@ -277,8 +269,6 @@ async def test_load_store_precomputed_done_match_by(
     await store_precomputed_done_facts(
         prs, [with_mutables(s) for s in samples],
         default_branches, settings, 1, pdb)
-    if with_preloading_enabled:
-        await pdb.cache.refresh()
     loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_filters(
         time_from, time_to, ["src-d/go-git"], {}, LabelFilter.empty(),
         default_branches, False, settings, prefixer, 1, pdb)
@@ -294,8 +284,7 @@ async def test_load_store_precomputed_done_match_by(
 
 
 async def test_load_store_precomputed_done_exclude_inactive(
-        pr_samples, pdb, done_prs_facts_loader,
-        with_preloading_enabled, prefixer):
+        pr_samples, pdb, done_prs_facts_loader, prefixer):
     default_branches = {
         "one": "master",
     }
@@ -356,8 +345,6 @@ async def test_load_store_precomputed_done_exclude_inactive(
     await store_precomputed_done_facts(
         prs, [with_mutables(s) for s in samples],
         default_branches, settings, 1, pdb)
-    if with_preloading_enabled:
-        await pdb.cache.refresh()
     time_from = samples[1].created.item().replace(tzinfo=timezone.utc) + timedelta(days=1)
     time_to = samples[0].first_comment_on_first_review.item().replace(tzinfo=timezone.utc)
     loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_filters(
@@ -450,7 +437,6 @@ async def test_load_precomputed_done_times_reponums_smoke(
     assert len(new_prs) == 0
 
 
-@pytest.mark.xfail(with_preloading_env, reason="Not supported in the preloader")
 @pytest.mark.parametrize("exclude_inactive", [False, True])
 @with_defer
 async def test_load_precomputed_done_times_deployments(
@@ -733,7 +719,7 @@ async def test_load_precomputed_pr_releases_tag(
 @with_defer
 async def test_discover_update_unreleased_prs_smoke(
         mdb, pdb, rdb, default_branches, release_match_setting_tag, release_loader,
-        merged_prs_facts_loader, with_preloading_enabled, prefixer):
+        merged_prs_facts_loader, prefixer):
     prs = await read_sql_query(
         select([PullRequest]).where(and_(PullRequest.number.in_(range(1000, 1010)),
                                          PullRequest.merged_at.isnot(None))),
@@ -748,8 +734,6 @@ async def test_discover_update_unreleased_prs_smoke(
         prefixer, 1, (6366825,), mdb, pdb, rdb, None)
     if pdb.url.dialect == "sqlite":
         await wait_deferred()
-        if with_preloading_enabled:
-            await pdb.cache.refresh()
 
     assert len(releases) == 2
     assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
@@ -765,8 +749,6 @@ async def test_discover_update_unreleased_prs_smoke(
         prefixer, 1, (6366825,), mdb, pdb, rdb, None)
     if pdb.url.dialect == "sqlite":
         await wait_deferred()
-        if with_preloading_enabled:
-            await pdb.cache.refresh()
 
     assert len(releases) == 1
     assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
@@ -782,9 +764,6 @@ async def test_discover_update_unreleased_prs_smoke(
         GitHubMergedPullRequestFacts.updated_at: datetime.now(timezone.utc),
     }))
 
-    if with_preloading_enabled:
-        await pdb.cache.refresh()
-
     unreleased_prs = await merged_prs_facts_loader.load_merged_unreleased_pull_request_facts(
         prs, datetime(2018, 11, 20, tzinfo=utc), LabelFilter.empty(), matched_bys,
         default_branches, release_match_setting_tag, prefixer, 1, pdb)
@@ -797,8 +776,6 @@ async def test_discover_update_unreleased_prs_smoke(
         prefixer, 1, (6366825,), mdb, pdb, rdb, None)
     if pdb.url.dialect == "sqlite":
         await wait_deferred()
-        if with_preloading_enabled:
-            await pdb.cache.refresh()
 
     assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
     unreleased_prs = await merged_prs_facts_loader.load_merged_unreleased_pull_request_facts(
@@ -824,7 +801,7 @@ async def test_discover_update_unreleased_prs_smoke(
 @with_defer
 async def test_discover_update_unreleased_prs_released(
         mdb, pdb, rdb, dag, default_branches, release_match_setting_tag, release_loader,
-        merged_prs_facts_loader, with_preloading_enabled, prefixer):
+        merged_prs_facts_loader, prefixer):
     prs = await read_sql_query(
         select([PullRequest]).where(and_(PullRequest.number.in_(range(1000, 1010)),
                                          PullRequest.merged_at.isnot(None))),
@@ -845,8 +822,6 @@ async def test_discover_update_unreleased_prs_released(
         default_branches, time_to,
         dag, release_match_setting_tag, prefixer, 1, (6366825,), mdb, pdb, None)
     await wait_deferred()
-    if with_preloading_enabled:
-        await pdb.cache.refresh()
 
     await update_unreleased_prs(
         prs, released_prs, time_to, {},
@@ -855,8 +830,6 @@ async def test_discover_update_unreleased_prs_released(
         GitHubMergedPullRequestFacts.data: FakeFacts().data,
         GitHubMergedPullRequestFacts.updated_at: datetime.now(timezone.utc),
     }))
-    if with_preloading_enabled:
-        await pdb.cache.refresh()
 
     unreleased_prs = await merged_prs_facts_loader.load_merged_unreleased_pull_request_facts(
         prs, time_to, LabelFilter.empty(), matched_bys, default_branches,
@@ -873,7 +846,7 @@ async def test_discover_update_unreleased_prs_released(
 @with_defer
 async def precomputed_merged_unreleased(
         mdb, pdb, rdb, dag, default_branches, release_match_setting_tag, release_loader,
-        with_preloading_enabled, prefixer):
+        prefixer):
     postgres = pdb.url.dialect == "postgresql"
     prs = await read_sql_query(
         select([PullRequest]).where(and_(PullRequest.number.in_(range(1000, 1010)),
@@ -895,8 +868,6 @@ async def precomputed_merged_unreleased(
         default_branches, time_to,
         dag, release_match_setting_tag, prefixer, 1, (6366825,), mdb, pdb, None)
     await wait_deferred()
-    if with_preloading_enabled:
-        await pdb.cache.refresh()
 
     await update_unreleased_prs(
         prs, released_prs, time_to, {},
@@ -909,8 +880,6 @@ async def precomputed_merged_unreleased(
             datetime(2018, 10, 15, tzinfo=timezone.utc) if postgres else "2018-10-15",
         ],
     }))
-    if with_preloading_enabled:
-        await pdb.cache.refresh()
     return prs, matched_bys
 
 
@@ -932,7 +901,6 @@ async def test_discover_update_unreleased_prs_exclude_inactive(
     assert len(unreleased_prs) == 0
 
 
-@pytest.mark.xfail(with_preloading_env, reason="Not supported in the preloader")
 @with_defer
 async def test_discover_update_unreleased_prs_deployments(
         mdb, pdb, rdb, dag, branches, default_branches, release_match_setting_tag,
@@ -1152,8 +1120,7 @@ async def test_store_merged_unreleased_pull_request_facts_smoke(
 
 @with_defer
 async def test_store_open_pull_request_facts_smoke(
-        mdb, pdb, rdb, release_match_setting_tag, open_prs_facts_loader,
-        with_preloading_enabled, prefixer, bots):
+        mdb, pdb, rdb, release_match_setting_tag, open_prs_facts_loader, prefixer, bots):
     prs, dfs, facts, _, deps_task = await _fetch_pull_requests(
         {"src-d/go-git": set(range(1000, 1010))},
         bots, release_match_setting_tag, LogicalRepositorySettings.empty(),
@@ -1182,8 +1149,6 @@ async def test_store_open_pull_request_facts_smoke(
         true_dict[(pr.pr[PullRequest.node_id.name], "src-d/go-git")] = f
     dfs.prs[PullRequest.closed_at.name] = None
     await store_open_pull_request_facts(zip(prs, samples), 1, pdb)
-    if with_preloading_enabled:
-        await pdb.cache.refresh()
     ghoprf = GitHubOpenPullRequestFacts
     rows = await pdb.fetch_all(select([ghoprf]))
     assert len(rows) == 10

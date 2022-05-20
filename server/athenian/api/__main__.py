@@ -38,8 +38,6 @@ from athenian.api.db import check_schema_versions
 from athenian.api.faster_pandas import patch_pandas
 from athenian.api.kms import AthenianKMS
 from athenian.api.mandrill import MandrillClient
-from athenian.api.preloading.cache import MemoryCachePreloader
-from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME
 from athenian.api.segment import SegmentClient
 from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
 
@@ -119,10 +117,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--memcached", required=False,
                         help="memcached (users profiles, preprocessed metadata cache) address, "
                              "for example, 0.0.0.0:11211")
-    parser.add_argument("--preload-dataframes", required=False, action="store_true",
-                        help="Whether to preload DB tables in memory and refresh periodically.")
-    parser.add_argument("--preload-refresh-frequency", type=int, default=60, required=False,
-                        help="Frequency at which to refresh the preloaded tables in minutes.")
     parser.add_argument("--ui", action="store_true", help="Enable the REST UI.")
     parser.add_argument("--no-google-kms", action="store_true",
                         help="Skip Google Key Management Service initialization. Personal Access "
@@ -379,24 +373,6 @@ def create_mandrill() -> Optional[MandrillClient]:
     return None
 
 
-PRELOADER_VAR_NAME = "mc_preloader"
-
-
-def setup_preloading(app: AthenianApp, preload_refresh_frequency: int,
-                     log: logging.Logger) -> None:
-    """Initialize the memory cache and schedule loading the DB tables."""
-    log.info("Preloading DB tables to memory is enabled")
-    app.app[PRELOADER_VAR_NAME] = mc_preloader = MemoryCachePreloader(
-        preload_refresh_frequency,
-        prometheus_registry=app.app[PROMETHEUS_REGISTRY_VAR_NAME])
-    app.on_dbs_connected(mc_preloader.preload)
-
-    async def shutdown(self, app: Optional[aiohttp.web.Application] = None) -> None:
-        await mc_preloader.stop()
-
-    app.app.on_shutdown.insert(0, shutdown)
-
-
 def set_endpoint_weights(file_name: str, log: logging.Logger) -> None:
     """Change the API endpoint weights from their default values."""
     if file_name is None:
@@ -437,8 +413,6 @@ def main() -> Optional[AthenianApp]:
         segment=create_segment(),
         google_analytics=os.getenv("GOOGLE_ANALYTICS", ""),
     )
-    if args.preload_dataframes:
-        setup_preloading(app, args.preload_refresh_frequency, log)
     app.run(host=args.host, port=args.port, print=lambda s: log.info("\n" + s))
     return app
 

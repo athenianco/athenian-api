@@ -40,14 +40,12 @@ async def test_extract_branches_cache(mdb, cache, branch_miner, prefixer):
             ["src-d/go-git", "src-d/gitbase"], prefixer, (6366825,), None, cache)
 
 
-async def test_extract_branches_main(mdb_rw, branch_miner, with_preloading_enabled, prefixer):
+async def test_extract_branches_main(mdb_rw, branch_miner, prefixer):
     mdb = mdb_rw
     await mdb.execute(update(Branch).where(Branch.branch_name == "master").values({
         Branch.is_default: False,
         Branch.branch_name: "main",
     }))
-    if with_preloading_enabled:
-        await mdb.cache.refresh()
     try:
         _, defaults = await branch_miner.extract_branches(
             ["src-d/go-git"], prefixer, (6366825,), mdb, None)
@@ -59,14 +57,12 @@ async def test_extract_branches_main(mdb_rw, branch_miner, with_preloading_enabl
         }))
 
 
-async def test_extract_branches_max_date(mdb_rw, branch_miner, with_preloading_enabled, prefixer):
+async def test_extract_branches_max_date(mdb_rw, branch_miner, prefixer):
     mdb = mdb_rw
     await mdb.execute(update(Branch).where(Branch.branch_name == "master").values({
         Branch.is_default: False,
         Branch.branch_name: "whatever_it_takes",
     }))
-    if with_preloading_enabled:
-        await mdb.cache.refresh()
     try:
         _, defaults = await branch_miner.extract_branches(
             ["src-d/go-git"], prefixer, (6366825,), mdb, None)
@@ -78,15 +74,13 @@ async def test_extract_branches_max_date(mdb_rw, branch_miner, with_preloading_e
         }))
 
 
-async def test_extract_branches_only_one(mdb_rw, branch_miner, with_preloading_enabled, prefixer):
+async def test_extract_branches_only_one(mdb_rw, branch_miner, prefixer):
     mdb = mdb_rw
     branches = await mdb.fetch_all(select([Branch]).where(Branch.branch_name != "master"))
     await mdb.execute(update(Branch).where(Branch.branch_name == "master").values({
         Branch.is_default: False,
         Branch.branch_name: "whatever_it_takes",
     }))
-    if with_preloading_enabled:
-        await mdb.cache.refresh()
     try:
         await mdb.execute(delete(Branch).where(Branch.branch_name != "whatever_it_takes"))
         try:

@@ -36,7 +36,7 @@ from athenian.api.models.metadata.github import Branch, NodeCommit, PullRequest,
     PullRequestLabel, Release
 from athenian.api.models.persistentdata.models import ReleaseNotification
 from athenian.api.models.precomputed.models import GitHubCommitHistory, \
-    GitHubDonePullRequestFacts, GitHubRelease as PrecomputedRelease, GitHubReleaseFacts
+    GitHubDonePullRequestFacts, GitHubReleaseFacts
 from tests.conftest import _metadata_db
 from tests.controllers.test_filter_controller import force_push_dropped_go_git_pr_numbers
 
@@ -571,7 +571,7 @@ async def test_load_releases_branches_empty(branches, default_branches, mdb, pdb
 @with_defer
 async def test_load_releases_tag_or_branch_dates(
         branches, default_branches, release_match_setting_tag, mdb, pdb, rdb, cache,
-        time_from, n, pretag, release_loader, with_preloading_enabled, prefixer):
+        time_from, n, pretag, release_loader, prefixer):
     time_to = datetime(year=2017, month=12, day=8, tzinfo=timezone.utc)
 
     if pretag:
@@ -591,8 +591,6 @@ async def test_load_releases_tag_or_branch_dates(
             cache,
         )
         await wait_deferred()
-        if with_preloading_enabled:
-            await pdb.cache.refresh()
 
     release_settings = ReleaseSettings({"github.com/src-d/go-git": ReleaseMatchSetting(
         branches="master", tags=".*", events=".*", match=ReleaseMatch.tag_or_branch)})
@@ -612,8 +610,6 @@ async def test_load_releases_tag_or_branch_dates(
         cache,
     )
     await wait_deferred()
-    if with_preloading_enabled:
-        await pdb.cache.refresh()
     match_groups, repos_count = group_repos_by_release_match(
         ["src-d/go-git"], default_branches, release_settings)
     spans = (await release_loader.fetch_precomputed_release_match_spans(
@@ -1927,8 +1923,7 @@ async def test_override_first_releases_smoke(
 @with_defer
 async def test_precomputed_releases_low_level(
         mdb, pdb, rdb, branches, default_branches, prefixer,
-        release_match_setting_tag, release_match_setting_branch, settings_index, release_loader,
-        with_preloading_enabled):
+        release_match_setting_tag, release_match_setting_branch, settings_index, release_loader):
     release_settings = [release_match_setting_branch, release_match_setting_tag][settings_index]
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
@@ -1939,35 +1934,17 @@ async def test_precomputed_releases_low_level(
     await wait_deferred()
     assert_array_equal(releases[Release.author.name].isnull().values,
                        releases[Release.author_node_id.name].isnull().values)
-    if with_preloading_enabled:
-        await pdb.cache.refresh()
     prels = await release_loader._fetch_precomputed_releases(
         {ReleaseMatch(settings_index): {["master", ".*"][settings_index]: ["src-d/go-git"]}},
         time_from, time_to, prefixer, 1, pdb)
-    if with_preloading_enabled:
-        # Currently, due to preloading being applied to only a subset of endpoints, some
-        # columns are not preloaded, so they're missing here. Once preloading is extended
-        # to other endpoints, these columns will be needed and they'll be added in the options
-        # defined in `athenian.api.preloading.cache`.
-        # Once it will happen, this test will fail and we can just temove this `if` branch.
-        missing_prels_columns = [
-            PrecomputedRelease.author_node_id, Release.author_node_id,
-            PrecomputedRelease.name, PrecomputedRelease.tag,
-            PrecomputedRelease.url, PrecomputedRelease.sha, PrecomputedRelease.commit_id,
-        ]
-        assert all(col not in prels.columns for col in missing_prels_columns)
-        cols = set(releases.columns).intersection(prels.columns)
-        releases, prels = releases[cols], prels[cols]
-    else:
-        prels = prels[releases.columns]
+    prels = prels[releases.columns]
     assert_frame_equal(releases, prels)
 
 
 @with_defer
 async def test_precomputed_releases_ambiguous(
         mdb, pdb, rdb, branches, default_branches, prefixer,
-        release_match_setting_tag, release_match_setting_branch, release_loader,
-        with_preloading_enabled):
+        release_match_setting_tag, release_match_setting_branch, release_loader):
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
     releases_tag, _ = await release_loader.load_releases(
@@ -1979,32 +1956,15 @@ async def test_precomputed_releases_ambiguous(
         release_match_setting_branch, LogicalRepositorySettings.empty(),
         prefixer, 1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
-    if with_preloading_enabled:
-        await pdb.cache.refresh()
     prels = await release_loader._fetch_precomputed_releases(
         {ReleaseMatch.tag: {".*": ["src-d/go-git"]},
          ReleaseMatch.branch: {"master": ["src-d/go-git"]}},
         time_from, time_to, prefixer, 1, pdb)
-    if with_preloading_enabled:
-        # Currently, due to preloading being applied to only a subset of endpoints, some
-        # columns are not preloaded, so they're missing here. Once preloading is extended
-        # to other endpoints, these columns will be needed and they'll be added in the options
-        # defined in `athenian.api.preloading.cache`.
-        # Once it will happen, this test will fail and we can just temove this `if` branch.
-        missing_prels_columns = [
-            PrecomputedRelease.repository_node_id, PrecomputedRelease.author_node_id,
-            PrecomputedRelease.name, PrecomputedRelease.tag, PrecomputedRelease.url,
-            PrecomputedRelease.sha, PrecomputedRelease.commit_id,
-        ]
-        assert all(col not in prels.columns for col in missing_prels_columns)
-        cols = set(releases_tag.columns).intersection(prels.columns)
-        releases_tag, prels = releases_tag[cols], prels[cols]
-    else:
-        prels = prels[releases_tag.columns]
+    prels = prels[releases_tag.columns]
     assert_frame_equal(releases_tag, prels)
 
 
-async def test_precomputed_release_timespans(pdb, release_loader, with_preloading_enabled):
+async def test_precomputed_release_timespans(pdb, release_loader):
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime.now(timezone.utc) - timedelta(days=100)
     mg1 = {ReleaseMatch.tag: {".*": ["src-d/go-git"]}}
@@ -2018,8 +1978,6 @@ async def test_precomputed_release_timespans(pdb, release_loader, with_preloadin
             await release_loader._store_precomputed_release_match_spans(
                 mg1, {"src-d/go-git": ReleaseMatch.tag},
                 time_from - timedelta(days=300), time_to + timedelta(days=200), 1, pdb_conn)
-    if with_preloading_enabled:
-        await pdb.cache.refresh()
     spans = await release_loader.fetch_precomputed_release_match_spans(
         {**mg1, **mg2}, 1, pdb)
     assert len(spans) == 1
