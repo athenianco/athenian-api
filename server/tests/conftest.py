@@ -55,9 +55,6 @@ from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
 from athenian.api.controllers.miners.github.release_load import ReleaseLoader
 from athenian.api.controllers.miners.github.release_match import ReleaseToPullRequestMapper
 from athenian.api.db import Connection, Database, db_retry_intervals, measure_db_overhead_and_retry
-from athenian.api.experiments.preloading.entries import PreloadedBranchMiner, \
-    PreloadedDonePRFactsLoader, PreloadedMergedPRFactsLoader, PreloadedOpenPRFactsLoader, \
-    PreloadedPullRequestMiner, PreloadedReleaseLoader, PreloadedReleaseToPullRequestMapper
 from athenian.api.faster_pandas import patch_pandas
 from athenian.api.metadata import __package__ as package
 from athenian.api.models import check_collation, metadata, persistentdata
@@ -67,7 +64,6 @@ from athenian.api.models.metadata.jira import Base as JiraBase
 from athenian.api.models.persistentdata.models import Base as PersistentdataBase
 from athenian.api.models.precomputed.models import GitHubBase as PrecomputedBase
 from athenian.api.models.state.models import Base as StateBase, God
-from athenian.api.preloading.cache import MemoryCachePreloader
 from athenian.api.request import AthenianWebRequest
 from athenian.precomputer.db import dereference_schemas as dereference_precomputed_schemas
 from tests.sample_db_data import fill_metadata_session, fill_persistentdata_session, \
@@ -94,7 +90,6 @@ override_rdb = os.getenv("OVERRIDE_RDB")
 override_memcached = os.getenv("OVERRIDE_MEMCACHED")
 logging.getLogger("aiosqlite").setLevel(logging.CRITICAL)
 db_retry_intervals.insert(-2, 5)  # reduce the probability of TooManyConnectionsError in Postgres
-with_preloading_env = os.getenv("WITH_PRELOADING", "0") == "1"
 
 
 class FakeCache:
@@ -336,25 +331,9 @@ async def mandrill(request, event_loop):
     return client
 
 
-@pytest.fixture(scope="session")
-def with_preloading_enabled():
-    return with_preloading_env
-
-
-@pytest.fixture(scope="function")
-async def with_preloading(sdb, mdb, mdb_rw, pdb, rdb, with_preloading_enabled):
-    if not with_preloading_enabled:
-        return False
-
-    mc_preloader = MemoryCachePreloader(60)
-    await mc_preloader.preload(sdb=sdb, mdb=mdb_rw, pdb=pdb, rdb=rdb)
-    mdb.cache = mdb_rw.cache
-    return True
-
-
 @pytest.fixture(scope="function")
 async def app(metadata_db, state_db, precomputed_db, persistentdata_db, slack,
-              with_preloading_enabled, request) -> AthenianApp:
+              request) -> AthenianApp:
     """Build the especifico App to be used during tests
 
     By default handler responses will be validated against oas spec,
@@ -386,8 +365,6 @@ async def app(metadata_db, state_db, precomputed_db, persistentdata_db, slack,
                       max_load=15,
                       with_pdb_schema_checks=False,
                       validate_responses=validate_responses)
-    if with_preloading_enabled:
-        app.on_dbs_connected(MemoryCachePreloader(60, None, False).preload)
     await app.ready()
     return app
 
@@ -618,39 +595,38 @@ async def rdb(persistentdata_db, event_loop, request):
 
 
 @pytest.fixture(scope="function")
-def branch_miner(with_preloading):
-    return PreloadedBranchMiner if with_preloading else BranchMiner
+def branch_miner():
+    return BranchMiner
 
 
 @pytest.fixture(scope="function")
-def release_loader(with_preloading):
-    return PreloadedReleaseLoader if with_preloading else ReleaseLoader
+def release_loader():
+    return ReleaseLoader
 
 
 @pytest.fixture(scope="function")
-def releases_to_prs_mapper(with_preloading):
-    return (PreloadedReleaseToPullRequestMapper if with_preloading
-            else ReleaseToPullRequestMapper)
+def releases_to_prs_mapper():
+    return ReleaseToPullRequestMapper
 
 
 @pytest.fixture(scope="function")
-def done_prs_facts_loader(with_preloading):
-    return PreloadedDonePRFactsLoader if with_preloading else DonePRFactsLoader
+def done_prs_facts_loader():
+    return DonePRFactsLoader
 
 
 @pytest.fixture(scope="function")
-def open_prs_facts_loader(with_preloading):
-    return PreloadedOpenPRFactsLoader if with_preloading else OpenPRFactsLoader
+def open_prs_facts_loader():
+    return OpenPRFactsLoader
 
 
 @pytest.fixture(scope="function")
-def merged_prs_facts_loader(with_preloading):
-    return PreloadedMergedPRFactsLoader if with_preloading else MergedPRFactsLoader
+def merged_prs_facts_loader():
+    return MergedPRFactsLoader
 
 
 @pytest.fixture(scope="function")
-def pr_miner(with_preloading):
-    return PreloadedPullRequestMiner if with_preloading else PullRequestMiner
+def pr_miner():
+    return PullRequestMiner
 
 
 @pytest.fixture(scope="session")
