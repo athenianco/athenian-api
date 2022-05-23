@@ -625,8 +625,7 @@ async def _issue_flow(return_: Set[str],
             deployments = deployments_task.result()
         else:
             deployments = None
-        prs = dict(zip((pr.node_id for pr in pr_list_items),
-                       (web_pr_from_struct(pr, prefixer, log) for pr in pr_list_items)))
+        prs = dict(web_pr_from_struct(pr_list_items, prefixer, log, lambda w, pr: (pr.node_id, w)))
         return prs, deployments
 
     (

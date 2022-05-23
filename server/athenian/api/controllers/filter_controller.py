@@ -3,7 +3,8 @@ from datetime import datetime, timedelta, timezone
 from itertools import chain
 import logging
 import operator
-from typing import Any, Dict, List, Mapping, Optional, Set, Tuple
+from typing import Any, Callable, Dict, Generator, Iterable, List, Mapping, Optional, Set, Tuple, \
+    TypeVar
 
 from aiohttp import web
 import aiomcache
@@ -267,46 +268,56 @@ def _bake_updated_min_max(filt: FilterPullRequestsRequest) -> Tuple[datetime, da
     return updated_min, updated_max
 
 
-def web_pr_from_struct(pr: PullRequestListItem,
-                       prefixer: Prefixer,
-                       log: logging.Logger,
-                       ) -> WebPullRequest:
+T = TypeVar("T")
+
+
+def web_pr_from_struct(
+        prs: Iterable[PullRequestListItem],
+        prefixer: Prefixer,
+        log: logging.Logger,
+        postprocess: Callable[[WebPullRequest, PullRequestListItem], T] = lambda w, _: w,
+) -> Generator[T, None, None]:
     """Convert an intermediate PR representation to the web model."""
-    props = dict(pr)
-    del props["node_id"]
-    del props["deployments"]
-    repo = props["repository"]
-    physical_repo = drop_logical_repo(repo)
-    if physical_repo != repo:
-        append = repo[len(physical_repo):]
-    else:
-        append = ""
-    props["repository"] = prefixer.repo_name_to_prefixed_name[physical_repo] + append
-    if pr.events_time_machine is not None:
-        props["events_time_machine"] = sorted(p.name.lower() for p in pr.events_time_machine)
-    if pr.stages_time_machine is not None:
-        props["stages_time_machine"] = sorted(p.name.lower() for p in pr.stages_time_machine)
-    props["events_now"] = sorted(p.name.lower() for p in pr.events_now)
-    props["stages_now"] = sorted(p.name.lower() for p in pr.stages_now)
-    props["stage_timings"] = StageTimings(**pr.stage_timings)
-    participants = defaultdict(list)
-    for pk, pids in sorted(pr.participants.items()):
-        pkweb = pk.name.lower()
-        for pid in pids:
-            try:
-                participants[prefixer.user_login_to_prefixed_login[pid]].append(pkweb)
-            except KeyError:
-                log.error("Failed to resolve user %s", pid)
-    props["participants"] = sorted(PullRequestParticipant(*p) for p in participants.items())
-    if pr.labels is not None:
-        props["labels"] = [PullRequestLabel(**label) for label in pr.labels]
-    if pr.jira is not None:
-        props["jira"] = jira = [LinkedJIRAIssue(**issue) for issue in pr.jira]
-        for issue in jira:
-            if issue.labels is not None:
-                # it is a set, must be a list
-                issue.labels = sorted(issue.labels)
-    return WebPullRequest(**props)
+    for pr in prs:
+        props = dict(pr)
+        del props["node_id"]
+        del props["deployments"]
+        repo = props["repository"]
+        physical_repo = drop_logical_repo(repo)
+        if physical_repo != repo:
+            append = repo[len(physical_repo):]
+        else:
+            append = ""
+        try:
+            props["repository"] = prefixer.repo_name_to_prefixed_name[physical_repo] + append
+        except KeyError:
+            # deleted repository
+            continue
+        if pr.events_time_machine is not None:
+            props["events_time_machine"] = sorted(p.name.lower() for p in pr.events_time_machine)
+        if pr.stages_time_machine is not None:
+            props["stages_time_machine"] = sorted(p.name.lower() for p in pr.stages_time_machine)
+        props["events_now"] = sorted(p.name.lower() for p in pr.events_now)
+        props["stages_now"] = sorted(p.name.lower() for p in pr.stages_now)
+        props["stage_timings"] = StageTimings(**pr.stage_timings)
+        participants = defaultdict(list)
+        for pk, pids in sorted(pr.participants.items()):
+            pkweb = pk.name.lower()
+            for pid in pids:
+                try:
+                    participants[prefixer.user_login_to_prefixed_login[pid]].append(pkweb)
+                except KeyError:
+                    log.error("Failed to resolve user %s", pid)
+        props["participants"] = sorted(PullRequestParticipant(*p) for p in participants.items())
+        if pr.labels is not None:
+            props["labels"] = [PullRequestLabel(**label) for label in pr.labels]
+        if pr.jira is not None:
+            props["jira"] = jira = [LinkedJIRAIssue(**issue) for issue in pr.jira]
+            for issue in jira:
+                if issue.labels is not None:
+                    # it is a set, must be a list
+                    issue.labels = sorted(issue.labels)
+        yield postprocess(WebPullRequest(**props), pr)
 
 
 def _nan_to_none(val):
@@ -642,7 +653,7 @@ async def _build_github_prs_response(prs: List[PullRequestListItem],
                                      ) -> web.Response:
     log = logging.getLogger(f"{metadata.__package__}._build_github_prs_response")
     prefix_logical_repo = prefixer.prefix_logical_repo
-    web_prs = sorted(web_pr_from_struct(pr, prefixer, log) for pr in prs)
+    web_prs = sorted(web_pr_from_struct(prs, prefixer, log))
     users = set(chain.from_iterable(chain.from_iterable(pr.participants.values()) for pr in prs))
     avatars = await mine_user_avatars(users, UserAvatarKeys.PREFIXED_LOGIN, meta_ids, mdb, cache)
     model = PullRequestSet(include=PullRequestSetInclude(
