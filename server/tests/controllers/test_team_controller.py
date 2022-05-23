@@ -412,6 +412,20 @@ class TestUpdateTeam:
         rbody = await self._request(client, 1, body, 400)
         assert "cycle" in rbody
 
+    async def test_unset_parent(self, client, sdb, disable_default_user):
+        for model in (TeamFactory(id=1), TeamFactory(id=2, parent_id=1)):
+            await sdb.execute(model_insert_stmt(model))
+        body = TeamUpdateRequest("Engineering", ["github.com/se7entyse7en"], None).to_dict()
+        rbody = await self._request(client, 2, body, 400)
+        assert "Team parent cannot be unset" in rbody
+
+    async def test_parent_stays_null(self, client, sdb, disable_default_user):
+        await sdb.execute(model_insert_stmt(TeamFactory(id=1)))
+        body = TeamUpdateRequest("Engineering", ["github.com/se7entyse7en"], None).to_dict()
+        await self._request(client, 1, body, 200)
+        team = await sdb.fetch_one(select([Team]).where(Team.id == 1))
+        assert team[Team.name.name] == "Engineering"
+
     async def _request(
         self, client: TestClient, team_id: int, json: dict, assert_status: int,
     ) -> str:
