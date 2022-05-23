@@ -14,23 +14,23 @@ from sqlalchemy import and_, insert, select, update
 from tqdm import tqdm
 
 from athenian.api.async_utils import gather
-from athenian.api.controllers.account import copy_teams_as_needed, get_metadata_account_ids
-from athenian.api.controllers.features.entries import MetricEntriesCalculator
-from athenian.api.controllers.jira import match_jira_identities
-from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.bots import bots as fetch_bots
-from athenian.api.controllers.miners.github.branches import BranchMiner
-from athenian.api.controllers.miners.github.deployment import mine_deployments
-from athenian.api.controllers.miners.github.precomputed_prs import delete_force_push_dropped_prs
-from athenian.api.controllers.miners.github.release_load import ReleaseLoader
-from athenian.api.controllers.miners.github.release_mine import discover_first_releases, \
-    hide_first_releases, mine_releases
-from athenian.api.controllers.miners.types import PullRequestFacts
-from athenian.api.controllers.prefixer import Prefixer
-from athenian.api.controllers.reposet import refresh_repository_names
-from athenian.api.controllers.settings import ReleaseMatch, Settings
 from athenian.api.db import Database
 from athenian.api.defer import defer, wait_deferred
+from athenian.api.internal.account import copy_teams_as_needed, get_metadata_account_ids
+from athenian.api.internal.features.entries import MetricEntriesCalculator
+from athenian.api.internal.jira import match_jira_identities
+from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.internal.miners.github.bots import bots as fetch_bots
+from athenian.api.internal.miners.github.branches import BranchMiner
+from athenian.api.internal.miners.github.deployment import mine_deployments
+from athenian.api.internal.miners.github.precomputed_prs import delete_force_push_dropped_prs
+from athenian.api.internal.miners.github.release_load import ReleaseLoader
+from athenian.api.internal.miners.github.release_mine import discover_first_releases, \
+    hide_first_releases, mine_releases
+from athenian.api.internal.miners.types import PullRequestFacts
+from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.reposet import refresh_repository_names
+from athenian.api.internal.settings import ReleaseMatch, Settings
 from athenian.api.models.state.models import RepositorySet, Team
 from athenian.api.precompute.context import PrecomputeContext
 from athenian.api.tracing import sentry_span

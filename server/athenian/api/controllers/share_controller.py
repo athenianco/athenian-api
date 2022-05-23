@@ -6,9 +6,9 @@ from typing import Any, Sequence, Set, Tuple
 import aiohttp.web
 from sqlalchemy import insert, select
 
+from athenian.api import ffx
 from athenian.api.async_utils import gather
 from athenian.api.auth import Auth0, disable_default_user
-from athenian.api.controllers import ffx
 from athenian.api.db import DatabaseLike
 from athenian.api.models.state.models import Share, UserAccount
 from athenian.api.models.web import BadRequestError, NotFoundError, Share as WebShare

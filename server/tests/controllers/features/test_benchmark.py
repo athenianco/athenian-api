@@ -3,8 +3,8 @@ import lzma
 from pathlib import Path
 import pickle
 
-from athenian.api.controllers.features.github.pull_request_metrics import metric_calculators
-from athenian.api.controllers.features.github.pull_request_metrics import \
+from athenian.api.internal.features.github.pull_request_metrics import metric_calculators
+from athenian.api.internal.features.github.pull_request_metrics import \
     PullRequestBinnedMetricCalculator
 from athenian.api.models.web import PullRequestMetricID
 

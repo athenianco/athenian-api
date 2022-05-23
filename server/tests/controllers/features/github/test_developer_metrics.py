@@ -1,10 +1,10 @@
 from datetime import datetime, timezone
 
-from athenian.api.controllers.features.metric import MetricInt
-from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.developer import DeveloperTopic
-from athenian.api.controllers.settings import LogicalRepositorySettings
 from athenian.api.defer import with_defer
+from athenian.api.internal.features.metric import MetricInt
+from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.internal.miners.github.developer import DeveloperTopic
+from athenian.api.internal.settings import LogicalRepositorySettings
 
 
 @with_defer

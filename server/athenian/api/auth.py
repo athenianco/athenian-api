@@ -30,7 +30,7 @@ from sqlalchemy import select
 from athenian.api.aiohttp_addons import create_aiohttp_closed_event
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached
-from athenian.api.controllers.account import check_account_expired, \
+from athenian.api.internal.account import check_account_expired, \
     get_user_account_status_from_request
 from athenian.api.kms import AthenianKMS
 from athenian.api.models.state.models import God, UserAccount, UserToken

@@ -11,17 +11,17 @@ from pandas.testing import assert_frame_equal, assert_index_equal
 import pytest
 from sqlalchemy import delete, insert, select, update
 
-from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.commit import _empty_dag
-from athenian.api.controllers.miners.github.precomputed_prs import \
-    store_merged_unreleased_pull_request_facts, store_open_pull_request_facts
-from athenian.api.controllers.miners.github.pull_request import PullRequestFactsMiner
-from athenian.api.controllers.miners.types import DAG, MinedPullRequest, PRParticipationKind, \
-    PullRequestCheckRun, PullRequestFacts
-from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch, \
-    ReleaseMatchSetting, ReleaseSettings
 import athenian.api.db
 from athenian.api.defer import launch_defer, wait_deferred, with_defer, with_explicit_defer
+from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.internal.miners.github.commit import _empty_dag
+from athenian.api.internal.miners.github.precomputed_prs import \
+    store_merged_unreleased_pull_request_facts, store_open_pull_request_facts
+from athenian.api.internal.miners.github.pull_request import PullRequestFactsMiner
+from athenian.api.internal.miners.types import DAG, MinedPullRequest, PRParticipationKind, \
+    PullRequestCheckRun, PullRequestFacts
+from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch, \
+    ReleaseMatchSetting, ReleaseSettings
 from athenian.api.models.metadata.github import Branch, PullRequest
 from athenian.api.models.metadata.jira import Issue
 from athenian.api.models.persistentdata.models import ReleaseNotification

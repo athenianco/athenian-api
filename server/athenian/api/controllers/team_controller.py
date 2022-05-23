@@ -17,10 +17,10 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.auth import disable_default_user
 from athenian.api.balancing import weight
-from athenian.api.controllers.account import copy_teams_as_needed, get_metadata_account_ids, \
-    get_user_account_status_from_request
-from athenian.api.controllers.jira import load_mapped_jira_users
 from athenian.api.db import DatabaseLike
+from athenian.api.internal.account import copy_teams_as_needed, get_metadata_account_ids, \
+    get_user_account_status_from_request
+from athenian.api.internal.jira import load_mapped_jira_users
 from athenian.api.models.metadata.github import User
 from athenian.api.models.state.models import Team
 from athenian.api.models.web import BadRequestError, Contributor, CreatedIdentifier, \

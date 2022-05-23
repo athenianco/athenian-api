@@ -2,12 +2,12 @@ from datetime import datetime, timezone
 
 from pandas._testing import assert_frame_equal
 
-from athenian.api.controllers.jira import JIRAConfig
-from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.jira.issue import fetch_jira_issues, ISSUE_PRS_BEGAN, \
-    ISSUE_PRS_RELEASED
-from athenian.api.controllers.settings import LogicalRepositorySettings
 from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.internal.jira import JIRAConfig
+from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.internal.miners.jira.issue import fetch_jira_issues, ISSUE_PRS_BEGAN, \
+    ISSUE_PRS_RELEASED
+from athenian.api.internal.settings import LogicalRepositorySettings
 
 
 @with_defer

@@ -4,7 +4,7 @@ import json
 import pytest
 from sqlalchemy import insert
 
-from athenian.api.controllers.settings import ReleaseMatch
+from athenian.api.internal.settings import ReleaseMatch
 from athenian.api.models.state.models import ReleaseSetting
 from athenian.api.models.web import PullRequestPaginationPlan, PullRequestStage
 

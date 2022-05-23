@@ -9,7 +9,8 @@ from pandas.testing import assert_frame_equal
 import pytest
 from sqlalchemy import insert, select
 
-from athenian.api.controllers.features.github.pull_request_metrics import AllCounter, \
+from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.internal.features.github.pull_request_metrics import AllCounter, \
     ClosedCalculator, CycleCounter, CycleCounterWithQuantiles, CycleTimeCalculator, \
     DoneCalculator, FlowRatioCalculator, histogram_calculators, LeadCounter, \
     LeadCounterWithQuantiles, LeadTimeCalculator, MergingCounter, MergingCounterWithQuantiles, \
@@ -18,16 +19,15 @@ from athenian.api.controllers.features.github.pull_request_metrics import AllCou
     ReleaseCounterWithQuantiles, ReleaseTimeCalculator, ReviewCounter, \
     ReviewCounterWithQuantiles, ReviewTimeCalculator, WaitFirstReviewTimeCalculator, \
     WorkInProgressCounter, WorkInProgressCounterWithQuantiles, WorkInProgressTimeCalculator
-from athenian.api.controllers.features.histogram import Scale
-from athenian.api.controllers.features.metric import MetricInt, MetricTimeDelta
-from athenian.api.controllers.features.metric_calculator import MetricCalculator, \
+from athenian.api.internal.features.histogram import Scale
+from athenian.api.internal.features.metric import MetricInt, MetricTimeDelta
+from athenian.api.internal.features.metric_calculator import MetricCalculator, \
     MetricCalculatorEnsemble
-from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.deployment import mine_deployments
-from athenian.api.controllers.miners.types import PullRequestFacts
-from athenian.api.controllers.settings import LogicalDeploymentSettings, \
+from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.internal.miners.github.deployment import mine_deployments
+from athenian.api.internal.miners.types import PullRequestFacts
+from athenian.api.internal.settings import LogicalDeploymentSettings, \
     LogicalRepositorySettings, ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
-from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.persistentdata.models import ReleaseNotification
 from athenian.api.models.precomputed.models import GitHubMergedPullRequestFacts, \
     GitHubOpenPullRequestFacts

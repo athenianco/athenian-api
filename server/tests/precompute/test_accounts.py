@@ -3,9 +3,9 @@ from unittest import mock
 
 import sqlalchemy as sa
 
-from athenian.api.controllers.account import get_metadata_account_ids
-from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.db import Database
+from athenian.api.internal.account import get_metadata_account_ids
+from athenian.api.internal.prefixer import Prefixer
 from athenian.api.models.state.models import RepositorySet, Team
 from athenian.api.precompute.accounts import _ensure_bot_team, main, precompute_reposet
 from tests.testutils.db import model_insert_stmt

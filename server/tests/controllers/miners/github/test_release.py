@@ -13,25 +13,25 @@ from sqlalchemy import delete, func, insert, select, sql
 from sqlalchemy.schema import CreateTable
 
 from athenian.api.async_utils import read_sql_query
-from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.commit import _empty_dag, _fetch_commit_history_dag, \
-    fetch_repository_commits
-from athenian.api.controllers.miners.github.dag_accelerated import extract_subdag, join_dags, \
-    mark_dag_access, mark_dag_parents, partition_dag
-from athenian.api.controllers.miners.github.precomputed_prs import store_precomputed_done_facts
-from athenian.api.controllers.miners.github.pull_request import PullRequestFactsMiner
-from athenian.api.controllers.miners.github.release_load import group_repos_by_release_match
-from athenian.api.controllers.miners.github.release_match import PullRequestToReleaseMapper, \
-    ReleaseToPullRequestMapper
-from athenian.api.controllers.miners.github.release_mine import mine_releases, \
-    mine_releases_by_name, override_first_releases
-from athenian.api.controllers.miners.github.released_pr import matched_by_column
-from athenian.api.controllers.miners.types import PullRequestFacts, released_prs_columns, \
-    ReleaseFacts
-from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch, \
-    ReleaseMatchSetting, ReleaseSettings
 from athenian.api.db import Database
 from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.internal.miners.github.commit import _empty_dag, _fetch_commit_history_dag, \
+    fetch_repository_commits
+from athenian.api.internal.miners.github.dag_accelerated import extract_subdag, join_dags, \
+    mark_dag_access, mark_dag_parents, partition_dag
+from athenian.api.internal.miners.github.precomputed_prs import store_precomputed_done_facts
+from athenian.api.internal.miners.github.pull_request import PullRequestFactsMiner
+from athenian.api.internal.miners.github.release_load import group_repos_by_release_match
+from athenian.api.internal.miners.github.release_match import PullRequestToReleaseMapper, \
+    ReleaseToPullRequestMapper
+from athenian.api.internal.miners.github.release_mine import mine_releases, \
+    mine_releases_by_name, override_first_releases
+from athenian.api.internal.miners.github.released_pr import matched_by_column
+from athenian.api.internal.miners.types import PullRequestFacts, released_prs_columns, \
+    ReleaseFacts
+from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch, \
+    ReleaseMatchSetting, ReleaseSettings
 from athenian.api.models.metadata.github import Branch, NodeCommit, PullRequest, \
     PullRequestLabel, Release
 from athenian.api.models.persistentdata.models import ReleaseNotification

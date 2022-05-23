@@ -8,9 +8,9 @@ import morcilla
 import pytest
 from sqlalchemy import and_, delete, insert, select, update
 
-from athenian.api.controllers.ffx import decrypt
 from athenian.api.controllers.invitation_controller import admin_backdoor, decode_slug, \
     encode_slug, jira_url_template, url_prefix
+from athenian.api.ffx import decrypt
 from athenian.api.models.metadata.github import FetchProgress
 from athenian.api.models.metadata.jira import Progress as JIRAProgress
 from athenian.api.models.state.models import Account, AccountFeature, AccountGitHubAccount, \

@@ -1,4 +1,4 @@
-from athenian.api.controllers.miners.github.bots import bots
+from athenian.api.internal.miners.github.bots import bots
 
 
 async def test_bots_fetch(mdb, sdb):

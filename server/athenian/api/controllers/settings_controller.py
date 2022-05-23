@@ -13,15 +13,15 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.auth import disable_default_user
 from athenian.api.balancing import weight
-from athenian.api.controllers.account import get_metadata_account_ids, \
-    get_user_account_status_from_request, only_admin
-from athenian.api.controllers.jira import ALLOWED_USER_TYPES, get_jira_id, \
-    load_jira_identity_mapping_sentinel
-from athenian.api.controllers.logical_repos import drop_logical_repo
-from athenian.api.controllers.miners.github.branches import BranchMiner
-from athenian.api.controllers.prefixer import Prefixer
-from athenian.api.controllers.settings import ReleaseMatch, Settings
 from athenian.api.db import Database, DatabaseLike
+from athenian.api.internal.account import get_metadata_account_ids, \
+    get_user_account_status_from_request, only_admin
+from athenian.api.internal.jira import ALLOWED_USER_TYPES, get_jira_id, \
+    load_jira_identity_mapping_sentinel
+from athenian.api.internal.logical_repos import drop_logical_repo
+from athenian.api.internal.miners.github.branches import BranchMiner
+from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.settings import ReleaseMatch, Settings
 from athenian.api.models.metadata.github import User as GitHubUser
 from athenian.api.models.metadata.jira import Issue, Project, User as JIRAUser
 from athenian.api.models.precomputed.models import GitHubCommitDeployment, GitHubDeploymentFacts, \

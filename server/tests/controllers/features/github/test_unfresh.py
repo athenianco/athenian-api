@@ -4,11 +4,11 @@ from pandas.testing import assert_frame_equal
 import pytest
 from sqlalchemy import delete, select, update
 
-from athenian.api.controllers.features import entries
-from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.types import PullRequestFacts
-from athenian.api.controllers.settings import LogicalRepositorySettings
 from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.internal.features import entries
+from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.internal.miners.types import PullRequestFacts
+from athenian.api.internal.settings import LogicalRepositorySettings
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
     GitHubMergedPullRequestFacts
 

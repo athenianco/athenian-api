@@ -1,7 +1,7 @@
 import pytest
 
-from athenian.api.controllers.miners.github.access import GitHubAccessChecker
 from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.internal.miners.github.access import GitHubAccessChecker
 
 
 @pytest.mark.parametrize("has_cache", [True, False])

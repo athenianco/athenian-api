@@ -7,9 +7,9 @@ import numpy as np
 import pytest
 from sqlalchemy import delete, insert, update
 
-from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.settings import LogicalRepositorySettings
 from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.internal.settings import LogicalRepositorySettings
 from athenian.api.models.metadata.github import NodePullRequestJiraIssues, PullRequest
 from athenian.api.models.metadata.jira import Issue
 from athenian.api.models.state.models import MappedJIRAIdentity

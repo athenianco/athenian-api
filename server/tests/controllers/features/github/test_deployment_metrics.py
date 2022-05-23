@@ -5,14 +5,14 @@ from numpy.testing import assert_array_equal
 import pandas as pd
 import pytest
 
-from athenian.api.controllers.features.entries import MetricEntriesCalculator
-from athenian.api.controllers.features.github.deployment_metrics import \
+from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.internal.features.entries import MetricEntriesCalculator
+from athenian.api.internal.features.github.deployment_metrics import \
     group_deployments_by_environments, group_deployments_by_participants, \
     group_deployments_by_repositories
-from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.types import DeploymentFacts, ReleaseParticipationKind
-from athenian.api.controllers.settings import LogicalRepositorySettings
-from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.internal.miners.types import DeploymentFacts, ReleaseParticipationKind
+from athenian.api.internal.settings import LogicalRepositorySettings
 from athenian.api.models.persistentdata.models import DeployedComponent
 from athenian.api.models.web import DeploymentMetricID
 

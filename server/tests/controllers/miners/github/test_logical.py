@@ -4,13 +4,13 @@ import pandas as pd
 from pandas.testing import assert_frame_equal
 import pytest
 
-from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.commit import _empty_dag
-from athenian.api.controllers.miners.github.logical import split_logical_deployed_components, \
-    split_logical_prs
-from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
-from athenian.api.controllers.settings import LogicalRepositorySettings
 from athenian.api.defer import with_defer
+from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.internal.miners.github.commit import _empty_dag
+from athenian.api.internal.miners.github.logical import split_logical_deployed_components, \
+    split_logical_prs
+from athenian.api.internal.miners.github.pull_request import PullRequestMiner
+from athenian.api.internal.settings import LogicalRepositorySettings
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
     DeploymentNotification
 

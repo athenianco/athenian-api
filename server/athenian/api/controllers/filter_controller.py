@@ -15,39 +15,39 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
 from athenian.api.cache import expires_header, middle_term_exptime, short_term_exptime
-from athenian.api.controllers.account import get_metadata_account_ids
-from athenian.api.controllers.features.github.check_run_filter import filter_check_runs
-from athenian.api.controllers.features.github.pull_request_filter import fetch_pull_requests, \
+from athenian.api.db import Database
+from athenian.api.internal.account import get_metadata_account_ids
+from athenian.api.internal.features.github.check_run_filter import filter_check_runs
+from athenian.api.internal.features.github.pull_request_filter import fetch_pull_requests, \
     filter_pull_requests
-from athenian.api.controllers.jira import get_jira_installation_or_none, JIRAConfig, \
+from athenian.api.internal.jira import get_jira_installation_or_none, JIRAConfig, \
     load_mapped_jira_users
-from athenian.api.controllers.logical_repos import coerce_logical_repos, drop_logical_repo
-from athenian.api.controllers.miners.access_classes import access_classes
-from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.bots import bots
-from athenian.api.controllers.miners.github.branches import BranchMiner
-from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
-from athenian.api.controllers.miners.github.contributors import mine_contributors
-from athenian.api.controllers.miners.github.deployment import load_jira_issues_for_deployments, \
+from athenian.api.internal.logical_repos import coerce_logical_repos, drop_logical_repo
+from athenian.api.internal.miners.access_classes import access_classes
+from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.internal.miners.github.bots import bots
+from athenian.api.internal.miners.github.branches import BranchMiner
+from athenian.api.internal.miners.github.commit import extract_commits, FilterCommitsProperty
+from athenian.api.internal.miners.github.contributors import mine_contributors
+from athenian.api.internal.miners.github.deployment import load_jira_issues_for_deployments, \
     mine_deployments
-from athenian.api.controllers.miners.github.deployment_light import mine_environments, \
+from athenian.api.internal.miners.github.deployment_light import mine_environments, \
     NoDeploymentNotificationsError
-from athenian.api.controllers.miners.github.label import mine_labels
-from athenian.api.controllers.miners.github.release_mine import \
+from athenian.api.internal.miners.github.label import mine_labels
+from athenian.api.internal.miners.github.release_mine import \
     diff_releases as mine_diff_releases, mine_releases, mine_releases_by_name
-from athenian.api.controllers.miners.github.repository import mine_repositories
-from athenian.api.controllers.miners.github.user import mine_user_avatars, UserAvatarKeys
-from athenian.api.controllers.miners.jira.issue import fetch_jira_issues_for_prs
-from athenian.api.controllers.miners.types import Deployment, DeploymentConclusion, \
+from athenian.api.internal.miners.github.repository import mine_repositories
+from athenian.api.internal.miners.github.user import mine_user_avatars, UserAvatarKeys
+from athenian.api.internal.miners.jira.issue import fetch_jira_issues_for_prs
+from athenian.api.internal.miners.types import Deployment, DeploymentConclusion, \
     DeploymentFacts, PRParticipants, PRParticipationKind, PullRequestEvent, \
     PullRequestJIRAIssueItem, PullRequestListItem, PullRequestStage, ReleaseFacts, \
     ReleaseParticipationKind
-from athenian.api.controllers.prefixer import Prefixer
-from athenian.api.controllers.reposet import resolve_repos
-from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseSettings, Settings
-from athenian.api.controllers.with_ import compile_developers, fetch_teams_map, \
+from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.reposet import resolve_repos
+from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings, Settings
+from athenian.api.internal.with_ import compile_developers, fetch_teams_map, \
     resolve_withgroups, scan_for_teams
-from athenian.api.db import Database
 from athenian.api.models.metadata.github import PullRequest, PushCommit, Release, User
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
     DeploymentNotification

@@ -10,7 +10,7 @@ from sqlalchemy import distinct, func, select
 from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached, CancelCache, max_exptime
-from athenian.api.controllers.account import get_metadata_account_ids_or_empty
+from athenian.api.internal.account import get_metadata_account_ids_or_empty
 from athenian.api.models.metadata.github import NodeRepository
 from athenian.api.models.state.models import UserAccount
 from athenian.api.request import AthenianWebRequest

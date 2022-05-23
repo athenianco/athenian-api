@@ -7,9 +7,9 @@ from sqlalchemy import and_, delete, insert, select, update
 
 from athenian.api import auth
 from athenian.api.async_utils import read_sql_query
-from athenian.api.controllers.logical_repos import coerce_logical_repos, contains_logical_repos, \
+from athenian.api.internal.logical_repos import coerce_logical_repos, contains_logical_repos, \
     drop_logical_repo
-from athenian.api.controllers.settings import ReleaseMatch, Settings
+from athenian.api.internal.settings import ReleaseMatch, Settings
 from athenian.api.models.precomputed.models import GitHubDeploymentFacts, \
     GitHubDonePullRequestFacts, GitHubOpenPullRequestFacts, GitHubPullRequestDeployment, \
     GitHubRelease, GitHubReleaseDeployment

@@ -6,14 +6,14 @@ from numpy.testing import assert_array_equal
 import pandas as pd
 import pytest
 
-from athenian.api.controllers.features.github.check_run_metrics_accelerated import \
-    mark_check_suite_types
-from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github import check_run
-from athenian.api.controllers.miners.github.check_run import _postprocess_check_runs, \
-    _split_duplicate_check_runs, mine_check_runs
-from athenian.api.controllers.settings import LogicalRepositorySettings
 from athenian.api.int_to_str import int_to_str
+from athenian.api.internal.features.github.check_run_metrics_accelerated import \
+    mark_check_suite_types
+from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.internal.miners.github import check_run
+from athenian.api.internal.miners.github.check_run import _postprocess_check_runs, \
+    _split_duplicate_check_runs, mine_check_runs
+from athenian.api.internal.settings import LogicalRepositorySettings
 from athenian.api.models.metadata.github import CheckRun
 
 

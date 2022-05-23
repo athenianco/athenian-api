@@ -9,11 +9,11 @@ from sqlalchemy import and_, delete, insert, select, update
 from sqlalchemy.orm import InstrumentedAttribute
 
 from athenian.api.auth import disable_default_user
-from athenian.api.controllers.account import get_metadata_account_ids, \
-    get_user_account_status, get_user_account_status_from_request, only_admin
-from athenian.api.controllers.miners.access_classes import access_classes
-from athenian.api.controllers.reposet import fetch_reposet, load_account_reposets
 from athenian.api.db import DatabaseLike
+from athenian.api.internal.account import get_metadata_account_ids, \
+    get_user_account_status, get_user_account_status_from_request, only_admin
+from athenian.api.internal.miners.access_classes import access_classes
+from athenian.api.internal.reposet import fetch_reposet, load_account_reposets
 from athenian.api.models.state.models import RepositorySet
 from athenian.api.models.web import CreatedIdentifier, DatabaseConflict, ForbiddenError, \
     InvalidRequestError, RepositorySetWithName

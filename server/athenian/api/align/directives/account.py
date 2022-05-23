@@ -4,7 +4,7 @@ from ariadne import SchemaDirectiveVisitor
 from graphql import GraphQLArgument, GraphQLField, GraphQLInputField, GraphQLInputObjectType, \
     GraphQLInterfaceType, GraphQLObjectType, GraphQLResolveInfo
 
-from athenian.api.controllers.account import check_account_expired, \
+from athenian.api.internal.account import check_account_expired, \
     get_user_account_status_from_request
 from athenian.api.models.web import UnauthorizedError
 from athenian.api.response import ResponseError

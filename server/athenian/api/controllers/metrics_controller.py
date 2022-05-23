@@ -7,23 +7,23 @@ from aiohttp import web
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
 from athenian.api.cache import expires_header, short_term_exptime
-from athenian.api.controllers.account import get_metadata_account_ids
-from athenian.api.controllers.datetime_utils import split_to_time_intervals
-from athenian.api.controllers.features.code import CodeStats
-from athenian.api.controllers.features.entries import make_calculator
-from athenian.api.controllers.jira import get_jira_installation, get_jira_installation_or_none
-from athenian.api.controllers.miners.access_classes import AccessChecker
-from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.bots import bots
-from athenian.api.controllers.miners.github.branches import BranchMiner
-from athenian.api.controllers.miners.github.commit import FilterCommitsProperty
-from athenian.api.controllers.miners.github.developer import DeveloperTopic
-from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind, \
+from athenian.api.internal.account import get_metadata_account_ids
+from athenian.api.internal.datetime_utils import split_to_time_intervals
+from athenian.api.internal.features.code import CodeStats
+from athenian.api.internal.features.entries import make_calculator
+from athenian.api.internal.jira import get_jira_installation, get_jira_installation_or_none
+from athenian.api.internal.miners.access_classes import AccessChecker
+from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.internal.miners.github.bots import bots
+from athenian.api.internal.miners.github.branches import BranchMiner
+from athenian.api.internal.miners.github.commit import FilterCommitsProperty
+from athenian.api.internal.miners.github.developer import DeveloperTopic
+from athenian.api.internal.miners.types import PRParticipants, PRParticipationKind, \
     ReleaseParticipants, ReleaseParticipationKind
-from athenian.api.controllers.prefixer import Prefixer
-from athenian.api.controllers.reposet import resolve_repos
-from athenian.api.controllers.settings import LogicalRepositorySettings, Settings
-from athenian.api.controllers.with_ import compile_developers, fetch_teams_map, \
+from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.reposet import resolve_repos
+from athenian.api.internal.settings import LogicalRepositorySettings, Settings
+from athenian.api.internal.with_ import compile_developers, fetch_teams_map, \
     resolve_withgroups, scan_for_teams
 from athenian.api.models.web import CalculatedCodeCheckMetrics, CalculatedCodeCheckMetricsItem, \
     CalculatedDeploymentMetric, CalculatedDeveloperMetrics, CalculatedDeveloperMetricsItem, \

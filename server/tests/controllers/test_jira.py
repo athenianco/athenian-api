@@ -4,9 +4,9 @@ import pytest
 from sqlalchemy import delete, distinct, insert, select, update
 from sqlalchemy.sql.functions import count
 
-from athenian.api.controllers.jira import load_jira_identity_mapping_sentinel, \
-    load_mapped_jira_users, match_jira_identities, normalize_issue_type
 from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.internal.jira import load_jira_identity_mapping_sentinel, \
+    load_mapped_jira_users, match_jira_identities, normalize_issue_type
 from athenian.api.models.metadata.jira import Progress
 from athenian.api.models.state.models import AccountJiraInstallation, MappedJIRAIdentity
 

@@ -5,10 +5,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from athenian.api.controllers.features.metric import MetricInt, MetricTimeDelta
-from athenian.api.controllers.features.metric_calculator import AverageMetricCalculator, \
+from athenian.api.internal.features.metric import MetricInt, MetricTimeDelta
+from athenian.api.internal.features.metric_calculator import AverageMetricCalculator, \
     MedianMetricCalculator
-from athenian.api.controllers.features.statistics import mean_confidence_interval, \
+from athenian.api.internal.features.statistics import mean_confidence_interval, \
     median_confidence_interval
 from athenian.api.typing_utils import df_from_structs
 

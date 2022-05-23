@@ -15,24 +15,24 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql.elements import BinaryExpression
 
 from athenian.api import metadata
-from athenian.api.controllers.features.entries import \
+from athenian.api.internal.features.entries import \
     MetricEntriesCalculator as OriginalMetricEntriesCalculator
-from athenian.api.controllers.features.github.unfresh_pull_request_metrics import \
+from athenian.api.internal.features.github.unfresh_pull_request_metrics import \
     UnfreshPullRequestFactsFetcher
-from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.branches import BranchMiner
-from athenian.api.controllers.miners.github.precomputed_prs import DonePRFactsLoader, \
+from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.internal.miners.github.branches import BranchMiner
+from athenian.api.internal.miners.github.precomputed_prs import DonePRFactsLoader, \
     MergedPRFactsLoader, OpenPRFactsLoader, triage_by_release_match
-from athenian.api.controllers.miners.github.precomputed_prs.utils import extract_release_match
-from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
-from athenian.api.controllers.miners.github.release_load import group_repos_by_release_match, \
+from athenian.api.internal.miners.github.precomputed_prs.utils import extract_release_match
+from athenian.api.internal.miners.github.pull_request import PullRequestMiner
+from athenian.api.internal.miners.github.release_load import group_repos_by_release_match, \
     match_groups_to_conditions, ReleaseLoader, set_matched_by_from_release_match
-from athenian.api.controllers.miners.github.release_match import ReleaseToPullRequestMapper
-from athenian.api.controllers.miners.jira.issue import PullRequestJiraMapper
-from athenian.api.controllers.miners.types import PRParticipants, PRParticipationKind, \
+from athenian.api.internal.miners.github.release_match import ReleaseToPullRequestMapper
+from athenian.api.internal.miners.jira.issue import PullRequestJiraMapper
+from athenian.api.internal.miners.types import PRParticipants, PRParticipationKind, \
     PullRequestFacts, PullRequestFactsMap, PullRequestID
-from athenian.api.controllers.prefixer import Prefixer
-from athenian.api.controllers.settings import ReleaseMatch, ReleaseSettings
+from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.settings import ReleaseMatch, ReleaseSettings
 from athenian.api.models.metadata.github import Base as MetadataGitHubBase, Branch, \
     NodePullRequestJiraIssues, PullRequest, Release
 from athenian.api.models.precomputed.models import GitHubBase as PrecomputedGitHubBase, \

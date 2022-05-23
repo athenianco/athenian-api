@@ -5,15 +5,15 @@ from aiohttp import web
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
 from athenian.api.cache import expires_header, short_term_exptime
-from athenian.api.controllers.account import get_metadata_account_ids
-from athenian.api.controllers.features.entries import make_calculator, UnsupportedMetricError
-from athenian.api.controllers.features.histogram import HistogramParameters, Scale
 from athenian.api.controllers.metrics_controller import check_environments, \
     compile_filters_checks, compile_filters_prs, FilterChecks, FilterPRs
-from athenian.api.controllers.miners.github.bots import bots
-from athenian.api.controllers.miners.github.branches import BranchMiner
-from athenian.api.controllers.prefixer import Prefixer
-from athenian.api.controllers.settings import Settings
+from athenian.api.internal.account import get_metadata_account_ids
+from athenian.api.internal.features.entries import make_calculator, UnsupportedMetricError
+from athenian.api.internal.features.histogram import HistogramParameters, Scale
+from athenian.api.internal.miners.github.bots import bots
+from athenian.api.internal.miners.github.branches import BranchMiner
+from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.settings import Settings
 from athenian.api.models.web import BadRequestError, CalculatedCodeCheckHistogram, \
     CalculatedPullRequestHistogram, CodeCheckHistogramsRequest, ForSetCodeChecks, Interquartile, \
     InvalidRequestError, PullRequestHistogramsRequest

@@ -7,7 +7,7 @@ import numpy as np
 from sqlalchemy import and_, func, select, update
 
 from athenian.api.async_utils import gather
-from athenian.api.controllers.miners.github.dag_accelerated import searchsorted_inrange
+from athenian.api.internal.miners.github.dag_accelerated import searchsorted_inrange
 from athenian.api.models.metadata.github import NodePullRequest, PullRequestLabel
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
     GitHubMergedPullRequestFacts
