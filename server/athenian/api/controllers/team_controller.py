@@ -161,7 +161,7 @@ async def update_team(request: AthenianWebRequest, id: int,
             return ResponseError(DatabaseConflict(
                 detail="Team '%s' already exists: %s: %s" % (name, type(err).__name__, err)),
             ).response
-    return web.Response()
+    return web.json_response({})
 
 
 def _check_name(name: str) -> str:

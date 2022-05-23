@@ -342,8 +342,6 @@ async def test_resync_teams_regular_user(client, headers, disable_default_user):
 
 
 class TestUpdateTeam:
-    # TODO: fix response validation against the schema
-    @pytest.mark.app_validate_responses(False)
     async def test_smoke(self, client, sdb, disable_default_user):
         for model in (
             TeamFactory(id=10, name="Parent"),
@@ -365,8 +363,6 @@ class TestUpdateTeam:
         body = TeamUpdateRequest("Engineering", ["github.com/se7entyse7en"], None).to_dict()
         await self._request(client, 1, body, 403)
 
-    # TODO: fix response validation against the schema
-    @pytest.mark.app_validate_responses(False)
     @pytest.mark.parametrize("owner, id, name, members, parent, status", [
         (1, 1, "Engineering", [], None, 400),
         (1, 1, "", ["github.com/se7entyse7en"], None, 400),
