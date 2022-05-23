@@ -211,84 +211,91 @@ async def test_create_team_same_name(client, headers, sdb, disable_default_user)
     })
 
 
-@pytest.mark.parametrize(
-    "initial_teams",
-    [
-        [],
+class TestListTeams:
+    @pytest.mark.parametrize(
+        "initial_teams",
         [
-            {"owner_id": 1, "name": "Team 1", "members": [51]},
-            {"owner_id": 1, "name": "Team 2", "members": [40020],
-             "parent_id": 1},
+            [],
+            [
+                {"id": 1, "owner_id": 1, "name": "Root", "parent_id": None},
+                {"id": 2, "owner_id": 1, "name": "Team 1", "members": [51], "parent_id": 1},
+                {"id": 3, "owner_id": 1, "name": "Team 2", "members": [40020], "parent_id": 1},
+            ],
         ],
-    ],
-    ids=["empty", "non-empty"],
-)
-@pytest.mark.parametrize("account", [1, 2], ids=["as admin", "as non-admin"])
-async def test_list_teams_smoke(client, headers, initial_teams, sdb, account, vadim_id_mapping):
-    await sdb.execute(insert(AccountGitHubAccount).values({
-        AccountGitHubAccount.account_id: 2,
-        AccountGitHubAccount.id: 1,
-    }))
-    contributors_details = {
-        # No further details because didn't contribute to repos
-        "github.com/se7entyse7en": {
-            "login": "github.com/se7entyse7en",
-            "email": "loumarvincaraig@gmail.com",
-            "name": "Lou Marvin Caraig",
-            "picture": "https://avatars.githubusercontent.com/u/5599208?s=600&u=46e13fb429c44109e0b125f133c4e694a6d2646e&v=4",  # noqa
-        },
-        "github.com/vmarkovtsev": {
-            "login": "github.com/vmarkovtsev",
-            "email": "gmarkhor@gmail.com",
-            "name": "Vadim Markovtsev",
-            "picture": "https://avatars1.githubusercontent.com/u/2793551?s=600&v=4",
-            "jira_user": "Vadim Markovtsev",
-        },
-    }
-    for t in initial_teams:
-        await sdb.execute(insert(Team).values(Team(**t).create_defaults().explode()))
+        ids=["empty", "non-empty"],
+    )
+    @pytest.mark.parametrize("account", [1, 2])
+    async def test_smoke(self, client, headers, initial_teams, sdb, account, vadim_id_mapping):
+        await sdb.execute(insert(AccountGitHubAccount).values({
+            AccountGitHubAccount.account_id: 2,
+            AccountGitHubAccount.id: 1,
+        }))
+        contributors_details = {
+            # No further details because didn't contribute to repos
+            "github.com/se7entyse7en": {
+                "login": "github.com/se7entyse7en",
+                "email": "loumarvincaraig@gmail.com",
+                "name": "Lou Marvin Caraig",
+                "picture": "https://avatars.githubusercontent.com/u/5599208?s=600&u=46e13fb429c44109e0b125f133c4e694a6d2646e&v=4",  # noqa
+            },
+            "github.com/vmarkovtsev": {
+                "login": "github.com/vmarkovtsev",
+                "email": "gmarkhor@gmail.com",
+                "name": "Vadim Markovtsev",
+                "picture": "https://avatars1.githubusercontent.com/u/2793551?s=600&v=4",
+                "jira_user": "Vadim Markovtsev",
+            },
+        }
+        for t in initial_teams:
+            await sdb.execute(model_insert_stmt(TeamFactory(**t)))
 
-    response = await client.request(method="GET", path=f"/v1/teams/{account}", headers=headers)
-    assert response.status == 200
-    body = (await response.read()).decode("utf-8")
-    teams = sorted([TeamListItem.from_dict(t) for t in json.loads(body)],
-                   key=attrgetter("id"))
+        response = await client.request(method="GET", path=f"/v1/teams/{account}", headers=headers)
+        assert response.status == 200
+        body = (await response.read()).decode("utf-8")
+        teams = sorted([TeamListItem.from_dict(t) for t in json.loads(body)], key=attrgetter("id"))
 
-    for i, (actual, expected) in enumerate(zip(teams, initial_teams), 1):
-        assert actual.id == i
-        assert actual.name == expected["name"]
-        for m in actual.members:
-            assert m.to_dict() == contributors_details[m.login]
+        if account == 2:
+            expected_teams = []
+        else:
+            expected_teams = [t for t in initial_teams]
 
+        assert len(teams) == len(expected_teams)
 
-@pytest.mark.parametrize(
-    "initial_teams",
-    [
-        [],
+        for id_, (actual, expected) in enumerate(zip(teams, expected_teams), 1):
+            assert actual.id == id_
+            assert actual.parent == expected["parent_id"]
+            assert actual.name == expected["name"]
+            for m in actual.members:
+                assert m.to_dict() == contributors_details[m.login]
+
+    @pytest.mark.parametrize(
+        "initial_teams",
         [
-            {"owner_id": 1, "name": "Team 1", "members": ["github.com/se7entyse7en"]},
-            {"owner_id": 1, "name": "Team 2", "members": ["github.com/vmarkovtsev"]},
+            [],
+            [
+                {"owner_id": 1, "name": "Team 1", "members": ["github.com/se7entyse7en"]},
+                {"owner_id": 1, "name": "Team 2", "members": ["github.com/vmarkovtsev"]},
+            ],
         ],
-    ],
-    ids=["empty", "non-empty"],
-)
-@pytest.mark.parametrize("account", [3, 4], ids=["not a member", "invalid account"])
-async def test_list_teams_wrong_account(client, headers, sdb, account, initial_teams):
-    for t in initial_teams:
-        await sdb.execute(insert(Team).values(Team(**t).create_defaults().explode()))
+        ids=["empty", "non-empty"],
+    )
+    @pytest.mark.parametrize("account", [3, 4], ids=["not a member", "invalid account"])
+    async def test_wrong_account(self, client, headers, sdb, account, initial_teams):
+        for t in initial_teams:
+            await sdb.execute(insert(Team).values(Team(**t).create_defaults().explode()))
 
-    response = await client.request(method="GET", path=f"/v1/teams/{account}", headers=headers)
+        response = await client.request(method="GET", path=f"/v1/teams/{account}", headers=headers)
 
-    body = (await response.read()).decode("utf-8")
-    assert response.status == 404, "Response body is : " + body
-    parsed = json.loads((await response.read()).decode("utf-8"))
-    assert parsed == {
-        "type": "/errors/AccountNotFound",
-        "title": "Not Found",
-        "status": 404,
-        "detail": (f"Account {account} does not exist or user auth0|5e1f6dfb57bc640ea390557b "
-                   "is not a member."),
-    }
+        body = (await response.read()).decode("utf-8")
+        assert response.status == 404, "Response body is : " + body
+        parsed = json.loads((await response.read()).decode("utf-8"))
+        assert parsed == {
+            "type": "/errors/AccountNotFound",
+            "title": "Not Found",
+            "status": 404,
+            "detail": (f"Account {account} does not exist or user auth0|5e1f6dfb57bc640ea390557b "
+                       "is not a member."),
+        }
 
 
 def _test_same_team(actual, expected, no_timings=True):
