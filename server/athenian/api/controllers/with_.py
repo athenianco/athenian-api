@@ -1,11 +1,12 @@
-from typing import Any, Collection, Dict, Iterable, List, Optional, Sequence, Set, Union
+from collections import defaultdict
+from typing import Any, Callable, Collection, Dict, Iterable, List, Optional, Sequence, Set, Union
 
-from morcilla import Database
 import numpy as np
-from sqlalchemy import and_, select
 
 from athenian.api.controllers.prefixer import Prefixer
+from athenian.api.controllers.team_controller import fetch_teams_recursively
 from athenian.api.controllers.user import MANNEQUIN_PREFIX
+from athenian.api.db import DatabaseLike
 from athenian.api.models.state.models import Team
 from athenian.api.models.web import InvalidRequestError, NotFoundError
 from athenian.api.response import ResponseError
@@ -18,8 +19,8 @@ async def resolve_withgroups(model_withgroups: Optional[Iterable[Any]],
                              prefix: Optional[str],
                              position: str,
                              prefixer: Prefixer,
-                             sdb: Database,
-                             group_type: callable = lambda i: i,
+                             sdb: DatabaseLike,
+                             group_type: Callable = lambda i: i,
                              ) -> List[Dict[Any, Collection[int]]]:
     """
     Load IDs or normalize logins of one or more groups of participants.
@@ -34,7 +35,7 @@ async def resolve_withgroups(model_withgroups: Optional[Iterable[Any]],
     """
     if model_withgroups is None:
         return []
-    teams = set()
+    teams: Set[int] = set()
     for with_ in model_withgroups:
         for k, people in (with_ or {}).items():
             scan_for_teams(people, teams, f"{position}.{k}")
@@ -72,23 +73,24 @@ def scan_for_teams(people: Optional[List[str]],
 
 async def fetch_teams_map(teams: Collection[int],
                           account: int,
-                          sdb: Database,
+                          sdb: DatabaseLike,
                           ) -> Dict[int, List[int]]:
     """Load the mapping from team ID to member IDs."""
     if not teams:
         return {}
-    rows = await sdb.fetch_all(
-        select([Team.id, Team.members])
-        .where(and_(
-            Team.owner_id == account,
-            Team.id.in_(teams),
-        )))
-    teams_map = {r[0]: r[1] for r in rows}
+
+    team_rows = await fetch_teams_recursively(
+        account, sdb, select_entities=(Team.members,), root_team_ids=teams,
+    )
+    teams_map: Dict[int, Set[int]] = defaultdict(set)
+    for members, root_team_id in team_rows:
+        teams_map[root_team_id] = teams_map[root_team_id].union(members)
+
     if diff := (teams - teams_map.keys()):
         raise ResponseError(NotFoundError(
             detail=f"Some teams do not exist or access denied: {diff}",
         ))
-    return teams_map
+    return {team_id: sorted(members) for team_id, members in teams_map.items()}
 
 
 def compile_developers(developers: Optional[Iterable[str]],
