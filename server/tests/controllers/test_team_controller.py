@@ -1,7 +1,9 @@
+from datetime import datetime, timezone
 import json
 from operator import attrgetter
 
 from aiohttp.test_utils import TestClient
+from freezegun import freeze_time
 import pytest
 from sqlalchemy import insert, select, update
 
@@ -12,7 +14,7 @@ from athenian.api.models.state.models import AccountGitHubAccount, Team
 from athenian.api.models.web import TeamUpdateRequest
 from athenian.api.models.web.team import Team as TeamListItem
 from athenian.api.models.web.team_create_request import TeamCreateRequest
-from tests.testutils.db import model_insert_stmt
+from tests.testutils.db import db_datetime_equals, model_insert_stmt
 from tests.testutils.factory.state import TeamFactory
 
 
@@ -342,10 +344,14 @@ async def test_resync_teams_regular_user(client, headers, disable_default_user):
 
 
 class TestUpdateTeam:
+    @freeze_time("2022-04-01")
     async def test_smoke(self, client, sdb, disable_default_user):
+        created_at = datetime(2001, 12, 3, 3, 20, tzinfo=timezone.utc)
         for model in (
             TeamFactory(id=10, name="Parent"),
-            TeamFactory(id=11, name="Test", members=[40020], parent_id=None),
+            TeamFactory(
+                id=11, name="Test", members=[40020], parent_id=None, created_at=created_at,
+            ),
         ):
             await sdb.execute(model_insert_stmt(model))
         body = TeamUpdateRequest("Dream", ["github.com/warenlg"], 10).to_dict()
@@ -355,6 +361,10 @@ class TestUpdateTeam:
         assert team[Team.name.name] == "Dream"
         assert team[Team.members.name] == [29]
         assert team[Team.parent_id.name] == 10
+        assert db_datetime_equals(sdb, team[Team.created_at.name], created_at)
+        assert db_datetime_equals(
+            sdb, team[Team.updated_at.name], datetime(2022, 4, 1, tzinfo=timezone.utc),
+        )
 
     async def test_default_user(self, client, sdb):
         await sdb.execute(insert(Team).values(Team(

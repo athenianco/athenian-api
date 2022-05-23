@@ -149,14 +149,14 @@ async def update_team(request: AthenianWebRequest, id: int,
         members = await _resolve_members(body.members, meta_ids, request.mdb)
         await _check_parent(account, body.parent, sdb_conn)
         await _check_parent_cycle(id, body.parent, sdb_conn)
-        t = Team(
-            owner_id=account,
-            name=name,
-            members=members,
-            parent_id=body.parent,
-        ).create_defaults()
+        values = {
+            Team.updated_at.name: datetime.now(timezone.utc),
+            Team.name.name: name,
+            Team.members.name: members,
+            Team.parent_id.name: body.parent,
+        }
         try:
-            await sdb_conn.execute(update(Team).where(Team.id == id).values(t.explode()))
+            await sdb_conn.execute(update(Team).where(Team.id == id).values(values))
         except (UniqueViolationError, IntegrityError, OperationalError) as err:
             return ResponseError(DatabaseConflict(
                 detail="Team '%s' already exists: %s: %s" % (name, type(err).__name__, err)),
