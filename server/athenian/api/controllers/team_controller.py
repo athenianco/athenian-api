@@ -139,29 +139,35 @@ async def update_team(request: AthenianWebRequest, id: int,
     body = TeamUpdateRequest.from_dict(body)
     name = _check_name(body.name)
     async with request.sdb.connection() as sdb_conn:
-        account = await sdb_conn.fetch_val(select([Team.owner_id]).where(Team.id == id))
-        if account is None:
-            return ResponseError(NotFoundError("Team %d was not found." % id)).response
-        await get_user_account_status_from_request(request, account)
-        if id == body.parent:
-            raise ResponseError(BadRequestError(detail="Team cannot be a the parent of itself."))
-        meta_ids = await get_metadata_account_ids(account, sdb_conn, request.cache)
-        members = await _resolve_members(body.members, meta_ids, request.mdb)
-        await _check_parent(account, body.parent, sdb_conn)
-        await _check_parent_cycle(id, body.parent, sdb_conn)
-        t = Team(
-            owner_id=account,
-            name=name,
-            members=members,
-            parent_id=body.parent,
-        ).create_defaults()
-        try:
-            await sdb_conn.execute(update(Team).where(Team.id == id).values(t.explode()))
-        except (UniqueViolationError, IntegrityError, OperationalError) as err:
-            return ResponseError(DatabaseConflict(
-                detail="Team '%s' already exists: %s: %s" % (name, type(err).__name__, err)),
-            ).response
-    return web.Response()
+        async with sdb_conn.transaction():
+            team = await sdb_conn.fetch_one(select(Team).where(Team.id == id).with_for_update())
+            if team is None:
+                return ResponseError(NotFoundError(f"Team {id} was not found.")).response
+            account = team[Team.owner_id.name]
+            await get_user_account_status_from_request(request, account)
+            if body.parent is None and team[Team.parent_id.name] is not None:
+                raise ResponseError(BadRequestError(detail="Team parent cannot be unset."))
+            if id == body.parent:
+                raise ResponseError(BadRequestError(
+                    detail="Team cannot be a the parent of itself.",
+                ))
+            meta_ids = await get_metadata_account_ids(account, sdb_conn, request.cache)
+            members = await _resolve_members(body.members, meta_ids, request.mdb)
+            await _check_parent(account, body.parent, sdb_conn)
+            await _check_parent_cycle(id, body.parent, sdb_conn)
+            values = {
+                Team.updated_at.name: datetime.now(timezone.utc),
+                Team.name.name: name,
+                Team.members.name: members,
+                Team.parent_id.name: body.parent,
+            }
+            try:
+                await sdb_conn.execute(update(Team).where(Team.id == id).values(values))
+            except (UniqueViolationError, IntegrityError, OperationalError) as err:
+                return ResponseError(DatabaseConflict(
+                    detail="Team '%s' already exists: %s: %s" % (name, type(err).__name__, err)),
+                ).response
+    return web.json_response({})
 
 
 def _check_name(name: str) -> str:

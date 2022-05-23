@@ -1,6 +1,9 @@
+from datetime import datetime, timezone
 import json
 from operator import attrgetter
 
+from aiohttp.test_utils import TestClient
+from freezegun import freeze_time
 import pytest
 from sqlalchemy import insert, select, update
 
@@ -11,7 +14,7 @@ from athenian.api.models.state.models import AccountGitHubAccount, Team
 from athenian.api.models.web import TeamUpdateRequest
 from athenian.api.models.web.team import Team as TeamListItem
 from athenian.api.models.web.team_create_request import TeamCreateRequest
-from tests.testutils.db import model_insert_stmt
+from tests.testutils.db import db_datetime_equals, model_insert_stmt
 from tests.testutils.factory.state import TeamFactory
 
 
@@ -340,99 +343,99 @@ async def test_resync_teams_regular_user(client, headers, disable_default_user):
     assert response.status == 403, "Response body is : " + body
 
 
-# TODO: fix response validation against the schema
-@pytest.mark.app_validate_responses(False)
-async def test_update_team_smoke(client, headers, sdb, disable_default_user):
-    await sdb.execute(insert(Team).values(Team(
-        owner_id=1, name="Test", members=[40020],
-    ).create_defaults().explode()))
-    body = TeamCreateRequest(1, "Engineering", ["github.com/se7entyse7en"]).to_dict()
-    response = await client.request(
-        method="POST", path="/v1/team/create", headers=headers, json=body,
-    )
-    assert response.status == 200
-    body = TeamUpdateRequest("Dream", ["github.com/warenlg"], 1).to_dict()
-    response = await client.request(
-        method="PUT", path="/v1/team/2", headers=headers, json=body,
-    )
+class TestUpdateTeam:
+    @freeze_time("2022-04-01")
+    async def test_smoke(self, client, sdb, disable_default_user):
+        created_at = datetime(2001, 12, 3, 3, 20, tzinfo=timezone.utc)
+        for model in (
+            TeamFactory(id=10, name="Parent"),
+            TeamFactory(
+                id=11, name="Test", members=[40020], parent_id=None, created_at=created_at,
+            ),
+        ):
+            await sdb.execute(model_insert_stmt(model))
+        body = TeamUpdateRequest("Dream", ["github.com/warenlg"], 10).to_dict()
 
-    rbody = (await response.read()).decode("utf-8")
-    assert response.status == 200, "Response body is : " + rbody
-    team = await sdb.fetch_one(select([Team]).where(Team.id == 2))
-    assert team[Team.name.name] == "Dream"
-    assert team[Team.members.name] == [29]
-    assert team[Team.parent_id.name] == 1
+        await self._request(client, 11, body, 200)
+        team = await sdb.fetch_one(select([Team]).where(Team.id == 11))
+        assert team[Team.name.name] == "Dream"
+        assert team[Team.members.name] == [29]
+        assert team[Team.parent_id.name] == 10
+        assert db_datetime_equals(sdb, team[Team.created_at.name], created_at)
+        assert db_datetime_equals(
+            sdb, team[Team.updated_at.name], datetime(2022, 4, 1, tzinfo=timezone.utc),
+        )
 
+    async def test_default_user(self, client, sdb):
+        await sdb.execute(insert(Team).values(Team(
+            id=1, owner_id=1, name="Test", members=[40020],
+        ).create_defaults().explode()))
+        body = TeamUpdateRequest("Engineering", ["github.com/se7entyse7en"], None).to_dict()
+        await self._request(client, 1, body, 403)
 
-async def test_update_team_default_user(client, headers, sdb):
-    await sdb.execute(insert(Team).values(Team(
-        owner_id=1, name="Test", members=[40020],
-    ).create_defaults().explode()))
-    body = TeamCreateRequest(1, "Engineering", ["github.com/se7entyse7en"]).to_dict()
-    response = await client.request(
-        method="POST", path="/v1/team/create", headers=headers, json=body,
-    )
-    assert response.status == 403
+    @pytest.mark.parametrize("owner, id, name, members, parent, status", [
+        (1, 1, "Engineering", [], None, 400),
+        (1, 1, "", ["github.com/se7entyse7en"], None, 400),
+        (1, 1, "$" * 256, ["github.com/se7entyse7en"], None, 400),
+        (1, 3, "Engineering", ["github.com/se7entyse7en"], None, 404),
+        (2, 1, "Engineering", ["github.com/se7entyse7en"], None, 200),
+        (3, 1, "Engineering", ["github.com/se7entyse7en"], None, 404),
+        (1, 1, "Dream", ["github.com/se7entyse7en"], None, 409),
+        (1, 1, "Engineering", ["github.com/eiso"], None, 200),
+        (2, 1, "Dream", ["github.com/se7entyse7en"], None, 200),
+        (2, 1, "Engineering", ["github.com/eiso"], None, 200),
+        (2, 1, "Engineering", ["github.com/eiso"], 2, 400),
+        (2, 1, "Engineering", ["github.com/eiso"], 1, 400),
+    ])
+    async def test_nasty_input(
+        self, client, sdb, disable_default_user, owner, id, name, members, parent, status,
+    ):
+        await sdb.execute(update(AccountGitHubAccount)
+                          .where(AccountGitHubAccount.id == 6366825)
+                          .values({AccountGitHubAccount.account_id: owner}))
+        for model in (
+            TeamFactory(owner_id=owner, id=1, name="Engineering", members=[51]),
+            TeamFactory(owner_id=1, id=2, name="Dream", members=[39936]),
+        ):
+            await sdb.execute(model_insert_stmt(model))
 
+        body = TeamUpdateRequest(name, members, parent).to_dict()
+        await self._request(client, id, body, status)
 
-# TODO: fix response validation against the schema
-@pytest.mark.app_validate_responses(False)
-@pytest.mark.parametrize("owner, id, name, members, parent, status", [
-    (1, 1, "Engineering", [], None, 400),
-    (1, 1, "", ["github.com/se7entyse7en"], None, 400),
-    (1, 1, "$" * 256, ["github.com/se7entyse7en"], None, 400),
-    (1, 3, "Engineering", ["github.com/se7entyse7en"], None, 404),
-    (2, 1, "Engineering", ["github.com/se7entyse7en"], None, 200),
-    (3, 1, "Engineering", ["github.com/se7entyse7en"], None, 404),
-    (1, 1, "Dream", ["github.com/se7entyse7en"], None, 409),
-    (1, 1, "Engineering", ["github.com/eiso"], None, 200),
-    (2, 1, "Dream", ["github.com/se7entyse7en"], None, 200),
-    (2, 1, "Engineering", ["github.com/eiso"], None, 200),
-    (2, 1, "Engineering", ["github.com/eiso"], 2, 400),
-    (2, 1, "Engineering", ["github.com/eiso"], 1, 400),
-])
-async def test_update_team_nasty_input(
-        client, headers, sdb, disable_default_user, owner, id, name, members, parent, status):
-    await sdb.execute(update(AccountGitHubAccount)
-                      .where(AccountGitHubAccount.id == 6366825)
-                      .values({AccountGitHubAccount.account_id: owner}))
-    await sdb.execute(insert(Team).values(Team(
-        owner_id=owner,
-        name="Engineering",
-        members=[51],
-    ).create_defaults().explode()))
-    await sdb.execute(insert(Team).values(Team(
-        owner_id=1,
-        name="Dream",
-        members=[39936],
-    ).create_defaults().explode()))
-    body = TeamUpdateRequest(name, members, parent).to_dict()
-    response = await client.request(
-        method="PUT", path="/v1/team/%d" % id, headers=headers, json=body,
-    )
-    body = (await response.read()).decode("utf-8")
-    assert response.status == status, "Response body is : " + body
+    async def test_parent_cycle(self, client, sdb, disable_default_user):
+        for model in (
+            TeamFactory(owner_id=1, id=1, name="Engineering", members=[51]),
+            TeamFactory(owner_id=1, id=2, parent_id=1, name="Dream", members=[39936]),
+        ):
+            await sdb.execute(model_insert_stmt(model))
+        body = TeamUpdateRequest("Engineering", ["github.com/se7entyse7en"], 2).to_dict()
+        rbody = await self._request(client, 1, body, 400)
+        assert "cycle" in rbody
 
+    async def test_unset_parent(self, client, sdb, disable_default_user):
+        for model in (TeamFactory(id=1), TeamFactory(id=2, parent_id=1)):
+            await sdb.execute(model_insert_stmt(model))
+        body = TeamUpdateRequest("Engineering", ["github.com/se7entyse7en"], None).to_dict()
+        rbody = await self._request(client, 2, body, 400)
+        assert "Team parent cannot be unset" in rbody
 
-async def test_update_team_parent_cycle(client, headers, sdb, disable_default_user):
-    await sdb.execute(insert(Team).values(Team(
-        owner_id=1,
-        name="Engineering",
-        members=[51],
-    ).create_defaults().explode()))
-    await sdb.execute(insert(Team).values(Team(
-        owner_id=1,
-        name="Dream",
-        members=[39936],
-        parent_id=1,
-    ).create_defaults().explode()))
-    body = TeamUpdateRequest("Engineering", ["github.com/se7entyse7en"], 2).to_dict()
-    response = await client.request(
-        method="PUT", path="/v1/team/1", headers=headers, json=body,
-    )
-    body = (await response.read()).decode("utf-8")
-    assert response.status == 400, "Response body is : " + body
-    assert "cycle" in body
+    async def test_parent_stays_null(self, client, sdb, disable_default_user):
+        await sdb.execute(model_insert_stmt(TeamFactory(id=1)))
+        body = TeamUpdateRequest("Engineering", ["github.com/se7entyse7en"], None).to_dict()
+        await self._request(client, 1, body, 200)
+        team = await sdb.fetch_one(select([Team]).where(Team.id == 1))
+        assert team[Team.name.name] == "Engineering"
+
+    async def _request(
+        self, client: TestClient, team_id: int, json: dict, assert_status: int,
+    ) -> str:
+        from tests.conftest import DEFAULT_HEADERS
+        response = await client.request(
+            method="PUT", path=f"/v1/team/{team_id}", headers=DEFAULT_HEADERS, json=json,
+        )
+        body = (await response.read()).decode("utf-8")
+        assert response.status == assert_status, f"Response body is: {body}"
+        return body
 
 
 # TODO: fix response validation against the schema
