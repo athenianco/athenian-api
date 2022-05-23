@@ -307,13 +307,16 @@ async def god(sdb) -> None:
     ).create_defaults().explode(with_primary_keys=True)))
 
 
+DEFAULT_HEADERS = {
+    "Accept": "application/json",
+    "Content-Type": "application/json",
+    "Origin": "http://localhost",
+}
+
+
 @pytest.fixture(scope="function")
 def headers() -> Dict[str, str]:
-    return {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-        "Origin": "http://localhost",
-    }
+    return dict(DEFAULT_HEADERS)
 
 
 @pytest.fixture(scope="session")
