@@ -38,7 +38,7 @@ jinja2==3.0.3
 git+ssh://git@github.com:/athenianco/precomputer@v0.2.68#egg=athenian-precomputer==0.2.68
 rsa>=4.7 # not directly required, pinned by Snyk to avoid a vulnerability
 names_matcher==2.0.5
-psutil==5.9.0
+psutil==5.9.1
 flogging==0.0.21
 unidecode==1.3.4
 pluralizer==1.1.0
