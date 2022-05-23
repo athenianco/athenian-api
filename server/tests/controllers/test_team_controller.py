@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 import json
 from operator import attrgetter
 
+from aiohttp import ClientResponse
 from aiohttp.test_utils import TestClient
 from freezegun import freeze_time
 import pytest
@@ -11,204 +12,174 @@ from athenian.api.models.state.models import AccountGitHubAccount, Team
 from athenian.api.models.web import TeamUpdateRequest
 from athenian.api.models.web.team import Team as TeamListItem
 from athenian.api.models.web.team_create_request import TeamCreateRequest
-from tests.testutils.db import db_datetime_equals, model_insert_stmt
+from tests.conftest import DEFAULT_HEADERS
+from tests.testutils.db import assert_existing_row, db_datetime_equals, model_insert_stmt
 from tests.testutils.factory.state import TeamFactory
 
 
-@pytest.mark.parametrize("account", [1, 2], ids=["as admin", "as non-admin"])
-async def test_create_team_smoke(client, headers, sdb, account, disable_default_user):
-    await sdb.execute(update(AccountGitHubAccount)
-                      .where(AccountGitHubAccount.id == 6366825)
-                      .values({AccountGitHubAccount.account_id: account}))
-    body = TeamCreateRequest(account, "Engineering", ["github.com/se7entyse7en"]).to_dict()
-    response = await client.request(
-        method="POST", path="/v1/team/create", headers=headers, json=body,
-    )
-    rbody = (await response.read()).decode("utf-8")
-    assert response.status == 200, "Response body is : " + rbody
-    assert len(await sdb.fetch_all(select([Team]))) == 1
-    team = await sdb.fetch_one(select([Team]).where(Team.id == json.loads(rbody)["id"]))
-    _test_same_team(team, {
-        "id": 1,
-        "members": [51],
-        "name": "Engineering",
-        "owner_id": account,
-        "parent_id": None,
-    })
+class TestCreateTeam:
+    @pytest.mark.parametrize("account", [1, 2], ids=["as admin", "as non-admin"])
+    async def test_smoke(self, client, headers, sdb, account, disable_default_user):
+        await sdb.execute(update(AccountGitHubAccount)
+                          .where(AccountGitHubAccount.id == 6366825)
+                          .values({AccountGitHubAccount.account_id: account}))
+        root_team_id = await sdb.execute(model_insert_stmt(
+            TeamFactory(owner_id=account, parent_id=None), with_primary_keys=False,
+        ))
 
-    body["name"] = "Management"
-    body["members"][0] = "github.com/vmarkovtsev"
-    body["parent"] = 1
-    response = await client.request(
-        method="POST", path="/v1/team/create", headers=headers, json=body,
-    )
-    rbody = (await response.read()).decode("utf-8")
-    assert response.status == 200, "Response body is : " + rbody
-    team = await sdb.fetch_one(select([Team]).where(Team.id == json.loads(rbody)["id"]))
-    _test_same_team(team, {
-        "id": 2,
-        "members": [40020],
-        "name": "Management",
-        "owner_id": account,
-        "parent_id": 1,
-    })
+        body = TeamCreateRequest(account, "Engineering", ["github.com/se7entyse7en"], 1).to_dict()
+        response = await self._request(client, body, 200)
+        assert len(await sdb.fetch_all(select(Team))) == 2
 
+        eng_team_id = (await response.json())["id"]
 
-async def test_create_team_bot(client, headers, sdb, disable_default_user):
-    await sdb.execute(update(AccountGitHubAccount)
-                      .where(AccountGitHubAccount.id == 6366825)
-                      .values({AccountGitHubAccount.account_id: 1}))
-    body = TeamCreateRequest(1, "Engineering", ["github.com/apps/dependabot"]).to_dict()
-    response = await client.request(
-        method="POST", path="/v1/team/create", headers=headers, json=body,
-    )
-    rbody = (await response.read()).decode("utf-8")
-    assert response.status == 200, "Response body is : " + rbody
-    assert len(await sdb.fetch_all(select([Team]))) == 1
-    team = await sdb.fetch_one(select([Team]).where(Team.id == json.loads(rbody)["id"]))
-    _test_same_team(team, {
-        "id": 1,
-        "members": [17019778],
-        "name": "Engineering",
-        "owner_id": 1,
-        "parent_id": None,
-    })
+        team = await sdb.fetch_one(select(Team).where(Team.id == eng_team_id))
+        _test_same_team(team, {
+            "id": eng_team_id,
+            "members": [51],
+            "name": "Engineering",
+            "owner_id": account,
+            "parent_id": root_team_id,
+        })
 
+        body["name"] = "Management"
+        body["members"][0] = "github.com/vmarkovtsev"
+        body["parent"] = eng_team_id
+        response = await self._request(client, body, 200)
+        mngmt_team_id = (await response.json())["id"]
+        team = await sdb.fetch_one(select(Team).where(Team.id == mngmt_team_id))
+        _test_same_team(team, {
+            "id": mngmt_team_id,
+            "members": [40020],
+            "name": "Management",
+            "owner_id": account,
+            "parent_id": eng_team_id,
+        })
 
-@pytest.mark.parametrize("account", [3, 4], ids=["not a member", "invalid account"])
-async def test_create_team_wrong_account(client, headers, sdb, account, disable_default_user):
-    body = TeamCreateRequest(account, "Engineering", ["github.com/se7entyse7en"]).to_dict()
-    response = await client.request(
-        method="POST", path="/v1/team/create", headers=headers, json=body,
-    )
+    async def test_bot(self, client, headers, sdb, disable_default_user):
+        await sdb.execute(update(AccountGitHubAccount)
+                          .where(AccountGitHubAccount.id == 6366825)
+                          .values({AccountGitHubAccount.account_id: 1}))
+        await sdb.execute(model_insert_stmt(TeamFactory(id=100, parent_id=None)))
+        body = TeamCreateRequest(1, "Engineering", ["github.com/apps/dependabot"], 100).to_dict()
+        response = await self._request(client, body, 200)
+        assert len(await sdb.fetch_all(select(Team))) == 2
+        eng_team_id = (await response.json())["id"]
+        team = await sdb.fetch_one(select([Team]).where(Team.id == eng_team_id))
+        _test_same_team(team, {
+            "id": eng_team_id,
+            "members": [17019778],
+            "name": "Engineering",
+            "owner_id": 1,
+            "parent_id": 100,
+        })
 
-    body = (await response.read()).decode("utf-8")
-    assert response.status == 404, "Response body is : " + body
-    parsed = json.loads((await response.read()).decode("utf-8"))
-    assert parsed == {
-        "type": "/errors/AccountNotFound",
-        "title": "Not Found",
-        "status": 404,
-        "detail": (f"Account {account} does not exist or user auth0|5e1f6dfb57bc640ea390557b "
-                   "is not a member."),
-    }
+    @pytest.mark.parametrize("account", [3, 4], ids=["not a member", "invalid account"])
+    async def test_wrong_account(self, client, headers, sdb, account, disable_default_user):
+        await sdb.execute(model_insert_stmt(TeamFactory(id=100, owner_id=3, parent_id=None)))
+        body = TeamCreateRequest(account, "Engin", ["github.com/se7entyse7en"], 100).to_dict()
+        response = await self._request(client, body, 404)
+        parsed = await response.json()
+        assert parsed == {
+            "type": "/errors/AccountNotFound",
+            "title": "Not Found",
+            "status": 404,
+            "detail": (f"Account {account} does not exist or user auth0|5e1f6dfb57bc640ea390557b "
+                       "is not a member."),
+        }
 
-    assert len(await sdb.fetch_all(select([Team]))) == 0
+        assert len(await sdb.fetch_all(select(Team))) == 1
 
+    async def test_default_user(self, client, headers, sdb):
+        await sdb.execute(model_insert_stmt(TeamFactory(id=100, parent_id=None)))
+        body = TeamCreateRequest(1, "Engineering", ["github.com/se7entyse7en"], 100).to_dict()
+        await self._request(client, body, 403)
+        assert len(await sdb.fetch_all(select(Team))) == 1
 
-async def test_create_team_default_user(client, headers, sdb):
-    body = TeamCreateRequest(1, "Engineering", ["github.com/se7entyse7en"]).to_dict()
-    response = await client.request(
-        method="POST", path="/v1/team/create", headers=headers, json=body,
-    )
+    async def test_wrong_member(self, client, headers, sdb, disable_default_user):
+        await sdb.execute(model_insert_stmt(TeamFactory(id=100, parent_id=None)))
+        body = TeamCreateRequest(1, "Engineering",
+                                 ["github.com/se7entyse7en/foo",
+                                  "github.com/vmarkovtsev/bar",
+                                  "github.com/warenlg"], 100).to_dict()
+        response = await self._request(client, body, 400)
+        parsed = await response.json()
+        assert parsed == {
+            "type": "/errors/BadRequest",
+            "title": "Bad Request",
+            "status": 400,
+            "detail": "Invalid members of the team: "
+                      "github.com/se7entyse7en/foo, github.com/vmarkovtsev/bar",
+        }
 
-    body = (await response.read()).decode("utf-8")
-    assert response.status == 403, "Response body is : " + body
-    assert len(await sdb.fetch_all(select([Team]))) == 0
+        assert len(await sdb.fetch_all(select(Team))) == 1
 
+    async def test_wrong_parent(self, client, headers, sdb, disable_default_user):
+        body = TeamCreateRequest(1, "Engineering",
+                                 ["github.com/se7entyse7en",
+                                  "github.com/warenlg"],
+                                 1).to_dict()
+        await self._request(client, body, 400)
+        await sdb.execute(model_insert_stmt(TeamFactory(id=1, name="Test", owner_id=3)))
+        await self._request(client, body, 400)
 
-async def test_create_team_wrong_member(client, headers, sdb, disable_default_user):
-    body = TeamCreateRequest(1, "Engineering",
-                             ["github.com/se7entyse7en/foo",
-                              "github.com/vmarkovtsev/bar",
-                              "github.com/warenlg"]).to_dict()
-    response = await client.request(
-        method="POST", path="/v1/team/create", headers=headers, json=body,
-    )
+    async def test_same_members(self, client, headers, sdb, disable_default_user):
+        await sdb.execute(model_insert_stmt(TeamFactory(id=100, name="Root", parent_id=None)))
+        body = TeamCreateRequest(1, "Engineering 1",
+                                 ["github.com/se7entyse7en",
+                                  "github.com/vmarkovtsev"], 100).to_dict()
+        await self._request(client, body, 200)
 
-    body = (await response.read()).decode("utf-8")
-    assert response.status == 400, "Response body is : " + body
-    parsed = json.loads((await response.read()).decode("utf-8"))
-    assert parsed == {
-        "type": "/errors/BadRequest",
-        "title": "Bad Request",
-        "status": 400,
-        "detail": "Invalid members of the team: "
-                  "github.com/se7entyse7en/foo, github.com/vmarkovtsev/bar",
-    }
+        body = TeamCreateRequest(1, "Engineering 2",
+                                 ["github.com/vmarkovtsev",
+                                  "github.com/se7entyse7en"], 100).to_dict()
+        await self._request(client, body, 200)
+        teams = await sdb.fetch_all(select(Team).order_by(Team.name))
+        assert len(teams) == 3
+        assert teams[0][Team.members.name] == teams[1][Team.members.name]
+        assert [t[Team.name.name] for t in teams] == ["Engineering 1", "Engineering 2", "Root"]
 
-    assert len(await sdb.fetch_all(select([Team]))) == 0
+    async def test_same_name(self, client, headers, sdb, disable_default_user):
+        await sdb.execute(model_insert_stmt(TeamFactory(id=10, parent_id=None, name="Root")))
+        body = TeamCreateRequest(1, "Engineering", ["github.com/se7entyse7en"], 10).to_dict()
+        response = await self._request(client, body, 200)
+        eng_team_id = (await response.json())["id"]
 
+        body = TeamCreateRequest(1, "Engineering", ["github.com/vmarkovtsev"], 10).to_dict()
+        response = await self._request(client, body, 409)
+        parsed = (await response.json())
+        detail = parsed["detail"]
+        del parsed["detail"]
+        assert "Team 'Engineering' already exists" in detail
+        assert parsed == {
+            "type": "/errors/DatabaseConflict",
+            "title": "Conflict",
+            "status": 409,
+        }
 
-async def test_create_team_wrong_parent(client, headers, sdb, disable_default_user):
-    body = TeamCreateRequest(1, "Engineering",
-                             ["github.com/se7entyse7en",
-                              "github.com/warenlg"],
-                             1).to_dict()
-    response = await client.request(
-        method="POST", path="/v1/team/create", headers=headers, json=body,
-    )
-    rbody = (await response.read()).decode("utf-8")
-    assert response.status == 400, "Response body is : " + rbody
+        teams = await sdb.fetch_all(select(Team).order_by(Team.name))
+        assert len(teams) == 2
+        _test_same_team(teams[0], {
+            "id": eng_team_id,
+            "members": [51],
+            "name": "Engineering",
+            "owner_id": 1,
+            "parent_id": 10,
+        })
 
-    await sdb.execute(insert(Team).values(Team(
-        owner_id=3, name="Test", members=[40020],
-    ).create_defaults().explode()))
-    response = await client.request(
-        method="POST", path="/v1/team/create", headers=headers, json=body,
-    )
-    rbody = (await response.read()).decode("utf-8")
-    assert response.status == 400, "Response body is : " + rbody
+    async def test_no_parent(self, client, headers, sdb, disable_default_user):
+        await sdb.execute(model_insert_stmt(TeamFactory(id=10)))
+        body = TeamCreateRequest(1, "Engineering", ["github.com/se7entyse7en"], None).to_dict()
+        await self._request(client, body, 200)
+        t = await assert_existing_row(sdb, Team, name="Engineering")
+        assert t[Team.parent_id.name] == 10
 
-
-async def test_create_team_same_members(client, headers, sdb, disable_default_user):
-    body = TeamCreateRequest(1, "Engineering 1",
-                             ["github.com/se7entyse7en",
-                              "github.com/vmarkovtsev"]).to_dict()
-    response = await client.request(
-        method="POST", path="/v1/team/create", headers=headers, json=body,
-    )
-    assert response.status == 200
-
-    body = TeamCreateRequest(1, "Engineering 2",
-                             ["github.com/vmarkovtsev",
-                              "github.com/se7entyse7en"]).to_dict()
-    response = await client.request(
-        method="POST", path="/v1/team/create", headers=headers, json=body,
-    )
-
-    body = (await response.read()).decode("utf-8")
-    assert response.status == 200, "Response body is : " + body
-
-    teams = await sdb.fetch_all(select([Team]))
-    assert len(teams) == 2
-    assert teams[0][Team.members.name] == teams[1][Team.members.name]
-    assert {t[Team.name.name] for t in teams} == {"Engineering 1", "Engineering 2"}
-
-
-async def test_create_team_same_name(client, headers, sdb, disable_default_user):
-    body = TeamCreateRequest(1, "Engineering", ["github.com/se7entyse7en"]).to_dict()
-    response = await client.request(
-        method="POST", path="/v1/team/create", headers=headers, json=body,
-    )
-    assert response.status == 200
-
-    body = TeamCreateRequest(1, "Engineering", ["github.com/vmarkovtsev"]).to_dict()
-    response = await client.request(
-        method="POST", path="/v1/team/create", headers=headers, json=body,
-    )
-
-    body = (await response.read()).decode("utf-8")
-    assert response.status == 409, "Response body is : " + body
-    parsed = json.loads(body)
-    detail = parsed["detail"]
-    del parsed["detail"]
-    assert "Team 'Engineering' already exists" in detail
-    assert parsed == {
-        "type": "/errors/DatabaseConflict",
-        "title": "Conflict",
-        "status": 409,
-    }
-
-    teams = await sdb.fetch_all(select([Team]))
-    assert len(teams) == 1
-    _test_same_team(teams[0], {
-        "id": 1,
-        "members": [51],
-        "name": "Engineering",
-        "owner_id": 1,
-        "parent_id": None,
-    })
+    async def _request(self, client: TestClient, json: dict, assert_status: int) -> ClientResponse:
+        response = await client.request(
+            method="POST", path="/v1/team/create", headers=DEFAULT_HEADERS, json=json,
+        )
+        assert response.status == assert_status
+        return response
 
 
 class TestListTeams:
@@ -433,7 +404,6 @@ class TestUpdateTeam:
     async def _request(
         self, client: TestClient, team_id: int, json: dict, assert_status: int,
     ) -> str:
-        from tests.conftest import DEFAULT_HEADERS
         response = await client.request(
             method="PUT", path=f"/v1/team/{team_id}", headers=DEFAULT_HEADERS, json=json,
         )

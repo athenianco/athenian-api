@@ -42,6 +42,10 @@ async def create_team(request: AthenianWebRequest, body: dict) -> web.Response:
         meta_ids = await get_metadata_account_ids(body.account, sdb_conn, request.cache)
         members = await _resolve_members(body.members, meta_ids, request.mdb)
         await _check_parent(account, parent, sdb_conn)
+        # parent defaults to root team, for retro-compatibility
+        if parent is None:
+            parent_team_row = await get_root_team(account, sdb_conn)
+            parent = parent_team_row[Team.id.name]
         t = Team(owner_id=account, name=name, members=members, parent_id=parent).create_defaults()
         try:
             tid = await sdb_conn.execute(insert(Team).values(t.explode()))
