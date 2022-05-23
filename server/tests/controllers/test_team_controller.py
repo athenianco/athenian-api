@@ -8,6 +8,7 @@ from freezegun import freeze_time
 import pytest
 from sqlalchemy import insert, select, update
 
+from athenian.api.db import Database
 from athenian.api.models.state.models import AccountGitHubAccount, Team
 from athenian.api.models.web import TeamUpdateRequest
 from athenian.api.models.web.team import Team as TeamListItem
@@ -412,65 +413,71 @@ class TestUpdateTeam:
         return body
 
 
-async def test_delete_team_smoke(client, headers, sdb, disable_default_user):
-    await sdb.execute(insert(Team).values(Team(
-        owner_id=1,
-        name="Engineering",
-        members=[51],
-    ).create_defaults().explode()))
-    await sdb.execute(insert(Team).values(Team(
-        owner_id=1,
-        name="Test",
-        members=[40020],
-        parent_id=1,
-    ).create_defaults().explode()))
-    response = await client.request(
-        method="DELETE", path="/v1/team/1", headers=headers, json={},
-    )
-    body = (await response.read()).decode("utf-8")
-    assert response.status == 200, "Response body is : " + body
-    teams = await sdb.fetch_all(select([Team]))
-    assert len(teams) == 1
-    assert teams[0][Team.name.name] == "Test"
-    assert teams[0][Team.parent_id.name] is None
+class TestDeleteTeam:
+    async def test_smoke(self, client, headers, sdb, disable_default_user):
+        for model in (TeamFactory(id=1, name="Root"), TeamFactory(id=2, parent_id=1, name="Test")):
+            await sdb.execute(model_insert_stmt(model))
 
+        await self._request(client, 2, 200)
+        teams = await sdb.fetch_all(select(Team))
+        assert len(teams) == 1
+        assert teams[0][Team.name.name] == "Root"
+        assert teams[0][Team.parent_id.name] is None
 
-async def test_delete_team_default_user(client, headers, sdb):
-    await sdb.execute(insert(Team).values(Team(
-        owner_id=1,
-        name="Engineering",
-        members=[51],
-    ).create_defaults().explode()))
-    await sdb.execute(insert(Team).values(Team(
-        owner_id=1,
-        name="Test",
-        members=[40020],
-        parent_id=1,
-    ).create_defaults().explode()))
-    response = await client.request(
-        method="DELETE", path="/v1/team/1", headers=headers, json={},
-    )
-    body = (await response.read()).decode("utf-8")
-    assert response.status == 403, "Response body is : " + body
+    async def test_default_user(self, client, headers, sdb):
+        for model in (TeamFactory(id=1), TeamFactory(id=2, parent_id=1)):
+            await sdb.execute(model_insert_stmt(model))
 
+        await self._request(client, 2, 403)
 
-@pytest.mark.parametrize("owner, id, status", [
-    (1, 2, 404),
-    (2, 1, 200),
-    (3, 1, 404),
-])
-async def test_delete_team_nasty_input(client, headers, sdb, disable_default_user,
-                                       owner, id, status):
-    await sdb.execute(insert(Team).values(Team(
-        owner_id=owner,
-        name="Engineering",
-        members=[51],
-    ).create_defaults().explode()))
-    response = await client.request(
-        method="DELETE", path="/v1/team/%d" % id, headers=headers, json={},
-    )
-    body = (await response.read()).decode("utf-8")
-    assert response.status == status, "Response body is : " + body
+    @pytest.mark.parametrize("owner, id, status", [
+        (1, 2, 404),
+        (2, 1, 200),
+        (3, 1, 404),
+    ])
+    async def test_nasty_input(
+        self, client, headers, sdb, disable_default_user, owner, id, status,
+    ):
+        await sdb.execute(model_insert_stmt(TeamFactory(id=9, parent_id=None, owner_id=owner)))
+        await sdb.execute(model_insert_stmt(TeamFactory(id=1, parent_id=9, owner_id=owner)))
+        await self._request(client, id, status)
+
+    async def test_team_forbidden(
+        self, client: TestClient, headers: dict, sdb: Database, disable_default_user: None,
+    ) -> None:
+        await sdb.execute(model_insert_stmt(TeamFactory(id=1, parent_id=None)))
+        response = await self._request(client, 1, 400)
+        assert response["detail"] == "Root team cannot be deleted."
+        await assert_existing_row(sdb, Team, id=1)
+
+    async def test_children_parent_is_updated(
+        self, client: TestClient, headers: dict, sdb: Database, disable_default_user: None,
+    ) -> None:
+        for model in (
+            TeamFactory(id=1, parent_id=None),
+            TeamFactory(id=2, parent_id=1),
+            TeamFactory(id=3, parent_id=2),
+            TeamFactory(id=4, parent_id=2),
+            TeamFactory(id=5, parent_id=1),
+            TeamFactory(id=6, parent_id=5),
+        ):
+            await sdb.execute(model_insert_stmt(model))
+
+        await self._request(client, 2, 200)
+        rows = await sdb.fetch_all(select(Team.id, Team.parent_id).order_by(Team.id))
+
+        assert rows[0] == (1, None)
+        assert rows[1] == (3, 1)
+        assert rows[2] == (4, 1)
+        assert rows[3] == (5, 1)
+        assert rows[4] == (6, 5)
+
+    async def _request(self, client: TestClient, team_id: int, assert_status: int) -> dict:
+        response = await client.request(
+            method="DELETE", path=f"/v1/team/{team_id}", headers=DEFAULT_HEADERS, json={},
+        )
+        assert response.status == assert_status
+        return await response.json()
 
 
 async def test_get_team_smoke(client, headers, sdb, vadim_id_mapping):

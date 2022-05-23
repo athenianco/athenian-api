@@ -63,15 +63,21 @@ async def delete_team(request: AthenianWebRequest, id: int) -> web.Response:
     :param id: Numeric identifier of the team to delete.
     """
     async with request.sdb.connection() as sdb_conn:
-        account = await sdb_conn.fetch_val(select([Team.owner_id]).where(Team.id == id))
-        if account is None:
-            return ResponseError(NotFoundError("Team %d was not found." % id)).response
-        await get_user_account_status_from_request(request, account)
-        await sdb_conn.execute(update(Team)
-                               .where(Team.parent_id == id)
-                               .values({Team.parent_id: None,
-                                        Team.updated_at: datetime.now(timezone.utc)}))
-        await sdb_conn.execute(delete(Team).where(Team.id == id))
+        async with sdb_conn.transaction():
+            team = await sdb_conn.fetch_one(select(Team).where(Team.id == id))
+            if team is None:
+                return ResponseError(NotFoundError("Team %d was not found." % id)).response
+            await get_user_account_status_from_request(request, team[Team.owner_id.name])
+
+            if (parent_id := team[Team.parent_id.name]) is None:
+                raise ResponseError(BadRequestError(detail="Root team cannot be deleted."))
+
+            await sdb_conn.execute(update(Team)
+                                   .where(Team.parent_id == id)
+                                   .values({Team.parent_id: parent_id,
+                                            Team.updated_at: datetime.now(timezone.utc)}))
+
+            await sdb_conn.execute(delete(Team).where(Team.id == id))
     return web.json_response({})
 
 
