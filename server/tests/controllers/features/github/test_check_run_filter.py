@@ -4,10 +4,10 @@ from typing import List, Optional
 import pandas as pd
 import pytest
 
-from athenian.api.controllers.features.github.check_run_filter import filter_check_runs
-from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.types import CodeCheckRunListItem, CodeCheckRunListStats
 from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.internal.features.github.check_run_filter import filter_check_runs
+from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.internal.miners.types import CodeCheckRunListItem, CodeCheckRunListStats
 
 
 def td_list(items: List[Optional[int]]) -> List[timedelta]:

@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import pytest
 from sqlalchemy import delete, select, update
 
-from athenian.api.controllers.reposet import load_account_reposets, load_account_state, \
+from athenian.api.internal.reposet import load_account_reposets, load_account_state, \
     refresh_repository_names
 from athenian.api.models.metadata.github import FetchProgress
 from athenian.api.models.state.models import RepositorySet

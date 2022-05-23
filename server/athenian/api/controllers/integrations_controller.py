@@ -14,11 +14,11 @@ from sqlalchemy import select
 from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
-from athenian.api.controllers.account import get_metadata_account_ids, get_user_account_status
-from athenian.api.controllers.features.everything import mine_everything, MineTopic
-from athenian.api.controllers.miners.github.contributors import load_organization_members
-from athenian.api.controllers.prefixer import Prefixer
-from athenian.api.controllers.settings import Settings
+from athenian.api.internal.account import get_metadata_account_ids, get_user_account_status
+from athenian.api.internal.features.everything import mine_everything, MineTopic
+from athenian.api.internal.miners.github.contributors import load_organization_members
+from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.settings import Settings
 from athenian.api.models.state.models import UserAccount
 from athenian.api.models.web import InvalidRequestError, MatchedIdentity, MatchIdentitiesRequest
 from athenian.api.request import AthenianWebRequest

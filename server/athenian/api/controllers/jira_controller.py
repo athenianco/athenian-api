@@ -18,33 +18,33 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather, list_with_yield, read_sql_query
 from athenian.api.balancing import weight
 from athenian.api.cache import cached, expires_header, short_term_exptime
-from athenian.api.controllers.account import get_account_repositories, get_metadata_account_ids
-from athenian.api.controllers.datetime_utils import split_to_time_intervals
-from athenian.api.controllers.features.entries import MetricEntriesCalculator
-from athenian.api.controllers.features.github.pull_request_filter import PullRequestListMiner, \
-    unwrap_pull_requests
-from athenian.api.controllers.features.histogram import HistogramParameters, Scale
-from athenian.api.controllers.features.jira.issue_metrics import JIRABinnedHistogramCalculator, \
-    JIRABinnedMetricCalculator
-from athenian.api.controllers.features.metric_calculator import DEFAULT_QUANTILE_STRIDE, \
-    group_to_indexes
 from athenian.api.controllers.filter_controller import web_pr_from_struct, webify_deployment
-from athenian.api.controllers.jira import get_jira_installation, JIRAConfig, \
-    load_mapped_jira_users, normalize_issue_type, normalize_user_type, resolve_projects
-from athenian.api.controllers.logical_repos import drop_logical_repo
-from athenian.api.controllers.miners.filters import LabelFilter
-from athenian.api.controllers.miners.github.bots import bots
-from athenian.api.controllers.miners.github.branches import BranchMiner
-from athenian.api.controllers.miners.github.deployment_light import fetch_repository_environments
-from athenian.api.controllers.miners.github.precomputed_prs import DonePRFactsLoader
-from athenian.api.controllers.miners.jira.epic import filter_epics
-from athenian.api.controllers.miners.jira.issue import fetch_jira_issues, ISSUE_PR_IDS, \
-    ISSUE_PRS_BEGAN, ISSUE_PRS_COUNT, ISSUE_PRS_RELEASED, resolve_work_began_and_resolved
-from athenian.api.controllers.miners.types import Deployment
-from athenian.api.controllers.prefixer import Prefixer
-from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseSettings, Settings
-from athenian.api.controllers.with_ import fetch_teams_map
 from athenian.api.db import Database
+from athenian.api.internal.account import get_account_repositories, get_metadata_account_ids
+from athenian.api.internal.datetime_utils import split_to_time_intervals
+from athenian.api.internal.features.entries import MetricEntriesCalculator
+from athenian.api.internal.features.github.pull_request_filter import PullRequestListMiner, \
+    unwrap_pull_requests
+from athenian.api.internal.features.histogram import HistogramParameters, Scale
+from athenian.api.internal.features.jira.issue_metrics import JIRABinnedHistogramCalculator, \
+    JIRABinnedMetricCalculator
+from athenian.api.internal.features.metric_calculator import DEFAULT_QUANTILE_STRIDE, \
+    group_to_indexes
+from athenian.api.internal.jira import get_jira_installation, JIRAConfig, \
+    load_mapped_jira_users, normalize_issue_type, normalize_user_type, resolve_projects
+from athenian.api.internal.logical_repos import drop_logical_repo
+from athenian.api.internal.miners.filters import LabelFilter
+from athenian.api.internal.miners.github.bots import bots
+from athenian.api.internal.miners.github.branches import BranchMiner
+from athenian.api.internal.miners.github.deployment_light import fetch_repository_environments
+from athenian.api.internal.miners.github.precomputed_prs import DonePRFactsLoader
+from athenian.api.internal.miners.jira.epic import filter_epics
+from athenian.api.internal.miners.jira.issue import fetch_jira_issues, ISSUE_PR_IDS, \
+    ISSUE_PRS_BEGAN, ISSUE_PRS_COUNT, ISSUE_PRS_RELEASED, resolve_work_began_and_resolved
+from athenian.api.internal.miners.types import Deployment
+from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings, Settings
+from athenian.api.internal.with_ import fetch_teams_map
 from athenian.api.models.metadata.github import Branch, PullRequest
 from athenian.api.models.metadata.jira import AthenianIssue, Component, Issue, IssueType, \
     Priority, Status, User

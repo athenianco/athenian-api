@@ -14,16 +14,16 @@ from sqlalchemy import and_, create_engine, extract, func, insert, or_, select, 
 
 from athenian.api.__main__ import create_memcached
 from athenian.api.async_utils import gather, read_sql_query
-from athenian.api.controllers.account import get_metadata_account_ids
-from athenian.api.controllers.features.github.pull_request_filter import fetch_pull_requests
-from athenian.api.controllers.miners.types import PRParticipationKind, PullRequestListItem
-from athenian.api.controllers.settings import ReleaseMatchSetting, Settings
 from athenian.api.db import Database
 from athenian.api.defer import enable_defer
 from athenian.api.experiments.aggregates.models import Base, PullRequestEvent, PullRequestStatus
 from athenian.api.experiments.aggregates.typing_utils import PullRequestsCollection
 from athenian.api.experiments.aggregates.utils import get_accounts_and_repos
 from athenian.api.faster_pandas import patch_pandas
+from athenian.api.internal.account import get_metadata_account_ids
+from athenian.api.internal.features.github.pull_request_filter import fetch_pull_requests
+from athenian.api.internal.miners.types import PRParticipationKind, PullRequestListItem
+from athenian.api.internal.settings import ReleaseMatchSetting, Settings
 from athenian.api.models.metadata.github import PullRequest
 from athenian.api.models.state.models import ReleaseSetting
 

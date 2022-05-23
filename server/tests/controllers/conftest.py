@@ -11,17 +11,17 @@ import pytest
 from sqlalchemy import delete, insert, select, update
 
 from athenian.api import metadata
-from athenian.api.controllers.features.entries import MetricEntriesCalculator
-from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github import deployment_light
-from athenian.api.controllers.miners.github.commit import _empty_dag, _fetch_commit_history_edges
-from athenian.api.controllers.miners.github.dag_accelerated import join_dags
-from athenian.api.controllers.miners.github.deployment import mine_deployments
-from athenian.api.controllers.miners.types import nonemin, PullRequestFacts
-from athenian.api.controllers.prefixer import Prefixer
-from athenian.api.controllers.settings import default_branch_alias, LogicalRepositorySettings, \
-    ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
 from athenian.api.defer import with_defer
+from athenian.api.internal.features.entries import MetricEntriesCalculator
+from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.internal.miners.github import deployment_light
+from athenian.api.internal.miners.github.commit import _empty_dag, _fetch_commit_history_edges
+from athenian.api.internal.miners.github.dag_accelerated import join_dags
+from athenian.api.internal.miners.github.deployment import mine_deployments
+from athenian.api.internal.miners.types import nonemin, PullRequestFacts
+from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.settings import default_branch_alias, LogicalRepositorySettings, \
+    ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
 from athenian.api.models.metadata.github import Branch
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
     DeploymentNotification

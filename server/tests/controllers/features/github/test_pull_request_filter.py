@@ -5,15 +5,15 @@ import pandas as pd
 import pytest
 from sqlalchemy import delete, select
 
-from athenian.api.controllers.features.github.pull_request_filter import fetch_pull_requests, \
+from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.internal.features.github.pull_request_filter import fetch_pull_requests, \
     filter_pull_requests
-from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.deployment import mine_deployments
-from athenian.api.controllers.miners.types import DeployedComponent, Deployment, \
+from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.internal.miners.github.deployment import mine_deployments
+from athenian.api.internal.miners.types import DeployedComponent, Deployment, \
     DeploymentConclusion, PRParticipationKind, PullRequestEvent, PullRequestListItem, \
     PullRequestStage
-from athenian.api.controllers.settings import LogicalRepositorySettings
-from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.internal.settings import LogicalRepositorySettings
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
     GitHubMergedPullRequestFacts, GitHubOpenPullRequestFacts
 from athenian.api.models.web import PullRequestMetricID

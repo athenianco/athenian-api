@@ -9,16 +9,16 @@ from pandas.testing import assert_frame_equal
 import pytest
 from sqlalchemy import and_, delete, func, insert, select
 
-from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.dag_accelerated import extract_independent_ownership, \
-    extract_pr_commits
-from athenian.api.controllers.miners.github.deployment import mine_deployments
-from athenian.api.controllers.miners.github.release_mine import mine_releases, \
-    mine_releases_by_name
-from athenian.api.controllers.miners.types import DeployedComponent as DeployedComponentStruct, \
-    Deployment, DeploymentConclusion, DeploymentFacts
-from athenian.api.controllers.settings import LogicalRepositorySettings
 from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.internal.miners.github.dag_accelerated import extract_independent_ownership, \
+    extract_pr_commits
+from athenian.api.internal.miners.github.deployment import mine_deployments
+from athenian.api.internal.miners.github.release_mine import mine_releases, \
+    mine_releases_by_name
+from athenian.api.internal.miners.types import DeployedComponent as DeployedComponentStruct, \
+    Deployment, DeploymentConclusion, DeploymentFacts
+from athenian.api.internal.settings import LogicalRepositorySettings
 from athenian.api.models.metadata.github import Release
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
     DeploymentNotification, ReleaseNotification

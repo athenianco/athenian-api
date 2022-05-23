@@ -7,12 +7,12 @@ import pandas as pd
 import pytest
 from sqlalchemy import delete, insert
 
-from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github import developer
-from athenian.api.controllers.miners.github.release_mine import mine_releases, \
-    override_first_releases
-from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch
 from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.internal.miners.github import developer
+from athenian.api.internal.miners.github.release_mine import mine_releases, \
+    override_first_releases
+from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel
 from athenian.api.models.state.models import ReleaseSetting, Team
 from athenian.api.models.web import CalculatedCodeCheckMetrics, CalculatedDeploymentMetric, \

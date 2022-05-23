@@ -5,9 +5,9 @@ from numpy.testing import assert_array_equal
 import pandas as pd
 import pytest
 
-from athenian.api.controllers.features.entries import \
+from athenian.api.internal.features.entries import \
     make_calculator, MetricEntriesCalculator as OriginalMetricEntriesCalculator
-from athenian.api.controllers.features.metric_calculator import group_by_repo
+from athenian.api.internal.features.metric_calculator import group_by_repo
 
 
 @pytest.fixture

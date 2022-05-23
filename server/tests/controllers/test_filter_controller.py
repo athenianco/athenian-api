@@ -11,12 +11,12 @@ import pytest
 from sqlalchemy import delete, insert, select
 
 from athenian.api.cache import CACHE_VAR_NAME, setup_cache_metrics
-from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.deployment import mine_deployments
-from athenian.api.controllers.miners.github.release_mine import mine_releases, \
-    override_first_releases
-from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch
 from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.internal.miners.github.deployment import mine_deployments
+from athenian.api.internal.miners.github.release_mine import mine_releases, \
+    override_first_releases
+from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch
 from athenian.api.models.metadata.github import Release
 from athenian.api.models.persistentdata.models import DeployedComponent as DBDeployedComponent, \
     DeploymentNotification as DBDeploymentNotification, ReleaseNotification

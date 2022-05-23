@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 
-from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.settings import LogicalRepositorySettings
 from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.internal.settings import LogicalRepositorySettings
 from athenian.api.models.web import ReleaseMetricID
 
 

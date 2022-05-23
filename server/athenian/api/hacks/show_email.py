@@ -1,7 +1,7 @@
 import os
 import sys
 
-from athenian.api.controllers.ffx import decrypt
+from athenian.api.ffx import decrypt
 
 
 def main():

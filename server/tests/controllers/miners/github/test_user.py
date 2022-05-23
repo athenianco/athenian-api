@@ -1,5 +1,5 @@
-from athenian.api.controllers.miners.github.user import mine_user_avatars, UserAvatarKeys
 from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.internal.miners.github.user import mine_user_avatars, UserAvatarKeys
 
 
 @with_defer

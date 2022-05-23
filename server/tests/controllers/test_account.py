@@ -1,9 +1,9 @@
 import pytest
 from sqlalchemy import delete, select
 
-from athenian.api.controllers.account import copy_teams_as_needed, get_metadata_account_ids, \
-    get_user_account_status, match_metadata_installation
 from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.internal.account import copy_teams_as_needed, get_metadata_account_ids, \
+    get_user_account_status, match_metadata_installation
 from athenian.api.models.state.models import AccountGitHubAccount, Team
 from athenian.api.models.web import User
 from athenian.api.response import ResponseError

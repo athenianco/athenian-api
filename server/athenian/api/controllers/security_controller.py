@@ -8,14 +8,11 @@ from asyncpg import UniqueViolationError
 import morcilla.core
 from sqlalchemy import and_, delete, insert, select, update
 
-from athenian.api.controllers.account import get_user_account_status_from_request
+from athenian.api.internal.account import get_user_account_status_from_request
 from athenian.api.models.state.models import UserToken
-from athenian.api.models.web import BadRequestError, ForbiddenError, NotFoundError
-from athenian.api.models.web.create_token_request import CreateTokenRequest
-from athenian.api.models.web.created_token import CreatedToken
-from athenian.api.models.web.generic_error import DatabaseConflict, ServerNotImplementedError
-from athenian.api.models.web.listed_token import ListedToken
-from athenian.api.models.web.patch_token_request import PatchTokenRequest
+from athenian.api.models.web import BadRequestError, CreatedToken, CreateTokenRequest, \
+    DatabaseConflict, ForbiddenError, ListedToken, NotFoundError, PatchTokenRequest, \
+    ServerNotImplementedError
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 

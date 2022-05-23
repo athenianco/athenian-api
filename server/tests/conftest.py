@@ -47,15 +47,16 @@ from athenian.api.__main__ import create_mandrill, create_memcached, create_slac
 from athenian.api.application import AthenianApp
 from athenian.api.auth import Auth0, User
 from athenian.api.cache import CACHE_VAR_NAME, setup_cache_metrics
-from athenian.api.controllers import account, invitation_controller
-from athenian.api.controllers.miners.github.branches import BranchMiner
-from athenian.api.controllers.miners.github.precomputed_prs import DonePRFactsLoader, \
-    MergedPRFactsLoader, OpenPRFactsLoader
-from athenian.api.controllers.miners.github.pull_request import PullRequestMiner
-from athenian.api.controllers.miners.github.release_load import ReleaseLoader
-from athenian.api.controllers.miners.github.release_match import ReleaseToPullRequestMapper
+from athenian.api.controllers import invitation_controller
 from athenian.api.db import Connection, Database, db_retry_intervals, measure_db_overhead_and_retry
 from athenian.api.faster_pandas import patch_pandas
+from athenian.api.internal import account
+from athenian.api.internal.miners.github.branches import BranchMiner
+from athenian.api.internal.miners.github.precomputed_prs import DonePRFactsLoader, \
+    MergedPRFactsLoader, OpenPRFactsLoader
+from athenian.api.internal.miners.github.pull_request import PullRequestMiner
+from athenian.api.internal.miners.github.release_load import ReleaseLoader
+from athenian.api.internal.miners.github.release_match import ReleaseToPullRequestMapper
 from athenian.api.metadata import __package__ as package
 from athenian.api.models import check_collation, metadata, persistentdata
 from athenian.api.models.metadata.github import Account, Base as GithubBase, NodeCommit, \

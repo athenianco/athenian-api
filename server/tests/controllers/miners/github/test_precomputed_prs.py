@@ -8,21 +8,21 @@ import pytest
 from sqlalchemy import and_, select, update
 
 from athenian.api.async_utils import read_sql_query
-from athenian.api.controllers.features.github.pull_request_filter import _fetch_pull_requests
-from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.deployment import mine_deployments
-from athenian.api.controllers.miners.github.precomputed_prs import \
+from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.internal.features.github.pull_request_filter import _fetch_pull_requests
+from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.internal.miners.github.deployment import mine_deployments
+from athenian.api.internal.miners.github.precomputed_prs import \
     delete_force_push_dropped_prs, discover_inactive_merged_unreleased_prs, \
     store_merged_unreleased_pull_request_facts, store_open_pull_request_facts, \
     store_precomputed_done_facts, update_unreleased_prs
-from athenian.api.controllers.miners.github.release_match import PullRequestToReleaseMapper
-from athenian.api.controllers.miners.github.released_pr import matched_by_column, \
+from athenian.api.internal.miners.github.release_match import PullRequestToReleaseMapper
+from athenian.api.internal.miners.github.released_pr import matched_by_column, \
     new_released_prs_df
-from athenian.api.controllers.miners.types import MinedPullRequest, PRParticipationKind, \
+from athenian.api.internal.miners.types import MinedPullRequest, PRParticipationKind, \
     PullRequestCheckRun, PullRequestFacts
-from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch, \
+from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch, \
     ReleaseMatchSetting, ReleaseSettings
-from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.models.metadata.github import Branch, PullRequest, PullRequestCommit, Release
 from athenian.api.models.persistentdata.models import DeploymentNotification
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \

@@ -5,7 +5,7 @@ from itertools import chain
 from sqlalchemy import and_, select
 
 from athenian.api.async_utils import gather
-from athenian.api.controllers.account import get_metadata_account_ids_or_empty
+from athenian.api.internal.account import get_metadata_account_ids_or_empty
 from athenian.api.models.metadata.github import Account as GitHubAccount
 from athenian.api.models.state.models import Account, UserAccount
 from athenian.api.precompute.context import PrecomputeContext

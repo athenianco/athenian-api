@@ -24,16 +24,16 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.auth import Auth0, disable_default_user
 from athenian.api.cache import cached, expires_header, middle_term_exptime
-from athenian.api.controllers.account import fetch_github_installation_progress, \
+from athenian.api.db import Connection, Database, DatabaseLike
+from athenian.api.defer import defer
+from athenian.api.ffx import decrypt, encrypt
+from athenian.api.internal.account import fetch_github_installation_progress, \
     generate_jira_invitation_link, get_account_name_or_stub, get_metadata_account_ids_or_empty, \
     get_user_account_status_from_request, is_github_login_enabled, is_membership_check_enabled, \
     jira_url_template, only_god
-from athenian.api.controllers.ffx import decrypt, encrypt
-from athenian.api.controllers.jira import fetch_jira_installation_progress
-from athenian.api.controllers.reposet import load_account_reposets
-from athenian.api.controllers.user import load_user_accounts
-from athenian.api.db import Connection, Database, DatabaseLike
-from athenian.api.defer import defer
+from athenian.api.internal.jira import fetch_jira_installation_progress
+from athenian.api.internal.reposet import load_account_reposets
+from athenian.api.internal.user import load_user_accounts
 from athenian.api.models.metadata.github import NodeUser, OrganizationMember
 from athenian.api.models.state.models import Account, BanishedUserAccount, Invitation, \
     RepositorySet, UserAccount

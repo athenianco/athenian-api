@@ -4,11 +4,11 @@ from sqlalchemy import and_, select
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
 from athenian.api.cache import expires_header, short_term_exptime
-from athenian.api.controllers.account import get_account_repositories, get_metadata_account_ids
-from athenian.api.controllers.jira import load_mapped_jira_users
-from athenian.api.controllers.miners.github.contributors import mine_contributors
-from athenian.api.controllers.prefixer import Prefixer
-from athenian.api.controllers.settings import Settings
+from athenian.api.internal.account import get_account_repositories, get_metadata_account_ids
+from athenian.api.internal.jira import load_mapped_jira_users
+from athenian.api.internal.miners.github.contributors import mine_contributors
+from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.settings import Settings
 from athenian.api.models.metadata.github import User
 from athenian.api.models.state.models import UserAccount
 from athenian.api.models.web import Contributor, NotFoundError

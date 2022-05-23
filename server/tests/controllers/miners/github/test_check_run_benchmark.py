@@ -7,11 +7,11 @@ import numpy as np
 import pandas as pd
 from sqlalchemy import and_, func, select
 
-from athenian.api.controllers.miners.github.check_run import _calculate_check_suite_started, \
+from athenian.api.int_to_str import int_to_str
+from athenian.api.internal.miners.github.check_run import _calculate_check_suite_started, \
     _finalize_check_runs, _merge_status_contexts, _postprocess_check_runs, \
     _split_duplicate_check_runs, check_suite_started_column, pull_request_closed_column, \
     pull_request_merged_column, pull_request_started_column, pull_request_title_column
-from athenian.api.int_to_str import int_to_str
 from athenian.api.models.metadata.github import CheckRun, NodePullRequest, NodePullRequestCommit
 from athenian.api.to_object_arrays import as_bool, is_null
 

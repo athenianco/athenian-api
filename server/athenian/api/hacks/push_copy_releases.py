@@ -13,14 +13,14 @@ from sqlalchemy.dialects.postgresql import insert as postgres_insert
 import athenian
 from athenian.api.__main__ import check_schema_versions, setup_context
 from athenian.api.async_utils import gather
-from athenian.api.controllers.account import get_metadata_account_ids
-from athenian.api.controllers.miners.github.branches import BranchMiner
-from athenian.api.controllers.miners.github.release_load import ReleaseLoader
-from athenian.api.controllers.prefixer import Prefixer
-from athenian.api.controllers.settings import Settings
 from athenian.api.db import Database, measure_db_overhead_and_retry
 from athenian.api.defer import enable_defer
 from athenian.api.faster_pandas import patch_pandas
+from athenian.api.internal.account import get_metadata_account_ids
+from athenian.api.internal.miners.github.branches import BranchMiner
+from athenian.api.internal.miners.github.release_load import ReleaseLoader
+from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.settings import Settings
 from athenian.api.models.metadata import dereference_schemas as dereference_metadata_schemas
 from athenian.api.models.metadata.github import Release
 from athenian.api.models.persistentdata import \

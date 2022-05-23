@@ -1,8 +1,8 @@
 from operator import itemgetter
 
-from athenian.api.controllers.miners.github.contributors import mine_contributors
-from athenian.api.controllers.settings import LogicalRepositorySettings
 from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.internal.miners.github.contributors import mine_contributors
+from athenian.api.internal.settings import LogicalRepositorySettings
 from tests.conftest import has_memcached
 
 

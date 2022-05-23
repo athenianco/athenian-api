@@ -3,11 +3,11 @@ from datetime import datetime, timezone
 import numpy as np
 import pytest
 
-from athenian.api.controllers.miners.github.branches import BranchMiner
-from athenian.api.controllers.miners.github.commit import extract_commits, FilterCommitsProperty
-from athenian.api.controllers.miners.github.dag_accelerated import find_orphans, \
-    validate_edges_integrity
 from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.internal.miners.github.branches import BranchMiner
+from athenian.api.internal.miners.github.commit import extract_commits, FilterCommitsProperty
+from athenian.api.internal.miners.github.dag_accelerated import find_orphans, \
+    validate_edges_integrity
 
 
 @pytest.mark.parametrize("property, count", [

@@ -3,7 +3,7 @@ import json
 import pytest
 from sqlalchemy import select
 
-from athenian.api.controllers.reposet import load_account_reposets
+from athenian.api.internal.reposet import load_account_reposets
 from athenian.api.models.state.models import RepositorySet
 from athenian.api.models.web import RepositorySetCreateRequest, RepositorySetWithName
 from athenian.api.response import ResponseError

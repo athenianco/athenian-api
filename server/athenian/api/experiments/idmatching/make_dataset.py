@@ -7,7 +7,7 @@ from sqlalchemy import and_, create_engine
 from sqlalchemy.orm import load_only, Session, sessionmaker
 from tqdm import tqdm
 
-from athenian.api.controllers.jira import ALLOWED_USER_TYPES
+from athenian.api.internal.jira import ALLOWED_USER_TYPES
 from athenian.api.models.metadata.github import OrganizationMember, PushCommit, User as GitHubUser
 from athenian.api.models.metadata.jira import User as JIRAUser
 from athenian.api.models.state.models import AccountGitHubAccount, AccountJiraInstallation

@@ -3,7 +3,7 @@ from datetime import timedelta
 import numpy as np
 import pytest
 
-from athenian.api.controllers.features.histogram import calculate_histogram, Scale
+from athenian.api.internal.features.histogram import calculate_histogram, Scale
 
 
 def test_calculate_histogram_empty_log():

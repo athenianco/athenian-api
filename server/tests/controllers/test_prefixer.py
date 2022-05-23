@@ -1,5 +1,5 @@
-from athenian.api.controllers.prefixer import Prefixer
 from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.internal.prefixer import Prefixer
 
 
 @with_defer

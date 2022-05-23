@@ -18,20 +18,20 @@ from xxhash._xxhash import xxh32_intdigest
 from athenian.api.async_utils import gather
 from athenian.api.auth import disable_default_user
 from athenian.api.balancing import weight
-from athenian.api.controllers.account import get_metadata_account_ids
-from athenian.api.controllers.features.entries import MetricEntriesCalculator
-from athenian.api.controllers.miners.access_classes import access_classes
-from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.bots import bots
-from athenian.api.controllers.miners.github.branches import BranchMiner
-from athenian.api.controllers.miners.github.deployment import mine_deployments
-from athenian.api.controllers.miners.github.release_mine import mine_releases
-from athenian.api.controllers.prefixer import Prefixer
-from athenian.api.controllers.reposet import resolve_repos
-from athenian.api.controllers.settings import LogicalRepositorySettings, ReleaseMatch, \
-    ReleaseSettings, Settings
 from athenian.api.db import Connection, Database
 from athenian.api.defer import defer, launch_defer_from_request, wait_deferred
+from athenian.api.internal.account import get_metadata_account_ids
+from athenian.api.internal.features.entries import MetricEntriesCalculator
+from athenian.api.internal.miners.access_classes import access_classes
+from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.internal.miners.github.bots import bots
+from athenian.api.internal.miners.github.branches import BranchMiner
+from athenian.api.internal.miners.github.deployment import mine_deployments
+from athenian.api.internal.miners.github.release_mine import mine_releases
+from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.reposet import resolve_repos
+from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch, \
+    ReleaseSettings, Settings
 from athenian.api.models.metadata.github import PushCommit, Release, User
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
     DeploymentNotification, ReleaseNotification

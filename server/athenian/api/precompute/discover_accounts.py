@@ -6,8 +6,8 @@ from typing import Dict, List, Tuple, Union
 import sqlalchemy as sa
 from tqdm import tqdm
 
-from athenian.api.controllers.reposet import load_account_state
 from athenian.api.db import Database
+from athenian.api.internal.reposet import load_account_state
 from athenian.api.models.state.models import Account, RepositorySet
 from athenian.api.precompute.context import PrecomputeContext
 

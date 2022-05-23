@@ -7,16 +7,16 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from athenian.api.controllers.features.entries import MetricEntriesCalculator
-from athenian.api.controllers.features.github.check_run_metrics import \
-    CheckRunHistogramCalculatorEnsemble, CheckRunMetricCalculatorEnsemble
-from athenian.api.controllers.features.github.check_run_metrics_accelerated import \
-    calculate_interval_intersections
-from athenian.api.controllers.features.histogram import Histogram, Scale
-from athenian.api.controllers.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.controllers.miners.github.check_run import _finalize_check_runs, \
-    check_suite_started_column
 from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.internal.features.entries import MetricEntriesCalculator
+from athenian.api.internal.features.github.check_run_metrics import \
+    CheckRunHistogramCalculatorEnsemble, CheckRunMetricCalculatorEnsemble
+from athenian.api.internal.features.github.check_run_metrics_accelerated import \
+    calculate_interval_intersections
+from athenian.api.internal.features.histogram import Histogram, Scale
+from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
+from athenian.api.internal.miners.github.check_run import _finalize_check_runs, \
+    check_suite_started_column
 from athenian.api.models.metadata.github import CheckRun
 from athenian.api.models.web import CodeCheckMetricID
 

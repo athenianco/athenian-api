@@ -4,7 +4,7 @@ from typing import Dict, List, Optional
 
 import dateutil.parser
 
-from athenian.api.controllers.ffx import encrypt
+from athenian.api.ffx import encrypt
 from athenian.api.models.web.account_status import AccountStatus
 from athenian.api.models.web.base_model_ import Model, VerbatimOptional
 
