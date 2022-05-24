@@ -1,29 +1,23 @@
 from datetime import datetime, timezone
 from itertools import chain
-import logging
 from sqlite3 import IntegrityError, OperationalError
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
+from typing import Any, List, Mapping, Optional, Tuple, Union
 
 from aiohttp import web
-import aiomcache
 from asyncpg import UniqueViolationError
-import morcilla
 from sqlalchemy import and_, delete, insert, select, update
 
-from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.auth import disable_default_user
 from athenian.api.balancing import weight
 from athenian.api.db import DatabaseLike
 from athenian.api.internal.account import copy_teams_as_needed, get_metadata_account_ids, \
     get_user_account_status_from_request
-from athenian.api.internal.jira import load_mapped_jira_users
-from athenian.api.internal.team import get_root_team
+from athenian.api.internal.team import get_all_team_members, get_root_team
 from athenian.api.models.metadata.github import User
 from athenian.api.models.state.models import Team
-from athenian.api.models.web import BadRequestError, Contributor, CreatedIdentifier, \
-    DatabaseConflict, ForbiddenError, NotFoundError, Team as TeamListItem, TeamCreateRequest, \
-    TeamUpdateRequest
+from athenian.api.models.web import BadRequestError, CreatedIdentifier, DatabaseConflict, \
+    ForbiddenError, NotFoundError, Team as TeamListItem, TeamCreateRequest, TeamUpdateRequest
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 
@@ -237,45 +231,6 @@ async def _check_parent_cycle(team_id: int, parent_id: Optional[int], sdb: Datab
     if parent_id is not None:
         visited.remove(None)
         raise ResponseError(BadRequestError(detail="Detected a team parent cycle: %s." % visited))
-
-
-async def get_all_team_members(gh_user_ids: Iterable[int],
-                               account: int,
-                               meta_ids: Tuple[int, ...],
-                               mdb: morcilla.Database,
-                               sdb: morcilla.Database,
-                               cache: Optional[aiomcache.Client],
-                               ) -> Dict[int, Contributor]:
-    """Return contributor objects for given github user identifiers."""
-    user_rows, mapped_jira = await gather(
-        mdb.fetch_all(select([User]).where(and_(
-            User.acc_id.in_(meta_ids),
-            User.node_id.in_(gh_user_ids),
-        ))),
-        load_mapped_jira_users(account, gh_user_ids, sdb, mdb, cache),
-    )
-    user_by_node = {u[User.node_id.name]: u for u in user_rows}
-    all_contributors = {}
-    missing = []
-    for m in gh_user_ids:
-        try:
-            ud = user_by_node[m]
-        except KeyError:
-            missing.append(m)
-            c = Contributor(login=str(m))
-        else:
-            login = ud[User.html_url.name].split("://", 1)[1]
-            c = Contributor(login=login,
-                            name=ud[User.name.name],
-                            email=ud[User.email.name],
-                            picture=ud[User.avatar_url.name],
-                            jira_user=mapped_jira.get(m))
-        all_contributors[m] = c
-
-    if missing:
-        logging.getLogger("%s.get_all_team_members" % metadata.__package__).error(
-            "Some users are missing in %s: %s", meta_ids, missing)
-    return all_contributors
 
 
 @disable_default_user

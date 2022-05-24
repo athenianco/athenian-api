@@ -1,12 +1,18 @@
 from http import HTTPStatus
-from typing import Any, Collection, Mapping, Optional, Sequence, Union
+import logging
+from typing import Any, Collection, Dict, Iterable, Mapping, Optional, Sequence, Tuple, Union
 
+import aiomcache
+import morcilla
 import sqlalchemy as sa
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
+from athenian.api.async_utils import gather
 from athenian.api.db import DatabaseLike
+from athenian.api.internal.jira import load_mapped_jira_users
+from athenian.api.models.metadata.github import User
 from athenian.api.models.state.models import Team
-from athenian.api.models.web import GenericError
+from athenian.api.models.web import Contributor, GenericError
 from athenian.api.response import ResponseError
 
 
@@ -73,6 +79,45 @@ async def get_team_from_db(
     if team is None:
         raise TeamNotFoundError(team_id)
     return team
+
+
+async def get_all_team_members(gh_user_ids: Iterable[int],
+                               account: int,
+                               meta_ids: Tuple[int, ...],
+                               mdb: morcilla.Database,
+                               sdb: morcilla.Database,
+                               cache: Optional[aiomcache.Client],
+                               ) -> Dict[int, Contributor]:
+    """Return contributor objects for given github user identifiers."""
+    user_rows, mapped_jira = await gather(
+        mdb.fetch_all(sa.select([User]).where(sa.and_(
+            User.acc_id.in_(meta_ids),
+            User.node_id.in_(gh_user_ids),
+        ))),
+        load_mapped_jira_users(account, gh_user_ids, sdb, mdb, cache),
+    )
+    user_by_node = {u[User.node_id.name]: u for u in user_rows}
+    all_contributors = {}
+    missing = []
+    for m in gh_user_ids:
+        try:
+            ud = user_by_node[m]
+        except KeyError:
+            missing.append(m)
+            c = Contributor(login=str(m))
+        else:
+            login = ud[User.html_url.name].split("://", 1)[1]
+            c = Contributor(login=login,
+                            name=ud[User.name.name],
+                            email=ud[User.email.name],
+                            picture=ud[User.avatar_url.name],
+                            jira_user=mapped_jira.get(m))
+        all_contributors[m] = c
+
+    if missing:
+        logging.getLogger("team.get_all_team_members").error(
+            "Some users are missing in %s: %s", meta_ids, missing)
+    return all_contributors
 
 
 async def fetch_teams_recursively(
