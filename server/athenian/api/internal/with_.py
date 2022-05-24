@@ -3,9 +3,9 @@ from typing import Any, Callable, Collection, Dict, Iterable, List, Optional, Se
 
 import numpy as np
 
-from athenian.api.controllers.team_controller import fetch_teams_recursively
 from athenian.api.db import DatabaseLike
 from athenian.api.internal.prefixer import Prefixer
+from athenian.api.internal.team import fetch_teams_recursively
 from athenian.api.internal.user import MANNEQUIN_PREFIX
 from athenian.api.models.state.models import Team
 from athenian.api.models.web import InvalidRequestError, NotFoundError
