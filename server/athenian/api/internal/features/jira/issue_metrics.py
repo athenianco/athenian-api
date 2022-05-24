@@ -1,5 +1,5 @@
 from datetime import timedelta
-from typing import Dict, Sequence, Type
+from typing import Dict, List, Sequence, Type
 
 import numpy as np
 import pandas as pd
@@ -9,7 +9,9 @@ from athenian.api.internal.features.metric_calculator import AverageMetricCalcul
     BinnedHistogramCalculator, BinnedMetricCalculator, Counter, HistogramCalculator, \
     HistogramCalculatorEnsemble, make_register_metric, MetricCalculator, \
     MetricCalculatorEnsemble, RatioCalculator, SumMetricCalculator, WithoutQuantilesMixin
+from athenian.api.internal.miners.filters import LabelFilter
 from athenian.api.internal.miners.jira.issue import ISSUE_PRS_BEGAN, ISSUE_PRS_RELEASED
+from athenian.api.internal.miners.types import JIRAParticipants, JIRAParticipationKind
 from athenian.api.models.metadata.jira import AthenianIssue, Issue, Status
 from athenian.api.models.web import JIRAMetricID
 
@@ -48,6 +50,96 @@ class JIRABinnedHistogramCalculator(BinnedHistogramCalculator):
     """BinnedHistogramCalculator adapted for JIRA issues."""
 
     ensemble_class = JIRAHistogramCalculatorEnsemble
+
+
+def split_issues_by_participants(with_: List[JIRAParticipants],
+                                 issues: pd.DataFrame,
+                                 ) -> List[np.ndarray]:
+    """Group issues by participants."""
+    result = []
+    if len(with_) < 2:
+        # supposing that we fetched only those issues that relate to the only group
+        return [np.arange(len(issues))]
+    for group in with_:
+        mask = np.full(len(issues), False)
+        if assignees := group.get(JIRAParticipationKind.ASSIGNEE):
+            # None will become "None" and will match; nobody is going to name a user "None"
+            # except for to troll Athenian.
+            assignees = np.char.lower(np.array(assignees, dtype="U"))
+            mask |= np.in1d(issues["assignee"].values.astype("U"), assignees)
+        if reporters := group.get(JIRAParticipationKind.REPORTER):
+            reporters = np.char.lower(np.array(reporters, dtype="U"))
+            mask |= np.in1d(issues["reporter"].values.astype("U"), reporters)
+        if commenters := group.get(JIRAParticipationKind.COMMENTER):
+            commenters = np.char.lower(np.array(commenters, dtype="U"))
+            issue_commenters = issues["commenters"]
+            merged_issue_commenters = np.concatenate(issue_commenters).astype("U")
+            offsets = np.zeros(len(issue_commenters) + 1, dtype=int)
+            np.cumsum(issue_commenters.apply(len).values, out=offsets[1:])
+            indexes = np.unique(np.searchsorted(
+                offsets, np.nonzero(np.in1d(merged_issue_commenters, commenters))[0],
+                side="right") - 1)
+            mask[indexes] = True
+        result.append(np.nonzero(mask)[0])
+    return result
+
+
+class IssuesLabelSplitter:
+    """Grouper of JIRA issues by labels."""
+
+    def __init__(self, enabled: bool, label_filter: LabelFilter):
+        """Initialize a new instance of IssuesLabelSplitter."""
+        self._labels = np.array([None], dtype=object)
+        self.enabled = enabled
+        self._filter = label_filter
+
+    @property
+    def labels(self) -> np.ndarray:
+        """Return the labels filter value."""
+        return self._labels
+
+    def __call__(self, issues: pd.DataFrame) -> List[np.ndarray]:
+        """Perform the issues grouping by labels."""
+        if not self.enabled or issues.empty:
+            return [np.arange(len(issues))]
+        labels_column = issues[Issue.labels.name].values
+        rows_all_labels = np.repeat(np.arange(len(labels_column), dtype=int),
+                                    [len(labels) for labels in labels_column])
+        all_labels = np.concatenate(labels_column).astype("U")
+        del labels_column
+        all_labels_order = np.argsort(all_labels)
+        ordered_rows_all_labels = rows_all_labels[all_labels_order]
+        unique_labels, unique_counts = np.unique(all_labels[all_labels_order], return_counts=True)
+        del all_labels
+        groups = np.array(np.split(ordered_rows_all_labels, np.cumsum(unique_counts)),
+                          dtype=object)
+        unique_labels_order = np.argsort(-unique_counts)
+        unique_labels = unique_labels[unique_labels_order]
+        groups = groups[unique_labels_order]
+        if self._filter.exclude and len(unique_labels):
+            exclude = np.array(sorted(self._filter.exclude), dtype="U")
+            mask = np.in1d(unique_labels, exclude, assume_unique=True, invert=True)
+            unique_labels = unique_labels[mask]
+            groups = groups[mask]
+        if self._filter.include:
+            if len(unique_labels):
+                singles, multiples = LabelFilter.split(self._filter.include)
+                include = set(singles)
+                for labels in multiples:
+                    include.update(labels)
+                include = np.array(sorted(self._filter.include), dtype="U")
+                mask = np.in1d(unique_labels, include, assume_unique=True)
+                unique_labels = unique_labels[mask]
+                groups = groups[mask]
+        else:
+            # no include filter => append another group of issues with empty labels
+            unique_labels = np.concatenate([unique_labels, [None]])
+            empty_labels_group = np.nonzero(~issues[Issue.labels.name].astype(bool).values)[0]
+            groups = list(groups) + [empty_labels_group]
+        if not isinstance(groups, list):
+            groups = groups.tolist()
+        self._labels = unique_labels
+        return groups
 
 
 @register_metric(JIRAMetricID.JIRA_RAISED)

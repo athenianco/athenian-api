@@ -350,15 +350,12 @@ async def copy_teams_as_needed(account: int,
     for node_id in reversed(list(nx.topological_sort(dig))):
         team = teams[node_id]
 
-        parent_id = None
+        parent_id = root_team_id
         if (github_parent_id := team[MetadataTeam.parent_team_id.name]) is not None:
             if (parent := teams.get(github_parent_id)) is not None:
                 parent_id = db_ids[parent[MetadataTeam.id.name]]
-
-        if parent_id is None:
-            # this happens either when the team hasn't got a real parent
-            # or its parent failed to create
-            parent_id = root_team_id
+        # we remain with parent_id = root_team_id either when the team hasn't got a real parent
+        # or its parent failed to create
 
         team = StateTeam(owner_id=account,
                          name=team[MetadataTeam.name.name],

@@ -114,6 +114,7 @@ class Team(create_time_mixin(created_at=True, updated_at=True),
     owner_id = Column(Integer(), ForeignKey("accounts.id", name="fk_reposet_owner"),
                       nullable=False, index=True)
     parent_id = Column(Integer(), ForeignKey("teams.id", name="fk_team_parent"))
+    root_id = "root_id"
 
 
 class AccountGitHubAccount(create_time_mixin(created_at=True, nullable=True), Base):

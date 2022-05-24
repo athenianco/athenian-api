@@ -81,3 +81,12 @@ class TeamGoalChangeFields(metaclass=Enum):
     teamId = "teamId"
     target = "target"
     remove = "remove"
+
+
+class MetricParamsFields(metaclass=Enum):
+    """Fields definitions for GraphQL MetricParams type."""
+
+    teamId = "teamId"
+    metrics = "metrics"
+    validFrom = "validFrom"
+    expiresAt = "expiresAt"
