@@ -39,6 +39,17 @@ class ReleaseParticipationKind(IntEnum):
 ReleaseParticipants = Mapping[ReleaseParticipationKind, Sequence[int]]
 
 
+class JIRAParticipationKind(IntEnum):
+    """User relationship with a JIRA issue."""
+
+    ASSIGNEE = auto()
+    REPORTER = auto()
+    COMMENTER = auto()
+
+
+JIRAParticipants = Mapping[JIRAParticipationKind, Sequence[str]]
+
+
 class Property(IntEnum):
     """PR's modelled lifecycle stage or corresponding events between `time_from` and `time_to`."""
 

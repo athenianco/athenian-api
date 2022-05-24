@@ -61,9 +61,8 @@ from athenian.api.models.web import BadRequestError, Commit, CommitSignature, Co
     FilterReleasesRequest, FilterRepositoriesRequest, ForbiddenError, GetPullRequestsRequest, \
     GetReleasesRequest, IncludedNativeUser, IncludedNativeUsers, InvalidRequestError, \
     LinkedJIRAIssue, NoSourceDataError, PullRequest as WebPullRequest, PullRequestLabel, \
-    PullRequestParticipant, \
-    PullRequestSet, PullRequestSetInclude, ReleasedPullRequest, ReleaseSet, ReleaseSetInclude, \
-    StageTimings
+    PullRequestParticipant, PullRequestSet, PullRequestSetInclude, ReleasedPullRequest, \
+    ReleaseSet, ReleaseSetInclude, StageTimings
 from athenian.api.models.web.code_check_run_statistics import CodeCheckRunStatistics
 from athenian.api.models.web.diff_releases_request import DiffReleasesRequest
 from athenian.api.models.web.diffed_releases import DiffedReleases

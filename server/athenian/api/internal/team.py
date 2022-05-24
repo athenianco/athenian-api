@@ -10,6 +10,49 @@ from athenian.api.models.web import GenericError
 from athenian.api.response import ResponseError
 
 
+class TeamNotFoundError(ResponseError):
+    """A team was not found."""
+
+    def __init__(self, *team_id: int):
+        """Init the TeamNotFoundError."""
+        wrapped_error = GenericError(
+            type="/errors/teams/TeamNotFound",
+            status=HTTPStatus.NOT_FOUND,
+            detail=f"Team{'s' if len(team_id) > 1 else ''} {', '.join(map(str, team_id))} "
+                   f"not found or access denied",
+            title="Team not found",
+        )
+        super().__init__(wrapped_error)
+
+
+class RootTeamNotFoundError(ResponseError):
+    """A team was not found."""
+
+    def __init__(self):
+        """Init the RootTeamNotFoundError."""
+        wrapped_error = GenericError(
+            type="/errors/teams/TeamNotFound",
+            status=HTTPStatus.NOT_FOUND,
+            detail="Root team not found or access denied",
+            title="Root team not found",
+        )
+        super().__init__(wrapped_error)
+
+
+class MultipleRootTeamsError(ResponseError):
+    """An account has multiple root teams."""
+
+    def __init__(self, account_id: int):
+        """Init the MultipleRootTeamsError."""
+        wrapped_error = GenericError(
+            type="/errors/teams/MultipleRootTeamsError",
+            status=HTTPStatus.INTERNAL_SERVER_ERROR,
+            detail=f"Account {account_id} has multiple root teams",
+            title="Multiple root teams",
+        )
+        super().__init__(wrapped_error)
+
+
 async def get_root_team(account_id: int, sdb_conn: DatabaseLike) -> Mapping[Union[int, str], Any]:
     """Return the root team for the account."""
     stmt = sa.select(Team).where(sa.and_(Team.owner_id == account_id, Team.parent_id.is_(None)))
@@ -45,10 +88,10 @@ async def fetch_teams_recursively(
     If `root_team_ids` is None all root teams will be taken as base for the recursion.
 
     The returned list of teams will include duplicates when
-    on of the `root_team_ids` is ancestor of another.
+    one of the `root_team_ids` is ancestor of another.
 
     Returned columns can be selected with `select_entities`. The ID of the root team
-    used to fetch the row will always be included as last column.
+    used to fetch the row is always included as the last column.
     """
     # a recursive CTE is used to link children teams and track depth
 
@@ -68,7 +111,7 @@ async def fetch_teams_recursively(
     recursive_base = sa.select(
         *cte_select_entities,
         sa.cast(1, sa.Integer).label("depth"),
-        Team.id.label("root_id"),
+        Team.id.label(Team.root_id),
     ).where(
         recursive_base_where,
     )
@@ -85,46 +128,8 @@ async def fetch_teams_recursively(
     # selected entities have the same names but must be taken from cte selectable
     result_select_entities = (getattr(cte.c, entity.name) for entity in select_entities)
     stmt = sa.select(*result_select_entities, cte.c.root_id)
-    return await sdb.fetch_all(stmt)
 
-
-class TeamNotFoundError(ResponseError):
-    """A team was not found."""
-
-    def __init__(self, team_id: int):
-        """Init the TeamNotFoundError."""
-        wrapped_error = GenericError(
-            type="/errors/teams/TeamNotFound",
-            status=HTTPStatus.NOT_FOUND,
-            detail=f"Team {team_id} not found or access denied",
-            title="Team not found",
-        )
-        super().__init__(wrapped_error)
-
-
-class RootTeamNotFoundError(ResponseError):
-    """A team was not found."""
-
-    def __init__(self):
-        """Init the RootTeamNotFoundError."""
-        wrapped_error = GenericError(
-            type="/errors/teams/TeamNotFound",
-            status=HTTPStatus.NOT_FOUND,
-            detail="Root team not found or access denied",
-            title="Root team not found",
-        )
-        super().__init__(wrapped_error)
-
-
-class MultipleRootTeamsError(ResponseError):
-    """An account has multiple root teams."""
-
-    def __init__(self, account_id: int):
-        """Init the MultipleRootTeamsError."""
-        wrapped_error = GenericError(
-            type="/errors/teams/MultipleRootTeamsError",
-            status=HTTPStatus.INTERNAL_SERVER_ERROR,
-            detail=f"Account {account_id} has multiple root teams",
-            title="Multiple root teams",
-        )
-        super().__init__(wrapped_error)
+    rows = await sdb.fetch_all(stmt)
+    if missing := set(root_team_ids or set()) - {r[Team.root_id] for r in rows}:
+        raise TeamNotFoundError(*missing)
+    return rows

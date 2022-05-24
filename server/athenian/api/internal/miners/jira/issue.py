@@ -9,7 +9,7 @@ import aiomcache
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import sql
+from sqlalchemy import func, sql
 from sqlalchemy.orm import aliased
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import ClauseElement
@@ -742,3 +742,10 @@ async def fetch_jira_issues_for_prs(pr_nodes: Collection[int],
                         prmap.node_acc.in_(meta_ids),
                         regiss.project_id.in_(jira_ids[1]),
                         regiss.is_deleted.is_(False))))
+
+
+participant_columns = [
+    func.lower(Issue.reporter_display_name).label("reporter"),
+    func.lower(Issue.assignee_display_name).label("assignee"),
+    Issue.commenters_display_names.label("commenters"),
+]

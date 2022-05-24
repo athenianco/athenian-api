@@ -1,5 +1,6 @@
 from typing import List, Optional
 
+from athenian.api.internal.miners.types import JIRAParticipants, JIRAParticipationKind
 from athenian.api.models.web.base_model_ import Model
 
 
@@ -98,3 +99,14 @@ class JIRAFilterWith(Model):
             if commenter is None:
                 raise ValueError("`commenters[%d]` cannot be null" % i)
         self._commenters = commenters
+
+    def as_participants(self) -> JIRAParticipants:
+        """Convert to the internal representation."""
+        result = {}
+        if self.reporters:
+            result[JIRAParticipationKind.REPORTER] = self.reporters
+        if self.assignees:
+            result[JIRAParticipationKind.ASSIGNEE] = self.assignees
+        if self.commenters:
+            result[JIRAParticipationKind.COMMENTER] = self.commenters
+        return result

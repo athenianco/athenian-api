@@ -37,6 +37,8 @@ from athenian.api.internal.features.github.release_metrics import \
 from athenian.api.internal.features.github.unfresh_pull_request_metrics import \
     UnfreshPullRequestFactsFetcher
 from athenian.api.internal.features.histogram import HistogramParameters
+from athenian.api.internal.features.jira.issue_metrics import IssuesLabelSplitter, \
+    JIRABinnedHistogramCalculator, JIRABinnedMetricCalculator, split_issues_by_participants
 from athenian.api.internal.features.metric_calculator import DEFAULT_QUANTILE_STRIDE, \
     group_by_repo, group_to_indexes, MetricCalculatorEnsemble
 from athenian.api.internal.jira import JIRAConfig
@@ -54,9 +56,10 @@ from athenian.api.internal.miners.github.precomputed_prs import DonePRFactsLoade
 from athenian.api.internal.miners.github.pull_request import ImpossiblePullRequest, \
     PullRequestFactsMiner, PullRequestMiner
 from athenian.api.internal.miners.github.release_mine import mine_releases
-from athenian.api.internal.miners.jira.issue import PullRequestJiraMapper
-from athenian.api.internal.miners.types import PRParticipants, PRParticipationKind, \
-    PullRequestFacts, ReleaseFacts, ReleaseParticipants
+from athenian.api.internal.miners.jira.issue import fetch_jira_issues, participant_columns, \
+    PullRequestJiraMapper
+from athenian.api.internal.miners.types import JIRAParticipants, JIRAParticipationKind, \
+    PRParticipants, PRParticipationKind, PullRequestFacts, ReleaseFacts, ReleaseParticipants
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch, \
     ReleaseSettings
@@ -532,7 +535,7 @@ class MetricEntriesCalculator:
                                                     logical_settings: LogicalRepositorySettings,
                                                     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
-        Calculate the check run metrics on GitHub.
+        Calculate histograms over check runs on GitHub.
 
         :return: 1. defs x pushers x repositories x lines x check runs count groups -> List[Tuple[metric ID, Histogram]].
                  2. how many suites in each check runs count group (meaningful only if split_by_check_runs=True).
@@ -625,6 +628,148 @@ class MetricEntriesCalculator:
         groups = group_to_indexes(deps, participant_grouper, repo_grouper, env_grouper)
         values = calc(deps, time_intervals, groups)
         return values
+
+    @sentry_span
+    @cached(
+        exptime=short_term_exptime,
+        serialize=pickle.dumps,
+        deserialize=pickle.loads,
+        key=lambda metrics, time_intervals, quantiles, participants, label_filter, split_by_label, priorities, types, epics, exclude_inactive, release_settings, logical_settings, default_branches, **_:  # noqa
+        (
+            ",".join(sorted(metrics)),
+            ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
+            ",".join(str(q) for q in quantiles),
+            ";".join(",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(p.items()))
+                     for p in participants),
+            label_filter,
+            split_by_label,
+            ",".join(sorted(priorities)),
+            ",".join(sorted(types)),
+            ",".join(sorted(epics) if not isinstance(epics, bool) else ["<flying>"]),
+            exclude_inactive,
+            release_settings,
+            logical_settings,
+        ),
+        cache=lambda self, **_: self._cache,
+    )
+    async def calc_jira_metrics_line_github(self,
+                                            metrics: Sequence[str],
+                                            time_intervals: Sequence[Sequence[datetime]],
+                                            quantiles: Sequence[float],
+                                            participants: List[JIRAParticipants],
+                                            label_filter: LabelFilter,
+                                            split_by_label: bool,
+                                            priorities: Collection[str],
+                                            types: Collection[str],
+                                            epics: Union[Collection[str], bool],
+                                            exclude_inactive: bool,
+                                            release_settings: ReleaseSettings,
+                                            logical_settings: LogicalRepositorySettings,
+                                            default_branches: Dict[str, str],
+                                            jira_ids: Optional[JIRAConfig],
+                                            ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Calculate the JIRA issue metrics.
+
+        :return: 1. participants x labels x granularities x time intervals x metrics. \
+                 2. Labels by which we grouped the issues.
+        """
+        time_from, time_to = self._align_time_min_max(time_intervals, quantiles)
+        reporters = list(set(chain.from_iterable(
+            ([p.lower() for p in g.get(JIRAParticipationKind.REPORTER, [])])
+            for g in participants)))
+        assignees = list(set(chain.from_iterable(
+            ([(p.lower() if p is not None else None)
+              for p in g.get(JIRAParticipationKind.ASSIGNEE, [])])
+            for g in participants)))
+        commenters = list(set(chain.from_iterable(
+            ([p.lower() for p in g.get(JIRAParticipationKind.COMMENTER, [])])
+            for g in participants)))
+        issues = await fetch_jira_issues(
+            jira_ids,
+            time_from, time_to, exclude_inactive,
+            label_filter,
+            priorities,
+            types,
+            epics,
+            reporters, assignees, commenters, False,
+            default_branches, release_settings, logical_settings,
+            self._account, self._meta_ids, self._mdb, self._pdb, self._cache,
+            extra_columns=participant_columns if len(participants) > 1 else (),
+        )
+        calc = JIRABinnedMetricCalculator(metrics, quantiles, self._quantile_stride)
+        label_splitter = IssuesLabelSplitter(split_by_label, label_filter)
+        groupers = partial(split_issues_by_participants, participants), label_splitter
+        groups = group_to_indexes(issues, *groupers)
+        return calc(issues, time_intervals, groups), label_splitter.labels
+
+    @sentry_span
+    @cached(
+        exptime=short_term_exptime,
+        serialize=pickle.dumps,
+        deserialize=pickle.loads,
+        key=lambda defs, time_from, time_to, quantiles, participants, label_filter, priorities, types, epics, exclude_inactive, release_settings, logical_settings, default_branches, **_:  # noqa
+        (
+            ",".join("%s:%s" % (k, sorted(v)) for k, v in sorted(defs.items())),
+            time_from.timestamp(), time_to.timestamp(),
+            ",".join(str(q) for q in quantiles),
+            ";".join(",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(p.items()))
+                     for p in participants),
+            label_filter,
+            ",".join(sorted(priorities)),
+            ",".join(sorted(types)),
+            ",".join(sorted(epics) if not isinstance(epics, bool) else ["<flying>"]),
+            exclude_inactive,
+            release_settings,
+            logical_settings,
+        ),
+        cache=lambda self, **_: self._cache,
+    )
+    async def calc_jira_histograms(self,
+                                   defs: Dict[HistogramParameters, List[str]],
+                                   time_from: datetime,
+                                   time_to: datetime,
+                                   quantiles: Sequence[float],
+                                   participants: List[JIRAParticipants],
+                                   label_filter: LabelFilter,
+                                   priorities: Collection[str],
+                                   types: Collection[str],
+                                   epics: Union[Collection[str], bool],
+                                   exclude_inactive: bool,
+                                   release_settings: ReleaseSettings,
+                                   logical_settings: LogicalRepositorySettings,
+                                   default_branches: Dict[str, str],
+                                   jira_ids: Optional[JIRAConfig],
+                                   ) -> np.ndarray:
+        """Calculate histograms over JIRA issues."""
+        reporters = list(set(chain.from_iterable(
+            ([p.lower() for p in g.get(JIRAParticipationKind.REPORTER, [])])
+            for g in participants)))
+        assignees = list(set(chain.from_iterable(
+            ([(p.lower() if p is not None else None)
+              for p in g.get(JIRAParticipationKind.ASSIGNEE, [])])
+            for g in participants)))
+        commenters = list(set(chain.from_iterable(
+            ([p.lower() for p in g.get(JIRAParticipationKind.COMMENTER, [])])
+            for g in participants)))
+        issues = await fetch_jira_issues(
+            jira_ids,
+            time_from, time_to, exclude_inactive,
+            label_filter,
+            priorities,
+            types,
+            epics,
+            reporters, assignees, commenters, False,
+            default_branches, release_settings, logical_settings,
+            self._account, self._meta_ids, self._mdb, self._pdb, self._cache,
+            extra_columns=participant_columns if len(participants) > 1 else (),
+        )
+        try:
+            calc = JIRABinnedHistogramCalculator(defs.values(), quantiles)
+        except KeyError as e:
+            raise UnsupportedMetricError() from e
+        with_groups = group_to_indexes(issues, partial(split_issues_by_participants, participants))
+        return calc(issues, [[time_from, time_to]], with_groups, defs)
 
     async def _mine_and_group_check_runs(self,
                                          time_from: datetime,
