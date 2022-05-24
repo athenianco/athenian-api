@@ -44,7 +44,7 @@ RUN echo 'deb-src http://archive.ubuntu.com/ubuntu focal-updates main' >>/etc/ap
     cd / && \
     rm -rf /cpython && \
     apt-mark hold python3.8 python3.8-minimal libpython3.8 libpython3.8-minimal && \
-    pip3 install --no-cache-dir cython && \
+    pip3 install --no-cache-dir cython>=0.29.30 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -107,7 +107,7 @@ lapack_libs = mkl_lapack95_lp64' >/root/.numpy-site.cfg && \
     pip3 install 'setuptools<60.0.0' && \
     export NPY_NUM_BUILD_JOBS=$(getconf _NPROCESSORS_ONLN) && \
     echo $NPY_NUM_BUILD_JOBS && \
-    pip3 $VERBOSE install --no-cache-dir scipy==1.8.0 numpy==1.22.3 --no-binary numpy && \
+    pip3 $VERBOSE install --no-cache-dir scipy==1.8.0 numpy==1.22.4 --no-binary numpy && \
     apt-get purge -y libfftw3-dev gfortran gcc g++ && \
     apt-get autoremove -y --purge && \
     apt-get clean && \
