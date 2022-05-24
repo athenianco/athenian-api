@@ -5,10 +5,10 @@ Generic single-database configuration.
 You need to have `alembic.ini`. The easiest way to generate it is to run
 
 ```
-python3 -m athenian.api.models.state postgres://user:password@host:port/database
+python3 -m athenian.api.models.state postgresql://user:password@host:port/database
 ```
 
-Replace `postgres://user:password@host:port/database` with the actual DB connection string in
+Replace `postgresql://user:password@host:port/database` with the actual DB connection string in
 [SQLAlchemy format](https://docs.sqlalchemy.org/en/13/core/engines.html).
 
 It is possible to define `OFFLINE` environment variable (to any non-empty value) so that

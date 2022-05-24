@@ -12,10 +12,10 @@ from athenian.api.response import ResponseError
 
 async def get_root_team(account_id: int, sdb_conn: DatabaseLike) -> Mapping[Union[int, str], Any]:
     """Return the root team for the account."""
-    stmt = sa.select(Team).where(sa.and_(Team.owner_id == account_id, Team.parent_id == None))  # noqa F821
+    stmt = sa.select(Team).where(sa.and_(Team.owner_id == account_id, Team.parent_id.is_(None)))
     root_teams = await sdb_conn.fetch_all(stmt)
     if not root_teams:
-        raise TeamNotFoundError(0)
+        raise RootTeamNotFoundError()
     if len(root_teams) > 1:
         raise MultipleRootTeamsError(account_id)
     return root_teams[0]
@@ -98,6 +98,20 @@ class TeamNotFoundError(ResponseError):
             status=HTTPStatus.NOT_FOUND,
             detail=f"Team {team_id} not found or access denied",
             title="Team not found",
+        )
+        super().__init__(wrapped_error)
+
+
+class RootTeamNotFoundError(ResponseError):
+    """A team was not found."""
+
+    def __init__(self):
+        """Init the RootTeamNotFoundError."""
+        wrapped_error = GenericError(
+            type="/errors/teams/TeamNotFound",
+            status=HTTPStatus.NOT_FOUND,
+            detail="Root team not found or access denied",
+            title="Root team not found",
         )
         super().__init__(wrapped_error)
 

@@ -298,6 +298,7 @@ async def get_account_organizations(account: int,
 
 async def copy_teams_as_needed(account: int,
                                meta_ids: Tuple[int, ...],
+                               root_team_id: int,
                                sdb: DatabaseLike,
                                mdb: DatabaseLike,
                                cache: Optional[aiomcache.Client],
@@ -310,7 +311,8 @@ async def copy_teams_as_needed(account: int,
     log = logging.getLogger("%s.create_teams_as_needed" % metadata.__package__)
     existing = await sdb.fetch_val(select([func.count(StateTeam.id)])
                                    .where(and_(StateTeam.owner_id == account,
-                                               StateTeam.name != StateTeam.BOTS)))
+                                               StateTeam.name != StateTeam.BOTS,
+                                               StateTeam.id != root_team_id)))
     if existing > 0:
         log.info("Found %d existing teams for account %d, no-op", existing, account)
         return [], existing
@@ -347,12 +349,21 @@ async def copy_teams_as_needed(account: int,
     created_teams = []
     for node_id in reversed(list(nx.topological_sort(dig))):
         team = teams[node_id]
-        if (parent := teams.get(team[MetadataTeam.parent_team_id.name])) is not None:
-            parent = db_ids[parent[MetadataTeam.id.name]]
+
+        parent_id = None
+        if (github_parent_id := team[MetadataTeam.parent_team_id.name]) is not None:
+            if (parent := teams.get(github_parent_id)) is not None:
+                parent_id = db_ids[parent[MetadataTeam.id.name]]
+
+        if parent_id is None:
+            # this happens either when the team hasn't got a real parent
+            # or its parent failed to create
+            parent_id = root_team_id
+
         team = StateTeam(owner_id=account,
                          name=team[MetadataTeam.name.name],
                          members=sorted(members.get(team[MetadataTeam.id.name], [])),
-                         parent_id=parent,
+                         parent_id=parent_id,
                          ).create_defaults().explode()
         try:
             db_ids[node_id] = team[StateTeam.id.name] = \

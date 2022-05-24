@@ -18,11 +18,12 @@ from athenian.api.db import DatabaseLike
 from athenian.api.internal.account import copy_teams_as_needed, get_metadata_account_ids, \
     get_user_account_status_from_request
 from athenian.api.internal.jira import load_mapped_jira_users
+from athenian.api.internal.team import get_root_team
 from athenian.api.models.metadata.github import User
 from athenian.api.models.state.models import Team
 from athenian.api.models.web import BadRequestError, Contributor, CreatedIdentifier, \
-    DatabaseConflict, ForbiddenError, NotFoundError, Team as TeamListItem, \
-    TeamCreateRequest, TeamUpdateRequest
+    DatabaseConflict, ForbiddenError, NotFoundError, Team as TeamListItem, TeamCreateRequest, \
+    TeamUpdateRequest
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import model_response, ResponseError
 
@@ -40,7 +41,14 @@ async def create_team(request: AthenianWebRequest, body: dict) -> web.Response:
     async with request.sdb.connection() as sdb_conn:
         meta_ids = await get_metadata_account_ids(body.account, sdb_conn, request.cache)
         members = await _resolve_members(body.members, meta_ids, request.mdb)
+        if not members:
+            raise ResponseError(BadRequestError(detail="Empty member list is not allowed."))
+
         await _check_parent(account, parent, sdb_conn)
+        # parent defaults to root team, for retro-compatibility
+        if parent is None:
+            parent_team_row = await get_root_team(account, sdb_conn)
+            parent = parent_team_row[Team.id.name]
         t = Team(owner_id=account, name=name, members=members, parent_id=parent).create_defaults()
         try:
             tid = await sdb_conn.execute(insert(Team).values(t.explode()))
@@ -58,16 +66,22 @@ async def delete_team(request: AthenianWebRequest, id: int) -> web.Response:
     :param id: Numeric identifier of the team to delete.
     """
     async with request.sdb.connection() as sdb_conn:
-        account = await sdb_conn.fetch_val(select([Team.owner_id]).where(Team.id == id))
-        if account is None:
-            return ResponseError(NotFoundError("Team %d was not found." % id)).response
-        await get_user_account_status_from_request(request, account)
-        await sdb_conn.execute(update(Team)
-                               .where(Team.parent_id == id)
-                               .values({Team.parent_id: None,
-                                        Team.updated_at: datetime.now(timezone.utc)}))
-        await sdb_conn.execute(delete(Team).where(Team.id == id))
-    return web.Response()
+        async with sdb_conn.transaction():
+            team = await sdb_conn.fetch_one(select(Team).where(Team.id == id))
+            if team is None:
+                return ResponseError(NotFoundError("Team %d was not found." % id)).response
+            await get_user_account_status_from_request(request, team[Team.owner_id.name])
+
+            if (parent_id := team[Team.parent_id.name]) is None:
+                raise ResponseError(BadRequestError(detail="Root team cannot be deleted."))
+
+            await sdb_conn.execute(update(Team)
+                                   .where(Team.parent_id == id)
+                                   .values({Team.parent_id: parent_id,
+                                            Team.updated_at: datetime.now(timezone.utc)}))
+
+            await sdb_conn.execute(delete(Team).where(Team.id == id))
+    return web.json_response({})
 
 
 async def get_team(request: AthenianWebRequest, id: int) -> web.Response:
@@ -153,6 +167,13 @@ async def update_team(request: AthenianWebRequest, id: int,
             members = await _resolve_members(body.members, meta_ids, request.mdb)
             await _check_parent(account, body.parent, sdb_conn)
             await _check_parent_cycle(id, body.parent, sdb_conn)
+
+            if team[Team.parent_id.name] is None:
+                if body.parent is not None:
+                    raise ResponseError(BadRequestError(detail="Cannot set parent for root team."))
+            elif not members:
+                raise ResponseError(BadRequestError(detail="Empty member list is not allowed."))
+
             values = {
                 Team.updated_at.name: datetime.now(timezone.utc),
                 Team.name.name: name,
@@ -194,7 +215,7 @@ async def _resolve_members(members: List[str],
     exist = {r[0].split("://", 1)[1] for r in rows}
     invalid_members = sorted(members - exist)
 
-    if invalid_members or len(members) == 0:
+    if invalid_members:
         raise ResponseError(BadRequestError(
             detail="Invalid members of the team: %s" % ", ".join(invalid_members)))
 
@@ -262,8 +283,9 @@ async def get_all_team_members(gh_user_ids: Iterable[int],
 async def resync_teams(request: AthenianWebRequest, id: int) -> web.Response:
     """Delete all the teams belonging to the account and then clone from GitHub.
 
-    The "Bots" team will remain intact. The rest of the teams will be identical to what's
-    on GitHub.
+    The "Bots" team and the "Root" artificial team will remain intact.
+    The rest of the teams will be identical to what's on GitHub.
+    "Root" team will need to be already present for this operation to succeed.
 
     :param id: Numeric identifier of the account.
     """
@@ -273,9 +295,11 @@ async def resync_teams(request: AthenianWebRequest, id: int) -> web.Response:
             detail="User %s may not resynchronize teams %d" % (request.uid, account)))
     async with request.sdb.connection() as sdb_conn:
         meta_ids = await get_metadata_account_ids(account, sdb_conn, request.cache)
+        root_team_id = (await get_root_team(account, sdb_conn))[Team.id.name]
         async with sdb_conn.transaction():
             await sdb_conn.execute(delete(Team).where(and_(Team.owner_id == account,
-                                                           Team.name != Team.BOTS)))
+                                                           Team.name != Team.BOTS,
+                                                           Team.id != root_team_id)))
             teams, _ = await copy_teams_as_needed(
-                account, meta_ids, sdb_conn, request.mdb, request.cache)
+                account, meta_ids, root_team_id, sdb_conn, request.mdb, request.cache)
     return await _list_loaded_teams(teams, account, meta_ids, request)

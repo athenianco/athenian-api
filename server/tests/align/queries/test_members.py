@@ -71,7 +71,7 @@ class TestMembersErrors(BaseMembersTest):
         self, client: TestClient, headers: dict, sdb: Database,
     ):
         res = await self._request(1, 0, client, headers)
-        assert_extension_error(res, "Team 0 not found or access denied")
+        assert_extension_error(res, "Root team not found or access denied")
 
 
 class TestMembers(BaseMembersTest):
