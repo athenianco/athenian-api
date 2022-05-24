@@ -326,7 +326,7 @@ class TestUpdateTeam:
         for model in (
             TeamFactory(id=10, name="Parent"),
             TeamFactory(
-                id=11, name="Test", members=[40020], parent_id=None, created_at=created_at,
+                id=11, name="Test", members=[40020], parent_id=10, created_at=created_at,
             ),
         ):
             await sdb.execute(model_insert_stmt(model))
@@ -350,18 +350,18 @@ class TestUpdateTeam:
         await self._request(client, 1, body, 403)
 
     @pytest.mark.parametrize("owner, id, name, members, parent, status", [
-        (1, 1, "Engineering", [], None, 400),
-        (1, 1, "", ["github.com/se7entyse7en"], None, 400),
-        (1, 1, "$" * 256, ["github.com/se7entyse7en"], None, 400),
-        (1, 3, "Engineering", ["github.com/se7entyse7en"], None, 404),
-        (2, 1, "Engineering", ["github.com/se7entyse7en"], None, 200),
-        (3, 1, "Engineering", ["github.com/se7entyse7en"], None, 404),
-        (1, 1, "Dream", ["github.com/se7entyse7en"], None, 409),
-        (1, 1, "Engineering", ["github.com/eiso"], None, 200),
-        (2, 1, "Dream", ["github.com/se7entyse7en"], None, 200),
-        (2, 1, "Engineering", ["github.com/eiso"], None, 200),
-        (2, 1, "Engineering", ["github.com/eiso"], 2, 400),
-        (2, 1, "Engineering", ["github.com/eiso"], 1, 400),
+        (1, 2, "Engineering", [], 1, 400),
+        (1, 2, "", ["github.com/se7entyse7en"], 1, 400),
+        (1, 2, "$" * 256, ["github.com/se7entyse7en"], 1, 400),
+        (1, 4, "Engineering", ["github.com/se7entyse7en"], 1, 404),
+        (2, 2, "Engineering", ["github.com/se7entyse7en"], 1, 200),
+        (3, 2, "Engineering", ["github.com/se7entyse7en"], 1, 404),
+        (1, 2, "Dream", ["github.com/se7entyse7en"], 1, 409),
+        (1, 2, "Engineering", ["github.com/eiso"], 1, 200),
+        (2, 2, "Dream", ["github.com/se7entyse7en"], 1, 200),
+        (2, 2, "Engineering", ["github.com/eiso"], 1, 200),
+        (2, 2, "Engineering", ["github.com/eiso"], 2, 400),
+        (2, 1, "Root", ["github.com/eiso"], 2, 400),
     ])
     async def test_nasty_input(
         self, client, sdb, disable_default_user, owner, id, name, members, parent, status,
@@ -370,8 +370,9 @@ class TestUpdateTeam:
                           .where(AccountGitHubAccount.id == 6366825)
                           .values({AccountGitHubAccount.account_id: owner}))
         for model in (
-            TeamFactory(owner_id=owner, id=1, name="Engineering", members=[51]),
-            TeamFactory(owner_id=1, id=2, name="Dream", members=[39936]),
+            TeamFactory(owner_id=owner, id=1, name="Root", members=[]),
+            TeamFactory(owner_id=owner, id=2, name="Engineering", members=[51], parent_id=1),
+            TeamFactory(owner_id=1, id=3, name="Dream", members=[39936], parent_id=1),
         ):
             await sdb.execute(model_insert_stmt(model))
 
@@ -401,6 +402,27 @@ class TestUpdateTeam:
         await self._request(client, 1, body, 200)
         team = await sdb.fetch_one(select([Team]).where(Team.id == 1))
         assert team[Team.name.name] == "Engineering"
+
+    async def test_set_root_parent_forbidden(self, client, sdb, disable_default_user):
+        await sdb.execute(model_insert_stmt(TeamFactory(id=1)))
+        await sdb.execute(model_insert_stmt(TeamFactory(id=2)))
+
+        body = TeamUpdateRequest("Engineering", [], 2).to_dict()
+        res = await self._request(client, 1, body, 400)
+        res_data = json.loads(res)
+        assert res_data["detail"] == "Cannot set parent for root team."
+
+    async def test_change_parent(self, client, sdb, disable_default_user):
+        for model in (
+            TeamFactory(id=1, name="Root"),
+            TeamFactory(id=2, parent_id=1, members=[39936]),
+            TeamFactory(id=3, parent_id=1, members=[39936]),
+        ):
+            await sdb.execute(model_insert_stmt(model))
+
+        body = TeamUpdateRequest("New Name", ["github.com/se7entyse7en"], 2).to_dict()
+        await self._request(client, 3, body, 200)
+        await assert_existing_row(sdb, Team, name="New Name", parent_id=2, id=3)
 
     async def _request(
         self, client: TestClient, team_id: int, json: dict, assert_status: int,

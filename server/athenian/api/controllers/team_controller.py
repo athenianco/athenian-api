@@ -41,6 +41,9 @@ async def create_team(request: AthenianWebRequest, body: dict) -> web.Response:
     async with request.sdb.connection() as sdb_conn:
         meta_ids = await get_metadata_account_ids(body.account, sdb_conn, request.cache)
         members = await _resolve_members(body.members, meta_ids, request.mdb)
+        if not members:
+            raise ResponseError(BadRequestError(detail="Empty member list is not allowed."))
+
         await _check_parent(account, parent, sdb_conn)
         # parent defaults to root team, for retro-compatibility
         if parent is None:
@@ -164,6 +167,13 @@ async def update_team(request: AthenianWebRequest, id: int,
             members = await _resolve_members(body.members, meta_ids, request.mdb)
             await _check_parent(account, body.parent, sdb_conn)
             await _check_parent_cycle(id, body.parent, sdb_conn)
+
+            if team[Team.parent_id.name] is None:
+                if body.parent is not None:
+                    raise ResponseError(BadRequestError(detail="Cannot set parent for root team."))
+            elif not members:
+                raise ResponseError(BadRequestError(detail="Empty member list is not allowed."))
+
             values = {
                 Team.updated_at.name: datetime.now(timezone.utc),
                 Team.name.name: name,
@@ -205,7 +215,7 @@ async def _resolve_members(members: List[str],
     exist = {r[0].split("://", 1)[1] for r in rows}
     invalid_members = sorted(members - exist)
 
-    if invalid_members or len(members) == 0:
+    if invalid_members:
         raise ResponseError(BadRequestError(
             detail="Invalid members of the team: %s" % ", ".join(invalid_members)))
 
