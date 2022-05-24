@@ -5,9 +5,9 @@ from ariadne import QueryType
 from graphql import GraphQLResolveInfo
 
 from athenian.api.controllers.invitation_controller import get_organizations_members
-from athenian.api.controllers.team_controller import get_all_team_members, get_root_team, \
-    get_team_from_db
+from athenian.api.controllers.team_controller import get_all_team_members
 from athenian.api.internal.account import get_metadata_account_ids
+from athenian.api.internal.team import get_root_team, get_team_from_db
 from athenian.api.models.state.models import Team
 from athenian.api.tracing import sentry_span
 

@@ -1,7 +1,7 @@
 from typing import Any, Union
 
 from ariadne import SchemaDirectiveVisitor
-from graphql import default_field_resolver, GraphQLArgument
+from graphql import default_field_resolver
 from graphql.type import get_named_type, GraphQLField, GraphQLInputField, GraphQLInputObjectType, \
     GraphQLInterfaceType, GraphQLNonNull, GraphQLObjectType, GraphQLScalarType
 
@@ -41,14 +41,6 @@ class DateDirective(SchemaDirectiveVisitor):
         if isinstance(orig_type, GraphQLNonNull):
             field.type = GraphQLNonNull(field.type)
         return field
-
-    def visit_argument_definition(self,
-                                  argument: GraphQLArgument,
-                                  field: GraphQLField,
-                                  object_type: GraphQLInputObjectType):
-        """Wrap input argument to serialize/parse date values."""
-        # TODO(vmarkovtsev): implement this
-        return argument
 
 
 class GraphQLDateType(GraphQLScalarType):
