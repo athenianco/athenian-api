@@ -220,7 +220,9 @@ def measure_db_overhead_and_retry(db: Union[morcilla.Database, Database],
                             if wait_time is None:
                                 raise e from None
                             log.warning("[%d] %s: %s", i + 1, type(e).__name__, e)
-                            if need_acquire := isinstance(e, asyncpg.PostgresConnectionError):
+                            if need_acquire := isinstance(
+                                e, (asyncpg.PostgresConnectionError, asyncio.TimeoutError),
+                            ):
                                 try:
                                     connection.raw_connection is not None  # noqa: B015
                                 except AssertionError:
