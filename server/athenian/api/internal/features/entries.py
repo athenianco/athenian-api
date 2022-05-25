@@ -639,7 +639,7 @@ class MetricEntriesCalculator:
             ",".join(sorted(metrics)),
             ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
             ",".join(str(q) for q in quantiles),
-            ";".join(",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(p.items()))
+            ";".join(",".join(f"{k.name}:{sorted(map(str, v))}" for k, v in sorted(p.items()))
                      for p in participants),
             label_filter,
             split_by_label,
