@@ -22,6 +22,13 @@ def model_insert_stmt(model: BaseType, *, with_primary_keys=True) -> Insert:
     return sa.insert(table).values(values)
 
 
+async def models_insert(db: Database, *models: BaseType) -> None:
+    """Insert a set of models into a DB."""
+    async with db.connection() as conn:
+        for model in models:
+            await conn.execute(model_insert_stmt(model))
+
+
 async def assert_missing_row(db: DatabaseLike, table: DeclarativeMeta, **kwargs: Any) -> None:
     """Assert that a row with the given properties doesn't exist."""
     where_clause = _build_table_where_clause(table, **kwargs)
