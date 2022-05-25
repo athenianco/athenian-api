@@ -108,12 +108,10 @@ class TestMembers(BaseMembersTest):
     async def test_explicit_root_team(
         self, client: TestClient, headers: dict, sdb: Database,
     ) -> None:
-        await sdb.execute(model_insert_stmt(TeamFactory(id=1, members=[], parent_id=None)))
+        await sdb.execute(model_insert_stmt(TeamFactory(id=1, members=[40078], parent_id=None)))
         res = await self._request(1, 1, client, headers, ("login",))
-        # members are retrieved from mdb, result will depened on the 6 MB fixture
         logins = [m["login"] for m in res["data"]["members"]]
-        assert "github.com/vmarkovtsev" in logins
-        assert "github.com/gkwillie" in logins
+        assert logins == ["github.com/reujab"]
 
     async def test_implicit_root_team(
         self, client: TestClient, headers: dict, sdb: Database,
@@ -125,6 +123,4 @@ class TestMembers(BaseMembersTest):
         ):
             await sdb.execute(model_insert_stmt(model))
         res = await self._request(1, 0, client, headers, ("login",))
-        logins = [m["login"] for m in res["data"]["members"]]
-        assert "github.com/vmarkovtsev" in logins
-        assert "github.com/gkwillie" in logins
+        assert res["data"]["members"] == []
