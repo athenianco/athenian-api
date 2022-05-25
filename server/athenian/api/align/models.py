@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from itertools import chain
-from typing import Sequence
+from typing import List
 
 from athenian.api.models.web.base_model_ import Enum, Model
 
@@ -57,6 +57,68 @@ class MutateGoalResult(Model):
         return self._goal
 
 
+class TeamMetricValue(Model):
+    """Team metric value tree node."""
+
+    attribute_types = {
+        "team_id": int,
+        "value": object,
+        "children": List[Model],  # List[TeamMetricValue],
+    }
+
+    attribute_map = {
+        "team_id": "teamId",
+    }
+
+    def __init__(self, team_id: int, value: object, children: List[TeamMetricValue]):
+        """Initialize a new instance of TeamMetricValue."""
+        self._team_id = team_id
+        self._value = value
+        self._children = children
+
+    @property
+    def team_id(self) -> int:
+        """Return the team identifier."""
+        return self._team_id
+
+    @property
+    def value(self) -> object:
+        """Return the metric value."""
+        return self._value
+
+    @property
+    def children(self) -> List[TeamMetricValue]:
+        """Return the list of child team metrics."""
+        return self._children
+
+
+TeamMetricValue.attribute_types["children"] = List[TeamMetricValue]
+
+
+class MetricValues(Model):
+    """Response from metricsCurrentValues(), a specific metric team tree."""
+
+    attribute_types = {
+        "metric": str,
+        "value": TeamMetricValue,
+    }
+
+    def __init__(self, metric: str, value: TeamMetricValue):
+        """Init the MetricValues."""
+        self._metric = metric
+        self._value = value
+
+    @property
+    def matric(self) -> str:
+        """Return the metric ID."""
+        return self._metric
+
+    @property
+    def value(self) -> TeamMetricValue:
+        """Return the team tree of metric values."""
+        return self._value
+
+
 class CreateGoalInputFields(metaclass=Enum):
     """Fields definitions for GraphQL CreateGoalInput type."""
 
@@ -96,9 +158,9 @@ class TeamTree(Model):
         "name": str,
         "total_teams_count": int,
         "total_members_count": int,
-        "children": Sequence[Model],  # Sequence[Team],
-        "members": Sequence[int],
-        "total_members": Sequence[int],
+        "children": List[Model],  # List[Team],
+        "members": List[int],
+        "total_members": List[int],
     }
 
     attribute_map = {
@@ -110,8 +172,8 @@ class TeamTree(Model):
         self,
         id: int,
         name: str,
-        children: Sequence[TeamTree],
-        members: Sequence[int],
+        children: List[TeamTree],
+        members: List[int],
     ):
         """Init the TeamTree."""
         self._id = id
@@ -147,19 +209,22 @@ class TeamTree(Model):
         return len(self._total_members)
 
     @property
-    def children(self) -> Sequence[TeamTree]:
+    def children(self) -> List[TeamTree]:
         """Get the direct child teams of the team."""
         return self._children
 
     @property
-    def total_members(self) -> Sequence[int]:
+    def total_members(self) -> List[int]:
         """Get the team members recursively included in the team tree."""
         return self._total_members
 
     @property
-    def members(self) -> Sequence[int]:
+    def members(self) -> List[int]:
         """Get the directly contained members of the team."""
         return self._members
+
+
+TeamTree.attribute_types["children"] = List[TeamTree]
 
 
 class MetricParamsFields(metaclass=Enum):

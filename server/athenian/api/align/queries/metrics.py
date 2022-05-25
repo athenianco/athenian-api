@@ -1,15 +1,17 @@
 import asyncio
 from datetime import date, datetime, time, timedelta, timezone
 from itertools import chain
-from typing import Any, Collection, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Collection, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import aiomcache
 from ariadne import ObjectType
 from graphql import GraphQLResolveInfo
 from morcilla import Database
+import numpy as np
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 
-from athenian.api.align.models import MetricParamsFields
+from athenian.api.align.models import MetricParamsFields, MetricValues, TeamMetricValue
+from athenian.api.align.queries.teams import build_team_tree_from_rows
 from athenian.api.async_utils import gather
 from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.features.entries import make_calculator
@@ -62,9 +64,15 @@ async def resolve_metrics_current_values(obj: Any,
     date_to += timedelta(days=1)
     pr_metrics, release_metrics, jira_metrics = _triage_metrics(params[MetricParamsFields.metrics])
     teams = [row[Team.members.name] for row in team_rows]
-    await _calculate_team_metrics(
+    metric_values = await _calculate_team_metrics(
         pr_metrics, release_metrics, jira_metrics, date_from, date_to, teams, accountId,
         meta_ids, sdb, mdb, pdb, rdb, cache, info.context.app["slack"])
+    team_ids = [row[Team.id.name] for row in team_rows]
+    triaged = _triage_metric_values(
+        pr_metrics, release_metrics, jira_metrics, team_ids, metric_values)
+    nodes, root_team_id = build_team_tree_from_rows(team_rows, params[MetricParamsFields.teamId])
+    models = _build_metrics_response(nodes, triaged, root_team_id)
+    return [m.to_dict() for m in models]
 
 
 def _triage_metrics(metrics: List[str]) -> Tuple[List[str], List[str], List[str]]:
@@ -137,7 +145,7 @@ async def _calculate_team_metrics(
         rdb: Database,
         cache: Optional[aiomcache.Client],
         slack: Optional[SlackWebClient],
-):
+) -> Tuple[np.ndarray, ...]:
     time_from = datetime.combine(date_from, time(), tzinfo=timezone.utc)
     time_to = datetime.combine(date_to, time(), tzinfo=timezone.utc)
     time_intervals = [[time_from, time_to]]
@@ -192,4 +200,52 @@ async def _calculate_team_metrics(
             default_branches,
             jira_ids,
         ))
-    await gather(*tasks, op="calculators")
+    return await gather(*tasks, op="calculators")
+
+
+def _triage_metric_values(pr_metrics: Sequence[str],
+                          release_metrics: Sequence[str],
+                          jira_metrics: Sequence[str],
+                          teams: Sequence[int],
+                          metric_values: Tuple[np.ndarray],
+                          ) -> Dict[str, Dict[int, object]]:
+    result = {}
+    if pr_metrics:
+        pr_metric_values, *metric_values = metric_values
+        for i, metric in enumerate(pr_metrics):
+            metric_teams = result[metric] = {}
+            for team, team_metric_values in zip(teams, pr_metric_values[0][0]):
+                metric_teams[team] = team_metric_values[0][0][i].value
+    if release_metrics:
+        release_metric_values, *metric_values = metric_values
+        for i, metric in enumerate(release_metrics):
+            metric_teams = result[metric] = {}
+            for team, team_metric_values in zip(teams, release_metric_values):
+                metric_teams[team] = team_metric_values[0][0][0][i].value
+    if jira_metrics:
+        (jira_metric_values, _), *metric_values = metric_values
+        for i, metric in enumerate(jira_metrics):
+            metric_teams = result[metric] = {}
+            for team, team_metric_values in zip(teams, jira_metric_values):
+                metric_teams[team] = team_metric_values[0][0][0][i].value
+    return result
+
+
+def _build_metrics_response(nodes: Dict[int, Dict[str, Any]],
+                            triaged: Dict[str, Dict[int, object]],
+                            root_team_id: int,
+                            ) -> List[MetricValues]:
+    return [MetricValues(metric, _build_metric_response(nodes, team_metric_values, root_team_id))
+            for metric, team_metric_values in triaged.items()]
+
+
+def _build_metric_response(nodes: Dict[int, Dict[str, Any]],
+                           metric_values: Dict[int, object],
+                           team_id: int,
+                           ) -> TeamMetricValue:
+    return TeamMetricValue(
+        team_id=team_id,
+        value=metric_values[team_id],
+        children=[_build_metric_response(nodes, metric_values, child)
+                  for child in nodes[team_id]["children"]],
+    )

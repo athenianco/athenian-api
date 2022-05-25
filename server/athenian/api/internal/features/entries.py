@@ -675,16 +675,7 @@ class MetricEntriesCalculator:
                  2. Labels by which we grouped the issues.
         """
         time_from, time_to = self._align_time_min_max(time_intervals, quantiles)
-        reporters = list(set(chain.from_iterable(
-            ([p.lower() for p in g.get(JIRAParticipationKind.REPORTER, [])])
-            for g in participants)))
-        assignees = list(set(chain.from_iterable(
-            ([(p.lower() if p is not None else None)
-              for p in g.get(JIRAParticipationKind.ASSIGNEE, [])])
-            for g in participants)))
-        commenters = list(set(chain.from_iterable(
-            ([p.lower() for p in g.get(JIRAParticipationKind.COMMENTER, [])])
-            for g in participants)))
+        reporters, assignees, commenters = self._compile_jira_participants(participants)
         issues = await fetch_jira_issues(
             jira_ids,
             time_from, time_to, exclude_inactive,
@@ -742,16 +733,7 @@ class MetricEntriesCalculator:
                                    jira_ids: Optional[JIRAConfig],
                                    ) -> np.ndarray:
         """Calculate histograms over JIRA issues."""
-        reporters = list(set(chain.from_iterable(
-            ([p.lower() for p in g.get(JIRAParticipationKind.REPORTER, [])])
-            for g in participants)))
-        assignees = list(set(chain.from_iterable(
-            ([(p.lower() if p is not None else None)
-              for p in g.get(JIRAParticipationKind.ASSIGNEE, [])])
-            for g in participants)))
-        commenters = list(set(chain.from_iterable(
-            ([p.lower() for p in g.get(JIRAParticipationKind.COMMENTER, [])])
-            for g in participants)))
+        reporters, assignees, commenters = self._compile_jira_participants(participants)
         issues = await fetch_jira_issues(
             jira_ids,
             time_from, time_to, exclude_inactive,
@@ -770,6 +752,21 @@ class MetricEntriesCalculator:
             raise UnsupportedMetricError() from e
         with_groups = group_to_indexes(issues, partial(split_issues_by_participants, participants))
         return calc(issues, [[time_from, time_to]], with_groups, defs)
+
+    @staticmethod
+    def _compile_jira_participants(participants: List[JIRAParticipants],
+                                   ) -> Tuple[Collection[str], Collection[str], Collection[str]]:
+        reporters = list(set(chain.from_iterable(
+            ([p.lower() for p in g.get(JIRAParticipationKind.REPORTER, [])])
+            for g in participants)))
+        assignees = list(set(chain.from_iterable(
+            ([(p.lower() if p is not None else None)
+              for p in g.get(JIRAParticipationKind.ASSIGNEE, [])])
+            for g in participants)))
+        commenters = list(set(chain.from_iterable(
+            ([p.lower() for p in g.get(JIRAParticipationKind.COMMENTER, [])])
+            for g in participants)))
+        return reporters, assignees, commenters
 
     async def _mine_and_group_check_runs(self,
                                          time_from: datetime,
