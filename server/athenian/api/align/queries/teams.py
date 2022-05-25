@@ -1,5 +1,5 @@
 from operator import attrgetter
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 
 from ariadne import QueryType
 from graphql import GraphQLResolveInfo
@@ -23,19 +23,19 @@ async def resolve_teams(obj: Any, info: GraphQLResolveInfo, accountId: int, team
     # teamId 0 means all teams
     actual_team_id = None if teamId == 0 else teamId
 
-    team_tree = await get_team_tree(accountId, actual_team_id, sdb)
+    team_tree = await _get_team_tree(accountId, actual_team_id, sdb)
     return team_tree.to_dict()
 
 
-async def get_team_tree(
-    account: int, root_team_id: Optional[int], sdb: DatabaseLike,
-) -> TeamTree:
-    """Build the TeamTree for the Team root_team_id."""
-    team_select = [Team.id, Team.parent_id, Team.name, Team.members]
-    team_rows = await fetch_teams_recursively(
-        account, sdb, team_select, [root_team_id] if root_team_id else None,
-    )
+def build_team_tree_from_rows(team_rows: Iterable[Mapping[str, Any]],
+                              root_team_id: Optional[int],
+                              ) -> Tuple[Dict[int, Dict[str, Any]], int]:
+    """
+    Convert the flat Team rows to a tree with nested teams.
 
+    Each node contains the same elements as the original rows + "children" that point at
+    the nested teams.
+    """
     no_parent_teams = []
     nodes: Dict[int, Dict[str, Any]] = {}
 
@@ -65,7 +65,18 @@ async def get_team_tree(
         root_team_id = no_parent_teams[0]
     elif root_team_id not in nodes:
         raise TeamNotFoundError(root_team_id)
+    return nodes, root_team_id
 
+
+async def _get_team_tree(
+    account: int, root_team_id: Optional[int], sdb: DatabaseLike,
+) -> TeamTree:
+    """Build the TeamTree for the Team root_team_id."""
+    team_select = [Team.id, Team.parent_id, Team.name, Team.members]
+    team_rows = await fetch_teams_recursively(
+        account, sdb, team_select, [root_team_id] if root_team_id else None,
+    )
+    nodes, root_team_id = build_team_tree_from_rows(team_rows, root_team_id)
     return _build_team_tree(nodes[root_team_id], nodes)
 
 
