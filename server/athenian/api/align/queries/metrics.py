@@ -1,5 +1,5 @@
 import asyncio
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import datetime
 from itertools import chain
 from typing import Any, Collection, Dict, List, Mapping, Optional, Sequence, Set, Tuple, Union
 
@@ -10,6 +10,7 @@ from morcilla import Database
 import numpy as np
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 
+from athenian.api.align.goals.dates import goal_dates_to_datetimes
 from athenian.api.align.models import MetricParamsFields, MetricValue, MetricValues, \
     TeamMetricValue
 from athenian.api.align.queries.teams import build_team_tree_from_rows
@@ -63,12 +64,12 @@ async def resolve_metrics_current_values(obj: Any,
             detail=f"{MetricParamsFields.validFrom} must be less than or equal to "
                    f"{MetricParamsFields.expiresAt}",
         ))
-    date_to += timedelta(days=1)
+    time_from, time_to = goal_dates_to_datetimes(date_from, date_to)
     pr_metrics, release_metrics, jira_metrics = _triage_metrics(params[MetricParamsFields.metrics])
     teams_flat = flatten_teams(team_rows)
     teams = [teams_flat[row[Team.id.name]] for row in team_rows]
     metric_values = await _calculate_team_metrics(
-        pr_metrics, release_metrics, jira_metrics, date_from, date_to, teams, accountId,
+        pr_metrics, release_metrics, jira_metrics, time_from, time_to, teams, accountId,
         meta_ids, sdb, mdb, pdb, rdb, cache, info.context.app["slack"])
     team_ids = [row[Team.id.name] for row in team_rows]
     triaged = _triage_metric_values(
@@ -137,8 +138,8 @@ async def _calculate_team_metrics(
         pr_metrics: Sequence[str],
         release_metrics: Sequence[str],
         jira_metrics: Sequence[str],
-        date_from: date,
-        date_to: date,
+        time_from: datetime,
+        time_to: datetime,
         teams: Sequence[List[int]],
         account: int,
         meta_ids: Tuple[int, ...],
@@ -149,8 +150,6 @@ async def _calculate_team_metrics(
         cache: Optional[aiomcache.Client],
         slack: Optional[SlackWebClient],
 ) -> Tuple[Union[np.ndarray, Tuple[np.ndarray, ...]], ...]:
-    time_from = datetime.combine(date_from, time(), tzinfo=timezone.utc)
-    time_to = datetime.combine(date_to, time(), tzinfo=timezone.utc)
     time_intervals = [[time_from, time_to]]
     quantiles = (0, 0.95)
     settings = Settings.from_account(account, sdb, mdb, cache, slack)
