@@ -8,7 +8,8 @@ from athenian.api.align.queries.teams import _get_team_tree
 from athenian.api.db import Database
 from athenian.api.internal.team import MultipleRootTeamsError, RootTeamNotFoundError, \
     TeamNotFoundError
-from tests.align.utils import align_graphql_request, assert_extension_error
+from tests.align.utils import align_graphql_request, assert_extension_error, build_fragment, \
+    build_recursive_fields_structure
 from tests.testutils.db import model_insert_stmt, models_insert
 from tests.testutils.factory.state import TeamFactory
 
@@ -112,38 +113,18 @@ class BaseTeamsTest:
     _ALL_FIELDS = ("id", "name", "membersCount", "totalTeamsCount", "totalMembersCount")
 
     def _query(self, fields, depth):
-        fields_section = "\n".join(fields)
-        fragment = f"""
-            fragment teamFields on Team {{
-               {fields_section}
-            }}
-        """
+        fragment = build_fragment("teamFields", "Team", fields)
 
-        recursive_fields = "...teamFields"
-        for i in range(depth - 1):
-            indent = " " * 4 * i
-            recursive_fields = f"""
-               {recursive_fields}
-               {indent}children {{
-               {indent}    ...teamFields
-            """.strip()
-        for i in range(depth - 1):
-            indent = " " * 4 * (depth - 1 - i)
-            recursive_fields = f"""
-               {recursive_fields}
-               {indent}}}
-            """.strip()
+        recursive_part = build_recursive_fields_structure(["...teamFields"], depth)
 
-        return (
-            fragment
-            + f"""
-            query ($accountId: Int!, $teamId: Int!) {{
-              teams(accountId: $accountId, teamId: $teamId) {{
-                {recursive_fields}
-              }}
+        return f"""
+        {fragment}
+        query ($accountId: Int!, $teamId: Int!) {{
+            teams(accountId: $accountId, teamId: $teamId) {{
+                {recursive_part}
             }}
+        }}
         """
-        )
 
     async def _request(
         self,

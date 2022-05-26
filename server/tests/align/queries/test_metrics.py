@@ -9,7 +9,7 @@ from sqlalchemy import insert
 from athenian.api.async_utils import gather
 from athenian.api.models.state.models import MappedJIRAIdentity
 from athenian.api.models.web import JIRAMetricID, PullRequestMetricID, ReleaseMetricID
-from tests.align.utils import align_graphql_request
+from tests.align.utils import align_graphql_request, build_recursive_fields_structure
 from tests.conftest import DEFAULT_HEADERS
 from tests.testutils.db import models_insert
 from tests.testutils.factory.state import TeamFactory
@@ -28,20 +28,7 @@ class BaseMetricsTest:
             }
         """
 
-        recursive_fields = "...teamMetricValueFields"
-        for i in range(depth - 1):
-            indent = " " * 4 * i
-            recursive_fields = f"""
-               {recursive_fields}
-               {indent}children {{
-               {indent}    ...teamMetricValueFields
-            """.strip()
-        for i in range(depth - 1):
-            indent = " " * 4 * (depth - 1 - i)
-            recursive_fields = f"""
-               {recursive_fields}
-               {indent}}}
-            """.strip()
+        recursive_fields = build_recursive_fields_structure(["...teamMetricValueFields"], depth)
 
         return (
             fragment
