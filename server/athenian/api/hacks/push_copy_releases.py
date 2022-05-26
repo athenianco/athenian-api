@@ -50,7 +50,7 @@ def _parse_args():
 
 def main():
     """Go away linter."""
-    athenian.api.db._testing = True
+    athenian.api.is_testing = True
     patch_pandas()
 
     log = logging.getLogger("push_copy_releases")

@@ -3,7 +3,8 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from functools import reduce
 from itertools import chain
-from typing import Any, Callable, Collection, Dict, Generic, Iterable, List, Mapping, Optional, \
+from typing import Any, Callable, Collection, Dict, Generic, Iterable, KeysView, List, Mapping, \
+    Optional, \
     Sequence, Tuple, Type, TypeVar, Union
 import warnings
 
@@ -852,7 +853,8 @@ def group_by_repo(repository_full_name_column_name: str,
         return [np.array([], dtype=int)] * len(repos)
     df_repos = df[repository_full_name_column_name].values.astype("S")
     repos = [
-        np.array(repo_group if not isinstance(repo_group, set) else list(repo_group), dtype="S")
+        np.array(repo_group if not isinstance(repo_group, (set, KeysView)) else list(repo_group),
+                 dtype="S")
         for repo_group in repos
     ]
     unique_repos, imap = np.unique(np.concatenate(repos), return_inverse=True)

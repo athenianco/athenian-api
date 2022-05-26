@@ -1,7 +1,7 @@
 import asyncio
 from datetime import date, datetime, time, timedelta, timezone
 from itertools import chain
-from typing import Any, Collection, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Collection, Dict, List, Mapping, Optional, Sequence, Set, Tuple, Union
 
 import aiomcache
 from ariadne import ObjectType
@@ -10,7 +10,8 @@ from morcilla import Database
 import numpy as np
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 
-from athenian.api.align.models import MetricParamsFields, MetricValues, TeamMetricValue
+from athenian.api.align.models import MetricParamsFields, MetricValue, MetricValues, \
+    TeamMetricValue
 from athenian.api.align.queries.teams import build_team_tree_from_rows
 from athenian.api.async_utils import gather
 from athenian.api.internal.account import get_metadata_account_ids
@@ -49,7 +50,7 @@ async def resolve_metrics_current_values(obj: Any,
         info.context.sdb, info.context.mdb, info.context.pdb, info.context.rdb, info.context.cache
     team_rows, meta_ids = await gather(
         fetch_teams_recursively(
-            accountId, sdb, select_entities=(Team.id, Team.members),
+            accountId, sdb, select_entities=(Team.id, Team.members, Team.parent_id),
             root_team_ids=[params[MetricParamsFields.teamId]],
         ),
         get_metadata_account_ids(accountId, sdb, cache),
@@ -101,14 +102,14 @@ def _triage_metrics(metrics: List[str]) -> Tuple[List[str], List[str], List[str]
 
 def _loginify_teams(teams: Sequence[Collection[int]],
                     prefixer: Prefixer,
-                    ) -> List[List[str]]:
+                    ) -> List[Set[str]]:
     result = []
     user_node_to_login = prefixer.user_node_to_login.__getitem__
     for team in teams:
-        logins = []
+        logins = set()
         for node in team:
             try:
-                logins.append(user_node_to_login(node))
+                logins.add(user_node_to_login(node))
             except KeyError:
                 continue
         result.append(logins)
@@ -145,7 +146,7 @@ async def _calculate_team_metrics(
         rdb: Database,
         cache: Optional[aiomcache.Client],
         slack: Optional[SlackWebClient],
-) -> Tuple[np.ndarray, ...]:
+) -> Tuple[Union[np.ndarray, Tuple[np.ndarray, ...]], ...]:
     time_from = datetime.combine(date_from, time(), tzinfo=timezone.utc)
     time_to = datetime.combine(date_to, time(), tzinfo=timezone.utc)
     time_intervals = [[time_from, time_to]]
@@ -160,9 +161,9 @@ async def _calculate_team_metrics(
         get_jira_installation_or_none(account, sdb, mdb, cache),
         settings.list_release_matches(),
     )
-    repos = list(prefixer.repo_name_to_node.keys())
-    logical_settings, (branches, default_branches) = await gather(
-        BranchMiner.extract_branches(None, prefixer, meta_ids, mdb, cache),
+    repos = release_settings.native.keys()
+    (branches, default_branches), logical_settings = await gather(
+        BranchMiner.extract_branches(repos, prefixer, meta_ids, mdb, cache),
         settings.list_logical_repositories(prefixer),
     )
     calculator = make_calculator(account, meta_ids, mdb, pdb, rdb, cache)
@@ -183,7 +184,7 @@ async def _calculate_team_metrics(
             ReleaseParticipationKind.RELEASER: team,
         } for team in teams]
         tasks.append(calculator.calc_release_metrics_line_github(
-            release_metrics, time_intervals, quantiles, repos, release_participants,
+            release_metrics, time_intervals, quantiles, [repos], release_participants,
             LabelFilter.empty(), JIRAFilter.empty(), release_settings, logical_settings,
             prefixer, branches, default_branches))
     if jira_metrics:
@@ -209,7 +210,7 @@ def _triage_metric_values(pr_metrics: Sequence[str],
                           release_metrics: Sequence[str],
                           jira_metrics: Sequence[str],
                           teams: Sequence[int],
-                          metric_values: Tuple[np.ndarray],
+                          metric_values: Tuple[Union[np.ndarray, Tuple[np.ndarray, ...]], ...],
                           ) -> Dict[str, Dict[int, object]]:
     result = {}
     if pr_metrics:
@@ -219,13 +220,13 @@ def _triage_metric_values(pr_metrics: Sequence[str],
             for team, team_metric_values in zip(teams, pr_metric_values[0][0]):
                 metric_teams[team] = team_metric_values[0][0][i].value
     if release_metrics:
-        release_metric_values, *metric_values = metric_values
+        (release_metric_values, *_), *metric_values = metric_values
         for i, metric in enumerate(release_metrics):
             metric_teams = result[metric] = {}
             for team, team_metric_values in zip(teams, release_metric_values):
                 metric_teams[team] = team_metric_values[0][0][0][i].value
     if jira_metrics:
-        (jira_metric_values, _), *metric_values = metric_values
+        (jira_metric_values, *_), *metric_values = metric_values
         for i, metric in enumerate(jira_metrics):
             metric_teams = result[metric] = {}
             for team, team_metric_values in zip(teams, jira_metric_values):
@@ -247,7 +248,7 @@ def _build_metric_response(nodes: Dict[int, Dict[str, Any]],
                            ) -> TeamMetricValue:
     return TeamMetricValue(
         team_id=team_id,
-        value=metric_values[team_id],
+        value=MetricValue(metric_values[team_id]),
         children=[_build_metric_response(nodes, metric_values, child)
                   for child in nodes[team_id]["children"]],
     )
