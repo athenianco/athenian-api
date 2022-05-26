@@ -1,15 +1,23 @@
-# TODO: insert the real templates
 TEMPLATES_COLLECTION = {
     1: {
-        "name": "A",
+        "metric": "pr-review-time",
     },
     2: {
-        "name": "B",
+        "metric": "pr-review-comments-per",
     },
     3: {
-        "name": "C",
+        "metric": "pr-median-size",
     },
     4: {
-        "name": "D",
+        "metric": "pr-lead-time",
+    },
+    5: {
+        "metric": "release-count",
+    },
+    6: {
+        "metric": "jira-resolved",
+    },
+    7: {
+        "metric": "pr-all-mapped-to-jira",
     },
 }
