@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 from ariadne import make_executable_schema, MutationType, QueryType
 from freezegun import freeze_time
@@ -37,16 +37,17 @@ def test_on_input_field_definition() -> None:
         }
     """
     mutation = MutationType()
+    check_date = date.today() - timedelta(days=365)
 
     @mutation.field("travel")
     def travel(*_, input):
         # "when" string has been converted to a date object
-        assert input == {"when": date(1985, 10, 26)}
+        assert input == {"when": check_date}
         return True
 
     schema = make_executable_schema(type_defs, [mutation], directives={"date": DateDirective})
 
     q = "mutation m($travelInput: TravelInput!) { travel(input: $travelInput) }"
-    result = graphql_sync(schema, q, variable_values={"travelInput": {"when": "1985-10-26"}})
+    result = graphql_sync(schema, q, variable_values={"travelInput": {"when": str(check_date)}})
     assert result.data == {"travel": True}
     assert result.errors is None

@@ -1,7 +1,7 @@
-from typing import Any, Union
+from typing import Union
 
 from ariadne import SchemaDirectiveVisitor
-from graphql import default_field_resolver
+from graphql import default_field_resolver, GraphQLString
 from graphql.type import get_named_type, GraphQLField, GraphQLInputField, GraphQLInputObjectType, \
     GraphQLInterfaceType, GraphQLNonNull, GraphQLObjectType, GraphQLScalarType
 
@@ -36,30 +36,20 @@ class DateDirective(SchemaDirectiveVisitor):
         orig_named_type = get_named_type(field.type)
         assert orig_named_type.name == "String"
 
-        field.type = GraphQLDateType()
+        field.type = GraphQLDateType
         # re-wrap with GraphQLNonNull if needed
         if isinstance(orig_type, GraphQLNonNull):
             field.type = GraphQLNonNull(field.type)
         return field
 
 
-class GraphQLDateType(GraphQLScalarType):
-    """GraphQL type for a string containing a date."""
-
-    def __init__(self, *args: Any, **kwargs: Any):
-        """Init the type."""
-        kwargs.setdefault("name", "Date")
-        super().__init__(*args, **kwargs)
-
-    @staticmethod
-    def serialize(value: Any) -> Any:
-        """Serialize the date value to a string."""
-        return serialize_date(value)
-
-    @staticmethod
-    def parse_value(value: Any) -> Any:
-        """Parse the date object from a string value."""
-        return deserialize_date(value, min_=None, max_future_delta=None)
+GraphQLDateType = GraphQLScalarType(
+    name="Date",
+    description="ISO 8601 date.",
+    serialize=serialize_date,
+    parse_value=deserialize_date,
+    extensions={"()": GraphQLString},
+)
 
 
 directives = {"date": DateDirective}
