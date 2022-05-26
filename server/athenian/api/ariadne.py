@@ -1,3 +1,4 @@
+import traceback
 from typing import Any, Callable, Iterable, Optional
 
 import aiohttp.web
@@ -8,6 +9,7 @@ from ariadne.types import Extension, Resolver
 from graphql import GraphQLResolveInfo, GraphQLSchema, located_error
 import sentry_sdk
 
+import athenian
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError
 from athenian.api.serialization import FriendlyJson
@@ -98,4 +100,6 @@ class HandleErrorExtension(Extension):
             raise AriadneException(error)
         except Exception as e:
             sentry_sdk.capture_exception()
+            if athenian.api.is_testing:
+                traceback.print_exc()
             raise e from None

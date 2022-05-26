@@ -73,7 +73,7 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _main() -> int:
-    athenian.api.db._testing = True
+    athenian.api.is_testing = True
     patch_pandas()
     log = logging.getLogger("precomputer")
     args = _parse_args()

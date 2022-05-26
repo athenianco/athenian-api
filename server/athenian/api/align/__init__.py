@@ -1,9 +1,11 @@
 from pathlib import Path
 import sys
+from typing import Any, cast, Dict, Optional
 
 from ariadne import gql, make_executable_schema, SchemaBindable
-from graphql import GraphQLNonNull, GraphQLSchema, GraphQLType
-from graphql.utilities import type_comparators
+from graphql import GraphQLInputType, GraphQLNonNull, GraphQLScalarType, GraphQLSchema, \
+    GraphQLType, is_leaf_type, Undefined, ValueNode, VariableNode
+from graphql.utilities import type_comparators, value_from_ast as original_value_from_ast
 from graphql.validation.rules import variables_in_allowed_position
 
 from athenian.api import metadata
@@ -40,7 +42,7 @@ def patch_graphql():
     """Add support for scalar type inheritance."""
     original_is_type_sub_type_of = type_comparators.is_type_sub_type_of
 
-    def is_type_sub_type_of(
+    def is_type_sub_type_of_patched(
             schema: GraphQLSchema, maybe_subtype: GraphQLType, super_type: GraphQLType,
     ) -> bool:
         if is_not_null := type_comparators.is_non_null_type(super_type):
@@ -54,5 +56,25 @@ def patch_graphql():
             super_type = GraphQLNonNull(super_type)
         return original_is_type_sub_type_of(schema, maybe_subtype, super_type)
 
-    type_comparators.is_type_sub_type_of = is_type_sub_type_of
-    variables_in_allowed_position.is_type_sub_type_of = is_type_sub_type_of
+    type_comparators.is_type_sub_type_of = is_type_sub_type_of_patched
+    variables_in_allowed_position.is_type_sub_type_of = is_type_sub_type_of_patched
+
+    def value_from_ast_patched(
+            value_node: Optional[ValueNode],
+            type_: GraphQLInputType,
+            variables: Optional[Dict[str, Any]] = None,
+    ) -> Any:
+        result = original_value_from_ast(value_node, type_, variables)
+        if type_comparators.is_non_null_type(type_):
+            type_ = type_.of_type
+        if isinstance(value_node, VariableNode) and is_leaf_type(type_):
+            type_ = cast(GraphQLScalarType, type_)
+            try:
+                result = type_.parse_value(result)
+            except Exception:
+                result = Undefined
+        return result
+
+    sys.modules["graphql"].value_from_ast = value_from_ast_patched
+    sys.modules["graphql.utilities"].value_from_ast = value_from_ast_patched
+    sys.modules["graphql.utilities.value_from_ast"].value_from_ast = value_from_ast_patched

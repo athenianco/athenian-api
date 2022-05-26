@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from itertools import chain
-from typing import List
+from typing import Any, List, Optional, Union
+
+import numpy as np
 
 from athenian.api.models.web.base_model_ import Enum, Model
 
@@ -57,12 +59,53 @@ class MutateGoalResult(Model):
         return self._goal
 
 
+class MetricValue(Model):
+    """The value for a given team and metric."""
+
+    attribute_types = {
+        "int_": Optional[int],
+        "str_": Optional[object],
+        "float_": Optional[float],
+    }
+
+    attribute_map = {
+        "int_": "int",
+        "str_": "str",
+        "float_": "float",
+    }
+
+    def __init__(self, value: Any):
+        """Initialize a new instance of MetricValue."""
+        self._int_ = self._str_ = self._float_ = None
+        if isinstance(value, (int, np.integer)):
+            self._int_ = value
+        elif isinstance(value, float):
+            self._float_ = value
+        else:
+            self._str_ = value
+
+    @property
+    def int_(self) -> Optional[Union[int, np.integer]]:
+        """Return the metric value as an integer."""
+        return self._int_
+
+    @property
+    def str_(self) -> Optional[object]:
+        """Return the metric value as a string."""
+        return self._str_
+
+    @property
+    def float_(self) -> float:
+        """Return the metric value as a floating point number."""
+        return self._float_
+
+
 class TeamMetricValue(Model):
     """Team metric value tree node."""
 
     attribute_types = {
         "team_id": int,
-        "value": object,
+        "value": MetricValue,
         "children": List[Model],  # List[TeamMetricValue],
     }
 
@@ -70,7 +113,7 @@ class TeamMetricValue(Model):
         "team_id": "teamId",
     }
 
-    def __init__(self, team_id: int, value: object, children: List[TeamMetricValue]):
+    def __init__(self, team_id: int, value: MetricValue, children: List[TeamMetricValue]):
         """Initialize a new instance of TeamMetricValue."""
         self._team_id = team_id
         self._value = value
@@ -82,7 +125,7 @@ class TeamMetricValue(Model):
         return self._team_id
 
     @property
-    def value(self) -> object:
+    def value(self) -> MetricValue:
         """Return the metric value."""
         return self._value
 
@@ -109,7 +152,7 @@ class MetricValues(Model):
         self._value = value
 
     @property
-    def matric(self) -> str:
+    def metric(self) -> str:
         """Return the metric ID."""
         return self._metric
 

@@ -1,11 +1,9 @@
 import asyncio
 from contextvars import ContextVar
 import logging
-import os
 import pickle
 import re
 import sqlite3
-import sys
 import threading
 import time
 from typing import Any, Callable, List, Mapping, Optional, Union
@@ -29,6 +27,7 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import CompoundSelect, Select
 from sqlalchemy.sql.functions import ReturnTypeFromArgs
 
+import athenian
 from athenian.api import metadata
 from athenian.api.models import check_alembic_schema_version, check_collation, \
     DBSchemaMismatchError
@@ -89,7 +88,6 @@ Database = morcilla.Database
 
 
 _sql_log = logging.getLogger("%s.sql" % metadata.__package__)
-_testing = "pytest" in sys.modules or os.getenv("SENTRY_ENV", "development") == "development"
 _sql_str_re = re.compile(r"'[^']+'(, )?")
 _log_sql_re = re.compile(r"SELECT|\(SELECT|WITH RECURSIVE")
 
@@ -125,7 +123,7 @@ async def _asyncpg_execute(self,
         log_sql_probe = query[query.find("*/", 2, 1024) + 3:]
     else:
         log_sql_probe = query
-    if _log_sql_re.match(log_sql_probe) and not _testing:
+    if _log_sql_re.match(log_sql_probe) and not athenian.api.is_testing:
         from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
         if len(description) < MAX_SENTRY_STRING_LENGTH and args:
             description += "\n\n" + ", ".join(str(arg) for arg in args)
@@ -136,7 +134,7 @@ async def _asyncpg_execute(self,
                 brief = _sql_str_re.sub("", query)
                 description = "%s\n%s" % (query_id, brief[:MAX_SENTRY_STRING_LENGTH])
     with sentry_sdk.start_span(op="sql", description=description) as span:
-        if not _testing:
+        if not athenian.api.is_testing:
             query += _generate_tags()
         result = await self._execute_original(query, args, limit, timeout, **kwargs)
         try:

@@ -949,11 +949,11 @@ async def test_pr_miner_unreleased_facts(
         rdb,
         None,
     )
-    athenian.api.db._testing = False
+    athenian.api.is_testing = False
     try:
         miner, unreleased_facts, matched_bys, event = await pr_miner.mine(*args)
     finally:
-        athenian.api.db._testing = True
+        athenian.api.is_testing = True
     assert not event.is_set()
     launch_defer(0, "enable_defer")
     await wait_deferred()
