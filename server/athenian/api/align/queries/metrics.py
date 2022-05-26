@@ -120,10 +120,10 @@ def _jirafy_teams(teams: Sequence[Collection[int]],
                   ) -> List[JIRAParticipants]:
     result = []
     for team in teams:
-        result.append({JIRAParticipationKind.REPORTER: (reporters := [])})
+        result.append({JIRAParticipationKind.ASSIGNEE: (assignees := [])})
         for dev in team:
             try:
-                reporters.append(jira_map[dev])
+                assignees.append(jira_map[dev])
             except KeyError:
                 continue
     return result
@@ -178,7 +178,9 @@ async def _calculate_team_metrics(
         ))
     if release_metrics:
         release_participants = [{
+            ReleaseParticipationKind.PR_AUTHOR: team,
             ReleaseParticipationKind.COMMIT_AUTHOR: team,
+            ReleaseParticipationKind.RELEASER: team,
         } for team in teams]
         tasks.append(calculator.calc_release_metrics_line_github(
             release_metrics, time_intervals, quantiles, repos, release_participants,
