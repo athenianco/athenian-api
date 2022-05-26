@@ -2,13 +2,17 @@ from pathlib import Path
 import sys
 
 from ariadne import gql, make_executable_schema, SchemaBindable
-from graphql import GraphQLSchema
+from graphql import GraphQLNonNull, GraphQLSchema, GraphQLType
+from graphql.utilities import type_comparators
+from graphql.validation.rules import variables_in_allowed_position
 
 from athenian.api import metadata
 
 
 def create_graphql_schema() -> GraphQLSchema:
     """Dynamically import all the children modules and compile a GraphQL schema."""
+    patch_graphql()
+
     self_path = Path(__file__)
     amalgamation = "\n".join(
         p.read_text() for p in Path(self_path.with_name("spec")).glob("**/*.graphql")
@@ -30,3 +34,25 @@ def create_graphql_schema() -> GraphQLSchema:
         __import__(package := f"{metadata.__package__}.align.directives.{file_path.stem}")
         directives.update(sys.modules[package].directives)
     return make_executable_schema(spec, *bindables, directives=directives)
+
+
+def patch_graphql():
+    """Add support for scalar type inheritance."""
+    original_is_type_sub_type_of = type_comparators.is_type_sub_type_of
+
+    def is_type_sub_type_of(
+            schema: GraphQLSchema, maybe_subtype: GraphQLType, super_type: GraphQLType,
+    ) -> bool:
+        if is_not_null := type_comparators.is_non_null_type(super_type):
+            super_type = type_comparators.cast(GraphQLNonNull, super_type).of_type
+        while True:
+            try:
+                super_type = super_type.extensions["()"]
+            except (KeyError, TypeError, AttributeError):
+                break
+        if is_not_null:
+            super_type = GraphQLNonNull(super_type)
+        return original_is_type_sub_type_of(schema, maybe_subtype, super_type)
+
+    type_comparators.is_type_sub_type_of = is_type_sub_type_of
+    variables_in_allowed_position.is_type_sub_type_of = is_type_sub_type_of
