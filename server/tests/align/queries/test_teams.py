@@ -109,7 +109,7 @@ class TestGetTeamTree:
 
 
 class BaseTeamsTest:
-    _ALL_FIELDS = ("id", "name", "totalTeamsCount", "totalMembersCount")
+    _ALL_FIELDS = ("id", "name", "membersCount", "totalTeamsCount", "totalMembersCount")
 
     def _query(self, fields, depth):
         fields_section = "\n".join(fields)
@@ -197,6 +197,7 @@ class TestTeams(BaseTeamsTest):
         res = await self._request(1, 2, client, headers)
         teams = res["data"]["teams"]
         assert teams["id"] == 2
+        assert teams["membersCount"] == 0
         assert teams["totalTeamsCount"] == 0
         assert teams["totalMembersCount"] == 0
         assert teams["children"] == []
@@ -214,15 +215,18 @@ class TestTeams(BaseTeamsTest):
         teams = res["data"]["teams"]
         # team 4 is at 3rd level and is not returned, but counts are correct
         assert teams["id"] == 1
+        assert teams["membersCount"] == 1
         assert teams["totalTeamsCount"] == 3
         assert teams["totalMembersCount"] == 4
 
         assert teams["children"][0]["id"] == 2
+        assert teams["children"][0]["membersCount"] == 1
         assert teams["children"][0]["totalTeamsCount"] == 0
         assert teams["children"][0]["totalMembersCount"] == 1
         assert "children" not in teams["children"][0]
 
         assert teams["children"][1]["id"] == 3
+        assert teams["children"][1]["membersCount"] == 1
         assert teams["children"][1]["totalTeamsCount"] == 1
         assert teams["children"][1]["totalMembersCount"] == 2
         assert "children" not in teams["children"][1]
@@ -241,28 +245,33 @@ class TestTeams(BaseTeamsTest):
         teams = res["data"]["teams"]
 
         assert teams["id"] == 1
+        assert teams["membersCount"] == 1
         assert teams["totalTeamsCount"] == 4
         assert teams["totalMembersCount"] == 6
 
         team_1_children = sorted(teams["children"], key=itemgetter("id"))
 
         assert team_1_children[0]["id"] == 2
+        assert team_1_children[0]["membersCount"] == 2
         assert team_1_children[0]["totalTeamsCount"] == 0
         assert team_1_children[0]["totalMembersCount"] == 2
         assert team_1_children[0]["children"] == []
 
         assert team_1_children[1]["id"] == 3
+        assert team_1_children[1]["membersCount"] == 2
         assert team_1_children[1]["totalTeamsCount"] == 2
         assert team_1_children[1]["totalMembersCount"] == 4
 
         team_3_children = sorted(team_1_children[1]["children"], key=itemgetter("id"))
 
         assert team_3_children[0]["id"] == 4
+        assert team_3_children[0]["membersCount"] == 1
         assert team_3_children[0]["totalTeamsCount"] == 0
         assert team_3_children[0]["totalMembersCount"] == 1
         assert team_3_children[0]["children"] == []
 
         assert team_3_children[1]["id"] == 5
+        assert team_3_children[1]["membersCount"] == 3
         assert team_3_children[1]["totalTeamsCount"] == 0
         assert team_3_children[1]["totalMembersCount"] == 3
         assert team_3_children[1]["children"] == []
