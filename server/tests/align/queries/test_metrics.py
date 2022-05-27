@@ -210,3 +210,86 @@ class TestMetricsSmoke(BaseMetricsTest):
                         ]},
                 }],
             }}
+
+
+class TestMetricsNasty(BaseMetricsTest):
+    async def test_fetch_bad_team(self, client: TestClient) -> None:
+        res = await self._request(
+            client, 1, 1, [JIRAMetricID.JIRA_RESOLVED],
+            date(2019, 1, 1),
+            date(2022, 1, 1),
+        )
+        assert res == {
+            "errors": [{
+                "message": "Team not found",
+                "locations": [{"line": 16, "column": 15}],
+                "path": ["metricsCurrentValues"],
+                "extensions": {
+                    "status": 404,
+                    "type": "/errors/teams/TeamNotFound",
+                    "detail": "Team 1 not found or access denied",
+                },
+            }]}
+
+    async def test_fetch_bad_account(self, client: TestClient, sample_teams) -> None:
+        res = await self._request(
+            client, 2, 1, [JIRAMetricID.JIRA_RESOLVED],
+            date(2019, 1, 1),
+            date(2022, 1, 1),
+        )
+        assert res == {
+            "errors": [{
+                "message": "Team not found",
+                "locations": [{"line": 16, "column": 15}],
+                "path": ["metricsCurrentValues"],
+                "extensions": {
+                    "status": 404,
+                    "type": "/errors/teams/TeamNotFound",
+                    "detail": "Team 1 not found or access denied",
+                },
+            }]}
+
+    async def test_fetch_bad_metric(self, client: TestClient, sample_teams) -> None:
+        res = await self._request(
+            client, 1, 1, ["whatever"],
+            date(2019, 1, 1),
+            date(2022, 1, 1),
+        )
+        assert res == {
+            "errors": [{
+                "message": "Bad Request",
+                "locations": [{"line": 16, "column": 15}],
+                "path": ["metricsCurrentValues"],
+                "extensions": {
+                    "status": 400,
+                    "type": "/errors/InvalidRequestError",
+                    "detail": "The following metrics are not supported: whatever",
+                },
+            }]}
+
+    async def test_fetch_bad_dates_order(self, client: TestClient, sample_teams) -> None:
+        res = await self._request(
+            client, 1, 1, [JIRAMetricID.JIRA_RESOLVED],
+            date(2022, 1, 1),
+            date(2019, 1, 1),
+        )
+        assert res == {
+            "errors": [{
+                "message": "Bad Request",
+                "locations": [{"line": 16, "column": 15}],
+                "path": ["metricsCurrentValues"],
+                "extensions": {
+                    "status": 400,
+                    "type": "/errors/InvalidRequestError",
+                    "detail": "validFrom must be less than or equal to expiresAt",
+                },
+            }]}
+
+    async def test_fetch_bad_dates_future(self, client: TestClient, sample_teams) -> None:
+        res = await self._request(
+            client, 1, 1, [JIRAMetricID.JIRA_RESOLVED],
+            date(2019, 1, 1),
+            date(2129, 1, 1),
+        )
+        assert res["errors"]
+        assert res["data"]["metricsCurrentValues"] is None
