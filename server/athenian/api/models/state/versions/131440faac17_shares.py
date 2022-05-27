@@ -22,7 +22,7 @@ def upgrade():
     op.create_table(
         "shares",
         sa.Column("id", sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
-                  primary_key=True, autoincrement=False),
+                  primary_key=True),
         sa.Column("created_by", sa.String(), nullable=False),
         sa.Column("created_at", sa.TIMESTAMP(timezone=True), nullable=False,
                   server_default=sa.func.now()),
