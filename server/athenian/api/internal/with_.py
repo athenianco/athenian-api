@@ -1,5 +1,7 @@
 from collections import defaultdict
-from typing import Any, Callable, Collection, Dict, Iterable, List, Optional, Sequence, Set, Union
+from typing import Any, Callable, Collection, Dict, Iterable, KeysView, List, Mapping, Optional, \
+    Sequence, \
+    Set, Union
 
 import numpy as np
 
@@ -82,14 +84,31 @@ async def fetch_teams_map(teams: Collection[int],
     team_rows = await fetch_teams_recursively(
         account, sdb, select_entities=(Team.members,), root_team_ids=teams,
     )
-    teams_map: Dict[int, Set[int]] = defaultdict(set)
-    for members, root_team_id in team_rows:
-        teams_map[root_team_id] = teams_map[root_team_id].union(members)
-
+    teams_map = flatten_teams(team_rows, True)
+    if not isinstance(teams, (set, KeysView)):
+        teams = set(teams)
     if diff := (teams - teams_map.keys()):
         raise ResponseError(NotFoundError(
             detail=f"Some teams do not exist or access denied: {diff}",
         ))
+    return teams_map
+
+
+def flatten_teams(team_rows: Optional[Sequence[Mapping[Union[int, str], Any]]],
+                  only_root: bool,
+                  ) -> Dict[int, List[int]]:
+    """Union all the child teams with each root team."""
+    teams_map: Dict[int, Set[int]] = defaultdict(set)
+    if only_root:
+        for row in team_rows:
+            members, root_team_id = row[Team.members.name], row[Team.root_id]
+            teams_map[root_team_id] = teams_map[root_team_id].union(members)
+    else:
+        for row in team_rows:
+            members, parent_team_id, team_id = \
+                row[Team.members.name], row[Team.parent_id.name], row[Team.id.name]
+            teams_map[parent_team_id] = teams_map[parent_team_id].union(members)
+            teams_map[team_id] = set(members)
     return {team_id: sorted(members) for team_id, members in teams_map.items()}
 
 

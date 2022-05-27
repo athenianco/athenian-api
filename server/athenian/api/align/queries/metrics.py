@@ -31,6 +31,7 @@ from athenian.api.internal.miners.types import JIRAParticipants, JIRAParticipati
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import Settings
 from athenian.api.internal.team import fetch_teams_recursively
+from athenian.api.internal.with_ import flatten_teams
 from athenian.api.models.state.models import Team
 from athenian.api.models.web import InvalidRequestError
 from athenian.api.response import ResponseError
@@ -64,7 +65,8 @@ async def resolve_metrics_current_values(obj: Any,
         ))
     date_to += timedelta(days=1)
     pr_metrics, release_metrics, jira_metrics = _triage_metrics(params[MetricParamsFields.metrics])
-    teams = [row[Team.members.name] for row in team_rows]
+    teams_flat = flatten_teams(team_rows, False)
+    teams = [teams_flat[row[Team.id.name]] for row in team_rows]
     metric_values = await _calculate_team_metrics(
         pr_metrics, release_metrics, jira_metrics, date_from, date_to, teams, accountId,
         meta_ids, sdb, mdb, pdb, rdb, cache, info.context.app["slack"])
@@ -137,7 +139,7 @@ async def _calculate_team_metrics(
         jira_metrics: Sequence[str],
         date_from: date,
         date_to: date,
-        teams: Sequence[Collection[int]],
+        teams: Sequence[List[int]],
         account: int,
         meta_ids: Tuple[int, ...],
         sdb: Database,
