@@ -141,7 +141,11 @@ def triage_by_release_match(repo: str,
             return None
         dump = result
     else:
-        dump = ambiguous[match_name]
+        try:
+            dump = ambiguous[match_name]
+        except KeyError:
+            # event
+            return None
     if match == ReleaseMatch.tag:
         target = required_release_match.tags
     elif match == ReleaseMatch.branch:
