@@ -188,7 +188,13 @@ class ReleaseLoader:
                     missed = True
                 if my_time_from <= rt_to < my_time_to:
                     # DEV-990: ensure some gap to avoid failing when mdb lags
-                    missing_high.append((rt_to - timedelta(hours=1), (repo, match)))
+                    # related: DEV-4267
+                    if force_fresh:
+                        # effectively, we break if metadata stays out of sync during > 1 week
+                        lookbehind = timedelta(days=7)
+                    else:
+                        lookbehind = timedelta(hours=1)
+                    missing_high.append((rt_to - lookbehind, (repo, match)))
                     missed = True
                 if rt_from > my_time_to or rt_to < my_time_from:
                     missing_all.append((repo, match))
