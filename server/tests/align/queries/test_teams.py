@@ -4,7 +4,7 @@ from typing import Sequence
 from aiohttp.test_utils import TestClient
 import pytest
 
-from athenian.api.align.queries.teams import _get_team_tree
+from athenian.api.align.queries.teams import fetch_team_tree
 from athenian.api.db import Database
 from athenian.api.internal.team import MultipleRootTeamsError, RootTeamNotFoundError, \
     TeamNotFoundError
@@ -14,12 +14,12 @@ from tests.testutils.db import model_insert_stmt, models_insert
 from tests.testutils.factory.state import TeamFactory
 
 
-class TestGetTeamTree:
+class TestFetchTeamTree:
     async def test_lonely_team(self, sdb: Database) -> None:
         team_model = TeamFactory(id=1, name="TEAM A", members=[1, 2])
         await sdb.execute(model_insert_stmt(team_model))
 
-        team_tree = await _get_team_tree(1, 1, sdb)
+        team_tree = await fetch_team_tree(1, 1, sdb)
         assert team_tree.id == 1
         assert team_tree.name == "TEAM A"
         assert team_tree.children == []
@@ -39,7 +39,7 @@ class TestGetTeamTree:
             TeamFactory(id=8, parent_id=4, members=[6, 7]),
         )
 
-        team_tree = await _get_team_tree(1, 3, sdb)
+        team_tree = await fetch_team_tree(1, 3, sdb)
 
         assert team_tree.id == 3
         assert team_tree.total_teams_count == 5
@@ -90,23 +90,23 @@ class TestGetTeamTree:
             TeamFactory(id=1),
             TeamFactory(id=2, parent_id=1),
         )
-        team_tree = await _get_team_tree(1, None, sdb)
+        team_tree = await fetch_team_tree(1, None, sdb)
         assert team_tree.id == 1
         assert len(team_tree.children) == 1
         assert team_tree.children[0].id == 2
 
     async def test_none_root_team_no_team_existing(self, sdb: Database) -> None:
         with pytest.raises(RootTeamNotFoundError):
-            await _get_team_tree(1, None, sdb)
+            await fetch_team_tree(1, None, sdb)
 
     async def test_none_root_team_multiple_roots(self, sdb: Database) -> None:
         await models_insert(sdb, TeamFactory(id=1), TeamFactory(id=2))
         with pytest.raises(MultipleRootTeamsError):
-            await _get_team_tree(1, None, sdb)
+            await fetch_team_tree(1, None, sdb)
 
     async def test_explicit_team_not_found(self, sdb: Database) -> None:
         with pytest.raises(TeamNotFoundError):
-            await _get_team_tree(1, 1, sdb)
+            await fetch_team_tree(1, 1, sdb)
 
 
 class BaseTeamsTest:

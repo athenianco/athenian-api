@@ -13,7 +13,7 @@ from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from athenian.api.align.goals.dates import goal_dates_to_datetimes
 from athenian.api.align.models import MetricParamsFields, MetricValue, MetricValues, \
     TeamMetricValue
-from athenian.api.align.queries.teams import build_team_tree_from_rows
+from athenian.api.align.queries.teams import build_team_tree_nodes_from_rows
 from athenian.api.async_utils import gather
 from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.features.entries import make_calculator
@@ -74,7 +74,9 @@ async def resolve_metrics_current_values(obj: Any,
     team_ids = [row[Team.id.name] for row in team_rows]
     triaged = _triage_metric_values(
         pr_metrics, release_metrics, jira_metrics, team_ids, metric_values)
-    nodes, root_team_id = build_team_tree_from_rows(team_rows, params[MetricParamsFields.teamId])
+    nodes, root_team_id = build_team_tree_nodes_from_rows(
+        team_rows, params[MetricParamsFields.teamId],
+    )
     models = _build_metrics_response(nodes, triaged, root_team_id)
     return [m.to_dict() for m in models]
 
