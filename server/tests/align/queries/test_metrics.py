@@ -4,7 +4,10 @@ from typing import Any, Dict, List
 from aiohttp.test_utils import TestClient
 from morcilla import Database
 import pytest
+from sqlalchemy import insert
 
+from athenian.api.async_utils import gather
+from athenian.api.models.state.models import MappedJIRAIdentity
 from athenian.api.models.web import JIRAMetricID, PullRequestMetricID, ReleaseMetricID
 from tests.align.utils import align_graphql_request
 from tests.conftest import DEFAULT_HEADERS
@@ -88,10 +91,26 @@ class BaseMetricsTest:
 
 @pytest.fixture(scope="function")
 async def sample_teams(sdb: Database) -> None:
-    await models_insert(
-        sdb,
-        TeamFactory(id=1, members=[40020, 39789, 40070]),
-        TeamFactory(id=2, parent_id=1, members=[40191, 39926, 40418]),
+    id_values = [
+        MappedJIRAIdentity(
+            account_id=1,
+            confidence=1,
+            github_user_id=github_id,
+            jira_user_id=jira_id,
+        ).create_defaults().explode(with_primary_keys=True)
+        for github_id, jira_id in (
+            (40020, "5de5049e2c5dd20d0f9040c1"),
+            (39789, "5dd58cb9c7ac480ee5674902"),
+            (40191, "5ddec0b9be6c1f0d071ff82d"),
+        )
+    ]
+    await gather(
+        models_insert(
+            sdb,
+            TeamFactory(id=1, members=[40020, 39789, 40070]),
+            TeamFactory(id=2, parent_id=1, members=[40191, 39926, 40418]),
+        ),
+        sdb.execute_many(insert(MappedJIRAIdentity), id_values),
     )
 
 
@@ -162,3 +181,32 @@ class TestMetricsSmoke(BaseMetricsTest):
                     assert yours["value"][key] == val
 
         validate_recursively(mv[0]["value"], value)
+
+    async def test_fetch_two(self, client: TestClient, sample_teams):
+        res = await self._request(
+            client, 1, 1, [JIRAMetricID.JIRA_RESOLVED, JIRAMetricID.JIRA_RESOLUTION_RATE],
+            date(2019, 1, 1),
+            date(2022, 1, 1),
+        )
+        assert res == {
+            "data": {
+                "metricsCurrentValues": [{
+                    "metric": "jira-resolved",
+                    "value": {
+                        "teamId": 1, "value": {"str": None, "int": 738, "float": None},
+                        "children": [{
+                            "teamId": 2, "value": {"str": None, "int": 163, "float": None},
+                            "children": []},
+                        ]},
+                }, {
+                    "metric": "jira-resolution-rate",
+                    "value": {
+                        "teamId": 1,
+                        "value": {"str": None, "int": None, "float": 0.9473684430122375},
+                        "children": [{
+                            "teamId": 2, "value": {"str": None, "int": None,
+                                                   "float": 0.8624338507652283},
+                            "children": []},
+                        ]},
+                }],
+            }}
