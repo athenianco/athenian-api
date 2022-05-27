@@ -243,12 +243,15 @@ class DonePRFactsLoader:
                 {"": repos}
             or_items, or_repos = match_groups_to_sql(match_groups, ghprt)
             query = union_all(*(
-                select(selected).where(and_(item, format_version_filter, or_(
-                    *[and_(ghprt.repository_full_name == repo,
-                           ghprt.number.in_(repos[repo]),
-                           ghprt.acc_id == account)
-                      for repo in item_repos],
-                )))
+                select(selected).where(and_(
+                    item,
+                    ghprt.acc_id == account,
+                    format_version_filter,
+                    ghprt.repository_full_name.in_(item_repos),
+                    or_(*(and_(ghprt.repository_full_name == repo,
+                               ghprt.number.in_(repos[repo]))
+                          for repo in item_repos)),
+                ))
                 for item, item_repos in zip(or_items, or_repos)))
 
         with sentry_sdk.start_span(op="load_precomputed_done_facts_reponums/fetch"):
