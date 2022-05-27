@@ -199,6 +199,7 @@ class TeamTree(Model):
     attribute_types = {
         "id": int,
         "name": str,
+        "members_count": int,
         "total_teams_count": int,
         "total_members_count": int,
         "children": List[Model],  # List[Team],
@@ -207,6 +208,7 @@ class TeamTree(Model):
     }
 
     attribute_map = {
+        "members_count": "membersCount",
         "total_teams_count": "totalTeamsCount",
         "total_members_count": "totalMembersCount",
     }
@@ -224,6 +226,7 @@ class TeamTree(Model):
         self._members = members
         self._children = children
 
+        self._members_count = len(members)
         self._total_members = sorted(
             set(chain(members, *(child.total_members for child in children))),
         )
@@ -240,6 +243,11 @@ class TeamTree(Model):
     def name(self) -> str:
         """Get the name of the team."""
         return self._name
+
+    @property
+    def members_count(self) -> int:
+        """Get the number of members directly included in the team."""
+        return self._members_count
 
     @property
     def total_teams_count(self) -> int:

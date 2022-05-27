@@ -1,23 +1,25 @@
+from athenian.api.models.web import JIRAMetricID, PullRequestMetricID, ReleaseMetricID
+
 TEMPLATES_COLLECTION = {
     1: {
-        "metric": "pr-review-time",
+        "metric": PullRequestMetricID.PR_REVIEW_TIME,
     },
     2: {
-        "metric": "pr-review-comments-per",
+        "metric": PullRequestMetricID.PR_REVIEW_COMMENTS_PER,
     },
     3: {
-        "metric": "pr-median-size",
+        "metric": PullRequestMetricID.PR_MEDIAN_SIZE,
     },
     4: {
-        "metric": "pr-lead-time",
+        "metric": PullRequestMetricID.PR_LEAD_TIME,
     },
     5: {
-        "metric": "release-count",
+        "metric": ReleaseMetricID.RELEASE_COUNT,
     },
     6: {
-        "metric": "jira-resolved",
+        "metric": JIRAMetricID.JIRA_RESOLVED,
     },
     7: {
-        "metric": "pr-all-mapped-to-jira",
+        "metric": PullRequestMetricID.PR_ALL_MAPPED_TO_JIRA,
     },
 }
