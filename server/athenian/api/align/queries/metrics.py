@@ -65,7 +65,7 @@ async def resolve_metrics_current_values(obj: Any,
         ))
     date_to += timedelta(days=1)
     pr_metrics, release_metrics, jira_metrics = _triage_metrics(params[MetricParamsFields.metrics])
-    teams_flat = flatten_teams(team_rows, False)
+    teams_flat = flatten_teams(team_rows)
     teams = [teams_flat[row[Team.id.name]] for row in team_rows]
     metric_values = await _calculate_team_metrics(
         pr_metrics, release_metrics, jira_metrics, date_from, date_to, teams, accountId,
