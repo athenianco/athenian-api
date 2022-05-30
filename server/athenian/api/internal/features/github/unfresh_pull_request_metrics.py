@@ -173,9 +173,13 @@ class UnfreshPullRequestFactsFetcher:
         else:
             for f in facts.values():
                 f.jira_ids = []
-        cls.append_deployments(facts,
-                               pd.concat([unreleased_deps, released_deps]),
-                               cls._log)
+        deps = pd.concat([released_deps, unreleased_deps])
+        # there may be shared deployments in released_deps and unreleased_deps
+        # the same way as in done_facts and merged_facts
+        unique_dep_indexes = np.flatnonzero(~deps.index.duplicated())
+        if len(unique_dep_indexes) < len(deps):
+            deps = deps.take(unique_dep_indexes)
+        cls.append_deployments(facts, deps, cls._log)
         return facts
 
     @classmethod
