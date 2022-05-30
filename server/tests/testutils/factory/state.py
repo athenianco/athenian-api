@@ -5,8 +5,8 @@ from typing import Any
 import factory
 
 from athenian.api.controllers.invitation_controller import _generate_account_secret
-from athenian.api.models.state.models import Account, Goal, LogicalRepository, RepositorySet, \
-    Team, TeamGoal
+from athenian.api.models.state.models import Account, Goal, LogicalRepository, \
+    MappedJIRAIdentity, RepositorySet, Team, TeamGoal
 
 from .alchemy import SQLAlchemyModelFactory
 from .common import DEFAULT_ACCOUNT_ID
@@ -52,7 +52,7 @@ class TeamFactory(SQLAlchemyModelFactory):
     id = factory.Sequence(lambda n: n + 1)
     owner_id = DEFAULT_ACCOUNT_ID
     parent_id = None
-    name = factory.Sequence(lambda n: f"team-{n}")
+    name = factory.LazyAttribute(lambda team: f"team-{team.id:03}")
     members = []
 
 
@@ -76,3 +76,13 @@ class TeamGoalFactory(SQLAlchemyModelFactory):
         model = TeamGoal
 
     target = 0
+
+
+class MappedJIRAIdentityFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = MappedJIRAIdentity
+
+    account_id = DEFAULT_ACCOUNT_ID
+    github_user_id = factory.Sequence(lambda n: n + 1)
+    jira_user_id = factory.LazyAttribute(lambda jira_ident: f"jira-{jira_ident.github_user_id}")
+    confidence = 1

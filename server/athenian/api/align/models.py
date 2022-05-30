@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from itertools import chain
 from typing import Any, List, Optional, Union
 
@@ -202,7 +203,7 @@ class TeamTree(Model):
         "members_count": int,
         "total_teams_count": int,
         "total_members_count": int,
-        "children": List[Model],  # List[Team],
+        "children": List[Model],  # List[TeamTree],
         "members": List[int],
         "total_members": List[int],
     }
@@ -285,3 +286,127 @@ class MetricParamsFields(metaclass=Enum):
     metrics = "metrics"
     validFrom = "validFrom"
     expiresAt = "expiresAt"
+
+
+class GoalValue(Model):
+    """The current metric values for the goal on a team."""
+
+    attribute_types = {
+        "current": MetricValue,
+        "initial": MetricValue,
+        "target": MetricValue,
+    }
+
+    def __init__(self, current: MetricValue, initial: MetricValue, target: MetricValue):
+        """Init the GoalValue."""
+        self._current = current
+        self._initial = initial
+        self._target = target
+
+    @property
+    def current(self) -> MetricValue:
+        """Get current metric value."""
+        return self._current
+
+    @property
+    def initial(self) -> MetricValue:
+        """Get initial metric value."""
+        return self._initial
+
+    @property
+    def target(self) -> MetricValue:
+        """Get target metric value."""
+        return self._target
+
+
+class TeamGoalTree(Model):
+    """The team goal tree relative to a team and its descendants."""
+
+    attribute_types = {
+        "team": TeamTree,
+        "value": Optional[GoalValue],
+        "children": List[Model],  # List[TeamGoalTree]
+    }
+
+    def __init__(self, team: TeamTree, value: Optional[GoalValue], children: List[TeamGoalTree]):
+        """Init the TeamGoalTree."""
+        self._team = team
+        self._value = value
+        self._children = children
+
+    @property
+    def team(self) -> TeamTree:
+        """Get the team this node is applied to."""
+        return self._team
+
+    @property
+    def value(self) -> Optional[GoalValue]:
+        """Get the GoalValue attached to the team, if any."""
+        return self._value
+
+    @property
+    def children(self) -> List[TeamGoalTree]:
+        """Get the list of TeamGoalTree for the Team children."""
+        return self._children
+
+
+TeamGoalTree.attribute_types["children"] = List[TeamGoalTree]
+
+
+class GoalTree(Model):
+    """A goal attached to a tree of teams."""
+
+    attribute_types = {
+        "id": int,
+        "template_id": int,
+        "valid_from": date,
+        "expires_at": date,
+        "team_goal": TeamGoalTree,
+    }
+
+    attribute_map = {
+        "template_id": "templateId",
+        "valid_from": "validFrom",
+        "expires_at": "expiresAt",
+        "team_goal": "teamGoal",
+    }
+
+    def __init__(
+        self,
+        id: int,
+        template_id: int,
+        valid_from: date,
+        expires_at: date,
+        team_goal: TeamGoalTree,
+    ):
+        """Init the GoalTree."""
+        self._id = id
+        self._template_id = template_id
+        self._valid_from = valid_from
+        self._expires_at = expires_at
+        self._team_goal = team_goal
+
+    @property
+    def id(self) -> int:
+        """Get the identifier of the goal."""
+        return self._id
+
+    @property
+    def template_id(self) -> int:
+        """Get the template identifier of the goal."""
+        return self._template_id
+
+    @property
+    def valid_from(self) -> date:
+        """Get the valid from date of the goal."""
+        return self._valid_from
+
+    @property
+    def expires_at(self) -> date:
+        """Get the epxire date of the goal."""
+        return self._expires_at
+
+    @property
+    def team_goal(self) -> TeamGoalTree:
+        """Get the root of the `TeamGoalTree` attached to the goal."""
+        return self._team_goal

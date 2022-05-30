@@ -2,12 +2,13 @@
 
 from datetime import datetime, timezone
 from http import HTTPStatus
-from typing import Sequence, Union
+from typing import Iterable, Sequence, Union
 
 import sqlalchemy as sa
 
 from athenian.api.align.exceptions import GoalMutationError
-from athenian.api.db import conn_in_transaction, Connection, DatabaseLike, dialect_specific_insert
+from athenian.api.db import conn_in_transaction, Connection, DatabaseLike, \
+    dialect_specific_insert, Row
 from athenian.api.models.state.models import Goal, Team, TeamGoal
 from athenian.api.typing_utils import dataclass
 
@@ -108,6 +109,25 @@ async def assign_team_goals(
         },
     )
     await sdb_conn.execute_many(upsert_stmt, values)
+
+
+async def fetch_team_goals(
+    account: int, team_ids: Iterable[int], sdb: DatabaseLike,
+) -> Sequence[Row]:
+    """Fetch the TeamGoals from DB related to a set of teams.
+
+    Result is ordered by Goal id.
+    """
+    stmt = sa.select(
+        TeamGoal.team_id, TeamGoal.target, Goal,
+    ).join_from(
+        TeamGoal, Goal, TeamGoal.goal_id == Goal.id,
+    ).where(
+        sa.and_(TeamGoal.team_id.in_(team_ids), Goal.account_id == account),
+    ).order_by(
+        Goal.id, TeamGoal.team_id,
+    )
+    return await sdb.fetch_all(stmt)
 
 
 async def _validate_goal_creation_info(
