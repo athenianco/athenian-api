@@ -101,6 +101,8 @@ def _parse_create_goal_input(input: Dict[str, Any], account_id: int) -> GoalCrea
     valid_from, expires_at = _convert_goal_dates(
         input[CreateGoalInputFields.validFrom], input[CreateGoalInputFields.expiresAt],
     )
+    if expires_at < valid_from:
+        raise GoalMutationError("Goal expiresAt cannot precede validFrom")
 
     goal = Goal(
         account_id=account_id,
