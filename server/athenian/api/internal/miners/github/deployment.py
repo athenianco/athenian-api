@@ -1527,7 +1527,7 @@ async def _resolve_commit_relationship(
                         CommitRelationship(
                             all_commit_ids[my_parents],
                             all_shas[my_parents],
-                            success_len <= my_parents < success_len + len(cids))
+                            (success_len <= my_parents) & (my_parents < success_len + len(cids)))
                 if len(root_shas) > 0:
                     # there are still unresolved parents, we need to descend deeper
                     until_per_repo_env[env][repo_name] = min(dep_finished_ats)
