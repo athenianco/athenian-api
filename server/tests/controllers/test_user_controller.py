@@ -126,6 +126,7 @@ async def test_get_user_sso_join(client, headers, app, sdb):
     assert datetime.utcnow() >= parse_datetime(updated[:-1])
 
 
+@pytest.mark.flaky(reruns=10, reruns_delay=1)
 async def test_get_account_details_smoke(client, headers):
     response = await client.request(
         method="GET", path="/v1/account/1/details", headers=headers, json={},

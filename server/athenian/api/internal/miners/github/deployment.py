@@ -1235,7 +1235,6 @@ async def _extract_deployed_commits(
 
         grouped_deployed_shas = np.zeros(len(deployed_commits), dtype=object)
         relationships = commit_relationship[env][repo_name]
-
         if successful.any():
             successful_deployed_shas = deployed_shas[successful]
             parent_shas = []
@@ -1395,7 +1394,7 @@ async def _resolve_commit_relationship(
                 (successful_commits, failed_commits))
     for repo, commits in commits_per_physical_repo.items():
         commits_per_physical_repo[repo] = np.unique(np.concatenate(commits))
-    (dags, deployed_commits_df), (previous, env_repo_edges) = await gather(
+    (dags, deployed_commits_df), previous = await gather(
         fetch_dags_with_commits(
             commits_per_physical_repo, True, account, meta_ids, mdb, pdb, cache),
         _fetch_latest_deployed_components(
@@ -1428,8 +1427,8 @@ async def _resolve_commit_relationship(
             all_shas = np.concatenate([successful_shas, failed_shas])
             all_deployed_ats = np.concatenate([successful_deployed_ats, failed_deployed_ats])
             parents = mark_dag_parents(*dag, all_shas, all_deployed_ats, ownership)
-            unroot_mask = np.array([len(p) for p in parents], dtype=bool)
-            root_mask = ~unroot_mask
+            noroot_mask = np.array([len(p) for p in parents], dtype=bool)
+            root_mask = ~noroot_mask
             all_commits = np.concatenate([successful_commits, failed_commits])
             root_details_per_repo[env][repo_name] = (
                 all_commits[root_mask],
@@ -1437,51 +1436,85 @@ async def _resolve_commit_relationship(
                 all_deployed_ats[root_mask],
                 root_mask[:len(successful_commits)].sum(),
             )
-            for index, my_parents in zip(np.flatnonzero(unroot_mask), parents[unroot_mask]):
+            for index, my_parents in zip(np.flatnonzero(noroot_mask), parents[noroot_mask]):
                 my_relationships[all_commits[index]][all_deployed_ats[index]] = \
                     CommitRelationship(all_commits[my_parents],
                                        all_shas[my_parents],
                                        np.zeros(len(my_parents), dtype=bool))
     del commits_per_repo_per_env
     missing_sha = b"0" * 40
-    tainted_envs = []
-    while until_per_repo_env:
-        dags = await _extend_dags_with_previous_commits(
-            previous, dags, account, meta_ids, mdb, pdb)
-        for env, repos in previous.items():
-            for repo_name, (cid, sha, dep_finished_at) in repos.items():
-                if sha is None:
-                    log.warning("skipped environment %s, repository %s is unresolved",
-                                env, repo_name)
-                    del until_per_repo_env[env]
-                    tainted_envs.append(env)
-                    break
+    tainted_envs = set()
+    suspects = defaultdict(dict)
+    dags = await _extend_dags_with_previous_commits(
+        previous, dags, account, meta_ids, mdb, pdb)
 
+    # there may be older commits deployed earlier, disregarding our loading in batches
+    for env, repos in previous.items():
+        for repo_name, (_, shas, _) in repos.items():
+            if until_per_repo_env[env][repo_name] == datetime.min:
+                log.warning("skipped environment %s, repository %s is unresolved",
+                            env, repo_name)
+                del until_per_repo_env[env][repo_name]
+                tainted_envs.add(env)
+                break
+
+            root_ids, root_shas, root_deployed_ats, success_len = \
+                root_details_per_repo[env][repo_name]
+            dag = dags[drop_logical_repo(repo_name)]
+            successful_shas = np.concatenate([root_shas[:success_len], shas])
+            # even if `sha` is a child, it was deployed earlier, hence must steal the ownership
+            ownership = mark_dag_access(*dag, successful_shas, True)
+            suspects[env][repo_name] = dag[0][ownership < success_len]
+    # fetch those "impossible" deployments
+    back_to_the_future_previous = await _fetch_latest_deployed_components(
+        until_per_repo_env, logical_settings, prefixer, account, meta_ids, mdb, rdb,
+        suspects=suspects)
+    # merge with the original `previous`
+    for env, repos in previous.items():
+        back_to_the_future_repos = back_to_the_future_previous[env]
+        for repo_name, (cids, shas, dep_finished_ats) in repos.items():
+            (
+                back_to_the_future_cids,
+                back_to_the_future_shas,
+                back_to_the_future_dep_finished_ats,
+            ) = back_to_the_future_repos[repo_name]
+            if back_to_the_future_shas[0] != missing_sha:
+                cids.extend(back_to_the_future_cids)
+                shas.extend(back_to_the_future_shas)
+                dep_finished_ats.extend(back_to_the_future_dep_finished_ats)
+    del back_to_the_future_previous
+
+    while until_per_repo_env:
+        for env, repos in previous.items():
+            if env in tainted_envs:
+                continue
+            for repo_name, (cids, shas, dep_finished_ats) in repos.items():
                 my_relationships = commit_relationship[env][repo_name]
                 root_ids, root_shas, root_deployed_ats, success_len = \
                     root_details_per_repo[env][repo_name]
                 dag = dags[drop_logical_repo(repo_name)]
-                successful_shas = np.concatenate([root_shas[:success_len], [sha]])
+                successful_shas = np.concatenate([root_shas[:success_len], shas])
                 # even if `sha` is a child, it was deployed earlier, hence must steal the ownership
                 ownership = mark_dag_access(*dag, successful_shas, True)
                 all_shas = np.concatenate([successful_shas, root_shas[success_len:]])
                 all_deployed_ats = np.concatenate([
                     root_deployed_ats[:success_len],
-                    np.array([dep_finished_at], dtype="datetime64[s]"),
+                    np.array(dep_finished_ats, dtype="datetime64[s]"),
                     root_deployed_ats[success_len:],
                 ])
-                reached_root = sha == missing_sha
+                reached_root = shas[0] == missing_sha
                 parents = mark_dag_parents(*dag, all_shas, all_deployed_ats, ownership,
                                            slay_hydra=not reached_root)
                 if reached_root:
-                    unroot_mask = np.ones(len(parents), dtype=bool)
+                    noroot_mask = np.ones(len(parents), dtype=bool)
                 else:
-                    unroot_mask = np.array([len(p) for p in parents], dtype=bool)
-                root_mask = ~unroot_mask
-                root_mask[success_len] = False  # oldest commit that we've just inserted
-                unroot_mask[success_len] = False
+                    noroot_mask = np.array([len(p) for p in parents], dtype=bool)
+                root_mask = ~noroot_mask
+                # oldest commits that we've just inserted
+                root_mask[success_len:success_len + len(cids)] = False
+                noroot_mask[success_len:success_len + len(cids)] = False
                 all_commit_ids = np.concatenate([
-                    root_ids[:success_len], [cid], root_ids[success_len:],
+                    root_ids[:success_len], cids, root_ids[success_len:],
                 ])
                 root_details_per_repo[env][repo_name] = (
                     all_commit_ids[root_mask],
@@ -1489,28 +1522,30 @@ async def _resolve_commit_relationship(
                     all_deployed_ats[root_mask],
                     root_mask[:success_len].sum(),
                 )
-                for index, my_parents in zip(np.flatnonzero(unroot_mask), parents[unroot_mask]):
+                for index, my_parents in zip(np.flatnonzero(noroot_mask), parents[noroot_mask]):
                     my_relationships[all_commit_ids[index]][all_deployed_ats[index]] = \
                         CommitRelationship(
                             all_commit_ids[my_parents],
                             all_shas[my_parents],
-                            my_parents == success_len)
+                            success_len <= my_parents < success_len + len(cids))
                 if len(root_shas) > 0:
                     # there are still unresolved parents, we need to descend deeper
-                    until_per_repo_env[env][repo_name] = env_repo_edges[env][repo_name]
+                    until_per_repo_env[env][repo_name] = min(dep_finished_ats)
                 else:
                     del until_per_repo_env[env][repo_name]
             if not until_per_repo_env[env]:
                 del until_per_repo_env[env]
         if until_per_repo_env:
-            previous, env_repo_edges = await _fetch_latest_deployed_components(
+            previous = await _fetch_latest_deployed_components(
                 until_per_repo_env, logical_settings, prefixer, account, meta_ids, mdb, rdb)
-    return commit_relationship, dags, deployed_commits_df, tainted_envs
+            dags = await _extend_dags_with_previous_commits(
+                previous, dags, account, meta_ids, mdb, pdb)
+    return commit_relationship, dags, deployed_commits_df, sorted(tainted_envs)
 
 
 @sentry_span
 async def _extend_dags_with_previous_commits(
-        previous: Dict[str, Dict[str, Tuple[int, bytes, datetime]]],
+        previous: Dict[str, Dict[str, Tuple[List[int], List[bytes], List[datetime]]]],
         dags: Dict[str, DAG],
         account: int,
         meta_ids: Tuple[int, ...],
@@ -1519,9 +1554,11 @@ async def _extend_dags_with_previous_commits(
     records = {}
     missing_sha = b"0" * 40
     for repos in previous.values():
-        for repo, (cid, sha, dep_finished_at) in repos.items():
-            if sha != missing_sha:
-                records[cid] = (sha.decode(), drop_logical_repo(repo), dep_finished_at)
+        for repo, (cids, shas, dep_finished_ats) in repos.items():
+            physical_repo = drop_logical_repo(repo)
+            for cid, sha, dep_finished_at in zip(cids, shas, dep_finished_ats):
+                if sha != missing_sha:
+                    records[cid] = (sha.decode(), physical_repo, dep_finished_at)
     if not records:
         return dags
     previous_commits_df = pd.DataFrame.from_dict(records, orient="index")
@@ -1547,8 +1584,9 @@ async def _fetch_latest_deployed_components(
         meta_ids: Tuple[int, ...],
         mdb: Database,
         rdb: Database,
-) -> Tuple[Dict[str, Dict[str, Tuple[str, bytes, datetime]]],
-           Dict[str, Dict[str, datetime]]]:
+        suspects: Optional[Dict[str, Dict[str, np.ndarray]]] = None,
+        batch: int = 10,
+) -> Dict[str, Dict[str, Tuple[List[int], List[bytes], List[datetime]]]]:
     until_per_repo_env_logical = {}
     until_per_repo_env_physical = {}
     for env, repos in until_per_repo_env.items():
@@ -1562,22 +1600,34 @@ async def _fetch_latest_deployed_components(
                 until_per_repo_env_logical \
                     .setdefault(env, {}) \
                     .setdefault(physical_repo, {})[repo] = ts
+    if suspects is not None:
+        all_shas = list(chain.from_iterable(v.values() for v in suspects.values()))
+        all_shas = np.unique(np.concatenate(all_shas)).astype("U40")
+        sha_rows = await mdb.fetch_all(
+            select([NodeCommit.id, NodeCommit.sha])
+            .where(and_(NodeCommit.acc_id.in_(meta_ids),
+                        NodeCommit.sha.in_any_values(all_shas))))
+        commit_id_map = {r[1].encode(): r[0] for r in sha_rows}
+        for repo_suspects in suspects.values():
+            for repo, shas in repo_suspects.items():
+                repo_suspects[repo] = np.fromiter(
+                    (commit_id_map[sha] for sha in shas), int, len(shas))
     queries = [
         *_compose_latest_deployed_components_physical(
-            until_per_repo_env_physical, prefixer, account),
+            until_per_repo_env_physical, suspects, prefixer, account, batch),
         *_compose_latest_deployed_components_logical(
-            until_per_repo_env_logical, logical_settings, prefixer, account),
+            until_per_repo_env_logical, suspects, logical_settings, prefixer, account, batch),
     ]
-    previous, env_repo_edges = await _fetch_latest_deployed_components_queries(
-        queries, meta_ids, mdb, rdb)
+    previous = await _fetch_latest_deployed_components_queries(queries, meta_ids, mdb, rdb)
     missing_sha = b"0" * 40
     for env, repos in until_per_repo_env.items():
         if env not in previous:
             previous[env] = {}
         repo_commits = previous[env]
         for repo in repos:
-            repo_commits.setdefault(repo, (None, missing_sha, None))
-    return previous, env_repo_edges
+            if repo_commits.setdefault(repo, ([0], [missing_sha], [datetime.min])) == (None,) * 3:
+                until_per_repo_env[env][repo] = datetime.min
+    return previous
 
 
 def _compose_logical_filters_of_deployments(repo: str,
@@ -1609,9 +1659,11 @@ def _compose_logical_filters_of_deployments(repo: str,
 
 def _compose_latest_deployed_components_logical(
         until_per_repo_env: Dict[str, Dict[str, Dict[str, datetime]]],
+        suspects_per_repo_env: Optional[Dict[str, Dict[str, Collection[int]]]],
         logical_settings: LogicalRepositorySettings,
         prefixer: Prefixer,
         account: int,
+        batch: int,
 ) -> List[Select]:
     if not until_per_repo_env:
         return []
@@ -1646,9 +1698,12 @@ def _compose_latest_deployed_components_logical(
                         DeploymentNotification.conclusion == CONCLUSION_SUCCESS,
                         DeploymentNotification.finished_at < until,
                         DeployedComponent.repository_node_id == repo_node_id,
+                        *((DeployedComponent.resolved_commit_node_id.in_(
+                            suspects_per_repo_env[env][repo]),)
+                          if suspects_per_repo_env is not None else ()),
                         *logical_filters))
                     .order_by(desc(DeploymentNotification.finished_at))
-                    .limit(1)
+                    .limit(batch if suspects_per_repo_env is None else None)
                     .subquery()))
     return queries
 
@@ -1656,8 +1711,10 @@ def _compose_latest_deployed_components_logical(
 @sentry_span
 def _compose_latest_deployed_components_physical(
         until_per_repo_env: Dict[str, Dict[str, datetime]],
+        suspects_per_repo_env: Optional[Dict[str, Dict[str, Collection[int]]]],
         prefixer: Prefixer,
         account: int,
+        batch: int,
 ) -> List[Select]:
     repo_name_to_node = prefixer.repo_name_to_node
     queries = [
@@ -1676,9 +1733,12 @@ def _compose_latest_deployed_components_physical(
                 DeploymentNotification.conclusion == DeploymentNotification.CONCLUSION_SUCCESS,
                 DeploymentNotification.finished_at < until,
                 DeployedComponent.repository_node_id == repo_name_to_node[repo],
+                *((DeployedComponent.resolved_commit_node_id.in_(
+                    suspects_per_repo_env[env][repo]),)
+                  if suspects_per_repo_env is not None else ()),
             ))
             .order_by(desc(DeploymentNotification.finished_at))
-            .limit(1)
+            .limit(batch if suspects_per_repo_env is None else None)
             .subquery())
         for env, repos in until_per_repo_env.items()
         for repo, until in repos.items()
@@ -1692,40 +1752,40 @@ async def _fetch_latest_deployed_components_queries(
         meta_ids: Tuple[int, ...],
         mdb: Database,
         rdb: Database,
-) -> Tuple[Dict[str, Dict[str, Tuple[str, bytes, datetime]]],
-           Dict[str, Dict[str, datetime]]]:
+) -> Dict[str, Dict[str, Tuple[List[int], List[bytes], List[datetime]]]]:
     if not queries:
-        return {}, {}
+        return {}
     query = union_all(*queries) if len(queries) > 1 else queries[0]
     rows = await rdb.fetch_all(query)
     if not rows:
         result = {}
-        env_repo_edges = {}
     else:
-        result = defaultdict(dict)
-        env_repo_edges = defaultdict(dict)
-        commit_ids = set()
-        for row in rows:
-            env = row[DeploymentNotification.environment.name]
-            edge = row[DeploymentNotification.finished_at.name]
-            repo = row[DeployedComponent.repository_full_name]
-            commit_ids.add(row[DeployedComponent.resolved_commit_node_id.name])
-            env_repo_edges[env][repo] = edge
-        commit_ids.discard(None)
+        result_cids = defaultdict(lambda: defaultdict(list))
+        result_shas = defaultdict(lambda: defaultdict(list))
+        result_finisheds = defaultdict(lambda: defaultdict(list))
+        commit_ids = {row[DeployedComponent.resolved_commit_node_id.name] for row in rows} - {None}
         sha_rows = await mdb.fetch_all(
             select([NodeCommit.id, NodeCommit.sha])
             .where(and_(NodeCommit.acc_id.in_(meta_ids),
                         NodeCommit.id.in_any_values(commit_ids))))
         commit_data_map = {r[0]: r[1].encode() for r in sha_rows}
+        result = defaultdict(dict)
         for row in rows:
             env = row[DeploymentNotification.environment.name]
             repo = row[DeployedComponent.repository_full_name]
             cid = row[DeployedComponent.resolved_commit_node_id.name]
             try:
-                result[env][repo] = (cid, commit_data_map[cid], env_repo_edges[env][repo])
+                result_shas[env][repo].append(commit_data_map[cid])
             except KeyError:
+                result[env][repo] = (None,) * 3
                 continue
-    return result, env_repo_edges
+            else:
+                result_cids[env][repo].append(cid)
+                result_finisheds[env][repo].append(row[DeploymentNotification.finished_at.name])
+        for env, repos_cids in result_cids.items():
+            for repo, cids in repos_cids.items():
+                result[env][repo] = (cids, result_shas[env][repo], result_finisheds[env][repo])
+    return result
 
 
 @sentry_span
