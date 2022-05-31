@@ -567,7 +567,7 @@ def mark_dag_access(hashes: np.ndarray,
     If not `heads_order_is_significant`, we sort `heads` topologically, but the earlier commits \
     have the priority over the later commits, if they are the same.
 
-    :return: Indexes in `heads`, *not vertexes*.
+    :return: Indexes in `heads`, *not vertexes*. `len(heads)` if there is no parent.
     """
     if len(hashes) == 0:
         return np.array([], dtype=np.int64)

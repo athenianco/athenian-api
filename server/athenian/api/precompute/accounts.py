@@ -231,7 +231,7 @@ async def precompute_reposet(
         del ignored_first_releases, ignored_released_prs
         log.info("Mining deployments")
         await mine_deployments(
-            repos, {}, no_time_from, time_to, [], [], {}, {}, LabelFilter.empty(),
+            repos, {}, time_from, time_to, [], [], {}, {}, LabelFilter.empty(),
             JIRAFilter.empty(), release_settings, logical_settings,
             branches, default_branches, prefixer, reposet.owner_id, meta_ids,
             mdb, pdb, rdb, None)  # yes, disable the cache

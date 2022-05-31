@@ -4,6 +4,7 @@ jobs:
   codeball_job:
     runs-on: ubuntu-latest
     name: Run Codeball
+    if: "github.actor != 'dependabot[bot]'"
     steps:
       - name: Codeball AI Actions
         uses: sturdy-dev/codeball-action@v1
