@@ -704,7 +704,7 @@ class MetricEntriesCalculator:
             ",".join("%s:%s" % (k, sorted(v)) for k, v in sorted(defs.items())),
             time_from.timestamp(), time_to.timestamp(),
             ",".join(str(q) for q in quantiles),
-            ";".join(",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(p.items()))
+            ";".join(",".join(f"{k.name}:{sorted(map(str, v))}" for k, v in sorted(p.items()))
                      for p in participants),
             label_filter,
             ",".join(sorted(priorities)),
