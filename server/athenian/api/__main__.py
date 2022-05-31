@@ -220,6 +220,18 @@ def setup_context(log: logging.Logger) -> None:
             return aiohttp_traces_sample_rate / 100
         return aiohttp_traces_sample_rate
 
+    LOGGERS_EXCLUDED_FROM_EVENTS = ("ariadne",)
+
+    def before_send(event, hint):
+        event_logger = event.get("logger")
+        if event_logger is not None and any(
+                event_logger.startswith(disabled)
+                for disabled in LOGGERS_EXCLUDED_FROM_EVENTS
+        ):
+            return None
+
+        return event
+
     sentry_log = logging.getLogger("sentry_sdk.errors")
     sentry_log.handlers.clear()
     flogging.trailing_dot_exceptions.add(sentry_log.name)
@@ -237,6 +249,7 @@ def setup_context(log: logging.Logger) -> None:
         request_bodies="always",
         release="%s@%s" % (metadata.__package__, metadata.__version__),
         traces_sampler=sample_trace,
+        before_send=before_send,
     )
     sentry_sdk.utils.MAX_STRING_LENGTH = MAX_SENTRY_STRING_LENGTH
     sentry_sdk.serializer.MAX_DATABAG_BREADTH = 16  # e.g., max number of locals in a stack frame
