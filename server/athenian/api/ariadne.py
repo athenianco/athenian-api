@@ -66,7 +66,7 @@ class GraphQL:
             root_value=None,
             validation_rules=None,
             debug=self.debug,
-            introspection=False,
+            introspection=True,
             logger=self.logger,
             error_formatter=format_error,
             extensions=[HandleErrorExtension],
