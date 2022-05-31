@@ -1,7 +1,8 @@
 import asyncio
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import datetime
 from itertools import chain
-from typing import Any, Collection, Dict, List, Mapping, Optional, Sequence, Set, Tuple, Union
+from typing import Any, Collection, Dict, Iterable, List, Mapping, Optional, Sequence, Set, \
+    Tuple, Union
 
 import aiomcache
 from ariadne import ObjectType
@@ -10,9 +11,10 @@ from morcilla import Database
 import numpy as np
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 
+from athenian.api.align.goals.dates import goal_dates_to_datetimes
 from athenian.api.align.models import MetricParamsFields, MetricValue, MetricValues, \
     TeamMetricValue
-from athenian.api.align.queries.teams import build_team_tree_from_rows
+from athenian.api.align.queries.teams import build_team_tree_nodes_from_rows
 from athenian.api.async_utils import gather
 from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.features.entries import make_calculator
@@ -63,18 +65,20 @@ async def resolve_metrics_current_values(obj: Any,
             detail=f"{MetricParamsFields.validFrom} must be less than or equal to "
                    f"{MetricParamsFields.expiresAt}",
         ))
-    date_to += timedelta(days=1)
-    pr_metrics, release_metrics, jira_metrics = _triage_metrics(params[MetricParamsFields.metrics])
+    time_interval = goal_dates_to_datetimes(date_from, date_to)
     teams_flat = flatten_teams(team_rows)
-    teams = [teams_flat[row[Team.id.name]] for row in team_rows]
-    metric_values = await _calculate_team_metrics(
-        pr_metrics, release_metrics, jira_metrics, date_from, date_to, teams, accountId,
-        meta_ids, sdb, mdb, pdb, rdb, cache, info.context.app["slack"])
-    team_ids = [row[Team.id.name] for row in team_rows]
-    triaged = _triage_metric_values(
-        pr_metrics, release_metrics, jira_metrics, team_ids, metric_values)
-    nodes, root_team_id = build_team_tree_from_rows(team_rows, params[MetricParamsFields.teamId])
-    models = _build_metrics_response(nodes, triaged, root_team_id)
+    teams = {row[Team.id.name]: teams_flat[row[Team.id.name]] for row in team_rows}
+    team_metrics_all_intervals = await calculate_team_metrics(
+        params[MetricParamsFields.metrics],
+        [time_interval], teams, accountId,
+        meta_ids, sdb, mdb, pdb, rdb, cache, info.context.app["slack"],
+    )
+    team_metrics = team_metrics_all_intervals[time_interval]
+
+    nodes, root_team_id = build_team_tree_nodes_from_rows(
+        team_rows, params[MetricParamsFields.teamId],
+    )
+    models = _build_metrics_response(nodes, team_metrics, root_team_id)
     return [m.to_dict() for m in models]
 
 
@@ -102,9 +106,7 @@ def _triage_metrics(metrics: List[str]) -> Tuple[List[str], List[str], List[str]
     return pr_metrics, release_metrics, jira_metrics
 
 
-def _loginify_teams(teams: Sequence[Collection[int]],
-                    prefixer: Prefixer,
-                    ) -> List[Set[str]]:
+def _loginify_teams(teams: Iterable[Collection[int]], prefixer: Prefixer) -> List[Set[str]]:
     result = []
     user_node_to_login = prefixer.user_node_to_login.__getitem__
     for team in teams:
@@ -118,10 +120,10 @@ def _loginify_teams(teams: Sequence[Collection[int]],
     return result
 
 
-def _jirafy_teams(teams: Sequence[Collection[int]],
+def _jirafy_teams(teams: Iterable[Collection[int]],
                   jira_map: Mapping[int, str],
                   ) -> List[JIRAParticipants]:
-    result = []
+    result: List[JIRAParticipants] = []
     for team in teams:
         result.append({JIRAParticipationKind.ASSIGNEE: (assignees := [])})
         for dev in team:
@@ -132,14 +134,14 @@ def _jirafy_teams(teams: Sequence[Collection[int]],
     return result
 
 
+Interval = Tuple[datetime, datetime]
+
+
 @sentry_span
-async def _calculate_team_metrics(
-        pr_metrics: Sequence[str],
-        release_metrics: Sequence[str],
-        jira_metrics: Sequence[str],
-        date_from: date,
-        date_to: date,
-        teams: Sequence[List[int]],
+async def calculate_team_metrics(
+        metrics: List[str],
+        time_intervals: Sequence[Interval],
+        teams: Dict[int, List[int]],
         account: int,
         meta_ids: Tuple[int, ...],
         sdb: Database,
@@ -148,15 +150,21 @@ async def _calculate_team_metrics(
         rdb: Database,
         cache: Optional[aiomcache.Client],
         slack: Optional[SlackWebClient],
-) -> Tuple[Union[np.ndarray, Tuple[np.ndarray, ...]], ...]:
-    time_from = datetime.combine(date_from, time(), tzinfo=timezone.utc)
-    time_to = datetime.combine(date_to, time(), tzinfo=timezone.utc)
-    time_intervals = [[time_from, time_to]]
+) -> Dict[Interval, Dict[str, Dict[int, object]]]:
+    """Calculate a set of metrics for each team and time interval.
+
+    The result will be a nested dict structure indexed first by interval, then by metric and
+    finally by team id.
+    `teams` is a mapping of team id to team members.
+    """
+    pr_metrics, release_metrics, jira_metrics = _triage_metrics(metrics)
+    team_members = teams.values()
+
     quantiles = (0, 0.95)
     settings = Settings.from_account(account, sdb, mdb, cache, slack)
     if jira_metrics:
         jira_map_task = asyncio.create_task(load_mapped_jira_users(
-            account, set(chain.from_iterable(teams)), sdb, mdb, cache))
+            account, set(chain.from_iterable(team_members)), sdb, mdb, cache))
     prefixer, account_bots, jira_ids, release_settings = await gather(
         Prefixer.load(meta_ids, mdb, cache),
         bots(account, meta_ids, mdb, sdb, cache),
@@ -173,7 +181,7 @@ async def _calculate_team_metrics(
     if pr_metrics:
         pr_participants = [{
             PRParticipationKind.AUTHOR: team,
-        } for team in _loginify_teams(teams, prefixer)]
+        } for team in _loginify_teams(team_members, prefixer)]
         tasks.append(calculator.calc_pull_request_metrics_line_github(
             pr_metrics, time_intervals, quantiles, [], [], [repos], pr_participants,
             LabelFilter.empty(), JIRAFilter.empty(), True, account_bots,
@@ -184,7 +192,7 @@ async def _calculate_team_metrics(
             ReleaseParticipationKind.PR_AUTHOR: team,
             ReleaseParticipationKind.COMMIT_AUTHOR: team,
             ReleaseParticipationKind.RELEASER: team,
-        } for team in teams]
+        } for team in team_members]
         tasks.append(calculator.calc_release_metrics_line_github(
             release_metrics, time_intervals, quantiles, [repos], release_participants,
             LabelFilter.empty(), JIRAFilter.empty(), release_settings, logical_settings,
@@ -196,7 +204,7 @@ async def _calculate_team_metrics(
             jira_metrics,
             time_intervals,
             quantiles,
-            _jirafy_teams(teams, jira_map),
+            _jirafy_teams(team_members, jira_map),
             LabelFilter.empty(),
             False,
             [], [], [],
@@ -205,34 +213,47 @@ async def _calculate_team_metrics(
             default_branches,
             jira_ids,
         ))
-    return await gather(*tasks, op="calculators")
+    raw_values = await gather(*tasks, op="calculators")
+    return _triage_metric_values(
+        pr_metrics, release_metrics, jira_metrics, list(teams), time_intervals, raw_values,
+    )
 
 
 def _triage_metric_values(pr_metrics: Sequence[str],
                           release_metrics: Sequence[str],
                           jira_metrics: Sequence[str],
                           teams: Sequence[int],
+                          time_intervals: Sequence[Interval],
                           metric_values: Tuple[Union[np.ndarray, Tuple[np.ndarray, ...]], ...],
-                          ) -> Dict[str, Dict[int, object]]:
-    result = {}
+                          ) -> Dict[Interval, Dict[str, Dict[int, object]]]:
+
+    pr_metric_values = release_metric_values = jira_metric_values = []
     if pr_metrics:
         pr_metric_values, *metric_values = metric_values
-        for i, metric in enumerate(pr_metrics):
-            metric_teams = result[metric] = {}
-            for team, team_metric_values in zip(teams, pr_metric_values[0][0]):
-                metric_teams[team] = team_metric_values[0][0][i].value
     if release_metrics:
         (release_metric_values, *_), *metric_values = metric_values
-        for i, metric in enumerate(release_metrics):
-            metric_teams = result[metric] = {}
-            for team, team_metric_values in zip(teams, release_metric_values):
-                metric_teams[team] = team_metric_values[0][0][0][i].value
     if jira_metrics:
         (jira_metric_values, *_), *metric_values = metric_values
+
+    result: Dict[Interval, dict] = {}
+
+    for interval_idx, interval in enumerate(time_intervals):
+        result[interval] = {}
+        for metric_idx, metric in enumerate(pr_metrics):
+            metric_teams = result[interval][metric] = {}
+            for team, team_metric_values in zip(teams, pr_metric_values[0][0]):
+                metric_teams[team] = team_metric_values[interval_idx][0][metric_idx].value
+
+        for i, metric in enumerate(release_metrics):
+            metric_teams = result[interval][metric] = {}
+            for team, team_metric_values in zip(teams, release_metric_values):
+                metric_teams[team] = team_metric_values[0][interval_idx][0][i].value
+
         for i, metric in enumerate(jira_metrics):
-            metric_teams = result[metric] = {}
+            metric_teams = result[interval][metric] = {}
             for team, team_metric_values in zip(teams, jira_metric_values):
-                metric_teams[team] = team_metric_values[0][0][0][i].value
+                metric_teams[team] = team_metric_values[0][interval_idx][0][i].value
+
     return result
 
 

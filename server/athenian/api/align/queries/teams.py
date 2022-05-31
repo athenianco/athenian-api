@@ -1,11 +1,11 @@
 from operator import attrgetter
-from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
+from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
 
 from ariadne import QueryType
 from graphql import GraphQLResolveInfo
 
 from athenian.api.align.models import TeamTree
-from athenian.api.db import DatabaseLike
+from athenian.api.db import DatabaseLike, Row
 from athenian.api.internal.team import fetch_teams_recursively, MultipleRootTeamsError, \
     RootTeamNotFoundError, TeamNotFoundError
 from athenian.api.models.state.models import Team
@@ -23,13 +23,13 @@ async def resolve_teams(obj: Any, info: GraphQLResolveInfo, accountId: int, team
     # teamId 0 means all teams
     actual_team_id = None if teamId == 0 else teamId
 
-    team_tree = await _get_team_tree(accountId, actual_team_id, sdb)
+    team_tree = await fetch_team_tree(accountId, actual_team_id, sdb)
     return team_tree.to_dict()
 
 
-def build_team_tree_from_rows(team_rows: Iterable[Mapping[str, Any]],
-                              root_team_id: Optional[int],
-                              ) -> Tuple[Dict[int, Dict[str, Any]], int]:
+def build_team_tree_nodes_from_rows(
+    team_rows: Iterable[Row], root_team_id: Optional[int],
+) -> Tuple[Dict[int, Dict[str, Any]], int]:
     """
     Convert the flat Team rows to a tree with nested teams.
 
@@ -68,7 +68,7 @@ def build_team_tree_from_rows(team_rows: Iterable[Mapping[str, Any]],
     return nodes, root_team_id
 
 
-async def _get_team_tree(
+async def fetch_team_tree(
     account: int, root_team_id: Optional[int], sdb: DatabaseLike,
 ) -> TeamTree:
     """Build the TeamTree for the Team root_team_id."""
@@ -76,13 +76,25 @@ async def _get_team_tree(
     team_rows = await fetch_teams_recursively(
         account, sdb, team_select, [root_team_id] if root_team_id else None,
     )
-    nodes, root_team_id = build_team_tree_from_rows(team_rows, root_team_id)
-    return _build_team_tree(nodes[root_team_id], nodes)
+    return build_team_tree_from_rows(team_rows, root_team_id)
 
 
-def _build_team_tree(team_info: Dict[str, Any], all_teams: dict) -> TeamTree:
+def build_team_tree_from_rows(rows: Sequence[Row], root_team_id: Optional[int]) -> TeamTree:
+    """Build the TeamTree for the Team root_team_id starting from the retrieved team rows.
+
+    Team rows can be fetched with `fetch_teams_recursively`, and should at least include
+    id, parent_id, name and members as columns.
+    """
+    nodes, root_team_id = build_team_tree_nodes_from_rows(rows, root_team_id)
+    return _build_team_tree_from_node(nodes[root_team_id], nodes)
+
+
+def _build_team_tree_from_node(team_info: Dict[str, Any], all_teams: dict) -> TeamTree:
     children = sorted(
-        (_build_team_tree(all_teams[child_id], all_teams) for child_id in team_info["children"]),
+        (
+            _build_team_tree_from_node(all_teams[child_id], all_teams)
+            for child_id in team_info["children"]
+        ),
         key=attrgetter("name"),
     )
     return TeamTree(team_info["id"], team_info["name"], children, team_info["members"])

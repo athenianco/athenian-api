@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta, timezone
-from typing import Any, Dict, Sequence, Tuple, Union
+from typing import Any, Dict, Sequence, Union
 
 from ariadne import MutationType
 from graphql import GraphQLResolveInfo
 
 from athenian.api.align.exceptions import GoalMutationError
+from athenian.api.align.goals.dates import goal_dates_to_datetimes
 from athenian.api.align.goals.dbaccess import assign_team_goals, delete_goal, delete_team_goals, \
     GoalCreationInfo, insert_goal, TeamGoalTargetAssignment
 from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
@@ -98,7 +98,7 @@ def _parse_create_goal_input(input: Dict[str, Any], account_id: int) -> GoalCrea
     if len({team_goal.team_id for team_goal in team_goals}) < len(team_goals):
         raise GoalMutationError("More than one team goal with the same teamId")
 
-    valid_from, expires_at = _convert_goal_dates(
+    valid_from, expires_at = goal_dates_to_datetimes(
         input[CreateGoalInputFields.validFrom], input[CreateGoalInputFields.expiresAt],
     )
     if expires_at < valid_from:
@@ -127,15 +127,6 @@ def _parse_team_goal_input(team_goal_input: dict) -> TeamGoal:
 def _parse_team_goal_target(team_goal_target: dict) -> Union[int, float, str]:
     """Get the first non null value in GoalTargetInput."""
     return next(tgt for tgt in team_goal_target.values() if tgt is not None)
-
-
-def _convert_goal_dates(valid_from: date, expires_at: date) -> Tuple[datetime, datetime]:
-    """Convert date objects from API into datetimes."""
-    valid_from = datetime.combine(valid_from, time.min, tzinfo=timezone.utc)
-    # expiresAt semantic is to include the given day, so datetime is set to the start of the
-    # following day
-    expires_at = datetime.combine(expires_at + timedelta(days=1), time.min, tzinfo=timezone.utc)
-    return (valid_from, expires_at)
 
 
 @dataclass(frozen=True)

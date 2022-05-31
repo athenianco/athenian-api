@@ -85,6 +85,7 @@ def add_pdb_misses(pdb: morcilla.Database, topic: str, value: int) -> None:
 
 Connection = morcilla.Connection
 Database = morcilla.Database
+Row = Mapping[Union[int, str], Any]
 
 
 _sql_log = logging.getLogger("%s.sql" % metadata.__package__)
