@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timezone
+from itertools import chain
 import logging
 import textwrap
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Type, Union
@@ -10,13 +11,13 @@ from pandas.core.dtypes.cast import OutOfBoundsDatetime, tslib
 from pandas.core.internals import make_block
 from pandas.core.internals.managers import BlockManager, form_blocks
 import sentry_sdk
-from sqlalchemy import Boolean, Column, DateTime, Integer, String
+from sqlalchemy import BigInteger, Boolean, Column, DateTime, Integer, SmallInteger, String
 from sqlalchemy.orm.attributes import InstrumentedAttribute
-from sqlalchemy.sql import ClauseElement
+from sqlalchemy.sql import CompoundSelect
 from sqlalchemy.sql.elements import Label
 
 from athenian.api import metadata
-from athenian.api.db import Database, DatabaseLike
+from athenian.api.db import Database, DatabaseLike, is_postgresql
 from athenian.api.models.metadata.github import Base as MetadataBase
 from athenian.api.models.persistentdata.models import Base as PerdataBase
 from athenian.api.models.precomputed.models import GitHubBase as PrecomputedBase
@@ -25,7 +26,7 @@ from athenian.api.to_object_arrays import is_null, to_object_arrays_split
 from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
 
 
-async def read_sql_query(sql: ClauseElement,
+async def read_sql_query(sql: CompoundSelect,
                          con: DatabaseLike,
                          columns: Union[Sequence[str], Sequence[InstrumentedAttribute],
                                         MetadataBase, PerdataBase, PrecomputedBase, StateBase],
@@ -56,9 +57,160 @@ async def read_sql_query(sql: ClauseElement,
     Any datetime values with time zone information parsed via the `parse_dates`
     parameter will be converted to UTC.
     """
+    if await is_postgresql(con):
+        if not isinstance(columns, Sequence):
+            columns = columns.__table__.columns
+        return await _read_sql_query_numpy(sql, con, columns, index=index, soft_limit=soft_limit)
+    return await _read_sql_query_records(sql, con, columns, index=index, soft_limit=soft_limit)
+
+
+async def _read_sql_query_numpy(
+        sql: CompoundSelect,
+        con: DatabaseLike,
+        columns: Union[Sequence[str], Sequence[InstrumentedAttribute]],
+        index: Optional[Union[str, Sequence[str]]] = None,
+        soft_limit: Optional[int] = None,
+) -> pd.DataFrame:
+    sql.dtype, (int_erase_nulls, int_reset_nulls, fixed_str_cols) = _build_dtype(columns)
+    data, nulls = await _fetch_query(sql, con)
+    blocks = {}
+    rows_count = 0
+    for i, arr in enumerate(data):
+        blocks.setdefault(arr.dtype, [arr.base, []])[1].append(i)
+        rows_count = len(arr)
+    if nulls and (int_erase_nulls or int_reset_nulls or fixed_str_cols):
+        null_items, null_cols = np.unravel_index(nulls, (rows_count, len(sql.dtype)))
+        null_items = null_items[np.argsort(null_cols)]
+        unique_null_cols, offsets, counts = np.unique(
+            null_cols, return_index=True, return_counts=True)
+        col_map = {name: i for i, name in enumerate(sql.dtype.names)}
+        remain_mask = None
+        if int_erase_nulls or fixed_str_cols:
+            for col in chain(int_erase_nulls, fixed_str_cols):
+                pos = np.searchsorted(unique_null_cols, (col_index := col_map[col]))
+                if pos < len(unique_null_cols) and unique_null_cols[pos] == col_index:
+                    if remain_mask is None:
+                        remain_mask = np.ones(rows_count, dtype=bool)
+                    remain_mask[null_items[offsets[pos]:offsets[pos] + counts[pos]]] = False
+        for col in int_reset_nulls:
+            pos = np.searchsorted(unique_null_cols, (col_index := col_map[col]))
+            if pos < len(unique_null_cols) and unique_null_cols[pos] == col_index:
+                data[col][null_items[offsets[pos]:offsets[pos] + counts[pos]]] = 0
+        if remain_mask is not None:
+            for ptrs in blocks.values():
+                ptrs[0] = ptrs[0][:, remain_mask]
+            rows_count = remain_mask.sum()
+    if soft_limit is not None and rows_count > soft_limit:
+        rows_count = soft_limit
+        for ptrs in blocks.values():
+            ptrs[0] = ptrs[0][:, :soft_limit]
+    pd_blocks = [
+        make_block(block, placement=indexes)
+        for block, indexes in blocks.values()
+    ]
+    dtype_names = sql.dtype.names
+    block_mgr = BlockManager(
+        pd_blocks, [pd.Index(dtype_names), pd.RangeIndex(stop=rows_count)])
+    frame = pd.DataFrame(block_mgr, columns=dtype_names, copy=False)
+    for column, (child_dtype, _) in sql.dtype.fields.items():
+        if child_dtype.kind == "M":
+            try:
+                frame[column] = frame[column].dt.tz_localize(timezone.utc)
+            except (AttributeError, TypeError):
+                continue
+    if index is not None:
+        frame.set_index(index, inplace=True)
+    return frame
+
+
+def _build_dtype(columns: Sequence[InstrumentedAttribute],
+                 ) -> Tuple[np.dtype, Tuple[Set[str], Set[str], Set[str]]]:
+    body = []
+    int_erase_nulls = set()
+    int_reset_nulls = set()
+    fixed_str_cols = set()
+    for c in columns:
+        if isinstance(c, str):
+            body.append((c, object))
+            continue
+        if (
+                isinstance(c.type, DateTime)
+                or (isinstance(c.type, type) and issubclass(c.type, DateTime))
+        ):
+            body.append((c.name, "datetime64[ns]"))
+        elif (
+                isinstance(c.type, Boolean) or
+                (isinstance(c.type, type) and issubclass(c.type, Boolean))
+        ):
+            body.append((c.name, bool))
+        elif (
+                (isinstance(c.type, Integer) or
+                 (isinstance(c.type, type) and issubclass(c.type, Integer)))
+                and not getattr(c, "nullable", False)
+                and (not isinstance(c, Label) or (
+                    (not getattr(c.element, "nullable", False))
+                    and (not getattr(c, "nullable", False))))
+        ):
+            info = getattr(
+                c, "info", {} if not isinstance(c, Label) else getattr(c.element, "info", {}),
+            )
+            if info.get("erase_nulls", False):
+                int_erase_nulls.add(c.name)
+            elif info.get("reset_nulls", False):
+                int_reset_nulls.add(c.name)
+            sql_type = c.type if isinstance(c.type, type) else type(c.type)
+            if sql_type == BigInteger:
+                int_dtype = np.int64
+            elif sql_type == SmallInteger:
+                int_dtype = np.int16
+            elif sql_type == Integer:
+                int_dtype = np.int32
+            else:
+                raise AssertionError(f"Unsupported integer type: {sql_type.__name__}")
+            body.append((c.name, int_dtype))
+        elif (
+                (isinstance(c.type, type) and issubclass(c.type, String))
+                and not getattr(c, "nullable", False)
+                and (not isinstance(c, Label) or (
+                    (not getattr(c.element, "nullable", False))
+                    and (not getattr(c, "nullable", False))
+                ))
+                and (dtype := getattr(
+                    c, "info", {} if not isinstance(c, Label) else getattr(c.element, "info", {}),
+                ).get("dtype", False))
+        ):
+            fixed_str_cols.add(c.name)
+            body.append((c.name, dtype))
+        else:
+            body.append((c.name, object))
+
+    dtype = np.dtype(body, metadata={"blocks": True})
+    return dtype, (int_erase_nulls, int_reset_nulls, fixed_str_cols)
+
+
+async def _read_sql_query_records(
+        sql: CompoundSelect,
+        con: DatabaseLike,
+        columns: Union[Sequence[str], Sequence[InstrumentedAttribute],
+                       MetadataBase, PerdataBase, PrecomputedBase, StateBase],
+        index: Optional[Union[str, Sequence[str]]] = None,
+        soft_limit: Optional[int] = None,
+) -> pd.DataFrame:
+    data = await _fetch_query(sql, con)
+    if soft_limit is not None and len(data) > soft_limit:
+        data = data[:soft_limit]
+    return wrap_sql_query(data, columns, index)
+
+
+async def _fetch_query(sql: str,
+                       con: DatabaseLike,
+                       original_sql: Optional[str] = None,
+                       ) -> Union[List[Sequence[Any]], Tuple[np.ndarray, List[int]]]:
     try:
         data = await con.fetch_all(query=sql)
     except Exception as e:
+        if original_sql is not None:
+            sql = original_sql
         try:
             sql = str(sql)
         except Exception:
@@ -67,13 +219,11 @@ async def read_sql_query(sql: ClauseElement,
         logging.getLogger("%s.read_sql_query" % metadata.__package__).error(
             "%s: %s; %s", type(e).__name__, e, sql)
         raise e from None
-    if soft_limit is not None and len(data) > soft_limit:
-        data = data[:soft_limit]
-    return wrap_sql_query(data, columns, index)
+    return data
 
 
 def _create_block_manager_from_arrays(
-    arrays_typed: List[np.ndarray],
+    arrays_typed: Sequence[np.ndarray],
     arrays_obj: np.ndarray,
     names_typed: List[str],
     names_obj: List[str],
@@ -333,7 +483,7 @@ async def gather(*coros_or_futures,
 
 
 async def read_sql_query_with_join_collapse(
-        query: ClauseElement,
+        query: CompoundSelect,
         db: Database,
         columns: Union[Sequence[str], Sequence[InstrumentedAttribute],
                        MetadataBase, PerdataBase, PrecomputedBase, StateBase],
