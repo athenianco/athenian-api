@@ -4,7 +4,7 @@ jsonschema==4.5.1
 aiohttp_cors==0.7.0
 swagger-ui-bundle==0.0.9
 sqlalchemy==1.4.36
-asyncpg-rkt==0.25.1
+asyncpg-rkt==0.25.3
 morcilla[sqlite,postgresql]==0.5.21
 psycopg2-binary==2.9.3
 xxhash==3.0.0
