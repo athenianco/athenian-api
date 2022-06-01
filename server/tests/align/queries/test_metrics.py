@@ -36,8 +36,8 @@ class BaseMetricsTest:
             query ($accountId: Int!,
                    $teamId: Int!,
                    $metrics: [String!]!,
-                   $validFrom: String!,
-                   $expiresAt: String!) {{
+                   $validFrom: Date!,
+                   $expiresAt: Date!) {{
               metricsCurrentValues(accountId: $accountId, params: {{
                 teamId: $teamId,
                 metrics: $metrics,
@@ -279,4 +279,4 @@ class TestMetricsNasty(BaseMetricsTest):
             date(2129, 1, 1),
         )
         assert res["errors"]
-        assert res["data"]["metricsCurrentValues"] is None
+        assert res.get("data") is None

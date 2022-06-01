@@ -4,22 +4,20 @@ from ariadne import make_executable_schema, MutationType, QueryType
 from freezegun import freeze_time
 from graphql import graphql_sync
 
-from athenian.api.align.directives.date import DateDirective
+from athenian.api.align.scalars.date import date_scalar
 
 
 @freeze_time("2022-04-01")
 def test_on_field_definition() -> None:
     type_defs = """
-        directive @date on FIELD_DEFINITION
+        scalar Date
         type Query {
-          today: String @date
+          today: Date!
         }
     """
     query = QueryType()
     query.set_field("today", lambda *_: date.today())
-
-    schema = make_executable_schema(type_defs, [query], directives={"date": DateDirective})
-
+    schema = make_executable_schema(type_defs, [query, date_scalar])
     result = graphql_sync(schema, "{today}")
     assert result.data == {"today": "2022-04-01"}
     assert result.errors is None
@@ -27,13 +25,13 @@ def test_on_field_definition() -> None:
 
 def test_on_input_field_definition() -> None:
     type_defs = """
-        directive @date on INPUT_FIELD_DEFINITION
+        scalar Date
         type Query {hello: String!}
         type Mutation {
           travel(input: TravelInput!): Boolean
         }
         input TravelInput {
-          when: String! @date
+          when: Date!
         }
     """
     mutation = MutationType()
@@ -45,7 +43,7 @@ def test_on_input_field_definition() -> None:
         assert input == {"when": check_date}
         return True
 
-    schema = make_executable_schema(type_defs, [mutation], directives={"date": DateDirective})
+    schema = make_executable_schema(type_defs, [mutation, date_scalar])
 
     q = "mutation m($travelInput: TravelInput!) { travel(input: $travelInput) }"
     result = graphql_sync(schema, q, variable_values={"travelInput": {"when": str(check_date)}})
