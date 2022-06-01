@@ -1,3 +1,4 @@
+from pathlib import Path
 import traceback
 from typing import Any, Callable, Iterable, Optional
 
@@ -10,6 +11,7 @@ from graphql import GraphQLResolveInfo, GraphQLSchema, located_error
 import sentry_sdk
 
 import athenian
+import athenian.api.align
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError
 from athenian.api.serialization import FriendlyJson
@@ -17,6 +19,8 @@ from athenian.api.serialization import FriendlyJson
 
 class GraphQL:
     """GraphQL aiohttp application."""
+
+    _GRAPHIQL_HTML_PATH = Path(athenian.api.align.__file__).parent / "graphiql.html"
 
     def __init__(
         self,
@@ -51,9 +55,8 @@ class GraphQL:
                 *middlewares,
             ],
         )
-        subapp.router.add_route(
-            "POST", "/graphql", self.process, name="GraphQL",
-        )
+        subapp.router.add_route("POST", "/graphql", self.process, name="GraphQL")
+        subapp.router.add_route("GET", "/ui", self._serve_graphiql, name="GraphQL-UI")
         app.add_subapp(base_path, subapp)
         subapp._state = app._state
 
@@ -77,6 +80,9 @@ class GraphQL:
             content_type="application/json",
             status=200 if success else 400,
         )
+
+    async def _serve_graphiql(self, request: AthenianWebRequest) -> aiohttp.web.StreamResponse:
+        return aiohttp.web.FileResponse(self._GRAPHIQL_HTML_PATH)
 
 
 class AriadneException(BaseException):  # note: BaseException to trick Ariadne
