@@ -3,7 +3,8 @@ from typing import Sequence
 from aiohttp.test_utils import TestClient
 
 from athenian.api.db import Database
-from tests.align.utils import align_graphql_request, assert_extension_error, get_extension_error
+from tests.align.utils import align_graphql_request, assert_extension_error, \
+    get_extension_error_obj
 from tests.testutils.db import model_insert_stmt
 from tests.testutils.factory.state import TeamFactory
 
@@ -51,7 +52,7 @@ class TestMembersErrors(BaseMembersTest):
         await sdb.execute(model_insert_stmt(TeamFactory(id=1, members=[1, 2])))
         headers["Authorization"] = "Bearer invalid"
         res = await self._request(1, 1, client, headers)
-        error = get_extension_error(res)
+        error = get_extension_error_obj(res)["detail"]
         assert "Error decoding token headers" in error
 
     async def test_team_not_found(self, client: TestClient, headers: dict) -> None:

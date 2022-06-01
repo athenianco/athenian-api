@@ -10,14 +10,14 @@ async def align_graphql_request(client: TestClient, **kwargs) -> dict:
     return await response.json()
 
 
-def get_extension_error(response: dict) -> str:
-    """Return the first extension error of the graphql response."""
-    return response["errors"][0]["extensions"]["detail"]
+def get_extension_error_obj(response: dict) -> dict:
+    """Return the first extension error object of the graphql response."""
+    return response["errors"][0]["extensions"]
 
 
 def assert_extension_error(response: dict, error: str) -> None:
     """Check the first extension error of the graphql response."""
-    assert get_extension_error(response) == error
+    assert get_extension_error_obj(response)["detail"] == error
 
 
 def build_recursive_fields_structure(

@@ -1,30 +1,52 @@
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
 
 from aiohttp.test_utils import TestClient
 from freezegun import freeze_time
+import pytest
 import sqlalchemy as sa
 
 from athenian.api.db import Database
 from athenian.api.models.state.models import Goal, Team, TeamGoal
-from tests.align.utils import align_graphql_request, assert_extension_error, get_extension_error
+from tests.align.utils import align_graphql_request, assert_extension_error, \
+    get_extension_error_obj
 from tests.conftest import DEFAULT_HEADERS
+from tests.testutils.auth import mock_auth0
 from tests.testutils.db import assert_existing_row, assert_missing_row, db_datetime_equals, \
     model_insert_stmt, models_insert
-from tests.testutils.factory.state import GoalFactory, TeamFactory, TeamGoalFactory
+from tests.testutils.factory.state import GoalFactory, TeamFactory, TeamGoalFactory, \
+    UserAccountFactory
+
+_USER_ID = "github|1"
 
 
 class BaseGoalTest:
+    @pytest.fixture(autouse=True, scope="function")
+    async def setup(self, sdb):
+        await sdb.execute(model_insert_stmt(UserAccountFactory(user_id=_USER_ID)))
+
     @classmethod
     async def _assert_no_goal_exists(cls, sdb: Database) -> None:
         assert await sdb.fetch_one(sa.select(Goal)) is None
         assert await sdb.fetch_one(sa.select(TeamGoal)) is None
 
+    async def _base_request(self, client, json, user_id: Optional[str]) -> dict:
+        headers = {**DEFAULT_HEADERS}
+        if user_id is not None:
+            headers["Authorization"] = f"Bearer {user_id}"
+        with mock_auth0():
+            return await align_graphql_request(client, headers=headers, json=json)
+
 
 class BaseCreateGoalTest(BaseGoalTest):
-    async def _request(self, variables: dict, client: TestClient) -> dict:
+    async def _request(
+        self,
+        variables: dict,
+        client: TestClient,
+        user_id: Optional[str] = _USER_ID,
+    ) -> dict:
         body = {"query": self._QUERY, "variables": variables}
-        return await align_graphql_request(client, headers=DEFAULT_HEADERS, json=body)
+        return await self._base_request(client, body, user_id)
 
     _QUERY = """
         mutation ($accountId: Int!, $createGoalInput: CreateGoalInput!) {
@@ -148,6 +170,21 @@ class TestCreateGoalErrors(BaseCreateGoalTest):
         assert_extension_error(res, "Goal expiresAt cannot precede validFrom")
         await assert_missing_row(sdb, Goal, account_id=1)
 
+    async def test_default_user_forbidden(self, client: TestClient, sdb: Database) -> None:
+        await sdb.execute(model_insert_stmt(TeamFactory(owner_id=1, id=10)))
+
+        team_goals = [{"teamId": 10, "target": {"int": 42}}]
+
+        variables = {
+            "createGoalInput": self._mk_input(teamGoals=team_goals),
+            "accountId": 1,
+        }
+        res = await self._request(variables, client, None)
+        assert "data" not in res
+
+        assert get_extension_error_obj(res)["type"] == "/errors/ForbiddenError"
+        await assert_missing_row(sdb, Goal, account_id=1)
+
 
 class TestCreateGoals(BaseCreateGoalTest):
     async def test_create_single_team_goal(self, client: TestClient, sdb: Database) -> None:
@@ -164,6 +201,7 @@ class TestCreateGoals(BaseCreateGoalTest):
             ),
             "accountId": 1,
         }
+
         res = await self._request(variables, client)
         assert "errors" not in res
 
@@ -258,10 +296,16 @@ class BaseRemoveGoalTest(BaseGoalTest):
         }
     """
 
-    async def _request(self, accountId: int, goalId: int, client: TestClient) -> dict:
+    async def _request(
+        self,
+        accountId: int,
+        goalId: int,
+        client: TestClient,
+        user_id: Optional[str] = _USER_ID,
+    ) -> dict:
         variables = {"accountId": accountId, "goalId": goalId}
         body = {"query": self._QUERY, "variables": variables}
-        return await align_graphql_request(client, headers=DEFAULT_HEADERS, json=body)
+        return await self._base_request(client, body, user_id)
 
 
 class TestRemoveGoalErrors(BaseRemoveGoalTest):
@@ -274,6 +318,12 @@ class TestRemoveGoalErrors(BaseRemoveGoalTest):
 
         res = await self._request(1, 100, client)
         assert_extension_error(res, "Goal 100 not found")
+        await assert_existing_row(sdb, Goal, id=100)
+
+    async def test_default_user_forbidden(self, client: TestClient, sdb: Database) -> None:
+        await sdb.execute(model_insert_stmt(GoalFactory(id=100, account_id=2)))
+        res = await self._request(1, 100, client, user_id=None)
+        assert get_extension_error_obj(res)["type"] == "/errors/ForbiddenError"
         await assert_existing_row(sdb, Goal, id=100)
 
 
@@ -322,9 +372,14 @@ class BaseUpdateGoalTest(BaseGoalTest):
         }
     """
 
-    async def _request(self, variables: dict, client: TestClient) -> dict:
+    async def _request(
+        self,
+        variables: dict,
+        client: TestClient,
+        user_id: Optional[str] = _USER_ID,
+    ) -> dict:
         body = {"query": self._QUERY, "variables": variables}
-        return await align_graphql_request(client, headers=DEFAULT_HEADERS, json=body)
+        return await self._base_request(client, body, user_id)
 
 
 class TestUpdateGoalErrors(BaseUpdateGoalTest):
@@ -347,7 +402,7 @@ class TestUpdateGoalErrors(BaseUpdateGoalTest):
         ]
         variables = {"accountId": 1, "input": {"goalId": 100, "teamGoalChanges": team_changes}}
         res = await self._request(variables, client)
-        error = get_extension_error(res)
+        error = get_extension_error_obj(res)["detail"]
         assert "Both remove and new target present for teamId-s: 10" in error
         assert "Invalid target for teamId-s: 20" in error
 
@@ -357,7 +412,7 @@ class TestUpdateGoalErrors(BaseUpdateGoalTest):
         team_changes = [{"teamId": 10, "target": {}}]
         variables = {"accountId": 1, "input": {"goalId": 100, "teamGoalChanges": team_changes}}
         res = await self._request(variables, client)
-        error = get_extension_error(res)
+        error = get_extension_error_obj(res)["detail"]
         assert "Invalid target for teamId-s: 10" in error
 
     async def test_remove_account_mismatch(self, client: TestClient, sdb: Database) -> None:
@@ -421,11 +476,13 @@ class TestUpdateGoalErrors(BaseUpdateGoalTest):
         # goal for team 40 not created
         await assert_missing_row(sdb, TeamGoal, team_id=40, goal_id=100)
 
-    @classmethod
-    def _assert_error_response(cls, response: dict, error: str) -> None:
-        assert "errors" not in response
-        assert response["data"]["updateGoal"]["goal"] is None
-        assert response["data"]["updateGoal"]["errors"] == [error]
+    async def test_default_user_forbidden(self, client: TestClient, sdb: Database) -> None:
+        await models_insert(sdb, GoalFactory(id=100), TeamFactory(id=10))
+        team_changes = [{"teamId": 10, "target": {"int": 10}}]
+        variables = {"accountId": 1, "input": {"goalId": 100, "teamGoalChanges": team_changes}}
+        res = await self._request(variables, client, user_id=None)
+        assert get_extension_error_obj(res)["type"] == "/errors/ForbiddenError"
+        await assert_missing_row(sdb, TeamGoal, team_id=10)
 
 
 class TestUpdateGoal(BaseUpdateGoalTest):
