@@ -12,9 +12,8 @@ from urllib.parse import quote
 import aiohttp.web
 import aiosqlite
 import asyncpg
+from asyncpg.rkt import set_query_dtype
 from flogging import flogging
-from morcilla.backends.asyncpg import PostgresConnection
-from morcilla.backends.sqlite import SQLiteConnection
 import morcilla.core
 from morcilla.interfaces import ConnectionBackend, TransactionBackend
 import numpy as np
@@ -191,7 +190,7 @@ def measure_db_overhead_and_retry(db: Union[morcilla.Database, Database],
                 start_time = time.time()
                 wait_intervals = []
                 try:
-                    if _conn_backend_in_transaction(connection):
+                    if _conn_backend_in_transaction(connection.raw_connection):
                         # it is pointless to retry, the transaction has already failed
                         wait_intervals = [None]
                 except AssertionError:
@@ -360,6 +359,8 @@ def _visit_select(element, compiler, **kw):
         text = getattr(compiler, f"visit_{element.__visit_name__}")(element, **kw)
     finally:
         element._statement_hints = statement_hints
+    if dtype := getattr(element, "dtype", None):
+        hints = set_query_dtype(hints, dtype)
     if hints:
         return hints + text
     return text
@@ -390,25 +391,35 @@ def extract_registered_models(base: Any) -> Mapping[str, Any]:
     return base.registry._class_registry
 
 
-def conn_in_transaction(conn: Connection) -> bool:
+async def conn_in_transaction(con: Connection) -> bool:
     """Return True if the connection is inside a transaction."""
-    return _conn_backend_in_transaction(conn._connection)
+    async with con.raw_connection() as raw_connection:
+        return _conn_backend_in_transaction(raw_connection)
 
 
-def _conn_backend_in_transaction(conn_backend: ConnectionBackend) -> bool:
+def _conn_backend_in_transaction(raw_connection: Any) -> bool:
     """Return True if the connection backend is inside a transaction."""
-    raw_connection = conn_backend.raw_connection
     if isinstance(raw_connection, asyncpg.Connection):
         return raw_connection.is_in_transaction()
-    if isinstance(raw_connection, aiosqlite.Connection):
+    elif isinstance(raw_connection, aiosqlite.Connection):
         return raw_connection.in_transaction
     raise AssertionError(f"Unhandled db connection type {type(raw_connection)}")
 
 
-def dialect_specific_insert(conn: Connection) -> Callable:
+async def dialect_specific_insert(con: Connection) -> Callable:
     """Return the specific insertion function for the connection's SQL dialect."""
-    if isinstance(conn._connection, SQLiteConnection):
-        return sqlite_insert
-    if isinstance(conn._connection, PostgresConnection):
-        return postgres_insert
-    raise AssertionError(f"Unhandled morcilla connection type {type(conn)}")
+    async with con.raw_connection() as raw_connection:
+        if isinstance(raw_connection, aiosqlite.Connection):
+            return sqlite_insert
+        elif isinstance(raw_connection, asyncpg.Connection):
+            return postgres_insert
+        raise AssertionError(f"Unhandled morcilla connection type {type(raw_connection)}")
+
+
+async def is_postgresql(db: DatabaseLike) -> bool:
+    """Return the value indicating whether the db/connection points at PostgreSQL."""
+    if isinstance(db, Database):
+        return db.url.dialect == "postgresql"
+    else:
+        async with db.raw_connection() as raw_connection:
+            return isinstance(raw_connection, asyncpg.Connection)

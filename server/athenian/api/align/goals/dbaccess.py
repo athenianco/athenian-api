@@ -53,7 +53,7 @@ async def insert_goal(creation_info: GoalCreationInfo, sdb_conn: DatabaseLike) -
 
 async def delete_goal(account_id: int, goal_id: int, sdb_conn: Connection) -> None:
     """Delete a goal from DB with related team goals."""
-    assert conn_in_transaction(sdb_conn)
+    assert await conn_in_transaction(sdb_conn)
     where_clause = sa.and_(Goal.account_id == account_id, Goal.id == goal_id)
     # no rowcount support in morcilla, no delete ... returning support in sqlalchemy / sqlite,
     # so two queries are needed
@@ -69,7 +69,7 @@ async def delete_team_goals(
 ) -> None:
     """Delete a set of TeamGoal-s from DB."""
     assert team_ids
-    assert conn_in_transaction(sdb_conn)
+    assert await conn_in_transaction(sdb_conn)
     await _validate_team_goal_deletions(account_id, goal_id, team_ids, sdb_conn)
 
     delete_stmt = sa.delete(TeamGoal).where(
@@ -99,7 +99,7 @@ async def assign_team_goals(
         for assign in assignments
     ]
 
-    insert = dialect_specific_insert(sdb_conn)
+    insert = await dialect_specific_insert(sdb_conn)
     stmt = insert(TeamGoal)
     upsert_stmt = stmt.on_conflict_do_update(
         index_elements=[TeamGoal.goal_id, TeamGoal.team_id],
