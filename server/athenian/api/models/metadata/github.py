@@ -224,7 +224,7 @@ class PullRequest(Base,
     closed_at = Column(TIMESTAMP(timezone=True))
     closed = Column(Boolean)
     deletions = Column(BigInteger, nullable=False)
-    commits = Column(Integer, nullable=False, info={"reset_nulls": True})
+    commits = Column(BigInteger, nullable=False, info={"reset_nulls": True})
     head_ref = Column(Text, nullable=False)
     hidden = Column(Boolean)
     htmlurl = Column(Text)

@@ -71,19 +71,23 @@ async def _read_sql_query_numpy(
         index: Optional[Union[str, Sequence[str]]] = None,
         soft_limit: Optional[int] = None,
 ) -> pd.DataFrame:
-    sql.dtype, (int_erase_nulls, int_reset_nulls, fixed_str_cols) = _build_dtype(columns)
-    data, nulls = await _fetch_query(sql, con)
+    dtype, (int_erase_nulls, int_reset_nulls, fixed_str_cols) = _build_dtype(columns)
+    sql.dtype = dtype
+    try:
+        data, nulls = await _fetch_query(sql, con)
+    finally:
+        sql.dtype = None
     blocks = {}
     rows_count = 0
     for i, arr in enumerate(data):
         blocks.setdefault(arr.dtype, [arr.base, []])[1].append(i)
         rows_count = len(arr)
     if nulls and (int_erase_nulls or int_reset_nulls or fixed_str_cols):
-        null_items, null_cols = np.unravel_index(nulls, (rows_count, len(sql.dtype)))
+        null_items, null_cols = np.unravel_index(nulls, (rows_count, len(dtype)))
         null_items = null_items[np.argsort(null_cols)]
         unique_null_cols, offsets, counts = np.unique(
             null_cols, return_index=True, return_counts=True)
-        col_map = {name: i for i, name in enumerate(sql.dtype.names)}
+        col_map = {name: i for i, name in enumerate(dtype.names)}
         remain_mask = None
         if int_erase_nulls or fixed_str_cols:
             for col in chain(int_erase_nulls, fixed_str_cols):
@@ -108,11 +112,11 @@ async def _read_sql_query_numpy(
         make_block(block, placement=indexes)
         for block, indexes in blocks.values()
     ]
-    dtype_names = sql.dtype.names
+    dtype_names = dtype.names
     block_mgr = BlockManager(
         pd_blocks, [pd.Index(dtype_names), pd.RangeIndex(stop=rows_count)])
     frame = pd.DataFrame(block_mgr, columns=dtype_names, copy=False)
-    for column, (child_dtype, _) in sql.dtype.fields.items():
+    for column, (child_dtype, _) in dtype.fields.items():
         if child_dtype.kind == "M":
             try:
                 frame[column] = frame[column].dt.tz_localize(timezone.utc)
