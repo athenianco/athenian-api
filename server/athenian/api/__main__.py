@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
+
+from __future__ import annotations
+
 import argparse
 import asyncio
+import dataclasses
 from datetime import datetime, timezone
 import getpass
 import json
@@ -134,19 +138,11 @@ def setup_context(log: logging.Logger) -> None:
     """Log general info about the running process and configure Sentry."""
     log.info("%s", sys.argv)
     log.info("Version: %s", metadata.__version__)
-    log.info("Local time: %s", datetime.now())
-    log.info("UTC time: %s", datetime.now(timezone.utc))
-    commit = getattr(metadata, "__commit__", None)
-    if commit:
-        log.info("Commit: %s", commit)
-    build_date = getattr(metadata, "__date__", None)
-    if build_date:
-        log.info("Image built on %s", build_date)
-    username = getpass.getuser()
-    hostname = socket.getfqdn()
-    log.info("%s@%s -> %d", username, hostname, os.getpid())
-    if dev_id := os.getenv("ATHENIAN_DEV_ID"):
-        log.info("Developer: %s", dev_id)
+    log.info("Local time: %s", now := datetime.now())
+    log.info("UTC time: %s", now.replace(tzinfo=timezone.utc))
+
+    app_env = _ApplicationEnvironment.discover(log)
+
     pandas.set_option("display.max_rows", 20)
     pandas.set_option("display.large_repr", "info")
     pandas.set_option("display.memory_usage", False)
@@ -167,6 +163,35 @@ def setup_context(log: logging.Logger) -> None:
         morcilla.core.logger.setLevel(level + 10)
     validation.logger.error = validation.logger.warning
 
+    _init_sentry(log, app_env)
+
+
+@dataclasses.dataclass
+class _ApplicationEnvironment:
+    commit: Optional[str]
+    build_date: Optional[str]
+    username: str
+    hostname: str
+    dev_id: Optional[str]
+
+    @classmethod
+    def discover(cls, log: logging.Logger) -> _ApplicationEnvironment:
+        commit = getattr(metadata, "__commit__", None)
+        if commit:
+            log.info("Commit: %s", commit)
+        build_date = getattr(metadata, "__date__", None)
+        if build_date:
+            log.info("Image built on %s", build_date)
+        username = getpass.getuser()
+        hostname = socket.getfqdn()
+        log.info("%s@%s -> %d", username, hostname, os.getpid())
+        if dev_id := os.getenv("ATHENIAN_DEV_ID"):
+            log.info("Developer: %s", dev_id)
+
+        return cls(commit, build_date, username, hostname, dev_id)
+
+
+def _init_sentry(log: logging.Logger, app_env: _ApplicationEnvironment) -> None:
     sentry_key, sentry_project = os.getenv("SENTRY_KEY"), os.getenv("SENTRY_PROJECT")
 
     def warn(env_name):
@@ -220,6 +245,18 @@ def setup_context(log: logging.Logger) -> None:
             return aiohttp_traces_sample_rate / 100
         return aiohttp_traces_sample_rate
 
+    LOGGERS_EXCLUDED_FROM_EVENTS = ("ariadne",)
+
+    def before_send(event, hint):
+        event_logger = event.get("logger")
+        if event_logger is not None and any(
+                event_logger.startswith(disabled)
+                for disabled in LOGGERS_EXCLUDED_FROM_EVENTS
+        ):
+            return None
+
+        return event
+
     sentry_log = logging.getLogger("sentry_sdk.errors")
     sentry_log.handlers.clear()
     flogging.trailing_dot_exceptions.add(sentry_log.name)
@@ -237,18 +274,19 @@ def setup_context(log: logging.Logger) -> None:
         request_bodies="always",
         release="%s@%s" % (metadata.__package__, metadata.__version__),
         traces_sampler=sample_trace,
+        before_send=before_send,
     )
     sentry_sdk.utils.MAX_STRING_LENGTH = MAX_SENTRY_STRING_LENGTH
     sentry_sdk.serializer.MAX_DATABAG_BREADTH = 16  # e.g., max number of locals in a stack frame
     with sentry_sdk.configure_scope() as scope:
         if sentry_env == "development":
-            scope.set_tag("username", username)
-        if dev_id:
-            scope.set_tag("developer", dev_id)
-        if commit is not None:
-            scope.set_tag("commit", commit)
-        if build_date is not None:
-            scope.set_tag("build_date", build_date)
+            scope.set_tag("username", app_env.username)
+        if app_env.dev_id:
+            scope.set_tag("developer", app_env.dev_id)
+        if app_env.commit is not None:
+            scope.set_tag("commit", app_env.commit)
+        if app_env.build_date is not None:
+            scope.set_tag("build_date", app_env.build_date)
 
 
 def create_memcached(addr: str, log: logging.Logger) -> Optional[aiomcache.Client]:
