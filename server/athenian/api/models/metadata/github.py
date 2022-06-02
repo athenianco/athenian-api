@@ -1,5 +1,7 @@
+from datetime import datetime, timezone
+
 import dateutil.parser
-from sqlalchemy import BigInteger, Boolean, Column, Integer, PrimaryKeyConstraint, Text, \
+from sqlalchemy import BigInteger, Boolean, Column, func, Integer, PrimaryKeyConstraint, Text, \
     TIMESTAMP, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base, declared_attr
 from sqlalchemy.orm import synonym
@@ -42,13 +44,23 @@ class BodyMixin:
 
 
 class UpdatedMixin:
-    created_at = Column(TIMESTAMP(timezone=True))
-    updated_at = Column(TIMESTAMP(timezone=True))
+    created_at = Column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+    )
+    updated_at = Column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+    )
 
 
 class UserMixin:
-    user_node_id = Column(BigInteger)
-    user_login = Column(Text)
+    user_node_id = Column(BigInteger, nullable=False, info={"reset_nulls": True})
+    user_login = Column(Text, info={"dtype": "U40"})
 
 
 class RepositoryMixin:
@@ -116,7 +128,7 @@ class FetchProgress(Base,
 
     event_id = Column(Text, primary_key=True)
     node_type = Column(Text, primary_key=True)
-    nodes_processed = Column(BigInteger, default=0)
+    nodes_processed = Column(BigInteger, nullable=False, default=0)
     nodes_total = Column(BigInteger, nullable=False)
 
 
@@ -150,15 +162,14 @@ class PullRequestCommit(Base,
                         ):
     __tablename__ = "api_pull_request_commits"
 
-    # TODO(vmarkovtsev): DEV-3527 switch to S40
-    sha = Column(Text, nullable=False, info={"dtype": "U40"})
+    sha = Column(Text, nullable=False, info={"dtype": "S40", "erase_nulls": True})
     commit_node_id = Column(BigInteger, nullable=False)
-    author_login = Column(Text)
-    author_user_id = Column(BigInteger)
+    author_login = Column(Text, info={"dtype": "U40"})
+    author_user_id = Column(BigInteger, nullable=False, info={"reset_nulls": True})
     author_date = Column(Text, nullable=False)
     authored_date = Column(TIMESTAMP(timezone=True), nullable=False)
-    committer_login = Column(Text)
-    committer_user_id = Column(BigInteger)
+    committer_login = Column(Text, info={"dtype": "U40"})
+    committer_user_id = Column(BigInteger, nullable=False, info={"reset_nulls": True})
     commit_date = Column(Text, nullable=False)
     committed_date = Column(TIMESTAMP(timezone=True), nullable=False)
     created_at = synonym("committed_date")
@@ -205,8 +216,8 @@ class PullRequestReviewRequest(Base,
     created_at = Column(TIMESTAMP(timezone=True))
     pull_request_id = Column(BigInteger, nullable=False)
     pull_request_node_id = synonym("pull_request_id")
-    # FIXME(vmarkovtsev): set nullable=False when ENG-303 is resolved
-    requested_reviewer_id = Column(BigInteger, nullable=True)
+    # DEV-4315
+    requested_reviewer_id = Column(BigInteger, nullable=False, info={"erase_nulls": True})
 
 
 class PullRequest(Base,
@@ -228,12 +239,12 @@ class PullRequest(Base,
     head_ref = Column(Text, nullable=False)
     hidden = Column(Boolean)
     htmlurl = Column(Text)
-    merge_commit_id = Column(BigInteger)
-    merge_commit_sha = Column(Text)
+    merge_commit_id = Column(BigInteger, info={"reset_nulls": True})
+    merge_commit_sha = Column(Text, info={"dtype": "S40"})
     merged = Column(Boolean)
     merged_at = Column(TIMESTAMP(timezone=True))
-    merged_by_id = Column(BigInteger)
-    merged_by_login = Column(Text)
+    merged_by_id = Column(BigInteger, info={"reset_nulls": True})
+    merged_by_login = Column(Text, info={"dtype": "U40"})
     number = Column(BigInteger, nullable=False)
     title = Column(Text)
 
@@ -246,7 +257,7 @@ class PushCommit(Base,
 
     message = Column(Text, nullable=False)
     pushed_date = Column(TIMESTAMP(timezone=True))
-    author_login = Column(Text)
+    author_login = Column(Text, info={"dtype": "U40"})
     author_user_id = Column(BigInteger)
     author_avatar_url = Column(Text)
     author_email = Column(Text)
@@ -254,9 +265,8 @@ class PushCommit(Base,
     author_date = Column(Text, nullable=False)
     authored_date = Column(TIMESTAMP(timezone=True), nullable=False)
     url = Column(Text)
-    # TODO(vmarkovtsev): DEV-3527 switch to S40
-    sha = Column(Text, nullable=False, info={"dtype": "U40"})
-    committer_login = Column(Text)
+    sha = Column(Text, nullable=False, info={"dtype": "S40", "erase_nulls": True})
+    committer_login = Column(Text, info={"dtype": "U40"})
     committer_user_id = Column(BigInteger)
     committer_avatar_url = Column(Text)
     committer_email = Column(Text)
@@ -305,14 +315,13 @@ class Release(Base,
               ):
     __tablename__ = "api_releases"
 
-    author = Column(Text, nullable=False)
-    author_node_id = Column(BigInteger)  # e.g., by a deleted user
+    author = Column(Text, info={"dtype": "U40"})
+    author_node_id = Column(BigInteger, info={"reset_nulls": True})  # e.g., by a deleted user
     name = Column(Text)
     published_at = Column(TIMESTAMP(timezone=True))
     tag = Column(Text)
     url = Column(Text)
-    # TODO(vmarkovtsev): DEV-3527 switch to S40
-    sha = Column(Text, nullable=False, info={"dtype": "U40"})
+    sha = Column(Text, nullable=False, info={"dtype": "S40", "erase_nulls": True})
     commit_id = Column(BigInteger, nullable=False, info={"reset_nulls": True})
 
 
@@ -322,8 +331,7 @@ class NodeCommit(Base,
                  ):
     __tablename__ = "node_commit"
 
-    # TODO(vmarkovtsev): DEV-3527 switch to S40
-    oid = Column(Text, nullable=False, info={"dtype": "U40"})
+    oid = Column(Text, nullable=False, info={"dtype": "S40", "erase_nulls": True})
     sha = synonym("oid")
     repository_id = Column(BigInteger, nullable=False)
     message = Column(Text, nullable=False)
@@ -396,9 +404,8 @@ class Branch(Base,
     branch_id = Column(BigInteger, primary_key=True)
     branch_name = Column(Text, nullable=False)
     is_default = Column(Boolean, nullable=False)
-    commit_id = Column(BigInteger, nullable=False)
-    # TODO(vmarkovtsev): DEV-3527 switch to S40
-    commit_sha = Column(Text, nullable=False, info={"dtype": "U40"})
+    commit_id = Column(BigInteger, nullable=False, info={"erase_nulls": True})
+    commit_sha = Column(Text, nullable=False, info={"dtype": "S40", "erase_nulls": True})
     commit_date = "commit_date"
 
 
@@ -514,26 +521,25 @@ class CommonCheckRunMixin(RepositoryMixin):
 
     acc_id = Column(BigInteger)
     commit_node_id = Column(BigInteger, nullable=False, info={"erase_nulls": True})
-    # TODO(vmarkovtsev): DEV-3527 switch to S40
-    sha = Column(Text, nullable=False, info={"dtype": "U40"})
-    author_user_id = Column(BigInteger)
-    author_login = Column(Text)
+    sha = Column(Text, nullable=False, info={"dtype": "S40", "erase_nulls": True})
+    author_user_id = Column(BigInteger, nullable=False, info={"reset_nulls": True})
+    author_login = Column(Text, info={"dtype": "U40"})
     authored_date = Column(TIMESTAMP(timezone=True), nullable=False)
     committed_date = Column(TIMESTAMP(timezone=True), nullable=False)
     additions = Column(BigInteger, nullable=False, info={"erase_nulls": True})
     deletions = Column(BigInteger, nullable=False, info={"erase_nulls": True})
     changed_files = Column(BigInteger, nullable=False, info={"erase_nulls": True})
-    pull_request_node_id = Column(BigInteger)
+    pull_request_node_id = Column(BigInteger, info={"reset_nulls": True})
     started_at = Column(TIMESTAMP(timezone=True), nullable=False)
     completed_at = Column(TIMESTAMP(timezone=True))
     check_suite_node_id = Column(BigInteger, nullable=False, info={"erase_nulls": True})
     check_run_node_id = Column(BigInteger, nullable=False)
-    conclusion = Column(Text)
-    check_suite_conclusion = Column(Text)
+    conclusion = Column(Text, info={"dtype": "S16"})
+    check_suite_conclusion = Column(Text, info={"dtype": "S16"})
     url = Column(Text)  # legacy runs may have this set to null
     name = Column(Text)
-    status = Column(Text, nullable=False)
-    check_suite_status = Column(Text, nullable=False)
+    status = Column(Text, info={"dtype": "S12"})
+    check_suite_status = Column(Text, info={"dtype": "S12"})
 
 
 class CheckRunMixin(CommonCheckRunMixin):
@@ -553,10 +559,6 @@ class CheckRun(CheckRunMixin, Base):
     # yet several records may differ only by pull_request_node_id
     __table_args__ = (PrimaryKeyConstraint("acc_id", "check_run_node_id", "pull_request_node_id"),
                       {"schema": "github"})
-
-
-CheckRun.pull_request_node_id.nullable = True
-CheckRun.__table__.columns[CheckRun.pull_request_node_id.key].nullable = True
 
 
 class _CheckRun(CheckRunMixin, ShadowBase):

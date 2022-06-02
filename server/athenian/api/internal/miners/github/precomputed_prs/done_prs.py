@@ -725,9 +725,9 @@ class DonePRFactsLoader:
             data=row[ghdprf.data.name],
             node_id=row[ghdprf.pr_node_id.name],
             repository_full_name=row[ghdprf.repository_full_name.name],
-            author=user_node_to_login_get(row[ghdprf.author.name]),
-            merger=user_node_to_login_get(row[ghdprf.merger.name]),
-            releaser=user_node_to_login_get(row[ghdprf.releaser.name]))
+            author=user_node_to_login_get(row[ghdprf.author.name], ""),
+            merger=user_node_to_login_get(row[ghdprf.merger.name], ""),
+            releaser=user_node_to_login_get(row[ghdprf.releaser.name], ""))
 
 
 @sentry_span

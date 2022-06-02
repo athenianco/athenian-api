@@ -1042,9 +1042,9 @@ class PullRequestMiner:
         prs["dead"] = False
         if branches.empty:
             return prs
-        merged_prs = prs.take(np.nonzero((
+        merged_prs = prs.take(np.flatnonzero((
             prs[PullRequest.merged_at.name] <= datetime.now(timezone.utc) - timedelta(hours=1)
-        ).values)[0])
+        ).values))
         # timedelta(hours=1) must match the `exptime` of `fetch_repository_commits()`
         # commits DAGs are cached and may be not fully up to date, so otherwise some PRs may
         # appear as wrongly force push dropped; see also: DEV-554
@@ -1057,7 +1057,7 @@ class PullRequestMiner:
         repo_order = np.argsort(pr_repos)
         unique_pr_repos, pr_repo_counts = np.unique(pr_repos, return_counts=True)
         pr_merge_hashes = \
-            merged_prs[PullRequest.merge_commit_sha.name].values.astype("S40")[repo_order]
+            merged_prs[PullRequest.merge_commit_sha.name].values[repo_order]
         pos = 0
         queries = []
         dead = []
@@ -1090,7 +1090,7 @@ class PullRequestMiner:
                     repo_cond = PushCommit.repository_full_name == repo
                 queries.append(
                     sql.select([PushCommit.node_id.label("commit_node_id"),
-                                PushCommit.sha.label("sha"),
+                                PushCommit.sha.label(PushCommit.sha.name),
                                 sql.literal_column("'" + repo + "'").label("repo"),
                                 sql.literal_column(str(pr_node_id)).label("pr_node_id"),
                                 PushCommit.committed_date,
@@ -1113,7 +1113,7 @@ class PullRequestMiner:
             else:
                 query = sql.union_all(*batch)
             tasks.append(read_sql_query(query, mdb, [
-                "commit_node_id", "sha", "repo", "pr_node_id",
+                "commit_node_id", PushCommit.sha, "repo", "pr_node_id",
                 PushCommit.committed_date, PushCommit.pushed_date,
             ]))
         resolveds = await gather(*tasks, op="mark_dead_prs commit SQL UNION ALL-s")
@@ -1122,7 +1122,7 @@ class PullRequestMiner:
         pr_repos = resolved["repo"].values
         repo_order = np.argsort(pr_repos)
         unique_pr_repos, pr_repo_counts = np.unique(pr_repos, return_counts=True)
-        pr_merge_hashes = resolved["sha"].values.astype("S")[repo_order]
+        pr_merge_hashes = resolved[PushCommit.sha.name].values[repo_order]
         pos = 0
         alive_indexes = []
         for repo, n_prs in zip(unique_pr_repos, pr_repo_counts):
@@ -1148,7 +1148,8 @@ class PullRequestMiner:
             prs.loc[alive_node_ids, PullRequest.merge_commit_id.name] = \
                 resolved["commit_node_id"].values
         if columns is PullRequest or PullRequest.merge_commit_sha in columns:
-            prs.loc[alive_node_ids, PullRequest.merge_commit_sha.name] = resolved["sha"].values
+            prs.loc[alive_node_ids, PullRequest.merge_commit_sha.name] = \
+                resolved[PushCommit.sha.name].values
         prs.loc[alive_node_ids, "dead"] = False
         return prs
 
@@ -1468,15 +1469,11 @@ class PullRequestMiner:
         check_suite_started_ats = missed_df[check_suite_started_column].values
         check_suite_completed_ats = missed_df[check_suite_completed_column].values
         check_suite_node_ids = missed_df[CheckRun.check_suite_node_id.name].values
-        missed_df[CheckRun.conclusion.name].fillna("", inplace=True)
-        conclusions = missed_df[CheckRun.conclusion.name].values.astype("S", copy=False)
-        statuses = missed_df[CheckRun.status.name].values.astype("S", copy=False)
+        conclusions = missed_df[CheckRun.conclusion.name].values
+        statuses = missed_df[CheckRun.status.name].values
         commit_ids = missed_df[CheckRun.commit_node_id.name].values
-        missed_df[CheckRun.check_suite_conclusion.name].fillna("", inplace=True)
-        check_suite_conclusions = \
-            missed_df[CheckRun.check_suite_conclusion.name].values.astype("S", copy=False)
-        check_suite_statuses = \
-            missed_df[CheckRun.check_suite_status.name].values.astype("S", copy=False)
+        check_suite_conclusions = missed_df[CheckRun.check_suite_conclusion.name].values
+        check_suite_statuses = missed_df[CheckRun.check_suite_status.name].values
         names = missed_df[CheckRun.name.name].values.astype("U", copy=False)
         new_structs = []
         stored_new_pr_node_ids = []
@@ -2195,7 +2192,7 @@ class PullRequestFactsMiner:
             repository_full_name=pr.pr[PullRequest.repository_full_name.name],
             author=pr.pr[PullRequest.user_login.name],
             merger=pr.pr[PullRequest.merged_by_login.name],
-            releaser=pr.release[Release.author.name],
+            releaser=pr.release[Release.author.name] or "",
             review_comments=human_review_comments,
             regular_comments=human_regular_comments,
             participants=participants,

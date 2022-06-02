@@ -269,8 +269,8 @@ async def test_map_releases_to_prs_smoke(
             "2019-06-19 00:00:00", tzinfo=timezone.utc)).all()
         assert len(releases) == 2
         assert set(releases[Release.sha.name]) == {
-            "0d1a009cbb604db18be960db5f1525b99a55d727",
-            "6241d0e70427cb0db4ca00182717af88f638268c",
+            b"0d1a009cbb604db18be960db5f1525b99a55d727",
+            b"6241d0e70427cb0db4ca00182717af88f638268c",
         }
         assert new_settings == ReleaseSettings({
             "github.com/src-d/go-git": ReleaseMatchSetting(
@@ -314,8 +314,8 @@ async def test_map_releases_to_prs_empty(
     assert len(cache.mem) == 5
     assert len(releases) == 2
     assert set(releases[Release.sha.name]) == {
-        "0d1a009cbb604db18be960db5f1525b99a55d727",
-        "6241d0e70427cb0db4ca00182717af88f638268c",
+        b"0d1a009cbb604db18be960db5f1525b99a55d727",
+        b"6241d0e70427cb0db4ca00182717af88f638268c",
     }
     assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
     prs, releases, _, matched_bys, _, _ = await releases_to_prs_mapper.map_releases_to_prs(
@@ -354,8 +354,8 @@ async def test_map_releases_to_prs_blacklist(
     assert prs.empty
     assert len(releases) == 2
     assert set(releases[Release.sha.name]) == {
-        "0d1a009cbb604db18be960db5f1525b99a55d727",
-        "6241d0e70427cb0db4ca00182717af88f638268c",
+        b"0d1a009cbb604db18be960db5f1525b99a55d727",
+        b"6241d0e70427cb0db4ca00182717af88f638268c",
     }
     assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
 
@@ -379,8 +379,8 @@ async def test_map_releases_to_prs_authors_mergers(
     assert len(prs) == n
     assert len(releases) == 2
     assert set(releases[Release.sha.name]) == {
-        "0d1a009cbb604db18be960db5f1525b99a55d727",
-        "6241d0e70427cb0db4ca00182717af88f638268c",
+        b"0d1a009cbb604db18be960db5f1525b99a55d727",
+        b"6241d0e70427cb0db4ca00182717af88f638268c",
     }
     assert new_settings == release_match_setting_tag
     assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
@@ -401,7 +401,7 @@ async def test_map_releases_to_prs_hard(
     assert len(prs) == 24
     assert len(releases) == 1
     assert set(releases[Release.sha.name]) == {
-        "f9a30199e7083bdda8adad3a4fa2ec42d25c1fdb",
+        b"f9a30199e7083bdda8adad3a4fa2ec42d25c1fdb",
     }
     assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
 
@@ -748,7 +748,7 @@ async def test_map_releases_to_prs_branches(
             prefixer, 1, (6366825,), mdb, pdb, rdb, None)
     assert prs.empty
     assert len(releases) == 1
-    assert releases[Release.sha.name][0] == "5d7303c49ac984a9fec60523f2d5297682e16646"
+    assert releases[Release.sha.name][0] == b"5d7303c49ac984a9fec60523f2d5297682e16646"
     assert new_settings == release_settings
     assert matched_bys == {"src-d/go-git": ReleaseMatch.branch}
 
@@ -895,7 +895,7 @@ async def test_load_releases_events_settings(
         Release.published_at.name: pd.Timestamp("2020-01-01 00:00:00", tzinfo=timezone.utc),
         Release.tag.name: None,
         Release.url.name: "www",
-        Release.sha.name: "8d20cc5916edf7cfa6a9c5ed069f0640dc823c12",
+        Release.sha.name: b"8d20cc5916edf7cfa6a9c5ed069f0640dc823c12",
         Release.commit_id.name: 2756775,
         matched_by_column: ReleaseMatch.event,
     }
@@ -956,23 +956,42 @@ async def test_load_releases_events_unresolved(
     assert matched_bys == {"src-d/go-git": ReleaseMatch.event}
 
 
+@pytest.fixture(scope="module")
+def heads_df1():
+    df = pd.DataFrame([
+        (b"5d7303c49ac984a9fec60523f2d5297682e16646",
+         2756216,
+         525,
+         "src-d/go-git")],
+        columns=["1", "2", "3", "4"],
+    )
+    df["1"] = df["1"].values.astype("S40")
+    return df
+
+
+@pytest.fixture(scope="module")
+def heads_df2():
+    df = pd.DataFrame([
+        (b"d2a38b4a5965d529566566640519d03d2bd10f6c",
+         2757677,
+         525,
+         "src-d/go-git"),
+        (b"31eae7b619d166c366bf5df4991f04ba8cebea0a",
+         2755667,
+         611,
+         "src-d/go-git")],
+        columns=["1", "2", "3", "4"],
+    )
+    df["1"] = df["1"].values.astype("S40")
+    return df
+
+
 @pytest.mark.parametrize("prune", [False, True])
 @with_defer
-async def test__fetch_repository_commits_smoke(mdb, pdb, prune):
+async def test__fetch_repository_commits_smoke(mdb, pdb, prune, heads_df2):
     dags = await fetch_repository_commits(
         {"src-d/go-git": _empty_dag()},
-        pd.DataFrame([
-            ("d2a38b4a5965d529566566640519d03d2bd10f6c",
-             2757677,
-             525,
-             "src-d/go-git"),
-            ("31eae7b619d166c366bf5df4991f04ba8cebea0a",
-             2755667,
-             611,
-             "src-d/go-git")],
-            columns=["1", "2", "3", "4"],
-        ),
-        ("1", "2", "3", "4"),
+        heads_df2, ("1", "2", "3", "4"),
         prune, 1, (6366825,), mdb, pdb, None)
     assert isinstance(dags, dict)
     assert len(dags) == 1
@@ -995,52 +1014,24 @@ async def test__fetch_repository_commits_smoke(mdb, pdb, prune):
     assert len(hashes) == 9
     await wait_deferred()
     dags2 = await fetch_repository_commits(
-        dags,
-        pd.DataFrame([
-            ("d2a38b4a5965d529566566640519d03d2bd10f6c",
-             2757677,
-             525,
-             "src-d/go-git"),
-            ("31eae7b619d166c366bf5df4991f04ba8cebea0a",
-             2755667,
-             611,
-             "src-d/go-git")],
-            columns=["1", "2", "3", "4"],
-        ),
-        ("1", "2", "3", "4"),
+        dags, heads_df2, ("1", "2", "3", "4"),
         prune, 1, (6366825,), Database("sqlite://"), pdb, None)
     assert pickle.dumps(dags2) == pickle.dumps(dags)
+    heads_df = heads_df2.copy(deep=True)
+    heads_df["1"].values[0] = b"1353ccd6944ab41082099b79979ded3223db98ec"
+    heads_df["2"].values[0] = 2755667
     with pytest.raises(Exception):
         await fetch_repository_commits(
-            dags,
-            pd.DataFrame([
-                ("1353ccd6944ab41082099b79979ded3223db98ec",
-                 2755667,  # noqa
-                 525,
-                 "src-d/go-git"),
-                ("31eae7b619d166c366bf5df4991f04ba8cebea0a",
-                 2755667,  # noqa
-                 611,
-                 "src-d/go-git")],
-                columns=["1", "2", "3", "4"],
-            ),
-            ("1", "2", "3", "4"),
+            dags, heads_df, ("1", "2", "3", "4"),
             prune, 1, (6366825,), Database("sqlite://"), pdb, None)
 
 
 @pytest.mark.parametrize("prune", [False, True])
 @with_defer
-async def test__fetch_repository_commits_initial_commit(mdb, pdb, prune):
+async def test__fetch_repository_commits_initial_commit(mdb, pdb, prune, heads_df1):
     dags = await fetch_repository_commits(
         {"src-d/go-git": _empty_dag()},
-        pd.DataFrame([
-            ("5d7303c49ac984a9fec60523f2d5297682e16646",
-             2756216,
-             525,
-             "src-d/go-git")],
-            columns=["1", "2", "3", "4"],
-        ),
-        ("1", "2", "3", "4"),
+        heads_df1, ("1", "2", "3", "4"),
         prune, 1, (6366825,), mdb, pdb, None)
     hashes, vertexes, edges = dags["src-d/go-git"]
     assert hashes == np.array(["5d7303c49ac984a9fec60523f2d5297682e16646"], dtype="S40")
@@ -1051,19 +1042,12 @@ async def test__fetch_repository_commits_initial_commit(mdb, pdb, prune):
 @pytest.mark.parametrize("prune", [False, True])
 @with_defer
 @freeze_time("2015-04-05")
-async def test__fetch_repository_commits_orphan_skip(mdb, pdb, prune):
+async def test__fetch_repository_commits_orphan_skip(mdb, pdb, prune, heads_df1):
     dags = await fetch_repository_commits(
         {"src-d/go-git": (np.array(["7" * 40], dtype="S40"),
                           np.array([0, 0], dtype=np.uint32),
                           np.array([], dtype=np.uint32))},
-        pd.DataFrame([
-            ("5d7303c49ac984a9fec60523f2d5297682e16646",
-             2756216,
-             525,
-             "src-d/go-git")],
-            columns=["1", "2", "3", "4"],
-        ),
-        ("1", "2", "3", "4"),
+        heads_df1, ("1", "2", "3", "4"),
         prune, 1, (6366825,), mdb, pdb, None)
     hashes, vertexes, edges = dags["src-d/go-git"]
     if prune:
@@ -1074,19 +1058,12 @@ async def test__fetch_repository_commits_orphan_skip(mdb, pdb, prune):
 
 @pytest.mark.parametrize("prune", [False, True])
 @with_defer
-async def test__fetch_repository_commits_orphan_include(mdb, pdb, prune):
+async def test__fetch_repository_commits_orphan_include(mdb, pdb, prune, heads_df1):
     dags = await fetch_repository_commits(
         {"src-d/go-git": (np.array(["7" * 40], dtype="S40"),
                           np.array([0, 0], dtype=np.uint32),
                           np.array([], dtype=np.uint32))},
-        pd.DataFrame([
-            ("5d7303c49ac984a9fec60523f2d5297682e16646",
-             2756216,
-             525,
-             "src-d/go-git")],
-            columns=["1", "2", "3", "4"],
-        ),
-        ("1", "2", "3", "4"),
+        heads_df1, ("1", "2", "3", "4"),
         prune, 1, (6366825,), mdb, pdb, None)
     hashes, vertexes, edges = dags["src-d/go-git"]
     if prune:
@@ -1097,37 +1074,15 @@ async def test__fetch_repository_commits_orphan_include(mdb, pdb, prune):
 
 
 @with_defer
-async def test__fetch_repository_commits_cache(mdb, pdb, cache):
+async def test__fetch_repository_commits_cache(mdb, pdb, cache, heads_df2):
     dags1 = await fetch_repository_commits(
         {"src-d/go-git": _empty_dag()},
-        pd.DataFrame([
-            ("d2a38b4a5965d529566566640519d03d2bd10f6c",
-             2757677,
-             525,
-             "src-d/go-git"),
-            ("31eae7b619d166c366bf5df4991f04ba8cebea0a",
-             2755667,
-             611,
-             "src-d/go-git")],
-            columns=["1", "2", "3", "4"],
-        ),
-        ("1", "2", "3", "4"),
+        heads_df2, ("1", "2", "3", "4"),
         False, 1, (6366825,), mdb, pdb, cache)
     await wait_deferred()
     dags2 = await fetch_repository_commits(
         {"src-d/go-git": _empty_dag()},
-        pd.DataFrame([
-            ("d2a38b4a5965d529566566640519d03d2bd10f6c",
-             2757677,
-             525,
-             "src-d/go-git"),
-            ("31eae7b619d166c366bf5df4991f04ba8cebea0a",
-             2755667,
-             611,
-             "src-d/go-git")],
-            columns=["1", "2", "3", "4"],
-        ),
-        ("1", "2", "3", "4"),
+        heads_df2, ("1", "2", "3", "4"),
         False, 1, (6366825,), None, None, cache)
     assert pickle.dumps(dags1) == pickle.dumps(dags2)
     fake_pdb = Database("sqlite://")
@@ -1140,37 +1095,15 @@ async def test__fetch_repository_commits_cache(mdb, pdb, cache):
     with pytest.raises(Exception):
         await fetch_repository_commits(
             {"src-d/go-git": _empty_dag()},
-            pd.DataFrame([
-                ("d2a38b4a5965d529566566640519d03d2bd10f6c",
-                 2757677,  # noqa
-                 525,
-                 "src-d/go-git"),
-                ("31eae7b619d166c366bf5df4991f04ba8cebea0a",
-                 2755667,  # noqa
-                 611,
-                 "src-d/go-git")],
-                columns=["1", "2", "3", "4"],
-            ),
-            ("1", "2", "3", "4"),
+            heads_df2, ("1", "2", "3", "4"),
             True, 1, (6366825,), None, fake_pdb, cache)
 
 
 @with_defer
-async def test__fetch_repository_commits_many(mdb, pdb):
+async def test__fetch_repository_commits_many(mdb, pdb, heads_df2):
     dags = await fetch_repository_commits(
         {"src-d/go-git": _empty_dag()},
-        pd.DataFrame([
-            ("d2a38b4a5965d529566566640519d03d2bd10f6c",
-             2757677,
-             525,
-             "src-d/go-git"),
-            ("31eae7b619d166c366bf5df4991f04ba8cebea0a",
-             2755667,
-             611,
-             "src-d/go-git")] * 50,
-            columns=["1", "2", "3", "4"],
-        ),
-        ("1", "2", "3", "4"),
+        heads_df2, ("1", "2", "3", "4"),
         False, 1, (6366825,), mdb, pdb, None)
     assert len(dags["src-d/go-git"][0]) == 9
 
@@ -1396,7 +1329,7 @@ async def test_mark_dag_parents_smoke(
         rdb,
         None,
     )
-    release_hashes = releases[Release.sha.name].values.astype("S40")
+    release_hashes = releases[Release.sha.name].values
     release_dates = releases[Release.published_at.name].values
     ownership = mark_dag_access(hashes, vertexes, edges, release_hashes, True)
     parents = mark_dag_parents(hashes, vertexes, edges, release_hashes, release_dates, ownership)
@@ -1932,7 +1865,7 @@ async def test_precomputed_releases_low_level(
         release_settings, LogicalRepositorySettings.empty(), prefixer,
         1, (6366825,), mdb, pdb, rdb, None)
     await wait_deferred()
-    assert_array_equal(releases[Release.author.name].isnull().values,
+    assert_array_equal(releases[Release.author.name].values == "",
                        releases[Release.author_node_id.name].isnull().values)
     prels = await release_loader._fetch_precomputed_releases(
         {ReleaseMatch(settings_index): {["master", ".*"][settings_index]: ["src-d/go-git"]}},

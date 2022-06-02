@@ -219,9 +219,4 @@ def test_mine_check_runs_wrap(benchmark, no_deprecation_warnings):
                 check_suite_started_column):
         col_name = col.name if not isinstance(col, str) else col
         df[col_name] = df[col_name].astype(np.datetime64)
-    for col in [CheckRun.conclusion,
-                CheckRun.check_suite_conclusion,
-                CheckRun.author_user_id,
-                CheckRun.author_login]:
-        df[col.name].replace([np.nan], [None], inplace=True)
     benchmark(_finalize_check_runs, df, logging.getLogger("pytest.alternative_facts"))

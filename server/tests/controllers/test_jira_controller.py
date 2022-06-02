@@ -789,6 +789,9 @@ async def test_filter_jira_deleted_repositories(client, headers, mdb_rw):
         deletions=0,
         changed_files=0,
         commits=1,
+        user_node_id=0,
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
     )))
     try:
         body = {

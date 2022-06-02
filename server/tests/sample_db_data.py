@@ -99,10 +99,16 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
                             raise e from None
                 if table == "jira.issue":
                     kwargs["url"] = "https://athenianco.atlassian.net/browse/" + kwargs["key"]
-                if table == "github.node_repository":
+                elif table == "github.node_repository":
                     name_with_owner = kwargs["name_with_owner"]
                     kwargs["name"] = name_with_owner.split("/", 1)[1]
                     kwargs["url"] = "https://github.com/" + name_with_owner
+                # FIXME(vmarkovtsev): remove there when the rest of the code is updated DEV-3537
+                elif table == "github.node_reviewrequestedevent":
+                    kwargs["requested_reviewer_id"] = kwargs["requested_reviewer_id"] or 0
+                for key, val in kwargs.items():
+                    if key.endswith("_user_id") or key == "user_node_id":
+                        kwargs[key] = val or 0
                 session.add(model(**kwargs))
                 if table == "github.api_pull_requests":
                     session.add(NodePullRequest(graph_id=kwargs["node_id"],

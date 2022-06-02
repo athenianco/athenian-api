@@ -29,7 +29,7 @@ from athenian.api.internal.miners.jira.issue import generate_jira_prs_query
 from athenian.api.internal.settings import LogicalRepositorySettings
 from athenian.api.models.metadata.github import CheckRun, CheckRunByPR, NodePullRequest, \
     NodePullRequestCommit, NodeRepository, PullRequestLabel
-from athenian.api.to_object_arrays import as_bool, is_null
+from athenian.api.to_object_arrays import as_bool
 from athenian.api.tracing import sentry_span
 
 
@@ -235,14 +235,10 @@ async def _disambiguate_pull_requests(df: pd.DataFrame,
                                       mdb: Database,
                                       ) -> Union[Tuple[pd.DataFrame],
                                                  Tuple[pd.DataFrame, pd.DataFrame]]:
-    # cast pull_request_node_id to int
     pr_node_ids = df[CheckRun.pull_request_node_id.name].values
-    pr_node_ids[is_null(pr_node_ids)] = 0
-    df[CheckRun.pull_request_node_id.name] = pr_node_ids = pr_node_ids.astype(int, copy=False)
-
-    check_run_node_ids = df[CheckRun.check_run_node_id.name].values.astype(int, copy=False)
+    check_run_node_ids = df[CheckRun.check_run_node_id.name].values
     unique_node_ids, node_id_counts = np.unique(check_run_node_ids, return_counts=True)
-    ambiguous_unique_check_run_indexes = np.nonzero(node_id_counts > 1)[0]
+    ambiguous_unique_check_run_indexes = np.flatnonzero(node_id_counts > 1)
     if len(ambiguous_unique_check_run_indexes):
         log.debug("must disambiguate %d check runs", len(ambiguous_unique_check_run_indexes))
         # another groupby() replacement for speed
@@ -407,7 +403,7 @@ def _erase_completed_at_as_needed(df: pd.DataFrame):
         return
 
     # exclude skipped checks from execution time calculation
-    df[CheckRun.completed_at.name].values[df[CheckRun.conclusion.name].values == "NEUTRAL"] = None
+    df[CheckRun.completed_at.name].values[df[CheckRun.conclusion.name].values == b"NEUTRAL"] = None
 
     # exclude "too quick" checks from execution time calculation DEV-3155
     cr_types = np.empty(len(df), dtype=[("repo", int), ("name", np.uint64)])
@@ -570,7 +566,7 @@ def _merge_status_contexts(df: pd.DataFrame) -> pd.DataFrame:
     # Required order:
     # PENDING, ERROR, FAILURE, SUCCESS
     pending_repl = b"AAAAAAA"
-    statuses = df[CheckRun.status.name].values.astype("S", copy=False).copy()
+    statuses = df[CheckRun.status.name].values.copy()
     statuses[statuses == b"PENDING"] = pending_repl
     starteds = df[CheckRun.started_at.name].values
     # we *must* sort by the these:
@@ -647,17 +643,17 @@ def _split_duplicate_check_runs(df: pd.DataFrame) -> int:
         df[CheckRun.started_at.name].values.astype("datetime64[s]"))
     if split == 0:
         return 0
-    check_run_conclusions = df[CheckRun.conclusion.name].values.astype("S")
+    check_run_conclusions = df[CheckRun.conclusion.name].values
     check_suite_conclusions = df[CheckRun.check_suite_conclusion.name].values
     successful = (
-        (check_suite_conclusions == "SUCCESS") | (check_suite_conclusions == "NEUTRAL")
+        (check_suite_conclusions == b"SUCCESS") | (check_suite_conclusions == b"NEUTRAL")
     )
     # override the successful conclusion of the check suite if at least one check run's conclusion
     # does not agree
-    for c in ("TIMED_OUT", "CANCELLED", "FAILURE"):  # the order matters
+    for c in (b"TIMED_OUT", b"CANCELLED", b"FAILURE"):  # the order matters
         mask = successful & np.in1d(
             check_suite_node_ids,
-            np.unique(check_suite_node_ids[check_run_conclusions == c.encode()]),
+            np.unique(check_suite_node_ids[check_run_conclusions == c]),
         )
         if mask.any():
             df[CheckRun.check_suite_conclusion.name].values[mask] = c

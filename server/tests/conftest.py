@@ -562,6 +562,8 @@ async def mdb_rw(mdb, event_loop, worker_id, request):
                 Account.owner_id: 1,
                 Account.owner_login: "xxx",
                 Account.name: "src-d",
+                Account.created_at: datetime.now(timezone.utc),
+                Account.updated_at: datetime.now(timezone.utc),
             }))
             break
         except OperationalError:

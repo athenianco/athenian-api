@@ -832,7 +832,7 @@ async def _map_releases_to_deployments(
         time_from = await mdb.fetch_val(
             select([func.min(NodeCommit.committed_date)])
             .where(and_(NodeCommit.acc_id.in_(meta_ids),
-                        NodeCommit.sha.in_any_values(all_mentioned_hashes.astype("U40")))))
+                        NodeCommit.sha.in_any_values(all_mentioned_hashes))))
         if time_from is None:
             time_from = max_release_time_to - timedelta(days=10 * 365)
         elif mdb.url.dialect == "sqlite":
@@ -847,7 +847,7 @@ async def _map_releases_to_deployments(
     if not extra_releases.empty:
         releases = pd.concat([releases, extra_releases], copy=False, ignore_index=True)
     release_commit_shas = np.char.add(
-        releases[Release.sha.name].values.astype("S40"),
+        releases[Release.sha.name].values,
         releases[Release.repository_full_name.name].values.astype("S"))
     positions = searchsorted_inrange(all_commit_sha_repos, release_commit_shas)
     if len(all_commit_sha_repos):
@@ -982,7 +982,7 @@ async def _fetch_commit_stats(all_mentioned_hashes: np.ndarray,
                 NodeCommit.repository_id == NodeRepository.id,
             ), isouter=True))
         .where(and_(NodeCommit.acc_id.in_(meta_ids),
-                    NodeCommit.sha.in_any_values(all_mentioned_hashes.astype("U40"))))
+                    NodeCommit.sha.in_any_values(all_mentioned_hashes)))
         .order_by(func.coalesce(NodePullRequest.merged_at, NodeCommit.committed_date)))
     assert len(commit_rows) == len(all_mentioned_hashes)
     shas = np.zeros(len(commit_rows), "S40")
@@ -1210,7 +1210,7 @@ async def _extract_deployed_commits(
         dags: Dict[str, DAG],
 ) -> Tuple[Dict[str, Dict[str, DeployedCommitDetails]], np.ndarray]:
     commit_ids_in_df = deployed_commits_df[PushCommit.node_id.name].values
-    commit_shas_in_df = deployed_commits_df[PushCommit.sha.name].values.astype("S40")
+    commit_shas_in_df = deployed_commits_df[PushCommit.sha.name].values
     joined = notifications.join(components)
     commits = joined[DeployedComponent.resolved_commit_node_id.name].values
     conclusions = joined[DeploymentNotification.conclusion.name].values.astype("S9")
@@ -1404,7 +1404,7 @@ async def _resolve_commit_relationship(
     del commits_per_physical_repo
     deployed_commits_df.sort_values(PushCommit.node_id.name, ignore_index=True, inplace=True)
     commit_ids_in_df = deployed_commits_df[PushCommit.node_id.name].values
-    commit_shas_in_df = deployed_commits_df[PushCommit.sha.name].values.astype("S40")
+    commit_shas_in_df = deployed_commits_df[PushCommit.sha.name].values
     root_details_per_repo = defaultdict(dict)
     commit_relationship = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
     for env, env_commits_per_repo in commits_per_repo_per_env.items():
@@ -1558,7 +1558,7 @@ async def _extend_dags_with_previous_commits(
             physical_repo = drop_logical_repo(repo)
             for cid, sha, dep_finished_at in zip(cids, shas, dep_finished_ats):
                 if sha != missing_sha:
-                    records[cid] = (sha.decode(), physical_repo, dep_finished_at)
+                    records[cid] = (sha, physical_repo, dep_finished_at)
     if not records:
         return dags
     previous_commits_df = pd.DataFrame.from_dict(records, orient="index")
@@ -1568,6 +1568,8 @@ async def _extend_dags_with_previous_commits(
         PushCommit.repository_full_name.name,
         PushCommit.committed_date.name,
     ]
+    previous_commits_df[PushCommit.sha.name] = \
+        previous_commits_df[PushCommit.sha.name].values.astype("S40")
     previous_commits_df.reset_index(inplace=True)
     return await fetch_repository_commits(
         dags, previous_commits_df, COMMIT_FETCH_COMMITS_COLUMNS,

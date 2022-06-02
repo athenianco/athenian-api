@@ -48,6 +48,7 @@ from athenian.api.models.metadata.github import NodeCommit, NodePullRequest, Pul
     PullRequestLabel, PushCommit, Release
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
     GitHubReleaseDeployment
+from athenian.api.to_object_arrays import is_null
 from athenian.api.tracing import sentry_span
 
 
@@ -234,7 +235,7 @@ async def _mine_releases(repos: Iterable[str],
             if len(hashes) == 0:
                 log.error("%s has an empty commit DAG, skipped from mining releases", repo)
                 continue
-            release_hashes = repo_releases[Release.sha.name].values.astype("S40", copy=False)
+            release_hashes = repo_releases[Release.sha.name].values
             release_timestamps = repo_releases[Release.published_at.name].values
             ownership = mark_dag_access(hashes, vertexes, edges, release_hashes, True)
             parents = mark_dag_parents(
@@ -280,9 +281,9 @@ async def _mine_releases(repos: Iterable[str],
                 .with_statement_hint(
                     f"Rows({NodeCommit.__tablename__} *VALUES* #{len(all_hashes)})")
                 .with_statement_hint(f"Leading(*VALUES* {NodeCommit.__tablename__})"),
-                mdb, commits_df_columns, index=NodeCommit.sha.name)
+                mdb, commits_df_columns)
         log.info("Loaded %d commits", len(commits_df))
-        commits_index = commits_df.index.values.astype("S40")
+        commits_index = commits_df[NodeCommit.sha.name].values
         commit_ids = commits_df[NodeCommit.node_id.name].values
         commits_additions = commits_df[NodeCommit.additions.name].values
         commits_deletions = commits_df[NodeCommit.deletions.name].values
@@ -516,7 +517,7 @@ async def _mine_releases(repos: Iterable[str],
 
 def _null_to_zero_int(df: pd.DataFrame, col: str) -> Tuple[np.ndarray, np.ndarray]:
     vals = df[col]
-    vals_z = vals.isnull().values
+    vals_z = is_null(vals.values)
     vals.values[vals_z] = 0
     df[col] = df[col].astype(int)
     vals_nz = ~vals_z
@@ -1207,14 +1208,14 @@ async def diff_releases(borders: Dict[str, List[Tuple[str, str]]],
             if start > finish:
                 log.warning("Release pair old %s is later than new %s for %s", old, new, repo)
                 continue
-            start_sha, finish_sha = (repo_releases[x][0][Release.sha.name].encode()
+            start_sha, finish_sha = (repo_releases[x][0][Release.sha.name]
                                      for x in (start, finish))
             hashes, _, _ = extract_subdag(*dags[repo], np.array([finish_sha]))
             if hashes[searchsorted_inrange(hashes, np.array([start_sha]))] == start_sha:
                 diff = []
                 for i in range(start + 1, finish + 1):
                     r = repo_releases[i]
-                    sha = r[0][Release.sha.name].encode()
+                    sha = r[0][Release.sha.name]
                     if hashes[searchsorted_inrange(hashes, np.array([sha]))] == sha:
                         diff.append(r)
                 repo_result.append((old, new, diff))

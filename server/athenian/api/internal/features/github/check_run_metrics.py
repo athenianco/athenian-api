@@ -96,11 +96,12 @@ def make_check_runs_count_grouper(df: pd.DataFrame) -> Tuple[
     """
     suites = df[CheckRun.check_suite_node_id.name].values
     unique_suites, run_counts = np.unique(suites, return_counts=True)
-    suite_blocks = np.array(np.split(np.argsort(suites), np.cumsum(run_counts)[:-1]))
+    suite_blocks = np.array(np.split(np.argsort(suites), np.cumsum(run_counts)[:-1]),
+                            dtype=object)
     unique_run_counts, back_indexes, group_counts = np.unique(
         run_counts, return_inverse=True, return_counts=True)
     run_counts_order = np.argsort(back_indexes)
-    ordered_indexes = np.concatenate(suite_blocks[run_counts_order])
+    ordered_indexes = np.concatenate(suite_blocks[run_counts_order], casting="unsafe")
     groups = np.split(ordered_indexes, np.cumsum(group_counts * unique_run_counts)[:-1])
 
     def group_check_runs_by_check_runs_count(_) -> List[np.ndarray]:
@@ -126,10 +127,10 @@ class FirstSuiteEncounters(MetricCalculator[float]):
             return_index=True)
         # ignore incomplete suites
         completed = np.in1d(
-            facts[CheckRun.check_suite_status.name].values[first_suite_encounters].astype("S"),
+            facts[CheckRun.check_suite_status.name].values[first_suite_encounters],
             self.complete_suite_statuses)
         completed[
-            facts[CheckRun.check_suite_conclusion.name].values[first_suite_encounters].astype("S")
+            facts[CheckRun.check_suite_conclusion.name].values[first_suite_encounters]
             == b"SKIPPED"] = False
         first_suite_encounters = first_suite_encounters[completed]
         order = np.argsort(facts[check_suite_started_column].values[first_suite_encounters])
@@ -192,8 +193,8 @@ class SuitesInStatusCounter(SumMetricCalculator[int]):
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
         started = facts[check_suite_started_column].values.astype(min_times.dtype)
-        statuses = facts[CheckRun.check_suite_status.name].values.astype("S")
-        conclusions = facts[CheckRun.check_suite_conclusion.name].values.astype("S")
+        statuses = facts[CheckRun.check_suite_status.name].values
+        conclusions = facts[CheckRun.check_suite_conclusion.name].values
         relevant = np.zeros_like(started, dtype=bool)
         for status, status_conclusions in self.statuses.items():
             status_mask = statuses == status
@@ -277,11 +278,11 @@ class SuiteTimeCalculatorAnalysis(MetricCalculator[None]):
         unique_suites, first_encounters, inverse_indexes, run_counts = np.unique(
             facts[CheckRun.check_suite_node_id.name].values,
             return_index=True, return_inverse=True, return_counts=True)
-        statuses = facts[CheckRun.check_suite_status.name].values[first_encounters].astype("S")
+        statuses = facts[CheckRun.check_suite_status.name].values[first_encounters]
         completed = np.in1d(statuses, [b"COMPLETED", b"SUCCESS", b"FAILURE"])
         conclusions = facts[CheckRun.check_suite_conclusion.name].values[
             first_encounters[completed]
-        ].astype("S")
+        ]
         sensibly_completed = np.flatnonzero(completed)[
             np.in1d(conclusions, [b"CANCELLED", b"SKIPPED"], invert=True)]
         # first_encounters[sensibly_completed] gives the indexes of the completed suites
@@ -515,9 +516,9 @@ class FlakyCommitChecksCounter(SumMetricCalculator[int]):
                  min_times: np.ndarray,
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
-        statuses = facts[CheckRun.status.name].values.astype("S")
-        conclusions = facts[CheckRun.conclusion.name].values.astype("S")
-        check_suite_conclusions = facts[CheckRun.check_suite_conclusion.name].values.astype("S")
+        statuses = facts[CheckRun.status.name].values
+        conclusions = facts[CheckRun.conclusion.name].values
+        check_suite_conclusions = facts[CheckRun.check_suite_conclusion.name].values
         success_mask, failure_mask = calculate_check_run_outcome_masks(
             statuses, conclusions, check_suite_conclusions, True, True, False)
         commits = facts[CheckRun.commit_node_id.name].values.copy()
@@ -567,8 +568,8 @@ class MergedPRsWithFailedChecksCounter(SumMetricCalculator[int]):
         names = np.char.encode(df[CheckRun.name.name].values.astype("U"), "UTF-8")
         joint = np.char.add(int_to_str(pull_requests), names)
         _, first_encounters = np.unique(joint, return_index=True)
-        statuses = df[CheckRun.status.name].values.astype("S", copy=False)
-        conclusions = df[CheckRun.conclusion.name].values.astype("S", copy=False)
+        statuses = df[CheckRun.status.name].values
+        conclusions = df[CheckRun.conclusion.name].values
         failure_mask = np.zeros_like(statuses, dtype=bool)
         failure_mask[first_encounters] = True
         failure_mask &= (
@@ -797,9 +798,9 @@ class CompleteMarker(MetricCalculator[bool]):
                  max_times: np.ndarray,
                  **_) -> np.ndarray:
         completed = np.in1d(
-            facts[CheckRun.check_suite_status.name].values.astype("S"),
+            facts[CheckRun.check_suite_status.name].values,
             FirstSuiteEncounters.complete_suite_statuses)
-        conclusions = facts[CheckRun.check_suite_conclusion.name].values.astype("S")
+        conclusions = facts[CheckRun.check_suite_conclusion.name].values
         completed[(conclusions == b"SKIPPED") | (conclusions == b"CANCELLED")] = False
         run_completed_ats = facts[CheckRun.completed_at.name].values
         completed &= run_completed_ats == run_completed_ats

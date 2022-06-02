@@ -8,8 +8,10 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Ty
 import numpy as np
 import pandas as pd
 from pandas.core.dtypes.cast import OutOfBoundsDatetime, tslib
-from pandas.core.internals import make_block
-from pandas.core.internals.managers import BlockManager, form_blocks
+from pandas.core.internals.blocks import _extract_bool_array, Block, \
+    get_block_type as get_block_type_original, \
+    lib as blocks_lib, make_block as make_block_original
+from pandas.core.internals.managers import BlockManager
 import sentry_sdk
 from sqlalchemy import BigInteger, Boolean, Column, DateTime, Integer, SmallInteger, String
 from sqlalchemy.orm.attributes import InstrumentedAttribute
@@ -24,6 +26,72 @@ from athenian.api.models.precomputed.models import GitHubBase as PrecomputedBase
 from athenian.api.models.state.models import Base as StateBase
 from athenian.api.to_object_arrays import is_null, to_object_arrays_split
 from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
+
+
+class IntBlock(Block):
+    """
+    Custom Pandas block to carry S and U dtypes.
+
+    The name hacks the internals to recognize the block downstream.
+    """
+
+    __slots__ = ()
+    _can_hold_na = False
+
+    @property
+    def fill_value(self):
+        """Return an empty string."""
+        return self.values.dtype.type()
+
+    def take_nd(
+            self, indexer, axis: int = 0, new_mgr_locs=None, fill_value=blocks_lib.no_default,
+    ):
+        """Take values according to indexer and return them as a block."""
+        new_values = self.values.take(indexer, axis=axis)
+
+        if new_mgr_locs is None:
+            new_mgr_locs = self.mgr_locs
+
+        return self.make_block_same_class(new_values, new_mgr_locs)
+
+    def putmask(
+            self, mask, new, inplace: bool = False, axis: int = 0, transpose: bool = False,
+    ) -> List["Block"]:
+        """Specialize DataFrame.where()."""
+        mask = _extract_bool_array(mask)
+        new_values = self.values if inplace else self.values.copy()
+        if isinstance(new, np.ndarray) and len(new) == len(mask):
+            new = new[mask]
+        mask = mask.reshape(new_values.shape)
+        new_values[mask] = new
+        return [self.make_block_same_class(new_values, placement=self.mgr_locs)]
+
+
+def get_block_type(values, dtype=None):
+    """Add block type exclusion for fixed-length bytes and strings."""
+    if (dtype or values.dtype).kind in ("S", "U"):
+        return IntBlock
+    return get_block_type_original(values, dtype)
+
+
+def make_block(values, placement, klass=None, ndim=None, dtype=None):
+    """Override the block class if we are S or U."""
+    if (
+            klass is not None
+            and klass.__name__ == "IntBlock"
+            and klass is not IntBlock
+            and values.dtype.kind in ("S", "U")
+    ):
+        if isinstance(values, pd.Series):
+            values = values.values
+        klass = IntBlock
+    return make_block_original(values, placement, klass=klass, ndim=ndim, dtype=dtype)
+
+
+pd.core.internals.blocks.get_block_type = get_block_type
+pd.core.internals.blocks.make_block = make_block
+pd.core.internals.managers.get_block_type = get_block_type
+pd.core.internals.managers.make_block = make_block
 
 
 async def read_sql_query(sql: CompoundSelect,
@@ -71,7 +139,8 @@ async def _read_sql_query_numpy(
         index: Optional[Union[str, Sequence[str]]] = None,
         soft_limit: Optional[int] = None,
 ) -> pd.DataFrame:
-    dtype, (int_erase_nulls, int_reset_nulls, fixed_str_cols) = _build_dtype(columns)
+    dtype, (int_erase_nulls, int_reset_nulls, str_erase_nulls, str_reset_nulls) = \
+        _build_dtype(columns)
     sql.dtype = dtype
     try:
         data, nulls = await _fetch_query(sql, con)
@@ -82,24 +151,27 @@ async def _read_sql_query_numpy(
     for i, arr in enumerate(data):
         blocks.setdefault(arr.dtype, [arr.base, []])[1].append(i)
         rows_count = len(arr)
-    if nulls and (int_erase_nulls or int_reset_nulls or fixed_str_cols):
+    if nulls and (int_erase_nulls or int_reset_nulls or str_erase_nulls or str_reset_nulls):
         null_items, null_cols = np.unravel_index(nulls, (rows_count, len(dtype)))
-        null_items = null_items[np.argsort(null_cols)]
+        order = np.argsort(null_cols)
+        null_items = null_items[order]
+        null_cols = null_cols[order]
         unique_null_cols, offsets, counts = np.unique(
             null_cols, return_index=True, return_counts=True)
         col_map = {name: i for i, name in enumerate(dtype.names)}
         remain_mask = None
-        if int_erase_nulls or fixed_str_cols:
-            for col in chain(int_erase_nulls, fixed_str_cols):
+        if int_erase_nulls or str_erase_nulls:
+            for col in chain(int_erase_nulls, str_erase_nulls):
                 pos = np.searchsorted(unique_null_cols, (col_index := col_map[col]))
                 if pos < len(unique_null_cols) and unique_null_cols[pos] == col_index:
                     if remain_mask is None:
                         remain_mask = np.ones(rows_count, dtype=bool)
                     remain_mask[null_items[offsets[pos]:offsets[pos] + counts[pos]]] = False
-        for col in int_reset_nulls:
-            pos = np.searchsorted(unique_null_cols, (col_index := col_map[col]))
-            if pos < len(unique_null_cols) and unique_null_cols[pos] == col_index:
-                data[col][null_items[offsets[pos]:offsets[pos] + counts[pos]]] = 0
+        for reset_cols, reset_val in ((int_reset_nulls, 0), (str_reset_nulls, b"")):
+            for col in reset_cols:
+                pos = np.searchsorted(unique_null_cols, (col_index := col_map[col]))
+                if pos < len(unique_null_cols) and unique_null_cols[pos] == col_index:
+                    data[col][null_items[offsets[pos]:offsets[pos] + counts[pos]]] = reset_val
         if remain_mask is not None:
             for ptrs in blocks.values():
                 ptrs[0] = ptrs[0][:, remain_mask]
@@ -128,11 +200,12 @@ async def _read_sql_query_numpy(
 
 
 def _build_dtype(columns: Sequence[InstrumentedAttribute],
-                 ) -> Tuple[np.dtype, Tuple[Set[str], Set[str], Set[str]]]:
+                 ) -> Tuple[np.dtype, Tuple[Set[str], Set[str], Set[str], Set[str]]]:
     body = []
     int_erase_nulls = set()
     int_reset_nulls = set()
-    fixed_str_cols = set()
+    str_erase_nulls = set()
+    str_reset_nulls = set()
     for c in columns:
         if isinstance(c, str):
             body.append((c, object))
@@ -173,23 +246,23 @@ def _build_dtype(columns: Sequence[InstrumentedAttribute],
                 raise AssertionError(f"Unsupported integer type: {sql_type.__name__}")
             body.append((c.name, int_dtype))
         elif (
-                (isinstance(c.type, type) and issubclass(c.type, String))
-                and not getattr(c, "nullable", False)
-                and (not isinstance(c, Label) or (
-                    (not getattr(c.element, "nullable", False))
-                    and (not getattr(c, "nullable", False))
-                ))
-                and (dtype := getattr(
+                (isinstance(c.type, String) or
+                 (isinstance(c.type, type) and issubclass(c.type, String)))
+                and (info := getattr(
                     c, "info", {} if not isinstance(c, Label) else getattr(c.element, "info", {}),
-                ).get("dtype", False))
+                )).get("dtype", False)
         ):
-            fixed_str_cols.add(c.name)
+            dtype = np.dtype(info["dtype"])
+            if info.get("erase_nulls"):
+                str_erase_nulls.add(c.name)
+            if dtype.kind == "S":
+                str_reset_nulls.add(c.name)
             body.append((c.name, dtype))
         else:
             body.append((c.name, object))
 
     dtype = np.dtype(body, metadata={"blocks": True})
-    return dtype, (int_erase_nulls, int_reset_nulls, fixed_str_cols)
+    return dtype, (int_erase_nulls, int_reset_nulls, str_erase_nulls, str_reset_nulls)
 
 
 async def _read_sql_query_records(
@@ -203,7 +276,7 @@ async def _read_sql_query_records(
     data = await _fetch_query(sql, con)
     if soft_limit is not None and len(data) > soft_limit:
         data = data[:soft_limit]
-    return wrap_sql_query(data, columns, index)
+    return _wrap_sql_query(data, columns, index)
 
 
 async def _fetch_query(sql: str,
@@ -236,17 +309,19 @@ def _create_block_manager_from_arrays(
     assert len(arrays_typed) == len(names_typed)
     assert len(arrays_obj) == len(names_obj)
     range_index = pd.RangeIndex(stop=size)
-    typed_index = pd.Index(names_typed)
-    blocks = form_blocks(arrays_typed, typed_index, [typed_index, range_index])
+    blocks = [
+        make_block(np.atleast_2d(arrays_typed[i]), placement=[i])
+        for i, arr in enumerate(arrays_typed)
+    ]
     blocks.append(make_block(arrays_obj, placement=np.arange(len(arrays_obj)) + len(arrays_typed)))
     return BlockManager(blocks, [pd.Index(names_typed + names_obj), range_index])
 
 
-def wrap_sql_query(data: List[Sequence[Any]],
-                   columns: Union[Sequence[str], Sequence[InstrumentedAttribute],
-                                  MetadataBase, StateBase],
-                   index: Optional[Union[str, Sequence[str]]] = None,
-                   ) -> pd.DataFrame:
+def _wrap_sql_query(data: List[Sequence[Any]],
+                    columns: Union[Sequence[str], Sequence[InstrumentedAttribute],
+                                   MetadataBase, StateBase],
+                    index: Optional[Union[str, Sequence[str]]] = None,
+                    ) -> pd.DataFrame:
     """Turn the fetched DB records to a pandas DataFrame."""
     try:
         columns[0]
@@ -288,7 +363,7 @@ def wrap_sql_query(data: List[Sequence[Any]],
     with sentry_sdk.start_span(op="wrap_sql_query/convert", description=str(size := len(data))):
         data_typed, data_obj = to_object_arrays_split(data, typed_cols_indexes, obj_cols_indexes)
         converted_typed = []
-        discard_mask = None
+        remain_mask = None
         for column, values in zip(typed_cols_names, data_typed):
             if column in dt_columns:
                 converted_typed.append(_convert_datetime(values))
@@ -296,23 +371,20 @@ def wrap_sql_query(data: List[Sequence[Any]],
                 values, discarded = _convert_integer(values, column, *int_columns[column], log)
                 converted_typed.append(values)
                 if discarded is not None:
-                    if discard_mask is None:
-                        discard_mask = np.zeros(len(data), dtype=bool)
-                    discard_mask[discarded] = True
+                    if remain_mask is None:
+                        remain_mask = np.ones(len(data), dtype=bool)
+                    remain_mask[discarded] = False
             elif column in bool_columns:
                 converted_typed.append(values.astype(bool))
             elif column in fixed_str_columns:
-                if discard_mask is None:
-                    discard_mask = np.zeros(len(data), dtype=bool)
-                discard_mask[is_null(values)] = True
+                values[is_null(values)] = np.dtype(fixed_str_columns[column]).type()
                 converted_typed.append(values.astype(fixed_str_columns[column]))
             else:
                 raise AssertionError("impossible: typed columns are either dt or int")
-        if discard_mask is not None:
-            left = ~discard_mask
-            size = left.sum()
-            converted_typed = [arr[left] for arr in converted_typed]
-            data_obj = data_obj[:, left]
+        if remain_mask is not None:
+            size = remain_mask.sum()
+            converted_typed = [arr[remain_mask] for arr in converted_typed]
+            data_obj = data_obj[:, remain_mask]
     with sentry_sdk.start_span(op="wrap_sql_query/pd.DataFrame()", description=str(size)):
         block_mgr = _create_block_manager_from_arrays(
             converted_typed, data_obj, typed_cols_names, obj_cols_names, size)
@@ -375,11 +447,6 @@ def _extract_fixed_string_columns(columns: Iterable[Union[Column, str]],
                 isinstance(c.type, String) or
                 (isinstance(c.type, type) and issubclass(c.type, String))
             )
-            and not getattr(c, "nullable", False)
-            and (not isinstance(c, Label) or (
-                (not getattr(c.element, "nullable", False))
-                and (not getattr(c, "nullable", False))
-            ))
             and (info := getattr(
                 c, "info", {} if not isinstance(c, Label) else getattr(c.element, "info", {}),
             )).get("dtype", False)
