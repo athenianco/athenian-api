@@ -6,7 +6,7 @@ import factory
 
 from athenian.api.controllers.invitation_controller import _generate_account_secret
 from athenian.api.models.state.models import Account, Goal, LogicalRepository, \
-    MappedJIRAIdentity, RepositorySet, Team, TeamGoal
+    MappedJIRAIdentity, RepositorySet, Team, TeamGoal, UserAccount
 
 from .alchemy import SQLAlchemyModelFactory
 from .common import DEFAULT_ACCOUNT_ID
@@ -31,6 +31,15 @@ class AccountFactory(SQLAlchemyModelFactory):
     @factory.post_generation
     def _generate_secret(obj: Account, create: bool, extracted: Any, **kwargs: Any):
         obj.secret_salt, obj.secret = _generate_account_secret(obj.id, "secret")
+
+
+class UserAccountFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = UserAccount
+
+    user_id = factory.Sequence(lambda n: f"github|{n:05}")
+    account_id = DEFAULT_ACCOUNT_ID
+    is_admin = True
 
 
 class RepositorySetFactory(SQLAlchemyModelFactory):

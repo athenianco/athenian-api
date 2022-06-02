@@ -12,9 +12,11 @@ import sentry_sdk
 
 import athenian
 import athenian.api.align
+from athenian.api.auth import ensure_non_default_user
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError
 from athenian.api.serialization import FriendlyJson
+from athenian.api.typing_utils import wraps
 
 
 class GraphQL:
@@ -109,3 +111,12 @@ class HandleErrorExtension(Extension):
             if athenian.api.is_testing:
                 traceback.print_exc()
             raise e from None
+
+
+def ariadne_disable_default_user(resolver: Callable) -> Any:
+    """Decorate an ariadne resolver function to disable default user access."""
+    def wrapper(obj: Any, info: GraphQLResolveInfo, **kwargs: Any) -> Any:
+        ensure_non_default_user(info.context)
+        return resolver(obj, info, **kwargs)
+    wraps(wrapper, resolver)
+    return wrapper
