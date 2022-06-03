@@ -200,8 +200,9 @@ class MergedPRFactsLoader:
                     data=data,
                     node_id=node_id,
                     repository_full_name=repo,
-                    author=user_node_map_get(row[ghmprf.author.name]),
-                    merger=user_node_map_get(row[ghmprf.merger.name]))
+                    author=user_node_map_get(row[ghmprf.author.name], ""),
+                    merger=user_node_map_get(row[ghmprf.merger.name], ""),
+                    releaser="")
         if missing_facts:
             log.warning("No precomputed facts for merged %s", missing_facts)
         return facts

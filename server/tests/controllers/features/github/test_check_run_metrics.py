@@ -253,11 +253,11 @@ def alternative_facts() -> pd.DataFrame:
                 check_suite_started_column):
         col_name = col.name if not isinstance(col, str) else col
         df[col_name] = df[col_name].astype(np.datetime64)
-    for col in [CheckRun.conclusion,
-                CheckRun.check_suite_conclusion,
-                CheckRun.author_user_id,
-                CheckRun.author_login]:
-        df[col.name].replace([np.nan], [None], inplace=True)
+    for col in (CheckRun.status, CheckRun.check_suite_status):
+        df[col.name] = df[col.name].values.astype("S12")
+    for col in (CheckRun.conclusion, CheckRun.check_suite_conclusion):
+        df[col.name] = df[col.name].values.astype("S16")
+    df[CheckRun.sha.name] = df[CheckRun.sha.name].values.astype("S40")
     df = _finalize_check_runs(df, logging.getLogger("pytest.alternative_facts"))
     return df
 

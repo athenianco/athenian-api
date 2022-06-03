@@ -71,7 +71,7 @@ async def filter_check_runs(time_from: datetime,
     timeline_dates = [d.date() for d in timeline.tolist()]
     if df_check_runs.empty:
         return timeline_dates, []
-    suite_statuses = df_check_runs[CheckRun.check_suite_status.name].values.astype("S")
+    suite_statuses = df_check_runs[CheckRun.check_suite_status.name].values
     completed = np.nonzero(np.in1d(suite_statuses, [b"COMPLETED", b"SUCCESS", b"FAILURE"]))[0]
     df_check_runs = df_check_runs.take(completed)
     del suite_statuses, completed
@@ -102,10 +102,9 @@ async def filter_check_runs(time_from: datetime,
     prs_inverse_cr_map = inverse_cr_map.copy()
     prs_inverse_cr_map[no_pr_mask] = -1
 
-    statuscol = df_check_runs[CheckRun.status.name].values.astype("S")
-    conclusioncol = df_check_runs[CheckRun.conclusion.name].values.astype("S")
-    check_suite_conclusions = \
-        df_check_runs[CheckRun.check_suite_conclusion.name].values.astype("S")
+    statuscol = df_check_runs[CheckRun.status.name].values
+    conclusioncol = df_check_runs[CheckRun.conclusion.name].values
+    check_suite_conclusions = df_check_runs[CheckRun.check_suite_conclusion.name].values
     success_mask, failure_mask, skipped_mask = calculate_check_run_outcome_masks(
         statuscol, conclusioncol, check_suite_conclusions, True, True, True)
     commitscol = df_check_runs[CheckRun.commit_node_id.name].values

@@ -169,7 +169,7 @@ def _take_commits_in_default_branches(commits: pd.DataFrame,
     default_repos_names = np.array([f"{k}|{v}" for k, v in default_branches.items()], dtype="U")
     default_mask = np.in1d(branch_repos_names, default_repos_names, assume_unique=True)
     branch_repos = branch_repos[default_mask]
-    branch_hashes = branches[Branch.commit_sha.name].values[default_mask].astype("S")
+    branch_hashes = branches[Branch.commit_sha.name].values[default_mask]
     repos_order = np.argsort(branch_repos)
     branch_repos = branch_repos[repos_order]
     branch_hashes = branch_hashes[repos_order]
@@ -180,7 +180,7 @@ def _take_commits_in_default_branches(commits: pd.DataFrame,
     branch_repos_in_commits_mask = np.in1d(branch_repos, commit_repos, assume_unique=True)
     branch_repos = branch_repos[branch_repos_in_commits_mask]
     branch_hashes = branch_hashes[branch_repos_in_commits_mask]
-    commit_hashes = commits[PushCommit.sha.name].values.astype("S")
+    commit_hashes = commits[PushCommit.sha.name].values
 
     accessible_indexes = []
     for repo, head_sha, commit_repo_index in zip(
@@ -199,11 +199,11 @@ def _remove_force_push_dropped(commits: pd.DataFrame, dags: Dict[str, DAG]) -> p
     if commits.empty:
         return commits
     repos_order, indexes = np.unique(
-        commits[PushCommit.repository_full_name.name].values.astype("U"), return_inverse=True)
-    hashes = commits[PushCommit.sha.name].values.astype("S")
+        commits[PushCommit.repository_full_name.name].values, return_inverse=True)
+    hashes = commits[PushCommit.sha.name].values
     accessible_indexes = []
     for i, repo in enumerate(repos_order):
-        repo_indexes = np.nonzero(indexes == i)[0]
+        repo_indexes = np.flatnonzero(indexes == i)
         repo_hashes = hashes[repo_indexes]
         accessible_indexes.append(
             repo_indexes[np.in1d(repo_hashes, dags[repo][0], assume_unique=True)])
@@ -218,7 +218,7 @@ def _remove_force_push_dropped(commits: pd.DataFrame, dags: Dict[str, DAG]) -> p
     deserialize=pickle.loads,
     key=lambda repos, branches, columns, prune, **_: (
         ",".join(sorted(repos)),
-        ",".join(np.sort(
+        b",".join(np.sort(
             branches[columns[0] if isinstance(columns[0], str) else columns[0].name].values)),
         prune,
     ) if not branches.empty else None,
@@ -257,45 +257,49 @@ async def fetch_repository_commits(repos: Dict[str, DAG],
     missed_counter = 0
     repo_heads = {}
     sha_col, id_col, dt_col, repo_col = (c if isinstance(c, str) else c.name for c in columns)
-    hash_to_id = dict(zip(branches[sha_col].values, branches[id_col].values))
-    hash_to_dt = dict(zip(branches[sha_col].values, branches[dt_col].values))
     result = {}
     tasks = []
-    df_repos = branches[repo_col].values
-    df_shas = branches[sha_col].values.astype("S40")
+    df_shas = branches[sha_col].values
+    sha_order = np.argsort(df_shas)
+    df_shas = df_shas[sha_order]
+    df_ids = branches[id_col].values[sha_order]
+    df_dts = branches[dt_col].values[sha_order]
+    df_repos = branches[repo_col].values[sha_order]
+    del branches
     unique_repos, index_map, counts = np.unique(df_repos, return_inverse=True, return_counts=True)
     repo_order = np.argsort(index_map)
     offsets = np.zeros(len(counts) + 1, dtype=int)
     np.cumsum(counts, out=offsets[1:])
     for i, repo in enumerate(unique_repos):
-        required_heads = df_shas[repo_order[offsets[i]:offsets[i + 1]]]
-        repo_heads[repo] = required_heads
+        required_shas = df_shas[repo_order[offsets[i]:offsets[i + 1]]]
+        required_shas = required_shas[required_shas != b""]
+        repo_heads[repo] = required_shas
         try:
             hashes, vertexes, edges = repos[drop_logical_repo(repo)]
         except KeyError:
             # totally OK, `branches` may include repositories from other ForSet-s
             continue
         if len(hashes) > 0:
-            found_indexes = searchsorted_inrange(hashes, required_heads)
-            missed_mask = hashes[found_indexes] != required_heads
+            found_indexes = searchsorted_inrange(hashes, required_shas)
+            missed_mask = hashes[found_indexes] != required_shas
             missed_counter += missed_mask.sum()
-            missed_heads = required_heads[missed_mask]  # these hashes do not exist in the p-DAG
+            missed_shas = required_shas[missed_mask]  # these hashes do not exist in the p-DAG
         else:
-            missed_heads = required_heads
-        if len(missed_heads) > 0:
+            missed_shas = required_shas
+        if len(missed_shas) > 0:
+            missed_indexes = np.searchsorted(df_shas, missed_shas)
             # heuristic: order the heads from most to least recent
-            missed_heads = missed_heads.astype("U40")
-            order = sorted([(hash_to_dt[h], i) for i, h in enumerate(missed_heads)], reverse=True)
-            missed_heads = [missed_heads[i] for _, i in order]
-            missed_ids = [hash_to_id[h] for h in missed_heads]
+            order = np.argsort(df_dts[missed_indexes])[::-1]
+            missed_shas = missed_shas[order]
+            missed_ids = df_ids[missed_indexes[order]]
             tasks.append(_fetch_commit_history_dag(
-                hashes, vertexes, edges, missed_heads, missed_ids, repo, meta_ids, mdb))
+                hashes, vertexes, edges, missed_shas, missed_ids, repo, meta_ids, mdb))
         else:
             if prune:
-                hashes, vertexes, edges = extract_subdag(hashes, vertexes, edges, required_heads)
+                hashes, vertexes, edges = extract_subdag(hashes, vertexes, edges, required_shas)
             result[repo] = hashes, vertexes, edges
     # traverse commits starting from the missing branch heads
-    add_pdb_hits(pdb, "fetch_repository_commits", len(branches) - missed_counter)
+    add_pdb_hits(pdb, "fetch_repository_commits", len(df_shas) - missed_counter)
     add_pdb_misses(pdb, "fetch_repository_commits", missed_counter)
     if tasks:
         new_dags = await gather(*tasks, op="fetch_repository_commits/mdb")

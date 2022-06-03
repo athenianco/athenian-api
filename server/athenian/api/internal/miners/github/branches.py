@@ -16,6 +16,7 @@ from athenian.api.db import DatabaseLike
 from athenian.api.internal.logical_repos import coerce_logical_repos
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.models.metadata.github import Branch, NodeCommit, NodeRepositoryRef, Repository
+from athenian.api.to_object_arrays import is_not_null
 from athenian.api.tracing import sentry_span
 
 
@@ -156,8 +157,8 @@ class BranchMiner:
             Branch.acc_id.in_(meta_ids))) \
             .with_statement_hint("IndexOnlyScan(c node_commit_repository_target)")
         df = await read_sql_query_with_join_collapse(query, mdb, Branch)
-        for left_join_col in (Branch.commit_sha.name, Branch.repository_full_name.name):
-            if (not_null := df[left_join_col].notnull().values).sum() < len(df):
+        for left_join_col in (Branch.repository_full_name.name,):
+            if (not_null := is_not_null(df[left_join_col].values)).sum() < len(df):
                 df = df.take(np.flatnonzero(not_null))
         return df
 

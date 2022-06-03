@@ -154,15 +154,14 @@ class PullRequestToReleaseMapper:
             release_repos, return_inverse=True, return_counts=True)
         # stable sort to preserve the decreasing order by published_at
         release_repo_order = np.argsort(release_index_map, kind="stable")
-        ordered_release_shas = releases[Release.sha.name].values[release_repo_order].astype("S40")
+        ordered_release_shas = releases[Release.sha.name].values[release_repo_order]
         release_repo_offsets = np.zeros(len(release_repo_counts) + 1, dtype=int)
         np.cumsum(release_repo_counts, out=release_repo_offsets[1:])
         pr_repos = prs.index.get_level_values(1).values
         unique_pr_repos, pr_index_map, pr_repo_counts = np.unique(
             pr_repos, return_inverse=True, return_counts=True)
         pr_repo_order = np.argsort(pr_index_map)
-        pr_merge_hashes = \
-            prs[PullRequest.merge_commit_sha.name].values[pr_repo_order].astype("S40")
+        pr_merge_hashes = prs[PullRequest.merge_commit_sha.name].values[pr_repo_order]
         pr_merged_at = prs[PullRequest.merged_at.name].values[pr_repo_order].astype(
             releases[Release.published_at.name].values.dtype, copy=False)
         pr_node_ids = prs.index.get_level_values(0).values[pr_repo_order]
@@ -536,13 +535,13 @@ class ReleaseToPullRequestMapper:
             del releases_in_time_range[repo_name_origin_column]
 
         in_range_repos = releases_in_time_range[Release.repository_full_name.name].values
-        in_range_shas = releases_in_time_range[Release.sha.name].values.astype("S40")
+        in_range_shas = releases_in_time_range[Release.sha.name].values
         in_range_dates = releases_in_time_range[Release.published_at.name].values
 
         not_enough_repos = [None]
         releases_previous_older = None
         while not_enough_repos:
-            previous_shas = releases_previous[Release.sha.name].values.astype("S40")
+            previous_shas = releases_previous[Release.sha.name].values
             previous_dates = releases_previous[Release.published_at.name].values
             grouped_previous = dict(LogicalPRSettings.group_by_repo(
                 releases_previous[Release.repository_full_name.name].values))
@@ -708,7 +707,7 @@ class ReleaseToPullRequestMapper:
                     prs[PullRequest.repository_full_name.name].unique()),
                 logical_settings)
             prs.reset_index(PullRequest.repository_full_name.name, inplace=True)
-        pr_commits = prs[PullRequest.merge_commit_sha.name].values.astype("S40")
+        pr_commits = prs[PullRequest.merge_commit_sha.name].values
         pr_repos = prs[PullRequest.repository_full_name.name].values.astype("S")
         mask = np.in1d(commits, pr_commits)
         commits = commits[mask]
@@ -864,10 +863,10 @@ class ReleaseToPullRequestMapper:
         assert not new_releases.empty, "you must check this before calling me"
         hashes, vertexes, edges = dag
         visited_hashes, _, _ = extract_subdag(
-            hashes, vertexes, edges, new_releases[Release.sha.name].values.astype("S40"))
+            hashes, vertexes, edges, new_releases[Release.sha.name].values)
         # we need to traverse the DAG from *all* the previous releases because of release branches
         if not time_mask.all():
-            boundary_release_hashes = releases[Release.sha.name].values[~time_mask].astype("S40")
+            boundary_release_hashes = releases[Release.sha.name].values[~time_mask]
         else:
             boundary_release_hashes = []
         if len(boundary_release_hashes) == 0:

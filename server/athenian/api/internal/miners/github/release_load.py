@@ -431,9 +431,9 @@ class ReleaseLoader:
         else:
             df.reset_index(drop=True, inplace=True)
         user_node_to_login_get = prefixer.user_node_to_login.get
-        df[Release.author.name] = [
-            user_node_to_login_get(u) for u in df[Release.author_node_id.name].values
-        ]
+        df[Release.author.name] = np.fromiter((
+            user_node_to_login_get(u, "") for u in df[Release.author_node_id.name].values
+        ), "U40", len(df))
         return df
 
     @classmethod
@@ -669,6 +669,7 @@ class ReleaseLoader:
         for row in zip(*(releases[c].values for c in columns[:-1]),
                        releases[Release.published_at.name]):
             obj = {columns[i]: v for i, v in enumerate(row)}
+            obj[Release.sha.name] = obj[Release.sha.name].decode()
             obj[Release.acc_id.name] = account
             repo = row[1]
             if obj[matched_by_column] == ReleaseMatch.branch:
@@ -725,8 +726,13 @@ def _adjust_release_dtypes(df: pd.DataFrame) -> pd.DataFrame:
         except KeyError:
             assert col == Release.node_id.name
     assert df[Release.published_at.name].dtype == "datetime64[ns, UTC]"
-    df[Release.author_node_id.name].fillna(0, inplace=True)
-    df[Release.author_node_id.name] = df[Release.author_node_id.name].astype(int, copy=False)
+    if df[Release.author_node_id.name].dtype != int:
+        df[Release.author_node_id.name].fillna(0, inplace=True)
+        df[Release.author_node_id.name] = df[Release.author_node_id.name].astype(int, copy=False)
+    if df[Release.sha.name].values.dtype != "S40":
+        df[Release.sha.name] = df[Release.sha.name].values.astype("S40")
+    if df[Release.author.name].values.dtype != "U40":
+        df[Release.author.name] = df[Release.author.name].values.astype("U40")
     return df
 
 
@@ -1019,7 +1025,7 @@ class ReleaseMatcher:
             self._account, self._meta_ids, self._mdb, self._pdb, self._cache)
         first_shas = [
             extract_first_parents(
-                *dags[repo], branches[Branch.commit_sha.name].values.astype("S40"))
+                *dags[repo], branches[Branch.commit_sha.name].values)
             for repo, branches in branches_matched.items()
         ]
         first_shas = np.sort(np.concatenate(first_shas)).astype("U40")
@@ -1043,7 +1049,7 @@ class ReleaseMatcher:
                 Release.author_node_id.name: commits[PushCommit.author_user_id.name],
                 Release.commit_id.name: commits[PushCommit.node_id.name],
                 Release.node_id.name: commits[PushCommit.node_id.name],
-                Release.name.name: commits[PushCommit.sha.name],
+                Release.name.name: commits[PushCommit.sha.name].values.astype("U40").astype("O"),
                 Release.published_at.name: commits[PushCommit.committed_date.name],
                 Release.repository_full_name.name: repo,
                 Release.repository_node_id.name: commits[PushCommit.repository_node_id.name],

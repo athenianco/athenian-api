@@ -378,7 +378,7 @@ async def filter_commits(request: AthenianWebRequest, body: dict) -> web.Respons
             commits[PushCommit.committer_avatar_url.name]):
         obj = Commit(
             repository=repo_name_map[repository_full_name],
-            hash=sha,
+            hash=sha.decode(),
             message=message,
             size_added=_nan_to_none(additions),
             size_removed=_nan_to_none(deletions),

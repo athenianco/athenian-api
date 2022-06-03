@@ -68,7 +68,9 @@ class OpenPRFactsLoader:
                 data=row[ghoprf.data.name],
                 node_id=node_id,
                 repository_full_name=repo,
-                author=authors[node_id])
+                author=authors.get(node_id, ""),
+                merger="",
+                releaser="")
         return facts
 
     @classmethod
@@ -125,7 +127,9 @@ class OpenPRFactsLoader:
                 data=row[ghoprf.data.name],
                 node_id=node_id,
                 repository_full_name=repo,
-                author=authors[node_id])
+                author=authors.get(node_id, ""),
+                merger="",
+                releaser="")
         for pair in remove_physical:
             try:
                 del facts[pair]

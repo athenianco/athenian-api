@@ -43,8 +43,10 @@ class ReleaseNotification(create_time_mixin(created_at=True, updated_at=True), B
     __tablename__ = "release_notifications"
 
     repository_node_id = Column(BigInteger(), primary_key=True)
-    commit_hash_prefix = Column(Text(), primary_key=True)  # registered commit hash 7 or 40 chars
-    resolved_commit_hash = Column(Text())  # de-referenced commit hash in metadata DB
+    # registered commit hash 7 or 40 chars
+    commit_hash_prefix = Column(Text(), primary_key=True)
+    # de-referenced commit hash in metadata DB
+    resolved_commit_hash = Column(Text(), info={"dtype": "S40"})
     resolved_commit_node_id = Column(BigInteger())  # de-referenced commit node ID in metadata DB
     name = Column(Text())
     author_node_id = Column(BigInteger())

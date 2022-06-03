@@ -54,6 +54,7 @@ from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMat
 from athenian.api.models.metadata.github import PullRequest, PullRequestCommit, \
     PullRequestLabel, PullRequestReview, PullRequestReviewComment, Release
 from athenian.api.models.metadata.jira import Issue
+from athenian.api.to_object_arrays import is_not_null
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
 
@@ -982,8 +983,8 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
             Release.repository_full_name.name,
         ]
         milestone_releases = dummy_releases_df().append(milestone_prs.reset_index(drop=True))
-        milestone_releases = milestone_releases.take(np.where(
-            milestone_releases[Release.sha.name].notnull())[0])
+        milestone_releases = milestone_releases.take(np.flatnonzero(
+            is_not_null(milestone_releases[Release.sha.name])))
         releases, matched_bys = await ReleaseLoader.load_releases(
             prs_df[PullRequest.repository_full_name.name].unique(), branches, default_branches,
             rel_time_from, now, release_settings, logical_settings, prefixer,
