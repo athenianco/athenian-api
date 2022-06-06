@@ -46,6 +46,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--xcom", default="/airflow/xcom/return.json",
                         help="xcom target file path")
     parser.add_argument("--max-mem", type=int, default=0, help="Process memory limit in bytes.")
+    parser.add_argument(
+        "--prometheus-pushgateway",
+        required=False,
+        help="Prometheus pushgateway endpoint; if missing no metric will be reported",
+    )
 
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("sync-labels", help="Update the labels in the precomputed PRs")

@@ -1,33 +1,44 @@
 from argparse import Namespace
+import contextlib
+import logging
 from unittest import mock
 
+from freezegun import freeze_time
 import sqlalchemy as sa
 
 from athenian.api.db import Database
+from athenian.api.defer import with_defer
 from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.prefixer import Prefixer
-from athenian.api.models.state.models import RepositorySet, Team
-from athenian.api.precompute.accounts import _ensure_bot_team, _ensure_root_team, create_teams, \
-    main, precompute_reposet
+from athenian.api.models.state.models import AccountGitHubAccount, RepositorySet, Team
+from athenian.api.precompute.accounts import _DurationTracker, _ensure_bot_team, \
+    _ensure_root_team, create_teams, main, precompute_reposet
 from tests.testutils.db import assert_existing_row, model_insert_stmt, models_insert
 from tests.testutils.factory.state import AccountFactory, RepositorySetFactory, TeamFactory
 
 from .conftest import build_context, clear_all_accounts
 
 
-async def test_reposets_grouping(sdb, mdb, tqdm_disable) -> None:
+@with_defer
+async def test_reposets_grouping(sdb, mdb, pdb, rdb, tqdm_disable) -> None:
     await clear_all_accounts(sdb)
-    for model in (
+    await models_insert(
+        sdb,
         AccountFactory(id=11),
         RepositorySetFactory(owner_id=11),
         AccountFactory(id=12),
         RepositorySetFactory(owner_id=12),
         RepositorySetFactory(owner_id=12, name="another-reposet"),
-    ):
-        await sdb.execute(model_insert_stmt(model))
+        AccountGitHubAccount(id=1011, account_id=11),
+        AccountGitHubAccount(id=1012, account_id=12),
+    )
 
-    ctx = build_context(sdb=sdb, mdb=mdb)
-    namespace = Namespace(skip_jira_identity_map=True, account=["11", "12"])
+    ctx = build_context(sdb=sdb, mdb=mdb, pdb=pdb, rdb=rdb)
+    namespace = Namespace(
+        skip_jira_identity_map=True,
+        account=["11", "12"],
+        prometheus_pushgateway=None,
+    )
 
     with mock.patch(
         f"{main.__module__}.precompute_reposet",
@@ -111,3 +122,41 @@ class TestEnsureRootTeam:
             sdb, Team, id=root_team_id, name=Team.ROOT, parent_id=None,
         )
         assert root_team_row[Team.members.name] == []
+
+
+class TestDurationTracker:
+    # tests for private class _DurationTracker
+    def test_gateway_available(self) -> None:
+        with freeze_time("2021-01-10T10:10:10"):
+            tracker = _DurationTracker("host:9000", logging.getLogger(__name__))
+
+        with freeze_time("2021-01-10T10:10:52"):
+            with self._mock_prometheus_push_handler() as push_handler:
+                tracker.track(1, [3, 4], False)
+
+        push_handler.assert_called_once()
+        data = push_handler.call_args_list[0][1]["data"].decode("utf-8")
+        assert "TYPE precompute_account_seconds histogram" in data
+        assert (
+            "precompute_account_seconds_count"
+            '{account="1",github_account="3,4",is_fresh="False"} 1.0'
+        ) in data
+
+    def test_gateway_not_available(self) -> None:
+        tracker = _DurationTracker(None, logging.getLogger(__name__))
+
+        with self._mock_prometheus_push_handler() as push_handler:
+            tracker.track(1, [3, 4], False)
+
+        push_handler.assert_not_called()
+
+    @contextlib.contextmanager
+    def _mock_prometheus_push_handler(self):
+        from prometheus_client.exposition import push_to_gateway
+
+        # change the handler= default argument of push_to_gateway with a mocked handler
+        handler_mock = mock.Mock()
+        orig_defaults = tuple(push_to_gateway.__defaults__)
+        mocked_defaults = orig_defaults[:2] + (handler_mock,)
+        with mock.patch.object(push_to_gateway, "__defaults__", mocked_defaults):
+            yield handler_mock

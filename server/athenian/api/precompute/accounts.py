@@ -2,9 +2,11 @@ import argparse
 import asyncio
 from datetime import date, datetime, timedelta, timezone
 from itertools import chain
+import logging
 import os
 import signal
 import sys
+import time
 import traceback
 from typing import Callable, Optional, Sequence, Set, Tuple
 
@@ -25,8 +27,11 @@ from athenian.api.internal.miners.github.branches import BranchMiner
 from athenian.api.internal.miners.github.deployment import mine_deployments
 from athenian.api.internal.miners.github.precomputed_prs import delete_force_push_dropped_prs
 from athenian.api.internal.miners.github.release_load import ReleaseLoader
-from athenian.api.internal.miners.github.release_mine import discover_first_releases, \
-    hide_first_releases, mine_releases
+from athenian.api.internal.miners.github.release_mine import (
+    discover_first_releases,
+    hide_first_releases,
+    mine_releases,
+)
 from athenian.api.internal.miners.types import PullRequestFacts
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.reposet import refresh_repository_names
@@ -34,6 +39,7 @@ from athenian.api.internal.settings import ReleaseMatch, Settings
 from athenian.api.internal.team import get_root_team, RootTeamNotFoundError
 from athenian.api.models.state.models import RepositorySet, Team
 from athenian.api.precompute.context import PrecomputeContext
+from athenian.api.precompute.prometheus import get_metrics, push_metrics
 from athenian.api.tracing import sentry_span
 
 
@@ -57,8 +63,18 @@ async def main(context: PrecomputeContext,
     log = context.log
 
     for reposet in tqdm(reposets):
+        duration_tracker = _DurationTracker(args.prometheus_pushgateway, context.log)
+        try:
+            meta_ids = await get_metadata_account_ids(reposet.owner_id, context.sdb, context.cache)
+        except Exception as e:
+            log.error("prolog %d: %s: %s", reposet.owner_id, type(e).__name__, e)
+            sentry_sdk.capture_exception(e)
+            continue
+
         if not isolate:
-            await precompute_reposet(reposet, context, args, time_to, no_time_from, time_from)
+            await precompute_reposet(
+                reposet, meta_ids, context, args, time_to, no_time_from, time_from,
+            )
             continue
         pid = os.fork()
         if pid == 0:
@@ -67,7 +83,8 @@ async def main(context: PrecomputeContext,
             # must execute `callback` in a new event loop
             async def callback(context: PrecomputeContext):
                 await precompute_reposet(
-                    reposet, context, args, time_to, no_time_from, time_from)
+                    reposet, meta_ids, context, args, time_to, no_time_from, time_from,
+                )
 
             return callback
         else:
@@ -88,6 +105,8 @@ async def main(context: PrecomputeContext,
                     failed += 1
                     log.error("failed to precompute account %d: exit code %d",
                               reposet.owner_id, status[1])
+            duration_tracker.track(reposet.owner_id, meta_ids, not reposet.precomputed)
+
     log.info("failed: %d / %d", failed, len(reposets))
 
 
@@ -105,6 +124,7 @@ async def _get_reposets(sdb: Database, accounts: Sequence[int]) -> Sequence[Repo
 @sentry_span
 async def precompute_reposet(
     reposet: RepositorySet,
+    meta_ids: Tuple[int, ...],
     context: PrecomputeContext,
     args: argparse.Namespace,
     time_to: datetime,
@@ -125,7 +145,6 @@ async def precompute_reposet(
         context.slack,
     )
     try:
-        meta_ids = await get_metadata_account_ids(reposet.owner_id, sdb, cache)
         prefixer, bots, new_items = await gather(
             Prefixer.load(meta_ids, mdb, cache),
             fetch_bots(reposet.owner_id, meta_ids, mdb, sdb, None),
@@ -325,3 +344,33 @@ async def _ensure_root_team(account: int, sdb: Database) -> int:
 
     team = Team(name=Team.ROOT, owner_id=account, members=[], parent_id=None)
     return await sdb.execute(insert(Team).values(team.create_defaults().explode()))
+
+
+class _DurationTracker:
+    """Track the duration of the precompute operation if prometheus pushgatway is configured."""
+
+    _PROMETHEUS_JOB = "precomputer"
+
+    def __init__(self, gateway: Optional[str], log: logging.Logger):
+        self._gateway = gateway
+        self._start_t = time.perf_counter()
+        self._log = log
+
+    def track(self, account: int, meta_ids: Sequence[int], is_fresh: bool) -> None:
+        elapsed = time.perf_counter() - self._start_t
+
+        if self._gateway is None:
+            self._log.info(
+                "Prometheus Pushgateway not configured, not tracking duration: %.3f seconds",
+                elapsed,
+            )
+            return
+
+        metrics = get_metrics()
+        metrics.precompute_account_seconds.labels(
+            account=account,
+            github_account=",".join(map(str, sorted(meta_ids))),
+            is_fresh=is_fresh,
+        ).observe(elapsed)
+        self._log.info("Tracking precompute duration: %.3f seconds", elapsed)
+        push_metrics(self._gateway, self._PROMETHEUS_JOB)
