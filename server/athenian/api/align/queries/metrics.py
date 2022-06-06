@@ -13,8 +13,8 @@ from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 
 from athenian.api.align.goals.dates import goal_dates_to_datetimes
 from athenian.api.align.models import MetricParamsFields, MetricValue, MetricValues, \
-    TeamMetricValue
-from athenian.api.align.queries.teams import build_team_tree_nodes_from_rows
+    TeamMetricValue, TeamTree
+from athenian.api.align.queries.teams import build_team_tree_from_rows
 from athenian.api.async_utils import gather
 from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.features.entries import make_calculator
@@ -51,10 +51,13 @@ async def resolve_metrics_current_values(obj: Any,
     """Serve metricsCurrentValues()."""
     sdb, mdb, pdb, rdb, cache = \
         info.context.sdb, info.context.mdb, info.context.pdb, info.context.rdb, info.context.cache
+    team_id = params[MetricParamsFields.teamId]
     team_rows, meta_ids = await gather(
         fetch_teams_recursively(
-            accountId, sdb, select_entities=(Team.id, Team.members, Team.parent_id),
-            root_team_ids=[params[MetricParamsFields.teamId]],
+            accountId,
+            sdb,
+            select_entities=(Team.id, Team.name, Team.members, Team.parent_id),
+            root_team_ids=[team_id],
         ),
         get_metadata_account_ids(accountId, sdb, cache),
     )
@@ -75,10 +78,9 @@ async def resolve_metrics_current_values(obj: Any,
     )
     team_metrics = team_metrics_all_intervals[time_interval]
 
-    nodes, root_team_id = build_team_tree_nodes_from_rows(
-        team_rows, params[MetricParamsFields.teamId],
-    )
-    models = _build_metrics_response(nodes, team_metrics, root_team_id)
+    team_tree = build_team_tree_from_rows(team_rows, team_id)
+
+    models = _build_metrics_response(team_tree, team_metrics)
     return [m.to_dict() for m in models]
 
 
@@ -257,21 +259,20 @@ def _triage_metric_values(pr_metrics: Sequence[str],
     return result
 
 
-def _build_metrics_response(nodes: Dict[int, Dict[str, Any]],
-                            triaged: Dict[str, Dict[int, object]],
-                            root_team_id: int,
-                            ) -> List[MetricValues]:
-    return [MetricValues(metric, _build_metric_response(nodes, team_metric_values, root_team_id))
-            for metric, team_metric_values in triaged.items()]
+def _build_metrics_response(
+    team_tree: TeamTree, triaged: Dict[str, Dict[int, object]],
+) -> List[MetricValues]:
+    return [
+        MetricValues(metric, _build_team_metric_value(team_tree, team_metric_values))
+        for metric, team_metric_values in triaged.items()
+    ]
 
 
-def _build_metric_response(nodes: Dict[int, Dict[str, Any]],
-                           metric_values: Dict[int, object],
-                           team_id: int,
-                           ) -> TeamMetricValue:
+def _build_team_metric_value(
+    team_tree: TeamTree, metric_values: Dict[int, object],
+) -> TeamMetricValue:
     return TeamMetricValue(
-        team_id=team_id,
-        value=MetricValue(metric_values[team_id]),
-        children=[_build_metric_response(nodes, metric_values, child)
-                  for child in nodes[team_id]["children"]],
+        team=team_tree,
+        value=MetricValue(metric_values[team_tree.id]),
+        children=[_build_team_metric_value(child, metric_values) for child in team_tree.children],
     )

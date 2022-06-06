@@ -60,140 +60,6 @@ class MutateGoalResult(Model):
         return self._goal
 
 
-class MetricValue(Model):
-    """The value for a given team and metric."""
-
-    attribute_types = {
-        "int_": Optional[int],
-        "str_": Optional[object],
-        "float_": Optional[float],
-    }
-
-    attribute_map = {
-        "int_": "int",
-        "str_": "str",
-        "float_": "float",
-    }
-
-    def __init__(self, value: Any):
-        """Initialize a new instance of MetricValue."""
-        self._int_ = self._str_ = self._float_ = None
-        if isinstance(value, (int, np.integer)):
-            self._int_ = value
-        elif isinstance(value, float):
-            self._float_ = value
-        else:
-            self._str_ = value
-
-    @property
-    def int_(self) -> Optional[Union[int, np.integer]]:
-        """Return the metric value as an integer."""
-        return self._int_
-
-    @property
-    def str_(self) -> Optional[object]:
-        """Return the metric value as a string."""
-        return self._str_
-
-    @property
-    def float_(self) -> float:
-        """Return the metric value as a floating point number."""
-        return self._float_
-
-
-class TeamMetricValue(Model):
-    """Team metric value tree node."""
-
-    attribute_types = {
-        "team_id": int,
-        "value": MetricValue,
-        "children": List[Model],  # List[TeamMetricValue],
-    }
-
-    attribute_map = {
-        "team_id": "teamId",
-    }
-
-    def __init__(self, team_id: int, value: MetricValue, children: List[TeamMetricValue]):
-        """Initialize a new instance of TeamMetricValue."""
-        self._team_id = team_id
-        self._value = value
-        self._children = children
-
-    @property
-    def team_id(self) -> int:
-        """Return the team identifier."""
-        return self._team_id
-
-    @property
-    def value(self) -> MetricValue:
-        """Return the metric value."""
-        return self._value
-
-    @property
-    def children(self) -> List[TeamMetricValue]:
-        """Return the list of child team metrics."""
-        return self._children
-
-
-TeamMetricValue.attribute_types["children"] = List[TeamMetricValue]
-
-
-class MetricValues(Model):
-    """Response from metricsCurrentValues(), a specific metric team tree."""
-
-    attribute_types = {
-        "metric": str,
-        "value": TeamMetricValue,
-    }
-
-    def __init__(self, metric: str, value: TeamMetricValue):
-        """Init the MetricValues."""
-        self._metric = metric
-        self._value = value
-
-    @property
-    def metric(self) -> str:
-        """Return the metric ID."""
-        return self._metric
-
-    @property
-    def value(self) -> TeamMetricValue:
-        """Return the team tree of metric values."""
-        return self._value
-
-
-class CreateGoalInputFields(metaclass=Enum):
-    """Fields definitions for GraphQL CreateGoalInput type."""
-
-    templateId = "templateId"
-    teamGoals = "teamGoals"
-    validFrom = "validFrom"
-    expiresAt = "expiresAt"
-
-
-class TeamGoalInputFields(metaclass=Enum):
-    """Fields definitions for GraphQL TeamGoalInput type."""
-
-    teamId = "teamId"
-    target = "target"
-
-
-class UpdateGoalInputFields(metaclass=Enum):
-    """Fields definitions for GraphQL UpdateGoalInput type."""
-
-    goalId = "goalId"
-    teamGoalChanges = "teamGoalChanges"
-
-
-class TeamGoalChangeFields(metaclass=Enum):
-    """Fields definitions for GraphQL TeamGoalChange type."""
-
-    teamId = "teamId"
-    target = "target"
-    remove = "remove"
-
-
 class TeamTree(Model):
     """A team with the tree of child teams."""
 
@@ -277,6 +143,140 @@ class TeamTree(Model):
 
 
 TeamTree.attribute_types["children"] = List[TeamTree]
+
+
+class MetricValue(Model):
+    """The value for a given team and metric."""
+
+    attribute_types = {
+        "int_": Optional[int],
+        "str_": Optional[object],
+        "float_": Optional[float],
+    }
+
+    attribute_map = {
+        "int_": "int",
+        "str_": "str",
+        "float_": "float",
+    }
+
+    def __init__(self, value: Any):
+        """Initialize a new instance of MetricValue."""
+        self._int_ = self._str_ = self._float_ = None
+        if isinstance(value, (int, np.integer)):
+            self._int_ = value
+        elif isinstance(value, float):
+            self._float_ = value
+        else:
+            self._str_ = value
+
+    @property
+    def int_(self) -> Optional[Union[int, np.integer]]:
+        """Return the metric value as an integer."""
+        return self._int_
+
+    @property
+    def str_(self) -> Optional[object]:
+        """Return the metric value as a string."""
+        return self._str_
+
+    @property
+    def float_(self) -> float:
+        """Return the metric value as a floating point number."""
+        return self._float_
+
+
+class TeamMetricValue(Model):
+    """Team metric value tree node."""
+
+    attribute_types = {
+        "team": TeamTree,
+        "value": MetricValue,
+        "children": List[Model],  # List[TeamMetricValue],
+    }
+
+    attribute_map = {
+        "team_id": "teamId",
+    }
+
+    def __init__(self, team: TeamTree, value: MetricValue, children: List[TeamMetricValue]):
+        """Initialize a new instance of TeamMetricValue."""
+        self._team = team
+        self._value = value
+        self._children = children
+
+    @property
+    def team(self) -> TeamTree:
+        """Return the team relative to this metric value."""
+        return self._team
+
+    @property
+    def value(self) -> MetricValue:
+        """Return the metric value."""
+        return self._value
+
+    @property
+    def children(self) -> List[TeamMetricValue]:
+        """Return the list of child team metrics."""
+        return self._children
+
+
+TeamMetricValue.attribute_types["children"] = List[TeamMetricValue]
+
+
+class MetricValues(Model):
+    """Response from metricsCurrentValues(), a specific metric team tree."""
+
+    attribute_types = {
+        "metric": str,
+        "value": TeamMetricValue,
+    }
+
+    def __init__(self, metric: str, value: TeamMetricValue):
+        """Init the MetricValues."""
+        self._metric = metric
+        self._value = value
+
+    @property
+    def metric(self) -> str:
+        """Return the metric ID."""
+        return self._metric
+
+    @property
+    def value(self) -> TeamMetricValue:
+        """Return the team tree of metric values."""
+        return self._value
+
+
+class CreateGoalInputFields(metaclass=Enum):
+    """Fields definitions for GraphQL CreateGoalInput type."""
+
+    templateId = "templateId"
+    teamGoals = "teamGoals"
+    validFrom = "validFrom"
+    expiresAt = "expiresAt"
+
+
+class TeamGoalInputFields(metaclass=Enum):
+    """Fields definitions for GraphQL TeamGoalInput type."""
+
+    teamId = "teamId"
+    target = "target"
+
+
+class UpdateGoalInputFields(metaclass=Enum):
+    """Fields definitions for GraphQL UpdateGoalInput type."""
+
+    goalId = "goalId"
+    teamGoalChanges = "teamGoalChanges"
+
+
+class TeamGoalChangeFields(metaclass=Enum):
+    """Fields definitions for GraphQL TeamGoalChange type."""
+
+    teamId = "teamId"
+    target = "target"
+    remove = "remove"
 
 
 class MetricParamsFields(metaclass=Enum):

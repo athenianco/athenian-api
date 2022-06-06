@@ -19,7 +19,9 @@ class BaseMetricsTest:
     def _query(self, depth=4):
         fragment = """
             fragment teamMetricValueFields on TeamMetricValue {
-              teamId
+              team {
+                id
+              }
               value {
                 str
                 int
@@ -117,29 +119,40 @@ class TestMetricsSmoke(BaseMetricsTest):
                 "metricsCurrentValues": [{
                     "metric": "pr-lead-time",
                     "value": {
-                        "teamId": 1,
-                        "value": {
-                            "str": "34 days, 17:03:36",
-                            "int": None, "float": None},
+                        "team": {
+                            "id": 1,
+                        },
+                        "value": {"str": "34 days, 17:03:36", "int": None, "float": None},
                         "children": [{
-                            "teamId": 2, "value": {
-                                "str": "52 days, 5:31:30",
-                                "int": None, "float": None},
+                            "team": {
+                                "id": 2,
+                            },
+                            "value": {"str": "52 days, 5:31:30", "int": None, "float": None},
                             "children": [],
                         }]}}, {
                     "metric": "release-prs",
                     "value": {
-                        "teamId": 1, "value": {"str": None, "int": 324, "float": None},
+                        "team": {
+                            "id": 1,
+                        },
+                        "value": {"str": None, "int": 324, "float": None},
                         "children": [{
-                            "teamId": 2, "value": {"str": None, "int": 248, "float": None},
+                            "team": {
+                                "id": 2,
+                            },
+                            "value": {"str": None, "int": 248, "float": None},
                             "children": [],
                         }]}}, {
                     "metric": "jira-resolved",
                     "value": {
-                        "teamId": 1,
+                        "team": {
+                            "id": 1,
+                        },
                         "value": {"str": None, "int": 0, "float": None},
                         "children": [{
-                            "teamId": 2,
+                            "team": {
+                                "id": 2,
+                            },
                             "value": {"str": None, "int": 0, "float": None},
                             "children": [],
                         }]}}]}}
@@ -180,19 +193,19 @@ class TestMetricsSmoke(BaseMetricsTest):
                 "metricsCurrentValues": [{
                     "metric": "jira-resolved",
                     "value": {
-                        "teamId": 1, "value": {"str": None, "int": 738, "float": None},
+                        "team": {"id": 1}, "value": {"str": None, "int": 738, "float": None},
                         "children": [{
-                            "teamId": 2, "value": {"str": None, "int": 163, "float": None},
+                            "team": {"id": 2}, "value": {"str": None, "int": 163, "float": None},
                             "children": []},
                         ]},
                 }, {
                     "metric": "jira-resolution-rate",
                     "value": {
-                        "teamId": 1,
+                        "team": {"id": 1},
                         "value": {"str": None, "int": None, "float": 0.9473684430122375},
                         "children": [{
-                            "teamId": 2, "value": {"str": None, "int": None,
-                                                   "float": 0.8624338507652283},
+                            "team": {"id": 2},
+                            "value": {"str": None, "int": None, "float": 0.8624338507652283},
                             "children": []},
                         ]},
                 }],
@@ -209,7 +222,7 @@ class TestMetricsNasty(BaseMetricsTest):
         assert res == {
             "errors": [{
                 "message": "Team not found",
-                "locations": [{"line": 16, "column": 15}],
+                "locations": [{"line": 18, "column": 15}],
                 "path": ["metricsCurrentValues"],
                 "extensions": {
                     "status": 404,
@@ -227,7 +240,7 @@ class TestMetricsNasty(BaseMetricsTest):
         assert res == {
             "errors": [{
                 "message": "Team not found",
-                "locations": [{"line": 16, "column": 15}],
+                "locations": [{"line": 18, "column": 15}],
                 "path": ["metricsCurrentValues"],
                 "extensions": {
                     "status": 404,
@@ -245,7 +258,7 @@ class TestMetricsNasty(BaseMetricsTest):
         assert res == {
             "errors": [{
                 "message": "Bad Request",
-                "locations": [{"line": 16, "column": 15}],
+                "locations": [{"line": 18, "column": 15}],
                 "path": ["metricsCurrentValues"],
                 "extensions": {
                     "status": 400,
@@ -263,7 +276,7 @@ class TestMetricsNasty(BaseMetricsTest):
         assert res == {
             "errors": [{
                 "message": "Bad Request",
-                "locations": [{"line": 16, "column": 15}],
+                "locations": [{"line": 18, "column": 15}],
                 "path": ["metricsCurrentValues"],
                 "extensions": {
                     "status": 400,
