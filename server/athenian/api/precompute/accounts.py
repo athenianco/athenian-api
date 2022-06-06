@@ -287,7 +287,7 @@ async def create_teams(account: int,
     """
     root_team_id = await _ensure_root_team(account, sdb)
     _, num_teams = await copy_teams_as_needed(account, meta_ids, root_team_id, sdb, mdb, cache)
-    num_bots = await _ensure_bot_team(account, meta_ids, bots, prefixer, sdb, mdb)
+    num_bots = await _ensure_bot_team(account, meta_ids, bots, root_team_id, prefixer, sdb, mdb)
     return num_teams, num_bots
 
 
@@ -295,6 +295,7 @@ async def _ensure_bot_team(
     account: int,
     meta_ids: Sequence[int],
     bots: Set[str],
+    root_team_id: int,
     prefixer: Prefixer,
     sdb: Database,
     mdb: Database,
@@ -308,7 +309,7 @@ async def _ensure_bot_team(
     bots -= await fetch_bots.extra(mdb)
     bot_ids = set(chain.from_iterable(prefixer.user_login_to_node.get(u, ()) for u in bots))
     await sdb.execute(insert(Team).values(
-        Team(name=Team.BOTS, owner_id=account, members=sorted(bot_ids))
+        Team(name=Team.BOTS, owner_id=account, parent_id=root_team_id, members=sorted(bot_ids))
         .create_defaults().explode()))
     return len(bot_ids)
 
