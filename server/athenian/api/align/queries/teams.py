@@ -27,7 +27,28 @@ async def resolve_teams(obj: Any, info: GraphQLResolveInfo, accountId: int, team
     return team_tree.to_dict()
 
 
-def build_team_tree_nodes_from_rows(
+async def fetch_team_tree(
+    account: int, root_team_id: Optional[int], sdb: DatabaseLike,
+) -> TeamTree:
+    """Build the TeamTree for the Team root_team_id."""
+    team_select = [Team.id, Team.parent_id, Team.name, Team.members]
+    team_rows = await fetch_teams_recursively(
+        account, sdb, team_select, [root_team_id] if root_team_id else None,
+    )
+    return build_team_tree_from_rows(team_rows, root_team_id)
+
+
+def build_team_tree_from_rows(rows: Sequence[Row], root_team_id: Optional[int]) -> TeamTree:
+    """Build the TeamTree for the Team root_team_id starting from the retrieved team rows.
+
+    Team rows can be fetched with `fetch_teams_recursively`, and should at least include
+    id, parent_id, name and members as columns.
+    """
+    nodes, root_team_id = _build_team_tree_nodes_from_rows(rows, root_team_id)
+    return _build_team_tree_from_node(nodes[root_team_id], nodes)
+
+
+def _build_team_tree_nodes_from_rows(
     team_rows: Iterable[Row], root_team_id: Optional[int],
 ) -> Tuple[Dict[int, Dict[str, Any]], int]:
     """
@@ -66,27 +87,6 @@ def build_team_tree_nodes_from_rows(
     elif root_team_id not in nodes:
         raise TeamNotFoundError(root_team_id)
     return nodes, root_team_id
-
-
-async def fetch_team_tree(
-    account: int, root_team_id: Optional[int], sdb: DatabaseLike,
-) -> TeamTree:
-    """Build the TeamTree for the Team root_team_id."""
-    team_select = [Team.id, Team.parent_id, Team.name, Team.members]
-    team_rows = await fetch_teams_recursively(
-        account, sdb, team_select, [root_team_id] if root_team_id else None,
-    )
-    return build_team_tree_from_rows(team_rows, root_team_id)
-
-
-def build_team_tree_from_rows(rows: Sequence[Row], root_team_id: Optional[int]) -> TeamTree:
-    """Build the TeamTree for the Team root_team_id starting from the retrieved team rows.
-
-    Team rows can be fetched with `fetch_teams_recursively`, and should at least include
-    id, parent_id, name and members as columns.
-    """
-    nodes, root_team_id = build_team_tree_nodes_from_rows(rows, root_team_id)
-    return _build_team_tree_from_node(nodes[root_team_id], nodes)
 
 
 def _build_team_tree_from_node(team_info: Dict[str, Any], all_teams: dict) -> TeamTree:
