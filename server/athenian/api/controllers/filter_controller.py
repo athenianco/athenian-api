@@ -304,7 +304,7 @@ def web_pr_from_struct(
             pkweb = pk.name.lower()
             for pid in pids:
                 try:
-                    participants[prefixer.user_login_to_prefixed_login[pid]].append(pkweb)
+                    participants[prefixer.user_node_to_prefixed_login[pid]].append(pkweb)
                 except KeyError:
                     log.error("Failed to resolve user %s", pid)
         props["participants"] = sorted(PullRequestParticipant(*p) for p in participants.items())
@@ -654,7 +654,8 @@ async def _build_github_prs_response(prs: List[PullRequestListItem],
     prefix_logical_repo = prefixer.prefix_logical_repo
     web_prs = sorted(web_pr_from_struct(prs, prefixer, log))
     users = set(chain.from_iterable(chain.from_iterable(pr.participants.values()) for pr in prs))
-    avatars = await mine_user_avatars(users, UserAvatarKeys.PREFIXED_LOGIN, meta_ids, mdb, cache)
+    avatars = await mine_user_avatars(UserAvatarKeys.PREFIXED_LOGIN, meta_ids, mdb, cache,
+                                      nodes=users)
     model = PullRequestSet(include=PullRequestSetInclude(
         users={
             login: IncludedNativeUser(avatar=avatar) for login, avatar in avatars
@@ -835,10 +836,9 @@ async def filter_deployments(request: AthenianWebRequest, body: dict) -> web.Res
         rdb=request.rdb,
         cache=request.cache,
     )
-    user_node_to_login = prefixer.user_node_to_login.get
     avatars, issues = await gather(
-        mine_user_avatars([user_node_to_login(u) for u in people], UserAvatarKeys.PREFIXED_LOGIN,
-                          meta_ids, request.mdb, request.cache),
+        mine_user_avatars(UserAvatarKeys.PREFIXED_LOGIN, meta_ids, request.mdb, request.cache,
+                          nodes=people),
         load_jira_issues_for_deployments(deployments, jira_ids, meta_ids, request.mdb),
     )
     model = await _build_deployments_response(deployments, avatars, issues, prefixer)

@@ -58,10 +58,10 @@ async def test_pr_list_miner_match_participants(
     assert isinstance(prs, list)
     assert len(prs) == 320
     for pr in prs:
-        mcuadros_is_author = "mcuadros" in pr.participants[PRParticipationKind.AUTHOR]
-        smola_is_author = "smola" in pr.participants[PRParticipationKind.AUTHOR]
+        mcuadros_is_author = 39789 in pr.participants[PRParticipationKind.AUTHOR]
+        smola_is_author = 40070 in pr.participants[PRParticipationKind.AUTHOR]
         mcuadros_is_only_commenter = (
-            ("mcuadros" in pr.participants[PRParticipationKind.COMMENTER])
+            (39789 in pr.participants[PRParticipationKind.COMMENTER])
             and  # noqa
             (not mcuadros_is_author)
             and  # noqa

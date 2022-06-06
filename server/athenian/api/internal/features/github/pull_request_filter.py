@@ -317,7 +317,7 @@ class PullRequestListMiner:
             events_time_machine=events_time_machine,
             stages_time_machine=stages_time_machine,
             stage_timings=stage_timings,
-            participants=pr.participant_logins(),
+            participants=pr.participant_nodes(),
             labels=labels,
             jira=jira,
             deployments=deployments,

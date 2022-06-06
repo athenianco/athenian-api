@@ -467,7 +467,8 @@ async def _mine_releases(repos: Iterable[str],
             log.error("Missing user node in metadata for account %d / %s: %s",
                       account, meta_ids, missing_nodes)
         all_authors = all_author_logins
-        tasks.insert(0, mine_user_avatars(all_authors, UserAvatarKeys.NODE, meta_ids, mdb, cache))
+        tasks.insert(0, mine_user_avatars(UserAvatarKeys.NODE, meta_ids, mdb, cache,
+                                          logins=all_authors))
     if (with_pr_titles or labels) and all_pr_node_ids:
         all_pr_node_ids = np.concatenate(all_pr_node_ids)
     if with_pr_titles:
@@ -981,8 +982,8 @@ async def mine_releases_by_ids(releases: pd.DataFrame,
         return None
 
     tasks = [
-        mine_user_avatars([prefixer.user_node_to_login[a] for a in mentioned_authors],
-                          UserAvatarKeys.PREFIXED_LOGIN, meta_ids, mdb, cache)
+        mine_user_avatars(UserAvatarKeys.PREFIXED_LOGIN, meta_ids, mdb, cache,
+                          nodes=mentioned_authors)
         if with_avatars else dummy_avatars(),
     ]
     if precomputed_facts:

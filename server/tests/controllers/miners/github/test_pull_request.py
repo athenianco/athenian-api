@@ -346,13 +346,13 @@ async def test_pr_miner_participant_filters(
     count = 0
     for pr in miner:
         count += 1
-        participants = pr.participant_logins()
+        participants = pr.participant_nodes()
         if len(pk) == 1:
-            assert "mcuadros" in participants[pk[0]], (pk, str(pr.pr))
+            assert 39789 in participants[pk[0]], (pk, str(pr.pr))
         else:
             mentioned = False
             for v in pk:
-                if "mcuadros" in participants[v]:
+                if 39789 in participants[v]:
                     mentioned = True
                     break
             assert mentioned, (pk, str(pr.pr))
