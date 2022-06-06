@@ -97,130 +97,79 @@ def to_object_arrays_split(rows: List[Sequence[Any]],
     return result_typed, result_obj
 
 
-class _array:
-    def __init__(self, iface: dict):
-        self.__array_interface__ = iface
-
-
-def as_uintp(arr: np.ndarray) -> np.ndarray:
-    assert arr.dtype == object
-    iface = arr.__array_interface__.copy()
-    iface["typestr"] = "<u8"
-    iface["descr"] = [(iface["descr"][0], iface["typestr"])]
-    surrogate = _array(iface)
-    return np.array(surrogate, copy=False)
-
-
 def as_bool(arr: np.ndarray) -> np.ndarray:
     if arr.dtype == bool:
         return arr
     assert arr.dtype == object
-    assert arr.data.c_contiguous
-    assert len(arr.shape) == 1
+    assert arr.ndim == 1
     new_arr = np.empty(len(arr), dtype=bool)
     cdef:
-        const PyObject **arr_obj
-        int size
-        npy_bool *out_bools = <npy_bool *>PyArray_DATA(new_arr)
-        const npy_uintp[:] arr_view
-    if arr.data.c_contiguous:
-        arr_obj = <const PyObject **> PyArray_DATA(arr)
-        size = len(arr)
-        with nogil:
-            _as_bool_vec(arr_obj, size, out_bools)
-    else:
-        arr_view = as_uintp(arr)
-        with nogil:
-            _as_bool_uintp(arr_view, out_bools)
+        const char *arr_obj = <const char *> PyArray_DATA(arr)
+        int size = len(arr), stride = arr.strides[0]
+        npy_bool *out_bools = <npy_bool *> PyArray_DATA(new_arr)
+    with nogil:
+        _as_bool_vec(arr_obj, stride, size, out_bools)
     return new_arr
 
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef void _as_bool_vec(const PyObject **obj_arr,
+cdef void _as_bool_vec(const char *obj_arr,
+                       const int stride,
                        const int size,
                        npy_bool *out_arr) nogil:
     cdef int i
     for i in range(size):
         # Py_None and Py_False become 0
-        out_arr[i] = obj_arr[i] == Py_True
+        out_arr[i] = Py_True == (<const PyObject **> (obj_arr + i * stride))[0]
 
-
-@cython.boundscheck(False)
-@cython.wraparound(False)
-cdef void _as_bool_uintp(const npy_uintp[:] obj_arr,
-                         npy_bool *out_arr) nogil:
-    cdef:
-        int i
-        npy_uintp true = <npy_uintp> Py_True
-    for i in range(len(obj_arr)):
-        # Py_None and Py_False become 0
-        out_arr[i] = obj_arr[i] == true
 
 
 def is_null(arr: np.ndarray) -> np.ndarray:
     if arr.dtype != object:
         return np.zeros(len(arr), dtype=bool)
-    assert len(arr.shape) == 1
+    assert arr.ndim == 1
     new_arr = np.zeros(len(arr), dtype=bool)
     cdef:
-        const PyObject **arr_obj
-        int size
+        const char *arr_obj = <const char *> PyArray_DATA(arr)
+        int size = len(arr), stride = arr.strides[0]
         npy_bool *out_bools = <npy_bool *> PyArray_DATA(new_arr)
-        const npy_uintp[:] arr_view
-    if arr.data.c_contiguous:
-        arr_obj = <const PyObject **> PyArray_DATA(arr)
-        size = len(arr)
-        with nogil:
-            _is_null_vec(arr_obj, size, out_bools)
-    else:
-        arr_view = as_uintp(arr)
-        with nogil:
-            _is_null_uintp(arr_view, out_bools)
+    with nogil:
+        _is_null_vec(arr_obj, stride, size, out_bools)
     return new_arr
 
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef void _is_null_vec(const PyObject **obj_arr,
+cdef void _is_null_vec(const char *obj_arr,
+                       const int stride,
                        const int size,
                        npy_bool *out_arr) nogil:
     cdef int i
     for i in range(size):
-        out_arr[i] = obj_arr[i] == Py_None
-
-
-@cython.boundscheck(False)
-@cython.wraparound(False)
-cdef void _is_null_uintp(const npy_uintp[:] obj_arr,
-                         npy_bool *out_arr) nogil:
-    cdef:
-        int i
-        npy_uintp none = <npy_uintp>Py_None
-    for i in range(len(obj_arr)):
-        out_arr[i] = obj_arr[i] == none
+        out_arr[i] = Py_None == (<const PyObject **> (obj_arr + i * stride))[0]
 
 
 def is_not_null(arr: np.ndarray) -> np.ndarray:
     if arr.dtype != object:
         return np.ones(len(arr), dtype=bool)
-    assert arr.data.c_contiguous
-    assert len(arr.shape) == 1
+    assert arr.ndim == 1
     new_arr = np.zeros(len(arr), dtype=bool)
     cdef:
-        const PyObject **arr_obj = <const PyObject **> PyArray_DATA(arr)
-        int size = len(arr)
+        const char *arr_obj = <const char *> PyArray_DATA(arr)
+        int size = len(arr), stride = arr.strides[0]
         npy_bool *out_bools = <npy_bool *> PyArray_DATA(new_arr)
     with nogil:
-        _is_not_null(arr_obj, size, out_bools)
+        _is_not_null(arr_obj, stride, size, out_bools)
     return new_arr
 
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef void _is_not_null(const PyObject **obj_arr,
+cdef void _is_not_null(const char *obj_arr,
+                       const int stride,
                        const int size,
                        npy_bool *out_arr) nogil:
     cdef int i
     for i in range(size):
-        out_arr[i] = obj_arr[i] != Py_None
+        out_arr[i] = Py_None != (<const PyObject **> (obj_arr + i * stride))[0]
