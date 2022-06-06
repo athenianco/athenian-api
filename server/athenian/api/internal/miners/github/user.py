@@ -7,14 +7,14 @@ import aiomcache
 import morcilla
 from sqlalchemy import and_, select
 
-from athenian.api.cache import cached
+from athenian.api.cache import cached, middle_term_exptime
 from athenian.api.models.metadata.github import User
 from athenian.api.tracing import sentry_span
 
 
 @sentry_span
 @cached(
-    exptime=60 * 60,
+    exptime=middle_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda logins, **_: (",".join(sorted(logins)),),
@@ -45,14 +45,19 @@ class UserAvatarKeys(IntEnum):
 
 
 @sentry_span
-async def mine_user_avatars(logins: Iterable[str],
-                            keys: UserAvatarKeys,
+async def mine_user_avatars(keys: UserAvatarKeys,
                             meta_ids: Tuple[int, ...],
                             mdb: morcilla.Database,
                             cache: Optional[aiomcache.Client],
+                            logins: Optional[Iterable[str]] = None,
+                            nodes: Optional[Iterable[int]] = None,
                             ) -> List[Tuple[Union[str, int], str]]:
     """Fetch the user profile picture URL for each login."""
-    tuples = await _mine_user_avatars(logins, meta_ids, mdb, cache)
+    assert logins is not None or nodes is not None
+    if logins is not None:
+        tuples = await _mine_user_avatars_logins(logins, meta_ids, mdb, cache)
+    else:
+        tuples = await _mine_user_avatars_nodes(nodes, meta_ids, mdb, cache)
     return [(
         node
         if keys == UserAvatarKeys.NODE
@@ -67,18 +72,39 @@ async def mine_user_avatars(logins: Iterable[str],
 
 @sentry_span
 @cached(
-    exptime=60 * 60,
+    exptime=middle_term_exptime,
     serialize=marshal.dumps,
     deserialize=marshal.loads,
     key=lambda logins, **_: (",".join(sorted(logins)),),
 )
-async def _mine_user_avatars(logins: Iterable[str],
-                             meta_ids: Tuple[int, ...],
-                             mdb: morcilla.Database,
-                             cache: Optional[aiomcache.Client],
-                             ) -> List[Tuple[int, str, str]]:
+async def _mine_user_avatars_logins(logins: Iterable[str],
+                                    meta_ids: Tuple[int, ...],
+                                    mdb: morcilla.Database,
+                                    cache: Optional[aiomcache.Client],
+                                    ) -> List[Tuple[int, str, str]]:
     rows = await mdb.fetch_all(select([User.node_id, User.html_url, User.avatar_url])
                                .where(and_(User.login.in_(logins),
+                                           User.acc_id.in_(meta_ids))))
+    return [(u[User.node_id.name],
+             u[User.html_url.name].split("://", 1)[1],
+             u[User.avatar_url.name])
+            for u in rows]
+
+
+@sentry_span
+@cached(
+    exptime=middle_term_exptime,
+    serialize=marshal.dumps,
+    deserialize=marshal.loads,
+    key=lambda nodes, **_: (",".join(map(str, sorted(nodes))),),
+)
+async def _mine_user_avatars_nodes(nodes: Iterable[int],
+                                   meta_ids: Tuple[int, ...],
+                                   mdb: morcilla.Database,
+                                   cache: Optional[aiomcache.Client],
+                                   ) -> List[Tuple[int, str, str]]:
+    rows = await mdb.fetch_all(select([User.node_id, User.html_url, User.avatar_url])
+                               .where(and_(User.node_id.in_(nodes),
                                            User.acc_id.in_(meta_ids))))
     return [(u[User.node_id.name],
              u[User.html_url.name].split("://", 1)[1],

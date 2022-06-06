@@ -25,7 +25,7 @@ class PRParticipationKind(IntEnum):
     RELEASER = auto()
 
 
-PRParticipants = Mapping[PRParticipationKind, Set[str]]
+PRParticipants = Mapping[PRParticipationKind, Set[int]]
 
 
 class ReleaseParticipationKind(IntEnum):
@@ -183,29 +183,6 @@ class MinedPullRequest:
     jiras: pd.DataFrame
     deployments: pd.DataFrame
     check_run: Dict[str, Any]
-
-    def participant_logins(self) -> PRParticipants:
-        """Collect unique developer logins that are mentioned in this pull request."""
-        author = self.pr[PullRequest.user_login.name]
-        merger = self.pr[PullRequest.merged_by_login.name]
-        releaser = self.release[Release.author.name]
-        participants = {
-            PRParticipationKind.AUTHOR: {author} if author else set(),
-            PRParticipationKind.REVIEWER: self._extract_people(
-                self.reviews, PullRequestReview.user_login.name),
-            PRParticipationKind.COMMENTER: self._extract_people(
-                self.comments, PullRequestComment.user_login.name),
-            PRParticipationKind.COMMIT_COMMITTER: self._extract_people(
-                self.commits, PullRequestCommit.committer_login.name),
-            PRParticipationKind.COMMIT_AUTHOR: self._extract_people(
-                self.commits, PullRequestCommit.author_login.name),
-            PRParticipationKind.MERGER: {merger} if merger else set(),
-            PRParticipationKind.RELEASER: {releaser} if releaser else set(),
-        }
-        reviewers = participants[PRParticipationKind.REVIEWER]
-        if author in reviewers:
-            reviewers.remove(author)
-        return participants
 
     def participant_nodes(self) -> PRParticipants:
         """Collect unique developer node IDs that are mentioned in this pull request."""
