@@ -279,15 +279,13 @@ async def _read_sql_query_records(
     return _wrap_sql_query(data, columns, index)
 
 
-async def _fetch_query(sql: str,
+async def _fetch_query(sql: CompoundSelect,
                        con: DatabaseLike,
-                       original_sql: Optional[str] = None,
                        ) -> Union[List[Sequence[Any]], Tuple[np.ndarray, List[int]]]:
     try:
         data = await con.fetch_all(query=sql)
     except Exception as e:
-        if original_sql is not None:
-            sql = original_sql
+        sql.dtype = None
         try:
             sql = str(sql)
         except Exception:

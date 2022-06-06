@@ -42,6 +42,7 @@ from athenian.api.models.metadata.github import NodeCommit, NodeRepository, Pull
 from athenian.api.models.precomputed.models import GitHubRelease as PrecomputedRelease, \
     GitHubRepository
 from athenian.api.tracing import sentry_span
+from athenian.api.unordered_unique import in1d_str, unordered_unique
 
 
 async def load_commit_dags(releases: pd.DataFrame,
@@ -630,7 +631,7 @@ class ReleaseToPullRequestMapper:
         assert len(commits) > 0
         repo_name_to_node = prefixer.repo_name_to_node.get
         unique_repo_ids = {
-            repo_name_to_node(drop_logical_repo(r.decode())) for r in np.unique(repos)
+            repo_name_to_node(drop_logical_repo(r.decode())) for r in unordered_unique(repos)
         }
         if updated_min is not None:
             assert updated_max is not None
@@ -646,7 +647,7 @@ class ReleaseToPullRequestMapper:
                 NodeCommit.acc_id.in_(meta_ids),
                 NodeCommit.repository_id.in_(unique_repo_ids),
             ]
-            unique_commits = np.unique(commits).astype("U40")
+            unique_commits = unordered_unique(commits)
             if len(unique_commits) <= 100:
                 filters.append(NodeCommit.sha.in_(unique_commits))
             else:
@@ -709,7 +710,7 @@ class ReleaseToPullRequestMapper:
             prs.reset_index(PullRequest.repository_full_name.name, inplace=True)
         pr_commits = prs[PullRequest.merge_commit_sha.name].values
         pr_repos = prs[PullRequest.repository_full_name.name].values.astype("S")
-        mask = np.in1d(commits, pr_commits)
+        mask = in1d_str(commits, pr_commits)
         commits = commits[mask]
         repos = repos[mask]
         pr_commit_repos = np.char.add(pr_commits, pr_repos)

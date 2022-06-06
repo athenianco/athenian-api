@@ -270,7 +270,7 @@ async def _mine_releases(repos: Iterable[str],
             NodeCommit.author_user_id,
             NodeCommit.node_id,
         ]
-        all_hashes = np.concatenate(all_hashes).astype("U40") if all_hashes else []
+        all_hashes = np.concatenate(all_hashes) if all_hashes else []
         with sentry_sdk.start_span(op="mine_releases/fetch_commits",
                                    description=str(len(all_hashes))):
             commits_df = await read_sql_query(

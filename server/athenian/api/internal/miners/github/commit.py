@@ -447,7 +447,7 @@ def _empty_dag() -> DAG:
 async def _fetch_commit_history_dag(hashes: np.ndarray,
                                     vertexes: np.ndarray,
                                     edges: np.ndarray,
-                                    head_hashes: Sequence[str],
+                                    head_hashes: Sequence[Union[str, bytes]],
                                     head_ids: Sequence[int],
                                     repo: str,
                                     meta_ids: Tuple[int, ...],
@@ -458,7 +458,7 @@ async def _fetch_commit_history_dag(hashes: np.ndarray,
     log = logging.getLogger("%s._fetch_commit_history_dag" % metadata.__package__)
     # there can be duplicates, remove them
     head_hashes = np.asarray(head_hashes, dtype="S40")
-    head_ids = np.asarray(head_ids)
+    head_ids = np.asarray(head_ids, dtype=int)
     _, unique_indexes = np.unique(head_hashes, return_index=True)
     head_hashes = head_hashes[unique_indexes]
     head_ids = head_ids[unique_indexes]
@@ -468,7 +468,7 @@ async def _fetch_commit_history_dag(hashes: np.ndarray,
         if len(stop_heads) > max_stop_heads:
             min_commit_time = datetime.now(timezone.utc) - timedelta(days=90)
             rows = await mdb.fetch_all(select([NodeCommit.oid])
-                                       .where(and_(NodeCommit.oid.in_(stop_heads.astype("U40")),
+                                       .where(and_(NodeCommit.oid.in_(stop_heads),
                                                    NodeCommit.committed_date > min_commit_time,
                                                    NodeCommit.acc_id.in_(meta_ids)))
                                        .order_by(desc(NodeCommit.committed_date))
@@ -486,7 +486,7 @@ async def _fetch_commit_history_dag(hashes: np.ndarray,
         # the expansion factor is ~6x, so 2 * 25 -> 300
         with sentry_sdk.start_span(op="partition_dag",
                                    description="%d %d" % (len(hashes), len(partition_seeds))):
-            stop_hashes = partition_dag(hashes, vertexes, edges, partition_seeds).astype("U40")
+            stop_hashes = partition_dag(hashes, vertexes, edges, partition_seeds)
     else:
         stop_hashes = []
     batch_size = 20
@@ -505,7 +505,7 @@ async def _fetch_commit_history_dag(hashes: np.ndarray,
                 latest_commit = await mdb.fetch_val(
                     select([func.max(NodeCommit.committed_date)])
                     .where(and_(NodeCommit.acc_id.in_(meta_ids),
-                                NodeCommit.oid.in_(orphans.astype("U40")))))
+                                NodeCommit.oid.in_(orphans))))
                 if latest_commit is None:
                     log.error("failed to fetch committed_date of %s", orphans.tolist())
                     new_edges = []
@@ -529,7 +529,7 @@ async def _fetch_commit_history_dag(hashes: np.ndarray,
 
 
 async def _fetch_commit_history_edges(commit_ids: Iterable[int],
-                                      stop_hashes: Iterable[str],
+                                      stop_hashes: Iterable[bytes],
                                       meta_ids: Tuple[int, ...],
                                       mdb: Database,
                                       ) -> List[Tuple]:
@@ -580,7 +580,7 @@ async def _fetch_commit_history_edges(commit_ids: Iterable[int],
                 {tq}github.node_commit_edge_parents{tq} p
                     INNER JOIN commit_history h ON p.parent_id = h.child_id AND p.acc_id = h.acc_id
                     LEFT JOIN {tq}github.node_commit{tq} cc ON p.child_id = cc.graph_id AND p.acc_id = cc.acc_id
-            WHERE h.child_oid NOT IN ('{"', '".join(stop_hashes)}')
+            WHERE h.child_oid NOT IN ('{"', '".join(h.decode() for h in stop_hashes)}')
     ) SELECT
         parent_oid,
         child_oid,

@@ -147,7 +147,11 @@ async def _asyncpg_execute(self,
 async def _asyncpg_executemany(self, query, args, timeout, **kwargs):
     if timeout is None:
         timeout = float(10 * 60)  # twice as much the default
-    with sentry_sdk.start_span(op="sql", description="<= %d\n%s" % (len(args), query)):
+    if query.startswith("--🚀"):
+        log_query = query[query.find("🚀", 4) + 1:]
+    else:
+        log_query = query
+    with sentry_sdk.start_span(op="sql", description=f"<= {len(args)}\n{log_query}"):
         return await self._executemany_original(query, args, timeout, **kwargs)
 
 

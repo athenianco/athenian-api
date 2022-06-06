@@ -38,6 +38,8 @@ setup(
         code_root / "internal" / "miners" / "github" / "check_run_accelerated.pyx",
         code_root / "internal" / "features" / "github" / "check_run_metrics_accelerated.pyx",
         code_root / "to_object_arrays.pyx",
+        code_root / "unordered_unique.pyx",
+        code_root / "models" / "sql_builders.pyx",
     )]),
     include_dirs=[np.get_include()],
     namespace_packages=["athenian"],

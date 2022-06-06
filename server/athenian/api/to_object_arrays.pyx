@@ -7,7 +7,7 @@ from typing import Any, List, Sequence, Tuple
 
 cimport cython
 from cpython cimport PyObject
-from numpy cimport ndarray, npy_bool, npy_uintp, PyArray_DATA
+from numpy cimport ndarray, npy_bool, PyArray_DATA
 
 import asyncpg
 import numpy as np
@@ -97,7 +97,7 @@ def to_object_arrays_split(rows: List[Sequence[Any]],
     return result_typed, result_obj
 
 
-def as_bool(arr: np.ndarray) -> np.ndarray:
+def as_bool(ndarray arr not None) -> np.ndarray:
     if arr.dtype == bool:
         return arr
     assert arr.dtype == object
@@ -125,7 +125,7 @@ cdef void _as_bool_vec(const char *obj_arr,
 
 
 
-def is_null(arr: np.ndarray) -> np.ndarray:
+def is_null(ndarray arr not None) -> np.ndarray:
     if arr.dtype != object:
         return np.zeros(len(arr), dtype=bool)
     assert arr.ndim == 1
@@ -150,7 +150,7 @@ cdef void _is_null_vec(const char *obj_arr,
         out_arr[i] = Py_None == (<const PyObject **> (obj_arr + i * stride))[0]
 
 
-def is_not_null(arr: np.ndarray) -> np.ndarray:
+def is_not_null(ndarray arr not None) -> np.ndarray:
     if arr.dtype != object:
         return np.ones(len(arr), dtype=bool)
     assert arr.ndim == 1
