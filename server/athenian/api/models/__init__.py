@@ -3,19 +3,21 @@ import logging
 import os
 import subprocess
 import sys
-from typing import Any, Sequence
+from typing import Any, Iterable, Sequence
 
 from alembic import script
 from alembic.migration import MigrationContext
 from flogging import flogging
 from mako.template import Template
-from sqlalchemy import any_, create_engine
+import numpy as np
+from sqlalchemy import any_, create_engine, text
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.sql import operators, Values
 from sqlalchemy.sql.compiler import OPERATORS
 from sqlalchemy.sql.elements import BinaryExpression, BindParameter, Grouping
 from sqlalchemy.sql.operators import ColumnOperators, in_op, not_in_op
 
+from athenian.api.models.sql_builders import in_any_values_inline, in_inline
 from athenian.precomputer.db import always_unequal, create_base  # noqa: F401
 
 
@@ -49,54 +51,93 @@ def compile_binary(binary, compiler, override_operator=None, **kw):
         return compiler.visit_binary(binary, override_operator=override_operator, **kw)
 
     if isinstance(binary.right, BindParameter):
-        right_len = len(binary.right.value)
+        values = binary.right.value
+        right_len = len(values)
     else:
+        values = []
         right_len = 0
+    if is_array := right_len == 1 and isinstance(values[0], np.ndarray):
+        binary.right.value = values = values[0]
+        right_len = len(values)
+    render_any_values = (
+        getattr(binary, "any_values", False)
+        and compiler.dialect.name == "postgresql"
+        and right_len > 0  # = ANY(VALUES) is invalid syntax
+    )
     if right_len >= 10:
-        postgres = compiler.dialect.name == "postgresql"
-        left = compiler.process(binary.left, **kw)
+        # bypass the limit of the number of arguments
         kw["literal_binds"] = True
-        use_any = getattr(binary, "any_values", False) and postgres
-        negate = use_any and operator is not_in_op
-        if use_any:
-            # ANY(VALUES ...) seems to be performing the best among these three:
-            # 1. IN (...)
-            # 2. = ANY(ARRAY[...])
-            # 3. = ANY(VALUES ...)
-            operator = operators.eq
+    if render_any_values:
+        # = ANY(VALUES ...)
+        if is_array and (
+                values.dtype.kind in ("S", "U")
+                or values.dtype.kind in ("i", "u") and values.dtype.itemsize == 8):
+            right = any_(Grouping(text(in_any_values_inline(values))))
+        else:
             right = any_(Grouping(Values(
                 binary.left, literal_binds=True,
-            ).data(TupleWrapper(binary.right.value))))
-        else:
-            right = binary.right
+            ).data(TupleWrapper(values))))
+        left = compiler.process(binary.left, **kw)
         right = compiler.process(right, **kw)
-        sql = left + OPERATORS[operator] + right
-        if negate:
-            sql = "NOT (%s)" % sql
+        sql = left + OPERATORS[operators.eq] + right
+        if operator is not_in_op:
+            sql = f"NOT ({sql})"
         return sql
-    elif operator is in_op and right_len == 1:
-        # IN (<value>) -> = <value>
-        return compiler.process(binary.left == binary.right.value[0], **kw)
+    else:
+        # IN (...)
+        if operator is in_op and right_len == 1:
+            # IN (<value>) -> = <value>
+            value = values[0]
+            if is_array and values.dtype.kind == "S":
+                value = value.decode()
+            return compiler.process(binary.left == value, **kw)
+        if is_array:
+            if values.dtype.kind in ("S", "U") \
+                    or values.dtype.kind in ("i", "u") and values.dtype.itemsize == 8:
+                binary.right = Grouping(text(in_inline(values)))
+            else:
+                binary.right.value = values.tolist()
+        return compiler.visit_binary(binary, override_operator=override_operator, **kw)
 
-    return compiler.visit_binary(binary, override_operator=override_operator, **kw)
+
+_original_in_ = ColumnOperators.in_
+_original_notin_ = ColumnOperators.notin_
 
 
-def in_any_values(self: ColumnOperators, other):
+def _in_(self: ColumnOperators, other: Iterable):
+    """Override IN (...) PostgreSQL operator."""
+    if isinstance(other, np.ndarray):
+        other = [other]  # performance hack to avoid conversion to list
+    return _original_in_(self, other)
+
+
+def _notin_(self: ColumnOperators, other: Iterable):
+    """Override NOT IN (...) PostgreSQL operator."""
+    if isinstance(other, np.ndarray):
+        other = [other]  # performance hack to avoid conversion to list
+    return _original_notin_(self, other)
+
+
+ColumnOperators.in_ = _in_
+ColumnOperators.notin_ = _notin_
+
+
+def _in_any_values(self: ColumnOperators, other: Iterable):
     """Implement = ANY(VALUES (...), (...), ...) PostgreSQL operator."""
     expr = self.in_(other)
     expr.any_values = True
     return expr
 
 
-def notin_any_values(self: ColumnOperators, other):
+def _notin_any_values(self: ColumnOperators, other: Iterable):
     """Implement NOT = ANY(VALUES (...), (...), ...) PostgreSQL operator."""
     expr = self.notin_(other)
     expr.any_values = True
     return expr
 
 
-ColumnOperators.in_any_values = in_any_values
-ColumnOperators.notin_any_values = notin_any_values
+ColumnOperators.in_any_values = _in_any_values
+ColumnOperators.notin_any_values = _notin_any_values
 
 
 flogging.trailing_dot_exceptions.add("alembic.runtime.migration")

@@ -984,7 +984,7 @@ async def unwrap_pull_requests(prs_df: pd.DataFrame,
         ]
         milestone_releases = dummy_releases_df().append(milestone_prs.reset_index(drop=True))
         milestone_releases = milestone_releases.take(np.flatnonzero(
-            is_not_null(milestone_releases[Release.sha.name])))
+            is_not_null(milestone_releases[Release.sha.name].values)))
         releases, matched_bys = await ReleaseLoader.load_releases(
             prs_df[PullRequest.repository_full_name.name].unique(), branches, default_branches,
             rel_time_from, now, release_settings, logical_settings, prefixer,

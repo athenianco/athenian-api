@@ -1028,7 +1028,7 @@ class ReleaseMatcher:
                 *dags[repo], branches[Branch.commit_sha.name].values)
             for repo, branches in branches_matched.items()
         ]
-        first_shas = np.sort(np.concatenate(first_shas)).astype("U40")
+        first_shas = np.sort(np.concatenate(first_shas))
         first_commits = await self._fetch_commits(first_shas, time_from, time_to)
         pseudo_releases = []
         gh_merge = ((first_commits[PushCommit.committer_name.name] == "GitHub")
@@ -1092,13 +1092,18 @@ class ReleaseMatcher:
         serialize=pickle.dumps,
         deserialize=pickle.loads,
         # commit_shas are already sorted
-        key=lambda commit_shas, time_from, time_to, **_: (",".join(commit_shas),
-                                                          time_from, time_to),
+        key=lambda commit_shas, time_from, time_to, **_: (
+            "" if len(commit_shas) == 0 else (
+                ",".join(commit_shas)
+                if isinstance(commit_shas[0], str)
+                else b",".join(commit_shas).decode()
+            ),
+            time_from, time_to),
         refresh_on_access=True,
         cache=lambda self, **_: self._cache,
     )
     async def _fetch_commits(self,
-                             commit_shas: Sequence[str],
+                             commit_shas: Union[Sequence[str], np.ndarray],
                              time_from: datetime,
                              time_to: datetime) -> pd.DataFrame:
         filters = [

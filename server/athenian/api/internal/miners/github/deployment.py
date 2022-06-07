@@ -56,6 +56,7 @@ from athenian.api.models.precomputed.models import GitHubCommitDeployment, GitHu
 from athenian.api.to_object_arrays import is_not_null
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
+from athenian.api.unordered_unique import unordered_unique
 
 
 @sentry_span
@@ -769,9 +770,9 @@ async def _map_releases_to_deployments(
         if key[0] == ReleaseMatch.event:
             event_hashes.extend(val)
         else:
-            commits_by_reverse_key[key] = np.unique(np.concatenate(val)).astype("U40")
+            commits_by_reverse_key[key] = np.unique(np.concatenate(val))
     if event_hashes:
-        event_hashes = np.concatenate(event_hashes).astype("U40")
+        event_hashes = np.concatenate(event_hashes)
     commits_by_reverse_key = {
         k: v for k, v in commits_by_reverse_key.items() if k[0] != ReleaseMatch.event
     }
@@ -885,7 +886,7 @@ async def _submit_deployed_commits(
     for repos in deployed_commits_per_repo_per_env.values():
         for details in repos.values():
             all_shas.extend(details.shas)
-    all_shas = np.unique(np.concatenate(all_shas).astype("U40"))
+    all_shas = unordered_unique(np.concatenate(all_shas))
     rows = await mdb.fetch_all(select([NodeCommit.graph_id, NodeCommit.sha])
                                .where(and_(NodeCommit.acc_id.in_(meta_ids),
                                            NodeCommit.sha.in_any_values(all_shas))))
@@ -1283,7 +1284,7 @@ async def _extract_deployed_commits(
             grouped_deployed_shas, grouped_deployment_names,
         )
         all_mentioned_hashes.extend(grouped_deployed_shas)
-    all_mentioned_hashes = np.unique(np.concatenate(all_mentioned_hashes)).astype("U40")
+    all_mentioned_hashes = np.unique(np.concatenate(all_mentioned_hashes))
     return deployed_commits_per_repo_per_env, all_mentioned_hashes
 
 
@@ -1604,7 +1605,7 @@ async def _fetch_latest_deployed_components(
                     .setdefault(physical_repo, {})[repo] = ts
     if suspects is not None:
         all_shas = list(chain.from_iterable(v.values() for v in suspects.values()))
-        all_shas = np.unique(np.concatenate(all_shas)).astype("U40")
+        all_shas = np.unique(np.concatenate(all_shas))
         sha_rows = await mdb.fetch_all(
             select([NodeCommit.id, NodeCommit.sha])
             .where(and_(NodeCommit.acc_id.in_(meta_ids),

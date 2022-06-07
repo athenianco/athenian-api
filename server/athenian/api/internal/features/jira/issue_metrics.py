@@ -14,7 +14,7 @@ from athenian.api.internal.miners.jira.issue import ISSUE_PRS_BEGAN, ISSUE_PRS_R
 from athenian.api.internal.miners.types import JIRAParticipants, JIRAParticipationKind
 from athenian.api.models.metadata.jira import AthenianIssue, Issue, Status
 from athenian.api.models.web import JIRAMetricID
-
+from athenian.api.unordered_unique import in1d_str, unordered_unique
 
 metric_calculators: Dict[str, Type[MetricCalculator]] = {}
 histogram_calculators: Dict[str, Type[HistogramCalculator]] = {}
@@ -66,21 +66,21 @@ def split_issues_by_participants(with_: List[JIRAParticipants],
             # None will become "None" and will match; nobody is going to name a user "None"
             # except for to troll Athenian.
             assignees = np.char.lower(np.array(assignees, dtype="U"))
-            mask |= np.in1d(issues["assignee"].values.astype("U"), assignees)
+            mask |= in1d_str(issues["assignee"].values.astype("U"), assignees)
         if reporters := group.get(JIRAParticipationKind.REPORTER):
             reporters = np.char.lower(np.array(reporters, dtype="U"))
-            mask |= np.in1d(issues["reporter"].values.astype("U"), reporters)
+            mask |= in1d_str(issues["reporter"].values.astype("U"), reporters)
         if commenters := group.get(JIRAParticipationKind.COMMENTER):
             commenters = np.char.lower(np.array(commenters, dtype="U"))
             issue_commenters = issues["commenters"]
             merged_issue_commenters = np.concatenate(issue_commenters).astype("U")
             offsets = np.zeros(len(issue_commenters) + 1, dtype=int)
             np.cumsum(issue_commenters.apply(len).values, out=offsets[1:])
-            indexes = np.unique(np.searchsorted(
+            indexes = unordered_unique(np.searchsorted(
                 offsets, np.nonzero(np.in1d(merged_issue_commenters, commenters))[0],
                 side="right") - 1)
             mask[indexes] = True
-        result.append(np.nonzero(mask)[0])
+        result.append(np.flatnonzero(mask))
     return result
 
 

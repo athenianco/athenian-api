@@ -23,7 +23,7 @@ from athenian.api.internal.logical_repos import coerce_logical_repos
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings
 from athenian.api.sparse_mask import SparseMask
 from athenian.api.tracing import sentry_span
-
+from athenian.api.unordered_unique import unordered_unique
 
 DEFAULT_QUANTILE_STRIDE = 14
 
@@ -922,7 +922,7 @@ def calculate_logical_duplication_mask(repos_column: np.ndarray,
     """
     # maximum 255 logical releases for each repo -> uint8
     mask = np.zeros(len(repos_column), dtype=np.uint8)
-    actual_unique_repos = np.unique(repos_column).astype("U")
+    actual_unique_repos = unordered_unique(repos_column).astype("U")
     for root, children in coerce_logical_repos(actual_unique_repos).items():
         if len(children) == 1:
             continue
