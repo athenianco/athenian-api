@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from itertools import chain
 import logging
@@ -12,13 +13,14 @@ from typing import Callable, Optional, Sequence, Set, Tuple
 
 import aiomcache
 import sentry_sdk
+import sqlalchemy as sa
 from sqlalchemy import and_, insert, select, update
 from tqdm import tqdm
 
 from athenian.api.async_utils import gather
 from athenian.api.db import Database
 from athenian.api.defer import defer, wait_deferred
-from athenian.api.internal.account import copy_teams_as_needed, get_metadata_account_ids
+from athenian.api.internal.account import copy_teams_as_needed
 from athenian.api.internal.features.entries import MetricEntriesCalculator
 from athenian.api.internal.jira import match_jira_identities
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
@@ -37,10 +39,11 @@ from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.reposet import refresh_repository_names
 from athenian.api.internal.settings import ReleaseMatch, Settings
 from athenian.api.internal.team import get_root_team, RootTeamNotFoundError
-from athenian.api.models.state.models import RepositorySet, Team
+from athenian.api.models.state.models import AccountGitHubAccount, RepositorySet, Team
 from athenian.api.precompute.context import PrecomputeContext
 from athenian.api.precompute.prometheus import get_metrics, push_metrics
 from athenian.api.tracing import sentry_span
+from athenian.api.typing_utils import dataclass
 
 
 async def main(context: PrecomputeContext,
@@ -55,21 +58,20 @@ async def main(context: PrecomputeContext,
     time_from = \
         (time_to - timedelta(days=365 * 2)) if not os.getenv("CI") else no_time_from
     accounts = [int(p) for s in args.account for p in s.split()]
-    reposets = await _get_reposets(context.sdb, accounts)
+    to_precompute = await _get_reposets_to_precompute(context.sdb, accounts)
     if isolate:
         await context.close()
-    context.log.info("Heating %d reposets", len(reposets))
+    context.log.info("Heating %d reposets", len(to_precompute))
     failed = 0
     log = context.log
 
-    for reposet in tqdm(reposets):
-        duration_tracker = _DurationTracker(args.prometheus_pushgateway, context.log)
-        try:
-            meta_ids = await get_metadata_account_ids(reposet.owner_id, context.sdb, context.cache)
-        except Exception as e:
-            log.error("prolog %d: %s: %s", reposet.owner_id, type(e).__name__, e)
-            sentry_sdk.capture_exception(e)
+    for reposet_to_precompute in tqdm(to_precompute):
+        reposet = reposet_to_precompute.reposet
+        if not (meta_ids := reposet_to_precompute.meta_ids):
+            log.error("Reposet owner account %d is not installed", reposet.owner_id)
             continue
+
+        duration_tracker = _DurationTracker(args.prometheus_pushgateway, context.log)
 
         if not isolate:
             await precompute_reposet(
@@ -107,18 +109,41 @@ async def main(context: PrecomputeContext,
                               reposet.owner_id, status[1])
             duration_tracker.track(reposet.owner_id, meta_ids, not reposet.precomputed)
 
-    log.info("failed: %d / %d", failed, len(reposets))
+    log.info("failed: %d / %d", failed, len(to_precompute))
 
 
-async def _get_reposets(sdb: Database, accounts: Sequence[int]) -> Sequence[RepositorySet]:
-    query = select(
-        [RepositorySet],
-    ).where(
-        and_(RepositorySet.name == RepositorySet.ALL, RepositorySet.owner_id.in_(accounts)),
-    )
-    rows = await sdb.fetch_all(query)
+@dataclass(frozen=True)
+class RepoSetToPrecompute:
+    """A repository set to precompute."""
 
-    return [RepositorySet(**row) for row in rows]
+    reposet: RepositorySet
+    meta_ids: Tuple[int, ...]
+
+
+async def _get_reposets_to_precompute(
+    sdb: Database,
+    accounts: Sequence[int],
+) -> Sequence[RepoSetToPrecompute]:
+    reposet_stmt = sa.select(RepositorySet).where(sa.and_(RepositorySet.name == RepositorySet.ALL,
+                                                          RepositorySet.owner_id.in_(accounts)))
+    meta_ids_stmt = sa.select(
+        AccountGitHubAccount).where(AccountGitHubAccount.account_id.in_(accounts))
+
+    reposet_rows, meta_ids_rows = await gather(sdb.fetch_all(reposet_stmt),
+                                               sdb.fetch_all(meta_ids_stmt))
+
+    accounts_meta_ids = defaultdict(list)
+    for meta_ids_row in meta_ids_rows:
+        accounts_meta_ids[meta_ids_row[AccountGitHubAccount.account_id.name]].append(
+            meta_ids_row[AccountGitHubAccount.id.name],
+        )
+
+    res = []
+    for reposet_row in reposet_rows:
+        reposet = RepositorySet(**reposet_row)
+        meta_ids = tuple(accounts_meta_ids[reposet_row[RepositorySet.owner_id.name]])
+        res.append(RepoSetToPrecompute(reposet, meta_ids))
+    return res
 
 
 @sentry_span
