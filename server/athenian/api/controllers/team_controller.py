@@ -151,28 +151,36 @@ async def update_team(request: AthenianWebRequest, id: int,
                 return ResponseError(NotFoundError(f"Team {id} was not found.")).response
             account = team[Team.owner_id.name]
             await get_user_account_status_from_request(request, account)
-            if body.parent is None and team[Team.parent_id.name] is not None:
-                raise ResponseError(BadRequestError(detail="Team parent cannot be unset."))
-            if id == body.parent:
+
+            new_parent_id = body.parent
+            if id == new_parent_id:
                 raise ResponseError(BadRequestError(
                     detail="Team cannot be a the parent of itself.",
                 ))
-            meta_ids = await get_metadata_account_ids(account, sdb_conn, request.cache)
-            members = await _resolve_members(body.members, meta_ids, request.mdb)
-            await _check_parent(account, body.parent, sdb_conn)
-            await _check_parent_cycle(id, body.parent, sdb_conn)
 
             if team[Team.parent_id.name] is None:
-                if body.parent is not None:
+                if new_parent_id is not None:
                     raise ResponseError(BadRequestError(detail="Cannot set parent for root team."))
-            elif not members:
+            else:
+                # null parent means root team as parent, for retro-compatibility
+                if new_parent_id is None:
+                    root_team = await get_root_team(account, sdb_conn)
+                    new_parent_id = root_team[Team.id.name]
+
+            meta_ids = await get_metadata_account_ids(account, sdb_conn, request.cache)
+            members = await _resolve_members(body.members, meta_ids, request.mdb)
+
+            if team[Team.parent_id.name] is not None and not members:
                 raise ResponseError(BadRequestError(detail="Empty member list is not allowed."))
+
+            await _check_parent(account, new_parent_id, sdb_conn)
+            await _check_parent_cycle(id, new_parent_id, sdb_conn)
 
             values = {
                 Team.updated_at.name: datetime.now(timezone.utc),
                 Team.name.name: name,
                 Team.members.name: members,
-                Team.parent_id.name: body.parent,
+                Team.parent_id.name: new_parent_id,
             }
             try:
                 await sdb_conn.execute(update(Team).where(Team.id == id).values(values))

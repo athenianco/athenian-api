@@ -14,7 +14,8 @@ from athenian.api.models.web import TeamUpdateRequest
 from athenian.api.models.web.team import Team as TeamListItem
 from athenian.api.models.web.team_create_request import TeamCreateRequest
 from tests.conftest import DEFAULT_HEADERS
-from tests.testutils.db import assert_existing_row, db_datetime_equals, model_insert_stmt
+from tests.testutils.db import assert_existing_row, db_datetime_equals, model_insert_stmt, \
+    models_insert
 from tests.testutils.factory.state import TeamFactory
 
 
@@ -380,21 +381,26 @@ class TestUpdateTeam:
         await self._request(client, id, body, status)
 
     async def test_parent_cycle(self, client, sdb, disable_default_user):
-        for model in (
-            TeamFactory(owner_id=1, id=1, name="Engineering", members=[51]),
-            TeamFactory(owner_id=1, id=2, parent_id=1, name="Dream", members=[39936]),
-        ):
-            await sdb.execute(model_insert_stmt(model))
-        body = TeamUpdateRequest("Engineering", ["github.com/se7entyse7en"], 2).to_dict()
-        rbody = await self._request(client, 1, body, 400)
+        await models_insert(
+            sdb,
+            TeamFactory(id=1, members=[51]),
+            TeamFactory(id=2, parent_id=1),
+            TeamFactory(id=3, parent_id=2),
+        )
+        body = TeamUpdateRequest("Engineering", ["github.com/se7entyse7en"], 3).to_dict()
+        rbody = await self._request(client, 2, body, 400)
         assert "cycle" in rbody
 
-    async def test_unset_parent(self, client, sdb, disable_default_user):
-        for model in (TeamFactory(id=1), TeamFactory(id=2, parent_id=1)):
-            await sdb.execute(model_insert_stmt(model))
+    async def test_null_parent_as_root_parent(self, client, sdb, disable_default_user):
+        await models_insert(
+            sdb,
+            TeamFactory(id=1, parent_id=None),
+            TeamFactory(id=2, parent_id=1),
+            TeamFactory(id=3, parent_id=2),
+        )
         body = TeamUpdateRequest("Engineering", ["github.com/se7entyse7en"], None).to_dict()
-        rbody = await self._request(client, 2, body, 400)
-        assert "Team parent cannot be unset" in rbody
+        await self._request(client, 3, body)
+        await assert_existing_row(sdb, Team, id=3, parent_id=1)
 
     async def test_parent_stays_null(self, client, sdb, disable_default_user):
         await sdb.execute(model_insert_stmt(TeamFactory(id=1)))
@@ -425,7 +431,7 @@ class TestUpdateTeam:
         await assert_existing_row(sdb, Team, name="New Name", parent_id=2, id=3)
 
     async def _request(
-        self, client: TestClient, team_id: int, json: dict, assert_status: int,
+        self, client: TestClient, team_id: int, json: dict, assert_status: int = 200,
     ) -> str:
         response = await client.request(
             method="PUT", path=f"/v1/team/{team_id}", headers=DEFAULT_HEADERS, json=json,
