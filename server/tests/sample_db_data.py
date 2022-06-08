@@ -168,9 +168,9 @@ def fill_state_session(session: sqlalchemy.orm.Session):
     session.flush()
     session.add(AccountGitHubAccount(id=6366825, account_id=1))
     session.add(UserAccount(
-        user_id="auth0|5e1f6dfb57bc640ea390557b", account_id=1, is_admin=True))
+        user_id="auth0|62a1ae88b6bba16c6dbc6870", account_id=1, is_admin=True))
     session.add(UserAccount(
-        user_id="auth0|5e1f6dfb57bc640ea390557b", account_id=2, is_admin=False))
+        user_id="auth0|62a1ae88b6bba16c6dbc6870", account_id=2, is_admin=False))
     session.add(UserAccount(
         user_id="auth0|5e1f6e2e8bfa520ea5290741", account_id=3, is_admin=True))
     session.add(UserAccount(

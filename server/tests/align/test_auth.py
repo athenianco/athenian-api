@@ -43,7 +43,7 @@ async def test_auth_account_mismatch(client, headers):
             "extensions": {
                 "status": 404,
                 "type": "/errors/AccountNotFound",
-                "detail": "Account 3 does not exist or user auth0|5e1f6dfb57bc640ea390557b is "
+                "detail": "Account 3 does not exist or user auth0|62a1ae88b6bba16c6dbc6870 is "
                           "not a member.",
             },
         }],

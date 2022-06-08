@@ -103,13 +103,13 @@ async def test_account_expiration_regular(client, headers, sdb):
 
 
 @pytest.mark.parametrize("mapped_id, status", [
-    ("auth0|5e1f6dfb57bc640ea390557b", 401),
+    ("auth0|62a1ae88b6bba16c6dbc6870", 401),
     ("auth0|5e1f6e2e8bfa520ea5290741", 200),
 ])
 async def test_account_expiration_god(client, headers, sdb, mapped_id, status):
     await sdb.execute(update(Account).values({Account.expires_at: datetime.now(timezone.utc)}))
     await sdb.execute(insert(God).values(God(
-        user_id="auth0|5e1f6dfb57bc640ea390557b",
+        user_id="auth0|62a1ae88b6bba16c6dbc6870",
         mapped_id=mapped_id,
     ).create_defaults().explode(with_primary_keys=True)))
     body = {

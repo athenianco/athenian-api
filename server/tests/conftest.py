@@ -206,13 +206,13 @@ has_memcached = check_memcached()
 class TestAuth0(Auth0):
     def __init__(self, whitelist, cache=None):
         super().__init__(
-            whitelist=whitelist, default_user="auth0|5e1f6dfb57bc640ea390557b", lazy=True)
+            whitelist=whitelist, default_user="auth0|62a1ae88b6bba16c6dbc6870", lazy=True)
         self._default_user = User(
-            id="auth0|5e1f6dfb57bc640ea390557b",
+            id="auth0|62a1ae88b6bba16c6dbc6870",
             login="vadim",
             email="vadim@athenian.co",
             name="Vadim Markovtsev",
-            native_id="5e1f6dfb57bc640ea390557b",
+            native_id="62a1ae88b6bba16c6dbc6870",
             picture="https://s.gravatar.com/avatar/d7fb46e4e35ecf7c22a1275dd5dbd303?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fva.png",  # noqa
             updated=datetime.now(timezone.utc),
         )
@@ -304,7 +304,7 @@ def disable_default_user(app):
 @pytest.fixture(scope="function")
 async def god(sdb) -> None:
     await sdb.execute(insert(God).values(God(
-        user_id="auth0|5e1f6dfb57bc640ea390557b",
+        user_id="auth0|62a1ae88b6bba16c6dbc6870",
     ).create_defaults().explode(with_primary_keys=True)))
 
 

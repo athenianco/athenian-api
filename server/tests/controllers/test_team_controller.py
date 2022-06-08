@@ -86,7 +86,7 @@ class TestCreateTeam:
             "type": "/errors/AccountNotFound",
             "title": "Not Found",
             "status": 404,
-            "detail": (f"Account {account} does not exist or user auth0|5e1f6dfb57bc640ea390557b "
+            "detail": (f"Account {account} does not exist or user auth0|62a1ae88b6bba16c6dbc6870 "
                        "is not a member."),
         }
 
@@ -266,7 +266,7 @@ class TestListTeams:
             "type": "/errors/AccountNotFound",
             "title": "Not Found",
             "status": 404,
-            "detail": (f"Account {account} does not exist or user auth0|5e1f6dfb57bc640ea390557b "
+            "detail": (f"Account {account} does not exist or user auth0|62a1ae88b6bba16c6dbc6870 "
                        "is not a member."),
         }
 

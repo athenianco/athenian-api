@@ -15,7 +15,7 @@ from athenian.api.request import AthenianWebRequest
 from athenian.api.serialization import deserialize_datetime
 from tests.conftest import disable_default_user
 
-vadim_email = "af253b50a4d7b2c9841f436fbe4c635f270f4388653649b0971f2751a441a556fe63a9dabfa150a444dd"  # noqa
+vadim_email = "698650fc6af024b6679c2d9939cd828be15d7ca32a49ccf8a78e00a67688c4851858cce84d88fac228e8"  # noqa
 eiso_email = "18fe5f66fce88e4791d0117a311c6c2b2102216e18585c1199f90516186aa4461df7a2453857d781b6"  # noqa
 
 
@@ -28,11 +28,11 @@ async def test_get_user_smoke(client, headers, app):
     updated = items["updated"]
     del items["updated"]
     assert items == {
-        "id": "auth0|5e1f6dfb57bc640ea390557b",
+        "id": "auth0|62a1ae88b6bba16c6dbc6870",
         "email": "vadim@athenian.co",
         "login": "vadim",
         "name": "Vadim Markovtsev",
-        "native_id": "5e1f6dfb57bc640ea390557b",
+        "native_id": "62a1ae88b6bba16c6dbc6870",
         "picture": "https://s.gravatar.com/avatar/d7fb46e4e35ecf7c22a1275dd5dbd303?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fva.png",  # noqa
         "accounts": {
             "1": {"is_admin": True,
@@ -108,11 +108,11 @@ async def test_get_user_sso_join(client, headers, app, sdb):
     updated = items["updated"]
     del items["updated"]
     assert items == {
-        "id": "auth0|5e1f6dfb57bc640ea390557b",
+        "id": "auth0|62a1ae88b6bba16c6dbc6870",
         "email": "vadim@athenian.co",
         "login": "vadim",
         "name": "Vadim Markovtsev",
-        "native_id": "5e1f6dfb57bc640ea390557b",
+        "native_id": "62a1ae88b6bba16c6dbc6870",
         "picture": "https://s.gravatar.com/avatar/d7fb46e4e35ecf7c22a1275dd5dbd303?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fva.png",  # noqa
         "accounts": {
             "1": {"is_admin": True,
@@ -288,17 +288,17 @@ async def test_set_account_features_nasty(client, headers, god):
 @pytest.mark.flaky(reruns=10, reruns_delay=1)
 async def test_get_users_query_size_limit(xapp):
     users = await xapp._auth0.get_users(
-        ["auth0|5e1f6dfb57bc640ea390557b"] * 200 + ["auth0|5e1f6e2e8bfa520ea5290741"] * 200)
+        ["auth0|62a1ae88b6bba16c6dbc6870"] * 200 + ["auth0|5e1f6e2e8bfa520ea5290741"] * 200)
     assert len(users) == 2
-    assert users["auth0|5e1f6dfb57bc640ea390557b"].name == "Vadim Markovtsev"
-    assert users["auth0|5e1f6dfb57bc640ea390557b"].email == vadim_email
+    assert users["auth0|62a1ae88b6bba16c6dbc6870"].name == "Vadim Markovtsev"
+    assert users["auth0|62a1ae88b6bba16c6dbc6870"].email == vadim_email
     assert users["auth0|5e1f6e2e8bfa520ea5290741"].name == "Eiso Kant"
     assert users["auth0|5e1f6e2e8bfa520ea5290741"].email == eiso_email
 
 
 @pytest.mark.flaky(reruns=3, reruns_delay=60)
 async def test_get_users_rate_limit(xapp):
-    users = await gather(*[xapp._auth0.get_user("auth0|5e1f6dfb57bc640ea390557b")
+    users = await gather(*[xapp._auth0.get_user("auth0|62a1ae88b6bba16c6dbc6870")
                            for _ in range(20)])
     for u in users:
         assert u is not None
@@ -317,7 +317,7 @@ async def test_become_db(client, headers, sdb, god):
         method="GET", path="/v1/user", headers=headers, json={},
     )
     body2 = await response.json()
-    assert body2["impersonated_by"] == "auth0|5e1f6dfb57bc640ea390557b"
+    assert body2["impersonated_by"] == "auth0|62a1ae88b6bba16c6dbc6870"
     del body2["impersonated_by"]
     assert body1 == body2
     del body1["updated"]
@@ -349,11 +349,11 @@ async def test_become_db(client, headers, sdb, god):
     body3 = await response.json()
     del body3["updated"]
     assert body3 == {
-        "id": "auth0|5e1f6dfb57bc640ea390557b",
+        "id": "auth0|62a1ae88b6bba16c6dbc6870",
         "login": "vadim",
         "email": vadim_email,
         "name": "Vadim Markovtsev",
-        "native_id": "5e1f6dfb57bc640ea390557b",
+        "native_id": "62a1ae88b6bba16c6dbc6870",
         "picture": "https://s.gravatar.com/avatar/d7fb46e4e35ecf7c22a1275dd5dbd303?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fva.png",  # noqa
         "accounts": {
             "1": {"is_admin": True,
@@ -401,7 +401,7 @@ async def test_become_header(client, headers, sdb, god):
                   "has_deployments": False,
                   },
         },
-        "impersonated_by": "auth0|5e1f6dfb57bc640ea390557b",
+        "impersonated_by": "auth0|62a1ae88b6bba16c6dbc6870",
     }
 
 
@@ -417,7 +417,7 @@ async def test_change_user_regular(client: TestClient, headers: dict) -> None:
     assert response.status == 200
     items = await response.json()
     assert len(items["admins"]) == 1
-    assert items["admins"][0]["id"] == "auth0|5e1f6dfb57bc640ea390557b"
+    assert items["admins"][0]["id"] == "auth0|62a1ae88b6bba16c6dbc6870"
     assert len(items["regulars"]) == 1
     assert items["regulars"][0]["id"] == "auth0|5e1f6e2e8bfa520ea5290741"
 
@@ -448,7 +448,7 @@ async def test_change_user_admin(client, headers):
     assert response.status == 200
     items = await response.json()
     assert len(items["admins"]) == 2
-    assert items["admins"][0]["id"] == "auth0|5e1f6dfb57bc640ea390557b"
+    assert items["admins"][0]["id"] == "auth0|62a1ae88b6bba16c6dbc6870"
     assert items["admins"][1]["id"] == "auth0|5e1f6e2e8bfa520ea5290741"
 
 
@@ -482,7 +482,7 @@ async def test_change_user_banish(client, headers, sdb, membership_check):
     assert response.status == 200
     items = await response.json()
     assert len(items["admins"]) == 1
-    assert items["admins"][0]["id"] == "auth0|5e1f6dfb57bc640ea390557b"
+    assert items["admins"][0]["id"] == "auth0|62a1ae88b6bba16c6dbc6870"
     assert len(items["regulars"]) == 0
     assert "auth0|5e1f6e2e8bfa520ea5290741" == \
            await sdb.fetch_val(select([BanishedUserAccount.user_id]))
@@ -505,12 +505,12 @@ async def test_change_user_banish(client, headers, sdb, membership_check):
 
 
 @pytest.mark.parametrize("account, user, status, code", [
-    (1, "auth0|5e1f6dfb57bc640ea390557b", "regular", 403),
-    (1, "auth0|5e1f6dfb57bc640ea390557b", "banished", 403),
-    (2, "auth0|5e1f6dfb57bc640ea390557b", "regular", 403),
-    (2, "auth0|5e1f6dfb57bc640ea390557b", "admin", 403),
-    (2, "auth0|5e1f6dfb57bc640ea390557b", "banished", 403),
-    (3, "auth0|5e1f6dfb57bc640ea390557b", "regular", 404),
+    (1, "auth0|62a1ae88b6bba16c6dbc6870", "regular", 403),
+    (1, "auth0|62a1ae88b6bba16c6dbc6870", "banished", 403),
+    (2, "auth0|62a1ae88b6bba16c6dbc6870", "regular", 403),
+    (2, "auth0|62a1ae88b6bba16c6dbc6870", "admin", 403),
+    (2, "auth0|62a1ae88b6bba16c6dbc6870", "banished", 403),
+    (3, "auth0|62a1ae88b6bba16c6dbc6870", "regular", 404),
 ])
 async def test_change_user_errors(client, headers, account, user, status, code):
     body = {

@@ -66,6 +66,7 @@ from athenian.precomputer.db import dereference_schemas as dereference_precomput
 
 
 flogging.trailing_dot_exceptions.update((
+    "asyncio",
     "especifico.api.security",
     "especifico.apis.aiohttp_api",
 ))
