@@ -1036,7 +1036,7 @@ class PullRequestMiner:
         """
         Add and fill "dead" column in the `prs` DataFrame.
 
-        A PR is considered dead (force-push-dropped) if it does not exit in the commit DAG and \
+        A PR is considered dead (force-push-dropped) if it does not exist in the commit DAG and \
         we cannot detect its rebased clone.
         """
         prs["dead"] = False
@@ -1117,7 +1117,7 @@ class PullRequestMiner:
                 PushCommit.committed_date, PushCommit.pushed_date,
             ]))
         resolveds = await gather(*tasks, op="mark_dead_prs commit SQL UNION ALL-s")
-        resolved = pd.concat(resolveds)
+        resolved = pd.concat(resolveds, ignore_index=True)
         # look up the candidates in the DAGs
         pr_repos = resolved["repo"].values
         repo_order = np.argsort(pr_repos)

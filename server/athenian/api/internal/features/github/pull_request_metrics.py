@@ -355,7 +355,7 @@ class ReleaseTimeCalculator(AverageMetricCalculator[timedelta]):
         result_mask = released_mask
         result_mask[:, facts[PullRequestFacts.f.merged].isnull().values] = False
         merged = np.broadcast_to(facts[PullRequestFacts.f.merged].values[None, :],
-                                 (len(min_times), len(facts)))[result_mask]
+                                 result.shape)[result_mask]
         release_end = release_end[result_mask]
         result[result_mask] = release_end - merged
         return result
@@ -375,6 +375,46 @@ class ReleaseCounterWithQuantiles(Counter):
     the quantiles."""
 
     deps = (ReleaseTimeCalculator,)
+
+
+@register_metric(PullRequestMetricID.PR_OPEN_TIME)
+class OpenTimeCalculator(AverageMetricCalculator[timedelta]):
+    """Time the PR stayed open metric."""
+
+    may_have_negative_values = False
+    metric = MetricTimeDelta
+
+    def _analyze(self,
+                 facts: pd.DataFrame,
+                 min_times: np.ndarray,
+                 max_times: np.ndarray,
+                 override_event_time: Optional[datetime] = None,
+                 override_event_indexes: Optional[np.ndarray] = None,
+                 ) -> np.ndarray:
+        result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
+        closed = facts[PullRequestFacts.f.closed].values
+        closed_mask = (min_times[:, None] <= closed) & (closed < max_times[:, None])
+        closed = np.broadcast_to(closed[None, :], result.shape)[closed_mask]
+        opened = np.broadcast_to(facts[PullRequestFacts.f.created].values[None, :],
+                                 result.shape)[closed_mask]
+        result[closed_mask] = closed - opened
+        return result
+
+
+@register_metric(PullRequestMetricID.PR_OPEN_COUNT)
+class OpenCounter(WithoutQuantilesMixin, Counter):
+    """Count the number of PRs that were used to calculate PR_OPEN_TIME disregarding \
+    the quantiles."""
+
+    deps = (OpenTimeCalculator,)
+
+
+@register_metric(PullRequestMetricID.PR_OPEN_COUNT_Q)
+class OpenCounterWithQuantiles(Counter):
+    """Count the number of PRs that were used to calculate PR_OPEN_TIME respecting \
+    the quantiles."""
+
+    deps = (OpenTimeCalculator,)
 
 
 @register_metric(PullRequestMetricID.PR_LEAD_TIME)
