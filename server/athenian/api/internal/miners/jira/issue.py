@@ -61,12 +61,7 @@ async def generate_jira_prs_query(filters: List[ClauseElement],
             seed, _map, sql.and_(on[0] == _map.node_id, on[1] == _map.node_acc),
         )).where(sql.and_(*filters, *meta_ids_cond, _map.node_id.is_(None)))
     _issue = aliased(Issue, name="j")
-    filters.extend((
-        _issue.acc_id == jira.account,
-        _issue.project_id.in_(jira.projects),
-        _issue.is_deleted.is_(False),
-        *meta_ids_cond,
-    ))
+    filters.extend(meta_ids_cond)
     if jira.labels:
         components = await _load_components(jira.labels, jira.account, mdb, cache)
         _append_label_filters(
@@ -74,6 +69,11 @@ async def generate_jira_prs_query(filters: List[ClauseElement],
     if jira.issue_types:
         filters.append(_issue.type.in_(jira.issue_types))
     if not jira.epics:
+        filters.extend([
+            _issue.is_deleted.is_(False),
+            _issue.acc_id == jira.account,
+            _issue.project_id.in_(jira.projects),
+        ])
         return sql.select(columns).select_from(sql.join(
             seed, sql.join(_map, _issue, sql.and_(
                 _map.jira_acc == _issue.acc_id,
@@ -84,18 +84,26 @@ async def generate_jira_prs_query(filters: List[ClauseElement],
                 on[1] == _map.node_acc,
             ),
         )).where(sql.and_(*filters))
+
     _issue_epic = aliased(Issue, name="e")
-    filters.append(_issue_epic.key.in_(jira.epics))
+    filters.extend([
+        _issue.is_deleted.is_(False),
+        _issue_epic.acc_id == jira.account,
+        _issue_epic.project_id.in_(jira.projects),
+        _issue_epic.key.in_(jira.epics),
+    ])
     return sql.select(columns).select_from(sql.join(
-        seed, sql.join(
-            _map, sql.join(_issue, _issue_epic, sql.and_(
+        sql.join(
+            sql.join(_issue_epic, _issue, sql.and_(
                 _issue.epic_id == _issue_epic.id,
                 _issue.acc_id == _issue_epic.acc_id,
             )),
+            _map,
             sql.and_(
                 _map.jira_id == _issue.id,
                 _map.jira_acc == _issue.acc_id,
             )),
+        seed,
         sql.and_(
             on[0] == _map.node_id,
             on[1] == _map.node_acc,

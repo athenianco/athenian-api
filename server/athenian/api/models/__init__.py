@@ -104,16 +104,16 @@ _original_in_ = ColumnOperators.in_
 _original_notin_ = ColumnOperators.notin_
 
 
-def _in_(self: ColumnOperators, other: Iterable):
+def _in_(self: ColumnOperators, other: Iterable, any_: bool = False):
     """Override IN (...) PostgreSQL operator."""
-    if isinstance(other, np.ndarray):
+    if isinstance(other, np.ndarray) and (any_ or other.dtype != object):
         other = [other]  # performance hack to avoid conversion to list
     return _original_in_(self, other)
 
 
-def _notin_(self: ColumnOperators, other: Iterable):
+def _notin_(self: ColumnOperators, other: Iterable, any_: bool = False):
     """Override NOT IN (...) PostgreSQL operator."""
-    if isinstance(other, np.ndarray):
+    if isinstance(other, np.ndarray) and (any_ or other.dtype != object):
         other = [other]  # performance hack to avoid conversion to list
     return _original_notin_(self, other)
 
@@ -124,14 +124,14 @@ ColumnOperators.notin_ = _notin_
 
 def _in_any_values(self: ColumnOperators, other: Iterable):
     """Implement = ANY(VALUES (...), (...), ...) PostgreSQL operator."""
-    expr = self.in_(other)
+    expr = self.in_(other, any_=True)
     expr.any_values = True
     return expr
 
 
 def _notin_any_values(self: ColumnOperators, other: Iterable):
     """Implement NOT = ANY(VALUES (...), (...), ...) PostgreSQL operator."""
-    expr = self.notin_(other)
+    expr = self.notin_(other, any_=True)
     expr.any_values = True
     return expr
 
