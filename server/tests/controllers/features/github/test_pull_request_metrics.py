@@ -14,9 +14,9 @@ from athenian.api.internal.features.github.pull_request_metrics import AllCounte
     ClosedCalculator, CycleCounter, CycleCounterWithQuantiles, CycleTimeCalculator, \
     DoneCalculator, FlowRatioCalculator, histogram_calculators, LeadCounter, \
     LeadCounterWithQuantiles, LeadTimeCalculator, MergingCounter, MergingCounterWithQuantiles, \
-    MergingTimeCalculator, OpenedCalculator, PullRequestBinnedMetricCalculator, \
-    PullRequestMetricCalculatorEnsemble, register_metric, ReleaseCounter, \
-    ReleaseCounterWithQuantiles, ReleaseTimeCalculator, ReviewCounter, \
+    MergingTimeCalculator, OpenCounter, OpenCounterWithQuantiles, OpenedCalculator, \
+    PullRequestBinnedMetricCalculator, PullRequestMetricCalculatorEnsemble, register_metric, \
+    ReleaseCounter, ReleaseCounterWithQuantiles, ReleaseTimeCalculator, ReviewCounter, \
     ReviewCounterWithQuantiles, ReviewTimeCalculator, WaitFirstReviewTimeCalculator, \
     WorkInProgressCounter, WorkInProgressCounterWithQuantiles, WorkInProgressTimeCalculator
 from athenian.api.internal.features.histogram import Scale
@@ -288,6 +288,7 @@ def test_pull_request_flow_ratio_no_closed(pr_samples):  # noqa: F811
                           ReviewCounter,
                           MergingCounter,
                           ReleaseCounter,
+                          OpenCounter,
                           LeadCounter,
                           CycleCounter,
                           AllCounter,
@@ -330,6 +331,7 @@ def test_pull_request_metrics_counts_nq(pr_samples, cls):  # noqa: F811
                           (ReviewCounterWithQuantiles, ReviewCounter),
                           (MergingCounterWithQuantiles, MergingCounter),
                           (ReleaseCounterWithQuantiles, ReleaseCounter),
+                          (OpenCounterWithQuantiles, OpenCounter),
                           (LeadCounterWithQuantiles, LeadCounter),
                           (CycleCounterWithQuantiles, CycleCounter)])
 def test_pull_request_metrics_counts_q(pr_samples, cls_q, cls):  # noqa: F811
@@ -1082,6 +1084,7 @@ async def test_pull_request_stage_times(precomputed_deployments, real_pr_samples
         PullRequestMetricID.PR_WIP_TIME,
         PullRequestMetricID.PR_REVIEW_TIME,
         PullRequestMetricID.PR_MERGING_TIME,
+        PullRequestMetricID.PR_OPEN_TIME,
         PullRequestMetricID.PR_RELEASE_TIME,
         PullRequestMetricID.PR_DEPLOYMENT_TIME,
         PullRequestMetricID.PR_LEAD_DEPLOYMENT_TIME,
@@ -1094,6 +1097,7 @@ async def test_pull_request_stage_times(precomputed_deployments, real_pr_samples
     for metric, td in [(PullRequestMetricID.PR_WIP_TIME, timedelta(days=3, seconds=58592)),
                        (PullRequestMetricID.PR_REVIEW_TIME, timedelta(days=4, seconds=85421)),
                        (PullRequestMetricID.PR_MERGING_TIME, timedelta(days=5, seconds=1952)),
+                       (PullRequestMetricID.PR_OPEN_TIME, timedelta(days=9, seconds=20554)),
                        (PullRequestMetricID.PR_RELEASE_TIME, timedelta(days=29, seconds=50065)),
                        (PullRequestMetricID.PR_DEPLOYMENT_TIME,
                         [None, None, timedelta(days=663, seconds=69791)]),

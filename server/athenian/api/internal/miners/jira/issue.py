@@ -16,7 +16,7 @@ from sqlalchemy.sql import ClauseElement
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
-from athenian.api.cache import cached, short_term_exptime
+from athenian.api.cache import cached, middle_term_exptime, short_term_exptime
 from athenian.api.db import Database, DatabaseLike
 from athenian.api.internal.jira import JIRAConfig
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
@@ -105,7 +105,7 @@ async def generate_jira_prs_query(filters: List[ClauseElement],
 
 @sentry_span
 @cached(
-    exptime=60 * 60,  # 1 hour
+    exptime=middle_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda labels, account, **_: (labels, account),
