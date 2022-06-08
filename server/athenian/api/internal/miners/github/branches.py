@@ -11,7 +11,7 @@ from sqlalchemy import and_, func, select
 
 from athenian.api import metadata
 from athenian.api.async_utils import read_sql_query_with_join_collapse
-from athenian.api.cache import cached, cached_methods
+from athenian.api.cache import cached, cached_methods, middle_term_exptime
 from athenian.api.db import DatabaseLike
 from athenian.api.internal.logical_repos import coerce_logical_repos
 from athenian.api.internal.prefixer import Prefixer
@@ -27,12 +27,13 @@ class BranchMiner:
     @classmethod
     @sentry_span
     @cached(
-        exptime=60 * 60,
+        exptime=middle_term_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda meta_ids, repos, **_: (
+        key=lambda meta_ids, repos, strip=False, **_: (
             ",".join(map(str, meta_ids)),
-            ",".join(sorted(repos if repos is not None else [])),
+            ",".join(sorted(repos if repos is not None else ["None"])),
+            strip,
         ),
     )
     async def extract_branches(cls,
