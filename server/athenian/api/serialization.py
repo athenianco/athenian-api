@@ -198,6 +198,12 @@ def serialize_date(d: date) -> str:
     return d.isoformat()
 
 
+def serialize_timedelta(td: timedelta) -> str:
+    """Serialize a timedelta object into a string."""
+    seconds = int(td.total_seconds())
+    return f"{seconds}s"
+
+
 class FriendlyJson:
     """Allows to serialize datetime.datetime and datetime.date to JSON."""
 
@@ -220,7 +226,7 @@ class FriendlyJson:
         if isinstance(obj, (timedelta, np.timedelta64)):
             if isinstance(obj, np.timedelta64):
                 obj = obj.astype("timedelta64[s]").item()
-            return "%ds" % obj.total_seconds()
+            return serialize_timedelta(obj)
         if isinstance(obj, datetime):
             if obj != obj:
                 # NaT

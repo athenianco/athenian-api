@@ -6,7 +6,8 @@ import pandas as pd
 from pandas.errors import OutOfBoundsDatetime
 import pytest
 
-from athenian.api.serialization import deserialize_date, deserialize_datetime, FriendlyJson
+from athenian.api.serialization import deserialize_date, deserialize_datetime, FriendlyJson, \
+    serialize_timedelta
 
 
 @freeze_time("2022-04-01")
@@ -61,6 +62,14 @@ def test_deserialize_datatime_custom_bounds() -> None:
 def test_serialize_date() -> None:
     obj = date(1984, 5, 1)
     assert FriendlyJson.dumps(obj) == '"1984-05-01"'
+
+
+def test_serialize_timedelta() -> None:
+    td = timedelta(hours=2, seconds=2.2)
+    assert serialize_timedelta(td) == "7202s"
+
+    td = timedelta(seconds=0.9)
+    assert serialize_timedelta(td) == "0s"
 
 
 def test_serialize_datetime() -> None:
