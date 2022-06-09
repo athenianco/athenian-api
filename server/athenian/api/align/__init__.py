@@ -19,7 +19,7 @@ def create_graphql_schema() -> GraphQLSchema:
     )
     spec = gql(amalgamation)
     bindables = []
-    for pkg in ("queries", "mutations", "scalars"):
+    for pkg in ("queries", "mutations", "scalars", "types"):
         for file_path in (self_path.parent / pkg).glob("*.py"):
             if file_path.stem == "__init__":
                 continue

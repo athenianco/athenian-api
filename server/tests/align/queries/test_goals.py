@@ -319,3 +319,26 @@ class TestGoals(BaseGoalsTest):
         assert (team_goal_13 := team_goal_12["children"][0])["team"]["id"] == 13
         assert team_goal_13["value"] is None
         assert not team_goal_13["children"]
+
+    async def test_timedelta_metric(self, client: TestClient, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=10),
+            GoalFactory(
+                id=20,
+                template_id=4,
+                valid_from=datetime(2019, 1, 1, tzinfo=timezone.utc),
+                expires_at=datetime(2019, 7, 1, tzinfo=timezone.utc),
+            ),
+            TeamGoalFactory(goal_id=20, team_id=10, target="20001s"),
+        )
+
+        res = await self._request(1, 10, client)
+        assert len(res["data"]["goals"]) == 1
+
+        goal = res["data"]["goals"][0]
+        assert goal["teamGoal"]["team"]["id"] == 10
+
+        assert goal["teamGoal"]["value"]["target"]["str"] == "20001s"
+        assert goal["teamGoal"]["value"]["current"]["str"] == "3727969s"
+        assert goal["teamGoal"]["value"]["initial"]["str"] == "2126373s"

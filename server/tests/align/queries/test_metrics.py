@@ -122,12 +122,12 @@ class TestMetricsSmoke(BaseMetricsTest):
                         "team": {
                             "id": 1,
                         },
-                        "value": {"str": "34 days, 17:03:36", "int": None, "float": None},
+                        "value": {"str": "2999016s", "int": None, "float": None},
                         "children": [{
                             "team": {
                                 "id": 2,
                             },
-                            "value": {"str": "52 days, 5:31:30", "int": None, "float": None},
+                            "value": {"str": "4512690s", "int": None, "float": None},
                             "children": [],
                         }]}}, {
                     "metric": "release-prs",
@@ -158,7 +158,7 @@ class TestMetricsSmoke(BaseMetricsTest):
                         }]}}]}}
 
     @pytest.mark.parametrize("metric, value", [
-        ("pr-lead-time", {"str": "34 days, 17:03:36", "children": [{"str": "52 days, 5:31:30"}]}),
+        ("pr-lead-time", {"str": "2999016s", "children": [{"str": "4512690s"}]}),
         ("release-prs", {"int": 324, "children": [{"int": 248}]}),
         ("jira-resolved", {"int": 0, "children": [{"int": 0}]}),
     ])
