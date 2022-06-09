@@ -97,7 +97,7 @@ async def test_gen_user_invitation_new(client, headers, sdb, app):
     assert inv[Invitation.is_active.name]
     assert inv[Invitation.accepted.name] == 0
     assert inv[Invitation.account_id.name] == 1
-    assert inv[Invitation.created_by.name] == "auth0|5e1f6dfb57bc640ea390557b"
+    assert inv[Invitation.created_by.name] == "auth0|62a1ae88b6bba16c6dbc6870"
     try:
         assert inv[Invitation.created_at.name] > datetime.now(timezone.utc) - timedelta(minutes=1)
     except TypeError:
@@ -189,10 +189,10 @@ async def test_accept_invitation_smoke(client, headers, sdb, disable_default_use
     assert rbody == {
         "account": 3,
         "user": {
-            "id": "auth0|5e1f6dfb57bc640ea390557b",
+            "id": "auth0|62a1ae88b6bba16c6dbc6870",
             "name": "Vadim Markovtsev",
             "login": "vmarkovtsev",
-            "native_id": "5e1f6dfb57bc640ea390557b",
+            "native_id": "62a1ae88b6bba16c6dbc6870",
             "email": "vadim@athenian.co",
             "picture": "https://s.gravatar.com/avatar/d7fb46e4e35ecf7c22a1275dd5dbd303?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fva.png",  # noqa
             "accounts": {
@@ -240,12 +240,12 @@ async def test_accept_invitation_user_profile(
             method="PUT", path="/v1/invite/accept", headers=headers, json=body,
         )
         rbody = json.loads((await response.read()).decode("utf-8"))
-        app._auth0._default_user_id = "auth0|5e1f6dfb57bc640ea390557b"
+        app._auth0._default_user_id = "auth0|62a1ae88b6bba16c6dbc6870"
         app._auth0._default_user = None
         user = await app._auth0.default_user()
     finally:
         await app._auth0.update_user_profile(
-            "auth0|5e1f6dfb57bc640ea390557b", name="Vadim Markovtsev",
+            "auth0|62a1ae88b6bba16c6dbc6870", name="Vadim Markovtsev",
             email="vadim@athenian.co")
 
     assert response.status == 200, rbody
@@ -340,7 +340,7 @@ async def test_accept_invitation_banished(
         enabled=False,
     ).create_defaults().explode(with_primary_keys=True)))
     await sdb.execute(insert(BanishedUserAccount).values(BanishedUserAccount(
-        user_id="auth0|5e1f6dfb57bc640ea390557b",
+        user_id="auth0|62a1ae88b6bba16c6dbc6870",
         account_id=3,
     ).create_defaults().explode(with_primary_keys=True)))
     body = {
@@ -464,10 +464,10 @@ async def test_accept_invitation_admin_smoke(client, headers, sdb, disable_defau
     assert body == {
         "account": 4,
         "user": {
-            "id": "auth0|5e1f6dfb57bc640ea390557b",
+            "id": "auth0|62a1ae88b6bba16c6dbc6870",
             "name": "Vadim Markovtsev",
             "login": "vadim",
-            "native_id": "5e1f6dfb57bc640ea390557b",
+            "native_id": "62a1ae88b6bba16c6dbc6870",
             "email": "vadim@athenian.co",
             "picture": "https://s.gravatar.com/avatar/d7fb46e4e35ecf7c22a1275dd5dbd303?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fva.png", # noqa
             "accounts": {
@@ -608,7 +608,7 @@ async def test_check_invitation_malformed(client, headers):
 
 async def test_accept_invitation_god(client, headers, sdb, app):
     await sdb.execute(insert(God).values(God(
-        user_id="auth0|5e1f6dfb57bc640ea390557b",
+        user_id="auth0|62a1ae88b6bba16c6dbc6870",
         mapped_id="auth0|5e1f6e2e8bfa520ea5290741",
     ).create_defaults().explode(with_primary_keys=True)))
     iid = await sdb.execute(

@@ -1,14 +1,16 @@
 from datetime import datetime
 import json
+import random
 
 import pytest
 from sqlalchemy import insert, select
 
 from athenian.api.models.state.models import UserToken
 from athenian.api.models.web import CreatedToken, ListedToken
+from tests.controllers.test_user_controller import vadim_email
 
 
-@pytest.mark.flaky(reruns=5, reruns_delay=1)
+@pytest.mark.flaky(reruns=5, reruns_delay=random.uniform(0.5, 2.5))
 async def test_create_token_auth(client, headers, app):
     body = {
         "account": 1,
@@ -31,11 +33,11 @@ async def test_create_token_auth(client, headers, app):
     response = json.loads((await response.read()).decode("utf-8"))
     del response["updated"]
     assert response == {
-        "id": "auth0|5e1f6dfb57bc640ea390557b",
-        "email": "af253b50a4d7b2c9841f436fbe4c635f270f4388653649b0971f2751a441a556fe63a9dabfa150a444dd",  # "vadim@athenian.co",  # noqa
+        "id": "auth0|62a1ae88b6bba16c6dbc6870",
+        "email": vadim_email,
         "name": "Vadim Markovtsev",
         "login": "vadim",
-        "native_id": "5e1f6dfb57bc640ea390557b",
+        "native_id": "62a1ae88b6bba16c6dbc6870",
         "picture": "https://s.gravatar.com/avatar/d7fb46e4e35ecf7c22a1275dd5dbd303?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fva.png",  # noqa
         "accounts": {
             "1": {"is_admin": True,
@@ -115,7 +117,7 @@ async def test_delete_token_nasty_input(client, headers, sdb, token_id, code):
 
 async def test_patch_token_smoke(client, headers, sdb):
     await sdb.execute(insert(UserToken).values(UserToken(
-        account_id=1, user_id="auth0|5e1f6dfb57bc640ea390557b", name="xxx",
+        account_id=1, user_id="auth0|62a1ae88b6bba16c6dbc6870", name="xxx",
     ).create_defaults().explode()))
     body = {
         "name": "yyy",
@@ -136,10 +138,10 @@ async def test_patch_token_smoke(client, headers, sdb):
                                                   (10, "zzz", 404)])
 async def test_patch_token_nasty_input(client, headers, sdb, token_id, name, code):
     await sdb.execute(insert(UserToken).values(UserToken(
-        account_id=1, user_id="auth0|5e1f6dfb57bc640ea390557b", name="xxx1",
+        account_id=1, user_id="auth0|62a1ae88b6bba16c6dbc6870", name="xxx1",
     ).create_defaults().explode()))
     await sdb.execute(insert(UserToken).values(UserToken(
-        account_id=1, user_id="auth0|5e1f6dfb57bc640ea390557b", name="xxx2",
+        account_id=1, user_id="auth0|62a1ae88b6bba16c6dbc6870", name="xxx2",
     ).create_defaults().explode()))
     await sdb.execute(insert(UserToken).values(UserToken(
         account_id=3, user_id="auth0|5e1f6e2e8bfa520ea5290741", name="xxx3",
@@ -161,7 +163,7 @@ async def test_list_tokens_smoke(client, headers, sdb):
     body = json.loads((await response.read()).decode("utf-8"))
     assert body == []
     await sdb.execute(insert(UserToken).values(UserToken(
-        account_id=1, user_id="auth0|5e1f6dfb57bc640ea390557b", name="xxx1",
+        account_id=1, user_id="auth0|62a1ae88b6bba16c6dbc6870", name="xxx1",
     ).create_defaults().explode()))
     await sdb.execute(insert(UserToken).values(UserToken(
         account_id=1, user_id="auth0|5e1f6e2e8bfa520ea5290741", name="xxx2",

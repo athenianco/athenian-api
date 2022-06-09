@@ -17,7 +17,7 @@ from athenian.api.models.web import ReleaseNotificationStatus
 @pytest.fixture(scope="function")
 async def token(sdb):
     await sdb.execute(insert(UserToken).values(UserToken(
-        account_id=1, user_id="auth0|5e1f6dfb57bc640ea390557b", name="xxx",
+        account_id=1, user_id="auth0|62a1ae88b6bba16c6dbc6870", name="xxx",
     ).create_defaults().explode()))
     return "AQAAAAAAAAA="  # unencrypted
 
@@ -191,7 +191,7 @@ async def test_notify_release_422(client, headers, sdb, disable_default_user):
         "repository": "github.com/src-d/go-git",
     }]
     await sdb.execute(insert(UserToken).values(UserToken(
-        account_id=2, user_id="auth0|5e1f6dfb57bc640ea390557b", name="xxx",
+        account_id=2, user_id="auth0|62a1ae88b6bba16c6dbc6870", name="xxx",
     ).create_defaults().explode()))
     headers = headers.copy()
     headers["X-API-Key"] = "AQAAAAAAAAA="  # unencrypted
@@ -207,7 +207,7 @@ async def test_notify_release_default_user(client, headers, sdb):
         "repository": "github.com/src-d/go-git",
     }]
     await sdb.execute(insert(UserToken).values(UserToken(
-        account_id=2, user_id="auth0|5e1f6dfb57bc640ea390557b", name="xxx",
+        account_id=2, user_id="auth0|62a1ae88b6bba16c6dbc6870", name="xxx",
     ).create_defaults().explode()))
     headers = headers.copy()
     headers["X-API-Key"] = "AQAAAAAAAAA="  # unencrypted

@@ -1,4 +1,5 @@
 import json
+import random
 
 import pytest
 from sqlalchemy import insert
@@ -7,6 +8,7 @@ from athenian.api.controllers.share_controller import _encode_share_id
 from athenian.api.models.state.models import Share
 
 
+@pytest.mark.flaky(reruns=5, reruns_delay=random.uniform(0.5, 2.5))
 async def test_share_cycle_smoke(client, headers, disable_default_user):
     secret = {"key": 777}
     response = await client.request(
