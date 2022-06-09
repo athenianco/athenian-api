@@ -5,8 +5,8 @@ from numpy.testing import assert_array_equal
 import pandas as pd
 import pytest
 
-from athenian.api.internal.features.entries import \
-    make_calculator, MetricEntriesCalculator as OriginalMetricEntriesCalculator
+from athenian.api.internal.features.entries import make_calculator, \
+    MetricEntriesCalculator as OriginalMetricEntriesCalculator
 from athenian.api.internal.features.metric_calculator import group_by_repo
 
 
@@ -23,7 +23,7 @@ def base_testing_module(current_module):
 class MetricEntriesCalculator:
     """Fake calculator for different metrics."""
 
-    def __init__(self, *args) -> "MetricEntriesCalculator":
+    def __init__(self, *args):
         """Create a `MetricEntriesCalculator`."""
         pass
 
@@ -32,7 +32,7 @@ class MetricEntriesCalculator:
         return account == 1
 
 
-def test_get_calculator(base_testing_module, mdb, pdb, rdb, cache):
+async def test_get_calculator(base_testing_module, mdb, pdb, rdb, cache):
     calc = make_calculator(
         1, (1, ), mdb, pdb, rdb, cache,
     )
