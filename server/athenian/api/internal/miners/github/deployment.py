@@ -1843,14 +1843,14 @@ def _postprocess_fetch_deployment_candidates(result: Tuple[pd.DataFrame,
                                                         Collection[str],
                                                         Collection[DeploymentConclusion]]:
     df, cached_envs, cached_concls = result
-    if not cached_envs or (environments and set(cached_envs) - set(environments)):
+    if not cached_envs or (environments and set(environments).issubset(cached_envs)):
         if environments:
             df = df.take(np.flatnonzero(np.in1d(
                 df[DeploymentNotification.environment.name].values.astype("U"),
                 np.array(list(environments), dtype="U"))))
     else:
         raise CancelCache()
-    if not cached_concls or (conclusions and set(cached_concls) - set(conclusions)):
+    if not cached_concls or (conclusions and set(conclusions).issubset(cached_concls)):
         if conclusions:
             df = df.take(np.flatnonzero(np.in1d(
                 df[DeploymentNotification.conclusion.name].values.astype("S"),
