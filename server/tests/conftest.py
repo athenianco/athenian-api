@@ -790,7 +790,7 @@ def release_match_setting_tag_or_branch():
             "github.com/src-d/go-git": ReleaseMatchSetting(
                 branches="master", tags=".*", events=".*", match=ReleaseMatch.tag_or_branch,
             ),
-        }
+        },
     )
 
 
@@ -801,7 +801,7 @@ def release_match_setting_tag():
             "github.com/src-d/go-git": ReleaseMatchSetting(
                 branches="", tags=".*", events=".*", match=ReleaseMatch.tag,
             ),
-        }
+        },
     )
 
 
@@ -812,7 +812,7 @@ def release_match_setting_branch():
             "github.com/src-d/go-git": ReleaseMatchSetting(
                 branches=default_branch_alias, tags=".*", events=".*", match=ReleaseMatch.branch,
             ),
-        }
+        },
     )
 
 
@@ -823,7 +823,7 @@ def release_match_setting_event():
             "github.com/src-d/go-git": ReleaseMatchSetting(
                 branches="", tags=".*", events=".*", match=ReleaseMatch.event,
             ),
-        }
+        },
     )
 
 
@@ -838,7 +838,7 @@ def release_match_setting_tag_logical(release_match_setting_tag):
             "github.com/src-d/go-git/beta": ReleaseMatchSetting(
                 branches="", tags=r"v4\..*", events=".*", match=ReleaseMatch.tag,
             ),
-        }
+        },
     )
 
 
