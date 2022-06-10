@@ -112,17 +112,23 @@ def _generate_tags() -> str:
     return " /*" + ",".join(sorted(values)) + "*/"
 
 
+def _strip_rocket(query: str) -> str:
+    if query.startswith("--🚀"):
+        return query[query.find("🚀", 4) + 1:]
+    return query
+
+
 async def _asyncpg_execute(self,
                            query: str,
                            args,
                            limit,
                            timeout,
                            **kwargs):
-    description = query = query.strip()
-    if query.startswith("/*"):
-        log_sql_probe = query[query.find("*/", 2, 1024) + 3:]
+    description = log_query = _strip_rocket(query)
+    if log_query.startswith("/*"):
+        log_sql_probe = log_query[log_query.find("*/", 2, 1024) + 3:]
     else:
-        log_sql_probe = query
+        log_sql_probe = log_query
     if _log_sql_re.match(log_sql_probe) and not athenian.api.is_testing:
         from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
         if len(description) < MAX_SENTRY_STRING_LENGTH and args:
@@ -147,10 +153,7 @@ async def _asyncpg_execute(self,
 async def _asyncpg_executemany(self, query, args, timeout, **kwargs):
     if timeout is None:
         timeout = float(10 * 60)  # twice as much the default
-    if query.startswith("--🚀"):
-        log_query = query[query.find("🚀", 4) + 1:]
-    else:
-        log_query = query
+    log_query = _strip_rocket(query)
     with sentry_sdk.start_span(op="sql", description=f"<= {len(args)}\n{log_query}"):
         return await self._executemany_original(query, args, timeout, **kwargs)
 
