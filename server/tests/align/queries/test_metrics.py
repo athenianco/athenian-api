@@ -2,6 +2,7 @@ from datetime import date
 from typing import Any, Dict, List
 
 from aiohttp.test_utils import TestClient
+from freezegun import freeze_time
 from morcilla import Database
 import pytest
 from sqlalchemy import insert
@@ -9,7 +10,8 @@ from sqlalchemy import insert
 from athenian.api.async_utils import gather
 from athenian.api.models.state.models import MappedJIRAIdentity
 from athenian.api.models.web import JIRAMetricID, PullRequestMetricID, ReleaseMetricID
-from tests.align.utils import align_graphql_request, build_recursive_fields_structure
+from tests.align.utils import align_graphql_request, assert_extension_error, \
+    build_recursive_fields_structure
 from tests.conftest import DEFAULT_HEADERS
 from tests.testutils.db import models_insert
 from tests.testutils.factory.state import TeamFactory
@@ -306,11 +308,26 @@ class TestMetricsNasty(BaseMetricsTest):
                 },
             }]}
 
-    async def test_fetch_bad_dates_future(self, client: TestClient, sample_teams) -> None:
+    async def test_dates_far_future(self, client: TestClient, sample_teams) -> None:
         res = await self._request(
             client, 1, 1, [JIRAMetricID.JIRA_RESOLVED],
             date(2019, 1, 1),
             date(2129, 1, 1),
         )
         assert res["errors"]
+        assert res.get("data") is None
+
+    @freeze_time("2022-03-31")
+    async def test_valid_from_in_the_future(self, client: TestClient, sdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(id=1, members=[39789]))
+
+        res = await self._request(
+            client,
+            1,
+            1,
+            [PullRequestMetricID.PR_RELEASE_COUNT],
+            date(2022, 4, 1),
+            date(2022, 4, 10),
+        )
+        assert_extension_error(res, "validFrom cannot be in the future")
         assert res.get("data") is None
