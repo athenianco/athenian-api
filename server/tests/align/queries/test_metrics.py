@@ -103,7 +103,7 @@ async def sample_teams(sdb: Database) -> None:
     )
 
 
-class TestMetricsSmoke(BaseMetricsTest):
+class TestMetrics(BaseMetricsTest):
     async def test_fetch_all_kinds(self, client: TestClient, sample_teams) -> None:
         res = await self._request(
             client, 1, 1, [
@@ -210,6 +210,27 @@ class TestMetricsSmoke(BaseMetricsTest):
                         ]},
                 }],
             }}
+
+    async def test_missing_values_for_subteam(self, client: TestClient, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=1, members=[39789, 40070]),
+            TeamFactory(id=2, parent_id=1, members=[39926]),
+        )
+        res = await self._request(
+            client, 1, 1, [PullRequestMetricID.PR_REVIEW_TIME],
+            date(2005, 1, 1),
+            date(2005, 3, 31),
+        )
+        pr_review_time_data = res["data"]["metricsCurrentValues"][0]
+        assert pr_review_time_data["metric"] == PullRequestMetricID.PR_REVIEW_TIME
+        team_1_data = pr_review_time_data["value"]
+        assert team_1_data["team"]["id"] == 1
+        assert team_1_data["value"] == {"float": None, "int": None, "str": None}
+
+        assert len(team_1_data["children"]) == 1
+        assert (team_2_data := team_1_data["children"][0])["team"]["id"] == 2
+        assert team_2_data["value"] == {"float": None, "int": None, "str": None}
 
 
 class TestMetricsNasty(BaseMetricsTest):
