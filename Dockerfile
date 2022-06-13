@@ -1,11 +1,11 @@
-FROM ubuntu:20.04
+FROM ubuntu:22.04
 
 ENV BROWSER=/browser \
     LC_ALL=en_US.UTF-8 \
     SETUPTOOLS_USE_DISTUTILS=stdlib \
     DEBIAN_FRONTEND=noninteractive \
     TZ=Europe/Madrid \
-    PYTHON_TARGET_VERSION="3.8.5 1~20.04.3"
+    PYTHON_TARGET_VERSION="3.10.4 1~22.04.0"
 
 RUN echo '#!/bin/bash\n\
 \n\
@@ -18,7 +18,8 @@ echo\n' > /browser && \
 ENV OPT="-fno-semantic-interposition -march=haswell -mabm -maes -mno-pku -mno-sgx --param l1-cache-line-size=64 --param l1-cache-size=32 --param l2-cache-size=33792"
 
 # runtime environment
-RUN echo 'deb-src http://archive.ubuntu.com/ubuntu focal-updates main' >>/etc/apt/sources.list && \
+RUN echo 'deb-src http://archive.ubuntu.com/ubuntu/ jammy main restricted' >>/etc/apt/sources.list && \
+    echo 'deb-src http://archive.ubuntu.com/ubuntu/ jammy-updates main restricted' >>/etc/apt/sources.list && \
     apt-get update && \
     apt-get upgrade -y && \
     apt-get install --no-install-suggests --no-install-recommends -y \
@@ -27,23 +28,23 @@ RUN echo 'deb-src http://archive.ubuntu.com/ubuntu focal-updates main' >>/etc/ap
     locale-gen && \
     mkdir /cpython && \
     cd /cpython && \
-    apt-get source python3.8 && \
-    apt-get -s build-dep python3.8 | grep "Inst " | cut -d" " -f2 | sort | tr '\n' ' ' >build_bloat && \
-    DEBIAN_FRONTEND="noninteractive" TZ="Europe/Madrid" apt-get build-dep -y python3.8 && \
+    apt-get source python3.10 && \
+    apt-get -s build-dep python3.10 | grep "Inst " | cut -d" " -f2 | sort | tr '\n' ' ' >build_bloat && \
+    DEBIAN_FRONTEND="noninteractive" TZ="Europe/Madrid" apt-get build-dep -y python3.10 && \
     wget -O - https://bootstrap.pypa.io/get-pip.py | python3 && \
-    cd python3.8* && \
+    cd python3.10* && \
     sed -i 's/__main__/__skip__/g' Tools/scripts/run_tests.py && \
     dch --bin-nmu -Dunstable "Optimized build" && \
     DEB_CFLAGS_SET="$OPT" DEB_LDFLAGS_SET="$OPT" dpkg-buildpackage -uc -b -j2 && \
     cd .. && \
     apt-get remove -y $(cat build_bloat) && \
-    rm -f libpython3.8-testsuite* python3.8-examples* python3.8-doc* idle-python3.8* python3.8-venv* python3.8-full* && \
+    rm -f libpython3.10-testsuite* python3.10-examples* python3.10-doc* idle-python3.10* python3.10-venv* python3.10-full* && \
     apt-get remove -y dpkg-dev devscripts && \
     apt-get autoremove -y && \
     dpkg -i *.deb && \
     cd / && \
     rm -rf /cpython && \
-    apt-mark hold python3.8 python3.8-minimal libpython3.8 libpython3.8-minimal && \
+    apt-mark hold python3.10 python3.10-minimal libpython3.10 libpython3.10-minimal && \
     pip3 install --no-cache-dir cython>=0.29.30 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
