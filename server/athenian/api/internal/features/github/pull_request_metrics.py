@@ -20,7 +20,6 @@ from athenian.api.internal.miners.types import DeploymentConclusion, PRParticipa
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings
 from athenian.api.models.web import PullRequestMetricID
 
-
 metric_calculators: Dict[str, Type[MetricCalculator]] = {}
 histogram_calculators: Dict[str, Type[HistogramCalculator]] = {}
 register_metric = make_register_metric(metric_calculators, histogram_calculators)
@@ -66,17 +65,25 @@ def group_prs_by_lines(lines: Sequence[int], items: pd.DataFrame) -> List[np.nda
     return group_by_lines(lines, items["size"].values)
 
 
-def group_prs_by_participants(participants: List[PRParticipants],
+def group_prs_by_participants(participants: Sequence[PRParticipants],
                               items: pd.DataFrame,
                               ) -> List[np.ndarray]:
     """
     Group PRs by participants.
 
     The aggregation is OR. We don't support all kinds, see `PullRequestFacts`'s mutable fields.
+    An array with selected indexes in `items` if returned for every group in `participants`.
+    If `participants` is empty a single array selecting everything is returned.
     """
+    # FIXME: participants here can also be List[Dict[PRParticipationKind, Set[str]]]
+
     # if len(participants) == 1, we've already filtered in SQL so don't have to re-check
-    if len(participants) < 2 or items.empty:
+    # if there are no participant groups also we select everything and don't re-check
+    if len(participants) < 2:
         return [np.arange(len(items))]
+    # if items is empty we return the right number of indexes to allow subsequent correct grouping
+    if items.empty:
+        return [np.arange(len(items))] * len(participants)
     groups = []
     log = logging.getLogger("%s.group_prs_by_participants" % metadata.__package__)
     for participants_group in participants:
