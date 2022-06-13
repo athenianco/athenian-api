@@ -13,6 +13,7 @@ class TestGraphiQL:
 
         assert "<html>" in html
         assert "graphiql.min.js" in html
+        assert "/align/graphql" in html
 
 
 class TestAriadnDisableDefaultUser:
