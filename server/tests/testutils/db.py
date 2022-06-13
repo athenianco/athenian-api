@@ -1,6 +1,5 @@
 """Db related test utilities."""
 
-from datetime import datetime, timezone
 from functools import reduce
 from typing import Any, Union, cast
 
@@ -48,16 +47,6 @@ async def assert_existing_row(
     row = await db.fetch_one(stmt)
     assert row is not None
     return row
-
-
-def db_datetime_equals(db: Database, db_dt: datetime, dt: datetime) -> bool:
-    """Compare a datetime coming from db against another timezone aware datetime."""
-    assert dt.tzinfo is not None
-    if db.url.dialect == "sqlite":
-        db_dt_with_tz = db_dt.replace(tzinfo=timezone.utc)
-    else:
-        db_dt_with_tz = db_dt
-    return db_dt_with_tz == dt
 
 
 def _build_table_where_clause(table: DeclarativeMeta, **kwargs: Any) -> ClauseElement:

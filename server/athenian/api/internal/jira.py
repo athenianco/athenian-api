@@ -1,4 +1,3 @@
-from datetime import timezone
 from itertools import chain
 import logging
 import marshal
@@ -17,7 +16,7 @@ from unidecode import unidecode
 from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.cache import CancelCache, cached, max_exptime
-from athenian.api.db import DatabaseLike
+from athenian.api.db import DatabaseLike, ensure_db_datetime_tz
 from athenian.api.internal.miners.github.contributors import load_organization_members
 from athenian.api.models.metadata.jira import IssueType, Progress, Project, User as JIRAUser
 from athenian.api.models.state.models import (
@@ -193,10 +192,10 @@ async def fetch_jira_installation_progress(
         finished_at = None
     else:
         finished_at = max(r[Progress.end_at.name] for r in rows)
-    if mdb.url.dialect == "sqlite":
-        started_at = started_at.replace(tzinfo=timezone.utc)
-        if finished_at is not None:
-            finished_at = finished_at.replace(tzinfo=timezone.utc)
+
+    started_at = ensure_db_datetime_tz(started_at, mdb)
+    if finished_at is not None:
+        finished_at = ensure_db_datetime_tz(finished_at, mdb)
     model = InstallationProgress(
         started_date=started_at,
         finished_date=finished_at,

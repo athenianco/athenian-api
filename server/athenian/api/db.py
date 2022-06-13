@@ -1,5 +1,6 @@
 import asyncio
 from contextvars import ContextVar
+from datetime import datetime, timezone
 import logging
 import pickle
 import re
@@ -446,3 +447,10 @@ async def is_postgresql(db: DatabaseLike) -> bool:
     else:
         async with db.raw_connection() as raw_connection:
             return isinstance(raw_connection, asyncpg.Connection)
+
+
+def ensure_db_datetime_tz(dt: datetime, db: Database) -> datetime:
+    """Add tzinfo to datetime, if the db origin of the value doesn't handle timezones."""
+    if db.url.dialect == "sqlite":
+        return dt.replace(tzinfo=timezone.utc)
+    return dt

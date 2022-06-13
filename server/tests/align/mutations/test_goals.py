@@ -6,7 +6,7 @@ from freezegun import freeze_time
 import pytest
 import sqlalchemy as sa
 
-from athenian.api.db import Database
+from athenian.api.db import Database, ensure_db_datetime_tz
 from athenian.api.models.state.models import Goal, Team, TeamGoal
 from tests.align.utils import (
     align_graphql_request,
@@ -18,7 +18,6 @@ from tests.testutils.auth import mock_auth0
 from tests.testutils.db import (
     assert_existing_row,
     assert_missing_row,
-    db_datetime_equals,
     model_insert_stmt,
     models_insert,
 )
@@ -220,21 +219,18 @@ class TestCreateGoals(BaseCreateGoalTest):
 
         goal_row = await sdb.fetch_one(sa.select(Goal).where(Goal.id == new_goal_id))
         assert goal_row is not None
-        assert goal_row["account_id"] == 1
-        assert goal_row["template_id"] == 1
-        assert db_datetime_equals(
-            sdb,
-            goal_row["valid_from"],
-            datetime(2022, 1, 1, tzinfo=timezone.utc),
-        )
-        # expires_at is moved to the day after the one received in api
-        assert db_datetime_equals(
-            sdb,
-            goal_row["expires_at"],
-            datetime(2023, 1, 1, tzinfo=timezone.utc),
+        assert goal_row[Goal.account_id.name] == 1
+        assert goal_row[Goal.template_id.name] == 1
+        assert ensure_db_datetime_tz(goal_row[Goal.valid_from.name], sdb) == datetime(
+            2022, 1, 1, tzinfo=timezone.utc,
         )
 
-        team_goals = await sdb.fetch_all(sa.select([TeamGoal]).where(TeamGoal.goal_id == 1))
+        # expires_at is moved to the day after the one received in api
+        assert ensure_db_datetime_tz(goal_row[Goal.expires_at.name], sdb) == datetime(
+            2023, 1, 1, tzinfo=timezone.utc,
+        )
+
+        team_goals = await sdb.fetch_all(sa.select(TeamGoal).where(TeamGoal.goal_id == 1))
         assert len(team_goals) == 1
 
         assert team_goals[0]["team_id"] == 10
@@ -288,11 +284,9 @@ class TestCreateGoals(BaseCreateGoalTest):
         assert "errors" not in res
         new_goal_id = res["data"]["createGoal"]["goal"]["id"]
 
-        goal_row = await sdb.fetch_one(sa.select([Goal]).where(Goal.id == new_goal_id))
-        assert db_datetime_equals(
-            sdb,
-            goal_row["valid_from"],
-            datetime(2022, 5, 4, tzinfo=timezone.utc),
+        goal_row = await sdb.fetch_one(sa.select(Goal).where(Goal.id == new_goal_id))
+        assert ensure_db_datetime_tz(goal_row[Goal.valid_from.name], sdb) == datetime(
+            2022, 5, 4, tzinfo=timezone.utc,
         )
 
 
@@ -562,9 +556,9 @@ class TestUpdateGoal(BaseUpdateGoalTest):
         team_goal_20_row = await assert_existing_row(sdb, TeamGoal, team_id=20, goal_id=100)
         assert team_goal_20_row["target"] == 8888
         expected_created_at = datetime(1, 1, 2, tzinfo=timezone.utc)
-        assert db_datetime_equals(sdb, team_goal_20_row["created_at"], expected_created_at)
+        assert ensure_db_datetime_tz(team_goal_20_row["created_at"], sdb) == expected_created_at
         expected_updated_at = datetime(2022, 4, 1, 9, 30, tzinfo=timezone.utc)
-        assert db_datetime_equals(sdb, team_goal_20_row["updated_at"], expected_updated_at)
+        assert ensure_db_datetime_tz(team_goal_20_row["updated_at"], sdb) == expected_updated_at
 
         team_goal_30_row = await assert_existing_row(sdb, TeamGoal, team_id=30, goal_id=100)
         assert team_goal_30_row["target"] == 7777
