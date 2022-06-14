@@ -58,6 +58,7 @@ if sys.version_info < (3, 10):
             return typeobj
 
     VerbatimOptional = _VerbatimOptional()
+    VerbatimUnionTypes = (Union,)
 else:
 
     class _VerbatimUnion(OriginalSpecialForm, _root=True):
@@ -75,6 +76,8 @@ else:
         """Alternative Optional that prevents coercing (), [], and {} attributes to null during \
         serialization."""
         return VerbatimUnion[Optional[parameters].__args__]
+
+    VerbatimUnionTypes = (VerbatimUnion, Union)
 
 
 def is_generic(klass: type):
@@ -94,7 +97,7 @@ def is_list(klass: type):
 
 def is_union(klass: type):
     """Determine whether klass is a Union."""
-    return getattr(klass, "__origin__", None) in (Union, VerbatimUnion)
+    return getattr(klass, "__origin__", None) in VerbatimUnionTypes
 
 
 def is_optional(klass: type):
