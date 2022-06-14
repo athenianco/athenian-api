@@ -5,7 +5,6 @@ from typing import List, Optional, Type, TypeVar
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.jira_filter import JIRAFilter
 
-
 ForSetLike = TypeVar("ForSetLike", bound=Model)
 
 
@@ -36,7 +35,8 @@ class RepositoryGroupsMixin:
                     if v >= len(repositories):
                         raise ValueError(
                             "`repogroups[%d][%d]` = %s must be less than the number of "
-                            "repositories (%d)" % (i, j, v, len(repositories)))
+                            "repositories (%d)" % (i, j, v, len(repositories))
+                        )
 
         self._repositories = repositories
 
@@ -63,11 +63,13 @@ class RepositoryGroupsMixin:
                 for j, v in enumerate(group):
                     if v < 0:
                         raise ValueError(
-                            "`repogroups[%d][%d]` = %s must not be negative" % (i, j, v))
+                            "`repogroups[%d][%d]` = %s must not be negative" % (i, j, v)
+                        )
                     if self._repositories is not None and v >= len(self._repositories):
                         raise ValueError(
                             "`repogroups[%d][%d]` = %s must be less than the number of "
-                            "repositories (%d)" % (i, j, v, len(self._repositories)))
+                            "repositories (%d)" % (i, j, v, len(self._repositories))
+                        )
                 if len(set(group)) < len(group):
                     raise ValueError("`repogroups[%d]` has duplicate items" % i)
 
@@ -164,14 +166,22 @@ def make_common_pull_request_filters(prefix_labels: str) -> Type[Model]:
     :param jira: The jira of this CommonPullRequestFilters.
     """
 
-    setattr(CommonPullRequestFilters, prefix_labels + "labels_include", property(
-        CommonPullRequestFilters._get_labels_include,
-        CommonPullRequestFilters._set_labels_include,
-    ))
-    setattr(CommonPullRequestFilters, prefix_labels + "labels_exclude", property(
-        CommonPullRequestFilters._get_labels_exclude,
-        CommonPullRequestFilters._set_labels_exclude,
-    ))
+    setattr(
+        CommonPullRequestFilters,
+        prefix_labels + "labels_include",
+        property(
+            CommonPullRequestFilters._get_labels_include,
+            CommonPullRequestFilters._set_labels_include,
+        ),
+    )
+    setattr(
+        CommonPullRequestFilters,
+        prefix_labels + "labels_exclude",
+        property(
+            CommonPullRequestFilters._get_labels_exclude,
+            CommonPullRequestFilters._set_labels_exclude,
+        ),
+    )
 
     return CommonPullRequestFilters
 

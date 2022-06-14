@@ -10,11 +10,19 @@ from sqlalchemy import and_, delete, insert, select, update
 
 from athenian.api.internal.account import get_user_account_status_from_request
 from athenian.api.models.state.models import UserToken
-from athenian.api.models.web import BadRequestError, CreatedToken, CreateTokenRequest, \
-    DatabaseConflict, ForbiddenError, ListedToken, NotFoundError, PatchTokenRequest, \
-    ServerNotImplementedError
+from athenian.api.models.web import (
+    BadRequestError,
+    CreatedToken,
+    CreateTokenRequest,
+    DatabaseConflict,
+    ForbiddenError,
+    ListedToken,
+    NotFoundError,
+    PatchTokenRequest,
+    ServerNotImplementedError,
+)
 from athenian.api.request import AthenianWebRequest
-from athenian.api.response import model_response, ResponseError
+from athenian.api.response import ResponseError, model_response
 
 
 def info_from_bearerAuth(token: str, required_scopes) -> Optional[Dict[str, Any]]:
@@ -52,12 +60,18 @@ async def create_token(request: AthenianWebRequest, body: dict) -> web.Response:
     _check_token_name(model.name)
     async with request.sdb.connection() as conn:
         try:
-            token = await conn.execute(insert(UserToken).values(UserToken(
-                name=model.name, account_id=model.account, user_id=request.uid,
-            ).create_defaults().explode()))
+            token = await conn.execute(
+                insert(UserToken).values(
+                    UserToken(name=model.name, account_id=model.account, user_id=request.uid)
+                    .create_defaults()
+                    .explode()
+                )
+            )
         except (UniqueViolationError, IntegrityError, OperationalError) as e:
-            raise ResponseError(DatabaseConflict(
-                detail="Token '%s' already exists: %s: %s" % (model.name, type(e).__name__, e)),
+            raise ResponseError(
+                DatabaseConflict(
+                    detail="Token '%s' already exists: %s: %s" % (model.name, type(e).__name__, e)
+                ),
             ) from None
     plaintext = struct.pack("<q", token)
     cyphertext = await kms.encrypt(plaintext)
@@ -79,13 +93,21 @@ async def patch_token(request: AthenianWebRequest, id: int, body: dict) -> web.R
     async with request.sdb.connection() as conn:
         await _check_token_access(request, id, conn)
         try:
-            await conn.execute(update(UserToken).where(UserToken.id == id).values({
-                UserToken.name: model.name,
-                UserToken.updated_at: datetime.now(timezone.utc),
-            }))
+            await conn.execute(
+                update(UserToken)
+                .where(UserToken.id == id)
+                .values(
+                    {
+                        UserToken.name: model.name,
+                        UserToken.updated_at: datetime.now(timezone.utc),
+                    }
+                )
+            )
         except (UniqueViolationError, IntegrityError, OperationalError) as e:
-            raise ResponseError(DatabaseConflict(
-                detail="Token '%s' already exists: %s: %s" % (model.name, type(e).__name__, e)),
+            raise ResponseError(
+                DatabaseConflict(
+                    detail="Token '%s' already exists: %s: %s" % (model.name, type(e).__name__, e)
+                ),
             ) from None
     return web.json_response({})
 
@@ -96,23 +118,26 @@ async def list_tokens(request: AthenianWebRequest, id: int) -> web.Response:
     async with request.sdb.connection() as conn:
         await get_user_account_status_from_request(request, id)
         rows = await conn.fetch_all(
-            select([UserToken.id, UserToken.name, UserToken.last_used_at])
-            .where(and_(UserToken.user_id == request.uid,
-                        UserToken.account_id == id)))
+            select([UserToken.id, UserToken.name, UserToken.last_used_at]).where(
+                and_(UserToken.user_id == request.uid, UserToken.account_id == id)
+            )
+        )
         model = []
         for row in rows:
             last_used = row[UserToken.last_used_at.name]
             if sqlite:
                 last_used = last_used.replace(tzinfo=timezone.utc)
-            model.append(ListedToken(id=row[UserToken.id.name],
-                                     name=row[UserToken.name.name],
-                                     last_used=last_used))
+            model.append(
+                ListedToken(
+                    id=row[UserToken.id.name], name=row[UserToken.name.name], last_used=last_used
+                )
+            )
     return model_response(model)
 
 
-async def _check_token_access(request: AthenianWebRequest,
-                              id: int,
-                              conn: morcilla.core.Connection) -> None:
+async def _check_token_access(
+    request: AthenianWebRequest, id: int, conn: morcilla.core.Connection
+) -> None:
     token = await conn.fetch_one(select([UserToken]).where(UserToken.id == id))
     if token is None:
         raise ResponseError(NotFoundError(detail="Token %d was not found" % id))

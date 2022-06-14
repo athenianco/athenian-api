@@ -5,7 +5,6 @@ import typing
 
 from athenian.api import serialization, typing_utils
 
-
 T = typing.TypeVar("T")
 
 
@@ -25,8 +24,9 @@ class Slots(ABCMeta):
                 else:
                     break
         if sealed:
-            dikt["__slots__"] = \
-                tuple("_" + k for k in attribute_types) + dikt.get("__extra_slots__", ())
+            dikt["__slots__"] = tuple("_" + k for k in attribute_types) + dikt.get(
+                "__extra_slots__", ()
+            )
         else:
             dikt["__slots__"] = ()  # this is required for the magic to work
         return type.__new__(mcs, name, bases, dikt)
@@ -76,8 +76,9 @@ class Model(metaclass=Slots):
             value = getattr(self, attr_key)
             try:
                 if typing_utils.is_optional(type_ := self.attribute_types[attr_key]) and (
-                        value is None or (not getattr(type_.__origin__, "__verbatim__", False) and
-                                          len(value) == 0)):
+                    value is None
+                    or (not getattr(type_.__origin__, "__verbatim__", False) and len(value) == 0)
+                ):
                     continue
             except TypeError:
                 pass
@@ -96,8 +97,10 @@ class Model(metaclass=Slots):
 
     def __repr__(self):
         """For debugging."""
-        return "%s(%s)" % (type(self).__name__, ", ".join(
-            "%s=%r" % (k, getattr(self, k)) for k in self.attribute_types))
+        return "%s(%s)" % (
+            type(self).__name__,
+            ", ".join("%s=%r" % (k, getattr(self, k)) for k in self.attribute_types),
+        )
 
     def __sentry_repr__(self) -> str:
         """Override {}.__repr__() in Sentry."""
@@ -146,11 +149,12 @@ class Enum(Slots):
         return len(cls.__members)
 
 
-def AllOf(*mixed: typing.Type[Model],
-          name: str,
-          module: str,
-          sealed: bool = True,
-          ) -> typing.Type[Model]:
+def AllOf(
+    *mixed: typing.Type[Model],
+    name: str,
+    module: str,
+    sealed: bool = True,
+) -> typing.Type[Model]:
     """
     Inherit from multiple Model classes.
 
@@ -162,8 +166,7 @@ def AllOf(*mixed: typing.Type[Model],
         try:
             cls.__dict__
         except AttributeError:
-            raise TypeError(
-                "%s must have __dict__ (set sealed=False)" % cls.__name__) from None
+            raise TypeError("%s must have __dict__ (set sealed=False)" % cls.__name__) from None
 
     def __init__(self, **kwargs):
         consumed = set()
@@ -171,15 +174,23 @@ def AllOf(*mixed: typing.Type[Model],
             cls.__init__(self, **{k: kwargs.get(k, None) for k in cls.attribute_types})
             consumed.update(cls.attribute_types)
         if extra := kwargs.keys() - consumed:
-            raise TypeError("%s does not support these keyword arguments: %s",
-                            type(self).__name__, extra)
+            raise TypeError(
+                "%s does not support these keyword arguments: %s", type(self).__name__, extra
+            )
 
-    allOf = Slots(name, mixed, {
-        "attribute_types": dict(chain.from_iterable(cls.attribute_types.items() for cls in mixed)),
-        "attribute_map": dict(chain.from_iterable(cls.attribute_map.items() for cls in mixed)),
-        "__init__": __init__,
-        "__module__": module,
-    }, sealed=sealed)
+    allOf = Slots(
+        name,
+        mixed,
+        {
+            "attribute_types": dict(
+                chain.from_iterable(cls.attribute_types.items() for cls in mixed)
+            ),
+            "attribute_map": dict(chain.from_iterable(cls.attribute_map.items() for cls in mixed)),
+            "__init__": __init__,
+            "__module__": module,
+        },
+        sealed=sealed,
+    )
     if len(allOf.attribute_types) < sum(len(cls.attribute_types) for cls in mixed):
         raise TypeError("There are conflicting attribute_types in AllOf classes")
     return allOf

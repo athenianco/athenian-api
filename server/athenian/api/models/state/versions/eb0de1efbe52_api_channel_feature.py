@@ -17,12 +17,16 @@ depends_on = None
 
 def upgrade():
     if op.get_bind().dialect == "sqlite":
-        op.execute("insert or ignore into features(name, component, enabled, default_parameters) "
-                   "values ('api_channel', 'webapp', true, '\"stable\"');")
+        op.execute(
+            "insert or ignore into features(name, component, enabled, default_parameters) "
+            "values ('api_channel', 'webapp', true, '\"stable\"');"
+        )
     else:
-        op.execute("insert into features(name, component, enabled, default_parameters) "
-                   "values ('api_channel', 'webapp', true, '\"stable\"') "
-                   "on conflict do nothing;")
+        op.execute(
+            "insert into features(name, component, enabled, default_parameters) "
+            "values ('api_channel', 'webapp', true, '\"stable\"') "
+            "on conflict do nothing;"
+        )
 
 
 def downgrade():

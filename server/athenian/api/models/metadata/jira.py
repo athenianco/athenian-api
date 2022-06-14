@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, Boolean, Column, Integer, JSON, SmallInteger, Text, TIMESTAMP
+from sqlalchemy import JSON, TIMESTAMP, BigInteger, Boolean, Column, Integer, SmallInteger, Text
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.ext.declarative import declarative_base
 
@@ -34,8 +34,9 @@ class Issue(Base):
     type_id = Column(Text, nullable=False)
     status = Column(Text)
     status_id = Column(Text)
-    labels = Column(postgresql.ARRAY(Text).with_variant(JSON(), sqlite.dialect.name),
-                    nullable=False)
+    labels = Column(
+        postgresql.ARRAY(Text).with_variant(JSON(), sqlite.dialect.name), nullable=False
+    )
     components = Column(postgresql.ARRAY(Text).with_variant(JSON(), sqlite.dialect.name))
     epic_id = Column(Text)
     created = Column(TIMESTAMP(timezone=True), nullable=False)
@@ -45,10 +46,10 @@ class Issue(Base):
     reporter_display_name = Column(Text, nullable=False)
     assignee_id = Column(Text)
     assignee_display_name = Column(Text)
-    commenters_ids = Column(
-        postgresql.ARRAY(BigInteger).with_variant(JSON(), sqlite.dialect.name))
+    commenters_ids = Column(postgresql.ARRAY(BigInteger).with_variant(JSON(), sqlite.dialect.name))
     commenters_display_names = Column(
-        postgresql.ARRAY(Text).with_variant(JSON(), sqlite.dialect.name))
+        postgresql.ARRAY(Text).with_variant(JSON(), sqlite.dialect.name)
+    )
     comments_count = Column(Integer, nullable=False)
     priority_id = Column(Text)  # TODO(vmarkovtsev): make it nullable=False
     priority_name = Column(Text, nullable=False)

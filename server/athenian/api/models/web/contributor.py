@@ -23,12 +23,12 @@ class Contributor(Model):
     }
 
     def __init__(
-            self,
-            login: Optional[str] = None,
-            name: Optional[str] = None,
-            email: Optional[str] = None,
-            picture: Optional[str] = None,
-            jira_user: Optional[str] = None,
+        self,
+        login: Optional[str] = None,
+        name: Optional[str] = None,
+        email: Optional[str] = None,
+        picture: Optional[str] = None,
+        jira_user: Optional[str] = None,
     ):
         """Contributor - a model defined in OpenAPI
 

@@ -16,9 +16,7 @@ class JIRAProjectsRequest(Model):
         "projects": "projects",
     }
 
-    def __init__(self,
-                 account: Optional[int] = None,
-                 projects: Optional[Dict[str, bool]] = None):
+    def __init__(self, account: Optional[int] = None, projects: Optional[Dict[str, bool]] = None):
         """JIRAProjectsRequest - a model defined in OpenAPI
 
         :param account: The account of this JIRAProjectsRequest.

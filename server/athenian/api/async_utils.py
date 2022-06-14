@@ -8,9 +8,13 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Ty
 import numpy as np
 import pandas as pd
 from pandas.core.dtypes.cast import OutOfBoundsDatetime, tslib
-from pandas.core.internals.blocks import _extract_bool_array, Block, \
-    get_block_type as get_block_type_original, \
-    lib as blocks_lib, make_block as make_block_original
+from pandas.core.internals.blocks import (
+    Block,
+    _extract_bool_array,
+    get_block_type as get_block_type_original,
+    lib as blocks_lib,
+    make_block as make_block_original,
+)
 from pandas.core.internals.managers import BlockManager
 import sentry_sdk
 from sqlalchemy import BigInteger, Boolean, Column, DateTime, Integer, SmallInteger, String
@@ -44,7 +48,11 @@ class IntBlock(Block):
         return self.values.dtype.type()
 
     def take_nd(
-            self, indexer, axis: int = 0, new_mgr_locs=None, fill_value=blocks_lib.no_default,
+        self,
+        indexer,
+        axis: int = 0,
+        new_mgr_locs=None,
+        fill_value=blocks_lib.no_default,
     ):
         """Take values according to indexer and return them as a block."""
         new_values = self.values.take(indexer, axis=axis)
@@ -55,7 +63,12 @@ class IntBlock(Block):
         return self.make_block_same_class(new_values, new_mgr_locs)
 
     def putmask(
-            self, mask, new, inplace: bool = False, axis: int = 0, transpose: bool = False,
+        self,
+        mask,
+        new,
+        inplace: bool = False,
+        axis: int = 0,
+        transpose: bool = False,
     ) -> List["Block"]:
         """Specialize DataFrame.where()."""
         mask = _extract_bool_array(mask)
@@ -77,10 +90,10 @@ def get_block_type(values, dtype=None):
 def make_block(values, placement, klass=None, ndim=None, dtype=None):
     """Override the block class if we are S or U."""
     if (
-            klass is not None
-            and klass.__name__ == "IntBlock"
-            and klass is not IntBlock
-            and values.dtype.kind in ("S", "U")
+        klass is not None
+        and klass.__name__ == "IntBlock"
+        and klass is not IntBlock
+        and values.dtype.kind in ("S", "U")
     ):
         if isinstance(values, pd.Series):
             values = values.values
@@ -94,13 +107,20 @@ pd.core.internals.managers.get_block_type = get_block_type
 pd.core.internals.managers.make_block = make_block
 
 
-async def read_sql_query(sql: GenerativeSelect,
-                         con: DatabaseLike,
-                         columns: Union[Sequence[str], Sequence[InstrumentedAttribute],
-                                        MetadataBase, PerdataBase, PrecomputedBase, StateBase],
-                         index: Optional[Union[str, Sequence[str]]] = None,
-                         soft_limit: Optional[int] = None,
-                         ) -> pd.DataFrame:
+async def read_sql_query(
+    sql: GenerativeSelect,
+    con: DatabaseLike,
+    columns: Union[
+        Sequence[str],
+        Sequence[InstrumentedAttribute],
+        MetadataBase,
+        PerdataBase,
+        PrecomputedBase,
+        StateBase,
+    ],
+    index: Optional[Union[str, Sequence[str]]] = None,
+    soft_limit: Optional[int] = None,
+) -> pd.DataFrame:
     """Read SQL query into a DataFrame.
 
     Returns a DataFrame corresponding to the result set of the query.
@@ -133,14 +153,15 @@ async def read_sql_query(sql: GenerativeSelect,
 
 
 async def _read_sql_query_numpy(
-        sql: GenerativeSelect,
-        con: DatabaseLike,
-        columns: Union[Sequence[str], Sequence[InstrumentedAttribute]],
-        index: Optional[Union[str, Sequence[str]]] = None,
-        soft_limit: Optional[int] = None,
+    sql: GenerativeSelect,
+    con: DatabaseLike,
+    columns: Union[Sequence[str], Sequence[InstrumentedAttribute]],
+    index: Optional[Union[str, Sequence[str]]] = None,
+    soft_limit: Optional[int] = None,
 ) -> pd.DataFrame:
-    dtype, (int_erase_nulls, int_reset_nulls, str_erase_nulls, str_reset_nulls) = \
-        _build_dtype(columns)
+    dtype, (int_erase_nulls, int_reset_nulls, str_erase_nulls, str_reset_nulls) = _build_dtype(
+        columns
+    )
     sql.dtype = dtype
     try:
         data, nulls = await _fetch_query(sql, con)
@@ -157,7 +178,8 @@ async def _read_sql_query_numpy(
         null_items = null_items[order]
         null_cols = null_cols[order]
         unique_null_cols, offsets, counts = np.unique(
-            null_cols, return_index=True, return_counts=True)
+            null_cols, return_index=True, return_counts=True
+        )
         col_map = {name: i for i, name in enumerate(dtype.names)}
         remain_mask = None
         if int_erase_nulls or str_erase_nulls:
@@ -166,12 +188,12 @@ async def _read_sql_query_numpy(
                 if pos < len(unique_null_cols) and unique_null_cols[pos] == col_index:
                     if remain_mask is None:
                         remain_mask = np.ones(rows_count, dtype=bool)
-                    remain_mask[null_items[offsets[pos]:offsets[pos] + counts[pos]]] = False
+                    remain_mask[null_items[offsets[pos] : offsets[pos] + counts[pos]]] = False
         for reset_cols, reset_val in ((int_reset_nulls, 0), (str_reset_nulls, b"")):
             for col in reset_cols:
                 pos = np.searchsorted(unique_null_cols, (col_index := col_map[col]))
                 if pos < len(unique_null_cols) and unique_null_cols[pos] == col_index:
-                    data[col][null_items[offsets[pos]:offsets[pos] + counts[pos]]] = reset_val
+                    data[col][null_items[offsets[pos] : offsets[pos] + counts[pos]]] = reset_val
         if remain_mask is not None:
             for ptrs in blocks.values():
                 ptrs[0] = ptrs[0][:, remain_mask]
@@ -180,13 +202,9 @@ async def _read_sql_query_numpy(
         rows_count = soft_limit
         for ptrs in blocks.values():
             ptrs[0] = ptrs[0][:, :soft_limit]
-    pd_blocks = [
-        make_block(block, placement=indexes)
-        for block, indexes in blocks.values()
-    ]
+    pd_blocks = [make_block(block, placement=indexes) for block, indexes in blocks.values()]
     dtype_names = dtype.names
-    block_mgr = BlockManager(
-        pd_blocks, [pd.Index(dtype_names), pd.RangeIndex(stop=rows_count)])
+    block_mgr = BlockManager(pd_blocks, [pd.Index(dtype_names), pd.RangeIndex(stop=rows_count)])
     frame = pd.DataFrame(block_mgr, columns=dtype_names, copy=False)
     for column, (child_dtype, _) in dtype.fields.items():
         if child_dtype.kind == "M":
@@ -199,8 +217,9 @@ async def _read_sql_query_numpy(
     return frame
 
 
-def _build_dtype(columns: Sequence[InstrumentedAttribute],
-                 ) -> Tuple[np.dtype, Tuple[Set[str], Set[str], Set[str], Set[str]]]:
+def _build_dtype(
+    columns: Sequence[InstrumentedAttribute],
+) -> Tuple[np.dtype, Tuple[Set[str], Set[str], Set[str], Set[str]]]:
     body = []
     int_erase_nulls = set()
     int_reset_nulls = set()
@@ -210,23 +229,27 @@ def _build_dtype(columns: Sequence[InstrumentedAttribute],
         if isinstance(c, str):
             body.append((c, object))
             continue
-        if (
-                isinstance(c.type, DateTime)
-                or (isinstance(c.type, type) and issubclass(c.type, DateTime))
+        if isinstance(c.type, DateTime) or (
+            isinstance(c.type, type) and issubclass(c.type, DateTime)
         ):
             body.append((c.name, "datetime64[ns]"))
-        elif (
-                isinstance(c.type, Boolean) or
-                (isinstance(c.type, type) and issubclass(c.type, Boolean))
+        elif isinstance(c.type, Boolean) or (
+            isinstance(c.type, type) and issubclass(c.type, Boolean)
         ):
             body.append((c.name, bool))
         elif (
-                (isinstance(c.type, Integer) or
-                 (isinstance(c.type, type) and issubclass(c.type, Integer)))
-                and not getattr(c, "nullable", False)
-                and (not isinstance(c, Label) or (
+            (
+                isinstance(c.type, Integer)
+                or (isinstance(c.type, type) and issubclass(c.type, Integer))
+            )
+            and not getattr(c, "nullable", False)
+            and (
+                not isinstance(c, Label)
+                or (
                     (not getattr(c.element, "nullable", False))
-                    and (not getattr(c, "nullable", False))))
+                    and (not getattr(c, "nullable", False))
+                )
+            )
         ):
             info = getattr(
                 c, "info", {} if not isinstance(c, Label) else getattr(c.element, "info", {}),
@@ -246,11 +269,13 @@ def _build_dtype(columns: Sequence[InstrumentedAttribute],
                 raise AssertionError(f"Unsupported integer type: {sql_type.__name__}")
             body.append((c.name, int_dtype))
         elif (
-                (isinstance(c.type, String) or
-                 (isinstance(c.type, type) and issubclass(c.type, String)))
-                and (info := getattr(
-                    c, "info", {} if not isinstance(c, Label) else getattr(c.element, "info", {}),
-                )).get("dtype", False)
+            isinstance(c.type, String) or (isinstance(c.type, type) and issubclass(c.type, String))
+        ) and (
+            info := getattr(
+                c, "info", {} if not isinstance(c, Label) else getattr(c.element, "info", {}),
+            )
+        ).get(
+            "dtype", False
         ):
             dtype = np.dtype(info["dtype"])
             if info.get("erase_nulls"):
@@ -266,12 +291,18 @@ def _build_dtype(columns: Sequence[InstrumentedAttribute],
 
 
 async def _read_sql_query_records(
-        sql: GenerativeSelect,
-        con: DatabaseLike,
-        columns: Union[Sequence[str], Sequence[InstrumentedAttribute],
-                       MetadataBase, PerdataBase, PrecomputedBase, StateBase],
-        index: Optional[Union[str, Sequence[str]]] = None,
-        soft_limit: Optional[int] = None,
+    sql: GenerativeSelect,
+    con: DatabaseLike,
+    columns: Union[
+        Sequence[str],
+        Sequence[InstrumentedAttribute],
+        MetadataBase,
+        PerdataBase,
+        PrecomputedBase,
+        StateBase,
+    ],
+    index: Optional[Union[str, Sequence[str]]] = None,
+    soft_limit: Optional[int] = None,
 ) -> pd.DataFrame:
     data = await _fetch_query(sql, con)
     if soft_limit is not None and len(data) > soft_limit:
@@ -279,9 +310,10 @@ async def _read_sql_query_records(
     return _wrap_sql_query(data, columns, index)
 
 
-async def _fetch_query(sql: GenerativeSelect,
-                       con: DatabaseLike,
-                       ) -> Union[List[Sequence[Any]], Tuple[np.ndarray, List[int]]]:
+async def _fetch_query(
+    sql: GenerativeSelect,
+    con: DatabaseLike,
+) -> Union[List[Sequence[Any]], Tuple[np.ndarray, List[int]]]:
     try:
         data = await con.fetch_all(query=sql)
     except Exception as e:
@@ -292,7 +324,8 @@ async def _fetch_query(sql: GenerativeSelect,
             sql = repr(sql)
         sql = textwrap.shorten(sql, MAX_SENTRY_STRING_LENGTH - 500)
         logging.getLogger("%s.read_sql_query" % metadata.__package__).error(
-            "%s: %s; %s", type(e).__name__, e, sql)
+            "%s: %s; %s", type(e).__name__, e, sql
+        )
         raise e from None
     return data
 
@@ -315,11 +348,11 @@ def _create_block_manager_from_arrays(
     return BlockManager(blocks, [pd.Index(names_typed + names_obj), range_index])
 
 
-def _wrap_sql_query(data: List[Sequence[Any]],
-                    columns: Union[Sequence[str], Sequence[InstrumentedAttribute],
-                                   MetadataBase, StateBase],
-                    index: Optional[Union[str, Sequence[str]]] = None,
-                    ) -> pd.DataFrame:
+def _wrap_sql_query(
+    data: List[Sequence[Any]],
+    columns: Union[Sequence[str], Sequence[InstrumentedAttribute], MetadataBase, StateBase],
+    index: Optional[Union[str, Sequence[str]]] = None,
+) -> pd.DataFrame:
     """Turn the fetched DB records to a pandas DataFrame."""
     try:
         columns = columns.__table__.columns
@@ -336,8 +369,12 @@ def _wrap_sql_query(data: List[Sequence[Any]],
     obj_cols_indexes = []
     obj_cols_names = []
     for i, column in enumerate(columns):
-        if column in dt_columns or column in int_columns or column in bool_columns \
-                or column in fixed_str_columns:
+        if (
+            column in dt_columns
+            or column in int_columns
+            or column in bool_columns
+            or column in fixed_str_columns
+        ):
             cols_indexes = typed_cols_indexes
             cols_names = typed_cols_names
         else:
@@ -381,7 +418,8 @@ def _wrap_sql_query(data: List[Sequence[Any]],
             data_obj = data_obj[:, remain_mask]
     with sentry_sdk.start_span(op="wrap_sql_query/pd.DataFrame()", description=str(size)):
         block_mgr = _create_block_manager_from_arrays(
-            converted_typed, data_obj, typed_cols_names, obj_cols_names, size)
+            converted_typed, data_obj, typed_cols_names, obj_cols_names, size
+        )
         frame = pd.DataFrame(block_mgr, columns=typed_cols_names + obj_cols_names, copy=False)
         for column in dt_columns:
             try:
@@ -395,55 +433,73 @@ def _wrap_sql_query(data: List[Sequence[Any]],
 
 def _extract_datetime_columns(columns: Iterable[Union[Column, str]]) -> Set[str]:
     return {
-        c.name for c in columns
-        if not isinstance(c, str) and (
-            isinstance(c.type, DateTime) or
-            (isinstance(c.type, type) and issubclass(c.type, DateTime))
+        c.name
+        for c in columns
+        if not isinstance(c, str)
+        and (
+            isinstance(c.type, DateTime)
+            or (isinstance(c.type, type) and issubclass(c.type, DateTime))
         )
     }
 
 
 def _extract_boolean_columns(columns: Iterable[Union[Column, str]]) -> Set[str]:
     return {
-        c.name for c in columns
-        if not isinstance(c, str) and (
-            isinstance(c.type, Boolean) or
-            (isinstance(c.type, type) and issubclass(c.type, Boolean))
+        c.name
+        for c in columns
+        if not isinstance(c, str)
+        and (
+            isinstance(c.type, Boolean)
+            or (isinstance(c.type, type) and issubclass(c.type, Boolean))
         )
     }
 
 
-def _extract_integer_columns(columns: Iterable[Union[Column, str]],
-                             ) -> Dict[str, Tuple[bool, bool]]:
+def _extract_integer_columns(
+    columns: Iterable[Union[Column, str]],
+) -> Dict[str, Tuple[bool, bool]]:
     return {
-        c.name: ((info := getattr(
-            c, "info", {} if not isinstance(c, Label) else getattr(c.element, "info", {}),
-        )).get("erase_nulls", False), info.get("reset_nulls", False))
+        c.name: (
+            (
+                info := getattr(
+                    c, "info", {} if not isinstance(c, Label) else getattr(c.element, "info", {}),
+                )
+            ).get("erase_nulls", False),
+            info.get("reset_nulls", False),
+        )
         for c in columns
-        if not isinstance(c, str) and (
-            isinstance(c.type, Integer) or
-            (isinstance(c.type, type) and issubclass(c.type, Integer))
+        if not isinstance(c, str)
+        and (
+            isinstance(c.type, Integer)
+            or (isinstance(c.type, type) and issubclass(c.type, Integer))
         )
         and not getattr(c, "nullable", False)
-        and (not isinstance(c, Label) or (
-            (not getattr(c.element, "nullable", False))
-            and (not getattr(c, "nullable", False))
-        ))
+        and (
+            not isinstance(c, Label)
+            or (
+                (not getattr(c.element, "nullable", False)) and (not getattr(c, "nullable", False))
+            )
+        )
     }
 
 
-def _extract_fixed_string_columns(columns: Iterable[Union[Column, str]],
-                                  ) -> Dict[str, Tuple[str, bool]]:
+def _extract_fixed_string_columns(
+    columns: Iterable[Union[Column, str]],
+) -> Dict[str, Tuple[str, bool]]:
     return {
-        c.name: info["dtype"] for c in columns
+        c.name: info["dtype"]
+        for c in columns
         if (
-            not isinstance(c, str) and (
-                isinstance(c.type, String) or
-                (isinstance(c.type, type) and issubclass(c.type, String))
+            not isinstance(c, str)
+            and (
+                isinstance(c.type, String)
+                or (isinstance(c.type, type) and issubclass(c.type, String))
             )
-            and (info := getattr(
-                c, "info", {} if not isinstance(c, Label) else getattr(c.element, "info", {}),
-            )).get("dtype", False)
+            and (
+                info := getattr(
+                    c, "info", {} if not isinstance(c, Label) else getattr(c.element, "info", {}),
+                )
+            ).get("dtype", False)
         )
     }
 
@@ -467,9 +523,10 @@ def _convert_datetime(arr: np.ndarray) -> np.ndarray:
     return ts
 
 
-def postprocess_datetime(frame: pd.DataFrame,
-                         columns: Optional[Iterable[str]] = None,
-                         ) -> pd.DataFrame:
+def postprocess_datetime(
+    frame: pd.DataFrame,
+    columns: Optional[Iterable[str]] = None,
+) -> pd.DataFrame:
     """Ensure *inplace* that all the timestamps inside the dataframe are valid UTC or NaT.
 
     :return: Fixed dataframe - the same instance as `frame`.
@@ -498,12 +555,13 @@ def postprocess_datetime(frame: pd.DataFrame,
     return frame
 
 
-def _convert_integer(arr: np.ndarray,
-                     name: str,
-                     erase_null: bool,
-                     reset_null: bool,
-                     log: logging.Logger,
-                     ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+def _convert_integer(
+    arr: np.ndarray,
+    name: str,
+    erase_null: bool,
+    reset_null: bool,
+    log: logging.Logger,
+) -> Tuple[np.ndarray, Optional[np.ndarray]]:
     nulls = None
     while True:
         try:
@@ -516,11 +574,12 @@ def _convert_integer(arr: np.ndarray,
             arr[nulls] = 0
 
 
-async def gather(*coros_or_futures,
-                 op: Optional[str] = None,
-                 description: Optional[str] = None,
-                 catch: Type[BaseException] = Exception,
-                 ) -> Tuple[Any, ...]:
+async def gather(
+    *coros_or_futures,
+    op: Optional[str] = None,
+    description: Optional[str] = None,
+    catch: Type[BaseException] = Exception,
+) -> Tuple[Any, ...]:
     """Return a future aggregating results/exceptions from the given coroutines/futures.
 
     This is equivalent to `asyncio.gather(*coros_or_futures, return_exceptions=True)` with
@@ -530,6 +589,7 @@ async def gather(*coros_or_futures,
     :param description: Sentry span description.
     :param catch: Forward exceptions of this type.
     """
+
     async def body():
         if len(coros_or_futures) == 0:
             return tuple()
@@ -548,12 +608,18 @@ async def gather(*coros_or_futures,
 
 
 async def read_sql_query_with_join_collapse(
-        query: GenerativeSelect,
-        db: Database,
-        columns: Union[Sequence[str], Sequence[InstrumentedAttribute],
-                       MetadataBase, PerdataBase, PrecomputedBase, StateBase],
-        index: Optional[Union[str, Sequence[str]]] = None,
-        soft_limit: Optional[int] = None,
+    query: GenerativeSelect,
+    db: Database,
+    columns: Union[
+        Sequence[str],
+        Sequence[InstrumentedAttribute],
+        MetadataBase,
+        PerdataBase,
+        PrecomputedBase,
+        StateBase,
+    ],
+    index: Optional[Union[str, Sequence[str]]] = None,
+    soft_limit: Optional[int] = None,
 ) -> pd.DataFrame:
     """Enforce the predefined JOIN order in read_sql_query()."""
     query = query.with_statement_hint("Set(join_collapse_limit 1)")

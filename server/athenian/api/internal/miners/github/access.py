@@ -34,8 +34,10 @@ class GitHubAccessChecker(AccessChecker):
     )
     async def _fetch_installed_repos(self, metadata_ids: Iterable[int]) -> Dict[str, int]:
         rows = await self.mdb.fetch_all(
-            select([AccountRepository.repo_full_name, AccountRepository.repo_graph_id])
-            .where(AccountRepository.acc_id.in_(metadata_ids)))
+            select([AccountRepository.repo_full_name, AccountRepository.repo_graph_id]).where(
+                AccountRepository.acc_id.in_(metadata_ids)
+            )
+        )
         name_key = AccountRepository.repo_full_name.name
         node_key = AccountRepository.repo_graph_id.name
         return {r[name_key]: r[node_key] for r in rows}

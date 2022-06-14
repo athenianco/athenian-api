@@ -3,8 +3,14 @@ from operator import itemgetter
 import pytest
 
 from athenian.api.db import Database
-from athenian.api.internal.team import fetch_teams_recursively, get_root_team, get_team_from_db, \
-    MultipleRootTeamsError, RootTeamNotFoundError, TeamNotFoundError
+from athenian.api.internal.team import (
+    MultipleRootTeamsError,
+    RootTeamNotFoundError,
+    TeamNotFoundError,
+    fetch_teams_recursively,
+    get_root_team,
+    get_team_from_db,
+)
 from athenian.api.models.state.models import Team
 from tests.testutils.db import model_insert_stmt
 from tests.testutils.factory.state import TeamFactory
@@ -46,10 +52,7 @@ class TestFetchTeamsRecursively:
         assert res == []
 
     async def test_some_teams(self, sdb: Database) -> None:
-        for model in (
-            TeamFactory(id=1),
-            TeamFactory(id=2, parent_id=1),
-        ):
+        for model in (TeamFactory(id=1), TeamFactory(id=2, parent_id=1),):
             await sdb.execute(model_insert_stmt(model))
 
         rows = sorted((await fetch_teams_recursively(1, sdb)), key=itemgetter("id"))

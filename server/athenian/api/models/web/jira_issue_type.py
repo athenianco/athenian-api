@@ -25,14 +25,16 @@ class JIRAIssueType(Model):
         "normalized_name": "normalized_name",
     }
 
-    def __init__(self,
-                 name: Optional[str] = None,
-                 count: Optional[int] = None,
-                 image: Optional[str] = None,
-                 project: Optional[str] = None,
-                 is_subtask: Optional[bool] = None,
-                 is_epic: Optional[bool] = None,
-                 normalized_name: Optional[str] = None):
+    def __init__(
+        self,
+        name: Optional[str] = None,
+        count: Optional[int] = None,
+        image: Optional[str] = None,
+        project: Optional[str] = None,
+        is_subtask: Optional[bool] = None,
+        is_epic: Optional[bool] = None,
+        normalized_name: Optional[str] = None,
+    ):
         """JIRAIssueType - a model defined in OpenAPI
 
         :param name: The name of this JIRAIssueType.
@@ -95,7 +97,8 @@ class JIRAIssueType(Model):
             raise ValueError("Invalid value for `count`, must not be `None`")
         if count is not None and count < 1:
             raise ValueError(
-                "Invalid value for `count`, must be a value greater than or equal to `1`")
+                "Invalid value for `count`, must be a value greater than or equal to `1`"
+            )
 
         self._count = count
 

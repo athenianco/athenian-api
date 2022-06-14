@@ -2,7 +2,7 @@
 import json
 import sys
 
-from sqlalchemy import ARRAY, create_engine, JSON
+from sqlalchemy import ARRAY, JSON, create_engine
 from sqlalchemy.dialects import sqlite
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql import elements
@@ -26,8 +26,10 @@ def main():
             continue
         columns = model.__table__.columns
         compilers = {}
-        print("COPY public.%s (%s) FROM stdin;" % (
-            model.__table__.fullname, ", ".join([c.name for c in columns])))
+        print(
+            "COPY public.%s (%s) FROM stdin;"
+            % (model.__table__.fullname, ", ".join([c.name for c in columns]))
+        )
         for obj in session.query(model):
             vals = []
             for col in columns:

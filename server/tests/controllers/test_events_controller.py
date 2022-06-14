@@ -6,19 +6,31 @@ import pytest
 from sqlalchemy import delete, insert, select, update
 
 from athenian.api.controllers.events_controller import resolve_deployed_component_references
-from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
-    DeploymentNotification, ReleaseNotification
-from athenian.api.models.precomputed.models import GitHubDeploymentFacts, \
-    GitHubDonePullRequestFacts, GitHubMergedPullRequestFacts, GitHubReleaseFacts
+from athenian.api.models.persistentdata.models import (
+    DeployedComponent,
+    DeployedLabel,
+    DeploymentNotification,
+    ReleaseNotification,
+)
+from athenian.api.models.precomputed.models import (
+    GitHubDeploymentFacts,
+    GitHubDonePullRequestFacts,
+    GitHubMergedPullRequestFacts,
+    GitHubReleaseFacts,
+)
 from athenian.api.models.state.models import AccountGitHubAccount, UserToken
 from athenian.api.models.web import ReleaseNotificationStatus
 
 
 @pytest.fixture(scope="function")
 async def token(sdb):
-    await sdb.execute(insert(UserToken).values(UserToken(
-        account_id=1, user_id="auth0|62a1ae88b6bba16c6dbc6870", name="xxx",
-    ).create_defaults().explode()))
+    await sdb.execute(
+        insert(UserToken).values(
+            UserToken(account_id=1, user_id="auth0|62a1ae88b6bba16c6dbc6870", name="xxx")
+            .create_defaults()
+            .explode()
+        )
+    )
     return "AQAAAAAAAAA="  # unencrypted
 
 
@@ -29,14 +41,16 @@ async def without_default_deployments(rdb):
 
 
 async def test_notify_release_smoke(client, headers, sdb, rdb, token, disable_default_user):
-    body = [{
-        "commit": "8d20cc5",  # 8d20cc5916edf7cfa6a9c5ed069f0640dc823c12
-        "repository": "github.com/src-d/go-git",
-        "name": "xxx",
-        "author": "github.com/yyy",
-        "url": "https://google.com",
-        "published_at": "2021-01-12T00:00:00Z",
-    }]
+    body = [
+        {
+            "commit": "8d20cc5",  # 8d20cc5916edf7cfa6a9c5ed069f0640dc823c12
+            "repository": "github.com/src-d/go-git",
+            "name": "xxx",
+            "author": "github.com/yyy",
+            "url": "https://google.com",
+            "published_at": "2021-01-12T00:00:00Z",
+        }
+    ]
     headers = headers.copy()
     headers["X-API-Key"] = token
     response = await client.request(
@@ -95,10 +109,14 @@ async def test_notify_release_smoke(client, headers, sdb, rdb, token, disable_de
     assert len(rows) == 1
     assert rows[0][ReleaseNotification.author_node_id.name] is None
 
-    await sdb.execute(update(UserToken).values({
-        UserToken.user_id: "auth0|5e1f6e2e8bfa520ea5290741",
-        UserToken.updated_at: datetime.now(timezone.utc),
-    }))
+    await sdb.execute(
+        update(UserToken).values(
+            {
+                UserToken.user_id: "auth0|5e1f6e2e8bfa520ea5290741",
+                UserToken.updated_at: datetime.now(timezone.utc),
+            }
+        )
+    )
     response = await client.request(
         method="POST", path="/v1/events/releases", headers=headers, json=body,
     )
@@ -108,68 +126,105 @@ async def test_notify_release_smoke(client, headers, sdb, rdb, token, disable_de
     assert rows[0][ReleaseNotification.author_node_id.name] == 39936
 
 
-@pytest.mark.parametrize("status, body, statuses", [
-    # duplicates
-    (200, [
-        {
-            "commit": "abcdef0",
-            "repository": "github.com/src-d/go-git",
-        },
-        {
-            "commit": "abcdef0",
-            "repository": "github.com/src-d/go-git",
-        },
-    ], [ReleaseNotificationStatus.ACCEPTED_PENDING, ReleaseNotificationStatus.IGNORED_DUPLICATE]),
-    # duplicates
-    (200, [
-        {
-            "name": "xxx",
-            "commit": "abcdef0",
-            "repository": "github.com/src-d/go-git",
-        },
-        {
-            "name": "xxx",
-            "commit": "abcdef1",
-            "repository": "github.com/src-d/go-git",
-        },
-    ], [ReleaseNotificationStatus.ACCEPTED_PENDING, ReleaseNotificationStatus.IGNORED_DUPLICATE]),
-    # not duplicates
-    (200, [
-        {
-            "commit": "abcdef0",
-            "repository": "github.com/src-d/go-git",
-        },
-        {
-            "name": "xxx",
-            "commit": "abcdef0",
-            "repository": "github.com/src-d/go-git",
-        },
-    ], [ReleaseNotificationStatus.ACCEPTED_PENDING, ReleaseNotificationStatus.ACCEPTED_PENDING]),
-    # wrong hash
-    (400, [
-        {
-            "commit": "abcdef01",
-            "repository": "github.com/src-d/go-git",
-        },
-    ], []),
-    # denied repo
-    (403, [
-        {
-            "commit": "abcdef0",
-            "repository": "github.com/athenianco/metadata",
-        },
-    ], []),
-    # bad date
-    (400, [
-        {
-            "commit": "abcdef0",
-            "repository": "github.com/src-d/go-git",
-            "published_at": "date",
-        },
-    ], []),
-])
+@pytest.mark.parametrize(
+    "status, body, statuses",
+    [
+        # duplicates
+        (
+            200,
+            [
+                {
+                    "commit": "abcdef0",
+                    "repository": "github.com/src-d/go-git",
+                },
+                {
+                    "commit": "abcdef0",
+                    "repository": "github.com/src-d/go-git",
+                },
+            ],
+            [
+                ReleaseNotificationStatus.ACCEPTED_PENDING,
+                ReleaseNotificationStatus.IGNORED_DUPLICATE,
+            ],
+        ),
+        # duplicates
+        (
+            200,
+            [
+                {
+                    "name": "xxx",
+                    "commit": "abcdef0",
+                    "repository": "github.com/src-d/go-git",
+                },
+                {
+                    "name": "xxx",
+                    "commit": "abcdef1",
+                    "repository": "github.com/src-d/go-git",
+                },
+            ],
+            [
+                ReleaseNotificationStatus.ACCEPTED_PENDING,
+                ReleaseNotificationStatus.IGNORED_DUPLICATE,
+            ],
+        ),
+        # not duplicates
+        (
+            200,
+            [
+                {
+                    "commit": "abcdef0",
+                    "repository": "github.com/src-d/go-git",
+                },
+                {
+                    "name": "xxx",
+                    "commit": "abcdef0",
+                    "repository": "github.com/src-d/go-git",
+                },
+            ],
+            [
+                ReleaseNotificationStatus.ACCEPTED_PENDING,
+                ReleaseNotificationStatus.ACCEPTED_PENDING,
+            ],
+        ),
+        # wrong hash
+        (
+            400,
+            [
+                {
+                    "commit": "abcdef01",
+                    "repository": "github.com/src-d/go-git",
+                },
+            ],
+            [],
+        ),
+        # denied repo
+        (
+            403,
+            [
+                {
+                    "commit": "abcdef0",
+                    "repository": "github.com/athenianco/metadata",
+                },
+            ],
+            [],
+        ),
+        # bad date
+        (
+            400,
+            [
+                {
+                    "commit": "abcdef0",
+                    "repository": "github.com/src-d/go-git",
+                    "published_at": "date",
+                },
+            ],
+            [],
+        ),
+    ],
+)
 async def test_notify_release_nasty_input(
-        client, headers, token, rdb, body, status, statuses, disable_default_user):
+    client, headers, token, rdb, body, status, statuses, disable_default_user
+):
     headers = headers.copy()
     headers["X-API-Key"] = token
     response = await client.request(
@@ -186,13 +241,19 @@ async def test_notify_release_nasty_input(
 
 
 async def test_notify_release_422(client, headers, sdb, disable_default_user):
-    body = [{
-        "commit": "8d20cc5",  # 8d20cc5916edf7cfa6a9c5ed069f0640dc823c12
-        "repository": "github.com/src-d/go-git",
-    }]
-    await sdb.execute(insert(UserToken).values(UserToken(
-        account_id=2, user_id="auth0|62a1ae88b6bba16c6dbc6870", name="xxx",
-    ).create_defaults().explode()))
+    body = [
+        {
+            "commit": "8d20cc5",  # 8d20cc5916edf7cfa6a9c5ed069f0640dc823c12
+            "repository": "github.com/src-d/go-git",
+        }
+    ]
+    await sdb.execute(
+        insert(UserToken).values(
+            UserToken(account_id=2, user_id="auth0|62a1ae88b6bba16c6dbc6870", name="xxx")
+            .create_defaults()
+            .explode()
+        )
+    )
     headers = headers.copy()
     headers["X-API-Key"] = "AQAAAAAAAAA="  # unencrypted
     response = await client.request(
@@ -202,13 +263,19 @@ async def test_notify_release_422(client, headers, sdb, disable_default_user):
 
 
 async def test_notify_release_default_user(client, headers, sdb):
-    body = [{
-        "commit": "8d20cc5",  # 8d20cc5916edf7cfa6a9c5ed069f0640dc823c12
-        "repository": "github.com/src-d/go-git",
-    }]
-    await sdb.execute(insert(UserToken).values(UserToken(
-        account_id=2, user_id="auth0|62a1ae88b6bba16c6dbc6870", name="xxx",
-    ).create_defaults().explode()))
+    body = [
+        {
+            "commit": "8d20cc5",  # 8d20cc5916edf7cfa6a9c5ed069f0640dc823c12
+            "repository": "github.com/src-d/go-git",
+        }
+    ]
+    await sdb.execute(
+        insert(UserToken).values(
+            UserToken(account_id=2, user_id="auth0|62a1ae88b6bba16c6dbc6870", name="xxx")
+            .create_defaults()
+            .explode()
+        )
+    )
     headers = headers.copy()
     headers["X-API-Key"] = "AQAAAAAAAAA="  # unencrypted
     response = await client.request(
@@ -222,41 +289,60 @@ async def test_notify_release_default_user(client, headers, sdb):
 @pytest.mark.parametrize("devenv", [False, True])
 @freeze_time("2020-01-01")
 async def test_clear_precomputed_event_releases_smoke(
-        client, headers, pdb, disable_default_user, app, devenv):
-    await pdb.execute(insert(GitHubDonePullRequestFacts).values(GitHubDonePullRequestFacts(
-        acc_id=1,
-        release_match="event",
-        pr_node_id=111,
-        repository_full_name="src-d/go-git",
-        pr_created_at=datetime.now(timezone.utc),
-        pr_done_at=datetime.now(timezone.utc),
-        number=1,
-        reviewers={},
-        commenters={},
-        commit_authors={},
-        commit_committers={},
-        labels={},
-        activity_days=[],
-        data=b"data",
-    ).create_defaults().explode(with_primary_keys=True)))
-    await pdb.execute(insert(GitHubMergedPullRequestFacts).values(GitHubMergedPullRequestFacts(
-        acc_id=1,
-        release_match="event",
-        pr_node_id=222,
-        repository_full_name="src-d/go-git",
-        merged_at=datetime.now(timezone.utc),
-        checked_until=datetime.now(timezone.utc),
-        labels={},
-        activity_days=[],
-    ).create_defaults().explode(with_primary_keys=True)))
-    await pdb.execute(insert(GitHubReleaseFacts).values(GitHubReleaseFacts(
-        acc_id=1,
-        id=333,
-        release_match="event",
-        repository_full_name="src-d/go-git",
-        published_at=datetime.now(timezone.utc),
-        data=b"data",
-    ).create_defaults().explode(with_primary_keys=True)))
+    client, headers, pdb, disable_default_user, app, devenv
+):
+    await pdb.execute(
+        insert(GitHubDonePullRequestFacts).values(
+            GitHubDonePullRequestFacts(
+                acc_id=1,
+                release_match="event",
+                pr_node_id=111,
+                repository_full_name="src-d/go-git",
+                pr_created_at=datetime.now(timezone.utc),
+                pr_done_at=datetime.now(timezone.utc),
+                number=1,
+                reviewers={},
+                commenters={},
+                commit_authors={},
+                commit_committers={},
+                labels={},
+                activity_days=[],
+                data=b"data",
+            )
+            .create_defaults()
+            .explode(with_primary_keys=True)
+        )
+    )
+    await pdb.execute(
+        insert(GitHubMergedPullRequestFacts).values(
+            GitHubMergedPullRequestFacts(
+                acc_id=1,
+                release_match="event",
+                pr_node_id=222,
+                repository_full_name="src-d/go-git",
+                merged_at=datetime.now(timezone.utc),
+                checked_until=datetime.now(timezone.utc),
+                labels={},
+                activity_days=[],
+            )
+            .create_defaults()
+            .explode(with_primary_keys=True)
+        )
+    )
+    await pdb.execute(
+        insert(GitHubReleaseFacts).values(
+            GitHubReleaseFacts(
+                acc_id=1,
+                id=333,
+                release_match="event",
+                repository_full_name="src-d/go-git",
+                published_at=datetime.now(timezone.utc),
+                data=b"data",
+            )
+            .create_defaults()
+            .explode(with_primary_keys=True)
+        )
+    )
     body = {
         "account": 1,
         "repositories": ["{1}"],
@@ -267,9 +353,11 @@ async def test_clear_precomputed_event_releases_smoke(
         method="POST", path="/v1/events/clear_cache", headers=headers, json=body,
     )
     assert response.status == 200, (await response.read()).decode("utf-8")
-    for table, n in ((GitHubDonePullRequestFacts, 293),
-                     (GitHubMergedPullRequestFacts, 246),
-                     (GitHubReleaseFacts, 53)):
+    for table, n in (
+        (GitHubDonePullRequestFacts, 293),
+        (GitHubMergedPullRequestFacts, 246),
+        (GitHubReleaseFacts, 53),
+    ):
         assert len(await pdb.fetch_all(select([table]))) == n, table
 
 
@@ -277,13 +365,17 @@ async def test_clear_precomputed_event_releases_smoke(
 @pytest.mark.app_validate_responses(False)
 @freeze_time("2020-01-01")
 async def test_clear_precomputed_deployments_smoke(client, headers, pdb, disable_default_user):
-    await pdb.execute(insert(GitHubDeploymentFacts).values(GitHubDeploymentFacts(
-        acc_id=1,
-        deployment_name="Dummy deployment",
-        release_matches="abracadabra",
-        format_version=1,
-        data=b"0",
-    ).explode(with_primary_keys=True)))
+    await pdb.execute(
+        insert(GitHubDeploymentFacts).values(
+            GitHubDeploymentFacts(
+                acc_id=1,
+                deployment_name="Dummy deployment",
+                release_matches="abracadabra",
+                format_version=1,
+                data=b"0",
+            ).explode(with_primary_keys=True)
+        )
+    )
     body = {
         "account": 1,
         "repositories": ["{1}"],
@@ -302,15 +394,22 @@ async def test_clear_precomputed_deployments_smoke(client, headers, pdb, disable
 
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
-@pytest.mark.parametrize("status, body", [
-    (200, {"account": 1, "repositories": ["github.com/src-d/go-git"], "targets": []}),
-    (400, {"account": 1, "repositories": ["github.com/src-d/go-git"], "targets": ["wrong"]}),
-    (422, {"account": 2, "repositories": ["github.com/src-d/go-git"], "targets": []}),
-    (404, {"account": 3, "repositories": ["github.com/src-d/go-git"], "targets": []}),
-    (403, {"account": 1, "repositories": ["github.com/athenianco/athenian-api"], "targets": []}),
-])
+@pytest.mark.parametrize(
+    "status, body",
+    [
+        (200, {"account": 1, "repositories": ["github.com/src-d/go-git"], "targets": []}),
+        (400, {"account": 1, "repositories": ["github.com/src-d/go-git"], "targets": ["wrong"]}),
+        (422, {"account": 2, "repositories": ["github.com/src-d/go-git"], "targets": []}),
+        (404, {"account": 3, "repositories": ["github.com/src-d/go-git"], "targets": []}),
+        (
+            403,
+            {"account": 1, "repositories": ["github.com/athenianco/athenian-api"], "targets": []},
+        ),
+    ],
+)
 async def test_clear_precomputed_events_nasty_input(
-        client, headers, body, status, disable_default_user):
+    client, headers, body, status, disable_default_user
+):
     response = await client.request(
         method="POST", path="/v1/events/clear_cache", headers=headers, json=body,
     )
@@ -319,31 +418,39 @@ async def test_clear_precomputed_events_nasty_input(
 
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
-@pytest.mark.parametrize("ref, vhash", [
-    ("4.2.0", "y9c5A0Df"),
-    ("v4.2.0", "y9c5A0Df"),
-    ("1d28459504251497e0ce6132a0fadd5eb44ffd22", "Cd34s0Jb"),
-    ("1d28459", "Cd34s0Jb"),
-    ("xxx", "u5VWde@k"),
-])
+@pytest.mark.parametrize(
+    "ref, vhash",
+    [
+        ("4.2.0", "y9c5A0Df"),
+        ("v4.2.0", "y9c5A0Df"),
+        ("1d28459504251497e0ce6132a0fadd5eb44ffd22", "Cd34s0Jb"),
+        ("1d28459", "Cd34s0Jb"),
+        ("xxx", "u5VWde@k"),
+    ],
+)
 async def test_notify_deployment_smoke(
-        client, headers, token, rdb, ref, vhash, disable_default_user):
+    client, headers, token, rdb, ref, vhash, disable_default_user
+):
     await rdb.execute(delete(DeploymentNotification))
     await rdb.execute(delete(DeployedComponent))
-    body = [{
-        "components": [{
-            "repository": "github.com/src-d/go-git",
-            "reference": ref,
-        }],
-        "environment": "production",
-        "date_started": "2021-01-12T00:00:00Z",
-        "date_finished": "2021-01-12T01:00:00Z",
-        "conclusion": "SUCCESS",
-        "labels": {
-            "one": 1,
-            2: "two",
-        },
-    }]
+    body = [
+        {
+            "components": [
+                {
+                    "repository": "github.com/src-d/go-git",
+                    "reference": ref,
+                }
+            ],
+            "environment": "production",
+            "date_started": "2021-01-12T00:00:00Z",
+            "date_finished": "2021-01-12T01:00:00Z",
+            "conclusion": "SUCCESS",
+            "labels": {
+                "one": 1,
+                2: "two",
+            },
+        }
+    ]
     headers = headers.copy()
     headers["X-API-Key"] = token
     response = await client.request(
@@ -407,19 +514,23 @@ async def test_notify_deployment_smoke(
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
 async def test_notify_deployment_duplicate(client, headers, token, disable_default_user):
-    body = [{
-        "components": [{
-            "repository": "github.com/src-d/go-git",
-            "reference": "xxx",
-        }],
-        "environment": "staging",
-        "date_started": "2021-01-12T00:00:00Z",
-        "date_finished": "2021-01-12T00:01:00Z",
-        "conclusion": "FAILURE",
-        "labels": {
-            "one": 1,
-        },
-    }]
+    body = [
+        {
+            "components": [
+                {
+                    "repository": "github.com/src-d/go-git",
+                    "reference": "xxx",
+                }
+            ],
+            "environment": "staging",
+            "date_started": "2021-01-12T00:00:00Z",
+            "date_finished": "2021-01-12T00:01:00Z",
+            "conclusion": "FAILURE",
+            "labels": {
+                "one": 1,
+            },
+        }
+    ]
     headers = headers.copy()
     headers["X-API-Key"] = token
     response = await client.request(
@@ -432,80 +543,122 @@ async def test_notify_deployment_duplicate(client, headers, token, disable_defau
     assert response.status == 409
 
 
-@pytest.mark.parametrize("body, code", [
-    ({
-        "components": [{
-            "repository": "github.com/src-d/go-git",
-            "reference": "xxx",
-        }],
-        "environment": "production",
-        "date_started": "2021-01-12T00:00:00Z",
-        "date_finished": "2021-01-12T01:00:00Z",
-    }, 400),
-    ({
-        "components": [{
-            "repository": "github.com/src-d/go-git",
-            "reference": "xxx",
-        }],
-        "environment": "production",
-        "date_started": "2021-01-12T00:00:00Z",
-        "conclusion": "SUCCESS",
-    }, 400),
-    ({
-        "components": [{
-            "repository": "github.com/src-d/go-git",
-            "reference": "xxx",
-        }],
-        "environment": "production",
-        "date_started": "2021-01-12T00:00:00Z",
-        "date_finished": "2021-01-12T01:00:00Z",
-        "conclusion": "WHATEVER",
-    }, 400),
-    ({
-        "components": [{
-            "repository": "github.com/src-d/go-git",
-            "reference": "xxx",
-        }],
-        "environment": "production",
-    }, 400),
-    ({
-        "components": [],
-        "environment": "production",
-        "date_started": "2021-01-12T00:00:00Z",
-    }, 400),
-    ({
-        "components": [{
-            "repository": "github.com/src-d/go-git",
-            "reference": "xxx",
-        }],
-        "environment": "production",
-        "date_started": "2021-01-12T00:00:00Z",
-        "date_finished": "2021-01-11T01:00:00Z",
-        "conclusion": "SUCCESS",
-    }, 400),
-    ({
-        "components": [{
-            "repository": "github.com/athenianco/athenian-api",
-            "reference": "xxx",
-        }],
-        "environment": "production",
-        "date_started": "2021-01-12T00:00:00Z",
-        "date_finished": "2021-01-12T01:00:00Z",
-        "conclusion": "SUCCESS",
-    }, 403),
-    ({
-        "components": [{
-            "repository": "github.com",
-            "reference": "xxx",
-        }],
-        "environment": "production",
-        "date_started": "2021-01-12T00:00:00Z",
-        "date_finished": "2021-01-12T01:00:00Z",
-        "conclusion": "SUCCESS",
-    }, 400),
-])
+@pytest.mark.parametrize(
+    "body, code",
+    [
+        (
+            {
+                "components": [
+                    {
+                        "repository": "github.com/src-d/go-git",
+                        "reference": "xxx",
+                    }
+                ],
+                "environment": "production",
+                "date_started": "2021-01-12T00:00:00Z",
+                "date_finished": "2021-01-12T01:00:00Z",
+            },
+            400,
+        ),
+        (
+            {
+                "components": [
+                    {
+                        "repository": "github.com/src-d/go-git",
+                        "reference": "xxx",
+                    }
+                ],
+                "environment": "production",
+                "date_started": "2021-01-12T00:00:00Z",
+                "conclusion": "SUCCESS",
+            },
+            400,
+        ),
+        (
+            {
+                "components": [
+                    {
+                        "repository": "github.com/src-d/go-git",
+                        "reference": "xxx",
+                    }
+                ],
+                "environment": "production",
+                "date_started": "2021-01-12T00:00:00Z",
+                "date_finished": "2021-01-12T01:00:00Z",
+                "conclusion": "WHATEVER",
+            },
+            400,
+        ),
+        (
+            {
+                "components": [
+                    {
+                        "repository": "github.com/src-d/go-git",
+                        "reference": "xxx",
+                    }
+                ],
+                "environment": "production",
+            },
+            400,
+        ),
+        (
+            {
+                "components": [],
+                "environment": "production",
+                "date_started": "2021-01-12T00:00:00Z",
+            },
+            400,
+        ),
+        (
+            {
+                "components": [
+                    {
+                        "repository": "github.com/src-d/go-git",
+                        "reference": "xxx",
+                    }
+                ],
+                "environment": "production",
+                "date_started": "2021-01-12T00:00:00Z",
+                "date_finished": "2021-01-11T01:00:00Z",
+                "conclusion": "SUCCESS",
+            },
+            400,
+        ),
+        (
+            {
+                "components": [
+                    {
+                        "repository": "github.com/athenianco/athenian-api",
+                        "reference": "xxx",
+                    }
+                ],
+                "environment": "production",
+                "date_started": "2021-01-12T00:00:00Z",
+                "date_finished": "2021-01-12T01:00:00Z",
+                "conclusion": "SUCCESS",
+            },
+            403,
+        ),
+        (
+            {
+                "components": [
+                    {
+                        "repository": "github.com",
+                        "reference": "xxx",
+                    }
+                ],
+                "environment": "production",
+                "date_started": "2021-01-12T00:00:00Z",
+                "date_finished": "2021-01-12T01:00:00Z",
+                "conclusion": "SUCCESS",
+            },
+            400,
+        ),
+    ],
+)
 async def test_notify_deployment_nasty_input(
-        client, headers, token, body, code, disable_default_user):
+    client, headers, token, body, code, disable_default_user
+):
     headers = headers.copy()
     headers["X-API-Key"] = token
     response = await client.request(
@@ -516,11 +669,16 @@ async def test_notify_deployment_nasty_input(
 
 async def test_notify_deployment_unauthorized(client, headers):
     response = await client.request(
-        method="POST", path="/v1/events/deployments", headers=headers, json=[{
-            "components": [],
-            "environment": "production",
-            "date_started": "2021-01-12T00:00:00Z",
-        }],
+        method="POST",
+        path="/v1/events/deployments",
+        headers=headers,
+        json=[
+            {
+                "components": [],
+                "environment": "production",
+                "date_started": "2021-01-12T00:00:00Z",
+            }
+        ],
     )
     assert response.status == 401
 
@@ -530,16 +688,23 @@ async def test_notify_deployment_422(client, headers, token, sdb, disable_defaul
     headers = headers.copy()
     headers["X-API-Key"] = token
     response = await client.request(
-        method="POST", path="/v1/events/deployments", headers=headers, json=[{
-            "components": [{
-                "repository": "github.com/src-d/go-git",
-                "reference": "xxx",
-            }],
-            "environment": "production",
-            "date_started": "2021-01-12T00:00:00Z",
-            "date_finished": "2021-01-12T00:01:00Z",
-            "conclusion": "FAILURE",
-        }],
+        method="POST",
+        path="/v1/events/deployments",
+        headers=headers,
+        json=[
+            {
+                "components": [
+                    {
+                        "repository": "github.com/src-d/go-git",
+                        "reference": "xxx",
+                    }
+                ],
+                "environment": "production",
+                "date_started": "2021-01-12T00:00:00Z",
+                "date_finished": "2021-01-12T00:01:00Z",
+                "conclusion": "FAILURE",
+            }
+        ],
     )
     assert response.status == 422
 
@@ -549,23 +714,31 @@ async def test_notify_deployment_default_user(client, headers, token, sdb):
     headers = headers.copy()
     headers["X-API-Key"] = token
     response = await client.request(
-        method="POST", path="/v1/events/deployments", headers=headers, json=[{
-            "components": [{
-                "repository": "github.com/src-d/go-git",
-                "reference": "xxx",
-            }],
-            "environment": "production",
-            "date_started": "2021-01-12T00:00:00Z",
-            "date_finished": "2021-01-12T00:01:00Z",
-            "conclusion": "FAILURE",
-        }],
+        method="POST",
+        path="/v1/events/deployments",
+        headers=headers,
+        json=[
+            {
+                "components": [
+                    {
+                        "repository": "github.com/src-d/go-git",
+                        "reference": "xxx",
+                    }
+                ],
+                "environment": "production",
+                "date_started": "2021-01-12T00:00:00Z",
+                "date_finished": "2021-01-12T00:01:00Z",
+                "conclusion": "FAILURE",
+            }
+        ],
     )
     assert response.status == 403
 
 
 @pytest.mark.parametrize("unresolved", [False, True])
 async def test_resolve_deployed_component_references_smoke(
-        sdb, mdb, rdb, without_default_deployments, unresolved):
+    sdb, mdb, rdb, without_default_deployments, unresolved
+):
     async def execute_many(sql, values):
         if rdb.url.dialect == "sqlite":
             async with rdb.connection() as rdb_conn:
@@ -574,67 +747,87 @@ async def test_resolve_deployed_component_references_smoke(
         else:
             await rdb.execute_many(sql, values)
 
-    await execute_many(insert(DeploymentNotification), [
-        DeploymentNotification(
-            account_id=1,
-            name="dead",
-            started_at=datetime.now(timezone.utc) - timedelta(hours=1),
-            finished_at=datetime.now(timezone.utc),
-            conclusion="SUCCESS",
-            environment="production",
-        ).create_defaults().explode(with_primary_keys=True),
-        DeploymentNotification(
-            account_id=1,
-            name="alive",
-            started_at=datetime.now(timezone.utc) - timedelta(hours=1),
-            finished_at=datetime.now(timezone.utc),
-            conclusion="SUCCESS",
-            environment="production",
-        ).create_defaults().explode(with_primary_keys=True),
-    ])
+    await execute_many(
+        insert(DeploymentNotification),
+        [
+            DeploymentNotification(
+                account_id=1,
+                name="dead",
+                started_at=datetime.now(timezone.utc) - timedelta(hours=1),
+                finished_at=datetime.now(timezone.utc),
+                conclusion="SUCCESS",
+                environment="production",
+            )
+            .create_defaults()
+            .explode(with_primary_keys=True),
+            DeploymentNotification(
+                account_id=1,
+                name="alive",
+                started_at=datetime.now(timezone.utc) - timedelta(hours=1),
+                finished_at=datetime.now(timezone.utc),
+                conclusion="SUCCESS",
+                environment="production",
+            )
+            .create_defaults()
+            .explode(with_primary_keys=True),
+        ],
+    )
     commit = 2755428
-    await execute_many(insert(DeployedComponent), [
-        DeployedComponent(
-            account_id=1,
-            deployment_name="dead",
-            repository_node_id=40550,
-            reference="bbb",
-            created_at=datetime.now(timezone.utc) -
-            (timedelta(hours=3) if unresolved else timedelta(days=2)),
-        ).explode(with_primary_keys=True),
-        DeployedComponent(
-            account_id=1,
-            deployment_name="alive",
-            repository_node_id=40550,
-            reference="ccc",
-            resolved_commit_node_id=commit,
-            created_at=datetime.now(timezone.utc) - timedelta(days=2),
-        ).explode(with_primary_keys=True),
-    ])
-    await execute_many(insert(DeployedLabel), [
-        DeployedLabel(
-            account_id=1,
-            deployment_name="dead",
-            key="three",
-            value="four",
-        ).create_defaults().explode(with_primary_keys=True),
-        DeployedLabel(
-            account_id=1,
-            deployment_name="alive",
-            key="one",
-            value="two",
-        ).create_defaults().explode(with_primary_keys=True),
-    ])
+    await execute_many(
+        insert(DeployedComponent),
+        [
+            DeployedComponent(
+                account_id=1,
+                deployment_name="dead",
+                repository_node_id=40550,
+                reference="bbb",
+                created_at=datetime.now(timezone.utc)
+                - (timedelta(hours=3) if unresolved else timedelta(days=2)),
+            ).explode(with_primary_keys=True),
+            DeployedComponent(
+                account_id=1,
+                deployment_name="alive",
+                repository_node_id=40550,
+                reference="ccc",
+                resolved_commit_node_id=commit,
+                created_at=datetime.now(timezone.utc) - timedelta(days=2),
+            ).explode(with_primary_keys=True),
+        ],
+    )
+    await execute_many(
+        insert(DeployedLabel),
+        [
+            DeployedLabel(
+                account_id=1,
+                deployment_name="dead",
+                key="three",
+                value="four",
+            )
+            .create_defaults()
+            .explode(with_primary_keys=True),
+            DeployedLabel(
+                account_id=1,
+                deployment_name="alive",
+                key="one",
+                value="two",
+            )
+            .create_defaults()
+            .explode(with_primary_keys=True),
+        ],
+    )
     await resolve_deployed_component_references(sdb, mdb, rdb, None)
-    rows = await rdb.fetch_all(select([DeploymentNotification.name])
-                               .order_by(DeploymentNotification.name))
+    rows = await rdb.fetch_all(
+        select([DeploymentNotification.name]).order_by(DeploymentNotification.name)
+    )
     assert len(rows) == 1 + unresolved
     assert rows[0][0] == "alive"
-    rows = await rdb.fetch_all(select([DeployedComponent.deployment_name])
-                               .order_by(DeployedComponent.deployment_name))
+    rows = await rdb.fetch_all(
+        select([DeployedComponent.deployment_name]).order_by(DeployedComponent.deployment_name)
+    )
     assert len(rows) == 1 + unresolved
     assert rows[0][0] == "alive"
-    rows = await rdb.fetch_all(select([DeployedLabel.deployment_name])
-                               .order_by(DeployedLabel.deployment_name))
+    rows = await rdb.fetch_all(
+        select([DeployedLabel.deployment_name]).order_by(DeployedLabel.deployment_name)
+    )
     assert len(rows) == 1 + unresolved
     assert rows[0][0] == "alive"

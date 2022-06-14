@@ -1,8 +1,7 @@
 from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import Model
-from athenian.api.models.web.calculated_linear_metric_values import \
-    CalculatedLinearMetricValues
+from athenian.api.models.web.calculated_linear_metric_values import CalculatedLinearMetricValues
 from athenian.api.models.web.granularity import GranularityMixin
 from athenian.api.models.web.jira_filter_with import JIRAFilterWith
 
@@ -24,11 +23,13 @@ class CalculatedJIRAMetricValues(Model, GranularityMixin):
         "values": "values",
     }
 
-    def __init__(self,
-                 granularity: Optional[str] = None,
-                 jira_label: Optional[str] = None,
-                 with_: Optional[JIRAFilterWith] = None,
-                 values: Optional[List[CalculatedLinearMetricValues]] = None):
+    def __init__(
+        self,
+        granularity: Optional[str] = None,
+        jira_label: Optional[str] = None,
+        with_: Optional[JIRAFilterWith] = None,
+        values: Optional[List[CalculatedLinearMetricValues]] = None,
+    ):
         """CalculatedJIRAMetricValues - a model defined in OpenAPI
 
         :param granularity: The granularity of this CalculatedJIRAMetricValues.

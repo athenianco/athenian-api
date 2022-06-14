@@ -38,7 +38,6 @@ class _LogicalRepositoryGetRequest(Model, sealed=False):
         self._name = name
 
 
-LogicalRepositoryGetRequest = AllOf(_LogicalRepositoryGetRequest,
-                                    _Account,
-                                    name="LogicalRepositoryGetRequest",
-                                    module=__name__)
+LogicalRepositoryGetRequest = AllOf(
+    _LogicalRepositoryGetRequest, _Account, name="LogicalRepositoryGetRequest", module=__name__
+)

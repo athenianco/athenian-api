@@ -7,7 +7,7 @@ from typing import Any, List, Sequence, Tuple
 
 cimport cython
 from cpython cimport PyObject
-from numpy cimport ndarray, npy_bool, PyArray_DATA
+from numpy cimport PyArray_DATA, ndarray, npy_bool
 
 import asyncpg
 import numpy as np

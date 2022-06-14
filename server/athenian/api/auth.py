@@ -19,6 +19,7 @@ from especifico.exceptions import AuthenticationProblem, OAuthProblem, Unauthori
 from especifico.lifecycle import EspecificoRequest
 import especifico.security
 from especifico.utils import deep_get
+
 with warnings.catch_warnings():
     # this will suppress all warnings in this block
     warnings.filterwarnings("ignore", message="int_from_bytes is deprecated")
@@ -30,8 +31,10 @@ from sqlalchemy import select
 from athenian.api.aiohttp_addons import create_aiohttp_closed_event
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached
-from athenian.api.internal.account import check_account_expired, \
-    get_user_account_status_from_request
+from athenian.api.internal.account import (
+    check_account_expired,
+    get_user_account_status_from_request,
+)
 from athenian.api.kms import AthenianKMS
 from athenian.api.models.state.models import God, UserAccount, UserToken
 from athenian.api.models.web import ForbiddenError, GenericError, User
@@ -53,16 +56,19 @@ class Auth0:
     USERINFO_CACHE_TTL = 60  # seconds
     log = logging.getLogger("auth")
 
-    def __init__(self,
-                 domain=AUTH0_DOMAIN,
-                 audience=AUTH0_AUDIENCE,
-                 client_id=AUTH0_CLIENT_ID,
-                 client_secret=AUTH0_CLIENT_SECRET, whitelist: Sequence[str] = tuple(),
-                 default_user=DEFAULT_USER,
-                 key=KEY,
-                 cache: Optional[aiomcache.Client] = None,
-                 lazy=False,
-                 force_user: str = ""):
+    def __init__(
+        self,
+        domain=AUTH0_DOMAIN,
+        audience=AUTH0_AUDIENCE,
+        client_id=AUTH0_CLIENT_ID,
+        client_secret=AUTH0_CLIENT_SECRET,
+        whitelist: Sequence[str] = tuple(),
+        default_user=DEFAULT_USER,
+        key=KEY,
+        cache: Optional[aiomcache.Client] = None,
+        lazy=False,
+        force_user: str = "",
+    ):
         """
         Create a new Auth0 middleware.
 
@@ -84,12 +90,14 @@ class Auth0:
         :param force_user: Ignore all the incoming bearer tokens and make all requests on behalf \
                            of this user ID.
         """
-        for var, env_name in ((domain, "AUTH0_DOMAIN"),
-                              (audience, "AUTH0_AUDIENCE"),
-                              (client_id, "AUTH0_CLIENT_ID"),
-                              (client_secret, "AUTH0_CLIENT_SECRET"),
-                              (default_user, "ATHENIAN_DEFAULT_USER"),
-                              (key, "ATHENIAN_INVITATION_KEY")):
+        for var, env_name in (
+            (domain, "AUTH0_DOMAIN"),
+            (audience, "AUTH0_AUDIENCE"),
+            (client_id, "AUTH0_CLIENT_ID"),
+            (client_secret, "AUTH0_CLIENT_SECRET"),
+            (default_user, "ATHENIAN_DEFAULT_USER"),
+            (key, "ATHENIAN_INVITATION_KEY"),
+        ):
             if not var:
                 raise EnvironmentError("%s environment variable must be set." % env_name)
         self._domain = domain
@@ -140,8 +148,10 @@ class Auth0:
             return self._default_user
         self._default_user = await self.get_user(self._default_user_id)
         if self._default_user is None:
-            message = "Failed to fetch the default user (%s) details. " \
-                      "Try changing ATHENIAN_DEFAULT_USER" % self._default_user_id
+            message = (
+                "Failed to fetch the default user (%s) details. Try changing ATHENIAN_DEFAULT_USER"
+                % self._default_user_id
+            )
             self.log.error(message)
             raise GracefulExit(message)
         return self._default_user
@@ -180,14 +190,15 @@ class Auth0:
         return next(iter(users.values()))
 
     @sentry_span
-    async def _mgmt_call(self,
-                         url: str,
-                         timeout: float,
-                         action: str,
-                         attempt: int,
-                         data: Optional[dict] = None,
-                         method: str = "",
-                         ) -> Optional[aiohttp.ClientResponse]:
+    async def _mgmt_call(
+        self,
+        url: str,
+        timeout: float,
+        action: str,
+        attempt: int,
+        data: Optional[dict] = None,
+        method: str = "",
+    ) -> Optional[aiohttp.ClientResponse]:
         token = await self.mgmt_token()
         headers = {"Authorization": "Bearer " + token}
         timeout = aiohttp.ClientTimeout(total=timeout)
@@ -196,7 +207,8 @@ class Auth0:
                 response = await self._session.get(url, headers=headers, timeout=timeout)
             else:
                 response = await getattr(self._session, method, "post")(
-                    url, json=data, headers=headers, timeout=timeout)
+                    url, json=data, headers=headers, timeout=timeout
+                )
         except (aiohttp.ClientOSError, asyncio.TimeoutError) as e:
             if isinstance(e, asyncio.TimeoutError) or e.errno in (-3, 101, 103, 104):
                 self.log.warning("Auth0 Management API: %s", e)
@@ -208,8 +220,9 @@ class Auth0:
                 return None
             raise e from None
         if response.status == HTTPStatus.TOO_MANY_REQUESTS:
-            self.log.warning("Auth0 Management API rate limit hit while %s, retry %d",
-                             action, attempt)
+            self.log.warning(
+                "Auth0 Management API rate limit hit while %s, retry %d", action, attempt
+            )
             await asyncio.sleep(0.5 + random())
             return None
         elif response.status == HTTPStatus.UNAUTHORIZED:
@@ -249,9 +262,14 @@ class Auth0:
                     if len(batch) == 1:
                         return []
                     m = len(batch) // 2
-                    self.log.warning("Auth0 Management API /users raised HTTP %d, bisecting "
-                                     "%d/%d -> %d, %d",
-                                     response.status, len(batch), len(users), m, len(batch) - m)
+                    self.log.warning(
+                        "Auth0 Management API /users raised HTTP %d, bisecting %d/%d -> %d, %d",
+                        response.status,
+                        len(batch),
+                        len(users),
+                        m,
+                        len(batch) - m,
+                    )
                     b1, b2 = await gather(get_batch(batch[:m]), get_batch(batch[m:]))
                     return b1 + b2
                 else:
@@ -260,8 +278,11 @@ class Auth0:
                             response_body = await response.json()
                         except aiohttp.ContentTypeError:
                             response_body = await response.text()
-                        self.log.error("Auth0 Management API /users raised HTTP %d: %s",
-                                       response.status, response_body)
+                        self.log.error(
+                            "Auth0 Management API /users raised HTTP %d: %s",
+                            response.status,
+                            response_body,
+                        )
                     break
             else:  # for retry in range
                 return []
@@ -273,12 +294,13 @@ class Auth0:
         return {u.id: u for u in await get_batch(list(users))}
 
     @sentry_span
-    async def update_user_profile(self,
-                                  uid: str,
-                                  *,
-                                  name: Optional[str] = None,
-                                  email: Optional[str] = None,
-                                  ) -> bool:
+    async def update_user_profile(
+        self,
+        uid: str,
+        *,
+        name: Optional[str] = None,
+        email: Optional[str] = None,
+    ) -> bool:
         """Overwrite user's name and/or email."""
         for retry in range(1, 11):
             try:
@@ -303,8 +325,11 @@ class Auth0:
                     response_body = await response.json()
                 except aiohttp.ContentTypeError:
                     response_body = await response.text()
-                self.log.error("Auth0 Management API /users/{id} raised HTTP %d: %s",
-                               response.status, response_body)
+                self.log.error(
+                    "Auth0 Management API /users/{id} raised HTTP %d: %s",
+                    response.status,
+                    response_body,
+                )
             return response.status == HTTPStatus.OK
         else:  # for retry in range
             return False
@@ -323,22 +348,29 @@ class Auth0:
         req = await self._session.get("https://%s/.well-known/jwks.json" % self._domain)
         jwks = await req.json()
         self.log.info("Fetched %d JWKS records", len(jwks))
-        self._kids = {key["kid"]: {k: key[k] for k in ("kty", "kid", "use", "n", "e")}
-                      for key in jwks["keys"]}
+        self._kids = {
+            key["kid"]: {k: key[k] for k in ("kty", "kid", "use", "n", "e")}
+            for key in jwks["keys"]
+        }
         self._kids_event.set()
 
     async def _acquire_management_token(self, attempt: int) -> float:
         max_attempts = 10
         error = None
         try:
-            resp = await self._session.post("https://%s/oauth/token" % self._domain, headers={
-                "content-type": "application/x-www-form-urlencoded",
-            }, data={
-                "grant_type": "client_credentials",
-                "client_id": self._client_id,
-                "client_secret": self._client_secret,
-                "audience": "https://%s/api/v2/" % self._domain,
-            }, timeout=5)
+            resp = await self._session.post(
+                "https://%s/oauth/token" % self._domain,
+                headers={
+                    "content-type": "application/x-www-form-urlencoded",
+                },
+                data={
+                    "grant_type": "client_credentials",
+                    "client_id": self._client_id,
+                    "client_secret": self._client_secret,
+                    "audience": "https://%s/api/v2/" % self._domain,
+                },
+                timeout=5,
+            )
             data = await resp.json()
             self._mgmt_token = data["access_token"]
             self._mgmt_event.set()
@@ -354,12 +386,21 @@ class Auth0:
                 self.log.exception("Failed to renew the Auth0 management token: " + resp_text)
                 raise GracefulExit() from e
         if error is not None:
-            self.log.warning("Failed to renew the Auth0 management token %d / %d: %s: %s",
-                             attempt, max_attempts, error, resp_text)
+            self.log.warning(
+                "Failed to renew the Auth0 management token %d / %d: %s: %s",
+                attempt,
+                max_attempts,
+                error,
+                resp_text,
+            )
             await asyncio.sleep(1)
             return await self._acquire_management_token(attempt + 1)
-        self.log.info("Acquired new Auth0 management token %s...%s for the next %s",
-                      self._mgmt_token[:12], self._mgmt_token[-12:], timedelta(seconds=expires_in))
+        self.log.info(
+            "Acquired new Auth0 management token %s...%s for the next %s",
+            self._mgmt_token[:12],
+            self._mgmt_token[-12:],
+            timedelta(seconds=expires_in),
+        )
         expires_in -= 5 * 60  # 5 minutes earlier
         if expires_in < 0:
             expires_in = 0
@@ -384,18 +425,29 @@ class Auth0:
         cache=lambda self, **_: self._cache,
     )
     async def _get_user_info_cached(self, token: str) -> User:
-        resp = await self._session.get("https://%s/userinfo" % self._domain,
-                                       headers={"Authorization": "Bearer " + token})
+        resp = await self._session.get(
+            "https://%s/userinfo" % self._domain, headers={"Authorization": "Bearer " + token}
+        )
         try:
             user = await resp.json()
         except aiohttp.ContentTypeError:
-            raise ResponseError(GenericError(
-                "/errors/Auth0", title=resp.reason, status=resp.status,
-                detail=await resp.text()))
+            raise ResponseError(
+                GenericError(
+                    "/errors/Auth0",
+                    title=resp.reason,
+                    status=resp.status,
+                    detail=await resp.text(),
+                )
+            )
         if resp.status != 200:
-            raise ResponseError(GenericError(
-                "/errors/Auth0", title=resp.reason, status=resp.status,
-                detail=user.get("description", str(user))))
+            raise ResponseError(
+                GenericError(
+                    "/errors/Auth0",
+                    title=resp.reason,
+                    status=resp.status,
+                    detail=user.get("description", str(user)),
+                )
+            )
         if (account := user.pop("https://api.athenian.co/v1/account", 0)) > 0:
             user["account"] = account
         return User.from_auth0(**user, encryption_key=self.key)
@@ -410,7 +462,8 @@ class Auth0:
             raise AssertionError("Unsupported auth method: %s" % method)
 
         god = await request.sdb.fetch_one(
-            select([God.mapped_id]).where(God.user_id == request.uid))
+            select([God.mapped_id]).where(God.user_id == request.uid)
+        )
         if god is not None:
             request.god_id = request.uid
             if "X-Identity" in request.headers:
@@ -430,11 +483,14 @@ class Auth0:
             else:
                 user_info = await self._get_user_info(key := token)
             if user_info is None:
-                raise ResponseError(GenericError(
-                    "/errors/Auth0", title="Failed to retrieve user details from Auth0",
-                    status=HTTPStatus.SERVICE_UNAVAILABLE,
-                    detail=key,
-                ))
+                raise ResponseError(
+                    GenericError(
+                        "/errors/Auth0",
+                        title="Failed to retrieve user details from Auth0",
+                        status=HTTPStatus.SERVICE_UNAVAILABLE,
+                        detail=key,
+                    )
+                )
             if user_info.email and user_info.email != User.EMPTY_EMAIL:
                 email = {"email": user_info.email}
             else:
@@ -454,11 +510,13 @@ class Auth0:
             unverified_header = jwt.get_unverified_header(token)
         except jwt.JWTError as e:
             raise OAuthProblem(
-                description="Invalid header: %s Use an RS256 signed JWT Access Token." % e)
+                description="Invalid header: %s Use an RS256 signed JWT Access Token." % e
+            )
         if unverified_header["alg"] != "RS256":
             raise OAuthProblem(
-                description="Invalid algorithm %s Use an RS256 signed JWT Access Token." %
-                unverified_header["alg"])
+                description="Invalid algorithm %s Use an RS256 signed JWT Access Token."
+                % unverified_header["alg"]
+            )
 
         kids = await self.kids()
         try:
@@ -484,14 +542,18 @@ class Auth0:
         if token == "null":
             user = self.force_user or self._default_user_id
             return user, await request.sdb.fetch_val(
-                select([UserAccount.account_id]).where(UserAccount.user_id == user))
+                select([UserAccount.account_id]).where(UserAccount.user_id == user)
+            )
         kms = request.app["kms"]  # type: AthenianKMS
         if kms is None:
             raise AuthenticationProblem(
                 status=HTTPStatus.UNAUTHORIZED,
                 title="Unable to authenticate with an API key.",
-                detail="The backend was not properly configured and there is no connection with "
-                       "Google Key Management Service to decrypt API keys.")
+                detail=(
+                    "The backend was not properly configured and there is no connection with "
+                    "Google Key Management Service to decrypt API keys."
+                ),
+            )
         try:
             plaintext = await kms.decrypt(token)
         except aiohttp.ClientResponseError:
@@ -501,7 +563,8 @@ class Auth0:
         except (ValueError, struct.error):
             raise Unauthorized() from None
         token_obj = await request.sdb.fetch_one(
-            select([UserToken]).where(UserToken.id == token_id))
+            select([UserToken]).where(UserToken.id == token_id)
+        )
         if token_obj is None:
             raise Unauthorized()
         uid = token_obj[UserToken.user_id.name]
@@ -525,8 +588,7 @@ class Auth0:
             raise Unauthorized("Invalid authorization header") from e
         auth_type = auth_type.lower()
         if auth_type != "bearer":
-            raise Unauthorized(
-                "Invalid authorization header, the value must start with Bearer")
+            raise Unauthorized("Invalid authorization header, the value must start with Bearer")
         await self._set_user(request, value, auth_type)
         return await handler(request)
 
@@ -539,8 +601,11 @@ class AthenianAioHttpSecurityHandlerFactory(especifico.security.AioHttpSecurityH
         super().__init__(pass_context_arg_name=pass_context_arg_name)
         self.auth = auth
 
-    def verify_security(self, auth_funcs, function,
-                        ) -> Callable[[EspecificoRequest], Coroutine[None, None, Any]]:
+    def verify_security(
+        self,
+        auth_funcs,
+        function,
+    ) -> Callable[[EspecificoRequest], Coroutine[None, None, Any]]:
         """
         Decorate the request pipeline to check the security, either JWT or APIKey.
 
@@ -592,9 +657,16 @@ class AthenianAioHttpSecurityHandlerFactory(especifico.security.AioHttpSecurityH
                     route_specs = context.app["route_spec"]
                     if (spec := route_specs.get(canonical, None)) is not None:
                         try:
-                            required = "account" in deep_get(spec, [
-                                "requestBody", "content", "application/json", "schema", "required",
-                            ])
+                            required = "account" in deep_get(
+                                spec,
+                                [
+                                    "requestBody",
+                                    "content",
+                                    "application/json",
+                                    "schema",
+                                    "required",
+                                ],
+                            )
                         except KeyError:
                             required = False
                         if required:
@@ -611,8 +683,10 @@ class AthenianAioHttpSecurityHandlerFactory(especifico.security.AioHttpSecurityH
 
 def disable_default_user(func):
     """Decorate an endpoint handler to raise 403 if the user is the default one."""
-    async def wrapped_disable_default_user(request: AthenianWebRequest,
-                                           *args, **kwargs) -> aiohttp.web.Response:
+
+    async def wrapped_disable_default_user(
+        request: AthenianWebRequest, *args, **kwargs
+    ) -> aiohttp.web.Response:
         ensure_non_default_user(request)
         return await func(request, *args, **kwargs)
 

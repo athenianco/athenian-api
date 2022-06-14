@@ -42,20 +42,21 @@ def gen_cache_key(fmt: str, *args) -> bytes:
         full_key = (fmt % args).encode()
     else:
         full_key = fmt
-    first_half = xxh64_hexdigest(full_key[:len(full_key) // 2])
-    second_half = xxh64_hexdigest(full_key[len(full_key) // 2:])
+    first_half = xxh64_hexdigest(full_key[: len(full_key) // 2])
+    second_half = xxh64_hexdigest(full_key[len(full_key) // 2 :])
     return (first_half + second_half).encode()
 
 
-def cached(exptime: Union[int, Callable[..., int]],
-           serialize: Callable[[Any], bytes],
-           deserialize: Callable[[bytes], Any],
-           key: Callable[..., Optional[Tuple]],
-           cache: Optional[Callable[..., Optional[aiomcache.Client]]] = None,
-           refresh_on_access=False,
-           postprocess: Optional[Callable[..., Any]] = None,
-           version: int = 1,
-           ) -> Callable[[Callable[..., Coroutine]], Callable[..., Coroutine]]:
+def cached(
+    exptime: Union[int, Callable[..., int]],
+    serialize: Callable[[Any], bytes],
+    deserialize: Callable[[bytes], Any],
+    key: Callable[..., Optional[Tuple]],
+    cache: Optional[Callable[..., Optional[aiomcache.Client]]] = None,
+    refresh_on_access=False,
+    postprocess: Optional[Callable[..., Any]] = None,
+    version: int = 1,
+) -> Callable[[Callable[..., Coroutine]], Callable[..., Coroutine]]:
     """
     Return factory that creates decorators that cache function call results if possible.
 
@@ -74,29 +75,39 @@ def cached(exptime: Union[int, Callable[..., int]],
     :param version: Version of the cache payload format.
     :return: Decorator that cache function call results if possible.
     """
+
     def wrapper_cached(func: Callable[..., Coroutine]) -> Callable[..., Coroutine]:
         """Decorate a function to return the cached result if possible."""
         log = logging.getLogger("%s.cache" % metadata.__package__)
         if exptime == max_exptime and not refresh_on_access:
-            log.warning("%s will stay cached for max_exptime but will not refresh on access, "
-                        "consider setting refresh_on_access=True", func.__name__)
+            log.warning(
+                "%s will stay cached for max_exptime but will not refresh on access, "
+                "consider setting refresh_on_access=True",
+                func.__name__,
+            )
         if cache is None:
+
             def discover_cache(**kwargs) -> Optional[aiomcache.Client]:
                 try:
                     return kwargs["cache"]
                 except KeyError:
                     raise AssertionError(
                         '"cache" is not one of %s arguments, you must explicitly define it: '
-                        '@cached(cache=...)' % func.__qualname__)  # noqa: Q000
+                        "@cached(cache=...)"
+                        % func.__qualname__
+                    )  # noqa: Q000
+
         elif callable(cache):
             discover_cache = cache
         else:
+
             def discover_cache(**kwargs):
                 return cache
+
         signature = inspect.signature(func)
         full_name = func.__module__ + "." + func.__qualname__
         if full_name.startswith(__package__):
-            short_name = full_name[len(__package__) + 1:]
+            short_name = full_name[len(__package__) + 1 :]
         else:
             short_name = full_name
 
@@ -121,8 +132,13 @@ def cached(exptime: Union[int, Callable[..., int]],
                         with sentry_sdk.start_span(op="get " + cache_key.hex()):
                             buffer = await client.get(cache_key)
                     except (aiomcache.exceptions.ClientException, IncompleteReadError) as e:
-                        log.exception("Failed to fetch cached %s/%s: %s: %s",
-                                      full_name, cache_key.decode(), type(e).__name__, e)
+                        log.exception(
+                            "Failed to fetch cached %s/%s: %s: %s",
+                            full_name,
+                            cache_key.decode(),
+                            type(e).__name__,
+                            e,
+                        )
                         buffer = None
                 else:
                     buffer = None
@@ -131,8 +147,13 @@ def cached(exptime: Union[int, Callable[..., int]],
                         with sentry_sdk.start_span(op="deserialize", description=str(len(buffer))):
                             result = deserialize(lz4.frame.decompress(buffer))
                     except Exception as e:
-                        log.error("Failed to deserialize cached %s/%s: %s: %s",
-                                  full_name, cache_key.decode(), type(e).__name__, e)
+                        log.error(
+                            "Failed to deserialize cached %s/%s: %s: %s",
+                            full_name,
+                            cache_key.decode(),
+                            type(e).__name__,
+                            e,
+                        )
                     else:
                         t = exptime(result=result, **args_dict) if callable(exptime) else exptime
                         if refresh_on_access:
@@ -145,7 +166,8 @@ def cached(exptime: Union[int, Callable[..., int]],
                             except CancelCache:
                                 log.info("%s/%s was ignored", full_name, cache_key.decode())
                                 client.metrics["ignored"].labels(
-                                    __package__, __version__, short_name).inc()
+                                    __package__, __version__, short_name
+                                ).inc()
                                 client.metrics["context"]["ignores"].get()[short_name] += 1
                                 ignore = True
                             except Exception:
@@ -155,12 +177,12 @@ def cached(exptime: Union[int, Callable[..., int]],
                                 log.debug("%s/postprocess passed OK", full_name)
                         if not ignore:
                             log.debug("%s cache hit", full_name)
-                            client.metrics["hits"] \
-                                .labels(__package__, __version__, short_name) \
-                                .inc()
-                            client.metrics["hit_latency"] \
-                                .labels(__package__, __version__, short_name) \
-                                .observe(time.time() - start_time)
+                            client.metrics["hits"].labels(
+                                __package__, __version__, short_name
+                            ).inc()
+                            client.metrics["hit_latency"].labels(
+                                __package__, __version__, short_name
+                            ).observe(time.time() - start_time)
                             client.metrics["context"]["hits"].get()[short_name] += 1
                             return result
             log.debug("%s cache miss", full_name)
@@ -174,34 +196,46 @@ def cached(exptime: Union[int, Callable[..., int]],
                         uncompressed_payload_size = len(payload)
                         span.description = str(uncompressed_payload_size)
                 except Exception as e:
-                    log.error("Failed to serialize %s/%s: %s: %s",
-                              full_name, cache_key.decode(), type(e).__name__, e)
+                    log.error(
+                        "Failed to serialize %s/%s: %s: %s",
+                        full_name,
+                        cache_key.decode(),
+                        type(e).__name__,
+                        e,
+                    )
                 else:
+
                     async def set_cache_item():
                         nonlocal payload
                         with sentry_sdk.start_span(op="compress") as span:
                             payload = lz4.frame.compress(
-                                payload,
-                                block_size=lz4.frame.BLOCKSIZE_MAX1MB,
-                                compression_level=9)
-                            span.description = \
-                                "%d -> %d" % (uncompressed_payload_size, len(payload))
+                                payload, block_size=lz4.frame.BLOCKSIZE_MAX1MB, compression_level=9
+                            )
+                            span.description = "%d -> %d" % (
+                                uncompressed_payload_size,
+                                len(payload),
+                            )
                         try:
                             await client.set(cache_key, payload, exptime=t)
                         except aiomcache.exceptions.ClientException:
-                            log.exception("Failed to put %d bytes in memcached for %s/%s",
-                                          len(payload), full_name, cache_key.decode())
-                    await defer(set_cache_item(), "set_cache_items(%s, %d)" % (
-                        func.__qualname__, len(payload)))
-                    client.metrics["misses"] \
-                        .labels(__package__, __version__, short_name) \
-                        .inc()
-                    client.metrics["miss_latency"] \
-                        .labels(__package__, __version__, short_name) \
-                        .observe(time.time() - start_time)
-                    client.metrics["size"] \
-                        .labels(__package__, __version__, short_name) \
-                        .observe(uncompressed_payload_size)
+                            log.exception(
+                                "Failed to put %d bytes in memcached for %s/%s",
+                                len(payload),
+                                full_name,
+                                cache_key.decode(),
+                            )
+
+                    await defer(
+                        set_cache_item(),
+                        "set_cache_items(%s, %d)" % (func.__qualname__, len(payload)),
+                    )
+                    client.metrics["misses"].labels(__package__, __version__, short_name).inc()
+                    client.metrics["miss_latency"].labels(
+                        __package__, __version__, short_name
+                    ).observe(time.time() - start_time)
+                    client.metrics["size"].labels(__package__, __version__, short_name).observe(
+                        uncompressed_payload_size
+                    )
                     client.metrics["context"]["misses"].get()[short_name] += 1
             return result
 
@@ -213,7 +247,8 @@ def cached(exptime: Union[int, Callable[..., int]],
             props = key(**args_dict)
             assert isinstance(props, tuple), "key() must return a tuple in %s" % full_name
             cache_key = gen_cache_key(
-                full_name + "|" + str(version) + "|" + "|".join(str(p) for p in props))
+                full_name + "|" + str(version) + "|" + "|".join(str(p) for p in props)
+            )
             try:
                 return await client.delete(cache_key)
             except aiomcache.exceptions.ClientException:
@@ -279,48 +314,102 @@ def setup_cache_metrics(app: Union[web.Application, Mapping]) -> None:
     if cache is None:
         app["cache_context"] = {}
         return
-    app.setdefault("cache_context", {}).update({
-        "misses": ContextVar("cache_misses", default=None),
-        "ignores": ContextVar("cache_ignores", default=None),
-        "hits": ContextVar("cache_hits", default=None),
-    })
+    app.setdefault("cache_context", {}).update(
+        {
+            "misses": ContextVar("cache_misses", default=None),
+            "ignores": ContextVar("cache_ignores", default=None),
+            "hits": ContextVar("cache_hits", default=None),
+        }
+    )
     cache.metrics = {
         "hits": Counter(
-            "cache_hits", "Number of times the cache was useful",
+            "cache_hits",
+            "Number of times the cache was useful",
             ["app_name", "version", "func"],
             registry=registry,
         ),
         "ignored": Counter(
-            "cache_ignored", "Number of times the cache was ignored",
+            "cache_ignored",
+            "Number of times the cache was ignored",
             ["app_name", "version", "func"],
             registry=registry,
         ),
         "misses": Counter(
-            "cache_misses", "Number of times the cache was useless",
+            "cache_misses",
+            "Number of times the cache was useless",
             ["app_name", "version", "func"],
             registry=registry,
         ),
         "hit_latency": Histogram(
-            "cache_hit_latency", "Elapsed time to retrieve items from the cache",
+            "cache_hit_latency",
+            "Elapsed time to retrieve items from the cache",
             ["app_name", "version", "func"],
             registry=registry,
         ),
         "miss_latency": Histogram(
-            "cache_miss_latency", "Elapsed time to retrieve items bypassing the cache",
+            "cache_miss_latency",
+            "Elapsed time to retrieve items bypassing the cache",
             ["app_name", "version", "func"],
-            buckets=[0.05, 0.1, 0.25, 0.5, 0.75, 1.0,
-                     1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0,
-                     12.0, 15.0, 20.0, 25.0, 30.0,
-                     45.0, 60.0, 120.0, 180.0, 240.0, INF],
+            buckets=[
+                0.05,
+                0.1,
+                0.25,
+                0.5,
+                0.75,
+                1.0,
+                1.5,
+                2.0,
+                2.5,
+                3.0,
+                4.0,
+                5.0,
+                6.0,
+                7.0,
+                8.0,
+                9.0,
+                10.0,
+                12.0,
+                15.0,
+                20.0,
+                25.0,
+                30.0,
+                45.0,
+                60.0,
+                120.0,
+                180.0,
+                240.0,
+                INF,
+            ],
             registry=registry,
         ),
         "size": Histogram(
-            "cache_size", "Cached object size",
+            "cache_size",
+            "Cached object size",
             ["app_name", "version", "func"],
-            buckets=[10, 100, 1000, 5000, 10000, 25000, 50000, 75000,
-                     100000, 200000, 300000, 400000, 500000, 750000,
-                     1000000, 2000000, 3000000, 4000000, 5000000, 7500000,
-                     10000000, INF],
+            buckets=[
+                10,
+                100,
+                1000,
+                5000,
+                10000,
+                25000,
+                50000,
+                75000,
+                100000,
+                200000,
+                300000,
+                400000,
+                500000,
+                750000,
+                1000000,
+                2000000,
+                3000000,
+                4000000,
+                5000000,
+                7500000,
+                10000000,
+                INF,
+            ],
             registry=registry,
         ),
         "context": app["cache_context"],
@@ -335,12 +424,14 @@ def setup_cache_metrics(app: Union[web.Application, Mapping]) -> None:
     key=lambda request, duration, **kwargs: (request.method, request.path, kwargs),
 )
 async def _fetch_endpoint_expiration(
-        request: AthenianWebRequest, duration: int, **kwargs) -> datetime:
+    request: AthenianWebRequest, duration: int, **kwargs
+) -> datetime:
     return datetime.now(timezone.utc) + timedelta(seconds=duration)
 
 
 def expires_header(duration: int):
     """Append "Expires" header to the response according to `duration` in seconds."""
+
     def cached_header_decorator(fn):
         async def wrapped_cached_header(request: AthenianWebRequest, **kwargs) -> web.Response:
             response, expires = await gather(

@@ -1,6 +1,18 @@
 from collections import defaultdict
-from typing import Any, Callable, Collection, Dict, Iterable, KeysView, List, Mapping, Optional, \
-    Sequence, Set, Union
+from typing import (
+    Any,
+    Callable,
+    Collection,
+    Dict,
+    Iterable,
+    KeysView,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Set,
+    Union,
+)
 
 import numpy as np
 
@@ -13,16 +25,17 @@ from athenian.api.models.web import InvalidRequestError, NotFoundError
 from athenian.api.response import ResponseError
 
 
-async def resolve_withgroups(model_withgroups: Optional[Iterable[Any]],
-                             kind: Any,
-                             dereference: bool,
-                             account: int,
-                             prefix: Optional[str],
-                             position: str,
-                             prefixer: Prefixer,
-                             sdb: DatabaseLike,
-                             group_type: Callable = lambda i: i,
-                             ) -> List[Dict[Any, Collection[int]]]:
+async def resolve_withgroups(
+    model_withgroups: Optional[Iterable[Any]],
+    kind: Any,
+    dereference: bool,
+    account: int,
+    prefix: Optional[str],
+    position: str,
+    prefixer: Prefixer,
+    sdb: DatabaseLike,
+    group_type: Callable = lambda i: i,
+) -> List[Dict[Any, Collection[int]]]:
     """
     Load IDs or normalize logins of one or more groups of participants.
 
@@ -47,16 +60,17 @@ async def resolve_withgroups(model_withgroups: Optional[Iterable[Any]],
         for k, people in (with_ or {}).items():
             if not people:
                 continue
-            withgroup[kind[k.upper()]] = group_type(compile_developers(
-                people, teams_map, prefix, dereference, prefixer, f"{position}.{k}"))
+            withgroup[kind[k.upper()]] = group_type(
+                compile_developers(
+                    people, teams_map, prefix, dereference, prefixer, f"{position}.{k}"
+                )
+            )
         if withgroup:
             result.append(withgroup)
     return result
 
 
-def scan_for_teams(people: Optional[List[str]],
-                   teams: Set[int],
-                   pointer: str) -> None:
+def scan_for_teams(people: Optional[List[str]], teams: Set[int], pointer: str) -> None:
     """Extract and validate all the team mentions."""
     for j, person in enumerate(people or []):
         if not person.startswith("{"):
@@ -66,16 +80,19 @@ def scan_for_teams(people: Optional[List[str]],
                 raise ValueError("the team format must be {<id>}")
             teams.add(int(person[1:-1]))
         except ValueError as e:
-            raise ResponseError(InvalidRequestError(
-                detail=str(e),
-                pointer=f"{pointer}[{j}]",
-            )) from e
+            raise ResponseError(
+                InvalidRequestError(
+                    detail=str(e),
+                    pointer=f"{pointer}[{j}]",
+                )
+            ) from e
 
 
-async def fetch_teams_map(teams: Collection[int],
-                          account: int,
-                          sdb: DatabaseLike,
-                          ) -> Dict[int, List[int]]:
+async def fetch_teams_map(
+    teams: Collection[int],
+    account: int,
+    sdb: DatabaseLike,
+) -> Dict[int, List[int]]:
     """Load the mapping from team ID to member IDs."""
     if not teams:
         return {}
@@ -87,9 +104,9 @@ async def fetch_teams_map(teams: Collection[int],
     if not isinstance(teams, (set, KeysView)):
         teams = set(teams)
     if diff := (teams - teams_map.keys()):
-        raise ResponseError(NotFoundError(
-            detail=f"Some teams do not exist or access denied: {diff}",
-        ))
+        raise ResponseError(
+            NotFoundError(detail=f"Some teams do not exist or access denied: {diff}")
+        )
     return teams_map
 
 
@@ -101,8 +118,11 @@ def flatten_teams(team_rows: Sequence[Mapping[Union[int, str], Any]]) -> Dict[in
     teams_map: Dict[int, Set[int]] = defaultdict(set)
     # iter children before parents
     for row in reversed(team_rows):
-        members, parent_id, team_id = \
-            row[Team.members.name], row[Team.parent_id.name], row[Team.id.name]
+        members, parent_id, team_id = (
+            row[Team.members.name],
+            row[Team.parent_id.name],
+            row[Team.id.name],
+        )
 
         teams_map[team_id] = teams_map[team_id].union(members)
         if parent_id is not None:
@@ -111,14 +131,15 @@ def flatten_teams(team_rows: Sequence[Mapping[Union[int, str], Any]]) -> Dict[in
     return {team_id: sorted(members) for team_id, members in teams_map.items()}
 
 
-def compile_developers(developers: Optional[Iterable[str]],
-                       teams: Dict[int, List[int]],
-                       prefix: Optional[str],
-                       dereference: bool,
-                       prefixer: Prefixer,
-                       pointer: str,
-                       unique: bool = True,
-                       ) -> Union[Sequence[str], Sequence[int]]:
+def compile_developers(
+    developers: Optional[Iterable[str]],
+    teams: Dict[int, List[int]],
+    prefix: Optional[str],
+    dereference: bool,
+    prefixer: Prefixer,
+    pointer: str,
+    unique: bool = True,
+) -> Union[Sequence[str], Sequence[int]]:
     """
     Produce the final list of participants with resolved teams.
 
@@ -135,10 +156,12 @@ def compile_developers(developers: Optional[Iterable[str]],
             try:
                 team = teams[int(dev[1:-1])]
             except KeyError:
-                raise ResponseError(InvalidRequestError(
-                    detail="Teams are not supported",
-                    pointer=f"{pointer}[{i}]",
-                ))
+                raise ResponseError(
+                    InvalidRequestError(
+                        detail="Teams are not supported",
+                        pointer=f"{pointer}[{i}]",
+                    )
+                )
             if not dereference:
                 team = {user_node_to_login(p) for p in team} - {None}
             devs.extend(team)
@@ -146,19 +169,26 @@ def compile_developers(developers: Optional[Iterable[str]],
         parts = dev.split("/")
         dev_prefix, dev_login = parts[0], parts[-1]
         if prefix is not None and dev_prefix != prefix and dev_prefix != MANNEQUIN_PREFIX:
-            raise ResponseError(InvalidRequestError(
-                detail='User "%s" has prefix "%s" that does not match with the repository prefix '
-                       '"%s"' % (dev, dev_prefix, prefix),
-                pointer=f"{pointer}[{i}]",
-            ))
+            raise ResponseError(
+                InvalidRequestError(
+                    detail=(
+                        'User "%s" has prefix "%s" that does not match with the repository prefix '
+                        '"%s"'
+                    )
+                    % (dev, dev_prefix, prefix),
+                    pointer=f"{pointer}[{i}]",
+                )
+            )
         if dereference:
             try:
                 devs.extend(user_login_to_nodes(dev_login))
             except KeyError as e:
-                raise ResponseError(InvalidRequestError(
-                    detail=f'User "{dev}" does not exist',
-                    pointer=f"{pointer}[{i}]",
-                )) from e
+                raise ResponseError(
+                    InvalidRequestError(
+                        detail=f'User "{dev}" does not exist',
+                        pointer=f"{pointer}[{i}]",
+                    )
+                ) from e
         else:
             devs.append(dev_login)
     if unique:

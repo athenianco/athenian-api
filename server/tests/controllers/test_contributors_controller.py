@@ -22,14 +22,13 @@ async def _test_get_contributors(client, cached, headers, app, client_cache):
     if not cached:
         app.app[CACHE_VAR_NAME] = None
 
-    response = await client.request(
-        method="GET", path="/v1/get/contributors/1", headers=headers,
-    )
+    response = await client.request(method="GET", path="/v1/get/contributors/1", headers=headers)
 
     assert response.status == 200
 
-    contribs = [Contributor.from_dict(c) for c in json.loads(
-        (await response.read()).decode("utf-8"))]
+    contribs = [
+        Contributor.from_dict(c) for c in json.loads((await response.read()).decode("utf-8"))
+    ]
 
     assert len(contribs) == 212
     assert len(set(c.login for c in contribs)) == len(contribs)
@@ -47,9 +46,7 @@ async def _test_get_contributors(client, cached, headers, app, client_cache):
 
 async def test_get_contributors_no_installation(client, headers, sdb):
     await sdb.execute(delete(RepositorySet))
-    response = await client.request(
-        method="GET", path="/v1/get/contributors/2", headers=headers,
-    )
+    response = await client.request(method="GET", path="/v1/get/contributors/2", headers=headers)
 
     assert response.status == 422
 
@@ -63,13 +60,11 @@ async def test_get_contributors_no_installation(client, headers, sdb):
     }
 
 
-@pytest.mark.parametrize("account", [3, 4],
-                         ids=["user is not a member of account",
-                              "account doesn't exist"])
+@pytest.mark.parametrize(
+    "account", [3, 4], ids=["user is not a member of account", "account doesn't exist"]
+)
 async def test_get_contributors_not_found(client, account, headers):
-    response = await client.request(
-        method="GET", path="/v1/get/contributors/3", headers=headers,
-    )
+    response = await client.request(method="GET", path="/v1/get/contributors/3", headers=headers)
 
     assert response.status == 404
 

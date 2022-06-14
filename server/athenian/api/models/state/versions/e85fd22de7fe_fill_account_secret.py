@@ -18,7 +18,6 @@ import sqlalchemy as sa
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Session
 
-
 # revision identifiers, used by Alembic.
 revision = "e85fd22de7fe"
 down_revision = "4b00ea73d30a"
@@ -38,9 +37,12 @@ class Account(declarative_base()):
     id = sa.Column(sa.Integer(), primary_key=True)
     secret_salt = sa.Column(sa.Integer())
     secret = sa.Column(sa.String(8))
-    created_at = sa.Column(sa.TIMESTAMP(timezone=True), nullable=False,
-                           default=lambda: datetime.now(timezone.utc),
-                           server_default=sa.sql.func.now())
+    created_at = sa.Column(
+        sa.TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        server_default=sa.sql.func.now(),
+    )
 
 
 def encode_slug(iid: int, salt: int) -> str:

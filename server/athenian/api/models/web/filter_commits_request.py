@@ -57,11 +57,18 @@ class _FilterCommitsRequest(Model, sealed=False):
         try:
             _FilterCommitsProperty(property)
         except ValueError:
-            raise ValueError("Invalid value for `property` - is not one of [%s]" %
-                             ",".join('"%s"' % f.value for f in _FilterCommitsProperty)) from None
+            raise ValueError(
+                "Invalid value for `property` - is not one of [%s]"
+                % ",".join('"%s"' % f.value for f in _FilterCommitsProperty)
+            ) from None
 
         self._property = property
 
 
-FilterCommitsRequest = AllOf(_FilterCommitsRequest, _CommitFilter, CommonFilterProperties,
-                             name="FilterCommitsRequest", module=__name__)
+FilterCommitsRequest = AllOf(
+    _FilterCommitsRequest,
+    _CommitFilter,
+    CommonFilterProperties,
+    name="FilterCommitsRequest",
+    module=__name__,
+)

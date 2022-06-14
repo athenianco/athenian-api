@@ -26,7 +26,11 @@ query = ObjectType("Query")
 @query.field("goals")
 @sentry_span
 async def resolve_goals(
-    obj: Any, info: GraphQLResolveInfo, accountId: int, teamId: int, **kwargs,
+    obj: Any,
+    info: GraphQLResolveInfo,
+    accountId: int,
+    teamId: int,
+    **kwargs,
 ) -> Any:
     """Serve goals() query."""
     team_rows, meta_ids = await gather(
@@ -63,12 +67,14 @@ async def resolve_goals(
         initial_from, initial_to = goal_initial_query_interval(valid_from, expires_at)
         initial_interval = goal_initial_query_interval(valid_from, expires_at)
 
-        goal_requests.append({
-            "metric": metric,
-            "time_intervals": (initial_interval, (valid_from, expires_at)),
-            "team_goal_rows": group_team_goal_rows,
-            "teams": group_teams,
-        })
+        goal_requests.append(
+            {
+                "metric": metric,
+                "time_intervals": (initial_interval, (valid_from, expires_at)),
+                "team_goal_rows": group_team_goal_rows,
+                "teams": group_teams,
+            }
+        )
 
     all_metric_values = await calculate_team_metrics(
         metrics=list({r["metric"] for r in goal_requests}),
@@ -126,7 +132,9 @@ def _team_tree_to_goal_tree(
 
 
 def _team_tree_to_team_goal_tree(
-    team_tree: TeamTree, team_goal_rows_map: Mapping[int, Row], metric_values: GoalMetricValues,
+    team_tree: TeamTree,
+    team_goal_rows_map: Mapping[int, Row],
+    metric_values: GoalMetricValues,
 ) -> TeamGoalTree:
     try:
         team_goal_row = team_goal_rows_map[team_tree.id]

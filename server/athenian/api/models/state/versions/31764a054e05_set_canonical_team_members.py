@@ -15,7 +15,6 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Session
 import xxhash
 
-
 # revision identifiers, used by Alembic.
 revision = "31764a054e05"
 down_revision = "916dfb933702"
@@ -23,18 +22,63 @@ branch_labels = None
 depends_on = None
 
 bots = {
-    "allcontributors", "atlantis-faire-staging", "azure-pipelines", "bors", "changeset-bot",
-    "clubhouse", "codeclimate", "codecov", "codefactor-io", "commitlint", "cypress",
-    "datacamp-inf-selfserve-local", "datacamp-inf-selfserve-ops", "datacamp-inf-selfserve-prod",
-    "datacamp-inf-selfserve-staging", "deepcode-ci-bot", "dependabot", "dependabot-preview",
-    "depfu", "faire-pr-bot-app", "gally-bot", "github-actions", "gogogithubapp", "greenkeeper",
-    "guardrails", "height", "imgbot", "jira", "linc", "linear-app", "lingohub",
-    "linux-foundation-easycla", "locale-translation", "mergequeue", "netlify", "probot-auto-merge",
-    "pull-request-badge", "release-drafter", "release-please", "renovate", "sentry-internal-tools",
-    "sentry-io", "slack-trop", "slack-trop-test", "slash-commands", "sonarcloud",
-    "sourcelevel-bot", "stale", "stepsize", "swarmia", "sync-by-unito", "thehub-integration",
-    "transifex-integration", "trybe-evaluation-feedback", "trybe-evaluation-feedback-staging",
-    "vercel", "whitesource-bolt-for-github",
+    "allcontributors",
+    "atlantis-faire-staging",
+    "azure-pipelines",
+    "bors",
+    "changeset-bot",
+    "clubhouse",
+    "codeclimate",
+    "codecov",
+    "codefactor-io",
+    "commitlint",
+    "cypress",
+    "datacamp-inf-selfserve-local",
+    "datacamp-inf-selfserve-ops",
+    "datacamp-inf-selfserve-prod",
+    "datacamp-inf-selfserve-staging",
+    "deepcode-ci-bot",
+    "dependabot",
+    "dependabot-preview",
+    "depfu",
+    "faire-pr-bot-app",
+    "gally-bot",
+    "github-actions",
+    "gogogithubapp",
+    "greenkeeper",
+    "guardrails",
+    "height",
+    "imgbot",
+    "jira",
+    "linc",
+    "linear-app",
+    "lingohub",
+    "linux-foundation-easycla",
+    "locale-translation",
+    "mergequeue",
+    "netlify",
+    "probot-auto-merge",
+    "pull-request-badge",
+    "release-drafter",
+    "release-please",
+    "renovate",
+    "sentry-internal-tools",
+    "sentry-io",
+    "slack-trop",
+    "slack-trop-test",
+    "slash-commands",
+    "sonarcloud",
+    "sourcelevel-bot",
+    "stale",
+    "stepsize",
+    "swarmia",
+    "sync-by-unito",
+    "thehub-integration",
+    "transifex-integration",
+    "trybe-evaluation-feedback",
+    "trybe-evaluation-feedback-staging",
+    "vercel",
+    "whitesource-bolt-for-github",
 }
 
 
@@ -55,13 +99,20 @@ def make_team_cls(with_checksum: bool):
         members_count = sa.Column(sa.Integer(), nullable=False)
         if with_checksum:
             members_checksum = sa.Column(sa.BigInteger())
-        created_at = sa.Column(sa.TIMESTAMP(timezone=True), nullable=False,
-                               default=lambda: datetime.now(timezone.utc),
-                               server_default=sa.func.now())
-        updated_at = sa.Column(sa.TIMESTAMP(timezone=True), nullable=False,
-                               default=lambda: datetime.now(timezone.utc),
-                               server_default=sa.func.now(),
-                               onupdate=lambda ctx: datetime.now(timezone.utc))
+        created_at = sa.Column(
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            default=lambda: datetime.now(timezone.utc),
+            server_default=sa.func.now(),
+        )
+        updated_at = sa.Column(
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            default=lambda: datetime.now(timezone.utc),
+            server_default=sa.func.now(),
+            onupdate=lambda ctx: datetime.now(timezone.utc),
+        )
+
     return Team
 
 
@@ -92,8 +143,9 @@ def downgrade():
     for obj in session.query(make_team_cls(True)):
         new_members = ["github.com/" + user.rsplit("/", 1)[1] for user in obj.members]
         obj.members = new_members
-        obj.members_checksum = \
-            ctypes.c_longlong(xxhash.xxh64_intdigest(json.dumps(new_members))).value
+        obj.members_checksum = ctypes.c_longlong(
+            xxhash.xxh64_intdigest(json.dumps(new_members))
+        ).value
         session.add(obj)
     session.commit()
     with op.batch_alter_table("teams") as bop:

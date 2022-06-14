@@ -6,8 +6,9 @@ from flogging import flogging
 import numpy as np
 import pandas as pd
 
-from athenian.api.internal.features.github.pull_request_metrics import \
-    PullRequestMetricCalculatorEnsemble
+from athenian.api.internal.features.github.pull_request_metrics import (
+    PullRequestMetricCalculatorEnsemble,
+)
 from athenian.api.internal.miners.types import PullRequestFacts
 from athenian.api.models.web import PullRequestMetricID
 from athenian.api.typing_utils import df_from_structs
@@ -38,22 +39,26 @@ def main():
     df = df_from_structs(facts)
     log.info("Calculating the timedeltas")
     ensemble = PullRequestMetricCalculatorEnsemble(
-        PullRequestMetricID.PR_REVIEW_TIME, PullRequestMetricID.PR_LEAD_TIME,
-        quantiles=(0, 1))
-    ensemble(df,
-             np.array(["1970-01-01"], dtype="datetime64[ns]"),
-             np.array(["2020-01-01"], dtype="datetime64[ns]"),
-             [np.arange(len(df))])
+        PullRequestMetricID.PR_REVIEW_TIME, PullRequestMetricID.PR_LEAD_TIME, quantiles=(0, 1)
+    )
+    ensemble(
+        df,
+        np.array(["1970-01-01"], dtype="datetime64[ns]"),
+        np.array(["2020-01-01"], dtype="datetime64[ns]"),
+        [np.arange(len(df))],
+    )
     log.info("Building the result")
     review_times = ensemble[PullRequestMetricID.PR_REVIEW_TIME].peek.astype("timedelta64[s]")
     lead_times = ensemble[PullRequestMetricID.PR_LEAD_TIME].peek.astype("timedelta64[s]")
-    df = pd.DataFrame({
-        "acc": accs,
-        "size": df["size"],
-        "node_id": node_ids,
-        "review_time": review_times.squeeze(),
-        "lead_time": lead_times.squeeze(),
-    })
+    df = pd.DataFrame(
+        {
+            "acc": accs,
+            "size": df["size"],
+            "node_id": node_ids,
+            "review_time": review_times.squeeze(),
+            "lead_time": lead_times.squeeze(),
+        }
+    )
     log.info("Writing the result")
     df.to_pickle(sys.argv[2])
 

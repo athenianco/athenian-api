@@ -22,12 +22,14 @@ class _ReleaseMatchSetting(Model, sealed=False):
         "default_branch": "default_branch",
     }
 
-    def __init__(self,
-                 branches: Optional[str] = None,
-                 tags: Optional[str] = None,
-                 events: Optional[str] = None,
-                 match: Optional[str] = None,
-                 default_branch: Optional[str] = None):
+    def __init__(
+        self,
+        branches: Optional[str] = None,
+        tags: Optional[str] = None,
+        events: Optional[str] = None,
+        match: Optional[str] = None,
+        default_branch: Optional[str] = None,
+    ):
         """ReleaseMatchSetting - a model defined in OpenAPI
 
         :param branches: The branches of this ReleaseMatchSetting.
@@ -146,8 +148,9 @@ class _ReleaseMatchSetting(Model, sealed=False):
             raise ValueError("Invalid value for `match`, must not be `None`")
         if match not in ReleaseMatchStrategy:
             raise ValueError(
-                "Invalid value for `match` (%s), must be one of %s" %
-                (match, list(ReleaseMatchStrategy)))
+                "Invalid value for `match` (%s), must be one of %s"
+                % (match, list(ReleaseMatchStrategy))
+            )
 
         self._match = match
 
@@ -178,7 +181,9 @@ class ReleaseMatchSetting(_ReleaseMatchSetting):
     @classmethod
     def from_dataclass(cls, struct) -> "ReleaseMatchSetting":
         """Convert a dataclass structure to the web model."""
-        return ReleaseMatchSetting(branches=struct.branches,
-                                   tags=struct.tags,
-                                   events=struct.events,
-                                   match=struct.match.name)
+        return ReleaseMatchSetting(
+            branches=struct.branches,
+            tags=struct.tags,
+            events=struct.events,
+            match=struct.match.name,
+        )

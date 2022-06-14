@@ -11,9 +11,9 @@ class DiffReleasesRequest(Model):
     attribute_types = {"account": int, "borders": Dict[str, List[ReleasePair]]}
     attribute_map = {"account": "account", "borders": "borders"}
 
-    def __init__(self,
-                 account: Optional[int] = None,
-                 borders: Optional[Dict[str, List[ReleasePair]]] = None):
+    def __init__(
+        self, account: Optional[int] = None, borders: Optional[Dict[str, List[ReleasePair]]] = None
+    ):
         """DiffReleasesRequest - a model defined in OpenAPI
 
         :param account: The account of this DiffReleasesRequest.

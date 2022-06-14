@@ -12,13 +12,20 @@ from athenian.api.cache import cached, middle_term_exptime, short_term_exptime
 from athenian.api.db import Database
 from athenian.api.internal.logical_repos import drop_logical_repo
 from athenian.api.internal.miners.github.logical import split_logical_deployed_components
-from athenian.api.internal.miners.types import DeployedComponent as DeployedComponentDC, \
-    Deployment, DeploymentConclusion, Environment
+from athenian.api.internal.miners.types import (
+    DeployedComponent as DeployedComponentDC,
+    Deployment,
+    DeploymentConclusion,
+    Environment,
+)
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import LogicalRepositorySettings
 from athenian.api.models.metadata.github import NodeCommit
-from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel, \
-    DeploymentNotification
+from athenian.api.models.persistentdata.models import (
+    DeployedComponent,
+    DeployedLabel,
+    DeploymentNotification,
+)
 from athenian.api.tracing import sentry_span
 
 
@@ -30,15 +37,16 @@ from athenian.api.tracing import sentry_span
     exptime=middle_term_exptime,
     refresh_on_access=True,
 )
-async def load_included_deployments(names: Collection[str],
-                                    logical_settings: LogicalRepositorySettings,
-                                    prefixer: Prefixer,
-                                    account: int,
-                                    meta_ids: Tuple[int, ...],
-                                    mdb: Database,
-                                    rdb: Database,
-                                    cache: Optional[aiomcache.Client],
-                                    ) -> Dict[str, Deployment]:
+async def load_included_deployments(
+    names: Collection[str],
+    logical_settings: LogicalRepositorySettings,
+    prefixer: Prefixer,
+    account: int,
+    meta_ids: Tuple[int, ...],
+    mdb: Database,
+    rdb: Database,
+    cache: Optional[aiomcache.Client],
+) -> Dict[str, Deployment]:
     """
     Fetch brief details about the deployments.
 
@@ -46,22 +54,34 @@ async def load_included_deployments(names: Collection[str],
     """
     notifications, components, labels = await gather(
         read_sql_query(
-            select([DeploymentNotification])
-            .where(and_(DeploymentNotification.account_id == account,
-                        DeploymentNotification.name.in_any_values(names))),
-            rdb, DeploymentNotification,
+            select([DeploymentNotification]).where(
+                and_(
+                    DeploymentNotification.account_id == account,
+                    DeploymentNotification.name.in_any_values(names),
+                )
+            ),
+            rdb,
+            DeploymentNotification,
         ),
         read_sql_query(
-            select([DeployedComponent])
-            .where(and_(DeployedComponent.account_id == account,
-                        DeployedComponent.deployment_name.in_any_values(names))),
-            rdb, DeployedComponent,
+            select([DeployedComponent]).where(
+                and_(
+                    DeployedComponent.account_id == account,
+                    DeployedComponent.deployment_name.in_any_values(names),
+                )
+            ),
+            rdb,
+            DeployedComponent,
         ),
         read_sql_query(
-            select([DeployedLabel])
-            .where(and_(DeployedLabel.account_id == account,
-                        DeployedLabel.deployment_name.in_any_values(names))),
-            rdb, DeployedLabel,
+            select([DeployedLabel]).where(
+                and_(
+                    DeployedLabel.account_id == account,
+                    DeployedLabel.deployment_name.in_any_values(names),
+                )
+            ),
+            rdb,
+            DeployedLabel,
         ),
     )
     repo_node_to_name = prefixer.repo_node_to_name.get
@@ -72,31 +92,37 @@ async def load_included_deployments(names: Collection[str],
     if len(commit_ids) and commit_ids[0] is None:
         commit_ids = commit_ids[1:]
     hashes = await mdb.fetch_all(
-        select([NodeCommit.sha, NodeCommit.graph_id])
-        .where(and_(NodeCommit.acc_id.in_(meta_ids),
-                    NodeCommit.graph_id.in_any_values(commit_ids))))
+        select([NodeCommit.sha, NodeCommit.graph_id]).where(
+            and_(NodeCommit.acc_id.in_(meta_ids), NodeCommit.graph_id.in_any_values(commit_ids))
+        )
+    )
     hashes = {r[NodeCommit.graph_id.name]: r[NodeCommit.sha.name] for r in hashes}
     labels = group_deployed_labels_df(labels)
     labels_by_dep = {
-        name: dict(zip(keyvals[DeployedLabel.key.name].values,
-                       keyvals[DeployedLabel.value.name].values))
+        name: dict(
+            zip(keyvals[DeployedLabel.key.name].values, keyvals[DeployedLabel.value.name].values)
+        )
         for name, keyvals in zip(labels.index.values, labels["labels"].values)
     }
     components = split_logical_deployed_components(
-        notifications, labels, components,
-        logical_settings.with_logical_deployments([]), logical_settings,
+        notifications,
+        labels,
+        components,
+        logical_settings.with_logical_deployments([]),
+        logical_settings,
     )
     comps_by_dep = {}
     for name, repo, ref, commit_id in zip(
-            components[DeployedComponent.deployment_name.name].values,
-            components[DeployedComponent.repository_full_name].values,
-            components[DeployedComponent.reference.name].values,
-            components[DeployedComponent.resolved_commit_node_id.name].values):
+        components[DeployedComponent.deployment_name.name].values,
+        components[DeployedComponent.repository_full_name].values,
+        components[DeployedComponent.reference.name].values,
+        components[DeployedComponent.resolved_commit_node_id.name].values,
+    ):
         comps_by_dep.setdefault(name, []).append(
             DeployedComponentDC(
-                repository_full_name=repo,
-                reference=ref,
-                sha=hashes.get(commit_id)))
+                repository_full_name=repo, reference=ref, sha=hashes.get(commit_id)
+            )
+        )
     return {
         name: Deployment(
             name=name,
@@ -129,27 +155,36 @@ repository_environment_threshold = timedelta(days=60)
     deserialize=pickle.loads,
     key=lambda repos, **_: (",".join(sorted(repos)),),
 )
-async def fetch_repository_environments(repos: Collection[str],
-                                        prefixer: Prefixer,
-                                        account: int,
-                                        rdb: Database,
-                                        cache: Optional[aiomcache.Client],
-                                        ) -> Dict[str, List[str]]:
+async def fetch_repository_environments(
+    repos: Collection[str],
+    prefixer: Prefixer,
+    account: int,
+    rdb: Database,
+    cache: Optional[aiomcache.Client],
+) -> Dict[str, List[str]]:
     """Map environments to repositories that have deployed there."""
     repo_name_to_node_get = prefixer.repo_name_to_node.get
     repo_ids = {repo_name_to_node_get(r) for r in repos} - {None}
     rows = await rdb.fetch_all(
         select([DeployedComponent.repository_node_id, DeploymentNotification.environment])
-        .select_from(join(DeployedComponent, DeploymentNotification, and_(
-            DeployedComponent.account_id == DeploymentNotification.account_id,
-            DeployedComponent.deployment_name == DeploymentNotification.name,
-        )))
-        .where(and_(
-            DeployedComponent.account_id == account,
-            DeployedComponent.repository_node_id.in_(repo_ids),
-            DeploymentNotification.finished_at >
-            datetime.now(timezone.utc) - repository_environment_threshold,
-        ))
+        .select_from(
+            join(
+                DeployedComponent,
+                DeploymentNotification,
+                and_(
+                    DeployedComponent.account_id == DeploymentNotification.account_id,
+                    DeployedComponent.deployment_name == DeploymentNotification.name,
+                ),
+            )
+        )
+        .where(
+            and_(
+                DeployedComponent.account_id == account,
+                DeployedComponent.repository_node_id.in_(repo_ids),
+                DeploymentNotification.finished_at
+                > datetime.now(timezone.utc) - repository_environment_threshold,
+            )
+        )
         .group_by(DeployedComponent.repository_node_id, DeploymentNotification.environment)
         .distinct(),
     )
@@ -165,10 +200,12 @@ async def fetch_repository_environments(repos: Collection[str],
 def group_deployed_labels_df(df: pd.DataFrame) -> pd.DataFrame:
     """Group the DataFrame with key-value labels by deployment name."""
     groups = list(df.groupby(DeployedLabel.deployment_name.name, sort=False))
-    grouped_labels = pd.DataFrame({
-        "deployment_name": [g[0] for g in groups],
-        "labels": [g[1] for g in groups],
-    })
+    grouped_labels = pd.DataFrame(
+        {
+            "deployment_name": [g[0] for g in groups],
+            "labels": [g[1] for g in groups],
+        }
+    )
     for df in grouped_labels["labels"].values:
         df.reset_index(drop=True, inplace=True)
     grouped_labels.set_index("deployment_name", drop=True, inplace=True)
@@ -190,14 +227,15 @@ class NoDeploymentNotificationsError(Exception):
         time_to.timestamp(),
     ),
 )
-async def mine_environments(repos: Optional[List[str]],
-                            time_from: datetime,
-                            time_to: datetime,
-                            prefixer: Prefixer,
-                            account: int,
-                            rdb: Database,
-                            cache: Optional[aiomcache.Client],
-                            ) -> List[Environment]:
+async def mine_environments(
+    repos: Optional[List[str]],
+    time_from: datetime,
+    time_to: datetime,
+    prefixer: Prefixer,
+    account: int,
+    rdb: Database,
+    cache: Optional[aiomcache.Client],
+) -> List[Environment]:
     """
     Fetch unique deployment environments according to the filters.
 
@@ -211,19 +249,25 @@ async def mine_environments(repos: Optional[List[str]],
     if repos:
         repo_name_to_node = prefixer.repo_name_to_node.get
         repo_node_ids = {repo_name_to_node(drop_logical_repo(r)) for r in repos} - {None}
-        core = join(DeploymentNotification, DeployedComponent, and_(
-            DeploymentNotification.account_id == DeployedComponent.account_id,
-            DeploymentNotification.name == DeployedComponent.deployment_name,
-        ))
+        core = join(
+            DeploymentNotification,
+            DeployedComponent,
+            and_(
+                DeploymentNotification.account_id == DeployedComponent.account_id,
+                DeploymentNotification.name == DeployedComponent.deployment_name,
+            ),
+        )
         filters.append(DeployedComponent.repository_node_id.in_(repo_node_ids))
     else:
         core = DeploymentNotification
     query = (
-        select([
-            DeploymentNotification.environment,
-            func.count(DeploymentNotification.name).label("deployments_count"),
-            func.max(DeploymentNotification.finished_at).label("latest_finished_at"),
-        ])
+        select(
+            [
+                DeploymentNotification.environment,
+                func.count(DeploymentNotification.name).label("deployments_count"),
+                func.max(DeploymentNotification.finished_at).label("latest_finished_at"),
+            ]
+        )
         .select_from(core)
         .where(and_(*filters))
         .group_by(DeploymentNotification.environment)
@@ -233,25 +277,28 @@ async def mine_environments(repos: Optional[List[str]],
     envs = {r[0]: r for r in rows}
     if not envs:
         has_notifications = await rdb.fetch_val(
-            select([func.count(DeploymentNotification.name)])
-            .where(DeploymentNotification.account_id == account))
+            select([func.count(DeploymentNotification.name)]).where(
+                DeploymentNotification.account_id == account
+            )
+        )
         if not has_notifications:
             raise NoDeploymentNotificationsError()
         return []
     queries = [
-        select([
-            DeploymentNotification.environment,
-            DeploymentNotification.conclusion,
-        ]).where(and_(
-            DeploymentNotification.account_id == account,
-            DeploymentNotification.environment == env,
-            DeploymentNotification.finished_at == envs[env]["latest_finished_at"],
-        ))
+        select([DeploymentNotification.environment, DeploymentNotification.conclusion]).where(
+            and_(
+                DeploymentNotification.account_id == account,
+                DeploymentNotification.environment == env,
+                DeploymentNotification.finished_at == envs[env]["latest_finished_at"],
+            )
+        )
         for env in envs
     ]
     query = union_all(*queries) if len(queries) > 1 else queries[0]
     conclusions = dict(await rdb.fetch_all(query))
-    return [Environment(name=key,
-                        deployments_count=val["deployments_count"],
-                        last_conclusion=conclusions[key])
-            for key, val in envs.items()]
+    return [
+        Environment(
+            name=key, deployments_count=val["deployments_count"], last_conclusion=conclusions[key]
+        )
+        for key, val in envs.items()
+    ]

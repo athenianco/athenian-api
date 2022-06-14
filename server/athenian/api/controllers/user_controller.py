@@ -14,19 +14,42 @@ from athenian.api.async_utils import gather
 from athenian.api.cache import cached, max_exptime
 from athenian.api.controllers.invitation_controller import join_account
 from athenian.api.db import DatabaseLike
-from athenian.api.internal.account import get_account_organizations, \
-    get_user_account_status_from_request, is_membership_check_enabled, only_admin, only_god
+from athenian.api.internal.account import (
+    get_account_organizations,
+    get_user_account_status_from_request,
+    is_membership_check_enabled,
+    only_admin,
+    only_god,
+)
 from athenian.api.internal.jira import get_jira_id
 from athenian.api.internal.user import load_user_accounts
-from athenian.api.models.metadata.jira import Installation as JIRAInstallation, \
-    Project as JIRAProject
-from athenian.api.models.state.models import Account as DBAccount, AccountFeature, \
-    BanishedUserAccount, Feature, FeatureComponent, God, Invitation, UserAccount
-from athenian.api.models.web import Account, AccountUserChangeRequest, ForbiddenError, \
-    InvalidRequestError, JIRAInstallation as WebJIRAInstallation, NotFoundError, Organization, \
-    ProductFeature, UserChangeStatus
+from athenian.api.models.metadata.jira import (
+    Installation as JIRAInstallation,
+    Project as JIRAProject,
+)
+from athenian.api.models.state.models import (
+    Account as DBAccount,
+    AccountFeature,
+    BanishedUserAccount,
+    Feature,
+    FeatureComponent,
+    God,
+    Invitation,
+    UserAccount,
+)
+from athenian.api.models.web import (
+    Account,
+    AccountUserChangeRequest,
+    ForbiddenError,
+    InvalidRequestError,
+    JIRAInstallation as WebJIRAInstallation,
+    NotFoundError,
+    Organization,
+    ProductFeature,
+    UserChangeStatus,
+)
 from athenian.api.request import AthenianWebRequest
-from athenian.api.response import model_response, ResponseError
+from athenian.api.response import ResponseError, model_response
 from athenian.api.serialization import deserialize_datetime
 
 
@@ -34,9 +57,15 @@ async def get_user(request: AthenianWebRequest) -> web.Response:
     """Return details about the current user."""
     user = await request.user()
     user.accounts = await load_user_accounts(
-        user.id, getattr(request, "god_id", user.id),
-        request.sdb, request.mdb, request.rdb, request.app["slack"],
-        request.user, request.cache)
+        user.id,
+        getattr(request, "god_id", user.id),
+        request.sdb,
+        request.mdb,
+        request.rdb,
+        request.app["slack"],
+        request.user,
+        request.cache,
+    )
     if user.account is not None and user.account not in user.accounts:
         # join account by SSO, disable the org membership check
         user = await join_account(user.account, request, user=user, check_org_membership=False)
@@ -55,8 +84,9 @@ async def get_account_details(request: AthenianWebRequest, id: int) -> web.Respo
         if user[UserAccount.user_id.name] == user_id:
             break
     else:
-        raise ResponseError(ForbiddenError(
-            detail="User %s is not allowed to access account %d" % (user_id, id)))
+        raise ResponseError(
+            ForbiddenError(detail="User %s is not allowed to access account %d" % (user_id, id))
+        )
     admins = []
     regulars = []
     for user in users:
@@ -81,13 +111,14 @@ async def get_account_details(request: AthenianWebRequest, id: int) -> web.Respo
         jira = None
     elif isinstance(jira, Exception):
         raise jira from None
-    account = Account(regulars=[users[k] for k in regulars if k in users],
-                      admins=[users[k] for k in admins if k in users],
-                      organizations=[Organization(name=org.name,
-                                                  avatar_url=org.avatar_url,
-                                                  login=org.login)
-                                     for org in orgs],
-                      jira=jira)
+    account = Account(
+        regulars=[users[k] for k in regulars if k in users],
+        admins=[users[k] for k in admins if k in users],
+        organizations=[
+            Organization(name=org.name, avatar_url=org.avatar_url, login=org.login) for org in orgs
+        ],
+        jira=jira,
+    )
     return model_response(account)
 
 
@@ -98,18 +129,19 @@ async def get_account_details(request: AthenianWebRequest, id: int) -> web.Respo
     key=lambda account, **_: (account,),
     refresh_on_access=True,
 )
-async def _get_account_jira(account: int,
-                            sdb: DatabaseLike,
-                            mdb: DatabaseLike,
-                            cache: Optional[aiomcache.Client]) -> WebJIRAInstallation:
+async def _get_account_jira(
+    account: int, sdb: DatabaseLike, mdb: DatabaseLike, cache: Optional[aiomcache.Client]
+) -> WebJIRAInstallation:
     jira_id = await get_jira_id(account, sdb, cache)
     tasks = [
-        mdb.fetch_all(select([JIRAProject.key])
-                      .where(and_(JIRAProject.acc_id == jira_id,
-                                  JIRAProject.is_deleted.is_(False)))
-                      .order_by(JIRAProject.key)),
-        mdb.fetch_val(select([JIRAInstallation.base_url])
-                      .where(JIRAInstallation.acc_id == jira_id)),
+        mdb.fetch_all(
+            select([JIRAProject.key])
+            .where(and_(JIRAProject.acc_id == jira_id, JIRAProject.is_deleted.is_(False)))
+            .order_by(JIRAProject.key)
+        ),
+        mdb.fetch_val(
+            select([JIRAInstallation.base_url]).where(JIRAInstallation.acc_id == jira_id)
+        ),
     ]
     projects, base_url = await gather(*tasks)
     return WebJIRAInstallation(url=base_url, projects=[r[0] for r in projects])
@@ -124,14 +156,20 @@ async def get_account_features(request: AthenianWebRequest, id: int) -> web.Resp
 async def _get_account_features(sdb: morcilla.Database, id: int) -> web.Response:
     async def fetch_features():
         account_features = await sdb.fetch_all(
-            select([AccountFeature.feature_id, AccountFeature.parameters])
-            .where(and_(AccountFeature.account_id == id, AccountFeature.enabled)))
+            select([AccountFeature.feature_id, AccountFeature.parameters]).where(
+                and_(AccountFeature.account_id == id, AccountFeature.enabled)
+            )
+        )
         account_features = {row[0]: row[1] for row in account_features}
         features = await sdb.fetch_all(
-            select([Feature.id, Feature.name, Feature.default_parameters])
-            .where(and_(Feature.id.in_(account_features),
-                        Feature.component == FeatureComponent.webapp,
-                        Feature.enabled)))
+            select([Feature.id, Feature.name, Feature.default_parameters]).where(
+                and_(
+                    Feature.id.in_(account_features),
+                    Feature.component == FeatureComponent.webapp,
+                    Feature.enabled,
+                )
+            )
+        )
         features = {row[0]: [row[1], row[2]] for row in features}
         return account_features, features
 
@@ -162,8 +200,11 @@ async def _get_account_features(sdb: morcilla.Database, id: int) -> web.Response
 async def set_account_features(request: AthenianWebRequest, id: int, body: dict) -> web.Response:
     """Set account features if you are a god."""
     if getattr(request, "god_id", None) is None:  # no hasattr() please
-        raise ResponseError(ForbiddenError(
-            detail="User %s is not allowed to set features of accounts" % request.uid))
+        raise ResponseError(
+            ForbiddenError(
+                detail="User %s is not allowed to set features of accounts" % request.uid
+            )
+        )
     features = [ProductFeature.from_dict(f) for f in body]
     async with request.sdb.connection() as conn:
         await get_user_account_status_from_request(request, id)
@@ -172,25 +213,41 @@ async def set_account_features(request: AthenianWebRequest, id: int, body: dict)
                 try:
                     expires_at = deserialize_datetime(feature.parameters, max_future_delta=None)
                 except (TypeError, ValueError):
-                    raise ResponseError(InvalidRequestError(
-                        pointer=f".[{i}].parameters",
-                        detail=f"Invalid datetime string: {feature.parameters}"))
-                await conn.execute(update(DBAccount).where(DBAccount.id == id).values({
-                    DBAccount.expires_at: expires_at,
-                }))
+                    raise ResponseError(
+                        InvalidRequestError(
+                            pointer=f".[{i}].parameters",
+                            detail=f"Invalid datetime string: {feature.parameters}",
+                        )
+                    )
+                await conn.execute(
+                    update(DBAccount)
+                    .where(DBAccount.id == id)
+                    .values(
+                        {
+                            DBAccount.expires_at: expires_at,
+                        }
+                    )
+                )
             else:
-                if not isinstance(feature.parameters, dict) or \
-                        not isinstance(feature.parameters.get("enabled"), bool):
-                    raise ResponseError(InvalidRequestError(
-                        pointer=f".[{i}].parameters",
-                        detail='Parameters must be {"enabled": true|false, ...}',
-                    ))
-                fid = await conn.fetch_val(select([Feature.id])
-                                           .where(Feature.name == feature.name))
+                if not isinstance(feature.parameters, dict) or not isinstance(
+                    feature.parameters.get("enabled"), bool
+                ):
+                    raise ResponseError(
+                        InvalidRequestError(
+                            pointer=f".[{i}].parameters",
+                            detail='Parameters must be {"enabled": true|false, ...}',
+                        )
+                    )
+                fid = await conn.fetch_val(
+                    select([Feature.id]).where(Feature.name == feature.name)
+                )
                 if fid is None:
-                    raise ResponseError(InvalidRequestError(
-                        pointer=f".[{i}].name",
-                        detail=f"Feature is not supported: {feature.name}"))
+                    raise ResponseError(
+                        InvalidRequestError(
+                            pointer=f".[{i}].name",
+                            detail=f"Feature is not supported: {feature.name}",
+                        )
+                    )
                 if request.sdb.url.dialect == "postgresql":
                     query = postgres_insert(AccountFeature)
                     query = query.on_conflict_do_update(
@@ -202,12 +259,18 @@ async def set_account_features(request: AthenianWebRequest, id: int, body: dict)
                     )
                 else:
                     query = insert(AccountFeature).prefix_with("OR REPLACE")
-                await conn.execute(query.values(AccountFeature(
-                    account_id=id,
-                    feature_id=fid,
-                    enabled=feature.parameters["enabled"],
-                    parameters=feature.parameters.get("parameters"),
-                ).create_defaults().explode(with_primary_keys=True)))
+                await conn.execute(
+                    query.values(
+                        AccountFeature(
+                            account_id=id,
+                            feature_id=fid,
+                            enabled=feature.parameters["enabled"],
+                            parameters=feature.parameters.get("parameters"),
+                        )
+                        .create_defaults()
+                        .explode(with_primary_keys=True)
+                    )
+                )
     return await _get_account_features(request.sdb, id)
 
 
@@ -217,8 +280,11 @@ async def become_user(request: AthenianWebRequest, id: str = "") -> web.Response
     a super admin."""
     user_id = request.god_id
     async with request.sdb.connection() as conn:
-        if id and (await conn.fetch_one(
-                select([UserAccount]).where(UserAccount.user_id == id))) is None:
+        if (
+            id
+            and (await conn.fetch_one(select([UserAccount]).where(UserAccount.user_id == id)))
+            is None
+        ):
             raise ResponseError(NotFoundError(detail="User %s does not exist" % id))
         god = await conn.fetch_one(select([God]).where(God.user_id == user_id))
         god = God(**god).refresh()
@@ -226,9 +292,15 @@ async def become_user(request: AthenianWebRequest, id: str = "") -> web.Response
         await conn.execute(update(God).where(God.user_id == user_id).values(god.explode()))
     user = await request.app["auth"].get_user(id or user_id)
     user.accounts = await load_user_accounts(
-        user.id, getattr(request, "god_id", user.id),
-        request.sdb, request.mdb, request.rdb, request.app["slack"],
-        request.user, request.cache)
+        user.id,
+        getattr(request, "god_id", user.id),
+        request.sdb,
+        request.mdb,
+        request.rdb,
+        request.app["slack"],
+        request.user,
+        request.cache,
+    )
     return model_response(user)
 
 
@@ -238,17 +310,22 @@ async def change_user(request: AthenianWebRequest, body: dict) -> web.Response:
     aucr = AccountUserChangeRequest.from_dict(body)
     async with request.sdb.connection() as conn:
         users = await request.sdb.fetch_all(
-            select([UserAccount]).where(UserAccount.account_id == aucr.account))
+            select([UserAccount]).where(UserAccount.account_id == aucr.account)
+        )
         for user in users:
             if user[UserAccount.user_id.name] == aucr.user:
                 break
         else:
-            raise ResponseError(NotFoundError(
-                detail="User %s was not found in account %d" % (aucr.user, aucr.account)),
+            raise ResponseError(
+                NotFoundError(
+                    detail="User %s was not found in account %d" % (aucr.user, aucr.account)
+                ),
             )
         if len(users) == 1:
-            raise ResponseError(ForbiddenError(
-                detail="Forbidden to edit the last user of account %d" % aucr.account),
+            raise ResponseError(
+                ForbiddenError(
+                    detail="Forbidden to edit the last user of account %d" % aucr.account
+                ),
             )
         admins = set()
         for user in users:
@@ -256,33 +333,56 @@ async def change_user(request: AthenianWebRequest, body: dict) -> web.Response:
                 admins.add(user[UserAccount.user_id.name])
         if aucr.status == UserChangeStatus.REGULAR:
             if len(admins) == 1 and aucr.user in admins:
-                raise ResponseError(ForbiddenError(
-                    detail="Forbidden to demote the last admin of account %d" % aucr.account),
+                raise ResponseError(
+                    ForbiddenError(
+                        detail="Forbidden to demote the last admin of account %d" % aucr.account
+                    ),
                 )
-            await conn.execute(update(UserAccount)
-                               .where(and_(UserAccount.user_id == aucr.user,
-                                           UserAccount.account_id == aucr.account))
-                               .values({UserAccount.is_admin: False}))
+            await conn.execute(
+                update(UserAccount)
+                .where(
+                    and_(UserAccount.user_id == aucr.user, UserAccount.account_id == aucr.account)
+                )
+                .values({UserAccount.is_admin: False})
+            )
         elif aucr.status == UserChangeStatus.ADMIN:
-            await conn.execute(update(UserAccount)
-                               .where(and_(UserAccount.user_id == aucr.user,
-                                           UserAccount.account_id == aucr.account))
-                               .values({UserAccount.is_admin: True}))
+            await conn.execute(
+                update(UserAccount)
+                .where(
+                    and_(UserAccount.user_id == aucr.user, UserAccount.account_id == aucr.account)
+                )
+                .values({UserAccount.is_admin: True})
+            )
         elif aucr.status == UserChangeStatus.BANISHED:
             if len(admins) == 1 and aucr.user in admins:
-                raise ResponseError(ForbiddenError(
-                    detail="Forbidden to banish the last admin of account %d" % aucr.account),
+                raise ResponseError(
+                    ForbiddenError(
+                        detail="Forbidden to banish the last admin of account %d" % aucr.account
+                    ),
                 )
             async with conn.transaction():
-                await conn.execute(delete(UserAccount)
-                                   .where(and_(UserAccount.user_id == aucr.user,
-                                               UserAccount.account_id == aucr.account)))
-                await conn.execute(insert(BanishedUserAccount).values(BanishedUserAccount(
-                    user_id=aucr.user,
-                    account_id=aucr.account,
-                ).create_defaults().explode(with_primary_keys=True)))
+                await conn.execute(
+                    delete(UserAccount).where(
+                        and_(
+                            UserAccount.user_id == aucr.user,
+                            UserAccount.account_id == aucr.account,
+                        )
+                    )
+                )
+                await conn.execute(
+                    insert(BanishedUserAccount).values(
+                        BanishedUserAccount(
+                            user_id=aucr.user,
+                            account_id=aucr.account,
+                        )
+                        .create_defaults()
+                        .explode(with_primary_keys=True)
+                    )
+                )
                 if not await is_membership_check_enabled(aucr.account, conn):
-                    await conn.execute(update(Invitation)
-                                       .where(Invitation.account_id == aucr.account)
-                                       .values({Invitation.is_active: False}))
+                    await conn.execute(
+                        update(Invitation)
+                        .where(Invitation.account_id == aucr.account)
+                        .values({Invitation.is_active: False})
+                    )
     return await get_account_details(request, aucr.account)

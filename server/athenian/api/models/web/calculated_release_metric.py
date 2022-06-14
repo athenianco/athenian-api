@@ -129,8 +129,9 @@ class CalculatedReleaseMetric(Model, GranularityMixin):
             raise ValueError("Invalid value for `metrics`, must not be `None`")
         for i, metric in enumerate(metrics):
             if metric not in ReleaseMetricID:
-                raise ValueError("`metrics[%d]` = '%s' must be one of %s" % (
-                    i, metric, list(ReleaseMetricID)))
+                raise ValueError(
+                    "`metrics[%d]` = '%s' must be one of %s" % (i, metric, list(ReleaseMetricID))
+                )
 
         self._metrics = metrics
 

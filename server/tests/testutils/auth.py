@@ -9,4 +9,5 @@ def mock_auth0():
         if token == "null":
             return {"sub": self.force_user or self._default_user_id}
         return {"sub": token}
+
     return mock.patch.object(Auth0, "_extract_bearer_token", new=fake_extract_bearer_token)

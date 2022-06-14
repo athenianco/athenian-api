@@ -250,7 +250,10 @@ class _FilterPullRequestsRequest(Model, sealed=False):
         self._environment = environment
 
 
-FilterPullRequestsRequest = AllOf(_FilterPullRequestsRequest,
-                                  CommonFilterProperties,
-                                  CommonPullRequestFilters,
-                                  name="FilterPullRequestsRequest", module=__name__)
+FilterPullRequestsRequest = AllOf(
+    _FilterPullRequestsRequest,
+    CommonFilterProperties,
+    CommonPullRequestFilters,
+    name="FilterPullRequestsRequest",
+    module=__name__,
+)

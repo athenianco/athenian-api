@@ -42,8 +42,10 @@ class _ReleaseMatchRequest(Model):
         self._repositories = repositories
 
 
-ReleaseMatchRequest = AllOf(_ReleaseMatchSetting,
-                            _ReleaseMatchRequest,
-                            _Account,
-                            name="ReleaseMatchRequest",
-                            module=__name__)
+ReleaseMatchRequest = AllOf(
+    _ReleaseMatchSetting,
+    _ReleaseMatchRequest,
+    _Account,
+    name="ReleaseMatchRequest",
+    module=__name__,
+)

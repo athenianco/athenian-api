@@ -24,10 +24,11 @@ def main():
             continue
         repo_names = [f"'{r.split('/', 1)[1]}'" for r in old_items]
         node_rows = metadata_engine.execute(
-            f"SELECT graph_id, name_with_owner "
-            f"FROM github.node_repository "
+            "SELECT graph_id, name_with_owner "
+            "FROM github.node_repository "
             f"WHERE acc_id IN ({','.join(meta_ids[owner_id])}) "
-            f"  AND name_with_owner IN ({','.join(repo_names)})")
+            f"  AND name_with_owner IN ({','.join(repo_names)})"
+        )
         name_map = {row[1]: row[0] for row in node_rows}
         new_items = []
         for name in old_items:
@@ -37,8 +38,8 @@ def main():
             except KeyError:
                 continue
         state_engine.execute(
-            f"UPDATE repository_sets SET items = '{json.dumps(new_items)}' "
-            f"WHERE id = {rs_id}")
+            f"UPDATE repository_sets SET items = '{json.dumps(new_items)}' WHERE id = {rs_id}"
+        )
 
 
 if __name__ == "__main__":

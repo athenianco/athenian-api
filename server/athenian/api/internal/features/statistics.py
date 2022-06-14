@@ -46,8 +46,11 @@ class NumpyRandomChoiceCache:
 np.random.choice = NumpyRandomChoiceCache(2_000_000)  # +8MB
 
 
-def mean_confidence_interval(data: np.ndarray, may_have_negative_values: bool, confidence=0.8,
-                             ) -> Tuple[T, T, T]:
+def mean_confidence_interval(
+    data: np.ndarray,
+    may_have_negative_values: bool,
+    confidence=0.8,
+) -> Tuple[T, T, T]:
     """Calculate the mean value and the confidence interval."""
     assert len(data) > 0
     assert isinstance(data, np.ndarray)
@@ -79,7 +82,8 @@ def mean_confidence_interval(data: np.ndarray, may_have_negative_values: bool, c
                 conf_min = conf_max = m
             else:
                 conf_min, conf_max = scipy.stats.t.interval(
-                    confidence, len(arr) - 1, loc=m, scale=sem)
+                    confidence, len(arr) - 1, loc=m, scale=sem
+                )
         else:
             # There used to be an assumption of the log-normal distribution here.
             # However, it worked terribly bad in practice. Besides, we never have values bigger
@@ -89,9 +93,11 @@ def mean_confidence_interval(data: np.ndarray, may_have_negative_values: bool, c
             num_iterations = max(int(2000 * min(1.0, 200 / len(arr))), 10)
             for _ in range(10):
                 mci = bootstrap.bootstrap(
-                    arr, num_iterations=num_iterations, stat_func=bs_stats.mean, alpha=0.2)
+                    arr, num_iterations=num_iterations, stat_func=bs_stats.mean, alpha=0.2
+                )
                 m, conf_min, conf_max = map(
-                    exact_type, (mci.value, mci.lower_bound, mci.upper_bound))
+                    exact_type, (mci.value, mci.lower_bound, mci.upper_bound)
+                )
                 if conf_min >= 0:
                     break
                 num_iterations *= 2
@@ -103,6 +109,7 @@ def mean_confidence_interval(data: np.ndarray, may_have_negative_values: bool, c
         conf_min = timedelta(seconds=int(conf_min))
         conf_max = timedelta(seconds=int(conf_max))
     else:
+
         def type_conv(x):
             return data.dtype.type(x).item()
 

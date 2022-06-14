@@ -15,22 +15,41 @@ from athenian.api.controllers import invitation_controller
 from athenian.api.controllers.invitation_controller import _generate_account_secret
 from athenian.api.db import extract_registered_models
 from athenian.api.models.metadata import __min_version__
-from athenian.api.models.metadata.github import Base as GithubBase, CheckRunByPR, NodeCommit, \
-    NodePullRequest, PullRequest, PushCommit, SchemaMigration, ShadowBase as ShadowGithubBase
+from athenian.api.models.metadata.github import (
+    Base as GithubBase,
+    CheckRunByPR,
+    NodeCommit,
+    NodePullRequest,
+    PullRequest,
+    PushCommit,
+    SchemaMigration,
+    ShadowBase as ShadowGithubBase,
+)
 from athenian.api.models.metadata.jira import Base as JiraBase
 from athenian.api.models.persistentdata.models import DeployedComponent, DeploymentNotification
-from athenian.api.models.state.models import Account, AccountFeature, AccountGitHubAccount, \
-    AccountJiraInstallation, Feature, FeatureComponent, Invitation, RepositorySet, UserAccount, \
-    WorkType
+from athenian.api.models.state.models import (
+    Account,
+    AccountFeature,
+    AccountGitHubAccount,
+    AccountJiraInstallation,
+    Feature,
+    FeatureComponent,
+    Invitation,
+    RepositorySet,
+    UserAccount,
+    WorkType,
+)
 
 
 def fill_metadata_session(session: sqlalchemy.orm.Session):
     models = {}
     tables = {**GithubBase.metadata.tables, **JiraBase.metadata.tables}
-    for cls in chain(extract_registered_models(GithubBase).values(),
-                     extract_registered_models(JiraBase).values(),
-                     # shadow tables overwrite the original ones
-                     extract_registered_models(ShadowGithubBase).values()):
+    for cls in chain(
+        extract_registered_models(GithubBase).values(),
+        extract_registered_models(JiraBase).values(),
+        # shadow tables overwrite the original ones
+        extract_registered_models(ShadowGithubBase).values(),
+    ):
         table = getattr(cls, "__table__", None)
         if table is not None:
             models[table.fullname] = cls
@@ -111,32 +130,39 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
                         kwargs[key] = val or 0
                 session.add(model(**kwargs))
                 if table == "github.api_pull_requests":
-                    session.add(NodePullRequest(graph_id=kwargs["node_id"],
-                                                acc_id=kwargs["acc_id"],
-                                                title=kwargs["title"],
-                                                author_id=kwargs["user_node_id"],
-                                                merged=kwargs["merged"],
-                                                merged_at=kwargs["merged_at"],
-                                                merge_commit_id=kwargs["merge_commit_id"],
-                                                additions=kwargs["additions"],
-                                                deletions=kwargs["deletions"],
-                                                number=kwargs["number"],
-                                                repository_id=kwargs["repository_node_id"],
-                                                created_at=kwargs["created_at"],
-                                                closed_at=kwargs["closed_at"]))
+                    session.add(
+                        NodePullRequest(
+                            graph_id=kwargs["node_id"],
+                            acc_id=kwargs["acc_id"],
+                            title=kwargs["title"],
+                            author_id=kwargs["user_node_id"],
+                            merged=kwargs["merged"],
+                            merged_at=kwargs["merged_at"],
+                            merge_commit_id=kwargs["merge_commit_id"],
+                            additions=kwargs["additions"],
+                            deletions=kwargs["deletions"],
+                            number=kwargs["number"],
+                            repository_id=kwargs["repository_node_id"],
+                            created_at=kwargs["created_at"],
+                            closed_at=kwargs["closed_at"],
+                        )
+                    )
                 elif table == "github.api_push_commits":
-                    session.add(NodeCommit(graph_id=kwargs["node_id"],
-                                           acc_id=kwargs["acc_id"],
-                                           oid=kwargs["sha"],
-                                           message=kwargs["message"],
-                                           repository_id=kwargs["repository_node_id"],
-                                           committed_date=kwargs["committed_date"],
-                                           pushed_date=kwargs["pushed_date"],
-                                           committer_user_id=kwargs["committer_user_id"],
-                                           author_user_id=kwargs["author_user_id"],
-                                           additions=kwargs["additions"],
-                                           deletions=kwargs["deletions"],
-                                           ))
+                    session.add(
+                        NodeCommit(
+                            graph_id=kwargs["node_id"],
+                            acc_id=kwargs["acc_id"],
+                            oid=kwargs["sha"],
+                            message=kwargs["message"],
+                            repository_id=kwargs["repository_node_id"],
+                            committed_date=kwargs["committed_date"],
+                            pushed_date=kwargs["pushed_date"],
+                            committer_user_id=kwargs["committer_user_id"],
+                            author_user_id=kwargs["author_user_id"],
+                            additions=kwargs["additions"],
+                            deletions=kwargs["deletions"],
+                        )
+                    )
                 elif table == "github.api_check_runs":
                     del kwargs["committed_date_hack"]
                     del kwargs["pull_request_created_at"]
@@ -163,80 +189,118 @@ def fill_state_session(session: sqlalchemy.orm.Session):
     salt, secret = _generate_account_secret(3, "secret")
     session.add(Account(secret_salt=salt, secret=secret, expires_at=expires))
     salt, secret = _generate_account_secret(invitation_controller.admin_backdoor, "secret")
-    session.add(Account(id=invitation_controller.admin_backdoor, secret_salt=salt, secret=secret,
-                        expires_at=expires))
+    session.add(
+        Account(
+            id=invitation_controller.admin_backdoor,
+            secret_salt=salt,
+            secret=secret,
+            expires_at=expires,
+        )
+    )
     session.flush()
     session.add(AccountGitHubAccount(id=6366825, account_id=1))
-    session.add(UserAccount(
-        user_id="auth0|62a1ae88b6bba16c6dbc6870", account_id=1, is_admin=True))
-    session.add(UserAccount(
-        user_id="auth0|62a1ae88b6bba16c6dbc6870", account_id=2, is_admin=False))
-    session.add(UserAccount(
-        user_id="auth0|5e1f6e2e8bfa520ea5290741", account_id=3, is_admin=True))
-    session.add(UserAccount(
-        user_id="auth0|5e1f6e2e8bfa520ea5290741", account_id=1, is_admin=False))
-    session.add(RepositorySet(
-        name="all",
-        owner_id=1,
-        precomputed=os.getenv("PRECOMPUTED", "1") == "1",
-        tracking_re=".*alpha",
-        items=[["github.com/src-d/gitbase", 39652769],
-               ["github.com/src-d/go-git", 40550]]))
-    session.add(RepositorySet(
-        name="all",
-        owner_id=2,
-        items=[["github.com/src-d/hercules", 39652771],
-               ["github.com/athenianco/athenian-api", 0]]))
-    session.add(RepositorySet(
-        name="all",
-        owner_id=3,
-        items=[["github.com/athenianco/athenian-webapp", 0],
-               ["github.com/athenianco/athenian-api", 0]]))
+    session.add(UserAccount(user_id="auth0|62a1ae88b6bba16c6dbc6870", account_id=1, is_admin=True))
+    session.add(
+        UserAccount(user_id="auth0|62a1ae88b6bba16c6dbc6870", account_id=2, is_admin=False)
+    )
+    session.add(UserAccount(user_id="auth0|5e1f6e2e8bfa520ea5290741", account_id=3, is_admin=True))
+    session.add(
+        UserAccount(user_id="auth0|5e1f6e2e8bfa520ea5290741", account_id=1, is_admin=False)
+    )
+    session.add(
+        RepositorySet(
+            name="all",
+            owner_id=1,
+            precomputed=os.getenv("PRECOMPUTED", "1") == "1",
+            tracking_re=".*alpha",
+            items=[["github.com/src-d/gitbase", 39652769], ["github.com/src-d/go-git", 40550]],
+        )
+    )
+    session.add(
+        RepositorySet(
+            name="all",
+            owner_id=2,
+            items=[
+                ["github.com/src-d/hercules", 39652771],
+                ["github.com/athenianco/athenian-api", 0],
+            ],
+        )
+    )
+    session.add(
+        RepositorySet(
+            name="all",
+            owner_id=3,
+            items=[
+                ["github.com/athenianco/athenian-webapp", 0],
+                ["github.com/athenianco/athenian-api", 0],
+            ],
+        )
+    )
     session.add(Invitation(salt=777, account_id=3, created_by="auth0|5e1f6e2e8bfa520ea5290741"))
-    session.add(Feature(id=1000,
-                        name="jira",
-                        component=FeatureComponent.webapp,
-                        enabled=True,
-                        default_parameters={"a": "b", "c": "d"}))
-    session.add(Feature(id=1001,
-                        name="bare_value",
-                        component=FeatureComponent.webapp,
-                        enabled=True,
-                        default_parameters=365))
+    session.add(
+        Feature(
+            id=1000,
+            name="jira",
+            component=FeatureComponent.webapp,
+            enabled=True,
+            default_parameters={"a": "b", "c": "d"},
+        )
+    )
+    session.add(
+        Feature(
+            id=1001,
+            name="bare_value",
+            component=FeatureComponent.webapp,
+            enabled=True,
+            default_parameters=365,
+        )
+    )
     session.flush()
     for name in (Feature.USER_ORG_MEMBERSHIP_CHECK, Feature.GITHUB_LOGIN_ENABLED):
-        feature = session.query(Feature).filter(and_(
-            Feature.name == name,
-            Feature.component == FeatureComponent.server,
-        )).one_or_none()
+        feature = (
+            session.query(Feature)
+            .filter(
+                and_(
+                    Feature.name == name,
+                    Feature.component == FeatureComponent.server,
+                )
+            )
+            .one_or_none()
+        )
         if feature is None:
-            session.add(Feature(name=name,
-                                component=FeatureComponent.server,
-                                enabled=True))
-    session.add(AccountFeature(account_id=1, feature_id=1000, enabled=True,
-                               parameters={"a": "x"}))
-    session.add(AccountFeature(account_id=1, feature_id=1001, enabled=True,
-                               parameters=28))
+            session.add(Feature(name=name, component=FeatureComponent.server, enabled=True))
+    session.add(AccountFeature(account_id=1, feature_id=1000, enabled=True, parameters={"a": "x"}))
+    session.add(AccountFeature(account_id=1, feature_id=1001, enabled=True, parameters=28))
     session.add(AccountJiraInstallation(id=1, account_id=1))
-    session.add(WorkType(account_id=1, name="Bug Fixing", color="FF0000", rules=[[
-        "pull_request/label_include", ["bug", "fix"]]]))
+    session.add(
+        WorkType(
+            account_id=1,
+            name="Bug Fixing",
+            color="FF0000",
+            rules=[["pull_request/label_include", ["bug", "fix"]]],
+        )
+    )
 
 
 def fill_persistentdata_session(session: sqlalchemy.orm.Session):
-    session.add(DeploymentNotification(
-        account_id=1,
-        name="Dummy deployment",
-        conclusion="SUCCESS",
-        environment="production",
-        url=None,
-        started_at=datetime.datetime(2019, 11, 1, 12, 0, tzinfo=datetime.timezone.utc),
-        finished_at=datetime.datetime(2019, 11, 1, 12, 15, tzinfo=datetime.timezone.utc),
-    ))
+    session.add(
+        DeploymentNotification(
+            account_id=1,
+            name="Dummy deployment",
+            conclusion="SUCCESS",
+            environment="production",
+            url=None,
+            started_at=datetime.datetime(2019, 11, 1, 12, 0, tzinfo=datetime.timezone.utc),
+            finished_at=datetime.datetime(2019, 11, 1, 12, 15, tzinfo=datetime.timezone.utc),
+        )
+    )
     session.flush()
-    session.add(DeployedComponent(
-        account_id=1,
-        deployment_name="Dummy deployment",
-        repository_node_id=40550,
-        reference="v4.13.1",
-        resolved_commit_node_id=2755244,
-    ))
+    session.add(
+        DeployedComponent(
+            account_id=1,
+            deployment_name="Dummy deployment",
+            repository_node_id=40550,
+            reference="v4.13.1",
+            resolved_commit_node_id=2755244,
+        )
+    )

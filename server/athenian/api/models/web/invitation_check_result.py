@@ -12,8 +12,12 @@ class InvitationCheckResult(Model):
     attribute_types = {"active": Optional[bool], "type": Optional[str], "valid": bool}
     attribute_map = {"active": "active", "type": "type", "valid": "valid"}
 
-    def __init__(self, active: Optional[bool] = None, type: Optional[str] = None,
-                 valid: Optional[bool] = None):
+    def __init__(
+        self,
+        active: Optional[bool] = None,
+        type: Optional[str] = None,
+        valid: Optional[bool] = None,
+    ):
         """InvitationCheckResult - a model defined in OpenAPI
 
         :param active: The active of this InvitationCheckResult.
@@ -64,8 +68,9 @@ class InvitationCheckResult(Model):
         """
         allowed_values = [self.INVITATION_TYPE_ADMIN, self.INVITATION_TYPE_REGULAR, None]
         if type not in allowed_values:
-            raise ValueError("Invalid value for `type` %s, must be one of %s" %
-                             (type, allowed_values))
+            raise ValueError(
+                "Invalid value for `type` %s, must be one of %s" % (type, allowed_values)
+            )
 
         self._type = type
 

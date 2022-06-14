@@ -8,21 +8,30 @@ from sqlalchemy import and_, delete, func, insert, select, update
 
 from athenian.api.async_utils import gather
 from athenian.api.controllers.user_controller import get_user
-from athenian.api.models.state.models import Account as DBAccount, AccountFeature, \
-    BanishedUserAccount, Feature, FeatureComponent, Invitation, UserAccount
+from athenian.api.models.state.models import (
+    Account as DBAccount,
+    AccountFeature,
+    BanishedUserAccount,
+    Feature,
+    FeatureComponent,
+    Invitation,
+    UserAccount,
+)
 from athenian.api.models.web import Account, ProductFeature
 from athenian.api.request import AthenianWebRequest
 from athenian.api.serialization import deserialize_datetime
 from tests.conftest import disable_default_user
 
-vadim_email = "698650fc6af024b6679c2d9939cd828be15d7ca32a49ccf8a78e00a67688c4851858cce84d88fac228e8"  # noqa
-eiso_email = "18fe5f66fce88e4791d0117a311c6c2b2102216e18585c1199f90516186aa4461df7a2453857d781b6"  # noqa
+vadim_email = (
+    "698650fc6af024b6679c2d9939cd828be15d7ca32a49ccf8a78e00a67688c4851858cce84d88fac228e8"  # noqa
+)
+eiso_email = (
+    "18fe5f66fce88e4791d0117a311c6c2b2102216e18585c1199f90516186aa4461df7a2453857d781b6"  # noqa
+)
 
 
 async def test_get_user_smoke(client, headers, app):
-    response = await client.request(
-        method="GET", path="/v1/user", headers=headers, json={},
-    )
+    response = await client.request(method="GET", path="/v1/user", headers=headers, json={})
     assert response.status == 200
     items = await response.json()
     updated = items["updated"]
@@ -35,18 +44,20 @@ async def test_get_user_smoke(client, headers, app):
         "native_id": "62a1ae88b6bba16c6dbc6870",
         "picture": "https://s.gravatar.com/avatar/d7fb46e4e35ecf7c22a1275dd5dbd303?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fva.png",  # noqa
         "accounts": {
-            "1": {"is_admin": True,
-                  "expired": False,
-                  "has_ci": True,
-                  "has_jira": True,
-                  "has_deployments": True,
-                  },
-            "2": {"is_admin": False,
-                  "expired": False,
-                  "has_ci": False,
-                  "has_jira": False,
-                  "has_deployments": False,
-                  },
+            "1": {
+                "is_admin": True,
+                "expired": False,
+                "has_ci": True,
+                "has_jira": True,
+                "has_deployments": True,
+            },
+            "2": {
+                "is_admin": False,
+                "expired": False,
+                "has_ci": False,
+                "has_jira": False,
+                "has_deployments": False,
+            },
         },
     }
     assert datetime.utcnow() >= parse_datetime(updated[:-1])
@@ -71,18 +82,14 @@ async def test_is_default_user(client: TestClient, headers: dict, app, value) ->
     if not value:
         disable_default_user.__wrapped__(app)
 
-    response = await client.request(
-        method="GET", path="/v1/user", headers=headers, json={},
-    )
+    response = await client.request(method="GET", path="/v1/user", headers=headers, json={})
     items = await response.json()
     assert response.status == 200, items
     assert items == {"is_default_user": value}
 
 
 async def test_get_default_user(client, headers, lazy_gkwillie):
-    response = await client.request(
-        method="GET", path="/v1/user", headers=headers, json={},
-    )
+    response = await client.request(method="GET", path="/v1/user", headers=headers, json={})
     items = await response.json()
     assert response.status == 200, items
     del items["updated"]
@@ -100,9 +107,7 @@ async def test_get_default_user(client, headers, lazy_gkwillie):
 async def test_get_user_sso_join(client, headers, app, sdb):
     await sdb.execute(delete(UserAccount))
     app.app["auth"]._default_user.account = 1
-    response = await client.request(
-        method="GET", path="/v1/user", headers=headers, json={},
-    )
+    response = await client.request(method="GET", path="/v1/user", headers=headers, json={})
     items = await response.json()
     assert response.status == 200, items
     updated = items["updated"]
@@ -115,12 +120,13 @@ async def test_get_user_sso_join(client, headers, app, sdb):
         "native_id": "62a1ae88b6bba16c6dbc6870",
         "picture": "https://s.gravatar.com/avatar/d7fb46e4e35ecf7c22a1275dd5dbd303?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fva.png",  # noqa
         "accounts": {
-            "1": {"is_admin": True,
-                  "expired": False,
-                  "has_ci": True,
-                  "has_jira": True,
-                  "has_deployments": True,
-                  },
+            "1": {
+                "is_admin": True,
+                "expired": False,
+                "has_ci": True,
+                "has_jira": True,
+                "has_deployments": True,
+            },
         },
     }
     assert datetime.utcnow() >= parse_datetime(updated[:-1])
@@ -141,8 +147,10 @@ async def test_get_account_details_smoke(client, headers):
     assert len(body.organizations) == 1
     assert body.organizations[0].login == "src-d"
     assert body.organizations[0].name == "source{d}"
-    assert body.organizations[0].avatar_url == \
-           "https://avatars3.githubusercontent.com/u/15128793?s=200&v=4"
+    assert (
+        body.organizations[0].avatar_url
+        == "https://avatars3.githubusercontent.com/u/15128793?s=200&v=4"
+    )
     assert body.jira is not None
     assert body.jira.url == "https://athenianco.atlassian.net"
     assert body.jira.projects == ["CON", "CS", "DEV", "ENG", "GRW", "OPS", "PRO"]
@@ -186,18 +194,27 @@ async def test_get_account_features_nasty_input(client, headers, account, code):
 
 
 async def test_get_account_features_disabled(client, headers, sdb):
-    await sdb.execute(update(Feature).values(
-        {Feature.enabled: False, Feature.updated_at: datetime.now(timezone.utc)}))
+    await sdb.execute(
+        update(Feature).values(
+            {Feature.enabled: False, Feature.updated_at: datetime.now(timezone.utc)}
+        )
+    )
     response = await client.request(
         method="GET", path="/v1/account/1/features", headers=headers, json={},
     )
     body = await response.json()
     assert len(body) == 1
     assert body[0]["name"] == DBAccount.expires_at.name
-    await sdb.execute(update(Feature).values(
-        {Feature.enabled: True, Feature.updated_at: datetime.now(timezone.utc)}))
-    await sdb.execute(update(AccountFeature).values(
-        {AccountFeature.enabled: False, AccountFeature.updated_at: datetime.now(timezone.utc)}))
+    await sdb.execute(
+        update(Feature).values(
+            {Feature.enabled: True, Feature.updated_at: datetime.now(timezone.utc)}
+        )
+    )
+    await sdb.execute(
+        update(AccountFeature).values(
+            {AccountFeature.enabled: False, AccountFeature.updated_at: datetime.now(timezone.utc)}
+        )
+    )
     response = await client.request(
         method="GET", path="/v1/account/1/features", headers=headers, json={},
     )
@@ -209,8 +226,7 @@ async def test_get_account_features_disabled(client, headers, sdb):
 async def test_set_account_features_smoke(client, headers, god, sdb):
     body = [
         {"name": "expires_at", "parameters": "2020-01-01"},
-        {"name": "jira",
-         "parameters": {"enabled": True, "parameters": "test"}},
+        {"name": "jira", "parameters": {"enabled": True, "parameters": "test"}},
         {"name": "bare_value", "parameters": {"enabled": False}},
     ]
     response = await client.request(
@@ -288,7 +304,8 @@ async def test_set_account_features_nasty(client, headers, god):
 @pytest.mark.flaky(reruns=10, reruns_delay=1)
 async def test_get_users_query_size_limit(xapp):
     users = await xapp._auth0.get_users(
-        ["auth0|62a1ae88b6bba16c6dbc6870"] * 200 + ["auth0|5e1f6e2e8bfa520ea5290741"] * 200)
+        ["auth0|62a1ae88b6bba16c6dbc6870"] * 200 + ["auth0|5e1f6e2e8bfa520ea5290741"] * 200
+    )
     assert len(users) == 2
     assert users["auth0|62a1ae88b6bba16c6dbc6870"].name == "Vadim Markovtsev"
     assert users["auth0|62a1ae88b6bba16c6dbc6870"].email == vadim_email
@@ -298,8 +315,9 @@ async def test_get_users_query_size_limit(xapp):
 
 @pytest.mark.flaky(reruns=3, reruns_delay=60)
 async def test_get_users_rate_limit(xapp):
-    users = await gather(*[xapp._auth0.get_user("auth0|62a1ae88b6bba16c6dbc6870")
-                           for _ in range(20)])
+    users = await gather(
+        *[xapp._auth0.get_user("auth0|62a1ae88b6bba16c6dbc6870") for _ in range(20)]
+    )
     for u in users:
         assert u is not None
         assert u.name == "Vadim Markovtsev"
@@ -309,13 +327,13 @@ async def test_get_users_rate_limit(xapp):
 @pytest.mark.flaky(reruns=5, reruns_delay=1)
 async def test_become_db(client, headers, sdb, god):
     response = await client.request(
-        method="GET", path="/v1/become?id=auth0|5e1f6e2e8bfa520ea5290741", headers=headers,
+        method="GET",
+        path="/v1/become?id=auth0|5e1f6e2e8bfa520ea5290741",
+        headers=headers,
         json={},
     )
     body1 = await response.json()
-    response = await client.request(
-        method="GET", path="/v1/user", headers=headers, json={},
-    )
+    response = await client.request(method="GET", path="/v1/user", headers=headers, json={})
     body2 = await response.json()
     assert body2["impersonated_by"] == "auth0|62a1ae88b6bba16c6dbc6870"
     del body2["impersonated_by"]
@@ -329,23 +347,23 @@ async def test_become_db(client, headers, sdb, god):
         "native_id": "5e1f6e2e8bfa520ea5290741",
         "picture": "https://s.gravatar.com/avatar/dfe23533b671f82d2932e713b0477c75?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fei.png",  # noqa
         "accounts": {
-            "1": {"is_admin": False,
-                  "expired": False,
-                  "has_ci": True,
-                  "has_jira": True,
-                  "has_deployments": True,
-                  },
-            "3": {"is_admin": True,
-                  "expired": False,
-                  "has_ci": False,
-                  "has_jira": False,
-                  "has_deployments": False,
-                  },
+            "1": {
+                "is_admin": False,
+                "expired": False,
+                "has_ci": True,
+                "has_jira": True,
+                "has_deployments": True,
+            },
+            "3": {
+                "is_admin": True,
+                "expired": False,
+                "has_ci": False,
+                "has_jira": False,
+                "has_deployments": False,
+            },
         },
     }
-    response = await client.request(
-        method="GET", path="/v1/become", headers=headers, json={},
-    )
+    response = await client.request(method="GET", path="/v1/become", headers=headers, json={})
     body3 = await response.json()
     del body3["updated"]
     assert body3 == {
@@ -356,18 +374,20 @@ async def test_become_db(client, headers, sdb, god):
         "native_id": "62a1ae88b6bba16c6dbc6870",
         "picture": "https://s.gravatar.com/avatar/d7fb46e4e35ecf7c22a1275dd5dbd303?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fva.png",  # noqa
         "accounts": {
-            "1": {"is_admin": True,
-                  "expired": False,
-                  "has_ci": True,
-                  "has_jira": True,
-                  "has_deployments": True,
-                  },
-            "2": {"is_admin": False,
-                  "expired": False,
-                  "has_ci": False,
-                  "has_jira": False,
-                  "has_deployments": False,
-                  },
+            "1": {
+                "is_admin": True,
+                "expired": False,
+                "has_ci": True,
+                "has_jira": True,
+                "has_deployments": True,
+            },
+            "2": {
+                "is_admin": False,
+                "expired": False,
+                "has_ci": False,
+                "has_jira": False,
+                "has_deployments": False,
+            },
         },
     }
 
@@ -375,9 +395,7 @@ async def test_become_db(client, headers, sdb, god):
 async def test_become_header(client, headers, sdb, god):
     headers = headers.copy()
     headers["X-Identity"] = "auth0|5e1f6e2e8bfa520ea5290741"
-    response = await client.request(
-        method="GET", path="/v1/user", headers=headers, json={},
-    )
+    response = await client.request(method="GET", path="/v1/user", headers=headers, json={})
     body = await response.json()
     del body["updated"]
     assert body == {
@@ -388,18 +406,20 @@ async def test_become_header(client, headers, sdb, god):
         "native_id": "5e1f6e2e8bfa520ea5290741",
         "picture": "https://s.gravatar.com/avatar/dfe23533b671f82d2932e713b0477c75?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fei.png",  # noqa
         "accounts": {
-            "1": {"is_admin": False,
-                  "expired": False,
-                  "has_ci": True,
-                  "has_jira": True,
-                  "has_deployments": True,
-                  },
-            "3": {"is_admin": True,
-                  "expired": False,
-                  "has_ci": False,
-                  "has_jira": False,
-                  "has_deployments": False,
-                  },
+            "1": {
+                "is_admin": False,
+                "expired": False,
+                "has_ci": True,
+                "has_jira": True,
+                "has_deployments": True,
+            },
+            "3": {
+                "is_admin": True,
+                "expired": False,
+                "has_ci": False,
+                "has_jira": False,
+                "has_deployments": False,
+            },
         },
         "impersonated_by": "auth0|62a1ae88b6bba16c6dbc6870",
     }
@@ -458,19 +478,33 @@ async def test_change_user_banish(client, headers, sdb, membership_check):
         method="GET", path="/v1/invite/generate/1", headers=headers, json={},
     )
     link1 = await response.json()
-    assert 1 == (await sdb.fetch_val(
-        select([func.count(Invitation.id)])
-        .where(and_(Invitation.is_active, Invitation.account_id == 1))))
+    assert 1 == (
+        await sdb.fetch_val(
+            select([func.count(Invitation.id)]).where(
+                and_(Invitation.is_active, Invitation.account_id == 1)
+            )
+        )
+    )
     if not membership_check:
         check_fid = await sdb.fetch_val(
-            select([Feature.id])
-            .where(and_(Feature.name == Feature.USER_ORG_MEMBERSHIP_CHECK,
-                        Feature.component == FeatureComponent.server)))
-        await sdb.execute(insert(AccountFeature).values(AccountFeature(
-            account_id=1,
-            feature_id=check_fid,
-            enabled=False,
-        ).create_defaults().explode(with_primary_keys=True)))
+            select([Feature.id]).where(
+                and_(
+                    Feature.name == Feature.USER_ORG_MEMBERSHIP_CHECK,
+                    Feature.component == FeatureComponent.server,
+                )
+            )
+        )
+        await sdb.execute(
+            insert(AccountFeature).values(
+                AccountFeature(
+                    account_id=1,
+                    feature_id=check_fid,
+                    enabled=False,
+                )
+                .create_defaults()
+                .explode(with_primary_keys=True)
+            )
+        )
     body = {
         "account": 1,
         "user": "auth0|5e1f6e2e8bfa520ea5290741",
@@ -484,34 +518,50 @@ async def test_change_user_banish(client, headers, sdb, membership_check):
     assert len(items["admins"]) == 1
     assert items["admins"][0]["id"] == "auth0|62a1ae88b6bba16c6dbc6870"
     assert len(items["regulars"]) == 0
-    assert "auth0|5e1f6e2e8bfa520ea5290741" == \
-           await sdb.fetch_val(select([BanishedUserAccount.user_id]))
+    assert "auth0|5e1f6e2e8bfa520ea5290741" == await sdb.fetch_val(
+        select([BanishedUserAccount.user_id])
+    )
     if not membership_check:
-        assert 0 == (await sdb.fetch_val(
-            select([func.count(Invitation.id)])
-            .where(and_(Invitation.is_active, Invitation.account_id == 1))))
+        assert 0 == (
+            await sdb.fetch_val(
+                select([func.count(Invitation.id)]).where(
+                    and_(Invitation.is_active, Invitation.account_id == 1)
+                )
+            )
+        )
         response = await client.request(
             method="GET", path="/v1/invite/generate/1", headers=headers, json={},
         )
         link2 = await response.json()
-        assert 1 == (await sdb.fetch_val(
-            select([func.count(Invitation.id)])
-            .where(and_(Invitation.is_active, Invitation.account_id == 1))))
+        assert 1 == (
+            await sdb.fetch_val(
+                select([func.count(Invitation.id)]).where(
+                    and_(Invitation.is_active, Invitation.account_id == 1)
+                )
+            )
+        )
         assert link1 != link2
     else:
-        assert 1 == (await sdb.fetch_val(
-            select([func.count(Invitation.id)])
-            .where(and_(Invitation.is_active, Invitation.account_id == 1))))
+        assert 1 == (
+            await sdb.fetch_val(
+                select([func.count(Invitation.id)]).where(
+                    and_(Invitation.is_active, Invitation.account_id == 1)
+                )
+            )
+        )
 
 
-@pytest.mark.parametrize("account, user, status, code", [
-    (1, "auth0|62a1ae88b6bba16c6dbc6870", "regular", 403),
-    (1, "auth0|62a1ae88b6bba16c6dbc6870", "banished", 403),
-    (2, "auth0|62a1ae88b6bba16c6dbc6870", "regular", 403),
-    (2, "auth0|62a1ae88b6bba16c6dbc6870", "admin", 403),
-    (2, "auth0|62a1ae88b6bba16c6dbc6870", "banished", 403),
-    (3, "auth0|62a1ae88b6bba16c6dbc6870", "regular", 404),
-])
+@pytest.mark.parametrize(
+    "account, user, status, code",
+    [
+        (1, "auth0|62a1ae88b6bba16c6dbc6870", "regular", 403),
+        (1, "auth0|62a1ae88b6bba16c6dbc6870", "banished", 403),
+        (2, "auth0|62a1ae88b6bba16c6dbc6870", "regular", 403),
+        (2, "auth0|62a1ae88b6bba16c6dbc6870", "admin", 403),
+        (2, "auth0|62a1ae88b6bba16c6dbc6870", "banished", 403),
+        (3, "auth0|62a1ae88b6bba16c6dbc6870", "regular", 404),
+    ],
+)
 async def test_change_user_errors(client, headers, account, user, status, code):
     body = {
         "account": account,

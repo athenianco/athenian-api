@@ -652,7 +652,7 @@ class PullRequest(Model):
 
         :param events_time_machine: The events_time_machine of this PullRequest.
         """
-        for prop in (events_time_machine or []):
+        for prop in events_time_machine or []:
             if prop not in PullRequestEvent:
                 raise ValueError("Invalid `events_time_machine`: %s" % events_time_machine)
 
@@ -672,7 +672,7 @@ class PullRequest(Model):
 
         :param stages_time_machine: The stages_time_machine of this PullRequest.
         """
-        for prop in (stages_time_machine or []):
+        for prop in stages_time_machine or []:
             if prop not in PullRequestStage:
                 raise ValueError("Invalid `stages_time_machine`: %s" % stages_time_machine)
 

@@ -19,9 +19,11 @@ class FilteredCodeCheckRuns(Model):
         "items": "items",
     }
 
-    def __init__(self,
-                 timeline: Optional[List[date]] = None,
-                 items: Optional[List[FilteredCodeCheckRun]] = None):
+    def __init__(
+        self,
+        timeline: Optional[List[date]] = None,
+        items: Optional[List[FilteredCodeCheckRun]] = None,
+    ):
         """FilteredCodeCheckRuns - a model defined in OpenAPI
 
         :param timeline: The timeline of this FilteredCodeCheckRuns.

@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from ariadne import gql, make_executable_schema, QueryType
+from ariadne import QueryType, gql, make_executable_schema
 from graphql import graphql_sync
 
 from athenian.api.ariadne import ariadne_disable_default_user
@@ -17,7 +17,6 @@ class TestGraphiQL:
 
 
 class TestAriadnDisableDefaultUser:
-
     @dataclass
     class FakeContext:
         is_default_user: bool
@@ -25,11 +24,13 @@ class TestAriadnDisableDefaultUser:
 
     def test(self) -> None:
         query = QueryType()
-        type_defs = gql("""
+        type_defs = gql(
+            """
         type Query {
           hello: String!
         }
-        """)
+        """
+        )
 
         @query.field("hello")
         @ariadne_disable_default_user

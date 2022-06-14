@@ -5,12 +5,20 @@ from aiohttp.test_utils import TestClient
 import pytest
 
 from athenian.api.db import Database
-from tests.align.utils import align_graphql_request, assert_extension_error, build_fragment, \
-    build_recursive_fields_structure
+from tests.align.utils import (
+    align_graphql_request,
+    assert_extension_error,
+    build_fragment,
+    build_recursive_fields_structure,
+)
 from tests.conftest import DEFAULT_HEADERS
 from tests.testutils.db import models_insert
-from tests.testutils.factory.state import GoalFactory, MappedJIRAIdentityFactory, TeamFactory, \
-    TeamGoalFactory
+from tests.testutils.factory.state import (
+    GoalFactory,
+    MappedJIRAIdentityFactory,
+    TeamFactory,
+    TeamGoalFactory,
+)
 
 
 class BaseGoalsTest:
@@ -34,11 +42,7 @@ class BaseGoalsTest:
 
         if value_fields:
             fragment_fields = [
-                f"    {field} {{\n"
-                "        str\n"
-                "        int\n"
-                "        float\n"
-                "    }"
+                f"    {field} {{\n        str\n        int\n        float\n    }}"
                 for field in value_fields
             ]
             value_fragment = build_fragment("valueFields", "GoalValue", fragment_fields)
@@ -51,17 +55,21 @@ class BaseGoalsTest:
 
         actual_team_goal_fields = []
         if team_fragment:
-            actual_team_goal_fields.append("""
+            actual_team_goal_fields.append(
+                """
             team {
             ...teamFields
             }
-            """)
+            """
+            )
         if value_fields:
-            actual_team_goal_fields.append("""
+            actual_team_goal_fields.append(
+                """
             value {
             ...valueFields
             }
-            """)
+            """
+            )
 
         if actual_team_goal_fields:
             recursive_fields = build_recursive_fields_structure(actual_team_goal_fields, depth)
@@ -106,7 +114,9 @@ class TestGoalsErrors(BaseGoalsTest):
         assert_extension_error(res, "Team 1 not found or access denied")
 
     async def test_implicit_root_team_no_team_existing(
-        self, client: TestClient, sdb: Database,
+        self,
+        client: TestClient,
+        sdb: Database,
     ) -> None:
         res = await self._request(1, 0, client)
         assert_extension_error(res, "Root team not found or access denied")

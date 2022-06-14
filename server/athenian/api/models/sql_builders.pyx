@@ -5,10 +5,16 @@
 
 from libc.stdint cimport int64_t
 from libc.stdio cimport printf
-from libc.stdlib cimport lldiv_t, lldiv
-from libc.string cimport memcpy, memchr
-from numpy cimport dtype as np_dtype, ndarray, PyArray_DATA, PyArray_DESCR, PyArray_DIM, \
-    PyArray_STRIDE
+from libc.stdlib cimport lldiv, lldiv_t
+from libc.string cimport memchr, memcpy
+from numpy cimport (
+    PyArray_DATA,
+    PyArray_DESCR,
+    PyArray_DIM,
+    PyArray_STRIDE,
+    dtype as np_dtype,
+    ndarray,
+)
 
 
 cdef extern from "Python.h":

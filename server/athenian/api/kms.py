@@ -6,10 +6,9 @@ import os
 from typing import Union
 
 from gcloud.aio.auth import session
-from gcloud.aio.kms import encode, KMS
+from gcloud.aio.kms import KMS, encode
 
 from athenian.api import metadata
-
 
 session.log.exception = session.log.warning
 
@@ -23,14 +22,17 @@ class AthenianKMS:
     def __init__(self):
         """Initialize a new instance of AthenianKMS class."""
         evars = {}
-        for var, env_name in (("keyproject", "GOOGLE_KMS_PROJECT"),
-                              ("keyring", "GOOGLE_KMS_KEYRING"),
-                              ("keyname", "GOOGLE_KMS_KEYNAME")):
+        for var, env_name in (
+            ("keyproject", "GOOGLE_KMS_PROJECT"),
+            ("keyring", "GOOGLE_KMS_KEYRING"),
+            ("keyname", "GOOGLE_KMS_KEYNAME"),
+        ):
             evars[var] = x = os.getenv(env_name)
             if x is None:
                 raise EnvironmentError(
                     "%s must be defined, see https://cloud.google.com/kms/docs/reference/rest"
-                    % env_name)
+                    % env_name
+                )
         service_file_inline = os.getenv("GOOGLE_KMS_SERVICE_ACCOUNT_JSON_INLINE")
         if service_file_inline is not None:
             service_file = io.StringIO(service_file_inline)

@@ -17,10 +17,12 @@ class Organization(Model):
         "login": "login",
     }
 
-    def __init__(self,
-                 name: Optional[str] = None,
-                 avatar_url: Optional[str] = None,
-                 login: Optional[str] = None):
+    def __init__(
+        self,
+        name: Optional[str] = None,
+        avatar_url: Optional[str] = None,
+        login: Optional[str] = None,
+    ):
         """Organization - a model defined in OpenAPI
 
         :param name: The name of this Organization.

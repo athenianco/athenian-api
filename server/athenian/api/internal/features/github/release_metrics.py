@@ -6,17 +6,24 @@ import numpy as np
 import pandas as pd
 
 from athenian.api.internal.features.metric import MetricInt, MetricTimeDelta
-from athenian.api.internal.features.metric_calculator import AverageMetricCalculator, \
-    BinnedMetricCalculator, calculate_logical_duplication_mask, make_register_metric, \
-    MetricCalculator, MetricCalculatorEnsemble, SumMetricCalculator
+from athenian.api.internal.features.metric_calculator import (
+    AverageMetricCalculator,
+    BinnedMetricCalculator,
+    MetricCalculator,
+    MetricCalculatorEnsemble,
+    SumMetricCalculator,
+    calculate_logical_duplication_mask,
+    make_register_metric,
+)
 from athenian.api.internal.miners.github.released_pr import matched_by_column
-from athenian.api.internal.miners.types import ReleaseFacts, ReleaseParticipants, \
-    ReleaseParticipationKind
-from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch, \
-    ReleaseSettings
+from athenian.api.internal.miners.types import (
+    ReleaseFacts,
+    ReleaseParticipants,
+    ReleaseParticipationKind,
+)
+from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch, ReleaseSettings
 from athenian.api.models.metadata.github import PullRequest
 from athenian.api.models.web import ReleaseMetricID
-
 
 metric_calculators: Dict[str, Type[MetricCalculator]] = {}
 register_metric = make_register_metric(metric_calculators, None)
@@ -32,24 +39,29 @@ def merge_release_participants(participants: List[ReleaseParticipants]) -> Relea
     return {k: list(v) for k, v in merged.items()}
 
 
-def group_releases_by_participants(participants: List[ReleaseParticipants],
-                                   df: pd.DataFrame,
-                                   ) -> List[np.ndarray]:
+def group_releases_by_participants(
+    participants: List[ReleaseParticipants],
+    df: pd.DataFrame,
+) -> List[np.ndarray]:
     """Triage releases by their contributors."""
     if not participants or df.empty:
         return [np.arange(len(df))]
     indexes = []
     for group in participants:
         if ReleaseParticipationKind.RELEASER in group:
-            missing_indexes = np.flatnonzero(np.in1d(
-                np.array(df["publisher"].values),
-                group[ReleaseParticipationKind.RELEASER],
-                invert=True))
+            missing_indexes = np.flatnonzero(
+                np.in1d(
+                    np.array(df["publisher"].values),
+                    group[ReleaseParticipationKind.RELEASER],
+                    invert=True,
+                )
+            )
         else:
             missing_indexes = np.arange(len(df))
         for rpk, col in [
-                (ReleaseParticipationKind.COMMIT_AUTHOR, "commit_authors"),
-                (ReleaseParticipationKind.PR_AUTHOR, "prs_" + PullRequest.user_node_id.name)]:
+            (ReleaseParticipationKind.COMMIT_AUTHOR, "commit_authors"),
+            (ReleaseParticipationKind.PR_AUTHOR, "prs_" + PullRequest.user_node_id.name),
+        ]:
             if len(missing_indexes) == 0:
                 break
             if rpk in group:
@@ -68,9 +80,9 @@ def group_releases_by_participants(participants: List[ReleaseParticipants],
 
 
 def calculate_logical_release_duplication_mask(
-        items: pd.DataFrame,
-        release_settings: ReleaseSettings,
-        logical_settings: LogicalRepositorySettings,
+    items: pd.DataFrame,
+    release_settings: ReleaseSettings,
+    logical_settings: LogicalRepositorySettings,
 ) -> Optional[np.ndarray]:
     """Assign indexes to releases with the same settings for each logical repository."""
     if items.empty or not logical_settings.has_logical_prs():
@@ -84,10 +96,12 @@ class ReleaseMetricCalculatorEnsemble(MetricCalculatorEnsemble):
 
     def __init__(self, *metrics: str, quantiles: Sequence[float], quantile_stride: int):
         """Initialize a new instance of ReleaseMetricCalculatorEnsemble class."""
-        super().__init__(*metrics,
-                         quantiles=quantiles,
-                         quantile_stride=quantile_stride,
-                         class_mapping=metric_calculators)
+        super().__init__(
+            *metrics,
+            quantiles=quantiles,
+            quantile_stride=quantile_stride,
+            class_mapping=metric_calculators
+        )
 
 
 class ReleaseBinnedMetricCalculator(BinnedMetricCalculator):
@@ -103,11 +117,9 @@ class ReleaseMetricCalculatorMixin(Generic[T]):
     _check() decides whether _extract() must be called and thus deals with Optional[T].
     """
 
-    def _analyze(self,
-                 facts: pd.DataFrame,
-                 min_times: np.ndarray,
-                 max_times: np.ndarray,
-                 **kwargs) -> np.array:
+    def _analyze(
+        self, facts: pd.DataFrame, min_times: np.ndarray, max_times: np.ndarray, **kwargs
+    ) -> np.array:
         fill_value = None
         dtype = object
         if self.has_nan:
@@ -121,10 +133,9 @@ class ReleaseMetricCalculatorMixin(Generic[T]):
         result[checked_mask] = extracted[checked_mask]
         return result
 
-    def _check(self,
-               facts: pd.DataFrame,
-               min_times: np.ndarray,
-               max_times: np.ndarray) -> np.ndarray:
+    def _check(
+        self, facts: pd.DataFrame, min_times: np.ndarray, max_times: np.ndarray
+    ) -> np.ndarray:
         published = facts[ReleaseFacts.f.published].values
         return (min_times[:, None] <= published) & (published < max_times[:, None])
 
@@ -135,23 +146,23 @@ class ReleaseMetricCalculatorMixin(Generic[T]):
 class TagReleaseMetricCalculatorMixin(ReleaseMetricCalculatorMixin[T]):
     """Augment _check() to pass tag releases only."""
 
-    def _check(self,
-               facts: pd.DataFrame,
-               min_times: np.ndarray,
-               max_times: np.ndarray) -> np.ndarray:
-        return super()._check(facts, min_times, max_times) & \
-            (facts[matched_by_column].values == ReleaseMatch.tag)
+    def _check(
+        self, facts: pd.DataFrame, min_times: np.ndarray, max_times: np.ndarray
+    ) -> np.ndarray:
+        return super()._check(facts, min_times, max_times) & (
+            facts[matched_by_column].values == ReleaseMatch.tag
+        )
 
 
 class BranchReleaseMetricCalculatorMixin(ReleaseMetricCalculatorMixin[T]):
     """Augment _check() to pass branch releases only."""
 
-    def _check(self,
-               facts: pd.DataFrame,
-               min_times: np.ndarray,
-               max_times: np.ndarray) -> np.ndarray:
-        return super()._check(facts, min_times, max_times) & \
-            (facts[matched_by_column].values == ReleaseMatch.branch)
+    def _check(
+        self, facts: pd.DataFrame, min_times: np.ndarray, max_times: np.ndarray
+    ) -> np.ndarray:
+        return super()._check(facts, min_times, max_times) & (
+            facts[matched_by_column].values == ReleaseMatch.branch
+        )
 
 
 class ReleaseCounterMixin:
@@ -171,8 +182,9 @@ class ReleasePRsMixin:
     metric = MetricInt
 
     def _extract(self, facts: pd.DataFrame) -> np.ndarray:
-        return np.array([len(arr) for arr in facts["prs_" + PullRequest.number.name]],
-                        dtype=self.dtype)
+        return np.array(
+            [len(arr) for arr in facts["prs_" + PullRequest.number.name]], dtype=self.dtype
+        )
 
 
 class ReleaseCommitsMixin:
@@ -192,8 +204,7 @@ class ReleaseLinesMixin:
     metric = MetricInt
 
     def _extract(self, facts: pd.DataFrame) -> np.ndarray:
-        return (facts[ReleaseFacts.f.additions].values +
-                facts[ReleaseFacts.f.deletions].values)
+        return facts[ReleaseFacts.f.additions].values + facts[ReleaseFacts.f.deletions].values
 
 
 class ReleaseAgeMixin:
@@ -207,168 +218,170 @@ class ReleaseAgeMixin:
 
 
 @register_metric(ReleaseMetricID.RELEASE_COUNT)
-class ReleaseCounter(ReleaseCounterMixin,
-                     ReleaseMetricCalculatorMixin[int],
-                     SumMetricCalculator[int]):
+class ReleaseCounter(
+    ReleaseCounterMixin, ReleaseMetricCalculatorMixin[int], SumMetricCalculator[int]
+):
     """Count releases."""
 
 
 @register_metric(ReleaseMetricID.TAG_RELEASE_COUNT)
-class TagReleaseCounter(ReleaseCounterMixin,
-                        TagReleaseMetricCalculatorMixin[int],
-                        SumMetricCalculator[int]):
+class TagReleaseCounter(
+    ReleaseCounterMixin, TagReleaseMetricCalculatorMixin[int], SumMetricCalculator[int]
+):
     """Count tag releases."""
 
 
 @register_metric(ReleaseMetricID.BRANCH_RELEASE_COUNT)
-class BranchReleaseCounter(ReleaseCounterMixin,
-                           BranchReleaseMetricCalculatorMixin[int],
-                           SumMetricCalculator[int]):
+class BranchReleaseCounter(
+    ReleaseCounterMixin, BranchReleaseMetricCalculatorMixin[int], SumMetricCalculator[int]
+):
     """Count branch releases."""
 
 
 @register_metric(ReleaseMetricID.RELEASE_PRS)
-class ReleasePRsCounter(ReleasePRsMixin,
-                        ReleaseMetricCalculatorMixin[int],
-                        SumMetricCalculator[int]):
+class ReleasePRsCounter(
+    ReleasePRsMixin, ReleaseMetricCalculatorMixin[int], SumMetricCalculator[int]
+):
     """Count released PRs."""
 
 
 @register_metric(ReleaseMetricID.TAG_RELEASE_PRS)
-class TagReleasePRsCounter(ReleasePRsMixin,
-                           TagReleaseMetricCalculatorMixin[int],
-                           SumMetricCalculator[int]):
+class TagReleasePRsCounter(
+    ReleasePRsMixin, TagReleaseMetricCalculatorMixin[int], SumMetricCalculator[int]
+):
     """Count PRs released by tag."""
 
 
 @register_metric(ReleaseMetricID.BRANCH_RELEASE_PRS)
-class BranchReleasePRsCounter(ReleasePRsMixin,
-                              BranchReleaseMetricCalculatorMixin[int],
-                              SumMetricCalculator[int]):
+class BranchReleasePRsCounter(
+    ReleasePRsMixin, BranchReleaseMetricCalculatorMixin[int], SumMetricCalculator[int]
+):
     """Count PRs released by branch."""
 
 
 @register_metric(ReleaseMetricID.RELEASE_COMMITS)
-class ReleaseCommitsCounter(ReleaseCommitsMixin,
-                            ReleaseMetricCalculatorMixin[int],
-                            SumMetricCalculator[int]):
+class ReleaseCommitsCounter(
+    ReleaseCommitsMixin, ReleaseMetricCalculatorMixin[int], SumMetricCalculator[int]
+):
     """Count released commits."""
 
 
 @register_metric(ReleaseMetricID.TAG_RELEASE_COMMITS)
-class TagReleaseCommitsCounter(ReleaseCommitsMixin,
-                               TagReleaseMetricCalculatorMixin[int],
-                               SumMetricCalculator[int]):
+class TagReleaseCommitsCounter(
+    ReleaseCommitsMixin, TagReleaseMetricCalculatorMixin[int], SumMetricCalculator[int]
+):
     """Count commits released by tag."""
 
 
 @register_metric(ReleaseMetricID.BRANCH_RELEASE_COMMITS)
-class BranchReleaseCommitsCounter(ReleaseCommitsMixin,
-                                  BranchReleaseMetricCalculatorMixin[int],
-                                  SumMetricCalculator[int]):
+class BranchReleaseCommitsCounter(
+    ReleaseCommitsMixin, BranchReleaseMetricCalculatorMixin[int], SumMetricCalculator[int]
+):
     """Count commits released by branch."""
 
 
 @register_metric(ReleaseMetricID.RELEASE_LINES)
-class ReleaseLinesCounter(ReleaseLinesMixin,
-                          ReleaseMetricCalculatorMixin[int],
-                          SumMetricCalculator[int]):
+class ReleaseLinesCounter(
+    ReleaseLinesMixin, ReleaseMetricCalculatorMixin[int], SumMetricCalculator[int]
+):
     """Count changed lines belonging to released commits."""
 
 
 @register_metric(ReleaseMetricID.TAG_RELEASE_LINES)
-class TagReleaseLinesCounter(ReleaseLinesMixin,
-                             TagReleaseMetricCalculatorMixin[int],
-                             SumMetricCalculator[int]):
+class TagReleaseLinesCounter(
+    ReleaseLinesMixin, TagReleaseMetricCalculatorMixin[int], SumMetricCalculator[int]
+):
     """Count changed lines belonging to commits released by tag."""
 
 
 @register_metric(ReleaseMetricID.BRANCH_RELEASE_LINES)
-class BranchReleaseLinesCounter(ReleaseLinesMixin,
-                                BranchReleaseMetricCalculatorMixin[int],
-                                SumMetricCalculator[int]):
+class BranchReleaseLinesCounter(
+    ReleaseLinesMixin, BranchReleaseMetricCalculatorMixin[int], SumMetricCalculator[int]
+):
     """Count changed lines belonging to commits released by branch."""
 
 
 @register_metric(ReleaseMetricID.RELEASE_AVG_PRS)
-class ReleasePRsCalculator(ReleasePRsMixin,
-                           ReleaseMetricCalculatorMixin[float],
-                           AverageMetricCalculator[float]):
+class ReleasePRsCalculator(
+    ReleasePRsMixin, ReleaseMetricCalculatorMixin[float], AverageMetricCalculator[float]
+):
     """Measure average number of released PRs."""
 
 
 @register_metric(ReleaseMetricID.TAG_RELEASE_AVG_PRS)
-class TagReleasePRsCalculator(ReleasePRsMixin,
-                              TagReleaseMetricCalculatorMixin[float],
-                              AverageMetricCalculator[float]):
+class TagReleasePRsCalculator(
+    ReleasePRsMixin, TagReleaseMetricCalculatorMixin[float], AverageMetricCalculator[float]
+):
     """Measure average number of PRs released by tag."""
 
 
 @register_metric(ReleaseMetricID.BRANCH_RELEASE_AVG_PRS)
-class BranchReleasePRsCalculator(ReleasePRsMixin,
-                                 BranchReleaseMetricCalculatorMixin[float],
-                                 AverageMetricCalculator[float]):
+class BranchReleasePRsCalculator(
+    ReleasePRsMixin, BranchReleaseMetricCalculatorMixin[float], AverageMetricCalculator[float]
+):
     """Measure average number of PRs released by branch."""
 
 
 @register_metric(ReleaseMetricID.RELEASE_AVG_COMMITS)
-class ReleaseCommitsCalculator(ReleaseCommitsMixin,
-                               ReleaseMetricCalculatorMixin[float],
-                               AverageMetricCalculator[float]):
+class ReleaseCommitsCalculator(
+    ReleaseCommitsMixin, ReleaseMetricCalculatorMixin[float], AverageMetricCalculator[float]
+):
     """Measure average number of released commits."""
 
 
 @register_metric(ReleaseMetricID.TAG_RELEASE_AVG_COMMITS)
-class TagReleaseCommitsCalculator(ReleaseCommitsMixin,
-                                  TagReleaseMetricCalculatorMixin[float],
-                                  AverageMetricCalculator[float]):
+class TagReleaseCommitsCalculator(
+    ReleaseCommitsMixin, TagReleaseMetricCalculatorMixin[float], AverageMetricCalculator[float]
+):
     """Measure average number of commits released by tag."""
 
 
 @register_metric(ReleaseMetricID.BRANCH_RELEASE_AVG_COMMITS)
-class BranchReleaseCommitsCalculator(ReleaseCommitsMixin,
-                                     BranchReleaseMetricCalculatorMixin[float],
-                                     AverageMetricCalculator[float]):
+class BranchReleaseCommitsCalculator(
+    ReleaseCommitsMixin, BranchReleaseMetricCalculatorMixin[float], AverageMetricCalculator[float]
+):
     """Measure average number of commits released by branch."""
 
 
 @register_metric(ReleaseMetricID.RELEASE_AVG_LINES)
-class ReleaseLinesCalculator(ReleaseLinesMixin,
-                             ReleaseMetricCalculatorMixin[float],
-                             AverageMetricCalculator[float]):
+class ReleaseLinesCalculator(
+    ReleaseLinesMixin, ReleaseMetricCalculatorMixin[float], AverageMetricCalculator[float]
+):
     """Measure average number of changed lines belonging to released commits."""
 
 
 @register_metric(ReleaseMetricID.TAG_RELEASE_AVG_LINES)
-class TagReleaseLinesCalculator(ReleaseLinesMixin,
-                                TagReleaseMetricCalculatorMixin[float],
-                                AverageMetricCalculator[float]):
+class TagReleaseLinesCalculator(
+    ReleaseLinesMixin, TagReleaseMetricCalculatorMixin[float], AverageMetricCalculator[float]
+):
     """Measure average number of changed lines belonging to commits released by tag."""
 
 
 @register_metric(ReleaseMetricID.BRANCH_RELEASE_AVG_LINES)
-class BranchReleaseLinesCalculator(ReleaseLinesMixin,
-                                   BranchReleaseMetricCalculatorMixin[float],
-                                   AverageMetricCalculator[float]):
+class BranchReleaseLinesCalculator(
+    ReleaseLinesMixin, BranchReleaseMetricCalculatorMixin[float], AverageMetricCalculator[float]
+):
     """Measure average number of changed lines belonging to commits released by branch."""
 
 
 @register_metric(ReleaseMetricID.RELEASE_AGE)
-class ReleaseAgeCalculator(ReleaseAgeMixin,
-                           ReleaseMetricCalculatorMixin[timedelta],
-                           AverageMetricCalculator[timedelta]):
+class ReleaseAgeCalculator(
+    ReleaseAgeMixin, ReleaseMetricCalculatorMixin[timedelta], AverageMetricCalculator[timedelta]
+):
     """Measure average release age."""
 
 
 @register_metric(ReleaseMetricID.TAG_RELEASE_AGE)
-class TagReleaseAgeCalculator(ReleaseAgeMixin,
-                              TagReleaseMetricCalculatorMixin[timedelta],
-                              AverageMetricCalculator[timedelta]):
+class TagReleaseAgeCalculator(
+    ReleaseAgeMixin, TagReleaseMetricCalculatorMixin[timedelta], AverageMetricCalculator[timedelta]
+):
     """Measure average tag release age."""
 
 
 @register_metric(ReleaseMetricID.BRANCH_RELEASE_AGE)
-class BranchReleaseAgeCalculator(ReleaseAgeMixin,
-                                 BranchReleaseMetricCalculatorMixin[timedelta],
-                                 AverageMetricCalculator[timedelta]):
+class BranchReleaseAgeCalculator(
+    ReleaseAgeMixin,
+    BranchReleaseMetricCalculatorMixin[timedelta],
+    AverageMetricCalculator[timedelta],
+):
     """Measure average branch release age."""

@@ -1,13 +1,11 @@
 from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import AllOf, Model
-from athenian.api.models.web.common_deployment_properties import (
-    CommonDeploymentProperties,
-)
+from athenian.api.models.web.common_deployment_properties import CommonDeploymentProperties
 from athenian.api.models.web.deployment_with import DeploymentWith
 from athenian.api.models.web.for_set_common import (
-    make_common_pull_request_filters,
     RepositoryGroupsMixin,
+    make_common_pull_request_filters,
 )
 
 
@@ -152,7 +150,8 @@ class _ForSetDeployments(Model, RepositoryGroupsMixin):
         if self.environments:
             if index >= len(self.environments):
                 raise IndexError(
-                    "%d is out of range (max is %d)" % (index, len(self.environments)))
+                    "%d is out of range (max is %d)" % (index, len(self.environments))
+                )
             fs.environments = [self.environments[index]]
             return fs
         if self.envgroups:
@@ -165,8 +164,10 @@ class _ForSetDeployments(Model, RepositoryGroupsMixin):
         return fs
 
 
-ForSetDeployments = AllOf(_ForSetDeployments,
-                          make_common_pull_request_filters("pr_"),
-                          CommonDeploymentProperties,
-                          name="ForSetDeployments",
-                          module=__name__)
+ForSetDeployments = AllOf(
+    _ForSetDeployments,
+    make_common_pull_request_filters("pr_"),
+    CommonDeploymentProperties,
+    name="ForSetDeployments",
+    module=__name__,
+)

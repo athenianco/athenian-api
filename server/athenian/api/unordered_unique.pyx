@@ -3,12 +3,20 @@
 # distutils: language = c++
 # distutils: extra_compile_args = -mavx2 -ftree-vectorize -std=c++17
 import cython
+
 from libc.stddef cimport wchar_t
 from libc.stdint cimport int32_t, int64_t
-from libc.string cimport memcpy, memchr
+from libc.string cimport memchr, memcpy
 from libcpp.unordered_set cimport unordered_set
-from numpy cimport dtype as np_dtype, ndarray, PyArray_DATA, PyArray_DESCR, PyArray_DIM, \
-    PyArray_NDIM, PyArray_STRIDE
+from numpy cimport (
+    PyArray_DATA,
+    PyArray_DESCR,
+    PyArray_DIM,
+    PyArray_NDIM,
+    PyArray_STRIDE,
+    dtype as np_dtype,
+    ndarray,
+)
 
 import numpy as np
 

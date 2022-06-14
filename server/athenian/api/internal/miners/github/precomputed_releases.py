@@ -14,17 +14,20 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.internal.miners.github.released_pr import matched_by_column
 from athenian.api.internal.miners.types import ReleaseFacts
-from athenian.api.internal.settings import default_branch_alias, ReleaseMatch, ReleaseSettings
+from athenian.api.internal.settings import ReleaseMatch, ReleaseSettings, default_branch_alias
 from athenian.api.models.metadata.github import Release
-from athenian.api.models.precomputed.models import GitHubRelease as PrecomputedRelease, \
-    GitHubReleaseFacts
+from athenian.api.models.precomputed.models import (
+    GitHubRelease as PrecomputedRelease,
+    GitHubReleaseFacts,
+)
 from athenian.api.tracing import sentry_span
 
 
-def reverse_release_settings(repos: Iterable[str],
-                             default_branches: Dict[str, str],
-                             settings: ReleaseSettings,
-                             ) -> Dict[Tuple[ReleaseMatch, str], List[str]]:
+def reverse_release_settings(
+    repos: Iterable[str],
+    default_branches: Dict[str, str],
+    settings: ReleaseSettings,
+) -> Dict[Tuple[ReleaseMatch, str], List[str]]:
     """Map distinct pairs (release match, tag/branch name) to the aggregated repositories."""
     reverse_settings = defaultdict(list)
     for repo in repos:
@@ -42,12 +45,13 @@ def reverse_release_settings(repos: Iterable[str],
 
 
 @sentry_span
-async def load_precomputed_release_facts(releases: pd.DataFrame,
-                                         default_branches: Dict[str, str],
-                                         settings: ReleaseSettings,
-                                         account: int,
-                                         pdb: morcilla.Database,
-                                         ) -> Dict[Tuple[int, str], ReleaseFacts]:
+async def load_precomputed_release_facts(
+    releases: pd.DataFrame,
+    default_branches: Dict[str, str],
+    settings: ReleaseSettings,
+    account: int,
+    pdb: morcilla.Database,
+) -> Dict[Tuple[int, str], ReleaseFacts]:
     """
     Fetch precomputed facts about releases.
 
@@ -69,11 +73,13 @@ async def load_precomputed_release_facts(releases: pd.DataFrame,
             raise AssertionError("Ambiguous release settings for %s: %s" % (repo, setting))
         reverse_settings[(setting.match, value)].append(repo)
     grouped_releases = defaultdict(set)
-    for rid, repo in zip(releases[Release.node_id.name].values,
-                         releases[Release.repository_full_name.name].values):
+    for rid, repo in zip(
+        releases[Release.node_id.name].values, releases[Release.repository_full_name.name].values
+    ):
         grouped_releases[repo].add(rid)
-    default_version = \
-        GitHubReleaseFacts.__table__.columns[GitHubReleaseFacts.format_version.key].default.arg
+    default_version = GitHubReleaseFacts.__table__.columns[
+        GitHubReleaseFacts.format_version.key
+    ].default.arg
     queries = []
     total_ids = 0
     threshold_in_values = 1000
@@ -92,26 +98,32 @@ async def load_precomputed_release_facts(releases: pd.DataFrame,
             filters.append(GitHubReleaseFacts.id.in_(ids))
         total_ids += len(ids)
         queries.append(
-            select([GitHubReleaseFacts.id,
+            select(
+                [
+                    GitHubReleaseFacts.id,
                     GitHubReleaseFacts.repository_full_name,
-                    GitHubReleaseFacts.data])
+                    GitHubReleaseFacts.data,
+                ]
+            )
             .where(and_(*filters))
             .with_statement_hint(f"Rows(release_facts #{len(ids)})")
             .with_statement_hint(f"Rows(*VALUES* release_facts #{len(ids)})"),
         )
 
-    with sentry_sdk.start_span(op="load_precomputed_release_facts/fetch",
-                               description=str(len(releases))):
+    with sentry_sdk.start_span(
+        op="load_precomputed_release_facts/fetch", description=str(len(releases))
+    ):
         if total_ids < threshold_total:
             rows = await pdb.fetch_all(union_all(*queries))
         else:
             rows = chain.from_iterable(await gather(*(pdb.fetch_all(q) for q in queries)))
     result = {
-        ((node_id := row[GitHubReleaseFacts.id.name]),
-         (repo := row[GitHubReleaseFacts.repository_full_name.name])): ReleaseFacts(
-            row[GitHubReleaseFacts.data.name],
-            node_id=node_id,
-            repository_full_name=repo)
+        (
+            (node_id := row[GitHubReleaseFacts.id.name]),
+            (repo := row[GitHubReleaseFacts.repository_full_name.name]),
+        ): ReleaseFacts(
+            row[GitHubReleaseFacts.data.name], node_id=node_id, repository_full_name=repo
+        )
         for row in rows
     }
     return result
@@ -129,12 +141,14 @@ def compose_release_match(match: ReleaseMatch, value: str) -> str:
 
 
 @sentry_span
-async def store_precomputed_release_facts(releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
-                                          default_branches: Dict[str, str],
-                                          settings: ReleaseSettings,
-                                          account: int,
-                                          pdb: morcilla.Database,
-                                          on_conflict_replace: bool = False) -> None:
+async def store_precomputed_release_facts(
+    releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
+    default_branches: Dict[str, str],
+    settings: ReleaseSettings,
+    account: int,
+    pdb: morcilla.Database,
+    on_conflict_replace: bool = False,
+) -> None:
     """Put the new release facts to the pdb."""
     values = []
     skipped = defaultdict(int)
@@ -153,14 +167,18 @@ async def store_precomputed_release_facts(releases: List[Tuple[Dict[str, Any], R
             value = ""
         else:
             raise AssertionError("Ambiguous release settings for %s: %s" % (repo, setting))
-        values.append(GitHubReleaseFacts(
-            id=dikt[Release.node_id.name],
-            acc_id=account,
-            release_match=compose_release_match(setting.match, value),
-            repository_full_name=repo,
-            published_at=facts.published.item().replace(tzinfo=timezone.utc),
-            data=facts.data,
-        ).create_defaults().explode(with_primary_keys=True))
+        values.append(
+            GitHubReleaseFacts(
+                id=dikt[Release.node_id.name],
+                acc_id=account,
+                release_match=compose_release_match(setting.match, value),
+                repository_full_name=repo,
+                published_at=facts.published.item().replace(tzinfo=timezone.utc),
+                data=facts.data,
+            )
+            .create_defaults()
+            .explode(with_primary_keys=True)
+        )
     if skipped:
         log = logging.getLogger(f"{metadata.__package__}.store_precomputed_release_facts")
         log.warning("Ignored mined releases: %s", dict(skipped))
@@ -190,33 +208,48 @@ async def store_precomputed_release_facts(releases: List[Tuple[Dict[str, Any], R
 
 
 @sentry_span
-async def fetch_precomputed_releases_by_name(names: Dict[str, Iterable[str]],
-                                             account: int,
-                                             pdb: morcilla.Database,
-                                             ) -> pd.DataFrame:
+async def fetch_precomputed_releases_by_name(
+    names: Dict[str, Iterable[str]],
+    account: int,
+    pdb: morcilla.Database,
+) -> pd.DataFrame:
     """Load precomputed release facts given the mapping from repository names to release names."""
     prel = PrecomputedRelease
     if pdb.url.dialect == "sqlite":
         query = (
             select([prel])
-            .where(or_(*(and_(prel.repository_full_name == k,
-                              prel.acc_id == account,
-                              prel.name.in_(v)) for k, v in names.items())))
+            .where(
+                or_(
+                    *(
+                        and_(
+                            prel.repository_full_name == k,
+                            prel.acc_id == account,
+                            prel.name.in_(v),
+                        )
+                        for k, v in names.items()
+                    )
+                )
+            )
             .order_by(desc(prel.published_at))
         )
     else:
-        query = union_all(*(
-            select([prel])
-            .where(and_(prel.repository_full_name == k,
-                        prel.name.in_(v),
-                        prel.acc_id == account))
-            .order_by(desc(prel.published_at))
-            for k, v in names.items()))
+        query = union_all(
+            *(
+                select([prel])
+                .where(
+                    and_(prel.repository_full_name == k, prel.name.in_(v), prel.acc_id == account)
+                )
+                .order_by(desc(prel.published_at))
+                for k, v in names.items()
+            )
+        )
     df = await read_sql_query(query, pdb, prel)
     df[matched_by_column] = None
-    df.loc[df[prel.release_match.name].str.startswith("branch|"), matched_by_column] = \
-        ReleaseMatch.branch
-    df.loc[df[prel.release_match.name].str.startswith("tag|"), matched_by_column] = \
-        ReleaseMatch.tag
+    df.loc[
+        df[prel.release_match.name].str.startswith("branch|"), matched_by_column
+    ] = ReleaseMatch.branch
+    df.loc[
+        df[prel.release_match.name].str.startswith("tag|"), matched_by_column
+    ] = ReleaseMatch.tag
     df.drop(PrecomputedRelease.release_match.name, inplace=True, axis=1)
     return df

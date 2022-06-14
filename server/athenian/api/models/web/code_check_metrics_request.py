@@ -109,8 +109,10 @@ class _CodeCheckMetricsRequest(Model, sealed=False):
         self._split_by_check_runs = split_by_check_runs
 
 
-CodeCheckMetricsRequest = AllOf(_CodeCheckMetricsRequest,
-                                CommonFilterProperties,
-                                CommonMetricsProperties,
-                                name="CodeCheckMetricsRequest",
-                                module=__name__)
+CodeCheckMetricsRequest = AllOf(
+    _CodeCheckMetricsRequest,
+    CommonFilterProperties,
+    CommonMetricsProperties,
+    name="CodeCheckMetricsRequest",
+    module=__name__,
+)

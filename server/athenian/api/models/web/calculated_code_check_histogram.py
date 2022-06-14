@@ -158,7 +158,9 @@ class _CalculatedCodeCheckHistogram(Model, sealed=False):
         self._interquartile = interquartile
 
 
-CalculatedCodeCheckHistogram = AllOf(_CalculatedCodeCheckHistogram,
-                                     _CalculatedCodeCheckCommon,
-                                     name="CalculatedCodeCheckHistogram",
-                                     module=__name__)
+CalculatedCodeCheckHistogram = AllOf(
+    _CalculatedCodeCheckHistogram,
+    _CalculatedCodeCheckCommon,
+    name="CalculatedCodeCheckHistogram",
+    module=__name__,
+)

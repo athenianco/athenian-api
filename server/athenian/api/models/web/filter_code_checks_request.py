@@ -85,8 +85,10 @@ class _FilterCodeChecksRequest(Model, QuantilesMixin, sealed=False):
         self._triggered_by = triggered_by
 
 
-FilterCodeChecksRequest = AllOf(_FilterCodeChecksRequest,
-                                CommonFilterProperties,
-                                CommonPullRequestFilters,
-                                name="FilterCodeChecksRequest",
-                                module=__name__)
+FilterCodeChecksRequest = AllOf(
+    _FilterCodeChecksRequest,
+    CommonFilterProperties,
+    CommonPullRequestFilters,
+    name="FilterCodeChecksRequest",
+    module=__name__,
+)

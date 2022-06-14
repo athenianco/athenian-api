@@ -21,11 +21,11 @@ depends_on = None
 def upgrade():
     op.create_table(
         "shares",
-        sa.Column("id", sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
-                  primary_key=True),
+        sa.Column("id", sa.BigInteger().with_variant(sa.Integer(), "sqlite"), primary_key=True),
         sa.Column("created_by", sa.String(), nullable=False),
-        sa.Column("created_at", sa.TIMESTAMP(timezone=True), nullable=False,
-                  server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
         sa.Column("data", JSONB().with_variant(sa.JSON(), sqlite.dialect.name), nullable=False),
         sqlite_autoincrement=True,
     )

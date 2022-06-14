@@ -22,14 +22,19 @@ def upgrade():
     op.create_table(
         "installations",
         sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=False),
-        sa.Column("account_id", sa.Integer(),
-                  sa.ForeignKey("accounts.id", name="fk_installation_id_owner"),
-                  nullable=False),
+        sa.Column(
+            "account_id",
+            sa.Integer(),
+            sa.ForeignKey("accounts.id", name="fk_installation_id_owner"),
+            nullable=False,
+        ),
     )
     for account in session.execute("select * from accounts"):
         if account.installation_id is not None:
-            session.execute("insert into installations(id, account_id) values(%d, %d)" %
-                            (account.installation_id, account.id))
+            session.execute(
+                "insert into installations(id, account_id) values(%d, %d)"
+                % (account.installation_id, account.id)
+            )
     session.commit()
     with op.batch_alter_table("accounts") as bop:
         bop.drop_column("installation_id")
@@ -42,6 +47,7 @@ def downgrade():
     session = Session(bind=op.get_bind())
     for iid in session.execute("select * from installations"):
         session.execute(
-            "update accounts set installation_id = %d where id = %d" % (iid.id, iid.account_id))
+            "update accounts set installation_id = %d where id = %d" % (iid.id, iid.account_id)
+        )
     session.commit()
     op.drop_table("installations")

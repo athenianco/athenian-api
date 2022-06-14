@@ -25,6 +25,7 @@ from flogging import flogging
 import jinja2
 import morcilla
 import numpy
+
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=DeprecationWarning)
     import pandas
@@ -58,7 +59,9 @@ def parse_args() -> argparse.Namespace:
     class Formatter(argparse.ArgumentDefaultsHelpFormatter, argparse.RawTextHelpFormatter):
         pass
 
-    parser = argparse.ArgumentParser(metadata.__package__, epilog="""environment variables:
+    parser = argparse.ArgumentParser(
+        metadata.__package__,
+        epilog="""environment variables:
   SENTRY_KEY               Sentry token: ???@sentry.io
   SENTRY_PROJECT           Sentry project name
   AUTH0_DOMAIN             Auth0 domain, usually *.auth0.com
@@ -90,7 +93,8 @@ def parse_args() -> argparse.Namespace:
                            Release and deployment event notification channel.
   MANDRILL_API_KEY         Mailchimp Transactional API key. Enables sending emails.
   """,  # noqa
-                                     formatter_class=Formatter)
+        formatter_class=Formatter,
+    )
 
     def level_from_msg(msg: str) -> Optional[str]:
         for s in ("GET /status", "GET /prometheus", "before send dropped event"):
@@ -100,39 +104,72 @@ def parse_args() -> argparse.Namespace:
         return None
 
     flogging.add_logging_args(parser, level_from_msg=level_from_msg)
-    parser.add_argument("--host", default=[],
-                        help="HTTP server host. May be specified multiple times.",
-                        action="append")
+    parser.add_argument(
+        "--host",
+        default=[],
+        help="HTTP server host. May be specified multiple times.",
+        action="append",
+    )
     parser.add_argument("--port", type=int, default=8080, help="HTTP server port.")
-    parser.add_argument("--metadata-db",
-                        default="postgresql://postgres:postgres@0.0.0.0:5432/metadata",
-                        help="Metadata (GitHub, JIRA, etc.) DB connection string in SQLAlchemy "
-                             "format. This DB is readonly.")
-    parser.add_argument("--state-db",
-                        default="postgresql://postgres:postgres@0.0.0.0:5432/state",
-                        help="Server state (user settings, teams, etc.) DB connection string in "
-                             "SQLAlchemy format. This DB is read/write.")
-    parser.add_argument("--precomputed-db",
-                        default="postgresql://postgres:postgres@0.0.0.0:5432/precomputed",
-                        help="Precomputed objects augmenting the metadata DB and reducing "
-                             "the amount of online work. DB connection string in SQLAlchemy "
-                             "format. This DB is read/write.")
-    parser.add_argument("--persistentdata-db",
-                        default="postgresql://postgres:postgres@0.0.0.0:5432/persistentdata",
-                        help="Pushed and pulled source data that Athenian owns. DB connection "
-                             "string in SQLAlchemy format. This DB is read/write.")
-    parser.add_argument("--memcached", required=False,
-                        help="memcached (users profiles, preprocessed metadata cache) address, "
-                             "for example, 0.0.0.0:11211")
+    parser.add_argument(
+        "--metadata-db",
+        default="postgresql://postgres:postgres@0.0.0.0:5432/metadata",
+        help=(
+            "Metadata (GitHub, JIRA, etc.) DB connection string in SQLAlchemy "
+            "format. This DB is readonly."
+        ),
+    )
+    parser.add_argument(
+        "--state-db",
+        default="postgresql://postgres:postgres@0.0.0.0:5432/state",
+        help=(
+            "Server state (user settings, teams, etc.) DB connection string in "
+            "SQLAlchemy format. This DB is read/write."
+        ),
+    )
+    parser.add_argument(
+        "--precomputed-db",
+        default="postgresql://postgres:postgres@0.0.0.0:5432/precomputed",
+        help=(
+            "Precomputed objects augmenting the metadata DB and reducing "
+            "the amount of online work. DB connection string in SQLAlchemy "
+            "format. This DB is read/write."
+        ),
+    )
+    parser.add_argument(
+        "--persistentdata-db",
+        default="postgresql://postgres:postgres@0.0.0.0:5432/persistentdata",
+        help=(
+            "Pushed and pulled source data that Athenian owns. DB connection "
+            "string in SQLAlchemy format. This DB is read/write."
+        ),
+    )
+    parser.add_argument(
+        "--memcached",
+        required=False,
+        help=(
+            "memcached (users profiles, preprocessed metadata cache) address, "
+            "for example, 0.0.0.0:11211"
+        ),
+    )
     parser.add_argument("--ui", action="store_true", help="Enable the REST UI.")
-    parser.add_argument("--no-google-kms", action="store_true",
-                        help="Skip Google Key Management Service initialization. Personal Access "
-                             "Tokens will not work.")
-    parser.add_argument("--force-user",
-                        help="Bypass user authorization and execute all requests on behalf of "
-                             "this user.")
-    parser.add_argument("--no-db-version-check", action="store_true",
-                        help="Do not validate database schema versions on startup.")
+    parser.add_argument(
+        "--no-google-kms",
+        action="store_true",
+        help=(
+            "Skip Google Key Management Service initialization. Personal Access "
+            "Tokens will not work."
+        ),
+    )
+    parser.add_argument(
+        "--force-user",
+        help="Bypass user authorization and execute all requests on behalf of this user.",
+    )
+    parser.add_argument(
+        "--no-db-version-check",
+        action="store_true",
+        help="Do not validate database schema versions on startup.",
+    )
     parser.add_argument("--weights", help="JSON file with endpoint weights.")
     return parser.parse_args()
 
@@ -199,7 +236,8 @@ def _init_sentry(log: logging.Logger, app_env: _ApplicationEnvironment) -> None:
 
     def warn(env_name):
         logging.getLogger(metadata.__package__).warning(
-            "Skipped Sentry initialization: %s envvar is missing", env_name)
+            "Skipped Sentry initialization: %s envvar is missing", env_name
+        )
 
     if not sentry_key:
         warn("SENTRY_KEY")
@@ -210,21 +248,33 @@ def _init_sentry(log: logging.Logger, app_env: _ApplicationEnvironment) -> None:
     sentry_env = os.getenv("SENTRY_ENV", "development")
     log.info("Sentry: https://[secure]@sentry.io/%s#%s" % (sentry_project, sentry_env))
 
-    aiohttp_traces_sample_rate = float(os.getenv(
-        "SENTRY_SAMPLING_RATE", "0.2" if sentry_env != "development" else "0"))
+    aiohttp_traces_sample_rate = float(
+        os.getenv("SENTRY_SAMPLING_RATE", "0.2" if sentry_env != "development" else "0")
+    )
     if aiohttp_traces_sample_rate > 0:
         log.info(
             "Sentry tracing for aiohttp is ON: sampling rate %.2f", aiohttp_traces_sample_rate,
         )
-    script_traces_sample_rate = float(os.getenv(
-        "SENTRY_SAMPLING_RATE", "1.0" if sentry_env != "development" else "0"))
+    script_traces_sample_rate = float(
+        os.getenv("SENTRY_SAMPLING_RATE", "1.0" if sentry_env != "development" else "0")
+    )
 
-    disabled_transactions_re = re.compile("|".join([
-        "openapi.json", "ui(/|$)",
-    ]))
-    throttled_transactions_re = re.compile("|".join([
-        "invite/progress", "events/(?!clear_cache)",
-    ]))
+    disabled_transactions_re = re.compile(
+        "|".join(
+            [
+                "openapi.json",
+                "ui(/|$)",
+            ]
+        )
+    )
+    throttled_transactions_re = re.compile(
+        "|".join(
+            [
+                "invite/progress",
+                "events/(?!clear_cache)",
+            ]
+        )
+    )
     api_path_re = re.compile(r"/v\d+/")
 
     def sample_trace(context) -> float:
@@ -241,7 +291,7 @@ def _init_sentry(log: logging.Logger, app_env: _ApplicationEnvironment) -> None:
         path = request.path
         if not (match := api_path_re.match(path)):
             return 0
-        path = path[match.end():]
+        path = path[match.end() :]
         if disabled_transactions_re.match(path):
             return 0
         if throttled_transactions_re.match(path):
@@ -253,8 +303,7 @@ def _init_sentry(log: logging.Logger, app_env: _ApplicationEnvironment) -> None:
     def before_send(event, hint):
         event_logger = event.get("logger")
         if event_logger is not None and any(
-                event_logger.startswith(disabled)
-                for disabled in LOGGERS_EXCLUDED_FROM_EVENTS
+            event_logger.startswith(disabled) for disabled in LOGGERS_EXCLUDED_FROM_EVENTS
         ):
             return None
 
@@ -266,9 +315,13 @@ def _init_sentry(log: logging.Logger, app_env: _ApplicationEnvironment) -> None:
     sentry_sdk.init(
         environment=sentry_env,
         dsn="https://%s@sentry.io/%s" % (sentry_key, sentry_project),
-        integrations=[AioHttpIntegration(transaction_style="method_and_path_pattern"),
-                      LoggingIntegration(level=logging.INFO, event_level=logging.ERROR),
-                      SqlalchemyIntegration(), PureEvalIntegration(), ExecutingIntegration()],
+        integrations=[
+            AioHttpIntegration(transaction_style="method_and_path_pattern"),
+            LoggingIntegration(level=logging.INFO, event_level=logging.ERROR),
+            SqlalchemyIntegration(),
+            PureEvalIntegration(),
+            ExecutingIntegration(),
+        ],
         auto_enabling_integrations=False,
         send_default_pii=True,
         debug=sentry_env != "production",
@@ -308,9 +361,14 @@ def create_memcached(addr: str, log: logging.Logger) -> Optional[aiomcache.Clien
                 version = await client.version()
             except Exception as e:
                 last_attempt = attempt >= attempts - 1
-                log.log(logging.CRITICAL if last_attempt else logging.WARNING,
-                        "[%d / %d] memcached: %s: %s",
-                        attempt + 1, attempts, type(e).__name__, e)
+                log.log(
+                    logging.CRITICAL if last_attempt else logging.WARNING,
+                    "[%d / %d] memcached: %s: %s",
+                    attempt + 1,
+                    attempts,
+                    type(e).__name__,
+                    e,
+                )
                 if last_attempt:
                     sentry_sdk.capture_exception(e)
                     raise GracefulExit()
@@ -327,6 +385,7 @@ def create_memcached(addr: str, log: logging.Logger) -> Optional[aiomcache.Clien
 
 def create_auth0_factory(force_user: str) -> Callable[[], Auth0]:
     """Create the factory of Auth0 instances."""
+
     def factory(**kwargs):
         return Auth0(**kwargs, force_user=force_user)
 
@@ -345,9 +404,7 @@ def create_slack(log: logging.Logger) -> Optional[SlackWebClient]:
     # 1. avoid the warning
     # 2. timeouts don't work otherwise
     async def set_slack_client_session():
-        slack_client.session = aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=10),
-        )
+        slack_client.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10))
 
     slack_client.session_future = asyncio.ensure_future(set_slack_client_session())
 
@@ -360,7 +417,9 @@ def create_slack(log: logging.Logger) -> Optional[SlackWebClient]:
         raise ValueError("SLACK_INSTALL_CHANNEL may not be empty if SLACK_API_TOKEN exists")
     slack_client.jinja2 = jinja2.Environment(  # nosec B701
         loader=jinja2.FileSystemLoader(Path(__file__).parent / "slack"),
-        autoescape=False, trim_blocks=True, lstrip_blocks=True,
+        autoescape=False,
+        trim_blocks=True,
+        lstrip_blocks=True,
     )
     slack_client.jinja2.globals["env"] = os.getenv("SENTRY_ENV", "development")
     slack_client.jinja2.globals["now"] = lambda: datetime.now(timezone.utc)
@@ -370,8 +429,8 @@ def create_slack(log: logging.Logger) -> Optional[SlackWebClient]:
             return
         try:
             response = await slack_client.chat_postMessage(
-                channel=channel,
-                text=slack_client.jinja2.get_template(template).render(**kwargs))
+                channel=channel, text=slack_client.jinja2.get_template(template).render(**kwargs)
+            )
             error_name = error_data = ""
         except Exception as e:
             error_name = type(e).__name__
@@ -381,8 +440,9 @@ def create_slack(log: logging.Logger) -> Optional[SlackWebClient]:
             error_name = "HTTP %d" % response.status_code
             error_data = response.data
         if error_name:
-            log.error("Could not send a Slack message to %s: %s: %s",
-                      channel, error_name, error_data)
+            log.error(
+                "Could not send a Slack message to %s: %s: %s", channel, error_name, error_data
+            )
 
     async def post_account(template: str, **kwargs) -> None:
         return await post(template, account_channel, **kwargs)
@@ -429,12 +489,9 @@ def main() -> Optional[AthenianApp]:
     args = parse_args()
     log = logging.getLogger(metadata.__package__)
     setup_context(log)
-    if not args.no_db_version_check \
-            and not check_schema_versions(args.metadata_db,
-                                          args.state_db,
-                                          args.precomputed_db,
-                                          args.persistentdata_db,
-                                          log):
+    if not args.no_db_version_check and not check_schema_versions(
+        args.metadata_db, args.state_db, args.precomputed_db, args.persistentdata_db, log
+    ):
         return None
     patch_pandas()
     set_endpoint_weights(args.weights, log)

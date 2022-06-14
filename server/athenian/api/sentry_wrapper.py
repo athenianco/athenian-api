@@ -8,7 +8,6 @@ import sentry_sdk
 
 from athenian.api.__main__ import setup_context
 
-
 flogging.trailing_dot_exceptions.add("sentry_sdk.errors")
 
 

@@ -81,20 +81,24 @@ class _ForSetDevelopers(Model, RepositoryGroupsMixin, sealed=False):
             for i, group in enumerate(aggregate_devgroups):
                 if len(group) == 0:
                     raise ValueError(
-                        "`aggregate_devgroups[%d]` must contain at least one element" % i)
+                        "`aggregate_devgroups[%d]` must contain at least one element" % i
+                    )
                 for j, v in enumerate(group):
                     if v < 0:
                         raise ValueError(
-                            "`aggregate_devgroups[%d][%d]` = %s must not be negative" % (i, j, v))
+                            "`aggregate_devgroups[%d][%d]` = %s must not be negative" % (i, j, v)
+                        )
                     if self._developers is not None and v >= len(self._developers):
                         raise ValueError(
                             "`aggregate_devgroups[%d][%d]` = %s must be less than the number of "
-                            "developers (%d)" % (i, j, v, len(self._developers)))
+                            "developers (%d)" % (i, j, v, len(self._developers))
+                        )
                 if len(set(group)) < len(group):
                     raise ValueError("`aggregate_devgroups[%d]` has duplicate items" % i)
 
         self._aggregate_devgroups = aggregate_devgroups
 
 
-ForSetDevelopers = AllOf(_ForSetDevelopers, CommonPullRequestFilters,
-                         name="ForSetDevelopers", module=__name__)
+ForSetDevelopers = AllOf(
+    _ForSetDevelopers, CommonPullRequestFilters, name="ForSetDevelopers", module=__name__
+)

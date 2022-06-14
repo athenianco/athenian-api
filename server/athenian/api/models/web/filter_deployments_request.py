@@ -124,12 +124,16 @@ class _FilterDeploymentsRequest(Model, sealed=False):
             for value in conclusions:
                 if value not in DeploymentConclusion:
                     raise ValueError(
-                        f'Value "{value}" must be one of {list(DeploymentConclusion)}')
+                        f'Value "{value}" must be one of {list(DeploymentConclusion)}'
+                    )
         self._conclusions = conclusions
 
 
-FilterDeploymentsRequest = AllOf(_FilterDeploymentsRequest,
-                                 CommonFilterProperties,
-                                 make_common_pull_request_filters("pr_"),
-                                 CommonDeploymentProperties,
-                                 name="FilterDeploymentsRequest", module=__name__)
+FilterDeploymentsRequest = AllOf(
+    _FilterDeploymentsRequest,
+    CommonFilterProperties,
+    make_common_pull_request_filters("pr_"),
+    CommonDeploymentProperties,
+    name="FilterDeploymentsRequest",
+    module=__name__,
+)

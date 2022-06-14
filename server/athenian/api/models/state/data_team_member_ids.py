@@ -31,10 +31,11 @@ def main():
         else:
             people_logins = [f"'{r.rsplit('/', 1)[1]}'" for r in old_members]
             node_rows = metadata_engine.execute(
-                f"SELECT node_id, login "
-                f"FROM github.api_users "
+                "SELECT node_id, login "
+                "FROM github.api_users "
                 f"WHERE acc_id IN ({','.join(github_ids)}) "
-                f"  AND login IN ({','.join(people_logins)})")
+                f"  AND login IN ({','.join(people_logins)})"
+            )
             login_map = {row[1]: row[0] for row in node_rows}
             new_items = []
             for login in people_logins:
@@ -43,8 +44,8 @@ def main():
                 except KeyError:
                     continue
         state_engine.execute(
-            f"UPDATE teams SET members = '{json.dumps(sorted(new_items))}' "
-            f"WHERE id = {team_id}")
+            f"UPDATE teams SET members = '{json.dumps(sorted(new_items))}' WHERE id = {team_id}"
+        )
 
 
 if __name__ == "__main__":

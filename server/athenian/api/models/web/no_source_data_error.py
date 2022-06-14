@@ -19,5 +19,6 @@ class NoSourceDataError(GenericError):
         :param detail: The detail of this NoSourceDataError.
         :param instance: The instance of this NoSourceDataError.
         """
-        super().__init__(type="/errors/NoSourceDataError", title=title, status=status,
-                         detail=detail)
+        super().__init__(
+            type="/errors/NoSourceDataError", title=title, status=status, detail=detail
+        )

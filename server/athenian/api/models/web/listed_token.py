@@ -10,10 +10,12 @@ class ListedToken(Model):
     attribute_types = {"id": int, "name": str, "last_used": datetime}
     attribute_map = {"id": "id", "name": "name", "last_used": "last_used"}
 
-    def __init__(self,
-                 id: Optional[int] = None,
-                 name: Optional[str] = None,
-                 last_used: Optional[datetime] = None):
+    def __init__(
+        self,
+        id: Optional[int] = None,
+        name: Optional[str] = None,
+        last_used: Optional[datetime] = None,
+    ):
         """ListedToken - a model defined in OpenAPI
 
         :param id: The id of this ListedToken.

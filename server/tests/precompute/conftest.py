@@ -8,8 +8,16 @@ import sqlalchemy as sa
 import tqdm
 
 from athenian.api.db import Database
-from athenian.api.models.state.models import Account, AccountFeature, AccountGitHubAccount, \
-    AccountJiraInstallation, Invitation, RepositorySet, UserAccount, WorkType
+from athenian.api.models.state.models import (
+    Account,
+    AccountFeature,
+    AccountGitHubAccount,
+    AccountJiraInstallation,
+    Invitation,
+    RepositorySet,
+    UserAccount,
+    WorkType,
+)
 from athenian.api.precompute.context import PrecomputeContext
 
 

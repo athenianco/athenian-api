@@ -18,28 +18,31 @@ from athenian.api.tracing import sentry_span
 
 
 @sentry_span
-async def filter_epics(jira_ids: JIRAConfig,
-                       time_from: Optional[datetime],
-                       time_to: Optional[datetime],
-                       exclude_inactive: bool,
-                       labels: LabelFilter,
-                       priorities: Collection[str],
-                       reporters: Collection[str],
-                       assignees: Collection[Optional[str]],
-                       commenters: Collection[str],
-                       default_branches: Dict[str, str],
-                       release_settings: ReleaseSettings,
-                       logical_settings: LogicalRepositorySettings,
-                       account: int,
-                       meta_ids: Tuple[int, ...],
-                       mdb: morcilla.Database,
-                       pdb: morcilla.Database,
-                       cache: Optional[aiomcache.Client],
-                       extra_columns: Collection[InstrumentedAttribute] = (),
-                       ) -> Tuple[pd.DataFrame,
-                                  pd.DataFrame,
-                                  asyncio.Task,  # -> List[Mapping[str, Union[str, int]]]
-                                  Dict[str, Sequence[int]]]:
+async def filter_epics(
+    jira_ids: JIRAConfig,
+    time_from: Optional[datetime],
+    time_to: Optional[datetime],
+    exclude_inactive: bool,
+    labels: LabelFilter,
+    priorities: Collection[str],
+    reporters: Collection[str],
+    assignees: Collection[Optional[str]],
+    commenters: Collection[str],
+    default_branches: Dict[str, str],
+    release_settings: ReleaseSettings,
+    logical_settings: LogicalRepositorySettings,
+    account: int,
+    meta_ids: Tuple[int, ...],
+    mdb: morcilla.Database,
+    pdb: morcilla.Database,
+    cache: Optional[aiomcache.Client],
+    extra_columns: Collection[InstrumentedAttribute] = (),
+) -> Tuple[
+    pd.DataFrame,
+    pd.DataFrame,
+    asyncio.Task,  # -> List[Mapping[str, Union[str, int]]]
+    Dict[str, Sequence[int]],
+]:
     """
     Fetch JIRA epics and their children issues according to the given filters.
 
@@ -53,19 +56,41 @@ async def filter_epics(jira_ids: JIRAConfig,
     if candidate_types != {"epic"} and Issue.project_id not in extra_columns:
         extra_columns = (*extra_columns, Issue.project_id)
     epics = await fetch_jira_issues(
-        jira_ids, time_from, time_to, exclude_inactive, labels,
-        priorities, candidate_types, [], reporters, assignees, commenters, True,
-        default_branches, release_settings, logical_settings, account, meta_ids, mdb, pdb, cache,
-        extra_columns=extra_columns)
+        jira_ids,
+        time_from,
+        time_to,
+        exclude_inactive,
+        labels,
+        priorities,
+        candidate_types,
+        [],
+        reporters,
+        assignees,
+        commenters,
+        True,
+        default_branches,
+        release_settings,
+        logical_settings,
+        account,
+        meta_ids,
+        mdb,
+        pdb,
+        cache,
+        extra_columns=extra_columns,
+    )
     if epics.empty:
+
         async def noop():
             return []
 
-        return (epics,
-                pd.DataFrame(columns=[
-                    Issue.priority_id.name, Issue.status_id.name, Issue.project_id.name]),
-                asyncio.create_task(noop()),
-                {})
+        return (
+            epics,
+            pd.DataFrame(
+                columns=[Issue.priority_id.name, Issue.status_id.name, Issue.project_id.name]
+            ),
+            asyncio.create_task(noop()),
+            {},
+        )
     if candidate_types != {"epic"}:
         projects = epics[Issue.project_id.name].values.astype("S")
         types = epics[Issue.type.name].values.astype("S")
@@ -79,24 +104,49 @@ async def filter_epics(jira_ids: JIRAConfig,
     if Issue.parent_id not in extra_columns:
         extra_columns.append(Issue.parent_id)
     children = await fetch_jira_issues(
-        jira_ids, None, None, False, LabelFilter.empty(),
-        [], [], epics[Issue.key.name].values, [], [], [], False,
-        default_branches, release_settings, logical_settings, account, meta_ids, mdb, pdb, cache,
-        extra_columns=extra_columns)
+        jira_ids,
+        None,
+        None,
+        False,
+        LabelFilter.empty(),
+        [],
+        [],
+        epics[Issue.key.name].values,
+        [],
+        [],
+        [],
+        False,
+        default_branches,
+        release_settings,
+        logical_settings,
+        account,
+        meta_ids,
+        mdb,
+        pdb,
+        cache,
+        extra_columns=extra_columns,
+    )
     # plan to fetch the subtask counts, but not await it now
     subtasks = asyncio.create_task(
-        mdb.fetch_all(select([Issue.parent_id, func.count(Issue.id).label("subtasks")])
-                      .where(and_(Issue.acc_id == jira_ids.acc_id,
-                                  Issue.project_id.in_(jira_ids.projects),
-                                  Issue.is_deleted.is_(False),
-                                  Issue.parent_id.in_(children.index.values)))
-                      .group_by(Issue.parent_id)),
+        mdb.fetch_all(
+            select([Issue.parent_id, func.count(Issue.id).label("subtasks")])
+            .where(
+                and_(
+                    Issue.acc_id == jira_ids.acc_id,
+                    Issue.project_id.in_(jira_ids.projects),
+                    Issue.is_deleted.is_(False),
+                    Issue.parent_id.in_(children.index.values),
+                )
+            )
+            .group_by(Issue.parent_id)
+        ),
         name="fetch JIRA subtask counts",
     )
     await asyncio.sleep(0)
     empty_epic_ids_mask = children[Issue.epic_id.name].isnull()
-    children.loc[empty_epic_ids_mask, Issue.epic_id.name] = \
-        children[Issue.parent_id.name][empty_epic_ids_mask]
+    children.loc[empty_epic_ids_mask, Issue.epic_id.name] = children[Issue.parent_id.name][
+        empty_epic_ids_mask
+    ]
     children_epic_ids = children[Issue.epic_id.name].values
     order = np.argsort(children_epic_ids)
     children_epic_ids = children_epic_ids[order]

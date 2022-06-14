@@ -29,7 +29,8 @@ async def test_heavy_load(client, headers):
 
     async def request_200():
         return await client.request(
-            method="POST", path="/v1/metrics/pull_requests", headers=headers, json=req_body)
+            method="POST", path="/v1/metrics/pull_requests", headers=headers, json=req_body
+        )
 
     async def request_503():
         await asyncio.sleep(0.1)

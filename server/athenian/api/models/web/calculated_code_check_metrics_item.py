@@ -1,8 +1,7 @@
 from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import AllOf, Model
-from athenian.api.models.web.calculated_linear_metric_values import \
-    CalculatedLinearMetricValues
+from athenian.api.models.web.calculated_linear_metric_values import CalculatedLinearMetricValues
 from athenian.api.models.web.for_set_code_checks import _CalculatedCodeCheckCommon
 from athenian.api.models.web.granularity import GranularityMixin
 
@@ -57,7 +56,9 @@ class _CalculatedCodeCheckMetricsItem(Model, GranularityMixin, sealed=False):
         self._values = values
 
 
-CalculatedCodeCheckMetricsItem = AllOf(_CalculatedCodeCheckMetricsItem,
-                                       _CalculatedCodeCheckCommon,
-                                       name="CalculatedCodeCheckMetricsItem",
-                                       module=__name__)
+CalculatedCodeCheckMetricsItem = AllOf(
+    _CalculatedCodeCheckMetricsItem,
+    _CalculatedCodeCheckCommon,
+    name="CalculatedCodeCheckMetricsItem",
+    module=__name__,
+)

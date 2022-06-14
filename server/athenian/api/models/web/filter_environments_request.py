@@ -46,5 +46,9 @@ class _FilterEnvironmentsRequest(Model, sealed=False):
         self._repositories = repositories
 
 
-FilterEnvironmentsRequest = AllOf(_FilterEnvironmentsRequest, CommonFilterProperties,
-                                  name="FilterEnvironmentsRequest", module=__name__)
+FilterEnvironmentsRequest = AllOf(
+    _FilterEnvironmentsRequest,
+    CommonFilterProperties,
+    name="FilterEnvironmentsRequest",
+    module=__name__,
+)

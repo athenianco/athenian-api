@@ -1,7 +1,16 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, Boolean, Column, ForeignKeyConstraint, func, Integer, JSON, \
-    Text, TIMESTAMP
+from sqlalchemy import (
+    JSON,
+    TIMESTAMP,
+    BigInteger,
+    Boolean,
+    Column,
+    ForeignKeyConstraint,
+    Integer,
+    Text,
+    func,
+)
 from sqlalchemy.dialects import sqlite
 from sqlalchemy.dialects.postgresql import JSONB
 
@@ -25,14 +34,20 @@ def create_time_mixin(created_at: bool = False, updated_at: bool = False) -> typ
 
     class TimeMixin:
         if created_at_:
-            created_at = Column(TIMESTAMP(timezone=True), nullable=False,
-                                default=lambda: datetime.now(timezone.utc),
-                                server_default=func.now())
+            created_at = Column(
+                TIMESTAMP(timezone=True),
+                nullable=False,
+                default=lambda: datetime.now(timezone.utc),
+                server_default=func.now(),
+            )
         if updated_at_:
-            updated_at = Column(TIMESTAMP(timezone=True), nullable=False,
-                                default=lambda: datetime.now(timezone.utc),
-                                server_default=func.now(),
-                                onupdate=lambda ctx: datetime.now(timezone.utc))
+            updated_at = Column(
+                TIMESTAMP(timezone=True),
+                nullable=False,
+                default=lambda: datetime.now(timezone.utc),
+                server_default=func.now(),
+                onupdate=lambda ctx: datetime.now(timezone.utc),
+            )
 
     return TimeMixin
 

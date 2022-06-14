@@ -12,10 +12,12 @@ class RepositorySetWithName(Model):
     attribute_types = {"name": Optional[str], "items": List[str], "precomputed": Optional[bool]}
     attribute_map = {"name": "name", "items": "items", "precomputed": "precomputed"}
 
-    def __init__(self,
-                 name: Optional[str] = None,
-                 items: Optional[List[str]] = None,
-                 precomputed: Optional[bool] = None):
+    def __init__(
+        self,
+        name: Optional[str] = None,
+        items: Optional[List[str]] = None,
+        precomputed: Optional[bool] = None,
+    ):
         """RepositorySetWithName - a model defined in OpenAPI
 
         :param name: The name of this RepositorySetWithName.

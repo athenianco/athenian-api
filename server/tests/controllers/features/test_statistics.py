@@ -6,10 +6,14 @@ import pandas as pd
 import pytest
 
 from athenian.api.internal.features.metric import MetricInt, MetricTimeDelta
-from athenian.api.internal.features.metric_calculator import AverageMetricCalculator, \
-    MedianMetricCalculator
-from athenian.api.internal.features.statistics import mean_confidence_interval, \
-    median_confidence_interval
+from athenian.api.internal.features.metric_calculator import (
+    AverageMetricCalculator,
+    MedianMetricCalculator,
+)
+from athenian.api.internal.features.statistics import (
+    mean_confidence_interval,
+    median_confidence_interval,
+)
 from athenian.api.typing_utils import df_from_structs
 
 
@@ -20,11 +24,9 @@ def dt64arr(dt: datetime) -> np.ndarray:
 class DummyAverageMetricCalculator(AverageMetricCalculator):
     metric = MetricTimeDelta
 
-    def _analyze(self,
-                 facts: pd.DataFrame,
-                 min_times: np.ndarray,
-                 max_times: np.ndarray,
-                 **_) -> np.ndarray:
+    def _analyze(
+        self, facts: pd.DataFrame, min_times: np.ndarray, max_times: np.ndarray, **_
+    ) -> np.ndarray:
         raise AssertionError("this must be never called")
 
 
@@ -70,10 +72,9 @@ def test_mean_confidence_interval_timedelta_positive():
 
 
 def test_metric_zero_division():
-    m = MetricInt.from_fields(value=np.int64(0),
-                              confidence_min=np.int64(0),
-                              confidence_max=np.int64(0),
-                              exists=True)
+    m = MetricInt.from_fields(
+        value=np.int64(0), confidence_min=np.int64(0), confidence_max=np.int64(0), exists=True
+    )
     assert m.confidence_score() == 100
 
 
@@ -95,7 +96,8 @@ def test_mean_confidence_interval_empty():
 
 def test_mean_confidence_interval_negative_list(square_centered_samples):
     mean, conf_min, conf_max = mean_confidence_interval(
-        np.array(list(square_centered_samples)), True)
+        np.array(list(square_centered_samples)), True
+    )
     assert isinstance(mean, int)
     assert isinstance(conf_min, int)
     assert isinstance(conf_max, int)
@@ -132,30 +134,44 @@ def test_median_confidence_interval_empty():
 
 @pytest.mark.parametrize(
     "cls, negative, dtype",
-    ((*t[0], t[1]) for t in itertools.product(
-        [(DummyAverageMetricCalculator, False),
-         (DummyAverageMetricCalculator, True),
-         (MedianMetricCalculator, False)],
-        [datetime, pd.Timestamp])))
+    (
+        (*t[0], t[1])
+        for t in itertools.product(
+            [
+                (DummyAverageMetricCalculator, False),
+                (DummyAverageMetricCalculator, True),
+                (MedianMetricCalculator, False),
+            ],
+            [datetime, pd.Timestamp],
+        )
+    ),
+)
 def test_metric_calculator(pr_samples, cls, negative, dtype):
     class LeadTimeCalculator(cls):
         may_have_negative_values = negative
         metric = MetricTimeDelta
 
-        def _analyze(self, facts: np.ndarray, min_times: np.ndarray, max_time: np.ndarray,
-                     ) -> np.ndarray:
-            return np.repeat((facts["released"] - facts["work_began"]).values[None, :],
-                             len(min_times), axis=0)
+        def _analyze(
+            self,
+            facts: np.ndarray,
+            min_times: np.ndarray,
+            max_time: np.ndarray,
+        ) -> np.ndarray:
+            return np.repeat(
+                (facts["released"] - facts["work_began"]).values[None, :], len(min_times), axis=0
+            )
 
     calc = LeadTimeCalculator(quantiles=(0, 0.99))
     calc._representative_time_interval_indexes = [0]
     assert len(calc.values) == 0 and isinstance(calc.values, list)
     calc = LeadTimeCalculator(quantiles=(0, 1))
-    calc(df_from_structs(pr_samples(100)),
-         dt64arr(datetime.utcnow()),
-         dt64arr(datetime.utcnow()),
-         None,
-         np.array([[True] * 100]))
+    calc(
+        df_from_structs(pr_samples(100)),
+        dt64arr(datetime.utcnow()),
+        dt64arr(datetime.utcnow()),
+        None,
+        np.array([[True] * 100]),
+    )
     m = calc.values[0][0]
     assert m.exists
     assert isinstance(m.value, timedelta)
@@ -189,8 +205,7 @@ def test_average_metric_calculator_zeros_nonnegative():
 
 
 def test_mean_confidence_interval_nan_confidence_nonnegative():
-    m, cmin, cmax = mean_confidence_interval(
-        np.array([0, 1] * 2, dtype="timedelta64[s]"), False)
+    m, cmin, cmax = mean_confidence_interval(np.array([0, 1] * 2, dtype="timedelta64[s]"), False)
     assert m == timedelta(seconds=0)
     assert cmin == m
     assert cmax == m
@@ -206,7 +221,8 @@ def test_mean_confidence_interval_nan_confidence_negative():
 def test_mean_confidence_interval_timedelta_positive_zeros():
     np.random.seed(8)
     mean, conf_min, conf_max = mean_confidence_interval(
-        np.array([0] * 10 + [10] * 20 + [20] * 10 + [30] * 5 + [40] * 3 + [50]), False)
+        np.array([0] * 10 + [10] * 20 + [20] * 10 + [30] * 5 + [40] * 3 + [50]), False
+    )
     assert isinstance(mean, int)
     assert isinstance(conf_min, int)
     assert isinstance(conf_max, int)
@@ -226,17 +242,79 @@ def test_mean_confidence_interval_timedelta_positive_zeros():
 
 @pytest.mark.flaky(reruns=3)
 def test_mean_confidence_interval_nonnegative_overflow():
-    arr = np.array([5689621, 5448983, 5596389, 5468130, 4722905, 5000224, 4723318,  # noqa
-                    4063452, 4406564, 3728378, 4064774, 3874963, 3693545, 3618715,  # noqa
-                    3208079, 3207821, 3116119, 2656753, 2424436, 2408454, 2058306,  # noqa
-                    1884453, 1907901, 1221960, 1013571, 1012170,       0,       0,  # noqa
-                          0,       0,       0,     659,       0,       0,       0,  # noqa
-                        682,       0,       0,       0,     693,       0,       0,  # noqa
-                          0,     666,       0,     719,       0,       0,       0,  # noqa
-                        715,       0,   94176,       0,       0,       0,       0,  # noqa
-                        742,       0,     683,       0,       0,       0,       0,  # noqa
-                          0,       0,       0,       0,       0],                   # noqa
-                   dtype="timedelta64[s]")
+    arr = np.array(
+        [
+            5689621,
+            5448983,
+            5596389,
+            5468130,
+            4722905,
+            5000224,
+            4723318,  # noqa
+            4063452,
+            4406564,
+            3728378,
+            4064774,
+            3874963,
+            3693545,
+            3618715,  # noqa
+            3208079,
+            3207821,
+            3116119,
+            2656753,
+            2424436,
+            2408454,
+            2058306,  # noqa
+            1884453,
+            1907901,
+            1221960,
+            1013571,
+            1012170,
+            0,
+            0,  # noqa
+            0,
+            0,
+            0,
+            659,
+            0,
+            0,
+            0,  # noqa
+            682,
+            0,
+            0,
+            0,
+            693,
+            0,
+            0,  # noqa
+            0,
+            666,
+            0,
+            719,
+            0,
+            0,
+            0,  # noqa
+            715,
+            0,
+            94176,
+            0,
+            0,
+            0,
+            0,  # noqa
+            742,
+            0,
+            683,
+            0,
+            0,
+            0,
+            0,  # noqa
+            0,
+            0,
+            0,
+            0,
+            0,
+        ],  # noqa
+        dtype="timedelta64[s]",
+    )
     m, conf_min, conf_max = mean_confidence_interval(arr, False)
     assert m.days == 15
     assert conf_min.days in (11, 12)

@@ -13,8 +13,13 @@ import sentry_sdk
 from athenian.api.__main__ import check_schema_versions, setup_context
 import athenian.api.db
 from athenian.api.faster_pandas import patch_pandas
-from athenian.api.precompute import accounts, discover_accounts, notify_almost_expired_accounts, \
-    resolve_deployments, sync_labels
+from athenian.api.precompute import (
+    accounts,
+    discover_accounts,
+    notify_almost_expired_accounts,
+    resolve_deployments,
+    sync_labels,
+)
 from athenian.api.precompute.context import PrecomputeContext
 
 commands = {
@@ -32,19 +37,30 @@ def _parse_args() -> argparse.Namespace:
 
     parser = argparse.ArgumentParser(__package__, formatter_class=Formatter)
     flogging.add_logging_args(parser)
-    parser.add_argument("--metadata-db", required=True,
-                        help="Metadata DB endpoint, e.g. postgresql://0.0.0.0:5432/metadata")
-    parser.add_argument("--precomputed-db", required=True,
-                        help="Precomputed DB endpoint, e.g. postgresql://0.0.0.0:5432/precomputed")
-    parser.add_argument("--state-db", required=True,
-                        help="State DB endpoint, e.g. postgresql://0.0.0.0:5432/state")
-    parser.add_argument("--persistentdata-db", required=True,
-                        help="Persistentdata DB endpoint, e.g. "
-                             "postgresql://0.0.0.0:5432/persistentdata")
-    parser.add_argument("--memcached", required=False,
-                        help="memcached address, e.g. 0.0.0.0:11211")
-    parser.add_argument("--xcom", default="/airflow/xcom/return.json",
-                        help="xcom target file path")
+    parser.add_argument(
+        "--metadata-db",
+        required=True,
+        help="Metadata DB endpoint, e.g. postgresql://0.0.0.0:5432/metadata",
+    )
+    parser.add_argument(
+        "--precomputed-db",
+        required=True,
+        help="Precomputed DB endpoint, e.g. postgresql://0.0.0.0:5432/precomputed",
+    )
+    parser.add_argument(
+        "--state-db", required=True, help="State DB endpoint, e.g. postgresql://0.0.0.0:5432/state"
+    )
+    parser.add_argument(
+        "--persistentdata-db",
+        required=True,
+        help="Persistentdata DB endpoint, e.g. postgresql://0.0.0.0:5432/persistentdata",
+    )
+    parser.add_argument(
+        "--memcached", required=False, help="memcached address, e.g. 0.0.0.0:11211"
+    )
+    parser.add_argument(
+        "--xcom", default="/airflow/xcom/return.json", help="xcom target file path"
+    )
     parser.add_argument("--max-mem", type=int, default=0, help="Process memory limit in bytes.")
     parser.add_argument(
         "--prometheus-pushgateway",
@@ -54,10 +70,13 @@ def _parse_args() -> argparse.Namespace:
 
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("sync-labels", help="Update the labels in the precomputed PRs")
-    subparsers.add_parser("resolve-deployments",
-                          help="Fill missing commit references in the deployed components")
-    subparsers.add_parser("notify-almost-expired-accounts",
-                          help="Send Slack messages about accounts which are about to expire")
+    subparsers.add_parser(
+        "resolve-deployments", help="Fill missing commit references in the deployed components"
+    )
+    subparsers.add_parser(
+        "notify-almost-expired-accounts",
+        help="Send Slack messages about accounts which are about to expire",
+    )
 
     discover_accounts_parser = subparsers.add_parser(
         "discover-accounts", help="Schedule the eligible accounts for precomputing",
@@ -70,12 +89,17 @@ def _parse_args() -> argparse.Namespace:
 
     accounts_parser = subparsers.add_parser("accounts", help="Precompute one or more accounts")
     accounts_parser.add_argument("account", nargs="+", help="Account IDs to precompute")
-    accounts_parser.add_argument("--skip-jira-identity-map", action="store_true",
-                                 help="Do not match JIRA identities")
-    accounts_parser.add_argument("--disable-isolation", action="store_true",
-                                 help="Do not sandbox each account in a separate process")
-    accounts_parser.add_argument("--timeout", type=int, default=20 * 60,
-                                 help="Maximum processing time for one account")
+    accounts_parser.add_argument(
+        "--skip-jira-identity-map", action="store_true", help="Do not match JIRA identities"
+    )
+    accounts_parser.add_argument(
+        "--disable-isolation",
+        action="store_true",
+        help="Do not sandbox each account in a separate process",
+    )
+    accounts_parser.add_argument(
+        "--timeout", type=int, default=20 * 60, help="Maximum processing time for one account"
+    )
     return parser.parse_args()
 
 
@@ -96,11 +120,9 @@ def _main() -> int:
 
 
 def _execute_command(args: argparse.Namespace, log: logging.Logger) -> int:
-    if not check_schema_versions(args.metadata_db,
-                                 args.state_db,
-                                 args.precomputed_db,
-                                 args.persistentdata_db,
-                                 log):
+    if not check_schema_versions(
+        args.metadata_db, args.state_db, args.precomputed_db, args.persistentdata_db, log
+    ):
         return 1
 
     async def command(context: PrecomputeContext) -> Any:

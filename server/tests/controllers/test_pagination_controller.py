@@ -12,9 +12,7 @@ from athenian.api.models.web import PullRequestPaginationPlan, PullRequestStage
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
 @pytest.mark.filter_pull_requests
-@pytest.mark.parametrize("batch, count",
-                         [(100, 8),
-                          (500, 3)])
+@pytest.mark.parametrize("batch, count", [(100, 8), (500, 3)])
 async def test_paginate_prs_smoke(client, headers, batch, count):
     print("filter", flush=True)
     main_request = {
@@ -27,7 +25,8 @@ async def test_paginate_prs_smoke(client, headers, batch, count):
     }
     # populate pdb
     response = await client.request(
-        method="POST", path="/v1/filter/pull_requests", headers=headers, json=main_request)
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=main_request
+    )
     assert response.status == 200
     await response.read()
     print("paginate", flush=True)
@@ -36,7 +35,8 @@ async def test_paginate_prs_smoke(client, headers, batch, count):
         "batch": batch,
     }
     response = await client.request(
-        method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body)
+        method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body
+    )
     text = (await response.read()).decode("utf-8")
     assert response.status == 200, text
     obj = json.loads(text)
@@ -54,13 +54,17 @@ async def test_paginate_prs_smoke(client, headers, batch, count):
 
 
 @pytest.mark.filter_pull_requests
-@pytest.mark.parametrize("account, batch, stages, repos, code",
-                         [(1, 0, list(PullRequestStage), [], 400),
-                          (1, -10, list(PullRequestStage), [], 400),
-                          (1, None, list(PullRequestStage), [], 400),
-                          (3, 1, list(PullRequestStage), [], 404),
-                          (1, 1, list(PullRequestStage), ["github.com/a/b"], 403),
-                          (3, 1, None, [], 400)])
+@pytest.mark.parametrize(
+    "account, batch, stages, repos, code",
+    [
+        (1, 0, list(PullRequestStage), [], 400),
+        (1, -10, list(PullRequestStage), [], 400),
+        (1, None, list(PullRequestStage), [], 400),
+        (3, 1, list(PullRequestStage), [], 404),
+        (1, 1, list(PullRequestStage), ["github.com/a/b"], 403),
+        (3, 1, None, [], 400),
+    ],
+)
 async def test_paginate_prs_nasty_input(client, headers, account, batch, stages, repos, code):
     body = {
         "request": {
@@ -74,7 +78,8 @@ async def test_paginate_prs_nasty_input(client, headers, account, batch, stages,
         "batch": batch,
     }
     response = await client.request(
-        method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body)
+        method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body
+    )
     text = (await response.read()).decode("utf-8")
     assert response.status == code, text
 
@@ -96,7 +101,8 @@ async def test_paginate_prs_jira(client, headers):
     }
     # populate pdb
     response = await client.request(
-        method="POST", path="/v1/filter/pull_requests", headers=headers, json=main_request)
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=main_request
+    )
     assert response.status == 200
     await response.read()
     print("paginate", flush=True)
@@ -105,7 +111,8 @@ async def test_paginate_prs_jira(client, headers):
         "batch": 1,
     }
     response = await client.request(
-        method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body)
+        method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body
+    )
     text = (await response.read()).decode("utf-8")
     assert response.status == 200, text
     obj = json.loads(text)
@@ -116,7 +123,8 @@ async def test_paginate_prs_jira(client, headers):
     assert model.updated == [date(2018, 4, 3), date(2018, 1, 16)]
     main_request["jira"]["labels_include"] = ["nope"]
     response = await client.request(
-        method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body)
+        method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body
+    )
     text = (await response.read()).decode("utf-8")
     assert response.status == 200, text
     obj = json.loads(text)
@@ -141,7 +149,8 @@ async def test_paginate_prs_no_done(client, headers):
     }
     # populate pdb
     response = await client.request(
-        method="POST", path="/v1/filter/pull_requests", headers=headers, json=main_request)
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=main_request
+    )
     assert response.status == 200
     await response.read()
     print("paginate", flush=True)
@@ -150,7 +159,8 @@ async def test_paginate_prs_no_done(client, headers):
         "batch": 5,
     }
     response = await client.request(
-        method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body)
+        method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body
+    )
     text = (await response.read()).decode("utf-8")
     assert response.status == 200, text
     obj = json.loads(text)
@@ -161,7 +171,8 @@ async def test_paginate_prs_no_done(client, headers):
     assert model.updated == [date(2020, 3, 10), date(2020, 2, 28), date(2020, 1, 13)]
     main_request["stages"] = ["done"]
     response = await client.request(
-        method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body)
+        method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body
+    )
     text = (await response.read()).decode("utf-8")
     assert response.status == 200, text
     obj = json.loads(text)
@@ -186,7 +197,8 @@ async def test_paginate_prs_empty(client, headers):
     }
     # populate pdb
     response = await client.request(
-        method="POST", path="/v1/filter/pull_requests", headers=headers, json=main_request)
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=main_request
+    )
     assert response.status == 200
     await response.read()
     print("paginate", flush=True)
@@ -195,7 +207,8 @@ async def test_paginate_prs_empty(client, headers):
         "batch": 5,
     }
     response = await client.request(
-        method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body)
+        method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body
+    )
     text = (await response.read()).decode("utf-8")
     assert response.status == 200, text
     obj = json.loads(text)
@@ -209,14 +222,20 @@ async def test_paginate_prs_empty(client, headers):
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
 async def test_paginate_prs_same_day(client, headers, sdb):
-    await sdb.execute(insert(ReleaseSetting).values(ReleaseSetting(
-        repository="github.com/src-d/go-git",
-        account_id=1,
-        branches="",
-        tags=".*",
-        events=".*",
-        match=ReleaseMatch.tag,
-    ).create_defaults().explode(with_primary_keys=True)))
+    await sdb.execute(
+        insert(ReleaseSetting).values(
+            ReleaseSetting(
+                repository="github.com/src-d/go-git",
+                account_id=1,
+                branches="",
+                tags=".*",
+                events=".*",
+                match=ReleaseMatch.tag,
+            )
+            .create_defaults()
+            .explode(with_primary_keys=True)
+        )
+    )
     print("filter", flush=True)
     main_request = {
         "date_from": "2015-10-23",
@@ -228,7 +247,8 @@ async def test_paginate_prs_same_day(client, headers, sdb):
     }
     # populate pdb
     response = await client.request(
-        method="POST", path="/v1/filter/pull_requests", headers=headers, json=main_request)
+        method="POST", path="/v1/filter/pull_requests", headers=headers, json=main_request
+    )
     assert response.status == 200
     await response.read()
     print("paginate", flush=True)
@@ -237,7 +257,8 @@ async def test_paginate_prs_same_day(client, headers, sdb):
         "batch": 5,
     }
     response = await client.request(
-        method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body)
+        method="POST", path="/v1/paginate/pull_requests", headers=headers, json=body
+    )
     text = (await response.read()).decode("utf-8")
     assert response.status == 200, text
     obj = json.loads(text)

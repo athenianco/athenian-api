@@ -22,11 +22,13 @@ class Account(Model):
         "jira": "jira",
     }
 
-    def __init__(self,
-                 admins: Optional[List[User]] = None,
-                 regulars: Optional[List[User]] = None,
-                 organizations: Optional[List[Organization]] = None,
-                 jira: Optional[JIRAInstallation] = None):
+    def __init__(
+        self,
+        admins: Optional[List[User]] = None,
+        regulars: Optional[List[User]] = None,
+        organizations: Optional[List[Organization]] = None,
+        jira: Optional[JIRAInstallation] = None,
+    ):
         """Account - a model defined in OpenAPI
 
         :param admins: The admins of this Account.

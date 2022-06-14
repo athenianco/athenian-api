@@ -15,14 +15,14 @@ from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.balancing import weight
 from athenian.api.internal.account import get_metadata_account_ids, get_user_account_status
-from athenian.api.internal.features.everything import mine_everything, MineTopic
+from athenian.api.internal.features.everything import MineTopic, mine_everything
 from athenian.api.internal.miners.github.contributors import load_organization_members
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import Settings
 from athenian.api.models.state.models import UserAccount
 from athenian.api.models.web import InvalidRequestError, MatchedIdentity, MatchIdentitiesRequest
 from athenian.api.request import AthenianWebRequest
-from athenian.api.response import model_response, ResponseError
+from athenian.api.response import ResponseError, model_response
 
 
 @weight(1.0)
@@ -36,21 +36,28 @@ async def match_identities(request: AthenianWebRequest, body: dict) -> web.Respo
     for i, item in enumerate(model.identities):
         if item.emails:
             if common_emails := (emails := set(item.emails)).intersection(all_emails):
-                raise ResponseError(InvalidRequestError(
-                    detail="Emails of the identity must be unique: %s." % common_emails,
-                    pointer=".identities[%d].emails" % i))
+                raise ResponseError(
+                    InvalidRequestError(
+                        detail="Emails of the identity must be unique: %s." % common_emails,
+                        pointer=".identities[%d].emails" % i,
+                    )
+                )
             match_by_email[i] = emails
             all_emails.update(emails)
         elif item.names:
             match_by_name[i] = set(item.names)
         else:
-            raise ResponseError(InvalidRequestError(
-                detail="Identity must contain either `emails` or `names`.",
-                pointer=".identities[%d]" % i))
+            raise ResponseError(
+                InvalidRequestError(
+                    detail="Identity must contain either `emails` or `names`.",
+                    pointer=".identities[%d]" % i,
+                )
+            )
     log.debug("to match by email: %d", len(match_by_email))
     meta_ids = await get_metadata_account_ids(model.account, request.sdb, request.cache)
     github_names, github_emails, github_prefixed_logins = await load_organization_members(
-        model.account, meta_ids, request.mdb, request.sdb, log, request.cache)
+        model.account, meta_ids, request.mdb, request.sdb, log, request.cache
+    )
     inverted_github_emails = {}
     for node_id, emails in github_emails.items():
         for email in emails:
@@ -111,24 +118,37 @@ _get_everything_formats = {
 
 
 @weight(6.0)
-async def get_everything(request: AthenianWebRequest,
-                         account: int = 0,
-                         format: str = "parquet",
-                         ) -> web.FileResponse:
+async def get_everything(
+    request: AthenianWebRequest,
+    account: int = 0,
+    format: str = "parquet",
+) -> web.FileResponse:
     """Download all the data collected by Athenian for custom analysis."""
     if account == 0:
-        rows = await request.sdb.fetch_all(select([UserAccount.account_id])
-                                           .where(UserAccount.user_id == request.uid))
+        rows = await request.sdb.fetch_all(
+            select([UserAccount.account_id]).where(UserAccount.user_id == request.uid)
+        )
         if len(rows) != 1:
-            raise ResponseError(InvalidRequestError(
-                detail="User belongs to %d accounts, must specify `account` URL query argument." %
-                len(rows),
-                pointer="account",
-            ))
+            raise ResponseError(
+                InvalidRequestError(
+                    detail=(
+                        "User belongs to %d accounts, must specify `account` URL query argument."
+                    )
+                    % len(rows),
+                    pointer="account",
+                )
+            )
         account = rows[0][0]
     else:
-        await get_user_account_status(request.uid, account, request.sdb, request.mdb, request.user,
-                                      request.app["slack"], request.cache)
+        await get_user_account_status(
+            request.uid,
+            account,
+            request.sdb,
+            request.mdb,
+            request.user,
+            request.app["slack"],
+            request.cache,
+        )
     meta_ids = await get_metadata_account_ids(account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
     settings = Settings.from_request(request, account)
@@ -137,12 +157,22 @@ async def get_everything(request: AthenianWebRequest,
         settings.list_logical_repositories(prefixer),
     )
     data = await mine_everything(
-        set(MineTopic), release_settings, logical_settings, prefixer, account, meta_ids,
-        request.sdb, request.mdb, request.pdb, request.rdb, request.cache)
+        set(MineTopic),
+        release_settings,
+        logical_settings,
+        prefixer,
+        account,
+        meta_ids,
+        request.sdb,
+        request.mdb,
+        request.pdb,
+        request.rdb,
+        request.cache,
+    )
     serialize = _get_everything_formats[format]
-    with NamedTemporaryFile(prefix=f"athenian_get_everything_{account}_",
-                            suffix=".zip",
-                            delete=False) as tmpf:
+    with NamedTemporaryFile(
+        prefix=f"athenian_get_everything_{account}_", suffix=".zip", delete=False
+    ) as tmpf:
         with ZipFile(tmpf, "w") as zipf:
             for key, df_dict in data.items():
                 for subkey, df in df_dict.items():

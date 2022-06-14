@@ -38,7 +38,7 @@ from athenian.api.internal.miners.types import PullRequestFacts
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.reposet import refresh_repository_names
 from athenian.api.internal.settings import ReleaseMatch, Settings
-from athenian.api.internal.team import get_root_team, RootTeamNotFoundError
+from athenian.api.internal.team import RootTeamNotFoundError, get_root_team
 from athenian.api.models.state.models import AccountGitHubAccount, RepositorySet, Team
 from athenian.api.precompute.context import PrecomputeContext
 from athenian.api.precompute.prometheus import get_metrics, push_metrics
@@ -48,12 +48,11 @@ from athenian.api.typing_utils import dataclass
 
 async def main(context: PrecomputeContext, args: argparse.Namespace) -> Optional[Callable]:
     """Precompute several accounts."""
-    time_to = datetime.combine(date.today() + timedelta(days=1),
-                               datetime.min.time(),
-                               tzinfo=timezone.utc)
+    time_to = datetime.combine(
+        date.today() + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc
+    )
     no_time_from = datetime(1970, 1, 1, tzinfo=timezone.utc)
-    time_from = \
-        (time_to - timedelta(days=365 * 2)) if not os.getenv("CI") else no_time_from
+    time_from = (time_to - timedelta(days=365 * 2)) if not os.getenv("CI") else no_time_from
     accounts = [int(p) for s in args.account for p in s.split()]
     to_precompute = await _get_reposets_to_precompute(context.sdb, accounts)
     isolate = not args.disable_isolation
@@ -103,8 +102,11 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> Optional
                     status = os.wait()
                 if status[1] != 0:
                     failed += 1
-                    log.error("failed to precompute account %d: exit code %d",
-                              reposet.owner_id, status[1])
+                    log.error(
+                        "failed to precompute account %d: exit code %d",
+                        reposet.owner_id,
+                        status[1],
+                    )
             duration_tracker.track(reposet.owner_id, meta_ids, not reposet.precomputed)
 
     log.info("failed: %d / %d", failed, len(to_precompute))
@@ -122,13 +124,16 @@ async def _get_reposets_to_precompute(
     sdb: Database,
     accounts: Sequence[int],
 ) -> Sequence[RepoSetToPrecompute]:
-    reposet_stmt = sa.select(RepositorySet).where(sa.and_(RepositorySet.name == RepositorySet.ALL,
-                                                          RepositorySet.owner_id.in_(accounts)))
-    meta_ids_stmt = sa.select(
-        AccountGitHubAccount).where(AccountGitHubAccount.account_id.in_(accounts))
+    reposet_stmt = sa.select(RepositorySet).where(
+        sa.and_(RepositorySet.name == RepositorySet.ALL, RepositorySet.owner_id.in_(accounts))
+    )
+    meta_ids_stmt = sa.select(AccountGitHubAccount).where(
+        AccountGitHubAccount.account_id.in_(accounts)
+    )
 
-    reposet_rows, meta_ids_rows = await gather(sdb.fetch_all(reposet_stmt),
-                                               sdb.fetch_all(meta_ids_stmt))
+    reposet_rows, meta_ids_rows = await gather(
+        sdb.fetch_all(reposet_stmt), sdb.fetch_all(meta_ids_stmt)
+    )
 
     accounts_meta_ids = defaultdict(list)
     for meta_ids_row in meta_ids_rows:
@@ -164,7 +169,12 @@ async def precompute_reposet(
         if scope.span is not None:
             scope.span.description = str(reposet.items)
     log, sdb, mdb, pdb, rdb, cache, slack = (
-        context.log, context.sdb, context.mdb, context.pdb, context.rdb, context.cache,
+        context.log,
+        context.sdb,
+        context.mdb,
+        context.pdb,
+        context.rdb,
+        context.cache,
         context.slack,
     )
     try:
@@ -180,11 +190,11 @@ async def precompute_reposet(
     reposet.items = new_items
     log.info("Loaded %d bots", len(bots))
     if not reposet.precomputed:
-        log.info("Considering account %d as brand new, creating the teams",
-                 reposet.owner_id)
+        log.info("Considering account %d as brand new, creating the teams", reposet.owner_id)
         try:
             num_teams, num_bots = await create_teams(
-                reposet.owner_id, meta_ids, bots, prefixer, sdb, mdb, cache)
+                reposet.owner_id, meta_ids, bots, prefixer, sdb, mdb, cache
+            )
         except Exception as e:
             log.warning("teams %d: %s: %s", reposet.owner_id, type(e).__name__, e)
             sentry_sdk.capture_exception(e)
@@ -194,13 +204,16 @@ async def precompute_reposet(
         try:
             await match_jira_identities(reposet.owner_id, meta_ids, sdb, mdb, slack, cache)
         except Exception as e:
-            log.warning("match_jira_identities %d: %s: %s",
-                        reposet.owner_id, type(e).__name__, e)
+            log.warning("match_jira_identities %d: %s: %s", reposet.owner_id, type(e).__name__, e)
             sentry_sdk.capture_exception(e)
             # no return
 
-    log.info("Heating reposet %d of account %d (%d repos)",
-             reposet.id, reposet.owner_id, len(reposet.items))
+    log.info(
+        "Heating reposet %d of account %d (%d repos)",
+        reposet.id,
+        reposet.owner_id,
+        len(reposet.items),
+    )
     try:
         settings = Settings.from_account(reposet.owner_id, sdb, mdb, cache, None)
         repos = {r.split("/", 1)[1] for r in reposet.items}
@@ -213,23 +226,38 @@ async def precompute_reposet(
 
         log.info("Mining the releases")
         releases, _, matches, _ = await mine_releases(
-            repos, {}, branches, default_branches, no_time_from, time_to,
-            LabelFilter.empty(), JIRAFilter.empty(), release_settings, logical_settings,
-            prefixer, reposet.owner_id, meta_ids, mdb, pdb, rdb, None,
-            force_fresh=True, with_pr_titles=False, with_deployments=False)
-        releases_by_tag = sum(
-            1 for r in releases if r[1].matched_by == ReleaseMatch.tag)
-        releases_by_branch = sum(
-            1 for r in releases if r[1].matched_by == ReleaseMatch.branch)
+            repos,
+            {},
+            branches,
+            default_branches,
+            no_time_from,
+            time_to,
+            LabelFilter.empty(),
+            JIRAFilter.empty(),
+            release_settings,
+            logical_settings,
+            prefixer,
+            reposet.owner_id,
+            meta_ids,
+            mdb,
+            pdb,
+            rdb,
+            None,
+            force_fresh=True,
+            with_pr_titles=False,
+            with_deployments=False,
+        )
+        releases_by_tag = sum(1 for r in releases if r[1].matched_by == ReleaseMatch.tag)
+        releases_by_branch = sum(1 for r in releases if r[1].matched_by == ReleaseMatch.branch)
         releases_count = len(releases)
         ignored_first_releases, ignored_released_prs = discover_first_releases(releases)
         del releases
-        release_settings = ReleaseLoader.disambiguate_release_settings(
-            release_settings, matches)
+        release_settings = ReleaseLoader.disambiguate_release_settings(release_settings, matches)
         if reposet.precomputed:
             log.info("Scanning for force push dropped PRs")
             await delete_force_push_dropped_prs(
-                repos, branches, reposet.owner_id, meta_ids, mdb, pdb, None)
+                repos, branches, reposet.owner_id, meta_ids, mdb, pdb, None
+            )
         log.info("Extracting PR facts")
         facts = await MetricEntriesCalculator(
             reposet.owner_id,
@@ -260,24 +288,47 @@ async def precompute_reposet(
             prs = len(facts)
             prs_done = facts[PullRequestFacts.f.done].sum()
             prs_merged = (
-                facts[PullRequestFacts.f.merged].notnull()
-                & ~facts[PullRequestFacts.f.done]
+                facts[PullRequestFacts.f.merged].notnull() & ~facts[PullRequestFacts.f.done]
             ).sum()
             prs_open = facts[PullRequestFacts.f.closed].isnull().sum()
         del facts  # free some memory
         await wait_deferred()
         await hide_first_releases(
-            ignored_first_releases, ignored_released_prs, default_branches,
-            release_settings, reposet.owner_id, pdb)
+            ignored_first_releases,
+            ignored_released_prs,
+            default_branches,
+            release_settings,
+            reposet.owner_id,
+            pdb,
+        )
         ignored_releases_count = len(ignored_first_releases)
         del ignored_first_releases, ignored_released_prs
         log.info("Mining deployments")
         await mine_deployments(
-            repos, {}, time_from, time_to, [], [], {}, {}, LabelFilter.empty(),
-            JIRAFilter.empty(), release_settings, logical_settings,
-            branches, default_branches, prefixer, reposet.owner_id, meta_ids,
-            mdb, pdb, rdb, None)  # yes, disable the cache
+            repos,
+            {},
+            time_from,
+            time_to,
+            [],
+            [],
+            {},
+            {},
+            LabelFilter.empty(),
+            JIRAFilter.empty(),
+            release_settings,
+            logical_settings,
+            branches,
+            default_branches,
+            prefixer,
+            reposet.owner_id,
+            meta_ids,
+            mdb,
+            pdb,
+            rdb,
+            None,
+        )  # yes, disable the cache
         if not reposet.precomputed and slack is not None:
+
             async def report_precompute_success():
                 await slack.post_install(
                     "precomputed_account.jinja2",
@@ -295,33 +346,47 @@ async def precompute_reposet(
                     repositories=len(repos),
                     bots_team_name=Team.BOTS,
                     bots=num_bots,
-                    teams=num_teams)
+                    teams=num_teams,
+                )
 
-            await defer(report_precompute_success(),
-                        f"report precompute success {reposet.owner_id}")
+            await defer(
+                report_precompute_success(), f"report precompute success {reposet.owner_id}"
+            )
     except Exception as e:
-        log.warning("reposet %d: %s: %s\n%s", reposet.id, type(e).__name__, e,
-                    "".join(traceback.format_exception(*sys.exc_info())[:-1]))
+        log.warning(
+            "reposet %d: %s: %s\n%s",
+            reposet.id,
+            type(e).__name__,
+            e,
+            "".join(traceback.format_exception(*sys.exc_info())[:-1]),
+        )
         sentry_sdk.capture_exception(e)
     else:
         if not reposet.precomputed:
             await sdb.execute(
                 update(RepositorySet)
                 .where(RepositorySet.id == reposet.id)
-                .values({RepositorySet.precomputed: True,
-                         RepositorySet.updates_count: RepositorySet.updates_count,
-                         RepositorySet.updated_at: datetime.now(timezone.utc)}))
+                .values(
+                    {
+                        RepositorySet.precomputed: True,
+                        RepositorySet.updates_count: RepositorySet.updates_count,
+                        RepositorySet.updated_at: datetime.now(timezone.utc),
+                    }
+                )
+            )
     finally:
         await wait_deferred()
 
 
-async def create_teams(account: int,
-                       meta_ids: Tuple[int, ...],
-                       bots: Set[str],
-                       prefixer: Prefixer,
-                       sdb: Database,
-                       mdb: Database,
-                       cache: Optional[aiomcache.Client]) -> Tuple[int, int]:
+async def create_teams(
+    account: int,
+    meta_ids: Tuple[int, ...],
+    bots: Set[str],
+    prefixer: Prefixer,
+    sdb: Database,
+    mdb: Database,
+    cache: Optional[aiomcache.Client],
+) -> Tuple[int, int]:
     """Copy the existing teams from GitHub and create a new team with all the involved bots \
     for the specified account.
 
@@ -342,17 +407,23 @@ async def _ensure_bot_team(
     sdb: Database,
     mdb: Database,
 ) -> int:
-    bot_team = await sdb.fetch_one(select([Team.id, Team.members])
-                                   .where(and_(Team.name == Team.BOTS,
-                                               Team.owner_id == account)))
+    bot_team = await sdb.fetch_one(
+        select([Team.id, Team.members]).where(
+            and_(Team.name == Team.BOTS, Team.owner_id == account)
+        )
+    )
     if bot_team is not None:
         return len(bot_team[Team.members.name])
 
     bots -= await fetch_bots.extra(mdb)
     bot_ids = set(chain.from_iterable(prefixer.user_login_to_node.get(u, ()) for u in bots))
-    await sdb.execute(insert(Team).values(
-        Team(name=Team.BOTS, owner_id=account, parent_id=root_team_id, members=sorted(bot_ids))
-        .create_defaults().explode()))
+    await sdb.execute(
+        insert(Team).values(
+            Team(name=Team.BOTS, owner_id=account, parent_id=root_team_id, members=sorted(bot_ids))
+            .create_defaults()
+            .explode()
+        )
+    )
     return len(bot_ids)
 
 

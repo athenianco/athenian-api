@@ -18,6 +18,7 @@ async def _null_callback(*args):
 def wrap_func(func):
     """Wrap function in a coroutine."""
     if not asyncio.iscoroutinefunction(func):
+
         async def wrapper(*args, **kwargs):
             return func(*args, **kwargs)
 
@@ -87,9 +88,9 @@ class Cron:
 
     def _call_func(self, *args, **kwargs):
         """Call and take care of exceptions using gather."""
-        asyncio.gather(
-            self.cron(*args, **kwargs), return_exceptions=True,
-        ).add_done_callback(self._set_result)
+        asyncio.gather(self.cron(*args, **kwargs), return_exceptions=True).add_done_callback(
+            self._set_result
+        )
 
     def _set_result(self, result):
         """Set future's result if needed (can be an exception), else raise if needed."""
@@ -141,5 +142,10 @@ class EarlyExpirationCron(Cron):
 
 def crontab(spec, func=None, args=(), start=True, max_early_expiration_seconds=0):
     """Entrypoint for using Cron utility."""
-    return EarlyExpirationCron(spec, func=func, args=args, start=start,
-                               max_early_expiration_seconds=max_early_expiration_seconds)
+    return EarlyExpirationCron(
+        spec,
+        func=func,
+        args=args,
+        start=start,
+        max_early_expiration_seconds=max_early_expiration_seconds,
+    )

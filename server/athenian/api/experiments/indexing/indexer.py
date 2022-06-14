@@ -101,12 +101,8 @@ class BaseIndexer:
         return np.unique(v[np.nonzero(v)], return_counts=return_counts)
 
     def _search_in_layer(self, layer_level, vi_index_from, vi_index_to):
-        index_from = bisect.bisect_left(
-            self._virtual_indexes[layer_level], vi_index_from,
-        )
-        index_to = (
-            bisect.bisect_left(self._virtual_indexes[layer_level], vi_index_to) - 1
-        )
+        index_from = bisect.bisect_left(self._virtual_indexes[layer_level], vi_index_from)
+        index_to = bisect.bisect_left(self._virtual_indexes[layer_level], vi_index_to) - 1
 
         if layer_level.value == 0:
             index_to += 1
@@ -116,8 +112,8 @@ class BaseIndexer:
             postings_lists = self._layers[layer_level][index_from:index_to]
             v = np.concatenate(postings_lists)
             print(
-                f"Found {len(postings_lists)} to concatenate in layer {layer_level.name} "
-                f"(total items: {len(v)})",
+                f"Found {len(postings_lists)} to concatenate in layer "
+                f"{layer_level.name} (total items: {len(v)})"
             )
             return v
 
@@ -140,8 +136,8 @@ class BaseIndexer:
         center = np.concatenate(postings_lists)
         v = np.concatenate([left, center, right])
         print(
-            f"Found {len(postings_lists)} to concatenate in layer {layer_level.name} "
-            f"(total items: {len(center)} | grand total items: {len(v)})",
+            f"Found {len(postings_lists)} to concatenate in layer "
+            f"{layer_level.name} (total items: {len(center)} | grand total items: {len(v)})"
         )
         return v
 

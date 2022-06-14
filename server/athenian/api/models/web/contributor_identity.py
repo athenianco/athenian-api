@@ -10,9 +10,7 @@ class ContributorIdentity(Model):
 
     attribute_map = {"emails": "emails", "names": "names"}
 
-    def __init__(self,
-                 emails: Optional[List[str]] = None,
-                 names: Optional[List[str]] = None):
+    def __init__(self, emails: Optional[List[str]] = None, names: Optional[List[str]] = None):
         """ContributorIdentity - a model defined in OpenAPI
 
         :param emails: The emails of this ContributorIdentity.

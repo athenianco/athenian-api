@@ -41,7 +41,8 @@ class WorkTypeRule(Model):
             raise ValueError("Invalid value for `name`, must not be `None`")
         if len(name) < 1:
             raise ValueError(
-                "Invalid value for `name`, length must be greater than or equal to `1`")
+                "Invalid value for `name`, length must be greater than or equal to `1`"
+            )
 
         self._name = name
 

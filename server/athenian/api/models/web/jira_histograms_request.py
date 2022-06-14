@@ -106,5 +106,6 @@ class _JIRAHistogramsRequest(Model, QuantilesMixin, sealed=False):
         self._histograms = histograms
 
 
-JIRAHistogramsRequest = AllOf(_JIRAHistogramsRequest, FilterJIRACommon,
-                              name="JIRAHistogramsRequest", module=__name__)
+JIRAHistogramsRequest = AllOf(
+    _JIRAHistogramsRequest, FilterJIRACommon, name="JIRAHistogramsRequest", module=__name__
+)

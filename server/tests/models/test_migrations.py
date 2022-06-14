@@ -15,8 +15,13 @@ def test_migrations(worker_id):
         cs = "sqlite:///%s/sdb-%s.sqlite" % (tmpdir, worker_id)
         env = {**os.environ, "PYTHONPATH": os.getcwd(), "ATHENIAN_INVITATION_KEY": "vadim"}
         try:
-            subprocess.run([sys.executable, "-m", "athenian.api.models.state", cs],
-                           capture_output=True, check=True, cwd=tmpdir, env=env)
+            subprocess.run(
+                [sys.executable, "-m", "athenian.api.models.state", cs],
+                capture_output=True,
+                check=True,
+                cwd=tmpdir,
+                env=env,
+            )
         except subprocess.CalledProcessError as err:
             raise RuntimeError(err.stderr.decode("utf8")) from err
 

@@ -77,12 +77,12 @@ class FilteredEnvironment(Model):
         :param deployments_count: The deployments_count of this FilteredEnvironment.
         """
         if deployments_count is None:
-            raise ValueError(
-                "Invalid value for `deployments_count`, must not be `None`")
+            raise ValueError("Invalid value for `deployments_count`, must not be `None`")
         if deployments_count is not None and deployments_count < 1:
             raise ValueError(
                 "Invalid value for `deployments_count`, must be a value greater than or equal "
-                "to `1`")
+                "to `1`"
+            )
 
         self._deployments_count = deployments_count
 
@@ -108,7 +108,8 @@ class FilteredEnvironment(Model):
             raise ValueError("Invalid value for `last_conclusion`, must not be `None`")
 
         if last_conclusion not in DeploymentConclusion:
-            raise ValueError(f"Invalid value for `last_conclusion`, must be one of "
-                             f"{list(DeploymentConclusion)}")
+            raise ValueError(
+                f"Invalid value for `last_conclusion`, must be one of {list(DeploymentConclusion)}"
+            )
 
         self._last_conclusion = last_conclusion

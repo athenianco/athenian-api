@@ -126,9 +126,11 @@ class MappedJIRAIdentity(Model):
             raise ValueError("Invalid value for `confidence`, must not be `None`")
         if confidence is not None and confidence > 1:
             raise ValueError(
-                "Invalid value for `confidence`, must be a value less than or equal to `1`")
+                "Invalid value for `confidence`, must be a value less than or equal to `1`"
+            )
         if confidence is not None and confidence < 0:
             raise ValueError(
-                "Invalid value for `confidence`, must be a value greater than or equal to `0`")
+                "Invalid value for `confidence`, must be a value greater than or equal to `0`"
+            )
 
         self._confidence = confidence

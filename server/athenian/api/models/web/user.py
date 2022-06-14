@@ -77,10 +77,20 @@ class User(Model):
         self.account = None
 
     @classmethod
-    def from_auth0(cls, name: str, nickname: str, picture: str, updated_at: str,
-                   encryption_key: str, email: Optional[str] = None, sub: Optional[str] = None,
-                   user_id: Optional[str] = None, identities: Optional[List[dict]] = None,
-                   account: Optional[int] = None, **_):
+    def from_auth0(
+        cls,
+        name: str,
+        nickname: str,
+        picture: str,
+        updated_at: str,
+        encryption_key: str,
+        email: Optional[str] = None,
+        sub: Optional[str] = None,
+        user_id: Optional[str] = None,
+        identities: Optional[List[dict]] = None,
+        account: Optional[int] = None,
+        **_
+    ):
         """Create a new User object from Auth0 /userinfo."""
         if sub is None and user_id is None:
             raise TypeError('Either "sub" or "user_id" must be set to create a User.')

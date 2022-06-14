@@ -14,9 +14,9 @@ class PaginatePullRequestsRequest(Model):
     attribute_types = {"batch": int, "request": FilterPullRequestsRequest}
     attribute_map = {"batch": "batch", "request": "request"}
 
-    def __init__(self,
-                 batch: Optional[int] = None,
-                 request: Optional[FilterPullRequestsRequest] = None):
+    def __init__(
+        self, batch: Optional[int] = None, request: Optional[FilterPullRequestsRequest] = None
+    ):
         """PaginatePullRequestsRequest - a model defined in OpenAPI
 
         :param batch: The batch of this PaginatePullRequestsRequest.

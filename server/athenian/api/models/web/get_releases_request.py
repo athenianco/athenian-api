@@ -10,9 +10,9 @@ class GetReleasesRequest(Model):
     attribute_types = {"account": int, "releases": List[ReleaseNames]}
     attribute_map = {"account": "account", "releases": "releases"}
 
-    def __init__(self,
-                 account: Optional[int] = None,
-                 releases: Optional[List[ReleaseNames]] = None):
+    def __init__(
+        self, account: Optional[int] = None, releases: Optional[List[ReleaseNames]] = None
+    ):
         """GetReleasesRequest - a model defined in OpenAPI
 
         :param account: The account of this GetReleasesRequest.

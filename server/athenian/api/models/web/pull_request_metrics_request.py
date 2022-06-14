@@ -130,8 +130,10 @@ class _PullRequestMetricsRequest(Model, sealed=False):
         self._fresh = fresh
 
 
-PullRequestMetricsRequest = AllOf(_PullRequestMetricsRequest,
-                                  CommonFilterProperties,
-                                  CommonMetricsProperties,
-                                  name="PullRequestMetricsRequest",
-                                  module=__name__)
+PullRequestMetricsRequest = AllOf(
+    _PullRequestMetricsRequest,
+    CommonFilterProperties,
+    CommonMetricsProperties,
+    name="PullRequestMetricsRequest",
+    module=__name__,
+)

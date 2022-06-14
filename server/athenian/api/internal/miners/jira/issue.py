@@ -24,25 +24,29 @@ from athenian.api.internal.miners.github.label import fetch_labels_to_filter
 from athenian.api.internal.miners.github.logical import split_logical_prs
 from athenian.api.internal.miners.github.precomputed_prs import triage_by_release_match
 from athenian.api.internal.miners.types import PullRequestFactsMap
-from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch, \
-    ReleaseSettings
-from athenian.api.models.metadata.github import NodePullRequest, NodePullRequestJiraIssues, \
-    NodeRepository, PullRequest
+from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch, ReleaseSettings
+from athenian.api.models.metadata.github import (
+    NodePullRequest,
+    NodePullRequestJiraIssues,
+    NodeRepository,
+    PullRequest,
+)
 from athenian.api.models.metadata.jira import AthenianIssue, Component, Epic, Issue, Status
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts
 from athenian.api.to_object_arrays import is_not_null
 from athenian.api.tracing import sentry_span
 
 
-async def generate_jira_prs_query(filters: List[ClauseElement],
-                                  jira: JIRAFilter,
-                                  meta_ids: Optional[Tuple[int, ...]],
-                                  mdb: Database,
-                                  cache: Optional[aiomcache.Client],
-                                  columns=PullRequest,
-                                  seed=PullRequest,
-                                  on=(PullRequest.node_id, PullRequest.acc_id),
-                                  ) -> sql.Select:
+async def generate_jira_prs_query(
+    filters: List[ClauseElement],
+    jira: JIRAFilter,
+    meta_ids: Optional[Tuple[int, ...]],
+    mdb: Database,
+    cache: Optional[aiomcache.Client],
+    columns=PullRequest,
+    seed=PullRequest,
+    on=(PullRequest.node_id, PullRequest.acc_id),
+) -> sql.Select:
     """
     Produce SQLAlchemy statement to fetch PRs that satisfy JIRA conditions.
 
@@ -57,58 +61,89 @@ async def generate_jira_prs_query(filters: List[ClauseElement],
     _map = aliased(NodePullRequestJiraIssues, name="m")
     meta_ids_cond = (on[1].in_(meta_ids),) if meta_ids is not None else ()
     if jira.unmapped:
-        return sql.select(columns).select_from(sql.outerjoin(
-            seed, _map, sql.and_(on[0] == _map.node_id, on[1] == _map.node_acc),
-        )).where(sql.and_(*filters, *meta_ids_cond, _map.node_id.is_(None)))
+        return (
+            sql.select(columns)
+            .select_from(
+                sql.outerjoin(seed, _map, sql.and_(on[0] == _map.node_id, on[1] == _map.node_acc))
+            )
+            .where(sql.and_(*filters, *meta_ids_cond, _map.node_id.is_(None)))
+        )
     _issue = aliased(Issue, name="j")
     filters.extend(meta_ids_cond)
     if jira.labels:
         components = await _load_components(jira.labels, jira.account, mdb, cache)
         _append_label_filters(
-            jira.labels, components, mdb.url.dialect == "postgresql", filters, model=_issue)
+            jira.labels, components, mdb.url.dialect == "postgresql", filters, model=_issue
+        )
     if jira.issue_types:
         filters.append(_issue.type.in_(jira.issue_types))
     if not jira.epics:
-        filters.extend([
-            _issue.is_deleted.is_(False),
-            _issue.acc_id == jira.account,
-            _issue.project_id.in_(jira.projects),
-        ])
-        return sql.select(columns).select_from(sql.join(
-            seed, sql.join(_map, _issue, sql.and_(
-                _map.jira_acc == _issue.acc_id,
-                _map.jira_id == _issue.id,
-            )),
-            sql.and_(
-                on[0] == _map.node_id,
-                on[1] == _map.node_acc,
-            ),
-        )).where(sql.and_(*filters))
+        filters.extend(
+            [
+                _issue.is_deleted.is_(False),
+                _issue.acc_id == jira.account,
+                _issue.project_id.in_(jira.projects),
+            ]
+        )
+        return (
+            sql.select(columns)
+            .select_from(
+                sql.join(
+                    seed,
+                    sql.join(
+                        _map,
+                        _issue,
+                        sql.and_(
+                            _map.jira_acc == _issue.acc_id,
+                            _map.jira_id == _issue.id,
+                        ),
+                    ),
+                    sql.and_(
+                        on[0] == _map.node_id,
+                        on[1] == _map.node_acc,
+                    ),
+                )
+            )
+            .where(sql.and_(*filters))
+        )
 
     _issue_epic = aliased(Issue, name="e")
-    filters.extend([
-        _issue.is_deleted.is_(False),
-        _issue_epic.acc_id == jira.account,
-        _issue_epic.project_id.in_(jira.projects),
-        _issue_epic.key.in_(jira.epics),
-    ])
-    return sql.select(columns).select_from(sql.join(
-        sql.join(
-            sql.join(_issue_epic, _issue, sql.and_(
-                _issue.epic_id == _issue_epic.id,
-                _issue.acc_id == _issue_epic.acc_id,
-            )),
-            _map,
-            sql.and_(
-                _map.jira_id == _issue.id,
-                _map.jira_acc == _issue.acc_id,
-            )),
-        seed,
-        sql.and_(
-            on[0] == _map.node_id,
-            on[1] == _map.node_acc,
-        ),
-    )).where(sql.and_(*filters))
+    filters.extend(
+        [
+            _issue.is_deleted.is_(False),
+            _issue_epic.acc_id == jira.account,
+            _issue_epic.project_id.in_(jira.projects),
+            _issue_epic.key.in_(jira.epics),
+        ]
+    )
+    return (
+        sql.select(columns)
+        .select_from(
+            sql.join(
+                sql.join(
+                    sql.join(
+                        _issue_epic,
+                        _issue,
+                        sql.and_(
+                            _issue.epic_id == _issue_epic.id,
+                            _issue.acc_id == _issue_epic.acc_id,
+                        ),
+                    ),
+                    _map,
+                    sql.and_(
+                        _map.jira_id == _issue.id,
+                        _map.jira_acc == _issue.acc_id,
+                    ),
+                ),
+                seed,
+                sql.and_(
+                    on[0] == _map.node_id,
+                    on[1] == _map.node_acc,
+                ),
+            )
+        )
+        .where(sql.and_(*filters))
+    )
 
 
 @sentry_span
@@ -119,27 +154,34 @@ async def generate_jira_prs_query(filters: List[ClauseElement],
     key=lambda labels, account, **_: (labels, account),
     refresh_on_access=True,
 )
-async def _load_components(labels: LabelFilter,
-                           account: int,
-                           mdb: Database,
-                           cache: Optional[aiomcache.Client],
-                           ) -> Dict[str, str]:
+async def _load_components(
+    labels: LabelFilter,
+    account: int,
+    mdb: Database,
+    cache: Optional[aiomcache.Client],
+) -> Dict[str, str]:
     all_labels = set()
     for label in chain(labels.include, labels.exclude):
         for part in label.split(","):
             all_labels.add(part.strip())
-    rows = await mdb.fetch_all(sql.select([Component.id, Component.name]).where(sql.and_(
-        sql.func.lower(Component.name).in_(all_labels),
-        Component.acc_id == account,
-    )))
+    rows = await mdb.fetch_all(
+        sql.select([Component.id, Component.name]).where(
+            sql.and_(
+                sql.func.lower(Component.name).in_(all_labels),
+                Component.acc_id == account,
+            )
+        )
+    )
     return {r[1].lower(): r[0] for r in rows}
 
 
-def _append_label_filters(labels: LabelFilter,
-                          components: Dict[str, str],
-                          postgres: bool,
-                          filters: List[ClauseElement],
-                          model=Issue):
+def _append_label_filters(
+    labels: LabelFilter,
+    components: Dict[str, str],
+    postgres: bool,
+    filters: List[ClauseElement],
+    model=Issue,
+):
     if postgres:
         if labels.include:
             singles, multiples = LabelFilter.split(labels.include)
@@ -159,8 +201,13 @@ def _append_label_filters(labels: LabelFilter,
         if labels.exclude:
             filters.append(sql.not_(model.labels.overlap(labels.exclude)))
             if components:
-                filters.append(sql.not_(model.components.overlap(
-                    [components[s] for s in labels.exclude if s in components])))
+                filters.append(
+                    sql.not_(
+                        model.components.overlap(
+                            [components[s] for s in labels.exclude if s in components]
+                        )
+                    )
+                )
     else:
         # neither 100% correct nor efficient, but enough for local development
         if labels.include:
@@ -168,25 +215,43 @@ def _append_label_filters(labels: LabelFilter,
             singles, multiples = LabelFilter.split(labels.include)
             or_items.extend(model.labels.like("%%%s%%" % s) for s in singles)
             or_items.extend(
-                sql.and_(*(model.labels.like("%%%s%%" % s) for s in g)) for g in multiples)
+                sql.and_(*(model.labels.like("%%%s%%" % s) for s in g)) for g in multiples
+            )
             if components:
                 if singles:
                     or_items.extend(
                         model.components.like("%%%s%%" % components[s])
-                        for s in singles if s in components)
+                        for s in singles
+                        if s in components
+                    )
                 if multiples:
                     or_items.extend(
-                        sql.and_(*(model.components.like("%%%s%%" % components[s]) for s in g
-                                   if s in components))
-                        for g in multiples)
+                        sql.and_(
+                            *(
+                                model.components.like("%%%s%%" % components[s])
+                                for s in g
+                                if s in components
+                            )
+                        )
+                        for g in multiples
+                    )
             filters.append(sql.or_(*or_items))
         if labels.exclude:
-            filters.append(sql.not_(sql.or_(*(
-                model.labels.like("%%%s%%" % s) for s in labels.exclude))))
+            filters.append(
+                sql.not_(sql.or_(*(model.labels.like("%%%s%%" % s) for s in labels.exclude)))
+            )
             if components:
-                filters.append(sql.not_(sql.or_(*(
-                    model.components.like("%%%s%%" % components[s])
-                    for s in labels.exclude if s in components))))
+                filters.append(
+                    sql.not_(
+                        sql.or_(
+                            *(
+                                model.components.like("%%%s%%" % components[s])
+                                for s in labels.exclude
+                                if s in components
+                            )
+                        )
+                    )
+                )
 
 
 ISSUE_PRS_BEGAN = "prs_began"
@@ -219,28 +284,29 @@ ISSUE_PR_IDS = "pr_ids"
         logical_settings,
     ),
 )
-async def fetch_jira_issues(installation_ids: JIRAConfig,
-                            time_from: Optional[datetime],
-                            time_to: Optional[datetime],
-                            exclude_inactive: bool,
-                            labels: LabelFilter,
-                            priorities: Collection[str],
-                            types: Collection[str],
-                            epics: Union[Collection[str], bool],
-                            reporters: Collection[str],
-                            assignees: Collection[Optional[str]],
-                            commenters: Collection[str],
-                            nested_assignees: bool,
-                            default_branches: Dict[str, str],
-                            release_settings: ReleaseSettings,
-                            logical_settings: LogicalRepositorySettings,
-                            account: int,
-                            meta_ids: Tuple[int, ...],
-                            mdb: Database,
-                            pdb: Database,
-                            cache: Optional[aiomcache.Client],
-                            extra_columns: Iterable[InstrumentedAttribute] = (),
-                            ) -> pd.DataFrame:
+async def fetch_jira_issues(
+    installation_ids: JIRAConfig,
+    time_from: Optional[datetime],
+    time_to: Optional[datetime],
+    exclude_inactive: bool,
+    labels: LabelFilter,
+    priorities: Collection[str],
+    types: Collection[str],
+    epics: Union[Collection[str], bool],
+    reporters: Collection[str],
+    assignees: Collection[Optional[str]],
+    commenters: Collection[str],
+    nested_assignees: bool,
+    default_branches: Dict[str, str],
+    release_settings: ReleaseSettings,
+    logical_settings: LogicalRepositorySettings,
+    account: int,
+    meta_ids: Tuple[int, ...],
+    mdb: Database,
+    pdb: Database,
+    cache: Optional[aiomcache.Client],
+    extra_columns: Iterable[InstrumentedAttribute] = (),
+) -> pd.DataFrame:
     """
     Load JIRA issues following the specified filters.
 
@@ -264,14 +330,29 @@ async def fetch_jira_issues(installation_ids: JIRAConfig,
     """
     log = logging.getLogger("%s.jira" % metadata.__package__)
     issues = await _fetch_issues(
-        installation_ids, time_from, time_to, exclude_inactive, labels, priorities, types, epics,
-        reporters, assignees, commenters, nested_assignees, mdb, cache,
-        extra_columns=extra_columns)
+        installation_ids,
+        time_from,
+        time_to,
+        exclude_inactive,
+        labels,
+        priorities,
+        types,
+        epics,
+        reporters,
+        assignees,
+        commenters,
+        nested_assignees,
+        mdb,
+        cache,
+        extra_columns=extra_columns,
+    )
     if not exclude_inactive:
         # DEV-1899: exclude and report issues with empty AthenianIssue
         if (missing_updated := issues[AthenianIssue.updated.name].isnull().values).any():
-            log.error("JIRA issues are missing in jira.athenian_issue: %s",
-                      ", ".join(issues[Issue.key.name].take(np.nonzero(missing_updated)[0])))
+            log.error(
+                "JIRA issues are missing in jira.athenian_issue: %s",
+                ", ".join(issues[Issue.key.name].take(np.nonzero(missing_updated)[0])),
+            )
             issues = issues.take(np.nonzero(~missing_updated)[0])
     if len(issues.index) >= 20:
         jira_id_cond = NodePullRequestJiraIssues.jira_id.in_any_values(issues.index)
@@ -292,29 +373,45 @@ async def fetch_jira_issues(installation_ids: JIRAConfig,
         sql.select(pr_cols)
         .select_from(
             sql.outerjoin(
-                sql.outerjoin(NodePullRequestJiraIssues, NodePullRequest, sql.and_(
-                    NodePullRequestJiraIssues.node_acc == NodePullRequest.acc_id,
-                    NodePullRequestJiraIssues.node_id == NodePullRequest.graph_id,
-                )),
+                sql.outerjoin(
+                    NodePullRequestJiraIssues,
+                    NodePullRequest,
+                    sql.and_(
+                        NodePullRequestJiraIssues.node_acc == NodePullRequest.acc_id,
+                        NodePullRequestJiraIssues.node_id == NodePullRequest.graph_id,
+                    ),
+                ),
                 NodeRepository,
                 sql.and_(
                     NodePullRequest.acc_id == NodeRepository.acc_id,
                     NodePullRequest.repository_id == NodeRepository.graph_id,
-                )))
-        .where(sql.and_(NodePullRequestJiraIssues.jira_acc == installation_ids[0],
-                        NodePullRequestJiraIssues.node_acc.in_(meta_ids),
-                        jira_id_cond)),
-        mdb, pr_cols, index=NodePullRequestJiraIssues.node_id.name,
+                ),
+            )
+        )
+        .where(
+            sql.and_(
+                NodePullRequestJiraIssues.jira_acc == installation_ids[0],
+                NodePullRequestJiraIssues.node_acc.in_(meta_ids),
+                jira_id_cond,
+            )
+        ),
+        mdb,
+        pr_cols,
+        index=NodePullRequestJiraIssues.node_id.name,
     )
     # TODO(vmarkovtsev): load the "fresh" released PRs
-    existing_repos = np.flatnonzero(is_not_null(
-        prs[PullRequest.repository_full_name.name].values))
+    existing_repos = np.flatnonzero(is_not_null(prs[PullRequest.repository_full_name.name].values))
     if len(existing_repos) < len(prs):
         log.error(
             "Repositories referenced by github.node_pullrequest do not exist in "
             "github.node_repository on GitHub account %s: %s",
-            meta_ids, np.unique(prs[NodePullRequest.repository_id.name].values[np.setdiff1d(
-                np.arange(len(prs)), existing_repos, assume_unique=True)]).tolist())
+            meta_ids,
+            np.unique(
+                prs[NodePullRequest.repository_id.name].values[
+                    np.setdiff1d(np.arange(len(prs)), existing_repos, assume_unique=True)
+                ]
+            ).tolist(),
+        )
         prs = prs.take(existing_repos)
     unique_pr_node_ids = prs.index.unique()
     released_prs, labels = await gather(
@@ -322,11 +419,14 @@ async def fetch_jira_issues(installation_ids: JIRAConfig,
         fetch_labels_to_filter(unique_pr_node_ids, meta_ids, mdb),
     )
     prs = split_logical_prs(
-        prs, labels,
+        prs,
+        labels,
         logical_settings.with_logical_prs(prs[PullRequest.repository_full_name.name].unique()),
-        logical_settings)
+        logical_settings,
+    )
     pr_to_issue = {
-        key: ji for key, ji in zip(
+        key: ji
+        for key, ji in zip(
             prs.index.values,
             prs[NodePullRequestJiraIssues.jira_id.name].values,
         )
@@ -336,7 +436,8 @@ async def fetch_jira_issues(installation_ids: JIRAConfig,
     pr_node_ids = prs.index.get_level_values(0).values
     jira_ids = prs[NodePullRequestJiraIssues.jira_id.name].values
     unique_jira_ids, index_map, counts = np.unique(
-        jira_ids, return_inverse=True, return_counts=True)
+        jira_ids, return_inverse=True, return_counts=True
+    )
     split_pr_node_ids = np.split(pr_node_ids[np.argsort(index_map)], np.cumsum(counts[:-1]))
     issue_prs = [[]] * len(issues)  # yes, the references to the same list
     issue_indexes = []
@@ -358,13 +459,16 @@ async def fetch_jira_issues(installation_ids: JIRAConfig,
         i = issue_to_index[pr_to_issue[key]]
         node_id, repo = key
         if pr_created_at is not None:
-            work_began[i] = np.nanmin(np.array(
-                [work_began[i], pr_created_at],
-                dtype=np.datetime64))
+            work_began[i] = np.nanmin(
+                np.array([work_began[i], pr_created_at], dtype=np.datetime64)
+            )
         if (row := released_prs.get(key)) is not None:
-            released[i] = np.nanmax(np.array(
-                [released[i], row[GitHubDonePullRequestFacts.pr_done_at.name]],
-                dtype=np.datetime64))
+            released[i] = np.nanmax(
+                np.array(
+                    [released[i], row[GitHubDonePullRequestFacts.pr_done_at.name]],
+                    dtype=np.datetime64,
+                )
+            )
             continue
         if repo not in release_settings.native:
             # deleted repository, consider the PR as force push dropped
@@ -380,34 +484,38 @@ async def fetch_jira_issues(installation_ids: JIRAConfig,
     created_colname = Issue.created.name
     issues[resolved_colname] = issues[resolved_colname].astype(issues[created_colname].dtype)
     if (negative := issues[resolved_colname].values < issues[created_colname].values).any():
-        log.error("JIRA issues have resolved < created: %s",
-                  issues.index.values[negative].tolist())
+        log.error(
+            "JIRA issues have resolved < created: %s", issues.index.values[negative].tolist()
+        )
         issues[resolved_colname].values[negative] = issues[created_colname].values[negative]
     return issues
 
 
 @sentry_span
-async def _fetch_released_prs(pr_node_ids: Iterable[int],
-                              default_branches: Dict[str, str],
-                              release_settings: ReleaseSettings,
-                              account: int,
-                              pdb: Database,
-                              ) -> Dict[Tuple[int, str], Mapping[str, Any]]:
+async def _fetch_released_prs(
+    pr_node_ids: Iterable[int],
+    default_branches: Dict[str, str],
+    release_settings: ReleaseSettings,
+    account: int,
+    pdb: Database,
+) -> Dict[Tuple[int, str], Mapping[str, Any]]:
     ghdprf = GitHubDonePullRequestFacts
     released_rows = await pdb.fetch_all(
-        sql.select([ghdprf.pr_node_id,
-                    ghdprf.pr_created_at,
-                    ghdprf.pr_done_at,
-                    ghdprf.repository_full_name,
-                    ghdprf.release_match])
-        .where(sql.and_(ghdprf.pr_node_id.in_(pr_node_ids),
-                        ghdprf.acc_id == account)))
+        sql.select(
+            [
+                ghdprf.pr_node_id,
+                ghdprf.pr_created_at,
+                ghdprf.pr_done_at,
+                ghdprf.repository_full_name,
+                ghdprf.release_match,
+            ]
+        ).where(sql.and_(ghdprf.pr_node_id.in_(pr_node_ids), ghdprf.acc_id == account))
+    )
     released_by_repo = defaultdict(lambda: defaultdict(dict))
     for r in released_rows:
-        released_by_repo[
-            r[ghdprf.repository_full_name.name]][
-            r[ghdprf.release_match.name]][
-            r[ghdprf.pr_node_id.name]] = r
+        released_by_repo[r[ghdprf.repository_full_name.name]][r[ghdprf.release_match.name]][
+            r[ghdprf.pr_node_id.name]
+        ] = r
     released_prs = {}
     ambiguous = {ReleaseMatch.tag.name: {}, ReleaseMatch.branch.name: {}}
     for repo, matches in released_by_repo.items():
@@ -422,7 +530,8 @@ async def _fetch_released_prs(pr_node_ids: Iterable[int],
                         released_prs[key] = row
                 continue
             dump = triage_by_release_match(
-                repo, match, release_settings, default_branches, released_prs, ambiguous)
+                repo, match, release_settings, default_branches, released_prs, ambiguous
+            )
             if dump is None:
                 continue
             for node_id, row in prs.items():
@@ -434,22 +543,23 @@ async def _fetch_released_prs(pr_node_ids: Iterable[int],
 
 
 @sentry_span
-async def _fetch_issues(ids: JIRAConfig,
-                        time_from: Optional[datetime],
-                        time_to: Optional[datetime],
-                        exclude_inactive: bool,
-                        labels: LabelFilter,
-                        priorities: Collection[str],
-                        types: Collection[str],
-                        epics: Union[Collection[str], bool],
-                        reporters: Collection[str],
-                        assignees: Collection[Optional[str]],
-                        commenters: Collection[str],
-                        nested_assignees: bool,
-                        mdb: Database,
-                        cache: Optional[aiomcache.Client],
-                        extra_columns: Iterable[InstrumentedAttribute] = (),
-                        ) -> pd.DataFrame:
+async def _fetch_issues(
+    ids: JIRAConfig,
+    time_from: Optional[datetime],
+    time_to: Optional[datetime],
+    exclude_inactive: bool,
+    labels: LabelFilter,
+    priorities: Collection[str],
+    types: Collection[str],
+    epics: Union[Collection[str], bool],
+    reporters: Collection[str],
+    assignees: Collection[Optional[str]],
+    commenters: Collection[str],
+    nested_assignees: bool,
+    mdb: Database,
+    cache: Optional[aiomcache.Client],
+    extra_columns: Iterable[InstrumentedAttribute] = (),
+) -> pd.DataFrame:
     postgres = mdb.url.dialect == "postgresql"
     columns = [
         Issue.id,
@@ -498,8 +608,7 @@ async def _fetch_issues(ids: JIRAConfig,
     or_filters = []
     if labels:
         components = await _load_components(labels, ids[0], mdb, cache)
-        _append_label_filters(
-            labels, components, mdb.url.dialect == "postgresql", and_filters)
+        _append_label_filters(labels, components, mdb.url.dialect == "postgresql", and_filters)
     if reporters and (postgres or not commenters):
         or_filters.append(sql.func.lower(Issue.reporter_display_name).in_(reporters))
     if assignees and (postgres or (not commenters and not nested_assignees)):
@@ -520,64 +629,89 @@ async def _fetch_issues(ids: JIRAConfig,
             if assignees:
                 columns.append(sql.func.lower(Issue.assignee_display_name).label("_assignee"))
                 if nested_assignees and all(
-                        c.name != AthenianIssue.nested_assignee_display_names.name
-                        for c in extra_columns):
+                    c.name != AthenianIssue.nested_assignee_display_names.name
+                    for c in extra_columns
+                ):
                     columns.append(AthenianIssue.nested_assignee_display_names)
             if all(c.name != "commenters" for c in extra_columns):
                 columns.append(Issue.commenters_display_names.label("commenters"))
     if assignees and not postgres:
         if nested_assignees and all(
-                c.name != AthenianIssue.nested_assignee_display_names.name
-                for c in columns):
+            c.name != AthenianIssue.nested_assignee_display_names.name for c in columns
+        ):
             columns.append(AthenianIssue.nested_assignee_display_names)
         if None in assignees and all(c.name != "_assignee" for c in columns):
             columns.append(sql.func.lower(Issue.assignee_display_name).label("_assignee"))
 
     def query_starts():
-        seeds = [seed := sql.join(Issue, Status, sql.and_(Issue.status_id == Status.id,
-                                                          Issue.acc_id == Status.acc_id))]
+        seeds = [
+            seed := sql.join(
+                Issue,
+                Status,
+                sql.and_(Issue.status_id == Status.id, Issue.acc_id == Status.acc_id),
+            )
+        ]
         if epics is False:
             seeds = [
                 sql.outerjoin(
                     sql.outerjoin(
-                        sql.outerjoin(seed, epics_major,
-                                      sql.and_(Issue.epic_id == epics_major.id,
-                                               Issue.acc_id == epics_major.acc_id)),
-                        epics_parent, sql.and_(Issue.parent_id == epics_parent.id,
-                                               Issue.acc_id == epics_parent.acc_id),
+                        sql.outerjoin(
+                            seed,
+                            epics_major,
+                            sql.and_(
+                                Issue.epic_id == epics_major.id, Issue.acc_id == epics_major.acc_id
+                            ),
+                        ),
+                        epics_parent,
+                        sql.and_(
+                            Issue.parent_id == epics_parent.id, Issue.acc_id == epics_parent.acc_id
+                        ),
                     ),
-                    epics_self, sql.and_(Issue.id == epics_self.id,
-                                         Issue.acc_id == epics_self.acc_id),
+                    epics_self,
+                    sql.and_(Issue.id == epics_self.id, Issue.acc_id == epics_self.acc_id),
                 ),
             ]
         elif len(epics):
             seeds = [
-                sql.join(seed, Epic, sql.and_(Issue.epic_id == Epic.id,
-                                              Issue.acc_id == Epic.acc_id)),
-                sql.join(seed, Epic, sql.and_(Issue.parent_id == Epic.id,
-                                              Issue.acc_id == Epic.acc_id)),
+                sql.join(
+                    seed, Epic, sql.and_(Issue.epic_id == Epic.id, Issue.acc_id == Epic.acc_id)
+                ),
+                sql.join(
+                    seed, Epic, sql.and_(Issue.parent_id == Epic.id, Issue.acc_id == Epic.acc_id)
+                ),
             ]
-        return tuple(sql.select(columns).select_from(sql.outerjoin(
-            seed, AthenianIssue, sql.and_(Issue.acc_id == AthenianIssue.acc_id,
-                                          Issue.id == AthenianIssue.id)))
-                     for seed in seeds)
+        return tuple(
+            sql.select(columns).select_from(
+                sql.outerjoin(
+                    seed,
+                    AthenianIssue,
+                    sql.and_(Issue.acc_id == AthenianIssue.acc_id, Issue.id == AthenianIssue.id),
+                )
+            )
+            for seed in seeds
+        )
 
     if or_filters:
         if postgres:
-            query = [start.where(sql.and_(or_filter, *and_filters))
-                     for or_filter in or_filters
-                     for start in query_starts()]
+            query = [
+                start.where(sql.and_(or_filter, *and_filters))
+                for or_filter in or_filters
+                for start in query_starts()
+            ]
         else:
-            query = [start.where(sql.and_(sql.or_(*or_filters), *and_filters))
-                     for start in query_starts()]
+            query = [
+                start.where(sql.and_(sql.or_(*or_filters), *and_filters))
+                for start in query_starts()
+            ]
     else:
         query = [start.where(sql.and_(*and_filters)) for start in query_starts()]
 
     def hint(q):
-        return q \
-            .with_statement_hint("Leading(((athenian_issue issue) (s c)))") \
-            .with_statement_hint("Rows(athenian_issue issue *1000)") \
+        return (
+            q.with_statement_hint("Leading(((athenian_issue issue) (s c)))")
+            .with_statement_hint("Rows(athenian_issue issue *1000)")
             .with_statement_hint("Rows(s c *200)")
+        )
 
     if postgres:
         if len(query) == 1:
@@ -589,8 +723,9 @@ async def _fetch_issues(ids: JIRAConfig,
         else:
             query = [hint(q) for q in query]
         if isinstance(query, list):
-            df = await gather(*(read_sql_query(q, mdb, columns, index=Issue.id.name)
-                                for q in query))
+            df = await gather(
+                *(read_sql_query(q, mdb, columns, index=Issue.id.name) for q in query)
+            )
             df = pd.concat(df, copy=False)
             df.disable_consolidate()
             _, unique = np.unique(df.index.values, return_index=True)
@@ -599,8 +734,9 @@ async def _fetch_issues(ids: JIRAConfig,
             df = await read_sql_query(query, mdb, columns, index=Issue.id.name)
     else:
         # SQLite does not allow to use parameters multiple times
-        df = pd.concat(await gather(*(read_sql_query(q, mdb, columns, index=Issue.id.name)
-                                      for q in query)))
+        df = pd.concat(
+            await gather(*(read_sql_query(q, mdb, columns, index=Issue.id.name) for q in query))
+        )
     df = _validate_and_clean_issues(df, ids[0])
     df.sort_index(inplace=True)
     if postgres or (not commenters and (not nested_assignees or not assignees)):
@@ -611,8 +747,11 @@ async def _fetch_issues(ids: JIRAConfig,
     if assignees:
         if nested_assignees:
             assignees = set(assignees)
-            passed |= df[AthenianIssue.nested_assignee_display_names.name].apply(
-                lambda obj: bool(obj.keys() & assignees)).values
+            passed |= (
+                df[AthenianIssue.nested_assignee_display_names.name]
+                .apply(lambda obj: bool(obj.keys() & assignees))
+                .values
+            )
         else:
             passed |= df["_assignee"].isin(assignees).values
         if None in assignees:
@@ -642,14 +781,23 @@ def _validate_and_clean_issues(df: pd.DataFrame, acc_id: int) -> pd.DataFrame:
     log = logging.getLogger(f"{metadata.__package__}.validate_and_clean_issues")
     issue_ids = df.index.values
     if in_progress_no_work_began.any():
-        log.error("account %d has issues in progress but their `work_began` is null: %s",
-                  acc_id, issue_ids[in_progress_no_work_began].tolist())
+        log.error(
+            "account %d has issues in progress but their `work_began` is null: %s",
+            acc_id,
+            issue_ids[in_progress_no_work_began].tolist(),
+        )
     if done_no_work_began.any():
-        log.error("account %d has issues done but their `work_began` is null: %s",
-                  acc_id, issue_ids[done_no_work_began].tolist())
+        log.error(
+            "account %d has issues done but their `work_began` is null: %s",
+            acc_id,
+            issue_ids[done_no_work_began].tolist(),
+        )
     if done_no_resolved.any():
-        log.error("account %d has issues done but their `resolved` is null: %s",
-                  acc_id, issue_ids[done_no_resolved].tolist())
+        log.error(
+            "account %d has issues done but their `resolved` is null: %s",
+            acc_id,
+            issue_ids[done_no_resolved].tolist(),
+        )
     old_len = len(df)
     df = df.take(np.flatnonzero(~invalid))
     log.warning("cleaned JIRA issues %d / %d", len(df), old_len)
@@ -660,10 +808,9 @@ class PullRequestJiraMapper:
     """Mapper of pull requests to JIRA tickets."""
 
     @classmethod
-    async def append_pr_jira_mapping(cls,
-                                     prs: PullRequestFactsMap,
-                                     meta_ids: Tuple[int, ...],
-                                     mdb: DatabaseLike) -> None:
+    async def append_pr_jira_mapping(
+        cls, prs: PullRequestFactsMap, meta_ids: Tuple[int, ...], mdb: DatabaseLike
+    ) -> None:
         """Load and insert "jira_id" to the PR facts."""
         pr_node_ids = defaultdict(list)
         for node_id, repo in prs:
@@ -679,11 +826,12 @@ class PullRequestJiraMapper:
 
     @classmethod
     @sentry_span
-    async def load_pr_jira_mapping(cls,
-                                   prs: Collection[int],
-                                   meta_ids: Tuple[int, ...],
-                                   mdb: DatabaseLike,
-                                   ) -> Dict[int, List[str]]:
+    async def load_pr_jira_mapping(
+        cls,
+        prs: Collection[int],
+        meta_ids: Tuple[int, ...],
+        mdb: DatabaseLike,
+    ) -> Dict[int, List[str]]:
         """Fetch the mapping from PR node IDs to JIRA issue IDs."""
         nprji = NodePullRequestJiraIssues
         if len(prs) >= 100:
@@ -692,64 +840,90 @@ class PullRequestJiraMapper:
             node_id_cond = nprji.node_id.in_(prs)
         rows = await mdb.fetch_all(
             sql.select([nprji.node_id, Issue.key])
-            .select_from(sql.outerjoin(nprji, Issue, sql.and_(
-                nprji.jira_acc == Issue.acc_id,
-                nprji.jira_id == Issue.id,
-            )))
-            .where(sql.and_(node_id_cond,
-                            nprji.node_acc.in_(meta_ids))))
+            .select_from(
+                sql.outerjoin(
+                    nprji,
+                    Issue,
+                    sql.and_(
+                        nprji.jira_acc == Issue.acc_id,
+                        nprji.jira_id == Issue.id,
+                    ),
+                )
+            )
+            .where(sql.and_(node_id_cond, nprji.node_acc.in_(meta_ids)))
+        )
         result = defaultdict(list)
         for r in rows:
             result[r[0]].append(r[1])
         return result
 
 
-def resolve_work_began_and_resolved(issue_work_began: Optional[np.datetime64],
-                                    prs_began: Optional[np.datetime64],
-                                    issue_resolved: Optional[np.datetime64],
-                                    prs_released: Optional[np.datetime64],
-                                    ) -> Tuple[Optional[np.datetime64], Optional[np.datetime64]]:
+def resolve_work_began_and_resolved(
+    issue_work_began: Optional[np.datetime64],
+    prs_began: Optional[np.datetime64],
+    issue_resolved: Optional[np.datetime64],
+    prs_released: Optional[np.datetime64],
+) -> Tuple[Optional[np.datetime64], Optional[np.datetime64]]:
     """Compute the final timestamps of when the work started on the issue, and when the issue \
     became fully resolved."""
     if issue_work_began != issue_work_began or issue_work_began is None:
         return None, None
     if prs_began != prs_began or prs_began is None:
-        return issue_work_began, \
-            issue_resolved \
-            if (issue_resolved == issue_resolved and issue_resolved is not None) \
-            else None
+        return (
+            issue_work_began,
+            issue_resolved
+            if (issue_resolved == issue_resolved and issue_resolved is not None)
+            else None,
+        )
     work_began = min(prs_began, issue_work_began)
-    if (prs_released != prs_released or prs_released is None) or \
-            (issue_resolved != issue_resolved or issue_resolved is None):
+    if (prs_released != prs_released or prs_released is None) or (
+        issue_resolved != issue_resolved or issue_resolved is None
+    ):
         return work_began, None
     return work_began, max(issue_resolved, prs_released)
 
 
-async def fetch_jira_issues_for_prs(pr_nodes: Collection[int],
-                                    meta_ids: Tuple[int, ...],
-                                    jira_ids: JIRAConfig,
-                                    mdb: DatabaseLike,
-                                    ) -> List[Mapping[str, Any]]:
+async def fetch_jira_issues_for_prs(
+    pr_nodes: Collection[int],
+    meta_ids: Tuple[int, ...],
+    jira_ids: JIRAConfig,
+    mdb: DatabaseLike,
+) -> List[Mapping[str, Any]]:
     """Load brief information about JIRA issues mapped to the given PRs."""
     regiss = aliased(Issue, name="regular")
     epiciss = aliased(Epic, name="epic")
     prmap = aliased(NodePullRequestJiraIssues, name="m")
     return await mdb.fetch_all(
-        sql.select([prmap.node_id.label("node_id"),
-                    regiss.key.label("key"),
-                    regiss.title.label("title"),
-                    regiss.labels.label("labels"),
-                    regiss.type.label("type"),
-                    epiciss.key.label("epic")])
-        .select_from(sql.outerjoin(
-            sql.join(regiss, prmap, sql.and_(regiss.id == prmap.jira_id,
-                                             regiss.acc_id == prmap.jira_acc)),
-            epiciss, sql.and_(epiciss.id == regiss.epic_id,
-                              epiciss.acc_id == regiss.acc_id)))
-        .where(sql.and_(prmap.node_id.in_(pr_nodes),
-                        prmap.node_acc.in_(meta_ids),
-                        regiss.project_id.in_(jira_ids[1]),
-                        regiss.is_deleted.is_(False))))
+        sql.select(
+            [
+                prmap.node_id.label("node_id"),
+                regiss.key.label("key"),
+                regiss.title.label("title"),
+                regiss.labels.label("labels"),
+                regiss.type.label("type"),
+                epiciss.key.label("epic"),
+            ]
+        )
+        .select_from(
+            sql.outerjoin(
+                sql.join(
+                    regiss,
+                    prmap,
+                    sql.and_(regiss.id == prmap.jira_id, regiss.acc_id == prmap.jira_acc),
+                ),
+                epiciss,
+                sql.and_(epiciss.id == regiss.epic_id, epiciss.acc_id == regiss.acc_id),
+            )
+        )
+        .where(
+            sql.and_(
+                prmap.node_id.in_(pr_nodes),
+                prmap.node_acc.in_(meta_ids),
+                regiss.project_id.in_(jira_ids[1]),
+                regiss.is_deleted.is_(False),
+            )
+        )
+    )
 
 
 participant_columns = [

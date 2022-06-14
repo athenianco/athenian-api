@@ -70,11 +70,13 @@ class _LogicalRepository(Model, sealed=False):
             raise ValueError("Invalid value for `name`, may not be null")
         if len(name) > 100:
             raise ValueError(
-                "Invalid value for `name`, length must be less than or equal to `100`")
+                "Invalid value for `name`, length must be less than or equal to `100`"
+            )
         if not re.fullmatch(r"([a-zA-Z0-9-_]+\/?)*[a-zA-Z0-9-_]+", name):
             raise ValueError(
                 r"Invalid value for `name`, must be a follow pattern or equal to "
-                r"`/^([a-zA-Z0-9-_]+\/?)*[a-zA-Z0-9-_]+$/`")
+                r"`/^([a-zA-Z0-9-_]+\/?)*[a-zA-Z0-9-_]+$/`"
+            )
 
         self._name = name
 

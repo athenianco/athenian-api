@@ -13,7 +13,7 @@ from athenian.api.models.metadata.github import User
 from athenian.api.models.state.models import UserAccount
 from athenian.api.models.web import Contributor, NotFoundError
 from athenian.api.request import AthenianWebRequest
-from athenian.api.response import model_response, ResponseError
+from athenian.api.response import ResponseError, model_response
 
 
 @expires_header(short_term_exptime)
@@ -25,12 +25,13 @@ async def get_contributors(request: AthenianWebRequest, id: int) -> web.Response
     """
     async with request.sdb.connection() as sdb_conn:
         account_id = await sdb_conn.fetch_val(
-            select([UserAccount.account_id])
-            .where(and_(UserAccount.user_id == request.uid, UserAccount.account_id == id)))
+            select([UserAccount.account_id]).where(
+                and_(UserAccount.user_id == request.uid, UserAccount.account_id == id)
+            )
+        )
         if account_id is None:
             err_detail = (
-                f"Account {account_id} does not exist or user {request.uid} "
-                "is not a member."
+                f"Account {account_id} does not exist or user {request.uid} is not a member."
             )
             raise ResponseError(NotFoundError(detail=err_detail))
         tasks = [
@@ -47,17 +48,32 @@ async def get_contributors(request: AthenianWebRequest, id: int) -> web.Response
         )
         repos = logical_settings.append_logical_prs([r.split("/", 1)[1] for r in repos])
         users = await mine_contributors(
-            repos, None, None, False, [], release_settings, logical_settings, prefixer,
-            account_id, meta_ids, request.mdb, request.pdb, request.rdb, request.cache)
+            repos,
+            None,
+            None,
+            False,
+            [],
+            release_settings,
+            logical_settings,
+            prefixer,
+            account_id,
+            meta_ids,
+            request.mdb,
+            request.pdb,
+            request.rdb,
+            request.cache,
+        )
         mapped_jira = await load_mapped_jira_users(
-            account_id, [u[User.node_id.name] for u in users],
-            sdb_conn, request.mdb, request.cache)
+            account_id, [u[User.node_id.name] for u in users], sdb_conn, request.mdb, request.cache
+        )
         contributors = [
-            Contributor(login=prefixer.user_node_to_prefixed_login[u[User.node_id.name]],
-                        name=u[User.name.name],
-                        email="<classified>",  # u[User.email.name] TODO(vmarkovtsev): DEV-87
-                        picture=u[User.avatar_url.name],
-                        jira_user=mapped_jira.get(u[User.node_id.name]))
+            Contributor(
+                login=prefixer.user_node_to_prefixed_login[u[User.node_id.name]],
+                name=u[User.name.name],
+                email="<classified>",  # u[User.email.name] TODO(vmarkovtsev): DEV-87
+                picture=u[User.avatar_url.name],
+                jira_user=mapped_jira.get(u[User.node_id.name]),
+            )
             for u in users
         ]
         return model_response(contributors)

@@ -16,9 +16,7 @@ class _JIRAEpicChildSpecials(Model, sealed=False):
         "prs": "prs",
     }
 
-    def __init__(self,
-                 subtasks: Optional[int] = None,
-                 prs: Optional[int] = None):
+    def __init__(self, subtasks: Optional[int] = None, prs: Optional[int] = None):
         """_JIRAEpicChildSpecials - a model defined in OpenAPI
 
         :param subtasks: The subtasks of this _JIRAEpicChildSpecials.
@@ -74,5 +72,6 @@ class _JIRAEpicChildSpecials(Model, sealed=False):
         self._prs = prs
 
 
-JIRAEpicChild = AllOf(JIRAEpicIssueCommon, _JIRAEpicChildSpecials,
-                      name="JIRAEpicChild", module=__name__)
+JIRAEpicChild = AllOf(
+    JIRAEpicIssueCommon, _JIRAEpicChildSpecials, name="JIRAEpicChild", module=__name__
+)

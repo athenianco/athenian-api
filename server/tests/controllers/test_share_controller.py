@@ -11,13 +11,11 @@ from athenian.api.models.state.models import Share
 @pytest.mark.flaky(reruns=5, reruns_delay=random.uniform(0.5, 2.5))
 async def test_share_cycle_smoke(client, headers, disable_default_user):
     secret = {"key": 777}
-    response = await client.request(
-        method="POST", path="/v1/share", headers=headers, json=secret)
+    response = await client.request(method="POST", path="/v1/share", headers=headers, json=secret)
     ref = json.loads((await response.read()).decode("utf-8"))
     assert response.status == 200, ref
     assert ref == "7gsyzgrzminj8"
-    response = await client.request(
-        method="GET", path=f"/v1/share/{ref}", headers=headers)
+    response = await client.request(method="GET", path=f"/v1/share/{ref}", headers=headers)
     data = json.loads((await response.read()).decode("utf-8"))
     assert response.status == 200, data
     assert data["author"] == "Vadim Markovtsev"
@@ -27,40 +25,45 @@ async def test_share_cycle_smoke(client, headers, disable_default_user):
 
 async def test_share_default_user(client, headers):
     secret = {"key": 777}
-    response = await client.request(
-        method="POST", path="/v1/share", headers=headers, json=secret)
+    response = await client.request(method="POST", path="/v1/share", headers=headers, json=secret)
     ref = json.loads((await response.read()).decode("utf-8"))
     assert response.status == 403, ref
 
 
 async def test_share_null(client, headers, disable_default_user):
-    response = await client.request(
-        method="POST", path="/v1/share", headers=headers, json=None)
+    response = await client.request(method="POST", path="/v1/share", headers=headers, json=None)
     ref = json.loads((await response.read()).decode("utf-8"))
     assert response.status == 400, ref
 
 
 async def test_share_wrong_user(client, headers, sdb, app):
-    await sdb.execute(insert(Share).values(Share(
-        id=10,
-        created_by="incognito",
-        data={"key": 777},
-    ).create_defaults().explode()))
+    await sdb.execute(
+        insert(Share).values(
+            Share(
+                id=10,
+                created_by="incognito",
+                data={"key": 777},
+            )
+            .create_defaults()
+            .explode()
+        )
+    )
     ref = _encode_share_id(10, app.app["auth"])
-    response = await client.request(
-        method="GET", path=f"/v1/share/{ref}", headers=headers)
+    response = await client.request(method="GET", path=f"/v1/share/{ref}", headers=headers)
     data = json.loads((await response.read()).decode("utf-8"))
     assert response.status == 404, data
 
 
-@pytest.mark.parametrize("ref, code", [
-    ("7gsyzgrzminj8", 404),
-    ("7gsyzgrzminj9", 400),
-    ("xxx", 400),
-    ("", 405),
-])
+@pytest.mark.parametrize(
+    "ref, code",
+    [
+        ("7gsyzgrzminj8", 404),
+        ("7gsyzgrzminj9", 400),
+        ("xxx", 400),
+        ("", 405),
+    ],
+)
 async def test_share_nasty_input(client, headers, ref, code):
-    response = await client.request(
-        method="GET", path=f"/v1/share/{ref}", headers=headers)
+    response = await client.request(method="GET", path=f"/v1/share/{ref}", headers=headers)
     data = json.loads((await response.read()).decode("utf-8"))
     assert response.status == code, data

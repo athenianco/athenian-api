@@ -97,9 +97,9 @@ class TeamTree(Model):
         self._total_members = sorted(
             set(chain(members, *(child.total_members for child in children))),
         )
-        self._total_teams_count = sum(
-            child.total_teams_count for child in children
-        ) + len(children)
+        self._total_teams_count = sum(child.total_teams_count for child in children) + len(
+            children
+        )
 
     @property
     def id(self) -> int:

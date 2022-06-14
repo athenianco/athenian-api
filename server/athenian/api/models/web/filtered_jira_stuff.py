@@ -37,15 +37,17 @@ class FilteredJIRAStuff(Model):
         "deployments": "deployments",
     }
 
-    def __init__(self,
-                 epics: Optional[List[JIRAEpic]] = None,
-                 issues: Optional[List[JIRAIssue]] = None,
-                 labels: Optional[List[JIRALabel]] = None,
-                 issue_types: Optional[List[JIRAIssueType]] = None,
-                 priorities: Optional[List[JIRAPriority]] = None,
-                 statuses: Optional[List[JIRAStatus]] = None,
-                 users: Optional[List[JIRAUser]] = None,
-                 deployments: Optional[Dict[str, DeploymentNotification]] = None):
+    def __init__(
+        self,
+        epics: Optional[List[JIRAEpic]] = None,
+        issues: Optional[List[JIRAIssue]] = None,
+        labels: Optional[List[JIRALabel]] = None,
+        issue_types: Optional[List[JIRAIssueType]] = None,
+        priorities: Optional[List[JIRAPriority]] = None,
+        statuses: Optional[List[JIRAStatus]] = None,
+        users: Optional[List[JIRAUser]] = None,
+        deployments: Optional[Dict[str, DeploymentNotification]] = None,
+    ):
         """FilteredJIRAStuff - a model defined in OpenAPI
 
         :param epics: The epics of this FilteredJIRAStuff.

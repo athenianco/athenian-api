@@ -15,9 +15,11 @@ class DiffedReleases(Model):
 
     attribute_map = {"include": "include", "data": "data"}
 
-    def __init__(self,
-                 include: Optional[ReleaseSetInclude] = None,
-                 data: Optional[Dict[str, List[ReleaseDiff]]] = None):
+    def __init__(
+        self,
+        include: Optional[ReleaseSetInclude] = None,
+        data: Optional[Dict[str, List[ReleaseDiff]]] = None,
+    ):
         """DiffedReleases - a model defined in OpenAPI
 
         :param include: The include of this DiffedReleases.

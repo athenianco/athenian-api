@@ -1,6 +1,6 @@
 from datetime import date, timedelta
 
-from ariadne import make_executable_schema, MutationType, QueryType
+from ariadne import MutationType, QueryType, make_executable_schema
 from freezegun import freeze_time
 from graphql import graphql_sync
 

@@ -1,7 +1,7 @@
 from datetime import datetime
 
 import pytz
-from sqlalchemy import ARRAY, BigInteger, Column, func, Integer, Text, TIMESTAMP
+from sqlalchemy import ARRAY, TIMESTAMP, BigInteger, Column, Integer, Text, func
 
 from athenian.api.models import create_base
 
@@ -19,7 +19,8 @@ class PullRequestStatus(Base):
     node_id = Column(Text(), primary_key=True)
     number = Column(BigInteger(), nullable=False)
     last_aggregation_timestamp = Column(
-        TIMESTAMP(timezone=True), nullable=False,
+        TIMESTAMP(timezone=True),
+        nullable=False,
         default=datetime.utcfromtimestamp(0).replace(tzinfo=pytz.utc),
         server_default=func.to_timestamp(0),
     )

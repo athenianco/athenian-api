@@ -12,7 +12,7 @@ from mako.template import Template
 import numpy as np
 from sqlalchemy import any_, create_engine, text
 from sqlalchemy.ext.compiler import compiles
-from sqlalchemy.sql import operators, Values
+from sqlalchemy.sql import Values, operators
 from sqlalchemy.sql.compiler import OPERATORS
 from sqlalchemy.sql.elements import BinaryExpression, BindParameter, Grouping
 from sqlalchemy.sql.operators import ColumnOperators, in_op, not_in_op
@@ -70,13 +70,15 @@ def compile_binary(binary, compiler, override_operator=None, **kw):
     if render_any_values:
         # = ANY(VALUES ...)
         if is_array and (
-                values.dtype.kind in ("S", "U")
-                or values.dtype.kind in ("i", "u") and values.dtype.itemsize == 8):
+            values.dtype.kind in ("S", "U")
+            or values.dtype.kind in ("i", "u")
+            and values.dtype.itemsize == 8
+        ):
             right = any_(Grouping(text(in_any_values_inline(values))))
         else:
-            right = any_(Grouping(Values(
-                binary.left, literal_binds=True,
-            ).data(TupleWrapper(values))))
+            right = any_(
+                Grouping(Values(binary.left, literal_binds=True).data(TupleWrapper(values)))
+            )
         left = compiler.process(binary.left, **kw)
         right = compiler.process(right, **kw)
         sql = left + OPERATORS[operators.eq] + right
@@ -92,8 +94,11 @@ def compile_binary(binary, compiler, override_operator=None, **kw):
                 value = value.decode()
             return compiler.process(binary.left == value, **kw)
         if is_array:
-            if values.dtype.kind in ("S", "U") \
-                    or values.dtype.kind in ("i", "u") and values.dtype.itemsize == 8:
+            if (
+                values.dtype.kind in ("S", "U")
+                or values.dtype.kind in ("i", "u")
+                and values.dtype.itemsize == 8
+            ):
                 binary.right = Grouping(text(in_inline(values)))
             else:
                 binary.right.value = values.tolist()
@@ -159,7 +164,8 @@ def check_alembic_schema_version(name: str, conn_str: str, log: logging.Logger) 
     req_rev = directory.get_current_head()
     if real_rev != req_rev:
         raise DBSchemaMismatchError(
-            "%s version: required: %s connected: %s" % (conn_str, req_rev, real_rev))
+            "%s version: required: %s connected: %s" % (conn_str, req_rev, real_rev)
+        )
     log.info("%s DB schema version: %s", name, real_rev)
 
 
@@ -169,10 +175,12 @@ def check_collation(conn_str: str) -> None:
     if engine.dialect.name != "postgresql":
         return
     collation = engine.scalar(
-        "select datcollate from pg_database where datname='%s';" % engine.url.database)
+        "select datcollate from pg_database where datname='%s';" % engine.url.database
+    )
     if collation.lower() != "c.utf-8":
         raise DBSchemaMismatchError(
-            "%s collation: required: C.UTF-8 connected: %s" % (conn_str, collation))
+            "%s collation: required: C.UTF-8 connected: %s" % (conn_str, collation)
+        )
 
 
 def migrate(name: str, url=None, exec=True):
@@ -189,8 +197,15 @@ def migrate(name: str, url=None, exec=True):
     path = template_file_name.parent
     with open("alembic.ini", "w") as fout:
         fout.write(Template(filename=str(template_file_name)).render(url=url, path=path))
-    args = [sys.executable, sys.executable, "-m", "athenian.api.sentry_wrapper",
-            "alembic.config", "upgrade", "head"]
+    args = [
+        sys.executable,
+        sys.executable,
+        "-m",
+        "athenian.api.sentry_wrapper",
+        "alembic.config",
+        "upgrade",
+        "head",
+    ]
     if os.getenv("OFFLINE"):
         args.append("--sql")
     if exec:

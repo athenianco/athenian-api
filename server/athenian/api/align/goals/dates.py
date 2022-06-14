@@ -22,7 +22,8 @@ def goal_datetimes_to_dates(valid_from: datetime, expires_at: datetime) -> Tuple
 
 
 def goal_initial_query_interval(
-    valid_from: datetime, expires_at: datetime,
+    valid_from: datetime,
+    expires_at: datetime,
 ) -> Tuple[datetime, datetime]:
     """Return the time interval to query the initial metric value for the goal.
 

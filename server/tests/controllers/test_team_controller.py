@@ -14,20 +14,28 @@ from athenian.api.models.web import TeamUpdateRequest
 from athenian.api.models.web.team import Team as TeamListItem
 from athenian.api.models.web.team_create_request import TeamCreateRequest
 from tests.conftest import DEFAULT_HEADERS
-from tests.testutils.db import assert_existing_row, db_datetime_equals, model_insert_stmt, \
-    models_insert
+from tests.testutils.db import (
+    assert_existing_row,
+    db_datetime_equals,
+    model_insert_stmt,
+    models_insert,
+)
 from tests.testutils.factory.state import TeamFactory
 
 
 class TestCreateTeam:
     @pytest.mark.parametrize("account", [1, 2], ids=["as admin", "as non-admin"])
     async def test_smoke(self, client, headers, sdb, account, disable_default_user):
-        await sdb.execute(update(AccountGitHubAccount)
-                          .where(AccountGitHubAccount.id == 6366825)
-                          .values({AccountGitHubAccount.account_id: account}))
-        root_team_id = await sdb.execute(model_insert_stmt(
-            TeamFactory(owner_id=account, parent_id=None), with_primary_keys=False,
-        ))
+        await sdb.execute(
+            update(AccountGitHubAccount)
+            .where(AccountGitHubAccount.id == 6366825)
+            .values({AccountGitHubAccount.account_id: account})
+        )
+        root_team_id = await sdb.execute(
+            model_insert_stmt(
+                TeamFactory(owner_id=account, parent_id=None), with_primary_keys=False,
+            )
+        )
 
         body = TeamCreateRequest(account, "Engineering", ["github.com/se7entyse7en"], 1).to_dict()
         response = await self._request(client, body, 200)
@@ -36,13 +44,16 @@ class TestCreateTeam:
         eng_team_id = (await response.json())["id"]
 
         team = await sdb.fetch_one(select(Team).where(Team.id == eng_team_id))
-        _test_same_team(team, {
-            "id": eng_team_id,
-            "members": [51],
-            "name": "Engineering",
-            "owner_id": account,
-            "parent_id": root_team_id,
-        })
+        _test_same_team(
+            team,
+            {
+                "id": eng_team_id,
+                "members": [51],
+                "name": "Engineering",
+                "owner_id": account,
+                "parent_id": root_team_id,
+            },
+        )
 
         body["name"] = "Management"
         body["members"][0] = "github.com/vmarkovtsev"
@@ -50,31 +61,39 @@ class TestCreateTeam:
         response = await self._request(client, body, 200)
         mngmt_team_id = (await response.json())["id"]
         team = await sdb.fetch_one(select(Team).where(Team.id == mngmt_team_id))
-        _test_same_team(team, {
-            "id": mngmt_team_id,
-            "members": [40020],
-            "name": "Management",
-            "owner_id": account,
-            "parent_id": eng_team_id,
-        })
+        _test_same_team(
+            team,
+            {
+                "id": mngmt_team_id,
+                "members": [40020],
+                "name": "Management",
+                "owner_id": account,
+                "parent_id": eng_team_id,
+            },
+        )
 
     async def test_bot(self, client, headers, sdb, disable_default_user):
-        await sdb.execute(update(AccountGitHubAccount)
-                          .where(AccountGitHubAccount.id == 6366825)
-                          .values({AccountGitHubAccount.account_id: 1}))
+        await sdb.execute(
+            update(AccountGitHubAccount)
+            .where(AccountGitHubAccount.id == 6366825)
+            .values({AccountGitHubAccount.account_id: 1})
+        )
         await sdb.execute(model_insert_stmt(TeamFactory(id=100, parent_id=None)))
         body = TeamCreateRequest(1, "Engineering", ["github.com/apps/dependabot"], 100).to_dict()
         response = await self._request(client, body, 200)
         assert len(await sdb.fetch_all(select(Team))) == 2
         eng_team_id = (await response.json())["id"]
         team = await sdb.fetch_one(select([Team]).where(Team.id == eng_team_id))
-        _test_same_team(team, {
-            "id": eng_team_id,
-            "members": [17019778],
-            "name": "Engineering",
-            "owner_id": 1,
-            "parent_id": 100,
-        })
+        _test_same_team(
+            team,
+            {
+                "id": eng_team_id,
+                "members": [17019778],
+                "name": "Engineering",
+                "owner_id": 1,
+                "parent_id": 100,
+            },
+        )
 
     @pytest.mark.parametrize("account", [3, 4], ids=["not a member", "invalid account"])
     async def test_wrong_account(self, client, headers, sdb, account, disable_default_user):
@@ -86,8 +105,10 @@ class TestCreateTeam:
             "type": "/errors/AccountNotFound",
             "title": "Not Found",
             "status": 404,
-            "detail": (f"Account {account} does not exist or user auth0|62a1ae88b6bba16c6dbc6870 "
-                       "is not a member."),
+            "detail": (
+                f"Account {account} does not exist or user auth0|62a1ae88b6bba16c6dbc6870 "
+                "is not a member."
+            ),
         }
 
         assert len(await sdb.fetch_all(select(Team))) == 1
@@ -100,41 +121,44 @@ class TestCreateTeam:
 
     async def test_wrong_member(self, client, headers, sdb, disable_default_user):
         await sdb.execute(model_insert_stmt(TeamFactory(id=100, parent_id=None)))
-        body = TeamCreateRequest(1, "Engineering",
-                                 ["github.com/se7entyse7en/foo",
-                                  "github.com/vmarkovtsev/bar",
-                                  "github.com/warenlg"], 100).to_dict()
+        body = TeamCreateRequest(
+            1,
+            "Engineering",
+            ["github.com/se7entyse7en/foo", "github.com/vmarkovtsev/bar", "github.com/warenlg"],
+            100,
+        ).to_dict()
         response = await self._request(client, body, 400)
         parsed = await response.json()
         assert parsed == {
             "type": "/errors/BadRequest",
             "title": "Bad Request",
             "status": 400,
-            "detail": "Invalid members of the team: "
-                      "github.com/se7entyse7en/foo, github.com/vmarkovtsev/bar",
+            "detail": (
+                "Invalid members of the team: "
+                "github.com/se7entyse7en/foo, github.com/vmarkovtsev/bar"
+            ),
         }
 
         assert len(await sdb.fetch_all(select(Team))) == 1
 
     async def test_wrong_parent(self, client, headers, sdb, disable_default_user):
-        body = TeamCreateRequest(1, "Engineering",
-                                 ["github.com/se7entyse7en",
-                                  "github.com/warenlg"],
-                                 1).to_dict()
+        body = TeamCreateRequest(
+            1, "Engineering", ["github.com/se7entyse7en", "github.com/warenlg"], 1
+        ).to_dict()
         await self._request(client, body, 400)
         await sdb.execute(model_insert_stmt(TeamFactory(id=1, name="Test", owner_id=3)))
         await self._request(client, body, 400)
 
     async def test_same_members(self, client, headers, sdb, disable_default_user):
         await sdb.execute(model_insert_stmt(TeamFactory(id=100, name="Root", parent_id=None)))
-        body = TeamCreateRequest(1, "Engineering 1",
-                                 ["github.com/se7entyse7en",
-                                  "github.com/vmarkovtsev"], 100).to_dict()
+        body = TeamCreateRequest(
+            1, "Engineering 1", ["github.com/se7entyse7en", "github.com/vmarkovtsev"], 100
+        ).to_dict()
         await self._request(client, body, 200)
 
-        body = TeamCreateRequest(1, "Engineering 2",
-                                 ["github.com/vmarkovtsev",
-                                  "github.com/se7entyse7en"], 100).to_dict()
+        body = TeamCreateRequest(
+            1, "Engineering 2", ["github.com/vmarkovtsev", "github.com/se7entyse7en"], 100
+        ).to_dict()
         await self._request(client, body, 200)
         teams = await sdb.fetch_all(select(Team).order_by(Team.name))
         assert len(teams) == 3
@@ -149,7 +173,7 @@ class TestCreateTeam:
 
         body = TeamCreateRequest(1, "Engineering", ["github.com/vmarkovtsev"], 10).to_dict()
         response = await self._request(client, body, 409)
-        parsed = (await response.json())
+        parsed = await response.json()
         detail = parsed["detail"]
         del parsed["detail"]
         assert "Team 'Engineering' already exists" in detail
@@ -161,13 +185,16 @@ class TestCreateTeam:
 
         teams = await sdb.fetch_all(select(Team).order_by(Team.name))
         assert len(teams) == 2
-        _test_same_team(teams[0], {
-            "id": eng_team_id,
-            "members": [51],
-            "name": "Engineering",
-            "owner_id": 1,
-            "parent_id": 10,
-        })
+        _test_same_team(
+            teams[0],
+            {
+                "id": eng_team_id,
+                "members": [51],
+                "name": "Engineering",
+                "owner_id": 1,
+                "parent_id": 10,
+            },
+        )
 
     async def test_no_parent(self, client, headers, sdb, disable_default_user):
         await sdb.execute(model_insert_stmt(TeamFactory(id=10)))
@@ -199,10 +226,14 @@ class TestListTeams:
     )
     @pytest.mark.parametrize("account", [1, 2])
     async def test_smoke(self, client, headers, initial_teams, sdb, account, vadim_id_mapping):
-        await sdb.execute(insert(AccountGitHubAccount).values({
-            AccountGitHubAccount.account_id: 2,
-            AccountGitHubAccount.id: 1,
-        }))
+        await sdb.execute(
+            insert(AccountGitHubAccount).values(
+                {
+                    AccountGitHubAccount.account_id: 2,
+                    AccountGitHubAccount.id: 1,
+                }
+            )
+        )
         contributors_details = {
             # No further details because didn't contribute to repos
             "github.com/se7entyse7en": {
@@ -266,8 +297,10 @@ class TestListTeams:
             "type": "/errors/AccountNotFound",
             "title": "Not Found",
             "status": 404,
-            "detail": (f"Account {account} does not exist or user auth0|62a1ae88b6bba16c6dbc6870 "
-                       "is not a member."),
+            "detail": (
+                f"Account {account} does not exist or user auth0|62a1ae88b6bba16c6dbc6870 "
+                "is not a member."
+            ),
         }
 
 
@@ -294,7 +327,13 @@ async def test_resync_teams_smoke(client, headers, sdb, disable_default_user):
     assert len(teams) == len(actual_teams) - 1  # root team is not included in the response
 
     assert teams.keys() == {
-        "team", "engineering", "business", "operations", "product", "admin", "automation",
+        "team",
+        "engineering",
+        "business",
+        "operations",
+        "product",
+        "admin",
+        "automation",
     }
     assert [m.login for m in teams["product"].members] == ["github.com/warenlg", "github.com/eiso"]
 
@@ -326,9 +365,7 @@ class TestUpdateTeam:
         created_at = datetime(2001, 12, 3, 3, 20, tzinfo=timezone.utc)
         for model in (
             TeamFactory(id=10, name="Parent"),
-            TeamFactory(
-                id=11, name="Test", members=[40020], parent_id=10, created_at=created_at,
-            ),
+            TeamFactory(id=11, name="Test", members=[40020], parent_id=10, created_at=created_at),
         ):
             await sdb.execute(model_insert_stmt(model))
         body = TeamUpdateRequest("Dream", ["github.com/warenlg"], 10).to_dict()
@@ -344,32 +381,48 @@ class TestUpdateTeam:
         )
 
     async def test_default_user(self, client, sdb):
-        await sdb.execute(insert(Team).values(Team(
-            id=1, owner_id=1, name="Test", members=[40020],
-        ).create_defaults().explode()))
+        await sdb.execute(
+            insert(Team).values(
+                Team(id=1, owner_id=1, name="Test", members=[40020]).create_defaults().explode()
+            )
+        )
         body = TeamUpdateRequest("Engineering", ["github.com/se7entyse7en"], None).to_dict()
         await self._request(client, 1, body, 403)
 
-    @pytest.mark.parametrize("owner, id, name, members, parent, status", [
-        (1, 2, "Engineering", [], 1, 400),
-        (1, 2, "", ["github.com/se7entyse7en"], 1, 400),
-        (1, 2, "$" * 256, ["github.com/se7entyse7en"], 1, 400),
-        (1, 4, "Engineering", ["github.com/se7entyse7en"], 1, 404),
-        (2, 2, "Engineering", ["github.com/se7entyse7en"], 1, 200),
-        (3, 2, "Engineering", ["github.com/se7entyse7en"], 1, 404),
-        (1, 2, "Dream", ["github.com/se7entyse7en"], 1, 409),
-        (1, 2, "Engineering", ["github.com/eiso"], 1, 200),
-        (2, 2, "Dream", ["github.com/se7entyse7en"], 1, 200),
-        (2, 2, "Engineering", ["github.com/eiso"], 1, 200),
-        (2, 2, "Engineering", ["github.com/eiso"], 2, 400),
-        (2, 1, "Root", ["github.com/eiso"], 2, 400),
-    ])
+    @pytest.mark.parametrize(
+        "owner, id, name, members, parent, status",
+        [
+            (1, 2, "Engineering", [], 1, 400),
+            (1, 2, "", ["github.com/se7entyse7en"], 1, 400),
+            (1, 2, "$" * 256, ["github.com/se7entyse7en"], 1, 400),
+            (1, 4, "Engineering", ["github.com/se7entyse7en"], 1, 404),
+            (2, 2, "Engineering", ["github.com/se7entyse7en"], 1, 200),
+            (3, 2, "Engineering", ["github.com/se7entyse7en"], 1, 404),
+            (1, 2, "Dream", ["github.com/se7entyse7en"], 1, 409),
+            (1, 2, "Engineering", ["github.com/eiso"], 1, 200),
+            (2, 2, "Dream", ["github.com/se7entyse7en"], 1, 200),
+            (2, 2, "Engineering", ["github.com/eiso"], 1, 200),
+            (2, 2, "Engineering", ["github.com/eiso"], 2, 400),
+            (2, 1, "Root", ["github.com/eiso"], 2, 400),
+        ],
+    )
     async def test_nasty_input(
-        self, client, sdb, disable_default_user, owner, id, name, members, parent, status,
+        self,
+        client,
+        sdb,
+        disable_default_user,
+        owner,
+        id,
+        name,
+        members,
+        parent,
+        status,
     ):
-        await sdb.execute(update(AccountGitHubAccount)
-                          .where(AccountGitHubAccount.id == 6366825)
-                          .values({AccountGitHubAccount.account_id: owner}))
+        await sdb.execute(
+            update(AccountGitHubAccount)
+            .where(AccountGitHubAccount.id == 6366825)
+            .values({AccountGitHubAccount.account_id: owner})
+        )
         for model in (
             TeamFactory(owner_id=owner, id=1, name="Root", members=[]),
             TeamFactory(owner_id=owner, id=2, name="Engineering", members=[51], parent_id=1),
@@ -431,7 +484,11 @@ class TestUpdateTeam:
         await assert_existing_row(sdb, Team, name="New Name", parent_id=2, id=3)
 
     async def _request(
-        self, client: TestClient, team_id: int, json: dict, assert_status: int = 200,
+        self,
+        client: TestClient,
+        team_id: int,
+        json: dict,
+        assert_status: int = 200,
     ) -> str:
         response = await client.request(
             method="PUT", path=f"/v1/team/{team_id}", headers=DEFAULT_HEADERS, json=json,
@@ -458,20 +515,34 @@ class TestDeleteTeam:
 
         await self._request(client, 2, 403)
 
-    @pytest.mark.parametrize("owner, id, status", [
-        (1, 2, 404),
-        (2, 1, 200),
-        (3, 1, 404),
-    ])
+    @pytest.mark.parametrize(
+        "owner, id, status",
+        [
+            (1, 2, 404),
+            (2, 1, 200),
+            (3, 1, 404),
+        ],
+    )
     async def test_nasty_input(
-        self, client, headers, sdb, disable_default_user, owner, id, status,
+        self,
+        client,
+        headers,
+        sdb,
+        disable_default_user,
+        owner,
+        id,
+        status,
     ):
         await sdb.execute(model_insert_stmt(TeamFactory(id=9, parent_id=None, owner_id=owner)))
         await sdb.execute(model_insert_stmt(TeamFactory(id=1, parent_id=9, owner_id=owner)))
         await self._request(client, id, status)
 
     async def test_team_forbidden(
-        self, client: TestClient, headers: dict, sdb: Database, disable_default_user: None,
+        self,
+        client: TestClient,
+        headers: dict,
+        sdb: Database,
+        disable_default_user: None,
     ) -> None:
         await sdb.execute(model_insert_stmt(TeamFactory(id=1, parent_id=None)))
         response = await self._request(client, 1, 400)
@@ -479,7 +550,11 @@ class TestDeleteTeam:
         await assert_existing_row(sdb, Team, id=1)
 
     async def test_children_parent_is_updated(
-        self, client: TestClient, headers: dict, sdb: Database, disable_default_user: None,
+        self,
+        client: TestClient,
+        headers: dict,
+        sdb: Database,
+        disable_default_user: None,
     ) -> None:
         for model in (
             TeamFactory(id=1, parent_id=None),
@@ -509,41 +584,63 @@ class TestDeleteTeam:
 
 
 async def test_get_team_smoke(client, headers, sdb, vadim_id_mapping):
-    await sdb.execute(insert(Team).values(Team(
-        owner_id=1,
-        name="Engineering",
-        members=[40020, 39789],
-    ).create_defaults().explode()))
-    response = await client.request(
-        method="GET", path="/v1/team/1", headers=headers, json={},
+    await sdb.execute(
+        insert(Team).values(
+            Team(
+                owner_id=1,
+                name="Engineering",
+                members=[40020, 39789],
+            )
+            .create_defaults()
+            .explode()
+        )
     )
+    response = await client.request(method="GET", path="/v1/team/1", headers=headers, json={})
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     body = json.loads(body)
-    assert body == {"id": 1, "name": "Engineering", "parent": None, "members": [
-        {"login": "github.com/mcuadros",
-         "name": "Máximo Cuadros",
-         "email": "mcuadros@gmail.com",
-         "picture": "https://avatars0.githubusercontent.com/u/1573114?s=600&v=4"},
-        {"login": "github.com/vmarkovtsev",
-         "email": "gmarkhor@gmail.com",
-         "name": "Vadim Markovtsev",
-         "picture": "https://avatars1.githubusercontent.com/u/2793551?s=600&v=4",
-         "jira_user": "Vadim Markovtsev",
-         }]}
+    assert body == {
+        "id": 1,
+        "name": "Engineering",
+        "parent": None,
+        "members": [
+            {
+                "login": "github.com/mcuadros",
+                "name": "Máximo Cuadros",
+                "email": "mcuadros@gmail.com",
+                "picture": "https://avatars0.githubusercontent.com/u/1573114?s=600&v=4",
+            },
+            {
+                "login": "github.com/vmarkovtsev",
+                "email": "gmarkhor@gmail.com",
+                "name": "Vadim Markovtsev",
+                "picture": "https://avatars1.githubusercontent.com/u/2793551?s=600&v=4",
+                "jira_user": "Vadim Markovtsev",
+            },
+        ],
+    }
 
 
-@pytest.mark.parametrize("owner, id, status", [
-    (1, 2, 404),
-    (2, 1, 422),
-    (3, 1, 404),
-])
+@pytest.mark.parametrize(
+    "owner, id, status",
+    [
+        (1, 2, 404),
+        (2, 1, 422),
+        (3, 1, 404),
+    ],
+)
 async def test_get_team_nasty_input(client, headers, sdb, owner, id, status):
-    await sdb.execute(insert(Team).values(Team(
-        owner_id=owner,
-        name="Engineering",
-        members=[51, 39789],
-    ).create_defaults().explode()))
+    await sdb.execute(
+        insert(Team).values(
+            Team(
+                owner_id=owner,
+                name="Engineering",
+                members=[51, 39789],
+            )
+            .create_defaults()
+            .explode()
+        )
+    )
     response = await client.request(
         method="GET", path="/v1/team/%d" % id, headers=headers, json={},
     )

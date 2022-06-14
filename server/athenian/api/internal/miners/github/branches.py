@@ -36,14 +36,15 @@ class BranchMiner:
             strip,
         ),
     )
-    async def extract_branches(cls,
-                               repos: Optional[Iterable[str]],
-                               prefixer: Prefixer,
-                               meta_ids: Tuple[int, ...],
-                               mdb: DatabaseLike,
-                               cache: Optional[aiomcache.Client],
-                               strip: bool = False,
-                               ) -> Tuple[pd.DataFrame, Dict[str, str]]:
+    async def extract_branches(
+        cls,
+        repos: Optional[Iterable[str]],
+        prefixer: Prefixer,
+        meta_ids: Tuple[int, ...],
+        mdb: DatabaseLike,
+        cache: Optional[aiomcache.Client],
+        strip: bool = False,
+    ) -> Tuple[pd.DataFrame, Dict[str, str]]:
         """
         Fetch branches in the given repositories and extract the default branch names.
 
@@ -62,7 +63,8 @@ class BranchMiner:
         ambiguous_defaults = {}
         branch_repos = branches[Branch.repository_full_name.name].values
         unique_branch_repos, index_map, counts = np.unique(
-            branch_repos, return_inverse=True, return_counts=True)
+            branch_repos, return_inverse=True, return_counts=True
+        )
         if repos is None:
             repos = unique_branch_repos
         order = np.argsort(index_map)
@@ -90,15 +92,21 @@ class BranchMiner:
                     default_branch = "master"
                 log.warning(
                     "%s does not have an explicit default branch among %d listed, set to %s",
-                    repo, len(repo_branch_names), default_branch)
+                    repo,
+                    len(repo_branch_names),
+                    default_branch,
+                )
             default_branches[repo] = default_branch
             pos = next_pos
         if ambiguous_defaults:
             commit_ids = np.concatenate([rb[0] for rb in ambiguous_defaults.values()])
-            committed_dates = dict(await mdb.fetch_all(
-                select([NodeCommit.id, NodeCommit.committed_date])
-                .where(and_(NodeCommit.id.in_(commit_ids),
-                            NodeCommit.acc_id.in_(meta_ids)))))
+            committed_dates = dict(
+                await mdb.fetch_all(
+                    select([NodeCommit.id, NodeCommit.committed_date]).where(
+                        and_(NodeCommit.id.in_(commit_ids), NodeCommit.acc_id.in_(meta_ids))
+                    )
+                )
+            )
             for repo, (repo_commit_ids, repo_branch_names) in ambiguous_defaults.items():
                 default_branch = max_date = None
                 for name, commit_id in zip(repo_branch_names, repo_commit_ids):
@@ -109,15 +117,22 @@ class BranchMiner:
                         default_branch = name
                 if default_branch is None:
                     default_branch = "master"
-                log.warning("resolved <ambiguous> default branch in %s to %s",
-                            repo, default_branch)
+                log.warning(
+                    "resolved <ambiguous> default branch in %s to %s", repo, default_branch
+                )
                 default_branches[repo] = default_branch
         zero_branch_repos = [repo for repo in repos if repo not in default_branches]
         if zero_branch_repos:
             existing_zero_branch_repos = dict(
-                await mdb.fetch_all(select([Repository.node_id, Repository.full_name])
-                                    .where(and_(Repository.full_name.in_(zero_branch_repos),
-                                                Repository.acc_id.in_(meta_ids)))))
+                await mdb.fetch_all(
+                    select([Repository.node_id, Repository.full_name]).where(
+                        and_(
+                            Repository.full_name.in_(zero_branch_repos),
+                            Repository.acc_id.in_(meta_ids),
+                        )
+                    )
+                )
+            )
             deleted_repos = set(zero_branch_repos) - set(existing_zero_branch_repos.values())
             if deleted_repos:
                 for repo in deleted_repos:
@@ -125,11 +140,20 @@ class BranchMiner:
                 log.error("some repositories do not exist: %s", deleted_repos)
             if existing_zero_branch_repos:
                 rows = await mdb.fetch_all(
-                    select([NodeRepositoryRef.parent_id,
-                            func.count(NodeRepositoryRef.child_id).label("numrefs")])
-                    .where(and_(NodeRepositoryRef.acc_id.in_(meta_ids),
-                                NodeRepositoryRef.parent_id.in_(existing_zero_branch_repos)))
-                    .group_by(NodeRepositoryRef.parent_id))
+                    select(
+                        [
+                            NodeRepositoryRef.parent_id,
+                            func.count(NodeRepositoryRef.child_id).label("numrefs"),
+                        ]
+                    )
+                    .where(
+                        and_(
+                            NodeRepositoryRef.acc_id.in_(meta_ids),
+                            NodeRepositoryRef.parent_id.in_(existing_zero_branch_repos),
+                        )
+                    )
+                    .group_by(NodeRepositoryRef.parent_id)
+                )
                 refs = {r[NodeRepositoryRef.parent_id.name]: r["numrefs"] for r in rows}
                 reported_repos = set()
                 warnings = []
@@ -146,17 +170,22 @@ class BranchMiner:
 
     @classmethod
     @sentry_span
-    async def _extract_branches(cls,
-                                repos: Optional[Iterable[int]],
-                                meta_ids: Tuple[int, ...],
-                                mdb: DatabaseLike,
-                                ) -> pd.DataFrame:
-        query = select([Branch]).where(and_(
-            Branch.repository_node_id.in_(repos)
-            if repos is not None
-            else sa.true(),
-            Branch.acc_id.in_(meta_ids))) \
+    async def _extract_branches(
+        cls,
+        repos: Optional[Iterable[int]],
+        meta_ids: Tuple[int, ...],
+        mdb: DatabaseLike,
+    ) -> pd.DataFrame:
+        query = (
+            select([Branch])
+            .where(
+                and_(
+                    Branch.repository_node_id.in_(repos) if repos is not None else sa.true(),
+                    Branch.acc_id.in_(meta_ids),
+                )
+            )
             .with_statement_hint("IndexOnlyScan(c node_commit_repository_target)")
+        )
         df = await read_sql_query_with_join_collapse(query, mdb, Branch)
         for left_join_col in (Branch.repository_full_name.name,):
             if (not_null := is_not_null(df[left_join_col].values)).sum() < len(df):
@@ -164,10 +193,11 @@ class BranchMiner:
         return df
 
 
-async def load_branch_commit_dates(branches: pd.DataFrame,
-                                   meta_ids: Tuple[int, ...],
-                                   mdb: DatabaseLike,
-                                   ) -> None:
+async def load_branch_commit_dates(
+    branches: pd.DataFrame,
+    meta_ids: Tuple[int, ...],
+    mdb: DatabaseLike,
+) -> None:
     """Fetch the branch head commit dates if needed. The operation executes in-place."""
     if Branch.commit_date in branches:
         return
@@ -175,16 +205,21 @@ async def load_branch_commit_dates(branches: pd.DataFrame,
         branches[Branch.commit_date] = []
         return
     branch_commit_ids = branches[Branch.commit_id.name].values
-    branch_commit_dates = dict(await mdb.fetch_all(
-        select([NodeCommit.id, NodeCommit.committed_date])
-        .where(and_(NodeCommit.id.in_(branch_commit_ids),
-                    NodeCommit.acc_id.in_(meta_ids)))))
+    branch_commit_dates = dict(
+        await mdb.fetch_all(
+            select([NodeCommit.id, NodeCommit.committed_date]).where(
+                and_(NodeCommit.id.in_(branch_commit_ids), NodeCommit.acc_id.in_(meta_ids))
+            )
+        )
+    )
     if mdb.url.dialect == "sqlite":
-        branch_commit_dates = {k: v.replace(tzinfo=timezone.utc)
-                               for k, v in branch_commit_dates.items()}
+        branch_commit_dates = {
+            k: v.replace(tzinfo=timezone.utc) for k, v in branch_commit_dates.items()
+        }
     now = datetime.now(timezone.utc)
-    branches[Branch.commit_date] = [branch_commit_dates.get(commit_id, now)
-                                    for commit_id in branch_commit_ids]
+    branches[Branch.commit_date] = [
+        branch_commit_dates.get(commit_id, now) for commit_id in branch_commit_ids
+    ]
 
 
 def dummy_branches_df() -> pd.DataFrame:

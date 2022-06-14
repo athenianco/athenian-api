@@ -8,14 +8,26 @@ import sqlalchemy as sa
 
 from athenian.api.db import Database
 from athenian.api.models.state.models import Goal, Team, TeamGoal
-from tests.align.utils import align_graphql_request, assert_extension_error, \
-    get_extension_error_obj
+from tests.align.utils import (
+    align_graphql_request,
+    assert_extension_error,
+    get_extension_error_obj,
+)
 from tests.conftest import DEFAULT_HEADERS
 from tests.testutils.auth import mock_auth0
-from tests.testutils.db import assert_existing_row, assert_missing_row, db_datetime_equals, \
-    model_insert_stmt, models_insert
-from tests.testutils.factory.state import GoalFactory, TeamFactory, TeamGoalFactory, \
-    UserAccountFactory
+from tests.testutils.db import (
+    assert_existing_row,
+    assert_missing_row,
+    db_datetime_equals,
+    model_insert_stmt,
+    models_insert,
+)
+from tests.testutils.factory.state import (
+    GoalFactory,
+    TeamFactory,
+    TeamGoalFactory,
+    UserAccountFactory,
+)
 
 _USER_ID = "github|1"
 
@@ -127,9 +139,7 @@ class TestCreateGoalErrors(BaseCreateGoalTest):
 
     async def test_unexisting_team(self, client: TestClient, sdb: Database) -> None:
         variables = {
-            "createGoalInput": self._mk_input(
-                teamGoals={"teamId": 10, "target": {"int": 10}},
-            ),
+            "createGoalInput": self._mk_input(teamGoals={"teamId": 10, "target": {"int": 10}}),
             "accountId": 1,
         }
         res = await self._request(variables, client)
@@ -145,7 +155,8 @@ class TestCreateGoalErrors(BaseCreateGoalTest):
             {"teamId": 20, "target": {"int": 44}},
         ]
         variables = {
-            "createGoalInput": self._mk_input(teamGoals=team_goals), "accountId": 1,
+            "createGoalInput": self._mk_input(teamGoals=team_goals),
+            "accountId": 1,
         }
         res = await self._request(variables, client)
         assert "data" not in res
@@ -223,9 +234,7 @@ class TestCreateGoals(BaseCreateGoalTest):
             datetime(2023, 1, 1, tzinfo=timezone.utc),
         )
 
-        team_goals = await sdb.fetch_all(
-            sa.select([TeamGoal]).where(TeamGoal.goal_id == 1),
-        )
+        team_goals = await sdb.fetch_all(sa.select([TeamGoal]).where(TeamGoal.goal_id == 1))
         assert len(team_goals) == 1
 
         assert team_goals[0]["team_id"] == 10
@@ -387,7 +396,8 @@ class TestUpdateGoalErrors(BaseUpdateGoalTest):
         await models_insert(sdb, GoalFactory(id=100), TeamFactory(id=10))
 
         team_changes = [
-            {"teamId": 10, "target": {"int": 10}}, {"teamId": 10, "remove": True},
+            {"teamId": 10, "target": {"int": 10}},
+            {"teamId": 10, "remove": True},
         ]
         variables = {"accountId": 1, "input": {"goalId": 100, "teamGoalChanges": team_changes}}
         res = await self._request(variables, client)
@@ -446,7 +456,9 @@ class TestUpdateGoalErrors(BaseUpdateGoalTest):
         await assert_missing_row(sdb, TeamGoal, team_id=10)
 
     async def test_team_goals_to_remove_are_missing(
-        self, client: TestClient, sdb: Database,
+        self,
+        client: TestClient,
+        sdb: Database,
     ) -> None:
         await models_insert(
             sdb,
@@ -505,7 +517,8 @@ class TestUpdateGoal(BaseUpdateGoalTest):
         )
         team_changes = [{"teamId": 10, "remove": True}, {"teamId": 20, "remove": True}]
         variables = {
-            "accountId": 1, "input": {"goalId": 101, "teamGoalChanges": team_changes},
+            "accountId": 1,
+            "input": {"goalId": 101, "teamGoalChanges": team_changes},
         }
         res = await self._request(variables, client)
         assert res["data"]["updateGoal"]["goal"]["id"] == 101
@@ -526,7 +539,9 @@ class TestUpdateGoal(BaseUpdateGoalTest):
             TeamFactory(id=30),
             TeamGoalFactory(team_id=10, goal_id=100),
             TeamGoalFactory(
-                team_id=20, goal_id=100, target=9999,
+                team_id=20,
+                goal_id=100,
+                target=9999,
                 created_at=datetime(1, 1, 2, tzinfo=timezone.utc),
                 updated_at=datetime(1, 1, 3, tzinfo=timezone.utc),
             ),

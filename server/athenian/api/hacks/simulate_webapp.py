@@ -10,12 +10,8 @@ from athenian.api.async_utils import gather
 
 def extract_account_id(user):
     """Extract the account id from the user information."""
-    admin_accounts = [
-        acc_id for acc_id, is_admin in user["accounts"].items() if is_admin
-    ]
-    non_admin_accounts = [
-        acc_id for acc_id, is_admin in user["accounts"].items() if not is_admin
-    ]
+    admin_accounts = [acc_id for acc_id, is_admin in user["accounts"].items() if is_admin]
+    non_admin_accounts = [acc_id for acc_id, is_admin in user["accounts"].items() if not is_admin]
 
     return admin_accounts[0] if admin_accounts else non_admin_accounts[0]
 
@@ -38,9 +34,7 @@ async def do_request(client, url, headers, params=None):
         timing = (end - start).total_seconds()
         headers = resp.headers
 
-        perf_headers = {
-            k: v for k, v in headers.items() if k.startswith("X-Performance")
-        }
+        perf_headers = {k: v for k, v in headers.items() if k.startswith("X-Performance")}
 
         return (
             out,
@@ -80,7 +74,14 @@ async def get_reposet(client, headers, reposet_id):
 
 
 async def filter_repositories(
-    client, headers, account_id, date_from, date_to, exclude_inactive, repos, timezone,
+    client,
+    headers,
+    account_id,
+    date_from,
+    date_to,
+    exclude_inactive,
+    repos,
+    timezone,
 ):
     """Filter repositories according to the provided filter paramaters."""
     url = "https://api.athenian.co/v1/filter/repositories"
@@ -112,7 +113,13 @@ async def get_teams(client, headers, account_id):
 
 
 async def filter_contributors(
-    client, headers, account_id, date_from, date_to, repos, timezone,
+    client,
+    headers,
+    account_id,
+    date_from,
+    date_to,
+    repos,
+    timezone,
 ):
     """Filter contributors according to the provided filter paramaters."""
     url = "https://api.athenian.co/v1/filter/contributors"
@@ -128,7 +135,14 @@ async def filter_contributors(
 
 
 async def chained_filter_repositories_labels(
-    client, headers, account_id, date_from, date_to, exclude_inactive, repos, timezone,
+    client,
+    headers,
+    account_id,
+    date_from,
+    date_to,
+    exclude_inactive,
+    repos,
+    timezone,
 ):
     """Chain the request to get filtered repos and labels."""
     filtered_repositories, fr_datapoint = await filter_repositories(
@@ -149,7 +163,13 @@ async def chained_filter_repositories_labels(
 
 
 async def chained_get_teams_filter_contributors(
-    client, headers, account_id, date_from, date_to, repos, timezone,
+    client,
+    headers,
+    account_id,
+    date_from,
+    date_to,
+    repos,
+    timezone,
 ):
     """Chain the request to get teams and filtered contributors."""
     teams, teams_datapoint = await get_teams(client, headers, account_id)
@@ -322,7 +342,14 @@ async def get_metrics_prs(
 
 
 async def get_metrics_developers(
-    client, headers, account_id, date_from, date_to, repos, contributors, timezone,
+    client,
+    headers,
+    account_id,
+    date_from,
+    date_to,
+    repos,
+    contributors,
+    timezone,
 ):
     """Get the developers' metrics for the PRs filetered with the provided params."""
     url = "https://api.athenian.co/v1/metrics/developers"
@@ -381,13 +408,18 @@ async def get_metrics_releases(
 
 
 async def main(
-    token, date_from, date_to, exclude_inactive, limit, timezone, cache_enabled,
+    token,
+    date_from,
+    date_to,
+    exclude_inactive,
+    limit,
+    timezone,
+    cache_enabled,
 ):
     """Run the benchmarker emulating the refresh of the webapp Overview section."""
     print("=========================")
     print(
-        f"Starting benchmark: [{date_from}, {date_to}], exclude_inactive={exclude_inactive}, "
-        f"limit={limit}, timezone={timezone}, cache_enabled={cache_enabled}",
+        f"Starting benchmark: [{date_from}, {date_to}], exclude_inactive={exclude_inactive}, limit={limit}, timezone={timezone}, cache_enabled={cache_enabled}",  # noqa
     )
     print("=========================")
 

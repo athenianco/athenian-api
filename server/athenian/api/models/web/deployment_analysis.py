@@ -15,9 +15,11 @@ class DeploymentAnalysisUnsealed(Model, sealed=False):
 
     attribute_map = {"code": "code", "releases": "releases"}
 
-    def __init__(self,
-                 code: Optional[DeploymentAnalysisCode] = None,
-                 releases: Optional[List[FilteredRelease]] = None):
+    def __init__(
+        self,
+        code: Optional[DeploymentAnalysisCode] = None,
+        releases: Optional[List[FilteredRelease]] = None,
+    ):
         """DeploymentAnalysis - a model defined in OpenAPI
 
         :param code: The code of this DeploymentAnalysis.

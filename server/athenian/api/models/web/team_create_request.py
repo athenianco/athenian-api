@@ -21,11 +21,11 @@ class TeamCreateRequest(Model):
     }
 
     def __init__(
-            self,
-            account: Optional[int] = None,
-            name: Optional[str] = None,
-            members: Optional[List[str]] = None,
-            parent: Optional[int] = None,
+        self,
+        account: Optional[int] = None,
+        name: Optional[str] = None,
+        members: Optional[List[str]] = None,
+        parent: Optional[int] = None,
     ):
         """TeamCreateRequest - a model defined in OpenAPI
 

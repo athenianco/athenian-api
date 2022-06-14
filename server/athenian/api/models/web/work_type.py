@@ -12,10 +12,12 @@ class WorkType(Model):
 
     attribute_map = {"name": "name", "color": "color", "rules": "rules"}
 
-    def __init__(self,
-                 name: Optional[str] = None,
-                 color: Optional[str] = None,
-                 rules: Optional[List[WorkTypeRule]] = None):
+    def __init__(
+        self,
+        name: Optional[str] = None,
+        color: Optional[str] = None,
+        rules: Optional[List[WorkTypeRule]] = None,
+    ):
         """WorkType - a model defined in OpenAPI
 
         :param name: The name of this WorkType.
@@ -48,7 +50,8 @@ class WorkType(Model):
             raise ValueError("Invalid value for `name`, must not be `None`")
         if len(name) < 1:
             raise ValueError(
-                "Invalid value for `name`, length must be greater than or equal to `1`")
+                "Invalid value for `name`, length must be greater than or equal to `1`"
+            )
 
         self._name = name
 
@@ -75,7 +78,8 @@ class WorkType(Model):
         if not re.fullmatch(r"[0-9a-fA-F]{6}", color):
             raise ValueError(
                 "Invalid value for `color`, must be a follow pattern or equal to "
-                "`/^[0-9a-fA-F]{6}$/`")
+                "`/^[0-9a-fA-F]{6}$/`"
+            )
 
         self._color = color
 

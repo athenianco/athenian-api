@@ -38,10 +38,9 @@ class GraphQL:
         self.schema = schema
         self.dumps = dumps
 
-    def attach(self,
-               app: aiohttp.web.Application,
-               base_path: str,
-               middlewares: Iterable[Any]) -> None:
+    def attach(
+        self, app: aiohttp.web.Application, base_path: str, middlewares: Iterable[Any]
+    ) -> None:
         """Register self in the parent application under `base_path`."""
         # NOTE we use HTTPPermanentRedirect (308) because
         # clients sometimes turn POST requests into GET requests
@@ -98,8 +97,13 @@ class HandleErrorExtension(Extension):
     AriadneException is invisible to `except Exception` and we handle it in AthenianApp._shielded.
     """
 
-    async def resolve(self, next_: Resolver, parent: Any, info: GraphQLResolveInfo, **kwargs,
-                      ) -> Any:
+    async def resolve(
+        self,
+        next_: Resolver,
+        parent: Any,
+        info: GraphQLResolveInfo,
+        **kwargs,
+    ) -> Any:
         """Wrap the resolution flow in try-except."""
         try:
             return await super().resolve(next_, parent, info, **kwargs)
@@ -115,8 +119,10 @@ class HandleErrorExtension(Extension):
 
 def ariadne_disable_default_user(resolver: Callable) -> Any:
     """Decorate an ariadne resolver function to disable default user access."""
+
     def wrapper(obj: Any, info: GraphQLResolveInfo, **kwargs: Any) -> Any:
         ensure_non_default_user(info.context)
         return resolver(obj, info, **kwargs)
+
     wraps(wrapper, resolver)
     return wrapper
