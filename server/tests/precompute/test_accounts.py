@@ -42,10 +42,10 @@ class TestMain:
         )
 
         ctx = build_context(sdb=sdb, mdb=mdb, pdb=pdb, rdb=rdb)
-        namespace = self._namespace(account=["11", "12"])
+        namespace = self._namespace(account=["11", "12"], disable_isolation=True)
 
         with self._wrap_precompute() as precompute_mock:
-            await main(ctx, namespace, isolate=False)
+            await main(ctx, namespace)
 
         assert precompute_mock.call_count == 2
         # real precompute_reposet calls order is undefined, order calls by account id
@@ -72,10 +72,10 @@ class TestMain:
             AccountGitHubAccount(id=1011, account_id=11),
         )
         ctx = build_context(sdb=sdb, mdb=mdb, pdb=pdb, rdb=rdb)
-        namespace = self._namespace(account=["11", "12"])
+        namespace = self._namespace(account=["11", "12"], disable_isolation=True)
 
         with self._wrap_precompute() as precompute_mock:
-            await main(ctx, namespace, isolate=False)
+            await main(ctx, namespace)
 
         # precompute is not called on account 12
         assert precompute_mock.call_count == 1
@@ -94,10 +94,10 @@ class TestMain:
             AccountGitHubAccount(id=2011, account_id=11),
         )
         ctx = build_context(sdb=sdb, mdb=mdb, pdb=pdb, rdb=rdb)
-        namespace = self._namespace(account=["11"])
+        namespace = self._namespace(account=["11"], disable_isolation=True)
 
         with self._wrap_precompute() as precompute_mock:
-            await main(ctx, namespace, isolate=False)
+            await main(ctx, namespace)
 
         assert precompute_mock.call_count == 1
         assert precompute_mock.call_args[0][0].owner_id == 11
