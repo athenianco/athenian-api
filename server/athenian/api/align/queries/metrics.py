@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from itertools import chain
 from typing import Any, Collection, Dict, Iterable, List, Mapping, Optional, Sequence, Set, \
     Tuple, Union
@@ -61,14 +61,7 @@ async def resolve_metrics_current_values(obj: Any,
         ),
         get_metadata_account_ids(accountId, sdb, cache),
     )
-    date_from, date_to = params[MetricParamsFields.validFrom], params[MetricParamsFields.expiresAt]
-    if date_from > date_to:
-        raise ResponseError(InvalidRequestError(
-            pointer=f".{MetricParamsFields.validFrom} or .{MetricParamsFields.expiresAt}",
-            detail=f"{MetricParamsFields.validFrom} must be less than or equal to "
-                   f"{MetricParamsFields.expiresAt}",
-        ))
-    time_interval = goal_dates_to_datetimes(date_from, date_to)
+    time_interval = _parse_time_interval(params)
     teams_flat = flatten_teams(team_rows)
     teams = {row[Team.id.name]: teams_flat[row[Team.id.name]] for row in team_rows}
     team_metrics_all_intervals = await calculate_team_metrics(
@@ -82,6 +75,24 @@ async def resolve_metrics_current_values(obj: Any,
 
     models = _build_metrics_response(team_tree, team_metrics)
     return [m.to_dict() for m in models]
+
+
+def _parse_time_interval(params: Mapping[str, Any]) -> Tuple[datetime, datetime]:
+    date_from, date_to = params[MetricParamsFields.validFrom], params[MetricParamsFields.expiresAt]
+    if date_from > date_to:
+        raise ResponseError(InvalidRequestError(
+            pointer=f".{MetricParamsFields.validFrom} or .{MetricParamsFields.expiresAt}",
+            detail=(
+                f"{MetricParamsFields.validFrom} must be less than or equal to "
+                f"{MetricParamsFields.expiresAt}"
+            ),
+        ))
+    if date_from > datetime.now(timezone.utc).date():
+        raise ResponseError(InvalidRequestError(
+            pointer=f".{MetricParamsFields.validFrom}",
+            detail=f"{MetricParamsFields.validFrom} cannot be in the future",
+        ))
+    return goal_dates_to_datetimes(date_from, date_to)
 
 
 def _triage_metrics(metrics: List[str]) -> Tuple[List[str], List[str], List[str]]:
