@@ -2,8 +2,9 @@ from datetime import date
 from typing import List, Optional
 
 from athenian.api.models.web.base_model_ import Model
-from athenian.api.models.web.calculated_developer_metrics_item import \
-    CalculatedDeveloperMetricsItem
+from athenian.api.models.web.calculated_developer_metrics_item import (
+    CalculatedDeveloperMetricsItem,
+)
 from athenian.api.models.web.granularity import Granularity
 
 
@@ -165,10 +166,12 @@ class CalculatedDeveloperMetrics(Model):
         """
         if timezone is not None and timezone > 720:
             raise ValueError(
-                "Invalid value for `timezone`, must be a value less than or equal to `720`")
+                "Invalid value for `timezone`, must be a value less than or equal to `720`",
+            )
         if timezone is not None and timezone < -720:
             raise ValueError(
-                "Invalid value for `timezone`, must be a value greater than or equal to `-720`")
+                "Invalid value for `timezone`, must be a value greater than or equal to `-720`",
+            )
 
         self._timezone = timezone
 
@@ -191,7 +194,8 @@ class CalculatedDeveloperMetrics(Model):
         for i, g in enumerate(granularities):
             if not Granularity.format.match(g):
                 raise ValueError(
-                    'Invalid value for `granularity[%d]`: "%s"` does not match /%s/' %
-                    (i, g, Granularity.format.pattern))
+                    'Invalid value for `granularity[%d]`: "%s"` does not match /%s/'
+                    % (i, g, Granularity.format.pattern),
+                )
 
         self._granularities = granularities

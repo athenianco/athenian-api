@@ -5,12 +5,12 @@ import site
 
 site.ENABLE_USER_SITE = True  # workaround https://github.com/pypa/pip/issues/7953
 
-from setuptools import find_packages, setup  # noqa: E402
 # The following import has to stay after imports from `setuptools`:
 # - https://stackoverflow.com/questions/21594925/
 #     error-each-element-of-ext-modules-option-must-be-an-extension-instance-or-2-t
 from Cython.Build import cythonize  # noqa: I100, E402
 import numpy as np  # noqa: I100, E402
+from setuptools import find_packages, setup  # noqa: E402
 
 project_root = Path(__file__).parent
 code_root = project_root / "athenian" / "api"
@@ -33,14 +33,23 @@ setup(
     url="https://github.com/athenian/athenian-api",
     download_url="https://github.com/athenian/athenian-api",
     packages=find_packages(exclude=["tests"]),
-    ext_modules=cythonize([str(p) for p in (
-        code_root / "internal" / "miners" / "github" / "dag_accelerated.pyx",
-        code_root / "internal" / "miners" / "github" / "check_run_accelerated.pyx",
-        code_root / "internal" / "features" / "github" / "check_run_metrics_accelerated.pyx",
-        code_root / "to_object_arrays.pyx",
-        code_root / "unordered_unique.pyx",
-        code_root / "models" / "sql_builders.pyx",
-    )]),
+    ext_modules=cythonize(
+        [
+            str(p)
+            for p in (
+                code_root / "internal" / "miners" / "github" / "dag_accelerated.pyx",
+                code_root / "internal" / "miners" / "github" / "check_run_accelerated.pyx",
+                code_root
+                / "internal"
+                / "features"
+                / "github"
+                / "check_run_metrics_accelerated.pyx",
+                code_root / "to_object_arrays.pyx",
+                code_root / "unordered_unique.pyx",
+                code_root / "models" / "sql_builders.pyx",
+            )
+        ],
+    ),
     include_dirs=[np.get_include()],
     namespace_packages=["athenian"],
     keywords=[],

@@ -67,5 +67,9 @@ class _FilterRepositoriesRequest(Model, sealed=False):
         self._exclude_inactive = exclude_inactive
 
 
-FilterRepositoriesRequest = AllOf(_FilterRepositoriesRequest, CommonFilterProperties,
-                                  name="FilterRepositoriesRequest", module=__name__)
+FilterRepositoriesRequest = AllOf(
+    _FilterRepositoriesRequest,
+    CommonFilterProperties,
+    name="FilterRepositoriesRequest",
+    module=__name__,
+)

@@ -1,12 +1,18 @@
 from datetime import datetime, timedelta
-from enum import auto, IntEnum
+from enum import IntEnum, auto
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple, Type, Union
 
 import numpy as np
 import pandas as pd
 
-from athenian.api.models.metadata.github import NodePullRequest, PullRequest, PullRequestComment, \
-    PullRequestCommit, PullRequestReview, Release
+from athenian.api.models.metadata.github import (
+    NodePullRequest,
+    PullRequest,
+    PullRequestComment,
+    PullRequestCommit,
+    PullRequestReview,
+    Release,
+)
 from athenian.api.typing_utils import dataclass, numpy_struct
 
 
@@ -192,13 +198,17 @@ class MinedPullRequest:
         participants = {
             PRParticipationKind.AUTHOR: {author} if author else set(),
             PRParticipationKind.REVIEWER: self._extract_people(
-                self.reviews, PullRequestReview.user_node_id.name),
+                self.reviews, PullRequestReview.user_node_id.name,
+            ),
             PRParticipationKind.COMMENTER: self._extract_people(
-                self.comments, PullRequestComment.user_node_id.name),
+                self.comments, PullRequestComment.user_node_id.name,
+            ),
             PRParticipationKind.COMMIT_COMMITTER: self._extract_people(
-                self.commits, PullRequestCommit.committer_user_id.name),
+                self.commits, PullRequestCommit.committer_user_id.name,
+            ),
             PRParticipationKind.COMMIT_AUTHOR: self._extract_people(
-                self.commits, PullRequestCommit.author_user_id.name),
+                self.commits, PullRequestCommit.author_user_id.name,
+            ),
             PRParticipationKind.MERGER: {merger} if merger else set(),
             PRParticipationKind.RELEASER: {releaser} if releaser else set(),
         }
@@ -281,9 +291,17 @@ class PullRequestFacts:
             return self.released
         if self.closed is not None:
             return self.closed
-        return max(t for t in (self.created, self.first_commit, self.last_commit,
-                               self.first_review_request, self.last_review)
-                   if t is not None)
+        return max(
+            t
+            for t in (
+                self.created,
+                self.first_commit,
+                self.last_commit,
+                self.first_review_request,
+                self.last_review,
+            )
+            if t is not None
+        )
 
     def truncate(self, after_dt: Union[pd.Timestamp, datetime]) -> "PullRequestFacts":
         """Create a copy of the facts without timestamps bigger than or equal to `dt`."""
@@ -301,11 +319,11 @@ class PullRequestFacts:
         for k in changed:
             arr[k] = None
         arr["done"] = (
-            (released := arr["released"]) == released or
-            arr["force_push_dropped"] or
-            ((closed := arr["closed"]) == closed and (merged := arr["merged"]) != merged)
+            (released := arr["released"]) == released
+            or arr["force_push_dropped"]
+            or ((closed := arr["closed"]) == closed and (merged := arr["merged"]) != merged)
         )
-        data = b"".join([arr.view(np.byte).data, self.data[self.dtype.itemsize:]])
+        data = b"".join([arr.view(np.byte).data, self.data[self.dtype.itemsize :]])
         if len(self.deployed):
             deployed = np.asarray(self.deployed)
             np_after_dt = np.array(after_dt, dtype=deployed.dtype)
@@ -313,11 +331,13 @@ class PullRequestFacts:
             deployed = deployed[deps_passed]
             deployments = [self.deployments[i] for i in deps_passed]
             environments = [self.environments[i] for i in deps_passed]
-            return PullRequestFacts(data,
-                                    node_id=self.node_id,
-                                    deployed=deployed,
-                                    deployments=deployments,
-                                    environments=environments)
+            return PullRequestFacts(
+                data,
+                node_id=self.node_id,
+                deployed=deployed,
+                deployments=deployments,
+                environments=environments,
+            )
         return PullRequestFacts(data, node_id=self.node_id)
 
     def __lt__(self, other: "PullRequestFacts") -> bool:

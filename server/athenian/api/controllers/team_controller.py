@@ -11,15 +11,26 @@ from athenian.api.async_utils import gather
 from athenian.api.auth import disable_default_user
 from athenian.api.balancing import weight
 from athenian.api.db import DatabaseLike
-from athenian.api.internal.account import copy_teams_as_needed, get_metadata_account_ids, \
-    get_user_account_status_from_request
+from athenian.api.internal.account import (
+    copy_teams_as_needed,
+    get_metadata_account_ids,
+    get_user_account_status_from_request,
+)
 from athenian.api.internal.team import get_all_team_members, get_root_team
 from athenian.api.models.metadata.github import User
 from athenian.api.models.state.models import Team
-from athenian.api.models.web import BadRequestError, CreatedIdentifier, DatabaseConflict, \
-    ForbiddenError, NotFoundError, Team as TeamListItem, TeamCreateRequest, TeamUpdateRequest
+from athenian.api.models.web import (
+    BadRequestError,
+    CreatedIdentifier,
+    DatabaseConflict,
+    ForbiddenError,
+    NotFoundError,
+    Team as TeamListItem,
+    TeamCreateRequest,
+    TeamUpdateRequest,
+)
 from athenian.api.request import AthenianWebRequest
-from athenian.api.response import model_response, ResponseError
+from athenian.api.response import ResponseError, model_response
 
 
 @disable_default_user
@@ -47,8 +58,10 @@ async def create_team(request: AthenianWebRequest, body: dict) -> web.Response:
         try:
             tid = await sdb_conn.execute(insert(Team).values(t.explode()))
         except (UniqueViolationError, IntegrityError, OperationalError) as err:
-            raise ResponseError(DatabaseConflict(
-                detail="Team '%s' already exists: %s: %s" % (name, type(err).__name__, err)),
+            raise ResponseError(
+                DatabaseConflict(
+                    detail="Team '%s' already exists: %s: %s" % (name, type(err).__name__, err),
+                ),
             ) from None
         return model_response(CreatedIdentifier(tid))
 
@@ -69,10 +82,11 @@ async def delete_team(request: AthenianWebRequest, id: int) -> web.Response:
             if (parent_id := team[Team.parent_id.name]) is None:
                 raise ResponseError(BadRequestError(detail="Root team cannot be deleted."))
 
-            await sdb_conn.execute(update(Team)
-                                   .where(Team.parent_id == id)
-                                   .values({Team.parent_id: parent_id,
-                                            Team.updated_at: datetime.now(timezone.utc)}))
+            await sdb_conn.execute(
+                update(Team)
+                .where(Team.parent_id == id)
+                .values({Team.parent_id: parent_id, Team.updated_at: datetime.now(timezone.utc)}),
+            )
 
             await sdb_conn.execute(delete(Team).where(Team.id == id))
     return web.json_response({})
@@ -91,13 +105,16 @@ async def get_team(request: AthenianWebRequest, id: int) -> web.Response:
         await get_user_account_status_from_request(request, account)
         meta_ids = await get_metadata_account_ids(account, sdb_conn, request.cache)
     members = await get_all_team_members(
-        team[Team.members.name], account, meta_ids, request.mdb, request.sdb, request.cache)
-    model = TeamListItem(id=team[Team.id.name],
-                         name=team[Team.name.name],
-                         parent=team[Team.parent_id.name],
-                         members=sorted((members[m] for m in team[Team.members.name]
-                                         if m in members),
-                                        key=lambda u: u.login))
+        team[Team.members.name], account, meta_ids, request.mdb, request.sdb, request.cache,
+    )
+    model = TeamListItem(
+        id=team[Team.id.name],
+        name=team[Team.name.name],
+        parent=team[Team.parent_id.name],
+        members=sorted(
+            (members[m] for m in team[Team.members.name] if m in members), key=lambda u: u.login,
+        ),
+    )
     return model_response(model)
 
 
@@ -110,33 +127,40 @@ async def list_teams(request: AthenianWebRequest, id: int) -> web.Response:
     async with request.sdb.connection() as sdb_conn:
         await get_user_account_status_from_request(request, account)
         teams, meta_ids = await gather(
-            sdb_conn.fetch_all(
-                select([Team]).where(Team.owner_id == account).order_by(Team.name)),
+            sdb_conn.fetch_all(select([Team]).where(Team.owner_id == account).order_by(Team.name)),
             get_metadata_account_ids(account, sdb_conn, request.cache),
         )
     return await _list_loaded_teams(teams, account, meta_ids, request)
 
 
-async def _list_loaded_teams(teams: List[Mapping[str, Any]],
-                             account: int,
-                             meta_ids: Tuple[int, ...],
-                             request: AthenianWebRequest,
-                             ) -> web.Response:
+async def _list_loaded_teams(
+    teams: List[Mapping[str, Any]],
+    account: int,
+    meta_ids: Tuple[int, ...],
+    request: AthenianWebRequest,
+) -> web.Response:
     gh_user_ids = set(chain.from_iterable([t[Team.members.name] for t in teams]))
     all_members = await get_all_team_members(
-        gh_user_ids, account, meta_ids, request.mdb, request.sdb, request.cache)
-    items = [TeamListItem(id=t[Team.id.name],
-                          name=t[Team.name.name],
-                          parent=t[Team.parent_id.name],
-                          members=[all_members[m] for m in t[Team.members.name]
-                                   if m in all_members])
-             for t in teams]
+        gh_user_ids, account, meta_ids, request.mdb, request.sdb, request.cache,
+    )
+    items = [
+        TeamListItem(
+            id=t[Team.id.name],
+            name=t[Team.name.name],
+            parent=t[Team.parent_id.name],
+            members=[all_members[m] for m in t[Team.members.name] if m in all_members],
+        )
+        for t in teams
+    ]
     return model_response(items)
 
 
 @disable_default_user
-async def update_team(request: AthenianWebRequest, id: int,
-                      body: Union[dict, bytes] = None) -> web.Response:
+async def update_team(
+    request: AthenianWebRequest,
+    id: int,
+    body: Union[dict, bytes] = None,
+) -> web.Response:
     """Update a team.
 
     :param id: Numeric identifier of the team to update.
@@ -154,9 +178,9 @@ async def update_team(request: AthenianWebRequest, id: int,
 
             new_parent_id = body.parent
             if id == new_parent_id:
-                raise ResponseError(BadRequestError(
-                    detail="Team cannot be a the parent of itself.",
-                ))
+                raise ResponseError(
+                    BadRequestError(detail="Team cannot be a the parent of itself."),
+                )
 
             if team[Team.parent_id.name] is None:
                 if new_parent_id is not None:
@@ -185,8 +209,11 @@ async def update_team(request: AthenianWebRequest, id: int,
             try:
                 await sdb_conn.execute(update(Team).where(Team.id == id).values(values))
             except (UniqueViolationError, IntegrityError, OperationalError) as err:
-                return ResponseError(DatabaseConflict(
-                    detail="Team '%s' already exists: %s: %s" % (name, type(err).__name__, err)),
+                return ResponseError(
+                    DatabaseConflict(
+                        detail="Team '%s' already exists: %s: %s"
+                        % (name, type(err).__name__, err),
+                    ),
                 ).response
     return web.json_response({})
 
@@ -195,31 +222,35 @@ def _check_name(name: str) -> str:
     if not name:
         raise ResponseError(BadRequestError("Name of the team cannot be empty."))
     if len(name) > 255:
-        raise ResponseError(BadRequestError(
-            "Name of the team cannot be longer than 255 Python chars."))
+        raise ResponseError(
+            BadRequestError("Name of the team cannot be longer than 255 Python chars."),
+        )
     return name
 
 
-async def _resolve_members(members: List[str],
-                           meta_ids: Tuple[int, ...],
-                           mdb: DatabaseLike,
-                           ) -> List[int]:
+async def _resolve_members(
+    members: List[str],
+    meta_ids: Tuple[int, ...],
+    mdb: DatabaseLike,
+) -> List[int]:
     to_fetch = set()
     members = set(members)
     for m in members:
         if len(splitted := m.rsplit("/", 1)) == 2:
             to_fetch.add(splitted[1])
 
-    rows = await mdb.fetch_all(select([User.html_url, User.node_id])
-                               .where(and_(User.acc_id.in_(meta_ids),
-                                           User.login.in_(to_fetch)))
-                               .order_by(User.node_id))
+    rows = await mdb.fetch_all(
+        select([User.html_url, User.node_id])
+        .where(and_(User.acc_id.in_(meta_ids), User.login.in_(to_fetch)))
+        .order_by(User.node_id),
+    )
     exist = {r[0].split("://", 1)[1] for r in rows}
     invalid_members = sorted(members - exist)
 
     if invalid_members:
-        raise ResponseError(BadRequestError(
-            detail="Invalid members of the team: %s" % ", ".join(invalid_members)))
+        raise ResponseError(
+            BadRequestError(detail="Invalid members of the team: %s" % ", ".join(invalid_members)),
+        )
 
     return [r[1] for r in rows]
 
@@ -234,8 +265,9 @@ async def _check_parent(account: int, parent_id: Optional[int], sdb: DatabaseLik
 
 async def _check_parent_cycle(team_id: int, parent_id: Optional[int], sdb: DatabaseLike) -> None:
     while parent_id not in (visited := {None, team_id}):
-        visited.add(parent_id := await sdb.fetch_val(
-            select([Team.parent_id]).where(Team.id == parent_id)))
+        visited.add(
+            parent_id := await sdb.fetch_val(select([Team.parent_id]).where(Team.id == parent_id)),
+        )
     if parent_id is not None:
         visited.remove(None)
         raise ResponseError(BadRequestError(detail="Detected a team parent cycle: %s." % visited))
@@ -254,15 +286,23 @@ async def resync_teams(request: AthenianWebRequest, id: int) -> web.Response:
     """
     account = id
     if not await get_user_account_status_from_request(request, account):
-        raise ResponseError(ForbiddenError(
-            detail="User %s may not resynchronize teams %d" % (request.uid, account)))
+        raise ResponseError(
+            ForbiddenError(
+                detail="User %s may not resynchronize teams %d" % (request.uid, account),
+            ),
+        )
     async with request.sdb.connection() as sdb_conn:
         meta_ids = await get_metadata_account_ids(account, sdb_conn, request.cache)
         root_team_id = (await get_root_team(account, sdb_conn))[Team.id.name]
         async with sdb_conn.transaction():
-            await sdb_conn.execute(delete(Team).where(and_(Team.owner_id == account,
-                                                           Team.name != Team.BOTS,
-                                                           Team.id != root_team_id)))
+            await sdb_conn.execute(
+                delete(Team).where(
+                    and_(
+                        Team.owner_id == account, Team.name != Team.BOTS, Team.id != root_team_id,
+                    ),
+                ),
+            )
             teams, _ = await copy_teams_as_needed(
-                account, meta_ids, root_team_id, sdb_conn, request.mdb, request.cache)
+                account, meta_ids, root_team_id, sdb_conn, request.mdb, request.cache,
+            )
     return await _list_loaded_teams(teams, account, meta_ids, request)

@@ -10,9 +10,7 @@ class LogicalPRRules(Model):
 
     attribute_map = {"title": "title", "labels_include": "labels_include"}
 
-    def __init__(self,
-                 title: Optional[str] = None,
-                 labels_include: Optional[List[str]] = None):
+    def __init__(self, title: Optional[str] = None, labels_include: Optional[List[str]] = None):
         """LogicalPRRules - a model defined in OpenAPI
 
         :param title: The title of this LogicalPRRules.

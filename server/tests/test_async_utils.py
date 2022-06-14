@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, Column, insert, Integer, select
+from sqlalchemy import BigInteger, Column, Integer, insert, select
 
 from athenian.api.async_utils import read_sql_query
 from athenian.api.models.state.models import Base
@@ -16,9 +16,14 @@ async def test_erase_integer_nulls(sdb):
     await sdb.execute(insert(NullsModel).values({"id": 1, "int_col": None}))
     df = await read_sql_query(select([NullsModel]), sdb, NullsModel)
     assert len(df) == 1
-    df = await read_sql_query(select([NullsModel]), sdb, [
-        NullsModel.id, Column(Integer, name="int_col", nullable=False, info={"erase_nulls": True}),
-    ])
+    df = await read_sql_query(
+        select([NullsModel]),
+        sdb,
+        [
+            NullsModel.id,
+            Column(Integer, name="int_col", nullable=False, info={"erase_nulls": True}),
+        ],
+    )
     assert len(df) == 0
 
 
@@ -26,8 +31,13 @@ async def test_reset_integer_nulls(sdb):
     await sdb.execute(insert(NullsModel).values({"id": 1, "int_col": None}))
     df = await read_sql_query(select([NullsModel]), sdb, NullsModel)
     assert len(df) == 1
-    df = await read_sql_query(select([NullsModel]), sdb, [
-        NullsModel.id, Column(Integer, name="int_col", nullable=False, info={"reset_nulls": True}),
-    ])
+    df = await read_sql_query(
+        select([NullsModel]),
+        sdb,
+        [
+            NullsModel.id,
+            Column(Integer, name="int_col", nullable=False, info={"reset_nulls": True}),
+        ],
+    )
     assert len(df) == 1
     assert df.iloc[0]["int_col"] == 0

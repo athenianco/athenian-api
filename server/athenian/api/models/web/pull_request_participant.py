@@ -13,8 +13,15 @@ class PullRequestParticipant(Model):
     STATUS_COMMENTER = "commenter"
     STATUS_MERGER = "merger"
     STATUS_RELEASER = "releaser"
-    STATUSES = {STATUS_AUTHOR, STATUS_REVIEWER, STATUS_COMMIT_AUTHOR, STATUS_COMMIT_COMMITTER,
-                STATUS_COMMENTER, STATUS_MERGER, STATUS_RELEASER}
+    STATUSES = {
+        STATUS_AUTHOR,
+        STATUS_REVIEWER,
+        STATUS_COMMIT_AUTHOR,
+        STATUS_COMMIT_COMMITTER,
+        STATUS_COMMENTER,
+        STATUS_MERGER,
+        STATUS_RELEASER,
+    }
     attribute_types = {"id": str, "status": List[str]}
     attribute_map = {"id": "id", "status": "status"}
 
@@ -71,6 +78,7 @@ class PullRequestParticipant(Model):
         for v in status:
             if v not in self.STATUSES:
                 raise ValueError(
-                    "Invalid value for `status` (%s), must be one of %s" % (v, self.STATUSES))
+                    "Invalid value for `status` (%s), must be one of %s" % (v, self.STATUSES),
+                )
 
         self._status = status

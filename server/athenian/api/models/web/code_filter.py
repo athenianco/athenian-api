@@ -50,11 +50,14 @@ class _CodeFilter(Model, sealed=False):
         if granularity is None:
             raise ValueError("Invalid value for `granularity`, must not be `None`")
         if not Granularity.format.match(granularity):
-            raise ValueError("Invalid value for `granularity`, does not match /%s/" %
-                             Granularity.format.pattern)
+            raise ValueError(
+                "Invalid value for `granularity`, does not match /%s/"
+                % Granularity.format.pattern,
+            )
 
         self._granularity = granularity
 
 
-CodeFilter = AllOf(_CodeFilter, _CommitFilter, CommonFilterProperties,
-                   name="CodeFilter", module=__name__)
+CodeFilter = AllOf(
+    _CodeFilter, _CommitFilter, CommonFilterProperties, name="CodeFilter", module=__name__,
+)

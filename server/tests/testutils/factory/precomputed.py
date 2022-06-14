@@ -5,8 +5,11 @@ import hashlib
 
 import factory
 
-from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, \
-    GitHubOpenPullRequestFacts, GitHubRelease
+from athenian.api.models.precomputed.models import (
+    GitHubDonePullRequestFacts,
+    GitHubOpenPullRequestFacts,
+    GitHubRelease,
+)
 
 from .alchemy import SQLAlchemyModelFactory
 from .common import DEFAULT_ACCOUNT_ID

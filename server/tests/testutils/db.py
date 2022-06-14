@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 from functools import reduce
-from typing import Any, cast, Union
+from typing import Any, Union, cast
 
 import asyncpg
 import sqlalchemy as sa
@@ -38,7 +38,9 @@ async def assert_missing_row(db: DatabaseLike, table: DeclarativeMeta, **kwargs:
 
 
 async def assert_existing_row(
-    db: DatabaseLike, table: DeclarativeMeta, **kwargs: Any,
+    db: DatabaseLike,
+    table: DeclarativeMeta,
+    **kwargs: Any,
 ) -> Union[asyncpg.Record, Row]:
     """Assert that a row with the given properties exists, and return the row."""
     where_clause = _build_table_where_clause(table, **kwargs)

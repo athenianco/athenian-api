@@ -10,7 +10,8 @@ class TestGroupPRsByParticipants:
         items = pd.DataFrame({"author": [20, 30], "values": [100, 200]})
 
         participants = [
-            {PRParticipationKind.AUTHOR: {10, 30}}, {PRParticipationKind.AUTHOR: {20}},
+            {PRParticipationKind.AUTHOR: {10, 30}},
+            {PRParticipationKind.AUTHOR: {20}},
         ]
 
         res = group_prs_by_participants(participants, items)
@@ -38,7 +39,8 @@ class TestGroupPRsByParticipants:
     def test_empty_items_multiple_participant_groups(self) -> None:
         items = pd.DataFrame()
         participants = [
-            {PRParticipationKind.AUTHOR: {1, 3}}, {PRParticipationKind.AUTHOR: {2}},
+            {PRParticipationKind.AUTHOR: {1, 3}},
+            {PRParticipationKind.AUTHOR: {2}},
         ]
 
         res = group_prs_by_participants(participants, items)

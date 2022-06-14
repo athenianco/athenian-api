@@ -7,22 +7,45 @@ from sqlalchemy import and_, delete, insert, select, update
 
 from athenian.api import auth
 from athenian.api.async_utils import read_sql_query
-from athenian.api.internal.logical_repos import coerce_logical_repos, contains_logical_repos, \
-    drop_logical_repo
+from athenian.api.internal.logical_repos import (
+    coerce_logical_repos,
+    contains_logical_repos,
+    drop_logical_repo,
+)
 from athenian.api.internal.settings import ReleaseMatch, Settings
-from athenian.api.models.precomputed.models import GitHubDeploymentFacts, \
-    GitHubDonePullRequestFacts, GitHubOpenPullRequestFacts, GitHubPullRequestDeployment, \
-    GitHubRelease, GitHubReleaseDeployment
-from athenian.api.models.state.models import AccountGitHubAccount, LogicalRepository, \
-    MappedJIRAIdentity, ReleaseSetting, RepositorySet, UserAccount, WorkType
-from athenian.api.models.web import JIRAProject, LogicalRepository as WebLogicalRepository, \
-    MappedJIRAIdentity as WebMappedJIRAIdentity, ReleaseMatchSetting, ReleaseMatchStrategy, \
-    WorkType as WebWorkType
+from athenian.api.models.precomputed.models import (
+    GitHubDeploymentFacts,
+    GitHubDonePullRequestFacts,
+    GitHubOpenPullRequestFacts,
+    GitHubPullRequestDeployment,
+    GitHubRelease,
+    GitHubReleaseDeployment,
+)
+from athenian.api.models.state.models import (
+    AccountGitHubAccount,
+    LogicalRepository,
+    MappedJIRAIdentity,
+    ReleaseSetting,
+    RepositorySet,
+    UserAccount,
+    WorkType,
+)
+from athenian.api.models.web import (
+    JIRAProject,
+    LogicalRepository as WebLogicalRepository,
+    MappedJIRAIdentity as WebMappedJIRAIdentity,
+    ReleaseMatchSetting,
+    ReleaseMatchStrategy,
+    WorkType as WebWorkType,
+)
 from athenian.api.response import ResponseError
 from athenian.api.serialization import FriendlyJson
 from tests.testutils.db import assert_missing_row, model_insert_stmt
-from tests.testutils.factory.precomputed import GitHubDonePullRequestFactsFactory, \
-    GitHubOpenPullRequestFactsFactory, GitHubReleaseFactory
+from tests.testutils.factory.precomputed import (
+    GitHubDonePullRequestFactsFactory,
+    GitHubOpenPullRequestFactsFactory,
+    GitHubReleaseFactory,
+)
 from tests.testutils.factory.state import LogicalRepositoryFactory
 
 
@@ -32,8 +55,11 @@ async def validate_release_settings(body, response, sdb, exhaustive: bool):
     assert len(repos) > 0
     assert repos[0].startswith("github.com/")
     df = await read_sql_query(
-        select([ReleaseSetting]), sdb, ReleaseSetting,
-        index=[ReleaseSetting.repository.name, ReleaseSetting.account_id.name])
+        select([ReleaseSetting]),
+        sdb,
+        ReleaseSetting,
+        index=[ReleaseSetting.repository.name, ReleaseSetting.account_id.name],
+    )
     if exhaustive:
         assert len(df) == len(repos)
     for r in repos:
@@ -53,16 +79,20 @@ async def test_set_release_match_overwrite(client, headers, sdb, disable_default
         "match": ReleaseMatchStrategy.TAG,
     }
     response = await client.request(
-        method="PUT", path="/v1/settings/release_match", headers=headers, json=body)
+        method="PUT", path="/v1/settings/release_match", headers=headers, json=body,
+    )
     repos = await validate_release_settings(body, response, sdb, True)
     assert repos == ["github.com/src-d/gitbase", "github.com/src-d/go-git"]
-    body.update({
-        "branches": ".*",
-        "tags": "v.*",
-        "match": ReleaseMatchStrategy.BRANCH,
-    })
+    body.update(
+        {
+            "branches": ".*",
+            "tags": "v.*",
+            "match": ReleaseMatchStrategy.BRANCH,
+        },
+    )
     response = await client.request(
-        method="PUT", path="/v1/settings/release_match", headers=headers, json=body)
+        method="PUT", path="/v1/settings/release_match", headers=headers, json=body,
+    )
     repos = await validate_release_settings(body, response, sdb, True)
     assert repos == ["github.com/src-d/gitbase", "github.com/src-d/go-git"]
 
@@ -76,13 +106,19 @@ async def test_set_release_match_different_accounts(client, headers, sdb, disabl
         "match": ReleaseMatchStrategy.TAG,
     }
     response1 = await client.request(
-        method="PUT", path="/v1/settings/release_match", headers=headers, json=body1)
-    await sdb.execute(delete(AccountGitHubAccount)
-                      .where(AccountGitHubAccount.account_id == 1))
-    await sdb.execute(insert(AccountGitHubAccount).values(
-        AccountGitHubAccount(id=6366825, account_id=2).explode(with_primary_keys=True)))
-    await sdb.execute(update(UserAccount).where(UserAccount.account_id == 2).values(
-        {UserAccount.is_admin.name: True}))
+        method="PUT", path="/v1/settings/release_match", headers=headers, json=body1,
+    )
+    await sdb.execute(delete(AccountGitHubAccount).where(AccountGitHubAccount.account_id == 1))
+    await sdb.execute(
+        insert(AccountGitHubAccount).values(
+            AccountGitHubAccount(id=6366825, account_id=2).explode(with_primary_keys=True),
+        ),
+    )
+    await sdb.execute(
+        update(UserAccount)
+        .where(UserAccount.account_id == 2)
+        .values({UserAccount.is_admin.name: True}),
+    )
     body2 = {
         "repositories": ["github.com/src-d/go-git"],
         "account": 2,
@@ -91,7 +127,8 @@ async def test_set_release_match_different_accounts(client, headers, sdb, disabl
         "match": ReleaseMatchStrategy.BRANCH,
     }
     response2 = await client.request(
-        method="PUT", path="/v1/settings/release_match", headers=headers, json=body2)
+        method="PUT", path="/v1/settings/release_match", headers=headers, json=body2,
+    )
     await validate_release_settings(body1, response1, sdb, False)
     await validate_release_settings(body2, response2, sdb, False)
 
@@ -105,41 +142,67 @@ async def test_set_release_match_default_user(client, headers):
         "match": ReleaseMatchStrategy.TAG,
     }
     response = await client.request(
-        method="PUT", path="/v1/settings/release_match", headers=headers, json=body1)
+        method="PUT", path="/v1/settings/release_match", headers=headers, json=body1,
+    )
     assert response.status == 403
 
 
-@pytest.mark.parametrize("code, account, repositories, branches, tags, events, match", [
-    (400, 1, ["{1}"], None, ".*", {}, ReleaseMatchStrategy.BRANCH),
-    (400, 1, ["{1}"], "", ".*", {}, ReleaseMatchStrategy.TAG_OR_BRANCH),
-    (200, 1, ["{1}"], "", ".*", {}, ReleaseMatchStrategy.TAG),
-    (200, 1, [], "", ".*", {}, ReleaseMatchStrategy.TAG),
-    (400, 1, ["{1}"], None, ".*", {}, ReleaseMatchStrategy.TAG),
-    (400, 1, ["{1}"], "", ".*", {}, ReleaseMatchStrategy.BRANCH),
-    (400, 1, ["{1}"], "(f", ".*", {}, ReleaseMatchStrategy.BRANCH),
-    (400, 1, ["{1}"], ".*", None, {}, ReleaseMatchStrategy.TAG),
-    (400, 1, ["{1}"], ".*", None, {}, ReleaseMatchStrategy.BRANCH),
-    (200, 1, ["{1}"], ".*", "", {}, ReleaseMatchStrategy.BRANCH),
-    (400, 1, ["{1}"], ".*", "", {}, ReleaseMatchStrategy.TAG),
-    (400, 1, ["{1}"], ".*", "", {}, ReleaseMatchStrategy.TAG_OR_BRANCH),
-    (400, 1, ["{1}"], ".*", "(f", {}, ReleaseMatchStrategy.TAG),
-    (422, 2, ["{1}"], ".*", ".*", {}, ReleaseMatchStrategy.BRANCH),
-    (403, 2, ["github.com/athenianco/athenian-api"], ".*", ".*", {}, ReleaseMatchStrategy.BRANCH),
-    (404, 3, ["{1}"], ".*", ".*", {}, ReleaseMatchStrategy.BRANCH),
-    (403, 1, ["{2}"], ".*", ".*", {}, ReleaseMatchStrategy.BRANCH),
-    (400, 1, ["{1}"], ".*", ".*", {}, "whatever"),
-    (400, 1, ["{1}"], ".*", ".*", {}, None),
-    (400, 1, ["{1}"], ".*", ".*", {}, ""),
-    (400, 1, [], "", ".*", {"events": "(f"}, ReleaseMatchStrategy.TAG),
-])
+@pytest.mark.parametrize(
+    "code, account, repositories, branches, tags, events, match",
+    [
+        (400, 1, ["{1}"], None, ".*", {}, ReleaseMatchStrategy.BRANCH),
+        (400, 1, ["{1}"], "", ".*", {}, ReleaseMatchStrategy.TAG_OR_BRANCH),
+        (200, 1, ["{1}"], "", ".*", {}, ReleaseMatchStrategy.TAG),
+        (200, 1, [], "", ".*", {}, ReleaseMatchStrategy.TAG),
+        (400, 1, ["{1}"], None, ".*", {}, ReleaseMatchStrategy.TAG),
+        (400, 1, ["{1}"], "", ".*", {}, ReleaseMatchStrategy.BRANCH),
+        (400, 1, ["{1}"], "(f", ".*", {}, ReleaseMatchStrategy.BRANCH),
+        (400, 1, ["{1}"], ".*", None, {}, ReleaseMatchStrategy.TAG),
+        (400, 1, ["{1}"], ".*", None, {}, ReleaseMatchStrategy.BRANCH),
+        (200, 1, ["{1}"], ".*", "", {}, ReleaseMatchStrategy.BRANCH),
+        (400, 1, ["{1}"], ".*", "", {}, ReleaseMatchStrategy.TAG),
+        (400, 1, ["{1}"], ".*", "", {}, ReleaseMatchStrategy.TAG_OR_BRANCH),
+        (400, 1, ["{1}"], ".*", "(f", {}, ReleaseMatchStrategy.TAG),
+        (422, 2, ["{1}"], ".*", ".*", {}, ReleaseMatchStrategy.BRANCH),
+        (
+            403,
+            2,
+            ["github.com/athenianco/athenian-api"],
+            ".*",
+            ".*",
+            {},
+            ReleaseMatchStrategy.BRANCH,
+        ),
+        (404, 3, ["{1}"], ".*", ".*", {}, ReleaseMatchStrategy.BRANCH),
+        (403, 1, ["{2}"], ".*", ".*", {}, ReleaseMatchStrategy.BRANCH),
+        (400, 1, ["{1}"], ".*", ".*", {}, "whatever"),
+        (400, 1, ["{1}"], ".*", ".*", {}, None),
+        (400, 1, ["{1}"], ".*", ".*", {}, ""),
+        (400, 1, [], "", ".*", {"events": "(f"}, ReleaseMatchStrategy.TAG),
+    ],
+)
 async def test_set_release_match_nasty_input(
-        client, headers, sdb, code, account, repositories, branches, tags, events, match,
-        disable_default_user):
+    client,
+    headers,
+    sdb,
+    code,
+    account,
+    repositories,
+    branches,
+    tags,
+    events,
+    match,
+    disable_default_user,
+):
     if account == 2 and code == 403:
-        await sdb.execute(insert(AccountGitHubAccount).values({
-            AccountGitHubAccount.id: 1,
-            AccountGitHubAccount.account_id: 2,
-        }))
+        await sdb.execute(
+            insert(AccountGitHubAccount).values(
+                {
+                    AccountGitHubAccount.id: 1,
+                    AccountGitHubAccount.account_id: 2,
+                },
+            ),
+        )
     body = {
         "repositories": repositories,
         "account": account,
@@ -149,18 +212,28 @@ async def test_set_release_match_nasty_input(
         **events,
     }
     response = await client.request(
-        method="PUT", path="/v1/settings/release_match", headers=headers, json=body)
+        method="PUT", path="/v1/settings/release_match", headers=headers, json=body,
+    )
     assert response.status == code
 
 
 async def cleanup_gkwillie(sdb):
-    await sdb.execute(insert(UserAccount).values(UserAccount(
-        user_id="github|60340680", account_id=1, is_admin=True,
-    ).create_defaults().explode(with_primary_keys=True)))
+    await sdb.execute(
+        insert(UserAccount).values(
+            UserAccount(user_id="github|60340680", account_id=1, is_admin=True)
+            .create_defaults()
+            .explode(with_primary_keys=True),
+        ),
+    )
 
 
 async def test_set_release_match_login_failure(
-        client, headers, sdb, lazy_gkwillie, disable_default_user):
+    client,
+    headers,
+    sdb,
+    lazy_gkwillie,
+    disable_default_user,
+):
     await cleanup_gkwillie(sdb)
     await sdb.execute(delete(RepositorySet))
     await sdb.execute(delete(AccountGitHubAccount))
@@ -174,17 +247,31 @@ async def test_set_release_match_login_failure(
     auth.GracefulExit = ValueError
     try:
         response = await client.request(
-            method="PUT", path="/v1/settings/release_match", headers=headers, json=body)
+            method="PUT", path="/v1/settings/release_match", headers=headers, json=body,
+        )
     finally:
         auth.GracefulExit = GracefulExit
     assert response.status == 403, await response.read()
 
 
-@pytest.mark.parametrize("code, clear_kind", [
-    (200, None), (200, "reposets"), (422, "account"), (422, "repos"),
-])
+@pytest.mark.parametrize(
+    "code, clear_kind",
+    [
+        (200, None),
+        (200, "reposets"),
+        (422, "account"),
+        (422, "repos"),
+    ],
+)
 async def test_set_release_match_422(
-        client, headers, sdb, gkwillie, disable_default_user, code, clear_kind):
+    client,
+    headers,
+    sdb,
+    gkwillie,
+    disable_default_user,
+    code,
+    clear_kind,
+):
     await cleanup_gkwillie(sdb)
     if clear_kind == "reposets":
         await sdb.execute(delete(RepositorySet))
@@ -198,12 +285,18 @@ async def test_set_release_match_422(
         "match": ReleaseMatchStrategy.TAG_OR_BRANCH,
     }
     response = await client.request(
-        method="PUT", path="/v1/settings/release_match", headers=headers, json=body)
+        method="PUT", path="/v1/settings/release_match", headers=headers, json=body,
+    )
     assert response.status == code, await response.read()
 
 
 async def test_set_release_match_logical(
-        client, headers, sdb, disable_default_user, release_match_setting_tag_logical_db):
+    client,
+    headers,
+    sdb,
+    disable_default_user,
+    release_match_setting_tag_logical_db,
+):
     body = {
         "repositories": ["github.com/src-d/go-git/alpha"],
         "account": 1,
@@ -212,16 +305,24 @@ async def test_set_release_match_logical(
         "match": ReleaseMatchStrategy.EVENT,
     }
     response = await client.request(
-        method="PUT", path="/v1/settings/release_match", headers=headers, json=body)
+        method="PUT", path="/v1/settings/release_match", headers=headers, json=body,
+    )
     assert response.status == 200, await response.read()
     match = await sdb.fetch_val(
-        select([ReleaseSetting.match])
-        .where(ReleaseSetting.repository == "github.com/src-d/go-git/alpha"))
+        select([ReleaseSetting.match]).where(
+            ReleaseSetting.repository == "github.com/src-d/go-git/alpha",
+        ),
+    )
     assert match == 3
 
 
 async def test_set_release_match_logical_fail(
-        client, headers, sdb, disable_default_user, release_match_setting_tag_logical_db):
+    client,
+    headers,
+    sdb,
+    disable_default_user,
+    release_match_setting_tag_logical_db,
+):
     body = {
         "repositories": ["github.com/src-d/go-git/alpha"],
         "account": 1,
@@ -230,13 +331,15 @@ async def test_set_release_match_logical_fail(
         "match": ReleaseMatchStrategy.TAG_OR_BRANCH,
     }
     response = await client.request(
-        method="PUT", path="/v1/settings/release_match", headers=headers, json=body)
+        method="PUT", path="/v1/settings/release_match", headers=headers, json=body,
+    )
     assert response.status == 400, await response.read()
 
 
 async def test_get_release_match_settings_defaults(client, headers):
     response = await client.request(
-        method="GET", path="/v1/settings/release_match/1", headers=headers)
+        method="GET", path="/v1/settings/release_match/1", headers=headers,
+    )
     assert response.status == 200
     settings = {}
     for k, v in json.loads((await response.read()).decode("utf-8")).items():
@@ -258,15 +361,23 @@ async def test_get_release_match_settings_defaults(client, headers):
 
 
 async def test_get_release_match_settings_existing(client, headers, sdb):
-    await sdb.execute(insert(ReleaseSetting).values(
-        ReleaseSetting(repository="github.com/src-d/go-git",
-                       account_id=1,
-                       branches="master",
-                       tags="v.*",
-                       events=".*",
-                       match=ReleaseMatch.tag).create_defaults().explode(with_primary_keys=True)))
+    await sdb.execute(
+        insert(ReleaseSetting).values(
+            ReleaseSetting(
+                repository="github.com/src-d/go-git",
+                account_id=1,
+                branches="master",
+                tags="v.*",
+                events=".*",
+                match=ReleaseMatch.tag,
+            )
+            .create_defaults()
+            .explode(with_primary_keys=True),
+        ),
+    )
     response = await client.request(
-        method="GET", path="/v1/settings/release_match/1", headers=headers)
+        method="GET", path="/v1/settings/release_match/1", headers=headers,
+    )
     assert response.status == 200
     settings = {}
     for k, v in json.loads((await response.read()).decode("utf-8")).items():
@@ -296,7 +407,8 @@ async def test_get_release_match_settings_existing(client, headers, sdb):
 async def test_get_release_match_settings_nasty_input(client, headers, sdb, account, code):
     await sdb.execute(delete(RepositorySet))
     response = await client.request(
-        method="GET", path="/v1/settings/release_match/%d" % account, headers=headers)
+        method="GET", path="/v1/settings/release_match/%d" % account, headers=headers,
+    )
     assert response.status == code
 
 
@@ -307,34 +419,93 @@ async def test_get_release_match_settings_logical_fail(sdb, mdb, logical_setting
 
 
 async def test_get_release_match_settings_logical_success(
-        sdb, mdb, logical_settings_db, release_match_setting_tag_logical_db):
+    sdb,
+    mdb,
+    logical_settings_db,
+    release_match_setting_tag_logical_db,
+):
     settings = Settings.from_account(1, sdb, mdb, None, None)
     await settings.list_release_matches(["github.com/src-d/go-git/alpha"])
 
 
 JIRA_PROJECTS = [
-    JIRAProject(name="Content", key="CON", id="10013", enabled=True, last_update=None,
-                issues_count=0,
-                avatar_url="https://athenianco.atlassian.net/secure/projectavatar?pid=10013&avatarId=10424"),  # noqa
-    JIRAProject(name="Customer Success", key="CS", id="10012", enabled=True, last_update=None,
-                issues_count=0,
-                avatar_url="https://athenianco.atlassian.net/secure/projectavatar?pid=10012&avatarId=10419"),  # noqa
-    JIRAProject(name="Product Development", key="DEV", id="10009", enabled=False,
-                issues_count=1001,
-                last_update=datetime(2020, 10, 22, 11, 0, 9, tzinfo=timezone.utc),
-                avatar_url="https://athenianco.atlassian.net/secure/projectavatar?pid=10009&avatarId=10551"),  # noqa
-    JIRAProject(name="Engineering", key="ENG", id="10003", enabled=True, issues_count=862,
-                last_update=datetime(2020, 9, 1, 13, 7, 56, tzinfo=timezone.utc),
-                avatar_url="https://athenianco.atlassian.net/secure/projectavatar?pid=10003&avatarId=10404"),  # noqa
-    JIRAProject(name="Growth", key="GRW", id="10008", enabled=True, last_update=None,
-                issues_count=0,
-                avatar_url="https://athenianco.atlassian.net/secure/projectavatar?pid=10008&avatarId=10419"),  # noqa
-    JIRAProject(name="Operations", key="OPS", id="10002", enabled=True, last_update=None,
-                issues_count=0,
-                avatar_url="https://athenianco.atlassian.net/secure/projectavatar?pid=10002&avatarId=10421"),  # noqa
-    JIRAProject(name="Product", key="PRO", id="10001", enabled=True, last_update=None,
-                issues_count=0,
-                avatar_url="https://athenianco.atlassian.net/secure/projectavatar?pid=10001&avatarId=10414"),  # noqa
+    JIRAProject(
+        name="Content",
+        key="CON",
+        id="10013",
+        enabled=True,
+        last_update=None,
+        issues_count=0,
+        avatar_url=(
+            "https://athenianco.atlassian.net/secure/projectavatar?pid=10013&avatarId=10424"
+        ),
+    ),  # noqa
+    JIRAProject(
+        name="Customer Success",
+        key="CS",
+        id="10012",
+        enabled=True,
+        last_update=None,
+        issues_count=0,
+        avatar_url=(
+            "https://athenianco.atlassian.net/secure/projectavatar?pid=10012&avatarId=10419"
+        ),
+    ),  # noqa
+    JIRAProject(
+        name="Product Development",
+        key="DEV",
+        id="10009",
+        enabled=False,
+        issues_count=1001,
+        last_update=datetime(2020, 10, 22, 11, 0, 9, tzinfo=timezone.utc),
+        avatar_url=(
+            "https://athenianco.atlassian.net/secure/projectavatar?pid=10009&avatarId=10551"
+        ),
+    ),  # noqa
+    JIRAProject(
+        name="Engineering",
+        key="ENG",
+        id="10003",
+        enabled=True,
+        issues_count=862,
+        last_update=datetime(2020, 9, 1, 13, 7, 56, tzinfo=timezone.utc),
+        avatar_url=(
+            "https://athenianco.atlassian.net/secure/projectavatar?pid=10003&avatarId=10404"
+        ),
+    ),  # noqa
+    JIRAProject(
+        name="Growth",
+        key="GRW",
+        id="10008",
+        enabled=True,
+        last_update=None,
+        issues_count=0,
+        avatar_url=(
+            "https://athenianco.atlassian.net/secure/projectavatar?pid=10008&avatarId=10419"
+        ),
+    ),  # noqa
+    JIRAProject(
+        name="Operations",
+        key="OPS",
+        id="10002",
+        enabled=True,
+        last_update=None,
+        issues_count=0,
+        avatar_url=(
+            "https://athenianco.atlassian.net/secure/projectavatar?pid=10002&avatarId=10421"
+        ),
+    ),  # noqa
+    JIRAProject(
+        name="Product",
+        key="PRO",
+        id="10001",
+        enabled=True,
+        last_update=None,
+        issues_count=0,
+        avatar_url=(
+            "https://athenianco.atlassian.net/secure/projectavatar?pid=10001&avatarId=10414"
+        ),
+    ),  # noqa
 ]
 
 
@@ -342,7 +513,8 @@ JIRA_PROJECTS = [
 @pytest.mark.app_validate_responses(False)
 async def test_get_jira_projects_smoke(client, headers, disabled_dev):
     response = await client.request(
-        method="GET", path="/v1/settings/jira/projects/1", headers=headers)
+        method="GET", path="/v1/settings/jira/projects/1", headers=headers,
+    )
     assert response.status == 200
     body = [JIRAProject.from_dict(i) for i in json.loads((await response.read()).decode("utf-8"))]
     assert body == JIRA_PROJECTS
@@ -351,7 +523,8 @@ async def test_get_jira_projects_smoke(client, headers, disabled_dev):
 @pytest.mark.parametrize("account, code", [[2, 422], [3, 404], [4, 404]])
 async def test_get_jira_projects_nasty_input(client, headers, account, code):
     response = await client.request(
-        method="GET", path="/v1/settings/jira/projects/%d" % account, headers=headers)
+        method="GET", path="/v1/settings/jira/projects/%d" % account, headers=headers,
+    )
     assert response.status == code
 
 
@@ -365,7 +538,8 @@ async def test_set_jira_projects_smoke(client, headers, disable_default_user):
         },
     }
     response = await client.request(
-        method="PUT", path="/v1/settings/jira/projects", json=body, headers=headers)
+        method="PUT", path="/v1/settings/jira/projects", json=body, headers=headers,
+    )
     assert response.status == 200
     body = [JIRAProject.from_dict(i) for i in json.loads((await response.read()).decode("utf-8"))]
     assert body == JIRA_PROJECTS
@@ -379,13 +553,20 @@ async def test_set_jira_projects_default_user(client, headers):
         },
     }
     response = await client.request(
-        method="PUT", path="/v1/settings/jira/projects", json=body, headers=headers)
+        method="PUT", path="/v1/settings/jira/projects", json=body, headers=headers,
+    )
     assert response.status == 403
 
 
 @pytest.mark.parametrize("account, key, code", [[2, "DEV", 403], [3, "DEV", 404], [1, "XXX", 400]])
 async def test_set_jira_projects_nasty_input(
-        client, headers, disable_default_user, account, key, code):
+    client,
+    headers,
+    disable_default_user,
+    account,
+    key,
+    code,
+):
     body = {
         "account": account,
         "projects": {
@@ -393,7 +574,8 @@ async def test_set_jira_projects_nasty_input(
         },
     }
     response = await client.request(
-        method="PUT", path="/v1/settings/jira/projects", json=body, headers=headers)
+        method="PUT", path="/v1/settings/jira/projects", json=body, headers=headers,
+    )
     assert response.status == code
 
 
@@ -401,17 +583,20 @@ async def test_set_jira_projects_nasty_input(
 @pytest.mark.app_validate_responses(False)
 async def test_get_jira_identities_smoke(client, headers, sdb, denys_id_mapping):
     response = await client.request(
-        method="GET", path="/v1/settings/jira/identities/1", headers=headers)
+        method="GET", path="/v1/settings/jira/identities/1", headers=headers,
+    )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     ids = [WebMappedJIRAIdentity.from_dict(item) for item in FriendlyJson.loads(body)]
     assert len(ids) == 16
     has_match = False
     for user_map in ids:
-        match = user_map == WebMappedJIRAIdentity(developer_id="github.com/dennwc",
-                                                  developer_name="Denys Smirnov",
-                                                  jira_name="Denys Smirnov",
-                                                  confidence=1.0)
+        match = user_map == WebMappedJIRAIdentity(
+            developer_id="github.com/dennwc",
+            developer_name="Denys Smirnov",
+            jira_name="Denys Smirnov",
+            confidence=1.0,
+        )
         unmapped = user_map.developer_id is None and user_map.developer_name is None
         assert match or unmapped
         has_match |= match
@@ -422,7 +607,8 @@ async def test_get_jira_identities_smoke(client, headers, sdb, denys_id_mapping)
 @pytest.mark.app_validate_responses(False)
 async def test_get_jira_identities_empty(client, headers):
     response = await client.request(
-        method="GET", path="/v1/settings/jira/identities/1", headers=headers)
+        method="GET", path="/v1/settings/jira/identities/1", headers=headers,
+    )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     ids = [WebMappedJIRAIdentity.from_dict(item) for item in FriendlyJson.loads(body)]
@@ -436,7 +622,8 @@ async def test_get_jira_identities_empty(client, headers):
 @pytest.mark.parametrize("account, code", [[2, 422], [3, 404], [4, 404]])
 async def test_get_jira_identities_nasty_input(client, headers, account, code):
     response = await client.request(
-        method="GET", path="/v1/settings/jira/identities/%d" % account, headers=headers)
+        method="GET", path="/v1/settings/jira/identities/%d" % account, headers=headers,
+    )
     assert response.status == code
 
 
@@ -445,20 +632,28 @@ async def test_get_jira_identities_nasty_input(client, headers, account, code):
 async def test_set_jira_identities_smoke(client, headers, sdb, denys_id_mapping):
     body = {
         "account": 1,
-        "changes": [{
-            "developer_id": "github.com/dennwc",
-            "jira_name": "Vadim Markovtsev",
-        }],
+        "changes": [
+            {
+                "developer_id": "github.com/dennwc",
+                "jira_name": "Vadim Markovtsev",
+            },
+        ],
     }
     response = await client.request(
-        method="PATCH", path="/v1/settings/jira/identities", headers=headers, json=body)
+        method="PATCH", path="/v1/settings/jira/identities", headers=headers, json=body,
+    )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     ids = [WebMappedJIRAIdentity.from_dict(item) for item in FriendlyJson.loads(body)]
-    assert WebMappedJIRAIdentity(developer_id="github.com/dennwc",
-                                 developer_name="Denys Smirnov",
-                                 jira_name="Vadim Markovtsev",
-                                 confidence=1.0) in ids
+    assert (
+        WebMappedJIRAIdentity(
+            developer_id="github.com/dennwc",
+            developer_name="Denys Smirnov",
+            jira_name="Vadim Markovtsev",
+            confidence=1.0,
+        )
+        in ids
+    )
     assert len(ids) == 16
     rows = await sdb.fetch_all(select([MappedJIRAIdentity]))
     assert len(rows) == 1
@@ -472,22 +667,30 @@ async def test_set_jira_identities_smoke(client, headers, sdb, denys_id_mapping)
 @pytest.mark.app_validate_responses(False)
 async def test_set_jira_identities_reset_cache(client, headers, denys_id_mapping, client_cache):
     async def fetch_contribs():
-        return sorted(json.loads(
-            (await (await client.get(path="/v1/get/contributors/1", headers=headers)).read())
-            .decode("utf-8")), key=lambda u: u["login"])
+        return sorted(
+            json.loads(
+                (
+                    await (await client.get(path="/v1/get/contributors/1", headers=headers)).read()
+                ).decode("utf-8"),
+            ),
+            key=lambda u: u["login"],
+        )
 
     contribs1 = await fetch_contribs()
     contribs2 = await fetch_contribs()
     assert contribs1 == contribs2
     body = {
         "account": 1,
-        "changes": [{
-            "developer_id": "github.com/dennwc",
-            "jira_name": "Vadim Markovtsev",
-        }],
+        "changes": [
+            {
+                "developer_id": "github.com/dennwc",
+                "jira_name": "Vadim Markovtsev",
+            },
+        ],
     }
     response = await client.request(
-        method="PATCH", path="/v1/settings/jira/identities", headers=headers, json=body)
+        method="PATCH", path="/v1/settings/jira/identities", headers=headers, json=body,
+    )
     assert response.status == 200
     contribs2 = await fetch_contribs()
     assert contribs1 != contribs2
@@ -496,13 +699,16 @@ async def test_set_jira_identities_reset_cache(client, headers, denys_id_mapping
 
     body = {
         "account": 1,
-        "changes": [{
-            "developer_id": "github.com/dennwc",
-            "jira_name": None,
-        }],
+        "changes": [
+            {
+                "developer_id": "github.com/dennwc",
+                "jira_name": None,
+            },
+        ],
     }
     response = await client.request(
-        method="PATCH", path="/v1/settings/jira/identities", headers=headers, json=body)
+        method="PATCH", path="/v1/settings/jira/identities", headers=headers, json=body,
+    )
     assert response.status == 200
     contribs2 = await fetch_contribs()
     assert contribs1 != contribs2
@@ -516,13 +722,16 @@ async def test_set_jira_identities_reset_cache(client, headers, denys_id_mapping
 async def test_set_jira_identities_delete(client, headers, sdb, denys_id_mapping):
     body = {
         "account": 1,
-        "changes": [{
-            "developer_id": "github.com/dennwc",
-            "jira_name": None,
-        }],
+        "changes": [
+            {
+                "developer_id": "github.com/dennwc",
+                "jira_name": None,
+            },
+        ],
     }
     response = await client.request(
-        method="PATCH", path="/v1/settings/jira/identities", headers=headers, json=body)
+        method="PATCH", path="/v1/settings/jira/identities", headers=headers, json=body,
+    )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     ids = [WebMappedJIRAIdentity.from_dict(item) for item in FriendlyJson.loads(body)]
@@ -535,32 +744,40 @@ async def test_set_jira_identities_delete(client, headers, sdb, denys_id_mapping
     assert len(rows) == 0
 
 
-@pytest.mark.parametrize("account, github, jira, code", [
-    [2, "github.com/vmarkovtsev", "Vadim Markovtsev", 403],
-    [2, "github.com/vmarkovtsev", "Vadim Markovtsev", 422],
-    [3, "github.com/vmarkovtsev", "Vadim Markovtsev", 404],
-    [4, "github.com/vmarkovtsev", "Vadim Markovtsev", 404],
-    [1, None, "Vadim Markovtsev", 400],
-    [1, "", "Vadim Markovtsev", 400],
-    [1, "github.com", "Vadim Markovtsev", 400],
-    [1, "github.com/incognito", "Vadim Markovtsev", 400],
-    [1, "github.com/vmarkovtsev", "Vadim", 400],
-    [1, "github.com/vmarkovtsev", "", 400],
-])
+@pytest.mark.parametrize(
+    "account, github, jira, code",
+    [
+        [2, "github.com/vmarkovtsev", "Vadim Markovtsev", 403],
+        [2, "github.com/vmarkovtsev", "Vadim Markovtsev", 422],
+        [3, "github.com/vmarkovtsev", "Vadim Markovtsev", 404],
+        [4, "github.com/vmarkovtsev", "Vadim Markovtsev", 404],
+        [1, None, "Vadim Markovtsev", 400],
+        [1, "", "Vadim Markovtsev", 400],
+        [1, "github.com", "Vadim Markovtsev", 400],
+        [1, "github.com/incognito", "Vadim Markovtsev", 400],
+        [1, "github.com/vmarkovtsev", "Vadim", 400],
+        [1, "github.com/vmarkovtsev", "", 400],
+    ],
+)
 async def test_set_jira_identities_nasty_input(client, headers, account, github, jira, code, sdb):
     if account == 2 and code == 422:
-        await sdb.execute(update(UserAccount)
-                          .where(UserAccount.account_id == 2)
-                          .values({UserAccount.is_admin: True}))
+        await sdb.execute(
+            update(UserAccount)
+            .where(UserAccount.account_id == 2)
+            .values({UserAccount.is_admin: True}),
+        )
     body = {
         "account": account,
-        "changes": [{
-            "developer_id": github,
-            "jira_name": jira,
-        }],
+        "changes": [
+            {
+                "developer_id": github,
+                "jira_name": jira,
+            },
+        ],
     }
     response = await client.request(
-        method="PATCH", path="/v1/settings/jira/identities", json=body, headers=headers)
+        method="PATCH", path="/v1/settings/jira/identities", json=body, headers=headers,
+    )
     assert response.status == code
 
 
@@ -572,7 +789,8 @@ async def test_get_work_type_smoke(client, headers):
         "name": "Bug Fixing",
     }
     response = await client.request(
-        method="POST", path="/v1/settings/work_type/get", json=body, headers=headers)
+        method="POST", path="/v1/settings/work_type/get", json=body, headers=headers,
+    )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     wt = WebWorkType.from_dict(FriendlyJson.loads(body))
@@ -583,16 +801,20 @@ async def test_get_work_type_smoke(client, headers):
     }
 
 
-@pytest.mark.parametrize("body, status", [
-    ({"account": 2, "name": "Bug Fixing"}, 404),
-    ({"account": 3, "name": "Bug Fixing"}, 404),
-    ({"account": 1, "name": "Bug Making"}, 404),
-    ({"account": 1, "name": ""}, 400),
-    ({"account": 1}, 400),
-])
+@pytest.mark.parametrize(
+    "body, status",
+    [
+        ({"account": 2, "name": "Bug Fixing"}, 404),
+        ({"account": 3, "name": "Bug Fixing"}, 404),
+        ({"account": 1, "name": "Bug Making"}, 404),
+        ({"account": 1, "name": ""}, 400),
+        ({"account": 1}, 400),
+    ],
+)
 async def test_get_work_type_nasty_input(client, headers, body, status):
     response = await client.request(
-        method="POST", path="/v1/settings/work_type/get", json=body, headers=headers)
+        method="POST", path="/v1/settings/work_type/get", json=body, headers=headers,
+    )
     body = (await response.read()).decode("utf-8")
     assert response.status == status, "Response body is : " + body
 
@@ -605,33 +827,46 @@ async def test_delete_work_type_smoke(client, headers, sdb):
         "name": "Bug Fixing",
     }
     response = await client.request(
-        method="POST", path="/v1/settings/work_type/delete", json=body, headers=headers)
+        method="POST", path="/v1/settings/work_type/delete", json=body, headers=headers,
+    )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     assert body == ""
-    row = await sdb.fetch_one(select([WorkType]).where(and_(
-        WorkType.account_id == 1,
-        WorkType.name == "Bug Fixing",
-    )))
+    row = await sdb.fetch_one(
+        select([WorkType]).where(
+            and_(
+                WorkType.account_id == 1,
+                WorkType.name == "Bug Fixing",
+            ),
+        ),
+    )
     assert row is None
 
 
-@pytest.mark.parametrize("body, status", [
-    ({"account": 2, "name": "Bug Fixing"}, 404),
-    ({"account": 3, "name": "Bug Fixing"}, 404),
-    ({"account": 1, "name": "Bug Making"}, 404),
-    ({"account": 1, "name": ""}, 400),
-    ({"account": 1}, 400),
-])
+@pytest.mark.parametrize(
+    "body, status",
+    [
+        ({"account": 2, "name": "Bug Fixing"}, 404),
+        ({"account": 3, "name": "Bug Fixing"}, 404),
+        ({"account": 1, "name": "Bug Making"}, 404),
+        ({"account": 1, "name": ""}, 400),
+        ({"account": 1}, 400),
+    ],
+)
 async def test_delete_work_type_nasty_input(client, headers, body, status, sdb):
     response = await client.request(
-        method="POST", path="/v1/settings/work_type/delete", json=body, headers=headers)
+        method="POST", path="/v1/settings/work_type/delete", json=body, headers=headers,
+    )
     body = (await response.read()).decode("utf-8")
     assert response.status == status, "Response body is : " + body
-    row = await sdb.fetch_one(select([WorkType]).where(and_(
-        WorkType.account_id == 1,
-        WorkType.name == "Bug Fixing",
-    )))
+    row = await sdb.fetch_one(
+        select([WorkType]).where(
+            and_(
+                WorkType.account_id == 1,
+                WorkType.name == "Bug Fixing",
+            ),
+        ),
+    )
     assert row is not None
 
 
@@ -639,7 +874,8 @@ async def test_delete_work_type_nasty_input(client, headers, body, status, sdb):
 @pytest.mark.app_validate_responses(False)
 async def test_list_work_types_smoke(client, headers):
     response = await client.request(
-        method="GET", path="/v1/settings/work_types/1", headers=headers)
+        method="GET", path="/v1/settings/work_types/1", headers=headers,
+    )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     models = [WebWorkType.from_dict(i) for i in FriendlyJson.loads(body)]
@@ -654,7 +890,8 @@ async def test_list_work_types_smoke(client, headers):
 @pytest.mark.parametrize("acc, status", [(2, 200), (3, 404)])
 async def test_list_work_types_nasty_input(client, headers, acc, status):
     response = await client.request(
-        method="GET", path=f"/v1/settings/work_types/{acc}", headers=headers)
+        method="GET", path=f"/v1/settings/work_types/{acc}", headers=headers,
+    )
     body = (await response.read()).decode("utf-8")
     assert response.status == status, "Response body is : " + body
     if status == 200:
@@ -667,14 +904,17 @@ async def test_set_work_type_create(client, headers, sdb):
         "work_type": {
             "name": "Bug Making",
             "color": "00ff00",
-            "rules": [{
-                "name": "xxx",
-                "body": {"arg": 777},
-            }],
+            "rules": [
+                {
+                    "name": "xxx",
+                    "body": {"arg": 777},
+                },
+            ],
         },
     }
     response = await client.request(
-        method="PUT", path="/v1/settings/work_type", json=body, headers=headers)
+        method="PUT", path="/v1/settings/work_type", json=body, headers=headers,
+    )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     wt1 = WebWorkType.from_dict(FriendlyJson.loads(body))
@@ -683,10 +923,14 @@ async def test_set_work_type_create(client, headers, sdb):
         "name": "Bug Making",
         "rules": [{"body": {"arg": 777}, "name": "xxx"}],
     }
-    row = await sdb.fetch_one(select([WorkType.name, WorkType.color, WorkType.rules]).where(and_(
-        WorkType.account_id == 1,
-        WorkType.name == "Bug Making",
-    )))
+    row = await sdb.fetch_one(
+        select([WorkType.name, WorkType.color, WorkType.rules]).where(
+            and_(
+                WorkType.account_id == 1,
+                WorkType.name == "Bug Making",
+            ),
+        ),
+    )
     assert dict(row) == {
         "color": "00ff00",
         "name": "Bug Making",
@@ -700,14 +944,17 @@ async def test_set_work_type_update(client, headers, sdb):
         "work_type": {
             "name": "Bug Fixing",
             "color": "00ff00",
-            "rules": [{
-                "name": "xxx",
-                "body": {"arg": 777},
-            }],
+            "rules": [
+                {
+                    "name": "xxx",
+                    "body": {"arg": 777},
+                },
+            ],
         },
     }
     response = await client.request(
-        method="PUT", path="/v1/settings/work_type", json=body, headers=headers)
+        method="PUT", path="/v1/settings/work_type", json=body, headers=headers,
+    )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     wt1 = WebWorkType.from_dict(FriendlyJson.loads(body))
@@ -716,10 +963,14 @@ async def test_set_work_type_update(client, headers, sdb):
         "name": "Bug Fixing",
         "rules": [{"body": {"arg": 777}, "name": "xxx"}],
     }
-    rows = await sdb.fetch_all(select([WorkType.name, WorkType.color, WorkType.rules]).where(and_(
-        WorkType.account_id == 1,
-        WorkType.name == "Bug Fixing",
-    )))
+    rows = await sdb.fetch_all(
+        select([WorkType.name, WorkType.color, WorkType.rules]).where(
+            and_(
+                WorkType.account_id == 1,
+                WorkType.name == "Bug Fixing",
+            ),
+        ),
+    )
     assert len(rows) == 1
     assert dict(rows[0]) == {
         "color": "00ff00",
@@ -728,30 +979,38 @@ async def test_set_work_type_update(client, headers, sdb):
     }
 
 
-@pytest.mark.parametrize("acc, name, color, status", [
-    (3, "Bug Fixing", {"color": "00FF00"}, 404),
-    (1, "", {"color": "00FF00"}, 400),
-    (1, "Bug Fixing", {}, 400),
-])
+@pytest.mark.parametrize(
+    "acc, name, color, status",
+    [
+        (3, "Bug Fixing", {"color": "00FF00"}, 404),
+        (1, "", {"color": "00FF00"}, 400),
+        (1, "Bug Fixing", {}, 400),
+    ],
+)
 async def test_set_work_type_nasty_input(client, headers, sdb, acc, name, color, status):
     body = {
         "account": acc,
         "work_type": {
             "name": name,
             **color,
-            "rules": [{
-                "name": "xxx",
-                "body": {"arg": 777},
-            }],
+            "rules": [
+                {
+                    "name": "xxx",
+                    "body": {"arg": 777},
+                },
+            ],
         },
     }
     response = await client.request(
-        method="PUT", path="/v1/settings/work_type", json=body, headers=headers)
+        method="PUT", path="/v1/settings/work_type", json=body, headers=headers,
+    )
     body = (await response.read()).decode("utf-8")
     assert response.status == status, "Response body is : " + body
-    rows = await sdb.fetch_all(select([WorkType.name, WorkType.color, WorkType.rules]).where(and_(
-        WorkType.name == "Bug Fixing",
-    )))
+    rows = await sdb.fetch_all(
+        select([WorkType.name, WorkType.color, WorkType.rules]).where(
+            and_(WorkType.name == "Bug Fixing"),
+        ),
+    )
     assert len(rows) == 1
     assert dict(rows[0]) == {
         "color": "FF0000",
@@ -770,14 +1029,15 @@ async def test_set_work_type_empty_rules(client, headers, sdb):
         },
     }
     response = await client.request(
-        method="PUT", path="/v1/settings/work_type", json=body, headers=headers)
+        method="PUT", path="/v1/settings/work_type", json=body, headers=headers,
+    )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     rows = await sdb.fetch_all(
-        select([WorkType.account_id, WorkType.name, WorkType.color, WorkType.rules])
-        .where(and_(
-            WorkType.name == "Bug Fixing",
-        )))
+        select([WorkType.account_id, WorkType.name, WorkType.color, WorkType.rules]).where(
+            and_(WorkType.name == "Bug Fixing"),
+        ),
+    )
     assert len(rows) == 2
     rows = [row for row in rows if row[WorkType.account_id.name] == 2]
     assert len(rows) == 1
@@ -813,24 +1073,36 @@ async def test_contains_logical_repos():
 @pytest.mark.parametrize("with_title", [False, True])
 @pytest.mark.parametrize("with_labels", [False, True])
 async def test_logical_settings_smoke(sdb, mdb, prefixer, with_title, with_labels):
-    await sdb.execute(insert(LogicalRepository).values(LogicalRepository(
-        account_id=1,
-        name="alpha",
-        repository_id=40550,
-        prs={**({"title": ".*[Ff]ix"} if with_title else {}),
-             **({"labels": ["bug"]} if with_labels else {})},
-        deployments={**({"title": "prod"} if with_title else {}),
-                     **({"labels": {"repo": ["alpha"]}} if with_labels else {})},
-    ).create_defaults().explode()))
+    await sdb.execute(
+        insert(LogicalRepository).values(
+            LogicalRepository(
+                account_id=1,
+                name="alpha",
+                repository_id=40550,
+                prs={
+                    **({"title": ".*[Ff]ix"} if with_title else {}),
+                    **({"labels": ["bug"]} if with_labels else {}),
+                },
+                deployments={
+                    **({"title": "prod"} if with_title else {}),
+                    **({"labels": {"repo": ["alpha"]}} if with_labels else {}),
+                },
+            )
+            .create_defaults()
+            .explode(),
+        ),
+    )
     settings = Settings.from_account(1, sdb, mdb, None, None)
     logical_settings = await settings.list_logical_repositories(prefixer)
     any_with = with_labels or with_title
     assert logical_settings.has_logical_prs() == any_with
     assert logical_settings.has_logical_deployments() == any_with
-    assert logical_settings.with_logical_prs([]) == \
-           ({"src-d/go-git", "src-d/go-git/alpha"} if any_with else set())
-    assert logical_settings.with_logical_deployments([]) == \
-           ({"src-d/go-git", "src-d/go-git/alpha"} if any_with else set())
+    assert logical_settings.with_logical_prs([]) == (
+        {"src-d/go-git", "src-d/go-git/alpha"} if any_with else set()
+    )
+    assert logical_settings.with_logical_deployments([]) == (
+        {"src-d/go-git", "src-d/go-git/alpha"} if any_with else set()
+    )
     assert logical_settings.has_prs_by_label(["src-d/go-git"]) == with_labels
     if not any_with:
         with pytest.raises(KeyError):
@@ -842,44 +1114,66 @@ async def test_logical_settings_smoke(sdb, mdb, prefixer, with_title, with_label
     assert repo_settings
     assert repo_settings.has_labels == with_labels
     assert repo_settings.has_titles == with_title
-    assert repo_settings.logical_repositories == \
-           {"src-d/go-git", "src-d/go-git/alpha"} if any_with else {"src-d/go-git"}
+    assert (
+        repo_settings.logical_repositories == {"src-d/go-git", "src-d/go-git/alpha"}
+        if any_with
+        else {"src-d/go-git"}
+    )
 
     repo_settings = logical_settings.deployments("src-d/go-git")
     assert repo_settings
     assert repo_settings.has_labels == with_labels
     assert repo_settings.has_titles == with_title
-    assert repo_settings.logical_repositories == \
-           {"src-d/go-git", "src-d/go-git/alpha"} if any_with else {"src-d/go-git"}
+    assert (
+        repo_settings.logical_repositories == {"src-d/go-git", "src-d/go-git/alpha"}
+        if any_with
+        else {"src-d/go-git"}
+    )
 
 
 @pytest.fixture(scope="function")
 async def logical_settings_with_labels(sdb):
-    await sdb.execute(insert(LogicalRepository).values(LogicalRepository(
-        account_id=1,
-        name="alpha",
-        repository_id=40550,
-        prs={"title": ".*[Ff]ix", "labels": ["fix"]},
-        deployments={"title": "test", "labels": {"repo": ["alpha"]}},
-    ).create_defaults().explode()))
-    await sdb.execute(insert(LogicalRepository).values(LogicalRepository(
-        account_id=1,
-        name="beta",
-        repository_id=40550,
-        prs={"title": ".*[Aa]dd"},
-        deployments={"title": "prod"},
-    ).create_defaults().explode()))
+    await sdb.execute(
+        insert(LogicalRepository).values(
+            LogicalRepository(
+                account_id=1,
+                name="alpha",
+                repository_id=40550,
+                prs={"title": ".*[Ff]ix", "labels": ["fix"]},
+                deployments={"title": "test", "labels": {"repo": ["alpha"]}},
+            )
+            .create_defaults()
+            .explode(),
+        ),
+    )
+    await sdb.execute(
+        insert(LogicalRepository).values(
+            LogicalRepository(
+                account_id=1,
+                name="beta",
+                repository_id=40550,
+                prs={"title": ".*[Aa]dd"},
+                deployments={"title": "prod"},
+            )
+            .create_defaults()
+            .explode(),
+        ),
+    )
 
 
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
 async def test_list_logical_repositories_smoke(
-        client, headers, sdb, logical_settings_with_labels, release_match_setting_tag_logical_db,
-        logical_reposet):
+    client,
+    headers,
+    sdb,
+    logical_settings_with_labels,
+    release_match_setting_tag_logical_db,
+    logical_reposet,
+):
     response = await client.request(
-        method="GET",
-        path="/v1/settings/logical_repositories/1",
-        headers=headers)
+        method="GET", path="/v1/settings/logical_repositories/1", headers=headers,
+    )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     repos = [WebLogicalRepository.from_dict(d) for d in json.loads(body)]
@@ -908,12 +1202,18 @@ async def test_list_logical_repositories_smoke(
 
 @pytest.mark.parametrize("account, code", [(2, 422), (3, 404)])
 async def test_list_logical_repositories_nasty_input(
-        client, headers, sdb, logical_settings_with_labels, release_match_setting_tag_logical_db,
-        logical_reposet, account, code):
+    client,
+    headers,
+    sdb,
+    logical_settings_with_labels,
+    release_match_setting_tag_logical_db,
+    logical_reposet,
+    account,
+    code,
+):
     response = await client.request(
-        method="GET",
-        path=f"/v1/settings/logical_repositories/{account}",
-        headers=headers)
+        method="GET", path=f"/v1/settings/logical_repositories/{account}", headers=headers,
+    )
     body = (await response.read()).decode("utf-8")
     assert response.status == code, "Response body is : " + body
 
@@ -921,7 +1221,12 @@ async def test_list_logical_repositories_nasty_input(
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
 async def test_delete_logical_repository_smoke(
-        client, headers, logical_settings_db, release_match_setting_tag_logical_db, sdb):
+    client,
+    headers,
+    logical_settings_db,
+    release_match_setting_tag_logical_db,
+    sdb,
+):
     body = {
         "account": 1,
         "name": "github.com/src-d/go-git/alpha",
@@ -943,14 +1248,22 @@ async def test_delete_logical_repository_smoke(
         ["github.com/src-d/go-git", 40550],
         ["github.com/src-d/go-git/beta", 40550],
     ]
-    row = await sdb.fetch_one(select([ReleaseSetting])
-                              .where(ReleaseSetting.repository == "github.com/src-d/go-git/alpha"))
+    row = await sdb.fetch_one(
+        select([ReleaseSetting]).where(
+            ReleaseSetting.repository == "github.com/src-d/go-git/alpha",
+        ),
+    )
     assert row is None
 
 
 @pytest.mark.app_validate_responses(False)
 async def test_delete_logical_repository_clean_deployments(
-    client, headers, sdb, pdb, logical_settings_db, release_match_setting_tag_logical_db,
+    client,
+    headers,
+    sdb,
+    pdb,
+    logical_settings_db,
+    release_match_setting_tag_logical_db,
 ) -> None:
     body = {"account": 1, "name": "github.com/src-d/go-git/alpha"}
     # create some deployments in pdb
@@ -1022,14 +1335,20 @@ async def test_delete_logical_repo_clean_physical_repo_facts(client, headers, sd
         name="alpha", repository_id=40550, prs={"title": ".*[Ff]ix"},
     )
     await sdb.execute(model_insert_stmt(logical_repo, with_primary_keys=False))
-    await sdb.execute(update(RepositorySet).where(RepositorySet.owner_id == 1).values({
-        RepositorySet.items: [
-            ["github.com/src-d/go-git", 40550],
-            ["github.com/src-d/go-git/alpha", 40550],
-        ],
-        RepositorySet.updated_at: datetime.now(timezone.utc),
-        RepositorySet.updates_count: RepositorySet.updates_count + 1,
-    }))
+    await sdb.execute(
+        update(RepositorySet)
+        .where(RepositorySet.owner_id == 1)
+        .values(
+            {
+                RepositorySet.items: [
+                    ["github.com/src-d/go-git", 40550],
+                    ["github.com/src-d/go-git/alpha", 40550],
+                ],
+                RepositorySet.updated_at: datetime.now(timezone.utc),
+                RepositorySet.updates_count: RepositorySet.updates_count + 1,
+            },
+        ),
+    )
 
     done_pr_facts = [
         GitHubDonePullRequestFactsFactory(repository_full_name="src-d/go-git"),
@@ -1061,40 +1380,49 @@ async def test_delete_logical_repo_clean_physical_repo_facts(client, headers, sd
     await assert_missing_row(
         pdb, GitHubDonePullRequestFacts, repository_full_name="src-d/go-git/alpha",
     )
-    row = pdb.fetch_one(select(GitHubDonePullRequestFacts).where(
-        GitHubDonePullRequestFacts.repository_full_name == "src-d/go-git/beta",
-    ))
-    assert row is not None
-    await assert_missing_row(
-        pdb, GitHubDonePullRequestFacts, repository_full_name="src-d/go-git",
+    row = pdb.fetch_one(
+        select(GitHubDonePullRequestFacts).where(
+            GitHubDonePullRequestFacts.repository_full_name == "src-d/go-git/beta",
+        ),
     )
+    assert row is not None
+    await assert_missing_row(pdb, GitHubDonePullRequestFacts, repository_full_name="src-d/go-git")
 
     await assert_missing_row(
         pdb, GitHubOpenPullRequestFacts, repository_full_name="src-d/go-git/alpha",
     )
-    row = pdb.fetch_one(select(GitHubOpenPullRequestFacts).where(
-        GitHubOpenPullRequestFacts.repository_full_name == "src-d/go-git2",
-    ))
-    assert row is not None
-    await assert_missing_row(
-        pdb, GitHubOpenPullRequestFacts, repository_full_name="src-d/go-git",
+    row = pdb.fetch_one(
+        select(GitHubOpenPullRequestFacts).where(
+            GitHubOpenPullRequestFacts.repository_full_name == "src-d/go-git2",
+        ),
     )
+    assert row is not None
+    await assert_missing_row(pdb, GitHubOpenPullRequestFacts, repository_full_name="src-d/go-git")
 
-    row = await pdb.fetch_one(select(GitHubRelease).where(
-        GitHubRelease.repository_full_name == "src-d/go-git",
-    ))
+    row = await pdb.fetch_one(
+        select(GitHubRelease).where(GitHubRelease.repository_full_name == "src-d/go-git"),
+    )
     assert row is None
 
 
-@pytest.mark.parametrize("account, name, code", [
-    (2, "", 403),
-    (3, "", 404),
-    (1, "xxx", 400),
-    (1, "github.com/src-d/go-git", 400),
-    (1, "github.com/src-d/go-git/xxx", 404),
-])
+@pytest.mark.parametrize(
+    "account, name, code",
+    [
+        (2, "", 403),
+        (3, "", 404),
+        (1, "xxx", 400),
+        (1, "github.com/src-d/go-git", 400),
+        (1, "github.com/src-d/go-git/xxx", 404),
+    ],
+)
 async def test_delete_logical_repository_nasty_input(
-        client, headers, logical_settings_db, account, name, code):
+    client,
+    headers,
+    logical_settings_db,
+    account,
+    name,
+    code,
+):
     body = {
         "account": account,
         "name": name or "github.com/src-d/go-git/alpha",
@@ -1138,8 +1466,9 @@ async def _test_set_logical_repository(client, headers, sdb, n):
     )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is: " + body
-    rows = await sdb.fetch_all(select([LogicalRepository.name, LogicalRepository.prs])
-                               .order_by(LogicalRepository.name))
+    rows = await sdb.fetch_all(
+        select([LogicalRepository.name, LogicalRepository.prs]).order_by(LogicalRepository.name),
+    )
     assert len(rows) == n
     assert rows[0][LogicalRepository.name.name] == "alpha"
     assert rows[0][LogicalRepository.prs.name] == {
@@ -1153,8 +1482,11 @@ async def _test_set_logical_repository(client, headers, sdb, n):
         ["github.com/src-d/go-git/alpha", 40550],
     ]
     assert len(row[RepositorySet.items.name]) == 2 + n
-    row = await sdb.fetch_one(select([ReleaseSetting])
-                              .where(ReleaseSetting.repository == "github.com/src-d/go-git/alpha"))
+    row = await sdb.fetch_one(
+        select([ReleaseSetting]).where(
+            ReleaseSetting.repository == "github.com/src-d/go-git/alpha",
+        ),
+    )
     assert row[ReleaseSetting.branches.name] == "master"
     assert row[ReleaseSetting.tags.name] == "v.*"
     assert row[ReleaseSetting.match.name] == ReleaseMatch.tag
@@ -1163,7 +1495,12 @@ async def _test_set_logical_repository(client, headers, sdb, n):
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
 async def test_set_logical_repository_replace(
-        client, headers, logical_settings_db, release_match_setting_tag_logical_db, sdb):
+    client,
+    headers,
+    logical_settings_db,
+    release_match_setting_tag_logical_db,
+    sdb,
+):
     await _test_set_logical_repository(client, headers, sdb, 2)
 
 
@@ -1171,22 +1508,29 @@ async def test_set_logical_repository_replace(
 @pytest.mark.app_validate_responses(False)
 async def test_set_logical_repository_replace_identical(client, headers, sdb, logical_settings_db):
     # make the logical repositiry equal to the body
-    await sdb.execute(update(LogicalRepository).where(
-        LogicalRepository.name == "alpha",
-    ).values(
-        prs={"title": ".*[Aa]argh", "labels": ["bug", "fix"]},
-        updated_at=LogicalRepository.updated_at,
-    ))
+    await sdb.execute(
+        update(LogicalRepository)
+        .where(LogicalRepository.name == "alpha")
+        .values(
+            prs={"title": ".*[Aa]argh", "labels": ["bug", "fix"]},
+            updated_at=LogicalRepository.updated_at,
+        ),
+    )
     # create a matching ReleaseSetting for the logical repository
-    await sdb.execute(insert(ReleaseSetting).values(
-        ReleaseSetting(
-            repository="github.com/src-d/go-git/alpha",
-            account_id=1,
-            branches="master",
-            tags="v.*",
-            events=".*",
-            match=ReleaseMatch.tag).create_defaults().explode(with_primary_keys=True),
-    ))
+    await sdb.execute(
+        insert(ReleaseSetting).values(
+            ReleaseSetting(
+                repository="github.com/src-d/go-git/alpha",
+                account_id=1,
+                branches="master",
+                tags="v.*",
+                events=".*",
+                match=ReleaseMatch.tag,
+            )
+            .create_defaults()
+            .explode(with_primary_keys=True),
+        ),
+    )
 
     body = {
         "account": 1,
@@ -1206,7 +1550,11 @@ async def test_set_logical_repository_replace_identical(client, headers, sdb, lo
 
 @pytest.mark.app_validate_responses(False)
 async def test_set_logical_repository_clean_deployments(
-    client, headers, sdb, logical_settings_db, pdb,
+    client,
+    headers,
+    sdb,
+    logical_settings_db,
+    pdb,
 ) -> None:
     await pdb.execute(
         insert(GitHubPullRequestDeployment).values(
@@ -1242,15 +1590,25 @@ async def test_set_logical_repository_clean_deployments(
     assert pr_depl_row is None
 
 
-@pytest.mark.parametrize("account, name, parent, match, code", [
-    (2, "alpha", "github.com/src-d/go-git", "tag", 403),
-    (3, "alpha", "github.com/src-d/go-git", "tag", 404),
-    (1, "alpha", "github.com/athenianco/athenian-api", "tag", 403),
-    (1, "", "github.com/src-d/go-git", "tag", 400),
-    (1, "alpha", "github.com/src-d/go-git", "branch", 400),
-])
+@pytest.mark.parametrize(
+    "account, name, parent, match, code",
+    [
+        (2, "alpha", "github.com/src-d/go-git", "tag", 403),
+        (3, "alpha", "github.com/src-d/go-git", "tag", 404),
+        (1, "alpha", "github.com/athenianco/athenian-api", "tag", 403),
+        (1, "", "github.com/src-d/go-git", "tag", 400),
+        (1, "alpha", "github.com/src-d/go-git", "branch", 400),
+    ],
+)
 async def test_set_logical_repository_nasty_input(
-        client, headers, account, name, parent, match, code):
+    client,
+    headers,
+    account,
+    name,
+    parent,
+    match,
+    code,
+):
     body = {
         "account": account,
         "name": name,

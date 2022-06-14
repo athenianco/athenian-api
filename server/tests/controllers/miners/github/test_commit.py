@@ -5,15 +5,20 @@ import pytest
 
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.miners.github.branches import BranchMiner
-from athenian.api.internal.miners.github.commit import extract_commits, FilterCommitsProperty
-from athenian.api.internal.miners.github.dag_accelerated import find_orphans, \
-    validate_edges_integrity
+from athenian.api.internal.miners.github.commit import FilterCommitsProperty, extract_commits
+from athenian.api.internal.miners.github.dag_accelerated import (
+    find_orphans,
+    validate_edges_integrity,
+)
 
 
-@pytest.mark.parametrize("property, count", [
-    (FilterCommitsProperty.NO_PR_MERGES, 596),
-    (FilterCommitsProperty.BYPASSING_PRS, 289),
-])
+@pytest.mark.parametrize(
+    "property, count",
+    [
+        (FilterCommitsProperty.NO_PR_MERGES, 596),
+        (FilterCommitsProperty.BYPASSING_PRS, 289),
+    ],
+)
 @with_defer
 async def test_extract_commits_users(mdb, pdb, property, count, cache, prefixer):
     """

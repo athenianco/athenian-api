@@ -19,8 +19,9 @@ def parse_args():
     parser = argparse.ArgumentParser()
     add_logging_args(parser)
     parser.add_argument("conn_str", help="SQLAlchemy connection string")
-    parser.add_argument("--force-new", action="store_true",
-                        help="Always generate a new invitation.")
+    parser.add_argument(
+        "--force-new", action="store_true", help="Always generate a new invitation.",
+    )
     return parser.parse_args()
 
 
@@ -34,12 +35,14 @@ def main(conn_str: str, force_new: bool = False) -> None:
     salt = randint(0, (1 << 16) - 1)
     admin_backdoor = invitation_controller.admin_backdoor
     if not session.query(Account).filter(Account.id == admin_backdoor).all():
-        session.add(Account(id=invitation_controller.admin_backdoor,
-                            secret_salt=0,
-                            secret=Account.missing_secret,
-                            expires_at=datetime.now(
-                                timezone.utc,
-                            ) + invitation_controller.TRIAL_PERIOD))
+        session.add(
+            Account(
+                id=invitation_controller.admin_backdoor,
+                secret_salt=0,
+                secret=Account.missing_secret,
+                expires_at=datetime.now(timezone.utc) + invitation_controller.TRIAL_PERIOD,
+            ),
+        )
         session.commit()
         max_id = session.query(func.max(Account.id)).filter(Account.id < admin_backdoor).first()
         if max_id is None or max_id[0] is None:
@@ -55,13 +58,15 @@ def main(conn_str: str, force_new: bool = False) -> None:
             # session.execute("UPDATE sqlite_sequence SET seq=%d WHERE name='accounts';" % max_id)
         else:
             raise NotImplementedError(
-                "Cannot reset the primary key counter for " + engine.url.drivername)
+                "Cannot reset the primary key counter for " + engine.url.drivername,
+            )
     if not force_new:
-        issued = session.query(Invitation) \
-            .filter(and_(Invitation.account_id == admin_backdoor,
-                         Invitation.is_active)) \
-            .order_by(Invitation.created_by) \
+        issued = (
+            session.query(Invitation)
+            .filter(and_(Invitation.account_id == admin_backdoor, Invitation.is_active))
+            .order_by(Invitation.created_by)
             .all()
+        )
     else:
         issued = []
     try:

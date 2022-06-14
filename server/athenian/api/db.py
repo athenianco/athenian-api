@@ -28,8 +28,11 @@ from sqlalchemy.sql.functions import ReturnTypeFromArgs
 
 import athenian
 from athenian.api import metadata
-from athenian.api.models import check_alembic_schema_version, check_collation, \
-    DBSchemaMismatchError
+from athenian.api.models import (
+    DBSchemaMismatchError,
+    check_alembic_schema_version,
+    check_collation,
+)
 from athenian.api.models.metadata import check_schema_version as check_mdb_schema_version
 from athenian.api.slogging import log_multipart
 from athenian.api.typing_utils import wraps
@@ -108,29 +111,26 @@ def _generate_tags() -> str:
         except KeyError:
             pass
         values.append(
-            f"action='{';'.join(k for k, v in scope._tags.items() if isinstance(v, bool))}'")
+            f"action='{';'.join(k for k, v in scope._tags.items() if isinstance(v, bool))}'",
+        )
     return " /*" + ",".join(sorted(values)) + "*/"
 
 
 def _strip_rocket(query: str) -> str:
     if query.startswith("--🚀"):
-        return query[query.find("🚀", 4) + 1:]
+        return query[query.find("🚀", 4) + 1 :]
     return query
 
 
-async def _asyncpg_execute(self,
-                           query: str,
-                           args,
-                           limit,
-                           timeout,
-                           **kwargs):
+async def _asyncpg_execute(self, query: str, args, limit, timeout, **kwargs):
     description = log_query = _strip_rocket(query)
     if log_query.startswith("/*"):
-        log_sql_probe = log_query[log_query.find("*/", 2, 1024) + 3:]
+        log_sql_probe = log_query[log_query.find("*/", 2, 1024) + 3 :]
     else:
         log_sql_probe = log_query
     if _log_sql_re.match(log_sql_probe) and not athenian.api.is_testing:
         from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH
+
         if len(description) < MAX_SENTRY_STRING_LENGTH and args:
             description += "\n\n" + ", ".join(str(arg) for arg in args)
         if len(description) >= MAX_SENTRY_STRING_LENGTH:
@@ -177,10 +177,11 @@ class least(ReturnTypeFromArgs):  # noqa
 db_retry_intervals = [0, 0.1, 0.5, 1.4, None]
 
 
-def measure_db_overhead_and_retry(db: Union[morcilla.Database, Database],
-                                  db_id: Optional[str] = None,
-                                  app: Optional[aiohttp.web.Application] = None,
-                                  ) -> Union[morcilla.Database, Database]:
+def measure_db_overhead_and_retry(
+    db: Union[morcilla.Database, Database],
+    db_id: Optional[str] = None,
+    app: Optional[aiohttp.web.Application] = None,
+) -> Union[morcilla.Database, Database]:
     """
     Instrument Database to measure the time spent inside DB i/o.
 
@@ -218,12 +219,14 @@ def measure_db_overhead_and_retry(db: Union[morcilla.Database, Database],
                             if func == direct_acquire and need_acquire:
                                 return
                             return await func(*args, **kwargs)
-                        except (OSError,
-                                asyncpg.PostgresConnectionError,
-                                asyncpg.OperatorInterventionError,
-                                asyncpg.InsufficientResourcesError,
-                                sqlite3.OperationalError,
-                                asyncio.TimeoutError) as e:
+                        except (
+                            OSError,
+                            asyncpg.PostgresConnectionError,
+                            asyncpg.OperatorInterventionError,
+                            asyncpg.InsufficientResourcesError,
+                            sqlite3.OperationalError,
+                            asyncio.TimeoutError,
+                        ) as e:
                             if wait_time is None:
                                 raise e from None
                             log.warning("[%d] %s: %s", i + 1, type(e).__name__, e)
@@ -240,8 +243,11 @@ def measure_db_overhead_and_retry(db: Union[morcilla.Database, Database],
                                     try:
                                         await connection.release()
                                     except Exception as e:
-                                        log.warning("connection.release() raised %s: %s",
-                                                    type(e).__name__, e)
+                                        log.warning(
+                                            "connection.release() raised %s: %s",
+                                            type(e).__name__,
+                                            e,
+                                        )
                                     else:
                                         log.info("Disconnected from %s", db.url)
                             await asyncio.sleep(wait_time)
@@ -253,6 +259,7 @@ def measure_db_overhead_and_retry(db: Union[morcilla.Database, Database],
                                 else:
                                     delta = time.time() - start_time
                                     elapsed[db_id] += delta
+
                 if db.url.dialect == "sqlite":
                     return await execute()
                 async with connection._retry_lock:
@@ -265,8 +272,9 @@ def measure_db_overhead_and_retry(db: Union[morcilla.Database, Database],
         connection.fetch_one = measure_method_overhead_and_retry(connection.fetch_one)
         connection.execute = measure_method_overhead_and_retry(connection.execute)
         connection.execute_many = measure_method_overhead_and_retry(connection.execute_many)
-        connection.execute_many_native = \
-            measure_method_overhead_and_retry(connection.execute_many_native)
+        connection.execute_many_native = measure_method_overhead_and_retry(
+            connection.execute_many_native,
+        )
 
         original_transaction = connection.transaction
 
@@ -284,12 +292,13 @@ def measure_db_overhead_and_retry(db: Union[morcilla.Database, Database],
     return db
 
 
-def check_schema_versions(metadata_db: str,
-                          state_db: str,
-                          precomputed_db: str,
-                          persistentdata_db: str,
-                          log: logging.Logger,
-                          ) -> bool:
+def check_schema_versions(
+    metadata_db: str,
+    state_db: str,
+    precomputed_db: str,
+    persistentdata_db: str,
+    log: logging.Logger,
+) -> bool:
     """Validate schema versions in parallel threads."""
     passed = True
     logging.getLogger("alembic.runtime.migration").setLevel(logging.WARNING)
@@ -318,11 +327,14 @@ def check_schema_versions(metadata_db: str,
             passed = False
             log.exception("while checking metadata")
 
-    checkers = [threading.Thread(target=check_alembic, args=args)
-                for args in (("state", state_db),
-                             ("precomputed", precomputed_db),
-                             ("persistentdata", persistentdata_db),
-                             )]
+    checkers = [
+        threading.Thread(target=check_alembic, args=args)
+        for args in (
+            ("state", state_db),
+            ("precomputed", precomputed_db),
+            ("persistentdata", persistentdata_db),
+        )
+    ]
     checkers.append(threading.Thread(target=check_metadata, args=(metadata_db,)))
     for t in checkers:
         t.start()
@@ -375,10 +387,12 @@ def _visit_select(element, compiler, **kw):
     return text
 
 
-async def insert_or_ignore(model,
-                           values: List[Mapping[str, Any]],
-                           caller: str,
-                           db: Database) -> None:
+async def insert_or_ignore(
+    model,
+    values: List[Mapping[str, Any]],
+    caller: str,
+    db: Database,
+) -> None:
     """Insert records to the table corresponding to the `model`. Ignore PK collisions."""
     if db.url.dialect == "postgresql":
         sql = postgres_insert(model).on_conflict_do_nothing()

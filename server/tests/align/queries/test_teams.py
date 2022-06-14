@@ -6,10 +6,17 @@ import pytest
 
 from athenian.api.align.queries.teams import fetch_team_tree
 from athenian.api.db import Database
-from athenian.api.internal.team import MultipleRootTeamsError, RootTeamNotFoundError, \
-    TeamNotFoundError
-from tests.align.utils import align_graphql_request, assert_extension_error, build_fragment, \
-    build_recursive_fields_structure
+from athenian.api.internal.team import (
+    MultipleRootTeamsError,
+    RootTeamNotFoundError,
+    TeamNotFoundError,
+)
+from tests.align.utils import (
+    align_graphql_request,
+    assert_extension_error,
+    build_fragment,
+    build_recursive_fields_structure,
+)
 from tests.testutils.db import model_insert_stmt, models_insert
 from tests.testutils.factory.state import TeamFactory
 
@@ -148,20 +155,29 @@ class TestTeamsErrors(BaseTeamsTest):
         assert_extension_error(res, "Team 999 not found or access denied")
 
     async def test_team_account_mismatch(
-        self, client: TestClient, headers: dict, sdb: Database,
+        self,
+        client: TestClient,
+        headers: dict,
+        sdb: Database,
     ) -> None:
         await sdb.execute(model_insert_stmt(TeamFactory(id=1, owner_id=2, members=[1])))
         res = await self._request(1, 1, client, headers)
         assert_extension_error(res, "Team 1 not found or access denied")
 
     async def test_zero_team_id_no_root_teams(
-        self, client: TestClient, headers: dict, sdb: Database,
+        self,
+        client: TestClient,
+        headers: dict,
+        sdb: Database,
     ):
         res = await self._request(1, 0, client, headers)
         assert_extension_error(res, "Root team not found or access denied")
 
     async def test_zero_team_id_multiple_root_teams(
-        self, client: TestClient, headers: dict, sdb: Database,
+        self,
+        client: TestClient,
+        headers: dict,
+        sdb: Database,
     ):
         await models_insert(sdb, TeamFactory(id=1), TeamFactory(id=2))
         res = await self._request(1, 0, client, headers)

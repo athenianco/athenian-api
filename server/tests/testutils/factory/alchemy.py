@@ -18,9 +18,9 @@ class SQLAlchemyModelFactoryMetaClass(FactoryMetaClass):
             # explicitly defined in factory class
             for field_name, model_field in Model.__dict__.items():
                 if (
-                        field_name.startswith("_")
-                        or field_name in attrs
-                        or not isinstance(model_field, InstrumentedAttribute)
+                    field_name.startswith("_")
+                    or field_name in attrs
+                    or not isinstance(model_field, InstrumentedAttribute)
                 ):
                     continue
                 # if a factory declaration can be extracted from the the model attribute
@@ -89,4 +89,5 @@ class SQLAlchemyModelFactory(BaseFactory, metaclass=SQLAlchemyModelFactoryMetaCl
     Factory `Model` should derive from sqlalchemy `DeclarativeMeta`.
 
     """
+
     pass

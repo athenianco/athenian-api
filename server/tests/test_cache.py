@@ -14,13 +14,18 @@ from athenian.api.tracing import sentry_span
 from tests.conftest import has_memcached
 
 
-@pytest.mark.parametrize("fmt,args", [("text", []),
-                                      ("", []),
-                                      ("1", []),
-                                      ("%s", [""]),
-                                      ("xxx %s %d yyy", ["y", 2]),
-                                      ("x" * 100500, []),
-                                      ("%s", [])])
+@pytest.mark.parametrize(
+    "fmt,args",
+    [
+        ("text", []),
+        ("", []),
+        ("1", []),
+        ("%s", [""]),
+        ("xxx %s %d yyy", ["y", 2]),
+        ("x" * 100500, []),
+        ("%s", []),
+    ],
+)
 def test_gen_cache_key_formats(fmt, args):
     key = gen_cache_key(fmt, *args)
     assert key
@@ -153,12 +158,14 @@ async def test_expires_header(client, headers, client_cache):
         "repositories": ["{1}"],
     }
     response = await client.request(
-        method="POST", path="/v1/filter/labels", headers=headers, json=body)
+        method="POST", path="/v1/filter/labels", headers=headers, json=body,
+    )
     assert response.status == 200
     exp1 = response.headers["expires"]
     assert exp1 == "Sat, 01 Jan 2022 01:00:00 GMT"  # + middle_term_exptime = 1 hour
     time.sleep(1)
     response = await client.request(
-        method="POST", path="/v1/filter/labels", headers=headers, json=body)
+        method="POST", path="/v1/filter/labels", headers=headers, json=body,
+    )
     exp2 = response.headers["expires"]
     assert exp1 == exp2

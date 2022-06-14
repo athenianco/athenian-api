@@ -8,7 +8,6 @@ Create Date: 2020-06-30 14:10:54.682719+00:00
 from alembic import op
 import sqlalchemy as sa
 
-
 # revision identifiers, used by Alembic.
 revision = "91072707aebc"
 down_revision = "5887950a696d"
@@ -19,7 +18,8 @@ depends_on = None
 def upgrade():
     with op.batch_alter_table("repository_sets") as bop:
         bop.add_column(
-            sa.Column("precomputed", sa.Boolean(), nullable=False, server_default="false"))
+            sa.Column("precomputed", sa.Boolean(), nullable=False, server_default="false"),
+        )
 
 
 def downgrade():

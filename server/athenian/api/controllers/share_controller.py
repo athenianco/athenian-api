@@ -13,7 +13,7 @@ from athenian.api.db import DatabaseLike
 from athenian.api.models.state.models import Share, UserAccount
 from athenian.api.models.web import BadRequestError, NotFoundError, Share as WebShare
 from athenian.api.request import AthenianWebRequest
-from athenian.api.response import model_response, ResponseError
+from athenian.api.response import ResponseError, model_response
 from athenian.api.tracing import sentry_span
 
 
@@ -22,10 +22,16 @@ async def save_share(request: AthenianWebRequest, body: Any) -> aiohttp.web.Resp
     """Save the state of UI views and return a reference."""
     if body is None:
         raise ResponseError(BadRequestError("Saved data must not be null"))
-    obj_id = await request.sdb.execute(insert(Share).values(Share(
-        created_by=request.uid,
-        data=body,
-    ).create_defaults().explode()))
+    obj_id = await request.sdb.execute(
+        insert(Share).values(
+            Share(
+                created_by=request.uid,
+                data=body,
+            )
+            .create_defaults()
+            .explode(),
+        ),
+    )
     finseq = _encode_share_id(obj_id, request.app["auth"])
     return aiohttp.web.json_response(finseq)
 
@@ -39,8 +45,8 @@ def _encode_share_id(obj_id: int, auth: Auth0) -> str:
 @sentry_span
 async def _fetch_user_accounts(uids: Sequence[str], sdb: DatabaseLike) -> Tuple[Set[int]]:
     rows = await sdb.fetch_all(
-        select([UserAccount.user_id, UserAccount.account_id])
-        .where(UserAccount.user_id.in_(uids)))
+        select([UserAccount.user_id, UserAccount.account_id]).where(UserAccount.user_id.in_(uids)),
+    )
     accs = defaultdict(list)
     for row in rows:
         accs[row[0]].append(row[1])

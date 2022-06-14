@@ -11,9 +11,11 @@ class MatchIdentitiesRequest(Model):
 
     attribute_map = {"account": "account", "identities": "identities"}
 
-    def __init__(self,
-                 account: Optional[int] = None,
-                 identities: Optional[List[ContributorIdentity]] = None):
+    def __init__(
+        self,
+        account: Optional[int] = None,
+        identities: Optional[List[ContributorIdentity]] = None,
+    ):
         """MatchIdentitiesRequest - a model defined in OpenAPI
 
         :param account: The account of this MatchIdentitiesRequest.

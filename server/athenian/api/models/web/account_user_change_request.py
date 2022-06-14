@@ -92,7 +92,8 @@ class AccountUserChangeRequest(Model):
         """
         if status not in UserChangeStatus:
             raise ValueError(
-                "Invalid value for `status` (%s), must be one of %s" % (
-                    status, list(UserChangeStatus)))
+                "Invalid value for `status` (%s), must be one of %s"
+                % (status, list(UserChangeStatus)),
+            )
 
         self._status = status

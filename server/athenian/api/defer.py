@@ -1,4 +1,4 @@
-from asyncio import current_task, ensure_future, Event, shield, sleep, wait
+from asyncio import Event, current_task, ensure_future, shield, sleep, wait
 from contextvars import ContextVar
 import logging
 from typing import Awaitable, Coroutine, List
@@ -39,9 +39,7 @@ def enable_defer(explicit_launch: bool) -> None:
         launch_defer(0, "enable_defer")
 
 
-def launch_defer(delay: float,
-                 name: str,
-                 detached: bool = False) -> None:
+def launch_defer(delay: float, name: str, detached: bool = False) -> None:
     """Allow the deferred coroutines to execute after a certain delay (in seconds)."""
     log = logging.getLogger(f"{metadata.__package__}.launch_defer")
     try:
@@ -60,9 +58,12 @@ def launch_defer(delay: float,
         _defer_explicit.set(False)
 
     if (parent := Hub.current.scope.transaction) is None:
+
         def transaction():
             return start_transaction(name="defer", sampled=False)
+
     else:
+
         def transaction():
             return start_transaction(
                 name="defer " + parent.name,
@@ -80,6 +81,7 @@ def launch_defer(delay: float,
     if delay == 0:
         launch()
     else:
+
         async def delayer():
             global _global_defer_counter
             _global_defer_counter += 1
@@ -95,18 +97,17 @@ def launch_defer(delay: float,
         ensure_future(delayer())
 
 
-def launch_defer_from_request(request: web.Request,
-                              delay: float = 0,
-                              detached: bool = False,
-                              ) -> None:
+def launch_defer_from_request(
+    request: web.Request,
+    delay: float = 0,
+    detached: bool = False,
+) -> None:
     """
     Allow the deferred coroutines to execute after a certain delay (in seconds).
 
     We set the name to the method and the path of the HTTP request.
     """
-    return launch_defer(delay,
-                        "%s %s" % (request.method, request.path),
-                        detached=detached)
+    return launch_defer(delay, "%s %s" % (request.method, request.path), detached=detached)
 
 
 async def defer(coroutine: Awaitable, name: str) -> None:
@@ -115,8 +116,9 @@ async def defer(coroutine: Awaitable, name: str) -> None:
         for key, val in coroutine.cr_frame.f_locals.items():
             try:
                 # because we will use this connection in the deferred task but it's already closed
-                assert not isinstance(val, morcilla.core.Connection), \
-                    f"{key} must not be visible to {coroutine.__qualname__}"
+                assert not isinstance(
+                    val, morcilla.core.Connection,
+                ), f"{key} must not be visible to {coroutine.__qualname__}"
             except AssertionError as e:
                 coroutine.close()
                 raise e from None
@@ -199,6 +201,7 @@ async def wait_all_deferred() -> None:
 
 def with_defer(func):
     """Decorate a coroutine to enable defer()."""
+
     async def wrapped_with_defer(*args, **kwargs):
         enable_defer(False)
         try:
@@ -212,6 +215,7 @@ def with_defer(func):
 
 def with_explicit_defer(func):
     """Decorate a coroutine to enable defer() - but the user must call launch_defer()."""
+
     async def wrapped_with_defer(*args, **kwargs):
         enable_defer(True)
         try:

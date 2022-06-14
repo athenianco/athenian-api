@@ -113,7 +113,8 @@ def HistogramDefinition(M: Enum, module_name: str) -> Type[Model]:
             """
             if bins is not None and bins < 0:
                 raise ValueError(
-                    "Invalid value for `bins`, must be a value greater than or equal to `0`")
+                    "Invalid value for `bins`, must be a value greater than or equal to `0`",
+                )
 
             self._bins = bins
 

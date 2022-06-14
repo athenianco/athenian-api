@@ -5,10 +5,20 @@ import numpy as np
 import pandas as pd
 
 from athenian.api.internal.features.metric import MetricInt, MetricTimeDelta
-from athenian.api.internal.features.metric_calculator import AverageMetricCalculator, \
-    BinnedHistogramCalculator, BinnedMetricCalculator, Counter, HistogramCalculator, \
-    HistogramCalculatorEnsemble, make_register_metric, MetricCalculator, \
-    MetricCalculatorEnsemble, RatioCalculator, SumMetricCalculator, WithoutQuantilesMixin
+from athenian.api.internal.features.metric_calculator import (
+    AverageMetricCalculator,
+    BinnedHistogramCalculator,
+    BinnedMetricCalculator,
+    Counter,
+    HistogramCalculator,
+    HistogramCalculatorEnsemble,
+    MetricCalculator,
+    MetricCalculatorEnsemble,
+    RatioCalculator,
+    SumMetricCalculator,
+    WithoutQuantilesMixin,
+    make_register_metric,
+)
 from athenian.api.internal.miners.filters import LabelFilter
 from athenian.api.internal.miners.jira.issue import ISSUE_PRS_BEGAN, ISSUE_PRS_RELEASED
 from athenian.api.internal.miners.types import JIRAParticipants, JIRAParticipationKind
@@ -26,10 +36,12 @@ class JIRAMetricCalculatorEnsemble(MetricCalculatorEnsemble):
 
     def __init__(self, *metrics: str, quantiles: Sequence[float], quantile_stride: int):
         """Initialize a new instance of JIRAMetricCalculatorEnsemble class."""
-        super().__init__(*metrics,
-                         quantiles=quantiles,
-                         quantile_stride=quantile_stride,
-                         class_mapping=metric_calculators)
+        super().__init__(
+            *metrics,
+            quantiles=quantiles,
+            quantile_stride=quantile_stride,
+            class_mapping=metric_calculators,
+        )
 
 
 class JIRAHistogramCalculatorEnsemble(HistogramCalculatorEnsemble):
@@ -52,9 +64,10 @@ class JIRABinnedHistogramCalculator(BinnedHistogramCalculator):
     ensemble_class = JIRAHistogramCalculatorEnsemble
 
 
-def split_issues_by_participants(with_: List[JIRAParticipants],
-                                 issues: pd.DataFrame,
-                                 ) -> List[np.ndarray]:
+def split_issues_by_participants(
+    with_: List[JIRAParticipants],
+    issues: pd.DataFrame,
+) -> List[np.ndarray]:
     """Group issues by participants."""
     result = []
     if len(with_) < 2:
@@ -76,9 +89,14 @@ def split_issues_by_participants(with_: List[JIRAParticipants],
             merged_issue_commenters = np.concatenate(issue_commenters).astype("U")
             offsets = np.zeros(len(issue_commenters) + 1, dtype=int)
             np.cumsum(issue_commenters.apply(len).values, out=offsets[1:])
-            indexes = unordered_unique(np.searchsorted(
-                offsets, np.nonzero(np.in1d(merged_issue_commenters, commenters))[0],
-                side="right") - 1)
+            indexes = unordered_unique(
+                np.searchsorted(
+                    offsets,
+                    np.nonzero(np.in1d(merged_issue_commenters, commenters))[0],
+                    side="right",
+                )
+                - 1,
+            )
             mask[indexes] = True
         result.append(np.flatnonzero(mask))
     return result
@@ -103,16 +121,18 @@ class IssuesLabelSplitter:
         if not self.enabled or issues.empty:
             return [np.arange(len(issues))]
         labels_column = issues[Issue.labels.name].values
-        rows_all_labels = np.repeat(np.arange(len(labels_column), dtype=int),
-                                    [len(labels) for labels in labels_column])
+        rows_all_labels = np.repeat(
+            np.arange(len(labels_column), dtype=int), [len(labels) for labels in labels_column],
+        )
         all_labels = np.concatenate(labels_column).astype("U")
         del labels_column
         all_labels_order = np.argsort(all_labels)
         ordered_rows_all_labels = rows_all_labels[all_labels_order]
         unique_labels, unique_counts = np.unique(all_labels[all_labels_order], return_counts=True)
         del all_labels
-        groups = np.array(np.split(ordered_rows_all_labels, np.cumsum(unique_counts)),
-                          dtype=object)
+        groups = np.array(
+            np.split(ordered_rows_all_labels, np.cumsum(unique_counts)), dtype=object,
+        )
         unique_labels_order = np.argsort(-unique_counts)
         unique_labels = unique_labels[unique_labels_order]
         groups = groups[unique_labels_order]
@@ -148,11 +168,13 @@ class RaisedCounter(SumMetricCalculator[int]):
 
     metric = MetricInt
 
-    def _analyze(self,
-                 facts: pd.DataFrame,
-                 min_times: np.ndarray,
-                 max_times: np.ndarray,
-                 **_) -> np.ndarray:
+    def _analyze(
+        self,
+        facts: pd.DataFrame,
+        min_times: np.ndarray,
+        max_times: np.ndarray,
+        **_,
+    ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         created = facts[Issue.created.name].values
         result[(min_times[:, None] <= created) & (created < max_times[:, None])] = 1
@@ -165,11 +187,13 @@ class ResolvedCounter(SumMetricCalculator[int]):
 
     metric = MetricInt
 
-    def _analyze(self,
-                 facts: pd.DataFrame,
-                 min_times: np.ndarray,
-                 max_times: np.ndarray,
-                 **_) -> np.ndarray:
+    def _analyze(
+        self,
+        facts: pd.DataFrame,
+        min_times: np.ndarray,
+        max_times: np.ndarray,
+        **_,
+    ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         resolved = facts[AthenianIssue.resolved.name].values.astype(min_times.dtype)
         prs_began = facts[ISSUE_PRS_BEGAN].values.astype(min_times.dtype)
@@ -186,11 +210,13 @@ class OpenCounter(SumMetricCalculator[int]):
 
     metric = MetricInt
 
-    def _analyze(self,
-                 facts: pd.DataFrame,
-                 min_times: np.ndarray,
-                 max_times: np.ndarray,
-                 **_) -> np.ndarray:
+    def _analyze(
+        self,
+        facts: pd.DataFrame,
+        min_times: np.ndarray,
+        max_times: np.ndarray,
+        **_,
+    ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         created = facts[Issue.created.name].values
         resolved = facts[AthenianIssue.resolved.name].values.astype(min_times.dtype)
@@ -229,11 +255,13 @@ class LifeTimeCalculator(AverageMetricCalculator[timedelta]):
     may_have_negative_values = False
     metric = MetricTimeDelta
 
-    def _analyze(self,
-                 facts: pd.DataFrame,
-                 min_times: np.ndarray,
-                 max_times: np.ndarray,
-                 **_) -> np.ndarray:
+    def _analyze(
+        self,
+        facts: pd.DataFrame,
+        min_times: np.ndarray,
+        max_times: np.ndarray,
+        **_,
+    ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), None, self.dtype)
         created = facts[Issue.created.name].values
         prs_began = facts[ISSUE_PRS_BEGAN].values.astype(min_times.dtype)
@@ -264,11 +292,13 @@ class LeadTimeCalculator(AverageMetricCalculator[timedelta]):
     may_have_negative_values = False
     metric = MetricTimeDelta
 
-    def _analyze(self,
-                 facts: pd.DataFrame,
-                 min_times: np.ndarray,
-                 max_times: np.ndarray,
-                 **_) -> np.ndarray:
+    def _analyze(
+        self,
+        facts: pd.DataFrame,
+        min_times: np.ndarray,
+        max_times: np.ndarray,
+        **_,
+    ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), None, self.dtype)
         work_began = facts[AthenianIssue.work_began.name].values.astype(min_times.dtype)
         prs_began = facts[ISSUE_PRS_BEGAN].values.astype(min_times.dtype)
@@ -298,18 +328,21 @@ class AcknowledgeTimeCalculator(AverageMetricCalculator[timedelta]):
     may_have_negative_values = False
     metric = MetricTimeDelta
 
-    def _analyze(self,
-                 facts: pd.DataFrame,
-                 min_times: np.ndarray,
-                 max_times: np.ndarray,
-                 **_) -> np.ndarray:
+    def _analyze(
+        self,
+        facts: pd.DataFrame,
+        min_times: np.ndarray,
+        max_times: np.ndarray,
+        **_,
+    ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), None, self.dtype)
         work_began = facts[AthenianIssue.work_began.name].values.astype(min_times.dtype)
         prs_began = facts[ISSUE_PRS_BEGAN].values.astype(min_times.dtype)
         acknowledged = np.fmin(work_began, prs_began)
         statuses = facts[Status.category_name.name].values
-        acknowledged[(statuses != Status.CATEGORY_IN_PROGRESS) &
-                     (statuses != Status.CATEGORY_DONE)] = None
+        acknowledged[
+            (statuses != Status.CATEGORY_IN_PROGRESS) & (statuses != Status.CATEGORY_DONE)
+        ] = None
         created = facts[Issue.created.name].values.astype(min_times.dtype)
         ack_times = acknowledged - created
         ack_times = np.maximum(ack_times, ack_times.dtype.type(0))
@@ -347,11 +380,13 @@ class PRLagTimeCalculator(AverageMetricCalculator[timedelta]):
     may_have_negative_values = False
     metric = MetricTimeDelta
 
-    def _analyze(self,
-                 facts: pd.DataFrame,
-                 min_times: np.ndarray,
-                 max_times: np.ndarray,
-                 **_) -> np.ndarray:
+    def _analyze(
+        self,
+        facts: pd.DataFrame,
+        min_times: np.ndarray,
+        max_times: np.ndarray,
+        **_,
+    ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), None, self.dtype)
         work_began = facts[AthenianIssue.work_began.name].values.astype(min_times.dtype)
         prs_began = facts[ISSUE_PRS_BEGAN].values.astype(min_times.dtype)
@@ -359,8 +394,7 @@ class PRLagTimeCalculator(AverageMetricCalculator[timedelta]):
         zero = diff.dtype.type(0)
         diff[diff < zero] = zero
         statuses = facts[Status.category_name.name].values
-        diff[(statuses != Status.CATEGORY_IN_PROGRESS) &
-             (statuses != Status.CATEGORY_DONE)] = None
+        diff[(statuses != Status.CATEGORY_IN_PROGRESS) & (statuses != Status.CATEGORY_DONE)] = None
         focus_mask = (min_times[:, None] <= prs_began) & (prs_began < max_times[:, None])
         result[:] = diff
         result[~focus_mask] = None
@@ -378,18 +412,19 @@ class BacklogTimeCalculator(AverageMetricCalculator[timedelta]):
     may_have_negative_values = False
     metric = MetricTimeDelta
 
-    def _analyze(self,
-                 facts: pd.DataFrame,
-                 min_times: np.ndarray,
-                 max_times: np.ndarray,
-                 **_) -> np.ndarray:
+    def _analyze(
+        self,
+        facts: pd.DataFrame,
+        min_times: np.ndarray,
+        max_times: np.ndarray,
+        **_,
+    ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), None, self.dtype)
         created = facts[Issue.created.name].values.astype(min_times.dtype)
         work_began = facts[AthenianIssue.work_began.name].values.astype(min_times.dtype)
         diff = work_began - created
         statuses = facts[Status.category_name.name].values
-        diff[(statuses != Status.CATEGORY_IN_PROGRESS) &
-             (statuses != Status.CATEGORY_DONE)] = None
+        diff[(statuses != Status.CATEGORY_IN_PROGRESS) & (statuses != Status.CATEGORY_DONE)] = None
         focus_mask = (min_times[:, None] <= work_began) & (work_began < max_times[:, None])
         result[:] = diff
         result[~focus_mask] = None

@@ -69,7 +69,10 @@ class _FilterReleasesRequest(Model, sealed=False):
         self._with_ = with_
 
 
-FilterReleasesRequest = AllOf(_FilterReleasesRequest,
-                              CommonFilterProperties,
-                              CommonPullRequestFilters,
-                              name="FilterReleasesRequest", module=__name__)
+FilterReleasesRequest = AllOf(
+    _FilterReleasesRequest,
+    CommonFilterProperties,
+    CommonPullRequestFilters,
+    name="FilterReleasesRequest",
+    module=__name__,
+)

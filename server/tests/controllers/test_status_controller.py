@@ -7,9 +7,7 @@ from athenian.api.models.metadata import __min_version__
 
 
 async def test_versions(client, headers):
-    response = await client.request(
-        method="GET", path="/v1/versions", headers=headers, json={},
-    )
+    response = await client.request(method="GET", path="/v1/versions", headers=headers, json={})
     assert response.status == 200
     body = json.loads((await response.read()).decode("utf-8"))
     assert body["api"] == metadata.__version__
@@ -27,9 +25,7 @@ async def test_prometheus(client, headers, client_cache, app):
 
 
 async def test_status(client, headers):
-    response = await client.request(
-        method="GET", path="/status", headers=headers, json={},
-    )
+    response = await client.request(method="GET", path="/status", headers=headers, json={})
     assert response.status == 200
 
 
@@ -57,18 +53,25 @@ class Foo:
 async def test_objgraph_smoke(client, headers):
     _ = Foo()
     response = await client.request(
-        method="GET", path="/objgraph?type=tests.controllers.test_status_controller.Foo",
-        headers=headers, json={},
+        method="GET",
+        path="/objgraph?type=tests.controllers.test_status_controller.Foo",
+        headers=headers,
+        json={},
     )
     assert response.status == 200
     body = (await response.read()).decode("utf-8")
     assert body.startswith("digraph ObjectGraph")
 
 
-@pytest.mark.parametrize("query", ["depth=10",
-                                   "type=tests.controllers.test_status_controller.Foo&depth=50",
-                                   "type=tests.controllers.test_status_controller.Foo&depth=0",
-                                   "type=tests.controllers.test_status_controller.Foo&depth=xxx"])
+@pytest.mark.parametrize(
+    "query",
+    [
+        "depth=10",
+        "type=tests.controllers.test_status_controller.Foo&depth=50",
+        "type=tests.controllers.test_status_controller.Foo&depth=0",
+        "type=tests.controllers.test_status_controller.Foo&depth=xxx",
+    ],
+)
 async def test_objgraph_400(client, headers, query):
     _ = Foo()
     response = await client.request(

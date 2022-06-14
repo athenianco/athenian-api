@@ -10,10 +10,12 @@ class TableFetchingProgress(Model):
     attribute_types = {"fetched": int, "name": str, "total": int}
     attribute_map = {"fetched": "fetched", "name": "name", "total": "total"}
 
-    def __init__(self,
-                 fetched: Optional[int] = None,
-                 name: Optional[str] = None,
-                 total: Optional[int] = None):
+    def __init__(
+        self,
+        fetched: Optional[int] = None,
+        name: Optional[str] = None,
+        total: Optional[int] = None,
+    ):
         """TableFetchingProgress - a model defined in OpenAPI
 
         :param fetched: The fetched of this TableFetchingProgress.

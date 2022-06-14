@@ -56,12 +56,13 @@ class NumpyMetric(Metric[T]):
     nan = None  # numpy-compatible "missing" value
 
     @classmethod
-    def from_fields(cls,
-                    exists: bool,
-                    value: Optional[T],
-                    confidence_min: Optional[T],
-                    confidence_max: Optional[T],
-                    ) -> "NumpyMetric":
+    def from_fields(
+        cls,
+        exists: bool,
+        value: Optional[T],
+        confidence_min: Optional[T],
+        confidence_max: Optional[T],
+    ) -> "NumpyMetric":
         """Initialize a new instance of NumpyStruct from the mapping of immutable field \
         values."""
         if not exists:
@@ -75,10 +76,12 @@ class NumpyMetric(Metric[T]):
                 confidence_min = cls.nan
             if confidence_max is None:
                 confidence_max = cls.nan
-        return super().from_fields(exists=exists,
-                                   value=value,
-                                   confidence_min=confidence_min,
-                                   confidence_max=confidence_max)
+        return super().from_fields(
+            exists=exists,
+            value=value,
+            confidence_min=confidence_min,
+            confidence_max=confidence_max,
+        )
 
     @property
     def exists(self) -> bool:
@@ -122,10 +125,12 @@ class NumpyMetric(Metric[T]):
             return 0  # we really don't know the score in this case
 
 
-def make_metric(name: str,
-                module: str,
-                dtype: Union[str, T, np.dtype],
-                nan_value: Any) -> Type[NumpyMetric]:
+def make_metric(
+    name: str,
+    module: str,
+    dtype: Union[str, T, np.dtype],
+    nan_value: Any,
+) -> Type[NumpyMetric]:
     """Generate a new NumpyMetric specialization."""
     vulgar_type = type(np.zeros(1, dtype=np.dtype(dtype)).item())
 
@@ -137,10 +142,17 @@ def make_metric(name: str,
 
     # we cannot use the normal "class" construct because the class name must be `name`, and that
     # must be because we need to pickle
-    cls = numpy_struct(new_class(name, (NumpyMetric[vulgar_type],), {}, lambda ns: ns.update(
-        nan=nan_value,
-        Immutable=Immutable,
-    )))
+    cls = numpy_struct(
+        new_class(
+            name,
+            (NumpyMetric[vulgar_type],),
+            {},
+            lambda ns: ns.update(
+                nan=nan_value,
+                Immutable=Immutable,
+            ),
+        ),
+    )
     cls.__doc__ = f"NumpyMetric specialization for {dtype}."
     cls.__module__ = module
     return cls

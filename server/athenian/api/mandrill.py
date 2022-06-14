@@ -32,10 +32,7 @@ class MandrillClient:
 
     log = logging.getLogger(f"{metadata.__package__}.Mandrill")
 
-    def __init__(self,
-                 key: str,
-                 timeout: float = 10,
-                 retries: int = 5):
+    def __init__(self, key: str, timeout: float = 10, retries: int = 5):
         """Initialize a new instance of Mandrill class."""
         self.key = key
         self._session = aiohttp.ClientSession(
@@ -55,10 +52,13 @@ class MandrillClient:
         response = last_err = None
         for _ in range(self.retries):
             try:
-                response = await self._session.post("/api/1.0" + url, json={
-                    "key": self.key,
-                    **body,
-                })
+                response = await self._session.post(
+                    "/api/1.0" + url,
+                    json={
+                        "key": self.key,
+                        **body,
+                    },
+                )
             except (aiohttp.ClientOSError, asyncio.TimeoutError) as e:
                 last_err = e
                 if isinstance(e, asyncio.TimeoutError) or e.errno in (-3, 101, 103, 104):
@@ -76,33 +76,40 @@ class MandrillClient:
             return await response.json()
         raise MandrillError(response.status, (await response.read()).decode("utf-8"))
 
-    async def messages_send_template(self,
-                                     template_name: str,
-                                     recipients: Iterable[Tuple[str, ...]],
-                                     /, **kwargs,
-                                     ) -> List[bool]:
+    async def messages_send_template(
+        self,
+        template_name: str,
+        recipients: Iterable[Tuple[str, ...]],
+        /,
+        **kwargs,
+    ) -> List[bool]:
         """Fill the template with `kwargs` and send emails to the specified `recipients`."""
-        response = await self._call("/messages/send-template", {
-            "template_name": template_name,
-            "template_content": [],
-            "message": {
-                "to": [
-                    {"email": r[0], **({"name": r[1]} if len(r) > 1 else {})}
-                    for r in recipients
-                ],
-                "global_merge_vars": [
-                    {"name": key, "content": val} for key, val in kwargs.items()
-                ],
+        response = await self._call(
+            "/messages/send-template",
+            {
+                "template_name": template_name,
+                "template_content": [],
+                "message": {
+                    "to": [
+                        {"email": r[0], **({"name": r[1]} if len(r) > 1 else {})}
+                        for r in recipients
+                    ],
+                    "global_merge_vars": [
+                        {"name": key, "content": val} for key, val in kwargs.items()
+                    ],
+                },
             },
-        })
+        )
         result = []
         for status in response:
             if (resolution := status["status"]) in ("rejected", "invalid"):
                 reject_reason = status.get("reject_reason", "")
-                self.log.error("Failed to send email to %s: %s%s",
-                               status["email"],
-                               resolution,
-                               (" " + reject_reason) if reject_reason else "")
+                self.log.error(
+                    "Failed to send email to %s: %s%s",
+                    status["email"],
+                    resolution,
+                    (" " + reject_reason) if reject_reason else "",
+                )
                 result.append(False)
             else:
                 result.append(True)

@@ -12,10 +12,11 @@ from athenian.api import metadata
 from athenian.api.models.precomputed import template
 
 
-def schedule_pdb_schema_check(pdb: morcilla.Database,
-                              app: aiohttp.web.Application,
-                              interval: float = 15 * 60,
-                              ) -> List[asyncio.Task]:
+def schedule_pdb_schema_check(
+    pdb: morcilla.Database,
+    app: aiohttp.web.Application,
+    interval: float = 15 * 60,
+) -> List[asyncio.Task]:
     """
     Execute the precomputed DB schema version check every `interval` seconds.
 

@@ -3,8 +3,11 @@ from datetime import datetime, timezone
 
 from sqlalchemy import delete, insert, update
 
-from athenian.api.models.metadata.github import Account as MetaAccount, \
-    AccountRepository as MetaAccountRepository, FetchProgress
+from athenian.api.models.metadata.github import (
+    Account as MetaAccount,
+    AccountRepository as MetaAccountRepository,
+    FetchProgress,
+)
 from athenian.api.models.state.models import AccountGitHubAccount, RepositorySet
 from athenian.api.precompute.discover_accounts import main
 from tests.testutils.db import model_insert_stmt
@@ -45,8 +48,10 @@ async def test_partition(sdb, mdb_rw, tqdm_disable) -> None:
         await _make_installed_account(sdb, mdb_rw, 12, 112)
         await _make_installed_account(sdb, mdb_rw, 13, 113)
         # make all reposets precomputed for account 13
-        update_stmt = update(RepositorySet).where(RepositorySet.owner_id == 13).values(
-            precomputed=True, updated_at=datetime.now(timezone.utc), updates_count=1,
+        update_stmt = (
+            update(RepositorySet)
+            .where(RepositorySet.owner_id == 13)
+            .values(precomputed=True, updated_at=datetime.now(timezone.utc), updates_count=1)
         )
         await sdb.execute(update_stmt)
         ctx = build_context(sdb=sdb, mdb=mdb_rw)
@@ -63,10 +68,7 @@ async def test_partition(sdb, mdb_rw, tqdm_disable) -> None:
 async def _make_installed_account(sdb, mdb, account_id, meta_acc_id) -> None:
     """Create DB objects so that account_id is fully installed."""
 
-    for state_model in (
-        AccountFactory(id=account_id),
-        RepositorySetFactory(owner_id=account_id),
-    ):
+    for state_model in (AccountFactory(id=account_id), RepositorySetFactory(owner_id=account_id)):
         await sdb.execute(model_insert_stmt(state_model))
     await sdb.execute(insert(AccountGitHubAccount).values(id=meta_acc_id, account_id=account_id))
 

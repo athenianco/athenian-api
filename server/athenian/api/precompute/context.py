@@ -16,8 +16,9 @@ from athenian.api.cache import CACHE_VAR_NAME, setup_cache_metrics
 from athenian.api.db import Database, measure_db_overhead_and_retry
 from athenian.api.defer import enable_defer
 from athenian.api.models.metadata import dereference_schemas as dereference_metadata_schemas
-from athenian.api.models.persistentdata import \
-    dereference_schemas as dereference_persistentdata_schemas
+from athenian.api.models.persistentdata import (
+    dereference_schemas as dereference_persistentdata_schemas,
+)
 from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME
 from athenian.api.typing_utils import dataclass
 from athenian.precomputer.db import dereference_schemas as dereference_precomputed_schemas
@@ -53,7 +54,8 @@ class PrecomputeContext:
                         rdb = measure_db_overhead_and_retry(Database(args.persistentdata_db))
                         try:
                             await gather(
-                                sdb.connect(), mdb.connect(), pdb.connect(), rdb.connect())
+                                sdb.connect(), mdb.connect(), pdb.connect(), rdb.connect(),
+                            )
                             pdb.metrics = {
                                 "hits": ContextVar("pdb_hits", default=defaultdict(int)),
                                 "misses": ContextVar("pdb_misses", default=defaultdict(int)),

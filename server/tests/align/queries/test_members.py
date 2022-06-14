@@ -3,8 +3,11 @@ from typing import Sequence
 from aiohttp.test_utils import TestClient
 
 from athenian.api.db import Database
-from tests.align.utils import align_graphql_request, assert_extension_error, \
-    get_extension_error_obj
+from tests.align.utils import (
+    align_graphql_request,
+    assert_extension_error,
+    get_extension_error_obj,
+)
 from tests.testutils.db import model_insert_stmt
 from tests.testutils.factory.state import TeamFactory
 
@@ -47,7 +50,10 @@ class BaseMembersTest:
 
 class TestMembersErrors(BaseMembersTest):
     async def test_auth_failure(
-        self, client: TestClient, headers: dict, sdb: Database,
+        self,
+        client: TestClient,
+        headers: dict,
+        sdb: Database,
     ) -> None:
         await sdb.execute(model_insert_stmt(TeamFactory(id=1, members=[1, 2])))
         headers["Authorization"] = "Bearer invalid"
@@ -60,7 +66,10 @@ class TestMembersErrors(BaseMembersTest):
         assert_extension_error(res, "Team 999 not found or access denied")
 
     async def test_root_team_multiple_roots(
-        self, client: TestClient, headers: dict, sdb: Database,
+        self,
+        client: TestClient,
+        headers: dict,
+        sdb: Database,
     ):
         for model in (TeamFactory(), TeamFactory()):
             await sdb.execute(model_insert_stmt(model))
@@ -69,7 +78,10 @@ class TestMembersErrors(BaseMembersTest):
         assert_extension_error(res, "Account 1 has multiple root teams")
 
     async def test_root_team_no_team_exists(
-        self, client: TestClient, headers: dict, sdb: Database,
+        self,
+        client: TestClient,
+        headers: dict,
+        sdb: Database,
     ):
         res = await self._request(1, 0, client, headers)
         assert_extension_error(res, "Root team not found or access denied")
@@ -77,7 +89,10 @@ class TestMembersErrors(BaseMembersTest):
 
 class TestMembers(BaseMembersTest):
     async def test_specific_non_root_team_few_fields(
-        self, client: TestClient, headers: dict, sdb: Database,
+        self,
+        client: TestClient,
+        headers: dict,
+        sdb: Database,
     ) -> None:
         # members id are from the 6 MB metadata db fixture
         for model in (
@@ -93,7 +108,10 @@ class TestMembers(BaseMembersTest):
         ]
 
     async def test_specific_non_root_team(
-        self, client: TestClient, headers: dict, sdb: Database,
+        self,
+        client: TestClient,
+        headers: dict,
+        sdb: Database,
     ) -> None:
         for model in (
             TeamFactory(id=1, members=[]),
@@ -107,7 +125,10 @@ class TestMembers(BaseMembersTest):
         assert res_members[1]["email"] == "reujab@gmail.com"
 
     async def test_explicit_root_team(
-        self, client: TestClient, headers: dict, sdb: Database,
+        self,
+        client: TestClient,
+        headers: dict,
+        sdb: Database,
     ) -> None:
         await sdb.execute(model_insert_stmt(TeamFactory(id=1, members=[40078], parent_id=None)))
         res = await self._request(1, 1, client, headers, ("login",))
@@ -115,7 +136,10 @@ class TestMembers(BaseMembersTest):
         assert logins == ["github.com/reujab"]
 
     async def test_implicit_root_team(
-        self, client: TestClient, headers: dict, sdb: Database,
+        self,
+        client: TestClient,
+        headers: dict,
+        sdb: Database,
     ) -> None:
         for model in (
             TeamFactory(id=1, members=[]),

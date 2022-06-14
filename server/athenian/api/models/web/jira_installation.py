@@ -9,9 +9,7 @@ class JIRAInstallation(Model):
     attribute_types = {"url": str, "projects": List[str]}
     attribute_map = {"url": "url", "projects": "projects"}
 
-    def __init__(self,
-                 url: Optional[str] = None,
-                 projects: Optional[List[str]] = None):
+    def __init__(self, url: Optional[str] = None, projects: Optional[List[str]] = None):
         """JIRAInstallation - a model defined in OpenAPI
 
         :param url: The url of this JIRAInstallation.

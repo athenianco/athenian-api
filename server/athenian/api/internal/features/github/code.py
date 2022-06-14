@@ -9,10 +9,11 @@ from athenian.api.tracing import sentry_span
 
 
 @sentry_span
-def calc_code_stats(queried_commits: pd.DataFrame,
-                    total_commits: pd.DataFrame,
-                    time_intervals: Sequence[date],
-                    ) -> List[CodeStats]:
+def calc_code_stats(
+    queried_commits: pd.DataFrame,
+    total_commits: pd.DataFrame,
+    time_intervals: Sequence[date],
+) -> List[CodeStats]:
     """
     Calculate the commit statistics grouped by the given time intervals.
 

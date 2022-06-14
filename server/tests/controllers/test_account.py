@@ -3,8 +3,12 @@ from sqlalchemy import delete, select
 
 from athenian.api.db import Database
 from athenian.api.defer import wait_deferred, with_defer
-from athenian.api.internal.account import copy_teams_as_needed, get_metadata_account_ids, \
-    get_user_account_status, match_metadata_installation
+from athenian.api.internal.account import (
+    copy_teams_as_needed,
+    get_metadata_account_ids,
+    get_user_account_status,
+    match_metadata_installation,
+)
 from athenian.api.models.state.models import AccountGitHubAccount, Team
 from athenian.api.models.web import User
 from athenian.api.response import ResponseError
@@ -45,12 +49,14 @@ async def test_match_metadata_installation(sdb, mdb, slack):
             async with sdb_conn.transaction():
                 async with mdb.connection() as mdb_conn:
                     await match_metadata_installation(
-                        1, "vmarkovtsev", sdb_conn, mdb_conn, mdb_conn, slack)
+                        1, "vmarkovtsev", sdb_conn, mdb_conn, mdb_conn, slack,
+                    )
     async with sdb.connection() as sdb_conn:
         async with sdb_conn.transaction():
             async with mdb.connection() as mdb_conn:
                 meta_ids = await match_metadata_installation(
-                    1, "vmarkovtsev", sdb_conn, mdb_conn, mdb, slack)
+                    1, "vmarkovtsev", sdb_conn, mdb_conn, mdb, slack,
+                )
     assert meta_ids == {6366825}
 
 
@@ -64,7 +70,13 @@ async def test_copy_teams_as_needed(sdb: Database, mdb: Database):
 
     assert len(created_teams) == len(loaded_teams) == n
     assert loaded_teams.keys() == {
-        "team", "engineering", "business", "operations", "product", "admin", "automation",
+        "team",
+        "engineering",
+        "business",
+        "operations",
+        "product",
+        "admin",
+        "automation",
     }
     assert loaded_teams["product"][Team.members.name] == [29, 39936]
     assert loaded_teams["product"][Team.parent_id.name] == loaded_teams["team"][Team.id.name]

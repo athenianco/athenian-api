@@ -82,15 +82,21 @@ class _ForSetCodeChecks(Model, sealed=False):
                 raise IndexError("%d is out of range (no pusher_groups)" % index)
             return fs
         if index >= len(self.pusher_groups):
-            raise IndexError("%d is out of range (max is %d)" % (
-                index, len(self.withpusher_groupsgroups) - 1))
+            raise IndexError(
+                "%d is out of range (max is %d)" % (index, len(self.withpusher_groupsgroups) - 1),
+            )
         fs.pushers = self.pusher_groups[index]
         fs.pusher_groups = None
         return fs
 
 
-ForSetCodeChecks = AllOf(_ForSetCodeChecks, ForSetLines, CommonPullRequestFilters,
-                         name="ForSetCodeChecks", module=__name__)
+ForSetCodeChecks = AllOf(
+    _ForSetCodeChecks,
+    ForSetLines,
+    CommonPullRequestFilters,
+    name="ForSetCodeChecks",
+    module=__name__,
+)
 
 
 class _CalculatedCodeCheckCommon(Model, sealed=False):
@@ -185,9 +191,11 @@ class _CalculatedCodeCheckCommon(Model, sealed=False):
         """
         if suites_ratio is not None and suites_ratio > 1:
             raise ValueError(
-                "Invalid value for `suites_ratio`, must be a value less than or equal to `1`")
+                "Invalid value for `suites_ratio`, must be a value less than or equal to `1`",
+            )
         if suites_ratio is not None and suites_ratio < 0:
             raise ValueError(
-                "Invalid value for `suites_ratio`, must be a value greater than or equal to `0`")
+                "Invalid value for `suites_ratio`, must be a value greater than or equal to `0`",
+            )
 
         self._suites_ratio = suites_ratio

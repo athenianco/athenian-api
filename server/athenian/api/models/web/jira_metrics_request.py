@@ -129,8 +129,10 @@ class JIRAMetricsRequestSpecials(Model, sealed=False):
         self._group_by_jira_label = group_by_jira_label
 
 
-JIRAMetricsRequest = AllOf(FilterJIRACommon,
-                           CommonMetricsProperties,
-                           JIRAMetricsRequestSpecials,
-                           name="JIRAMetricsRequest",
-                           module=__name__)
+JIRAMetricsRequest = AllOf(
+    FilterJIRACommon,
+    CommonMetricsProperties,
+    JIRAMetricsRequestSpecials,
+    name="JIRAMetricsRequest",
+    module=__name__,
+)

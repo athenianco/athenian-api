@@ -196,7 +196,8 @@ class TestDurationTracker:
         assert (
             "precompute_account_seconds_count"
             '{account="1",github_account="3,4",is_fresh="False"} 1.0'
-        ) in data
+            in data
+        )
 
     def test_gateway_not_available(self) -> None:
         tracker = _DurationTracker(None, logging.getLogger(__name__))

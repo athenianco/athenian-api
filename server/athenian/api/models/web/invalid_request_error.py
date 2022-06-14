@@ -26,10 +26,13 @@ class InvalidRequestError(GenericError):
         :param instance: The instance of this InvalidRequestError.
         :param pointer: The pointer of this InvalidRequestError.
         """
-        super().__init__(type="/errors/InvalidRequestError",
-                         title=HTTPStatus.BAD_REQUEST.phrase,
-                         status=HTTPStatus.BAD_REQUEST,
-                         detail=detail, instance=instance)
+        super().__init__(
+            type="/errors/InvalidRequestError",
+            title=HTTPStatus.BAD_REQUEST.phrase,
+            status=HTTPStatus.BAD_REQUEST,
+            detail=detail,
+            instance=instance,
+        )
         self._pointer = pointer
 
     @property

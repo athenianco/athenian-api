@@ -21,7 +21,9 @@ def assert_extension_error(response: dict, error: str) -> None:
 
 
 def build_recursive_fields_structure(
-    fields: Sequence[str], depth: int, recursive_field: str = "children",
+    fields: Sequence[str],
+    depth: int,
+    recursive_field: str = "children",
 ) -> str:
     result = "\n".join(fields)
     for i in range(depth - 1):
@@ -45,8 +47,4 @@ def build_recursive_fields_structure(
 
 def build_fragment(name: str, type_: str, fields: Sequence[str]) -> str:
     fields_list = "\n".join(f"    {field}" for field in fields)
-    return (
-        f"fragment {name} on {type_} {{\n"
-        f"{fields_list}\n"
-        "}"
-    )
+    return f"fragment {name} on {type_} {{\n{fields_list}\n}}"

@@ -22,13 +22,14 @@ class AccountStatus(Model):
         "has_deployments": "has_deployments",
     }
 
-    def __init__(self,
-                 is_admin: Optional[bool] = None,
-                 expired: Optional[bool] = None,
-                 has_ci: Optional[bool] = None,
-                 has_jira: Optional[bool] = None,
-                 has_deployments: Optional[bool] = None,
-                 ):
+    def __init__(
+        self,
+        is_admin: Optional[bool] = None,
+        expired: Optional[bool] = None,
+        has_ci: Optional[bool] = None,
+        has_jira: Optional[bool] = None,
+        has_deployments: Optional[bool] = None,
+    ):
         """AccountStatus - a model defined in OpenAPI
 
         :param is_admin: The is_admin of this AccountStatus.

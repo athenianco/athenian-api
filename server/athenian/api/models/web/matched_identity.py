@@ -19,10 +19,12 @@ class MatchedIdentity(Model):
         "confidence": "confidence",
     }
 
-    def __init__(self,
-                 from_: Optional[ContributorIdentity] = None,
-                 to: Optional[str] = None,
-                 confidence: Optional[float] = None):
+    def __init__(
+        self,
+        from_: Optional[ContributorIdentity] = None,
+        to: Optional[str] = None,
+        confidence: Optional[float] = None,
+    ):
         """MatchedIdentity - a model defined in OpenAPI
 
         :param from_: The from_ of this MatchedIdentity.

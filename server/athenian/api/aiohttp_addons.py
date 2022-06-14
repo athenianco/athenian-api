@@ -44,9 +44,7 @@ def create_aiohttp_closed_event(session: aiohttp.ClientSession) -> asyncio.Event
             transports += 1
             orig_lost = proto.connection_lost
             orig_eof_received = proto.eof_received
-            proto.connection_lost = functools.partial(
-                connection_lost, orig_lost=orig_lost,
-            )
+            proto.connection_lost = functools.partial(connection_lost, orig_lost=orig_lost)
             proto.eof_received = functools.partial(
                 eof_received, orig_eof_received=orig_eof_received,
             )

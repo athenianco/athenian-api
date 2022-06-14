@@ -41,65 +41,60 @@ class Prefixer:
         deserialize=pickle.loads,
         key=lambda meta_ids, **_: (",".join(str(i) for i in meta_ids),),
     )
-    async def load(meta_ids: Iterable[int],
-                   mdb: DatabaseLike,
-                   cache: Optional[aiomcache.Client],
-                   ) -> "Prefixer":
+    async def load(
+        meta_ids: Iterable[int],
+        mdb: DatabaseLike,
+        cache: Optional[aiomcache.Client],
+    ) -> "Prefixer":
         """Load node IDs and prefixes for all known repositories and users."""
         repo_rows, user_rows = await gather(
             mdb.fetch_all(
-                select([Repository.node_id, Repository.full_name, Repository.html_url])
-                .where(and_(Repository.acc_id.in_(meta_ids),
-                            Repository.full_name.isnot(None))),
+                select([Repository.node_id, Repository.full_name, Repository.html_url]).where(
+                    and_(Repository.acc_id.in_(meta_ids), Repository.full_name.isnot(None)),
+                ),
             ),
             mdb.fetch_all(
-                select([User.node_id, User.login, User.html_url])
-                .where(and_(User.acc_id.in_(meta_ids),
-                            User.login.isnot(None))),
+                select([User.node_id, User.login, User.html_url]).where(
+                    and_(User.acc_id.in_(meta_ids), User.login.isnot(None)),
+                ),
             ),
             op="Prefixer",
         )
 
         repo_node_to_prefixed_name = {
-            r[Repository.node_id.name]: strip_proto(r[Repository.html_url.name])
-            for r in repo_rows
+            r[Repository.node_id.name]: strip_proto(r[Repository.html_url.name]) for r in repo_rows
         }
         repo_node_to_name = {
-            r[Repository.node_id.name]: r[Repository.full_name.name]
-            for r in repo_rows
+            r[Repository.node_id.name]: r[Repository.full_name.name] for r in repo_rows
         }
         repo_name_to_node = {
-            r[Repository.full_name.name]: r[Repository.node_id.name]
-            for r in repo_rows
+            r[Repository.full_name.name]: r[Repository.node_id.name] for r in repo_rows
         }
         repo_name_to_prefixed_name = {
             r[Repository.full_name.name]: strip_proto(r[Repository.html_url.name])
             for r in repo_rows
         }
         user_node_to_prefixed_login = {
-            r[User.node_id.name]: strip_proto(r[User.html_url.name])
-            for r in user_rows
+            r[User.node_id.name]: strip_proto(r[User.html_url.name]) for r in user_rows
         }
         user_login_to_prefixed_login = {
-            r[User.login.name]: strip_proto(r[User.html_url.name])
-            for r in user_rows
+            r[User.login.name]: strip_proto(r[User.html_url.name]) for r in user_rows
         }
-        user_node_to_login = {
-            r[User.node_id.name]: r[User.login.name]
-            for r in user_rows
-        }
+        user_node_to_login = {r[User.node_id.name]: r[User.login.name] for r in user_rows}
         user_login_to_node = {}
         for r in user_rows:
             user_login_to_node.setdefault(r[User.login.name], []).append(r[User.node_id.name])
-        return Prefixer(None,
-                        repo_node_to_prefixed_name=repo_node_to_prefixed_name,
-                        repo_name_to_prefixed_name=repo_name_to_prefixed_name,
-                        repo_node_to_name=repo_node_to_name,
-                        repo_name_to_node=repo_name_to_node,
-                        user_node_to_prefixed_login=user_node_to_prefixed_login,
-                        user_login_to_prefixed_login=user_login_to_prefixed_login,
-                        user_node_to_login=user_node_to_login,
-                        user_login_to_node=user_login_to_node)
+        return Prefixer(
+            None,
+            repo_node_to_prefixed_name=repo_node_to_prefixed_name,
+            repo_name_to_prefixed_name=repo_name_to_prefixed_name,
+            repo_node_to_name=repo_node_to_name,
+            repo_name_to_node=repo_name_to_node,
+            user_node_to_prefixed_login=user_node_to_prefixed_login,
+            user_login_to_prefixed_login=user_login_to_prefixed_login,
+            user_node_to_login=user_node_to_login,
+            user_login_to_node=user_login_to_node,
+        )
 
     def resolve_repo_nodes(self, repo_node_ids: Iterable[int]) -> List[str]:
         """Lookup each repository node ID in repo_node_map."""
@@ -116,7 +111,8 @@ class Prefixer:
     def prefix_user_logins(self, user_logins: Iterable[str]) -> List[str]:
         """Lookup each user login in user_login_to_prefixed_login."""
         return [
-            pl for name in user_logins
+            pl
+            for name in user_logins
             if (pl := self.user_login_to_prefixed_login.get(name)) is not None
         ]
 
@@ -137,8 +133,10 @@ class Prefixer:
 
     def __repr__(self) -> str:
         """Avoid spamming Sentry stacks."""
-        return f"<Prefixer with {len(self.repo_node_to_name)} repos, " \
-               f"{len(self.user_node_to_login)} users>"
+        return (
+            f"<Prefixer with {len(self.repo_node_to_name)} repos, "
+            f"{len(self.user_node_to_login)} users>"
+        )
 
     def __sentry_repr__(self) -> str:
         """Override {}.__repr__() in Sentry."""

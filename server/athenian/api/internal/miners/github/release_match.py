@@ -14,49 +14,85 @@ from sqlalchemy.sql.elements import BinaryExpression
 from athenian.api import metadata
 from athenian.api.async_utils import gather, postprocess_datetime, read_sql_query
 from athenian.api.cache import cached, max_exptime, middle_term_exptime
-from athenian.api.db import add_pdb_hits, add_pdb_misses, Database, insert_or_ignore
+from athenian.api.db import Database, add_pdb_hits, add_pdb_misses, insert_or_ignore
 from athenian.api.defer import defer
-from athenian.api.internal.logical_repos import coerce_logical_repos, contains_logical_repos, \
-    drop_logical_repo
+from athenian.api.internal.logical_repos import (
+    coerce_logical_repos,
+    contains_logical_repos,
+    drop_logical_repo,
+)
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.branches import load_branch_commit_dates
-from athenian.api.internal.miners.github.commit import DAG, \
-    fetch_precomputed_commit_history_dags, fetch_repository_commits, RELEASE_FETCH_COMMITS_COLUMNS
-from athenian.api.internal.miners.github.dag_accelerated import extract_subdag, \
-    mark_dag_access, mark_dag_parents, searchsorted_inrange
+from athenian.api.internal.miners.github.commit import (
+    DAG,
+    RELEASE_FETCH_COMMITS_COLUMNS,
+    fetch_precomputed_commit_history_dags,
+    fetch_repository_commits,
+)
+from athenian.api.internal.miners.github.dag_accelerated import (
+    extract_subdag,
+    mark_dag_access,
+    mark_dag_parents,
+    searchsorted_inrange,
+)
 from athenian.api.internal.miners.github.label import fetch_labels_to_filter
 from athenian.api.internal.miners.github.logical import split_logical_prs
-from athenian.api.internal.miners.github.precomputed_prs import \
-    DonePRFactsLoader, MergedPRFactsLoader, update_unreleased_prs
-from athenian.api.internal.miners.github.release_load import dummy_releases_df, \
-    group_repos_by_release_match, match_groups_to_sql, ReleaseLoader
-from athenian.api.internal.miners.github.released_pr import index_name, new_released_prs_df, \
-    release_columns
+from athenian.api.internal.miners.github.precomputed_prs import (
+    DonePRFactsLoader,
+    MergedPRFactsLoader,
+    update_unreleased_prs,
+)
+from athenian.api.internal.miners.github.release_load import (
+    ReleaseLoader,
+    dummy_releases_df,
+    group_repos_by_release_match,
+    match_groups_to_sql,
+)
+from athenian.api.internal.miners.github.released_pr import (
+    index_name,
+    new_released_prs_df,
+    release_columns,
+)
 from athenian.api.internal.miners.jira.issue import generate_jira_prs_query
-from athenian.api.internal.miners.types import nonemax, PullRequestFactsMap
+from athenian.api.internal.miners.types import PullRequestFactsMap, nonemax
 from athenian.api.internal.prefixer import Prefixer
-from athenian.api.internal.settings import LogicalPRSettings, LogicalRepositorySettings, \
-    ReleaseMatch, ReleaseSettings
-from athenian.api.models.metadata.github import NodeCommit, NodeRepository, PullRequest, \
-    PullRequestLabel, PushCommit, Release
-from athenian.api.models.precomputed.models import GitHubRelease as PrecomputedRelease, \
-    GitHubRepository
+from athenian.api.internal.settings import (
+    LogicalPRSettings,
+    LogicalRepositorySettings,
+    ReleaseMatch,
+    ReleaseSettings,
+)
+from athenian.api.models.metadata.github import (
+    NodeCommit,
+    NodeRepository,
+    PullRequest,
+    PullRequestLabel,
+    PushCommit,
+    Release,
+)
+from athenian.api.models.precomputed.models import (
+    GitHubRelease as PrecomputedRelease,
+    GitHubRepository,
+)
 from athenian.api.tracing import sentry_span
 from athenian.api.unordered_unique import in1d_str, unordered_unique
 
 
-async def load_commit_dags(releases: pd.DataFrame,
-                           account: int,
-                           meta_ids: Tuple[int, ...],
-                           mdb: Database,
-                           pdb: Database,
-                           cache: Optional[aiomcache.Client],
-                           ) -> Dict[str, DAG]:
+async def load_commit_dags(
+    releases: pd.DataFrame,
+    account: int,
+    meta_ids: Tuple[int, ...],
+    mdb: Database,
+    pdb: Database,
+    cache: Optional[aiomcache.Client],
+) -> Dict[str, DAG]:
     """Produce the commit history DAGs which should contain the specified releases."""
     pdags = await fetch_precomputed_commit_history_dags(
-        releases[Release.repository_full_name.name].unique(), account, pdb, cache)
+        releases[Release.repository_full_name.name].unique(), account, pdb, cache,
+    )
     return await fetch_repository_commits(
-        pdags, releases, RELEASE_FETCH_COMMITS_COLUMNS, False, account, meta_ids, mdb, pdb, cache)
+        pdags, releases, RELEASE_FETCH_COMMITS_COLUMNS, False, account, meta_ids, mdb, pdb, cache,
+    )
 
 
 class PullRequestToReleaseMapper:
@@ -64,25 +100,24 @@ class PullRequestToReleaseMapper:
 
     @classmethod
     @sentry_span
-    async def map_prs_to_releases(cls,
-                                  prs: pd.DataFrame,
-                                  releases: pd.DataFrame,
-                                  matched_bys: Dict[str, ReleaseMatch],
-                                  branches: pd.DataFrame,
-                                  default_branches: Dict[str, str],
-                                  time_to: datetime,
-                                  dags: Dict[str, DAG],
-                                  release_settings: ReleaseSettings,
-                                  prefixer: Prefixer,
-                                  account: int,
-                                  meta_ids: Tuple[int, ...],
-                                  mdb: Database,
-                                  pdb: Database,
-                                  cache: Optional[aiomcache.Client],
-                                  labels: Optional[pd.DataFrame] = None,
-                                  ) -> Tuple[pd.DataFrame,
-                                             PullRequestFactsMap,
-                                             asyncio.Event]:
+    async def map_prs_to_releases(
+        cls,
+        prs: pd.DataFrame,
+        releases: pd.DataFrame,
+        matched_bys: Dict[str, ReleaseMatch],
+        branches: pd.DataFrame,
+        default_branches: Dict[str, str],
+        time_to: datetime,
+        dags: Dict[str, DAG],
+        release_settings: ReleaseSettings,
+        prefixer: Prefixer,
+        account: int,
+        meta_ids: Tuple[int, ...],
+        mdb: Database,
+        pdb: Database,
+        cache: Optional[aiomcache.Client],
+        labels: Optional[pd.DataFrame] = None,
+    ) -> Tuple[pd.DataFrame, PullRequestFactsMap, asyncio.Event]:
         """
         Match the merged pull requests to the nearest releases that include them.
 
@@ -102,12 +137,27 @@ class PullRequestToReleaseMapper:
         _, unreleased_prs, precomputed_pr_releases = await gather(
             load_branch_commit_dates(branches, meta_ids, mdb),
             MergedPRFactsLoader.load_merged_unreleased_pull_request_facts(
-                prs, nonemax(releases[Release.published_at.name].nonemax(), time_to),
-                LabelFilter.empty(), matched_bys, default_branches, release_settings,
-                prefixer, account, pdb),
+                prs,
+                nonemax(releases[Release.published_at.name].nonemax(), time_to),
+                LabelFilter.empty(),
+                matched_bys,
+                default_branches,
+                release_settings,
+                prefixer,
+                account,
+                pdb,
+            ),
             DonePRFactsLoader.load_precomputed_pr_releases(
-                prs, time_to, matched_bys, default_branches, release_settings,
-                prefixer, account, pdb, cache),
+                prs,
+                time_to,
+                matched_bys,
+                default_branches,
+                release_settings,
+                prefixer,
+                account,
+                pdb,
+                cache,
+            ),
         )
         add_pdb_hits(pdb, "map_prs_to_releases/released", len(precomputed_pr_releases))
         add_pdb_hits(pdb, "map_prs_to_releases/unreleased", len(unreleased_prs))
@@ -128,31 +178,47 @@ class PullRequestToReleaseMapper:
         dead_prs.drop(index=missed_released_prs.index, inplace=True, errors="ignore")
         add_pdb_misses(pdb, "map_prs_to_releases/released", len(missed_released_prs))
         add_pdb_misses(pdb, "map_prs_to_releases/dead", len(dead_prs))
-        add_pdb_misses(pdb, "map_prs_to_releases/unreleased",
-                       len(merged_prs) - len(missed_released_prs) - len(dead_prs))
+        add_pdb_misses(
+            pdb,
+            "map_prs_to_releases/unreleased",
+            len(merged_prs) - len(missed_released_prs) - len(dead_prs),
+        )
         if not dead_prs.empty:
             if not missed_released_prs.empty:
                 missed_released_prs = pd.concat([missed_released_prs, dead_prs])
             else:
                 missed_released_prs = dead_prs
-        await defer(update_unreleased_prs(
-            merged_prs, missed_released_prs, time_to, labels, matched_bys, default_branches,
-            release_settings, account, pdb, unreleased_prs_event),
-            "update_unreleased_prs(%d, %d)" % (len(merged_prs), len(missed_released_prs)))
+        await defer(
+            update_unreleased_prs(
+                merged_prs,
+                missed_released_prs,
+                time_to,
+                labels,
+                matched_bys,
+                default_branches,
+                release_settings,
+                account,
+                pdb,
+                unreleased_prs_event,
+            ),
+            "update_unreleased_prs(%d, %d)" % (len(merged_prs), len(missed_released_prs)),
+        )
         return pr_releases.append(missed_released_prs), unreleased_prs, unreleased_prs_event
 
     @classmethod
-    async def _map_prs_to_releases(cls,
-                                   prs: pd.DataFrame,
-                                   dags: Dict[str, DAG],
-                                   releases: pd.DataFrame,
-                                   ) -> pd.DataFrame:
+    async def _map_prs_to_releases(
+        cls,
+        prs: pd.DataFrame,
+        dags: Dict[str, DAG],
+        releases: pd.DataFrame,
+    ) -> pd.DataFrame:
         if prs.empty:
             return new_released_prs_df()
         assert prs.index.nlevels == 2
         release_repos = releases[Release.repository_full_name.name].values
         unique_release_repos, release_index_map, release_repo_counts = np.unique(
-            release_repos, return_inverse=True, return_counts=True)
+            release_repos, return_inverse=True, return_counts=True,
+        )
         # stable sort to preserve the decreasing order by published_at
         release_repo_order = np.argsort(release_index_map, kind="stable")
         ordered_release_shas = releases[Release.sha.name].values[release_repo_order]
@@ -160,11 +226,15 @@ class PullRequestToReleaseMapper:
         np.cumsum(release_repo_counts, out=release_repo_offsets[1:])
         pr_repos = prs.index.get_level_values(1).values
         unique_pr_repos, pr_index_map, pr_repo_counts = np.unique(
-            pr_repos, return_inverse=True, return_counts=True)
+            pr_repos, return_inverse=True, return_counts=True,
+        )
         pr_repo_order = np.argsort(pr_index_map)
         pr_merge_hashes = prs[PullRequest.merge_commit_sha.name].values[pr_repo_order]
-        pr_merged_at = prs[PullRequest.merged_at.name].values[pr_repo_order].astype(
-            releases[Release.published_at.name].values.dtype, copy=False)
+        pr_merged_at = (
+            prs[PullRequest.merged_at.name]
+            .values[pr_repo_order]
+            .astype(releases[Release.published_at.name].values.dtype, copy=False)
+        )
         pr_node_ids = prs.index.get_level_values(0).values[pr_repo_order]
         pr_repo_offsets = np.zeros(len(pr_repo_counts) + 1, dtype=int)
         np.cumsum(pr_repo_counts, out=pr_repo_offsets[1:])
@@ -181,7 +251,8 @@ class PullRequestToReleaseMapper:
                 release_beg = release_repo_offsets[release_pos]
                 release_end = release_repo_offsets[release_pos + 1]
                 ownership = mark_dag_access(
-                    hashes, vertexes, edges, ordered_release_shas[release_beg:release_end], True)
+                    hashes, vertexes, edges, ordered_release_shas[release_beg:release_end], True,
+                )
                 unmatched = np.flatnonzero(ownership == (release_end - release_beg))
                 if len(unmatched) > 0:
                     hashes = np.delete(hashes, unmatched)
@@ -195,12 +266,15 @@ class PullRequestToReleaseMapper:
                 merges_found = searchsorted_inrange(hashes, merge_hashes)
                 found_mask = hashes[merges_found] == merge_hashes
                 found_releases = releases[release_columns].take(
-                    release_repo_order[release_beg:release_end]
-                    [ownership[merges_found[found_mask]]])
+                    release_repo_order[release_beg:release_end][
+                        ownership[merges_found[found_mask]]
+                    ],
+                )
                 if not found_releases.empty:
                     found_releases[Release.published_at.name] = np.maximum(
                         found_releases[Release.published_at.name].values,
-                        pr_merged_at[pr_beg:pr_end][found_mask])
+                        pr_merged_at[pr_beg:pr_end][found_mask],
+                    )
                     found_releases[index_name] = pr_node_ids[pr_beg:pr_end][found_mask]
                     released_prs.append(found_releases)
                 release_pos += 1
@@ -231,22 +305,30 @@ class PullRequestToReleaseMapper:
 
     @classmethod
     @sentry_span
-    async def _fetch_labels(cls,
-                            node_ids: Iterable[int],
-                            df: Optional[pd.DataFrame],
-                            meta_ids: Tuple[int, ...],
-                            mdb: Database,
-                            ) -> Dict[int, List[str]]:
+    async def _fetch_labels(
+        cls,
+        node_ids: Iterable[int],
+        df: Optional[pd.DataFrame],
+        meta_ids: Tuple[int, ...],
+        mdb: Database,
+    ) -> Dict[int, List[str]]:
         if df is not None:
             labels = {}
-            for node_id, name in zip(df.index.get_level_values(0).values,
-                                     df[PullRequestLabel.name.name].values):
+            for node_id, name in zip(
+                df.index.get_level_values(0).values, df[PullRequestLabel.name.name].values,
+            ):
                 labels.setdefault(node_id, []).append(name)
             return labels
         rows = await mdb.fetch_all(
-            select([PullRequestLabel.pull_request_node_id, func.lower(PullRequestLabel.name)])
-            .where(and_(PullRequestLabel.pull_request_node_id.in_(node_ids),
-                        PullRequestLabel.acc_id.in_(meta_ids))))
+            select(
+                [PullRequestLabel.pull_request_node_id, func.lower(PullRequestLabel.name)],
+            ).where(
+                and_(
+                    PullRequestLabel.pull_request_node_id.in_(node_ids),
+                    PullRequestLabel.acc_id.in_(meta_ids),
+                ),
+            ),
+        )
         labels = {}
         for row in rows:
             node_id, label = row[0], row[1]
@@ -261,39 +343,43 @@ class ReleaseToPullRequestMapper:
 
     @classmethod
     @sentry_span
-    async def map_releases_to_prs(cls,
-                                  repos: Collection[str],
-                                  branches: pd.DataFrame,
-                                  default_branches: Dict[str, str],
-                                  time_from: datetime,
-                                  time_to: datetime,
-                                  authors: Collection[str],
-                                  mergers: Collection[str],
-                                  jira: JIRAFilter,
-                                  release_settings: ReleaseSettings,
-                                  logical_settings: LogicalRepositorySettings,
-                                  updated_min: Optional[datetime],
-                                  updated_max: Optional[datetime],
-                                  pdags: Optional[Dict[str, DAG]],
-                                  prefixer: Prefixer,
-                                  account: int,
-                                  meta_ids: Tuple[int, ...],
-                                  mdb: Database,
-                                  pdb: Database,
-                                  rdb: Database,
-                                  cache: Optional[aiomcache.Client],
-                                  pr_blacklist: Optional[BinaryExpression] = None,
-                                  pr_whitelist: Optional[BinaryExpression] = None,
-                                  truncate: bool = True,
-                                  precomputed_observed: Optional[Tuple[
-                                      np.ndarray, np.ndarray]] = None,
-                                  ) -> Union[Tuple[pd.DataFrame,
-                                                   pd.DataFrame,
-                                                   ReleaseSettings,
-                                                   Dict[str, ReleaseMatch],
-                                                   Dict[str, DAG],
-                                                   Tuple[np.ndarray, np.ndarray]],
-                                             pd.DataFrame]:
+    async def map_releases_to_prs(
+        cls,
+        repos: Collection[str],
+        branches: pd.DataFrame,
+        default_branches: Dict[str, str],
+        time_from: datetime,
+        time_to: datetime,
+        authors: Collection[str],
+        mergers: Collection[str],
+        jira: JIRAFilter,
+        release_settings: ReleaseSettings,
+        logical_settings: LogicalRepositorySettings,
+        updated_min: Optional[datetime],
+        updated_max: Optional[datetime],
+        pdags: Optional[Dict[str, DAG]],
+        prefixer: Prefixer,
+        account: int,
+        meta_ids: Tuple[int, ...],
+        mdb: Database,
+        pdb: Database,
+        rdb: Database,
+        cache: Optional[aiomcache.Client],
+        pr_blacklist: Optional[BinaryExpression] = None,
+        pr_whitelist: Optional[BinaryExpression] = None,
+        truncate: bool = True,
+        precomputed_observed: Optional[Tuple[np.ndarray, np.ndarray]] = None,
+    ) -> Union[
+        Tuple[
+            pd.DataFrame,
+            pd.DataFrame,
+            ReleaseSettings,
+            Dict[str, ReleaseMatch],
+            Dict[str, DAG],
+            Tuple[np.ndarray, np.ndarray],
+        ],
+        pd.DataFrame,
+    ]:
         """Find pull requests which were released between `time_from` and `time_to` but merged before \
         `time_from`.
 
@@ -331,62 +417,124 @@ class ReleaseToPullRequestMapper:
 
         if precomputed_observed is None:
             (
-                all_observed_commits, all_observed_repos,
-                releases_in_time_range, release_settings, matched_bys, dags,
+                all_observed_commits,
+                all_observed_repos,
+                releases_in_time_range,
+                release_settings,
+                matched_bys,
+                dags,
             ) = await cls._map_releases_to_prs_observe(
-                repos, branches, default_branches, time_from, time_to,
-                release_settings, logical_settings, pdags,
-                prefixer, account, meta_ids, mdb, pdb, rdb, cache, truncate)
+                repos,
+                branches,
+                default_branches,
+                time_from,
+                time_to,
+                release_settings,
+                logical_settings,
+                pdags,
+                prefixer,
+                account,
+                meta_ids,
+                mdb,
+                pdb,
+                rdb,
+                cache,
+                truncate,
+            )
         else:
             all_observed_commits, all_observed_repos = precomputed_observed
 
         if len(all_observed_commits):
             prs = await cls._find_old_released_prs(
-                all_observed_commits, all_observed_repos, time_from, authors, mergers, jira,
-                updated_min, updated_max, pr_blacklist, pr_whitelist, logical_settings,
-                prefixer, meta_ids, mdb, cache)
+                all_observed_commits,
+                all_observed_repos,
+                time_from,
+                authors,
+                mergers,
+                jira,
+                updated_min,
+                updated_max,
+                pr_blacklist,
+                pr_whitelist,
+                logical_settings,
+                prefixer,
+                meta_ids,
+                mdb,
+                cache,
+            )
         else:
-            prs = pd.DataFrame(columns=[c.name for c in PullRequest.__table__.columns
-                                        if c.name != PullRequest.node_id.name])
+            prs = pd.DataFrame(
+                columns=[
+                    c.name
+                    for c in PullRequest.__table__.columns
+                    if c.name != PullRequest.node_id.name
+                ],
+            )
             prs.index = pd.Index([], name=PullRequest.node_id.name)
         prs["dead"] = False
         if precomputed_observed is None:
             return (
-                prs, releases_in_time_range, release_settings, matched_bys, dags,
+                prs,
+                releases_in_time_range,
+                release_settings,
+                matched_bys,
+                dags,
                 (all_observed_commits, all_observed_repos),
             )
         return prs
 
     @classmethod
     @sentry_span
-    async def _map_releases_to_prs_observe(cls,
-                                           repos: Collection[str],  # logical
-                                           branches: pd.DataFrame,
-                                           default_branches: Dict[str, str],
-                                           time_from: datetime,
-                                           time_to: datetime,
-                                           release_settings: ReleaseSettings,
-                                           logical_settings: LogicalRepositorySettings,
-                                           pdags: Optional[Dict[str, DAG]],
-                                           prefixer: Prefixer,
-                                           account: int,
-                                           meta_ids: Tuple[int, ...],
-                                           mdb: Database,
-                                           pdb: Database,
-                                           rdb: Database,
-                                           cache: Optional[aiomcache.Client],
-                                           truncate: bool,
-                                           ) -> Tuple[np.ndarray,
-                                                      np.ndarray,
-                                                      pd.DataFrame,
-                                                      ReleaseSettings,
-                                                      Dict[str, ReleaseMatch],
-                                                      Dict[str, DAG]]:
-        matched_bys, releases, releases_in_time_range, release_settings, dags = \
-            await cls._find_releases_for_matching_prs(
-                repos, branches, default_branches, time_from, time_to, not truncate,
-                release_settings, logical_settings, pdags, prefixer, account, meta_ids,
-                mdb, pdb, rdb, cache)
+    async def _map_releases_to_prs_observe(
+        cls,
+        repos: Collection[str],  # logical
+        branches: pd.DataFrame,
+        default_branches: Dict[str, str],
+        time_from: datetime,
+        time_to: datetime,
+        release_settings: ReleaseSettings,
+        logical_settings: LogicalRepositorySettings,
+        pdags: Optional[Dict[str, DAG]],
+        prefixer: Prefixer,
+        account: int,
+        meta_ids: Tuple[int, ...],
+        mdb: Database,
+        pdb: Database,
+        rdb: Database,
+        cache: Optional[aiomcache.Client],
+        truncate: bool,
+    ) -> Tuple[
+        np.ndarray,
+        np.ndarray,
+        pd.DataFrame,
+        ReleaseSettings,
+        Dict[str, ReleaseMatch],
+        Dict[str, DAG],
+    ]:
+        (
+            matched_bys,
+            releases,
+            releases_in_time_range,
+            release_settings,
+            dags,
+        ) = await cls._find_releases_for_matching_prs(
+            repos,
+            branches,
+            default_branches,
+            time_from,
+            time_to,
+            not truncate,
+            release_settings,
+            logical_settings,
+            pdags,
+            prefixer,
+            account,
+            meta_ids,
+            mdb,
+            pdb,
+            rdb,
+            cache,
+        )
 
         rpak = Release.published_at.name
         rrfnk = Release.repository_full_name.name
@@ -397,11 +545,13 @@ class ReleaseToPullRequestMapper:
             for repo, repo_releases in releases.groupby(rrfnk, sort=False):
                 if (repo_releases[rpak] >= time_from).any():
                     observed_commits = cls._extract_released_commits(
-                        repo_releases, dags[drop_logical_repo(repo)], time_from)
+                        repo_releases, dags[drop_logical_repo(repo)], time_from,
+                    )
                     if len(observed_commits):
                         all_observed_commits.append(observed_commits)
-                        all_observed_repos.append(np.full(
-                            len(observed_commits), repo, dtype=f"S{len(repo)}"))
+                        all_observed_repos.append(
+                            np.full(len(observed_commits), repo, dtype=f"S{len(repo)}"),
+                        )
         if all_observed_commits:
             all_observed_repos = np.concatenate(all_observed_repos)
             all_observed_commits = np.concatenate(all_observed_commits)
@@ -411,36 +561,42 @@ class ReleaseToPullRequestMapper:
         else:
             all_observed_commits = all_observed_repos = np.array([])
         return (
-            all_observed_commits, all_observed_repos,
-            releases_in_time_range, release_settings, matched_bys, dags,
+            all_observed_commits,
+            all_observed_repos,
+            releases_in_time_range,
+            release_settings,
+            matched_bys,
+            dags,
         )
 
     @classmethod
     @sentry_span
     async def _find_releases_for_matching_prs(
-            cls,
-            repos: Iterable[str],  # logical
-            branches: pd.DataFrame,
-            default_branches: Dict[str, str],
-            time_from: datetime,
-            time_to: datetime,
-            until_today: bool,
-            release_settings: ReleaseSettings,
-            logical_settings: LogicalRepositorySettings,
-            pdags: Optional[Dict[str, DAG]],
-            prefixer: Prefixer,
-            account: int,
-            meta_ids: Tuple[int, ...],
-            mdb: Database,
-            pdb: Database,
-            rdb: Database,
-            cache: Optional[aiomcache.Client],
-            releases_in_time_range: Optional[pd.DataFrame] = None,
-    ) -> Tuple[Dict[str, ReleaseMatch],
-               pd.DataFrame,
-               pd.DataFrame,
-               ReleaseSettings,
-               Dict[str, DAG]]:
+        cls,
+        repos: Iterable[str],  # logical
+        branches: pd.DataFrame,
+        default_branches: Dict[str, str],
+        time_from: datetime,
+        time_to: datetime,
+        until_today: bool,
+        release_settings: ReleaseSettings,
+        logical_settings: LogicalRepositorySettings,
+        pdags: Optional[Dict[str, DAG]],
+        prefixer: Prefixer,
+        account: int,
+        meta_ids: Tuple[int, ...],
+        mdb: Database,
+        pdb: Database,
+        rdb: Database,
+        cache: Optional[aiomcache.Client],
+        releases_in_time_range: Optional[pd.DataFrame] = None,
+    ) -> Tuple[
+        Dict[str, ReleaseMatch],
+        pd.DataFrame,
+        pd.DataFrame,
+        ReleaseSettings,
+        Dict[str, DAG],
+    ]:
         """
         Load releases with sufficient history depth.
 
@@ -454,9 +610,21 @@ class ReleaseToPullRequestMapper:
             # that's because the release strategy can change depending on the time range
             # see ENG-710 and ENG-725
             releases_in_time_range, matched_bys = await cls.release_loader.load_releases(
-                repos, branches, default_branches, time_from, time_to,
-                release_settings, logical_settings, prefixer, account, meta_ids,
-                mdb, pdb, rdb, cache)
+                repos,
+                branches,
+                default_branches,
+                time_from,
+                time_to,
+                release_settings,
+                logical_settings,
+                prefixer,
+                account,
+                meta_ids,
+                mdb,
+                pdb,
+                rdb,
+                cache,
+            )
         else:
             matched_bys = {}
         existing_repos = releases_in_time_range[Release.repository_full_name.name].unique()
@@ -464,7 +632,8 @@ class ReleaseToPullRequestMapper:
 
         # these matching rules must be applied to the past to stay consistent
         consistent_release_settings = ReleaseLoader.disambiguate_release_settings(
-            release_settings, matched_bys)
+            release_settings, matched_bys,
+        )
 
         # seek releases backwards until each in_time_range one has a parent
 
@@ -481,15 +650,25 @@ class ReleaseToPullRequestMapper:
             nonlocal pdags
             if pdags is None:
                 pdags = await fetch_precomputed_commit_history_dags(
-                    physical_repos, account, pdb, cache)
+                    physical_repos, account, pdb, cache,
+                )
             return await fetch_repository_commits(
-                pdags, releases_in_time_range, RELEASE_FETCH_COMMITS_COLUMNS, False,
-                account, meta_ids, mdb, pdb, cache)
+                pdags,
+                releases_in_time_range,
+                RELEASE_FETCH_COMMITS_COLUMNS,
+                False,
+                account,
+                meta_ids,
+                mdb,
+                pdb,
+                cache,
+            )
 
         if has_logical := contains_logical_repos(existing_repos):
             repo_name_origin_column = f"{Release.repository_full_name.name}_original"
-            releases_in_time_range[repo_name_origin_column] = \
-                releases_in_time_range[Release.repository_full_name.name]
+            releases_in_time_range[repo_name_origin_column] = releases_in_time_range[
+                Release.repository_full_name.name
+            ]
             release_repos = releases_in_time_range[Release.repository_full_name.name].values
             for i, repo in enumerate(release_repos):
                 release_repos[i] = drop_logical_repo(repo)
@@ -499,27 +678,61 @@ class ReleaseToPullRequestMapper:
 
         until_today_task = None
         if until_today:
-            today = datetime.combine((datetime.now(timezone.utc) + timedelta(days=1)).date(),
-                                     datetime.min.time(), tzinfo=timezone.utc)
+            today = datetime.combine(
+                (datetime.now(timezone.utc) + timedelta(days=1)).date(),
+                datetime.min.time(),
+                tzinfo=timezone.utc,
+            )
             if today > time_to:
                 until_today_task = cls.release_loader.load_releases(
                     # important: not existing_repos
-                    repos, branches, default_branches, time_to, today,
-                    consistent_release_settings, logical_settings, prefixer,
-                    account, meta_ids, mdb, pdb, rdb, cache)
+                    repos,
+                    branches,
+                    default_branches,
+                    time_to,
+                    today,
+                    consistent_release_settings,
+                    logical_settings,
+                    prefixer,
+                    account,
+                    meta_ids,
+                    mdb,
+                    pdb,
+                    rdb,
+                    cache,
+                )
         if until_today_task is None:
             until_today_task = dummy_load_releases_until_today()
 
         (releases_today, _), (releases_previous, _), dags, repo_births = await gather(
             until_today_task,
             cls.release_loader.load_releases(
-                existing_repos, branches, default_branches, lookbehind_depth, most_recent_time,
-                consistent_release_settings, logical_settings,
-                prefixer, account, meta_ids, mdb, pdb, rdb, cache),
+                existing_repos,
+                branches,
+                default_branches,
+                lookbehind_depth,
+                most_recent_time,
+                consistent_release_settings,
+                logical_settings,
+                prefixer,
+                account,
+                meta_ids,
+                mdb,
+                pdb,
+                rdb,
+                cache,
+            ),
             fetch_dags(),
             cls._fetch_first_release_dates(
-                physical_repos, consistent_release_settings, default_branches,
-                account, meta_ids, mdb, pdb, cache),
+                physical_repos,
+                consistent_release_settings,
+                default_branches,
+                account,
+                meta_ids,
+                mdb,
+                pdb,
+                cache,
+            ),
         )
         if extended_releases := [df for df in (releases_today, releases_previous) if not df.empty]:
             if len(extended_releases) == 2:
@@ -527,12 +740,21 @@ class ReleaseToPullRequestMapper:
             else:
                 extended_releases = extended_releases[0]
             dags = await fetch_repository_commits(
-                dags, extended_releases, RELEASE_FETCH_COMMITS_COLUMNS, False,
-                account, meta_ids, mdb, pdb, cache)
+                dags,
+                extended_releases,
+                RELEASE_FETCH_COMMITS_COLUMNS,
+                False,
+                account,
+                meta_ids,
+                mdb,
+                pdb,
+                cache,
+            )
         del extended_releases
         if has_logical:
-            releases_in_time_range[Release.repository_full_name.name] = \
-                releases_in_time_range[repo_name_origin_column]
+            releases_in_time_range[Release.repository_full_name.name] = releases_in_time_range[
+                repo_name_origin_column
+            ]
             del releases_in_time_range[repo_name_origin_column]
 
         in_range_repos = releases_in_time_range[Release.repository_full_name.name].values
@@ -544,8 +766,11 @@ class ReleaseToPullRequestMapper:
         while not_enough_repos:
             previous_shas = releases_previous[Release.sha.name].values
             previous_dates = releases_previous[Release.published_at.name].values
-            grouped_previous = dict(LogicalPRSettings.group_by_repo(
-                releases_previous[Release.repository_full_name.name].values))
+            grouped_previous = dict(
+                LogicalPRSettings.group_by_repo(
+                    releases_previous[Release.repository_full_name.name].values,
+                ),
+            )
             not_enough_repos.clear()
             for repo, in_range_repo_indexes in LogicalPRSettings.group_by_repo(in_range_repos):
                 physical_repo = drop_logical_repo(repo)
@@ -564,69 +789,111 @@ class ReleaseToPullRequestMapper:
                 dag = dags[physical_repo]
                 ownership = mark_dag_access(*dag, all_shas, True)
                 parents = mark_dag_parents(*dag, all_shas, all_timestamps, ownership)
-                if any((len(p) == 0) for p in parents[:len(in_range_repo_indexes)]):
+                if any((len(p) == 0) for p in parents[: len(in_range_repo_indexes)]):
                     not_enough_repos.append(repo)
             if not_enough_repos:
                 most_recent_time = lookbehind_depth - timedelta(seconds=1)
                 lookbehind_depth -= depth_step
                 depth_step *= 2
                 if lookbehind_depth < lookbehind_depth_limit:
-                    lookbehind_depth = \
-                        min(repo_births[drop_logical_repo(r)] for r in not_enough_repos)
+                    lookbehind_depth = min(
+                        repo_births[drop_logical_repo(r)] for r in not_enough_repos
+                    )
                     if len(not_enough_repos) >= 3:
                         # load releases in `num_chunks` batches to save some resources
                         repo_birth_seq = sorted(
-                            (repo_births[drop_logical_repo(r)], r) for r in not_enough_repos)
+                            (repo_births[drop_logical_repo(r)], r) for r in not_enough_repos
+                        )
                         num_chunks = 3
                         step = len(not_enough_repos) // num_chunks + 1
-                        chunks = await gather(*(cls.release_loader.load_releases(
-                            [p[1] for p in repo_birth_seq[i * step:(i + 1) * step]],
-                            branches, default_branches,
-                            repo_birth_seq[min(i * step, len(repo_birth_seq) - 1)][0],
-                            most_recent_time, consistent_release_settings, logical_settings,
-                            prefixer, account, meta_ids, mdb, pdb, rdb, cache)
-                            for i in range(num_chunks)))
+                        chunks = await gather(
+                            *(
+                                cls.release_loader.load_releases(
+                                    [p[1] for p in repo_birth_seq[i * step : (i + 1) * step]],
+                                    branches,
+                                    default_branches,
+                                    repo_birth_seq[min(i * step, len(repo_birth_seq) - 1)][0],
+                                    most_recent_time,
+                                    consistent_release_settings,
+                                    logical_settings,
+                                    prefixer,
+                                    account,
+                                    meta_ids,
+                                    mdb,
+                                    pdb,
+                                    rdb,
+                                    cache,
+                                )
+                                for i in range(num_chunks)
+                            ),
+                        )
                         releases_previous_older = pd.concat(
-                            [c[0] for c in chunks], ignore_index=True, copy=False)
+                            [c[0] for c in chunks], ignore_index=True, copy=False,
+                        )
                 if releases_previous_older is None:
                     releases_previous_older, _ = await cls.release_loader.load_releases(
-                        not_enough_repos, branches, default_branches,
-                        lookbehind_depth, most_recent_time,
-                        consistent_release_settings, logical_settings,
-                        prefixer, account, meta_ids, mdb, pdb, rdb, cache)
+                        not_enough_repos,
+                        branches,
+                        default_branches,
+                        lookbehind_depth,
+                        most_recent_time,
+                        consistent_release_settings,
+                        logical_settings,
+                        prefixer,
+                        account,
+                        meta_ids,
+                        mdb,
+                        pdb,
+                        rdb,
+                        cache,
+                    )
                 dags = await fetch_repository_commits(
-                    dags, releases_previous_older, RELEASE_FETCH_COMMITS_COLUMNS, False,
-                    account, meta_ids, mdb, pdb, cache)
+                    dags,
+                    releases_previous_older,
+                    RELEASE_FETCH_COMMITS_COLUMNS,
+                    False,
+                    account,
+                    meta_ids,
+                    mdb,
+                    pdb,
+                    cache,
+                )
                 releases_previous = pd.concat(
-                    [releases_previous, releases_previous_older], ignore_index=True, copy=False)
+                    [releases_previous, releases_previous_older], ignore_index=True, copy=False,
+                )
                 releases_previous_older = None
 
-        releases = pd.concat([releases_today, releases_in_time_range, releases_previous],
-                             ignore_index=True, copy=False)
+        releases = pd.concat(
+            [releases_today, releases_in_time_range, releases_previous],
+            ignore_index=True,
+            copy=False,
+        )
         if not releases_today.empty:
-            releases_in_time_range = pd.concat([releases_today, releases_in_time_range],
-                                               ignore_index=True, copy=False)
+            releases_in_time_range = pd.concat(
+                [releases_today, releases_in_time_range], ignore_index=True, copy=False,
+            )
         return matched_bys, releases, releases_in_time_range, consistent_release_settings, dags
 
     @classmethod
     @sentry_span
-    async def _find_old_released_prs(cls,
-                                     commits: np.ndarray,
-                                     repos: np.ndarray,
-                                     time_boundary: datetime,
-                                     authors: Collection[str],
-                                     mergers: Collection[str],
-                                     jira: JIRAFilter,
-                                     updated_min: Optional[datetime],
-                                     updated_max: Optional[datetime],
-                                     pr_blacklist: Optional[BinaryExpression],
-                                     pr_whitelist: Optional[BinaryExpression],
-                                     logical_settings: LogicalRepositorySettings,
-                                     prefixer: Prefixer,
-                                     meta_ids: Tuple[int, ...],
-                                     mdb: Database,
-                                     cache: Optional[aiomcache.Client],
-                                     ) -> pd.DataFrame:
+    async def _find_old_released_prs(
+        cls,
+        commits: np.ndarray,
+        repos: np.ndarray,
+        time_boundary: datetime,
+        authors: Collection[str],
+        mergers: Collection[str],
+        jira: JIRAFilter,
+        updated_min: Optional[datetime],
+        updated_max: Optional[datetime],
+        pr_blacklist: Optional[BinaryExpression],
+        pr_whitelist: Optional[BinaryExpression],
+        logical_settings: LogicalRepositorySettings,
+        prefixer: Prefixer,
+        meta_ids: Tuple[int, ...],
+        mdb: Database,
+        cache: Optional[aiomcache.Client],
+    ) -> pd.DataFrame:
         assert len(commits) == len(repos)
         assert len(commits) > 0
         repo_name_to_node = prefixer.repo_name_to_node.get
@@ -656,7 +923,8 @@ class ReleaseToPullRequestMapper:
             query = select([NodeCommit.node_id]).where(and_(*filters))
             if len(unique_commits) > 100:
                 query = query.with_statement_hint(
-                    f"Rows({NodeCommit.__tablename__} *VALUES* #{len(unique_commits)})")
+                    f"Rows({NodeCommit.__tablename__} *VALUES* #{len(unique_commits)})",
+                )
             commit_rows = await mdb.fetch_all(query)
             merge_commit_ids = [r[0] for r in commit_rows]
         filters = [
@@ -668,13 +936,19 @@ class ReleaseToPullRequestMapper:
         if merge_commit_ids is not None:
             filters.append(PullRequest.merge_commit_id.in_(merge_commit_ids))
         else:
-            filters.extend([PullRequest.updated_at.between(updated_min, updated_max),
-                            PullRequest.repository_node_id.in_(unique_repo_ids)])
+            filters.extend(
+                [
+                    PullRequest.updated_at.between(updated_min, updated_max),
+                    PullRequest.repository_node_id.in_(unique_repo_ids),
+                ],
+            )
         if len(authors) and len(mergers):
-            filters.append(or_(
-                PullRequest.user_login.in_(authors),
-                PullRequest.merged_by_login.in_(mergers),
-            ))
+            filters.append(
+                or_(
+                    PullRequest.user_login.in_(authors),
+                    PullRequest.merged_by_login.in_(mergers),
+                ),
+            )
             hints.append(f"Rows(pr ath math *{10 * len(set(authors).intersection(mergers))})")
         elif len(authors):
             filters.append(PullRequest.user_login.in_(authors))
@@ -703,10 +977,13 @@ class ReleaseToPullRequestMapper:
             else:
                 labels = pd.DataFrame()
             prs = split_logical_prs(
-                prs, labels,
+                prs,
+                labels,
                 logical_settings.with_logical_prs(
-                    prs[PullRequest.repository_full_name.name].unique()),
-                logical_settings)
+                    prs[PullRequest.repository_full_name.name].unique(),
+                ),
+                logical_settings,
+            )
             prs.reset_index(PullRequest.repository_full_name.name, inplace=True)
         pr_commits = prs[PullRequest.merge_commit_sha.name].values
         pr_repos = prs[PullRequest.repository_full_name.name].values.astype("S")
@@ -727,22 +1004,20 @@ class ReleaseToPullRequestMapper:
         exptime=middle_term_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda repos, release_settings, **_: (
-            ",".join(sorted(repos)),
-            release_settings,
-        ),
+        key=lambda repos, release_settings, **_: (",".join(sorted(repos)), release_settings),
         refresh_on_access=True,
     )
-    async def _fetch_first_release_dates(cls,
-                                         repos: Iterable[str],
-                                         release_settings: ReleaseSettings,
-                                         default_branches: Dict[str, str],
-                                         account: int,
-                                         meta_ids: Tuple[int, ...],
-                                         mdb: Database,
-                                         pdb: Database,
-                                         cache: Optional[aiomcache.Client],
-                                         ) -> Dict[str, datetime]:
+    async def _fetch_first_release_dates(
+        cls,
+        repos: Iterable[str],
+        release_settings: ReleaseSettings,
+        default_branches: Dict[str, str],
+        account: int,
+        meta_ids: Tuple[int, ...],
+        mdb: Database,
+        pdb: Database,
+        cache: Optional[aiomcache.Client],
+    ) -> Dict[str, datetime]:
         match_groups, _ = group_repos_by_release_match(repos, default_branches, release_settings)
         spans, earliest_releases, repo_biths = await gather(
             cls.release_loader.fetch_precomputed_release_match_spans(match_groups, account, pdb),
@@ -762,19 +1037,23 @@ class ReleaseToPullRequestMapper:
     @classmethod
     @sentry_span
     async def _fetch_earliest_precomputed_releases(
-            cls,
-            match_groups: Dict[ReleaseMatch, Dict[str, List[str]]],
-            account: int,
-            pdb: Database) -> Dict[str, datetime]:
+        cls,
+        match_groups: Dict[ReleaseMatch, Dict[str, List[str]]],
+        account: int,
+        pdb: Database,
+    ) -> Dict[str, datetime]:
         prel = PrecomputedRelease
         or_items, _ = match_groups_to_sql(match_groups, prel)
         if not or_items:
             return {}
-        query = union_all(*(
-            select([prel.repository_full_name, func.min(prel.published_at)])
-            .where(and_(item, prel.acc_id == account))
-            .group_by(prel.repository_full_name)
-            for item in or_items))
+        query = union_all(
+            *(
+                select([prel.repository_full_name, func.min(prel.published_at)])
+                .where(and_(item, prel.acc_id == account))
+                .group_by(prel.repository_full_name)
+                for item in or_items
+            ),
+        )
         result = dict(await pdb.fetch_all(query))
         if pdb.url.dialect == "sqlite":
             for key, val in result.items():
@@ -790,50 +1069,88 @@ class ReleaseToPullRequestMapper:
         key=lambda meta_ids, repos, **_: (*meta_ids, ",".join(sorted(repos))),
         refresh_on_access=True,
     )
-    async def _fetch_repository_first_commit_dates(cls,
-                                                   repos: Iterable[str],
-                                                   account: int,
-                                                   meta_ids: Tuple[int, ...],
-                                                   mdb: Database,
-                                                   pdb: Database,
-                                                   cache: Optional[aiomcache.Client],
-                                                   ) -> Dict[str, datetime]:
+    async def _fetch_repository_first_commit_dates(
+        cls,
+        repos: Iterable[str],
+        account: int,
+        meta_ids: Tuple[int, ...],
+        mdb: Database,
+        pdb: Database,
+        cache: Optional[aiomcache.Client],
+    ) -> Dict[str, datetime]:
         log = logging.getLogger(f"{metadata.__package__}._fetch_repository_first_commit_dates")
         rows = await pdb.fetch_all(
-            select([GitHubRepository.repository_full_name,
-                    GitHubRepository.first_commit.label("min")])
-            .where(and_(GitHubRepository.repository_full_name.in_(repos),
-                        GitHubRepository.acc_id == account)))
+            select(
+                [
+                    GitHubRepository.repository_full_name,
+                    GitHubRepository.first_commit.label("min"),
+                ],
+            ).where(
+                and_(
+                    GitHubRepository.repository_full_name.in_(repos),
+                    GitHubRepository.acc_id == account,
+                ),
+            ),
+        )
         add_pdb_hits(pdb, "_fetch_repository_first_commit_dates", len(rows))
         missing = set(repos) - {r[0] for r in rows}
         add_pdb_misses(pdb, "_fetch_repository_first_commit_dates", len(missing))
         if missing:
             computed = await mdb.fetch_all(
-                select([func.min(NodeRepository.name_with_owner)
-                        .label(PushCommit.repository_full_name.name),
+                select(
+                    [
+                        func.min(NodeRepository.name_with_owner).label(
+                            PushCommit.repository_full_name.name,
+                        ),
                         func.min(NodeCommit.committed_date).label("min"),
-                        NodeRepository.id])
-                .select_from(join(NodeCommit, NodeRepository,
-                                  and_(NodeCommit.repository_id == NodeRepository.id,
-                                       NodeCommit.acc_id == NodeRepository.acc_id)))
-                .where(and_(NodeRepository.name_with_owner.in_(missing),
-                            NodeRepository.acc_id.in_(meta_ids)))
-                .group_by(NodeRepository.id))
+                        NodeRepository.id,
+                    ],
+                )
+                .select_from(
+                    join(
+                        NodeCommit,
+                        NodeRepository,
+                        and_(
+                            NodeCommit.repository_id == NodeRepository.id,
+                            NodeCommit.acc_id == NodeRepository.acc_id,
+                        ),
+                    ),
+                )
+                .where(
+                    and_(
+                        NodeRepository.name_with_owner.in_(missing),
+                        NodeRepository.acc_id.in_(meta_ids),
+                    ),
+                )
+                .group_by(NodeRepository.id),
+            )
             values = []
             for r in computed:
                 if (repo_name := r[PushCommit.repository_full_name.name]) in missing:
                     missing.remove(repo_name)
-                    values.append(GitHubRepository(
-                        acc_id=account,
-                        repository_full_name=repo_name,
-                        first_commit=r["min"],
-                        node_id=r[NodeRepository.id.name],
-                    ).create_defaults().explode(with_primary_keys=True))
+                    values.append(
+                        GitHubRepository(
+                            acc_id=account,
+                            repository_full_name=repo_name,
+                            first_commit=r["min"],
+                            node_id=r[NodeRepository.id.name],
+                        )
+                        .create_defaults()
+                        .explode(with_primary_keys=True),
+                    )
                 else:
-                    dupes = [dr[NodeRepository.id.name] for dr in computed
-                             if dr[PushCommit.repository_full_name.name] == repo_name]
-                    log.error("duplicate repositories in %s@%s: %s -> %s",
-                              NodeRepository.__tablename__, meta_ids, repo_name, dupes)
+                    dupes = [
+                        dr[NodeRepository.id.name]
+                        for dr in computed
+                        if dr[PushCommit.repository_full_name.name] == repo_name
+                    ]
+                    log.error(
+                        "duplicate repositories in %s@%s: %s -> %s",
+                        NodeRepository.__tablename__,
+                        meta_ids,
+                        repo_name,
+                        dupes,
+                    )
             if missing:
                 log.warning("some repositories have 0 commits in %s: %s", meta_ids, missing)
                 now = datetime.now(timezone.utc)
@@ -841,11 +1158,15 @@ class ReleaseToPullRequestMapper:
                     rows.append((r, now))
             if mdb.url.dialect == "sqlite":
                 for v in values:
-                    v[GitHubRepository.first_commit.name] = \
-                        v[GitHubRepository.first_commit.name].replace(tzinfo=timezone.utc)
-            await defer(insert_or_ignore(
-                GitHubRepository, values, "_fetch_repository_first_commit_dates", pdb,
-            ), "insert_repository_first_commit_dates")
+                    v[GitHubRepository.first_commit.name] = v[
+                        GitHubRepository.first_commit.name
+                    ].replace(tzinfo=timezone.utc)
+            await defer(
+                insert_or_ignore(
+                    GitHubRepository, values, "_fetch_repository_first_commit_dates", pdb,
+                ),
+                "insert_repository_first_commit_dates",
+            )
             rows.extend((r[:2] for r in computed))
         result = dict(rows)
         if mdb.url.dialect == "sqlite" or pdb.url.dialect == "sqlite":
@@ -854,17 +1175,19 @@ class ReleaseToPullRequestMapper:
         return result
 
     @classmethod
-    def _extract_released_commits(cls,
-                                  releases: pd.DataFrame,
-                                  dag: DAG,
-                                  time_boundary: datetime,
-                                  ) -> np.ndarray:
+    def _extract_released_commits(
+        cls,
+        releases: pd.DataFrame,
+        dag: DAG,
+        time_boundary: datetime,
+    ) -> np.ndarray:
         time_mask = (releases[Release.published_at.name] >= time_boundary).values
         new_releases = releases.take(np.flatnonzero(time_mask))
         assert not new_releases.empty, "you must check this before calling me"
         hashes, vertexes, edges = dag
         visited_hashes, _, _ = extract_subdag(
-            hashes, vertexes, edges, new_releases[Release.sha.name].values)
+            hashes, vertexes, edges, new_releases[Release.sha.name].values,
+        )
         # we need to traverse the DAG from *all* the previous releases because of release branches
         if not time_mask.all():
             boundary_release_hashes = releases[Release.sha.name].values[~time_mask]

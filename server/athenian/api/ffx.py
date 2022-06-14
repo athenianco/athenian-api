@@ -9,5 +9,6 @@ def encrypt(data: bytes, key: bytes) -> str:
 
 def decrypt(data: str, key: bytes) -> bytes:
     """Decrypt a FFX string."""
-    return bytes.fromhex(pyffx.String(key, alphabet="0123456789abcdef", length=len(data))
-                         .decrypt(data))
+    return bytes.fromhex(
+        pyffx.String(key, alphabet="0123456789abcdef", length=len(data)).decrypt(data),
+    )

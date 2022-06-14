@@ -10,9 +10,11 @@ class Interquartile(Model):
     attribute_types = {"left": Union[float, timedelta], "right": Union[float, timedelta]}
     attribute_map = {"left": "left", "right": "right"}
 
-    def __init__(self,
-                 left: Optional[Union[float, timedelta]] = None,
-                 right: Optional[Union[float, timedelta]] = None):
+    def __init__(
+        self,
+        left: Optional[Union[float, timedelta]] = None,
+        right: Optional[Union[float, timedelta]] = None,
+    ):
         """Interquartile - a model defined in OpenAPI
 
         :param left: The left of this Interquartile.

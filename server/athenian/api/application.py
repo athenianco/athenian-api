@@ -17,8 +17,13 @@ import traceback
 from typing import Any, Callable, Coroutine, Dict, List, Optional
 
 import aiohttp.web
-from aiohttp.web_exceptions import HTTPClientError, HTTPFound, HTTPNoContent, HTTPRedirection, \
-    HTTPResetContent
+from aiohttp.web_exceptions import (
+    HTTPClientError,
+    HTTPFound,
+    HTTPNoContent,
+    HTTPRedirection,
+    HTTPResetContent,
+)
 from aiohttp.web_runner import GracefulExit
 import aiohttp_cors
 import aiomcache
@@ -45,14 +50,20 @@ from athenian.api.balancing import extract_handler_weight
 from athenian.api.cache import CACHE_VAR_NAME, setup_cache_metrics
 from athenian.api.controllers import invitation_controller
 from athenian.api.controllers.status_controller import setup_status
-from athenian.api.db import add_pdb_metrics_context, Database, measure_db_overhead_and_retry
-from athenian.api.defer import defer, enable_defer, launch_defer_from_request, wait_all_deferred, \
-    wait_deferred
+from athenian.api.db import Database, add_pdb_metrics_context, measure_db_overhead_and_retry
+from athenian.api.defer import (
+    defer,
+    enable_defer,
+    launch_defer_from_request,
+    wait_all_deferred,
+    wait_deferred,
+)
 from athenian.api.kms import AthenianKMS
 from athenian.api.mandrill import MandrillClient
 from athenian.api.models.metadata import dereference_schemas as dereference_metadata_schemas
-from athenian.api.models.persistentdata import \
-    dereference_schemas as dereference_persistentdata_schemas
+from athenian.api.models.persistentdata import (
+    dereference_schemas as dereference_persistentdata_schemas,
+)
 from athenian.api.models.precomputed.schema_monitor import schedule_pdb_schema_check
 from athenian.api.models.web import GenericError
 from athenian.api.models.web.generic_error import ServiceUnavailableError
@@ -61,15 +72,12 @@ from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError
 from athenian.api.segment import SegmentClient
 from athenian.api.serialization import FriendlyJson
-from athenian.api.tracing import InfiniteString, MAX_SENTRY_STRING_LENGTH
+from athenian.api.tracing import MAX_SENTRY_STRING_LENGTH, InfiniteString
 from athenian.precomputer.db import dereference_schemas as dereference_precomputed_schemas
 
-
-flogging.trailing_dot_exceptions.update((
-    "asyncio",
-    "especifico.api.security",
-    "especifico.apis.aiohttp_api",
-))
+flogging.trailing_dot_exceptions.update(
+    ("asyncio", "especifico.api.security", "especifico.apis.aiohttp_api"),
+)
 
 
 class AthenianOperation(especifico.spec.OpenAPIOperation):
@@ -110,10 +118,13 @@ class AthenianAioHttpApi(especifico.AioHttpApi):
     def make_security_handler_factory(self, pass_context_arg_name):
         """Return our own SecurityHandlerFactory to create all security check handlers."""
         return AthenianAioHttpSecurityHandlerFactory(
-            self.options.as_dict()["auth"], pass_context_arg_name)
+            self.options.as_dict()["auth"], pass_context_arg_name,
+        )
 
-    async def get_request(self, req: aiohttp.web.Request,
-                          ) -> especifico.lifecycle.EspecificoRequest:
+    async def get_request(
+        self,
+        req: aiohttp.web.Request,
+    ) -> especifico.lifecycle.EspecificoRequest:
         """Override the parent's method to ensure that we can access the full request body in \
         Sentry."""
         api_req = await super().get_request(req)
@@ -148,7 +159,8 @@ class AthenianAioHttpApi(especifico.AioHttpApi):
 
     async def _get_swagger_css(self, _: aiohttp.web.Request) -> aiohttp.web.FileResponse:
         return aiohttp.web.FileResponse(
-            Path(__file__).with_name("swagger") / "swagger-ui-athenian.css")
+            Path(__file__).with_name("swagger") / "swagger-ui-athenian.css",
+        )
 
     async def _get_swagger_js(self, _: aiohttp.web.Request) -> aiohttp.web.Response:
         js = (Path(__file__).with_name("swagger") / "swagger-ui-athenian.js").read_text()
@@ -176,8 +188,10 @@ class AthenianWebApplication(aiohttp.web.Application):
 
     def __str__(self) -> str:
         """Override MutableMapping[str, Any]'s cringe."""
-        return f"<AthenianWebApplication with {len(self.router)} routes, " \
-               f"{len(self.middlewares)} middlewares, {len(self)} state properties>"
+        return (
+            f"<AthenianWebApplication with {len(self.router)} routes, "
+            f"{len(self.middlewares)} middlewares, {len(self)} state properties>"
+        )
 
     def __repr__(self) -> str:
         """Override MutableMapping[str, Any]'s cringe."""
@@ -196,10 +210,12 @@ class ServerCrashedError(GenericError):
 
         :param instance: Sentry event ID of this error.
         """
-        super().__init__(type="/errors/InternalServerError",
-                         title=HTTPStatus.INTERNAL_SERVER_ERROR.phrase,
-                         status=HTTPStatus.INTERNAL_SERVER_ERROR,
-                         instance=instance)
+        super().__init__(
+            type="/errors/InternalServerError",
+            title=HTTPStatus.INTERNAL_SERVER_ERROR.phrase,
+            status=HTTPStatus.INTERNAL_SERVER_ERROR,
+            instance=instance,
+        )
 
 
 ADJUST_LOAD_VAR_NAME = "adjust_load"
@@ -210,27 +226,29 @@ class AthenianApp(especifico.AioHttpApp):
 
     log = logging.getLogger(metadata.__package__)
 
-    def __init__(self,
-                 mdb_conn: str,
-                 sdb_conn: str,
-                 pdb_conn: str,
-                 rdb_conn: str,
-                 ui: bool,
-                 client_max_size: int,
-                 max_load: float,
-                 mdb_options: Optional[Dict[str, Any]] = None,
-                 sdb_options: Optional[Dict[str, Any]] = None,
-                 pdb_options: Optional[Dict[str, Any]] = None,
-                 rdb_options: Optional[Dict[str, Any]] = None,
-                 auth0_cls: Callable[..., Auth0] = Auth0,
-                 kms_cls: Callable[[], AthenianKMS] = AthenianKMS,
-                 cache: Optional[aiomcache.Client] = None,
-                 slack: Optional[SlackWebClient] = None,
-                 mandrill: Optional[MandrillClient] = None,
-                 with_pdb_schema_checks: bool = True,
-                 segment: Optional[SegmentClient] = None,
-                 google_analytics: Optional[str] = "",
-                 validate_responses: bool = False):
+    def __init__(
+        self,
+        mdb_conn: str,
+        sdb_conn: str,
+        pdb_conn: str,
+        rdb_conn: str,
+        ui: bool,
+        client_max_size: int,
+        max_load: float,
+        mdb_options: Optional[Dict[str, Any]] = None,
+        sdb_options: Optional[Dict[str, Any]] = None,
+        pdb_options: Optional[Dict[str, Any]] = None,
+        rdb_options: Optional[Dict[str, Any]] = None,
+        auth0_cls: Callable[..., Auth0] = Auth0,
+        kms_cls: Callable[[], AthenianKMS] = AthenianKMS,
+        cache: Optional[aiomcache.Client] = None,
+        slack: Optional[SlackWebClient] = None,
+        mandrill: Optional[MandrillClient] = None,
+        with_pdb_schema_checks: bool = True,
+        segment: Optional[SegmentClient] = None,
+        google_analytics: Optional[str] = "",
+        validate_responses: bool = False,
+    ):
         """
         Initialize the underlying especifico -> aiohttp application.
 
@@ -259,22 +277,27 @@ class AthenianApp(especifico.AioHttpApp):
         """
         options = {"swagger_ui": ui}
         specification_dir = str(Path(__file__).parent / "openapi")
-        super().__init__(metadata.__package__,
-                         specification_dir=specification_dir,
-                         options=options,
-                         server_args={"client_max_size": client_max_size})
+        super().__init__(
+            metadata.__package__,
+            specification_dir=specification_dir,
+            options=options,
+            server_args={"client_max_size": client_max_size},
+        )
         self.api_cls = AthenianAioHttpApi
         self._devenv = os.getenv("SENTRY_ENV", "development") == "development"
         invitation_controller.validate_env()
-        self.app["auth"] = self._auth0 = auth0_cls(whitelist=[
-            r"/v1/openapi.json$",
-            r"/v1/ui(/|$)",
-            r"/v1/invite/check/?$",
-            r"/status/?$",
-            r"/prometheus/?$",
-            r"/memory/?$",
-            r"/objgraph/?$",
-        ], cache=cache)
+        self.app["auth"] = self._auth0 = auth0_cls(
+            whitelist=[
+                r"/v1/openapi.json$",
+                r"/v1/ui(/|$)",
+                r"/v1/invite/check/?$",
+                r"/status/?$",
+                r"/prometheus/?$",
+                r"/memory/?$",
+                r"/objgraph/?$",
+            ],
+            cache=cache,
+        )
         middlewares = [
             self.i_will_survive,
             self.with_db,
@@ -313,7 +336,8 @@ class AthenianApp(especifico.AioHttpApp):
             validate_responses=validate_responses,
         )
         GraphQL(align.create_graphql_schema()).attach(
-            self.app, "/align", middlewares + [self._auth0.authenticate])
+            self.app, "/align", middlewares + [self._auth0.authenticate],
+        )
         if kms_cls is not None:
             self.app["kms"] = self._kms = kms_cls()
         else:
@@ -327,6 +351,7 @@ class AthenianApp(especifico.AioHttpApp):
         setup_cache_metrics(self.app)
         self._setup_survival()
         if ui:
+
             def index_redirect(_):
                 raise HTTPFound("/v1/ui/")
 
@@ -345,8 +370,9 @@ class AthenianApp(especifico.AioHttpApp):
                         await db.connect()
                         break
                     except asyncio.exceptions.TimeoutError as e:
-                        self.log.warning("%d/%d timed out connecting to %s",
-                                         i + 1, attempts, db_conn)
+                        self.log.warning(
+                            "%d/%d timed out connecting to %s", i + 1, attempts, db_conn,
+                        )
                         timeout = e  # `e` goes out of scope before `else`
                 else:
                     raise timeout from None
@@ -393,6 +419,7 @@ class AthenianApp(especifico.AioHttpApp):
 
     def on_dbs_connected(self, callback: Callable[..., Coroutine]) -> None:
         """Register an async callback on when all DBs connect."""
+
         async def on_dbs_connected_callback_wrapper(*_) -> bool:
             await gather(*self._db_futures.values())
             dbs = {db: self.app[db] for db in self._db_futures}
@@ -406,8 +433,9 @@ class AthenianApp(especifico.AioHttpApp):
                 await self._raise_graceful_exit()
                 return False
 
-        self._on_dbs_connected_callbacks.append(asyncio.ensure_future(
-            on_dbs_connected_callback_wrapper()))
+        self._on_dbs_connected_callbacks.append(
+            asyncio.ensure_future(on_dbs_connected_callback_wrapper()),
+        )
 
     async def ready(self) -> bool:
         """
@@ -428,9 +456,7 @@ class AthenianApp(especifico.AioHttpApp):
     @load.setter
     def load(self, value: float) -> None:
         """Set the current server load in abstract units."""
-        self.app["load"] \
-            .labels(metadata.__package__, metadata.__version__) \
-            .set(value)
+        self.app["load"].labels(metadata.__package__, metadata.__version__).set(value)
         self._load = value
 
     def __del__(self):
@@ -447,7 +473,10 @@ class AthenianApp(especifico.AioHttpApp):
     def run(self, port=None, server=None, debug=None, host=None, **options) -> None:
         """Launch the event loop and block on serving requests."""
         if flogging.logs_are_structured:
-            access_log_format = re.sub(r"\s+", " ", """
+            access_log_format = re.sub(
+                r"\s+",
+                " ",
+                """
                 {"ip": "%a",
                  "start_time": "%t",
                  "request": "%r",
@@ -458,18 +487,21 @@ class AthenianApp(especifico.AioHttpApp):
                  "user": "%{User}o",
                  "elapsed": %Tf,
                  "performance_db": "%{X-Performance-DB}o"}
-            """.strip())
+            """.strip(),
+            )
         else:
             access_log_format = '%a %t "%r" %s %b "%{User-Agent}i" "%{User}o"'
-        super().run(port=port,
-                    server=server,
-                    debug=debug,
-                    host=host,
-                    use_default_access_log=True,
-                    handle_signals=False,
-                    access_log_format=access_log_format,
-                    loop=asyncio.get_event_loop(),
-                    **options)
+        super().run(
+            port=port,
+            server=server,
+            debug=debug,
+            host=host,
+            use_default_access_log=True,
+            handle_signals=False,
+            access_log_format=access_log_format,
+            loop=asyncio.get_event_loop(),
+            **options,
+        )
 
     async def shutdown(self, app: Optional[aiohttp.web.Application] = None) -> None:
         """Free resources associated with the object."""
@@ -539,22 +571,30 @@ class AthenianApp(especifico.AioHttpApp):
             request.cache = None
         try:
             return await handler(request)
-        except (ConnectionError,
-                PostgresConnectionError,
-                InterfaceError,
-                OperatorInterventionError) as e:
+        except (
+            ConnectionError,
+            PostgresConnectionError,
+            InterfaceError,
+            OperatorInterventionError,
+        ) as e:
             sentry_sdk.add_breadcrumb(message=traceback.format_exc(), level="error")
             event_id = sentry_sdk.capture_message(
-                "Internal connectivity error: %s" % type(e).__name__, level="error")
-            return ResponseError(ServiceUnavailableError(
-                type="/errors/InternalConnectivityError",
-                detail="%s: %s" % (type(e).__name__, e),
-                instance=event_id,
-            )).response
+                "Internal connectivity error: %s" % type(e).__name__, level="error",
+            )
+            return ResponseError(
+                ServiceUnavailableError(
+                    type="/errors/InternalConnectivityError",
+                    detail="%s: %s" % (type(e).__name__, e),
+                    instance=event_id,
+                ),
+            ).response
 
     @aiohttp.web.middleware
-    async def postprocess_response(self, request: aiohttp.web.Request, handler,
-                                   ) -> aiohttp.web.Response:
+    async def postprocess_response(
+        self,
+        request: aiohttp.web.Request,
+        handler,
+    ) -> aiohttp.web.Response:
         """Append X-Backend-Server HTTP header, enable compression, etc."""
         try:
             response = await handler(request)  # type: aiohttp.web.Response
@@ -563,10 +603,11 @@ class AthenianApp(especifico.AioHttpApp):
             await self._postprocess_response(request, e.response)
             raise e from None
 
-    async def _postprocess_response(self,
-                                    request: AthenianWebRequest,
-                                    response: aiohttp.web.Response,
-                                    ) -> aiohttp.web.Response:
+    async def _postprocess_response(
+        self,
+        request: AthenianWebRequest,
+        response: aiohttp.web.Response,
+    ) -> aiohttp.web.Response:
         response.headers.add("X-Backend-Server", self.server_name)
         if (uid := getattr(request, "uid", None)) is not None:
             response.headers.add("User", uid)
@@ -596,28 +637,37 @@ class AthenianApp(especifico.AioHttpApp):
 
     @staticmethod
     def _respond_shutting_down() -> aiohttp.web.Response:
-        return ResponseError(ServiceUnavailableError(
-            type="/errors/ShuttingDownError",
-            detail="This server is shutting down, please repeat your request.",
-        )).response
+        return ResponseError(
+            ServiceUnavailableError(
+                type="/errors/ShuttingDownError",
+                detail="This server is shutting down, please repeat your request.",
+            ),
+        ).response
 
-    async def _shielded(self,
-                        request: aiohttp.web.Request,
-                        handler: Callable[..., Coroutine],
-                        ) -> aiohttp.web.Response:
+    async def _shielded(
+        self,
+        request: aiohttp.web.Request,
+        handler: Callable[..., Coroutine],
+    ) -> aiohttp.web.Response:
         start_time = time.time()
         asyncio.current_task().set_name("shield %s %s" % (request.method, request.path))
 
         if request.method != "OPTIONS":
             load = extract_handler_weight(handler)
             if (new_load := self.load + load) > self._max_load:
-                self.log.warning("Rejecting the request, too much load: %.1f > %.1f %s",
-                                 new_load, self._max_load, self._requests)
+                self.log.warning(
+                    "Rejecting the request, too much load: %.1f > %.1f %s",
+                    new_load,
+                    self._max_load,
+                    self._requests,
+                )
                 # no "raise"! the "except" does not exist yet
-                response = ResponseError(ServiceUnavailableError(
-                    type="/errors/HeavyLoadError",
-                    detail="This server is serving too much load, please repeat your request.",
-                )).response
+                response = ResponseError(
+                    ServiceUnavailableError(
+                        type="/errors/HeavyLoadError",
+                        detail="This server is serving too much load, please repeat your request.",
+                    ),
+                ).response
                 response.headers.add("X-Serving-Load", "%.1f" % self.load)
                 response.headers.add("X-Requested-Load", "%.1f" % new_load)
                 return response
@@ -651,25 +701,30 @@ class AthenianApp(especifico.AioHttpApp):
             body["extensions"]["type"] = real_error.type
             body["extensions"]["detail"] = real_error.detail
             return aiohttp.web.json_response({"errors": [body]})
-        except (EspecificoException,
-                HTTPClientError,   # 4xx
-                HTTPRedirection,   # 3xx
-                HTTPNoContent,     # 204
-                HTTPResetContent,  # 205
-                ) as e:
+        except (
+            EspecificoException,
+            HTTPClientError,  # 4xx
+            HTTPRedirection,  # 3xx
+            HTTPNoContent,  # 204
+            HTTPResetContent,  # 205
+        ) as e:
             raise e from None
         except Unauthorized as e:  # 401
             if request.path.startswith("/align/graphql"):
-                return aiohttp.web.json_response({
-                    "errors": [{
-                        "message": HTTPStatus(e.code).phrase,
-                        "extensions": {
-                            "status": e.code,
-                            "type": "/errors/Unauthorized",
-                            "detail": e.description,
-                        },
-                    }],
-                })
+                return aiohttp.web.json_response(
+                    {
+                        "errors": [
+                            {
+                                "message": HTTPStatus(e.code).phrase,
+                                "extensions": {
+                                    "status": e.code,
+                                    "type": "/errors/Unauthorized",
+                                    "detail": e.description,
+                                },
+                            },
+                        ],
+                    },
+                )
             raise e from None
         except bdb.BdbQuit:
             # breakpoint() helper
@@ -713,19 +768,24 @@ class AthenianApp(especifico.AioHttpApp):
             if code := (await cache.get(b"manhole", b"")).decode():
                 _locals = locals().copy()
                 try:
-                    await eval(compile(code, "manhole", "exec", ast.PyCF_ALLOW_TOP_LEVEL_AWAIT),
-                               globals(), _locals)
+                    await eval(
+                        compile(code, "manhole", "exec", ast.PyCF_ALLOW_TOP_LEVEL_AWAIT),
+                        globals(),
+                        _locals,
+                    )
                     if (response := _locals.get("response")) is not None:
                         assert isinstance(response, aiohttp.web.Response)
-                        self.log.warning("Manhole code hijacked the request! -> %d",
-                                         response.status)
+                        self.log.warning(
+                            "Manhole code hijacked the request! -> %d", response.status,
+                        )
                         return response
                 except (ResponseError, Unauthorized) as e:
                     self.log.warning("Manhole code hijacked the request! -> %d", e.response.status)
                     raise e from None
                 except Exception as e:
-                    self.log.error("Failed to execute the manhole code: %s: %s",
-                                   type(e).__name__, e)
+                    self.log.error(
+                        "Failed to execute the manhole code: %s: %s", type(e).__name__, e,
+                    )
                     # we continue the execution
         asyncio.current_task().set_name(handler.__qualname__)
         with sentry_sdk.start_span(op=handler.__qualname__):
@@ -737,8 +797,11 @@ class AthenianApp(especifico.AioHttpApp):
         self.load = 0
 
         def initiate_graceful_shutdown(signame: str):
-            self.log.warning("Received %s, waiting for pending %d requests to finish...",
-                             signame, len(self._requests))
+            self.log.warning(
+                "Received %s, waiting for pending %d requests to finish...",
+                signame,
+                len(self._requests),
+            )
             sentry_sdk.add_breadcrumb(category="signal", message=signame, level="warning")
             self._shutting_down = True
             self._set_unready()
@@ -750,14 +813,18 @@ class AthenianApp(especifico.AioHttpApp):
         loop.add_signal_handler(signal.SIGTERM, partial(initiate_graceful_shutdown, "SIGTERM"))
 
     def _enable_cors(self) -> None:
-        cors = aiohttp_cors.setup(self.app, defaults={
-            "*": aiohttp_cors.ResourceOptions(
-                allow_credentials=True,
-                expose_headers="*",
-                allow_headers="*",
-                max_age=3600,
-                allow_methods="*",
-            )})
+        cors = aiohttp_cors.setup(
+            self.app,
+            defaults={
+                "*": aiohttp_cors.ResourceOptions(
+                    allow_credentials=True,
+                    expose_headers="*",
+                    allow_headers="*",
+                    max_age=3600,
+                    allow_methods="*",
+                ),
+            },
+        )
         for route in self.app.router.routes():
             cors.add(route)
 
@@ -829,7 +896,9 @@ class AthenianApp(especifico.AioHttpApp):
                     sampler = self.app["sampler"]
                 except KeyError:
                     sampler = self.app["sampler"] = (
-                        asyncio.create_task(self._sample_stack(), name="sample_stack"), [], [],
+                        asyncio.create_task(self._sample_stack(), name="sample_stack"),
+                        [],
+                        [],
                     )
                 sampler[1].append(request)
             scope.set_extra("concurrent requests", self._requests)
@@ -843,10 +912,11 @@ class AthenianApp(especifico.AioHttpApp):
                     pass
         return traced
 
-    def _set_stack_samples_sentry_context(self,
-                                          request: aiohttp.web.Request,
-                                          start_time: float,
-                                          ) -> None:
+    def _set_stack_samples_sentry_context(
+        self,
+        request: aiohttp.web.Request,
+        start_time: float,
+    ) -> None:
         sample_stack_requests, samples = self.app["sampler"][1:]
         sample_stack_requests.remove(request)
         related_samples = []
@@ -859,24 +929,32 @@ class AthenianApp(especifico.AioHttpApp):
             added = stack - state
             removed = state - stack
             state = stack
-            diff = [("+" + name) for name in sorted(added)] + \
-                   [("-" + name) for name in sorted(removed)]
+            diff = [("+" + name) for name in sorted(added)] + [
+                ("-" + name) for name in sorted(removed)
+            ]
             if diff:
                 diff_samples.append("%05.2f %s" % (offset, "; ".join(diff)))
         with sentry_sdk.configure_scope() as scope:
-            scope.set_context("Tracing", {
-                "stack samples": InfiniteString("\n".join(diff_samples)),
-            })
+            scope.set_context(
+                "Tracing",
+                {
+                    "stack samples": InfiniteString("\n".join(diff_samples)),
+                },
+            )
 
     async def _report_ready(self) -> None:
         if not await self.ready():
             return
         self.app["health"] = health = prometheus_client.Info(
-            "server_ready", "Indicates whether the server is fully up and running",
-            registry=self.app[PROMETHEUS_REGISTRY_VAR_NAME])
-        health.info({
-            "version": metadata.__version__,
-        })
+            "server_ready",
+            "Indicates whether the server is fully up and running",
+            registry=self.app[PROMETHEUS_REGISTRY_VAR_NAME],
+        )
+        health.info(
+            {
+                "version": metadata.__version__,
+            },
+        )
 
     def _set_unready(self) -> None:
         if (health := self.app.get("health")) is not None:

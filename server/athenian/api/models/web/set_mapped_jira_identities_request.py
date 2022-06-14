@@ -18,10 +18,11 @@ class SetMappedJIRAIdentitiesRequest(Model):
         "changes": "changes",
     }
 
-    def __init__(self,
-                 account: Optional[int] = None,
-                 changes: Optional[List[MappedJIRAIdentityChange]] = None,
-                 ):
+    def __init__(
+        self,
+        account: Optional[int] = None,
+        changes: Optional[List[MappedJIRAIdentityChange]] = None,
+    ):
         """SetMappedJIRAIdentitiesRequest - a model defined in OpenAPI
 
         :param account: The account of this SetMappedJIRAIdentitiesRequest.

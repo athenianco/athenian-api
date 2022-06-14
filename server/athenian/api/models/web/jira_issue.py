@@ -17,9 +17,7 @@ class _JIRAIssueSpecials(Model, sealed=False):
         "prs": "prs",
     }
 
-    def __init__(self,
-                 project: Optional[str] = None,
-                 prs: Optional[List[PullRequest]] = None):
+    def __init__(self, project: Optional[str] = None, prs: Optional[List[PullRequest]] = None):
         """JIRAIssue - a model defined in OpenAPI
 
         :param project: The project of this JIRAIssue.

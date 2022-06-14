@@ -18,5 +18,6 @@ class MissingSettingsError(GenericError):
         :param status: The status of this MissingSettingsError.
         :param detail: The detail of this MissingSettingsError.
         """
-        super().__init__(type="/errors/MissingSettingsError", title=title, status=status,
-                         detail=detail)
+        super().__init__(
+            type="/errors/MissingSettingsError", title=title, status=status, detail=detail,
+        )

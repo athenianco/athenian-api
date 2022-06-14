@@ -80,8 +80,10 @@ class _DeploymentMetricsRequest(Model):
         self._metrics = metrics
 
 
-DeploymentMetricsRequest = AllOf(_DeploymentMetricsRequest,
-                                 CommonFilterProperties,
-                                 CommonMetricsProperties,
-                                 name="DeploymentMetricsRequest",
-                                 module=__name__)
+DeploymentMetricsRequest = AllOf(
+    _DeploymentMetricsRequest,
+    CommonFilterProperties,
+    CommonMetricsProperties,
+    name="DeploymentMetricsRequest",
+    module=__name__,
+)

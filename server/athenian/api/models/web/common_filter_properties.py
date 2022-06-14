@@ -119,19 +119,24 @@ class CommonFilterProperties(Model, sealed=False):
         """
         if timezone is not None and timezone > 720:
             raise ValueError(
-                "Invalid value for `timezone`, must be a value less than or equal to `720`")
+                "Invalid value for `timezone`, must be a value less than or equal to `720`",
+            )
         if timezone is not None and timezone < -720:
             raise ValueError(
-                "Invalid value for `timezone`, must be a value greater than or equal to `-720`")
+                "Invalid value for `timezone`, must be a value greater than or equal to `-720`",
+            )
 
         self._timezone = timezone
 
     def resolve_time_from_and_to(self) -> Tuple[datetime, datetime]:
         """Extract the time window from the request model: the timestamps of `from` and `to`."""
         if self.date_from > self.date_to:
-            raise ResponseError(InvalidRequestError(
-                "`date_to` may not be less than `date_from`",
-                detail="from:%s > to:%s" % (self.date_from, self.date_to)))
+            raise ResponseError(
+                InvalidRequestError(
+                    "`date_to` may not be less than `date_from`",
+                    detail="from:%s > to:%s" % (self.date_from, self.date_to),
+                ),
+            )
         time_from = datetime.combine(self.date_from, datetime.min.time(), tzinfo=timezone.utc)
         time_to = datetime.combine(self.date_to, datetime.max.time(), tzinfo=timezone.utc)
         if self.timezone is not None:

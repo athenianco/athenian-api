@@ -24,7 +24,9 @@ class ParseError(ValueError):
 
 
 def _deserialize(
-    data: Union[dict, list, str], klass: Union[Class, str], path: str,
+    data: Union[dict, list, str],
+    klass: Union[Class, str],
+    path: str,
 ) -> Union[dict, list, Class, int, float, str, bool, date, datetime, timedelta]:
     """Deserializes dict, list, str into an object.
 
@@ -232,8 +234,7 @@ class FriendlyJson:
                 # NaT
                 return None
             tz = obj.tzinfo
-            assert tz == timezone.utc or tz == tzutc(), \
-                "all timestamps must be UTC: %s" % obj
+            assert tz == timezone.utc or tz == tzutc(), "all timestamps must be UTC: %s" % obj
             return obj.strftime("%Y-%m-%dT%H:%M:%SZ")  # RFC3339
         if isinstance(obj, date):
             return serialize_date(obj)

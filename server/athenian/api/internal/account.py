@@ -24,12 +24,33 @@ from athenian.api.async_utils import gather
 from athenian.api.cache import cached, max_exptime, middle_term_exptime, short_term_exptime
 from athenian.api.db import Connection, Database, DatabaseLike
 from athenian.api.defer import defer
-from athenian.api.models.metadata.github import Account as MetadataAccount, AccountRepository, \
-    FetchProgress, NodeUser, Organization, Team as MetadataTeam, TeamMember
-from athenian.api.models.state.models import Account, AccountFeature, AccountGitHubAccount, \
-    Feature, FeatureComponent, RepositorySet, Team as StateTeam, UserAccount
-from athenian.api.models.web import ForbiddenError, InstallationProgress, NoSourceDataError, \
-    NotFoundError, TableFetchingProgress, User
+from athenian.api.models.metadata.github import (
+    Account as MetadataAccount,
+    AccountRepository,
+    FetchProgress,
+    NodeUser,
+    Organization,
+    Team as MetadataTeam,
+    TeamMember,
+)
+from athenian.api.models.state.models import (
+    Account,
+    AccountFeature,
+    AccountGitHubAccount,
+    Feature,
+    FeatureComponent,
+    RepositorySet,
+    Team as StateTeam,
+    UserAccount,
+)
+from athenian.api.models.web import (
+    ForbiddenError,
+    InstallationProgress,
+    NoSourceDataError,
+    NotFoundError,
+    TableFetchingProgress,
+    User,
+)
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError
 from athenian.api.typing_utils import wraps
@@ -45,27 +66,36 @@ jira_url_template = os.getenv("ATHENIAN_JIRA_INSTALLATION_URL_TEMPLATE")
     key=lambda account, **_: (account,),
     refresh_on_access=True,
 )
-async def get_metadata_account_ids(account: int,
-                                   sdb: DatabaseLike,
-                                   cache: Optional[aiomcache.Client],
-                                   ) -> Tuple[int, ...]:
+async def get_metadata_account_ids(
+    account: int,
+    sdb: DatabaseLike,
+    cache: Optional[aiomcache.Client],
+) -> Tuple[int, ...]:
     """Fetch the metadata account IDs for the given API account ID."""
-    ids = await sdb.fetch_all(select([AccountGitHubAccount.id])
-                              .where(AccountGitHubAccount.account_id == account))
+    ids = await sdb.fetch_all(
+        select([AccountGitHubAccount.id]).where(AccountGitHubAccount.account_id == account),
+    )
     if len(ids) == 0:
         acc_exists = await sdb.fetch_val(select([Account.id]).where(Account.id == account))
         if not acc_exists:
-            raise ResponseError(NotFoundError(detail=f"Account {account} does not exist",
-                                              type_="/errors/AccountNotFound"))
-        raise ResponseError(NoSourceDataError(
-            detail="The installation of account %d has not finished yet." % account))
+            raise ResponseError(
+                NotFoundError(
+                    detail=f"Account {account} does not exist", type_="/errors/AccountNotFound",
+                ),
+            )
+        raise ResponseError(
+            NoSourceDataError(
+                detail="The installation of account %d has not finished yet." % account,
+            ),
+        )
     return tuple(r[0] for r in ids)
 
 
-async def get_metadata_account_ids_or_empty(account: int,
-                                            sdb: DatabaseLike,
-                                            cache: Optional[aiomcache.Client],
-                                            ) -> Tuple[int, ...]:
+async def get_metadata_account_ids_or_empty(
+    account: int,
+    sdb: DatabaseLike,
+    cache: Optional[aiomcache.Client],
+) -> Tuple[int, ...]:
     """
     Fetch the metadata account IDs for the given API account ID.
 
@@ -77,13 +107,14 @@ async def get_metadata_account_ids_or_empty(account: int,
         return ()
 
 
-async def match_metadata_installation(account: int,
-                                      login: str,
-                                      sdb_conn: Connection,
-                                      mdb_conn: Connection,
-                                      mdb: Database,
-                                      slack: Optional[SlackWebClient],
-                                      ) -> Collection[int]:
+async def match_metadata_installation(
+    account: int,
+    login: str,
+    sdb_conn: Connection,
+    mdb_conn: Connection,
+    mdb: Database,
+    slack: Optional[SlackWebClient],
+) -> Collection[int]:
     """Discover new metadata installations for the given state DB account.
 
     sdb_conn must be in a transaction!
@@ -98,32 +129,48 @@ async def match_metadata_installation(account: int,
     if not meta_ids:
         log.warning("account %d: no installations found for %s", account, login)
         return ()
-    owned_accounts = {r[0] for r in await sdb_conn.fetch_all(
-        select([AccountGitHubAccount.id])
-        .where(AccountGitHubAccount.id.in_(meta_ids)))}
+    owned_accounts = {
+        r[0]
+        for r in await sdb_conn.fetch_all(
+            select([AccountGitHubAccount.id]).where(AccountGitHubAccount.id.in_(meta_ids)),
+        )
+    }
     meta_ids -= owned_accounts
     if not meta_ids:
-        log.warning("account %d: no new installations for %s among %d",
-                    account, login, len(owned_accounts))
+        log.warning(
+            "account %d: no new installations for %s among %d",
+            account,
+            login,
+            len(owned_accounts),
+        )
         return ()
     inserted = [
         AccountGitHubAccount(id=acc_id, account_id=account)
-        .create_defaults().explode(with_primary_keys=True)
+        .create_defaults()
+        .explode(with_primary_keys=True)
         for acc_id in meta_ids
     ]
     await sdb_conn.execute_many(insert(AccountGitHubAccount), inserted)
     log.info("account %d: installed %s for %s", account, meta_ids, login)
     if slack is not None:
+
         async def report_new_installation():
-            metadata_accounts = [(r[0], r[1]) for r in await mdb.fetch_all(
-                select([MetadataAccount.id, MetadataAccount.owner_login])
-                .where(MetadataAccount.id.in_(meta_ids)))]
-            await slack.post_install("new_installation.jinja2",
-                                     account=account,
-                                     all_reposet_name=RepositorySet.ALL,
-                                     metadata_accounts=metadata_accounts,
-                                     login=login,
-                                     )
+            metadata_accounts = [
+                (r[0], r[1])
+                for r in await mdb.fetch_all(
+                    select([MetadataAccount.id, MetadataAccount.owner_login]).where(
+                        MetadataAccount.id.in_(meta_ids),
+                    ),
+                )
+            ]
+            await slack.post_install(
+                "new_installation.jinja2",
+                account=account,
+                all_reposet_name=RepositorySet.ALL,
+                metadata_accounts=metadata_accounts,
+                login=login,
+            )
+
         await defer(report_new_installation(), "report_new_installation")
     return meta_ids
 
@@ -135,26 +182,29 @@ async def match_metadata_installation(account: int,
     key=lambda account, **_: (account,),
     refresh_on_access=True,
 )
-async def get_account_name(account: int,
-                           sdb: DatabaseLike,
-                           mdb: DatabaseLike,
-                           cache: Optional[aiomcache.Client],
-                           meta_ids: Optional[Tuple[int, ...]] = None,
-                           ) -> str:
+async def get_account_name(
+    account: int,
+    sdb: DatabaseLike,
+    mdb: DatabaseLike,
+    cache: Optional[aiomcache.Client],
+    meta_ids: Optional[Tuple[int, ...]] = None,
+) -> str:
     """Load the human-readable name of the account."""
     if meta_ids is None:
         meta_ids = await get_metadata_account_ids(account, sdb, cache)
-    rows = await mdb.fetch_all(select([MetadataAccount.name])
-                               .where(MetadataAccount.id.in_(meta_ids)))
+    rows = await mdb.fetch_all(
+        select([MetadataAccount.name]).where(MetadataAccount.id.in_(meta_ids)),
+    )
     return ", ".join(r[0] for r in rows)
 
 
-async def get_account_name_or_stub(account: int,
-                                   sdb: DatabaseLike,
-                                   mdb: DatabaseLike,
-                                   cache: Optional[aiomcache.Client],
-                                   meta_ids: Optional[Tuple[int, ...]] = None,
-                                   ) -> str:
+async def get_account_name_or_stub(
+    account: int,
+    sdb: DatabaseLike,
+    mdb: DatabaseLike,
+    cache: Optional[aiomcache.Client],
+    meta_ids: Optional[Tuple[int, ...]] = None,
+) -> str:
     """Load the human-readable name of the account or a placeholder if no name exists."""
     try:
         return await get_account_name(account, sdb, mdb, cache, meta_ids)
@@ -168,15 +218,16 @@ async def get_account_name_or_stub(account: int,
     deserialize=lambda _: False,
     key=lambda user, account, **_: (user, account),
 )
-async def _report_user_rejected(user: str,
-                                user_info: Optional[Callable[..., Coroutine]],
-                                account: int,
-                                context: str,
-                                sdb: DatabaseLike,
-                                mdb: DatabaseLike,
-                                slack: SlackWebClient,
-                                cache: Optional[aiomcache.Client],
-                                ) -> bool:
+async def _report_user_rejected(
+    user: str,
+    user_info: Optional[Callable[..., Coroutine]],
+    account: int,
+    context: str,
+    sdb: DatabaseLike,
+    mdb: DatabaseLike,
+    slack: SlackWebClient,
+    cache: Optional[aiomcache.Client],
+) -> bool:
     async def dummy_user():
         return User(login="N/A")
 
@@ -191,17 +242,24 @@ async def _report_user_rejected(user: str,
         user_email=user_info.email if user_info.email != User.EMPTY_EMAIL else "",
         account=account,
         account_name=name,
-        context=context)
+        context=context,
+    )
     return True
 
 
-async def get_user_account_status_from_request(request: AthenianWebRequest,
-                                               account: int) -> bool:
+async def get_user_account_status_from_request(request: AthenianWebRequest, account: int) -> bool:
     """Return the value indicating whether the requesting user is an admin of the given account."""
     return await get_user_account_status(
-        request.uid, account, request.sdb, request.mdb, request.user, request.app["slack"],
-        request.cache, context=f"{request.method} {request.path}",
-        is_god=hasattr(request, "god_id"))
+        request.uid,
+        account,
+        request.sdb,
+        request.mdb,
+        request.user,
+        request.app["slack"],
+        request.cache,
+        context=f"{request.method} {request.path}",
+        is_god=hasattr(request, "god_id"),
+    )
 
 
 @cached(
@@ -210,16 +268,17 @@ async def get_user_account_status_from_request(request: AthenianWebRequest,
     deserialize=lambda buf: buf == b"1",
     key=lambda user, account, **_: (user, account),
 )
-async def get_user_account_status(user: str,
-                                  account: int,
-                                  sdb: Database,
-                                  mdb: Optional[Database],
-                                  user_info: Optional[Callable[..., Coroutine]],
-                                  slack: Optional[SlackWebClient],
-                                  cache: Optional[aiomcache.Client],
-                                  context: str = "",
-                                  is_god: bool = False,
-                                  ) -> bool:
+async def get_user_account_status(
+    user: str,
+    account: int,
+    sdb: Database,
+    mdb: Optional[Database],
+    user_info: Optional[Callable[..., Coroutine]],
+    slack: Optional[SlackWebClient],
+    cache: Optional[aiomcache.Client],
+    context: str = "",
+    is_god: bool = False,
+) -> bool:
     """
     Return the value indicating whether the given user is an admin of the given account.
 
@@ -227,51 +286,70 @@ async def get_user_account_status(user: str,
     `context` is an optional string to pass in the user rejection Slack message.
     """
     status = await sdb.fetch_val(
-        select([UserAccount.is_admin])
-        .where(and_(UserAccount.user_id == user, UserAccount.account_id == account)))
+        select([UserAccount.is_admin]).where(
+            and_(UserAccount.user_id == user, UserAccount.account_id == account),
+        ),
+    )
     if status is None:
         if slack is not None and not is_god:
             await defer(
                 _report_user_rejected(user, user_info, account, context, sdb, mdb, slack, cache),
-                "report_user_rejected_to_slack")
-        raise ResponseError(NotFoundError(
-            detail="Account %d does not exist or user %s is not a member." % (account, user),
-            type_="/errors/AccountNotFound"))
+                "report_user_rejected_to_slack",
+            )
+        raise ResponseError(
+            NotFoundError(
+                detail="Account %d does not exist or user %s is not a member." % (account, user),
+                type_="/errors/AccountNotFound",
+            ),
+        )
     return status
 
 
 def only_admin(func):
     """Enforce the admin access level to an API handler."""
+
     async def wrapped_only_admin(request: AthenianWebRequest, body: dict) -> web.Response:
         account = body["account"]
         if not await get_user_account_status_from_request(request, account):
-            raise ResponseError(ForbiddenError(
-                f'User "{request.uid}" must be an admin of account {account}'))
+            raise ResponseError(
+                ForbiddenError(f'User "{request.uid}" must be an admin of account {account}'),
+            )
         return await func(request, body)
+
     return wraps(wrapped_only_admin, func)
 
 
 def only_god(func):
     """Enforce the god access level to an API handler."""
+
     async def wrapped_only_god(request: AthenianWebRequest, **kwargs) -> web.Response:
         if not hasattr(request, "god_id"):
             raise ResponseError(ForbiddenError(detail=f"User {request.uid} must be a god"))
         return await func(request, **kwargs)
+
     return wraps(wrapped_only_god, func)
 
 
-async def get_account_repositories(account: int,
-                                   with_prefix: bool,
-                                   sdb: DatabaseLike,
-                                   ) -> List[str]:
+async def get_account_repositories(
+    account: int,
+    with_prefix: bool,
+    sdb: DatabaseLike,
+) -> List[str]:
     """Fetch all the repositories belonging to the account."""
-    repos = await sdb.fetch_val(select([RepositorySet.items]).where(and_(
-        RepositorySet.owner_id == account,
-        RepositorySet.name == RepositorySet.ALL,
-    )))
+    repos = await sdb.fetch_val(
+        select([RepositorySet.items]).where(
+            and_(
+                RepositorySet.owner_id == account,
+                RepositorySet.name == RepositorySet.ALL,
+            ),
+        ),
+    )
     if repos is None:
-        raise ResponseError(NoSourceDataError(
-            detail="The installation of account %d has not finished yet." % account))
+        raise ResponseError(
+            NoSourceDataError(
+                detail="The installation of account %d has not finished yet." % account,
+            ),
+        )
     if not with_prefix:
         repos = [r[0].split("/", 1)[1] for r in repos]
     else:
@@ -285,41 +363,50 @@ async def get_account_repositories(account: int,
     deserialize=pickle.loads,
     key=lambda account, **_: (account,),
 )
-async def get_account_organizations(account: int,
-                                    sdb: DatabaseLike,
-                                    mdb: DatabaseLike,
-                                    cache: Optional[aiomcache.Client],
-                                    ) -> List[Organization]:
+async def get_account_organizations(
+    account: int,
+    sdb: DatabaseLike,
+    mdb: DatabaseLike,
+    cache: Optional[aiomcache.Client],
+) -> List[Organization]:
     """Fetch the list of GitHub organizations installed for the account."""
     ghids = await get_metadata_account_ids(account, sdb, cache)
     rows = await mdb.fetch_all(select([Organization]).where(Organization.acc_id.in_(ghids)))
     return [Organization(**r) for r in rows]
 
 
-async def copy_teams_as_needed(account: int,
-                               meta_ids: Tuple[int, ...],
-                               root_team_id: int,
-                               sdb: DatabaseLike,
-                               mdb: DatabaseLike,
-                               cache: Optional[aiomcache.Client],
-                               ) -> Tuple[List[Mapping[str, Any]], int]:
+async def copy_teams_as_needed(
+    account: int,
+    meta_ids: Tuple[int, ...],
+    root_team_id: int,
+    sdb: DatabaseLike,
+    mdb: DatabaseLike,
+    cache: Optional[aiomcache.Client],
+) -> Tuple[List[Mapping[str, Any]], int]:
     """
     Copy the teams from GitHub organization if none exist yet.
 
     :return: <list of created teams if nothing exists>, <final number of teams>.
     """
     log = logging.getLogger("%s.create_teams_as_needed" % metadata.__package__)
-    existing = await sdb.fetch_val(select([func.count(StateTeam.id)])
-                                   .where(and_(StateTeam.owner_id == account,
-                                               StateTeam.name != StateTeam.BOTS,
-                                               StateTeam.id != root_team_id)))
+    existing = await sdb.fetch_val(
+        select([func.count(StateTeam.id)]).where(
+            and_(
+                StateTeam.owner_id == account,
+                StateTeam.name != StateTeam.BOTS,
+                StateTeam.id != root_team_id,
+            ),
+        ),
+    )
     if existing > 0:
         log.info("Found %d existing teams for account %d, no-op", existing, account)
         return [], existing
     orgs = [org.id for org in await get_account_organizations(account, sdb, mdb, cache)]
-    team_rows = await mdb.fetch_all(select([MetadataTeam])
-                                    .where(and_(MetadataTeam.organization_id.in_(orgs),
-                                                MetadataTeam.acc_id.in_(meta_ids))))
+    team_rows = await mdb.fetch_all(
+        select([MetadataTeam]).where(
+            and_(MetadataTeam.organization_id.in_(orgs), MetadataTeam.acc_id.in_(meta_ids)),
+        ),
+    )
     if not team_rows:
         log.warning("Found 0 metadata teams for account %d", account)
         return [], 0
@@ -338,8 +425,10 @@ async def copy_teams_as_needed(account: int,
         return [], 0
     teams = {t[MetadataTeam.id.name]: t for t in team_rows}
     member_rows = await mdb.fetch_all(
-        select([TeamMember.parent_id, TeamMember.child_id])
-        .where(and_(TeamMember.parent_id.in_(teams), TeamMember.acc_id.in_(meta_ids))))
+        select([TeamMember.parent_id, TeamMember.child_id]).where(
+            and_(TeamMember.parent_id.in_(teams), TeamMember.acc_id.in_(meta_ids)),
+        ),
+    )
     members = defaultdict(list)
     for row in member_rows:
         members[row[TeamMember.parent_id.name]].append(row[TeamMember.child_id.name])
@@ -355,24 +444,38 @@ async def copy_teams_as_needed(account: int,
         # we remain with parent_id = root_team_id either when the team hasn't got a real parent
         # or its parent failed to create
 
-        team = StateTeam(owner_id=account,
-                         name=team[MetadataTeam.name.name],
-                         members=sorted(members.get(team[MetadataTeam.id.name], [])),
-                         parent_id=parent_id,
-                         ).create_defaults().explode()
+        team = (
+            StateTeam(
+                owner_id=account,
+                name=team[MetadataTeam.name.name],
+                members=sorted(members.get(team[MetadataTeam.id.name], [])),
+                parent_id=parent_id,
+            )
+            .create_defaults()
+            .explode()
+        )
         try:
-            db_ids[node_id] = team[StateTeam.id.name] = \
-                await sdb.execute(insert(StateTeam).values(team))
+            db_ids[node_id] = team[StateTeam.id.name] = await sdb.execute(
+                insert(StateTeam).values(team),
+            )
         except (UniqueViolationError, IntegrityError) as e:
-            log.warning('Failed to create team "%s" in account %d: %s',
-                        team[StateTeam.name.name], account, e)
+            log.warning(
+                'Failed to create team "%s" in account %d: %s',
+                team[StateTeam.name.name],
+                account,
+                e,
+            )
             db_ids[node_id] = None
         else:
             created_teams.append(team)
     team_names = [t[MetadataTeam.name.name] for t in team_rows]
-    log.info("Created %d out of %d teams in account %d: %s",
-             len(created_teams), len(team_names), account,
-             [t[StateTeam.name.name] for t in created_teams])
+    log.info(
+        "Created %d out of %d teams in account %d: %s",
+        len(created_teams),
+        len(team_names),
+        account,
+        [t[StateTeam.name.name] for t in created_teams],
+    )
     return created_teams, len(created_teams)
 
 
@@ -389,20 +492,26 @@ async def generate_jira_invitation_link(account: int, sdb: DatabaseLike) -> str:
     deserialize=lambda buf: marshal.loads(buf),
     key=lambda account, **_: (account,),
 )
-async def get_installation_event_ids(account: int,
-                                     sdb: DatabaseLike,
-                                     mdb: DatabaseLike,
-                                     cache: Optional[aiomcache.Client],
-                                     ) -> List[Tuple[int, str]]:
+async def get_installation_event_ids(
+    account: int,
+    sdb: DatabaseLike,
+    mdb: DatabaseLike,
+    cache: Optional[aiomcache.Client],
+) -> List[Tuple[int, str]]:
     """Load the GitHub account and delivery event IDs for the given sdb account."""
     meta_ids = await get_metadata_account_ids(account, sdb, cache)
     rows = await mdb.fetch_all(
         select([AccountRepository.acc_id, AccountRepository.event_id])
         .where(AccountRepository.acc_id.in_(meta_ids))
-        .distinct())
+        .distinct(),
+    )
     if diff := set(meta_ids) - {r[0] for r in rows}:
-        raise ResponseError(NoSourceDataError(detail="Some installation%s missing: %s." %
-                                                     ("s are" if len(diff) > 1 else " is", diff)))
+        raise ResponseError(
+            NoSourceDataError(
+                detail="Some installation%s missing: %s."
+                % ("s are" if len(diff) > 1 else " is", diff),
+            ),
+        )
     return [(r[0], r[1]) for r in rows]
 
 
@@ -413,37 +522,41 @@ async def get_installation_event_ids(account: int,
     key=lambda metadata_account_id, **_: (metadata_account_id,),
     refresh_on_access=True,
 )
-async def get_installation_owner(metadata_account_id: int,
-                                 mdb_conn: morcilla.core.Connection,
-                                 cache: Optional[aiomcache.Client],
-                                 ) -> str:
+async def get_installation_owner(
+    metadata_account_id: int,
+    mdb_conn: morcilla.core.Connection,
+    cache: Optional[aiomcache.Client],
+) -> str:
     """Load the native user ID who installed the app."""
     user_login = await mdb_conn.fetch_val(
-        select([MetadataAccount.owner_login])
-        .where(MetadataAccount.id == metadata_account_id))
+        select([MetadataAccount.owner_login]).where(MetadataAccount.id == metadata_account_id),
+    )
     if user_login is None:
         raise ResponseError(NoSourceDataError(detail="The installation has not started yet."))
     return user_login
 
 
-async def fetch_github_installation_progress(account: int,
-                                             sdb: DatabaseLike,
-                                             mdb: DatabaseLike,
-                                             cache: Optional[aiomcache.Client],
-                                             ) -> InstallationProgress:
+async def fetch_github_installation_progress(
+    account: int,
+    sdb: DatabaseLike,
+    mdb: DatabaseLike,
+    cache: Optional[aiomcache.Client],
+) -> InstallationProgress:
     """Load the GitHub installation progress for the specified account."""
     return (await _fetch_github_installation_progress_timed(account, sdb, mdb, cache))[0]
 
 
-@cached(exptime=lambda result, **_: 5 if result[1] < 1 else short_term_exptime,
-        serialize=pickle.dumps,
-        deserialize=pickle.loads,
-        key=lambda account, **_: (account,))
+@cached(
+    exptime=lambda result, **_: 5 if result[1] < 1 else short_term_exptime,
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda account, **_: (account,),
+)
 async def _fetch_github_installation_progress_timed(
-        account: int,
-        sdb: DatabaseLike,
-        mdb: DatabaseLike,
-        cache: Optional[aiomcache.Client],
+    account: int,
+    sdb: DatabaseLike,
+    mdb: DatabaseLike,
+    cache: Optional[aiomcache.Client],
 ) -> Tuple[InstallationProgress, float]:
     start_time = time.time()
     if isinstance(mdb, Database):
@@ -456,10 +569,10 @@ async def _fetch_github_installation_progress_timed(
 
 
 async def _fetch_github_installation_progress_db(
-        account: int,
-        sdb: DatabaseLike,
-        mdb_conn: Connection,
-        cache: Optional[aiomcache.Client],
+    account: int,
+    sdb: DatabaseLike,
+    mdb_conn: Connection,
+    cache: Optional[aiomcache.Client],
 ) -> InstallationProgress:
     log = logging.getLogger("%s.fetch_github_installation_progress" % metadata.__package__)
     assert isinstance(mdb_conn, Connection)
@@ -473,18 +586,28 @@ async def _fetch_github_installation_progress_db(
     models = []
     for metadata_account_id, event_id in event_ids:
         repositories = await mdb_conn.fetch_val(
-            select([func.count(AccountRepository.repo_graph_id)])
-            .where(AccountRepository.acc_id == metadata_account_id))
+            select([func.count(AccountRepository.repo_graph_id)]).where(
+                AccountRepository.acc_id == metadata_account_id,
+            ),
+        )
         rows = await mdb_conn.fetch_all(
-            select([FetchProgress])
-            .where(and_(FetchProgress.event_id == event_id,
-                        FetchProgress.acc_id == metadata_account_id)))
+            select([FetchProgress]).where(
+                and_(
+                    FetchProgress.event_id == event_id,
+                    FetchProgress.acc_id == metadata_account_id,
+                ),
+            ),
+        )
         if not rows:
             continue
-        tables = [TableFetchingProgress(fetched=r[FetchProgress.nodes_processed.name],
-                                        name=r[FetchProgress.node_type.name],
-                                        total=r[FetchProgress.nodes_total.name])
-                  for r in rows]
+        tables = [
+            TableFetchingProgress(
+                fetched=r[FetchProgress.nodes_processed.name],
+                name=r[FetchProgress.node_type.name],
+                total=r[FetchProgress.nodes_total.name],
+            )
+            for r in rows
+        ]
         started_date = min(r[FetchProgress.created_at.name] for r in rows)
         if mdb_sqlite:
             started_date = started_date.replace(tzinfo=timezone.utc)
@@ -497,44 +620,57 @@ async def _fetch_github_installation_progress_db(
             for table in tables:
                 table.total = table.fetched
             if pending:
-                log.info("Overriding the installation progress of %d by the idle time threshold; "
-                         "there are %d pending tables, last update on %s",
-                         account, pending, finished_date)
+                log.info(
+                    "Overriding the installation progress of %d by the idle time threshold; "
+                    "there are %d pending tables, last update on %s",
+                    account,
+                    pending,
+                    finished_date,
+                )
                 finished_date += idle_threshold  # don't fool the user
         elif pending:
             finished_date = None
         elif now - finished_date < calm_threshold:
-            log.warning("Account %d's installation is calming, postponed until %s",
-                        account, finished_date + calm_threshold)
+            log.warning(
+                "Account %d's installation is calming, postponed until %s",
+                account,
+                finished_date + calm_threshold,
+            )
             finished_date = None
         else:
             finished_date += calm_threshold  # don't fool the user
-        model = InstallationProgress(started_date=started_date,
-                                     finished_date=finished_date,
-                                     owner=owner,
-                                     repositories=repositories,
-                                     tables=tables)
+        model = InstallationProgress(
+            started_date=started_date,
+            finished_date=finished_date,
+            owner=owner,
+            repositories=repositories,
+            tables=tables,
+        )
         models.append(model)
     if not models:
-        raise ResponseError(NoSourceDataError(
-            detail="No installation progress exists for account %d." % account))
+        raise ResponseError(
+            NoSourceDataError(detail="No installation progress exists for account %d." % account),
+        )
     tables = {}
     finished_date = datetime(2020, 1, 1, tzinfo=timezone.utc)
     for m in models:
         for t in m.tables:
             table = tables.setdefault(
-                t.name, TableFetchingProgress(name=t.name, fetched=0, total=0))
+                t.name, TableFetchingProgress(name=t.name, fetched=0, total=0),
+            )
             table.fetched += t.fetched
             table.total += t.total
         if model.finished_date is None:
             finished_date = None
         elif finished_date is not None:
             finished_date = max(finished_date, model.finished_date)
-    model = InstallationProgress(started_date=min(m.started_date for m in models),
-                                 finished_date=finished_date,
-                                 owner=owner,
-                                 repositories=sum(m.repositories for m in models),
-                                 tables=sorted(tables.values()))
+    model = InstallationProgress(
+        started_date=min(m.started_date for m in models),
+        finished_date=finished_date,
+        owner=owner,
+        repositories=sum(m.repositories for m in models),
+        tables=sorted(tables.values()),
+    )
     return model
 
 
@@ -551,17 +687,21 @@ async def is_github_login_enabled(account: int, sdb: DatabaseLike) -> bool:
 async def _get_feature_bool(account: int, name: str, sdb: DatabaseLike) -> bool:
     enabled = False
     global_row = await sdb.fetch_one(
-        select([Feature.id, Feature.enabled])
-        .where(and_(Feature.name == name,
-                    Feature.component == FeatureComponent.server)))
+        select([Feature.id, Feature.enabled]).where(
+            and_(Feature.name == name, Feature.component == FeatureComponent.server),
+        ),
+    )
     if global_row is not None:
         feature_id = global_row[Feature.id.name]
         default_enabled = global_row[Feature.enabled.name]
         enabled = await sdb.fetch_val(
-            select([AccountFeature.enabled]).where(and_(
-                AccountFeature.account_id == account,
-                AccountFeature.feature_id == feature_id,
-            )))
+            select([AccountFeature.enabled]).where(
+                and_(
+                    AccountFeature.account_id == account,
+                    AccountFeature.feature_id == feature_id,
+                ),
+            ),
+        )
         enabled = (enabled is None and default_enabled) or enabled
     return enabled
 
@@ -569,17 +709,28 @@ async def _get_feature_bool(account: int, name: str, sdb: DatabaseLike) -> bool:
 async def check_account_expired(context: AthenianWebRequest, log: logging.Logger) -> bool:
     """Return the value indicating whether the account's expiration datetime is in the past."""
     expires_at = await context.sdb.fetch_val(
-        select([Account.expires_at]).where(Account.id == context.account))
+        select([Account.expires_at]).where(Account.id == context.account),
+    )
     if getattr(context, "god_id", context.uid) == context.uid and (
-            expires_at is None or expires_at < datetime.now(expires_at.tzinfo)):
+        expires_at is None or expires_at < datetime.now(expires_at.tzinfo)
+    ):
         if (slack := context.app["slack"]) is not None:
             await defer(
                 report_user_account_expired(
-                    context.uid, context.account, expires_at, context.sdb, context.mdb,
-                    context.user, slack, context.cache),
-                "report_user_account_expired_to_slack")
-        log.warning("Attempt to use an expired account %d by user %s",
-                    context.account, context.uid)
+                    context.uid,
+                    context.account,
+                    expires_at,
+                    context.sdb,
+                    context.mdb,
+                    context.user,
+                    slack,
+                    context.cache,
+                ),
+                "report_user_account_expired_to_slack",
+            )
+        log.warning(
+            "Attempt to use an expired account %d by user %s", context.account, context.uid,
+        )
         return True
     return False
 
@@ -590,15 +741,18 @@ async def check_account_expired(context: AthenianWebRequest, log: logging.Logger
     deserialize=lambda x: x,
     key=lambda user, account, **_: (user, account),
 )
-async def report_user_account_expired(user: str,
-                                      account: int,
-                                      expired_at: datetime,
-                                      sdb: Database,
-                                      mdb: Database,
-                                      user_info: Callable[..., Coroutine],
-                                      slack: Optional[SlackWebClient],
-                                      cache: Optional[aiomcache.Client]):
+async def report_user_account_expired(
+    user: str,
+    account: int,
+    expired_at: datetime,
+    sdb: Database,
+    mdb: Database,
+    user_info: Callable[..., Coroutine],
+    slack: Optional[SlackWebClient],
+    cache: Optional[aiomcache.Client],
+):
     """Send a Slack message about the user who accessed an expired account."""
+
     async def dummy_user():
         return User(login="N/A")
 
@@ -606,11 +760,13 @@ async def report_user_account_expired(user: str,
         get_account_name_or_stub(account, sdb, mdb, cache),
         user_info() if user_info is not None else dummy_user(),
     )
-    await slack.post_account("user_account_expired.jinja2",
-                             user=user,
-                             user_name=user_info.login,
-                             user_email=user_info.email,
-                             account=account,
-                             account_name=name,
-                             expired_at=expired_at)
+    await slack.post_account(
+        "user_account_expired.jinja2",
+        user=user,
+        user_name=user_info.login,
+        user_email=user_info.email,
+        account=account,
+        account_name=name,
+        expired_at=expired_at,
+    )
     return b"1"

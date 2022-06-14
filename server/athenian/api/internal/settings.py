@@ -2,8 +2,22 @@ from collections import defaultdict
 from enum import IntEnum
 from itertools import chain
 import re
-from typing import Any, Callable, Collection, Coroutine, Dict, FrozenSet, Generator, Iterable, \
-    List, Mapping, Optional, Sequence, Set, Tuple
+from typing import (
+    Any,
+    Callable,
+    Collection,
+    Coroutine,
+    Dict,
+    FrozenSet,
+    Generator,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+)
 
 import aiomcache
 import aiosqlite.core
@@ -15,8 +29,12 @@ from sqlalchemy.dialects.postgresql import insert as postgres_insert
 
 from athenian.api.db import Database, DatabaseLike
 from athenian.api.internal.account import get_account_repositories, get_metadata_account_ids
-from athenian.api.internal.logical_repos import coerce_logical_repos, \
-    coerce_prefixed_logical_repos, drop_logical_repo, drop_prefixed_logical_repo
+from athenian.api.internal.logical_repos import (
+    coerce_logical_repos,
+    coerce_prefixed_logical_repos,
+    drop_logical_repo,
+    drop_prefixed_logical_repo,
+)
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.reposet import resolve_repos
 from athenian.api.models.metadata.github import PullRequestLabel
@@ -29,12 +47,17 @@ from athenian.api.typing_utils import dataclass
 
 # rejected: PR was closed without merging.
 # force_push_drop: commit history was overwritten and the PR's merge commit no longer exists.
-ReleaseMatch = IntEnum("ReleaseMatch", {"rejected": -2,
-                                        "force_push_drop": -1,
-                                        ReleaseMatchStrategy.BRANCH: 0,
-                                        ReleaseMatchStrategy.TAG: 1,
-                                        ReleaseMatchStrategy.TAG_OR_BRANCH: 2,
-                                        ReleaseMatchStrategy.EVENT: 3})
+ReleaseMatch = IntEnum(
+    "ReleaseMatch",
+    {
+        "rejected": -2,
+        "force_push_drop": -1,
+        ReleaseMatchStrategy.BRANCH: 0,
+        ReleaseMatchStrategy.TAG: 1,
+        ReleaseMatchStrategy.TAG_OR_BRANCH: 2,
+        ReleaseMatchStrategy.EVENT: 3,
+    },
+)
 ReleaseMatch.__doc__ = """Enumeration of supported release matching strategies."""
 
 default_branch_alias = "{{default}}"
@@ -52,12 +75,20 @@ class ReleaseMatchSetting:
     def __str__(self) -> str:
         """Return the compact string representation of the object."""
         return '{"branches": "%s", "tags": "%s", "events": "%s", "match": "%s"}' % (
-            self.branches, self.tags, self.events, self.match.name)
+            self.branches,
+            self.tags,
+            self.events,
+            self.match.name,
+        )
 
     def __repr__(self) -> str:
         """Return the Python representation of the object."""
         return 'ReleaseMatchSetting(branches="%s", tags="%s", events="%s", match=Match["%s"])' % (
-            self.branches, self.tags, self.events, self.match.name)
+            self.branches,
+            self.tags,
+            self.events,
+            self.match.name,
+        )
 
     def __sentry_repr__(self) -> str:
         """Override {}.__repr__() in Sentry."""
@@ -77,8 +108,12 @@ class ReleaseMatchSetting:
         if self.match == ReleaseMatch.tag:
             return "|".join([ReleaseMatch.tag.name, self.tags])
         if self.match == ReleaseMatch.branch:
-            return "|".join([ReleaseMatch.branch.name,
-                             self.branches.replace(default_branch_alias, default_branch)])
+            return "|".join(
+                [
+                    ReleaseMatch.branch.name,
+                    self.branches.replace(default_branch_alias, default_branch),
+                ],
+            )
         if self.match == ReleaseMatch.event:
             return "|".join([ReleaseMatch.event.name, self.events])
         if self.match == ReleaseMatch.force_push_drop:
@@ -172,13 +207,15 @@ class ReleaseSettings:
 
     def set_by_native(self, name_without_prefix: str, value: ReleaseMatchSetting) -> None:
         """Update release settings given a repository name without prefix."""
-        self._map_prefixed[self.prefixed_for_native(name_without_prefix)] = \
-            self._map_native[name_without_prefix] = value
+        self._map_prefixed[self.prefixed_for_native(name_without_prefix)] = self._map_native[
+            name_without_prefix
+        ] = value
 
     def set_by_prefixed(self, name_with_prefix: str, value: ReleaseMatchSetting) -> None:
         """Update release settings given a repository name with prefix."""
-        self._map_prefixed[name_with_prefix] = \
-            self._map_native[name_with_prefix.split("/", 1)[1]] = value
+        self._map_prefixed[name_with_prefix] = self._map_native[
+            name_with_prefix.split("/", 1)[1]
+        ] = value
 
     def select(self, repos: Collection[str]) -> "ReleaseSettings":
         """Reduce the settings to the specified repositories only."""
@@ -220,9 +257,10 @@ class CommonLogicalSettingsMixin:
         return bool(self._labels)
 
     @staticmethod
-    def group_by_repo(repos: Sequence[str],
-                      whitelist: Optional[Collection[str]] = None,
-                      ) -> Generator[Tuple[str, np.ndarray], None, None]:
+    def group_by_repo(
+        repos: Sequence[str],
+        whitelist: Optional[Collection[str]] = None,
+    ) -> Generator[Tuple[str, np.ndarray], None, None]:
         """
         Iterate over the indexes of repository groups.
 
@@ -278,20 +316,35 @@ class LogicalPRSettings(CommonLogicalSettingsMixin):
         for label, repos in self._labels.items():
             for repo in repos:
                 labels[repo].append(label)
-        return str(dict((r, {
-            **({"title": pattern.pattern[2:-1]}
-               if (pattern := self._title_regexps.get(r))
-               else {}),
-            **({"labels": sorted(repo_labels)} if (repo_labels := labels.get(r)) else {}),
-        }) for r in sorted(self._repos - {self._origin})))
+        return str(
+            dict(
+                (
+                    r,
+                    {
+                        **(
+                            {"title": pattern.pattern[2:-1]}
+                            if (pattern := self._title_regexps.get(r))
+                            else {}
+                        ),
+                        **(
+                            {"labels": sorted(repo_labels)}
+                            if (repo_labels := labels.get(r))
+                            else {}
+                        ),
+                    },
+                )
+                for r in sorted(self._repos - {self._origin})
+            ),
+        )
 
-    def match(self,
-              prs: pd.DataFrame,
-              labels: pd.DataFrame,
-              pr_indexes: Sequence[int],
-              id_column: str,
-              title_column: str,
-              ) -> Dict[str, List[int]]:
+    def match(
+        self,
+        prs: pd.DataFrame,
+        labels: pd.DataFrame,
+        pr_indexes: Sequence[int],
+        id_column: str,
+        title_column: str,
+    ) -> Dict[str, List[int]]:
         """
         Map PRs to logical repositories.
 
@@ -331,9 +384,11 @@ class LogicalPRSettings(CommonLogicalSettingsMixin):
                 reverse_indexes = pr_indexes[order][found_indexes[label_pr_indexes]]
                 names = labels[PullRequestLabel.name.name].values[label_pr_indexes]
                 unique_names, name_map, counts = np.unique(
-                    names, return_inverse=True, return_counts=True)
+                    names, return_inverse=True, return_counts=True,
+                )
                 grouped_pr_indexes = np.split(
-                    reverse_indexes[np.argsort(name_map)], np.cumsum(counts[:-1]))
+                    reverse_indexes[np.argsort(name_map)], np.cumsum(counts[:-1]),
+                )
                 label_keys = np.array(list(self._labels.keys()))
                 label_values = np.array(list(self._labels.values()))
                 found_indexes = np.searchsorted(unique_names, label_keys)
@@ -344,8 +399,9 @@ class LogicalPRSettings(CommonLogicalSettingsMixin):
                     for repo in repos:
                         matched_by_label[repo].append(label_pr_indexes)
                 for repo, label_matches in matched_by_label.items():
-                    matched[repo] = np.unique(np.concatenate(
-                        [matched.get(repo, []), *label_matches]))
+                    matched[repo] = np.unique(
+                        np.concatenate([matched.get(repo, []), *label_matches]),
+                    )
         try:
             concat_logical = np.unique(np.concatenate(list(matched.values())))
             generic = np.setdiff1d(pr_indexes, concat_logical, assume_unique=True)
@@ -388,12 +444,22 @@ class LogicalDeploymentSettings(CommonLogicalSettingsMixin):
             for value, repos in label_values.items():
                 for repo in repos:
                     labels[repo].setdefault(label, []).append(value)
-        return str(dict((r, {
-            **({"title": pattern.pattern[2:-1]}
-               if (pattern := self._title_regexps.get(r))
-               else {}),
-            **({"labels": repo_labels} if (repo_labels := labels.get(r)) else {}),
-        }) for r in sorted(self._repos - {self._origin})))
+        return str(
+            dict(
+                (
+                    r,
+                    {
+                        **(
+                            {"title": pattern.pattern[2:-1]}
+                            if (pattern := self._title_regexps.get(r))
+                            else {}
+                        ),
+                        **({"labels": repo_labels} if (repo_labels := labels.get(r)) else {}),
+                    },
+                )
+                for r in sorted(self._repos - {self._origin})
+            ),
+        )
 
     def title(self, repo: str) -> re.Pattern:
         """Return the title regexp for the given logical repository."""
@@ -403,10 +469,11 @@ class LogicalDeploymentSettings(CommonLogicalSettingsMixin):
         """Return the label key values for the given logical repository."""
         return self._labels_inv[repo]
 
-    def match(self,
-              notifications: pd.DataFrame,
-              labels: pd.DataFrame,
-              ) -> Dict[str, Set[str]]:
+    def match(
+        self,
+        notifications: pd.DataFrame,
+        labels: pd.DataFrame,
+    ) -> Dict[str, Set[str]]:
         """
         Split deployed components into logical parts.
 
@@ -431,10 +498,12 @@ class LogicalDeploymentSettings(CommonLogicalSettingsMixin):
         if not labels.empty and self.has_labels:
             logical_labels = self._labels
             for deployment_name, deployed_labels_df in zip(
-                    labels["deployment_name"].values,
-                    labels["labels"].values):
-                for label, value in zip(deployed_labels_df[DeployedLabel.key.name].values,
-                                        deployed_labels_df[DeployedLabel.value.name].values):
+                labels["deployment_name"].values, labels["labels"].values,
+            ):
+                for label, value in zip(
+                    deployed_labels_df[DeployedLabel.key.name].values,
+                    deployed_labels_df[DeployedLabel.value.name].values,
+                ):
                     try:
                         repo_labels = logical_labels[label]
                     except KeyError:
@@ -450,16 +519,12 @@ class LogicalDeploymentSettings(CommonLogicalSettingsMixin):
 class LogicalRepositorySettings:
     """Rules for matching PRs, releases, deployments to account-defined sub-repositories."""
 
-    def __init__(self,
-                 prs: Mapping[str, Any],
-                 deployments: Mapping[str, Any]):
+    def __init__(self, prs: Mapping[str, Any], deployments: Mapping[str, Any]):
         """Initialize a new instance of LogicalRepositorySettings class."""
         pr_settings = defaultdict(dict)
         for repo, val in prs.items():
             pr_settings[drop_logical_repo(repo)][repo] = val
-        self._prs = {
-            repo: LogicalPRSettings(val, repo) for repo, val in pr_settings.items()
-        }
+        self._prs = {repo: LogicalPRSettings(val, repo) for repo, val in pr_settings.items()}
         dep_settings = defaultdict(dict)
         for repo, val in deployments.items():
             dep_settings[drop_logical_repo(repo)][repo] = val
@@ -475,8 +540,10 @@ class LogicalRepositorySettings:
 
     def __repr__(self) -> str:
         """Implement repr()."""
-        return f"LogicalRepositorySettings(prs={repr(self._prs)}, " \
-               f"deployments={repr(self._deployments)})"
+        return (
+            f"LogicalRepositorySettings(prs={repr(self._prs)}, "
+            f"deployments={repr(self._deployments)})"
+        )
 
     def __sentry_repr__(self) -> str:
         """Override {}.__repr__() in Sentry."""
@@ -497,19 +564,17 @@ class LogicalRepositorySettings:
 
     def with_logical_prs(self, repos: Iterable[str]) -> Set[str]:
         """Collect all mentioned logical repositories."""
-        return set(chain.from_iterable(
-            prs.logical_repositories
-            for prs in self._prs.values()
-            if prs
-        )).union(repos)
+        return set(
+            chain.from_iterable(prs.logical_repositories for prs in self._prs.values() if prs),
+        ).union(repos)
 
     def with_logical_deployments(self, repos: Iterable[str]) -> Set[str]:
         """Collect all mentioned logical repositories."""
-        return set(chain.from_iterable(
-            dep.logical_repositories
-            for dep in self._deployments.values()
-            if dep
-        )).union(repos)
+        return set(
+            chain.from_iterable(
+                dep.logical_repositories for dep in self._deployments.values() if dep
+            ),
+        ).union(repos)
 
     def prs(self, repo: str) -> Optional[LogicalPRSettings]:
         """Return PR match rules for the given repository native name."""
@@ -560,15 +625,18 @@ class Settings:
     - Logical repository rules.
     """
 
-    def __init__(self,
-                 do_not_call_me_directly: Any, *,
-                 account: int,
-                 user_id: Optional[str],
-                 login: Optional[Callable[[], Coroutine[None, None, str]]],
-                 sdb: DatabaseLike,
-                 mdb: DatabaseLike,
-                 cache: Optional[aiomcache.Client],
-                 slack: Optional[SlackWebClient]):
+    def __init__(
+        self,
+        do_not_call_me_directly: Any,
+        *,
+        account: int,
+        user_id: Optional[str],
+        login: Optional[Callable[[], Coroutine[None, None, str]]],
+        sdb: DatabaseLike,
+        mdb: DatabaseLike,
+        cache: Optional[aiomcache.Client],
+        slack: Optional[SlackWebClient],
+    ):
         """Initialize a new instance of Settings class."""
         self._account = account
         self._user_id = user_id
@@ -579,40 +647,49 @@ class Settings:
         self._slack = slack
 
     @classmethod
-    def from_account(cls,
-                     account: int,
-                     sdb: Database,
-                     mdb: Database,
-                     cache: Optional[aiomcache.Client],
-                     slack: Optional[SlackWebClient]):
+    def from_account(
+        cls,
+        account: int,
+        sdb: Database,
+        mdb: Database,
+        cache: Optional[aiomcache.Client],
+        slack: Optional[SlackWebClient],
+    ):
         """Create a new Settings class instance in readonly mode given the account ID."""
-        return Settings(None,
-                        account=account,
-                        user_id=None,
-                        login=None,
-                        sdb=sdb,
-                        mdb=mdb,
-                        cache=cache,
-                        slack=slack)
+        return Settings(
+            None,
+            account=account,
+            user_id=None,
+            login=None,
+            sdb=sdb,
+            mdb=mdb,
+            cache=cache,
+            slack=slack,
+        )
 
     @classmethod
     def from_request(cls, request: AthenianWebRequest, account: int) -> "Settings":
         """Create a new Settings class instance in readwrite mode from the request object and \
         the account ID."""
+
         async def login_loader() -> str:
             return (await request.user()).login
 
-        return Settings(None,
-                        account=account,
-                        user_id=request.uid,
-                        login=login_loader,
-                        sdb=request.sdb,
-                        mdb=request.mdb,
-                        cache=request.cache,
-                        slack=request.app["slack"])
+        return Settings(
+            None,
+            account=account,
+            user_id=request.uid,
+            login=login_loader,
+            sdb=request.sdb,
+            mdb=request.mdb,
+            cache=request.cache,
+            slack=request.app["slack"],
+        )
 
-    async def list_release_matches(self, repos: Optional[Collection[str]] = None,
-                                   ) -> ReleaseSettings:
+    async def list_release_matches(
+        self,
+        repos: Optional[Collection[str]] = None,
+    ) -> ReleaseSettings:
         """
         List the current release matching settings for the specified repositories.
 
@@ -623,69 +700,85 @@ class Settings:
             repos = await get_account_repositories(self._account, True, self._sdb)
         repos = set(repos).union(coerce_prefixed_logical_repos(repos).keys())
         rows = await self._sdb.fetch_all(
-            select([ReleaseSetting])
-            .where(and_(ReleaseSetting.account_id == self._account,
-                        ReleaseSetting.repository.in_(repos))))
+            select([ReleaseSetting]).where(
+                and_(
+                    ReleaseSetting.account_id == self._account,
+                    ReleaseSetting.repository.in_(repos),
+                ),
+            ),
+        )
         settings = []
         loaded = set()
         for row in rows:
             repo = row[ReleaseSetting.repository.name]
             loaded.add(repo)
-            settings.append((
-                repo,
-                ReleaseMatchSetting(
-                    branches=row[ReleaseSetting.branches.name],
-                    tags=row[ReleaseSetting.tags.name],
-                    events=row[ReleaseSetting.events.name],
-                    match=ReleaseMatch(row[ReleaseSetting.match.name]),
-                )))
+            settings.append(
+                (
+                    repo,
+                    ReleaseMatchSetting(
+                        branches=row[ReleaseSetting.branches.name],
+                        tags=row[ReleaseSetting.tags.name],
+                        events=row[ReleaseSetting.events.name],
+                        match=ReleaseMatch(row[ReleaseSetting.match.name]),
+                    ),
+                ),
+            )
         missing_logical = []
         for repo in repos:
             if repo not in loaded:
                 if drop_prefixed_logical_repo(repo) != repo:
                     missing_logical.append(repo)
                     continue
-                settings.append((
-                    repo,
-                    ReleaseMatchSetting(
-                        branches=default_branch_alias,
-                        tags=".*",
-                        events=".*",
-                        match=ReleaseMatch.tag_or_branch,
-                    )))
+                settings.append(
+                    (
+                        repo,
+                        ReleaseMatchSetting(
+                            branches=default_branch_alias,
+                            tags=".*",
+                            events=".*",
+                            match=ReleaseMatch.tag_or_branch,
+                        ),
+                    ),
+                )
         if missing_logical:
-            raise ResponseError(MissingSettingsError(
-                detail=f"Logical repositories must have release settings: {missing_logical}",
-            ))
+            raise ResponseError(
+                MissingSettingsError(
+                    detail=f"Logical repositories must have release settings: {missing_logical}",
+                ),
+            )
         settings.sort()
         settings = dict(settings)
         return ReleaseSettings(settings)
 
-    async def set_release_matches(self,
-                                  repos: List[str],
-                                  branches: str,
-                                  tags: str,
-                                  events: str,
-                                  match: ReleaseMatch,
-                                  meta_ids: Optional[Tuple[int, ...]] = None,
-                                  prefixer: Optional[Prefixer] = None,
-                                  dereference: bool = True,
-                                  pointer_root: str = "",
-                                  ) -> Set[str]:
+    async def set_release_matches(
+        self,
+        repos: List[str],
+        branches: str,
+        tags: str,
+        events: str,
+        match: ReleaseMatch,
+        meta_ids: Optional[Tuple[int, ...]] = None,
+        prefixer: Optional[Prefixer] = None,
+        dereference: bool = True,
+        pointer_root: str = "",
+    ) -> Set[str]:
         """Set the release matching rule for a list of repositories."""
         for propname, s in (("branches", ReleaseMatch.branch), ("tags", ReleaseMatch.tag)):
             propval = locals()[propname]
             if match in (s, ReleaseMatch.tag_or_branch) and not propval:
-                raise ResponseError(InvalidRequestError(
-                    f"{pointer_root}.{propname}",
-                    detail='Value may not be empty given "match" = "%s"' % match.name),
+                raise ResponseError(
+                    InvalidRequestError(
+                        f"{pointer_root}.{propname}",
+                        detail='Value may not be empty given "match" = "%s"' % match.name,
+                    ),
                 )
             try:
                 re.compile(propval)
             except re.error as e:
-                raise ResponseError(InvalidRequestError(
-                    f"{pointer_root}.{propname}",
-                    detail="Invalid regular expression: %s" % e),
+                raise ResponseError(
+                    InvalidRequestError(
+                        f"{pointer_root}.{propname}", detail="Invalid regular expression: %s" % e,
+                    ),
                 ) from None
         if not branches:
             branches = default_branch_alias
@@ -696,7 +789,8 @@ class Settings:
             try:
                 if meta_ids is None:
                     meta_ids = await get_metadata_account_ids(
-                        self._account, self._sdb, self._cache)
+                        self._account, self._sdb, self._cache,
+                    )
             except ResponseError as e:
                 if repos:
                     raise e from None
@@ -706,29 +800,48 @@ class Settings:
                 if prefixer is None:
                     prefixer = await Prefixer.load(meta_ids, self._mdb, self._cache)
                 settings = Settings.from_account(
-                    self._account, self._sdb, self._mdb, self._cache, self._slack)
+                    self._account, self._sdb, self._mdb, self._cache, self._slack,
+                )
                 logical_settings = await settings.list_logical_repositories(prefixer)
             repos, _ = await resolve_repos(
-                repos, self._account, self._user_id, self._login, logical_settings, meta_ids,
-                self._sdb, self._mdb, self._cache, self._slack, strip_prefix=False)
+                repos,
+                self._account,
+                self._user_id,
+                self._login,
+                logical_settings,
+                meta_ids,
+                self._sdb,
+                self._mdb,
+                self._cache,
+                self._slack,
+                strip_prefix=False,
+            )
         values = []
         for repo in repos:
             if drop_prefixed_logical_repo(repo) != repo:
                 # logical
                 if match not in (ReleaseMatch.tag, ReleaseMatch.event):
-                    raise ResponseError(InvalidRequestError(
-                        f"{pointer_root}.{match}",
-                        detail=f"Logical repository {repo} must be released either by tag or by "
-                               f"submitted event.",
-                    ))
-            values.append(ReleaseSetting(
-                repository=repo,
-                account_id=self._account,
-                branches=branches,
-                tags=tags,
-                events=events,
-                match=match,
-            ).create_defaults().explode(with_primary_keys=True))
+                    raise ResponseError(
+                        InvalidRequestError(
+                            f"{pointer_root}.{match}",
+                            detail=(
+                                f"Logical repository {repo} must be released either by tag or by "
+                                "submitted event."
+                            ),
+                        ),
+                    )
+            values.append(
+                ReleaseSetting(
+                    repository=repo,
+                    account_id=self._account,
+                    branches=branches,
+                    tags=tags,
+                    events=events,
+                    match=match,
+                )
+                .create_defaults()
+                .explode(with_primary_keys=True),
+            )
         if isinstance(self._sdb, Database):
             sqlite = self._sdb.url.dialect == "sqlite"
         else:
@@ -757,11 +870,12 @@ class Settings:
             await self._sdb.execute_many(query, values)
         return repos
 
-    async def list_logical_repositories(self,
-                                        prefixer: Prefixer,
-                                        repos: Optional[Collection[str]] = None,
-                                        pointer: Optional[str] = None,
-                                        ) -> LogicalRepositorySettings:
+    async def list_logical_repositories(
+        self,
+        prefixer: Prefixer,
+        repos: Optional[Collection[str]] = None,
+        pointer: Optional[str] = None,
+    ) -> LogicalRepositorySettings:
         """
         List the current logical repository settings for the specified repositories.
 
@@ -783,9 +897,12 @@ class Settings:
         repo_name_to_node = prefixer.repo_name_to_node.get
         repo_ids = [n for r in repos if (n := repo_name_to_node(r))]
         rows = await self._sdb.fetch_all(
-            select([LogicalRepository])
-            .where(and_(LogicalRepository.account_id == self._account,
-                        LogicalRepository.repository_id.in_(repo_ids))),
+            select([LogicalRepository]).where(
+                and_(
+                    LogicalRepository.account_id == self._account,
+                    LogicalRepository.repository_id.in_(repo_ids),
+                ),
+            ),
         )
         prs = {}
         deployments = {}
@@ -800,7 +917,9 @@ class Settings:
                 deployments[logical_name] = deployments_setting
         if diff_repos:
             pointer = pointer or "?"
-            raise ResponseError(InvalidRequestError(
-                pointer,
-                detail="Some logical repositories do not exist: %s" % diff_repos))
+            raise ResponseError(
+                InvalidRequestError(
+                    pointer, detail="Some logical repositories do not exist: %s" % diff_repos,
+                ),
+            )
         return LogicalRepositorySettings(prs, deployments)

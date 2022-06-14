@@ -20,10 +20,11 @@ class FilterJIRAStuffSpecials(Model, sealed=False):
         "return_": "return",
     }
 
-    def __init__(self,
-                 with_: Optional[JIRAFilterWith] = None,
-                 return_: Optional[List[str]] = None,
-                 ):
+    def __init__(
+        self,
+        with_: Optional[JIRAFilterWith] = None,
+        return_: Optional[List[str]] = None,
+    ):
         """FilterJIRAStuff - a model defined in OpenAPI
 
         :param with_: The with_ of this FilterJIRAStuff.
@@ -121,5 +122,6 @@ class FilterJIRAStuffSpecials(Model, sealed=False):
         self._with_ = with_
 
 
-FilterJIRAStuff = AllOf(FilterJIRAStuffSpecials, FilterJIRACommon,
-                        name="FilterJIRAStuff", module=__name__)
+FilterJIRAStuff = AllOf(
+    FilterJIRAStuffSpecials, FilterJIRACommon, name="FilterJIRAStuff", module=__name__,
+)

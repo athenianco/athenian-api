@@ -19,12 +19,13 @@ class JIRAUser(Model):
         "developer": "developer",
     }
 
-    def __init__(self,
-                 name: Optional[str] = None,
-                 avatar: Optional[str] = None,
-                 type: Optional[str] = None,
-                 developer: Optional[str] = None,
-                 ):
+    def __init__(
+        self,
+        name: Optional[str] = None,
+        avatar: Optional[str] = None,
+        type: Optional[str] = None,
+        developer: Optional[str] = None,
+    ):
         """JIRAUser - a model defined in OpenAPI
 
         :param name: The name of this JIRAUser.
@@ -108,7 +109,8 @@ class JIRAUser(Model):
         allowed_values = {"atlassian", "app", "customer"}
         if type not in allowed_values:
             raise ValueError(
-                "Invalid value for `type` (%s), must be one of %s" % (type, allowed_values))
+                "Invalid value for `type` (%s), must be one of %s" % (type, allowed_values),
+            )
 
         self._type = type
 

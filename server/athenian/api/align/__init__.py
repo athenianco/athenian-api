@@ -1,10 +1,19 @@
 from pathlib import Path
 import sys
-from typing import Any, cast, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
-from ariadne import gql, make_executable_schema, SchemaBindable
-from graphql import GraphQLInputType, GraphQLNonNull, GraphQLScalarType, GraphQLSchema, \
-    GraphQLType, is_leaf_type, Undefined, ValueNode, VariableNode
+from ariadne import SchemaBindable, gql, make_executable_schema
+from graphql import (
+    GraphQLInputType,
+    GraphQLNonNull,
+    GraphQLScalarType,
+    GraphQLSchema,
+    GraphQLType,
+    Undefined,
+    ValueNode,
+    VariableNode,
+    is_leaf_type,
+)
 from graphql.utilities import type_comparators, value_from_ast as original_value_from_ast
 from graphql.validation.rules import variables_in_allowed_position
 

@@ -21,11 +21,11 @@ class Team(Model):
     }
 
     def __init__(
-            self,
-            id: Optional[int] = None,
-            name: Optional[str] = None,
-            members: Optional[List[Contributor]] = None,
-            parent: Optional[int] = None,
+        self,
+        id: Optional[int] = None,
+        name: Optional[str] = None,
+        members: Optional[List[Contributor]] = None,
+        parent: Optional[int] = None,
     ):
         """Team - a model defined in OpenAPI
 

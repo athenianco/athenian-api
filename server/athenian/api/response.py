@@ -11,15 +11,18 @@ from athenian.api.tracing import sentry_span
 
 
 @sentry_span
-def model_response(model: Union[Model, Iterable[Model]], *,
-                   status: int = 200,
-                   reason: Optional[str] = None,
-                   headers: LooseHeaders = None,
-                   ) -> web.Response:
+def model_response(
+    model: Union[Model, Iterable[Model]],
+    *,
+    status: int = 200,
+    reason: Optional[str] = None,
+    headers: LooseHeaders = None,
+) -> web.Response:
     """Generate a web model_response from the given model."""
     data = Model.serialize(model)
-    return web.json_response(data, dumps=FriendlyJson.dumps,
-                             status=status, reason=reason, headers=headers)
+    return web.json_response(
+        data, dumps=FriendlyJson.dumps, status=status, reason=reason, headers=headers,
+    )
 
 
 class ResponseError(Exception):

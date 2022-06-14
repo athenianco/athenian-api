@@ -18,10 +18,12 @@ class GetPullRequestsRequest(Model):
         "environment": "environment",
     }
 
-    def __init__(self,
-                 account: Optional[int] = None,
-                 prs: Optional[List[PullRequestNumbers]] = None,
-                 environment: Optional[str] = None):
+    def __init__(
+        self,
+        account: Optional[int] = None,
+        prs: Optional[List[PullRequestNumbers]] = None,
+        environment: Optional[str] = None,
+    ):
         """GetPullRequestsRequest - a model defined in OpenAPI
 
         :param account: The account of this GetPullRequestsRequest.

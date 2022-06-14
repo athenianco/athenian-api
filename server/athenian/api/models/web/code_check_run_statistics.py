@@ -104,7 +104,8 @@ class CodeCheckRunStatistics(Model):
             raise ValueError("Invalid value for `count`, must not be `None`")
         if count < 1:
             raise ValueError(
-                "Invalid value for `count`, must be a value greater than or equal to `1`")
+                "Invalid value for `count`, must be a value greater than or equal to `1`",
+            )
 
         self._count = count
 
@@ -130,7 +131,8 @@ class CodeCheckRunStatistics(Model):
             raise ValueError("Invalid value for `successes`, must not be `None`")
         if successes < 0:
             raise ValueError(
-                "Invalid value for `successes`, must be a value greater than or equal to `0`")
+                "Invalid value for `successes`, must be a value greater than or equal to `0`",
+            )
 
         self._successes = successes
 
@@ -227,7 +229,8 @@ class CodeCheckRunStatistics(Model):
             raise ValueError("Invalid value for `skips`, must not be `None`")
         if skips < 0:
             raise ValueError(
-                "Invalid value for `skips`, must be a value greater than or equal to `0`")
+                "Invalid value for `skips`, must be a value greater than or equal to `0`",
+            )
 
         self._skips = skips
 
@@ -255,7 +258,8 @@ class CodeCheckRunStatistics(Model):
             raise ValueError("Invalid value for `flaky_count`, must not be `None`")
         if flaky_count < 0:
             raise ValueError(
-                "Invalid value for `flaky_count`, must be a value greater than or equal to `0`")
+                "Invalid value for `flaky_count`, must be a value greater than or equal to `0`",
+            )
 
         self._flaky_count = flaky_count
 
@@ -330,7 +334,8 @@ class CodeCheckRunStatistics(Model):
         """
         if mean_execution_time_timeline is None:
             raise ValueError(
-                "Invalid value for `mean_execution_time_timeline`, must not be `None`")
+                "Invalid value for `mean_execution_time_timeline`, must not be `None`",
+            )
 
         self._mean_execution_time_timeline = mean_execution_time_timeline
 
@@ -357,6 +362,7 @@ class CodeCheckRunStatistics(Model):
         """
         if median_execution_time_timeline is None:
             raise ValueError(
-                "Invalid value for `median_execution_time_timeline`, must not be `None`")
+                "Invalid value for `median_execution_time_timeline`, must not be `None`",
+            )
 
         self._median_execution_time_timeline = median_execution_time_timeline

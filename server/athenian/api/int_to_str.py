@@ -20,6 +20,6 @@ def int_to_str(*arrs: np.ndarray) -> np.ndarray:
             col = arr.byteswap()
         else:
             col = arr
-        arena[:, pos:pos + itemsize] = col.view(np.uint8).reshape(size, itemsize)
+        arena[:, pos : pos + itemsize] = col.view(np.uint8).reshape(size, itemsize)
         pos += itemsize
     return arena.ravel().view(f"S{str_len}")

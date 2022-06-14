@@ -10,13 +10,15 @@ class AccessChecker:
 
     CACHE_TTL = 60  # 1 minute
 
-    def __init__(self,
-                 account: int,
-                 metadata_ids: Tuple[int, ...],
-                 sdb_conn: DatabaseLike,
-                 mdb_conn: DatabaseLike,
-                 cache: Optional[aiomcache.Client],
-                 cache_ttl=CACHE_TTL):
+    def __init__(
+        self,
+        account: int,
+        metadata_ids: Tuple[int, ...],
+        sdb_conn: DatabaseLike,
+        mdb_conn: DatabaseLike,
+        cache: Optional[aiomcache.Client],
+        cache_ttl=CACHE_TTL,
+    ):
         """
         Initialize a new instance of AccessChecker.
 

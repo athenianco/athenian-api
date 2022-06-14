@@ -7,9 +7,11 @@ import pytest
 
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.features.entries import MetricEntriesCalculator
-from athenian.api.internal.features.github.deployment_metrics import \
-    group_deployments_by_environments, group_deployments_by_participants, \
-    group_deployments_by_repositories
+from athenian.api.internal.features.github.deployment_metrics import (
+    group_deployments_by_environments,
+    group_deployments_by_participants,
+    group_deployments_by_repositories,
+)
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.types import DeploymentFacts, ReleaseParticipationKind
 from athenian.api.internal.settings import LogicalRepositorySettings
@@ -21,121 +23,171 @@ from athenian.api.models.web import DeploymentMetricID
 def sample_deps() -> pd.DataFrame:
     rnid = DeployedComponent.repository_node_id.name
     rpfn = DeployedComponent.repository_full_name
-    return pd.DataFrame.from_dict({
-        "components": [pd.DataFrame([{rnid: 1, rpfn: "1"}, {rnid: 2, rpfn: "2"}]),
-                       pd.DataFrame([{rnid: 3, rpfn: "3"}, {rnid: 1, rpfn: "1"}]),
-                       pd.DataFrame([{rnid: 3, rpfn: "3"}, {rnid: 2, rpfn: "2"}]),
-                       pd.DataFrame([{rnid: 1, rpfn: "1"}]),
-                       pd.DataFrame([{rnid: 3, rpfn: "3"}])],
-        DeploymentFacts.f.pr_authors: [[1, 2, 3], [1, 4, 5], [2, 4, 6], [], [3]],
-        DeploymentFacts.f.commit_authors: [[1, 2, 3], [1, 4, 5, 6], [2, 4, 6], [7], [3]],
-        DeploymentFacts.f.release_authors: [[], [], [1, 2], [], [7]],
-        DeploymentFacts.f.commits_overall: [[1, 1], [1, 1], [1, 0], [1], [1]],
-        "environment": ["1", "2", "1", "3", "3"],
-    })
+    return pd.DataFrame.from_dict(
+        {
+            "components": [
+                pd.DataFrame([{rnid: 1, rpfn: "1"}, {rnid: 2, rpfn: "2"}]),
+                pd.DataFrame([{rnid: 3, rpfn: "3"}, {rnid: 1, rpfn: "1"}]),
+                pd.DataFrame([{rnid: 3, rpfn: "3"}, {rnid: 2, rpfn: "2"}]),
+                pd.DataFrame([{rnid: 1, rpfn: "1"}]),
+                pd.DataFrame([{rnid: 3, rpfn: "3"}]),
+            ],
+            DeploymentFacts.f.pr_authors: [[1, 2, 3], [1, 4, 5], [2, 4, 6], [], [3]],
+            DeploymentFacts.f.commit_authors: [[1, 2, 3], [1, 4, 5, 6], [2, 4, 6], [7], [3]],
+            DeploymentFacts.f.release_authors: [[], [], [1, 2], [], [7]],
+            DeploymentFacts.f.commits_overall: [[1, 1], [1, 1], [1, 0], [1], [1]],
+            "environment": ["1", "2", "1", "3", "3"],
+        },
+    )
 
 
 def test_group_deployments_by_repositories_smoke(sample_deps):
     assert_array_equal(
-        [arr.tolist() for arr in group_deployments_by_repositories(
-            [["1", "2"], ["2", "3"]], sample_deps)],
-        [[0, 1, 3], [0, 1, 2, 4]])
+        [
+            arr.tolist()
+            for arr in group_deployments_by_repositories([["1", "2"], ["2", "3"]], sample_deps)
+        ],
+        [[0, 1, 3], [0, 1, 2, 4]],
+    )
     assert_array_equal(
-        [arr.tolist() for arr in group_deployments_by_repositories(
-            [["1"], ["2"], ["1", "2"]], sample_deps)],
-        [[0, 1, 3], [0], [0, 1, 3]])
-    assert_array_equal(group_deployments_by_repositories([], sample_deps),
-                       [np.arange(len(sample_deps))])
-    assert_array_equal(group_deployments_by_repositories([["1", "2"], ["2", "3"]], pd.DataFrame()),
-                       [np.array([], dtype=int)] * 2)
-    assert_array_equal(group_deployments_by_repositories([], pd.DataFrame()),
-                       [np.array([], dtype=int)])
+        [
+            arr.tolist()
+            for arr in group_deployments_by_repositories([["1"], ["2"], ["1", "2"]], sample_deps)
+        ],
+        [[0, 1, 3], [0], [0, 1, 3]],
+    )
+    assert_array_equal(
+        group_deployments_by_repositories([], sample_deps), [np.arange(len(sample_deps))],
+    )
+    assert_array_equal(
+        group_deployments_by_repositories([["1", "2"], ["2", "3"]], pd.DataFrame()),
+        [np.array([], dtype=int)] * 2,
+    )
+    assert_array_equal(
+        group_deployments_by_repositories([], pd.DataFrame()), [np.array([], dtype=int)],
+    )
 
 
 def test_group_deployments_by_participants_smoke(sample_deps):
     assert_array_equal(
         group_deployments_by_participants(
-            [{ReleaseParticipationKind.PR_AUTHOR: [1]}], sample_deps),
+            [{ReleaseParticipationKind.PR_AUTHOR: [1]}], sample_deps,
+        ),
         [[0, 1]],
     )
     assert_array_equal(
         group_deployments_by_participants(
-            [{ReleaseParticipationKind.COMMIT_AUTHOR: [3]}], sample_deps),
+            [{ReleaseParticipationKind.COMMIT_AUTHOR: [3]}], sample_deps,
+        ),
         [[0, 4]],
     )
     assert_array_equal(
-        group_deployments_by_participants(
-            [{ReleaseParticipationKind.RELEASER: [2]}], sample_deps),
+        group_deployments_by_participants([{ReleaseParticipationKind.RELEASER: [2]}], sample_deps),
         [[2]],
     )
     assert_array_equal(
-        group_deployments_by_participants(
-            [{ReleaseParticipationKind.RELEASER: [7]}], sample_deps),
+        group_deployments_by_participants([{ReleaseParticipationKind.RELEASER: [7]}], sample_deps),
         [[4]],
     )
     assert_array_equal(
         group_deployments_by_participants(
-            [{ReleaseParticipationKind.PR_AUTHOR: [1, 3]}], sample_deps),
+            [{ReleaseParticipationKind.PR_AUTHOR: [1, 3]}], sample_deps,
+        ),
         [[0, 1, 4]],
     )
     assert_array_equal(
         group_deployments_by_participants(
-            [{ReleaseParticipationKind.PR_AUTHOR: [1],
-              ReleaseParticipationKind.COMMIT_AUTHOR: [3]}], sample_deps),
+            [
+                {
+                    ReleaseParticipationKind.PR_AUTHOR: [1],
+                    ReleaseParticipationKind.COMMIT_AUTHOR: [3],
+                },
+            ],
+            sample_deps,
+        ),
         [[0, 1, 4]],
     )
     assert_array_equal(
         group_deployments_by_participants(
-            [{ReleaseParticipationKind.PR_AUTHOR: [1, 8],
-              ReleaseParticipationKind.COMMIT_AUTHOR: [1]},
-             {ReleaseParticipationKind.RELEASER: [2, 7]}], sample_deps),
+            [
+                {
+                    ReleaseParticipationKind.PR_AUTHOR: [1, 8],
+                    ReleaseParticipationKind.COMMIT_AUTHOR: [1],
+                },
+                {ReleaseParticipationKind.RELEASER: [2, 7]},
+            ],
+            sample_deps,
+        ),
         [[0, 1], [2, 4]],
     )
-    assert_array_equal(group_deployments_by_participants([
-        {ReleaseParticipationKind.PR_AUTHOR: [1]},
-        {ReleaseParticipationKind.COMMIT_AUTHOR: [1]},
-    ], pd.DataFrame()), [np.array([], dtype=int)] * 2)
-    assert_array_equal(group_deployments_by_participants([], pd.DataFrame()),
-                       [np.array([], dtype=int)])
+    assert_array_equal(
+        group_deployments_by_participants(
+            [
+                {ReleaseParticipationKind.PR_AUTHOR: [1]},
+                {ReleaseParticipationKind.COMMIT_AUTHOR: [1]},
+            ],
+            pd.DataFrame(),
+        ),
+        [np.array([], dtype=int)] * 2,
+    )
+    assert_array_equal(
+        group_deployments_by_participants([], pd.DataFrame()), [np.array([], dtype=int)],
+    )
 
 
 def test_group_deployments_by_environments_smoke(sample_deps):
-    assert [x.tolist() for x in group_deployments_by_environments(
-        [["1", "2"], ["1", "3"]], sample_deps)] == \
-        [[0, 1, 2], [0, 2, 3, 4]]
-    assert [x.tolist() for x in group_deployments_by_environments(
-        [["1"], ["3"]], sample_deps)] == \
-        [[0, 2], [3, 4]]
-    assert [x.tolist() for x in group_deployments_by_environments([], sample_deps)] == \
-           [[0, 1, 2, 3, 4]]
-    assert [x.tolist() for x in group_deployments_by_environments([["1"]], pd.DataFrame())] == \
-           [[]]
+    assert [
+        x.tolist()
+        for x in group_deployments_by_environments([["1", "2"], ["1", "3"]], sample_deps)
+    ] == [[0, 1, 2], [0, 2, 3, 4]]
+    assert [
+        x.tolist() for x in group_deployments_by_environments([["1"], ["3"]], sample_deps)
+    ] == [[0, 2], [3, 4]]
+    assert [x.tolist() for x in group_deployments_by_environments([], sample_deps)] == [
+        [0, 1, 2, 3, 4],
+    ]
+    assert [x.tolist() for x in group_deployments_by_environments([["1"]], pd.DataFrame())] == [[]]
     assert [x.tolist() for x in group_deployments_by_environments([], pd.DataFrame())] == [[]]
 
 
 @with_defer
 async def test_deployment_metrics_calculators_smoke(
-        sample_deployments, metrics_calculator_factory, release_match_setting_tag_or_branch,
-        prefixer, branches, default_branches):
+    sample_deployments,
+    metrics_calculator_factory,
+    release_match_setting_tag_or_branch,
+    prefixer,
+    branches,
+    default_branches,
+):
     for i in range(2):
         calc = metrics_calculator_factory(
-            1, (6366825,), with_cache=True)  # type: MetricEntriesCalculator
+            1, (6366825,), with_cache=True,
+        )  # type: MetricEntriesCalculator
         if i == 1:
             calc._mdb = None
             calc._rdb = None
             calc._pdb = None
         metrics = await calc.calc_deployment_metrics_line_github(
             list(DeploymentMetricID),
-            [[datetime(2015, 1, 1, tzinfo=timezone.utc),
-              datetime(2021, 1, 1, tzinfo=timezone.utc)]],
+            [
+                [
+                    datetime(2015, 1, 1, tzinfo=timezone.utc),
+                    datetime(2021, 1, 1, tzinfo=timezone.utc),
+                ],
+            ],
             (0, 1),
             [["src-d/go-git"]],
-            {}, [["staging"], ["production"]],
-            LabelFilter.empty(), {}, {}, JIRAFilter.empty(),
+            {},
+            [["staging"], ["production"]],
+            LabelFilter.empty(),
+            {},
+            {},
+            JIRAFilter.empty(),
             release_match_setting_tag_or_branch,
             LogicalRepositorySettings.empty(),
             prefixer,
-            branches, default_branches,
+            branches,
+            default_branches,
             (1, ("10003", "10009")),
         )
         await wait_deferred()
