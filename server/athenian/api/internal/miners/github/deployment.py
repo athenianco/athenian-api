@@ -1056,11 +1056,11 @@ async def _fetch_commit_stats(all_mentioned_hashes: np.ndarray,
         merge_sha_indexes = np.searchsorted(merge_shas, hashes)
         commit_counts = np.fromiter((len(c) for c in pr_hashes), int, len(pr_hashes))
         if has_logical:
-            _, sha_counts = np.unique(merge_shas, return_counts=True)
+            _, sha_counts = np.unique(merge_shas[merge_sha_indexes], return_counts=True)
             commit_counts = np.repeat(commit_counts, sha_counts)
             merge_sha_indexes = (
                 np.repeat(merge_sha_indexes + sha_counts - sha_counts.cumsum(), sha_counts)
-                + np.arange(len(merge_shas))
+                + np.arange(len(merge_sha_indexes))
             )
         pr_commits[merge_sha_indexes] = commit_counts
         all_pr_hashes.extend(pr_hashes)
@@ -1605,16 +1605,19 @@ async def _fetch_latest_deployed_components(
                     .setdefault(physical_repo, {})[repo] = ts
     if suspects is not None:
         all_shas = list(chain.from_iterable(v.values() for v in suspects.values()))
-        all_shas = np.unique(np.concatenate(all_shas))
-        sha_rows = await mdb.fetch_all(
+        all_shas = unordered_unique(np.concatenate(all_shas))
+        sha_df = await read_sql_query(
             select([NodeCommit.id, NodeCommit.sha])
             .where(and_(NodeCommit.acc_id.in_(meta_ids),
-                        NodeCommit.sha.in_any_values(all_shas))))
-        commit_id_map = {r[1].encode(): r[0] for r in sha_rows}
+                        NodeCommit.sha.in_any_values(all_shas))),
+            mdb, [NodeCommit.id, NodeCommit.sha],
+        )
+        order = np.argsort(sha_df[NodeCommit.sha.name].values)
+        all_shas = sha_df[NodeCommit.sha.name].values[order]
+        all_ids = sha_df[NodeCommit.id.name].values[order]
         for repo_suspects in suspects.values():
             for repo, shas in repo_suspects.items():
-                repo_suspects[repo] = np.fromiter(
-                    (commit_id_map[sha] for sha in shas), int, len(shas))
+                repo_suspects[repo] = all_ids[np.searchsorted(all_shas, shas)]
     queries = [
         *_compose_latest_deployed_components_physical(
             until_per_repo_env_physical, suspects, prefixer, account, batch),

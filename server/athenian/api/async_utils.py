@@ -15,8 +15,8 @@ from pandas.core.internals.managers import BlockManager
 import sentry_sdk
 from sqlalchemy import BigInteger, Boolean, Column, DateTime, Integer, SmallInteger, String
 from sqlalchemy.orm.attributes import InstrumentedAttribute
-from sqlalchemy.sql import CompoundSelect
 from sqlalchemy.sql.elements import Label
+from sqlalchemy.sql.selectable import GenerativeSelect
 
 from athenian.api import metadata
 from athenian.api.db import Database, DatabaseLike, is_postgresql
@@ -94,7 +94,7 @@ pd.core.internals.managers.get_block_type = get_block_type
 pd.core.internals.managers.make_block = make_block
 
 
-async def read_sql_query(sql: CompoundSelect,
+async def read_sql_query(sql: GenerativeSelect,
                          con: DatabaseLike,
                          columns: Union[Sequence[str], Sequence[InstrumentedAttribute],
                                         MetadataBase, PerdataBase, PrecomputedBase, StateBase],
@@ -133,7 +133,7 @@ async def read_sql_query(sql: CompoundSelect,
 
 
 async def _read_sql_query_numpy(
-        sql: CompoundSelect,
+        sql: GenerativeSelect,
         con: DatabaseLike,
         columns: Union[Sequence[str], Sequence[InstrumentedAttribute]],
         index: Optional[Union[str, Sequence[str]]] = None,
@@ -266,7 +266,7 @@ def _build_dtype(columns: Sequence[InstrumentedAttribute],
 
 
 async def _read_sql_query_records(
-        sql: CompoundSelect,
+        sql: GenerativeSelect,
         con: DatabaseLike,
         columns: Union[Sequence[str], Sequence[InstrumentedAttribute],
                        MetadataBase, PerdataBase, PrecomputedBase, StateBase],
@@ -279,7 +279,7 @@ async def _read_sql_query_records(
     return _wrap_sql_query(data, columns, index)
 
 
-async def _fetch_query(sql: CompoundSelect,
+async def _fetch_query(sql: GenerativeSelect,
                        con: DatabaseLike,
                        ) -> Union[List[Sequence[Any]], Tuple[np.ndarray, List[int]]]:
     try:
@@ -548,7 +548,7 @@ async def gather(*coros_or_futures,
 
 
 async def read_sql_query_with_join_collapse(
-        query: CompoundSelect,
+        query: GenerativeSelect,
         db: Database,
         columns: Union[Sequence[str], Sequence[InstrumentedAttribute],
                        MetadataBase, PerdataBase, PrecomputedBase, StateBase],

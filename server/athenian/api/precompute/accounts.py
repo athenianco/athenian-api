@@ -46,10 +46,7 @@ from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import dataclass
 
 
-async def main(context: PrecomputeContext,
-               args: argparse.Namespace,
-               *, isolate: bool = True,
-               ) -> Optional[Callable]:
+async def main(context: PrecomputeContext, args: argparse.Namespace) -> Optional[Callable]:
     """Precompute several accounts."""
     time_to = datetime.combine(date.today() + timedelta(days=1),
                                datetime.min.time(),
@@ -59,6 +56,7 @@ async def main(context: PrecomputeContext,
         (time_to - timedelta(days=365 * 2)) if not os.getenv("CI") else no_time_from
     accounts = [int(p) for s in args.account for p in s.split()]
     to_precompute = await _get_reposets_to_precompute(context.sdb, accounts)
+    isolate = not args.disable_isolation
     if isolate:
         await context.close()
     context.log.info("Heating %d reposets", len(to_precompute))
