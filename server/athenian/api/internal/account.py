@@ -1,6 +1,7 @@
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from itertools import chain
+from graphlib import CycleError, TopologicalSorter  # noqa
+from itertools import chain  # noqa
 import logging
 import marshal
 import os
@@ -15,7 +16,6 @@ import aiomcache
 import aiosqlite
 from asyncpg import UniqueViolationError
 import morcilla.core
-import networkx as nx
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 from sqlalchemy import and_, func, insert, select
 
@@ -324,19 +324,17 @@ async def copy_teams_as_needed(account: int,
         log.warning("Found 0 metadata teams for account %d", account)
         return [], 0
     # check for cycles - who knows?
-    dig = nx.DiGraph()
+    dig = {}
     for row in team_rows:
         team_id = row[MetadataTeam.id.name]
         if (parent_id := row[MetadataTeam.parent_team_id.name]) is not None:
-            dig.add_edge(team_id, parent_id)
+            dig.setdefault(team_id, []).append(parent_id)
         else:
-            dig.add_node(team_id)
+            dig.setdefault(team_id, [])
     try:
-        cycle = nx.find_cycle(dig)
-    except nx.NetworkXNoCycle:
-        pass
-    else:
-        log.error("Found a metadata parent-child team reference cycle: %s", cycle)
+        TopologicalSorter(dig).prepare()
+    except CycleError as e:
+        log.error("Found a metadata parent-child team reference cycle: %s", e)
         return [], 0
     teams = {t[MetadataTeam.id.name]: t for t in team_rows}
     member_rows = await mdb.fetch_all(
@@ -347,7 +345,7 @@ async def copy_teams_as_needed(account: int,
         members[row[TeamMember.parent_id.name]].append(row[TeamMember.child_id.name])
     db_ids = {}
     created_teams = []
-    for node_id in reversed(list(nx.topological_sort(dig))):
+    for node_id in TopologicalSorter(dig).static_order():
         team = teams[node_id]
 
         parent_id = root_team_id
