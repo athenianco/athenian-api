@@ -15,6 +15,7 @@ import re
 import socket
 import sys
 from typing import Callable, Optional
+import warnings
 
 import aiohttp.web
 from aiohttp.web_runner import GracefulExit
@@ -24,7 +25,9 @@ from flogging import flogging
 import jinja2
 import morcilla
 import numpy
-import pandas
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    import pandas
 from sentry_sdk.integrations.aiohttp import AioHttpIntegration
 from sentry_sdk.integrations.executing import ExecutingIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration

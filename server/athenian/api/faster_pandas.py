@@ -1,22 +1,25 @@
 from datetime import timezone
 from functools import lru_cache, wraps
 from typing import List, Optional
+import warnings
 
 import numpy as np
-from pandas import DataFrame, Index, MultiIndex, Series, set_option
-from pandas.core import algorithms
-from pandas.core.arrays import DatetimeArray, datetimes
-from pandas.core.arrays.datetimelike import DatetimeLikeArrayMixin
-from pandas.core.base import IndexOpsMixin
-from pandas.core.dtypes import common
-from pandas.core.dtypes.cast import maybe_cast_to_datetime
-from pandas.core.dtypes.common import is_dtype_equal
-from pandas.core.dtypes.dtypes import DatetimeTZDtype
-from pandas.core.dtypes.inference import is_array_like
-from pandas.core.dtypes.missing import na_value_for_dtype
-import pandas.core.internals.construction
-from pandas.core.internals.construction import DtypeObj, lib, Scalar
-from pandas.core.reshape.merge import _MergeOperation, _should_fill
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    from pandas import DataFrame, Index, MultiIndex, Series, set_option
+    from pandas.core import algorithms
+    from pandas.core.arrays import DatetimeArray, datetimes
+    from pandas.core.arrays.datetimelike import DatetimeLikeArrayMixin
+    from pandas.core.base import IndexOpsMixin
+    from pandas.core.dtypes import common
+    from pandas.core.dtypes.cast import maybe_cast_to_datetime
+    from pandas.core.dtypes.common import is_dtype_equal
+    from pandas.core.dtypes.dtypes import DatetimeTZDtype
+    from pandas.core.dtypes.inference import is_array_like
+    from pandas.core.dtypes.missing import na_value_for_dtype
+    import pandas.core.internals.construction
+    from pandas.core.internals.construction import DtypeObj, lib, Scalar
+    from pandas.core.reshape.merge import _MergeOperation, _should_fill
 
 
 def nan_to_none_return(func):

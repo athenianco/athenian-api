@@ -1,56 +1,12 @@
 from abc import ABCMeta
 from itertools import chain
 import pprint
-import sys
 import typing
 
 from athenian.api import serialization, typing_utils
 
+
 T = typing.TypeVar("T")
-
-
-OriginalSpecialForm = type(typing.Any)
-
-if sys.version_info < (3, 10):
-    class _VerbatimOptional(OriginalSpecialForm, _root=True):
-        cache = {}
-
-        def __init__(self):
-            super().__init__("Optional", """
-            Alternative Optional that prevents coercing (), [], and {} attributes to null during
-            serialization.
-            """)
-
-        def __getitem__(self, parameters):
-            typeobj = super().__getitem__(parameters)
-            key = typeobj.__origin__.__reduce__()
-            try:
-                typeobj.__origin__ = self.cache[key]
-            except KeyError:
-                cloned_origin = self.cache[key] = OriginalSpecialForm.__new__(OriginalSpecialForm)
-                for attr in self.__slots__:
-                    setattr(cloned_origin, attr, getattr(typeobj.__origin__, attr))
-                typeobj.__origin__ = cloned_origin
-            typeobj.__origin__.__verbatim__ = True
-            return typeobj
-
-    VerbatimOptional = _VerbatimOptional()
-else:
-    class _VerbatimUnion(OriginalSpecialForm, _root=True):
-        __slots__ = ("__verbatim__",)
-
-        def __init__(self):
-            self._getitem = typing.Union._getitem
-            self._name = typing.Union._name
-            self.__verbatim__ = True
-
-    VerbatimUnion = _VerbatimUnion()
-
-    @OriginalSpecialForm
-    def VerbatimOptional(self, parameters):
-        """Alternative Optional that prevents coercing (), [], and {} attributes to null during \
-        serialization."""
-        return VerbatimUnion[typing.Optional[parameters].__args__]
 
 
 class Slots(ABCMeta):

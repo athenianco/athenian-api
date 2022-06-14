@@ -4,7 +4,7 @@ on:
   push:
     branches:
     - master
-  pull_request_target:
+  pull_request:
 
 env:
   PIP_CACHE: |
@@ -50,7 +50,7 @@ jobs:
         restore-keys: ubuntu-22.04-pip-lint-
     - name: pip
       run: |
-        pip3 install -r server/requirements-lint.txt --no-warn-script-location
+        python3 -m pip install -r server/requirements-lint.txt --no-warn-script-location
         echo "$HOME/.local/bin" >> $GITHUB_PATH
     - name: flake8
       working-directory: server
@@ -98,11 +98,13 @@ jobs:
     - name: pip
       run: |
         set -x
+        python3 -m pip install --upgrade setuptools pip
+        sudo apt-get remove -y python3-setuptools
         sed -i "s/git+ssh:\/\/git@/git+https:\/\/gkwillie:${{ secrets.GKWILLIE_TOKEN }}@/g" server/requirements.txt
-        pip3 install -r server/requirements.txt --no-warn-script-location
+        python3 -m pip install -r server/requirements.txt --no-warn-script-location
         git checkout -f server/requirements.txt
-        pip3 install --user --no-deps -e server/
-        pip3 list
+        python3 -m pip install --user --no-deps -e server/
+        python3 -m pip list
     - name: web models
       working-directory: server
       run: |
@@ -191,9 +193,11 @@ jobs:
     - name: pip
       run: |
         set -x
+        python3 -m pip install --upgrade setuptools pip
+        sudo apt-get remove -y python3-setuptools
         sed -i "s/git+ssh:\/\/git@/git+https:\/\/gkwillie:${{ secrets.GKWILLIE_TOKEN }}@/g" server/requirements.txt
-        pip3 install -r server/requirements.txt -r server/requirements-test.txt --no-warn-script-location
-        pip3 install --user --no-deps -e server/
+        python3 -m pip install -r server/requirements.txt -r server/requirements-test.txt --no-warn-script-location
+        python3 -m pip install --user --no-deps -e server/
         patch --forward $HOME/.local/lib/python3.*/site-packages/aiomcache/client.py patches/aiomcache_version.patch || true
         patch --forward $HOME/.local/lib/python3.*/site-packages/prometheus_client/exposition.py patches/prometheus_client.patch || true
         echo "$HOME/.local/bin" >> $GITHUB_PATH
@@ -365,7 +369,7 @@ jobs:
     - name: docker build
       run: |
         set -x
-        pip3 install --no-cache-dir py-cpuinfo resolve-march-native && \
+        python3 -m pip install --no-cache-dir py-cpuinfo resolve-march-native && \
         cpuinfo && \
         resolve-march-native --vertical && \
         docker build --pull --cache-from gcr.io/${{ secrets.GOOGLE_PROJECT }}/api:latest --build-arg COMMIT=$GITHUB_SHA --build-arg GKWILLIE_TOKEN=${{ secrets.GKWILLIE_TOKEN }} -t gcr.io/${{ secrets.GOOGLE_PROJECT }}/api .

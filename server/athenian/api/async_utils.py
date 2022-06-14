@@ -322,19 +322,15 @@ def _wrap_sql_query(data: List[Sequence[Any]],
                     ) -> pd.DataFrame:
     """Turn the fetched DB records to a pandas DataFrame."""
     try:
-        columns[0]
-    except TypeError:
-        dt_columns = _extract_datetime_columns(columns.__table__.columns)
-        int_columns = _extract_integer_columns(columns.__table__.columns)
-        bool_columns = _extract_boolean_columns(columns.__table__.columns)
-        fixed_str_columns = _extract_fixed_string_columns(columns.__table__.columns)
-        columns = [c.name for c in columns.__table__.columns]
-    else:
-        dt_columns = _extract_datetime_columns(columns)
-        int_columns = _extract_integer_columns(columns)
-        bool_columns = _extract_boolean_columns(columns)
-        fixed_str_columns = _extract_fixed_string_columns(columns)
-        columns = [(c.name if not isinstance(c, str) else c) for c in columns]
+        columns = columns.__table__.columns
+    except AttributeError:
+        pass
+    dt_columns = _extract_datetime_columns(columns)
+    int_columns = _extract_integer_columns(columns)
+    bool_columns = _extract_boolean_columns(columns)
+    fixed_str_columns = _extract_fixed_string_columns(columns)
+    columns = [(c.name if not isinstance(c, str) else c) for c in columns]
+
     typed_cols_indexes = []
     typed_cols_names = []
     obj_cols_indexes = []
