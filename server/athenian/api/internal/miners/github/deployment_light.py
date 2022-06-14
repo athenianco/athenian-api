@@ -49,7 +49,7 @@ async def load_included_deployments(names: Collection[str],
             select([DeploymentNotification])
             .where(and_(DeploymentNotification.account_id == account,
                         DeploymentNotification.name.in_any_values(names))),
-            rdb, DeploymentNotification,
+            rdb, DeploymentNotification, index=DeploymentNotification.name.name,
         ),
         read_sql_query(
             select([DeployedComponent])
@@ -109,7 +109,7 @@ async def load_included_deployments(names: Collection[str],
             labels=labels_by_dep.get(name, None),
         )
         for name, conclusion, env, url, started_at, finished_at in zip(
-            notifications[DeploymentNotification.name.name].values,
+            notifications.index.values,
             notifications[DeploymentNotification.conclusion.name].values,
             notifications[DeploymentNotification.environment.name].values,
             notifications[DeploymentNotification.url.name].values,
