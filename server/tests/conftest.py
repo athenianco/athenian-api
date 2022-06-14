@@ -25,7 +25,9 @@ except ImportError:
         def apply():
             pass
 import numpy as np
-import pandas as pd
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    import pandas as pd
 try:
     import pytest
 except ImportError:

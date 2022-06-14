@@ -6,7 +6,8 @@ import dateutil.parser
 
 from athenian.api.ffx import encrypt
 from athenian.api.models.web.account_status import AccountStatus
-from athenian.api.models.web.base_model_ import Model, VerbatimOptional
+from athenian.api.models.web.base_model_ import Model
+from athenian.api.typing_utils import VerbatimOptional
 
 
 class User(Model):

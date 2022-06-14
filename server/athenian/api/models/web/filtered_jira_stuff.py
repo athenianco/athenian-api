@@ -1,6 +1,6 @@
 from typing import Dict, List, Optional
 
-from athenian.api.models.web.base_model_ import Model, VerbatimOptional
+from athenian.api.models.web.base_model_ import Model
 from athenian.api.models.web.deployment_notification import DeploymentNotification
 from athenian.api.models.web.jira_epic import JIRAEpic
 from athenian.api.models.web.jira_issue import JIRAIssue
@@ -9,6 +9,7 @@ from athenian.api.models.web.jira_label import JIRALabel
 from athenian.api.models.web.jira_priority import JIRAPriority
 from athenian.api.models.web.jira_status import JIRAStatus
 from athenian.api.models.web.jira_user import JIRAUser
+from athenian.api.typing_utils import VerbatimOptional
 
 
 class FilteredJIRAStuff(Model):

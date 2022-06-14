@@ -3,6 +3,7 @@ from contextvars import ContextVar
 import dataclasses
 from datetime import datetime, timedelta
 from itertools import chain
+import sys
 from typing import Any, Callable, Dict, Iterable, Iterator, List, Mapping, NamedTuple, \
     Optional, Tuple, Type, TypeVar, Union
 
@@ -13,6 +14,50 @@ import sentry_sdk
 import xxhash
 
 from athenian.api.tracing import sentry_span
+
+
+OriginalSpecialForm = type(Any)
+
+if sys.version_info < (3, 10):
+    class _VerbatimOptional(OriginalSpecialForm, _root=True):
+        cache = {}
+
+        def __init__(self):
+            super().__init__("Optional", """
+            Alternative Optional that prevents coercing (), [], and {} attributes to null during
+            serialization.
+            """)
+
+        def __getitem__(self, parameters):
+            typeobj = super().__getitem__(parameters)
+            key = typeobj.__origin__.__reduce__()
+            try:
+                typeobj.__origin__ = self.cache[key]
+            except KeyError:
+                cloned_origin = self.cache[key] = OriginalSpecialForm.__new__(OriginalSpecialForm)
+                for attr in self.__slots__:
+                    setattr(cloned_origin, attr, getattr(typeobj.__origin__, attr))
+                typeobj.__origin__ = cloned_origin
+            typeobj.__origin__.__verbatim__ = True
+            return typeobj
+
+    VerbatimOptional = _VerbatimOptional()
+else:
+    class _VerbatimUnion(OriginalSpecialForm, _root=True):
+        __slots__ = ("__verbatim__",)
+
+        def __init__(self):
+            self._getitem = Union._getitem
+            self._name = Union._name
+            self.__verbatim__ = True
+
+    VerbatimUnion = _VerbatimUnion()
+
+    @OriginalSpecialForm
+    def VerbatimOptional(self, parameters):
+        """Alternative Optional that prevents coercing (), [], and {} attributes to null during \
+        serialization."""
+        return VerbatimUnion[Optional[parameters].__args__]
 
 
 def is_generic(klass: type):
@@ -32,7 +77,7 @@ def is_list(klass: type):
 
 def is_union(klass: type):
     """Determine whether klass is a Union."""
-    return getattr(klass, "__origin__", None) == Union
+    return getattr(klass, "__origin__", None) in (Union, VerbatimUnion)
 
 
 def is_optional(klass: type):
