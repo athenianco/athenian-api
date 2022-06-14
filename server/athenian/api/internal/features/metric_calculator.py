@@ -2,13 +2,12 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from datetime import datetime, timedelta
 from functools import reduce
-from itertools import chain
+from graphlib import TopologicalSorter  # noqa
+from itertools import chain  # noqa
 from typing import Any, Callable, Collection, Dict, Generic, Iterable, KeysView, List, Mapping, \
-    Optional, \
-    Sequence, Tuple, Type, TypeVar, Union
+    Optional, Sequence, Tuple, Type, TypeVar, Union
 import warnings
 
-import networkx as nx
 import numpy as np
 import pandas as pd
 import sentry_sdk
@@ -498,7 +497,7 @@ class MetricCalculatorEnsemble:
                       **kwargs,
                       ) -> Tuple[List[MetricCalculator],
                                  Dict[str, List[MetricCalculator]]]:
-        dig = nx.DiGraph()
+        dig = {}
         required_classes = list(metric_classes)
         while required_classes:
             cls = required_classes.pop()
@@ -506,13 +505,13 @@ class MetricCalculatorEnsemble:
                 for dep in cls.deps:
                     if dep not in dig:
                         required_classes.append(dep)
-                    dig.add_edge(cls, dep)
-            elif cls not in dig:
-                dig.add_node(cls)
+                    dig.setdefault(cls, []).append(dep)
+            else:
+                dig.setdefault(cls, [])
         calcs = []
         metrics = {}
         cls_instances = {}
-        for cls in reversed(list(nx.topological_sort(dig))):
+        for cls in TopologicalSorter(dig).static_order():
             calc = cls(*(cls_instances[dep] for dep in cls.deps),
                        quantiles=quantiles, **kwargs)
             calcs.extend(clones := calc.split())
