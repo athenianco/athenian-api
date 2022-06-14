@@ -17,8 +17,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  flake8:
-    name: flake8 + semgrep
+  static_checks:
+    name: Static checks
     if: "!contains(github.event.head_commit.message, 'Bump version') || github.event_name != 'push'"
     runs-on: ubuntu-22.04
     steps:
@@ -46,15 +46,15 @@ jobs:
       uses: actions/cache@v2
       with:
         path: ${{ env.PIP_CACHE }}
-        key: ubuntu-22.04-pip-lint-${{ hashFiles('server/requirements-lint.txt') }}
-        restore-keys: ubuntu-22.04-pip-lint-
+        key: ubuntu-22.04-pip-static-checks-${{ hashFiles('server/requirements-lint.txt') }}
+        restore-keys: ubuntu-22.04-pip-static-checks-
     - name: pip
       run: |
         python3 -m pip install -r server/requirements-lint.txt --no-warn-script-location
         echo "$HOME/.local/bin" >> $GITHUB_PATH
-    - name: flake8
+    - name: static checks
       working-directory: server
-      run: flake8
+      run: tests/run_static_checks.sh
     - name: semgrep security
       working-directory: server
       run: semgrep --config p/r2c-security-audit --severity ERROR --disable-version-check --error
@@ -93,8 +93,8 @@ jobs:
       uses: actions/cache@v2
       with:
         path: ${{ env.PIP_CACHE }}
-        key: ubuntu-22.04-pip-main-${{ hashFiles('server/requirements.txt') }}
-        restore-keys: ubuntu-22.04-pip-main-
+        key: ubuntu-22.04-pip-custom-checks-${{ hashFiles('server/requirements.txt', 'server/requirements-lint.txt') }}
+        restore-keys: ubuntu-22.04-pip-custom-checks-
     - name: pip
       run: |
         set -x
@@ -102,6 +102,7 @@ jobs:
         sudo apt-get remove -y python3-setuptools
         sed -i "s/git+ssh:\/\/git@/git+https:\/\/gkwillie:${{ secrets.GKWILLIE_TOKEN }}@/g" server/requirements.txt
         python3 -m pip install -r server/requirements.txt --no-warn-script-location
+        python3 -m pip install -r server/requirements-lint.txt --no-warn-script-location
         git checkout -f server/requirements.txt
         python3 -m pip install --user --no-deps -e server/
         python3 -m pip list
@@ -110,6 +111,7 @@ jobs:
       run: |
         set -x
         python3 -m athenian.api.models.web
+        chorny athenian/api/models/web/__init__.py ; isort athenian/api/models/web/__init__.py
         git status --porcelain
         test -z "$(git status --porcelain)"
     - name: migrations
@@ -395,7 +397,7 @@ jobs:
         (docker image ls -a | grep -v latest | tail -n +2 |  awk '{print $3}' | xargs docker rmi) || true
   bump_version:
     name: Bump the version
-    needs: [flake8, custom_checks, test, docker]
+    needs: [static_checks, custom_checks, test, docker]
     if: "!contains(github.event.head_commit.message, 'Bump version') && github.ref == 'refs/heads/master' && github.event_name == 'push'"
     runs-on: ubuntu-22.04
     steps:
