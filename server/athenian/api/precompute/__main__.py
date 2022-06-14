@@ -72,6 +72,8 @@ def _parse_args() -> argparse.Namespace:
     accounts_parser.add_argument("account", nargs="+", help="Account IDs to precompute")
     accounts_parser.add_argument("--skip-jira-identity-map", action="store_true",
                                  help="Do not match JIRA identities")
+    accounts_parser.add_argument("--disable-isolation", action="store_true",
+                                 help="Do not sandbox each account in a separate process")
     accounts_parser.add_argument("--timeout", type=int, default=20 * 60,
                                  help="Maximum processing time for one account")
     return parser.parse_args()

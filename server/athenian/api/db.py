@@ -139,12 +139,14 @@ async def _asyncpg_execute(self,
                 query_id = log_multipart(_sql_log, pickle.dumps((query, args)))
                 brief = _sql_str_re.sub("", query)
                 description = "%s\n%s" % (query_id, brief[:MAX_SENTRY_STRING_LENGTH])
+    else:
+        description = description[:1024]
     with sentry_sdk.start_span(op="sql", description=description) as span:
         if not athenian.api.is_testing:
             query += _generate_tags()
         result = await self._execute_original(query, args, limit, timeout, **kwargs)
         try:
-            span.description = "=> %d\n%s" % (len(result[0]), span.description)
+            span.description = f"=> {len(result[0])}\n{span.description}"
         except TypeError:
             pass
         return result
