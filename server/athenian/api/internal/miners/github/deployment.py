@@ -1,17 +1,19 @@
 import asyncio
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from itertools import chain, repeat
+from itertools import chain, groupby, product, repeat
 import json
 import logging
+from operator import attrgetter
 import pickle
 import re
-from typing import Any, Collection, Dict, List, Mapping, NamedTuple, Optional, Set, Tuple
+from typing import Any, Collection, Dict, List, Mapping, NamedTuple, Optional, Sequence, Set, Tuple
 
 import aiomcache
 import numpy as np
 import pandas as pd
 import sentry_sdk
+import sqlalchemy as sa
 from sqlalchemy import (
     and_,
     desc,
@@ -26,13 +28,19 @@ from sqlalchemy import (
     union_all,
 )
 from sqlalchemy.orm import aliased
-from sqlalchemy.sql import Select
+from sqlalchemy.sql import Executable, Select
 from sqlalchemy.sql.elements import UnaryExpression
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import CancelCache, cached, short_term_exptime
-from athenian.api.db import Database, add_pdb_hits, add_pdb_misses, insert_or_ignore
+from athenian.api.db import (
+    Database,
+    add_pdb_hits,
+    add_pdb_misses,
+    ensure_db_datetime_tz,
+    insert_or_ignore,
+)
 from athenian.api.defer import defer
 from athenian.api.internal.jira import JIRAConfig
 from athenian.api.internal.logical_repos import coerce_logical_repos, drop_logical_repo
@@ -99,6 +107,7 @@ from athenian.api.models.metadata.github import (
     PullRequestLabel,
     PushCommit,
     Release,
+    Repository,
 )
 from athenian.api.models.persistentdata.models import (
     DeployedComponent,
@@ -115,7 +124,7 @@ from athenian.api.models.precomputed.models import (
 )
 from athenian.api.to_object_arrays import is_not_null
 from athenian.api.tracing import sentry_span
-from athenian.api.typing_utils import df_from_structs
+from athenian.api.typing_utils import dataclass, df_from_structs
 from athenian.api.unordered_unique import unordered_unique
 
 
@@ -2602,3 +2611,145 @@ async def load_jira_issues_for_deployments(
                 prs[pri] = np.sort(np.array(release_keys, dtype="S"))
 
     return issues
+
+
+async def hide_outlier_first_deployments(
+    deployment_facts: pd.DataFrame,
+    account: int,
+    meta_ids: Sequence[int],
+    mdb: Database,
+    pdb: Database,
+    threshold: float = 100.0,
+) -> None:
+    """Hide the outlier first deployments by deleting their facts from pdb.
+
+    A deployment is an outlier first for a repo if:
+    - it's the first deployment for a given repo and environment
+    - the time distance with the repository creation is at least `threshold` times
+      the median of time distances of each deployment with the previous one
+    """
+    log = logging.getLogger(f"{__name__}.hide_outlier_first_deployments")
+    outlier_deploys = await _search_outlier_first_deployments(
+        deployment_facts, meta_ids, mdb, log, threshold,
+    )
+
+    if not outlier_deploys:
+        return
+
+    log.info("Clearing %d outlier first deployments", len(outlier_deploys))
+
+    stmts: list[Executable] = []
+
+    # group outlier deploys by name
+    grouped_deploys = (
+        (name, [d.repository_full_name for d in name_groups])
+        for name, name_groups in groupby(
+            sorted(outlier_deploys, key=attrgetter("deployment_name")),
+            key=attrgetter("deployment_name"),
+        )
+    )
+
+    tables = (GitHubCommitDeployment, GitHubPullRequestDeployment, GitHubReleaseDeployment)
+    for Table, (deploy_name, repositories) in product(tables, grouped_deploys):
+        where_clause = sa.and_(
+            Table.acc_id == account,
+            Table.deployment_name == deploy_name,
+            Table.repository_full_name.in_(repositories),
+        )
+        stmts.append(sa.delete(Table).where(where_clause))
+
+    # clear GitHubDeploymentFacts by removing prs and commits from facts data
+    FactsT = GitHubDeploymentFacts
+    depl_facts_stmt = sa.select(GitHubDeploymentFacts).where(
+        sa.and_(
+            FactsT.acc_id == account,
+            FactsT.deployment_name.in_(d.deployment_name for d in outlier_deploys),
+        ),
+    )
+    depl_facts_rows = await pdb.fetch_all(depl_facts_stmt)
+
+    for row in depl_facts_rows:
+        facts = DeploymentFacts(row[FactsT.data.name], name=row[FactsT.deployment_name.name])
+        new_facts = facts.with_nothing_deployed()
+        match_cols = (
+            FactsT.acc_id,
+            FactsT.deployment_name,
+            FactsT.release_matches,
+            FactsT.format_version,
+        )
+        update_stmt = (
+            sa.update(FactsT)
+            .where(sa.and_(*(col == row[col.name] for col in match_cols)))
+            .values({FactsT.data: new_facts.data})
+        )
+        stmts.append(update_stmt)
+
+    await gather(*[pdb.execute(stmt) for stmt in stmts], op="hide_first_deployments")
+
+
+@dataclass(frozen=True, slots=True)
+class _OutlierDeployment:
+    repository_full_name: str
+    deployment_name: str
+
+
+async def _search_outlier_first_deployments(
+    deployment_facts: pd.DataFrame,
+    meta_ids: Sequence[int],
+    mdb: Database,
+    log: logging.Logger,
+    threshold: float = 100.0,
+) -> Sequence[_OutlierDeployment]:
+    """Search the outlier first deployments."""
+    REPOSITORY_COLUMN = "repository"
+    exploded_facts = deployment_facts.explode("repositories").rename(
+        columns={"repositories": REPOSITORY_COLUMN},
+    )
+
+    # retrieve repo => creation time mapping
+    mentioned_repos = exploded_facts.repository.unique()
+    repos_stmt = sa.select(Repository.full_name, Repository.created_at).where(
+        sa.and_(Repository.acc_id.in_(meta_ids), Repository.full_name.in_(mentioned_repos)),
+    )
+    repo_creation_times: Mapping[str, np.datetime64] = {
+        r[0]: np.datetime64(ensure_db_datetime_tz(r[1], mdb))
+        for r in await mdb.fetch_all(repos_stmt)
+    }
+
+    grouped_facts = exploded_facts.groupby(
+        [DeploymentNotification.environment.name, REPOSITORY_COLUMN],
+    )
+
+    result = set()
+
+    for group_name, group in grouped_facts:
+        env, repo = group_name
+
+        success_mask = (
+            group[DeploymentNotification.conclusion.name]
+            == DeploymentNotification.CONCLUSION_SUCCESS
+        )
+        deploy_times = np.sort(group[DeploymentNotification.started_at.name].values[success_mask])
+
+        if len(deploy_times) < 2:
+            # missing two successful deployments to compute median deploy interval
+            # skip the analysis, don't hide the deployment
+            continue
+        median_interval_ = np.median(np.diff(deploy_times))
+
+        first_deploy_idx = np.argmin(group["started_at"].values)
+        first_deploy_time = group["started_at"].values[first_deploy_idx]
+        first_deploy_interval_ = first_deploy_time - repo_creation_times[repo]
+
+        if (first_deploy_interval_ / median_interval_) > threshold:
+            deploy = _OutlierDeployment(repo, group["name"].values[first_deploy_idx])
+            # same deploy can be selected from different environments
+            if deploy not in result:
+                log.info(
+                    "Deployment %s detected as outlier first in repository %s",
+                    deploy.deployment_name,
+                    deploy.repository_full_name,
+                )
+                result.add(deploy)
+
+    return tuple(result)

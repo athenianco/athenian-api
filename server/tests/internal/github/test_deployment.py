@@ -5,11 +5,16 @@ import numpy as np
 import pandas as pd
 from pandas.testing import assert_frame_equal
 import pytest
+import sqlalchemy as sa
 from sqlalchemy import and_, delete, func, insert, select
 
 from athenian.api.defer import wait_deferred, with_defer
+from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
-from athenian.api.internal.miners.github.deployment import mine_deployments
+from athenian.api.internal.miners.github.deployment import (
+    hide_outlier_first_deployments,
+    mine_deployments,
+)
 from athenian.api.internal.miners.github.release_mine import mine_releases
 from athenian.api.internal.miners.types import DeploymentConclusion, DeploymentFacts
 from athenian.api.internal.settings import LogicalRepositorySettings
@@ -22,7 +27,9 @@ from athenian.api.models.persistentdata.models import (
 )
 from athenian.api.models.precomputed.models import (
     GitHubCommitDeployment,
+    GitHubDeploymentFacts,
     GitHubPullRequestDeployment,
+    GitHubReleaseDeployment,
 )
 
 
@@ -4423,3 +4430,97 @@ def _validate_deployments(deps, count, with_2016):
     del pdeps["releases"]
     del sdeps["releases"]
     assert_frame_equal(pdeps, sdeps)
+
+
+class TestHideOutlierFirstDeployments:
+    @with_defer
+    async def test_base(
+        self,
+        sample_deployments,
+        release_match_setting_tag_or_branch,
+        branches,
+        default_branches,
+        prefixer,
+        mdb,
+        pdb,
+        rdb,
+        cache,
+        sdb,
+    ) -> None:
+        meta_ids = await get_metadata_account_ids(1, sdb, None)
+        time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
+        time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
+
+        existing_depl_facts = await pdb.fetch_all(sa.select(GitHubDeploymentFacts))
+        assert len(existing_depl_facts) == 0
+
+        existing_pr_depl_facts = await pdb.fetch_all(sa.select(GitHubPullRequestDeployment))
+        assert len(existing_pr_depl_facts) == 0
+
+        deps, people = await mine_deployments(
+            ["src-d/go-git"],
+            {},
+            time_from,
+            time_to,
+            ["production", "staging"],
+            [],
+            {},
+            {},
+            LabelFilter.empty(),
+            JIRAFilter.empty(),
+            release_match_setting_tag_or_branch,
+            LogicalRepositorySettings.empty(),
+            branches,
+            default_branches,
+            prefixer,
+            1,
+            (6366825,),
+            mdb,
+            pdb,
+            rdb,
+            cache,
+        )
+        # wait deferred tasks writing to pdb to complete
+        await wait_deferred()
+
+        expected_outlier_deployments = ["staging_2016_07_06", "production_2016_07_06"]
+
+        pr_where = GitHubPullRequestDeployment.deployment_name.in_(expected_outlier_deployments)
+        pre_hiding_pr_count = await self._count(pdb, GitHubPullRequestDeployment)
+        to_be_removed_pr_count = await self._count(pdb, GitHubPullRequestDeployment, pr_where)
+
+        commit_where = GitHubCommitDeployment.deployment_name.in_(expected_outlier_deployments)
+        pre_hiding_commit_count = await self._count(pdb, GitHubCommitDeployment)
+        to_be_removed_commit_count = await self._count(pdb, GitHubCommitDeployment, commit_where)
+
+        rel_where = GitHubReleaseDeployment.deployment_name.in_(expected_outlier_deployments)
+        pre_hiding_release_count = await self._count(pdb, GitHubReleaseDeployment)
+        to_be_removed_release_count = await self._count(pdb, GitHubReleaseDeployment, rel_where)
+
+        await hide_outlier_first_deployments(deps, 1, meta_ids, mdb, pdb, 1.1)
+
+        post_hiding_pr_count = await self._count(pdb, GitHubPullRequestDeployment)
+        post_hiding_commit_count = await self._count(pdb, GitHubCommitDeployment)
+        post_hiding_release_count = await self._count(pdb, GitHubReleaseDeployment)
+
+        assert post_hiding_pr_count == pre_hiding_pr_count - to_be_removed_pr_count
+        assert post_hiding_commit_count == pre_hiding_commit_count - to_be_removed_commit_count
+        assert post_hiding_release_count == pre_hiding_release_count - to_be_removed_release_count
+
+        assert await self._count(pdb, GitHubPullRequestDeployment, pr_where) == 0
+
+        depl_where = GitHubDeploymentFacts.deployment_name.in_(expected_outlier_deployments)
+        depl_rows = await pdb.fetch_all(sa.select(GitHubDeploymentFacts).where(depl_where))
+        for depl_row in depl_rows:
+            facts = DeploymentFacts(
+                depl_row[GitHubDeploymentFacts.data.name],
+                name=depl_row[GitHubDeploymentFacts.deployment_name.name],
+            )
+            assert not len(facts.prs)
+
+    @classmethod
+    async def _count(cls, pdb, table, where=None):
+        stmt = sa.select(sa.func.count()).select_from(table)
+        if where is not None:
+            stmt = stmt.where(where)
+        return await pdb.fetch_val(stmt)
