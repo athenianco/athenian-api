@@ -17,9 +17,9 @@ if ! [ -z "$(git diff HEAD)" ]; then
     exit 1
 fi
 
-find . -name '*.py' | xargs add-trailing-comma --py36-plus 2>/dev/null
+(find . -name '*.py' | xargs add-trailing-comma --py36-plus)
 
-chorny --quiet .
+(chorny .)
 
 if ! [ -z "$(git diff HEAD)" ]; then
     echo "Some files modified after code formatting check."

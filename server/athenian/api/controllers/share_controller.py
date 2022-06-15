@@ -27,6 +27,7 @@ async def save_share(request: AthenianWebRequest, body: Any) -> aiohttp.web.Resp
             Share(
                 created_by=request.uid,
                 data=body,
+                divine=hasattr(request, "god_id"),
             )
             .create_defaults()
             .explode(),

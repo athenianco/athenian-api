@@ -407,4 +407,5 @@ class Share(create_time_mixin(created_at=True), Base):
 
     id = Column(BigInteger().with_variant(Integer(), sqlite.dialect.name), primary_key=True)
     created_by = Column(String(), nullable=False)
+    divine = Column(Boolean, nullable=False, default=False, server_default="false")
     data = Column(JSONB().with_variant(JSON(), sqlite.dialect.name), nullable=False)
