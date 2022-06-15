@@ -157,9 +157,9 @@ async def test_get_everything_smoke(client, headers, dummy_deployment_label):
     }
     assert len(jira_issues_df) == 1797
     assert set(jira_issues_df) == {
-        "assignee", "category_name", "commenters", "created", "epic_id", "labels", "pr_ids",
-        "priority_name", "prs_began", "prs_count", "prs_released", "reporter", "resolved",
-        "status", "type", "updated", "work_began",
+        "assignee", "category_name", "commenters", "created", "athenian_epic_id", "labels",
+        "pr_ids", "priority_name", "prs_began", "prs_count", "prs_released", "reporter",
+        "resolved", "status", "type", "updated", "work_began",
     }
     assert len(deps_df) == 1
     assert set(deps_df.columns) == {

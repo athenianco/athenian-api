@@ -736,7 +736,7 @@ async def test_filter_jira_issue_only_flying(client, headers):
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     model = FilteredJIRAStuff.from_dict(json.loads(body))
-    assert len(model.issues) == 199
+    assert len(model.issues) == 189
 
 
 # TODO: fix response validation against the schema

@@ -489,9 +489,8 @@ async def _fetch_issues(ids: JIRAConfig,
     if isinstance(epics, bool):
         assert epics is False
         epics_major = aliased(Epic, name="epics_major")
-        epics_parent = aliased(Epic, name="epics_parent")
         epics_self = aliased(Epic, name="epics_self")
-        for alias in (epics_major, epics_parent, epics_self):
+        for alias in (epics_major, epics_self):
             and_filters.append(alias.name.is_(None))
     elif len(epics):
         and_filters.append(Epic.key.in_(epics))
@@ -534,44 +533,31 @@ async def _fetch_issues(ids: JIRAConfig,
             columns.append(sql.func.lower(Issue.assignee_display_name).label("_assignee"))
 
     def query_starts():
-        seeds = [seed := sql.join(Issue, Status, sql.and_(Issue.status_id == Status.id,
-                                                          Issue.acc_id == Status.acc_id))]
+        seed = sql.join(Issue, Status, sql.and_(Issue.status_id == Status.id,
+                                                Issue.acc_id == Status.acc_id))
         if epics is False:
-            seeds = [
-                sql.outerjoin(
-                    sql.outerjoin(
-                        sql.outerjoin(seed, epics_major,
-                                      sql.and_(Issue.epic_id == epics_major.id,
-                                               Issue.acc_id == epics_major.acc_id)),
-                        epics_parent, sql.and_(Issue.parent_id == epics_parent.id,
-                                               Issue.acc_id == epics_parent.acc_id),
-                    ),
-                    epics_self, sql.and_(Issue.id == epics_self.id,
-                                         Issue.acc_id == epics_self.acc_id),
-                ),
-            ]
+            seed = sql.outerjoin(
+                sql.outerjoin(seed, epics_major,
+                              sql.and_(Issue.epic_id == epics_major.id,
+                                       Issue.acc_id == epics_major.acc_id)),
+                epics_self, sql.and_(Issue.id == epics_self.id,
+                                     Issue.acc_id == epics_self.acc_id),
+            )
         elif len(epics):
-            seeds = [
-                sql.join(seed, Epic, sql.and_(Issue.epic_id == Epic.id,
-                                              Issue.acc_id == Epic.acc_id)),
-                sql.join(seed, Epic, sql.and_(Issue.parent_id == Epic.id,
-                                              Issue.acc_id == Epic.acc_id)),
-            ]
-        return tuple(sql.select(columns).select_from(sql.outerjoin(
+            seed = sql.join(seed, Epic, sql.and_(Issue.epic_id == Epic.id,
+                                                 Issue.acc_id == Epic.acc_id))
+        return sql.select(columns).select_from(sql.outerjoin(
             seed, AthenianIssue, sql.and_(Issue.acc_id == AthenianIssue.acc_id,
                                           Issue.id == AthenianIssue.id)))
-                     for seed in seeds)
 
     if or_filters:
         if postgres:
-            query = [start.where(sql.and_(or_filter, *and_filters))
-                     for or_filter in or_filters
-                     for start in query_starts()]
+            query = [query_starts().where(sql.and_(or_filter, *and_filters))
+                     for or_filter in or_filters]
         else:
-            query = [start.where(sql.and_(sql.or_(*or_filters), *and_filters))
-                     for start in query_starts()]
+            query = [query_starts().where(sql.and_(sql.or_(*or_filters), *and_filters))]
     else:
-        query = [start.where(sql.and_(*and_filters)) for start in query_starts()]
+        query = [query_starts().where(sql.and_(*and_filters))]
 
     def hint(q):
         return q \

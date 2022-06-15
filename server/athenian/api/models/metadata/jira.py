@@ -37,7 +37,7 @@ class Issue(Base):
     labels = Column(postgresql.ARRAY(Text).with_variant(JSON(), sqlite.dialect.name),
                     nullable=False)
     components = Column(postgresql.ARRAY(Text).with_variant(JSON(), sqlite.dialect.name))
-    epic_id = Column(Text)
+    epic_id = Column("athenian_epic_id", Text)
     created = Column(TIMESTAMP(timezone=True), nullable=False)
     updated = Column(TIMESTAMP(timezone=True), nullable=False)
     resolved = Column(TIMESTAMP(timezone=True))

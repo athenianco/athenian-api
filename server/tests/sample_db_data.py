@@ -77,6 +77,8 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
                             ctor = lambda x: x  # noqa:E731
                     columns[c.name] = ctor
                 keys = [p.strip(b'(),"').decode() for p in parts[1:-2]]
+                name_map = {getattr(model, k).name: k for k in dir(model)
+                            if not k.startswith("_") and hasattr(getattr(model, k), "name")}
                 continue
             if stdin:
                 if line == b"\\.\n":
@@ -88,23 +90,17 @@ def fill_metadata_session(session: sqlalchemy.orm.Session):
                 for k, p in zip(keys, vals):
                     p = p.replace(b"\\t", b"\t").replace(b"\\n", b"\n").decode()
                     if p == r"\N":
-                        kwargs[k] = None
+                        kwargs[name_map[k]] = None
                     else:
                         try:
-                            kwargs[k] = columns[k](p)
+                            kwargs[name_map[k]] = columns[k](p)
                         except Exception as e:
                             print("%s.%s" % (table, k), p)
                             for k, p in zip(keys, vals):
                                 print(k, '"%s"' % p.decode())
                             raise e from None
-                if table == "jira.issue":
-                    kwargs["url"] = "https://athenianco.atlassian.net/browse/" + kwargs["key"]
-                elif table == "github.node_repository":
-                    name_with_owner = kwargs["name_with_owner"]
-                    kwargs["name"] = name_with_owner.split("/", 1)[1]
-                    kwargs["url"] = "https://github.com/" + name_with_owner
                 # FIXME(vmarkovtsev): remove there when the rest of the code is updated DEV-3537
-                elif table == "github.node_reviewrequestedevent":
+                if table == "github.node_reviewrequestedevent":
                     kwargs["requested_reviewer_id"] = kwargs["requested_reviewer_id"] or 0
                 for key, val in kwargs.items():
                     if key.endswith("_user_id") or key == "user_node_id":
