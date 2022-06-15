@@ -85,10 +85,9 @@ pip install -r server/requirements-lint.txt
 
 Validate your changes:
 
-```
+```bash
 cd server
-flake8
-pytest -s
+tests/run_static_checks.sh # (must be run on a clean git tree)
 ```
 
 Generate metadata SQL dump suitable for unit tests:
@@ -106,6 +105,21 @@ docker run --rm -e DB_DIR=/io -v$(pwd):/io --entrypoint python3 athenian/api /se
 You should have three SQLite files in `$(pwd)`: `mdb-master.sqlite`, `pdb-master.sqlite`, and `sdb-master.sqlite`.
 
 Obtain Auth0 credentials for running locally: [webapp docs](https://github.com/athenianco/athenian-webapp/blob/master/docs/CONTRIBUTING.md#auth0-and-github-app-local-testing).
+
+
+### Code formatting
+
+Code must be formatted according to custom rules implemented by
+[Chorny](https://github.com/athenianco/chorny), a formatter
+derived from [Black](https://github.com/psf/black).
+
+The required code style cannot be enforced / checked with a single command but
+must be applied by calling two commands in sequence:
+
+```bash
+add-trailing-comma --py36-plus my_module.py
+chorny my_module.py
+```
 
 # [Guide to adding new endpoints.](ADDING_ENDPOINTS.md)
 
