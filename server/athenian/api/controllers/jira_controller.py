@@ -195,7 +195,7 @@ async def _epic_flow(return_: Set[str],
     ]
     if JIRAFilterReturn.USERS in return_:
         extra_columns.extend(participant_columns)
-    epics_df, children_df, subtask_task, epic_children_map = await filter_epics(
+    epics_df, children_df, subtask_counts, epic_children_map = await filter_epics(
         jira_ids, time_from, time_to, exclude_inactive, label_filter,
         priorities, reporters, assignees, commenters, default_branches,
         release_settings, logical_settings, account, meta_ids,
@@ -342,20 +342,19 @@ async def _epic_flow(return_: Set[str],
     else:
         status_ids = []
         status_project_map = {}
-    tasks = [
-        subtask_task,
+    priorities, statuses, types = await gather(
         _fetch_priorities(priority_ids, jira_ids[0], return_, mdb),
         _fetch_statuses(status_ids, status_project_map, jira_ids[0], return_, mdb),
-        _fetch_types(issue_type_ids, jira_ids[0], return_, mdb,
-                     columns=[IssueType.id, IssueType.project_id, IssueType.name]),
-    ]
-    _, priorities, statuses, types = await gather(*tasks, op="epic epilog")
+        _fetch_types(
+            issue_type_ids, jira_ids[0], return_, mdb,
+            columns=[IssueType.id, IssueType.project_id, IssueType.name]),
+        op="epic epilog")
     invalid_parent_id = []
-    for row in subtask_task.result():
+    for issue_id, count in subtask_counts:
         try:
-            issue_by_id[(parent_id := row[Issue.parent_id.name])].subtasks = row["subtasks"]
+            issue_by_id[issue_id].subtasks = count
         except KeyError:
-            invalid_parent_id.append(parent_id)
+            invalid_parent_id.append(issue_id)
     if invalid_parent_id:
         log.error("issues are parents of children outside of the epics: %s", invalid_parent_id)
     for row in types:
