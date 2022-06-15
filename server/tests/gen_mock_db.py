@@ -16,18 +16,20 @@ try:
 except ImportError:
     pass
 
-from tests.conftest import db_dir, metadata_db
-from tests.sample_db_data import fill_persistentdata_session, fill_state_session
 # this must go *after* tests to let tests.conftest check ATHENIAN_INVITATION_KEY
 from athenian.api.models import migrate  # noqa: I100
-from athenian.api.models.persistentdata import \
-    dereference_schemas as dereference_persistentdata_schemas
+from athenian.api.models.persistentdata import (
+    dereference_schemas as dereference_persistentdata_schemas,
+)
+from tests.conftest import db_dir, metadata_db
+from tests.sample_db_data import fill_persistentdata_session, fill_state_session
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Generate DB fixtures.")
-    parser.add_argument("--no-state-samples", action="store_true",
-                        help="Leave the initialized state DB empty.")
+    parser.add_argument(
+        "--no-state-samples", action="store_true", help="Leave the initialized state DB empty.",
+    )
     return parser.parse_args()
 
 
@@ -38,9 +40,9 @@ def main():
         db_path = db_dir / ("%sdb-master.sqlite" % letter)
         if db_path.exists():
             db_path.unlink()
-        conn_str = os.getenv(
-            "OVERRIDE_%sDB" % letter.upper(), "sqlite:///%s" % db_path,
-        ).rsplit("?", 1)[0]
+        conn_str = os.getenv("OVERRIDE_%sDB" % letter.upper(), "sqlite:///%s" % db_path).rsplit(
+            "?", 1,
+        )[0]
         migrate(name, conn_str, exec=False)
 
         if letter == "s" and not args.no_state_samples:

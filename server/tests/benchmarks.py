@@ -5,34 +5,45 @@ import time
 import pandas as pd
 import requests
 
-
 common_body = {
     "account": 1,
 }
 
 
 queries = [
-    ("metrics_2_weeks", "metrics/prs", {
-        "for": [{"repositories": ["{1}"]}],
-        "metrics": ["pr-lead-time", "pr-cycle-time"],
-        "date_from": "2020-04-03",
-        "date_to": "2020-04-17",
-        "granularities": ["day"],
-    }),
-    ("metrics_4_weeks", "metrics/prs", {
-        "for": [{"repositories": ["{1}"]}],
-        "metrics": ["pr-lead-time", "pr-cycle-time"],
-        "date_from": "2020-04-03",
-        "date_to": "2020-04-17",
-        "granularities": ["day"],
-    }),
-    ("metrics_3_months", "metrics/prs", {
-        "for": [{"repositories": ["{1}"]}],
-        "metrics": ["pr-lead-time", "pr-cycle-time"],
-        "date_from": "2020-01-17",
-        "date_to": "2020-04-17",
-        "granularities": ["week"],
-    }),
+    (
+        "metrics_2_weeks",
+        "metrics/prs",
+        {
+            "for": [{"repositories": ["{1}"]}],
+            "metrics": ["pr-lead-time", "pr-cycle-time"],
+            "date_from": "2020-04-03",
+            "date_to": "2020-04-17",
+            "granularities": ["day"],
+        },
+    ),
+    (
+        "metrics_4_weeks",
+        "metrics/prs",
+        {
+            "for": [{"repositories": ["{1}"]}],
+            "metrics": ["pr-lead-time", "pr-cycle-time"],
+            "date_from": "2020-04-03",
+            "date_to": "2020-04-17",
+            "granularities": ["day"],
+        },
+    ),
+    (
+        "metrics_3_months",
+        "metrics/prs",
+        {
+            "for": [{"repositories": ["{1}"]}],
+            "metrics": ["pr-lead-time", "pr-cycle-time"],
+            "date_from": "2020-01-17",
+            "date_to": "2020-04-17",
+            "granularities": ["week"],
+        },
+    ),
 ]
 
 
@@ -40,8 +51,9 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("-o", "--output", required=True, help="Output CSV path.")
     parser.add_argument("-s", "--server", default="http://0.0.0.0:8080", help="Server address.")
-    parser.add_argument("-t", "--time", default=60,
-                        help="Time in seconds during which to send the same requests.")
+    parser.add_argument(
+        "-t", "--time", default=60, help="Time in seconds during which to send the same requests.",
+    )
     parser.add_argument("--with-cache", action="store_true", help="Enable the server cache.")
     return parser.parse_args()
 

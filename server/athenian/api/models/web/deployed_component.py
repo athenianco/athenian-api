@@ -10,10 +10,11 @@ class DeployedComponent(Model):
 
     attribute_map = {"repository": "repository", "reference": "reference"}
 
-    def __init__(self,
-                 repository: Optional[str] = None,
-                 reference: Optional[str] = None,
-                 ):
+    def __init__(
+        self,
+        repository: Optional[str] = None,
+        reference: Optional[str] = None,
+    ):
         """DeployedComponent - a model defined in OpenAPI
 
         :param repository: The repository of this DeployedComponent.
@@ -79,6 +80,7 @@ class DeployedComponent(Model):
             raise ValueError("Invalid value for `reference`, must not be `None`")
         if not reference:
             raise ValueError(
-                "Invalid value for `reference`, length must be greater than or equal to `1`")
+                "Invalid value for `reference`, length must be greater than or equal to `1`",
+            )
 
         self._reference = reference

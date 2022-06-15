@@ -9,9 +9,7 @@ class ReleaseNames(Model):
     attribute_types = {"repository": str, "names": List[str]}
     attribute_map = {"repository": "repository", "names": "names"}
 
-    def __init__(self,
-                 repository: Optional[str] = None,
-                 names: Optional[List[str]] = None):
+    def __init__(self, repository: Optional[str] = None, names: Optional[List[str]] = None):
         """ReleaseNames - a model defined in OpenAPI
 
         :param repository: The repository of this ReleaseNames.

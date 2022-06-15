@@ -5,7 +5,6 @@ import sentry_sdk
 
 from athenian.api import typing_utils
 
-
 # The rest will be truncated both in the errors and the traces.
 MAX_SENTRY_STRING_LENGTH = 4096
 
@@ -13,6 +12,7 @@ MAX_SENTRY_STRING_LENGTH = 4096
 def sentry_span(func):
     """Wrap the function in a Sentry span to trace the elapsed time."""
     if asyncio.iscoroutinefunction(func):
+
         async def wrapped_async_sentry_span(*args, **kwargs):
             __tracebackhide__ = True  # noqa: F841
             with sentry_sdk.Hub(sentry_sdk.Hub.current):

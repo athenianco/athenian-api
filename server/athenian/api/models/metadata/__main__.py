@@ -46,9 +46,14 @@ def main() -> int:
                     status = "❌"
                 else:
                     status = "✔️"
-                log.info("%s  %s.%s / %s%s",
-                         status, module.__name__.rsplit(".", 1)[1], model.__name__,
-                         (table.schema + ".") if table.schema is not None else "", table.name)
+                log.info(
+                    "%s  %s.%s / %s%s",
+                    status,
+                    module.__name__.rsplit(".", 1)[1],
+                    model.__name__,
+                    (table.schema + ".") if table.schema is not None else "",
+                    table.name,
+                )
             finally:
                 session.close()
     for model, exc in errors:
@@ -58,6 +63,7 @@ def main() -> int:
     if not errors:
         # Synchronization level: 100%.
         from random import choice
+
         log.info("\n%s", choice(nge_phrases))
     return int(bool(errors))
 

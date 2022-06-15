@@ -2,11 +2,13 @@ from datetime import timedelta
 from typing import Any
 from unittest import mock
 
-from ariadne import make_executable_schema, QueryType
-from graphql import graphql_sync, GraphQLResolveInfo
+from ariadne import QueryType, make_executable_schema
+from graphql import GraphQLResolveInfo, graphql_sync
 
-from athenian.api.align.types.goal_metric_value import goal_metric_value, \
-    resolve_goal_metric_value_str
+from athenian.api.align.types.goal_metric_value import (
+    goal_metric_value,
+    resolve_goal_metric_value_str,
+)
 
 
 class TestResolveGoalMetricValueStr:

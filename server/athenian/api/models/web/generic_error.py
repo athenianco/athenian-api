@@ -160,8 +160,12 @@ class BadRequestError(GenericError):
 
         :param detail: The details about this error.
         """
-        super().__init__(type="/errors/BadRequest", title=HTTPStatus.BAD_REQUEST.phrase,
-                         status=HTTPStatus.BAD_REQUEST, detail=detail)
+        super().__init__(
+            type="/errors/BadRequest",
+            title=HTTPStatus.BAD_REQUEST.phrase,
+            status=HTTPStatus.BAD_REQUEST,
+            detail=detail,
+        )
 
 
 class NotFoundError(GenericError):
@@ -172,8 +176,12 @@ class NotFoundError(GenericError):
 
         :param detail: The details about this error.
         """
-        super().__init__(type=type_, title=HTTPStatus.NOT_FOUND.phrase,
-                         status=HTTPStatus.NOT_FOUND, detail=detail)
+        super().__init__(
+            type=type_,
+            title=HTTPStatus.NOT_FOUND.phrase,
+            status=HTTPStatus.NOT_FOUND,
+            detail=detail,
+        )
 
 
 class ForbiddenError(GenericError):
@@ -184,8 +192,12 @@ class ForbiddenError(GenericError):
 
         :param detail: The details about this error.
         """
-        super().__init__(type="/errors/ForbiddenError", title=HTTPStatus.FORBIDDEN.phrase,
-                         status=HTTPStatus.FORBIDDEN, detail=detail)
+        super().__init__(
+            type="/errors/ForbiddenError",
+            title=HTTPStatus.FORBIDDEN.phrase,
+            status=HTTPStatus.FORBIDDEN,
+            detail=detail,
+        )
 
 
 class UnauthorizedError(GenericError):
@@ -196,8 +208,12 @@ class UnauthorizedError(GenericError):
 
         :param detail: The details about this error.
         """
-        super().__init__(type="/errors/Unauthorized", title=HTTPStatus.UNAUTHORIZED.phrase,
-                         status=HTTPStatus.UNAUTHORIZED, detail=detail)
+        super().__init__(
+            type="/errors/Unauthorized",
+            title=HTTPStatus.UNAUTHORIZED.phrase,
+            status=HTTPStatus.UNAUTHORIZED,
+            detail=detail,
+        )
 
 
 class DatabaseConflict(GenericError):
@@ -208,23 +224,29 @@ class DatabaseConflict(GenericError):
 
         :param detail: The details about this error.
         """
-        super().__init__(type="/errors/DatabaseConflict", title=HTTPStatus.CONFLICT.phrase,
-                         status=HTTPStatus.CONFLICT, detail=detail)
+        super().__init__(
+            type="/errors/DatabaseConflict",
+            title=HTTPStatus.CONFLICT.phrase,
+            status=HTTPStatus.CONFLICT,
+            detail=detail,
+        )
 
 
 class TooManyRequestsError(GenericError):
     """HTTP 429."""
 
-    def __init__(self,
-                 detail: Optional[str] = None,
-                 type="/errors/TooManyRequestsError"):
+    def __init__(self, detail: Optional[str] = None, type="/errors/TooManyRequestsError"):
         """Initialize a new instance of TooManyRequestsError.
 
         :param detail: The details about this error.
         :param type: The type identifier of this error.
         """
-        super().__init__(type=type, title=HTTPStatus.TOO_MANY_REQUESTS.phrase,
-                         status=HTTPStatus.TOO_MANY_REQUESTS, detail=detail)
+        super().__init__(
+            type=type,
+            title=HTTPStatus.TOO_MANY_REQUESTS.phrase,
+            status=HTTPStatus.TOO_MANY_REQUESTS,
+            detail=detail,
+        )
 
 
 class ServerNotImplementedError(GenericError):
@@ -235,10 +257,12 @@ class ServerNotImplementedError(GenericError):
 
         :param detail: The details about this error.
         """
-        super().__init__(type="/errors/NotImplemented",
-                         title=HTTPStatus.NOT_IMPLEMENTED.phrase,
-                         status=HTTPStatus.NOT_IMPLEMENTED,
-                         detail=detail)
+        super().__init__(
+            type="/errors/NotImplemented",
+            title=HTTPStatus.NOT_IMPLEMENTED.phrase,
+            status=HTTPStatus.NOT_IMPLEMENTED,
+            detail=detail,
+        )
 
 
 class ServiceUnavailableError(GenericError):
@@ -251,8 +275,10 @@ class ServiceUnavailableError(GenericError):
         :param type: The type identifier of this error.
         :param instance: Sentry event ID of this error.
         """
-        super().__init__(type=type,
-                         title=HTTPStatus.SERVICE_UNAVAILABLE.phrase,
-                         status=HTTPStatus.SERVICE_UNAVAILABLE,
-                         detail=detail,
-                         instance=instance)
+        super().__init__(
+            type=type,
+            title=HTTPStatus.SERVICE_UNAVAILABLE.phrase,
+            status=HTTPStatus.SERVICE_UNAVAILABLE,
+            detail=detail,
+            instance=instance,
+        )

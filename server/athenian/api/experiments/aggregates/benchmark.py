@@ -51,7 +51,12 @@ async def benchmark(sdb_conn_uri: str, adb_conn_uri: str, account: int, n: int):
                 for i in range(n):
                     log.info(
                         "[%s][%d/%d] Running query with granularity %s for interval [%s, %s]",
-                        label, i, n, granularity, from_, to,
+                        label,
+                        i,
+                        n,
+                        granularity,
+                        from_,
+                        to,
                     )
                     start = datetime.now()
                     try:
@@ -64,32 +69,45 @@ async def benchmark(sdb_conn_uri: str, adb_conn_uri: str, account: int, n: int):
                     log.info("Time elapsed: %fs", elapsed)
 
                     records[label][granularity].append(data)
-                    stats_records.append({
-                        "from": from_,
-                        "to": to,
-                        "label": label,
-                        "granularity": granularity,
-                        "elapsed": elapsed,
-                    })
+                    stats_records.append(
+                        {
+                            "from": from_,
+                            "to": to,
+                            "label": label,
+                            "granularity": granularity,
+                            "elapsed": elapsed,
+                        },
+                    )
 
-    stats = pd.DataFrame(stats_records)\
-              .groupby(["from", "to", "label", "granularity"])["elapsed"]\
-              .agg([np.mean, np.std]).reset_index()
-    pr_numbers_per_label = pd.DataFrame([
-        {
-            "label": label,
-            "number_of_prs": dict(records[label]["all"][0][0])["cycle_count"],
-        } for label in [f[1] for f in froms]
-    ])
+    stats = (
+        pd.DataFrame(stats_records)
+        .groupby(["from", "to", "label", "granularity"])["elapsed"]
+        .agg([np.mean, np.std])
+        .reset_index()
+    )
+    pr_numbers_per_label = pd.DataFrame(
+        [
+            {
+                "label": label,
+                "number_of_prs": dict(records[label]["all"][0][0])["cycle_count"],
+            }
+            for label in [f[1] for f in froms]
+        ],
+    )
 
-    full_stats = stats.join(pr_numbers_per_label.set_index("label"), on="label")\
-                      .sort_values(by=["granularity", "number_of_prs"])
+    full_stats = stats.join(pr_numbers_per_label.set_index("label"), on="label").sort_values(
+        by=["granularity", "number_of_prs"],
+    )
     print(full_stats)
 
 
-async def _run_query(adb: ParallelDatabase,
-                     repositories: List[str],
-                     from_: datetime, to: datetime, granularity: str) -> pd.DataFrame:
+async def _run_query(
+    adb: ParallelDatabase,
+    repositories: List[str],
+    from_: datetime,
+    to: datetime,
+    granularity: str,
+) -> pd.DataFrame:
     # TODO: these queries assume that the release setting do not change.
     # This has to be fixed by including in the filtering:
     #
@@ -219,16 +237,40 @@ ORDER BY timestamp
 
 def _parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--state-db", required=True, dest="sdb_conn",
-                        help="State DB endpoint, e.g. postgresql://0.0.0.0:5432/state")
-    parser.add_argument("--aggregates-db", required=True, dest="adb_conn",
-                        help="Aggregates DB endpoint, e.g. postgresql://0.0.0.0:5432/aggregates")
-    parser.add_argument("--account", required=True, type=int, dest="account",
-                        help="Account to benchmark the metrics aggregation for")
-    parser.add_argument("--debug", required=False, action="store_true", dest="debug",
-                        help="Whether to run in debug mode")
-    parser.add_argument("--n", required=False, type=int, dest="n", default=10,
-                        help="Number of runs for each interval (default: 10)")
+    parser.add_argument(
+        "--state-db",
+        required=True,
+        dest="sdb_conn",
+        help="State DB endpoint, e.g. postgresql://0.0.0.0:5432/state",
+    )
+    parser.add_argument(
+        "--aggregates-db",
+        required=True,
+        dest="adb_conn",
+        help="Aggregates DB endpoint, e.g. postgresql://0.0.0.0:5432/aggregates",
+    )
+    parser.add_argument(
+        "--account",
+        required=True,
+        type=int,
+        dest="account",
+        help="Account to benchmark the metrics aggregation for",
+    )
+    parser.add_argument(
+        "--debug",
+        required=False,
+        action="store_true",
+        dest="debug",
+        help="Whether to run in debug mode",
+    )
+    parser.add_argument(
+        "--n",
+        required=False,
+        type=int,
+        dest="n",
+        default=10,
+        help="Number of runs for each interval (default: 10)",
+    )
 
     return parser.parse_args()
 
@@ -236,8 +278,7 @@ def _parse_args():
 def main():
     """Run benchmark for metrics aggregation query."""
     args = _parse_args()
-    asyncio.run(benchmark(args.sdb_conn, args.adb_conn, args.account, args.n),
-                debug=args.debug)
+    asyncio.run(benchmark(args.sdb_conn, args.adb_conn, args.account, args.n), debug=args.debug)
 
 
 if __name__ == "__main__":

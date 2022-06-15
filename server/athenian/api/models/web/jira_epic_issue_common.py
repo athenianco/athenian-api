@@ -43,23 +43,24 @@ class JIRAEpicIssueCommon(Model, sealed=False):
         "url": "url",
     }
 
-    def __init__(self,
-                 id: Optional[str] = None,
-                 title: Optional[str] = None,
-                 created: Optional[datetime] = None,
-                 updated: Optional[datetime] = None,
-                 work_began: Optional[datetime] = None,
-                 resolved: Optional[datetime] = None,
-                 lead_time: Optional[timedelta] = None,
-                 life_time: Optional[timedelta] = None,
-                 reporter: Optional[str] = None,
-                 assignee: Optional[str] = None,
-                 comments: Optional[int] = None,
-                 priority: Optional[str] = None,
-                 status: Optional[str] = None,
-                 type: Optional[str] = None,
-                 url: Optional[str] = None,
-                 ):
+    def __init__(
+        self,
+        id: Optional[str] = None,
+        title: Optional[str] = None,
+        created: Optional[datetime] = None,
+        updated: Optional[datetime] = None,
+        work_began: Optional[datetime] = None,
+        resolved: Optional[datetime] = None,
+        lead_time: Optional[timedelta] = None,
+        life_time: Optional[timedelta] = None,
+        reporter: Optional[str] = None,
+        assignee: Optional[str] = None,
+        comments: Optional[int] = None,
+        priority: Optional[str] = None,
+        status: Optional[str] = None,
+        type: Optional[str] = None,
+        url: Optional[str] = None,
+    ):
         """JIRAEpicChild - a model defined in OpenAPI
 
         :param id: The id of this JIRAEpicIssueCommon.

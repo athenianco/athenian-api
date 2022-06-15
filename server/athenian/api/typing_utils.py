@@ -4,8 +4,21 @@ import dataclasses
 from datetime import datetime, timedelta
 from itertools import chain
 import sys
-from typing import Any, Callable, Dict, Iterable, Iterator, List, Mapping, NamedTuple, \
-    Optional, Tuple, Type, TypeVar, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    Iterator,
+    List,
+    Mapping,
+    NamedTuple,
+    Optional,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+)
 
 import numpy as np
 import pandas as pd
@@ -15,18 +28,21 @@ import xxhash
 
 from athenian.api.tracing import sentry_span
 
-
 OriginalSpecialForm = type(Any)
 
 if sys.version_info < (3, 10):
+
     class _VerbatimOptional(OriginalSpecialForm, _root=True):
         cache = {}
 
         def __init__(self):
-            super().__init__("Optional", """
+            super().__init__(
+                "Optional",
+                """
             Alternative Optional that prevents coercing (), [], and {} attributes to null during
             serialization.
-            """)
+            """,
+            )
 
         def __getitem__(self, parameters):
             typeobj = super().__getitem__(parameters)
@@ -43,6 +59,7 @@ if sys.version_info < (3, 10):
 
     VerbatimOptional = _VerbatimOptional()
 else:
+
     class _VerbatimUnion(OriginalSpecialForm, _root=True):
         __slots__ = ("__verbatim__",)
 
@@ -82,8 +99,9 @@ def is_union(klass: type):
 
 def is_optional(klass: type):
     """Determine whether klass is an Optional."""
-    return is_union(klass) and \
-        len(klass.__args__) == 2 and issubclass(klass.__args__[1], type(None))
+    return (
+        is_union(klass) and len(klass.__args__) == 2 and issubclass(klass.__args__[1], type(None))
+    )
 
 
 def wraps(wrapper, wrappee):
@@ -100,12 +118,14 @@ def wraps(wrapper, wrappee):
 T = TypeVar("T")
 
 
-def dataclass(cls: Optional[T] = None,
-              /, *,
-              slots=False,
-              first_mutable: Optional[str] = None,
-              **kwargs,
-              ) -> Union[T, Type[Mapping[str, Any]]]:
+def dataclass(
+    cls: Optional[T] = None,
+    /,
+    *,
+    slots=False,
+    first_mutable: Optional[str] = None,
+    **kwargs,
+) -> Union[T, Type[Mapping[str, Any]]]:
     """
     Generate a dataclasses.dataclass with optional __slots__.
 
@@ -114,6 +134,7 @@ def dataclass(cls: Optional[T] = None,
                           considered mutable and optional. Such fields are not pickled and can be \
                           changed even though the instance is frozen.
     """
+
     def wrap(cls):
         cls = dataclasses.dataclass(cls, **kwargs)
         if slots:
@@ -131,7 +152,8 @@ def dataclass(cls: Optional[T] = None,
 
 # Caching context indicator. By default, we don't save the mutable optional fields.
 _serialize_mutable_fields_in_dataclasses = ContextVar(
-    "serialize_mutable_fields_in_dataclasses", default=False)
+    "serialize_mutable_fields_in_dataclasses", default=False,
+)
 
 
 @contextmanager
@@ -145,9 +167,10 @@ def serialize_mutable_fields_in_dataclasses():
         _serialize_mutable_fields_in_dataclasses.set(False)
 
 
-def _add_slots_to_dataclass(cls: T,
-                            first_mutable: Optional[str],
-                            ) -> Union[T, Type[Mapping[str, Any]]]:
+def _add_slots_to_dataclass(
+    cls: T,
+    first_mutable: Optional[str],
+) -> Union[T, Type[Mapping[str, Any]]]:
     """Set __slots__ of a dataclass, and make it a Mapping to compensate for a missing __dict__."""
     # Need to create a new class, since we can't set __slots__ after a class has been created.
 
@@ -168,12 +191,19 @@ def _add_slots_to_dataclass(cls: T,
     if (hash_method := cls_dict.pop("__hash__", None)) is not None:
         cls_dict["__hash__"] = hash_method
     else:
+
         def __hash__(self) -> int:
             """Implement hash() over the immutable fields."""
-            return hash(tuple(
-                (xxhash.xxh64_intdigest(x.view(np.uint8).data) if isinstance(x, np.ndarray) else x)
-                for x in self.__getstate__()
-            ))
+            return hash(
+                tuple(
+                    (
+                        xxhash.xxh64_intdigest(x.view(np.uint8).data)
+                        if isinstance(x, np.ndarray)
+                        else x
+                    )
+                    for x in self.__getstate__()
+                ),
+            )
 
         cls_dict["__hash__"] = __hash__
     qualname = getattr(cls, "__qualname__", None)
@@ -184,6 +214,7 @@ def _add_slots_to_dataclass(cls: T,
         first_mutable_index = field_names.index(first_mutable)
     mutable_fields = set(field_names[first_mutable_index:])
     if first_mutable is not None:
+
         def __setattr__(self, attr: str, val: Any) -> None:
             """Alternative to __setattr__ that works with mutable optional fields."""
             assert attr in mutable_fields, "You can only change mutable optional fields."
@@ -230,7 +261,7 @@ def _add_slots_to_dataclass(cls: T,
                 object.__setattr__(self, attr, val)
             # Fields with a default value.
             if len(self.__slots__) > len(state):
-                for field in dataclasses.fields(self)[len(state):]:
+                for field in dataclasses.fields(self)[len(state) :]:
                     object.__setattr__(self, field.name, field.default)
 
     # And finally create the class.
@@ -292,16 +323,18 @@ class NumpyStruct(Mapping[str, Any]):
                     value = value.replace(tzinfo=None)
                 arr[field_name] = np.asarray(value, field_dtype)
             else:
-                if is_str := ((is_ascii := _dtype_is_ascii(nested_dtype)) or
-                              nested_dtype.char in ("S", "U")):
+                if is_str := (
+                    (is_ascii := _dtype_is_ascii(nested_dtype)) or nested_dtype.char in ("S", "U")
+                ):
                     if isinstance(value, np.ndarray):
                         if value.dtype == np.dtype(object):
                             nan_mask = value == np.array([None])
                         else:
                             nan_mask = np.full(len(value), False)
                     else:
-                        nan_mask = np.fromiter((v is None for v in value),
-                                               dtype=np.bool_, count=len(value))
+                        nan_mask = np.fromiter(
+                            (v is None for v in value), dtype=np.bool_, count=len(value),
+                        )
                     if is_ascii:
                         nested_dtype = np.dtype("S")
                 value = np.asarray(value, nested_dtype)
@@ -314,7 +347,8 @@ class NumpyStruct(Mapping[str, Any]):
                 pointer = [offset, len(value)]
                 if is_str and (is_ascii or nested_dtype.itemsize == 0):
                     pointer.append(
-                        value.dtype.itemsize // np.dtype(nested_dtype.char + "1").itemsize)
+                        value.dtype.itemsize // np.dtype(nested_dtype.char + "1").itemsize,
+                    )
                 arr[field_name] = pointer
                 offset += len(data)
         if not extra_bytes:
@@ -336,7 +370,7 @@ class NumpyStruct(Mapping[str, Any]):
     @property
     def coerced_data(self) -> memoryview:
         """Return prefix of `data` with nested immutable objects excluded."""
-        return memoryview(self.data)[:self.dtype.itemsize]
+        return memoryview(self.data)[: self.dtype.itemsize]
 
     def __getitem__(self, item: str) -> Any:
         """Implement self[]."""
@@ -381,8 +415,7 @@ class NumpyStruct(Mapping[str, Any]):
             return True
 
         if self.__class__ is not other.__class__:
-            raise NotImplementedError(
-                f"Cannot compare {self.__class__} and {other.__class__}")
+            raise NotImplementedError(f"Cannot compare {self.__class__} and {other.__class__}")
 
         return self.data == other.data
 
@@ -403,9 +436,10 @@ class NumpyStruct(Mapping[str, Any]):
         return type(self)(self.data, **{attr: getattr(self, attr) for attr in self.__slots__[2:]})
 
     @staticmethod
-    def _generate_get(name: str,
-                      type_: Union[str, np.dtype, List[Union[str, np.dtype]]],
-                      ) -> Callable[["NumpyStruct"], Any]:
+    def _generate_get(
+        name: str,
+        type_: Union[str, np.dtype, List[Union[str, np.dtype]]],
+    ) -> Callable[["NumpyStruct"], Any]:
         if _dtype_is_ascii(type_):
             type_ = str
         elif isinstance(type_, list):
@@ -429,8 +463,9 @@ class NumpyStruct(Mapping[str, Any]):
                 if type_ in (str, np.str_):
                     value = value or None
                 return value
-            if (_dtype_is_ascii(nested_dtype) and (char := "S")) or \
-                    ((char := nested_dtype.char) in ("S", "U") and nested_dtype.itemsize == 0):
+            if (_dtype_is_ascii(nested_dtype) and (char := "S")) or (
+                (char := nested_dtype.char) in ("S", "U") and nested_dtype.itemsize == 0
+            ):
                 offset, count, itemsize = value
                 nested_dtype = f"{char}{itemsize}"
             else:
@@ -479,8 +514,11 @@ def numpy_struct(cls):
         f"{cls.__name__}FieldNames",
         [(k, str) for k in chain(dtype, optional)],
     )(*chain(dtype, optional))
-    base = type(cls.__name__ + "Base", (NumpyStruct,),
-                {k: property(NumpyStruct._generate_get(k, v)) for k, v in dtype.items()})
+    base = type(
+        cls.__name__ + "Base",
+        (NumpyStruct,),
+        {k: property(NumpyStruct._generate_get(k, v)) for k, v in dtype.items()},
+    )
     body = {
         "__slots__": ("_data", "_arr", *optional),
         "dtype": np.dtype(dtype_tuples),
@@ -494,9 +532,10 @@ def numpy_struct(cls):
 
 
 @sentry_span
-def df_from_structs(items: Iterable[NumpyStruct],
-                    length: Optional[int] = None,
-                    ) -> pd.DataFrame:
+def df_from_structs(
+    items: Iterable[NumpyStruct],
+    length: Optional[int] = None,
+) -> pd.DataFrame:
     """
     Combine several NumpyStruct-s to a Pandas DataFrame.
 
@@ -546,7 +585,7 @@ def df_from_structs(items: Iterable[NumpyStruct],
                 columns[k] = column = [None] * length
                 column[0] = v
         for i, item in enumerate(items_iter, 1):
-            coerced_datas[i * itemsize:(i + 1) * itemsize] = item.coerced_data
+            coerced_datas[i * itemsize : (i + 1) * itemsize] = item.coerced_data
             for k in columns:
                 columns[k][i] = item[k]
         table_array = np.frombuffer(coerced_datas, dtype=dtype)

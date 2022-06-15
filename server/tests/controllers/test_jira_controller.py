@@ -13,25 +13,65 @@ from athenian.api.internal.settings import LogicalRepositorySettings
 from athenian.api.models.metadata.github import NodePullRequestJiraIssues, PullRequest
 from athenian.api.models.metadata.jira import Issue
 from athenian.api.models.state.models import MappedJIRAIdentity
-from athenian.api.models.web import CalculatedJIRAHistogram, CalculatedJIRAMetricValues, \
-    CalculatedLinearMetricValues, DeployedComponent, DeploymentNotification, FilteredJIRAStuff, \
-    JIRAEpic, JIRAEpicChild, JIRAFilterReturn, JIRAIssueType, JIRALabel, JIRAMetricID, \
-    JIRAPriority, JIRAStatus, JIRAUser
+from athenian.api.models.web import (
+    CalculatedJIRAHistogram,
+    CalculatedJIRAMetricValues,
+    CalculatedLinearMetricValues,
+    DeployedComponent,
+    DeploymentNotification,
+    FilteredJIRAStuff,
+    JIRAEpic,
+    JIRAEpicChild,
+    JIRAFilterReturn,
+    JIRAIssueType,
+    JIRALabel,
+    JIRAMetricID,
+    JIRAPriority,
+    JIRAStatus,
+    JIRAUser,
+)
 from athenian.api.serialization import FriendlyJson
 
 
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
-@pytest.mark.parametrize("return_, checked", [
-    (None, set(JIRAFilterReturn)),
-    ([], set(JIRAFilterReturn) - {JIRAFilterReturn.ONLY_FLYING}),
-    [*([list(set(JIRAFilterReturn) - {JIRAFilterReturn.ONLY_FLYING})] * 2)],
-    ([JIRAFilterReturn.EPICS], {JIRAFilterReturn.EPICS}),
-    [*([[JIRAFilterReturn.EPICS, JIRAFilterReturn.PRIORITIES, JIRAFilterReturn.STATUSES]] * 2)],
-    ([JIRAFilterReturn.ISSUES], ()),
-    [*([[JIRAFilterReturn.ISSUES, JIRAFilterReturn.PRIORITIES, JIRAFilterReturn.STATUSES,
-         JIRAFilterReturn.ISSUE_TYPES, JIRAFilterReturn.USERS, JIRAFilterReturn.LABELS]] * 2)],
-])
+@pytest.mark.parametrize(
+    "return_, checked",
+    [
+        (None, set(JIRAFilterReturn)),
+        ([], set(JIRAFilterReturn) - {JIRAFilterReturn.ONLY_FLYING}),
+        [*([list(set(JIRAFilterReturn) - {JIRAFilterReturn.ONLY_FLYING})] * 2)],
+        ([JIRAFilterReturn.EPICS], {JIRAFilterReturn.EPICS}),
+        [
+            *(
+                [
+                    [
+                        JIRAFilterReturn.EPICS,
+                        JIRAFilterReturn.PRIORITIES,
+                        JIRAFilterReturn.STATUSES,
+                    ],
+                ]
+                * 2
+            ),
+        ],
+        ([JIRAFilterReturn.ISSUES], ()),
+        [
+            *(
+                [
+                    [
+                        JIRAFilterReturn.ISSUES,
+                        JIRAFilterReturn.PRIORITIES,
+                        JIRAFilterReturn.STATUSES,
+                        JIRAFilterReturn.ISSUE_TYPES,
+                        JIRAFilterReturn.USERS,
+                        JIRAFilterReturn.LABELS,
+                    ],
+                ]
+                * 2
+            ),
+        ],
+    ],
+)
 async def test_filter_jira_return(client, headers, return_, checked):
     body = {
         "date_from": "2019-10-13",
@@ -50,215 +90,435 @@ async def test_filter_jira_return(client, headers, return_, checked):
     model = FilteredJIRAStuff.from_dict(json.loads(body))
     if "labels" in checked:
         assert model.labels == [
-            JIRALabel(title="API",
-                      last_used=datetime(2020, 7, 13, 17, 45, 58, tzinfo=tzutc()),
-                      issues_count=4, kind="component"),
-            JIRALabel(title="Webapp",
-                      last_used=datetime(2020, 7, 13, 17, 45, 58, tzinfo=tzutc()),
-                      issues_count=1, kind="component"),
-            JIRALabel(title="accounts",
-                      last_used=datetime(2020, 12, 15, 10, 16, 15, tzinfo=tzutc()),
-                      issues_count=1, kind="regular"),
-            JIRALabel(title="bug",
-                      last_used=datetime(2020, 6, 1, 7, 15, 7, tzinfo=tzutc()),
-                      issues_count=16, kind="regular"),
-            JIRALabel(title="code-quality",
-                      last_used=datetime(2020, 6, 4, 11, 35, 12, tzinfo=tzutc()),
-                      issues_count=1, kind="regular"),
-            JIRALabel(title="discarded",
-                      last_used=datetime(2020, 6, 1, 1, 27, 23, tzinfo=tzutc()),
-                      issues_count=4, kind="regular"),
-            JIRALabel(title="discussion",
-                      last_used=datetime(2020, 3, 31, 21, 16, 11, tzinfo=tzutc()),
-                      issues_count=3, kind="regular"),
-            JIRALabel(title="feature",
-                      last_used=datetime(2020, 4, 3, 18, 48, tzinfo=tzutc()),
-                      issues_count=6, kind="regular"),
-            JIRALabel(title="functionality",
-                      last_used=datetime(2020, 6, 4, 11, 35, 15, tzinfo=tzutc()), issues_count=1,
-                      kind="regular"),
-            JIRALabel(title="internal-story",
-                      last_used=datetime(2020, 6, 1, 7, 15, 7, tzinfo=tzutc()),
-                      issues_count=11, kind="regular"),
-            JIRALabel(title="needs-specs",
-                      last_used=datetime(2020, 4, 6, 13, 25, 2, tzinfo=tzutc()),
-                      issues_count=4, kind="regular"),
-            JIRALabel(title="onboarding",
-                      last_used=datetime(2020, 7, 13, 17, 45, 58, tzinfo=tzutc()),
-                      issues_count=1, kind="regular"),
-            JIRALabel(title="performance",
-                      last_used=datetime(2020, 3, 31, 21, 16, 5, tzinfo=tzutc()),
-                      issues_count=1, kind="regular"),
-            JIRALabel(title="user-story",
-                      last_used=datetime(2020, 4, 3, 18, 48, tzinfo=tzutc()),
-                      issues_count=5, kind="regular"),
-            JIRALabel(title="webapp",
-                      last_used=datetime(2020, 4, 3, 18, 47, 6, tzinfo=tzutc()),
-                      issues_count=1, kind="regular"),
+            JIRALabel(
+                title="API",
+                last_used=datetime(2020, 7, 13, 17, 45, 58, tzinfo=tzutc()),
+                issues_count=4,
+                kind="component",
+            ),
+            JIRALabel(
+                title="Webapp",
+                last_used=datetime(2020, 7, 13, 17, 45, 58, tzinfo=tzutc()),
+                issues_count=1,
+                kind="component",
+            ),
+            JIRALabel(
+                title="accounts",
+                last_used=datetime(2020, 12, 15, 10, 16, 15, tzinfo=tzutc()),
+                issues_count=1,
+                kind="regular",
+            ),
+            JIRALabel(
+                title="bug",
+                last_used=datetime(2020, 6, 1, 7, 15, 7, tzinfo=tzutc()),
+                issues_count=16,
+                kind="regular",
+            ),
+            JIRALabel(
+                title="code-quality",
+                last_used=datetime(2020, 6, 4, 11, 35, 12, tzinfo=tzutc()),
+                issues_count=1,
+                kind="regular",
+            ),
+            JIRALabel(
+                title="discarded",
+                last_used=datetime(2020, 6, 1, 1, 27, 23, tzinfo=tzutc()),
+                issues_count=4,
+                kind="regular",
+            ),
+            JIRALabel(
+                title="discussion",
+                last_used=datetime(2020, 3, 31, 21, 16, 11, tzinfo=tzutc()),
+                issues_count=3,
+                kind="regular",
+            ),
+            JIRALabel(
+                title="feature",
+                last_used=datetime(2020, 4, 3, 18, 48, tzinfo=tzutc()),
+                issues_count=6,
+                kind="regular",
+            ),
+            JIRALabel(
+                title="functionality",
+                last_used=datetime(2020, 6, 4, 11, 35, 15, tzinfo=tzutc()),
+                issues_count=1,
+                kind="regular",
+            ),
+            JIRALabel(
+                title="internal-story",
+                last_used=datetime(2020, 6, 1, 7, 15, 7, tzinfo=tzutc()),
+                issues_count=11,
+                kind="regular",
+            ),
+            JIRALabel(
+                title="needs-specs",
+                last_used=datetime(2020, 4, 6, 13, 25, 2, tzinfo=tzutc()),
+                issues_count=4,
+                kind="regular",
+            ),
+            JIRALabel(
+                title="onboarding",
+                last_used=datetime(2020, 7, 13, 17, 45, 58, tzinfo=tzutc()),
+                issues_count=1,
+                kind="regular",
+            ),
+            JIRALabel(
+                title="performance",
+                last_used=datetime(2020, 3, 31, 21, 16, 5, tzinfo=tzutc()),
+                issues_count=1,
+                kind="regular",
+            ),
+            JIRALabel(
+                title="user-story",
+                last_used=datetime(2020, 4, 3, 18, 48, tzinfo=tzutc()),
+                issues_count=5,
+                kind="regular",
+            ),
+            JIRALabel(
+                title="webapp",
+                last_used=datetime(2020, 4, 3, 18, 47, 6, tzinfo=tzutc()),
+                issues_count=1,
+                kind="regular",
+            ),
         ]
     else:
         assert model.labels is None
     if "epics" in checked:
         true_epics = [
-            JIRAEpic(id="ENG-1", title="Evaluate our product and process internally",
-                     created=datetime(2019, 12, 2, 14, 19, 58, 762),
-                     updated=datetime(2020, 6, 1, 7, 19, 0, 316),
-                     work_began=datetime(2020, 6, 1, 7, 19, 0, 335),
-                     resolved=datetime(2020, 6, 1, 7, 19, 0, 335),
-                     lead_time=timedelta(0), life_time=timedelta(days=181, seconds=61141),
-                     reporter="Lou Marvin Caraig", assignee="Waren Long", comments=0,
-                     priority="Medium", status="Done", prs=0, project="10003", children=[],
-                     type="Epic",
-                     url="https://athenianco.atlassian.net/browse/ENG-1"),
-            JIRAEpic(id="DEV-70", title="Show the installation progress in the waiting page",
-                     created=datetime(2020, 1, 22, 16, 57, 10, 253),
-                     updated=datetime(2020, 7, 13, 17, 45, 58, 294),
-                     work_began=datetime(2020, 6, 2, 11, 40, 42, 905),
-                     resolved=datetime(2020, 7, 13, 17, 45, 58, 305),
-                     lead_time=timedelta(days=41, seconds=21915),
-                     life_time=timedelta(days=173, seconds=2928),
-                     reporter="Lou Marvin Caraig", assignee="David Pordomingo",
-                     url="https://athenianco.atlassian.net/browse/DEV-70",
-                     comments=8, priority="Low", status="Released", type="Epic",
-                     prs=0, project="10009", children=[
-                         JIRAEpicChild(
-                             id="DEV-183",
-                             title="Implement the endpoint that returns the installation progress",
-                             created=datetime(2020, 6, 2, 11, 7, 36, 558),
-                             updated=datetime(2020, 6, 2, 11, 40, 42, 891),
-                             work_began=datetime(2020, 6, 2, 11, 40, 42, 905),
-                             resolved=datetime(2020, 6, 2, 11, 40, 42, 905),
-                             lead_time=timedelta(0), life_time=timedelta(seconds=1986),
-                             reporter="Waren Long", assignee="Vadim Markovtsev",
-                             comments=1, priority="Low", status="Closed", prs=0, type="Task",
-                             subtasks=0, url="https://athenianco.atlassian.net/browse/DEV-183"),
-                         JIRAEpicChild(
-                             id="DEV-228",
-                             title="Consider installation progress without updates during 3 hours as complete",  # noqa
-                             created=datetime(2020, 6, 8, 9, 0, 22, 517),
-                             updated=datetime(2020, 6, 16, 18, 12, 38, 634),
-                             work_began=datetime(2020, 6, 9, 10, 8, 15, 357),
-                             resolved=datetime(2020, 6, 9, 10, 34, 7, 221),
-                             lead_time=timedelta(seconds=1551),
-                             life_time=timedelta(days=1, seconds=5624),
-                             reporter="Vadim Markovtsev", assignee="Vadim Markovtsev",
-                             comments=1, priority="Medium",
-                             status="Released", prs=0, type="Task", subtasks=0,
-                             url="https://athenianco.atlassian.net/browse/DEV-228"),
-                        JIRAEpicChild(
-                            id="DEV-315",
-                            title="Add a progress bar in the waiting page to show the installation progress",  # noqa
-                            created=datetime(2020, 6, 18, 21, 51, 19, 344),
-                            updated=datetime(2020, 7, 27, 16, 56, 20, 144),
-                            work_began=datetime(2020, 6, 25, 17, 8, 11, 311),
-                            resolved=datetime(2020, 7, 13, 17, 43, 20, 317),
-                            lead_time=timedelta(days=18, seconds=2109),
-                            life_time=timedelta(days=24, seconds=71520),
-                            reporter="Waren Long", assignee="David Pordomingo",
-                            comments=4, priority="High", status="Released", prs=0, type="Story",
-                            subtasks=0, url="https://athenianco.atlassian.net/browse/DEV-315"),
-                        JIRAEpicChild(
-                            id="DEV-364",
-                            title="Block the access to the Overview page until the installation is 100% complete",  # noqa
-                            created=datetime(2020, 6, 25, 16, 12, 34, 233),
-                            updated=datetime(2020, 7, 27, 16, 56, 22, 968),
-                            work_began=datetime(2020, 7, 2, 4, 23, 20, 3),
-                            resolved=datetime(2020, 7, 13, 17, 46, 15, 634),
-                            lead_time=timedelta(days=11, seconds=48175),
-                            life_time=timedelta(days=18, seconds=5621),
-                            reporter="Waren Long", assignee="David Pordomingo",
-                            comments=1, priority="Medium", status="Released", prs=0, type="Story",
-                            subtasks=0, url="https://athenianco.atlassian.net/browse/DEV-364"),
-                        JIRAEpicChild(
-                            id="DEV-365",
-                            title="Design the success view telling the user the installation is complete and the account ready to use",  # noqa
-                            created=datetime(2020, 6, 25, 16, 17, 14, 436),
-                            updated=datetime(2020, 6, 26, 9, 38, 36, 635),
-                            work_began=datetime(2020, 6, 26, 9, 33, 9, 184),
-                            resolved=datetime(2020, 6, 26, 9, 35, 43, 579),
-                            lead_time=timedelta(seconds=154),
-                            life_time=timedelta(seconds=62309),
-                            reporter="Waren Long", assignee="Zuri Negrin",
-                            comments=2, priority="Medium", status="Released", prs=0, type="Story",
-                            subtasks=0, url="https://athenianco.atlassian.net/browse/DEV-365"),
-                     ]),
+            JIRAEpic(
+                id="ENG-1",
+                title="Evaluate our product and process internally",
+                created=datetime(2019, 12, 2, 14, 19, 58, 762),
+                updated=datetime(2020, 6, 1, 7, 19, 0, 316),
+                work_began=datetime(2020, 6, 1, 7, 19, 0, 335),
+                resolved=datetime(2020, 6, 1, 7, 19, 0, 335),
+                lead_time=timedelta(0),
+                life_time=timedelta(days=181, seconds=61141),
+                reporter="Lou Marvin Caraig",
+                assignee="Waren Long",
+                comments=0,
+                priority="Medium",
+                status="Done",
+                prs=0,
+                project="10003",
+                children=[],
+                type="Epic",
+                url="https://athenianco.atlassian.net/browse/ENG-1",
+            ),
+            JIRAEpic(
+                id="DEV-70",
+                title="Show the installation progress in the waiting page",
+                created=datetime(2020, 1, 22, 16, 57, 10, 253),
+                updated=datetime(2020, 7, 13, 17, 45, 58, 294),
+                work_began=datetime(2020, 6, 2, 11, 40, 42, 905),
+                resolved=datetime(2020, 7, 13, 17, 45, 58, 305),
+                lead_time=timedelta(days=41, seconds=21915),
+                life_time=timedelta(days=173, seconds=2928),
+                reporter="Lou Marvin Caraig",
+                assignee="David Pordomingo",
+                url="https://athenianco.atlassian.net/browse/DEV-70",
+                comments=8,
+                priority="Low",
+                status="Released",
+                type="Epic",
+                prs=0,
+                project="10009",
+                children=[
+                    JIRAEpicChild(
+                        id="DEV-183",
+                        title="Implement the endpoint that returns the installation progress",
+                        created=datetime(2020, 6, 2, 11, 7, 36, 558),
+                        updated=datetime(2020, 6, 2, 11, 40, 42, 891),
+                        work_began=datetime(2020, 6, 2, 11, 40, 42, 905),
+                        resolved=datetime(2020, 6, 2, 11, 40, 42, 905),
+                        lead_time=timedelta(0),
+                        life_time=timedelta(seconds=1986),
+                        reporter="Waren Long",
+                        assignee="Vadim Markovtsev",
+                        comments=1,
+                        priority="Low",
+                        status="Closed",
+                        prs=0,
+                        type="Task",
+                        subtasks=0,
+                        url="https://athenianco.atlassian.net/browse/DEV-183",
+                    ),
+                    JIRAEpicChild(
+                        id="DEV-228",
+                        title=(
+                            "Consider installation progress without updates during 3 hours "
+                            "as complete"
+                        ),
+                        created=datetime(2020, 6, 8, 9, 0, 22, 517),
+                        updated=datetime(2020, 6, 16, 18, 12, 38, 634),
+                        work_began=datetime(2020, 6, 9, 10, 8, 15, 357),
+                        resolved=datetime(2020, 6, 9, 10, 34, 7, 221),
+                        lead_time=timedelta(seconds=1551),
+                        life_time=timedelta(days=1, seconds=5624),
+                        reporter="Vadim Markovtsev",
+                        assignee="Vadim Markovtsev",
+                        comments=1,
+                        priority="Medium",
+                        status="Released",
+                        prs=0,
+                        type="Task",
+                        subtasks=0,
+                        url="https://athenianco.atlassian.net/browse/DEV-228",
+                    ),
+                    JIRAEpicChild(
+                        id="DEV-315",
+                        title=(
+                            "Add a progress bar in the waiting page to show the installation"
+                            " progress"
+                        ),
+                        created=datetime(2020, 6, 18, 21, 51, 19, 344),
+                        updated=datetime(2020, 7, 27, 16, 56, 20, 144),
+                        work_began=datetime(2020, 6, 25, 17, 8, 11, 311),
+                        resolved=datetime(2020, 7, 13, 17, 43, 20, 317),
+                        lead_time=timedelta(days=18, seconds=2109),
+                        life_time=timedelta(days=24, seconds=71520),
+                        reporter="Waren Long",
+                        assignee="David Pordomingo",
+                        comments=4,
+                        priority="High",
+                        status="Released",
+                        prs=0,
+                        type="Story",
+                        subtasks=0,
+                        url="https://athenianco.atlassian.net/browse/DEV-315",
+                    ),
+                    JIRAEpicChild(
+                        id="DEV-364",
+                        title=(
+                            "Block the access to the Overview page until the installation is 100%"
+                            " complete"
+                        ),
+                        created=datetime(2020, 6, 25, 16, 12, 34, 233),
+                        updated=datetime(2020, 7, 27, 16, 56, 22, 968),
+                        work_began=datetime(2020, 7, 2, 4, 23, 20, 3),
+                        resolved=datetime(2020, 7, 13, 17, 46, 15, 634),
+                        lead_time=timedelta(days=11, seconds=48175),
+                        life_time=timedelta(days=18, seconds=5621),
+                        reporter="Waren Long",
+                        assignee="David Pordomingo",
+                        comments=1,
+                        priority="Medium",
+                        status="Released",
+                        prs=0,
+                        type="Story",
+                        subtasks=0,
+                        url="https://athenianco.atlassian.net/browse/DEV-364",
+                    ),
+                    JIRAEpicChild(
+                        id="DEV-365",
+                        title=(
+                            "Design the success view telling the user the installation is complete"
+                            " and the account ready to use"
+                        ),
+                        created=datetime(2020, 6, 25, 16, 17, 14, 436),
+                        updated=datetime(2020, 6, 26, 9, 38, 36, 635),
+                        work_began=datetime(2020, 6, 26, 9, 33, 9, 184),
+                        resolved=datetime(2020, 6, 26, 9, 35, 43, 579),
+                        lead_time=timedelta(seconds=154),
+                        life_time=timedelta(seconds=62309),
+                        reporter="Waren Long",
+                        assignee="Zuri Negrin",
+                        comments=2,
+                        priority="Medium",
+                        status="Released",
+                        prs=0,
+                        type="Story",
+                        subtasks=0,
+                        url="https://athenianco.atlassian.net/browse/DEV-365",
+                    ),
+                ],
+            ),
         ]
         assert model.epics == true_epics
     else:
         assert model.epics is None
     if "issue_types" in checked:
         assert model.issue_types == [
-            JIRAIssueType(name="Design document", count=10, project="10003", is_subtask=False,
-                          normalized_name="designdocument", is_epic=False,
-                          image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10322&avatarType=issuetype"),  # noqa
-            JIRAIssueType(name="Epic", count=1, project="10003", is_subtask=False,
-                          normalized_name="epic", is_epic=True,
-                          image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10307&avatarType=issuetype"),  # noqa
-            JIRAIssueType(name="Epic", count=1, is_epic=True,
-                          image="https://athenianco.atlassian.net/images/icons/issuetypes/epic.svg",  # noqa
-                          project="10009", is_subtask=False, normalized_name="epic"),
-            JIRAIssueType(name="Story", count=49, project="10003", is_subtask=False,
-                          normalized_name="story", is_epic=False,
-                          image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10315&avatarType=issuetype"),  # noqa
-            JIRAIssueType(name="Subtask", count=98, project="10003", is_subtask=True,
-                          normalized_name="subtask", is_epic=False,
-                          image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10316&avatarType=issuetype"),  # noqa
-            JIRAIssueType(name="Task", count=4, project="10003", is_subtask=False,
-                          normalized_name="task", is_epic=False,
-                          image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10318&avatarType=issuetype"),  # noqa
-            JIRAIssueType(name="Task", count=5, is_epic=False,
-                          image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10318&avatarType=issuetype",  # noqa
-                          project="10009", is_subtask=False, normalized_name="task"),
+            JIRAIssueType(
+                name="Design document",
+                count=10,
+                project="10003",
+                is_subtask=False,
+                normalized_name="designdocument",
+                is_epic=False,
+                image=(
+                    "https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId"
+                    "=10322&avatarType=issuetype"
+                ),
+            ),
+            JIRAIssueType(
+                name="Epic",
+                count=1,
+                project="10003",
+                is_subtask=False,
+                normalized_name="epic",
+                is_epic=True,
+                image=(
+                    "https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId"
+                    "=10307&avatarType=issuetype"
+                ),
+            ),
+            JIRAIssueType(
+                name="Epic",
+                count=1,
+                is_epic=True,
+                image="https://athenianco.atlassian.net/images/icons/issuetypes/epic.svg",
+                project="10009",
+                is_subtask=False,
+                normalized_name="epic",
+            ),
+            JIRAIssueType(
+                name="Story",
+                count=49,
+                project="10003",
+                is_subtask=False,
+                normalized_name="story",
+                is_epic=False,
+                image=(
+                    "https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId"
+                    "=10315&avatarType=issuetype"
+                ),
+            ),
+            JIRAIssueType(
+                name="Subtask",
+                count=98,
+                project="10003",
+                is_subtask=True,
+                normalized_name="subtask",
+                is_epic=False,
+                image=(
+                    "https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId"
+                    "=10316&avatarType=issuetype"
+                ),
+            ),
+            JIRAIssueType(
+                name="Task",
+                count=4,
+                project="10003",
+                is_subtask=False,
+                normalized_name="task",
+                is_epic=False,
+                image=(
+                    "https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId"
+                    "=10318&avatarType=issuetype"
+                ),
+            ),
+            JIRAIssueType(
+                name="Task",
+                count=5,
+                is_epic=False,
+                image=(
+                    "https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId"
+                    "=10318&avatarType=issuetype"
+                ),
+                project="10009",
+                is_subtask=False,
+                normalized_name="task",
+            ),
         ]
     else:
         assert model.issue_types is None
     if "users" in checked:
         assert model.users == [
-            JIRAUser(name="David Pordomingo",
-                     avatar="https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/DP-4.png",  # noqa
-                     type="atlassian"),
-            JIRAUser(name="Denys Smirnov",
-                     avatar="https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/DS-1.png",  # noqa
-                     type="atlassian"),
-            JIRAUser(name="Kuba Podgórski",
-                     avatar="https://secure.gravatar.com/avatar/ec2f95fe07b5ffec5cde78781f433b68?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FKP-3.png",  # noqa
-                     type="atlassian"),
-            JIRAUser(name="Lou Marvin Caraig",
-                     avatar="https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/LC-0.png",  # noqa
-                     type="atlassian"),
-            JIRAUser(name="Marcelo Novaes",
-                     avatar="https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/MN-4.png",  # noqa
-                     type="atlassian"),
-            JIRAUser(name="Oleksandr Chabaiev",
-                     avatar="https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/OC-5.png",  # noqa
-                     type="atlassian"),
-            JIRAUser(name="Vadim Markovtsev",
-                     avatar="https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/VM-6.png",  # noqa
-                     type="atlassian"),
-            JIRAUser(name="Waren Long",
-                     avatar="https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/WL-5.png",  # noqa
-                     type="atlassian"),
+            JIRAUser(
+                name="David Pordomingo",
+                avatar=(
+                    "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/"
+                    "initials/DP-4.png"
+                ),
+                type="atlassian",
+            ),
+            JIRAUser(
+                name="Denys Smirnov",
+                avatar=(
+                    "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/"
+                    "initials/DS-1.png"
+                ),
+                type="atlassian",
+            ),
+            JIRAUser(
+                name="Kuba Podgórski",
+                avatar=(
+                    "https://secure.gravatar.com/avatar/ec2f95fe07b5ffec5cde78781f433b68?d="
+                    "https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas"
+                    ".net%2Finitials%2FKP-3.png"
+                ),
+                type="atlassian",
+            ),
+            JIRAUser(
+                name="Lou Marvin Caraig",
+                avatar=(
+                    "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net"
+                    "/initials/LC-0.png"
+                ),
+                type="atlassian",
+            ),
+            JIRAUser(
+                name="Marcelo Novaes",
+                avatar=(
+                    "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/"
+                    "initials/MN-4.png"
+                ),
+                type="atlassian",
+            ),
+            JIRAUser(
+                name="Oleksandr Chabaiev",
+                avatar=(
+                    "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/"
+                    "initials/OC-5.png"
+                ),
+                type="atlassian",
+            ),
+            JIRAUser(
+                name="Vadim Markovtsev",
+                avatar=(
+                    "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/"
+                    "initials/VM-6.png"
+                ),
+                type="atlassian",
+            ),
+            JIRAUser(
+                name="Waren Long",
+                avatar=(
+                    "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/"
+                    "initials/WL-5.png"
+                ),
+                type="atlassian",
+            ),
         ]
     else:
         assert model.users is None
     if "priorities" in checked:
         true_priorities = [
-            JIRAPriority(name="High",
-                         image="https://athenianco.atlassian.net/images/icons/priorities/high.svg",
-                         rank=2,
-                         color="EA4444"),
-            JIRAPriority(name="Medium",
-                         image="https://athenianco.atlassian.net/images/icons/priorities/medium.svg",  # noqa
-                         rank=3,
-                         color="EA7D24"),
-            JIRAPriority(name="Low",
-                         image="https://athenianco.atlassian.net/images/icons/priorities/low.svg",
-                         rank=4,
-                         color="2A8735"),
-            JIRAPriority(name="None",
-                         image="https://athenianco.atlassian.net/images/icons/priorities/trivial.svg",  # noqa
-                         rank=6,
-                         color="9AA1B2"),
+            JIRAPriority(
+                name="High",
+                image="https://athenianco.atlassian.net/images/icons/priorities/high.svg",
+                rank=2,
+                color="EA4444",
+            ),
+            JIRAPriority(
+                name="Medium",
+                image="https://athenianco.atlassian.net/images/icons/priorities/medium.svg",
+                rank=3,
+                color="EA7D24",
+            ),
+            JIRAPriority(
+                name="Low",
+                image="https://athenianco.atlassian.net/images/icons/priorities/low.svg",
+                rank=4,
+                color="2A8735",
+            ),
+            JIRAPriority(
+                name="None",
+                image="https://athenianco.atlassian.net/images/icons/priorities/trivial.svg",
+                rank=6,
+                color="9AA1B2",
+            ),
         ]
         if "issues" not in checked:
             true_priorities.pop(-1)
@@ -371,68 +631,243 @@ async def test_filter_jira_epics_deleted(client, headers, ikey, mdb_rw):
 
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
-@pytest.mark.parametrize("exclude_inactive, labels, epics, types, users, priorities", [
-    [False, 32, 13, [
-        JIRAIssueType(name="Bug", count=2, is_epic=False,
-                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10303&avatarType=issuetype",  # noqa
-                      project="10003", is_subtask=False, normalized_name="bug"),
-        JIRAIssueType(name="Bug", count=88, project="10009", is_subtask=False,
-                      normalized_name="bug", is_epic=False,
-                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10303&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Design Document", count=4, project="10009", is_subtask=False,
-                      normalized_name="designdocument", is_epic=False,
-                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10322&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Epic", count=2, is_epic=True,
-                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10307&avatarType=issuetype",  # noqa
-                      project="10003", is_subtask=False, normalized_name="epic"),
-        JIRAIssueType(name="Epic", count=11, project="10009", is_subtask=False,
-                      normalized_name="epic", is_epic=True,
-                      image="https://athenianco.atlassian.net/images/icons/issuetypes/epic.svg"),
-        JIRAIssueType(name="Incident", count=2, project="10009", is_subtask=False,
-                      normalized_name="incident", is_epic=False,
-                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10304&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Story", count=25, project="10009", is_subtask=False,
-                      normalized_name="story", is_epic=False,
-                      image="https://athenianco.atlassian.net/images/icons/issuetypes/story.svg"),
-        JIRAIssueType(name="Subtask", count=1, project="10003", is_subtask=True,
-                      normalized_name="subtask", is_epic=False,
-                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10316&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Sub-task", count=20, project="10009", is_subtask=True,
-                      normalized_name="subtask", is_epic=False,
-                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10316&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Task", count=166, project="10009", is_subtask=False,
-                      normalized_name="task", is_epic=False,
-                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10318&avatarType=issuetype")],  # noqa
-     14, 6],
-    [True, 31, 11, [
-        JIRAIssueType(name="Bug", count=1, is_epic=False,
-                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10303&avatarType=issuetype",  # noqa
-                      project="10003", is_subtask=False, normalized_name="bug"),
-        JIRAIssueType(name="Bug", count=78, project="10009", is_subtask=False,
-                      normalized_name="bug", is_epic=False,
-                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10303&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Design Document", count=1, project="10009", is_subtask=False,
-                      normalized_name="designdocument", is_epic=False,
-                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10322&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Epic", count=11, project="10009", is_subtask=False,
-                      normalized_name="epic", is_epic=True,
-                      image="https://athenianco.atlassian.net/images/icons/issuetypes/epic.svg"),
-        JIRAIssueType(name="Incident", count=2, project="10009", is_subtask=False,
-                      normalized_name="incident", is_epic=False,
-                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10304&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Story", count=13, project="10009", is_subtask=False,
-                      normalized_name="story", is_epic=False,
-                      image="https://athenianco.atlassian.net/images/icons/issuetypes/story.svg"),
-        JIRAIssueType(name="Sub-task", count=20, project="10009", is_subtask=True,
-                      normalized_name="subtask", is_epic=False,
-                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10316&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Task", count=128, is_epic=False,
-                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10318&avatarType=issuetype",  # noqa
-                      project="10009", is_subtask=False, normalized_name="task")],
-     12, 6],
-])
+@pytest.mark.parametrize(
+    "exclude_inactive, labels, epics, types, users, priorities",
+    [
+        [
+            False,
+            32,
+            13,
+            [
+                JIRAIssueType(
+                    name="Bug",
+                    count=2,
+                    is_epic=False,
+                    image=(
+                        "https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId"
+                        "=10303&avatarType=issuetype"
+                    ),
+                    project="10003",
+                    is_subtask=False,
+                    normalized_name="bug",
+                ),
+                JIRAIssueType(
+                    name="Bug",
+                    count=88,
+                    project="10009",
+                    is_subtask=False,
+                    normalized_name="bug",
+                    is_epic=False,
+                    image=(
+                        "https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId"
+                        "=10303&avatarType=issuetype"
+                    ),
+                ),
+                JIRAIssueType(
+                    name="Design Document",
+                    count=4,
+                    project="10009",
+                    is_subtask=False,
+                    normalized_name="designdocument",
+                    is_epic=False,
+                    image=(
+                        "https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId"
+                        "=10322&avatarType=issuetype"
+                    ),
+                ),
+                JIRAIssueType(
+                    name="Epic",
+                    count=2,
+                    is_epic=True,
+                    image=(
+                        "https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId"
+                        "=10307&avatarType=issuetype"
+                    ),
+                    project="10003",
+                    is_subtask=False,
+                    normalized_name="epic",
+                ),
+                JIRAIssueType(
+                    name="Epic",
+                    count=11,
+                    project="10009",
+                    is_subtask=False,
+                    normalized_name="epic",
+                    is_epic=True,
+                    image="https://athenianco.atlassian.net/images/icons/issuetypes/epic.svg",
+                ),
+                JIRAIssueType(
+                    name="Incident",
+                    count=2,
+                    project="10009",
+                    is_subtask=False,
+                    normalized_name="incident",
+                    is_epic=False,
+                    image=(
+                        "https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId"
+                        "=10304&avatarType=issuetype"
+                    ),
+                ),
+                JIRAIssueType(
+                    name="Story",
+                    count=25,
+                    project="10009",
+                    is_subtask=False,
+                    normalized_name="story",
+                    is_epic=False,
+                    image="https://athenianco.atlassian.net/images/icons/issuetypes/story.svg",
+                ),
+                JIRAIssueType(
+                    name="Subtask",
+                    count=1,
+                    project="10003",
+                    is_subtask=True,
+                    normalized_name="subtask",
+                    is_epic=False,
+                    image=(
+                        "https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId"
+                        "=10316&avatarType=issuetype"
+                    ),
+                ),
+                JIRAIssueType(
+                    name="Sub-task",
+                    count=20,
+                    project="10009",
+                    is_subtask=True,
+                    normalized_name="subtask",
+                    is_epic=False,
+                    image=(
+                        "https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId"
+                        "=10316&avatarType=issuetype"
+                    ),
+                ),
+                JIRAIssueType(
+                    name="Task",
+                    count=166,
+                    project="10009",
+                    is_subtask=False,
+                    normalized_name="task",
+                    is_epic=False,
+                    image=(
+                        "https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId"
+                        "=10318&avatarType=issuetype"
+                    ),
+                ),
+            ],
+            14,
+            6,
+        ],
+        [
+            True,
+            31,
+            11,
+            [
+                JIRAIssueType(
+                    name="Bug",
+                    count=1,
+                    is_epic=False,
+                    image=(
+                        "https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId"
+                        "=10303&avatarType=issuetype"
+                    ),
+                    project="10003",
+                    is_subtask=False,
+                    normalized_name="bug",
+                ),
+                JIRAIssueType(
+                    name="Bug",
+                    count=78,
+                    project="10009",
+                    is_subtask=False,
+                    normalized_name="bug",
+                    is_epic=False,
+                    image=(
+                        "https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId"
+                        "=10303&avatarType=issuetype"
+                    ),
+                ),
+                JIRAIssueType(
+                    name="Design Document",
+                    count=1,
+                    project="10009",
+                    is_subtask=False,
+                    normalized_name="designdocument",
+                    is_epic=False,
+                    image=(
+                        "https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId"
+                        "=10322&avatarType=issuetype"
+                    ),
+                ),
+                JIRAIssueType(
+                    name="Epic",
+                    count=11,
+                    project="10009",
+                    is_subtask=False,
+                    normalized_name="epic",
+                    is_epic=True,
+                    image="https://athenianco.atlassian.net/images/icons/issuetypes/epic.svg",
+                ),
+                JIRAIssueType(
+                    name="Incident",
+                    count=2,
+                    project="10009",
+                    is_subtask=False,
+                    normalized_name="incident",
+                    is_epic=False,
+                    image=(
+                        "https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId"
+                        "=10304&avatarType=issuetype"
+                    ),
+                ),
+                JIRAIssueType(
+                    name="Story",
+                    count=13,
+                    project="10009",
+                    is_subtask=False,
+                    normalized_name="story",
+                    is_epic=False,
+                    image="https://athenianco.atlassian.net/images/icons/issuetypes/story.svg",
+                ),
+                JIRAIssueType(
+                    name="Sub-task",
+                    count=20,
+                    project="10009",
+                    is_subtask=True,
+                    normalized_name="subtask",
+                    is_epic=False,
+                    image=(
+                        "https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId"
+                        "=10316&avatarType=issuetype"
+                    ),
+                ),
+                JIRAIssueType(
+                    name="Task",
+                    count=128,
+                    is_epic=False,
+                    image=(
+                        "https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId"
+                        "=10318&avatarType=issuetype"
+                    ),
+                    project="10009",
+                    is_subtask=False,
+                    normalized_name="task",
+                ),
+            ],
+            12,
+            6,
+        ],
+    ],
+)
 async def test_filter_jira_exclude_inactive(
-        client, headers, exclude_inactive, labels, epics, types, users, priorities):
+    client,
+    headers,
+    exclude_inactive,
+    labels,
+    epics,
+    types,
+    users,
+    priorities,
+):
     body = {
         "date_from": "2020-09-13",
         "date_to": "2020-10-23",
@@ -494,54 +929,150 @@ async def test_filter_jira_selected_projects(client, headers):
 
 def _check_filter_jira_no_dev_project(model: FilteredJIRAStuff) -> None:
     assert model.labels == [
-        JIRALabel(title="accounts", last_used=datetime(2020, 12, 15, 10, 16, 15, tzinfo=tzutc()),
-                  issues_count=1, kind="regular"),
-        JIRALabel(title="bug", last_used=datetime(2020, 6, 1, 7, 15, 7, tzinfo=tzutc()),
-                  issues_count=16, kind="regular"),
-        JIRALabel(title="discarded", last_used=datetime(2020, 6, 1, 1, 27, 23, tzinfo=tzutc()),
-                  issues_count=4, kind="regular"),
-        JIRALabel(title="discussion", last_used=datetime(2020, 3, 31, 21, 16, 11, tzinfo=tzutc()),
-                  issues_count=3, kind="regular"),
-        JIRALabel(title="feature", last_used=datetime(2020, 4, 3, 18, 48, tzinfo=tzutc()),
-                  issues_count=6, kind="regular"),
-        JIRALabel(title="internal-story", last_used=datetime(2020, 6, 1, 7, 15, 7, tzinfo=tzutc()),
-                  issues_count=11, kind="regular"),
-        JIRALabel(title="needs-specs", last_used=datetime(2020, 4, 6, 13, 25, 2, tzinfo=tzutc()),
-                  issues_count=4, kind="regular"),
-        JIRALabel(title="performance", last_used=datetime(2020, 3, 31, 21, 16, 5, tzinfo=tzutc()),
-                  issues_count=1, kind="regular"),
-        JIRALabel(title="user-story", last_used=datetime(2020, 4, 3, 18, 48, tzinfo=tzutc()),
-                  issues_count=5, kind="regular"),
-        JIRALabel(title="webapp", last_used=datetime(2020, 4, 3, 18, 47, 6, tzinfo=tzutc()),
-                  issues_count=1, kind="regular")]
+        JIRALabel(
+            title="accounts",
+            last_used=datetime(2020, 12, 15, 10, 16, 15, tzinfo=tzutc()),
+            issues_count=1,
+            kind="regular",
+        ),
+        JIRALabel(
+            title="bug",
+            last_used=datetime(2020, 6, 1, 7, 15, 7, tzinfo=tzutc()),
+            issues_count=16,
+            kind="regular",
+        ),
+        JIRALabel(
+            title="discarded",
+            last_used=datetime(2020, 6, 1, 1, 27, 23, tzinfo=tzutc()),
+            issues_count=4,
+            kind="regular",
+        ),
+        JIRALabel(
+            title="discussion",
+            last_used=datetime(2020, 3, 31, 21, 16, 11, tzinfo=tzutc()),
+            issues_count=3,
+            kind="regular",
+        ),
+        JIRALabel(
+            title="feature",
+            last_used=datetime(2020, 4, 3, 18, 48, tzinfo=tzutc()),
+            issues_count=6,
+            kind="regular",
+        ),
+        JIRALabel(
+            title="internal-story",
+            last_used=datetime(2020, 6, 1, 7, 15, 7, tzinfo=tzutc()),
+            issues_count=11,
+            kind="regular",
+        ),
+        JIRALabel(
+            title="needs-specs",
+            last_used=datetime(2020, 4, 6, 13, 25, 2, tzinfo=tzutc()),
+            issues_count=4,
+            kind="regular",
+        ),
+        JIRALabel(
+            title="performance",
+            last_used=datetime(2020, 3, 31, 21, 16, 5, tzinfo=tzutc()),
+            issues_count=1,
+            kind="regular",
+        ),
+        JIRALabel(
+            title="user-story",
+            last_used=datetime(2020, 4, 3, 18, 48, tzinfo=tzutc()),
+            issues_count=5,
+            kind="regular",
+        ),
+        JIRALabel(
+            title="webapp",
+            last_used=datetime(2020, 4, 3, 18, 47, 6, tzinfo=tzutc()),
+            issues_count=1,
+            kind="regular",
+        ),
+    ]
     assert model.epics == [
-        JIRAEpic(id="ENG-1", title="Evaluate our product and process internally",
-                 created=datetime(2019, 12, 2, 14, 19, 58, 762),
-                 updated=datetime(2020, 6, 1, 7, 19, 0, 316),
-                 work_began=datetime(2020, 6, 1, 7, 19, 0, 335),
-                 resolved=datetime(2020, 6, 1, 7, 19, 0, 335),
-                 lead_time=timedelta(0),
-                 life_time=timedelta(days=181, seconds=61141),
-                 reporter="Lou Marvin Caraig", assignee="Waren Long", type="Epic",
-                 comments=0, priority="Medium", status="Done", prs=0, project="10003",
-                 children=[], url="https://athenianco.atlassian.net/browse/ENG-1"),
+        JIRAEpic(
+            id="ENG-1",
+            title="Evaluate our product and process internally",
+            created=datetime(2019, 12, 2, 14, 19, 58, 762),
+            updated=datetime(2020, 6, 1, 7, 19, 0, 316),
+            work_began=datetime(2020, 6, 1, 7, 19, 0, 335),
+            resolved=datetime(2020, 6, 1, 7, 19, 0, 335),
+            lead_time=timedelta(0),
+            life_time=timedelta(days=181, seconds=61141),
+            reporter="Lou Marvin Caraig",
+            assignee="Waren Long",
+            type="Epic",
+            comments=0,
+            priority="Medium",
+            status="Done",
+            prs=0,
+            project="10003",
+            children=[],
+            url="https://athenianco.atlassian.net/browse/ENG-1",
+        ),
     ]
     assert model.issue_types == [
-        JIRAIssueType(name="Design document", count=10, project="10003", is_subtask=False,
-                      normalized_name="designdocument", is_epic=False,
-                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10322&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Epic", count=1, project="10003", is_subtask=False,
-                      normalized_name="epic", is_epic=True,
-                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10307&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Story", count=49, project="10003", is_subtask=False,
-                      normalized_name="story", is_epic=False,
-                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10315&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Subtask", count=98, project="10003", is_subtask=True,
-                      normalized_name="subtask", is_epic=False,
-                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10316&avatarType=issuetype"),  # noqa
-        JIRAIssueType(name="Task", count=4, project="10003", is_subtask=False,
-                      normalized_name="task", is_epic=False,
-                      image="https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId=10318&avatarType=issuetype"),  # noqa
+        JIRAIssueType(
+            name="Design document",
+            count=10,
+            project="10003",
+            is_subtask=False,
+            normalized_name="designdocument",
+            is_epic=False,
+            image=(
+                "https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId"
+                "=10322&avatarType=issuetype"
+            ),
+        ),
+        JIRAIssueType(
+            name="Epic",
+            count=1,
+            project="10003",
+            is_subtask=False,
+            normalized_name="epic",
+            is_epic=True,
+            image=(
+                "https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId"
+                "=10307&avatarType=issuetype"
+            ),
+        ),
+        JIRAIssueType(
+            name="Story",
+            count=49,
+            project="10003",
+            is_subtask=False,
+            normalized_name="story",
+            is_epic=False,
+            image=(
+                "https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId"
+                "=10315&avatarType=issuetype"
+            ),
+        ),
+        JIRAIssueType(
+            name="Subtask",
+            count=98,
+            project="10003",
+            is_subtask=True,
+            normalized_name="subtask",
+            is_epic=False,
+            image=(
+                "https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId"
+                "=10316&avatarType=issuetype"
+            ),
+        ),
+        JIRAIssueType(
+            name="Task",
+            count=4,
+            project="10003",
+            is_subtask=False,
+            normalized_name="task",
+            is_epic=False,
+            image=(
+                "https://athenianco.atlassian.net/secure/viewavatar?size=medium&avatarId"
+                "=10318&avatarType=issuetype"
+            ),
+        ),
     ]
 
 
@@ -649,19 +1180,24 @@ async def test_filter_jira_issue_prs_deployments(client, headers, mdb_rw, precom
         "exclude_inactive": True,
         "return": ["issues", "issue_bodies"],
     }
-    await mdb_rw.execute(insert(NodePullRequestJiraIssues).values({
-        NodePullRequestJiraIssues.jira_acc: 1,
-        NodePullRequestJiraIssues.node_acc: 6366825,
-        NodePullRequestJiraIssues.node_id: 163373,
-        NodePullRequestJiraIssues.jira_id: "10100",
-    }))
+    await mdb_rw.execute(
+        insert(NodePullRequestJiraIssues).values(
+            {
+                NodePullRequestJiraIssues.jira_acc: 1,
+                NodePullRequestJiraIssues.node_acc: 6366825,
+                NodePullRequestJiraIssues.node_id: 163373,
+                NodePullRequestJiraIssues.jira_id: "10100",
+            },
+        ),
+    )
     try:
         response = await client.request(
             method="POST", path="/v1/filter/jira", headers=headers, json=body,
         )
     finally:
-        await mdb_rw.execute(delete(NodePullRequestJiraIssues)
-                             .where(NodePullRequestJiraIssues.node_id == 163373))
+        await mdb_rw.execute(
+            delete(NodePullRequestJiraIssues).where(NodePullRequestJiraIssues.node_id == 163373),
+        )
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     model = FilteredJIRAStuff.from_dict(json.loads(body))
@@ -678,21 +1214,28 @@ async def test_filter_jira_issue_prs_deployments(client, headers, mdb_rw, precom
             components=[
                 DeployedComponent(
                     repository="github.com/src-d/go-git",
-                    reference="v4.13.1 (0d1a009cbb604db18be960db5f1525b99a55d727)")],
+                    reference="v4.13.1 (0d1a009cbb604db18be960db5f1525b99a55d727)",
+                ),
+            ],
             environment="production",
             name="Dummy deployment",
             url=None,
             date_started=datetime(2019, 11, 1, 12, 0, tzinfo=timezone.utc),
             date_finished=datetime(2019, 11, 1, 12, 15, tzinfo=timezone.utc),
             conclusion="SUCCESS",
-            labels=None),
+            labels=None,
+        ),
     }
 
 
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
 async def test_filter_jira_issue_prs_logical(
-        client, headers, logical_settings_db, release_match_setting_tag_logical_db):
+    client,
+    headers,
+    logical_settings_db,
+    release_match_setting_tag_logical_db,
+):
     body = {
         "date_from": "2019-09-01",
         "date_to": "2022-01-01",
@@ -770,29 +1313,37 @@ async def test_filter_jira_issue_disabled(client, headers, mdb_rw):
 async def test_filter_jira_deleted_repositories(client, headers, mdb_rw):
     # DEV-2082
     mdb = mdb_rw
-    await mdb.execute(insert(NodePullRequestJiraIssues).values(dict(
-        node_id=1234,
-        node_acc=6366825,
-        jira_acc=1,
-        jira_id="12541",
-    )))
-    await mdb.execute(insert(PullRequest).values(dict(
-        node_id=1234,
-        acc_id=6366825,
-        repository_full_name="athenianco/athenian-api",
-        repository_node_id=4321,
-        base_ref="base_ref",
-        head_ref="head_ref",
-        number=100500,
-        closed=True,
-        additions=0,
-        deletions=0,
-        changed_files=0,
-        commits=1,
-        user_node_id=0,
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
-    )))
+    await mdb.execute(
+        insert(NodePullRequestJiraIssues).values(
+            dict(
+                node_id=1234,
+                node_acc=6366825,
+                jira_acc=1,
+                jira_id="12541",
+            ),
+        ),
+    )
+    await mdb.execute(
+        insert(PullRequest).values(
+            dict(
+                node_id=1234,
+                acc_id=6366825,
+                repository_full_name="athenianco/athenian-api",
+                repository_node_id=4321,
+                base_ref="base_ref",
+                head_ref="head_ref",
+                number=100500,
+                closed=True,
+                additions=0,
+                deletions=0,
+                changed_files=0,
+                commits=1,
+                user_node_id=0,
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            ),
+        ),
+    )
     try:
         body = {
             "date_from": "2020-11-01",
@@ -812,19 +1363,22 @@ async def test_filter_jira_deleted_repositories(client, headers, mdb_rw):
         assert len(model.issues) == 46
         assert prs == 0
     finally:
-        await mdb.execute(delete(NodePullRequestJiraIssues)
-                          .where(NodePullRequestJiraIssues.node_id == 1234))
-        await mdb.execute(delete(PullRequest)
-                          .where(PullRequest.node_id == 1234))
+        await mdb.execute(
+            delete(NodePullRequestJiraIssues).where(NodePullRequestJiraIssues.node_id == 1234),
+        )
+        await mdb.execute(delete(PullRequest).where(PullRequest.node_id == 1234))
 
 
-@pytest.mark.parametrize("account, date_to, tz, status", [
-    (1, "2015-10-12", 0, 400),
-    (1, None, 0, 400),
-    (2, "2020-10-12", 0, 422),
-    (3, "2020-10-12", 0, 404),
-    (1, "2020-10-12", 100500, 400),
-])
+@pytest.mark.parametrize(
+    "account, date_to, tz, status",
+    [
+        (1, "2015-10-12", 0, 400),
+        (1, None, 0, 400),
+        (2, "2020-10-12", 0, 422),
+        (3, "2020-10-12", 0, 404),
+        (1, "2020-10-12", 100500, 400),
+    ],
+)
 async def test_filter_jira_nasty_input(client, headers, account, date_to, tz, status):
     body = {
         "date_from": "2015-10-13",
@@ -861,13 +1415,15 @@ async def test_jira_metrics_smoke(client, headers, exclude_inactive):
     items = [CalculatedJIRAMetricValues.from_dict(i) for i in body]
     assert items[0].granularity == "all"
     assert items[0].with_ is None
-    assert items[0].values == [CalculatedLinearMetricValues(
-        date=date(2020, 1, 1),
-        values=[1699, 1628],
-        confidence_mins=[None] * 2,
-        confidence_maxs=[None] * 2,
-        confidence_scores=[None] * 2,
-    )]
+    assert items[0].values == [
+        CalculatedLinearMetricValues(
+            date=date(2020, 1, 1),
+            values=[1699, 1628],
+            confidence_mins=[None] * 2,
+            confidence_maxs=[None] * 2,
+            confidence_scores=[None] * 2,
+        ),
+    ]
     assert items[1].granularity == "2 month"
     assert items[1].with_ is None
     assert len(items[1].values) == 5
@@ -887,18 +1443,30 @@ async def test_jira_metrics_smoke(client, headers, exclude_inactive):
     )
 
 
-@pytest.mark.parametrize("account, metrics, date_from, date_to, timezone, granularities, status", [
-    (1, [JIRAMetricID.JIRA_RAISED], "2020-01-01", "2020-04-01", 120, ["all"], 200),
-    (2, [JIRAMetricID.JIRA_RAISED], "2020-01-01", "2020-04-01", 120, ["all"], 422),
-    (3, [JIRAMetricID.JIRA_RAISED], "2020-01-01", "2020-04-01", 120, ["all"], 404),
-    (1, [], "2020-01-01", "2020-04-01", 120, ["all"], 200),
-    (1, None, "2020-01-01", "2020-04-01", 120, ["all"], 400),
-    (1, [JIRAMetricID.JIRA_RAISED], "2020-05-01", "2020-04-01", 120, ["all"], 400),
-    (1, [JIRAMetricID.JIRA_RAISED], "2020-01-01", "2020-04-01", 100500, ["all"], 400),
-    (1, [JIRAMetricID.JIRA_RAISED], "2020-01-01", "2020-04-01", 120, ["whatever"], 400),
-])
+@pytest.mark.parametrize(
+    "account, metrics, date_from, date_to, timezone, granularities, status",
+    [
+        (1, [JIRAMetricID.JIRA_RAISED], "2020-01-01", "2020-04-01", 120, ["all"], 200),
+        (2, [JIRAMetricID.JIRA_RAISED], "2020-01-01", "2020-04-01", 120, ["all"], 422),
+        (3, [JIRAMetricID.JIRA_RAISED], "2020-01-01", "2020-04-01", 120, ["all"], 404),
+        (1, [], "2020-01-01", "2020-04-01", 120, ["all"], 200),
+        (1, None, "2020-01-01", "2020-04-01", 120, ["all"], 400),
+        (1, [JIRAMetricID.JIRA_RAISED], "2020-05-01", "2020-04-01", 120, ["all"], 400),
+        (1, [JIRAMetricID.JIRA_RAISED], "2020-01-01", "2020-04-01", 100500, ["all"], 400),
+        (1, [JIRAMetricID.JIRA_RAISED], "2020-01-01", "2020-04-01", 120, ["whatever"], 400),
+    ],
+)
 async def test_jira_metrics_nasty_input1(
-        client, headers, account, metrics, date_from, date_to, timezone, granularities, status):
+    client,
+    headers,
+    account,
+    metrics,
+    date_from,
+    date_to,
+    timezone,
+    granularities,
+    status,
+):
     body = {
         "date_from": date_from,
         "date_to": date_to,
@@ -1011,25 +1579,40 @@ async def test_jira_metrics_labels(client, headers):
     assert items[0].values[0].values == [142]
 
 
-@pytest.mark.parametrize("assignees, reporters, commenters, count", [
-    (["Vadim markovtsev"], ["waren long"], ["lou Marvin caraig"], 1136),
-    (["Vadim markovtsev"], [], [], 529),
-    ([], [], ["{1}"], 236),
-    ([None, "Vadim MARKOVTSEV"], [], [], 694),
-    ([], ["waren long"], [], 539),
-    ([], [], ["lou Marvin caraig"], 236),
-    ([None], [], ["lou Marvin caraig"], 381),
-])
+@pytest.mark.parametrize(
+    "assignees, reporters, commenters, count",
+    [
+        (["Vadim markovtsev"], ["waren long"], ["lou Marvin caraig"], 1136),
+        (["Vadim markovtsev"], [], [], 529),
+        ([], [], ["{1}"], 236),
+        ([None, "Vadim MARKOVTSEV"], [], [], 694),
+        ([], ["waren long"], [], 539),
+        ([], [], ["lou Marvin caraig"], 236),
+        ([None], [], ["lou Marvin caraig"], 381),
+    ],
+)
 async def test_jira_metrics_people(
-        client, headers, assignees, reporters, commenters, count, sample_team, sdb):
-    await sdb.execute(insert(MappedJIRAIdentity).values({
-        MappedJIRAIdentity.account_id: 1,
-        MappedJIRAIdentity.confidence: 1,
-        MappedJIRAIdentity.github_user_id: 51,
-        MappedJIRAIdentity.jira_user_id: "5ddec0b9be6c1f0d071ff82d",
-        MappedJIRAIdentity.created_at: datetime.now(timezone.utc),
-        MappedJIRAIdentity.updated_at: datetime.now(timezone.utc),
-    }))
+    client,
+    headers,
+    assignees,
+    reporters,
+    commenters,
+    count,
+    sample_team,
+    sdb,
+):
+    await sdb.execute(
+        insert(MappedJIRAIdentity).values(
+            {
+                MappedJIRAIdentity.account_id: 1,
+                MappedJIRAIdentity.confidence: 1,
+                MappedJIRAIdentity.github_user_id: 51,
+                MappedJIRAIdentity.jira_user_id: "5ddec0b9be6c1f0d071ff82d",
+                MappedJIRAIdentity.created_at: datetime.now(timezone.utc),
+                MappedJIRAIdentity.updated_at: datetime.now(timezone.utc),
+            },
+        ),
+    )
     body = {
         "date_from": "2020-01-01",
         "date_to": "2020-10-20",
@@ -1038,11 +1621,13 @@ async def test_jira_metrics_people(
         "metrics": [JIRAMetricID.JIRA_RAISED],
         "exclude_inactive": True,
         "granularities": ["all"],
-        "with": [{
-            "assignees": assignees,
-            "reporters": reporters,
-            "commenters": commenters,
-        }],
+        "with": [
+            {
+                "assignees": assignees,
+                "reporters": reporters,
+                "commenters": commenters,
+            },
+        ],
     }
     response = await client.request(
         method="POST", path="/v1/metrics/jira", headers=headers, json=body,
@@ -1074,11 +1659,14 @@ async def test_jira_metrics_teams(client, headers):
         "metrics": [JIRAMetricID.JIRA_RAISED],
         "exclude_inactive": True,
         "granularities": ["all"],
-        "with": [{
-            "assignees": ["vadim Markovtsev"],
-        }, {
-            "reporters": ["waren Long"],
-        }],
+        "with": [
+            {
+                "assignees": ["vadim Markovtsev"],
+            },
+            {
+                "reporters": ["waren Long"],
+            },
+        ],
     }
     response = await client.request(
         method="POST", path="/v1/metrics/jira", headers=headers, json=body,
@@ -1095,15 +1683,18 @@ async def test_jira_metrics_teams(client, headers):
     assert items[1].with_.to_dict() == {"reporters": ["waren Long"]}
 
 
-@pytest.mark.parametrize("metric, exclude_inactive, n", [
-    (JIRAMetricID.JIRA_OPEN, False, 142),
-    (JIRAMetricID.JIRA_OPEN, True, 133),
-    (JIRAMetricID.JIRA_RESOLVED, False, 850),
-    (JIRAMetricID.JIRA_RESOLVED, True, 850),
-    (JIRAMetricID.JIRA_ACKNOWLEDGED, False, 776),
-    (JIRAMetricID.JIRA_ACKNOWLEDGED_Q, False, 776),
-    (JIRAMetricID.JIRA_RESOLUTION_RATE, False, 1.0240963697433472),
-])
+@pytest.mark.parametrize(
+    "metric, exclude_inactive, n",
+    [
+        (JIRAMetricID.JIRA_OPEN, False, 142),
+        (JIRAMetricID.JIRA_OPEN, True, 133),
+        (JIRAMetricID.JIRA_RESOLVED, False, 850),
+        (JIRAMetricID.JIRA_RESOLVED, True, 850),
+        (JIRAMetricID.JIRA_ACKNOWLEDGED, False, 776),
+        (JIRAMetricID.JIRA_ACKNOWLEDGED_Q, False, 776),
+        (JIRAMetricID.JIRA_RESOLUTION_RATE, False, 1.0240963697433472),
+    ],
+)
 async def test_jira_metrics_counts(client, headers, metric, exclude_inactive, n):
     body = {
         "date_from": "2020-06-01",
@@ -1123,35 +1714,61 @@ async def test_jira_metrics_counts(client, headers, metric, exclude_inactive, n)
     assert len(body) == 1
     items = [CalculatedJIRAMetricValues.from_dict(i) for i in body]
     assert items[0].granularity == "all"
-    assert items[0].values == [CalculatedLinearMetricValues(
-        date=date(2020, 6, 1),
-        values=[n],
-        confidence_mins=[None],
-        confidence_maxs=[None],
-        confidence_scores=[None],
-    )]
+    assert items[0].values == [
+        CalculatedLinearMetricValues(
+            date=date(2020, 6, 1),
+            values=[n],
+            confidence_mins=[None],
+            confidence_maxs=[None],
+            confidence_scores=[None],
+        ),
+    ]
 
 
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
-@pytest.mark.parametrize("metric, value, score, cmin, cmax", [
-    (JIRAMetricID.JIRA_LIFE_TIME, "3360382s", 51, "2557907s", "4227690s"),
-    (JIRAMetricID.JIRA_LEAD_TIME, "2922288s", 43, "2114455s", "3789853s"),
-    (JIRAMetricID.JIRA_ACKNOWLEDGE_TIME, "450250s", 66, "369809s", "527014s"),
-    (JIRAMetricID.JIRA_PR_LAG_TIME, "0s", 100, "0s", "0s"),
-    (JIRAMetricID.JIRA_BACKLOG_TIME, "450856s", 66, "370707s", "527781s"),
-])
+@pytest.mark.parametrize(
+    "metric, value, score, cmin, cmax",
+    [
+        (JIRAMetricID.JIRA_LIFE_TIME, "3360382s", 51, "2557907s", "4227690s"),
+        (JIRAMetricID.JIRA_LEAD_TIME, "2922288s", 43, "2114455s", "3789853s"),
+        (JIRAMetricID.JIRA_ACKNOWLEDGE_TIME, "450250s", 66, "369809s", "527014s"),
+        (JIRAMetricID.JIRA_PR_LAG_TIME, "0s", 100, "0s", "0s"),
+        (JIRAMetricID.JIRA_BACKLOG_TIME, "450856s", 66, "370707s", "527781s"),
+    ],
+)
 @with_defer
 async def test_jira_metrics_bug_times(
-        client, headers, metric, value, score, cmin, cmax, metrics_calculator_factory,
-        release_match_setting_tag, prefixer, bots):
+    client,
+    headers,
+    metric,
+    value,
+    score,
+    cmin,
+    cmax,
+    metrics_calculator_factory,
+    release_match_setting_tag,
+    prefixer,
+    bots,
+):
     metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
-    args = (time_from, time_to, {"src-d/go-git"}, {},
-            LabelFilter.empty(), JIRAFilter.empty(),
-            False, bots, release_match_setting_tag, LogicalRepositorySettings.empty(),
-            prefixer, False, False)
+    args = (
+        time_from,
+        time_to,
+        {"src-d/go-git"},
+        {},
+        LabelFilter.empty(),
+        JIRAFilter.empty(),
+        False,
+        bots,
+        release_match_setting_tag,
+        LogicalRepositorySettings.empty(),
+        prefixer,
+        False,
+        False,
+    )
     await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
     await wait_deferred()
     np.random.seed(7)
@@ -1174,13 +1791,15 @@ async def test_jira_metrics_bug_times(
     assert len(body) == 2
     items = [CalculatedJIRAMetricValues.from_dict(i) for i in body]
     assert items[0].granularity == "all"
-    assert items[0].values == [CalculatedLinearMetricValues(
-        date=date(2016, 1, 1),
-        values=[value],
-        confidence_mins=[cmin],
-        confidence_maxs=[cmax],
-        confidence_scores=[score],
-    )]
+    assert items[0].values == [
+        CalculatedLinearMetricValues(
+            date=date(2016, 1, 1),
+            values=[value],
+            confidence_mins=[cmin],
+            confidence_maxs=[cmax],
+            confidence_scores=[score],
+        ),
+    ]
 
 
 async def test_jira_metrics_disabled_projects(client, headers, disabled_dev):
@@ -1223,13 +1842,15 @@ async def test_jira_metrics_selected_projects(client, headers):
 
 
 def _check_metrics_no_dev_project(items: List[CalculatedJIRAMetricValues]) -> None:
-    assert items[0].values == [CalculatedLinearMetricValues(
-        date=date(2020, 1, 1),
-        values=[767, 829],
-        confidence_mins=[None] * 2,
-        confidence_maxs=[None] * 2,
-        confidence_scores=[None] * 2,
-    )]
+    assert items[0].values == [
+        CalculatedLinearMetricValues(
+            date=date(2020, 1, 1),
+            values=[767, 829],
+            confidence_mins=[None] * 2,
+            confidence_maxs=[None] * 2,
+            confidence_scores=[None] * 2,
+        ),
+    ]
 
 
 async def test_jira_metrics_group_by_label_smoke(client, headers):
@@ -1313,30 +1934,88 @@ async def test_jira_metrics_group_by_label_empty(client, headers):
     assert items[0].values[0].values == [0]
 
 
-@pytest.mark.parametrize("with_, ticks, frequencies, interquartile", [
-    [None,
-     [["60s", "122s", "249s", "507s", "1033s", "2105s", "4288s", "8737s", "17799s", "36261s",
-       "73870s", "150489s", "306576s", "624554s", "1272338s", "2591999s"]],
-     [[351, 7, 12, 27, 38, 70, 95, 103, 68, 76, 120, 116, 132, 114, 285]],
-     [{"left": "1255s", "right": "618082s"}],
-     ],
-    [[{"assignees": ["Vadim Markovtsev"]}, {"reporters": ["Waren Long"]}],
-     [["60s", "158s", "417s", "1102s", "2909s", "7676s", "20258s", "53456s", "141062s", "372237s",
-       "982262s", "2591999s"],
-      ["60s", "136s", "309s", "704s", "1601s", "3639s", "8271s", "18801s", "42732s", "97125s",
-       "220753s", "501745s", "1140405s", "2591999s"]],
-     [[60, 4, 18, 36, 76, 88, 42, 33, 31, 19, 81],
-      [129, 3, 6, 9, 18, 23, 21, 32, 56, 43, 57, 46, 59]],
-     [{"left": "3062s", "right": "194589s"}, {"left": "60s", "right": "364828s"}],
-     ],
-])
+@pytest.mark.parametrize(
+    "with_, ticks, frequencies, interquartile",
+    [
+        [
+            None,
+            [
+                [
+                    "60s",
+                    "122s",
+                    "249s",
+                    "507s",
+                    "1033s",
+                    "2105s",
+                    "4288s",
+                    "8737s",
+                    "17799s",
+                    "36261s",
+                    "73870s",
+                    "150489s",
+                    "306576s",
+                    "624554s",
+                    "1272338s",
+                    "2591999s",
+                ],
+            ],
+            [[351, 7, 12, 27, 38, 70, 95, 103, 68, 76, 120, 116, 132, 114, 285]],
+            [{"left": "1255s", "right": "618082s"}],
+        ],
+        [
+            [{"assignees": ["Vadim Markovtsev"]}, {"reporters": ["Waren Long"]}],
+            [
+                [
+                    "60s",
+                    "158s",
+                    "417s",
+                    "1102s",
+                    "2909s",
+                    "7676s",
+                    "20258s",
+                    "53456s",
+                    "141062s",
+                    "372237s",
+                    "982262s",
+                    "2591999s",
+                ],
+                [
+                    "60s",
+                    "136s",
+                    "309s",
+                    "704s",
+                    "1601s",
+                    "3639s",
+                    "8271s",
+                    "18801s",
+                    "42732s",
+                    "97125s",
+                    "220753s",
+                    "501745s",
+                    "1140405s",
+                    "2591999s",
+                ],
+            ],
+            [
+                [60, 4, 18, 36, 76, 88, 42, 33, 31, 19, 81],
+                [129, 3, 6, 9, 18, 23, 21, 32, 56, 43, 57, 46, 59],
+            ],
+            [
+                {"left": "3062s", "right": "194589s"},
+                {"left": "60s", "right": "364828s"},
+            ],
+        ],
+    ],
+)
 async def test_jira_histograms_smoke(client, headers, with_, ticks, frequencies, interquartile):
     for _ in range(2):
         body = {
-            "histograms": [{
-                "metric": JIRAMetricID.JIRA_LEAD_TIME,
-                "scale": "log",
-            }],
+            "histograms": [
+                {
+                    "metric": JIRAMetricID.JIRA_LEAD_TIME,
+                    "scale": "log",
+                },
+            ],
             **({"with": with_} if with_ is not None else {}),
             "date_from": "2015-10-13",
             "date_to": "2020-11-01",
@@ -1352,7 +2031,8 @@ async def test_jira_histograms_smoke(client, headers, with_, ticks, frequencies,
         for item in body:
             CalculatedJIRAHistogram.from_dict(item)
         for histogram, hticks, hfrequencies, hinterquartile, hwith_ in zip(
-                body, ticks, frequencies, interquartile, with_ or [None]):
+            body, ticks, frequencies, interquartile, with_ or [None],
+        ):
             assert histogram == {
                 "metric": JIRAMetricID.JIRA_LEAD_TIME,
                 "scale": "log",
@@ -1365,10 +2045,12 @@ async def test_jira_histograms_smoke(client, headers, with_, ticks, frequencies,
 
 async def test_jira_histogram_disabled_projects(client, headers, disabled_dev):
     body = {
-        "histograms": [{
-            "metric": JIRAMetricID.JIRA_LEAD_TIME,
-            "scale": "log",
-        }],
+        "histograms": [
+            {
+                "metric": JIRAMetricID.JIRA_LEAD_TIME,
+                "scale": "log",
+            },
+        ],
         "date_from": "2015-10-13",
         "date_to": "2020-11-01",
         "exclude_inactive": False,
@@ -1387,8 +2069,23 @@ def _check_histogram_no_dev_project(histogram: dict) -> None:
     assert histogram == {
         "metric": JIRAMetricID.JIRA_LEAD_TIME,
         "scale": "log",
-        "ticks": ["60s", "128s", "275s", "590s", "1266s", "2714s", "5818s", "12470s", "26730s",
-                  "57293s", "122803s", "263218s", "564186s", "1209285s", "2591999s"],
+        "ticks": [
+            "60s",
+            "128s",
+            "275s",
+            "590s",
+            "1266s",
+            "2714s",
+            "5818s",
+            "12470s",
+            "26730s",
+            "57293s",
+            "122803s",
+            "263218s",
+            "564186s",
+            "1209285s",
+            "2591999s",
+        ],
         "frequencies": [214, 3, 6, 20, 25, 31, 33, 33, 31, 55, 54, 55, 74, 222],
         "interquartile": {"left": "149s", "right": "1273387s"},
     }
@@ -1396,10 +2093,12 @@ def _check_histogram_no_dev_project(histogram: dict) -> None:
 
 async def test_jira_histogram_selected_projects(client, headers):
     body = {
-        "histograms": [{
-            "metric": JIRAMetricID.JIRA_LEAD_TIME,
-            "scale": "log",
-        }],
+        "histograms": [
+            {
+                "metric": JIRAMetricID.JIRA_LEAD_TIME,
+                "scale": "log",
+            },
+        ],
         "date_from": "2015-10-13",
         "date_to": "2020-11-01",
         "exclude_inactive": False,
@@ -1430,14 +2129,26 @@ async def test_jira_histogram_selected_projects(client, headers):
     ],
 )
 async def test_jira_histograms_nasty_input(
-        client, headers, metric, date_to, bins, scale, ticks, quantiles, account, status):
+    client,
+    headers,
+    metric,
+    date_to,
+    bins,
+    scale,
+    ticks,
+    quantiles,
+    account,
+    status,
+):
     body = {
-        "histograms": [{
-            "metric": metric,
-            **({"scale": scale} if scale is not None else {}),
-            **({"bins": bins} if bins is not None else {}),
-            **({"ticks": ticks} if ticks is not None else {}),
-        }],
+        "histograms": [
+            {
+                "metric": metric,
+                **({"scale": scale} if scale is not None else {}),
+                **({"bins": bins} if bins is not None else {}),
+                **({"ticks": ticks} if ticks is not None else {}),
+            },
+        ],
         "date_from": "2015-10-13",
         "date_to": date_to,
         "quantiles": quantiles,

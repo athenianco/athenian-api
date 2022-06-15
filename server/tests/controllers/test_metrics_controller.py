@@ -10,22 +10,33 @@ from sqlalchemy import delete, insert
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github import developer
-from athenian.api.internal.miners.github.release_mine import mine_releases, \
-    override_first_releases
+from athenian.api.internal.miners.github.release_mine import mine_releases, override_first_releases
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch
 from athenian.api.models.persistentdata.models import DeployedComponent, DeployedLabel
 from athenian.api.models.state.models import ReleaseSetting, Team
-from athenian.api.models.web import CalculatedCodeCheckMetrics, CalculatedDeploymentMetric, \
-    CalculatedDeveloperMetrics, CalculatedLinearMetricValues, CalculatedPullRequestMetrics, \
-    CalculatedReleaseMetric, CodeBypassingPRsMeasurement, CodeCheckMetricID, DeploymentMetricID, \
-    DeveloperMetricID, PullRequestMetricID, PullRequestWith, ReleaseMetricID
+from athenian.api.models.web import (
+    CalculatedCodeCheckMetrics,
+    CalculatedDeploymentMetric,
+    CalculatedDeveloperMetrics,
+    CalculatedLinearMetricValues,
+    CalculatedPullRequestMetrics,
+    CalculatedReleaseMetric,
+    CodeBypassingPRsMeasurement,
+    CodeCheckMetricID,
+    DeploymentMetricID,
+    DeveloperMetricID,
+    PullRequestMetricID,
+    PullRequestWith,
+    ReleaseMetricID,
+)
 from athenian.api.serialization import FriendlyJson
 
 
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
 @pytest.mark.parametrize(
-    "metric, count", [
+    "metric, count",
+    [
         (PullRequestMetricID.PR_WIP_TIME, 51),
         (PullRequestMetricID.PR_WIP_PENDING_COUNT, 0),
         (PullRequestMetricID.PR_WIP_COUNT, 51),
@@ -78,9 +89,11 @@ async def test_calc_metrics_prs_smoke(client, metric, count, headers, app, clien
                 "repositories": [
                     "github.com/src-d/go-git",
                 ],
-                **({"environments": ["production"]}
-                   if metric == PullRequestMetricID.PR_DEPLOYMENT_TIME
-                   else {}),
+                **(
+                    {"environments": ["production"]}
+                    if metric == PullRequestMetricID.PR_DEPLOYMENT_TIME
+                    else {}
+                ),
             },
         ],
         "metrics": [metric],
@@ -133,14 +146,16 @@ async def test_calc_metrics_prs_all_time(client, headers):
     }
     body = {
         "for": [for_block, for_block],
-        "metrics": [PullRequestMetricID.PR_WIP_TIME,
-                    PullRequestMetricID.PR_REVIEW_TIME,
-                    PullRequestMetricID.PR_MERGING_TIME,
-                    PullRequestMetricID.PR_RELEASE_TIME,
-                    PullRequestMetricID.PR_OPEN_TIME,
-                    PullRequestMetricID.PR_LEAD_TIME,
-                    PullRequestMetricID.PR_CYCLE_TIME,
-                    PullRequestMetricID.PR_WAIT_FIRST_REVIEW_TIME],
+        "metrics": [
+            PullRequestMetricID.PR_WIP_TIME,
+            PullRequestMetricID.PR_REVIEW_TIME,
+            PullRequestMetricID.PR_MERGING_TIME,
+            PullRequestMetricID.PR_RELEASE_TIME,
+            PullRequestMetricID.PR_OPEN_TIME,
+            PullRequestMetricID.PR_LEAD_TIME,
+            PullRequestMetricID.PR_CYCLE_TIME,
+            PullRequestMetricID.PR_WAIT_FIRST_REVIEW_TIME,
+        ],
         "date_from": "2015-10-13",
         "date_to": "2019-03-15",
         "timezone": 60,
@@ -170,8 +185,10 @@ async def test_calc_metrics_prs_all_time(client, headers):
             for m, t in zip(cm.metrics, val.values):
                 if t is None:
                     continue
-                assert pd.to_timedelta(t) >= timedelta(0), \
-                    "Metric: %s\nValues: %s" % (m, val.values)
+                assert pd.to_timedelta(t) >= timedelta(0), "Metric: %s\nValues: %s" % (
+                    m,
+                    val.values,
+                )
                 nonzero[m] += pd.to_timedelta(t) > timedelta(0)
             if val.confidence_mins is not None:
                 cmins += 1
@@ -179,24 +196,28 @@ async def test_calc_metrics_prs_all_time(client, headers):
                     if t is None:
                         assert v is None
                         continue
-                    assert pd.to_timedelta(t) >= timedelta(0), \
-                        "Metric: %s\nConfidence mins: %s" % (m, val.confidence_mins)
+                    assert pd.to_timedelta(t) >= timedelta(
+                        0,
+                    ), "Metric: %s\nConfidence mins: %s" % (m, val.confidence_mins)
             if val.confidence_maxs is not None:
                 cmaxs += 1
                 for t, v in zip(val.confidence_maxs, val.values):
                     if t is None:
                         assert v is None
                         continue
-                    assert pd.to_timedelta(t) >= timedelta(0), \
-                        "Metric: %s\nConfidence maxs: %s" % (m, val.confidence_maxs)
+                    assert pd.to_timedelta(t) >= timedelta(
+                        0,
+                    ), "Metric: %s\nConfidence maxs: %s" % (m, val.confidence_maxs)
             if val.confidence_scores is not None:
                 cscores += 1
                 for s, v in zip(val.confidence_scores, val.values):
                     if s is None:
                         assert v is None
                         continue
-                    assert 0 <= s <= 100, \
-                        "Metric: %s\nConfidence scores: %s" % (m, val.confidence_scores)
+                    assert 0 <= s <= 100, "Metric: %s\nConfidence scores: %s" % (
+                        m,
+                        val.confidence_scores,
+                    )
         for k, v in nonzero.items():
             assert v > 0, k
     assert cmins > 0
@@ -233,20 +254,21 @@ async def test_calc_metrics_prs_access_denied(client, headers):
 
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
-@pytest.mark.parametrize(("devs", "date_from"),
-                         ([{"with": {}}, "2019-11-28"], [{}, "2018-09-28"]))
+@pytest.mark.parametrize(("devs", "date_from"), ([{"with": {}}, "2019-11-28"], [{}, "2018-09-28"]))
 async def test_calc_metrics_prs_empty_devs_tight_date(client, devs, date_from, headers):
     """https://athenianco.atlassian.net/browse/ENG-126"""
     body = {
         "date_from": date_from,
         "date_to": "2020-01-16",
-        "for": [{
-            **devs,
-            "repositories": [
-                "github.com/src-d/go-git",
-            ],
-            "environments": ["production"],
-        }],
+        "for": [
+            {
+                **devs,
+                "repositories": [
+                    "github.com/src-d/go-git",
+                ],
+                "environments": ["production"],
+            },
+        ],
         "granularities": ["month"],
         "exclude_inactive": False,
         "account": 1,
@@ -263,29 +285,41 @@ async def test_calc_metrics_prs_empty_devs_tight_date(client, devs, date_from, h
 
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
-@pytest.mark.parametrize("account, date_to, quantiles, lines, in_, code",
-                         [(3, "2020-02-22", [0, 1], None, "{1}", 404),
-                          (2, "2020-02-22", [0, 1], None, "{1}", 422),
-                          (10, "2020-02-22", [0, 1], None, "{1}", 404),
-                          (1, "2015-10-13", [0, 1], None, "{1}", 200),
-                          (1, "2010-01-11", [0, 1], None, "{1}", 400),
-                          (1, "2020-01-32", [0, 1], None, "{1}", 400),
-                          (1, "2020-01-01", [-1, 0.5], None, "{1}", 400),
-                          (1, "2020-01-01", [0, -1], None, "{1}", 400),
-                          (1, "2020-01-01", [10, 20], None, "{1}", 400),
-                          (1, "2020-01-01", [0.5, 0.25], None, "{1}", 400),
-                          (1, "2020-01-01", [0.5, 0.5], None, "{1}", 400),
-                          (1, "2015-10-13", [0, 1], [], "{1}", 400),
-                          (1, "2015-10-13", [0, 1], [1], "{1}", 400),
-                          (1, "2015-10-13", [0, 1], [1, 1], "{1}", 400),
-                          (1, "2015-10-13", [0, 1], [-1, 1], "{1}", 400),
-                          (1, "2015-10-13", [0, 1], [1, 0], "{1}", 400),
-                          (1, "2015-10-13", [0, 1], None, "github.com/athenianco/api", 403),
-                          ("1", "2020-02-22", [0, 1], None, "{1}", 400),
-                          (1, "0015-10-13", [0, 1], None, "{1}", 400),
-                          ])
+@pytest.mark.parametrize(
+    "account, date_to, quantiles, lines, in_, code",
+    [
+        (3, "2020-02-22", [0, 1], None, "{1}", 404),
+        (2, "2020-02-22", [0, 1], None, "{1}", 422),
+        (10, "2020-02-22", [0, 1], None, "{1}", 404),
+        (1, "2015-10-13", [0, 1], None, "{1}", 200),
+        (1, "2010-01-11", [0, 1], None, "{1}", 400),
+        (1, "2020-01-32", [0, 1], None, "{1}", 400),
+        (1, "2020-01-01", [-1, 0.5], None, "{1}", 400),
+        (1, "2020-01-01", [0, -1], None, "{1}", 400),
+        (1, "2020-01-01", [10, 20], None, "{1}", 400),
+        (1, "2020-01-01", [0.5, 0.25], None, "{1}", 400),
+        (1, "2020-01-01", [0.5, 0.5], None, "{1}", 400),
+        (1, "2015-10-13", [0, 1], [], "{1}", 400),
+        (1, "2015-10-13", [0, 1], [1], "{1}", 400),
+        (1, "2015-10-13", [0, 1], [1, 1], "{1}", 400),
+        (1, "2015-10-13", [0, 1], [-1, 1], "{1}", 400),
+        (1, "2015-10-13", [0, 1], [1, 0], "{1}", 400),
+        (1, "2015-10-13", [0, 1], None, "github.com/athenianco/api", 403),
+        ("1", "2020-02-22", [0, 1], None, "{1}", 400),
+        (1, "0015-10-13", [0, 1], None, "{1}", 400),
+    ],
+)
 async def test_calc_metrics_prs_nasty_input(
-        client, headers, account, date_to, quantiles, lines, in_, code, mdb):
+    client,
+    headers,
+    account,
+    date_to,
+    quantiles,
+    lines,
+    in_,
+    code,
+    mdb,
+):
     """What if we specify a date that does not exist?"""
     body = {
         "for": [
@@ -346,32 +380,37 @@ async def test_calc_metrics_prs_reposet(client, headers):
 
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
-@pytest.mark.parametrize("metric, count", [
-    (PullRequestMetricID.PR_WIP_COUNT, 596),
-    (PullRequestMetricID.PR_REVIEW_COUNT, 433),
-    (PullRequestMetricID.PR_MERGING_COUNT, 589),
-    (PullRequestMetricID.PR_RELEASE_COUNT, 408),
-    (PullRequestMetricID.PR_OPEN_COUNT, 589),
-    (PullRequestMetricID.PR_LEAD_COUNT, 408),
-    (PullRequestMetricID.PR_CYCLE_COUNT, 932),
-    (PullRequestMetricID.PR_OPENED, 596),
-    (PullRequestMetricID.PR_REVIEWED, 373),
-    (PullRequestMetricID.PR_NOT_REVIEWED, 276),
-    (PullRequestMetricID.PR_CLOSED, 589),
-    (PullRequestMetricID.PR_MERGED, 538),
-    (PullRequestMetricID.PR_REJECTED, 51),
-    (PullRequestMetricID.PR_DONE, 468),
-    (PullRequestMetricID.PR_WIP_PENDING_COUNT, 0),
-    (PullRequestMetricID.PR_REVIEW_PENDING_COUNT, 86),
-    (PullRequestMetricID.PR_MERGING_PENDING_COUNT, 21),
-    (PullRequestMetricID.PR_RELEASE_PENDING_COUNT, 4395),
-])
+@pytest.mark.parametrize(
+    "metric, count",
+    [
+        (PullRequestMetricID.PR_WIP_COUNT, 596),
+        (PullRequestMetricID.PR_REVIEW_COUNT, 433),
+        (PullRequestMetricID.PR_MERGING_COUNT, 589),
+        (PullRequestMetricID.PR_RELEASE_COUNT, 408),
+        (PullRequestMetricID.PR_OPEN_COUNT, 589),
+        (PullRequestMetricID.PR_LEAD_COUNT, 408),
+        (PullRequestMetricID.PR_CYCLE_COUNT, 932),
+        (PullRequestMetricID.PR_OPENED, 596),
+        (PullRequestMetricID.PR_REVIEWED, 373),
+        (PullRequestMetricID.PR_NOT_REVIEWED, 276),
+        (PullRequestMetricID.PR_CLOSED, 589),
+        (PullRequestMetricID.PR_MERGED, 538),
+        (PullRequestMetricID.PR_REJECTED, 51),
+        (PullRequestMetricID.PR_DONE, 468),
+        (PullRequestMetricID.PR_WIP_PENDING_COUNT, 0),
+        (PullRequestMetricID.PR_REVIEW_PENDING_COUNT, 86),
+        (PullRequestMetricID.PR_MERGING_PENDING_COUNT, 21),
+        (PullRequestMetricID.PR_RELEASE_PENDING_COUNT, 4395),
+    ],
+)
 async def test_calc_metrics_prs_counts_sums(client, headers, metric, count):
     body = {
         "for": [
             {
-                "with": {k: ["github.com/vmarkovtsev", "github.com/mcuadros"]
-                         for k in PullRequestWith().attribute_types},
+                "with": {
+                    k: ["github.com/vmarkovtsev", "github.com/mcuadros"]
+                    for k in PullRequestWith().attribute_types
+                },
                 "repositories": ["{1}"],
             },
         ],
@@ -400,25 +439,44 @@ async def test_calc_metrics_prs_counts_sums(client, headers, metric, count):
 
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
-@pytest.mark.parametrize("with_bots, values", [
-    (False, [[2.461538553237915, None, None, None],
-             [2.8328359127044678, 2.452173948287964, 7.439024448394775, 8.300812721252441],
-             [3.003115177154541, 2.5336787700653076, 5.616822242736816, 6.504673004150391],
-             [2.9247312545776367, 2.4838709831237793, 6.034883499145508, 6.813953399658203],
-             [2.660493850708008, 2.5050504207611084, 7.74545431137085, 8.163636207580566]]),
-    (True, [[1.4807692766189575, None, None, None],
-            [1.9402985572814941, 2.2058823108673096, 7.699999809265137, 8.050000190734863],
-            [2.121495246887207, 2.3231706619262695, 5.641975402832031, 6.111111164093018],
-            [2.0465950965881348, 2.2727272510528564, 6.234375, 6.75],
-            [1.814814805984497, 2.4146342277526855, 7.767441749572754, 7.860465049743652]]),
-])
+@pytest.mark.parametrize(
+    "with_bots, values",
+    [
+        (
+            False,
+            [
+                [2.461538553237915, None, None, None],
+                [2.8328359127044678, 2.452173948287964, 7.439024448394775, 8.300812721252441],
+                [3.003115177154541, 2.5336787700653076, 5.616822242736816, 6.504673004150391],
+                [2.9247312545776367, 2.4838709831237793, 6.034883499145508, 6.813953399658203],
+                [2.660493850708008, 2.5050504207611084, 7.74545431137085, 8.163636207580566],
+            ],
+        ),
+        (
+            True,
+            [
+                [1.4807692766189575, None, None, None],
+                [1.9402985572814941, 2.2058823108673096, 7.699999809265137, 8.050000190734863],
+                [2.121495246887207, 2.3231706619262695, 5.641975402832031, 6.111111164093018],
+                [2.0465950965881348, 2.2727272510528564, 6.234375, 6.75],
+                [1.814814805984497, 2.4146342277526855, 7.767441749572754, 7.860465049743652],
+            ],
+        ),
+    ],
+)
 async def test_calc_metrics_prs_averages(client, headers, with_bots, values, sdb):
     if with_bots:
-        await sdb.execute(insert(Team).values(Team(
-            owner_id=1,
-            name=Team.BOTS,
-            members=[39789],
-        ).create_defaults().explode()))
+        await sdb.execute(
+            insert(Team).values(
+                Team(
+                    owner_id=1,
+                    name=Team.BOTS,
+                    members=[39789],
+                )
+                .create_defaults()
+                .explode(),
+            ),
+        )
     body = {
         "for": [
             {
@@ -426,10 +484,12 @@ async def test_calc_metrics_prs_averages(client, headers, with_bots, values, sdb
                 "repositories": ["{1}"],
             },
         ],
-        "metrics": [PullRequestMetricID.PR_PARTICIPANTS_PER,
-                    PullRequestMetricID.PR_REVIEWS_PER,
-                    PullRequestMetricID.PR_REVIEW_COMMENTS_PER,
-                    PullRequestMetricID.PR_COMMENTS_PER],
+        "metrics": [
+            PullRequestMetricID.PR_PARTICIPANTS_PER,
+            PullRequestMetricID.PR_REVIEWS_PER,
+            PullRequestMetricID.PR_REVIEW_COMMENTS_PER,
+            PullRequestMetricID.PR_COMMENTS_PER,
+        ],
         "date_from": "2015-10-13",
         "date_to": "2020-01-23",
         "granularities": ["year"],
@@ -454,8 +514,7 @@ async def test_calc_metrics_prs_sizes(client, headers):
                 "repositories": ["{1}"],
             },
         ],
-        "metrics": [PullRequestMetricID.PR_SIZE,
-                    PullRequestMetricID.PR_MEDIAN_SIZE],
+        "metrics": [PullRequestMetricID.PR_SIZE, PullRequestMetricID.PR_MEDIAN_SIZE],
         "date_from": "2015-10-13",
         "date_to": "2020-01-23",
         "granularities": ["all"],
@@ -502,11 +561,13 @@ async def test_calc_metrics_prs_index_error(client, headers):
                 "repositories": ["github.com/src-d/go-git"],
             },
         ],
-        "metrics": [PullRequestMetricID.PR_WIP_TIME,
-                    PullRequestMetricID.PR_REVIEW_TIME,
-                    PullRequestMetricID.PR_MERGING_TIME,
-                    PullRequestMetricID.PR_RELEASE_TIME,
-                    PullRequestMetricID.PR_LEAD_TIME],
+        "metrics": [
+            PullRequestMetricID.PR_WIP_TIME,
+            PullRequestMetricID.PR_REVIEW_TIME,
+            PullRequestMetricID.PR_MERGING_TIME,
+            PullRequestMetricID.PR_RELEASE_TIME,
+            PullRequestMetricID.PR_LEAD_TIME,
+        ],
         "date_from": "2019-02-25",
         "date_to": "2019-02-28",
         "granularities": ["week"],
@@ -526,16 +587,21 @@ async def test_calc_metrics_prs_ratio_flow(client, headers):
     body = {
         "date_from": "2016-01-01",
         "date_to": "2020-01-16",
-        "for": [{
-            "repositories": [
-                "github.com/src-d/go-git",
-            ],
-        }],
+        "for": [
+            {
+                "repositories": [
+                    "github.com/src-d/go-git",
+                ],
+            },
+        ],
         "granularities": ["month"],
         "exclude_inactive": False,
         "account": 1,
-        "metrics": [PullRequestMetricID.PR_FLOW_RATIO, PullRequestMetricID.PR_OPENED,
-                    PullRequestMetricID.PR_CLOSED],
+        "metrics": [
+            PullRequestMetricID.PR_FLOW_RATIO,
+            PullRequestMetricID.PR_OPENED,
+            PullRequestMetricID.PR_CLOSED,
+        ],
     }
     response = await client.request(
         method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
@@ -553,8 +619,11 @@ async def test_calc_metrics_prs_ratio_flow(client, headers):
         if flow is None:
             assert closed is None
             continue
-        assert flow == np.float32((opened + 1) / (closed + 1)), \
-            "%.3f != %d / %d" % (flow, opened, closed)
+        assert flow == np.float32((opened + 1) / (closed + 1)), "%.3f != %d / %d" % (
+            flow,
+            opened,
+            closed,
+        )
 
 
 # TODO: fix response validation against the schema
@@ -563,11 +632,13 @@ async def test_calc_metrics_prs_exclude_inactive_full_span(client, headers):
     body = {
         "date_from": "2017-01-01",
         "date_to": "2017-01-11",
-        "for": [{
-            "repositories": [
-                "github.com/src-d/go-git",
-            ],
-        }],
+        "for": [
+            {
+                "repositories": [
+                    "github.com/src-d/go-git",
+                ],
+            },
+        ],
         "granularities": ["all"],
         "account": 1,
         "metrics": [PullRequestMetricID.PR_ALL_COUNT],
@@ -588,11 +659,13 @@ async def test_calc_metrics_prs_exclude_inactive_split(client, headers):
     body = {
         "date_from": "2016-12-21",
         "date_to": "2017-01-11",
-        "for": [{
-            "repositories": [
-                "github.com/src-d/go-git",
-            ],
-        }],
+        "for": [
+            {
+                "repositories": [
+                    "github.com/src-d/go-git",
+                ],
+            },
+        ],
         "granularities": ["11 day"],
         "account": 1,
         "metrics": [PullRequestMetricID.PR_ALL_COUNT],
@@ -615,14 +688,16 @@ async def test_calc_metrics_prs_filter_authors(client, headers):
     body = {
         "date_from": "2017-01-01",
         "date_to": "2017-01-11",
-        "for": [{
-            "repositories": [
-                "github.com/src-d/go-git",
-            ],
-            "with": {
-                "author": ["github.com/mcuadros"],
+        "for": [
+            {
+                "repositories": [
+                    "github.com/src-d/go-git",
+                ],
+                "with": {
+                    "author": ["github.com/mcuadros"],
+                },
             },
-        }],
+        ],
         "granularities": ["all"],
         "account": 1,
         "metrics": [PullRequestMetricID.PR_ALL_COUNT],
@@ -642,14 +717,16 @@ async def test_calc_metrics_prs_filter_team(client, headers, sample_team):
     body = {
         "date_from": "2017-01-01",
         "date_to": "2017-01-11",
-        "for": [{
-            "repositories": [
-                "github.com/src-d/go-git",
-            ],
-            "with": {
-                "author": ["{%d}" % sample_team],
+        "for": [
+            {
+                "repositories": [
+                    "github.com/src-d/go-git",
+                ],
+                "with": {
+                    "author": ["{%d}" % sample_team],
+                },
             },
-        }],
+        ],
         "granularities": ["all"],
         "account": 1,
         "metrics": [PullRequestMetricID.PR_ALL_COUNT],
@@ -670,19 +747,21 @@ async def test_calc_metrics_prs_group_authors(client, headers):
     body = {
         "date_from": "2017-01-01",
         "date_to": "2017-04-11",
-        "for": [{
-            "repositories": [
-                "github.com/src-d/go-git",
-            ],
-            "withgroups": [
-                {
-                    "author": ["github.com/mcuadros"],
-                },
-                {
-                    "merger": ["github.com/mcuadros"],
-                },
-            ],
-        }],
+        "for": [
+            {
+                "repositories": [
+                    "github.com/src-d/go-git",
+                ],
+                "withgroups": [
+                    {
+                        "author": ["github.com/mcuadros"],
+                    },
+                    {
+                        "merger": ["github.com/mcuadros"],
+                    },
+                ],
+            },
+        ],
         "granularities": ["all"],
         "account": 1,
         "metrics": [PullRequestMetricID.PR_ALL_COUNT],
@@ -708,19 +787,21 @@ async def test_calc_metrics_prs_group_team(client, headers, sample_team):
     body = {
         "date_from": "2017-01-01",
         "date_to": "2017-04-11",
-        "for": [{
-            "repositories": [
-                "github.com/src-d/go-git",
-            ],
-            "withgroups": [
-                {
-                    "author": [team_str],
-                },
-                {
-                    "merger": [team_str],
-                },
-            ],
-        }],
+        "for": [
+            {
+                "repositories": [
+                    "github.com/src-d/go-git",
+                ],
+                "withgroups": [
+                    {
+                        "author": [team_str],
+                    },
+                    {
+                        "merger": [team_str],
+                    },
+                ],
+            },
+        ],
         "granularities": ["all"],
         "account": 1,
         "metrics": [PullRequestMetricID.PR_ALL_COUNT],
@@ -746,14 +827,17 @@ async def test_calc_metrics_prs_labels_include(client, headers):
     body = {
         "date_from": "2018-09-01",
         "date_to": "2018-11-18",
-        "for": [{
-            "repositories": [
-                "github.com/src-d/go-git",
-            ],
-            "labels_include": [
-                "bug", "enhancement",
-            ],
-        }],
+        "for": [
+            {
+                "repositories": [
+                    "github.com/src-d/go-git",
+                ],
+                "labels_include": [
+                    "bug",
+                    "enhancement",
+                ],
+            },
+        ],
         "granularities": ["all"],
         "account": 1,
         "metrics": [PullRequestMetricID.PR_ALL_COUNT],
@@ -774,14 +858,17 @@ async def test_calc_metrics_prs_quantiles(client, headers):
     body = {
         "date_from": "2018-06-01",
         "date_to": "2018-11-18",
-        "for": [{
-            "repositories": [
-                "github.com/src-d/go-git",
-            ],
-            "labels_include": [
-                "bug", "enhancement",
-            ],
-        }],
+        "for": [
+            {
+                "repositories": [
+                    "github.com/src-d/go-git",
+                ],
+                "labels_include": [
+                    "bug",
+                    "enhancement",
+                ],
+            },
+        ],
         "granularities": ["all"],
         "account": 1,
         "metrics": [PullRequestMetricID.PR_WIP_TIME],
@@ -832,15 +919,17 @@ async def test_calc_metrics_prs_quantiles(client, headers):
 async def test_calc_metrics_prs_jira(client, headers):
     """Metrics over PRs filtered by JIRA properties."""
     body = {
-        "for": [{
-            "repositories": ["{1}"],
-            "jira": {
-                "epics": ["DEV-149", "DEV-776", "DEV-737", "DEV-667", "DEV-140"],
-                "labels_include": ["performance", "enhancement"],
-                "labels_exclude": ["security"],
-                "issue_types": ["Task"],
+        "for": [
+            {
+                "repositories": ["{1}"],
+                "jira": {
+                    "epics": ["DEV-149", "DEV-776", "DEV-737", "DEV-667", "DEV-140"],
+                    "labels_include": ["performance", "enhancement"],
+                    "labels_exclude": ["security"],
+                    "issue_types": ["Task"],
+                },
             },
-        }],
+        ],
         "metrics": [PullRequestMetricID.PR_LEAD_TIME],
         "date_from": "2015-10-13",
         "date_to": "2020-01-23",
@@ -862,12 +951,14 @@ async def test_calc_metrics_prs_jira(client, headers):
 @pytest.mark.app_validate_responses(False)
 async def test_calc_metrics_prs_jira_disabled_projects(client, headers, disabled_dev):
     body = {
-        "for": [{
-            "repositories": ["{1}"],
-            "jira": {
-                "epics": ["DEV-149", "DEV-776", "DEV-737", "DEV-667", "DEV-140"],
+        "for": [
+            {
+                "repositories": ["{1}"],
+                "jira": {
+                    "epics": ["DEV-149", "DEV-776", "DEV-737", "DEV-667", "DEV-140"],
+                },
             },
-        }],
+        ],
         "metrics": [PullRequestMetricID.PR_LEAD_TIME],
         "date_from": "2015-10-13",
         "date_to": "2020-01-23",
@@ -889,13 +980,15 @@ async def test_calc_metrics_prs_jira_disabled_projects(client, headers, disabled
 @pytest.mark.app_validate_responses(False)
 async def test_calc_metrics_prs_jira_custom_projects(client, headers):
     body = {
-        "for": [{
-            "repositories": ["{1}"],
-            "jira": {
-                "epics": ["DEV-149", "DEV-776", "DEV-737", "DEV-667", "DEV-140"],
-                "projects": ["ENG"],
+        "for": [
+            {
+                "repositories": ["{1}"],
+                "jira": {
+                    "epics": ["DEV-149", "DEV-776", "DEV-737", "DEV-667", "DEV-140"],
+                    "projects": ["ENG"],
+                },
             },
-        }],
+        ],
         "metrics": [PullRequestMetricID.PR_LEAD_TIME],
         "date_from": "2015-10-13",
         "date_to": "2020-01-23",
@@ -917,12 +1010,14 @@ async def test_calc_metrics_prs_jira_custom_projects(client, headers):
 @pytest.mark.app_validate_responses(False)
 async def test_calc_metrics_prs_jira_only_custom_projects(client, headers):
     body = {
-        "for": [{
-            "repositories": ["{1}"],
-            "jira": {
-                "projects": ["DEV"],
+        "for": [
+            {
+                "repositories": ["{1}"],
+                "jira": {
+                    "projects": ["DEV"],
+                },
             },
-        }],
+        ],
         "metrics": [PullRequestMetricID.PR_MERGED],
         "date_from": "2015-10-13",
         "date_to": "2020-01-23",
@@ -1040,17 +1135,20 @@ async def test_calc_metrics_prs_lines_smoke(client, headers):
     assert cm.calculated[0].values[0].values[0] == 6
 
 
-@pytest.mark.parametrize("metric", [
-    PullRequestMetricID.PR_DEPLOYMENT_TIME,
-    PullRequestMetricID.PR_DEPLOYMENT_COUNT,
-    PullRequestMetricID.PR_DEPLOYMENT_COUNT_Q,
-    PullRequestMetricID.PR_CYCLE_DEPLOYMENT_TIME,
-    PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT,
-    PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT_Q,
-    PullRequestMetricID.PR_LEAD_DEPLOYMENT_TIME,
-    PullRequestMetricID.PR_LEAD_DEPLOYMENT_COUNT,
-    PullRequestMetricID.PR_LEAD_DEPLOYMENT_COUNT_Q,
-])
+@pytest.mark.parametrize(
+    "metric",
+    [
+        PullRequestMetricID.PR_DEPLOYMENT_TIME,
+        PullRequestMetricID.PR_DEPLOYMENT_COUNT,
+        PullRequestMetricID.PR_DEPLOYMENT_COUNT_Q,
+        PullRequestMetricID.PR_CYCLE_DEPLOYMENT_TIME,
+        PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT,
+        PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT_Q,
+        PullRequestMetricID.PR_LEAD_DEPLOYMENT_TIME,
+        PullRequestMetricID.PR_LEAD_DEPLOYMENT_COUNT,
+        PullRequestMetricID.PR_LEAD_DEPLOYMENT_COUNT_Q,
+    ],
+)
 async def test_calc_metrics_prs_deployments_no_env(client, headers, metric):
     body = {
         "for": [
@@ -1083,10 +1181,12 @@ async def test_calc_metrics_prs_deployments_smoke(client, headers, precomputed_d
                 "environments": ["staging", "production"],
             },
         ],
-        "metrics": [PullRequestMetricID.PR_DEPLOYMENT_TIME,
-                    PullRequestMetricID.PR_LEAD_DEPLOYMENT_TIME,
-                    PullRequestMetricID.PR_CYCLE_DEPLOYMENT_TIME,
-                    PullRequestMetricID.PR_DEPLOYMENT_COUNT],
+        "metrics": [
+            PullRequestMetricID.PR_DEPLOYMENT_TIME,
+            PullRequestMetricID.PR_LEAD_DEPLOYMENT_TIME,
+            PullRequestMetricID.PR_CYCLE_DEPLOYMENT_TIME,
+            PullRequestMetricID.PR_DEPLOYMENT_COUNT,
+        ],
         "date_from": "2015-10-13",
         "date_to": "2020-01-23",
         "granularities": ["all"],
@@ -1104,18 +1204,28 @@ async def test_calc_metrics_prs_deployments_smoke(client, headers, precomputed_d
 
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
-@pytest.mark.parametrize("second_repo, counts", [
-    ("/beta", [266, 52, 204, 197]),
-    ("", [463, 81, 372, 347]),
-])
+@pytest.mark.parametrize(
+    "second_repo, counts",
+    [
+        ("/beta", [266, 52, 204, 197]),
+        ("", [463, 81, 372, 347]),
+    ],
+)
 async def test_calc_metrics_prs_logical_smoke(
-        client, headers, logical_settings_db, release_match_setting_tag_logical_db,
-        second_repo, counts):
+    client,
+    headers,
+    logical_settings_db,
+    release_match_setting_tag_logical_db,
+    second_repo,
+    counts,
+):
     body = {
         "for": [
             {
-                "repositories": ["github.com/src-d/go-git/alpha",
-                                 "github.com/src-d/go-git" + second_repo],
+                "repositories": [
+                    "github.com/src-d/go-git/alpha",
+                    "github.com/src-d/go-git" + second_repo,
+                ],
             },
         ],
         "metrics": [
@@ -1141,25 +1251,38 @@ async def test_calc_metrics_prs_logical_smoke(
 
 @pytest.mark.app_validate_responses(False)
 async def test_calc_metrics_prs_logical_dupes(client, headers, logical_settings_db, sdb):
-    await sdb.execute(insert(ReleaseSetting).values(
-        ReleaseSetting(repository="github.com/src-d/go-git/alpha",
-                       account_id=1,
-                       branches="master",
-                       tags=".*",
-                       events=".*",
-                       match=ReleaseMatch.tag).create_defaults().explode(with_primary_keys=True)))
-    await sdb.execute(insert(ReleaseSetting).values(
-        ReleaseSetting(repository="github.com/src-d/go-git/beta",
-                       account_id=1,
-                       branches="master",
-                       tags=".*",
-                       events=".*",
-                       match=ReleaseMatch.tag).create_defaults().explode(with_primary_keys=True)))
+    await sdb.execute(
+        insert(ReleaseSetting).values(
+            ReleaseSetting(
+                repository="github.com/src-d/go-git/alpha",
+                account_id=1,
+                branches="master",
+                tags=".*",
+                events=".*",
+                match=ReleaseMatch.tag,
+            )
+            .create_defaults()
+            .explode(with_primary_keys=True),
+        ),
+    )
+    await sdb.execute(
+        insert(ReleaseSetting).values(
+            ReleaseSetting(
+                repository="github.com/src-d/go-git/beta",
+                account_id=1,
+                branches="master",
+                tags=".*",
+                events=".*",
+                match=ReleaseMatch.tag,
+            )
+            .create_defaults()
+            .explode(with_primary_keys=True),
+        ),
+    )
     body = {
         "for": [
             {
-                "repositories": ["github.com/src-d/go-git/alpha",
-                                 "github.com/src-d/go-git/beta"],
+                "repositories": ["github.com/src-d/go-git/alpha", "github.com/src-d/go-git/beta"],
             },
         ],
         "metrics": [
@@ -1187,15 +1310,26 @@ async def test_calc_metrics_prs_logical_dupes(client, headers, logical_settings_
 @pytest.mark.app_validate_responses(False)
 @with_defer
 async def test_calc_metrics_prs_release_ignored(
-        client, headers, mdb, pdb, rdb, release_match_setting_tag, pr_miner, prefixer,
-        branches, default_branches):
+    client,
+    headers,
+    mdb,
+    pdb,
+    rdb,
+    release_match_setting_tag,
+    pr_miner,
+    prefixer,
+    branches,
+    default_branches,
+):
     body = {
         "for": [{"repositories": ["{1}"]}],
-        "metrics": [PullRequestMetricID.PR_RELEASE_TIME,
-                    PullRequestMetricID.PR_RELEASE_COUNT,
-                    PullRequestMetricID.PR_RELEASE_PENDING_COUNT,
-                    PullRequestMetricID.PR_REJECTED,
-                    PullRequestMetricID.PR_DONE],
+        "metrics": [
+            PullRequestMetricID.PR_RELEASE_TIME,
+            PullRequestMetricID.PR_RELEASE_COUNT,
+            PullRequestMetricID.PR_RELEASE_PENDING_COUNT,
+            PullRequestMetricID.PR_REJECTED,
+            PullRequestMetricID.PR_DONE,
+        ],
         "date_from": "2017-06-01",
         "date_to": "2018-01-01",
         "granularities": ["all"],
@@ -1211,12 +1345,29 @@ async def test_calc_metrics_prs_release_ignored(
     time_from = datetime(year=2017, month=6, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2017, month=12, day=31, tzinfo=timezone.utc)
     releases, _, _, _ = await mine_releases(
-        ["src-d/go-git"], {}, None, default_branches, time_from, time_to, LabelFilter.empty(),
-        JIRAFilter.empty(), release_match_setting_tag, LogicalRepositorySettings.empty(),
-        prefixer, 1, (6366825,), mdb, pdb, rdb, None, with_deployments=False)
+        ["src-d/go-git"],
+        {},
+        None,
+        default_branches,
+        time_from,
+        time_to,
+        LabelFilter.empty(),
+        JIRAFilter.empty(),
+        release_match_setting_tag,
+        LogicalRepositorySettings.empty(),
+        prefixer,
+        1,
+        (6366825,),
+        mdb,
+        pdb,
+        rdb,
+        None,
+        with_deployments=False,
+    )
     await wait_deferred()
     ignored = await override_first_releases(
-        releases, {}, release_match_setting_tag, 1, pdb, threshold_factor=0)
+        releases, {}, release_match_setting_tag, 1, pdb, threshold_factor=0,
+    )
     assert ignored == 1
     response = await client.request(
         method="POST", path="/v1/metrics/pull_requests", headers=headers, json=body,
@@ -1283,15 +1434,18 @@ async def test_code_bypassing_prs_only_default_branch(client, headers):
     assert total_lines == 175297
 
 
-@pytest.mark.parametrize("account, date_to, in_, code",
-                         [(3, "2020-02-22", "{1}", 404),
-                          (2, "2020-02-22", "github.com/src-d/go-git", 422),
-                          (10, "2020-02-22", "{1}", 404),
-                          (1, "2019-01-12", "{1}", 200),
-                          (1, "2019-01-11", "{1}", 400),
-                          (1, "2019-01-32", "{1}", 400),
-                          (1, "2019-01-12", "github.com/athenianco/athenian-api", 403),
-                          ])
+@pytest.mark.parametrize(
+    "account, date_to, in_, code",
+    [
+        (3, "2020-02-22", "{1}", 404),
+        (2, "2020-02-22", "github.com/src-d/go-git", 422),
+        (10, "2020-02-22", "{1}", 404),
+        (1, "2019-01-12", "{1}", 200),
+        (1, "2019-01-11", "{1}", 400),
+        (1, "2019-01-32", "{1}", 400),
+        (1, "2019-01-12", "github.com/athenianco/athenian-api", 403),
+    ],
+)
 async def test_code_bypassing_prs_nasty_input(client, headers, account, date_to, in_, code):
     body = {
         "account": account,
@@ -1345,8 +1499,10 @@ developer_metric_be_stats = {
 }
 
 
-@pytest.mark.parametrize("metric, value", sorted((m, developer_metric_mcuadros_stats[m])
-                                                 for m in DeveloperMetricID))
+@pytest.mark.parametrize(
+    "metric, value",
+    sorted((m, developer_metric_mcuadros_stats[m]) for m in DeveloperMetricID),
+)
 async def test_developer_metrics_single(client, headers, metric, value):
     body = {
         "account": 1,
@@ -1363,7 +1519,8 @@ async def test_developer_metrics_single(client, headers, metric, value):
     )
     assert response.status == 200
     result = CalculatedDeveloperMetrics.from_dict(
-        FriendlyJson.loads((await response.read()).decode("utf-8")))
+        FriendlyJson.loads((await response.read()).decode("utf-8")),
+    )
     assert result.metrics == [metric]
     assert result.date_from == date(year=2018, month=1, day=12)
     assert result.date_to == date(year=2020, month=3, day=1)
@@ -1401,14 +1558,29 @@ async def test_developer_metrics_jira_single(client, headers, metric, value):
         "date_to": "2020-03-01",
         "granularities": ["all"],
         "for": [
-            {"repositories": ["{1}"], "developers": ["github.com/mcuadros"],
-             "jira": {
-                 "labels_include": [
-                     "API", "Webapp", "accounts", "bug", "code-quality", "discarded",
-                     "discussion", "feature", "functionality", "internal-story", "needs-specs",
-                     "onboarding", "performance", "user-story", "webapp",
-                 ],
-            }},
+            {
+                "repositories": ["{1}"],
+                "developers": ["github.com/mcuadros"],
+                "jira": {
+                    "labels_include": [
+                        "API",
+                        "Webapp",
+                        "accounts",
+                        "bug",
+                        "code-quality",
+                        "discarded",
+                        "discussion",
+                        "feature",
+                        "functionality",
+                        "internal-story",
+                        "needs-specs",
+                        "onboarding",
+                        "performance",
+                        "user-story",
+                        "webapp",
+                    ],
+                },
+            },
         ],
         "metrics": [metric],
     }
@@ -1417,7 +1589,8 @@ async def test_developer_metrics_jira_single(client, headers, metric, value):
     )
     assert response.status == 200
     result = CalculatedDeveloperMetrics.from_dict(
-        FriendlyJson.loads((await response.read()).decode("utf-8")))
+        FriendlyJson.loads((await response.read()).decode("utf-8")),
+    )
     assert result.metrics == [metric]
     assert result.date_from == date(year=2016, month=1, day=12)
     assert result.date_to == date(year=2020, month=3, day=1)
@@ -1444,8 +1617,10 @@ developer_metric_mcuadros_jira_labels_stats = {
 }
 
 
-@pytest.mark.parametrize("metric, value",
-                         list(developer_metric_mcuadros_jira_labels_stats.items()))
+@pytest.mark.parametrize(
+    "metric, value",
+    list(developer_metric_mcuadros_jira_labels_stats.items()),
+)
 async def test_developer_metrics_jira_labels_single(client, headers, metric, value):
     body = {
         "account": 1,
@@ -1453,16 +1628,38 @@ async def test_developer_metrics_jira_labels_single(client, headers, metric, val
         "date_to": "2020-03-01",
         "granularities": ["all"],
         "for": [
-            {"repositories": ["{1}"], "developers": ["github.com/mcuadros"],
-             "labels_include": ["enhancement", "bug", "plumbing", "performance", "ssh",
-                                "documentation", "windows"],
-             "jira": {
-                 "labels_include": [
-                     "API", "Webapp", "accounts", "bug", "code-quality", "discarded",
-                     "discussion", "feature", "functionality", "internal-story", "needs-specs",
-                     "onboarding", "performance", "user-story", "webapp",
-                 ],
-            }},
+            {
+                "repositories": ["{1}"],
+                "developers": ["github.com/mcuadros"],
+                "labels_include": [
+                    "enhancement",
+                    "bug",
+                    "plumbing",
+                    "performance",
+                    "ssh",
+                    "documentation",
+                    "windows",
+                ],
+                "jira": {
+                    "labels_include": [
+                        "API",
+                        "Webapp",
+                        "accounts",
+                        "bug",
+                        "code-quality",
+                        "discarded",
+                        "discussion",
+                        "feature",
+                        "functionality",
+                        "internal-story",
+                        "needs-specs",
+                        "onboarding",
+                        "performance",
+                        "user-story",
+                        "webapp",
+                    ],
+                },
+            },
         ],
         "metrics": [metric],
     }
@@ -1471,7 +1668,8 @@ async def test_developer_metrics_jira_labels_single(client, headers, metric, val
     )
     assert response.status == 200
     result = CalculatedDeveloperMetrics.from_dict(
-        FriendlyJson.loads((await response.read()).decode("utf-8")))
+        FriendlyJson.loads((await response.read()).decode("utf-8")),
+    )
     assert result.metrics == [metric]
     assert result.date_from == date(year=2016, month=1, day=12)
     assert result.date_to == date(year=2020, month=3, day=1)
@@ -1499,7 +1697,8 @@ async def test_developer_metrics_all(client, headers, dev):
     )
     assert response.status == 200, (await response.read()).decode("utf-8")
     result = CalculatedDeveloperMetrics.from_dict(
-        FriendlyJson.loads((await response.read()).decode("utf-8")))
+        FriendlyJson.loads((await response.read()).decode("utf-8")),
+    )
     assert set(result.metrics) == set(DeveloperMetricID)
     assert result.date_from == date(year=2018, month=1, day=12)
     assert result.date_to == date(year=2020, month=3, day=1)
@@ -1512,11 +1711,14 @@ async def test_developer_metrics_all(client, headers, dev):
         for v, m in zip(result.calculated[0].values[0][0].values, sorted(DeveloperMetricID)):
             assert v == developer_metric_mcuadros_stats[m], m
     elif dev == "xxx":
-        assert all(v == 0 for v in result.calculated[0].values[0][0].values), \
-            "%s\n%s" % (str(result.calculated[0].values[0]), sorted(DeveloperMetricID))
+        assert all(v == 0 for v in result.calculated[0].values[0][0].values), "%s\n%s" % (
+            str(result.calculated[0].values[0]),
+            sorted(DeveloperMetricID),
+        )
     else:
-        assert all(isinstance(v, int) for v in result.calculated[0].values[0][0].values), \
-            "%s\n%s" % (str(result.calculated[0].values[0]), sorted(DeveloperMetricID))
+        assert all(
+            isinstance(v, int) for v in result.calculated[0].values[0][0].values
+        ), "%s\n%s" % (str(result.calculated[0].values[0]), sorted(DeveloperMetricID))
 
 
 async def test_developer_metrics_repogroups(client, headers):
@@ -1527,9 +1729,11 @@ async def test_developer_metrics_repogroups(client, headers):
         "timezone": 60,
         "granularities": ["all"],
         "for": [
-            {"repositories": ["github.com/src-d/go-git", "github.com/src-d/gitbase"],
-             "repogroups": [[0], [1]],
-             "developers": ["github.com/mcuadros"]},
+            {
+                "repositories": ["github.com/src-d/go-git", "github.com/src-d/gitbase"],
+                "repogroups": [[0], [1]],
+                "developers": ["github.com/mcuadros"],
+            },
         ],
         "metrics": sorted(DeveloperMetricID),
     }
@@ -1542,29 +1746,41 @@ async def test_developer_metrics_repogroups(client, headers):
         developer.ACTIVITY_DAYS_THRESHOLD_DENSITY = 0.2
     assert response.status == 200, (await response.read()).decode("utf-8")
     result = CalculatedDeveloperMetrics.from_dict(
-        FriendlyJson.loads((await response.read()).decode("utf-8")))
+        FriendlyJson.loads((await response.read()).decode("utf-8")),
+    )
     assert set(result.metrics) == set(DeveloperMetricID)
     assert len(result.calculated) == 2
-    assert all((v > 0 or m == DeveloperMetricID.ACTIVE)
-               for m, v in zip(sorted(sorted(DeveloperMetricID)),
-                               result.calculated[0].values[0][0].values))
+    assert all(
+        (v > 0 or m == DeveloperMetricID.ACTIVE)
+        for m, v in zip(
+            sorted(sorted(DeveloperMetricID)), result.calculated[0].values[0][0].values,
+        )
+    )
     assert all(v == 0 for v in result.calculated[1].values[0][0].values)
 
 
-@pytest.mark.parametrize("metric, value", sorted((m, developer_metric_be_stats[m])
-                                                 for m in DeveloperMetricID))
+@pytest.mark.parametrize(
+    "metric, value",
+    sorted((m, developer_metric_be_stats[m]) for m in DeveloperMetricID),
+)
 async def test_developer_metrics_labels_include(client, headers, metric, value):
     body = {
         "account": 1,
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
         "granularities": ["all"],
-        "for": [{
-            "repositories": ["{1}"],
-            "developers": ["github.com/mcuadros", "github.com/smola",
-                           "github.com/jfontan", "github.com/ajnavarro"],
-            "labels_include": ["bug", "enhancement"],
-        }],
+        "for": [
+            {
+                "repositories": ["{1}"],
+                "developers": [
+                    "github.com/mcuadros",
+                    "github.com/smola",
+                    "github.com/jfontan",
+                    "github.com/ajnavarro",
+                ],
+                "labels_include": ["bug", "enhancement"],
+            },
+        ],
         "metrics": [metric],
     }
     response = await client.request(
@@ -1572,7 +1788,8 @@ async def test_developer_metrics_labels_include(client, headers, metric, value):
     )
     assert response.status == 200
     result = CalculatedDeveloperMetrics.from_dict(
-        FriendlyJson.loads((await response.read()).decode("utf-8")))
+        FriendlyJson.loads((await response.read()).decode("utf-8")),
+    )
     assert result.calculated[0].for_.labels_include == ["bug", "enhancement"]
     assert [m[0].values for m in result.calculated[0].values] == value
 
@@ -1583,12 +1800,18 @@ async def test_developer_metrics_aggregate(client, headers):
         "date_from": "2018-07-12",
         "date_to": "2018-09-15",
         "granularities": ["all"],
-        "for": [{
-            "repositories": ["{1}"],
-            "developers": ["github.com/mcuadros", "github.com/erizocosmico",
-                           "github.com/jfontan", "github.com/vancluever"],
-            "aggregate_devgroups": [[0, 1, 2, 3]],
-        }],
+        "for": [
+            {
+                "repositories": ["{1}"],
+                "developers": [
+                    "github.com/mcuadros",
+                    "github.com/erizocosmico",
+                    "github.com/jfontan",
+                    "github.com/vancluever",
+                ],
+                "aggregate_devgroups": [[0, 1, 2, 3]],
+            },
+        ],
         "metrics": [DeveloperMetricID.ACTIVE, DeveloperMetricID.PRS_CREATED],
     }
     response = await client.request(
@@ -1596,7 +1819,8 @@ async def test_developer_metrics_aggregate(client, headers):
     )
     assert response.status == 200
     result = CalculatedDeveloperMetrics.from_dict(
-        FriendlyJson.loads((await response.read()).decode("utf-8")))
+        FriendlyJson.loads((await response.read()).decode("utf-8")),
+    )
     assert [m[0].values for m in result.calculated[0].values] == [[1, 17]]
     body["for"][0]["aggregate_devgroups"][0].append(-1)
     response = await client.request(
@@ -1616,11 +1840,16 @@ async def test_developer_metrics_granularities(client, headers):
         "date_from": "2018-07-12",
         "date_to": "2018-09-15",
         "granularities": ["all", "2 week"],
-        "for": [{
-            "repositories": ["{1}"],
-            "developers": ["github.com/mcuadros", "github.com/erizocosmico",
-                           "github.com/jfontan"],
-        }],
+        "for": [
+            {
+                "repositories": ["{1}"],
+                "developers": [
+                    "github.com/mcuadros",
+                    "github.com/erizocosmico",
+                    "github.com/jfontan",
+                ],
+            },
+        ],
         "metrics": [DeveloperMetricID.ACTIVE, DeveloperMetricID.PRS_CREATED],
     }
     response = await client.request(
@@ -1628,7 +1857,8 @@ async def test_developer_metrics_granularities(client, headers):
     )
     assert response.status == 200
     result = CalculatedDeveloperMetrics.from_dict(
-        FriendlyJson.loads((await response.read()).decode("utf-8")))
+        FriendlyJson.loads((await response.read()).decode("utf-8")),
+    )
     assert len(result.calculated) == 2
     assert result.calculated[0].values == [
         [CalculatedLinearMetricValues(date=date(2018, 7, 12), values=[1, 0])],
@@ -1643,13 +1873,15 @@ async def test_developer_metrics_granularities(client, headers):
             CalculatedLinearMetricValues(date=date(2018, 8, 9), values=[1, 0]),
             CalculatedLinearMetricValues(date=date(2018, 8, 23), values=[1, 0]),
             CalculatedLinearMetricValues(date=date(2018, 9, 6), values=[1, 0]),
-        ], [
+        ],
+        [
             CalculatedLinearMetricValues(date=date(2018, 7, 12), values=[0, 2]),
             CalculatedLinearMetricValues(date=date(2018, 7, 26), values=[1, 2]),
             CalculatedLinearMetricValues(date=date(2018, 8, 9), values=[0, 0]),
             CalculatedLinearMetricValues(date=date(2018, 8, 23), values=[0, 0]),
             CalculatedLinearMetricValues(date=date(2018, 9, 6), values=[0, 0]),
-        ], [
+        ],
+        [
             CalculatedLinearMetricValues(date=date(2018, 7, 12), values=[1, 2]),
             CalculatedLinearMetricValues(date=date(2018, 7, 26), values=[0, 2]),
             CalculatedLinearMetricValues(date=date(2018, 8, 9), values=[1, 4]),
@@ -1666,12 +1898,18 @@ async def test_developer_metrics_labels_exclude(client, headers):
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
         "granularities": ["all"],
-        "for": [{
-            "repositories": ["{1}"],
-            "developers": ["github.com/mcuadros", "github.com/smola",
-                           "github.com/jfontan", "github.com/ajnavarro"],
-            "labels_exclude": ["bug", "enhancement"],
-        }],
+        "for": [
+            {
+                "repositories": ["{1}"],
+                "developers": [
+                    "github.com/mcuadros",
+                    "github.com/smola",
+                    "github.com/jfontan",
+                    "github.com/ajnavarro",
+                ],
+                "labels_exclude": ["bug", "enhancement"],
+            },
+        ],
         "metrics": [DeveloperMetricID.PRS_CREATED],
     }
     response = await client.request(
@@ -1679,7 +1917,8 @@ async def test_developer_metrics_labels_exclude(client, headers):
     )
     assert response.status == 200
     result = CalculatedDeveloperMetrics.from_dict(
-        FriendlyJson.loads((await response.read()).decode("utf-8")))
+        FriendlyJson.loads((await response.read()).decode("utf-8")),
+    )
     assert not result.calculated[0].for_.labels_include
     assert result.calculated[0].for_.labels_exclude == ["bug", "enhancement"]
     assert [m[0].values for m in result.calculated[0].values] == [[14], [8], [26], [7]]
@@ -1691,13 +1930,19 @@ async def test_developer_metrics_labels_include_exclude(client, headers):
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
         "granularities": ["all"],
-        "for": [{
-            "repositories": ["{1}"],
-            "developers": ["github.com/mcuadros", "github.com/smola",
-                           "github.com/jfontan", "github.com/ajnavarro"],
-            "labels_include": ["bug"],
-            "labels_exclude": ["enhancement"],
-        }],
+        "for": [
+            {
+                "repositories": ["{1}"],
+                "developers": [
+                    "github.com/mcuadros",
+                    "github.com/smola",
+                    "github.com/jfontan",
+                    "github.com/ajnavarro",
+                ],
+                "labels_include": ["bug"],
+                "labels_exclude": ["enhancement"],
+            },
+        ],
         "metrics": [DeveloperMetricID.PRS_CREATED],
     }
     response = await client.request(
@@ -1705,7 +1950,8 @@ async def test_developer_metrics_labels_include_exclude(client, headers):
     )
     assert response.status == 200
     result = CalculatedDeveloperMetrics.from_dict(
-        FriendlyJson.loads((await response.read()).decode("utf-8")))
+        FriendlyJson.loads((await response.read()).decode("utf-8")),
+    )
     assert result.calculated[0].for_.labels_include == ["bug"]
     assert result.calculated[0].for_.labels_exclude == ["enhancement"]
     assert [m[0].values for m in result.calculated[0].values] == [[0], [0], [1], [0]]
@@ -1717,13 +1963,19 @@ async def test_developer_metrics_labels_contradiction(client, headers):
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
         "granularities": ["all"],
-        "for": [{
-            "repositories": ["{1}"],
-            "developers": ["github.com/mcuadros", "github.com/smola",
-                           "github.com/jfontan", "github.com/ajnavarro"],
-            "labels_include": ["bug"],
-            "labels_exclude": ["bug"],
-        }],
+        "for": [
+            {
+                "repositories": ["{1}"],
+                "developers": [
+                    "github.com/mcuadros",
+                    "github.com/smola",
+                    "github.com/jfontan",
+                    "github.com/ajnavarro",
+                ],
+                "labels_include": ["bug"],
+                "labels_exclude": ["bug"],
+            },
+        ],
         "metrics": [DeveloperMetricID.PRS_CREATED],
     }
     response = await client.request(
@@ -1731,21 +1983,25 @@ async def test_developer_metrics_labels_contradiction(client, headers):
     )
     assert response.status == 200
     result = CalculatedDeveloperMetrics.from_dict(
-        FriendlyJson.loads((await response.read()).decode("utf-8")))
+        FriendlyJson.loads((await response.read()).decode("utf-8")),
+    )
     assert result.calculated[0].for_.labels_include == ["bug"]
     assert result.calculated[0].for_.labels_exclude == ["bug"]
     assert [m[0].values for m in result.calculated[0].values] == [[0], [0], [0], [0]]
 
 
-@pytest.mark.parametrize("account, date_to, in_, code",
-                         [(3, "2020-02-22", "{1}", 404),
-                          (2, "2020-02-22", "github.com/src-d/go-git", 422),
-                          (10, "2020-02-22", "{1}", 404),
-                          (1, "2018-01-12", "{1}", 200),
-                          (1, "2018-01-11", "{1}", 400),
-                          (1, "2019-01-32", "{1}", 400),
-                          (1, "2018-01-12", "github.com/athenianco/athenian-api", 403),
-                          ])
+@pytest.mark.parametrize(
+    "account, date_to, in_, code",
+    [
+        (3, "2020-02-22", "{1}", 404),
+        (2, "2020-02-22", "github.com/src-d/go-git", 422),
+        (10, "2020-02-22", "{1}", 404),
+        (1, "2018-01-12", "{1}", 200),
+        (1, "2018-01-11", "{1}", 400),
+        (1, "2019-01-32", "{1}", 400),
+        (1, "2018-01-12", "github.com/athenianco/athenian-api", 403),
+    ],
+)
 async def test_developer_metrics_nasty_input(client, headers, account, date_to, in_, code):
     body = {
         "account": account,
@@ -1763,10 +2019,13 @@ async def test_developer_metrics_nasty_input(client, headers, account, date_to, 
     assert response.status == code
 
 
-@pytest.mark.parametrize("repos, devs", [
-    ([], ["github.com/mcuadros"]),
-    (["github.com/src-d/go-git"], []),
-])
+@pytest.mark.parametrize(
+    "repos, devs",
+    [
+        ([], ["github.com/mcuadros"]),
+        (["github.com/src-d/go-git"], []),
+    ],
+)
 async def test_developer_metrics_empty(client, headers, repos, devs):
     body = {
         "account": 1,
@@ -1793,8 +2052,7 @@ async def test_developer_metrics_order(client, headers):
         "date_to": "2020-03-01",
         "granularities": ["all"],
         "for": [
-            {"repositories": ["{1}"], "developers": [
-                "github.com/mcuadros", "github.com/smola"]},
+            {"repositories": ["{1}"], "developers": ["github.com/mcuadros", "github.com/smola"]},
         ],
         "metrics": [DeveloperMetricID.PRS_CREATED],
     }
@@ -1803,7 +2061,8 @@ async def test_developer_metrics_order(client, headers):
     )
     assert response.status == 200
     result = CalculatedDeveloperMetrics.from_dict(
-        FriendlyJson.loads((await response.read()).decode("utf-8")))
+        FriendlyJson.loads((await response.read()).decode("utf-8")),
+    )
     assert result.calculated[0].for_.developers == body["for"][0]["developers"]
     assert [m[0].values for m in result.calculated[0].values] == [[14], [8]]
     body["for"][0]["developers"] = list(reversed(body["for"][0]["developers"]))
@@ -1812,7 +2071,8 @@ async def test_developer_metrics_order(client, headers):
     )
     assert response.status == 200
     result = CalculatedDeveloperMetrics.from_dict(
-        FriendlyJson.loads((await response.read()).decode("utf-8")))
+        FriendlyJson.loads((await response.read()).decode("utf-8")),
+    )
     assert result.calculated[0].for_.developers == body["for"][0]["developers"]
     assert [m[0].values for m in result.calculated[0].values] == [[8], [14]]
 
@@ -1893,9 +2153,13 @@ async def test_release_metrics_participants_multiple(client, headers):
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
         "for": [["github.com/src-d/go-git"]],
-        "with": [{"releaser": ["github.com/smola"],
-                  "pr_author": ["github.com/mcuadros"],
-                  "commit_author": ["github.com/smola"]}],
+        "with": [
+            {
+                "releaser": ["github.com/smola"],
+                "pr_author": ["github.com/mcuadros"],
+                "commit_author": ["github.com/smola"],
+            },
+        ],
         "metrics": [ReleaseMetricID.RELEASE_COUNT],
         "granularities": ["all"],
     }
@@ -1916,9 +2180,13 @@ async def test_release_metrics_participants_team(client, headers, sample_team):
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
         "for": [["github.com/src-d/go-git"]],
-        "with": [{"releaser": ["{%d}" % sample_team],
-                  "pr_author": ["{%d}" % sample_team],
-                  "commit_author": ["{%d}" % sample_team]}],
+        "with": [
+            {
+                "releaser": ["{%d}" % sample_team],
+                "pr_author": ["{%d}" % sample_team],
+                "commit_author": ["{%d}" % sample_team],
+            },
+        ],
         "metrics": [ReleaseMetricID.RELEASE_COUNT],
         "granularities": ["all"],
     }
@@ -1939,8 +2207,7 @@ async def test_release_metrics_participants_groups(client, headers):
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
         "for": [["github.com/src-d/go-git"]],
-        "with": [{"releaser": ["github.com/mcuadros"]},
-                 {"pr_author": ["github.com/smola"]}],
+        "with": [{"releaser": ["github.com/mcuadros"]}, {"pr_author": ["github.com/smola"]}],
         "metrics": [ReleaseMetricID.RELEASE_COUNT],
         "granularities": ["all"],
     }
@@ -1958,23 +2225,34 @@ async def test_release_metrics_participants_groups(client, headers):
 
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
-@pytest.mark.parametrize("account, date_to, quantiles, extra_metrics, in_, code",
-                         [(3, "2020-02-22", [0, 1], [], "{1}", 404),
-                          (2, "2020-02-22", [0, 1], [], "github.com/src-d/go-git", 422),
-                          (10, "2020-02-22", [0, 1], [], "{1}", 404),
-                          (1, "2015-10-13", [0, 1], [], "{1}", 200),
-                          (1, "2015-10-13", [0, 1], ["whatever"], "{1}", 400),
-                          (1, "2010-01-11", [0, 1], [], "{1}", 400),
-                          (1, "2020-01-32", [0, 1], [], "{1}", 400),
-                          (1, "2020-01-01", [-1, 0.5], [], "{1}", 400),
-                          (1, "2020-01-01", [0, -1], [], "{1}", 400),
-                          (1, "2020-01-01", [10, 20], [], "{1}", 400),
-                          (1, "2020-01-01", [0.5, 0.25], [], "{1}", 400),
-                          (1, "2020-01-01", [0.5, 0.5], [], "{1}", 400),
-                          (1, "2015-10-13", [0, 1], [], "github.com/athenianco/athenian-api", 403),
-                          ])
+@pytest.mark.parametrize(
+    "account, date_to, quantiles, extra_metrics, in_, code",
+    [
+        (3, "2020-02-22", [0, 1], [], "{1}", 404),
+        (2, "2020-02-22", [0, 1], [], "github.com/src-d/go-git", 422),
+        (10, "2020-02-22", [0, 1], [], "{1}", 404),
+        (1, "2015-10-13", [0, 1], [], "{1}", 200),
+        (1, "2015-10-13", [0, 1], ["whatever"], "{1}", 400),
+        (1, "2010-01-11", [0, 1], [], "{1}", 400),
+        (1, "2020-01-32", [0, 1], [], "{1}", 400),
+        (1, "2020-01-01", [-1, 0.5], [], "{1}", 400),
+        (1, "2020-01-01", [0, -1], [], "{1}", 400),
+        (1, "2020-01-01", [10, 20], [], "{1}", 400),
+        (1, "2020-01-01", [0.5, 0.25], [], "{1}", 400),
+        (1, "2020-01-01", [0.5, 0.5], [], "{1}", 400),
+        (1, "2015-10-13", [0, 1], [], "github.com/athenianco/athenian-api", 403),
+    ],
+)
 async def test_release_metrics_nasty_input(
-        client, headers, account, date_to, quantiles, extra_metrics, in_, code):
+    client,
+    headers,
+    account,
+    date_to,
+    quantiles,
+    extra_metrics,
+    in_,
+    code,
+):
     body = {
         "for": [[in_], [in_]],
         "metrics": [ReleaseMetricID.TAG_RELEASE_AGE] + extra_metrics,
@@ -2099,13 +2377,21 @@ async def test_release_metrics_labels(client, headers):
     assert models[0].values[0].values == [22, 234]
 
 
-@pytest.mark.parametrize("second_repo, counts", [
-    ("/beta", [44, 118]),
-    ("", [44, 191]),
-])
+@pytest.mark.parametrize(
+    "second_repo, counts",
+    [
+        ("/beta", [44, 118]),
+        ("", [44, 191]),
+    ],
+)
 async def test_release_metrics_logical(
-        client, headers, logical_settings_db, release_match_setting_tag_logical_db,
-        second_repo, counts):
+    client,
+    headers,
+    logical_settings_db,
+    release_match_setting_tag_logical_db,
+    second_repo,
+    counts,
+):
     body = {
         "account": 1,
         "date_from": "2018-01-01",
@@ -2131,10 +2417,14 @@ async def test_release_metrics_participants_many_participants(client, headers):
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
         "for": [["github.com/src-d/go-git"]],
-        "with": [{"releaser": ["github.com/smola"],
-                  "pr_author": ["github.com/mcuadros"],
-                  "commit_author": ["github.com/smola"]},
-                 {"releaser": ["github.com/mcuadros"]}],
+        "with": [
+            {
+                "releaser": ["github.com/smola"],
+                "pr_author": ["github.com/mcuadros"],
+                "commit_author": ["github.com/smola"],
+            },
+            {"releaser": ["github.com/mcuadros"]},
+        ],
         "metrics": [ReleaseMetricID.RELEASE_COUNT],
         "granularities": ["all"],
     }
@@ -2157,10 +2447,12 @@ async def test_code_check_metrics_smoke(client, headers):
         "account": 1,
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
-        "for": [{
-            "repositories": ["github.com/src-d/go-git"],
-            "pushers": ["github.com/mcuadros"],
-        }],
+        "for": [
+            {
+                "repositories": ["github.com/src-d/go-git"],
+                "pushers": ["github.com/mcuadros"],
+            },
+        ],
         "metrics": [CodeCheckMetricID.SUITES_COUNT],
         "granularities": ["all"],
     }
@@ -2172,11 +2464,16 @@ async def test_code_check_metrics_smoke(client, headers):
     rbody = json.loads(rbody)
     model = CalculatedCodeCheckMetrics.from_dict(rbody)
     assert model.to_dict() == {
-        "calculated": [{"for": {"pushers": ["github.com/mcuadros"],
-                                "repositories": ["github.com/src-d/go-git"]},
-                        "granularity": "all",
-                        "values": [{"date": date(2018, 1, 12),
-                                    "values": [245]}]}],
+        "calculated": [
+            {
+                "for": {
+                    "pushers": ["github.com/mcuadros"],
+                    "repositories": ["github.com/src-d/go-git"],
+                },
+                "granularity": "all",
+                "values": [{"date": date(2018, 1, 12), "values": [245]}],
+            },
+        ],
         "date_from": date(2018, 1, 12),
         "date_to": date(2020, 3, 1),
         "granularities": ["all"],
@@ -2193,12 +2490,14 @@ async def test_code_check_metrics_jira(client, headers):
         "account": 1,
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
-        "for": [{
-            "repositories": ["github.com/src-d/go-git"],
-            "jira": {
-                "labels_include": ["bug", "onboarding", "performance"],
+        "for": [
+            {
+                "repositories": ["github.com/src-d/go-git"],
+                "jira": {
+                    "labels_include": ["bug", "onboarding", "performance"],
+                },
             },
-        }],
+        ],
         "metrics": [CodeCheckMetricID.SUITES_COUNT],
         "granularities": ["all"],
     }
@@ -2210,13 +2509,16 @@ async def test_code_check_metrics_jira(client, headers):
     rbody = json.loads(rbody)
     model = CalculatedCodeCheckMetrics.from_dict(rbody)
     assert model.to_dict() == {
-        "calculated": [{"for": {"jira": {"labels_include": ["bug",
-                                                            "onboarding",
-                                                            "performance"]},
-                                "repositories": ["github.com/src-d/go-git"]},
-                        "granularity": "all",
-                        "values": [{"date": date(2018, 1, 12),
-                                    "values": [60]}]}],
+        "calculated": [
+            {
+                "for": {
+                    "jira": {"labels_include": ["bug", "onboarding", "performance"]},
+                    "repositories": ["github.com/src-d/go-git"],
+                },
+                "granularity": "all",
+                "values": [{"date": date(2018, 1, 12), "values": [60]}],
+            },
+        ],
         "date_from": date(2018, 1, 12),
         "date_to": date(2020, 3, 1),
         "granularities": ["all"],
@@ -2233,17 +2535,21 @@ async def test_code_check_metrics_labels(client, headers):
         "account": 1,
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
-        "for": [{
-            "repositories": ["github.com/src-d/go-git"],
-            "labels_include": ["bug", "plumbing", "enhancement"],
-        }, {
-            "repositories": ["github.com/src-d/go-git"],
-            "labels_include": ["bug", "plumbing", "enhancement"],
-            "labels_exclude": ["xxx"],
-        }, {
-            "repositories": ["github.com/src-d/go-git"],
-            "labels_exclude": ["bug"],
-        }],
+        "for": [
+            {
+                "repositories": ["github.com/src-d/go-git"],
+                "labels_include": ["bug", "plumbing", "enhancement"],
+            },
+            {
+                "repositories": ["github.com/src-d/go-git"],
+                "labels_include": ["bug", "plumbing", "enhancement"],
+                "labels_exclude": ["xxx"],
+            },
+            {
+                "repositories": ["github.com/src-d/go-git"],
+                "labels_exclude": ["bug"],
+            },
+        ],
         "metrics": [CodeCheckMetricID.SUITES_COUNT],
         "granularities": ["all"],
     }
@@ -2255,26 +2561,34 @@ async def test_code_check_metrics_labels(client, headers):
     rbody = json.loads(rbody)
     model = CalculatedCodeCheckMetrics.from_dict(rbody)
     md = model.to_dict()
-    md["calculated"].sort(key=lambda x: (x["for"].get("labels_include", []),
-                                         x["for"].get("labels_exclude", [])))
+    md["calculated"].sort(
+        key=lambda x: (x["for"].get("labels_include", []), x["for"].get("labels_exclude", [])),
+    )
     assert md == {
-        "calculated": [{"for": {"labels_exclude": ["bug"],
-                                "repositories": ["github.com/src-d/go-git"]},
-                        "granularity": "all",
-                        "values": [{"date": date(2018, 1, 12),
-                                    "values": [734]}]},
-                       {"for": {"labels_include": ["bug", "plumbing", "enhancement"],
-                                "repositories": ["github.com/src-d/go-git"]},
-                        "granularity": "all",
-                        "values": [{"date": date(2018, 1, 12),
-                                    "values": [23]}]},
-                       {"for": {"labels_include": ["bug", "plumbing", "enhancement"],
-                                "labels_exclude": ["xxx"],
-                                "repositories": ["github.com/src-d/go-git"]},
-                        "granularity": "all",
-                        "values": [{"date": date(2018, 1, 12),
-                                    "values": [18]}]},
-                       ],
+        "calculated": [
+            {
+                "for": {"labels_exclude": ["bug"], "repositories": ["github.com/src-d/go-git"]},
+                "granularity": "all",
+                "values": [{"date": date(2018, 1, 12), "values": [734]}],
+            },
+            {
+                "for": {
+                    "labels_include": ["bug", "plumbing", "enhancement"],
+                    "repositories": ["github.com/src-d/go-git"],
+                },
+                "granularity": "all",
+                "values": [{"date": date(2018, 1, 12), "values": [23]}],
+            },
+            {
+                "for": {
+                    "labels_include": ["bug", "plumbing", "enhancement"],
+                    "labels_exclude": ["xxx"],
+                    "repositories": ["github.com/src-d/go-git"],
+                },
+                "granularity": "all",
+                "values": [{"date": date(2018, 1, 12), "values": [18]}],
+            },
+        ],
         "date_from": date(2018, 1, 12),
         "date_to": date(2020, 3, 1),
         "granularities": ["all"],
@@ -2291,9 +2605,11 @@ async def test_code_check_metrics_split_by_check_runs(client, headers):
         "account": 1,
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
-        "for": [{
-            "repositories": ["github.com/src-d/go-git"],
-        }],
+        "for": [
+            {
+                "repositories": ["github.com/src-d/go-git"],
+            },
+        ],
         "metrics": [CodeCheckMetricID.SUITES_COUNT],
         "split_by_check_runs": True,
         "granularities": ["all"],
@@ -2306,42 +2622,50 @@ async def test_code_check_metrics_split_by_check_runs(client, headers):
     rbody = json.loads(rbody)
     model = CalculatedCodeCheckMetrics.from_dict(rbody)
     assert model.to_dict() == {
-        "calculated": [{"check_runs": 1,
-                        "for": {"repositories": ["github.com/src-d/go-git"]},
-                        "granularity": "all",
-                        "suites_ratio": 0.35198372329603256,
-                        "values": [{"date": date(2018, 1, 12),
-                                    "values": [344]}]},
-                       {"check_runs": 2,
-                        "for": {"repositories": ["github.com/src-d/go-git"]},
-                        "granularity": "all",
-                        "suites_ratio": 0.1861648016276704,
-                        "values": [{"date": date(2018, 1, 12),
-                                    "values": [183]}]},
-                       {"check_runs": 3,
-                        "for": {"repositories": ["github.com/src-d/go-git"]},
-                        "granularity": "all",
-                        "suites_ratio": 0.35096642929806715,
-                        "values": [{"date": date(2018, 1, 12),
-                                    "values": [345]}]},
-                       {"check_runs": 4,
-                        "for": {"repositories": ["github.com/src-d/go-git"]},
-                        "granularity": "all",
-                        "suites_ratio": 0.09766022380467955,
-                        "values": [{"date": date(2018, 1, 12),
-                                    "values": [96]}]},
-                       {"check_runs": 5,
-                        "for": {"repositories": ["github.com/src-d/go-git"]},
-                        "granularity": "all",
-                        "suites_ratio": 0.004069175991861648,
-                        "values": [{"date": date(2018, 1, 12),
-                                    "values": [4]}]},
-                       {"check_runs": 6,
-                        "for": {"repositories": ["github.com/src-d/go-git"]},
-                        "granularity": "all",
-                        "suites_ratio": 0.009155645981688708,
-                        "values": [{"date": date(2018, 1, 12),
-                                    "values": [9]}]}],
+        "calculated": [
+            {
+                "check_runs": 1,
+                "for": {"repositories": ["github.com/src-d/go-git"]},
+                "granularity": "all",
+                "suites_ratio": 0.35198372329603256,
+                "values": [{"date": date(2018, 1, 12), "values": [344]}],
+            },
+            {
+                "check_runs": 2,
+                "for": {"repositories": ["github.com/src-d/go-git"]},
+                "granularity": "all",
+                "suites_ratio": 0.1861648016276704,
+                "values": [{"date": date(2018, 1, 12), "values": [183]}],
+            },
+            {
+                "check_runs": 3,
+                "for": {"repositories": ["github.com/src-d/go-git"]},
+                "granularity": "all",
+                "suites_ratio": 0.35096642929806715,
+                "values": [{"date": date(2018, 1, 12), "values": [345]}],
+            },
+            {
+                "check_runs": 4,
+                "for": {"repositories": ["github.com/src-d/go-git"]},
+                "granularity": "all",
+                "suites_ratio": 0.09766022380467955,
+                "values": [{"date": date(2018, 1, 12), "values": [96]}],
+            },
+            {
+                "check_runs": 5,
+                "for": {"repositories": ["github.com/src-d/go-git"]},
+                "granularity": "all",
+                "suites_ratio": 0.004069175991861648,
+                "values": [{"date": date(2018, 1, 12), "values": [4]}],
+            },
+            {
+                "check_runs": 6,
+                "for": {"repositories": ["github.com/src-d/go-git"]},
+                "granularity": "all",
+                "suites_ratio": 0.009155645981688708,
+                "values": [{"date": date(2018, 1, 12), "values": [9]}],
+            },
+        ],
         "date_from": date(2018, 1, 12),
         "date_to": date(2020, 3, 1),
         "granularities": ["all"],
@@ -2358,10 +2682,12 @@ async def test_code_check_metrics_repogroups(client, headers):
         "account": 1,
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
-        "for": [{
-            "repositories": ["github.com/src-d/go-git"],
-            "repogroups": [[0], [0]],
-        }],
+        "for": [
+            {
+                "repositories": ["github.com/src-d/go-git"],
+                "repogroups": [[0], [0]],
+            },
+        ],
         "metrics": [CodeCheckMetricID.SUITES_COUNT],
         "granularities": ["all"],
     }
@@ -2373,14 +2699,18 @@ async def test_code_check_metrics_repogroups(client, headers):
     rbody = json.loads(rbody)
     model = CalculatedCodeCheckMetrics.from_dict(rbody)
     assert model.to_dict() == {
-        "calculated": [{"for": {"repositories": ["github.com/src-d/go-git"]},
-                        "granularity": "all",
-                        "values": [{"date": date(2018, 1, 12),
-                                    "values": [981]}]},
-                       {"for": {"repositories": ["github.com/src-d/go-git"]},
-                        "granularity": "all",
-                        "values": [{"date": date(2018, 1, 12),
-                                    "values": [981]}]}],
+        "calculated": [
+            {
+                "for": {"repositories": ["github.com/src-d/go-git"]},
+                "granularity": "all",
+                "values": [{"date": date(2018, 1, 12), "values": [981]}],
+            },
+            {
+                "for": {"repositories": ["github.com/src-d/go-git"]},
+                "granularity": "all",
+                "values": [{"date": date(2018, 1, 12), "values": [981]}],
+            },
+        ],
         "date_from": date(2018, 1, 12),
         "date_to": date(2020, 3, 1),
         "granularities": ["all"],
@@ -2397,10 +2727,12 @@ async def test_code_check_metrics_authorgroups(client, headers):
         "account": 1,
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
-        "for": [{
-            "repositories": ["github.com/src-d/go-git"],
-            "pusher_groups": [["github.com/mcuadros"], ["github.com/erizocosmico"]],
-        }],
+        "for": [
+            {
+                "repositories": ["github.com/src-d/go-git"],
+                "pusher_groups": [["github.com/mcuadros"], ["github.com/erizocosmico"]],
+            },
+        ],
         "metrics": [CodeCheckMetricID.SUITES_COUNT],
         "granularities": ["all"],
     }
@@ -2412,16 +2744,24 @@ async def test_code_check_metrics_authorgroups(client, headers):
     rbody = json.loads(rbody)
     model = CalculatedCodeCheckMetrics.from_dict(rbody)
     assert model.to_dict() == {
-        "calculated": [{"for": {"pushers": ["github.com/mcuadros"],
-                                "repositories": ["github.com/src-d/go-git"]},
-                        "granularity": "all",
-                        "values": [{"date": date(2018, 1, 12),
-                                    "values": [245]}]},
-                       {"for": {"pushers": ["github.com/erizocosmico"],
-                                "repositories": ["github.com/src-d/go-git"]},
-                        "granularity": "all",
-                        "values": [{"date": date(2018, 1, 12),
-                                    "values": [22]}]}],
+        "calculated": [
+            {
+                "for": {
+                    "pushers": ["github.com/mcuadros"],
+                    "repositories": ["github.com/src-d/go-git"],
+                },
+                "granularity": "all",
+                "values": [{"date": date(2018, 1, 12), "values": [245]}],
+            },
+            {
+                "for": {
+                    "pushers": ["github.com/erizocosmico"],
+                    "repositories": ["github.com/src-d/go-git"],
+                },
+                "granularity": "all",
+                "values": [{"date": date(2018, 1, 12), "values": [22]}],
+            },
+        ],
         "date_from": date(2018, 1, 12),
         "date_to": date(2020, 3, 1),
         "granularities": ["all"],
@@ -2438,10 +2778,12 @@ async def test_code_check_metrics_lines(client, headers):
         "account": 1,
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
-        "for": [{
-            "repositories": ["github.com/src-d/go-git"],
-            "lines": [0, 10, 1000],
-        }],
+        "for": [
+            {
+                "repositories": ["github.com/src-d/go-git"],
+                "lines": [0, 10, 1000],
+            },
+        ],
         "metrics": [CodeCheckMetricID.SUITES_COUNT],
         "granularities": ["all"],
     }
@@ -2454,16 +2796,16 @@ async def test_code_check_metrics_lines(client, headers):
     model = CalculatedCodeCheckMetrics.from_dict(rbody)
     assert model.to_dict() == {
         "calculated": [
-            {"for": {"lines": [0, 10],
-                     "repositories": ["github.com/src-d/go-git"]},
-             "granularity": "all",
-             "values": [{"date": date(2018, 1, 12),
-                         "values": [299]}]},
-            {"for": {"lines": [10, 1000],
-                     "repositories": ["github.com/src-d/go-git"]},
-             "granularity": "all",
-             "values": [{"date": date(2018, 1, 12),
-                         "values": [666]}]},
+            {
+                "for": {"lines": [0, 10], "repositories": ["github.com/src-d/go-git"]},
+                "granularity": "all",
+                "values": [{"date": date(2018, 1, 12), "values": [299]}],
+            },
+            {
+                "for": {"lines": [10, 1000], "repositories": ["github.com/src-d/go-git"]},
+                "granularity": "all",
+                "values": [{"date": date(2018, 1, 12), "values": [666]}],
+            },
         ],
         "date_from": date(2018, 1, 12),
         "date_to": date(2020, 3, 1),
@@ -2474,23 +2816,28 @@ async def test_code_check_metrics_lines(client, headers):
     }
 
 
-@pytest.mark.parametrize("account, repos, metrics, code", [
-    (3, ["{1}"], [CodeCheckMetricID.SUITES_COUNT], 404),
-    (2, ["github.com/src-d/go-git"], [CodeCheckMetricID.SUITES_COUNT], 422),
-    (10, ["{1}"], [CodeCheckMetricID.SUITES_COUNT], 404),
-    (1, None, [CodeCheckMetricID.SUITES_COUNT], 400),
-    (1, ["{1}"], None, 400),
-    (1, ["{1}"], ["xxx"], 400),
-    (1, ["github.com/athenianco/athenian-api"], [CodeCheckMetricID.SUITES_COUNT], 403),
-])
+@pytest.mark.parametrize(
+    "account, repos, metrics, code",
+    [
+        (3, ["{1}"], [CodeCheckMetricID.SUITES_COUNT], 404),
+        (2, ["github.com/src-d/go-git"], [CodeCheckMetricID.SUITES_COUNT], 422),
+        (10, ["{1}"], [CodeCheckMetricID.SUITES_COUNT], 404),
+        (1, None, [CodeCheckMetricID.SUITES_COUNT], 400),
+        (1, ["{1}"], None, 400),
+        (1, ["{1}"], ["xxx"], 400),
+        (1, ["github.com/athenianco/athenian-api"], [CodeCheckMetricID.SUITES_COUNT], 403),
+    ],
+)
 async def test_code_check_metrics_nasty_input(client, headers, account, repos, metrics, code):
     body = {
         "account": account,
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
-        "for": [{
-            "repositories": repos,
-        }],
+        "for": [
+            {
+                "repositories": repos,
+            },
+        ],
         "metrics": metrics,
         "granularities": ["all"],
     }
@@ -2508,10 +2855,12 @@ async def test_code_check_metrics_logical_repos(client, headers, logical_setting
         "account": 1,
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
-        "for": [{
-            "repositories": ["github.com/src-d/go-git/alpha"],
-            "pushers": ["github.com/mcuadros"],
-        }],
+        "for": [
+            {
+                "repositories": ["github.com/src-d/go-git/alpha"],
+                "pushers": ["github.com/mcuadros"],
+            },
+        ],
         "metrics": [CodeCheckMetricID.SUITES_COUNT],
         "granularities": ["all"],
     }
@@ -2523,11 +2872,16 @@ async def test_code_check_metrics_logical_repos(client, headers, logical_setting
     rbody = json.loads(rbody)
     model = CalculatedCodeCheckMetrics.from_dict(rbody)
     assert model.to_dict() == {
-        "calculated": [{"for": {"pushers": ["github.com/mcuadros"],
-                                "repositories": ["github.com/src-d/go-git/alpha"]},
-                        "granularity": "all",
-                        "values": [{"date": date(2018, 1, 12),
-                                    "values": [91]}]}],
+        "calculated": [
+            {
+                "for": {
+                    "pushers": ["github.com/mcuadros"],
+                    "repositories": ["github.com/src-d/go-git/alpha"],
+                },
+                "granularity": "all",
+                "values": [{"date": date(2018, 1, 12), "values": [91]}],
+            },
+        ],
         "date_from": date(2018, 1, 12),
         "date_to": date(2020, 3, 1),
         "granularities": ["all"],
@@ -2544,14 +2898,20 @@ async def test_deployment_metrics_smoke(client, headers, sample_deployments):
         "account": 1,
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
-        "for": [{
-            "repositories": ["{1}"],
-            "withgroups": [{"releaser": ["github.com/mcuadros"]},
-                           {"pr_author": ["github.com/mcuadros"]}],
-            "environments": ["staging", "production", "mirror"],
-        }],
-        "metrics": [DeploymentMetricID.DEP_SUCCESS_COUNT,
-                    DeploymentMetricID.DEP_DURATION_SUCCESSFUL],
+        "for": [
+            {
+                "repositories": ["{1}"],
+                "withgroups": [
+                    {"releaser": ["github.com/mcuadros"]},
+                    {"pr_author": ["github.com/mcuadros"]},
+                ],
+                "environments": ["staging", "production", "mirror"],
+            },
+        ],
+        "metrics": [
+            DeploymentMetricID.DEP_SUCCESS_COUNT,
+            DeploymentMetricID.DEP_DURATION_SUCCESSFUL,
+        ],
         "granularities": ["all"],
     }
     response = await client.request(
@@ -2560,85 +2920,110 @@ async def test_deployment_metrics_smoke(client, headers, sample_deployments):
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     model = [CalculatedDeploymentMetric.from_dict(obj) for obj in json.loads(body)]
-    assert [m.to_dict() for m in model] == [{
-        "for": {
-            "repositories": ["{1}"],
-            "with": {"releaser": ["github.com/mcuadros"]},
-            "environments": ["staging"],
+    assert [m.to_dict() for m in model] == [
+        {
+            "for": {
+                "repositories": ["{1}"],
+                "with": {"releaser": ["github.com/mcuadros"]},
+                "environments": ["staging"],
+            },
+            "metrics": ["dep-success-count", "dep-duration-successful"],
+            "granularity": "all",
+            "values": [
+                {
+                    "date": date(2018, 1, 12),
+                    "values": [3, "600s"],
+                    "confidence_maxs": [None, "600s"],
+                    "confidence_mins": [None, "600s"],
+                    "confidence_scores": [None, 100],
+                },
+            ],
         },
-        "metrics": ["dep-success-count", "dep-duration-successful"],
-        "granularity": "all",
-        "values": [{
-            "date": date(2018, 1, 12),
-            "values": [3, "600s"],
-            "confidence_maxs": [None, "600s"],
-            "confidence_mins": [None, "600s"],
-            "confidence_scores": [None, 100],
-        }]}, {
-        "for": {
-            "repositories": ["{1}"],
-            "with": {"releaser": ["github.com/mcuadros"]},
-            "environments": ["production"],
+        {
+            "for": {
+                "repositories": ["{1}"],
+                "with": {"releaser": ["github.com/mcuadros"]},
+                "environments": ["production"],
+            },
+            "metrics": ["dep-success-count", "dep-duration-successful"],
+            "granularity": "all",
+            "values": [
+                {
+                    "date": date(2018, 1, 12),
+                    "values": [3, "600s"],
+                    "confidence_maxs": [None, "600s"],
+                    "confidence_mins": [None, "600s"],
+                    "confidence_scores": [None, 100],
+                },
+            ],
         },
-        "metrics": ["dep-success-count", "dep-duration-successful"],
-        "granularity": "all",
-        "values": [{
-            "date": date(2018, 1, 12),
-            "values": [3, "600s"],
-            "confidence_maxs": [None, "600s"],
-            "confidence_mins": [None, "600s"],
-            "confidence_scores": [None, 100],
-        }]}, {
-        "for": {
-            "repositories": ["{1}"],
-            "with": {"releaser": ["github.com/mcuadros"]},
-            "environments": ["mirror"],
+        {
+            "for": {
+                "repositories": ["{1}"],
+                "with": {"releaser": ["github.com/mcuadros"]},
+                "environments": ["mirror"],
+            },
+            "metrics": ["dep-success-count", "dep-duration-successful"],
+            "granularity": "all",
+            "values": [
+                {
+                    "date": date(2018, 1, 12),
+                    "values": [0, None],
+                },
+            ],
         },
-        "metrics": ["dep-success-count", "dep-duration-successful"],
-        "granularity": "all",
-        "values": [{
-            "date": date(2018, 1, 12),
-            "values": [0, None],
-        }]}, {
-        "for": {
-            "repositories": ["{1}"],
-            "with": {"pr_author": ["github.com/mcuadros"]},
-            "environments": ["staging"],
+        {
+            "for": {
+                "repositories": ["{1}"],
+                "with": {"pr_author": ["github.com/mcuadros"]},
+                "environments": ["staging"],
+            },
+            "metrics": ["dep-success-count", "dep-duration-successful"],
+            "granularity": "all",
+            "values": [
+                {
+                    "date": date(2018, 1, 12),
+                    "values": [3, "600s"],
+                    "confidence_maxs": [None, "600s"],
+                    "confidence_mins": [None, "600s"],
+                    "confidence_scores": [None, 100],
+                },
+            ],
         },
-        "metrics": ["dep-success-count", "dep-duration-successful"],
-        "granularity": "all",
-        "values": [{
-            "date": date(2018, 1, 12),
-            "values": [3, "600s"],
-            "confidence_maxs": [None, "600s"],
-            "confidence_mins": [None, "600s"],
-            "confidence_scores": [None, 100],
-        }]}, {
-        "for": {
-            "repositories": ["{1}"],
-            "with": {"pr_author": ["github.com/mcuadros"]},
-            "environments": ["production"],
+        {
+            "for": {
+                "repositories": ["{1}"],
+                "with": {"pr_author": ["github.com/mcuadros"]},
+                "environments": ["production"],
+            },
+            "metrics": ["dep-success-count", "dep-duration-successful"],
+            "granularity": "all",
+            "values": [
+                {
+                    "date": date(2018, 1, 12),
+                    "values": [3, "600s"],
+                    "confidence_maxs": [None, "600s"],
+                    "confidence_mins": [None, "600s"],
+                    "confidence_scores": [None, 100],
+                },
+            ],
         },
-        "metrics": ["dep-success-count", "dep-duration-successful"],
-        "granularity": "all",
-        "values": [{
-            "date": date(2018, 1, 12),
-            "values": [3, "600s"],
-            "confidence_maxs": [None, "600s"],
-            "confidence_mins": [None, "600s"],
-            "confidence_scores": [None, 100],
-        }]}, {
-        "for": {
-            "repositories": ["{1}"],
-            "with": {"pr_author": ["github.com/mcuadros"]},
-            "environments": ["mirror"],
+        {
+            "for": {
+                "repositories": ["{1}"],
+                "with": {"pr_author": ["github.com/mcuadros"]},
+                "environments": ["mirror"],
+            },
+            "metrics": ["dep-success-count", "dep-duration-successful"],
+            "granularity": "all",
+            "values": [
+                {
+                    "date": date(2018, 1, 12),
+                    "values": [0, None],
+                },
+            ],
         },
-        "metrics": ["dep-success-count", "dep-duration-successful"],
-        "granularity": "all",
-        "values": [{
-            "date": date(2018, 1, 12),
-            "values": [0, None],
-        }]}]
+    ]
 
 
 async def test_deployment_metrics_empty_for(client, headers, sample_deployments):
@@ -2656,38 +3041,81 @@ async def test_deployment_metrics_empty_for(client, headers, sample_deployments)
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     model = [CalculatedDeploymentMetric.from_dict(obj) for obj in json.loads(body)]
-    assert [m.to_dict() for m in model] == [{
-        "for": {},
-        "granularity": "all",
-        "metrics": [DeploymentMetricID.DEP_SUCCESS_COUNT],
-        "values": [{
-            "date": date(2018, 1, 12),
-            "values": [9]}]}]
+    assert [m.to_dict() for m in model] == [
+        {
+            "for": {},
+            "granularity": "all",
+            "metrics": [DeploymentMetricID.DEP_SUCCESS_COUNT],
+            "values": [{"date": date(2018, 1, 12), "values": [9]}],
+        },
+    ]
 
 
-@pytest.mark.parametrize("account, date_from, date_to, repos, withgroups, metrics, code", [
-    (1, "2018-01-12", "2020-01-12", ["{1}"], [], [DeploymentMetricID.DEP_PRS_COUNT], 200),
-    (1, "2020-01-12", "2018-01-12", ["{1}"], [], [DeploymentMetricID.DEP_PRS_COUNT], 400),
-    (2, "2018-01-12", "2020-01-12", ["github.com/src-d/go-git"], [],
-     [DeploymentMetricID.DEP_PRS_COUNT], 422),
-    (3, "2018-01-12", "2020-01-12", ["github.com/src-d/go-git"], [],
-     [DeploymentMetricID.DEP_PRS_COUNT], 404),
-    (1, "2018-01-12", "2020-01-12", ["{1}"], [], ["whatever"], 400),
-    (1, "2018-01-12", "2020-01-12", ["github.com/athenianco/athenian-api"], [],
-     [DeploymentMetricID.DEP_PRS_COUNT], 403),
-    (1, "2018-01-12", "2020-01-12", ["{1}"], [{"pr_author": ["github.com/akbarik"]}],
-     [DeploymentMetricID.DEP_PRS_COUNT], 400),
-])
+@pytest.mark.parametrize(
+    "account, date_from, date_to, repos, withgroups, metrics, code",
+    [
+        (1, "2018-01-12", "2020-01-12", ["{1}"], [], [DeploymentMetricID.DEP_PRS_COUNT], 200),
+        (1, "2020-01-12", "2018-01-12", ["{1}"], [], [DeploymentMetricID.DEP_PRS_COUNT], 400),
+        (
+            2,
+            "2018-01-12",
+            "2020-01-12",
+            ["github.com/src-d/go-git"],
+            [],
+            [DeploymentMetricID.DEP_PRS_COUNT],
+            422,
+        ),
+        (
+            3,
+            "2018-01-12",
+            "2020-01-12",
+            ["github.com/src-d/go-git"],
+            [],
+            [DeploymentMetricID.DEP_PRS_COUNT],
+            404,
+        ),
+        (1, "2018-01-12", "2020-01-12", ["{1}"], [], ["whatever"], 400),
+        (
+            1,
+            "2018-01-12",
+            "2020-01-12",
+            ["github.com/athenianco/athenian-api"],
+            [],
+            [DeploymentMetricID.DEP_PRS_COUNT],
+            403,
+        ),
+        (
+            1,
+            "2018-01-12",
+            "2020-01-12",
+            ["{1}"],
+            [{"pr_author": ["github.com/akbarik"]}],
+            [DeploymentMetricID.DEP_PRS_COUNT],
+            400,
+        ),
+    ],
+)
 async def test_deployment_metrics_nasty_input(
-        client, headers, account, date_from, date_to, repos, withgroups, metrics, code):
+    client,
+    headers,
+    account,
+    date_from,
+    date_to,
+    repos,
+    withgroups,
+    metrics,
+    code,
+):
     body = {
         "account": account,
         "date_from": date_from,
         "date_to": date_to,
-        "for": [{
-            "repositories": [*repos],
-            "withgroups": [*withgroups],
-        }],
+        "for": [
+            {
+                "repositories": [*repos],
+                "withgroups": [*withgroups],
+            },
+        ],
         "metrics": [*metrics],
         "granularities": ["all"],
     }
@@ -2699,14 +3127,21 @@ async def test_deployment_metrics_nasty_input(
 
 
 async def test_deployment_metrics_filter_labels(
-        client, headers, precomputed_deployments, rdb, client_cache):
+    client,
+    headers,
+    precomputed_deployments,
+    rdb,
+    client_cache,
+):
     body = {
         "account": 1,
         "date_from": "2015-01-12",
         "date_to": "2020-03-01",
-        "for": [{
-            "pr_labels_include": ["bug", "plumbing", "enhancement"],
-        }],
+        "for": [
+            {
+                "pr_labels_include": ["bug", "plumbing", "enhancement"],
+            },
+        ],
         "metrics": [DeploymentMetricID.DEP_COUNT],
         "granularities": ["all"],
     }
@@ -2728,12 +3163,16 @@ async def test_deployment_metrics_filter_labels(
     assert model[0].values[0].values[0] == 0
 
     del body["for"][0]["pr_labels_exclude"]
-    await rdb.execute(insert(DeployedLabel).values({
-        DeployedLabel.account_id: 1,
-        DeployedLabel.deployment_name: "Dummy deployment",
-        DeployedLabel.key: "nginx",
-        DeployedLabel.value: 504,
-    }))
+    await rdb.execute(
+        insert(DeployedLabel).values(
+            {
+                DeployedLabel.account_id: 1,
+                DeployedLabel.deployment_name: "Dummy deployment",
+                DeployedLabel.key: "nginx",
+                DeployedLabel.value: 504,
+            },
+        ),
+    )
     body["for"][0]["with_labels"] = {"nginx": 503}
     model = await request()
     assert model[0].values[0].values[0] == 0
@@ -2753,18 +3192,28 @@ async def test_deployment_metrics_filter_labels(
 
 
 async def test_deployment_metrics_environments(
-        client, headers, sample_deployments, rdb, client_cache):
-    await rdb.execute(delete(DeployedComponent)
-                      .where(DeployedComponent.deployment_name == "staging_2018_12_02"))
+    client,
+    headers,
+    sample_deployments,
+    rdb,
+    client_cache,
+):
+    await rdb.execute(
+        delete(DeployedComponent).where(DeployedComponent.deployment_name == "staging_2018_12_02"),
+    )
     body = {
         "account": 1,
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
-        "for": [{
-            "envgroups": [["production"]],
-        }],
-        "metrics": [DeploymentMetricID.DEP_SUCCESS_COUNT,
-                    DeploymentMetricID.DEP_DURATION_SUCCESSFUL],
+        "for": [
+            {
+                "envgroups": [["production"]],
+            },
+        ],
+        "metrics": [
+            DeploymentMetricID.DEP_SUCCESS_COUNT,
+            DeploymentMetricID.DEP_DURATION_SUCCESSFUL,
+        ],
         "granularities": ["all"],
     }
 
@@ -2794,12 +3243,16 @@ async def test_deployment_metrics_with(client, headers, sample_deployments):
         "account": 1,
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
-        "for": [{
-            "with": {"pr_author": ["github.com/mcuadros"]},
-            "environments": ["production"],
-        }],
-        "metrics": [DeploymentMetricID.DEP_SUCCESS_COUNT,
-                    DeploymentMetricID.DEP_DURATION_SUCCESSFUL],
+        "for": [
+            {
+                "with": {"pr_author": ["github.com/mcuadros"]},
+                "environments": ["production"],
+            },
+        ],
+        "metrics": [
+            DeploymentMetricID.DEP_SUCCESS_COUNT,
+            DeploymentMetricID.DEP_DURATION_SUCCESSFUL,
+        ],
         "granularities": ["all"],
     }
 
@@ -2821,14 +3274,17 @@ async def test_deployment_metrics_team(client, headers, sample_deployments, samp
         "account": 1,
         "date_from": "2018-01-12",
         "date_to": "2020-03-01",
-        "for": [{
-            "repositories": ["{1}"],
-            "withgroups": [{"releaser": [team_str]},
-                           {"pr_author": [team_str]}],
-            "environments": ["production"],
-        }],
-        "metrics": [DeploymentMetricID.DEP_SUCCESS_COUNT,
-                    DeploymentMetricID.DEP_DURATION_SUCCESSFUL],
+        "for": [
+            {
+                "repositories": ["{1}"],
+                "withgroups": [{"releaser": [team_str]}, {"pr_author": [team_str]}],
+                "environments": ["production"],
+            },
+        ],
+        "metrics": [
+            DeploymentMetricID.DEP_SUCCESS_COUNT,
+            DeploymentMetricID.DEP_DURATION_SUCCESSFUL,
+        ],
         "granularities": ["all"],
     }
     response = await client.request(
@@ -2837,32 +3293,41 @@ async def test_deployment_metrics_team(client, headers, sample_deployments, samp
     body = (await response.read()).decode("utf-8")
     assert response.status == 200, "Response body is : " + body
     model = [CalculatedDeploymentMetric.from_dict(obj) for obj in json.loads(body)]
-    assert [m.to_dict() for m in model] == [{
-        "for": {
-            "repositories": ["{1}"],
-            "with": {"releaser": [team_str]},
-            "environments": ["production"],
+    assert [m.to_dict() for m in model] == [
+        {
+            "for": {
+                "repositories": ["{1}"],
+                "with": {"releaser": [team_str]},
+                "environments": ["production"],
+            },
+            "metrics": ["dep-success-count", "dep-duration-successful"],
+            "granularity": "all",
+            "values": [
+                {
+                    "date": date(2018, 1, 12),
+                    "values": [3, "600s"],
+                    "confidence_maxs": [None, "600s"],
+                    "confidence_mins": [None, "600s"],
+                    "confidence_scores": [None, 100],
+                },
+            ],
         },
-        "metrics": ["dep-success-count", "dep-duration-successful"],
-        "granularity": "all",
-        "values": [{
-            "date": date(2018, 1, 12),
-            "values": [3, "600s"],
-            "confidence_maxs": [None, "600s"],
-            "confidence_mins": [None, "600s"],
-            "confidence_scores": [None, 100],
-        }]}, {
-        "for": {
-            "repositories": ["{1}"],
-            "with": {"pr_author": [team_str]},
-            "environments": ["production"],
+        {
+            "for": {
+                "repositories": ["{1}"],
+                "with": {"pr_author": [team_str]},
+                "environments": ["production"],
+            },
+            "metrics": ["dep-success-count", "dep-duration-successful"],
+            "granularity": "all",
+            "values": [
+                {
+                    "date": date(2018, 1, 12),
+                    "values": [3, "600s"],
+                    "confidence_maxs": [None, "600s"],
+                    "confidence_mins": [None, "600s"],
+                    "confidence_scores": [None, 100],
+                },
+            ],
         },
-        "metrics": ["dep-success-count", "dep-duration-successful"],
-        "granularity": "all",
-        "values": [{
-            "date": date(2018, 1, 12),
-            "values": [3, "600s"],
-            "confidence_maxs": [None, "600s"],
-            "confidence_mins": [None, "600s"],
-            "confidence_scores": [None, 100],
-        }]}]
+    ]

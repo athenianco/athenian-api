@@ -18,10 +18,10 @@ class TeamUpdateRequest(Model):
     }
 
     def __init__(
-            self,
-            name: Optional[str] = None,
-            members: Optional[List[str]] = None,
-            parent: Optional[int] = None,
+        self,
+        name: Optional[str] = None,
+        members: Optional[List[str]] = None,
+        parent: Optional[int] = None,
     ):
         """TeamUpdateRequest - a model defined in OpenAPI
 

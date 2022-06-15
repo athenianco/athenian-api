@@ -11,7 +11,9 @@ from libcpp.set cimport set
 from libcpp.string cimport string
 from libcpp.unordered_map cimport unordered_map
 from libcpp.vector cimport vector
+
 import numpy as np
+
 
 # __builtin_clzl is a compiler built-in that counts the number of leading zeros
 cdef extern int __builtin_clzl(unsigned long)

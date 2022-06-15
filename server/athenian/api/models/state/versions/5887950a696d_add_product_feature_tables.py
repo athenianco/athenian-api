@@ -11,7 +11,6 @@ import enum
 from alembic import op
 import sqlalchemy as sa
 
-
 # revision identifiers, used by Alembic.
 revision = "5887950a696d"
 down_revision = "0a724a1ab9ab"
@@ -48,12 +47,18 @@ def upgrade():
     )
     op.create_table(
         "account_features",
-        sa.Column("account_id", sa.Integer(),
-                  sa.ForeignKey("accounts.id", name="fk_account_features_account"),
-                  primary_key=True),
-        sa.Column("feature_id", sa.Integer(),
-                  sa.ForeignKey("features.id", name="fk_account_features_feature"),
-                  primary_key=True),
+        sa.Column(
+            "account_id",
+            sa.Integer(),
+            sa.ForeignKey("accounts.id", name="fk_account_features_account"),
+            primary_key=True,
+        ),
+        sa.Column(
+            "feature_id",
+            sa.Integer(),
+            sa.ForeignKey("features.id", name="fk_account_features_feature"),
+            primary_key=True,
+        ),
         sa.Column("enabled", sa.Boolean(), nullable=False, default=False, server_default="false"),
         sa.Column("parameters", sa.JSON()),
         sa.Column(

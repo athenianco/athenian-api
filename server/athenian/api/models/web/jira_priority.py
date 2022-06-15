@@ -19,11 +19,13 @@ class JIRAPriority(Model):
         "color": "color",
     }
 
-    def __init__(self,
-                 name: Optional[str] = None,
-                 image: Optional[str] = None,
-                 rank: Optional[int] = None,
-                 color: Optional[str] = None):
+    def __init__(
+        self,
+        name: Optional[str] = None,
+        image: Optional[str] = None,
+        rank: Optional[int] = None,
+        color: Optional[str] = None,
+    ):
         """JIRAPriority - a model defined in OpenAPI
 
         :param name: The name of this JIRAPriority.
@@ -112,7 +114,8 @@ class JIRAPriority(Model):
             raise ValueError("Invalid rank for `rank`, must not be `None`")
         if rank is not None and rank < 1:
             raise ValueError(
-                "Invalid rank for `rank`, must be a rank greater than or equal to `1`")
+                "Invalid rank for `rank`, must be a rank greater than or equal to `1`",
+            )
 
         self._rank = rank
 

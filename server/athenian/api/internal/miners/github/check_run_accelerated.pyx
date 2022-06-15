@@ -2,8 +2,8 @@
 # cython: warn.maybe_uninitialized=True
 # distutils: language = c++
 
-from cpython cimport PyObject
 cimport cython
+from cpython cimport PyObject
 from libc.stdint cimport int32_t, int64_t, uint64_t
 from libcpp.string cimport string
 from libcpp.unordered_map cimport unordered_map

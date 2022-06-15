@@ -10,19 +10,24 @@ import pandas as pd
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
-from athenian.api.db import add_pdb_hits, add_pdb_misses, Database
+from athenian.api.db import Database, add_pdb_hits, add_pdb_misses
 from athenian.api.internal.logical_repos import coerce_logical_repos
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.logical import split_logical_prs
-from athenian.api.internal.miners.github.precomputed_prs import \
-    discover_inactive_merged_unreleased_prs, MergedPRFactsLoader, \
-    OpenPRFactsLoader, remove_ambiguous_prs
+from athenian.api.internal.miners.github.precomputed_prs import (
+    MergedPRFactsLoader,
+    OpenPRFactsLoader,
+    discover_inactive_merged_unreleased_prs,
+    remove_ambiguous_prs,
+)
 from athenian.api.internal.miners.github.pull_request import PullRequestMiner
 from athenian.api.internal.miners.github.release_load import ReleaseLoader
-from athenian.api.internal.miners.jira.issue import generate_jira_prs_query, \
-    PullRequestJiraMapper
-from athenian.api.internal.miners.types import DeploymentConclusion, PRParticipants, \
-    PullRequestFactsMap
+from athenian.api.internal.miners.jira.issue import PullRequestJiraMapper, generate_jira_prs_query
+from athenian.api.internal.miners.types import (
+    DeploymentConclusion,
+    PRParticipants,
+    PullRequestFactsMap,
+)
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings
 from athenian.api.models.metadata.github import PullRequest
@@ -40,30 +45,31 @@ class UnfreshPullRequestFactsFetcher:
 
     @classmethod
     @sentry_span
-    async def fetch_pull_request_facts_unfresh(cls,
-                                               miner: Type[PullRequestMiner],
-                                               done_facts: PullRequestFactsMap,
-                                               ambiguous: Dict[str, List[int]],
-                                               time_from: datetime,
-                                               time_to: datetime,
-                                               repositories: Set[str],
-                                               participants: PRParticipants,
-                                               labels: LabelFilter,
-                                               jira: JIRAFilter,
-                                               pr_jira_mapper: Optional[PullRequestJiraMapper],
-                                               exclude_inactive: bool,
-                                               branches: pd.DataFrame,
-                                               default_branches: Dict[str, str],
-                                               release_settings: ReleaseSettings,
-                                               logical_settings: LogicalRepositorySettings,
-                                               prefixer: Prefixer,
-                                               account: int,
-                                               meta_ids: Tuple[int, ...],
-                                               mdb: Database,
-                                               pdb: Database,
-                                               rdb: Database,
-                                               cache: Optional[aiomcache.Client],
-                                               ) -> PullRequestFactsMap:
+    async def fetch_pull_request_facts_unfresh(
+        cls,
+        miner: Type[PullRequestMiner],
+        done_facts: PullRequestFactsMap,
+        ambiguous: Dict[str, List[int]],
+        time_from: datetime,
+        time_to: datetime,
+        repositories: Set[str],
+        participants: PRParticipants,
+        labels: LabelFilter,
+        jira: JIRAFilter,
+        pr_jira_mapper: Optional[PullRequestJiraMapper],
+        exclude_inactive: bool,
+        branches: pd.DataFrame,
+        default_branches: Dict[str, str],
+        release_settings: ReleaseSettings,
+        logical_settings: LogicalRepositorySettings,
+        prefixer: Prefixer,
+        account: int,
+        meta_ids: Tuple[int, ...],
+        mdb: Database,
+        pdb: Database,
+        rdb: Database,
+        cache: Optional[aiomcache.Client],
+    ) -> PullRequestFactsMap:
         """
         Load the missing facts about merged unreleased and open PRs from pdb instead of querying \
         the most up to date information from mdb.
@@ -77,7 +83,8 @@ class UnfreshPullRequestFactsFetcher:
         if pr_jira_mapper is not None:
             done_jira_map_task = asyncio.create_task(
                 pr_jira_mapper.append_pr_jira_mapping(done_facts, meta_ids, mdb),
-                name="append_pr_jira_mapping/done")
+                name="append_pr_jira_mapping/done",
+            )
         done_node_ids = {node_id for node_id, _ in done_facts}
         done_deployments_task = asyncio.create_task(
             miner.fetch_pr_deployments(done_node_ids, account, pdb, rdb),
@@ -90,30 +97,80 @@ class UnfreshPullRequestFactsFetcher:
             # map_releases_to_prs is not required because such PRs are already released,
             # by definition
             cls.release_loader.load_releases(
-                repositories, branches, default_branches, time_from, time_to,
-                release_settings, logical_settings, prefixer,
-                account, meta_ids, mdb, pdb, rdb, cache),
+                repositories,
+                branches,
+                default_branches,
+                time_from,
+                time_to,
+                release_settings,
+                logical_settings,
+                prefixer,
+                account,
+                meta_ids,
+                mdb,
+                pdb,
+                rdb,
+                cache,
+            ),
             miner.fetch_prs(
-                time_from, time_to, physical_repos.keys(), participants, labels, jira,
-                exclude_inactive, blacklist, None, branches, None,
-                account, meta_ids, mdb, pdb, cache, columns=[
-                    PullRequest.node_id, PullRequest.repository_full_name, PullRequest.merged_at,
-                    PullRequest.user_login, PullRequest.title,
-                ], with_labels=logical_settings.has_prs_by_label(physical_repos)),
+                time_from,
+                time_to,
+                physical_repos.keys(),
+                participants,
+                labels,
+                jira,
+                exclude_inactive,
+                blacklist,
+                None,
+                branches,
+                None,
+                account,
+                meta_ids,
+                mdb,
+                pdb,
+                cache,
+                columns=[
+                    PullRequest.node_id,
+                    PullRequest.repository_full_name,
+                    PullRequest.merged_at,
+                    PullRequest.user_login,
+                    PullRequest.title,
+                ],
+                with_labels=logical_settings.has_prs_by_label(physical_repos),
+            ),
         ]
         if jira and done_facts:
-            tasks.append(cls._filter_done_facts_jira(
-                miner, done_facts, jira, meta_ids, mdb, cache))
+            tasks.append(
+                cls._filter_done_facts_jira(miner, done_facts, jira, meta_ids, mdb, cache),
+            )
         else:
+
             async def identity():
                 return
 
             tasks.append(identity())
         if not exclude_inactive:
-            tasks.append(cls._fetch_inactive_merged_unreleased_prs(
-                time_from, time_to, repositories, has_logical_repos, participants, labels, jira,
-                default_branches, release_settings, prefixer, account, meta_ids, mdb, pdb, cache))
+            tasks.append(
+                cls._fetch_inactive_merged_unreleased_prs(
+                    time_from,
+                    time_to,
+                    repositories,
+                    has_logical_repos,
+                    participants,
+                    labels,
+                    jira,
+                    default_branches,
+                    release_settings,
+                    prefixer,
+                    account,
+                    meta_ids,
+                    mdb,
+                    pdb,
+                    cache,
+                ),
+            )
         else:
+
             async def dummy_inactive_prs():
                 return pd.DataFrame()
 
@@ -124,48 +181,78 @@ class UnfreshPullRequestFactsFetcher:
             _,  # _filter_done_facts_jira
             inactive_merged_prs,  # _fetch_inactive_merged_unreleased_prs
         ) = await gather(*tasks, op="discover PRs")
-        add_pdb_misses(pdb, "load_precomputed_done_facts_filters/ambiguous",
-                       remove_ambiguous_prs(done_facts, ambiguous, matched_bys))
+        add_pdb_misses(
+            pdb,
+            "load_precomputed_done_facts_filters/ambiguous",
+            remove_ambiguous_prs(done_facts, ambiguous, matched_bys),
+        )
         unique_unreleased_pr_node_ids = unreleased_prs.index.values
         unmerged_mask = unreleased_prs[PullRequest.merged_at.name].isnull().values
         open_prs = unique_unreleased_pr_node_ids[unmerged_mask]
-        open_pr_authors = dict(zip(
-            open_prs, unreleased_prs[PullRequest.user_login.name].values[unmerged_mask]))
+        open_pr_authors = dict(
+            zip(open_prs, unreleased_prs[PullRequest.user_login.name].values[unmerged_mask]),
+        )
 
         unreleased_prs = split_logical_prs(
-            unreleased_prs, unreleased_labels, repositories, logical_settings)
+            unreleased_prs, unreleased_labels, repositories, logical_settings,
+        )
         unreleased_pr_node_ids = unreleased_prs.index.get_level_values(0).values
         merged_mask = unreleased_prs[PullRequest.merged_at.name].notnull().values
-        merged_prs = \
-            unreleased_prs.index.take(np.flatnonzero(merged_mask)).union(inactive_merged_prs)
+        merged_prs = unreleased_prs.index.take(np.flatnonzero(merged_mask)).union(
+            inactive_merged_prs,
+        )
         tasks = [
             cls.open_prs_facts_loader.load_open_pull_request_facts_unfresh(
-                open_prs, time_from, time_to, repositories, exclude_inactive, open_pr_authors,
-                account, pdb),
+                open_prs,
+                time_from,
+                time_to,
+                repositories,
+                exclude_inactive,
+                open_pr_authors,
+                account,
+                pdb,
+            ),
             # require `checked_until` to be after `time_to` or now() - 1 hour (heater interval)
             cls.merged_prs_facts_loader.load_merged_unreleased_pull_request_facts(
-                merged_prs, min(time_to, datetime.now(timezone.utc) - timedelta(hours=1)),
-                LabelFilter.empty(), matched_bys,
-                default_branches, release_settings, prefixer, account, pdb,
-                time_from=time_from, exclude_inactive=exclude_inactive),
+                merged_prs,
+                min(time_to, datetime.now(timezone.utc) - timedelta(hours=1)),
+                LabelFilter.empty(),
+                matched_bys,
+                default_branches,
+                release_settings,
+                prefixer,
+                account,
+                pdb,
+                time_from=time_from,
+                exclude_inactive=exclude_inactive,
+            ),
             miner.fetch_pr_deployments(unique_unreleased_pr_node_ids, account, pdb, rdb),
             done_deployments_task,
         ]
         if pr_jira_mapper is not None:
-            tasks.extend([
-                pr_jira_mapper.load_pr_jira_mapping(unreleased_pr_node_ids, meta_ids, mdb),
-                done_jira_map_task,
-            ])
-        open_facts, merged_facts, unreleased_deps, released_deps, *unreleased_jira_map = \
-            await gather(*tasks, op="final gather")
+            tasks.extend(
+                [
+                    pr_jira_mapper.load_pr_jira_mapping(unreleased_pr_node_ids, meta_ids, mdb),
+                    done_jira_map_task,
+                ],
+            )
+        (
+            open_facts,
+            merged_facts,
+            unreleased_deps,
+            released_deps,
+            *unreleased_jira_map,
+        ) = await gather(*tasks, op="final gather")
         add_pdb_hits(pdb, "precomputed_open_facts", len(open_facts))
         add_pdb_hits(pdb, "precomputed_merged_unreleased_facts", len(merged_facts))
         # ensure the priority order
         facts = {**open_facts, **merged_facts, **done_facts}
         if pr_jira_mapper is not None:
             unreleased_jira_map = unreleased_jira_map[0]
-            for node_id, repo in zip(unreleased_prs.index.get_level_values(0).values,
-                                     unreleased_prs.index.get_level_values(1).values):
+            for node_id, repo in zip(
+                unreleased_prs.index.get_level_values(0).values,
+                unreleased_prs.index.get_level_values(1).values,
+            ):
                 try:
                     facts[(node_id, repo)].jira_ids = unreleased_jira_map[node_id]
                 except KeyError:
@@ -184,55 +271,79 @@ class UnfreshPullRequestFactsFetcher:
 
     @classmethod
     @sentry_span
-    async def _filter_done_facts_jira(cls,
-                                      miner: Type[PullRequestMiner],
-                                      done_facts: PullRequestFactsMap,
-                                      jira: JIRAFilter,
-                                      meta_ids: Tuple[int, ...],
-                                      mdb: Database,
-                                      cache: Optional[aiomcache.Client],
-                                      ) -> None:
+    async def _filter_done_facts_jira(
+        cls,
+        miner: Type[PullRequestMiner],
+        done_facts: PullRequestFactsMap,
+        jira: JIRAFilter,
+        meta_ids: Tuple[int, ...],
+        mdb: Database,
+        cache: Optional[aiomcache.Client],
+    ) -> None:
         pr_node_ids = defaultdict(list)
         for node_id, repo in done_facts:
             pr_node_ids[node_id].append(repo)
         filtered = await miner.filter_jira(
-            pr_node_ids, jira, meta_ids, mdb, cache, columns=[PullRequest.node_id])
+            pr_node_ids, jira, meta_ids, mdb, cache, columns=[PullRequest.node_id],
+        )
         for node_id in pr_node_ids.keys() - set(filtered.index.values):
             for repo in pr_node_ids[node_id]:
                 del done_facts[(node_id, repo)]
 
     @classmethod
     @sentry_span
-    async def _fetch_inactive_merged_unreleased_prs(cls,
-                                                    time_from: datetime,
-                                                    time_to: datetime,
-                                                    repos: Union[Set[str], KeysView[str]],
-                                                    has_logical_repos: bool,
-                                                    participants: PRParticipants,
-                                                    labels: LabelFilter,
-                                                    jira: JIRAFilter,
-                                                    default_branches: Dict[str, str],
-                                                    release_settings: ReleaseSettings,
-                                                    prefixer: Prefixer,
-                                                    account: int,
-                                                    meta_ids: Tuple[int, ...],
-                                                    mdb: Database,
-                                                    pdb: Database,
-                                                    cache: Optional[aiomcache.Client],
-                                                    ) -> pd.Index:
+    async def _fetch_inactive_merged_unreleased_prs(
+        cls,
+        time_from: datetime,
+        time_to: datetime,
+        repos: Union[Set[str], KeysView[str]],
+        has_logical_repos: bool,
+        participants: PRParticipants,
+        labels: LabelFilter,
+        jira: JIRAFilter,
+        default_branches: Dict[str, str],
+        release_settings: ReleaseSettings,
+        prefixer: Prefixer,
+        account: int,
+        meta_ids: Tuple[int, ...],
+        mdb: Database,
+        pdb: Database,
+        cache: Optional[aiomcache.Client],
+    ) -> pd.Index:
         prs = await discover_inactive_merged_unreleased_prs(
-            time_from, time_to, repos, participants, labels, default_branches, release_settings,
-            prefixer, account, pdb, cache)
+            time_from,
+            time_to,
+            repos,
+            participants,
+            labels,
+            default_branches,
+            release_settings,
+            prefixer,
+            account,
+            pdb,
+            cache,
+        )
         if not jira:
             return pd.Index([(k, r) for k, val in prs.items() for r in val])
         columns = [PullRequest.node_id, PullRequest.repository_full_name]
         query = await generate_jira_prs_query(
             [PullRequest.node_id.in_(prs), PullRequest.acc_id.in_(meta_ids)],
-            jira, meta_ids, mdb, cache, columns=columns)
+            jira,
+            meta_ids,
+            mdb,
+            cache,
+            columns=columns,
+        )
         query = query.with_statement_hint(f"Rows(pr repo #{len(prs)})")
-        df = await read_sql_query(query, mdb, columns, index=[
-            PullRequest.node_id.name, PullRequest.repository_full_name.name,
-        ])
+        df = await read_sql_query(
+            query,
+            mdb,
+            columns,
+            index=[
+                PullRequest.node_id.name,
+                PullRequest.repository_full_name.name,
+            ],
+        )
         if not has_logical_repos:
             return df.index
         clones = [
@@ -244,9 +355,11 @@ class UnfreshPullRequestFactsFetcher:
 
     @staticmethod
     @sentry_span
-    def append_deployments(facts: PullRequestFactsMap,
-                           deps: pd.DataFrame,
-                           log: logging.Logger) -> None:
+    def append_deployments(
+        facts: PullRequestFactsMap,
+        deps: pd.DataFrame,
+        log: logging.Logger,
+    ) -> None:
         """Insert missing deployments info in the PR facts."""
         if len(facts) == 0:
             return
@@ -264,7 +377,8 @@ class UnfreshPullRequestFactsFetcher:
         envs = deps[DeploymentNotification.environment.name].values.astype("U", copy=False)
         conclusions = deps[DeploymentNotification.conclusion.name].values
         for node_id, name, finished, env, conclusion, repo in zip(
-                pr_node_ids, names, finisheds, envs, conclusions, repos):
+            pr_node_ids, names, finisheds, envs, conclusions, repos,
+        ):
             try:
                 f = facts[(node_id, repo)]
             except KeyError:

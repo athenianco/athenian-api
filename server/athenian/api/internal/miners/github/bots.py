@@ -53,31 +53,44 @@ class Bots:
         deserialize=pickle.loads,
         key=lambda account, **_: (account,),
     )
-    async def __call__(self,
-                       account: int,
-                       meta_ids: Tuple[int, ...],
-                       mdb: morcilla.Database,
-                       sdb: morcilla.Database,
-                       cache: Optional[aiomcache.Client],
-                       ) -> FrozenSet[str]:
+    async def __call__(
+        self,
+        account: int,
+        meta_ids: Tuple[int, ...],
+        mdb: morcilla.Database,
+        sdb: morcilla.Database,
+        cache: Optional[aiomcache.Client],
+    ) -> FrozenSet[str]:
         """
         Return the bot logins.
 
         There are two parts: global bots in mdb and local bots in the Bots team in sdb.
         """
         await self._ensure_fetched(mdb)
-        team = (await sdb.fetch_val(select([Team.members]).where(and_(
-            Team.owner_id == account,
-            Team.name == Team.BOTS,
-        )))) or []
-        team_logins = await mdb.fetch_all(select([User.login]).where(and_(
-            User.acc_id.in_(meta_ids),
-            User.node_id.in_(team),
-        )))
-        bots = frozenset(self._bots[0].union(
-            (r[0] for r in team_logins),
-            *(self._bots.get(mid, set()) for mid in meta_ids),
-        ))
+        team = (
+            await sdb.fetch_val(
+                select([Team.members]).where(
+                    and_(
+                        Team.owner_id == account,
+                        Team.name == Team.BOTS,
+                    ),
+                ),
+            )
+        ) or []
+        team_logins = await mdb.fetch_all(
+            select([User.login]).where(
+                and_(
+                    User.acc_id.in_(meta_ids),
+                    User.node_id.in_(team),
+                ),
+            ),
+        )
+        bots = frozenset(
+            self._bots[0].union(
+                (r[0] for r in team_logins),
+                *(self._bots.get(mid, set()) for mid in meta_ids),
+            ),
+        )
         return bots
 
 

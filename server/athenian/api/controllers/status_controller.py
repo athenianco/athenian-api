@@ -19,7 +19,7 @@ from athenian.api.models.web import BadRequestError
 from athenian.api.models.web.versions import Versions
 from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME
 from athenian.api.request import AthenianWebRequest
-from athenian.api.response import model_response, ResponseError
+from athenian.api.response import ResponseError, model_response
 
 
 @cached(
@@ -127,7 +127,8 @@ def setup_status(app: web.Application) -> None:
     * `/status` serves the canary health checks.
     """
     app[PrometheusRenderer.var_name] = prometheus_renderer = PrometheusRenderer(
-        app[PROMETHEUS_REGISTRY_VAR_NAME])
+        app[PROMETHEUS_REGISTRY_VAR_NAME],
+    )
     # passing prometheus_renderer without __call__ triggers a spurious DeprecationWarning
     # FIXME(vmarkovtsev): https://github.com/aio-libs/aiohttp/issues/4519
     app.router.add_get("/prometheus", prometheus_renderer.__call__)

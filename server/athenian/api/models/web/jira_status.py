@@ -18,10 +18,12 @@ class JIRAStatus(Model):
         "project": "project",
     }
 
-    def __init__(self,
-                 name: Optional[str] = None,
-                 stage: Optional[str] = None,
-                 project: Optional[str] = None):
+    def __init__(
+        self,
+        name: Optional[str] = None,
+        stage: Optional[str] = None,
+        project: Optional[str] = None,
+    ):
         """JIRAStatus - a model defined in OpenAPI
 
         :param name: The name of this JIRAStatus.
@@ -84,8 +86,8 @@ class JIRAStatus(Model):
         allowed_values = {"To Do", "In Progress", "Done"}
         if stage not in allowed_values:
             raise ValueError(
-                "Invalid value for `stage` (%s), must be one of %s" % (
-                    stage, allowed_values))
+                "Invalid value for `stage` (%s), must be one of %s" % (stage, allowed_values),
+            )
 
         self._stage = stage
 

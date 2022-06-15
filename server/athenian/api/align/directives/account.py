@@ -1,11 +1,20 @@
 from typing import Any, Union
 
 from ariadne import SchemaDirectiveVisitor
-from graphql import GraphQLArgument, GraphQLField, GraphQLInputField, GraphQLInputObjectType, \
-    GraphQLInterfaceType, GraphQLObjectType, GraphQLResolveInfo
+from graphql import (
+    GraphQLArgument,
+    GraphQLField,
+    GraphQLInputField,
+    GraphQLInputObjectType,
+    GraphQLInterfaceType,
+    GraphQLObjectType,
+    GraphQLResolveInfo,
+)
 
-from athenian.api.internal.account import check_account_expired, \
-    get_user_account_status_from_request
+from athenian.api.internal.account import (
+    check_account_expired,
+    get_user_account_status_from_request,
+)
 from athenian.api.models.web import UnauthorizedError
 from athenian.api.response import ResponseError
 
@@ -42,7 +51,9 @@ class AccountDirective(SchemaDirectiveVisitor):
         return argument
 
     def visit_input_field_definition(
-        self, field: GraphQLInputField, object_type: GraphQLInputObjectType,
+        self,
+        field: GraphQLInputField,
+        object_type: GraphQLInputObjectType,
     ) -> GraphQLInputField:
         """Override the resolver in mutations."""
         raise NotImplementedError

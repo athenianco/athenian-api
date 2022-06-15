@@ -179,7 +179,8 @@ class JIRAFilter(Model):
 
         :param unmapped: The unmapped of this JIRAFilter.
         """
-        if unmapped and (self._epics or self._labels_include or
-                         self._labels_exclude or self._issue_types):
+        if unmapped and (
+            self._epics or self._labels_include or self._labels_exclude or self._issue_types
+        ):
             raise ValueError("`unmapped` may not be mixed with anything else")
         self._unmapped = unmapped

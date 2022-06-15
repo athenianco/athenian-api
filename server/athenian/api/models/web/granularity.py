@@ -2,7 +2,7 @@ from datetime import date, datetime, timedelta
 import re
 from typing import List
 
-from dateutil.rrule import DAILY, MONTHLY, rrule, WEEKLY, YEARLY
+from dateutil.rrule import DAILY, MONTHLY, WEEKLY, YEARLY, rrule
 
 from athenian.api.models.web.base_model_ import Model
 
@@ -46,7 +46,7 @@ class Granularity(Model):
         if not unsampled or unsampled[0] != date_from:
             # happens because of the alignment
             unsampled.insert(0, date_from)
-        series = unsampled[::int(step)]
+        series = unsampled[:: int(step)]
         series.append(date_to + timedelta(days=1))
         return series
 
@@ -71,7 +71,9 @@ class GranularityMixin:
         if granularity is None:
             raise ValueError("Invalid value for `granularity`, must not be `None`")
         if not Granularity.format.match(granularity):
-            raise ValueError('Invalid value for `granularity`: "%s" does not match /%s/' %
-                             granularity, Granularity.format.pattern)
+            raise ValueError(
+                'Invalid value for `granularity`: "%s" does not match /%s/' % granularity,
+                Granularity.format.pattern,
+            )
 
         self._granularity = granularity

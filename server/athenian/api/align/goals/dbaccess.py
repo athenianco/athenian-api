@@ -7,8 +7,13 @@ from typing import Iterable, Sequence, Union
 import sqlalchemy as sa
 
 from athenian.api.align.exceptions import GoalMutationError
-from athenian.api.db import conn_in_transaction, Connection, DatabaseLike, \
-    dialect_specific_insert, Row
+from athenian.api.db import (
+    Connection,
+    DatabaseLike,
+    Row,
+    conn_in_transaction,
+    dialect_specific_insert,
+)
 from athenian.api.models.state.models import Goal, Team, TeamGoal
 from athenian.api.typing_utils import dataclass
 
@@ -65,7 +70,10 @@ async def delete_goal(account_id: int, goal_id: int, sdb_conn: Connection) -> No
 
 
 async def delete_team_goals(
-    account_id: int, goal_id: int, team_ids: Sequence[int], sdb_conn: Connection,
+    account_id: int,
+    goal_id: int,
+    team_ids: Sequence[int],
+    sdb_conn: Connection,
 ) -> None:
     """Delete a set of TeamGoal-s from DB."""
     assert team_ids
@@ -112,26 +120,26 @@ async def assign_team_goals(
 
 
 async def fetch_team_goals(
-    account: int, team_ids: Iterable[int], sdb: DatabaseLike,
+    account: int,
+    team_ids: Iterable[int],
+    sdb: DatabaseLike,
 ) -> Sequence[Row]:
     """Fetch the TeamGoals from DB related to a set of teams.
 
     Result is ordered by Goal id.
     """
-    stmt = sa.select(
-        TeamGoal.team_id, TeamGoal.target, Goal,
-    ).join_from(
-        TeamGoal, Goal, TeamGoal.goal_id == Goal.id,
-    ).where(
-        sa.and_(TeamGoal.team_id.in_(team_ids), Goal.account_id == account),
-    ).order_by(
-        Goal.id, TeamGoal.team_id,
+    stmt = (
+        sa.select(TeamGoal.team_id, TeamGoal.target, Goal)
+        .join_from(TeamGoal, Goal, TeamGoal.goal_id == Goal.id)
+        .where(sa.and_(TeamGoal.team_id.in_(team_ids), Goal.account_id == account))
+        .order_by(Goal.id, TeamGoal.team_id)
     )
     return await sdb.fetch_all(stmt)
 
 
 async def _validate_goal_creation_info(
-    creation_info: GoalCreationInfo, sdb_conn: DatabaseLike,
+    creation_info: GoalCreationInfo,
+    sdb_conn: DatabaseLike,
 ) -> None:
     """Execute validation on GoalCreationInfo using the DB."""
     # check that all team exist and belong to the right account
@@ -150,7 +158,10 @@ async def _validate_goal_creation_info(
 
 
 async def _validate_team_goal_deletions(
-    account_id: int, goal_id: int, team_ids: Sequence[int], sdb_conn: DatabaseLike,
+    account_id: int,
+    goal_id: int,
+    team_ids: Sequence[int],
+    sdb_conn: DatabaseLike,
 ) -> None:
     where_clause = sa.and_(
         Goal.account_id == account_id,
@@ -158,9 +169,9 @@ async def _validate_team_goal_deletions(
         TeamGoal.goal_id == goal_id,
         TeamGoal.team_id.in_(team_ids),
     )
-    select_stmt = sa.select(
-        [TeamGoal.team_id],
-    ).join_from(TeamGoal, Goal).join(Team).where(where_clause)
+    select_stmt = (
+        sa.select([TeamGoal.team_id]).join_from(TeamGoal, Goal).join(Team).where(where_clause)
+    )
     found = {row[0] for row in await sdb_conn.fetch_all(select_stmt)}
     if missing := [team_id for team_id in team_ids if team_id not in found]:
         missing_repr = ",".join(map(str, missing))
@@ -175,18 +186,16 @@ async def _validate_team_goal_assignments(
     assignments: Sequence[TeamGoalTargetAssignment],
     sdb_conn: Connection,
 ) -> None:
-    goal_exists = await sdb_conn.fetch_val(sa.select([1]).where(sa.and_(
-        Goal.account_id == account_id, Goal.id == goal_id,
-    )))
+    goal_exists = await sdb_conn.fetch_val(
+        sa.select([1]).where(sa.and_(Goal.account_id == account_id, Goal.id == goal_id)),
+    )
     if not goal_exists:
         raise GoalMutationError(
             f"Goal {goal_id} doesn't exist or access denied", HTTPStatus.NOT_FOUND,
         )
 
     teams_stmt = sa.select([Team.id]).where(
-        sa.and_(
-            Team.id.in_(a.team_id for a in assignments), Team.owner_id == account_id,
-        ),
+        sa.and_(Team.id.in_(a.team_id for a in assignments), Team.owner_id == account_id),
     )
     found_teams = set(r[0] for r in await sdb_conn.fetch_all(teams_stmt))
     if missing_teams := [a.team_id for a in assignments if a.team_id not in found_teams]:

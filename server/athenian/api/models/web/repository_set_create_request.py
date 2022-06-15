@@ -21,10 +21,12 @@ class RepositorySetCreateRequest(Model):
         "name": "name",
     }
 
-    def __init__(self,
-                 account: Optional[int] = None,
-                 items: Optional[List[str]] = None,
-                 name: Optional[str] = None):
+    def __init__(
+        self,
+        account: Optional[int] = None,
+        items: Optional[List[str]] = None,
+        name: Optional[str] = None,
+    ):
         """RepositorySetCreateRequest - a model defined in OpenAPI
 
         :param account: The account of this RepositorySetCreateRequest.

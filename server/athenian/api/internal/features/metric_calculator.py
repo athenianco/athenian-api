@@ -4,8 +4,23 @@ from datetime import datetime, timedelta
 from functools import reduce
 from graphlib import TopologicalSorter  # noqa
 from itertools import chain  # noqa
-from typing import Any, Callable, Collection, Dict, Generic, Iterable, KeysView, List, Mapping, \
-    Optional, Sequence, Tuple, Type, TypeVar, Union
+from typing import (
+    Any,
+    Callable,
+    Collection,
+    Dict,
+    Generic,
+    Iterable,
+    KeysView,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+)
 import warnings
 
 import numpy as np
@@ -13,11 +28,19 @@ import pandas as pd
 import sentry_sdk
 
 from athenian.api.int_to_str import int_to_str
-from athenian.api.internal.features.histogram import calculate_histogram, Histogram, Scale
-from athenian.api.internal.features.metric import Metric, MetricFloat, MetricInt, MultiMetric, \
-    NumpyMetric, T
-from athenian.api.internal.features.statistics import mean_confidence_interval, \
-    median_confidence_interval
+from athenian.api.internal.features.histogram import Histogram, Scale, calculate_histogram
+from athenian.api.internal.features.metric import (
+    Metric,
+    MetricFloat,
+    MetricInt,
+    MultiMetric,
+    NumpyMetric,
+    T,
+)
+from athenian.api.internal.features.statistics import (
+    mean_confidence_interval,
+    median_confidence_interval,
+)
 from athenian.api.internal.logical_repos import coerce_logical_repos
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings
 from athenian.api.sparse_mask import SparseMask
@@ -66,12 +89,12 @@ class MetricCalculator(Generic[T], ABC):
         """Return the dependencies."""
         return self._calcs
 
-    def __init__(self,
-                 *deps: Union["MetricCalculator",
-                              Tuple["MetricCalculator"],
-                              List["MetricCalculator"]],
-                 quantiles: Sequence[float],
-                 **kwargs):
+    def __init__(
+        self,
+        *deps: Union["MetricCalculator", Tuple["MetricCalculator"], List["MetricCalculator"]],
+        quantiles: Sequence[float],
+        **kwargs,
+    ):
         """Initialize a new `MetricCalculator` instance."""
         self.reset()
         self._calcs: List[Union[MetricCalculator, List[MetricCalculator]]] = []
@@ -95,13 +118,15 @@ class MetricCalculator(Generic[T], ABC):
             else:
                 raise AssertionError("%s is not listed in the dependencies" % type(calc))
 
-    def __call__(self,
-                 facts: pd.DataFrame,
-                 min_times: np.ndarray,
-                 max_times: np.ndarray,
-                 quantiles_mounted_at: Optional[int],
-                 groups_mask: np.ndarray,
-                 **kwargs) -> None:
+    def __call__(
+        self,
+        facts: pd.DataFrame,
+        min_times: np.ndarray,
+        max_times: np.ndarray,
+        quantiles_mounted_at: Optional[int],
+        groups_mask: np.ndarray,
+        **kwargs,
+    ) -> None:
         """Calculate the samples over the supplied facts.
 
         :param facts: Mined facts about pull requests: timestamps, stats, etc.
@@ -136,8 +161,9 @@ class MetricCalculator(Generic[T], ABC):
         if facts.empty:
             self._peek = np.empty((len(min_times), 0), object)
             ts_dim = quantiles_mounted_at or len(min_times)
-            self._grouped_notnull = self._grouped_sample_mask = \
-                SparseMask(np.empty((len(groups_mask), ts_dim, 0), dtype=bool))
+            self._grouped_notnull = self._grouped_sample_mask = SparseMask(
+                np.empty((len(groups_mask), ts_dim, 0), dtype=bool),
+            )
             self._samples = np.empty((len(groups_mask), ts_dim, 0), self.dtype)
             return
         assert groups_mask.shape[1] == len(facts)
@@ -161,12 +187,14 @@ class MetricCalculator(Generic[T], ABC):
             group_sample_mask[discard_mask] = False
             del discard_mask
         self._grouped_sample_mask = SparseMask(group_sample_mask)
-        flat_samples = np.broadcast_to(peek[None, :], group_sample_mask.shape)[group_sample_mask] \
-            .astype(self.dtype, copy=False).ravel()
+        flat_samples = (
+            np.broadcast_to(peek[None, :], group_sample_mask.shape)[group_sample_mask]
+            .astype(self.dtype, copy=False)
+            .ravel()
+        )
         group_sample_lengths = np.sum(group_sample_mask, axis=-1)
         self._samples = np.full(len(groups_mask) * len(peek), None, object)
-        self._samples[:] = np.split(
-            flat_samples, np.cumsum(group_sample_lengths.ravel())[:-1])
+        self._samples[:] = np.split(flat_samples, np.cumsum(group_sample_lengths.ravel())[:-1])
         self._samples = self._samples.reshape((len(groups_mask), len(peek)))
 
     @property
@@ -216,8 +244,9 @@ class MetricCalculator(Generic[T], ABC):
         """Clear the current state of the calculator."""
         self._samples = np.empty((0, 0), dtype=object)
         self._peek = np.empty((0, 0), dtype=object)
-        self._grouped_notnull = self._grouped_sample_mask = \
-            SparseMask(np.empty((0, 0, 0), dtype=bool))
+        self._grouped_notnull = self._grouped_sample_mask = SparseMask(
+            np.empty((0, 0, 0), dtype=bool),
+        )
         self._last_values = None
 
     def split(self) -> List["MetricCalculator"]:
@@ -232,11 +261,13 @@ class MetricCalculator(Generic[T], ABC):
         return instance
 
     @abstractmethod
-    def _analyze(self,
-                 facts: pd.DataFrame,
-                 min_times: np.ndarray,
-                 max_times: np.ndarray,
-                 **kwargs) -> np.ndarray:
+    def _analyze(
+        self,
+        facts: pd.DataFrame,
+        min_times: np.ndarray,
+        max_times: np.ndarray,
+        **kwargs,
+    ) -> np.ndarray:
         """
         Calculate the samples for each item in the data frame.
 
@@ -264,11 +295,12 @@ class MetricCalculator(Generic[T], ABC):
             return peek != nan
         return peek != peek.dtype.type(0)
 
-    def _calculate_discard_mask(self,
-                                peek: np.ndarray,
-                                quantiles_mounted_at: int,
-                                groups_mask: np.ndarray,
-                                ) -> np.ndarray:
+    def _calculate_discard_mask(
+        self,
+        peek: np.ndarray,
+        quantiles_mounted_at: int,
+        groups_mask: np.ndarray,
+    ) -> np.ndarray:
         qnotnull = self._find_notnull(peek[quantiles_mounted_at:])
         if peek.dtype != object:
             dtype = peek.dtype
@@ -276,40 +308,47 @@ class MetricCalculator(Generic[T], ABC):
             dtype = self.dtype
         qnotnull = np.broadcast_to(qnotnull[None, :], (len(groups_mask), *qnotnull.shape))
         group_sample_mask = qnotnull & groups_mask[:, None, :]
-        flat_samples = np.broadcast_to(
-            peek[None, quantiles_mounted_at:], qnotnull.shape,
-        )[group_sample_mask].astype(dtype, copy=False).ravel()
+        flat_samples = (
+            np.broadcast_to(peek[None, quantiles_mounted_at:], qnotnull.shape)[group_sample_mask]
+            .astype(dtype, copy=False)
+            .ravel()
+        )
         group_sample_lengths = np.sum(group_sample_mask, axis=-1)
         if self.has_nan:
             max_len = group_sample_lengths.max()
             if max_len == 0:
                 cut_values = np.full((*group_sample_lengths.shape, 2), None, dtype)
             else:
-                surrogate_samples = np.full(
-                    (*group_sample_lengths.shape, max_len), None, dtype)
+                surrogate_samples = np.full((*group_sample_lengths.shape, max_len), None, dtype)
                 flat_lengths = group_sample_lengths.ravel()
                 flat_mask = flat_lengths > 0
                 flat_lengths = flat_lengths[flat_mask]
-                flat_offsets = \
-                    (np.arange(group_sample_lengths.size) * max_len)[flat_mask] + flat_lengths
+                flat_offsets = (np.arange(group_sample_lengths.size) * max_len)[
+                    flat_mask
+                ] + flat_lengths
                 flat_cumsum = flat_lengths.cumsum()
-                indexes = np.arange(flat_cumsum[-1]) + \
-                    np.repeat(flat_offsets - flat_cumsum, flat_lengths)
+                indexes = np.arange(flat_cumsum[-1]) + np.repeat(
+                    flat_offsets - flat_cumsum, flat_lengths,
+                )
                 surrogate_samples.ravel()[indexes] = flat_samples
                 with warnings.catch_warnings():
                     # this will happen if some groups are all NaN-s, that's normal
                     warnings.filterwarnings("ignore", "All-NaN slice encountered")
-                    cut_values = np.moveaxis(np.nanquantile(
-                        surrogate_samples, self._quantiles, interpolation="nearest", axis=-1,
-                    ).astype(dtype), 0, -1)
+                    cut_values = np.moveaxis(
+                        np.nanquantile(
+                            surrogate_samples, self._quantiles, interpolation="nearest", axis=-1,
+                        ).astype(dtype),
+                        0,
+                        -1,
+                    )
         else:
             pos = 0
             cut_values = np.zeros((group_sample_lengths.size, 2), dtype=dtype)
             for i, slen in enumerate(group_sample_lengths.ravel()):
                 if slen > 0:
-                    cut_values[i] = np.quantile(flat_samples[pos:pos + slen],
-                                                self._quantiles,
-                                                interpolation="nearest")
+                    cut_values[i] = np.quantile(
+                        flat_samples[pos : pos + slen], self._quantiles, interpolation="nearest",
+                    )
                     pos += slen
         cut_values = cut_values.reshape((*group_sample_lengths.shape, 2))
         grouped_qpeek = np.broadcast_to(peek[None, quantiles_mounted_at:], qnotnull.shape)
@@ -360,7 +399,8 @@ class AverageMetricCalculator(MetricCalculator[T], ABC):
                 else:
                     raise e from None
         return self.metric.from_fields(
-            True, *mean_confidence_interval(samples, self.may_have_negative_values))
+            True, *mean_confidence_interval(samples, self.may_have_negative_values),
+        )
 
 
 class MedianMetricCalculator(WithoutQuantilesMixin, MetricCalculator[T], ABC):
@@ -378,7 +418,8 @@ class AggregationMetricCalculator(WithoutQuantilesMixin, MetricCalculator[T], AB
     def _value(self, samples: np.ndarray) -> Metric[T]:
         exists = len(samples) > 0
         return self.metric.from_fields(
-            True, self._agg(samples) if exists else np.dtype(self.dtype).type(), None, None)
+            True, self._agg(samples) if exists else np.dtype(self.dtype).type(), None, None,
+        )
 
     @abstractmethod
     def _agg(self, samples: np.ndarray) -> T:
@@ -422,31 +463,38 @@ class Counter(MetricCalculator[int], ABC):
     def _values(self) -> List[List[Metric[T]]]:
         if self._quantiles != (0, 1):
             # if we've got the quantiles, report the lengths
-            return [[self.metric.from_fields(True, len(s), None, None) for s in gs]
-                    for gs in self.samples]
+            return [
+                [self.metric.from_fields(True, len(s), None, None) for s in gs]
+                for gs in self.samples
+            ]
         # otherwise, ignore the upstream quantiles
-        return [[self.metric.from_fields(True, s, None, None) for s in gs]
-                for gs in self.grouped_notnull.dense().sum(axis=-1)]
+        return [
+            [self.metric.from_fields(True, s, None, None) for s in gs]
+            for gs in self.grouped_notnull.dense().sum(axis=-1)
+        ]
 
     def _value(self, samples: np.ndarray) -> Metric[int]:
         raise AssertionError("this must be never called")
 
-    def _analyze(self,
-                 facts: pd.DataFrame,
-                 min_times: np.ndarray,
-                 max_times: np.ndarray,
-                 **kwargs) -> np.ndarray:
+    def _analyze(
+        self,
+        facts: pd.DataFrame,
+        min_times: np.ndarray,
+        max_times: np.ndarray,
+        **kwargs,
+    ) -> np.ndarray:
         raise AssertionError("this must be never called")
 
 
 class HistogramCalculator(MetricCalculator, ABC):
     """Pull request histogram calculator, base abstract class."""
 
-    def histogram(self,
-                  scale: Optional[Scale],
-                  bins: Optional[int],
-                  ticks: Optional[list],
-                  ) -> List[List[Histogram[T]]]:
+    def histogram(
+        self,
+        scale: Optional[Scale],
+        bins: Optional[int],
+        ticks: Optional[list],
+    ) -> List[List[Histogram[T]]]:
         """Calculate the histogram over the current distribution."""
         histograms = []
         for group_samples in self.samples:
@@ -463,12 +511,14 @@ class MetricCalculatorEnsemble:
     """Several calculators ordered in sequence such that the dependencies are respected and each \
     calculator class is calculated only once."""
 
-    def __init__(self,
-                 *metrics: str,
-                 class_mapping: Dict[str, Type[MetricCalculator]],
-                 quantiles: Sequence[float],
-                 quantile_stride: int,
-                 **kwargs):
+    def __init__(
+        self,
+        *metrics: str,
+        class_mapping: Dict[str, Type[MetricCalculator]],
+        quantiles: Sequence[float],
+        quantile_stride: int,
+        **kwargs,
+    ):
         """Initialize a new instance of MetricCalculatorEnsemble class."""
         metric_classes = defaultdict(list)
         for m in metrics:
@@ -492,11 +542,11 @@ class MetricCalculatorEnsemble:
         return groups_mask
 
     @staticmethod
-    def _plan_classes(metric_classes: Dict[Type[MetricCalculator], List[str]],
-                      quantiles: Sequence[float],
-                      **kwargs,
-                      ) -> Tuple[List[MetricCalculator],
-                                 Dict[str, List[MetricCalculator]]]:
+    def _plan_classes(
+        metric_classes: Dict[Type[MetricCalculator], List[str]],
+        quantiles: Sequence[float],
+        **kwargs,
+    ) -> Tuple[List[MetricCalculator], Dict[str, List[MetricCalculator]]]:
         dig = {}
         required_classes = list(metric_classes)
         while required_classes:
@@ -512,8 +562,7 @@ class MetricCalculatorEnsemble:
         metrics = {}
         cls_instances = {}
         for cls in TopologicalSorter(dig).static_order():
-            calc = cls(*(cls_instances[dep] for dep in cls.deps),
-                       quantiles=quantiles, **kwargs)
+            calc = cls(*(cls_instances[dep] for dep in cls.deps), quantiles=quantiles, **kwargs)
             calcs.extend(clones := calc.split())
             cls_instances[cls] = clones
             try:
@@ -524,34 +573,41 @@ class MetricCalculatorEnsemble:
         return calcs, metrics
 
     @staticmethod
-    def compose_quantile_time_intervals(min_time: np.datetime64,
-                                        max_time: np.datetime64,
-                                        quantile_stride: int,
-                                        ) -> Tuple[np.ndarray, np.ndarray]:
+    def compose_quantile_time_intervals(
+        min_time: np.datetime64,
+        max_time: np.datetime64,
+        quantile_stride: int,
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """Calculate the additional time intervals needed to filter out the local outliers."""
         zero = np.datetime64("2000-01-03")
         min_qli = (min_time.astype("datetime64[D]") - zero) // np.timedelta64(quantile_stride, "D")
         max_qli = (
-            ((max_time + np.timedelta64(23, "h")).astype("datetime64[D]") - zero) +
-            np.timedelta64(quantile_stride - 1, "D")
+            ((max_time + np.timedelta64(23, "h")).astype("datetime64[D]") - zero)
+            + np.timedelta64(quantile_stride - 1, "D")
         ) // np.timedelta64(quantile_stride, "D")
-        timeline = zero + (min_time - min_time.astype("datetime64[D]")) + \
-            (np.arange(min_qli, max_qli + 1, 1) * quantile_stride).astype("timedelta64[D]")
+        timeline = (
+            zero
+            + (min_time - min_time.astype("datetime64[D]"))
+            + (np.arange(min_qli, max_qli + 1, 1) * quantile_stride).astype("timedelta64[D]")
+        )
         return timeline[:-1], timeline[1:]
 
-    def _compose_quantile_time_intervals(self,
-                                         min_time: np.datetime64,
-                                         max_time: np.datetime64,
-                                         ) -> Tuple[np.ndarray, np.ndarray]:
+    def _compose_quantile_time_intervals(
+        self,
+        min_time: np.datetime64,
+        max_time: np.datetime64,
+    ) -> Tuple[np.ndarray, np.ndarray]:
         return self.compose_quantile_time_intervals(min_time, max_time, self._quantile_stride)
 
     @sentry_span
-    def __call__(self,
-                 facts: pd.DataFrame,
-                 min_times: np.ndarray,
-                 max_times: np.ndarray,
-                 groups: Sequence[Sequence[int]],
-                 **kwargs) -> None:
+    def __call__(
+        self,
+        facts: pd.DataFrame,
+        min_times: np.ndarray,
+        max_times: np.ndarray,
+        groups: Sequence[Sequence[int]],
+        **kwargs,
+    ) -> None:
         """Invoke all the owned metric calculators on the same input."""
         groups_mask = self.compose_groups_mask(groups, len(facts))
         if self._quantiles == (0, 1):
@@ -593,30 +649,36 @@ class MetricCalculatorEnsemble:
 class HistogramCalculatorEnsemble(MetricCalculatorEnsemble):
     """Like MetricCalculatorEnsemble, but for histograms."""
 
-    def __init__(self,
-                 *metrics: str,
-                 class_mapping: Dict[str, Type[MetricCalculator]],
-                 quantiles: Sequence[float],
-                 **kwargs):
+    def __init__(
+        self,
+        *metrics: str,
+        class_mapping: Dict[str, Type[MetricCalculator]],
+        quantiles: Sequence[float],
+        **kwargs,
+    ):
         """Initialize a new instance of HistogramCalculatorEnsemble class."""
-        super().__init__(*metrics,
-                         class_mapping=class_mapping,
-                         quantiles=quantiles,
-                         quantile_stride=-1,
-                         **kwargs)
+        super().__init__(
+            *metrics,
+            class_mapping=class_mapping,
+            quantiles=quantiles,
+            quantile_stride=-1,
+            **kwargs,
+        )
 
-    def _compose_quantile_time_intervals(self,
-                                         min_time: np.datetime64,
-                                         max_time: np.datetime64,
-                                         ) -> Tuple[np.ndarray, np.ndarray]:
+    def _compose_quantile_time_intervals(
+        self,
+        min_time: np.datetime64,
+        max_time: np.datetime64,
+    ) -> Tuple[np.ndarray, np.ndarray]:
         # matches the legacy outliers behavior - unstable, but suites histograms better
         return np.array([min_time]), np.array([max_time])
 
-    def histograms(self,
-                   scale: Optional[Scale],
-                   bins: Optional[int],
-                   ticks: Optional[list],
-                   ) -> Dict[str, Histogram]:
+    def histograms(
+        self,
+        scale: Optional[Scale],
+        bins: Optional[int],
+        ticks: Optional[list],
+    ) -> Dict[str, Histogram]:
         """Calculate the current histograms."""
         return {k: v[0].histogram(scale, bins, ticks) for k, v in self._metrics.items()}
 
@@ -636,11 +698,13 @@ class BinnedEnsemblesCalculator(Generic[M]):
 
     ensemble_class: Type[MetricCalculatorEnsemble]
 
-    def __init__(self,
-                 metrics: Iterable[Sequence[str]],
-                 quantiles: Sequence[float],
-                 quantile_stride: int,
-                 **kwargs):
+    def __init__(
+        self,
+        metrics: Iterable[Sequence[str]],
+        quantiles: Sequence[float],
+        quantile_stride: int,
+        **kwargs,
+    ):
         """
         Initialize a new instance of `BinnedEnsemblesCalculator`.
 
@@ -654,17 +718,19 @@ class BinnedEnsemblesCalculator(Generic[M]):
                 quantiles=quantiles,
                 quantile_stride=quantile_stride,
                 **kwargs,
-            ) for metrics in metrics
+            )
+            for metrics in metrics
         ]
         self._metrics = list(metrics)
 
     @sentry_span
-    def __call__(self,
-                 items: pd.DataFrame,
-                 time_intervals: Sequence[Sequence[datetime]],
-                 groups: np.ndarray,
-                 agg_kwargs: Iterable[Mapping[str, Any]],
-                 ) -> np.ndarray:
+    def __call__(
+        self,
+        items: pd.DataFrame,
+        time_intervals: Sequence[Sequence[datetime]],
+        groups: np.ndarray,
+        agg_kwargs: Iterable[Mapping[str, Any]],
+    ) -> np.ndarray:
         """
         Calculate the binned aggregations on a series of mined facts.
 
@@ -708,16 +774,20 @@ class BinnedEnsemblesCalculator(Generic[M]):
                     cell[primary][secondary].append(value)
             return cell
 
-        flat_vals = np.concatenate([
-            fill_ensemble_group(m, g)
-            for m in range(len(metrics))
-            for g in range(flat_groups.shape[0])
-        ])
+        flat_vals = np.concatenate(
+            [
+                fill_ensemble_group(m, g)
+                for m in range(len(metrics))
+                for g in range(flat_groups.shape[0])
+            ],
+        )
         return flat_vals.reshape((len(metrics), *effective_groups_shape, len(time_intervals)))
 
     @classmethod
-    def _make_min_max_times(cls, time_intervals: Sequence[Sequence[datetime]],
-                            ) -> Tuple[np.ndarray, np.ndarray, List[Tuple[int, int]]]:
+    def _make_min_max_times(
+        cls,
+        time_intervals: Sequence[Sequence[datetime]],
+    ) -> Tuple[np.ndarray, np.ndarray, List[Tuple[int, int]]]:
         sizes = np.zeros(len(time_intervals) + 1, dtype=int)
         for i, ts in enumerate(time_intervals):
             size = len(ts)
@@ -725,7 +795,9 @@ class BinnedEnsemblesCalculator(Generic[M]):
             assert size >= 2, "Each time interval series must contain at least two elements."
         flat_time_intervals = np.fromiter(
             chain.from_iterable((dt.replace(tzinfo=None) for dt in ts) for ts in time_intervals),
-            dtype="datetime64[ns]", count=sizes.sum())
+            dtype="datetime64[ns]",
+            count=sizes.sum(),
+        )
         offsets = np.cumsum(sizes)
         flat_intervals_count = len(flat_time_intervals) - len(time_intervals)
         nat = np.datetime64("NaT")
@@ -736,26 +808,30 @@ class BinnedEnsemblesCalculator(Generic[M]):
         for i in range(len(time_intervals)):
             begin, end = offsets[i], offsets[i + 1]
             next_offset = offset + end - begin - 1
-            min_times[offset:next_offset] = flat_time_intervals[begin:end - 1]
-            max_times[offset:next_offset] = flat_time_intervals[begin + 1:end]
+            min_times[offset:next_offset] = flat_time_intervals[begin : end - 1]
+            max_times[offset:next_offset] = flat_time_intervals[begin + 1 : end]
             for j in range(offset, next_offset):
                 ts_index_map.append((i, j - offset))
             offset = next_offset
         return min_times, max_times, ts_index_map
 
-    def _aggregate_ensembles(self, kwargs: Iterable[Mapping[str, Any]],
-                             ) -> List[Dict[str, List[List[M]]]]:
+    def _aggregate_ensembles(
+        self,
+        kwargs: Iterable[Mapping[str, Any]],
+    ) -> List[Dict[str, List[List[M]]]]:
         raise NotImplementedError
 
 
 class BinnedMetricCalculator(BinnedEnsemblesCalculator[Metric]):
     """Batched metrics calculation on sequential time intervals with always one set of metrics."""
 
-    def __init__(self,
-                 metrics: Sequence[str],
-                 quantiles: Sequence[float],
-                 quantile_stride: int,
-                 **kwargs):
+    def __init__(
+        self,
+        metrics: Sequence[str],
+        quantiles: Sequence[float],
+        quantile_stride: int,
+        **kwargs,
+    ):
         """
         Initialize a new instance of `BinnedMetricsCalculator`.
 
@@ -765,11 +841,12 @@ class BinnedMetricCalculator(BinnedEnsemblesCalculator[Metric]):
         """
         super().__init__([metrics], quantiles=quantiles, quantile_stride=quantile_stride, **kwargs)
 
-    def __call__(self,
-                 items: pd.DataFrame,
-                 time_intervals: Sequence[Sequence[datetime]],
-                 groups: np.ndarray,
-                 ) -> np.ndarray:
+    def __call__(
+        self,
+        items: pd.DataFrame,
+        time_intervals: Sequence[Sequence[datetime]],
+        groups: np.ndarray,
+    ) -> np.ndarray:
         """
         Override the parent's method to reduce the level of nesting.
 
@@ -777,39 +854,44 @@ class BinnedMetricCalculator(BinnedEnsemblesCalculator[Metric]):
         """
         return super().__call__(items, time_intervals, groups, [{}])[0]
 
-    def _aggregate_ensembles(self, kwargs: Iterable[Mapping[str, Any]],
-                             ) -> List[Dict[str, List[List[Metric]]]]:
+    def _aggregate_ensembles(
+        self,
+        kwargs: Iterable[Mapping[str, Any]],
+    ) -> List[Dict[str, List[List[Metric]]]]:
         return [self.ensembles[0].values()]
 
 
 class BinnedHistogramCalculator(BinnedEnsemblesCalculator[Histogram]):
     """Batched histograms calculation on sequential time intervals."""
 
-    def __init__(self,
-                 metrics: Iterable[Sequence[str]],
-                 quantiles: Sequence[float],
-                 **kwargs):
+    def __init__(self, metrics: Iterable[Sequence[str]], quantiles: Sequence[float], **kwargs):
         """Initialize a new instance of `BinnedHistogramCalculator`."""
         self.ensembles = [
             self.ensemble_class(
                 *metrics,
                 quantiles=quantiles,
                 **kwargs,
-            ) for metrics in metrics
+            )
+            for metrics in metrics
         ]
         self._metrics = list(metrics)
 
-    def _aggregate_ensembles(self, kwargs: Iterable[Mapping[str, Any]],
-                             ) -> List[Dict[str, List[List[Histogram]]]]:
-        return [{k: v for k, v in ensemble.histograms(**ekw).items()}
-                for ensemble, ekw in zip(self.ensembles, kwargs)]
+    def _aggregate_ensembles(
+        self,
+        kwargs: Iterable[Mapping[str, Any]],
+    ) -> List[Dict[str, List[List[Histogram]]]]:
+        return [
+            {k: v for k, v in ensemble.histograms(**ekw).items()}
+            for ensemble, ekw in zip(self.ensembles, kwargs)
+        ]
 
 
-def group_to_indexes(items: pd.DataFrame,
-                     *groupers: Callable[[pd.DataFrame], List[np.ndarray]],
-                     deduplicate_key: Optional[str] = None,
-                     deduplicate_mask: Optional[np.ndarray] = None,
-                     ) -> np.ndarray:
+def group_to_indexes(
+    items: pd.DataFrame,
+    *groupers: Callable[[pd.DataFrame], List[np.ndarray]],
+    deduplicate_key: Optional[str] = None,
+    deduplicate_mask: Optional[np.ndarray] = None,
+) -> np.ndarray:
     """
     Apply a chain of grouping functions to a table and return the tensor with group indexes.
 
@@ -821,11 +903,14 @@ def group_to_indexes(items: pd.DataFrame,
     groups = [grouper(items) for grouper in groupers]
 
     def intersect(*coordinates: int) -> np.ndarray:
-        return reduce(lambda x, y: np.intersect1d(x, y, assume_unique=True),
-                      [group[i] for group, i in zip(groups, coordinates)])
+        return reduce(
+            lambda x, y: np.intersect1d(x, y, assume_unique=True),
+            [group[i] for group, i in zip(groups, coordinates)],
+        )
 
-    indexes = np.fromfunction(np.vectorize(intersect, otypes=[object]),
-                              [len(g) for g in groups], dtype=object)
+    indexes = np.fromfunction(
+        np.vectorize(intersect, otypes=[object]), [len(g) for g in groups], dtype=object,
+    )
     if deduplicate_key is None:
         return indexes
     deduped_indexes = np.empty_like(indexes)
@@ -843,17 +928,20 @@ def group_to_indexes(items: pd.DataFrame,
     return deduped_indexes
 
 
-def group_by_repo(repository_full_name_column_name: str,
-                  repos: Sequence[Collection[str]],
-                  df: pd.DataFrame,
-                  ) -> List[np.ndarray]:
+def group_by_repo(
+    repository_full_name_column_name: str,
+    repos: Sequence[Collection[str]],
+    df: pd.DataFrame,
+) -> List[np.ndarray]:
     """Group items by the value of their "repository_full_name" column."""
     if df.empty:
         return [np.array([], dtype=int)] * len(repos)
     df_repos = df[repository_full_name_column_name].values.astype("S")
     repos = [
-        np.array(repo_group if not isinstance(repo_group, (set, KeysView)) else list(repo_group),
-                 dtype="S")
+        np.array(
+            repo_group if not isinstance(repo_group, (set, KeysView)) else list(repo_group),
+            dtype="S",
+        )
         for repo_group in repos
     ]
     unique_repos, imap = np.unique(np.concatenate(repos), return_inverse=True)
@@ -863,20 +951,16 @@ def group_by_repo(repository_full_name_column_name: str,
         result = []
         for repo_group in repos:
             step = len(repo_group)
-            cols = imap[pos:pos + step]
+            cols = imap[pos : pos + step]
             group = np.flatnonzero(np.sum(matches[cols], axis=0, dtype=bool))
             pos += step
             result.append(group)
     else:
-        result = [
-            np.flatnonzero(np.in1d(df_repos, repo_group))
-            for repo_group in repos
-        ]
+        result = [np.flatnonzero(np.in1d(df_repos, repo_group)) for repo_group in repos]
     return result
 
 
-def group_by_lines(lines: Sequence[int],
-                   column: np.ndarray) -> List[np.ndarray]:
+def group_by_lines(lines: Sequence[int], column: np.ndarray) -> List[np.ndarray]:
     """
     Bin items by the number of changed `lines` represented by `column`.
 
@@ -897,7 +981,8 @@ def group_by_lines(lines: Sequence[int],
     line_group_assignments -= 1
     order = np.argsort(line_group_assignments)
     existing_groups, existing_group_counts = np.unique(
-        line_group_assignments[order], return_counts=True)
+        line_group_assignments[order], return_counts=True,
+    )
     line_groups = np.split(np.arange(len(column))[order], np.cumsum(existing_group_counts)[:-1])
     if line_group_assignments[order[0]] < 0:
         line_groups = line_groups[1:]
@@ -908,10 +993,11 @@ def group_by_lines(lines: Sequence[int],
     return full_line_groups
 
 
-def calculate_logical_duplication_mask(repos_column: np.ndarray,
-                                       release_settings: ReleaseSettings,
-                                       logical_settings: LogicalRepositorySettings,
-                                       ) -> Optional[np.ndarray]:
+def calculate_logical_duplication_mask(
+    repos_column: np.ndarray,
+    release_settings: ReleaseSettings,
+    logical_settings: LogicalRepositorySettings,
+) -> Optional[np.ndarray]:
     """
     Assign indexes to same logical settings for each logical repository.
 
@@ -941,8 +1027,9 @@ def calculate_logical_duplication_mask(repos_column: np.ndarray,
                 except KeyError:
                     dep_re = ""
                 try:
-                    dep_labels = tuple(sorted(
-                        (k, tuple(v)) for k, v in deployments.labels(child).items()))
+                    dep_labels = tuple(
+                        sorted((k, tuple(v)) for k, v in deployments.labels(child).items()),
+                    )
                 except KeyError:
                     dep_labels = ()
                 child_deployments = dep_re, dep_labels
@@ -968,14 +1055,18 @@ class RatioCalculator(WithoutQuantilesMixin, MetricCalculator[float]):
         self._opened, self._closed = self._calcs
 
     def _values(self) -> List[List[Metric[float]]]:
-        metrics = [[self.metric.from_fields(False, None, None, None)] * len(samples)
-                   for samples in self.samples]
+        metrics = [
+            [self.metric.from_fields(False, None, None, None)] * len(samples)
+            for samples in self.samples
+        ]
         offset = self.value_offset
-        for i, (opened_group, closed_group) in enumerate(zip(
-                self._opened.values, self._closed.values)):
+        for i, (opened_group, closed_group) in enumerate(
+            zip(self._opened.values, self._closed.values),
+        ):
             for j, (opened, closed) in enumerate(zip(opened_group, closed_group)):
-                if (not closed.exists and not opened.exists) or \
-                        (opened.value == closed.value == 0 and offset == 0):
+                if (not closed.exists and not opened.exists) or (
+                    opened.value == closed.value == 0 and offset == 0
+                ):
                     continue
                 # offset may be 1, See ENG-866
                 val = ((opened.value or 0) + offset) / ((closed.value or 0) + offset)
@@ -985,26 +1076,33 @@ class RatioCalculator(WithoutQuantilesMixin, MetricCalculator[float]):
     def _value(self, samples: np.ndarray) -> Metric[timedelta]:
         raise AssertionError("this must be never called")
 
-    def _analyze(self,
-                 facts: pd.DataFrame,
-                 min_times: np.ndarray,
-                 max_times: np.ndarray,
-                 **kwargs) -> np.ndarray:
+    def _analyze(
+        self,
+        facts: pd.DataFrame,
+        min_times: np.ndarray,
+        max_times: np.ndarray,
+        **kwargs,
+    ) -> np.ndarray:
         return np.full((len(min_times), len(facts)), self.nan, self.dtype)
 
 
-def make_register_metric(metric_calculators: Dict[str, Type[MetricCalculator]],
-                         histogram_calculators: Optional[Dict[str, Type[HistogramCalculator]]]):
+def make_register_metric(
+    metric_calculators: Dict[str, Type[MetricCalculator]],
+    histogram_calculators: Optional[Dict[str, Type[HistogramCalculator]]],
+):
     """Create the decorator to keep track of the metric and histogram calculators."""
+
     def register_metric(name: str):
         assert isinstance(name, str)
 
         def register_with_name(cls: Type[MetricCalculator]):
             metric_calculators[name] = cls
             if histogram_calculators is not None and not issubclass(cls, SumMetricCalculator):
-                histogram_calculators[name] = \
-                    type("HistogramOf" + cls.__name__, (cls, HistogramCalculator), {})
+                histogram_calculators[name] = type(
+                    "HistogramOf" + cls.__name__, (cls, HistogramCalculator), {},
+                )
             return cls
 
         return register_with_name
+
     return register_metric

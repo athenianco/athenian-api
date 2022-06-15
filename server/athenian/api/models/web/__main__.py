@@ -20,8 +20,11 @@ def main():
         imports = []
         for k, v in vars(mod).items():
             try:
-                if getattr(v, "__module__", None) == ip and not isinstance(v, TypeVar) and \
-                        not v.__name__.startswith("_"):
+                if (
+                    getattr(v, "__module__", None) == ip
+                    and not isinstance(v, TypeVar)
+                    and not v.__name__.startswith("_")
+                ):
                     imports.append(k)
             except AttributeError:
                 continue

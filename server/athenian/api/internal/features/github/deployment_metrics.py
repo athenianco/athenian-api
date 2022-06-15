@@ -5,12 +5,21 @@ import numpy as np
 import pandas as pd
 
 from athenian.api.internal.features.metric import MetricFloat, MetricInt, MetricTimeDelta
-from athenian.api.internal.features.metric_calculator import AverageMetricCalculator, \
-    BinnedMetricCalculator, make_register_metric, MetricCalculator, MetricCalculatorEnsemble, \
-    RatioCalculator, SumMetricCalculator
-from athenian.api.internal.miners.types import DeploymentFacts, PullRequestJIRAIssueItem, \
-    ReleaseParticipants, \
-    ReleaseParticipationKind
+from athenian.api.internal.features.metric_calculator import (
+    AverageMetricCalculator,
+    BinnedMetricCalculator,
+    MetricCalculator,
+    MetricCalculatorEnsemble,
+    RatioCalculator,
+    SumMetricCalculator,
+    make_register_metric,
+)
+from athenian.api.internal.miners.types import (
+    DeploymentFacts,
+    PullRequestJIRAIssueItem,
+    ReleaseParticipants,
+    ReleaseParticipationKind,
+)
 from athenian.api.models.persistentdata.models import DeployedComponent, DeploymentNotification
 from athenian.api.models.web import DeploymentMetricID
 
@@ -22,17 +31,21 @@ T = TypeVar("T")
 class DeploymentMetricCalculatorEnsemble(MetricCalculatorEnsemble):
     """MetricCalculatorEnsemble adapted for releases."""
 
-    def __init__(self,
-                 *metrics: str,
-                 quantiles: Sequence[float],
-                 quantile_stride: int,
-                 jira: Dict[str, PullRequestJIRAIssueItem]):
+    def __init__(
+        self,
+        *metrics: str,
+        quantiles: Sequence[float],
+        quantile_stride: int,
+        jira: Dict[str, PullRequestJIRAIssueItem],
+    ):
         """Initialize a new instance of DeploymentMetricCalculatorEnsemble class."""
-        super().__init__(*metrics,
-                         quantiles=quantiles,
-                         quantile_stride=quantile_stride,
-                         class_mapping=metric_calculators,
-                         jira=jira)
+        super().__init__(
+            *metrics,
+            quantiles=quantiles,
+            quantile_stride=quantile_stride,
+            class_mapping=metric_calculators,
+            jira=jira,
+        )
 
 
 class DeploymentBinnedMetricCalculator(BinnedMetricCalculator):
@@ -41,20 +54,21 @@ class DeploymentBinnedMetricCalculator(BinnedMetricCalculator):
     ensemble_class = DeploymentMetricCalculatorEnsemble
 
 
-def group_deployments_by_repositories(repositories: Sequence[Collection[str]],
-                                      df: pd.DataFrame,
-                                      ) -> List[np.ndarray]:
+def group_deployments_by_repositories(
+    repositories: Sequence[Collection[str]],
+    df: pd.DataFrame,
+) -> List[np.ndarray]:
     """Group deployments by repository node IDs."""
     if len(repositories) == 0:
         return [np.arange(len(df))]
     if df.empty:
         return [np.array([], dtype=int)] * len(repositories)
-    df_repos = [c[DeployedComponent.repository_full_name].values
-                for c in df["components"].values]
+    df_repos = [c[DeployedComponent.repository_full_name].values for c in df["components"].values]
     df_repos_flat = np.concatenate(df_repos).astype("U", copy=False)
     # DEV-4112 exclude empty deployments
-    df_commits = np.concatenate(df[DeploymentFacts.f.commits_overall].values,
-                                dtype=int, casting="unsafe")
+    df_commits = np.concatenate(
+        df[DeploymentFacts.f.commits_overall].values, dtype=int, casting="unsafe",
+    )
     df_repos_flat[df_commits == 0] = ""
 
     offsets = np.zeros(len(df), dtype=int)
@@ -70,7 +84,7 @@ def group_deployments_by_repositories(repositories: Sequence[Collection[str]],
         pos = 0
         for repo_group in repositories:
             step = len(repo_group)
-            cols = imap[pos:pos + step]
+            cols = imap[pos : pos + step]
             flags = np.sum(matches[cols], axis=0).astype(bool)
             group = np.flatnonzero(np.bitwise_or.reduceat(flags, offsets))
             pos += step
@@ -83,18 +97,24 @@ def group_deployments_by_repositories(repositories: Sequence[Collection[str]],
     return result
 
 
-def group_deployments_by_participants(participants: List[ReleaseParticipants],
-                                      df: pd.DataFrame,
-                                      ) -> List[np.ndarray]:
+def group_deployments_by_participants(
+    participants: List[ReleaseParticipants],
+    df: pd.DataFrame,
+) -> List[np.ndarray]:
     """Group deployments by participants."""
     if len(participants) == 0:
         return [np.arange(len(df))]
     if df.empty:
         return [np.array([], dtype=int)] * len(participants)
     preprocessed = {}
-    for pkind, col in zip(ReleaseParticipationKind, [DeploymentFacts.f.pr_authors,
-                                                     DeploymentFacts.f.commit_authors,
-                                                     DeploymentFacts.f.release_authors]):
+    for pkind, col in zip(
+        ReleaseParticipationKind,
+        [
+            DeploymentFacts.f.pr_authors,
+            DeploymentFacts.f.commit_authors,
+            DeploymentFacts.f.release_authors,
+        ],
+    ):
         values = df[col].values
         offsets = np.zeros(len(values) + 1, dtype=int)
         lengths = np.array([len(v) for v in values])
@@ -116,9 +136,10 @@ def group_deployments_by_participants(participants: List[ReleaseParticipants],
     return result
 
 
-def group_deployments_by_environments(environments: List[List[str]],
-                                      df: pd.DataFrame,
-                                      ) -> List[np.ndarray]:
+def group_deployments_by_environments(
+    environments: List[List[str]],
+    df: pd.DataFrame,
+) -> List[np.ndarray]:
     """Group deployments by environments."""
     if len(environments) == 0:
         return [np.arange(len(df))]
@@ -132,15 +153,12 @@ def group_deployments_by_environments(environments: List[List[str]],
         pos = 0
         for env_group in environments:
             step = len(env_group)
-            cols = imap[pos:pos + step]
+            cols = imap[pos : pos + step]
             group = np.flatnonzero(np.sum(matches[cols], axis=0).astype(bool))
             pos += step
             result.append(group)
     else:
-        result = [
-            np.flatnonzero(np.in1d(df_envs, env_group))
-            for env_group in environments
-        ]
+        result = [np.flatnonzero(np.in1d(df_envs, env_group)) for env_group in environments]
     return result
 
 
@@ -150,11 +168,13 @@ class DeploymentsCounter(SumMetricCalculator[int]):
 
     metric = MetricInt
 
-    def _analyze(self,
-                 facts: pd.DataFrame,
-                 min_times: np.ndarray,
-                 max_times: np.ndarray,
-                 **kwargs) -> np.ndarray:
+    def _analyze(
+        self,
+        facts: pd.DataFrame,
+        min_times: np.ndarray,
+        max_times: np.ndarray,
+        **kwargs,
+    ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         deployed = facts[DeploymentNotification.finished_at.name].values
         result[(min_times[:, None] <= deployed) & (deployed < max_times[:, None])] = 1
@@ -167,11 +187,13 @@ class SuccessfulDeploymentsCounter(SumMetricCalculator[int]):
 
     metric = MetricInt
 
-    def _analyze(self,
-                 facts: pd.DataFrame,
-                 min_times: np.ndarray,
-                 max_times: np.ndarray,
-                 **kwargs) -> np.ndarray:
+    def _analyze(
+        self,
+        facts: pd.DataFrame,
+        min_times: np.ndarray,
+        max_times: np.ndarray,
+        **kwargs,
+    ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         deployed = facts[DeploymentNotification.finished_at.name].values.copy()
         unsuccessful = (
@@ -189,11 +211,13 @@ class FailedDeploymentsCounter(SumMetricCalculator[int]):
 
     metric = MetricInt
 
-    def _analyze(self,
-                 facts: pd.DataFrame,
-                 min_times: np.ndarray,
-                 max_times: np.ndarray,
-                 **kwargs) -> np.ndarray:
+    def _analyze(
+        self,
+        facts: pd.DataFrame,
+        min_times: np.ndarray,
+        max_times: np.ndarray,
+        **kwargs,
+    ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         deployed = facts[DeploymentNotification.finished_at.name].values.copy()
         unfailed = (
@@ -213,11 +237,13 @@ class DurationCalculator(AverageMetricCalculator[datetime]):
     metric = MetricTimeDelta
     may_have_negative_values = False
 
-    def _analyze(self,
-                 facts: pd.DataFrame,
-                 min_times: np.ndarray,
-                 max_times: np.ndarray,
-                 **kwargs) -> np.ndarray:
+    def _analyze(
+        self,
+        facts: pd.DataFrame,
+        min_times: np.ndarray,
+        max_times: np.ndarray,
+        **kwargs,
+    ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         started = facts[DeploymentNotification.started_at.name].values
         finished = facts[DeploymentNotification.finished_at.name].values.copy()
@@ -240,11 +266,13 @@ class SuccessfulDurationCalculator(AverageMetricCalculator[datetime]):
     metric = MetricTimeDelta
     may_have_negative_values = False
 
-    def _analyze(self,
-                 facts: pd.DataFrame,
-                 min_times: np.ndarray,
-                 max_times: np.ndarray,
-                 **kwargs) -> np.ndarray:
+    def _analyze(
+        self,
+        facts: pd.DataFrame,
+        min_times: np.ndarray,
+        max_times: np.ndarray,
+        **kwargs,
+    ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         started = facts[DeploymentNotification.started_at.name].values
         finished = facts[DeploymentNotification.finished_at.name].values.copy()
@@ -267,11 +295,13 @@ class FailedDurationCalculator(AverageMetricCalculator[datetime]):
     metric = MetricTimeDelta
     may_have_negative_values = False
 
-    def _analyze(self,
-                 facts: pd.DataFrame,
-                 min_times: np.ndarray,
-                 max_times: np.ndarray,
-                 **kwargs) -> np.ndarray:
+    def _analyze(
+        self,
+        facts: pd.DataFrame,
+        min_times: np.ndarray,
+        max_times: np.ndarray,
+        **kwargs,
+    ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         started = facts[DeploymentNotification.started_at.name].values
         finished = facts[DeploymentNotification.finished_at.name].values.copy()
@@ -300,11 +330,13 @@ class ItemsMixin:
     dimension = ""
     agg = None
 
-    def _analyze(self,
-                 facts: pd.DataFrame,
-                 min_times: np.ndarray,
-                 max_times: np.ndarray,
-                 **kwargs) -> np.ndarray:
+    def _analyze(
+        self,
+        facts: pd.DataFrame,
+        min_times: np.ndarray,
+        max_times: np.ndarray,
+        **kwargs,
+    ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         agg = self.agg
         items = np.fromiter((agg(v) for v in facts[self.dimension].values), int, len(facts))

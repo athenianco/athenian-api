@@ -10,9 +10,7 @@ class _AcceptedInvitation(Model):
     attribute_types = {"name": str, "email": str}
     attribute_map = {"name": "name", "email": "email"}
 
-    def __init__(self,
-                 name: Optional[str] = None,
-                 email: Optional[str] = None):
+    def __init__(self, name: Optional[str] = None, email: Optional[str] = None):
         """AcceptedInvitation - a model defined in OpenAPI
 
         :param name: The name of this AcceptedInvitation.
@@ -64,7 +62,6 @@ class _AcceptedInvitation(Model):
         self._email = email
 
 
-AcceptedInvitation = AllOf(_AcceptedInvitation,
-                           _InvitationLink,
-                           name="AcceptedInvitation",
-                           module=__name__)
+AcceptedInvitation = AllOf(
+    _AcceptedInvitation, _InvitationLink, name="AcceptedInvitation", module=__name__,
+)

@@ -8,7 +8,6 @@ Create Date: 2021-02-19 06:36:10.938726+00:00
 from alembic import op
 import sqlalchemy as sa
 
-
 # revision identifiers, used by Alembic.
 revision = "860cdc895ef3"
 down_revision = "8dac2ad15a8d"
@@ -36,10 +35,18 @@ def upgrade():
         sa.Column("author", sa.Text()),
         sa.Column("url", sa.Text()),
         sa.Column("published_at", sa.TIMESTAMP(timezone=True), nullable=False),
-        sa.Column("created_at", sa.TIMESTAMP(timezone=True), nullable=False,
-                  server_default=sa.func.now()),
-        sa.Column("updated_at", sa.TIMESTAMP(timezone=True), nullable=False,
-                  server_default=sa.func.now()),
+        sa.Column(
+            "created_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
+        ),
         **schema_arg,
     )
 

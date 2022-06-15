@@ -1,4 +1,4 @@
-from athenian.api.db import conn_in_transaction, Database
+from athenian.api.db import Database, conn_in_transaction
 
 
 class TestConnInTransaction:

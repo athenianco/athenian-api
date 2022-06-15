@@ -4,15 +4,27 @@ import numpy as np
 import pandas as pd
 
 from athenian.api.internal.features.metric import Metric, MetricInt
-from athenian.api.internal.features.metric_calculator import AnyMetricCalculator, \
-    BinnedMetricCalculator, \
-    MetricCalculator, MetricCalculatorEnsemble, SumMetricCalculator
-from athenian.api.internal.miners.github.developer import developer_changed_lines_column, \
-    developer_identity_column, DeveloperTopic
+from athenian.api.internal.features.metric_calculator import (
+    AnyMetricCalculator,
+    BinnedMetricCalculator,
+    MetricCalculator,
+    MetricCalculatorEnsemble,
+    SumMetricCalculator,
+)
+from athenian.api.internal.miners.github.developer import (
+    DeveloperTopic,
+    developer_changed_lines_column,
+    developer_identity_column,
+)
 from athenian.api.internal.miners.github.pull_request import ReviewResolution
-from athenian.api.models.metadata.github import PullRequest, PullRequestComment, \
-    PullRequestReview, PullRequestReviewComment, PushCommit, \
-    Release
+from athenian.api.models.metadata.github import (
+    PullRequest,
+    PullRequestComment,
+    PullRequestReview,
+    PullRequestReviewComment,
+    PushCommit,
+    Release,
+)
 
 metric_calculators: Dict[str, Type[MetricCalculator]] = {}
 T = TypeVar("T")
@@ -34,10 +46,12 @@ class DeveloperMetricCalculatorEnsemble(MetricCalculatorEnsemble):
 
     def __init__(self, *metrics: str, quantiles: Sequence[float], quantile_stride: int):
         """Initialize a new instance of ReleaseMetricCalculatorEnsemble class."""
-        super().__init__(*metrics,
-                         quantiles=quantiles,
-                         quantile_stride=quantile_stride,
-                         class_mapping=metric_calculators)
+        super().__init__(
+            *metrics,
+            quantiles=quantiles,
+            quantile_stride=quantile_stride,
+            class_mapping=metric_calculators,
+        )
 
 
 class DeveloperBinnedMetricCalculator(BinnedMetricCalculator):
@@ -53,11 +67,13 @@ class DeveloperTopicCounter(SumMetricCalculator[int]):
     metric = MetricInt
     timestamp_column: str
 
-    def _analyze(self,
-                 facts: pd.DataFrame,
-                 min_times: np.ndarray,
-                 max_times: np.ndarray,
-                 **kwargs) -> np.array:
+    def _analyze(
+        self,
+        facts: pd.DataFrame,
+        min_times: np.ndarray,
+        max_times: np.ndarray,
+        **kwargs,
+    ) -> np.array:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         column = facts[self.timestamp_column].astype(min_times.dtype, copy=False).values
         column_in_range = (min_times[:, None] <= column) & (column < max_times[:, None])
@@ -73,11 +89,13 @@ class DeveloperTopicSummator(SumMetricCalculator[int]):
     topic_column: str
     timestamp_column: str
 
-    def _analyze(self,
-                 facts: pd.DataFrame,
-                 min_times: np.ndarray,
-                 max_times: np.ndarray,
-                 **kwargs) -> np.array:
+    def _analyze(
+        self,
+        facts: pd.DataFrame,
+        min_times: np.ndarray,
+        max_times: np.ndarray,
+        **kwargs,
+    ) -> np.array:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         topic_column = facts[self.topic_column].values
         ts_column = facts[self.timestamp_column].values
@@ -122,11 +140,13 @@ class ActiveCounter(MetricCalculator[int]):
         value = int(active / days > self.ACTIVITY_DAYS_THRESHOLD_DENSITY)
         return self.metric.from_fields(True, value, None, None)
 
-    def _analyze(self,
-                 facts: pd.DataFrame,
-                 min_times: np.ndarray,
-                 max_times: np.ndarray,
-                 **kwargs) -> np.array:
+    def _analyze(
+        self,
+        facts: pd.DataFrame,
+        min_times: np.ndarray,
+        max_times: np.ndarray,
+        **kwargs,
+    ) -> np.array:
         column = facts[PushCommit.committed_date.name].dt.floor(freq="D").values
         column_in_range = (min_times[:, None] <= column) & (column < max_times[:, None])
         timestamps = np.repeat(column[None, :], len(min_times), axis=0)
@@ -145,11 +165,13 @@ class Active0Counter(AnyMetricCalculator[int]):
     may_have_negative_values = False
     metric = MetricInt
 
-    def _analyze(self,
-                 facts: pd.DataFrame,
-                 min_times: np.ndarray,
-                 max_times: np.ndarray,
-                 **kwargs) -> np.array:
+    def _analyze(
+        self,
+        facts: pd.DataFrame,
+        min_times: np.ndarray,
+        max_times: np.ndarray,
+        **kwargs,
+    ) -> np.array:
         return self._calcs[0].peek
 
 
@@ -202,17 +224,22 @@ class PRReviewedCounter(SumMetricCalculator[int]):
     may_have_negative_values = False
     metric = MetricInt
 
-    def _analyze(self,
-                 facts: pd.DataFrame,
-                 min_times: np.ndarray,
-                 max_times: np.ndarray,
-                 **kwargs) -> np.array:
+    def _analyze(
+        self,
+        facts: pd.DataFrame,
+        min_times: np.ndarray,
+        max_times: np.ndarray,
+        **kwargs,
+    ) -> np.array:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         column = facts[PullRequestReview.submitted_at.name].values
         column_in_range = (min_times[:, None] <= column) & (column < max_times[:, None])
-        duplicated = facts.duplicated([
-            PullRequestReview.pull_request_node_id.name, developer_identity_column,
-        ]).values
+        duplicated = facts.duplicated(
+            [
+                PullRequestReview.pull_request_node_id.name,
+                developer_identity_column,
+            ],
+        ).values
         column_in_range[np.broadcast_to(duplicated[None, :], result.shape)] = False
         result[column_in_range] = 1
         return result
@@ -232,11 +259,13 @@ class ReviewStatesCounter(SumMetricCalculator[int]):
     metric = MetricInt
     state = None
 
-    def _analyze(self,
-                 facts: pd.DataFrame,
-                 min_times: np.ndarray,
-                 max_times: np.ndarray,
-                 **kwargs) -> np.array:
+    def _analyze(
+        self,
+        facts: pd.DataFrame,
+        min_times: np.ndarray,
+        max_times: np.ndarray,
+        **kwargs,
+    ) -> np.array:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
         column = facts[PullRequestReview.submitted_at.name].values
         column_in_range = (min_times[:, None] <= column) & (column < max_times[:, None])
@@ -282,11 +311,13 @@ class WorkedCounter(AnyMetricCalculator[int]):
     may_have_negative_values = False
     metric = MetricInt
 
-    def _analyze(self,
-                 facts: pd.DataFrame,
-                 min_times: np.ndarray,
-                 max_times: np.ndarray,
-                 **kwargs) -> np.array:
+    def _analyze(
+        self,
+        facts: pd.DataFrame,
+        min_times: np.ndarray,
+        max_times: np.ndarray,
+        **kwargs,
+    ) -> np.array:
         result = np.full((len(min_times), len(facts)), 0, self.dtype)
         for calc in self._calcs:
             result |= calc.peek > 0
@@ -294,9 +325,10 @@ class WorkedCounter(AnyMetricCalculator[int]):
         return result
 
 
-def group_actions_by_developers(devs: Sequence[Collection[str]],
-                                df: pd.DataFrame,
-                                ) -> List[np.ndarray]:
+def group_actions_by_developers(
+    devs: Sequence[Collection[str]],
+    df: pd.DataFrame,
+) -> List[np.ndarray]:
     """Group developer actions by developer groups."""
     indexes = []
     identities = df[developer_identity_column].values.astype("S")

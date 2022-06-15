@@ -9,10 +9,15 @@ from sqlalchemy import and_, insert, select
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 
 from athenian.api.internal.logical_repos import drop_logical_repo
-from athenian.api.internal.miners.github.precomputed_prs.utils import \
-    append_activity_days_filter, collect_activity_days
-from athenian.api.internal.miners.types import MinedPullRequest, PullRequestFacts, \
-    PullRequestFactsMap
+from athenian.api.internal.miners.github.precomputed_prs.utils import (
+    append_activity_days_filter,
+    collect_activity_days,
+)
+from athenian.api.internal.miners.types import (
+    MinedPullRequest,
+    PullRequestFacts,
+    PullRequestFactsMap,
+)
 from athenian.api.models.metadata.github import PullRequest
 from athenian.api.models.precomputed.models import GitHubOpenPullRequestFacts
 from athenian.api.tracing import sentry_span
@@ -23,12 +28,13 @@ class OpenPRFactsLoader:
 
     @classmethod
     @sentry_span
-    async def load_open_pull_request_facts(cls,
-                                           prs: pd.DataFrame,
-                                           repositories: Set[str],
-                                           account: int,
-                                           pdb: morcilla.Database,
-                                           ) -> PullRequestFactsMap:
+    async def load_open_pull_request_facts(
+        cls,
+        prs: pd.DataFrame,
+        repositories: Set[str],
+        account: int,
+        pdb: morcilla.Database,
+    ) -> PullRequestFactsMap:
         """
         Fetch precomputed facts about the open PRs from the DataFrame.
 
@@ -46,17 +52,22 @@ class OpenPRFactsLoader:
             ghoprf.data,
         ]
         rows = await pdb.fetch_all(
-            select(selected)
-            .where(and_(ghoprf.pr_node_id.in_(node_ids),
-                        ghoprf.repository_full_name.in_(repositories),
-                        ghoprf.format_version == default_version,
-                        ghoprf.acc_id == account)))
+            select(selected).where(
+                and_(
+                    ghoprf.pr_node_id.in_(node_ids),
+                    ghoprf.repository_full_name.in_(repositories),
+                    ghoprf.format_version == default_version,
+                    ghoprf.acc_id == account,
+                ),
+            ),
+        )
         if not rows:
             return {}
         updated_ats = prs[PullRequest.updated_at.name].values[open_indexes]
         found_node_ids = np.fromiter((r[ghoprf.pr_node_id.name] for r in rows), int, len(rows))
         found_updated_ats = np.fromiter(
-            (r[ghoprf.pr_updated_at.name] for r in rows), updated_ats.dtype, len(rows))
+            (r[ghoprf.pr_updated_at.name] for r in rows), updated_ats.dtype, len(rows),
+        )
         indexes = np.searchsorted(node_ids, found_node_ids)
         passed = np.flatnonzero(updated_ats[indexes] <= found_updated_ats)
         facts = {}
@@ -70,21 +81,23 @@ class OpenPRFactsLoader:
                 repository_full_name=repo,
                 author=authors.get(node_id, ""),
                 merger="",
-                releaser="")
+                releaser="",
+            )
         return facts
 
     @classmethod
     @sentry_span
-    async def load_open_pull_request_facts_unfresh(cls,
-                                                   prs: Iterable[int],
-                                                   time_from: datetime,
-                                                   time_to: datetime,
-                                                   repositories: Collection[str],
-                                                   exclude_inactive: bool,
-                                                   authors: Mapping[str, str],
-                                                   account: int,
-                                                   pdb: morcilla.Database,
-                                                   ) -> PullRequestFactsMap:
+    async def load_open_pull_request_facts_unfresh(
+        cls,
+        prs: Iterable[int],
+        time_from: datetime,
+        time_to: datetime,
+        repositories: Collection[str],
+        exclude_inactive: bool,
+        authors: Mapping[str, str],
+        account: int,
+        pdb: morcilla.Database,
+    ) -> PullRequestFactsMap:
         """
         Fetch precomputed facts about the open PRs from the DataFrame.
 
@@ -105,7 +118,8 @@ class OpenPRFactsLoader:
         ]
         if exclude_inactive:
             date_range = append_activity_days_filter(
-                time_from, time_to, selected, filters, ghoprf.activity_days, postgres)
+                time_from, time_to, selected, filters, ghoprf.activity_days, postgres,
+            )
         selected = sorted(selected, key=lambda i: i.key)
         rows = await pdb.fetch_all(select(selected).where(and_(*filters)))
         if not rows:
@@ -114,8 +128,10 @@ class OpenPRFactsLoader:
         remove_physical = set()
         for row in rows:
             if exclude_inactive and not postgres:
-                activity_days = {datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-                                 for d in row[ghoprf.activity_days.name]}
+                activity_days = {
+                    datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                    for d in row[ghoprf.activity_days.name]
+                }
                 if not activity_days.intersection(date_range):
                     continue
             node_id = row[ghoprf.pr_node_id.name]
@@ -129,7 +145,8 @@ class OpenPRFactsLoader:
                 repository_full_name=repo,
                 author=authors.get(node_id, ""),
                 merger="",
-                releaser="")
+                releaser="",
+            )
         for pair in remove_physical:
             try:
                 del facts[pair]
@@ -139,12 +156,13 @@ class OpenPRFactsLoader:
 
     @classmethod
     @sentry_span
-    async def load_open_pull_request_facts_all(cls,
-                                               repos: Collection[str],
-                                               pr_node_id_blacklist: Collection[int],
-                                               account: int,
-                                               pdb: morcilla.Database,
-                                               ) -> PullRequestFactsMap:
+    async def load_open_pull_request_facts_all(
+        cls,
+        repos: Collection[str],
+        pr_node_id_blacklist: Collection[int],
+        account: int,
+        pdb: morcilla.Database,
+    ) -> PullRequestFactsMap:
         """
         Load the precomputed open PR facts through all the time.
 
@@ -169,9 +187,10 @@ class OpenPRFactsLoader:
         with sentry_sdk.start_span(op="load_open_pull_request_facts_all/fetch"):
             rows = await pdb.fetch_all(query)
         facts = {
-            ((node_id := row[ghoprf.pr_node_id.name]),
-             (repo := row[ghoprf.repository_full_name.name])): PullRequestFacts(
-                row[ghoprf.data.name], node_id=node_id, repository_full_name=repo)
+            (
+                (node_id := row[ghoprf.pr_node_id.name]),
+                (repo := row[ghoprf.repository_full_name.name]),
+            ): PullRequestFacts(row[ghoprf.data.name], node_id=node_id, repository_full_name=repo)
             for row in rows
         }
         return facts
@@ -179,9 +198,10 @@ class OpenPRFactsLoader:
 
 @sentry_span
 async def store_open_pull_request_facts(
-        open_prs_and_facts: Iterable[Tuple[MinedPullRequest, PullRequestFacts]],
-        account: int,
-        pdb: morcilla.Database) -> None:
+    open_prs_and_facts: Iterable[Tuple[MinedPullRequest, PullRequestFacts]],
+    account: int,
+    pdb: morcilla.Database,
+) -> None:
     """
     Persist the facts about open pull requests to the database.
 
@@ -196,16 +216,20 @@ async def store_open_pull_request_facts(
         updated_at = pr.pr[PullRequest.updated_at.name]
         if updated_at != updated_at:
             continue
-        values.append(GitHubOpenPullRequestFacts(
-            acc_id=account,
-            pr_node_id=pr.pr[PullRequest.node_id.name],
-            repository_full_name=pr.pr[PullRequest.repository_full_name.name],
-            pr_created_at=pr.pr[PullRequest.created_at.name],
-            number=pr.pr[PullRequest.number.name],
-            pr_updated_at=updated_at,
-            activity_days=collect_activity_days(pr, facts, not postgres),
-            data=facts.data,
-        ).create_defaults().explode(with_primary_keys=True))
+        values.append(
+            GitHubOpenPullRequestFacts(
+                acc_id=account,
+                pr_node_id=pr.pr[PullRequest.node_id.name],
+                repository_full_name=pr.pr[PullRequest.repository_full_name.name],
+                pr_created_at=pr.pr[PullRequest.created_at.name],
+                number=pr.pr[PullRequest.number.name],
+                pr_updated_at=updated_at,
+                activity_days=collect_activity_days(pr, facts, not postgres),
+                data=facts.data,
+            )
+            .create_defaults()
+            .explode(with_primary_keys=True),
+        )
     if postgres:
         sql = postgres_insert(GitHubOpenPullRequestFacts)
         sql = sql.on_conflict_do_update(

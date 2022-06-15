@@ -178,5 +178,10 @@ class _FilterJIRACommon(Model, sealed=False):
         self._exclude_inactive = exclude_inactive
 
 
-FilterJIRACommon = AllOf(_FilterJIRACommon, CommonFilterProperties,
-                         name="FilterJIRACommon", module=__name__, sealed=False)
+FilterJIRACommon = AllOf(
+    _FilterJIRACommon,
+    CommonFilterProperties,
+    name="FilterJIRACommon",
+    module=__name__,
+    sealed=False,
+)

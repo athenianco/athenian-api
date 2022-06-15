@@ -31,8 +31,9 @@ class GranularitiesMixin:
         for i, g in enumerate(granularities):
             if not Granularity.format.match(g):
                 raise ValueError(
-                    'Invalid value for `granularity[%d]`: "%s"` does not match /%s/' %
-                    (i, g, Granularity.format.pattern))
+                    'Invalid value for `granularity[%d]`: "%s"` does not match /%s/'
+                    % (i, g, Granularity.format.pattern),
+                )
 
         self._granularities = granularities
 

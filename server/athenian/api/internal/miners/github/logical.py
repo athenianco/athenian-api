@@ -4,22 +4,26 @@ import numpy as np
 import pandas as pd
 
 from athenian.api.internal.logical_repos import coerce_logical_repos
-from athenian.api.internal.settings import LogicalDeploymentSettings, LogicalPRSettings, \
-    LogicalRepositorySettings
+from athenian.api.internal.settings import (
+    LogicalDeploymentSettings,
+    LogicalPRSettings,
+    LogicalRepositorySettings,
+)
 from athenian.api.models.metadata.github import PullRequest
 from athenian.api.models.persistentdata.models import DeployedComponent
 
 
-def split_logical_prs(prs: pd.DataFrame,
-                      labels: Optional[pd.DataFrame],
-                      logical_repos: Collection[str],
-                      logical_settings: LogicalRepositorySettings,
-                      reindex: bool = True,
-                      reset_index: bool = True,
-                      repo_column: str = PullRequest.repository_full_name.name,
-                      id_column: str = PullRequest.node_id.name,
-                      title_column: str = PullRequest.title.name,
-                      ) -> pd.DataFrame:
+def split_logical_prs(
+    prs: pd.DataFrame,
+    labels: Optional[pd.DataFrame],
+    logical_repos: Collection[str],
+    logical_settings: LogicalRepositorySettings,
+    reindex: bool = True,
+    reset_index: bool = True,
+    repo_column: str = PullRequest.repository_full_name.name,
+    id_column: str = PullRequest.node_id.name,
+    title_column: str = PullRequest.title.name,
+) -> pd.DataFrame:
     """Remove and clone PRs according to the logical repository settings."""
     assert isinstance(prs, pd.DataFrame)
     if labels is None:
@@ -34,14 +38,16 @@ def split_logical_prs(prs: pd.DataFrame,
     if physical_repos.keys() != logical_repos:
         chunks = []
         for physical_repo, indexes in LogicalPRSettings.group_by_repo(
-                prs[repo_column].values, physical_repos):
+            prs[repo_column].values, physical_repos,
+        ):
             try:
                 repo_settings = logical_settings.prs(physical_repo)
             except KeyError:
                 chunks.append(prs.take(indexes))
                 continue
             for repo, logical_indexes in repo_settings.match(
-                    prs, labels, indexes, id_column=id_column, title_column=title_column).items():
+                prs, labels, indexes, id_column=id_column, title_column=title_column,
+            ).items():
                 if repo not in logical_repos:
                     continue
                 if len(logical_indexes) < len(prs):
@@ -60,12 +66,13 @@ def split_logical_prs(prs: pd.DataFrame,
     return prs
 
 
-def split_logical_deployed_components(notifications: pd.DataFrame,
-                                      labels: pd.DataFrame,
-                                      components: pd.DataFrame,
-                                      logical_repos: Collection[str],
-                                      logical_settings: LogicalRepositorySettings,
-                                      ) -> pd.DataFrame:
+def split_logical_deployed_components(
+    notifications: pd.DataFrame,
+    labels: pd.DataFrame,
+    components: pd.DataFrame,
+    logical_repos: Collection[str],
+    logical_settings: LogicalRepositorySettings,
+) -> pd.DataFrame:
     """Remove and clone deployed components according to the logical repository settings."""
     physical_repos = coerce_logical_repos(logical_repos)
     if physical_repos.keys() == logical_repos:
@@ -74,7 +81,8 @@ def split_logical_deployed_components(notifications: pd.DataFrame,
     component_deployment_names = components.index.values.astype("U", copy=False)
     inspected_indexes = []
     for physical_repo, indexes in LogicalDeploymentSettings.group_by_repo(
-            components[DeployedComponent.repository_full_name].values, physical_repos):
+        components[DeployedComponent.repository_full_name].values, physical_repos,
+    ):
         try:
             repo_settings = logical_settings.deployments(physical_repo)
         except KeyError:
@@ -86,7 +94,8 @@ def split_logical_deployed_components(notifications: pd.DataFrame,
             if repo not in logical_repos:
                 continue
             deployment_names = np.array(
-                list(deployment_names), dtype=component_deployment_names.dtype)
+                list(deployment_names), dtype=component_deployment_names.dtype,
+            )
             final_indexes = indexes[np.in1d(component_deployment_names[indexes], deployment_names)]
             if len(final_indexes):
                 inspected_indexes.append(final_indexes)

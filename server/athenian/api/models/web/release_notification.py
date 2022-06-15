@@ -101,10 +101,12 @@ class ReleaseNotification(Model):
             raise ValueError("Invalid value for `commit`, must not be `None`")
         if len(commit) > 40:
             raise ValueError(
-                "Invalid value for `commit`, length must be less than or equal to `40`")
+                "Invalid value for `commit`, length must be less than or equal to `40`",
+            )
         if len(commit) < 7:
             raise ValueError(
-                "Invalid value for `commit`, length must be greater than or equal to `7`")
+                "Invalid value for `commit`, length must be greater than or equal to `7`",
+            )
 
         self._commit = commit
 

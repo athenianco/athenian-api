@@ -17,9 +17,9 @@ class CommonDeploymentProperties(Model, sealed=False):
     }
 
     def __init__(
-            self,
-            with_labels: Optional[Dict[str, Any]] = None,
-            without_labels: Optional[Dict[str, Any]] = None,
+        self,
+        with_labels: Optional[Dict[str, Any]] = None,
+        without_labels: Optional[Dict[str, Any]] = None,
     ):
         """CommonDeploymentProperties - a model defined in OpenAPI
 

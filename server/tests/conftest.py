@@ -17,26 +17,34 @@ from typing import Dict, List, Optional, Union
 import warnings
 
 from filelock import FileLock
+
 try:
     import nest_asyncio
 except ImportError:
+
     class nest_asyncio:
         @staticmethod
         def apply():
             pass
+
+
 import numpy as np
+
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=DeprecationWarning)
     import pandas as pd
 try:
     import pytest
 except ImportError:
+
     class pytest:
         @staticmethod
         def fixture(*args, **kwargs):
             if not kwargs:
                 return args[0]
             return lambda fn: fn
+
+
 from sqlalchemy import create_engine, delete, func, insert, select
 from sqlalchemy.ext.declarative import DeclarativeMeta
 from sqlalchemy.orm import sessionmaker
@@ -54,23 +62,34 @@ from athenian.api.db import Connection, Database, db_retry_intervals, measure_db
 from athenian.api.faster_pandas import patch_pandas
 from athenian.api.internal import account
 from athenian.api.internal.miners.github.branches import BranchMiner
-from athenian.api.internal.miners.github.precomputed_prs import DonePRFactsLoader, \
-    MergedPRFactsLoader, OpenPRFactsLoader
+from athenian.api.internal.miners.github.precomputed_prs import (
+    DonePRFactsLoader,
+    MergedPRFactsLoader,
+    OpenPRFactsLoader,
+)
 from athenian.api.internal.miners.github.pull_request import PullRequestMiner
 from athenian.api.internal.miners.github.release_load import ReleaseLoader
 from athenian.api.internal.miners.github.release_match import ReleaseToPullRequestMapper
 from athenian.api.metadata import __package__ as package
 from athenian.api.models import check_collation, metadata, persistentdata
-from athenian.api.models.metadata.github import Account, Base as GithubBase, NodeCommit, \
-    PullRequest, ShadowBase as ShadowGithubBase
+from athenian.api.models.metadata.github import (
+    Account,
+    Base as GithubBase,
+    NodeCommit,
+    PullRequest,
+    ShadowBase as ShadowGithubBase,
+)
 from athenian.api.models.metadata.jira import Base as JiraBase
 from athenian.api.models.persistentdata.models import Base as PersistentdataBase
 from athenian.api.models.precomputed.models import GitHubBase as PrecomputedBase
 from athenian.api.models.state.models import Base as StateBase, God
 from athenian.api.request import AthenianWebRequest
 from athenian.precomputer.db import dereference_schemas as dereference_precomputed_schemas
-from tests.sample_db_data import fill_metadata_session, fill_persistentdata_session, \
-    fill_state_session
+from tests.sample_db_data import (
+    fill_metadata_session,
+    fill_persistentdata_session,
+    fill_state_session,
+)
 
 if os.getenv("NEST_ASYNCIO"):
     nest_asyncio.apply()
@@ -84,8 +103,9 @@ pdb_backup = tempfile.NamedTemporaryFile(prefix="athenian.api.precomputed.", suf
 rdb_backup = tempfile.NamedTemporaryFile(prefix="athenian.api.persistentdata.", suffix=".sqlite")
 assert Auth0.KEY == os.environ["ATHENIAN_INVITATION_KEY"], "athenian.api was imported before tests"
 invitation_controller.url_prefix = "https://app.athenian.co/i/"
-account.jira_url_template = invitation_controller.jira_url_template = \
-    "https://installation.athenian.co/jira/%s/atlassian-connect.json"
+account.jira_url_template = (
+    invitation_controller.jira_url_template
+) = "https://installation.athenian.co/jira/%s/atlassian-connect.json"
 override_mdb = os.getenv("OVERRIDE_MDB")
 override_sdb = os.getenv("OVERRIDE_SDB")
 override_pdb = os.getenv("OVERRIDE_PDB")
@@ -156,7 +176,8 @@ def client_cache(event_loop, app):
 def memcached(event_loop, xapp, request):
     old_cache = xapp.app[CACHE_VAR_NAME]
     xapp.app[CACHE_VAR_NAME] = client = create_memcached(
-        override_memcached or "0.0.0.0:11211", logging.getLogger("pytest"))
+        override_memcached or "0.0.0.0:11211", logging.getLogger("pytest"),
+    )
     client.version_future.cancel()
     trash = []
     set = client.set
@@ -208,7 +229,8 @@ has_memcached = check_memcached()
 class TestAuth0(Auth0):
     def __init__(self, whitelist, cache=None):
         super().__init__(
-            whitelist=whitelist, default_user="auth0|62a1ae88b6bba16c6dbc6870", lazy=True)
+            whitelist=whitelist, default_user="auth0|62a1ae88b6bba16c6dbc6870", lazy=True,
+        )
         self._default_user = User(
             id="auth0|62a1ae88b6bba16c6dbc6870",
             login="vadim",
@@ -305,9 +327,13 @@ def disable_default_user(app):
 
 @pytest.fixture(scope="function")
 async def god(sdb) -> None:
-    await sdb.execute(insert(God).values(God(
-        user_id="auth0|62a1ae88b6bba16c6dbc6870",
-    ).create_defaults().explode(with_primary_keys=True)))
+    await sdb.execute(
+        insert(God).values(
+            God(user_id="auth0|62a1ae88b6bba16c6dbc6870")
+            .create_defaults()
+            .explode(with_primary_keys=True),
+        ),
+    )
 
 
 DEFAULT_HEADERS = {
@@ -330,6 +356,7 @@ def slack():
 @pytest.fixture(scope="function")
 async def mandrill(request, event_loop):
     if (client := create_mandrill()) is not None:
+
         def shutdown():
             event_loop.run_until_complete(client.close())
 
@@ -338,8 +365,14 @@ async def mandrill(request, event_loop):
 
 
 @pytest.fixture(scope="function")
-async def app(metadata_db, state_db, precomputed_db, persistentdata_db, slack,
-              request) -> AthenianApp:
+async def app(
+    metadata_db,
+    state_db,
+    precomputed_db,
+    persistentdata_db,
+    slack,
+    request,
+) -> AthenianApp:
     """Build the especifico App to be used during tests
 
     By default handler responses will be validated against oas spec,
@@ -359,18 +392,20 @@ async def app(metadata_db, state_db, precomputed_db, persistentdata_db, slack,
     else:
         validate_responses = validate_responses_mark.args[0]
 
-    app = AthenianApp(mdb_conn=metadata_db,
-                      sdb_conn=state_db,
-                      pdb_conn=precomputed_db,
-                      rdb_conn=persistentdata_db,
-                      ui=False,
-                      auth0_cls=TestAuth0,
-                      kms_cls=FakeKMS,
-                      slack=slack,
-                      client_max_size=256 * 1024,
-                      max_load=15,
-                      with_pdb_schema_checks=False,
-                      validate_responses=validate_responses)
+    app = AthenianApp(
+        mdb_conn=metadata_db,
+        sdb_conn=state_db,
+        pdb_conn=precomputed_db,
+        rdb_conn=persistentdata_db,
+        ui=False,
+        auth0_cls=TestAuth0,
+        kms_cls=FakeKMS,
+        slack=slack,
+        client_max_size=256 * 1024,
+        max_load=15,
+        with_pdb_schema_checks=False,
+        validate_responses=validate_responses,
+    )
     await app.ready()
     return app
 
@@ -426,10 +461,12 @@ def _metadata_db(worker_id: str, force_reset: bool) -> str:
     return conn_str
 
 
-def _init_own_db(letter: str,
-                 base: DeclarativeMeta,
-                 worker_id: str,
-                 init_sql: Optional[dict] = None) -> str:
+def _init_own_db(
+    letter: str,
+    base: DeclarativeMeta,
+    worker_id: str,
+    init_sql: Optional[dict] = None,
+) -> str:
     try:
         return _init_own_db_unchecked(letter, base, worker_id, init_sql)
     except Exception:
@@ -438,10 +475,12 @@ def _init_own_db(letter: str,
         sys.exit(1)
 
 
-def _init_own_db_unchecked(letter: str,
-                           base: DeclarativeMeta,
-                           worker_id: str,
-                           init_sql: Optional[dict] = None) -> str:
+def _init_own_db_unchecked(
+    letter: str,
+    base: DeclarativeMeta,
+    worker_id: str,
+    init_sql: Optional[dict] = None,
+) -> str:
     override_db = globals()["override_%sdb" % letter]
     backup_path = globals()["%sdb_backup" % letter].name
     if override_db:
@@ -500,16 +539,28 @@ def state_db(worker_id) -> str:
 
 @pytest.fixture(scope="function")
 def persistentdata_db(worker_id) -> str:
-    return _init_own_db("r", PersistentdataBase, worker_id, {
-        "postgresql": "create schema if not exists athenian;",
-    })
+    return _init_own_db(
+        "r",
+        PersistentdataBase,
+        worker_id,
+        {
+            "postgresql": "create schema if not exists athenian;",
+        },
+    )
 
 
 @pytest.fixture(scope="function")
 def precomputed_db(worker_id) -> str:
-    return _init_own_db("p", PrecomputedBase, worker_id, {
-        "postgresql": "create extension if not exists hstore; create schema if not exists github;",
-    })
+    return _init_own_db(
+        "p",
+        PrecomputedBase,
+        worker_id,
+        {
+            "postgresql": (
+                "create extension if not exists hstore; create schema if not exists github;"
+            ),
+        },
+    )
 
 
 async def _connect_to_db(addr, event_loop, request):
@@ -559,14 +610,18 @@ async def mdb_rw(mdb, event_loop, worker_id, request):
     while True:
         try:
             # a canary query
-            await mdb.execute(insert(Account).values({
-                Account.id: 777,
-                Account.owner_id: 1,
-                Account.owner_login: "xxx",
-                Account.name: "src-d",
-                Account.created_at: datetime.now(timezone.utc),
-                Account.updated_at: datetime.now(timezone.utc),
-            }))
+            await mdb.execute(
+                insert(Account).values(
+                    {
+                        Account.id: 777,
+                        Account.owner_id: 1,
+                        Account.owner_login: "xxx",
+                        Account.name: "src-d",
+                        Account.created_at: datetime.now(timezone.utc),
+                        Account.updated_at: datetime.now(timezone.utc),
+                    },
+                ),
+            )
             break
         except OperationalError:
             metadata_db = _metadata_db(worker_id, True)
@@ -652,8 +707,9 @@ def locked_migrations(request):
 
 
 def pytest_addoption(parser):
-    parser.addoption("--limit", action="store", default=-1, type=float,
-                     help="Max number of tests to run.")
+    parser.addoption(
+        "--limit", action="store", default=-1, type=float, help="Max number of tests to run.",
+    )
 
 
 def pytest_collection_modifyitems(session, config, items):

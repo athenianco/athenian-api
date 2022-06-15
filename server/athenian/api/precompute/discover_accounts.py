@@ -13,7 +13,8 @@ from athenian.api.precompute.context import PrecomputeContext
 
 
 async def main(
-    context: PrecomputeContext, args: argparse.Namespace,
+    context: PrecomputeContext,
+    args: argparse.Namespace,
 ) -> Union[List[int], Dict[str, List[int]]]:
     """Load all accounts, find which must be precomputed, and return their IDs.
 
@@ -30,7 +31,8 @@ async def main(
     discovered: Dict[str, List[int]] = {"precomputed": [], "fresh": []}
     for account, precomputed in tqdm(accounts):
         state = await load_account_state(
-            account, sdb, context.mdb, context.cache, context.slack, log=log)
+            account, sdb, context.mdb, context.cache, context.slack, log=log,
+        )
         if state is None:
             log.info("Skipped account %d because it is not installed", account)
             continue
@@ -54,11 +56,11 @@ async def _get_accounts(sdb: Database) -> List[Tuple[int, bool]]:
         Account.id == RepositorySet.owner_id,
         RepositorySet.name == RepositorySet.ALL,
     )
-    stmt = sa.select(
-        [Account.id, sa.func.coalesce(RepositorySet.precomputed, False).label("precomputed")],
-    ).join(
-        RepositorySet, join_cond, isouter=True,
-    ).where(
-        Account.expires_at > datetime.now(timezone.utc),
+    stmt = (
+        sa.select(
+            [Account.id, sa.func.coalesce(RepositorySet.precomputed, False).label("precomputed")],
+        )
+        .join(RepositorySet, join_cond, isouter=True)
+        .where(Account.expires_at > datetime.now(timezone.utc))
     )
     return await sdb.fetch_all(stmt)

@@ -4,6 +4,7 @@ from typing import List, Optional
 import warnings
 
 import numpy as np
+
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=DeprecationWarning)
     from pandas import DataFrame, Index, MultiIndex, Series, set_option
@@ -18,12 +19,13 @@ with warnings.catch_warnings():
     from pandas.core.dtypes.inference import is_array_like
     from pandas.core.dtypes.missing import na_value_for_dtype
     import pandas.core.internals.construction
-    from pandas.core.internals.construction import DtypeObj, lib, Scalar
+    from pandas.core.internals.construction import DtypeObj, Scalar, lib
     from pandas.core.reshape.merge import _MergeOperation, _should_fill
 
 
 def nan_to_none_return(func):
     """Decorate to replace returned NaN-s with None-s."""
+
     @wraps(func)
     def wrapped_nan_to_none_return(*args, **kwargs):
         r = func(*args, **kwargs)
@@ -61,7 +63,9 @@ def patch_pandas():
     _MergeOperation._maybe_add_join_keys = _maybe_add_join_keys
 
     def _convert_object_array(
-            content: List[Scalar], coerce_float: bool = False, dtype: Optional[DtypeObj] = None,
+        content: List[Scalar],
+        coerce_float: bool = False,
+        dtype: Optional[DtypeObj] = None,
     ) -> List[Scalar]:
         # safe=True avoids converting nullable integers to floats
         def convert(arr):
@@ -160,9 +164,7 @@ def _maybe_add_join_keys(self, result, left_indexer, right_indexer):
                     if left_has_missing:
                         take_right = self.right_join_keys[i]
 
-                        if not is_dtype_equal(
-                            result[name].dtype, self.left[name].dtype,
-                        ):
+                        if not is_dtype_equal(result[name].dtype, self.left[name].dtype):
                             take_left = self.left[name]._values
 
                 elif name in self.right:
@@ -173,9 +175,7 @@ def _maybe_add_join_keys(self, result, left_indexer, right_indexer):
                     if right_has_missing:
                         take_left = self.left_join_keys[i]
 
-                        if not is_dtype_equal(
-                            result[name].dtype, self.right[name].dtype,
-                        ):
+                        if not is_dtype_equal(result[name].dtype, self.right[name].dtype):
                             take_right = self.right[name]._values
 
         elif left_indexer is not None and is_array_like(self.left_join_keys[i]):

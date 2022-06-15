@@ -88,5 +88,9 @@ class _DeveloperMetricsRequest(Model, GranularitiesMixin, sealed=False):
         self._metrics = metrics
 
 
-DeveloperMetricsRequest = AllOf(_DeveloperMetricsRequest, CommonFilterProperties,
-                                name="DeveloperMetricsRequest", module=__name__)
+DeveloperMetricsRequest = AllOf(
+    _DeveloperMetricsRequest,
+    CommonFilterProperties,
+    name="DeveloperMetricsRequest",
+    module=__name__,
+)

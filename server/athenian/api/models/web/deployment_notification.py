@@ -67,8 +67,9 @@ class DeploymentNotificationUnsealed(Model, sealed=False):
     def validate_timestamps(self) -> None:
         """Post-check the request data."""
         if self.date_finished < self.date_started:
-            raise ResponseError(InvalidRequestError(
-                "`date_finished` must be later than `date_started`"))
+            raise ResponseError(
+                InvalidRequestError("`date_finished` must be later than `date_started`"),
+            )
 
     @property
     def components(self) -> List[DeployedComponent]:
@@ -117,7 +118,8 @@ class DeploymentNotificationUnsealed(Model, sealed=False):
             raise ValueError("Invalid value for `environment`, must not be `None`")
         if not environment:
             raise ValueError(
-                "Invalid value for `environment`, length must be greater than or equal to `1`")
+                "Invalid value for `environment`, length must be greater than or equal to `1`",
+            )
 
         self._environment = environment
 
@@ -230,7 +232,8 @@ class DeploymentNotificationUnsealed(Model, sealed=False):
         """
         if conclusion not in DeploymentConclusion:
             raise ValueError(
-                f"Invalid value for `conclusion`, must be one of {list(DeploymentConclusion)}")
+                f"Invalid value for `conclusion`, must be one of {list(DeploymentConclusion)}",
+            )
         self._conclusion = conclusion
 
     @property

@@ -5,8 +5,10 @@ from numpy.testing import assert_array_equal
 import pandas as pd
 import pytest
 
-from athenian.api.internal.features.entries import make_calculator, \
-    MetricEntriesCalculator as OriginalMetricEntriesCalculator
+from athenian.api.internal.features.entries import (
+    MetricEntriesCalculator as OriginalMetricEntriesCalculator,
+    make_calculator,
+)
 from athenian.api.internal.features.metric_calculator import group_by_repo
 
 
@@ -33,21 +35,23 @@ class MetricEntriesCalculator:
 
 
 async def test_get_calculator(base_testing_module, mdb, pdb, rdb, cache):
-    calc = make_calculator(
-        1, (1, ), mdb, pdb, rdb, cache,
-    )
+    calc = make_calculator(1, (1,), mdb, pdb, rdb, cache)
     assert isinstance(calc, OriginalMetricEntriesCalculator)
 
 
 def test_group_by_repo_single_repos():
-    df = pd.DataFrame({"repo": [
-        "one",
-        "two",
-        "one",
-        "one",
-        "one",
-        "two",
-    ]})
+    df = pd.DataFrame(
+        {
+            "repo": [
+                "one",
+                "two",
+                "one",
+                "one",
+                "one",
+                "two",
+            ],
+        },
+    )
     groups = group_by_repo("repo", [["one"], ["two"], ["one", "two"]], df)
     assert len(groups) == 3
     assert_array_equal(groups[0], [0, 2, 3, 4])
@@ -56,14 +60,18 @@ def test_group_by_repo_single_repos():
 
 
 def test_group_by_repo_few_groups():
-    df = pd.DataFrame({"repo": [
-        "one",
-        "two",
-        "one",
-        "one",
-        "one",
-        "two",
-    ]})
+    df = pd.DataFrame(
+        {
+            "repo": [
+                "one",
+                "two",
+                "one",
+                "one",
+                "one",
+                "two",
+            ],
+        },
+    )
     groups = group_by_repo("repo", [["one"]], df)
     assert len(groups) == 1
     assert_array_equal(groups[0], [0, 2, 3, 4])

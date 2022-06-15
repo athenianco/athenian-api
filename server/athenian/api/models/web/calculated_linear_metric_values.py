@@ -23,12 +23,14 @@ class CalculatedLinearMetricValues(Model):
         "confidence_maxs": "confidence_maxs",
     }
 
-    def __init__(self, date: Optional[datetime.date] = None,
-                 values: Optional[List[object]] = None,
-                 confidence_scores: Optional[List[int]] = None,
-                 confidence_mins: Optional[List[object]] = None,
-                 confidence_maxs: Optional[List[object]] = None,
-                 ):
+    def __init__(
+        self,
+        date: Optional[datetime.date] = None,
+        values: Optional[List[object]] = None,
+        confidence_scores: Optional[List[int]] = None,
+        confidence_mins: Optional[List[object]] = None,
+        confidence_maxs: Optional[List[object]] = None,
+    ):
         """Initialize CalculatedLinearMetricValues - a model defined in OpenAPI.
 
         :param date: The date of this CalculatedLinearMetricValues.

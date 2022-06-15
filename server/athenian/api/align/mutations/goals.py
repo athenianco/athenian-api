@@ -7,11 +7,24 @@ from graphql import GraphQLResolveInfo
 
 from athenian.api.align.exceptions import GoalMutationError
 from athenian.api.align.goals.dates import goal_dates_to_datetimes
-from athenian.api.align.goals.dbaccess import assign_team_goals, delete_goal, delete_team_goals, \
-    GoalCreationInfo, insert_goal, TeamGoalTargetAssignment
+from athenian.api.align.goals.dbaccess import (
+    GoalCreationInfo,
+    TeamGoalTargetAssignment,
+    assign_team_goals,
+    delete_goal,
+    delete_team_goals,
+    insert_goal,
+)
 from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
-from athenian.api.align.models import CreateGoalInputFields, GoalRemoveStatus, MutateGoalResult, \
-    MutateGoalResultGoal, TeamGoalChangeFields, TeamGoalInputFields, UpdateGoalInputFields
+from athenian.api.align.models import (
+    CreateGoalInputFields,
+    GoalRemoveStatus,
+    MutateGoalResult,
+    MutateGoalResultGoal,
+    TeamGoalChangeFields,
+    TeamGoalInputFields,
+    UpdateGoalInputFields,
+)
 from athenian.api.ariadne import ariadne_disable_default_user
 from athenian.api.models.state.models import Goal, TeamGoal
 from athenian.api.tracing import sentry_span
@@ -93,8 +106,7 @@ def _parse_create_goal_input(input: Dict[str, Any], account_id: int) -> GoalCrea
         raise GoalMutationError(f"Invalid templateId {template_id}")
 
     team_goals = [
-        _parse_team_goal_input(tg_input)
-        for tg_input in input[CreateGoalInputFields.teamGoals]
+        _parse_team_goal_input(tg_input) for tg_input in input[CreateGoalInputFields.teamGoals]
     ]
     if not team_goals:
         raise GoalMutationError("At least one teamGoals is required")

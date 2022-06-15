@@ -9,10 +9,19 @@ def delete_metadata(acc_id: int) -> None:  # noqa: D103
     nodes_file_name = "50_nodes.sql"
     if not (nodes_file := Path(nodes_file_name)).exists():
         with TemporaryDirectory() as tmpdir:
-            subprocess.check_call([
-                "git", "clone", "--branch", "master", "--single-branch", "--depth", "1",
-                "git@github.com:athenianco/metadata.git", tmpdir,
-            ])
+            subprocess.check_call(
+                [
+                    "git",
+                    "clone",
+                    "--branch",
+                    "master",
+                    "--single-branch",
+                    "--depth",
+                    "1",
+                    "git@github.com:athenianco/metadata.git",
+                    tmpdir,
+                ],
+            )
             move(Path(tmpdir) / "sql" / nodes_file_name, nodes_file_name)
     assert nodes_file.exists()
     print("BEGIN;")
@@ -56,8 +65,10 @@ def delete_state(acc_id: int) -> None:  # noqa: D103
 
 
 def show_help(_=None) -> int:  # noqa: D103
-    print(f"Usage: python3 delete_github_account.py {'|'.join(deleters.keys())} <acc_id>",
-          file=sys.stderr)
+    print(
+        f"Usage: python3 delete_github_account.py {'|'.join(deleters.keys())} <acc_id>",
+        file=sys.stderr,
+    )
     return 1
 
 

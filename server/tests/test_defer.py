@@ -3,8 +3,14 @@ import logging
 
 import pytest
 
-from athenian.api.defer import defer, enable_defer, launch_defer, set_defer_loop, \
-    wait_all_deferred, wait_deferred
+from athenian.api.defer import (
+    defer,
+    enable_defer,
+    launch_defer,
+    set_defer_loop,
+    wait_all_deferred,
+    wait_deferred,
+)
 
 
 # GHA blames the termination of AthenianApp, which seems impossible here - we are not using it

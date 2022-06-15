@@ -7,8 +7,11 @@ async def test_prefixer_load(mdb, cache):
     for i in range(2):
         prefixer = await Prefixer.load((6366825,), mdb if i == 0 else None, cache)
         await wait_deferred()
-        assert len(prefixer.user_node_to_prefixed_login) == \
-               len(prefixer.user_login_to_prefixed_login) == 930
+        assert (
+            len(prefixer.user_node_to_prefixed_login)
+            == len(prefixer.user_login_to_prefixed_login)
+            == 930
+        )
         assert "vmarkovtsev" in prefixer.user_login_to_prefixed_login
         assert len(prefixer.repo_node_to_prefixed_name) == 306
         assert len(prefixer.repo_name_to_prefixed_name) == 292

@@ -10,27 +10,59 @@ import pytest
 from sqlalchemy import insert, select
 
 from athenian.api.defer import wait_deferred, with_defer
-from athenian.api.internal.features.github.pull_request_metrics import AllCounter, \
-    ClosedCalculator, CycleCounter, CycleCounterWithQuantiles, CycleTimeCalculator, \
-    DoneCalculator, FlowRatioCalculator, histogram_calculators, LeadCounter, \
-    LeadCounterWithQuantiles, LeadTimeCalculator, MergingCounter, MergingCounterWithQuantiles, \
-    MergingTimeCalculator, OpenCounter, OpenCounterWithQuantiles, OpenedCalculator, \
-    PullRequestBinnedMetricCalculator, PullRequestMetricCalculatorEnsemble, register_metric, \
-    ReleaseCounter, ReleaseCounterWithQuantiles, ReleaseTimeCalculator, ReviewCounter, \
-    ReviewCounterWithQuantiles, ReviewTimeCalculator, WaitFirstReviewTimeCalculator, \
-    WorkInProgressCounter, WorkInProgressCounterWithQuantiles, WorkInProgressTimeCalculator
+from athenian.api.internal.features.github.pull_request_metrics import (
+    AllCounter,
+    ClosedCalculator,
+    CycleCounter,
+    CycleCounterWithQuantiles,
+    CycleTimeCalculator,
+    DoneCalculator,
+    FlowRatioCalculator,
+    LeadCounter,
+    LeadCounterWithQuantiles,
+    LeadTimeCalculator,
+    MergingCounter,
+    MergingCounterWithQuantiles,
+    MergingTimeCalculator,
+    OpenCounter,
+    OpenCounterWithQuantiles,
+    OpenedCalculator,
+    PullRequestBinnedMetricCalculator,
+    PullRequestMetricCalculatorEnsemble,
+    ReleaseCounter,
+    ReleaseCounterWithQuantiles,
+    ReleaseTimeCalculator,
+    ReviewCounter,
+    ReviewCounterWithQuantiles,
+    ReviewTimeCalculator,
+    WaitFirstReviewTimeCalculator,
+    WorkInProgressCounter,
+    WorkInProgressCounterWithQuantiles,
+    WorkInProgressTimeCalculator,
+    histogram_calculators,
+    register_metric,
+)
 from athenian.api.internal.features.histogram import Scale
 from athenian.api.internal.features.metric import MetricInt, MetricTimeDelta
-from athenian.api.internal.features.metric_calculator import MetricCalculator, \
-    MetricCalculatorEnsemble
+from athenian.api.internal.features.metric_calculator import (
+    MetricCalculator,
+    MetricCalculatorEnsemble,
+)
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.deployment import mine_deployments
 from athenian.api.internal.miners.types import PullRequestFacts
-from athenian.api.internal.settings import LogicalDeploymentSettings, \
-    LogicalRepositorySettings, ReleaseMatch, ReleaseMatchSetting, ReleaseSettings
+from athenian.api.internal.settings import (
+    LogicalDeploymentSettings,
+    LogicalRepositorySettings,
+    ReleaseMatch,
+    ReleaseMatchSetting,
+    ReleaseSettings,
+)
 from athenian.api.models.persistentdata.models import ReleaseNotification
-from athenian.api.models.precomputed.models import GitHubMergedPullRequestFacts, \
-    GitHubOpenPullRequestFacts
+from athenian.api.models.precomputed.models import (
+    GitHubMergedPullRequestFacts,
+    GitHubOpenPullRequestFacts,
+)
 from athenian.api.models.web import Granularity, PullRequestMetricID
 from athenian.api.typing_utils import df_from_structs
 from tests.conftest import has_memcached
@@ -57,8 +89,11 @@ def random_dropout(pr, prob):
     if "first_commit" in killed:
         kwargs["work_began"] = kwargs["created"]
     if "released" in killed or "closed" in killed:
-        kwargs["done"] = kwargs["released"] or pr.force_push_dropped or (
-            kwargs["closed"] and not kwargs["merged"])
+        kwargs["done"] = (
+            kwargs["released"]
+            or pr.force_push_dropped
+            or (kwargs["closed"] and not kwargs["merged"])
+        )
     return PullRequestFacts.from_fields(**kwargs)
 
 
@@ -70,26 +105,42 @@ def dt64arr_s(dt: datetime) -> np.ndarray:
     return np.array([dt.replace(tzinfo=None)], dtype="datetime64[s]")
 
 
-@pytest.mark.parametrize("cls", [
-    WorkInProgressTimeCalculator, ReviewTimeCalculator, MergingTimeCalculator,
-    ReleaseTimeCalculator, LeadTimeCalculator, WaitFirstReviewTimeCalculator,
-])
+@pytest.mark.parametrize(
+    "cls",
+    [
+        WorkInProgressTimeCalculator,
+        ReviewTimeCalculator,
+        MergingTimeCalculator,
+        ReleaseTimeCalculator,
+        LeadTimeCalculator,
+        WaitFirstReviewTimeCalculator,
+    ],
+)
 def test_pull_request_metrics_2d(pr_samples, cls):  # noqa: F811
     calc = cls(quantiles=(0, 1))
-    time_froms = np.array([datetime.utcnow() - timedelta(days=i * 200) for i in range(1, 3)],
-                          dtype="datetime64[ns]")
-    time_tos = np.array([datetime.utcnow(), datetime.utcnow() - timedelta(days=100)],
-                        dtype="datetime64[ns]")
+    time_froms = np.array(
+        [datetime.utcnow() - timedelta(days=i * 200) for i in range(1, 3)], dtype="datetime64[ns]",
+    )
+    time_tos = np.array(
+        [datetime.utcnow(), datetime.utcnow() - timedelta(days=100)], dtype="datetime64[ns]",
+    )
     prs = df_from_structs(random_dropout(pr, 0.5) for pr in pr_samples(1000))
     r = calc._analyze(prs, time_froms, time_tos)
     assert (r[0, r[0] == r[0]] >= np.array(0, dtype=r.dtype)).any()
     assert (r[1, r[1] == r[1]] >= np.array(0, dtype=r.dtype)).any()
 
 
-@pytest.mark.parametrize("cls", [
-    WorkInProgressTimeCalculator, ReviewTimeCalculator, MergingTimeCalculator,
-    ReleaseTimeCalculator, LeadTimeCalculator, WaitFirstReviewTimeCalculator,
-])
+@pytest.mark.parametrize(
+    "cls",
+    [
+        WorkInProgressTimeCalculator,
+        ReviewTimeCalculator,
+        MergingTimeCalculator,
+        ReleaseTimeCalculator,
+        LeadTimeCalculator,
+        WaitFirstReviewTimeCalculator,
+    ],
+)
 def test_pull_request_metrics_timedelta_stability(pr_samples, cls):  # noqa: F811
     calc = cls(quantiles=(0, 1))
     time_from = datetime.utcnow() - timedelta(days=10000)
@@ -124,14 +175,17 @@ def test_pull_request_metrics_empty_group(pr_samples, fill_val):
     assert calc.values[0][0].exists == fill_val
 
 
-@pytest.mark.parametrize("cls, peak_attr",
-                         [(WorkInProgressTimeCalculator, "first_review_request"),
-                          (ReviewTimeCalculator, "approved,last_review"),
-                          (MergingTimeCalculator, "closed"),
-                          (ReleaseTimeCalculator, "released"),
-                          (LeadTimeCalculator, "released"),
-                          (WaitFirstReviewTimeCalculator, "first_comment_on_first_review"),
-                          ])
+@pytest.mark.parametrize(
+    "cls, peak_attr",
+    [
+        (WorkInProgressTimeCalculator, "first_review_request"),
+        (ReviewTimeCalculator, "approved,last_review"),
+        (MergingTimeCalculator, "closed"),
+        (ReleaseTimeCalculator, "released"),
+        (LeadTimeCalculator, "released"),
+        (WaitFirstReviewTimeCalculator, "first_comment_on_first_review"),
+    ],
+)
 def test_pull_request_metrics_out_of_bounds(pr_samples, cls, peak_attr):  # noqa: F811
     calc = cls(quantiles=(0, 1))
     for pr in pr_samples(100):
@@ -140,29 +194,38 @@ def test_pull_request_metrics_out_of_bounds(pr_samples, cls, peak_attr):  # noqa
             time_from = max(getattr(pr, attr), dt64arr_s(time_from)).item()
         time_from += timedelta(days=1)
         time_to = time_from + timedelta(days=7)
-        assert calc._analyze(df_from_structs([pr]),
-                             dt64arr_ns(time_from),
-                             dt64arr_ns(time_to)) == np.array([None])
+        assert calc._analyze(
+            df_from_structs([pr]), dt64arr_ns(time_from), dt64arr_ns(time_to),
+        ) == np.array([None])
 
         time_from = datetime.utcnow()
         for attr in peak_attr.split(","):
             time_from = min(getattr(pr, attr), dt64arr_s(time_from)).item()
         time_from -= timedelta(days=7)
         time_to = time_from + timedelta(days=1)
-        assert calc._analyze(df_from_structs([pr]),
-                             dt64arr_ns(time_from),
-                             dt64arr_ns(time_to)) == np.array([None])
+        assert calc._analyze(
+            df_from_structs([pr]), dt64arr_ns(time_from), dt64arr_ns(time_to),
+        ) == np.array([None])
 
 
-@pytest.mark.parametrize("metric", [PullRequestMetricID.PR_OPENED,
-                                    PullRequestMetricID.PR_MERGED,
-                                    PullRequestMetricID.PR_REJECTED,
-                                    PullRequestMetricID.PR_CLOSED])
+@pytest.mark.parametrize(
+    "metric",
+    [
+        PullRequestMetricID.PR_OPENED,
+        PullRequestMetricID.PR_MERGED,
+        PullRequestMetricID.PR_REJECTED,
+        PullRequestMetricID.PR_CLOSED,
+    ],
+)
 def test_pull_request_metrics_float_binned(pr_samples, metric):  # noqa: F811
     time_from = (datetime.now(tz=timezone.utc) - timedelta(days=365 * 3 // 2)).date()
     time_to = (datetime.now(tz=timezone.utc) - timedelta(days=365 // 2)).date()
-    time_intervals = [[datetime.combine(i, datetime.min.time(), tzinfo=timezone.utc)
-                       for i in Granularity.split("month", time_from, time_to)]]
+    time_intervals = [
+        [
+            datetime.combine(i, datetime.min.time(), tzinfo=timezone.utc)
+            for i in Granularity.split("month", time_from, time_to)
+        ],
+    ]
     binned = PullRequestBinnedMetricCalculator([metric], quantiles=(0, 1), quantile_stride=0)
     samples = pr_samples(1000)
     if metric == PullRequestMetricID.PR_REJECTED:
@@ -170,9 +233,7 @@ def test_pull_request_metrics_float_binned(pr_samples, metric):  # noqa: F811
             data = dict(s)
             data["merged"] = None
             samples[i] = PullRequestFacts.from_fields(**data)
-    result = binned(df_from_structs(samples),
-                    time_intervals,
-                    np.array([np.arange(len(samples))]))
+    result = binned(df_from_structs(samples), time_intervals, np.array([np.arange(len(samples))]))
     # the last interval is null and that's intended
     for i, m in enumerate(result[0][0][:-1]):
         assert m[0].exists, str(i)
@@ -209,9 +270,9 @@ def test_pull_request_closed_no(pr_samples):  # noqa: F811
 
 
 def test_pull_request_flow_ratio(pr_samples):  # noqa: F811
-    calc = FlowRatioCalculator(OpenedCalculator(quantiles=(0, 1)),
-                               ClosedCalculator(quantiles=(0, 1)),
-                               quantiles=(0, 1))
+    calc = FlowRatioCalculator(
+        OpenedCalculator(quantiles=(0, 1)), ClosedCalculator(quantiles=(0, 1)), quantiles=(0, 1),
+    )
     open_calc = OpenedCalculator(quantiles=(0, 1))
     closed_calc = ClosedCalculator(quantiles=(0, 1))
     time_from = datetime.utcnow() - timedelta(days=365)
@@ -228,31 +289,39 @@ def test_pull_request_flow_ratio(pr_samples):  # noqa: F811
     assert 0 < m.value < 1
     assert m.confidence_min is None
     assert m.confidence_max is None
-    assert m.value == \
-        np.float32((open_calc.values[0][0].value + 1) / (closed_calc.values[0][0].value + 1))
+    assert m.value == np.float32(
+        (open_calc.values[0][0].value + 1) / (closed_calc.values[0][0].value + 1),
+    )
 
 
 def test_pull_request_flow_ratio_zeros(pr_samples):
-    calc = FlowRatioCalculator(OpenedCalculator(quantiles=(0, 1)),
-                               ClosedCalculator(quantiles=(0, 1)),
-                               quantiles=(0, 1))
-    calc._representative_time_interval_indexes = \
-        calc._calcs[0]._representative_time_interval_indexes = \
-        calc._calcs[1]._representative_time_interval_indexes = [0]
+    calc = FlowRatioCalculator(
+        OpenedCalculator(quantiles=(0, 1)), ClosedCalculator(quantiles=(0, 1)), quantiles=(0, 1),
+    )
+    calc._representative_time_interval_indexes = calc._calcs[
+        0
+    ]._representative_time_interval_indexes = calc._calcs[
+        1
+    ]._representative_time_interval_indexes = [0]
     assert len(calc.values) == 0
 
 
 def test_pull_request_flow_ratio_no_opened(pr_samples):  # noqa: F811
-    calc = FlowRatioCalculator(OpenedCalculator(quantiles=(0, 1)),
-                               ClosedCalculator(quantiles=(0, 1)),
-                               quantiles=(0, 1))
+    calc = FlowRatioCalculator(
+        OpenedCalculator(quantiles=(0, 1)), ClosedCalculator(quantiles=(0, 1)), quantiles=(0, 1),
+    )
     time_to = datetime.utcnow()
     time_from = time_to - timedelta(days=180)
     for pr in pr_samples(100):
         if pr.closed and time_from <= pr.closed < time_to:
             df = df_from_structs([pr])
-            args = \
-                df, dt64arr_ns(time_from), dt64arr_ns(time_to), None, np.full((1, len(df)), True)
+            args = (
+                df,
+                dt64arr_ns(time_from),
+                dt64arr_ns(time_to),
+                None,
+                np.full((1, len(df)), True),
+            )
             for dep in calc._calcs:
                 dep(*args)
             calc(*args)
@@ -263,16 +332,19 @@ def test_pull_request_flow_ratio_no_opened(pr_samples):  # noqa: F811
 
 
 def test_pull_request_flow_ratio_no_closed(pr_samples):  # noqa: F811
-    calc = FlowRatioCalculator(OpenedCalculator(quantiles=(0, 1)),
-                               ClosedCalculator(quantiles=(0, 1)),
-                               quantiles=(0, 1))
+    calc = FlowRatioCalculator(
+        OpenedCalculator(quantiles=(0, 1)), ClosedCalculator(quantiles=(0, 1)), quantiles=(0, 1),
+    )
     time_to = datetime.utcnow() - timedelta(days=180)
     time_from = time_to - timedelta(days=180)
     for pr in pr_samples(100):
         if pr.closed and pr.closed > time_to > pr.created >= time_from:
             args = (
-                df_from_structs([pr]), dt64arr_ns(time_from), dt64arr_ns(time_to),
-                None, np.array([[True]]),
+                df_from_structs([pr]),
+                dt64arr_ns(time_from),
+                dt64arr_ns(time_to),
+                None,
+                np.array([[True]]),
             )
             for dep in calc._calcs:
                 dep(*args)
@@ -283,20 +355,27 @@ def test_pull_request_flow_ratio_no_closed(pr_samples):  # noqa: F811
     assert m.value == 2
 
 
-@pytest.mark.parametrize("cls",
-                         [WorkInProgressCounter,
-                          ReviewCounter,
-                          MergingCounter,
-                          ReleaseCounter,
-                          OpenCounter,
-                          LeadCounter,
-                          CycleCounter,
-                          AllCounter,
-                          ])
+@pytest.mark.parametrize(
+    "cls",
+    [
+        WorkInProgressCounter,
+        ReviewCounter,
+        MergingCounter,
+        ReleaseCounter,
+        OpenCounter,
+        LeadCounter,
+        CycleCounter,
+        AllCounter,
+    ],
+)
 def test_pull_request_metrics_counts_nq(pr_samples, cls):  # noqa: F811
-    calc = cls(*(dep1(*(dep2(quantiles=(0, 1)) for dep2 in dep1.deps),
-                      quantiles=(0, 1)) for dep1 in cls.deps),
-               quantiles=(0, 1))
+    calc = cls(
+        *(
+            dep1(*(dep2(quantiles=(0, 1)) for dep2 in dep1.deps), quantiles=(0, 1))
+            for dep1 in cls.deps
+        ),
+        quantiles=(0, 1),
+    )
     prs = df_from_structs(pr_samples(1000))
     time_tos = np.full(2, datetime.utcnow(), "datetime64[ns]")
     time_froms = time_tos - np.timedelta64(timedelta(days=10000))
@@ -326,18 +405,26 @@ def test_pull_request_metrics_counts_nq(pr_samples, cls):  # noqa: F811
 
 
 @pytest.mark.flaky(reruns=3)
-@pytest.mark.parametrize("cls_q, cls",
-                         [(WorkInProgressCounterWithQuantiles, WorkInProgressCounter),
-                          (ReviewCounterWithQuantiles, ReviewCounter),
-                          (MergingCounterWithQuantiles, MergingCounter),
-                          (ReleaseCounterWithQuantiles, ReleaseCounter),
-                          (OpenCounterWithQuantiles, OpenCounter),
-                          (LeadCounterWithQuantiles, LeadCounter),
-                          (CycleCounterWithQuantiles, CycleCounter)])
+@pytest.mark.parametrize(
+    "cls_q, cls",
+    [
+        (WorkInProgressCounterWithQuantiles, WorkInProgressCounter),
+        (ReviewCounterWithQuantiles, ReviewCounter),
+        (MergingCounterWithQuantiles, MergingCounter),
+        (ReleaseCounterWithQuantiles, ReleaseCounter),
+        (OpenCounterWithQuantiles, OpenCounter),
+        (LeadCounterWithQuantiles, LeadCounter),
+        (CycleCounterWithQuantiles, CycleCounter),
+    ],
+)
 def test_pull_request_metrics_counts_q(pr_samples, cls_q, cls):  # noqa: F811
-    calc_q = cls_q(*(dep1(*(dep2(quantiles=(0, 0.95)) for dep2 in dep1.deps),
-                          quantiles=(0, 0.95)) for dep1 in cls_q.deps),
-                   quantiles=(0, 0.95))
+    calc_q = cls_q(
+        *(
+            dep1(*(dep2(quantiles=(0, 0.95)) for dep2 in dep1.deps), quantiles=(0, 0.95))
+            for dep1 in cls_q.deps
+        ),
+        quantiles=(0, 0.95),
+    )
     calc = cls(*calc_q._calcs, quantiles=(0, 0.95))
     prs = df_from_structs(pr_samples(1000))
     time_to = np.concatenate([dt64arr_ns(datetime.utcnow())] * 2)
@@ -352,13 +439,28 @@ def test_pull_request_metrics_counts_q(pr_samples, cls_q, cls):  # noqa: F811
     assert 0 < calc_q.values[0][0].value < calc.values[0][0].value
 
 
-@pytest.mark.parametrize("with_memcached, with_mine_cache_wipe",
-                         itertools.product(*([[False, True]] * 2)))
+@pytest.mark.parametrize(
+    "with_memcached, with_mine_cache_wipe",
+    itertools.product(*([[False, True]] * 2)),
+)
 @with_defer
 async def test_calc_pull_request_metrics_line_github_cache_reset(
-        metrics_calculator_factory, branches, default_branches,
-        mdb, pdb, rdb, cache, memcached, with_memcached, metrics_calculator_factory_memcached,
-        release_match_setting_tag, with_mine_cache_wipe, pr_miner, prefixer, bots):
+    metrics_calculator_factory,
+    branches,
+    default_branches,
+    mdb,
+    pdb,
+    rdb,
+    cache,
+    memcached,
+    with_memcached,
+    metrics_calculator_factory_memcached,
+    release_match_setting_tag,
+    with_mine_cache_wipe,
+    pr_miner,
+    prefixer,
+    bots,
+):
     if with_memcached:
         if not has_memcached:
             raise pytest.skip("no memcached")
@@ -371,25 +473,60 @@ async def test_calc_pull_request_metrics_line_github_cache_reset(
     metrics_calculator = factory(1, (6366825,), with_cache=True)
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2019, month=10, day=1, tzinfo=timezone.utc)
-    args = ([PullRequestMetricID.PR_CYCLE_TIME], [[date_from, date_to]], [0, 1], [], [],
-            [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(), False,
-            bots, release_match_setting_tag, LogicalRepositorySettings.empty(),
-            prefixer, branches, default_branches, False)
-    metrics1 = (
-        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
-    )[0][0][0][0][0][0]
+    args = (
+        [PullRequestMetricID.PR_CYCLE_TIME],
+        [[date_from, date_to]],
+        [0, 1],
+        [],
+        [],
+        [{"src-d/go-git"}],
+        [{}],
+        LabelFilter.empty(),
+        JIRAFilter.empty(),
+        False,
+        bots,
+        release_match_setting_tag,
+        LogicalRepositorySettings.empty(),
+        prefixer,
+        branches,
+        default_branches,
+        False,
+    )
+    metrics1 = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+        0
+    ][0]
     await wait_deferred()
     assert await metrics_calculator.calc_pull_request_metrics_line_github.reset_cache(*args)
     if with_mine_cache_wipe:
         assert await pr_miner._mine.reset_cache(
-            None, date_from, date_to, {"src-d/go-git"}, {}, LabelFilter.empty(),
-            JIRAFilter.empty(), False, branches, default_branches,
-            False, release_match_setting_tag, LogicalRepositorySettings.empty(),
-            None, None, None, True,
-            prefixer, 1, (6366825,), mdb, pdb, rdb, cache)
-    metrics2 = (
-        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
-    )[0][0][0][0][0][0]
+            None,
+            date_from,
+            date_to,
+            {"src-d/go-git"},
+            {},
+            LabelFilter.empty(),
+            JIRAFilter.empty(),
+            False,
+            branches,
+            default_branches,
+            False,
+            release_match_setting_tag,
+            LogicalRepositorySettings.empty(),
+            None,
+            None,
+            None,
+            True,
+            prefixer,
+            1,
+            (6366825,),
+            mdb,
+            pdb,
+            rdb,
+            cache,
+        )
+    metrics2 = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+        0
+    ][0]
     assert metrics1.exists and metrics2.exists
     assert metrics1.value == metrics2.value
     assert metrics1.confidence_score() == metrics2.confidence_score()
@@ -398,105 +535,227 @@ async def test_calc_pull_request_metrics_line_github_cache_reset(
 
 @with_defer
 async def test_calc_pull_request_metrics_line_github_cache_lines(
-        metrics_calculator_factory, release_match_setting_tag, prefixer, bots,
-        branches, default_branches):
+    metrics_calculator_factory,
+    release_match_setting_tag,
+    prefixer,
+    bots,
+    branches,
+    default_branches,
+):
     metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2019, month=10, day=1, tzinfo=timezone.utc)
-    args = [[PullRequestMetricID.PR_CYCLE_TIME], [[date_from, date_to]], [0, 1], [0, 1000], [],
-            [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(), False,
-            bots, release_match_setting_tag, LogicalRepositorySettings.empty(),
-            prefixer, branches, default_branches, False]
-    metrics1 = (
-        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
-    )[0][0][0][0][0][0]
+    args = [
+        [PullRequestMetricID.PR_CYCLE_TIME],
+        [[date_from, date_to]],
+        [0, 1],
+        [0, 1000],
+        [],
+        [{"src-d/go-git"}],
+        [{}],
+        LabelFilter.empty(),
+        JIRAFilter.empty(),
+        False,
+        bots,
+        release_match_setting_tag,
+        LogicalRepositorySettings.empty(),
+        prefixer,
+        branches,
+        default_branches,
+        False,
+    ]
+    metrics1 = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+        0
+    ][0]
     await wait_deferred()
     args[3] = []
-    metrics2 = (
-        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
-    )[0][0][0][0][0][0]
+    metrics2 = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+        0
+    ][0]
     assert metrics1 != metrics2
 
 
 @with_defer
 async def test_calc_pull_request_metrics_line_github_changed_releases(
-        metrics_calculator_factory, mdb, pdb, rdb, cache, release_match_setting_tag,
-        prefixer, bots, branches, default_branches):
+    metrics_calculator_factory,
+    mdb,
+    pdb,
+    rdb,
+    cache,
+    release_match_setting_tag,
+    prefixer,
+    bots,
+    branches,
+    default_branches,
+):
     metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2017, month=10, day=1, tzinfo=timezone.utc)
-    args = [[PullRequestMetricID.PR_CYCLE_TIME], [[date_from, date_to]], [0, 1], [], [],
-            [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(), False,
-            bots, release_match_setting_tag, LogicalRepositorySettings.empty(),
-            prefixer, branches, default_branches, False]
-    metrics1 = (
-        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
-    )[0][0][0][0][0][0]
+    args = [
+        [PullRequestMetricID.PR_CYCLE_TIME],
+        [[date_from, date_to]],
+        [0, 1],
+        [],
+        [],
+        [{"src-d/go-git"}],
+        [{}],
+        LabelFilter.empty(),
+        JIRAFilter.empty(),
+        False,
+        bots,
+        release_match_setting_tag,
+        LogicalRepositorySettings.empty(),
+        prefixer,
+        branches,
+        default_branches,
+        False,
+    ]
+    metrics1 = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+        0
+    ][0]
     await wait_deferred()
-    release_match_setting_tag = ReleaseSettings({
-        "github.com/src-d/go-git": ReleaseMatchSetting("master", ".*", ".*", ReleaseMatch.branch),
-    })
+    release_match_setting_tag = ReleaseSettings(
+        {
+            "github.com/src-d/go-git": ReleaseMatchSetting(
+                "master", ".*", ".*", ReleaseMatch.branch,
+            ),
+        },
+    )
     args[-6] = release_match_setting_tag
-    metrics2 = (
-        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
-    )[0][0][0][0][0][0]
+    metrics2 = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+        0
+    ][0]
     assert metrics1 != metrics2
 
 
 @with_defer
 async def test_pr_list_miner_match_metrics_all_count_david_bug(
-        metrics_calculator_factory, mdb, pdb, rdb, release_match_setting_tag, prefixer, bots,
-        branches, default_branches):
+    metrics_calculator_factory,
+    mdb,
+    pdb,
+    rdb,
+    release_match_setting_tag,
+    prefixer,
+    bots,
+    branches,
+    default_branches,
+):
     metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(year=2016, month=11, day=17, tzinfo=timezone.utc)
     time_middle = time_from + timedelta(days=14)
     time_to = datetime(year=2016, month=12, day=15, tzinfo=timezone.utc)
-    metric1 = (await metrics_calculator_no_cache.calc_pull_request_metrics_line_github(
-        [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_middle]], [0, 1], [], [],
-        [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(), False,
-        bots, release_match_setting_tag, LogicalRepositorySettings.empty(),
-        prefixer, branches, default_branches, False,
-    ))[0][0][0][0][0][0].value
-    await wait_deferred()
-    metric2 = (await metrics_calculator_no_cache.calc_pull_request_metrics_line_github(
-        [PullRequestMetricID.PR_ALL_COUNT], [[time_middle, time_to]], [0, 1], [], [],
-        [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(), False,
-        bots, release_match_setting_tag, LogicalRepositorySettings.empty(),
-        prefixer, branches, default_branches, False,
-    ))[0][0][0][0][0][0].value
-    await wait_deferred()
-    metric1_ext, metric2_ext = (m[0].value for m in (
+    metric1 = (
         await metrics_calculator_no_cache.calc_pull_request_metrics_line_github(
-            [PullRequestMetricID.PR_ALL_COUNT], [[time_from, time_middle, time_to]], [0, 1],
-            [], [], [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(), False,
-            bots, release_match_setting_tag, LogicalRepositorySettings.empty(),
-            prefixer, branches, default_branches, False,
+            [PullRequestMetricID.PR_ALL_COUNT],
+            [[time_from, time_middle]],
+            [0, 1],
+            [],
+            [],
+            [{"src-d/go-git"}],
+            [{}],
+            LabelFilter.empty(),
+            JIRAFilter.empty(),
+            False,
+            bots,
+            release_match_setting_tag,
+            LogicalRepositorySettings.empty(),
+            prefixer,
+            branches,
+            default_branches,
+            False,
         )
-    )[0][0][0][0])
+    )[0][0][0][0][0][0].value
+    await wait_deferred()
+    metric2 = (
+        await metrics_calculator_no_cache.calc_pull_request_metrics_line_github(
+            [PullRequestMetricID.PR_ALL_COUNT],
+            [[time_middle, time_to]],
+            [0, 1],
+            [],
+            [],
+            [{"src-d/go-git"}],
+            [{}],
+            LabelFilter.empty(),
+            JIRAFilter.empty(),
+            False,
+            bots,
+            release_match_setting_tag,
+            LogicalRepositorySettings.empty(),
+            prefixer,
+            branches,
+            default_branches,
+            False,
+        )
+    )[0][0][0][0][0][0].value
+    await wait_deferred()
+    metric1_ext, metric2_ext = (
+        m[0].value
+        for m in (
+            await metrics_calculator_no_cache.calc_pull_request_metrics_line_github(
+                [PullRequestMetricID.PR_ALL_COUNT],
+                [[time_from, time_middle, time_to]],
+                [0, 1],
+                [],
+                [],
+                [{"src-d/go-git"}],
+                [{}],
+                LabelFilter.empty(),
+                JIRAFilter.empty(),
+                False,
+                bots,
+                release_match_setting_tag,
+                LogicalRepositorySettings.empty(),
+                prefixer,
+                branches,
+                default_branches,
+                False,
+            )
+        )[0][0][0][0]
+    )
     assert metric1 == metric1_ext
     assert metric2 == metric2_ext
 
 
 @with_defer
 async def test_calc_pull_request_metrics_line_github_exclude_inactive(
-        metrics_calculator_factory, release_match_setting_tag, prefixer, bots,
-        branches, default_branches):
+    metrics_calculator_factory,
+    release_match_setting_tag,
+    prefixer,
+    bots,
+    branches,
+    default_branches,
+):
     metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2017, month=1, day=12, tzinfo=timezone.utc)
-    args = [[PullRequestMetricID.PR_ALL_COUNT], [[date_from, date_to]], [0, 1], [], [],
-            [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(),
-            False, bots, release_match_setting_tag, LogicalRepositorySettings.empty(),
-            prefixer, branches, default_branches, False]
-    metrics = (
-        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
-    )[0][0][0][0][0][0]
+    args = [
+        [PullRequestMetricID.PR_ALL_COUNT],
+        [[date_from, date_to]],
+        [0, 1],
+        [],
+        [],
+        [{"src-d/go-git"}],
+        [{}],
+        LabelFilter.empty(),
+        JIRAFilter.empty(),
+        False,
+        bots,
+        release_match_setting_tag,
+        LogicalRepositorySettings.empty(),
+        prefixer,
+        branches,
+        default_branches,
+        False,
+    ]
+    metrics = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+        0
+    ][0]
     await wait_deferred()
     assert metrics.value == 7
     args[9] = True
-    metrics = (
-        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
-    )[0][0][0][0][0][0]
+    metrics = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+        0
+    ][0]
     await wait_deferred()
     assert metrics.value == 6
     date_from = datetime(year=2017, month=5, day=23, tzinfo=timezone.utc)
@@ -504,43 +763,63 @@ async def test_calc_pull_request_metrics_line_github_exclude_inactive(
     args[0] = [PullRequestMetricID.PR_RELEASE_COUNT]
     args[1] = [[date_from, date_to]]
     args[9] = False
-    metrics = (
-        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
-    )[0][0][0][0][0][0]
+    metrics = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+        0
+    ][0]
     await wait_deferred()
     assert metrics.value == 70
-    metrics = (
-        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
-    )[0][0][0][0][0][0]
+    metrics = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+        0
+    ][0]
     await wait_deferred()
     assert metrics.value == 70
     args[9] = True
-    metrics = (
-        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
-    )[0][0][0][0][0][0]
+    metrics = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+        0
+    ][0]
     assert metrics.value == 71
 
 
 @with_defer
 async def test_calc_pull_request_metrics_line_github_quantiles(
-        metrics_calculator_factory, release_match_setting_tag, prefixer, bots,
-        branches, default_branches):
+    metrics_calculator_factory,
+    release_match_setting_tag,
+    prefixer,
+    bots,
+    branches,
+    default_branches,
+):
     metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2017, month=1, day=12, tzinfo=timezone.utc)
-    args = [[PullRequestMetricID.PR_ALL_COUNT], [[date_from, date_to]], [0, 0.95], [], [],
-            [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(),
-            False, bots, release_match_setting_tag, LogicalRepositorySettings.empty(),
-            prefixer, branches, default_branches, False]
-    metrics = (
-        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
-    )[0][0][0][0][0][0]
+    args = [
+        [PullRequestMetricID.PR_ALL_COUNT],
+        [[date_from, date_to]],
+        [0, 0.95],
+        [],
+        [],
+        [{"src-d/go-git"}],
+        [{}],
+        LabelFilter.empty(),
+        JIRAFilter.empty(),
+        False,
+        bots,
+        release_match_setting_tag,
+        LogicalRepositorySettings.empty(),
+        prefixer,
+        branches,
+        default_branches,
+        False,
+    ]
+    metrics = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+        0
+    ][0]
     await wait_deferred()
     assert metrics.value == 26
     args[2] = [0, 1]
-    metrics = (
-        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
-    )[0][0][0][0][0][0]
+    metrics = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+        0
+    ][0]
     await wait_deferred()
     assert metrics.value == 26  # != 7 from the previous test!
     # yes, see _fetch_inactive_merged_unreleased_prs
@@ -548,50 +827,108 @@ async def test_calc_pull_request_metrics_line_github_quantiles(
 
 @with_defer
 async def test_calc_pull_request_metrics_line_github_tag_after_branch(
-        metrics_calculator_factory, mdb, pdb, rdb, cache, prefixer, bots,
-        release_match_setting_branch, release_match_setting_tag_or_branch,
-        branches, default_branches):
+    metrics_calculator_factory,
+    mdb,
+    pdb,
+    rdb,
+    cache,
+    prefixer,
+    bots,
+    release_match_setting_branch,
+    release_match_setting_tag_or_branch,
+    branches,
+    default_branches,
+):
     metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2018, month=1, day=12, tzinfo=timezone.utc)
-    args = [[PullRequestMetricID.PR_RELEASE_TIME], [[date_from, date_to]], [0, 1], [], [],
-            [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(),
-            False, bots, release_match_setting_branch, LogicalRepositorySettings.empty(),
-            prefixer, branches, default_branches, False]
-    metrics = (
-        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
-    )[0][0][0][0][0][0]
+    args = [
+        [PullRequestMetricID.PR_RELEASE_TIME],
+        [[date_from, date_to]],
+        [0, 1],
+        [],
+        [],
+        [{"src-d/go-git"}],
+        [{}],
+        LabelFilter.empty(),
+        JIRAFilter.empty(),
+        False,
+        bots,
+        release_match_setting_branch,
+        LogicalRepositorySettings.empty(),
+        prefixer,
+        branches,
+        default_branches,
+        False,
+    ]
+    metrics = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+        0
+    ][0]
     await wait_deferred()
     assert metrics.value == timedelta(seconds=395)
     args[-6] = release_match_setting_tag_or_branch
-    metrics = (
-        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
-    )[0][0][0][0][0][0]
+    metrics = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+        0
+    ][0]
     assert metrics.value == timedelta(days=41, seconds=19129)
 
 
 @with_defer
 async def test_calc_pull_request_metrics_line_github_deployment_hazard(
-        metrics_calculator_factory, mdb, pdb, rdb, cache, prefixer, bots,
-        release_match_setting_branch, precomputed_deployments, branches, default_branches):
+    metrics_calculator_factory,
+    mdb,
+    pdb,
+    rdb,
+    cache,
+    prefixer,
+    bots,
+    release_match_setting_branch,
+    precomputed_deployments,
+    branches,
+    default_branches,
+):
     metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     date_from = datetime(year=2019, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2020, month=1, day=12, tzinfo=timezone.utc)
-    args = [[PullRequestMetricID.PR_RELEASE_TIME], [[date_from, date_to]], [0, 1], [], [],
-            [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(),
-            False, bots, release_match_setting_branch, LogicalRepositorySettings.empty(),
-            prefixer, branches, default_branches, False]
-    metrics = (
-        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
-    )[0][0][0][0][0][0]
+    args = [
+        [PullRequestMetricID.PR_RELEASE_TIME],
+        [[date_from, date_to]],
+        [0, 1],
+        [],
+        [],
+        [{"src-d/go-git"}],
+        [{}],
+        LabelFilter.empty(),
+        JIRAFilter.empty(),
+        False,
+        bots,
+        release_match_setting_branch,
+        LogicalRepositorySettings.empty(),
+        prefixer,
+        branches,
+        default_branches,
+        False,
+    ]
+    metrics = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+        0
+    ][0]
     await wait_deferred()
     assert metrics.value == timedelta(seconds=0)  # 396 days without loading deployed releases
 
 
 @with_defer
 async def test_calc_pull_request_metrics_line_jira_map(
-        metrics_calculator_factory, mdb, pdb, rdb, cache, release_match_setting_tag_or_branch,
-        prefixer, bots, branches, default_branches):
+    metrics_calculator_factory,
+    mdb,
+    pdb,
+    rdb,
+    cache,
+    release_match_setting_tag_or_branch,
+    prefixer,
+    bots,
+    branches,
+    default_branches,
+):
     metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2018, month=1, day=12, tzinfo=timezone.utc)
@@ -600,13 +937,28 @@ async def test_calc_pull_request_metrics_line_jira_map(
         PullRequestMetricID.PR_DONE_MAPPED_TO_JIRA,
         PullRequestMetricID.PR_ALL_MAPPED_TO_JIRA,
     ]
-    args = [metrics, [[date_from, date_to]], [0, 1], [], [],
-            [{"src-d/go-git"}], [{}], LabelFilter.empty(), JIRAFilter.empty(),
-            False, bots, release_match_setting_tag_or_branch, LogicalRepositorySettings.empty(),
-            prefixer, branches, default_branches, False]
-    metrics = (
-        await metrics_calculator.calc_pull_request_metrics_line_github(*args)
-    )[0][0][0][0][0]
+    args = [
+        metrics,
+        [[date_from, date_to]],
+        [0, 1],
+        [],
+        [],
+        [{"src-d/go-git"}],
+        [{}],
+        LabelFilter.empty(),
+        JIRAFilter.empty(),
+        False,
+        bots,
+        release_match_setting_tag_or_branch,
+        LogicalRepositorySettings.empty(),
+        prefixer,
+        branches,
+        default_branches,
+        False,
+    ]
+    metrics = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
+        0
+    ]
     await wait_deferred()
     assert metrics[0].value == 0.021739130839705467
     assert metrics[1].value == 0.00800000037997961
@@ -615,14 +967,23 @@ async def test_calc_pull_request_metrics_line_jira_map(
 
 @with_defer
 async def test_calc_pull_request_metrics_deep_filters(
-        metrics_calculator_factory, mdb, pdb, rdb, cache, release_match_setting_tag_or_branch,
-        prefixer, bots, branches, default_branches):
+    metrics_calculator_factory,
+    mdb,
+    pdb,
+    rdb,
+    cache,
+    release_match_setting_tag_or_branch,
+    prefixer,
+    bots,
+    branches,
+    default_branches,
+):
     metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     release_settings = release_match_setting_tag_or_branch.copy()
     for r in ("gitbase", "hercules"):
-        release_settings.native["src-d/" + r] = \
-            release_settings.prefixed["github.com/src-d/" + r] = \
-            release_settings.native["src-d/go-git"]
+        release_settings.native["src-d/" + r] = release_settings.prefixed[
+            "github.com/src-d/" + r
+        ] = release_settings.native["src-d/go-git"]
     date_from = datetime(year=2017, month=1, day=1, tzinfo=timezone.utc)
     date_to = datetime(year=2018, month=1, day=12, tzinfo=timezone.utc)
     metrics = [
@@ -633,10 +994,21 @@ async def test_calc_pull_request_metrics_deep_filters(
     args = [
         metrics,
         [[date_from, date_to], [date_from, date_from + (date_to - date_from) / 2, date_to]],
-        [0, 1], [0, 50, 10000], [], [{"src-d/go-git"}, {"src-d/gitbase"}, {"src-d/hercules"}],
-        {}, LabelFilter.empty(), JIRAFilter.empty(),
-        False, bots, release_settings, LogicalRepositorySettings.empty(),
-        prefixer, branches, default_branches, False,
+        [0, 1],
+        [0, 50, 10000],
+        [],
+        [{"src-d/go-git"}, {"src-d/gitbase"}, {"src-d/hercules"}],
+        {},
+        LabelFilter.empty(),
+        JIRAFilter.empty(),
+        False,
+        bots,
+        release_settings,
+        LogicalRepositorySettings.empty(),
+        prefixer,
+        branches,
+        default_branches,
+        False,
     ]
     # 1. line: 2 groups
     # 2. repository: 3 groups
@@ -644,99 +1016,248 @@ async def test_calc_pull_request_metrics_deep_filters(
     # 4. time series primary: 2 groups
     # 5. time series secondary: 1 and 2 groups
     # 6. metrics: 3 groups
-    metrics = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))
+    metrics = await metrics_calculator.calc_pull_request_metrics_line_github(*args)
     metric = MetricInt.from_fields
-    ground_truth = np.array([
-        [  # line group 1
-            [  # repository group 1
-                [  # participants group 1
-                    [  # time series primary 1
-                        [metric(exists=True, value=134, confidence_min=None, confidence_max=None),
-                         metric(exists=True, value=131, confidence_min=None, confidence_max=None),
-                         metric(exists=True, value=110, confidence_min=None, confidence_max=None)],
-                    ],
-                    [  # time series primary 2
-                        [metric(exists=True, value=65, confidence_min=None, confidence_max=None),
-                         metric(exists=True, value=62, confidence_min=None, confidence_max=None),
-                         metric(exists=True, value=54, confidence_min=None, confidence_max=None)],
-                        [metric(exists=True, value=69, confidence_min=None, confidence_max=None),
-                         metric(exists=True, value=69, confidence_min=None, confidence_max=None),
-                         metric(exists=True, value=56, confidence_min=None, confidence_max=None)],
+    ground_truth = np.array(
+        [
+            [  # line group 1
+                [  # repository group 1
+                    [  # participants group 1
+                        [  # time series primary 1
+                            [
+                                metric(
+                                    exists=True,
+                                    value=134,
+                                    confidence_min=None,
+                                    confidence_max=None,
+                                ),
+                                metric(
+                                    exists=True,
+                                    value=131,
+                                    confidence_min=None,
+                                    confidence_max=None,
+                                ),
+                                metric(
+                                    exists=True,
+                                    value=110,
+                                    confidence_min=None,
+                                    confidence_max=None,
+                                ),
+                            ],
+                        ],
+                        [  # time series primary 2
+                            [
+                                metric(
+                                    exists=True,
+                                    value=65,
+                                    confidence_min=None,
+                                    confidence_max=None,
+                                ),
+                                metric(
+                                    exists=True,
+                                    value=62,
+                                    confidence_min=None,
+                                    confidence_max=None,
+                                ),
+                                metric(
+                                    exists=True,
+                                    value=54,
+                                    confidence_min=None,
+                                    confidence_max=None,
+                                ),
+                            ],
+                            [
+                                metric(
+                                    exists=True,
+                                    value=69,
+                                    confidence_min=None,
+                                    confidence_max=None,
+                                ),
+                                metric(
+                                    exists=True,
+                                    value=69,
+                                    confidence_min=None,
+                                    confidence_max=None,
+                                ),
+                                metric(
+                                    exists=True,
+                                    value=56,
+                                    confidence_min=None,
+                                    confidence_max=None,
+                                ),
+                            ],
+                        ],
                     ],
                 ],
+                # repository group 2 and 3
+                *[
+                    [  # repository group
+                        [  # participants group 1
+                            [  # time series primary 1
+                                [
+                                    metric(
+                                        exists=True,
+                                        value=0,
+                                        confidence_min=None,
+                                        confidence_max=None,
+                                    ),
+                                ]
+                                * 3,
+                            ],
+                            [  # time series primary 2
+                                [
+                                    metric(
+                                        exists=True,
+                                        value=0,
+                                        confidence_min=None,
+                                        confidence_max=None,
+                                    ),
+                                ]
+                                * 3,
+                            ]
+                            * 2,
+                        ],
+                    ],
+                ]
+                * 2,
             ],
-            # repository group 2 and 3
-            *[[  # repository group
-                [  # participants group 1
-                    [  # time series primary 1
-                        [metric(exists=True, value=0, confidence_min=None,
-                                confidence_max=None)] * 3,
+            [  # line group 2
+                [  # repository group 1
+                    [  # participants group 1
+                        [  # time series primary 1
+                            [
+                                metric(
+                                    exists=True,
+                                    value=142,
+                                    confidence_min=None,
+                                    confidence_max=None,
+                                ),
+                                metric(
+                                    exists=True,
+                                    value=142,
+                                    confidence_min=None,
+                                    confidence_max=None,
+                                ),
+                                metric(
+                                    exists=True,
+                                    value=130,
+                                    confidence_min=None,
+                                    confidence_max=None,
+                                ),
+                            ],
+                        ],
+                        [  # time series primary 2
+                            [
+                                metric(
+                                    exists=True,
+                                    value=69,
+                                    confidence_min=None,
+                                    confidence_max=None,
+                                ),
+                                metric(
+                                    exists=True,
+                                    value=70,
+                                    confidence_min=None,
+                                    confidence_max=None,
+                                ),
+                                metric(
+                                    exists=True,
+                                    value=64,
+                                    confidence_min=None,
+                                    confidence_max=None,
+                                ),
+                            ],
+                            [
+                                metric(
+                                    exists=True,
+                                    value=73,
+                                    confidence_min=None,
+                                    confidence_max=None,
+                                ),
+                                metric(
+                                    exists=True,
+                                    value=72,
+                                    confidence_min=None,
+                                    confidence_max=None,
+                                ),
+                                metric(
+                                    exists=True,
+                                    value=66,
+                                    confidence_min=None,
+                                    confidence_max=None,
+                                ),
+                            ],
+                        ],
                     ],
-                    [  # time series primary 2
-                        [metric(exists=True, value=0, confidence_min=None,
-                                confidence_max=None)] * 3,
-                    ] * 2,
                 ],
-            ]] * 2,
-        ],
-        [  # line group 2
-            [  # repository group 1
-                [  # participants group 1
-                    [  # time series primary 1
-                        [metric(exists=True, value=142, confidence_min=None, confidence_max=None),
-                         metric(exists=True, value=142, confidence_min=None, confidence_max=None),
-                         metric(exists=True, value=130, confidence_min=None, confidence_max=None)],
+                # repository group 2 and 3
+                *[
+                    [  # repository group
+                        [  # participants group 1
+                            [  # time series primary 1
+                                [
+                                    metric(
+                                        exists=True,
+                                        value=0,
+                                        confidence_min=None,
+                                        confidence_max=None,
+                                    ),
+                                ]
+                                * 3,
+                            ],
+                            [  # time series primary 2
+                                [
+                                    metric(
+                                        exists=True,
+                                        value=0,
+                                        confidence_min=None,
+                                        confidence_max=None,
+                                    ),
+                                ]
+                                * 3,
+                            ]
+                            * 2,
+                        ],
                     ],
-                    [  # time series primary 2
-                        [metric(exists=True, value=69, confidence_min=None, confidence_max=None),
-                         metric(exists=True, value=70, confidence_min=None, confidence_max=None),
-                         metric(exists=True, value=64, confidence_min=None, confidence_max=None)],
-                        [metric(exists=True, value=73, confidence_min=None, confidence_max=None),
-                         metric(exists=True, value=72, confidence_min=None, confidence_max=None),
-                         metric(exists=True, value=66, confidence_min=None, confidence_max=None)],
-                    ],
-                ],
+                ]
+                * 2,
             ],
-            # repository group 2 and 3
-            *[[  # repository group
-                [  # participants group 1
-                    [  # time series primary 1
-                        [metric(exists=True, value=0, confidence_min=None,
-                                confidence_max=None)] * 3,
-                    ],
-                    [  # time series primary 2
-                        [metric(exists=True, value=0, confidence_min=None,
-                                confidence_max=None)] * 3,
-                    ] * 2,
-                ],
-            ]] * 2,
         ],
-    ], dtype=object)
+        dtype=object,
+    )
     np.testing.assert_array_equal(np.array(metrics.tolist(), dtype=object), ground_truth)
 
 
 def test_pull_request_metric_calculator_ensemble_accuracy(pr_samples):
     qargs = dict(quantiles=(0, 1))
-    ensemble = PullRequestMetricCalculatorEnsemble(PullRequestMetricID.PR_CYCLE_TIME,
-                                                   PullRequestMetricID.PR_WIP_COUNT,
-                                                   PullRequestMetricID.PR_RELEASE_TIME,
-                                                   PullRequestMetricID.PR_CLOSED,
-                                                   quantile_stride=0,
-                                                   **qargs)
+    ensemble = PullRequestMetricCalculatorEnsemble(
+        PullRequestMetricID.PR_CYCLE_TIME,
+        PullRequestMetricID.PR_WIP_COUNT,
+        PullRequestMetricID.PR_RELEASE_TIME,
+        PullRequestMetricID.PR_CLOSED,
+        quantile_stride=0,
+        **qargs,
+    )
     release_time = ReleaseTimeCalculator(**qargs)
     wip_count = WorkInProgressCounter(WorkInProgressTimeCalculator(**qargs), **qargs)
-    cycle_time = CycleTimeCalculator(WorkInProgressTimeCalculator(**qargs),
-                                     ReviewTimeCalculator(**qargs),
-                                     MergingTimeCalculator(**qargs),
-                                     ReleaseTimeCalculator(**qargs),
-                                     **qargs)
+    cycle_time = CycleTimeCalculator(
+        WorkInProgressTimeCalculator(**qargs),
+        ReviewTimeCalculator(**qargs),
+        MergingTimeCalculator(**qargs),
+        ReleaseTimeCalculator(**qargs),
+        **qargs,
+    )
     closed = ClosedCalculator(**qargs)
     time_from = datetime.utcnow() - timedelta(days=365)
     time_to = datetime.utcnow()
     for _ in range(2):
         prs = df_from_structs(pr_samples(100))
         args = [
-            prs, dt64arr_ns(time_from), dt64arr_ns(time_to), None, np.full((1, len(prs)), True),
+            prs,
+            dt64arr_ns(time_from),
+            dt64arr_ns(time_to),
+            None,
+            np.full((1, len(prs)), True),
         ]
         ensemble(*args[:-2], args[-1])
         release_time(*args)
@@ -755,7 +1276,8 @@ def test_pull_request_metric_calculator_ensemble_accuracy(pr_samples):
 
 def test_pull_request_metric_calculator_empty_facts(pr_samples):
     binned = PullRequestBinnedMetricCalculator(
-        [PullRequestMetricID.PR_WIP_COUNT], quantiles=(0, 0.9), quantile_stride=210)
+        [PullRequestMetricID.PR_WIP_COUNT], quantiles=(0, 0.9), quantile_stride=210,
+    )
     prs = df_from_structs(pr_samples(1)).iloc[:0]
     time_to = datetime.now(timezone.utc)
     time_from = time_to - timedelta(days=365)
@@ -769,21 +1291,40 @@ def test_pull_request_metric_calculator_ensemble_empty(pr_samples):
     ensemble = PullRequestMetricCalculatorEnsemble(quantiles=(0, 1), quantile_stride=73)
     time_from = datetime.utcnow() - timedelta(days=365)
     time_to = datetime.utcnow()
-    ensemble(df_from_structs(pr_samples(1)), dt64arr_ns(time_from), dt64arr_ns(time_to),
-             [np.arange(1)])
+    ensemble(
+        df_from_structs(pr_samples(1)), dt64arr_ns(time_from), dt64arr_ns(time_to), [np.arange(1)],
+    )
     assert ensemble.values() == {}
 
 
 @with_defer
 async def test_calc_pull_request_facts_github_open_precomputed(
-        metrics_calculator_factory, mdb, pdb, rdb, release_match_setting_tag, prefixer, bots):
+    metrics_calculator_factory,
+    mdb,
+    pdb,
+    rdb,
+    release_match_setting_tag,
+    prefixer,
+    bots,
+):
     metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
-    args = (time_from, time_to, {"src-d/go-git"}, {},
-            LabelFilter.empty(), JIRAFilter.empty(),
-            False, bots, release_match_setting_tag, LogicalRepositorySettings.empty(),
-            prefixer, False, False)
+    args = (
+        time_from,
+        time_to,
+        {"src-d/go-git"},
+        {},
+        LabelFilter.empty(),
+        JIRAFilter.empty(),
+        False,
+        bots,
+        release_match_setting_tag,
+        LogicalRepositorySettings.empty(),
+        prefixer,
+        False,
+        False,
+    )
     facts1 = await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
     facts1.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
     await wait_deferred()
@@ -796,22 +1337,41 @@ async def test_calc_pull_request_facts_github_open_precomputed(
 
 @with_defer
 async def test_calc_pull_request_facts_github_unreleased_precomputed(
-        metrics_calculator_factory, mdb, pdb, rdb, release_match_setting_tag, prefixer, bots):
+    metrics_calculator_factory,
+    mdb,
+    pdb,
+    rdb,
+    release_match_setting_tag,
+    prefixer,
+    bots,
+):
     metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(year=2019, month=10, day=30, tzinfo=timezone.utc)
     time_to = datetime(year=2019, month=11, day=2, tzinfo=timezone.utc)
-    args = (time_from, time_to, {"src-d/go-git"}, {},
-            LabelFilter.empty(), JIRAFilter.empty(),
-            False, bots, release_match_setting_tag, LogicalRepositorySettings.empty(),
-            prefixer, False, False)
+    args = (
+        time_from,
+        time_to,
+        {"src-d/go-git"},
+        {},
+        LabelFilter.empty(),
+        JIRAFilter.empty(),
+        False,
+        bots,
+        release_match_setting_tag,
+        LogicalRepositorySettings.empty(),
+        prefixer,
+        False,
+        False,
+    )
     facts1 = await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
     facts1.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
     await wait_deferred()
     unreleased_facts = await pdb.fetch_all(select([GitHubMergedPullRequestFacts]))
     assert len(unreleased_facts) == 2
     for row in unreleased_facts:
-        assert row[GitHubMergedPullRequestFacts.data.name] is not None, \
-            row[GitHubMergedPullRequestFacts.pr_node_id.name]
+        assert row[GitHubMergedPullRequestFacts.data.name] is not None, row[
+            GitHubMergedPullRequestFacts.pr_node_id.name
+        ]
     facts2 = await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
     facts2.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
     assert_frame_equal(facts1, facts2)
@@ -819,21 +1379,46 @@ async def test_calc_pull_request_facts_github_unreleased_precomputed(
 
 @with_defer
 async def test_calc_pull_request_facts_github_jira(
-        metrics_calculator_factory, mdb, pdb, rdb, release_match_setting_tag,
-        prefixer, bots, cache):
+    metrics_calculator_factory,
+    mdb,
+    pdb,
+    rdb,
+    release_match_setting_tag,
+    prefixer,
+    bots,
+    cache,
+):
     metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     metrics_calculator_cache_only = metrics_calculator_factory(1, (6366825,), cache_only=True)
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
-    args = [time_from, time_to, {"src-d/go-git"}, {},
-            LabelFilter.empty(), JIRAFilter.empty(),
-            False, bots, release_match_setting_tag, LogicalRepositorySettings.empty(),
-            prefixer, False, False]
+    args = [
+        time_from,
+        time_to,
+        {"src-d/go-git"},
+        {},
+        LabelFilter.empty(),
+        JIRAFilter.empty(),
+        False,
+        bots,
+        release_match_setting_tag,
+        LogicalRepositorySettings.empty(),
+        prefixer,
+        False,
+        False,
+    ]
     facts = await metrics_calculator.calc_pull_request_facts_github(*args)
     await wait_deferred()
     assert facts[PullRequestFacts.f.released].notnull().sum() == 235
-    args[5] = JIRAFilter(1, ["10003", "10009"], LabelFilter({"performance", "task"}, set()),
-                         set(), set(), False, False)
+    args[5] = JIRAFilter(
+        1,
+        ["10003", "10009"],
+        LabelFilter({"performance", "task"}, set()),
+        set(),
+        set(),
+        False,
+        False,
+    )
     facts = await metrics_calculator.calc_pull_request_facts_github(*args)
     assert facts[PullRequestFacts.f.released].notnull().sum() == 16
 
@@ -848,24 +1433,48 @@ async def test_calc_pull_request_facts_github_jira(
 
 @with_defer
 async def test_calc_pull_request_facts_github_event_releases(
-        metrics_calculator_factory, mdb, pdb, rdb, release_match_setting_event,
-        prefixer, bots, cache):
-    await rdb.execute(insert(ReleaseNotification).values(ReleaseNotification(
-        account_id=1,
-        repository_node_id=40550,
-        commit_hash_prefix="1edb992",
-        name="Pushed!",
-        author_node_id=40020,
-        url="www",
-        published_at=datetime(2019, 9, 1, tzinfo=timezone.utc),
-    ).create_defaults().explode(with_primary_keys=True)))
+    metrics_calculator_factory,
+    mdb,
+    pdb,
+    rdb,
+    release_match_setting_event,
+    prefixer,
+    bots,
+    cache,
+):
+    await rdb.execute(
+        insert(ReleaseNotification).values(
+            ReleaseNotification(
+                account_id=1,
+                repository_node_id=40550,
+                commit_hash_prefix="1edb992",
+                name="Pushed!",
+                author_node_id=40020,
+                url="www",
+                published_at=datetime(2019, 9, 1, tzinfo=timezone.utc),
+            )
+            .create_defaults()
+            .explode(with_primary_keys=True),
+        ),
+    )
     metrics_calculator = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(year=2018, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
-    args = [time_from, time_to, {"src-d/go-git"}, {},
-            LabelFilter.empty(), JIRAFilter.empty(),
-            False, bots, release_match_setting_event, LogicalRepositorySettings.empty(),
-            prefixer, False, False]
+    args = [
+        time_from,
+        time_to,
+        {"src-d/go-git"},
+        {},
+        LabelFilter.empty(),
+        JIRAFilter.empty(),
+        False,
+        bots,
+        release_match_setting_event,
+        LogicalRepositorySettings.empty(),
+        prefixer,
+        False,
+        False,
+    ]
     facts = await metrics_calculator.calc_pull_request_facts_github(*args)
     await wait_deferred()
     assert facts[PullRequestFacts.f.released].notnull().sum() == 381
@@ -875,15 +1484,33 @@ async def test_calc_pull_request_facts_github_event_releases(
 
 @with_defer
 async def test_calc_pull_request_facts_empty(
-        metrics_calculator_factory, mdb, pdb, rdb, release_match_setting_tag,
-        prefixer, bots, cache):
+    metrics_calculator_factory,
+    mdb,
+    pdb,
+    rdb,
+    release_match_setting_tag,
+    prefixer,
+    bots,
+    cache,
+):
     metrics_calculator = metrics_calculator_factory(1, (6366825,), with_cache=True)
     time_from = datetime(year=2022, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2023, month=4, day=1, tzinfo=timezone.utc)
-    args = [time_from, time_to, {"src-d/go-git"}, {},
-            LabelFilter.empty(), JIRAFilter.empty(),
-            True, bots, release_match_setting_tag, LogicalRepositorySettings.empty(),
-            prefixer, False, False]
+    args = [
+        time_from,
+        time_to,
+        {"src-d/go-git"},
+        {},
+        LabelFilter.empty(),
+        JIRAFilter.empty(),
+        True,
+        bots,
+        release_match_setting_tag,
+        LogicalRepositorySettings.empty(),
+        prefixer,
+        False,
+        False,
+    ]
     facts = await metrics_calculator.calc_pull_request_facts_github(*args)
     assert facts.empty
     assert len(facts.columns) == len(PullRequestFacts.f)
@@ -903,14 +1530,17 @@ def test_size_calculator_shift_log():
 class QuantileTestingMetric(MetricCalculator):
     metric = MetricTimeDelta
 
-    def _analyze(self,
-                 facts: pd.DataFrame,
-                 min_times: np.ndarray,
-                 max_times: np.ndarray,
-                 **kwargs) -> np.ndarray:
+    def _analyze(
+        self,
+        facts: pd.DataFrame,
+        min_times: np.ndarray,
+        max_times: np.ndarray,
+        **kwargs,
+    ) -> np.ndarray:
         """Calculate the actual state update."""
-        return np.repeat((facts["released"] - facts["created"]).values[None, :],
-                         len(min_times), axis=0)
+        return np.repeat(
+            (facts["released"] - facts["created"]).values[None, :], len(min_times), axis=0,
+        )
 
     def _value(self, samples: Sequence[timedelta]) -> Tuple[timedelta, int]:
         """Calculate the actual current metric value."""
@@ -924,16 +1554,15 @@ def test_quantiles(pr_samples):
     min_times = dt64arr_ns(time_from)
     max_times = dt64arr_ns(time_to)
     groups = [np.arange(len(samples))]
-    ensemble = PullRequestMetricCalculatorEnsemble(
-        "test", quantiles=(0, 1), quantile_stride=0)
+    ensemble = PullRequestMetricCalculatorEnsemble("test", quantiles=(0, 1), quantile_stride=0)
     ensemble(samples, min_times, max_times, groups)
     m1, c1 = ensemble.values()["test"][0][0]
-    ensemble = PullRequestMetricCalculatorEnsemble(
-        "test", quantiles=(0, 0.9), quantile_stride=73)
+    ensemble = PullRequestMetricCalculatorEnsemble("test", quantiles=(0, 0.9), quantile_stride=73)
     ensemble(samples, min_times, max_times, groups)
     m2, c2 = ensemble.values()["test"][0][0]
     ensemble = PullRequestMetricCalculatorEnsemble(
-        "test", quantiles=(0.1, 0.9), quantile_stride=73)
+        "test", quantiles=(0.1, 0.9), quantile_stride=73,
+    )
     ensemble(samples, min_times, max_times, groups)
     m3, c3 = ensemble.values()["test"][0][0]
     assert m1 > m2 > m3
@@ -950,8 +1579,9 @@ def test_counter_quantiles(pr_samples):
     c_without = WorkInProgressCounter(c_base, quantiles=quantiles)
     min_times = dt64arr_ns(time_from)
     max_times = dt64arr_ns(time_to)
-    qmins, qmaxs = \
-        MetricCalculatorEnsemble.compose_quantile_time_intervals(min_times[0], max_times[0], 73)
+    qmins, qmaxs = MetricCalculatorEnsemble.compose_quantile_time_intervals(
+        min_times[0], max_times[0], 73,
+    )
     min_times = np.concatenate([min_times, qmins])
     max_times = np.concatenate([max_times, qmaxs])
     groups = np.full((1, len(samples)), True)
@@ -965,37 +1595,77 @@ def test_counter_quantiles(pr_samples):
 
 @pytest.fixture(scope="function")
 @with_defer
-async def real_pr_samples(release_match_setting_tag,
-                          metrics_calculator_factory,
-                          prefixer,
-                          bots) -> Tuple[datetime, datetime, pd.DataFrame]:
+async def real_pr_samples(
+    release_match_setting_tag,
+    metrics_calculator_factory,
+    prefixer,
+    bots,
+) -> Tuple[datetime, datetime, pd.DataFrame]:
     metrics_calculator_no_cache = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
-    args = (time_from, time_to, {"src-d/go-git"}, {},
-            LabelFilter.empty(), JIRAFilter.empty(),
-            False, bots, release_match_setting_tag, LogicalRepositorySettings.empty(),
-            prefixer, False, False)
+    args = (
+        time_from,
+        time_to,
+        {"src-d/go-git"},
+        {},
+        LabelFilter.empty(),
+        JIRAFilter.empty(),
+        False,
+        bots,
+        release_match_setting_tag,
+        LogicalRepositorySettings.empty(),
+        prefixer,
+        False,
+        False,
+    )
     samples = await metrics_calculator_no_cache.calc_pull_request_facts_github(*args)
     return time_from, time_to, samples
 
 
 @with_defer
 async def test_pull_request_count_logical_alpha_beta(
-        logical_settings, metrics_calculator_factory, mdb, pdb, rdb,
-        release_match_setting_tag_logical, prefixer, bots, branches, default_branches):
+    logical_settings,
+    metrics_calculator_factory,
+    mdb,
+    pdb,
+    rdb,
+    release_match_setting_tag_logical,
+    prefixer,
+    bots,
+    branches,
+    default_branches,
+):
     logical_settings = deepcopy(logical_settings)
-    logical_settings._deployments["src-d/go-git"] = LogicalDeploymentSettings({
-        "src-d/go-git/alpha": {"title": ".*"},
-    }, "src-d/go-git")
+    logical_settings._deployments["src-d/go-git"] = LogicalDeploymentSettings(
+        {
+            "src-d/go-git/alpha": {"title": ".*"},
+        },
+        "src-d/go-git",
+    )
     await mine_deployments(
-        ["src-d/go-git/alpha"], {},
-        datetime(2015, 1, 1, tzinfo=timezone.utc), datetime(2020, 1, 1, tzinfo=timezone.utc),
+        ["src-d/go-git/alpha"],
+        {},
+        datetime(2015, 1, 1, tzinfo=timezone.utc),
+        datetime(2020, 1, 1, tzinfo=timezone.utc),
         ["production", "staging"],
-        [], {}, {}, LabelFilter.empty(), JIRAFilter.empty(),
-        release_match_setting_tag_logical, logical_settings,
-        branches, default_branches, prefixer,
-        1, (6366825,), mdb, pdb, rdb, None)
+        [],
+        {},
+        {},
+        LabelFilter.empty(),
+        JIRAFilter.empty(),
+        release_match_setting_tag_logical,
+        logical_settings,
+        branches,
+        default_branches,
+        prefixer,
+        1,
+        (6366825,),
+        mdb,
+        pdb,
+        rdb,
+        None,
+    )
     await wait_deferred()
     metrics_calculator = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
@@ -1010,11 +1680,23 @@ async def test_pull_request_count_logical_alpha_beta(
     for i in range(2):  # test the second run with filled pdb
         print([">>>> no pdb <<<<", ">>>> with pdb <<<<"][i], flush=True)
         args = [
-            metrics, [[time_from, time_to]], (0, 1), [], ["production"],
-            [["src-d/go-git/alpha"], ["src-d/go-git/beta"]], [],
-            LabelFilter.empty(), JIRAFilter.empty(),
-            False, bots, release_match_setting_tag_logical, logical_settings, prefixer,
-            branches, default_branches, False,
+            metrics,
+            [[time_from, time_to]],
+            (0, 1),
+            [],
+            ["production"],
+            [["src-d/go-git/alpha"], ["src-d/go-git/beta"]],
+            [],
+            LabelFilter.empty(),
+            JIRAFilter.empty(),
+            False,
+            bots,
+            release_match_setting_tag_logical,
+            logical_settings,
+            prefixer,
+            branches,
+            default_branches,
+            False,
         ]
         values = await metrics_calculator.calc_pull_request_metrics_line_github(*args)
         await wait_deferred()
@@ -1038,8 +1720,15 @@ async def test_pull_request_count_logical_alpha_beta(
 
 @with_defer
 async def test_pull_request_count_logical_root(
-        logical_settings, precomputed_deployments, metrics_calculator_factory,
-        release_match_setting_tag_logical, prefixer, bots, branches, default_branches):
+    logical_settings,
+    precomputed_deployments,
+    metrics_calculator_factory,
+    release_match_setting_tag_logical,
+    prefixer,
+    bots,
+    branches,
+    default_branches,
+):
     metrics_calculator = metrics_calculator_factory(1, (6366825,))
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=4, day=1, tzinfo=timezone.utc)
@@ -1053,11 +1742,23 @@ async def test_pull_request_count_logical_root(
     for i in range(2):  # test the second run with filled pdb
         print([">>>> no pdb <<<<", ">>>> with pdb <<<<"][i], flush=True)
         args = [
-            metrics, [[time_from, time_to]], (0, 1), [], ["production"],
-            [["src-d/go-git/alpha"], ["src-d/go-git/beta"]], [],
-            LabelFilter.empty(), JIRAFilter.empty(),
-            False, bots, release_match_setting_tag_logical, logical_settings, prefixer,
-            branches, default_branches, False,
+            metrics,
+            [[time_from, time_to]],
+            (0, 1),
+            [],
+            ["production"],
+            [["src-d/go-git/alpha"], ["src-d/go-git/beta"]],
+            [],
+            LabelFilter.empty(),
+            JIRAFilter.empty(),
+            False,
+            bots,
+            release_match_setting_tag_logical,
+            logical_settings,
+            prefixer,
+            branches,
+            default_branches,
+            False,
         ]
         args[5].append(["src-d/go-git"])
         values = await metrics_calculator.calc_pull_request_metrics_line_github(*args)
@@ -1090,19 +1791,23 @@ async def test_pull_request_stage_times(precomputed_deployments, real_pr_samples
         PullRequestMetricID.PR_LEAD_DEPLOYMENT_TIME,
         quantile_stride=0,
         quantiles=(0, 1),
-        environments=["staging", "mirror", "production"])
+        environments=["staging", "mirror", "production"],
+    )
     time_from, time_to, samples = real_pr_samples
     ensemble(samples, dt64arr_ns(time_from), dt64arr_ns(time_to), [np.arange(len(samples))])
     values = ensemble.values()
-    for metric, td in [(PullRequestMetricID.PR_WIP_TIME, timedelta(days=3, seconds=58592)),
-                       (PullRequestMetricID.PR_REVIEW_TIME, timedelta(days=4, seconds=85421)),
-                       (PullRequestMetricID.PR_MERGING_TIME, timedelta(days=5, seconds=1952)),
-                       (PullRequestMetricID.PR_OPEN_TIME, timedelta(days=9, seconds=20554)),
-                       (PullRequestMetricID.PR_RELEASE_TIME, timedelta(days=29, seconds=50065)),
-                       (PullRequestMetricID.PR_DEPLOYMENT_TIME,
-                        [None, None, timedelta(days=663, seconds=69791)]),
-                       (PullRequestMetricID.PR_LEAD_DEPLOYMENT_TIME,
-                        [None, None, timedelta(days=700, seconds=78816)])]:
+    for metric, td in [
+        (PullRequestMetricID.PR_WIP_TIME, timedelta(days=3, seconds=58592)),
+        (PullRequestMetricID.PR_REVIEW_TIME, timedelta(days=4, seconds=85421)),
+        (PullRequestMetricID.PR_MERGING_TIME, timedelta(days=5, seconds=1952)),
+        (PullRequestMetricID.PR_OPEN_TIME, timedelta(days=9, seconds=20554)),
+        (PullRequestMetricID.PR_RELEASE_TIME, timedelta(days=29, seconds=50065)),
+        (PullRequestMetricID.PR_DEPLOYMENT_TIME, [None, None, timedelta(days=663, seconds=69791)]),
+        (
+            PullRequestMetricID.PR_LEAD_DEPLOYMENT_TIME,
+            [None, None, timedelta(days=700, seconds=78816)],
+        ),
+    ]:
         assert values[metric][0][0].value == td, metric
 
 
@@ -1114,20 +1819,26 @@ async def test_pull_request_deployment_stage_counts(precomputed_deployments, rea
         PullRequestMetricID.PR_LEAD_DEPLOYMENT_COUNT_Q,
         quantile_stride=180,
         quantiles=(0, 0.95),
-        environments=["staging", "mirror", "production"])
+        environments=["staging", "mirror", "production"],
+    )
     time_from, time_to, samples = real_pr_samples
     ensemble(samples, dt64arr_ns(time_from), dt64arr_ns(time_to), [np.arange(len(samples))])
     values = ensemble.values()
-    for metric, td in [(PullRequestMetricID.PR_DEPLOYMENT_COUNT, [0, 0, 418]),
-                       (PullRequestMetricID.PR_DEPLOYMENT_COUNT_Q, [0, 0, 398]),
-                       (PullRequestMetricID.PR_LEAD_DEPLOYMENT_COUNT, [0, 0, 418]),
-                       (PullRequestMetricID.PR_LEAD_DEPLOYMENT_COUNT_Q, [0, 0, 397])]:
+    for metric, td in [
+        (PullRequestMetricID.PR_DEPLOYMENT_COUNT, [0, 0, 418]),
+        (PullRequestMetricID.PR_DEPLOYMENT_COUNT_Q, [0, 0, 398]),
+        (PullRequestMetricID.PR_LEAD_DEPLOYMENT_COUNT, [0, 0, 418]),
+        (PullRequestMetricID.PR_LEAD_DEPLOYMENT_COUNT_Q, [0, 0, 397]),
+    ]:
         assert values[metric][0][0].value == td, metric
 
 
 @pytest.mark.parametrize("with_origin", [False, True])
 async def test_pull_request_cycle_deployment_time(
-        precomputed_deployments, real_pr_samples, with_origin):
+    precomputed_deployments,
+    real_pr_samples,
+    with_origin,
+):
     ensemble = PullRequestMetricCalculatorEnsemble(
         PullRequestMetricID.PR_CYCLE_DEPLOYMENT_TIME,
         PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT,
@@ -1135,26 +1846,36 @@ async def test_pull_request_cycle_deployment_time(
         *((PullRequestMetricID.PR_CYCLE_TIME,) if with_origin else ()),
         quantile_stride=180,
         quantiles=(0, 0.95),
-        environments=["staging", "mirror", "production"])
+        environments=["staging", "mirror", "production"],
+    )
     time_from, time_to, samples = real_pr_samples
     ensemble(samples, dt64arr_ns(time_from), dt64arr_ns(time_to), [np.arange(len(samples))])
     values = ensemble.values()
-    for metric, td in [(PullRequestMetricID.PR_CYCLE_DEPLOYMENT_TIME,
-                        [None, None, timedelta(days=659, seconds=86161)]),
-                       (PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT, [0, 0, 418]),
-                       (PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT_Q, [0, 0, 377])]:
+    for metric, td in [
+        (
+            PullRequestMetricID.PR_CYCLE_DEPLOYMENT_TIME,
+            [None, None, timedelta(days=659, seconds=86161)],
+        ),
+        (PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT, [0, 0, 418]),
+        (PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT_Q, [0, 0, 377]),
+    ]:
         assert values[metric][0][0].value == td, metric
 
 
 async def test_pull_request_deployment_time_with_failed(
-        precomputed_sample_deployments, real_pr_samples):
+    precomputed_sample_deployments,
+    real_pr_samples,
+):
     ensemble = PullRequestMetricCalculatorEnsemble(
         PullRequestMetricID.PR_DEPLOYMENT_TIME,
         quantile_stride=0,
         quantiles=(0, 1),
-        environments=["staging", "production"])
+        environments=["staging", "production"],
+    )
     time_from, time_to, samples = real_pr_samples
     ensemble(samples, dt64arr_ns(time_from), dt64arr_ns(time_to), [np.arange(len(samples))])
     values = ensemble.values()
-    assert values[PullRequestMetricID.PR_DEPLOYMENT_TIME][0][0].value == \
-           [timedelta(days=128, seconds=86233)] * 2
+    assert (
+        values[PullRequestMetricID.PR_DEPLOYMENT_TIME][0][0].value
+        == [timedelta(days=128, seconds=86233)] * 2
+    )

@@ -13,13 +13,16 @@ class LabelFilter:
     exclude: Set[str]
 
     @classmethod
-    def from_iterables(cls,
-                       include: Optional[Iterable[str]],
-                       exclude: Optional[Iterable[str]],
-                       ) -> "LabelFilter":
+    def from_iterables(
+        cls,
+        include: Optional[Iterable[str]],
+        exclude: Optional[Iterable[str]],
+    ) -> "LabelFilter":
         """Initialize a new instance of LabelFilter from two iterables."""
-        return cls(include=set(s.lower().strip(" \t,") for s in (include or [])),
-                   exclude=set(s.lower() for s in (exclude or [])))
+        return cls(
+            include=set(s.lower().strip(" \t,") for s in (include or [])),
+            exclude=set(s.lower() for s in (exclude or [])),
+        )
 
     @classmethod
     def empty(cls) -> "LabelFilter":
@@ -41,10 +44,8 @@ class LabelFilter:
     def compatible_with(self, other: "LabelFilter") -> bool:
         """Check whether the `other` filter can be applied to the items filtered by `self`."""
         return (
-            ((not self.include) or (other.include and self.include.issuperset(other.include)))
-            and
-            ((not self.exclude) or (other.exclude and self.exclude.issubset(other.exclude)))
-        )
+            (not self.include) or (other.include and self.include.issuperset(other.include))
+        ) and ((not self.exclude) or (other.exclude and self.exclude.issubset(other.exclude)))
 
     def match(self, labels: Iterable[str]) -> bool:
         """Check whether a set of labels satisfies the filter."""
@@ -102,7 +103,8 @@ class JIRAFilter:
             or bool(self.epics)
             or bool(self.issue_types)
             or self.unmapped
-            or self.custom_projects)
+            or self.custom_projects
+        )
 
     def __str__(self) -> str:
         """Implement str()."""
@@ -119,8 +121,13 @@ class JIRAFilter:
     def __repr__(self) -> str:
         """Implement repr()."""
         return "JIRAFilter(%r, %r, %r, %r, %r, %r)" % (
-            self.account, self.labels, self.epics, self.issue_types, self.custom_projects,
-            self.unmapped)
+            self.account,
+            self.labels,
+            self.epics,
+            self.issue_types,
+            self.custom_projects,
+            self.unmapped,
+        )
 
     def __sentry_repr__(self) -> str:
         """Override {}.__repr__() in Sentry."""
@@ -134,11 +141,11 @@ class JIRAFilter:
             return True
         if not self.labels.compatible_with(other.labels):
             return False
-        if self.epics and (not other.epics or
-                           not self.epics.issuperset(other.epics)):
+        if self.epics and (not other.epics or not self.epics.issuperset(other.epics)):
             return False
-        if self.issue_types and (not other.issue_types or
-                                 not self.issue_types.issuperset(other.issue_types)):
+        if self.issue_types and (
+            not other.issue_types or not self.issue_types.issuperset(other.issue_types)
+        ):
             return False
         return True
 
@@ -153,10 +160,12 @@ class JIRAFilter:
         else:
             reverse_map = {v: k for k, v in ids[1].items()}
             projects = sorted(reverse_map[k] for k in model.projects if k in reverse_map)
-        return JIRAFilter(account=ids.acc_id,
-                          projects=projects,
-                          labels=labels,
-                          epics={s.upper() for s in (model.epics or [])},
-                          issue_types={normalize_issue_type(s) for s in (model.issue_types or [])},
-                          custom_projects=custom_projects,
-                          unmapped=bool(model.unmapped))
+        return JIRAFilter(
+            account=ids.acc_id,
+            projects=projects,
+            labels=labels,
+            epics={s.upper() for s in (model.epics or [])},
+            issue_types={normalize_issue_type(s) for s in (model.issue_types or [])},
+            custom_projects=custom_projects,
+            unmapped=bool(model.unmapped),
+        )

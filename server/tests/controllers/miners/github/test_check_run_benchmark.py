@@ -8,19 +8,28 @@ import pandas as pd
 from sqlalchemy import and_, func, select
 
 from athenian.api.int_to_str import int_to_str
-from athenian.api.internal.miners.github.check_run import _calculate_check_suite_started, \
-    _finalize_check_runs, _merge_status_contexts, _postprocess_check_runs, \
-    _split_duplicate_check_runs, check_suite_started_column, pull_request_closed_column, \
-    pull_request_merged_column, pull_request_started_column, pull_request_title_column
+from athenian.api.internal.miners.github.check_run import (
+    _calculate_check_suite_started,
+    _finalize_check_runs,
+    _merge_status_contexts,
+    _postprocess_check_runs,
+    _split_duplicate_check_runs,
+    check_suite_started_column,
+    pull_request_closed_column,
+    pull_request_merged_column,
+    pull_request_started_column,
+    pull_request_title_column,
+)
 from athenian.api.models.metadata.github import CheckRun, NodePullRequest, NodePullRequestCommit
 from athenian.api.to_object_arrays import as_bool, is_null
 
 
-def _disambiguate_pull_requests(df: pd.DataFrame,
-                                log: logging.Logger,
-                                pr_lifetimes: pd.DataFrame,
-                                pr_commit_counts: pd.DataFrame,
-                                ) -> pd.DataFrame:
+def _disambiguate_pull_requests(
+    df: pd.DataFrame,
+    log: logging.Logger,
+    pr_lifetimes: pd.DataFrame,
+    pr_commit_counts: pd.DataFrame,
+) -> pd.DataFrame:
     with_logical_repo_support = False
     # cast pull_request_node_id to int
     pr_node_ids = df[CheckRun.pull_request_node_id.name].values
@@ -55,32 +64,51 @@ def _disambiguate_pull_requests(df: pd.DataFrame,
         pr_cols.append(NodePullRequest.title)
     unique_pr_ids = np.unique(pr_node_ids)  # with 0, but that's fine
     (
-        select(pr_cols)
-        .where(and_(NodePullRequest.acc_id.in_([1]),
-                    NodePullRequest.id.in_any_values(unique_pr_ids))),
-        select([NodePullRequestCommit.pull_request_id,
-                func.count(NodePullRequestCommit.commit_id).label("count")])
-        .where(and_(NodePullRequestCommit.acc_id.in_([1]),
-                    NodePullRequestCommit.pull_request_id.in_any_values(
-                        unique_ambiguous_pr_node_ids)))
+        select(pr_cols).where(
+            and_(NodePullRequest.acc_id.in_([1]), NodePullRequest.id.in_any_values(unique_pr_ids)),
+        ),
+        select(
+            [
+                NodePullRequestCommit.pull_request_id,
+                func.count(NodePullRequestCommit.commit_id).label("count"),
+            ],
+        )
+        .where(
+            and_(
+                NodePullRequestCommit.acc_id.in_([1]),
+                NodePullRequestCommit.pull_request_id.in_any_values(unique_ambiguous_pr_node_ids),
+            ),
+        )
         .group_by(NodePullRequestCommit.pull_request_id),
     )
     del unique_ambiguous_pr_node_ids
-    pr_lifetimes.rename(columns={
-        **({NodePullRequest.created_at.name: pull_request_started_column,
-            NodePullRequest.closed_at.name: pull_request_closed_column}
-           if fetch_pr_ts else {}),
-        NodePullRequest.merged.name: pull_request_merged_column,
-        **({NodePullRequest.title.name: pull_request_title_column}
-           if with_logical_repo_support else {}),
-    }, inplace=True)
+    pr_lifetimes.rename(
+        columns={
+            **(
+                {
+                    NodePullRequest.created_at.name: pull_request_started_column,
+                    NodePullRequest.closed_at.name: pull_request_closed_column,
+                }
+                if fetch_pr_ts
+                else {}
+            ),
+            NodePullRequest.merged.name: pull_request_merged_column,
+            **(
+                {NodePullRequest.title.name: pull_request_title_column}
+                if with_logical_repo_support
+                else {}
+            ),
+        },
+        inplace=True,
+    )
     df = df.join(
         pr_lifetimes[
             [pull_request_merged_column]
             + ([pull_request_started_column, pull_request_closed_column] if fetch_pr_ts else [])
             + ([pull_request_title_column] if with_logical_repo_support else [])
         ],
-        on=CheckRun.pull_request_node_id.name)
+        on=CheckRun.pull_request_node_id.name,
+    )
     df[pull_request_closed_column].fillna(datetime.now(timezone.utc), inplace=True)
     df[pull_request_closed_column].values[df[pull_request_started_column].isnull().values] = None
     df[pull_request_merged_column] = as_bool(df[pull_request_merged_column].values)
@@ -90,11 +118,14 @@ def _disambiguate_pull_requests(df: pd.DataFrame,
     # do not let different check runs belonging to the same suite map to different PRs
     _calculate_check_suite_started(df)
     try:
-        check_runs_outside_pr_lifetime_indexes = \
-            np.flatnonzero(~df[check_suite_started_column].between(
+        check_runs_outside_pr_lifetime_indexes = np.flatnonzero(
+            ~df[check_suite_started_column]
+            .between(
                 df[pull_request_started_column],
                 df[pull_request_closed_column] + timedelta(hours=1),
-            ).values)
+            )
+            .values,
+        )
     except TypeError:
         # "Cannot compare tz-naive and tz-aware datetime-like objects"
         # all the timestamps are NAT-s
@@ -107,8 +138,9 @@ def _disambiguate_pull_requests(df: pd.DataFrame,
     df.drop_duplicates([CheckRun.check_run_node_id.name, CheckRun.pull_request_node_id.name],
                        inplace=True, ignore_index=True)
     """
-    dupe_arr = int_to_str(df[CheckRun.check_run_node_id.name].values,
-                          df[CheckRun.pull_request_node_id.name].values)
+    dupe_arr = int_to_str(
+        df[CheckRun.check_run_node_id.name].values, df[CheckRun.pull_request_node_id.name].values,
+    )
     _, not_dupes = np.unique(dupe_arr, return_index=True)
     check_run_node_ids = df[CheckRun.check_run_node_id.name].values[not_dupes]
     pr_node_ids = df[CheckRun.pull_request_node_id.name].values[not_dupes]
@@ -131,25 +163,31 @@ def _disambiguate_pull_requests(df: pd.DataFrame,
             ambiguous_pr_node_ids = pr_node_ids[ambiguous_indexes]
     if len(ambiguous_unique_check_run_indexes):
         ambiguous_check_run_node_ids = check_run_node_ids[ambiguous_indexes]
-        ambiguous_df = pd.DataFrame({
-            CheckRun.check_run_node_id.name: ambiguous_check_run_node_ids,
-            CheckRun.check_suite_node_id.name: check_suite_node_ids[ambiguous_indexes],
-            CheckRun.pull_request_node_id.name: ambiguous_pr_node_ids,
-            CheckRun.author_user_id.name: author_node_ids[ambiguous_indexes],
-            pull_request_started_column: pull_request_starteds[ambiguous_indexes],
-        }).join(pr_lifetimes[[NodePullRequest.author_id.name]],
-                on=CheckRun.pull_request_node_id.name)
+        ambiguous_df = pd.DataFrame(
+            {
+                CheckRun.check_run_node_id.name: ambiguous_check_run_node_ids,
+                CheckRun.check_suite_node_id.name: check_suite_node_ids[ambiguous_indexes],
+                CheckRun.pull_request_node_id.name: ambiguous_pr_node_ids,
+                CheckRun.author_user_id.name: author_node_ids[ambiguous_indexes],
+                pull_request_started_column: pull_request_starteds[ambiguous_indexes],
+            },
+        ).join(
+            pr_lifetimes[[NodePullRequest.author_id.name]], on=CheckRun.pull_request_node_id.name,
+        )
         # we need to sort to stabilize idxmin() in step 2
         ambiguous_df.sort_values(pull_request_started_column, inplace=True)
         # heuristic: the PR should be created by the commit author
-        passed = np.flatnonzero((
-            ambiguous_df[NodePullRequest.author_id.name] ==
-            ambiguous_df[CheckRun.author_user_id.name]
-        ).values)
+        passed = np.flatnonzero(
+            (
+                ambiguous_df[NodePullRequest.author_id.name]
+                == ambiguous_df[CheckRun.author_user_id.name]
+            ).values,
+        )
         log.info("disambiguation step 1 - authors: %d / %d", len(passed), len(ambiguous_df))
         ambiguous_df.disable_consolidate()
         passed_df = ambiguous_df.take(passed).join(
-            pr_commit_counts, on=CheckRun.pull_request_node_id.name)
+            pr_commit_counts, on=CheckRun.pull_request_node_id.name,
+        )
         del ambiguous_df
         # heuristic: the PR with the least number of commits wins
         order = np.argsort(passed_df["count"].values, kind="stable")
@@ -210,13 +248,16 @@ def _benchmark_postprocess(df, log, pr_lifetimes, pr_commit_counts):
 def test_mine_check_runs_wrap(benchmark, no_deprecation_warnings):
     df = pd.read_csv(
         Path(__file__).parent.parent.parent / "features" / "github" / "check_runs.csv.gz",
-        index_col=0)
-    for col in (CheckRun.started_at,
-                CheckRun.completed_at,
-                CheckRun.pull_request_created_at,
-                CheckRun.pull_request_closed_at,
-                CheckRun.committed_date,
-                check_suite_started_column):
+        index_col=0,
+    )
+    for col in (
+        CheckRun.started_at,
+        CheckRun.completed_at,
+        CheckRun.pull_request_created_at,
+        CheckRun.pull_request_closed_at,
+        CheckRun.committed_date,
+        check_suite_started_column,
+    ):
         col_name = col.name if not isinstance(col, str) else col
         df[col_name] = df[col_name].astype(np.datetime64)
     benchmark(_finalize_check_runs, df, logging.getLogger("pytest.alternative_facts"))

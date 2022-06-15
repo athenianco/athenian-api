@@ -18,9 +18,9 @@ class _FilterContributorsRequest(Model, sealed=False):
     }
 
     def __init__(
-            self,
-            in_: Optional[List[str]] = None,
-            as_: List[str] = None,
+        self,
+        in_: Optional[List[str]] = None,
+        as_: List[str] = None,
     ):
         """FilterContributorsRequest - a model defined in OpenAPI
 
@@ -77,14 +77,16 @@ class _FilterContributorsRequest(Model, sealed=False):
         }
         if not set(as_).issubset(allowed_values):
             raise ValueError(
-                "Invalid values for `as_` [%s], must be a subset of [%s]" % (
-                    ", ".join(set(as_) - allowed_values),
-                    ", ".join(allowed_values),
-                ),
+                "Invalid values for `as_` [%s], must be a subset of [%s]"
+                % (", ".join(set(as_) - allowed_values), ", ".join(allowed_values)),
             )
 
         self._as_ = as_
 
 
-FilterContributorsRequest = AllOf(_FilterContributorsRequest, CommonFilterProperties,
-                                  name="FilterContributorsRequest", module=__name__)
+FilterContributorsRequest = AllOf(
+    _FilterContributorsRequest,
+    CommonFilterProperties,
+    name="FilterContributorsRequest",
+    module=__name__,
+)

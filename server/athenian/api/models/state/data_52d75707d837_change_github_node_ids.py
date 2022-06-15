@@ -15,21 +15,26 @@ def main():
     print("Loading the user node IDs from sdb", file=sys.stderr)
     jira_rows = state_engine.execute(
         "SELECT github_user_id, account_id, jira_user_id, confidence, created_at, updated_at "
-        "FROM jira_identity_mapping_old").fetchall()
+        "FROM jira_identity_mapping_old",
+    ).fetchall()
     node_ids = defaultdict(set)
     for row in jira_rows:
         try:
             node_ids[meta_ids[row[1]]].add(row[0])
         except KeyError:
             continue
-    print(f"Mapping {sum(len(n) for n in node_ids.values())} IDs to new format "
-          f"in {len(node_ids)} batches", file=sys.stderr)
+    print(
+        f"Mapping {sum(len(n) for n in node_ids.values())} IDs to new format "
+        f"in {len(node_ids)} batches",
+        file=sys.stderr,
+    )
     metadata_engine = create_engine(metadata_uri)
     mapping = defaultdict(dict)
     for acc, acc_node_ids in tqdm(node_ids.items()):
         map_rows = metadata_engine.execute(
-            f'SELECT ext_id, node_id FROM github.graph_ids WHERE acc_id = {acc} AND ext_id = '  # noqa
-            f'ANY(VALUES {", ".join("(%r)" % n for n in acc_node_ids)})')
+            f"SELECT ext_id, node_id FROM github.graph_ids WHERE acc_id = {acc} AND ext_id = "  # noqa
+            f'ANY(VALUES {", ".join("(%r)" % n for n in acc_node_ids)})',
+        )
         for row in map_rows:
             mapping[acc][row[0]] = row[1]
     print(f"Mapped {sum(len(m) for m in mapping.values())} node IDs", file=sys.stderr)
@@ -44,7 +49,9 @@ def main():
     state_engine.execute(
         "INSERT INTO jira_identity_mapping "
         "(github_user_id, account_id, jira_user_id, confidence, created_at, updated_at) "
-        "VALUES " + sql)
+        "VALUES "
+        + sql,
+    )
 
 
 if __name__ == "__main__":

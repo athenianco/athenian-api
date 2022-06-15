@@ -6,7 +6,6 @@ import numpy as np
 
 from athenian.api.typing_utils import dataclass
 
-
 T = TypeVar("T", float, int, timedelta)
 
 
@@ -37,11 +36,12 @@ class HistogramParameters(Generic[T]):
     ticks: Optional[Tuple[T]]
 
 
-def calculate_histogram(samples: np.ndarray,
-                        scale: Optional[Scale],
-                        bins: Optional[int],
-                        ticks: Optional[list],
-                        ) -> Histogram[T]:
+def calculate_histogram(
+    samples: np.ndarray,
+    scale: Optional[Scale],
+    bins: Optional[int],
+    ticks: Optional[list],
+) -> Histogram[T]:
     """
     Calculate the histogram over the series of values.
 
@@ -56,8 +56,13 @@ def calculate_histogram(samples: np.ndarray,
         scale = Scale.LINEAR
     if len(samples) == 0:
         if ticks is not None:
-            return Histogram(scale=scale, bins=bins, ticks=ticks,
-                             frequencies=[0] * (len(ticks) - 1), interquartile=(0, 0))
+            return Histogram(
+                scale=scale,
+                bins=bins,
+                ticks=ticks,
+                frequencies=[0] * (len(ticks) - 1),
+                interquartile=(0, 0),
+            )
         return Histogram(scale=scale, bins=bins, ticks=[], frequencies=[], interquartile=(0, 0))
     assert samples.dtype != np.dtype(object)
     try:
@@ -83,8 +88,10 @@ def calculate_histogram(samples: np.ndarray,
         iq = iq.astype("timedelta64[s]")
     if scale == Scale.LOG:
         if (samples <= 0).any():
-            raise ValueError("Logarithmic scale is incompatible with non-positive samples: %s" %
-                             samples[samples <= 0])
+            raise ValueError(
+                "Logarithmic scale is incompatible with non-positive samples: %s"
+                % samples[samples <= 0],
+            )
         samples = np.log(samples)
     if ticks is not None:
         min_bin, max_bin = samples.min(), samples.max()
@@ -109,5 +116,10 @@ def calculate_histogram(samples: np.ndarray,
         edges = edges.astype("timedelta64[s]")
         if edges[0] == timedelta(seconds=59):
             edges[0] = timedelta(seconds=60)
-    return Histogram(scale=scale, bins=len(edges) - 1, ticks=edges.tolist(),
-                     frequencies=hist.tolist(), interquartile=tuple(iq))
+    return Histogram(
+        scale=scale,
+        bins=len(edges) - 1,
+        ticks=edges.tolist(),
+        frequencies=hist.tolist(),
+        interquartile=tuple(iq),
+    )

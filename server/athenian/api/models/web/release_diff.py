@@ -10,10 +10,12 @@ class ReleaseDiff(Model):
     attribute_types = {"old": str, "new": str, "releases": List[FilteredRelease]}
     attribute_map = {"old": "old", "new": "new", "releases": "releases"}
 
-    def __init__(self,
-                 old: Optional[str] = None,
-                 new: Optional[str] = None,
-                 releases: Optional[List[FilteredRelease]] = None):
+    def __init__(
+        self,
+        old: Optional[str] = None,
+        new: Optional[str] = None,
+        releases: Optional[List[FilteredRelease]] = None,
+    ):
         """ReleaseDiff - a model defined in OpenAPI
 
         :param old: The old of this ReleaseDiff.

@@ -8,7 +8,6 @@ Create Date: 2020-01-05 07:46:09.270335+00:00
 from alembic import op
 import sqlalchemy as sa
 
-
 # revision identifiers, used by Alembic.
 revision = "e7afe365ab0e"
 down_revision = "34eafe9e7cd9"
@@ -26,8 +25,12 @@ def upgrade():
     op.create_table(
         "repository_sets",
         sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("owner", sa.Integer(), sa.ForeignKey("accounts.id", name="fk_reposet_owner"),
-                  nullable=False),
+        sa.Column(
+            "owner",
+            sa.Integer(),
+            sa.ForeignKey("accounts.id", name="fk_reposet_owner"),
+            nullable=False,
+        ),
         sa.Column("updated_at", sa.TIMESTAMP(timezone=True), nullable=False),
         sa.Column("created_at", sa.TIMESTAMP(timezone=True), nullable=False),
         sa.Column("updates_count", sa.Integer(), nullable=False),

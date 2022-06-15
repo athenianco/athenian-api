@@ -7,7 +7,6 @@ Create Date: 2022-03-22 10:11:20.845989+00:00
 """
 from alembic import op
 
-
 # revision identifiers, used by Alembic.
 revision = "7ce4c9a0cd96"
 down_revision = "125357829cbe"
@@ -17,7 +16,8 @@ depends_on = None
 
 def upgrade():
     if op.get_bind().dialect.name == "postgresql":
-        op.execute("""
+        op.execute(
+            """
         CREATE INDEX release_notifications_sha
         ON athenian.release_notifications (account_id, resolved_commit_hash, published_at)
         WHERE resolved_commit_hash is not null;
@@ -39,12 +39,14 @@ def upgrade():
                foreign key (account_id, deployment_name)
                references athenian.deployment_notifications(account_id, name)
                on delete cascade;
-        """)
+        """,
+        )
 
 
 def downgrade():
     if op.get_bind().dialect.name == "postgresql":
-        op.execute("""
+        op.execute(
+            """
         DROP INDEX athenian.release_notifications_sha;
         DROP INDEX athenian.release_notifications_commit;
         DROP INDEX athenian.release_notifications_load_releases;
@@ -60,4 +62,5 @@ def downgrade():
             add constraint fk_deployed_labels_deployment
                foreign key (account_id, deployment_name)
                references athenian.deployment_notifications(account_id, name);
-        """)
+        """,
+        )

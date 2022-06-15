@@ -17,28 +17,26 @@ from athenian.api.tracing import sentry_span
 
 
 @sentry_span
-async def filter_epics(jira_ids: JIRAConfig,
-                       time_from: Optional[datetime],
-                       time_to: Optional[datetime],
-                       exclude_inactive: bool,
-                       labels: LabelFilter,
-                       priorities: Collection[str],
-                       reporters: Collection[str],
-                       assignees: Collection[Optional[str]],
-                       commenters: Collection[str],
-                       default_branches: Dict[str, str],
-                       release_settings: ReleaseSettings,
-                       logical_settings: LogicalRepositorySettings,
-                       account: int,
-                       meta_ids: Tuple[int, ...],
-                       mdb: morcilla.Database,
-                       pdb: morcilla.Database,
-                       cache: Optional[aiomcache.Client],
-                       extra_columns: Collection[InstrumentedAttribute] = (),
-                       ) -> Tuple[pd.DataFrame,
-                                  pd.DataFrame,
-                                  Iterable[Tuple[str, int]],
-                                  Dict[str, Sequence[int]]]:
+async def filter_epics(
+    jira_ids: JIRAConfig,
+    time_from: Optional[datetime],
+    time_to: Optional[datetime],
+    exclude_inactive: bool,
+    labels: LabelFilter,
+    priorities: Collection[str],
+    reporters: Collection[str],
+    assignees: Collection[Optional[str]],
+    commenters: Collection[str],
+    default_branches: Dict[str, str],
+    release_settings: ReleaseSettings,
+    logical_settings: LogicalRepositorySettings,
+    account: int,
+    meta_ids: Tuple[int, ...],
+    mdb: morcilla.Database,
+    pdb: morcilla.Database,
+    cache: Optional[aiomcache.Client],
+    extra_columns: Collection[InstrumentedAttribute] = (),
+) -> Tuple[pd.DataFrame, pd.DataFrame, Iterable[Tuple[str, int]], Dict[str, Sequence[int]]]:
     """
     Fetch JIRA epics and their children issues according to the given filters.
 
@@ -52,19 +50,45 @@ async def filter_epics(jira_ids: JIRAConfig,
     if candidate_types != {"epic"} and Issue.project_id not in extra_columns:
         extra_columns = (*extra_columns, Issue.project_id)
     epics = await fetch_jira_issues(
-        jira_ids, time_from, time_to, exclude_inactive, labels,
-        priorities, candidate_types, [], reporters, assignees, commenters, True,
-        default_branches, release_settings, logical_settings, account, meta_ids, mdb, pdb, cache,
-        extra_columns=extra_columns)
+        jira_ids,
+        time_from,
+        time_to,
+        exclude_inactive,
+        labels,
+        priorities,
+        candidate_types,
+        [],
+        reporters,
+        assignees,
+        commenters,
+        True,
+        default_branches,
+        release_settings,
+        logical_settings,
+        account,
+        meta_ids,
+        mdb,
+        pdb,
+        cache,
+        extra_columns=extra_columns,
+    )
     if epics.empty:
+
         async def noop():
             return []
 
-        return (epics,
-                pd.DataFrame(columns=[
-                    Issue.priority_id.name, Issue.status_id.name, Issue.project_id.name]),
-                [],
-                {})
+        return (
+            epics,
+            pd.DataFrame(
+                columns=[
+                    Issue.priority_id.name,
+                    Issue.status_id.name,
+                    Issue.project_id.name,
+                ],
+            ),
+            [],
+            {},
+        )
     if candidate_types != {"epic"}:
         projects = epics[Issue.project_id.name].values.astype("S")
         types = epics[Issue.type.name].values.astype("S")
@@ -78,15 +102,34 @@ async def filter_epics(jira_ids: JIRAConfig,
     if Issue.parent_id not in extra_columns:
         extra_columns.append(Issue.parent_id)
     children = await fetch_jira_issues(
-        jira_ids, None, None, False, LabelFilter.empty(),
-        [], [], epics[Issue.key.name].values, [], [], [], False,
-        default_branches, release_settings, logical_settings, account, meta_ids, mdb, pdb, cache,
-        extra_columns=extra_columns)
+        jira_ids,
+        None,
+        None,
+        False,
+        LabelFilter.empty(),
+        [],
+        [],
+        epics[Issue.key.name].values,
+        [],
+        [],
+        [],
+        False,
+        default_branches,
+        release_settings,
+        logical_settings,
+        account,
+        meta_ids,
+        mdb,
+        pdb,
+        cache,
+        extra_columns=extra_columns,
+    )
     children_parent_ids = children[Issue.parent_id.name].values
     nnz_parent_mask = is_not_null(children_parent_ids)
     subtask_mask = (children[Issue.epic_id.name].values != children_parent_ids) & nnz_parent_mask
     unique_parent_ids, subtask_counts = np.unique(
-        children_parent_ids[subtask_mask], return_counts=True)
+        children_parent_ids[subtask_mask], return_counts=True,
+    )
     subtask_counts = zip(unique_parent_ids, subtask_counts)
 
     children.disable_consolidate()

@@ -2,23 +2,25 @@
 # cython: warn.maybe_uninitialized=True
 # distutils: language = c++
 
-from cpython cimport PyBytes_FromString, PyObject, Py_INCREF
+from posix.dlfcn cimport RTLD_LAZY, dlclose, dlopen, dlsym
+
 cimport cython
-from posix.dlfcn cimport dlclose, dlopen, dlsym, RTLD_LAZY
+from cpython cimport Py_INCREF, PyBytes_FromString, PyObject
 from cython.operator cimport dereference, postincrement
-from libc.stdint cimport int8_t, int32_t, uint32_t, int64_t, uint64_t
-from libc.string cimport memcpy, memset, strncmp, strlen
+from libc.stdint cimport int8_t, int32_t, int64_t, uint32_t, uint64_t
+from libc.string cimport memcpy, memset, strlen, strncmp
 from libcpp cimport bool
-from libcpp.vector cimport vector
 from libcpp.string cimport string
 from libcpp.unordered_map cimport unordered_map
 from libcpp.unordered_set cimport unordered_set
 from libcpp.utility cimport pair
+from libcpp.vector cimport vector
 from numpy cimport PyArray_BYTES
+
+from typing import Any, List, Optional, Sequence, Tuple
 
 import asyncpg
 import numpy as np
-from typing import Any, List, Optional, Sequence, Tuple
 
 
 cdef extern from "../../../asyncpg_recordobj.h":

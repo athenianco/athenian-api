@@ -6,8 +6,12 @@ from graphql import GraphQLResolveInfo
 
 from athenian.api.align.models import TeamTree
 from athenian.api.db import DatabaseLike, Row
-from athenian.api.internal.team import fetch_teams_recursively, MultipleRootTeamsError, \
-    RootTeamNotFoundError, TeamNotFoundError
+from athenian.api.internal.team import (
+    MultipleRootTeamsError,
+    RootTeamNotFoundError,
+    TeamNotFoundError,
+    fetch_teams_recursively,
+)
 from athenian.api.models.state.models import Team
 from athenian.api.tracing import sentry_span
 
@@ -28,7 +32,9 @@ async def resolve_teams(obj: Any, info: GraphQLResolveInfo, accountId: int, team
 
 
 async def fetch_team_tree(
-    account: int, root_team_id: Optional[int], sdb: DatabaseLike,
+    account: int,
+    root_team_id: Optional[int],
+    sdb: DatabaseLike,
 ) -> TeamTree:
     """Build the TeamTree for the Team root_team_id."""
     team_select = [Team.id, Team.parent_id, Team.name, Team.members]
@@ -49,7 +55,8 @@ def build_team_tree_from_rows(rows: Sequence[Row], root_team_id: Optional[int]) 
 
 
 def _build_team_tree_nodes_from_rows(
-    team_rows: Iterable[Row], root_team_id: Optional[int],
+    team_rows: Iterable[Row],
+    root_team_id: Optional[int],
 ) -> Tuple[Dict[int, Dict[str, Any]], int]:
     """
     Convert the flat Team rows to a tree with nested teams.

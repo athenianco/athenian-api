@@ -8,7 +8,6 @@ Create Date: 2020-06-17 06:30:47.273245+00:00
 from alembic import op
 import sqlalchemy as sa
 
-
 # revision identifiers, used by Alembic.
 revision = "0a724a1ab9ab"
 down_revision = "ac103a7ff715"
@@ -21,9 +20,12 @@ def upgrade():
     op.create_table(
         "account_jira_installations",
         sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=False),
-        sa.Column("account_id", sa.Integer(),
-                  sa.ForeignKey("accounts.id", name="fk_installation_id_owner2"),
-                  nullable=False),
+        sa.Column(
+            "account_id",
+            sa.Integer(),
+            sa.ForeignKey("accounts.id", name="fk_installation_id_owner2"),
+            nullable=False,
+        ),
     )
 
 

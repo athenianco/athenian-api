@@ -11,9 +11,7 @@ class WorkTypePutRequest(Model):
 
     attribute_map = {"account": "account", "work_type": "work_type"}
 
-    def __init__(self,
-                 account: Optional[int] = None,
-                 work_type: Optional[WorkType] = None):
+    def __init__(self, account: Optional[int] = None, work_type: Optional[WorkType] = None):
         """WorkTypePutRequest - a model defined in OpenAPI
 
         :param account: The account of this WorkTypePutRequest.

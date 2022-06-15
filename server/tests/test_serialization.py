@@ -6,8 +6,12 @@ import pandas as pd
 from pandas.errors import OutOfBoundsDatetime
 import pytest
 
-from athenian.api.serialization import deserialize_date, deserialize_datetime, FriendlyJson, \
-    serialize_timedelta
+from athenian.api.serialization import (
+    FriendlyJson,
+    deserialize_date,
+    deserialize_datetime,
+    serialize_timedelta,
+)
 
 
 @freeze_time("2022-04-01")
@@ -39,20 +43,13 @@ def test_deserialize_datatime_out_of_bounds() -> None:
 @freeze_time("2022-01-01")
 def test_deserialize_datatime_custom_bounds() -> None:
     dt = datetime
-    assert (
-        deserialize_datetime("1901-07-30T05:00:00", min_=dt(1850, 1, 1))
-        == dt(1901, 7, 30, 5)
-    )
+    assert deserialize_datetime("1901-07-30T05:00:00", min_=dt(1850, 1, 1)) == dt(1901, 7, 30, 5)
     with pytest.raises(OutOfBoundsDatetime):
         deserialize_datetime("1901-07-30T05:00:00", min_=dt(1950, 1, 1))
 
-    assert (
-        deserialize_datetime("2070-01-30T05:00:00", max_future_delta=None)
-        == dt(2070, 1, 30, 5)
-    )
-    assert (
-        deserialize_datetime("2022-01-30T05:00:00", max_future_delta=timedelta(days=100))
-        == dt(2022, 1, 30, 5)
+    assert deserialize_datetime("2070-01-30T05:00:00", max_future_delta=None) == dt(2070, 1, 30, 5)
+    assert deserialize_datetime("2022-01-30T05:00:00", max_future_delta=timedelta(days=100)) == dt(
+        2022, 1, 30, 5,
     )
 
     with pytest.raises(OutOfBoundsDatetime):
