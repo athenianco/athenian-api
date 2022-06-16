@@ -501,7 +501,7 @@ async def disable_empty_projects(
                 .explode(with_primary_keys=True),
             )
     await sdb.execute_many(insert(JIRAProjectSetting), disabled)
-    if slack is not None:
+    if slack is not None and len(disabled) > 0:
         await slack.post_install(
             "disabled_jira_projects.jinja2",
             account=account,
