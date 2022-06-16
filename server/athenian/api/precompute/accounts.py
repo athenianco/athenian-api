@@ -22,7 +22,7 @@ from athenian.api.db import Database
 from athenian.api.defer import defer, wait_deferred
 from athenian.api.internal.account import copy_teams_as_needed
 from athenian.api.internal.features.entries import MetricEntriesCalculator
-from athenian.api.internal.jira import match_jira_identities
+from athenian.api.internal.jira import disable_empty_projects, match_jira_identities
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.bots import bots as fetch_bots
 from athenian.api.internal.miners.github.branches import BranchMiner
@@ -208,11 +208,17 @@ async def precompute_reposet(
             sentry_sdk.capture_exception(e)
             num_teams = num_bots = 0
             # no return
-    if not args.skip_jira_identity_map:
+    if not args.skip_jira:
         try:
             await match_jira_identities(reposet.owner_id, meta_ids, sdb, mdb, slack, cache)
         except Exception as e:
             log.warning("match_jira_identities %d: %s: %s", reposet.owner_id, type(e).__name__, e)
+            sentry_sdk.capture_exception(e)
+            # no return
+        try:
+            await disable_empty_projects(reposet.owner_id, meta_ids, sdb, mdb, slack, cache)
+        except Exception as e:
+            log.warning("disable_empty_projects %d: %s: %s", reposet.owner_id, type(e).__name__, e)
             sentry_sdk.capture_exception(e)
             # no return
 

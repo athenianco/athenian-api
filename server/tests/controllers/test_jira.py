@@ -6,13 +6,18 @@ from sqlalchemy.sql.functions import count
 
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.jira import (
+    disable_empty_projects,
     load_jira_identity_mapping_sentinel,
     load_mapped_jira_users,
     match_jira_identities,
     normalize_issue_type,
 )
 from athenian.api.models.metadata.jira import Progress
-from athenian.api.models.state.models import AccountJiraInstallation, MappedJIRAIdentity
+from athenian.api.models.state.models import (
+    AccountJiraInstallation,
+    JIRAProjectSetting,
+    MappedJIRAIdentity,
+)
 
 
 @with_defer
@@ -167,3 +172,20 @@ async def test_match_jira_identities_incomplete_progress(sdb, mdb_rw, slack):
 )
 def test_normalize_issue_type(orig, norm):
     assert normalize_issue_type(orig) == norm
+
+
+@with_defer
+async def test_disable_empty_projects(sdb, mdb, slack, cache):
+    disabled = await disable_empty_projects(1, (6366825,), sdb, mdb, slack, cache)
+    assert disabled == 6
+    settings = await sdb.fetch_all(
+        select([JIRAProjectSetting.key, JIRAProjectSetting.enabled]).where(
+            JIRAProjectSetting.account_id == 1,
+        ),
+    )
+    assert len(settings) == 6
+    keys = set()
+    for row in settings:
+        keys.add(row[JIRAProjectSetting.key.name])
+        assert not row[JIRAProjectSetting.enabled.name]
+    assert keys == {"CON", "CS", "GRW", "ENG", "OPS", "PRO"}

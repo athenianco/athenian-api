@@ -105,7 +105,7 @@ class TestMain:
         assert precompute_mock.call_args[0][1] == (1011, 2011)
 
     def _namespace(self, **kwargs: Any) -> Namespace:
-        kwargs.setdefault("skip_jira_identity_map", True)
+        kwargs.setdefault("skip_jira", True)
         kwargs.setdefault("prometheus_pushgateway", None)
         return Namespace(**kwargs)
 
