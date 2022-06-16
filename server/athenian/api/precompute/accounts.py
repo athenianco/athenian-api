@@ -26,7 +26,10 @@ from athenian.api.internal.jira import match_jira_identities
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.bots import bots as fetch_bots
 from athenian.api.internal.miners.github.branches import BranchMiner
-from athenian.api.internal.miners.github.deployment import mine_deployments
+from athenian.api.internal.miners.github.deployment import (
+    hide_outlier_first_deployments,
+    mine_deployments,
+)
 from athenian.api.internal.miners.github.precomputed_prs import delete_force_push_dropped_prs
 from athenian.api.internal.miners.github.release_load import ReleaseLoader
 from athenian.api.internal.miners.github.release_mine import (
@@ -308,8 +311,9 @@ async def precompute_reposet(
         )
         ignored_releases_count = len(ignored_first_releases)
         del ignored_first_releases, ignored_released_prs
+
         log.info("Mining deployments")
-        await mine_deployments(
+        deployment_facts, _ = await mine_deployments(
             repos,
             {},
             time_from,
@@ -330,8 +334,13 @@ async def precompute_reposet(
             mdb,
             pdb,
             rdb,
-            None,
-        )  # yes, disable the cache
+            None,  # yes, disable the cache
+        )
+        await wait_deferred()
+        await hide_outlier_first_deployments(
+            deployment_facts, reposet.owner_id, meta_ids, mdb, pdb,
+        )
+
         if not reposet.precomputed and slack is not None:
 
             async def report_precompute_success():

@@ -8,18 +8,13 @@ from freezegun import freeze_time
 import pytest
 from sqlalchemy import insert, select, update
 
-from athenian.api.db import Database
+from athenian.api.db import Database, ensure_db_datetime_tz
 from athenian.api.models.state.models import AccountGitHubAccount, Team
 from athenian.api.models.web import TeamUpdateRequest
 from athenian.api.models.web.team import Team as TeamListItem
 from athenian.api.models.web.team_create_request import TeamCreateRequest
 from tests.conftest import DEFAULT_HEADERS
-from tests.testutils.db import (
-    assert_existing_row,
-    db_datetime_equals,
-    model_insert_stmt,
-    models_insert,
-)
+from tests.testutils.db import assert_existing_row, model_insert_stmt, models_insert
 from tests.testutils.factory.state import TeamFactory
 
 
@@ -375,9 +370,9 @@ class TestUpdateTeam:
         assert team[Team.name.name] == "Dream"
         assert team[Team.members.name] == [29]
         assert team[Team.parent_id.name] == 10
-        assert db_datetime_equals(sdb, team[Team.created_at.name], created_at)
-        assert db_datetime_equals(
-            sdb, team[Team.updated_at.name], datetime(2022, 4, 1, tzinfo=timezone.utc),
+        assert ensure_db_datetime_tz(team[Team.created_at.name], sdb) == created_at
+        assert ensure_db_datetime_tz(team[Team.updated_at.name], sdb) == datetime(
+            2022, 4, 1, tzinfo=timezone.utc,
         )
 
     async def test_default_user(self, client, sdb):

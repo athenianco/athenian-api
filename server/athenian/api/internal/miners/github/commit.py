@@ -15,7 +15,13 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached, middle_term_exptime, short_term_exptime
-from athenian.api.db import Database, DatabaseLike, add_pdb_hits, add_pdb_misses
+from athenian.api.db import (
+    Database,
+    DatabaseLike,
+    add_pdb_hits,
+    add_pdb_misses,
+    ensure_db_datetime_tz,
+)
 from athenian.api.defer import defer
 from athenian.api.internal.logical_repos import drop_logical_repo
 from athenian.api.internal.miners.github.branches import BranchMiner, load_branch_commit_dates
@@ -587,8 +593,7 @@ async def _fetch_commit_history_dag(
                     log.error("failed to fetch committed_date of %s", orphans.tolist())
                     new_edges = []
                 else:
-                    if mdb.url.dialect == "sqlite":
-                        latest_commit = latest_commit.replace(tzinfo=timezone.utc)
+                    latest_commit = ensure_db_datetime_tz(latest_commit, mdb)
                     if datetime.now(timezone.utc) - latest_commit < timedelta(days=1, hours=6):
                         log.warning(
                             "skipping because some orphans are suspiciously young: %s",

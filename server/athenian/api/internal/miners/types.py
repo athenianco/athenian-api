@@ -517,6 +517,25 @@ class DeploymentFacts:
 
         name: str
 
+    def with_nothing_deployed(self):
+        """Return a copy of this DeploymentFacts with no deployed entities.
+
+        The returned DeploymentFacts will have no commits, prs, releases.
+
+        """
+        return DeploymentFacts.from_fields(
+            pr_authors=[],
+            commit_authors=[],
+            release_authors=[],
+            repositories=self.repositories,
+            prs=[],
+            prs_offsets=[],
+            lines_prs=[],
+            lines_overall=self.lines_overall,
+            commits_prs=self.commits_prs,
+            commits_overall=self.commits_overall,
+        )
+
 
 @numpy_struct
 class PullRequestCheckRun:
