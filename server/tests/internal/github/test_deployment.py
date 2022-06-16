@@ -31,6 +31,7 @@ from athenian.api.models.precomputed.models import (
     GitHubPullRequestDeployment,
     GitHubReleaseDeployment,
 )
+from tests.testutils.db import count
 
 
 @with_defer
@@ -4448,8 +4449,8 @@ class TestHideOutlierFirstDeployments:
         sdb,
     ) -> None:
         meta_ids = await get_metadata_account_ids(1, sdb, None)
-        assert (await self._count(pdb, GitHubDeploymentFacts)) == 0
-        assert (await self._count(pdb, GitHubPullRequestDeployment)) == 0
+        assert (await count(pdb, GitHubDeploymentFacts)) == 0
+        assert (await count(pdb, GitHubPullRequestDeployment)) == 0
 
         deps, people = await mine_deployments(
             ["src-d/go-git"],
@@ -4480,28 +4481,28 @@ class TestHideOutlierFirstDeployments:
         expected_outlier_deployments = ["staging_2016_07_06", "production_2016_07_06"]
 
         pr_where = GitHubPullRequestDeployment.deployment_name.in_(expected_outlier_deployments)
-        pre_hiding_pr_count = await self._count(pdb, GitHubPullRequestDeployment)
-        to_be_removed_pr_count = await self._count(pdb, GitHubPullRequestDeployment, pr_where)
+        pre_hiding_pr_count = await count(pdb, GitHubPullRequestDeployment)
+        to_be_removed_pr_count = await count(pdb, GitHubPullRequestDeployment, pr_where)
 
         commit_where = GitHubCommitDeployment.deployment_name.in_(expected_outlier_deployments)
-        pre_hiding_commit_count = await self._count(pdb, GitHubCommitDeployment)
-        to_be_removed_commit_count = await self._count(pdb, GitHubCommitDeployment, commit_where)
+        pre_hiding_commit_count = await count(pdb, GitHubCommitDeployment)
+        to_be_removed_commit_count = await count(pdb, GitHubCommitDeployment, commit_where)
 
         rel_where = GitHubReleaseDeployment.deployment_name.in_(expected_outlier_deployments)
-        pre_hiding_release_count = await self._count(pdb, GitHubReleaseDeployment)
-        to_be_removed_release_count = await self._count(pdb, GitHubReleaseDeployment, rel_where)
+        pre_hiding_release_count = await count(pdb, GitHubReleaseDeployment)
+        to_be_removed_release_count = await count(pdb, GitHubReleaseDeployment, rel_where)
 
         await hide_outlier_first_deployments(deps, 1, meta_ids, mdb, pdb, 1.1)
 
-        post_hiding_pr_count = await self._count(pdb, GitHubPullRequestDeployment)
-        post_hiding_commit_count = await self._count(pdb, GitHubCommitDeployment)
-        post_hiding_release_count = await self._count(pdb, GitHubReleaseDeployment)
+        post_hiding_pr_count = await count(pdb, GitHubPullRequestDeployment)
+        post_hiding_commit_count = await count(pdb, GitHubCommitDeployment)
+        post_hiding_release_count = await count(pdb, GitHubReleaseDeployment)
 
         assert post_hiding_pr_count == pre_hiding_pr_count - to_be_removed_pr_count
         assert post_hiding_commit_count == pre_hiding_commit_count - to_be_removed_commit_count
         assert post_hiding_release_count == pre_hiding_release_count - to_be_removed_release_count
 
-        assert await self._count(pdb, GitHubPullRequestDeployment, pr_where) == 0
+        assert await count(pdb, GitHubPullRequestDeployment, pr_where) == 0
 
         depl_where = GitHubDeploymentFacts.deployment_name.in_(expected_outlier_deployments)
         depl_rows = await pdb.fetch_all(sa.select(GitHubDeploymentFacts).where(depl_where))
@@ -4557,15 +4558,8 @@ class TestHideOutlierFirstDeployments:
         # wait deferred tasks writing to pdb to complete
         await wait_deferred()
 
-        assert (await self._count(pdb, GitHubPullRequestDeployment)) == 0
-        assert (await self._count(pdb, GitHubCommitDeployment)) == 0
-        assert (await self._count(pdb, GitHubReleaseDeployment)) == 0
+        assert (await count(pdb, GitHubPullRequestDeployment)) == 0
+        assert (await count(pdb, GitHubCommitDeployment)) == 0
+        assert (await count(pdb, GitHubReleaseDeployment)) == 0
 
         await hide_outlier_first_deployments(deps, 1, meta_ids, mdb, pdb, 1.1)
-
-    @classmethod
-    async def _count(cls, pdb, table, where=None):
-        stmt = sa.select(sa.func.count()).select_from(table)
-        if where is not None:
-            stmt = stmt.where(where)
-        return await pdb.fetch_val(stmt)
