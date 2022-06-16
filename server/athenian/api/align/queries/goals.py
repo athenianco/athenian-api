@@ -54,10 +54,6 @@ async def resolve_goals(
     goal_requests = []
     for _, group_team_goal_rows_iter in groupby(team_goal_rows, itemgetter(Goal.id.name)):
         group_team_goal_rows = list(group_team_goal_rows_iter)
-        group_teams = {
-            row[TeamGoal.team_id.name]: team_member_map[row[TeamGoal.team_id.name]]
-            for row in group_team_goal_rows
-        }
         group_goal_row = group_team_goal_rows[0]  # could be any row
 
         metric = TEMPLATES_COLLECTION[group_goal_row[Goal.template_id.name]]["metric"]
@@ -72,14 +68,15 @@ async def resolve_goals(
                 "metric": metric,
                 "time_intervals": (initial_interval, (valid_from, expires_at)),
                 "team_goal_rows": group_team_goal_rows,
-                "teams": group_teams,
             },
         )
 
     all_metric_values = await calculate_team_metrics(
         metrics=list({r["metric"] for r in goal_requests}),
         time_intervals=list(set(chain.from_iterable(r["time_intervals"] for r in goal_requests))),
-        teams=dict(chain.from_iterable(r["teams"].items() for r in goal_requests)),
+        # we always request all teams starting from root, since current and initial metrics are
+        # always included in the response
+        teams=team_member_map,
         account=accountId,
         meta_ids=meta_ids,
         sdb=info.context.sdb,
@@ -140,13 +137,15 @@ def _team_tree_to_team_goal_tree(
         team_goal_row = team_goal_rows_map[team_tree.id]
     except KeyError:
         # the team can be present in the tree but have no team goal
-        goal_value = None
+        target = None
     else:
-        goal_value = GoalValue(
-            current=MetricValue(metric_values.current.get(team_tree.id)),
-            initial=MetricValue(metric_values.initial.get(team_tree.id)),
-            target=MetricValue(team_goal_row[TeamGoal.target.name]),
-        )
+        target = MetricValue(team_goal_row[TeamGoal.target.name])
+
+    goal_value = GoalValue(
+        current=MetricValue(metric_values.current.get(team_tree.id)),
+        initial=MetricValue(metric_values.initial.get(team_tree.id)),
+        target=target,
+    )
     children = [
         _team_tree_to_team_goal_tree(child, team_goal_rows_map, metric_values)
         for child in team_tree.children
