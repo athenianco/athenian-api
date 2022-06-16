@@ -89,6 +89,8 @@ def add_pdb_misses(pdb: morcilla.Database, topic: str, value: int) -> None:
 Connection = morcilla.Connection
 Database = morcilla.Database
 Row = Mapping[Union[int, str], Any]
+integrity_errors = (asyncpg.IntegrityConstraintViolationError, sqlite3.IntegrityError)
+"""Possible integrity error exceptions according to used DB backends."""
 
 
 _sql_log = logging.getLogger("%s.sql" % metadata.__package__)

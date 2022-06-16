@@ -18,10 +18,12 @@ from tests.testutils.auth import mock_auth0
 from tests.testutils.db import (
     assert_existing_row,
     assert_missing_row,
+    count,
     model_insert_stmt,
     models_insert,
 )
 from tests.testutils.factory.state import (
+    AccountFactory,
     GoalFactory,
     TeamFactory,
     TeamGoalFactory,
@@ -195,6 +197,29 @@ class TestCreateGoalErrors(BaseCreateGoalTest):
         assert get_extension_error_obj(res)["type"] == "/errors/ForbiddenError"
         await assert_missing_row(sdb, Goal, account_id=1)
 
+    async def test_duplicated_dates(self, client: TestClient, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            GoalFactory(
+                template_id=1,
+                valid_from=datetime(2021, 1, 1, tzinfo=timezone.utc),
+                expires_at=datetime(2021, 4, 1, tzinfo=timezone.utc),
+            ),
+            TeamFactory(id=100),
+        )
+        variables = {
+            "createGoalInput": self._mk_input(
+                validFrom="2021-01-01",
+                expiresAt="2021-03-31",
+                teamGoals=[{"teamId": 100, "target": {"int": 0}}],
+            ),
+            "accountId": 1,
+        }
+        res = await self._request(variables, client)
+        assert_extension_error(res, "Goal using template 1 and the same interval exists")
+
+        assert (await count(sdb, Goal, Goal.account_id == 1)) == 1
+
 
 class TestCreateGoals(BaseCreateGoalTest):
     async def test_create_single_team_goal(self, client: TestClient, sdb: Database) -> None:
@@ -288,6 +313,53 @@ class TestCreateGoals(BaseCreateGoalTest):
         assert ensure_db_datetime_tz(goal_row[Goal.valid_from.name], sdb) == datetime(
             2022, 5, 4, tzinfo=timezone.utc,
         )
+
+    async def test_similar_goals(self, client: TestClient, sdb: Database) -> None:
+        # test that the uc_goal constraint doesn't fail more than expected
+        await models_insert(
+            sdb,
+            GoalFactory(
+                template_id=1,
+                valid_from=datetime(2021, 1, 1, tzinfo=timezone.utc),
+                expires_at=datetime(2021, 4, 1, tzinfo=timezone.utc),
+            ),
+            TeamFactory(id=100),
+        )
+
+        # same interval, different template
+        variables: dict = {
+            "createGoalInput": self._mk_input(
+                templateId=2,
+                validFrom="2022-01-01",
+                expiresAt="2022-03-31",
+                teamGoals=[{"teamId": 100, "target": {"int": 1}}],
+            ),
+            "accountId": 1,
+        }
+        res = await self._request(variables, client)
+        assert "errors" not in res
+
+        # same template, different interval
+        variables["createGoalInput"]["templateId"] = 1
+        variables["createGoalInput"]["expiresAt"] = "2022-06-30"
+
+        res = await self._request(variables, client)
+        assert "errors" not in res
+
+        # same template and interval but different account
+        await models_insert(
+            sdb,
+            AccountFactory(id=5),
+            UserAccountFactory(account_id=5, user_id="gh|XXX"),
+            TeamFactory(id=200, owner_id=5),
+        )
+        variables["createGoalInput"]["expiresAt"] = "2022-03-31"
+        variables["accountId"] = 5
+        variables["createGoalInput"]["teamGoals"] = [{"teamId": 200, "target": {"int": 1}}]
+        res = await self._request(variables, client, user_id="gh|XXX")
+        assert "errors" not in res
+
+        assert (await count(sdb, Goal)) == 4
 
 
 class BaseRemoveGoalTest(BaseGoalTest):

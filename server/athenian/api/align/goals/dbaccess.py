@@ -13,6 +13,7 @@ from athenian.api.db import (
     Row,
     conn_in_transaction,
     dialect_specific_insert,
+    integrity_errors,
 )
 from athenian.api.models.state.models import Goal, Team, TeamGoal
 from athenian.api.typing_utils import dataclass
@@ -42,8 +43,17 @@ class TeamGoalTargetAssignment:
 async def insert_goal(creation_info: GoalCreationInfo, sdb_conn: DatabaseLike) -> int:
     """Insert the goal and related objects into DB."""
     await _validate_goal_creation_info(creation_info, sdb_conn)
+
     goal_value = creation_info.goal.create_defaults().explode()
-    new_goal_id = await sdb_conn.execute(sa.insert(Goal).values(goal_value))
+    try:
+        new_goal_id = await sdb_conn.execute(sa.insert(Goal).values(goal_value))
+    except integrity_errors:  # uc_goal constraint can fail here
+        template_id = creation_info.goal.template_id
+        raise GoalMutationError(
+            f"There is an existing goal with the same template {template_id} for the same time"
+            " interval",
+        )
+
     team_goals_values = [
         {
             **team_goal.create_defaults().explode(with_primary_keys=True),
