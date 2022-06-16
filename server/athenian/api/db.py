@@ -119,7 +119,7 @@ def _generate_tags() -> str:
 
 def _strip_rocket(query: str) -> str:
     if query.startswith("--🚀"):
-        return query[query.find("🚀", 4) + 1 :]
+        return query[query.find("🚀", 4) + 2 :]
     return query
 
 
@@ -146,8 +146,12 @@ async def _asyncpg_execute(self, query: str, args, limit, timeout, **kwargs):
         if not athenian.api.is_testing:
             query += _generate_tags()
         result = await self._execute_original(query, args, limit, timeout, **kwargs)
+        if isinstance(result[0], tuple):
+            length = len(result[0][0][0])
+        else:
+            length = len(result[0])
         try:
-            span.description = f"=> {len(result[0])}\n{span.description}"
+            span.description = f"=> {length}\n{span.description}"
         except TypeError:
             pass
         return result
