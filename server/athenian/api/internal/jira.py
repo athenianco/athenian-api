@@ -10,7 +10,7 @@ from names_matcher import NamesMatcher
 import numpy as np
 from pluralizer import Pluralizer
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
-from sqlalchemy import and_, func, insert, select
+from sqlalchemy import and_, func, insert, join, select
 from unidecode import unidecode
 
 from athenian.api import metadata
@@ -18,7 +18,8 @@ from athenian.api.async_utils import gather
 from athenian.api.cache import CancelCache, cached, max_exptime
 from athenian.api.db import DatabaseLike, ensure_db_datetime_tz
 from athenian.api.internal.miners.github.contributors import load_organization_members
-from athenian.api.models.metadata.jira import IssueType, Progress, Project, User as JIRAUser
+from athenian.api.models.metadata.github import NodePullRequestJiraIssues
+from athenian.api.models.metadata.jira import Issue, IssueType, Progress, Project, User as JIRAUser
 from athenian.api.models.state.models import (
     AccountJiraInstallation,
     JIRAProjectSetting,
@@ -437,3 +438,74 @@ def normalize_user_type(type_: str) -> str:
     if type_ == "on-prem":
         return "atlassian"
     return type_
+
+
+async def disable_empty_projects(
+    account: int,
+    meta_ids: Tuple[int, ...],
+    sdb: DatabaseLike,
+    mdb: DatabaseLike,
+    slack: Optional[SlackWebClient],
+    cache: Optional[aiomcache.Client],
+) -> int:
+    """
+    If a JIRA project doesn't contain issues with mapped PRs, disable it.
+
+    Scan all the existing projects. If the project is explicitly enabled in the settings, skip.
+    """
+    if (jira_id := await get_jira_installation_or_none(account, sdb, mdb, cache)) is None:
+        return None
+    mapped_projects, all_projects, settings = await gather(
+        mdb.fetch_all(
+            select([Issue.project_id])
+            .select_from(
+                join(
+                    NodePullRequestJiraIssues,
+                    Issue,
+                    and_(
+                        NodePullRequestJiraIssues.jira_acc == Issue.acc_id,
+                        NodePullRequestJiraIssues.jira_id == Issue.id,
+                    ),
+                ),
+            )
+            .where(
+                and_(
+                    NodePullRequestJiraIssues.node_acc.in_(meta_ids),
+                    NodePullRequestJiraIssues.jira_acc == jira_id[0],
+                ),
+            )
+            .distinct(),
+        ),
+        mdb.fetch_all(
+            select([Project.id, Project.key]).where(
+                and_(Project.acc_id == jira_id[0], Project.is_deleted.is_(False)),
+            ),
+        ),
+        sdb.fetch_all(
+            select([JIRAProjectSetting.key]).where(JIRAProjectSetting.account_id == account),
+        ),
+    )
+    mapped_projects = {r[0] for r in mapped_projects}
+    settings = {r[0] for r in settings}
+    disabled = []
+    for row in all_projects:
+        project_id, project_key = row
+        if project_id not in mapped_projects and project_key not in settings:
+            disabled.append(
+                JIRAProjectSetting(
+                    key=project_key,
+                    enabled=False,
+                    account_id=account,
+                )
+                .create_defaults()
+                .explode(with_primary_keys=True),
+            )
+    await sdb.execute_many(insert(JIRAProjectSetting), disabled)
+    if slack is not None:
+        await slack.post_install(
+            "disabled_jira_projects.jinja2",
+            account=account,
+            disabled=len(disabled),
+            total=len(all_projects),
+        )
+    return len(disabled)

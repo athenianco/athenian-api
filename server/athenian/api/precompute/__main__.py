@@ -92,7 +92,7 @@ def _parse_args() -> argparse.Namespace:
     accounts_parser = subparsers.add_parser("accounts", help="Precompute one or more accounts")
     accounts_parser.add_argument("account", nargs="+", help="Account IDs to precompute")
     accounts_parser.add_argument(
-        "--skip-jira-identity-map", action="store_true", help="Do not match JIRA identities",
+        "--skip-jira", action="store_true", help="Do not perform any JIRA-related procedures.",
     )
     accounts_parser.add_argument(
         "--disable-isolation",
