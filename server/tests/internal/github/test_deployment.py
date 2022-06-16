@@ -4448,20 +4448,14 @@ class TestHideOutlierFirstDeployments:
         sdb,
     ) -> None:
         meta_ids = await get_metadata_account_ids(1, sdb, None)
-        time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
-        time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
-
-        existing_depl_facts = await pdb.fetch_all(sa.select(GitHubDeploymentFacts))
-        assert len(existing_depl_facts) == 0
-
-        existing_pr_depl_facts = await pdb.fetch_all(sa.select(GitHubPullRequestDeployment))
-        assert len(existing_pr_depl_facts) == 0
+        assert (await self._count(pdb, GitHubDeploymentFacts)) == 0
+        assert (await self._count(pdb, GitHubPullRequestDeployment)) == 0
 
         deps, people = await mine_deployments(
             ["src-d/go-git"],
             {},
-            time_from,
-            time_to,
+            datetime(2015, 1, 1, tzinfo=timezone.utc),
+            datetime(2020, 1, 1, tzinfo=timezone.utc),
             ["production", "staging"],
             [],
             {},
@@ -4517,6 +4511,57 @@ class TestHideOutlierFirstDeployments:
                 name=depl_row[GitHubDeploymentFacts.deployment_name.name],
             )
             assert not len(facts.prs)
+
+    @with_defer
+    async def test_no_deployment_facts(
+        self,
+        sample_deployments,
+        release_match_setting_tag_or_branch,
+        branches,
+        default_branches,
+        prefixer,
+        mdb,
+        pdb,
+        rdb,
+        cache,
+        sdb,
+    ) -> None:
+        meta_ids = await get_metadata_account_ids(1, sdb, None)
+        # delete notifications so that mine_deployments will find nothing
+        await rdb.execute(sa.delete(DeploymentNotification))
+
+        deps, _ = await mine_deployments(
+            ["src-d/go-git"],
+            {},
+            datetime(2015, 1, 1, tzinfo=timezone.utc),
+            datetime(2020, 1, 1, tzinfo=timezone.utc),
+            ["production", "staging"],
+            [],
+            {},
+            {},
+            LabelFilter.empty(),
+            JIRAFilter.empty(),
+            release_match_setting_tag_or_branch,
+            LogicalRepositorySettings.empty(),
+            branches,
+            default_branches,
+            prefixer,
+            1,
+            (6366825,),
+            mdb,
+            pdb,
+            rdb,
+            cache,
+        )
+        assert deps.empty
+        # wait deferred tasks writing to pdb to complete
+        await wait_deferred()
+
+        assert (await self._count(pdb, GitHubPullRequestDeployment)) == 0
+        assert (await self._count(pdb, GitHubCommitDeployment)) == 0
+        assert (await self._count(pdb, GitHubReleaseDeployment)) == 0
+
+        await hide_outlier_first_deployments(deps, 1, meta_ids, mdb, pdb, 1.1)
 
     @classmethod
     async def _count(cls, pdb, table, where=None):

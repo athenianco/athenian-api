@@ -2701,6 +2701,10 @@ async def _search_outlier_first_deployments(
     threshold: float = 100.0,
 ) -> Sequence[_OutlierDeployment]:
     """Search the outlier first deployments."""
+    # the dataframe with no deployment_facts will have no columns
+    if deployment_facts.empty:
+        return ()
+
     REPOSITORY_COLUMN = "repository"
     exploded_facts = deployment_facts.explode("repositories").rename(
         columns={"repositories": REPOSITORY_COLUMN},
