@@ -355,11 +355,11 @@ async def fetch_jira_issues(
                 "JIRA issues are missing in jira.athenian_issue: %s",
                 ", ".join(issues[Issue.key.name].take(np.nonzero(missing_updated)[0])),
             )
-            issues = issues.take(np.nonzero(~missing_updated)[0])
+            issues = issues.take(np.flatnonzero(~missing_updated))
     if len(issues.index) >= 20:
         jira_id_cond = NodePullRequestJiraIssues.jira_id.in_any_values(issues.index)
     else:
-        jira_id_cond = NodePullRequestJiraIssues.jira_id.in_(issues.index)
+        jira_id_cond = NodePullRequestJiraIssues.jira_id.in_(issues.index.values)
     nullable_repository_id = NodePullRequest.repository_id
     nullable_repository_id = nullable_repository_id.label(nullable_repository_id.name)
     nullable_repository_id.nullable = True
@@ -396,6 +396,10 @@ async def fetch_jira_issues(
                 NodePullRequestJiraIssues.node_acc.in_(meta_ids),
                 jira_id_cond,
             ),
+        )
+        .with_statement_hint(
+            f"Leading({NodePullRequestJiraIssues.__tablename__} *VALUES* "
+            f"{NodePullRequest.__tablename__})",
         ),
         mdb,
         pr_cols,
@@ -741,6 +745,7 @@ async def _fetch_issues(
             await gather(*(read_sql_query(q, mdb, columns, index=Issue.id.name) for q in query)),
         )
     df = _validate_and_clean_issues(df, ids[0])
+    sentry_sdk.Hub.current.scope.span.description = str(len(df))
     df.sort_index(inplace=True)
     if postgres or (not commenters and (not nested_assignees or not assignees)):
         return df
@@ -766,7 +771,6 @@ async def _fetch_issues(
                 passed[i] = True
     df.disable_consolidate()
     df = df.take(np.flatnonzero(passed))
-    sentry_sdk.Hub.current.scope.span.description = str(len(df))
     return df
 
 
