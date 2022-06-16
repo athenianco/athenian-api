@@ -254,7 +254,7 @@ class TestGoals(BaseGoalsTest):
 
         assert (team_goal_12 := team_goal_10["children"][1])["team"]["id"] == 12
         assert not team_goal_12["children"]
-        assert team_goal_12["value"] is None
+        assert team_goal_12["value"]["target"] is None
 
         assert (team_goal_13 := team_goal_11["children"][0])["team"]["id"] == 13
         assert not team_goal_13["children"]
@@ -297,7 +297,7 @@ class TestGoals(BaseGoalsTest):
         assert len(team_goal_10["children"]) == 2
 
         assert (team_goal_11 := team_goal_10["children"][0])["team"]["id"] == 11
-        assert team_goal_11["value"] is None
+        assert team_goal_11["value"]["target"] is None
         assert not team_goal_11["children"]
 
         assert (team_goal_12 := team_goal_10["children"][1])["team"]["id"] == 12
@@ -305,7 +305,7 @@ class TestGoals(BaseGoalsTest):
         assert len(team_goal_12["children"]) == 1
 
         assert (team_goal_13 := team_goal_12["children"][0])["team"]["id"] == 13
-        assert team_goal_13["value"] is None
+        assert team_goal_13["value"]["target"] is None
         assert not team_goal_13["children"]
 
         # same tree is built for goal 21, with different values
@@ -315,7 +315,7 @@ class TestGoals(BaseGoalsTest):
         assert goal_21["expiresAt"] == "2004-09-30"
 
         assert (team_goal_10 := goal_21["teamGoal"])["team"]["id"] == 10
-        assert team_goal_10["value"] is None
+        assert team_goal_10["value"]["target"] is None
         assert len(team_goal_10["children"]) == 2
 
         assert (team_goal_11 := team_goal_10["children"][0])["team"]["id"] == 11
@@ -327,7 +327,7 @@ class TestGoals(BaseGoalsTest):
         assert len(team_goal_12["children"]) == 1
 
         assert (team_goal_13 := team_goal_12["children"][0])["team"]["id"] == 13
-        assert team_goal_13["value"] is None
+        assert team_goal_13["value"]["target"] is None
         assert not team_goal_13["children"]
 
     async def test_timedelta_metric(self, client: TestClient, sdb: Database) -> None:

@@ -294,10 +294,10 @@ class GoalValue(Model):
     attribute_types = {
         "current": MetricValue,
         "initial": MetricValue,
-        "target": MetricValue,
+        "target": Optional[MetricValue],
     }
 
-    def __init__(self, current: MetricValue, initial: MetricValue, target: MetricValue):
+    def __init__(self, current: MetricValue, initial: MetricValue, target: Optional[MetricValue]):
         """Init the GoalValue."""
         self._current = current
         self._initial = initial
@@ -314,7 +314,7 @@ class GoalValue(Model):
         return self._initial
 
     @property
-    def target(self) -> MetricValue:
+    def target(self) -> Optional[MetricValue]:
         """Get target metric value."""
         return self._target
 
@@ -324,11 +324,11 @@ class TeamGoalTree(Model):
 
     attribute_types = {
         "team": TeamTree,
-        "value": Optional[GoalValue],
+        "value": GoalValue,
         "children": List[Model],  # List[TeamGoalTree]
     }
 
-    def __init__(self, team: TeamTree, value: Optional[GoalValue], children: List[TeamGoalTree]):
+    def __init__(self, team: TeamTree, value: GoalValue, children: List[TeamGoalTree]):
         """Init the TeamGoalTree."""
         self._team = team
         self._value = value
@@ -340,7 +340,7 @@ class TeamGoalTree(Model):
         return self._team
 
     @property
-    def value(self) -> Optional[GoalValue]:
+    def value(self) -> GoalValue:
         """Get the GoalValue attached to the team, if any."""
         return self._value
 
