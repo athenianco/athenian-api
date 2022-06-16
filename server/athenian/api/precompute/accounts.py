@@ -69,6 +69,7 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> Optional
             continue
 
         duration_tracker = _DurationTracker(args.prometheus_pushgateway, context.log)
+        _set_sentry_scope(reposet)
 
         if not isolate:
             await precompute_reposet(
@@ -77,7 +78,7 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> Optional
             continue
         pid = os.fork()
         if pid == 0:
-            log.info("sandbox %d", os.getpid())
+            log.info("sandbox %d (account %d)", os.getpid(), reposet.owner_id)
 
             # must execute `callback` in a new event loop
             async def callback(context: PrecomputeContext):
@@ -87,7 +88,7 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> Optional
 
             return callback
         else:
-            log.info("supervisor: waiting for %d", pid)
+            log.info("supervisor: waiting for %d (account %d)", pid, reposet.owner_id)
             status = 0, 0
             try:
                 for _ in range(args.timeout * 100):
@@ -149,6 +150,13 @@ async def _get_reposets_to_precompute(
     return res
 
 
+def _set_sentry_scope(reposet: RepositorySet) -> None:
+    with sentry_sdk.configure_scope() as scope:
+        scope.set_tag("account", reposet.owner_id)
+        if scope.span is not None:
+            scope.span.description = str(reposet.items)
+
+
 @sentry_span
 async def precompute_reposet(
     reposet: RepositorySet,
@@ -164,10 +172,7 @@ async def precompute_reposet(
 
     There's at most one reposet per account, so a single Sentry scope is created per account.
     """
-    with sentry_sdk.Hub.current.configure_scope() as scope:
-        scope.set_tag("account", reposet.owner_id)
-        if scope.span is not None:
-            scope.span.description = str(reposet.items)
+    _set_sentry_scope(reposet)
     log, sdb, mdb, pdb, rdb, cache, slack = (
         context.log,
         context.sdb,
