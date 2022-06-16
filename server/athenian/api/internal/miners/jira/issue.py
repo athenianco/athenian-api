@@ -603,7 +603,6 @@ async def _fetch_issues(
         and_filters.append(Issue.created < time_to)
     if exclude_inactive and time_from is not None:
         filter_by_athenian_issue = True
-        and_filters.append(AthenianIssue.acc_id == ids.acc_id)
         and_filters.append(AthenianIssue.updated >= time_from)
     if len(priorities):
         and_filters.append(sql.func.lower(Issue.priority_name).in_(priorities))
