@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from itertools import chain
 import logging
 import marshal
@@ -16,7 +17,7 @@ from unidecode import unidecode
 from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.cache import CancelCache, cached, max_exptime
-from athenian.api.db import DatabaseLike, ensure_db_datetime_tz
+from athenian.api.db import DatabaseLike, ensure_db_datetime_tz, is_postgresql
 from athenian.api.internal.miners.github.contributors import load_organization_members
 from athenian.api.models.metadata.github import NodePullRequestJiraIssues
 from athenian.api.models.metadata.jira import Issue, IssueType, Progress, Project, User as JIRAUser
@@ -457,7 +458,7 @@ async def disable_empty_projects(
         return None
     mapped_projects, all_projects, settings = await gather(
         mdb.fetch_all(
-            select([Issue.project_id])
+            select(Issue.project_id)
             .select_from(
                 join(
                     NodePullRequestJiraIssues,
@@ -477,20 +478,39 @@ async def disable_empty_projects(
             .distinct(),
         ),
         mdb.fetch_all(
-            select([Project.id, Project.key]).where(
-                and_(Project.acc_id == jira_id[0], Project.is_deleted.is_(False)),
-            ),
+            select(Project.id, Project.key, func.min(Issue.created))
+            .select_from(
+                join(
+                    Project,
+                    Issue,
+                    and_(
+                        Project.acc_id == Issue.acc_id,
+                        Project.id == Issue.project_id,
+                    ),
+                    isouter=True,
+                ),
+            )
+            .where(and_(Project.acc_id == jira_id[0], Project.is_deleted.is_(False)))
+            .group_by(Project.id, Project.key),
         ),
         sdb.fetch_all(
-            select([JIRAProjectSetting.key]).where(JIRAProjectSetting.account_id == account),
+            select(JIRAProjectSetting.key).where(JIRAProjectSetting.account_id == account),
         ),
     )
     mapped_projects = {r[0] for r in mapped_projects}
     settings = {r[0] for r in settings}
     disabled = []
+    one_month_ago = datetime.now(timezone.utc) - timedelta(days=30)
+    if not await is_postgresql(mdb):
+        one_month_ago = one_month_ago.replace(tzinfo=None)
     for row in all_projects:
-        project_id, project_key = row
-        if project_id not in mapped_projects and project_key not in settings:
+        project_id, project_key, first_issue = row
+        if (
+            project_id not in mapped_projects
+            and project_key not in settings
+            and first_issue is not None
+            and first_issue <= one_month_ago
+        ):
             disabled.append(
                 JIRAProjectSetting(
                     key=project_key,

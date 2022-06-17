@@ -177,15 +177,15 @@ def test_normalize_issue_type(orig, norm):
 @with_defer
 async def test_disable_empty_projects(sdb, mdb, slack, cache):
     disabled = await disable_empty_projects(1, (6366825,), sdb, mdb, slack, cache)
-    assert disabled == 6
+    assert disabled == 1
     settings = await sdb.fetch_all(
         select([JIRAProjectSetting.key, JIRAProjectSetting.enabled]).where(
             JIRAProjectSetting.account_id == 1,
         ),
     )
-    assert len(settings) == 6
+    assert len(settings) == 1
     keys = set()
     for row in settings:
         keys.add(row[JIRAProjectSetting.key.name])
         assert not row[JIRAProjectSetting.enabled.name]
-    assert keys == {"CON", "CS", "GRW", "ENG", "OPS", "PRO"}
+    assert keys == {"ENG"}
