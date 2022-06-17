@@ -16,15 +16,15 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
     log, sdb, mdb, cache = context.log, context.sdb, context.mdb, context.cache
     right = datetime.now(timezone.utc) + timedelta(days=1)
     left = right - timedelta(hours=1)
-    accounts = dict(
+    accounts: dict[int, datetime] = dict(
         await sdb.fetch_all(
-            select([Account.id, Account.expires_at]).where(
-                Account.expires_at.between(left, right),
-            ),
+            select(Account.id, Account.expires_at).where(Account.expires_at.between(left, right)),
         ),
     )
+
     if not accounts:
         return
+
     log.info("Notifying about almost expired accounts: %s", sorted(accounts))
     user_rows, *meta_ids = await gather(
         sdb.fetch_all(
@@ -36,12 +36,15 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
     )
     users = dict(user_rows)
     name_rows = await mdb.fetch_all(
-        select([GitHubAccount.id, GitHubAccount.name]).where(
+        select(GitHubAccount.id, GitHubAccount.name).where(
             GitHubAccount.id.in_(chain.from_iterable(meta_ids)),
         ),
     )
-    names = dict(name_rows)
-    names = {acc: ", ".join(names[i] for i in m) for acc, m in zip(accounts, meta_ids)}
+    names_by_meta_id: dict[int, str] = dict(name_rows)
+    names = {
+        acc: ", ".join(names_by_meta_id.get(i, "<uninstalled>") for i in m)
+        for acc, m in zip(accounts, meta_ids)
+    }
     await gather(
         *(
             context.slack.post_account(
