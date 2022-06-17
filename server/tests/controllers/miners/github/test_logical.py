@@ -34,7 +34,7 @@ async def sample_prs(mdb, pdb, branches):
         None,
         None,
         branches,
-        {"src-d/go-git": _empty_dag()},
+        {"src-d/go-git": (True, _empty_dag())},
         1,
         (6366825,),
         mdb,

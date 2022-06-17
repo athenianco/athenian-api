@@ -473,7 +473,7 @@ async def test_map_releases_to_prs_early_merges(
         prs[PullRequest.merged_at.name] > datetime(year=2017, month=9, day=4, tzinfo=timezone.utc)
     ).all()
     assert isinstance(dag, dict)
-    dag = dag["src-d/go-git"]
+    dag = dag["src-d/go-git"][1]
     assert len(dag) == 3
     assert len(dag[0]) == 1012
     assert dag[0].dtype == np.dtype("S40")
@@ -527,7 +527,7 @@ async def test_map_releases_to_prs_smoke(
         )
         await wait_deferred()
         assert len(prs) == 7
-        assert len(dag["src-d/go-git"][0]) == 1508
+        assert len(dag["src-d/go-git"][1][0]) == 1508
         assert (
             prs[PullRequest.merged_at.name]
             < pd.Timestamp("2019-07-31 00:00:00", tzinfo=timezone.utc)
@@ -1683,7 +1683,7 @@ def heads_df2():
 @with_defer
 async def test__fetch_repository_commits_smoke(mdb, pdb, prune, heads_df2):
     dags = await fetch_repository_commits(
-        {"src-d/go-git": _empty_dag()},
+        {"src-d/go-git": (True, _empty_dag())},
         heads_df2,
         ("1", "2", "3", "4"),
         prune,
@@ -1695,7 +1695,7 @@ async def test__fetch_repository_commits_smoke(mdb, pdb, prune, heads_df2):
     )
     assert isinstance(dags, dict)
     assert len(dags) == 1
-    hashes, vertexes, edges = dags["src-d/go-git"]
+    hashes, vertexes, edges = dags["src-d/go-git"][1]
     ground_truth = {
         "31eae7b619d166c366bf5df4991f04ba8cebea0a": [
             "b977a025ca21e3b5ca123d8093bd7917694f6da7",
@@ -1748,7 +1748,7 @@ async def test__fetch_repository_commits_smoke(mdb, pdb, prune, heads_df2):
 @with_defer
 async def test__fetch_repository_commits_initial_commit(mdb, pdb, prune, heads_df1):
     dags = await fetch_repository_commits(
-        {"src-d/go-git": _empty_dag()},
+        {"src-d/go-git": (True, _empty_dag())},
         heads_df1,
         ("1", "2", "3", "4"),
         prune,
@@ -1758,7 +1758,8 @@ async def test__fetch_repository_commits_initial_commit(mdb, pdb, prune, heads_d
         pdb,
         None,
     )
-    hashes, vertexes, edges = dags["src-d/go-git"]
+    consistent, (hashes, vertexes, edges) = dags["src-d/go-git"]
+    assert consistent
     assert hashes == np.array(["5d7303c49ac984a9fec60523f2d5297682e16646"], dtype="S40")
     assert (vertexes == np.array([0, 0], dtype=np.uint32)).all()
     assert (edges == np.array([], dtype=np.uint32)).all()
@@ -1771,9 +1772,12 @@ async def test__fetch_repository_commits_orphan_skip(mdb, pdb, prune, heads_df1)
     dags = await fetch_repository_commits(
         {
             "src-d/go-git": (
-                np.array(["7" * 40], dtype="S40"),
-                np.array([0, 0], dtype=np.uint32),
-                np.array([], dtype=np.uint32),
+                True,
+                (
+                    np.array(["7" * 40], dtype="S40"),
+                    np.array([0, 0], dtype=np.uint32),
+                    np.array([], dtype=np.uint32),
+                ),
             ),
         },
         heads_df1,
@@ -1785,7 +1789,7 @@ async def test__fetch_repository_commits_orphan_skip(mdb, pdb, prune, heads_df1)
         pdb,
         None,
     )
-    hashes, vertexes, edges = dags["src-d/go-git"]
+    hashes, vertexes, edges = dags["src-d/go-git"][1]
     if prune:
         assert len(hashes) == 0
     else:
@@ -1798,9 +1802,12 @@ async def test__fetch_repository_commits_orphan_include(mdb, pdb, prune, heads_d
     dags = await fetch_repository_commits(
         {
             "src-d/go-git": (
-                np.array(["7" * 40], dtype="S40"),
-                np.array([0, 0], dtype=np.uint32),
-                np.array([], dtype=np.uint32),
+                True,
+                (
+                    np.array(["7" * 40], dtype="S40"),
+                    np.array([0, 0], dtype=np.uint32),
+                    np.array([], dtype=np.uint32),
+                ),
             ),
         },
         heads_df1,
@@ -1812,7 +1819,7 @@ async def test__fetch_repository_commits_orphan_include(mdb, pdb, prune, heads_d
         pdb,
         None,
     )
-    hashes, vertexes, edges = dags["src-d/go-git"]
+    hashes, vertexes, edges = dags["src-d/go-git"][1]
     if prune:
         assert hashes == np.array(["5d7303c49ac984a9fec60523f2d5297682e16646"], dtype="S40")
     else:
@@ -1824,7 +1831,7 @@ async def test__fetch_repository_commits_orphan_include(mdb, pdb, prune, heads_d
 @with_defer
 async def test__fetch_repository_commits_cache(mdb, pdb, cache, heads_df2):
     dags1 = await fetch_repository_commits(
-        {"src-d/go-git": _empty_dag()},
+        {"src-d/go-git": (True, _empty_dag())},
         heads_df2,
         ("1", "2", "3", "4"),
         False,
@@ -1836,7 +1843,7 @@ async def test__fetch_repository_commits_cache(mdb, pdb, cache, heads_df2):
     )
     await wait_deferred()
     dags2 = await fetch_repository_commits(
-        {"src-d/go-git": _empty_dag()},
+        {"src-d/go-git": (True, _empty_dag())},
         heads_df2,
         ("1", "2", "3", "4"),
         False,
@@ -1856,7 +1863,7 @@ async def test__fetch_repository_commits_cache(mdb, pdb, cache, heads_df2):
     fake_pdb.metrics = {"hits": FakeMetrics(), "misses": FakeMetrics()}
     with pytest.raises(Exception):
         await fetch_repository_commits(
-            {"src-d/go-git": _empty_dag()},
+            {"src-d/go-git": (True, _empty_dag())},
             heads_df2,
             ("1", "2", "3", "4"),
             True,
@@ -1871,7 +1878,7 @@ async def test__fetch_repository_commits_cache(mdb, pdb, cache, heads_df2):
 @with_defer
 async def test__fetch_repository_commits_many(mdb, pdb, heads_df2):
     dags = await fetch_repository_commits(
-        {"src-d/go-git": _empty_dag()},
+        {"src-d/go-git": (True, _empty_dag())},
         heads_df2,
         ("1", "2", "3", "4"),
         False,
@@ -1881,7 +1888,7 @@ async def test__fetch_repository_commits_many(mdb, pdb, heads_df2):
         pdb,
         None,
     )
-    assert len(dags["src-d/go-git"][0]) == 9
+    assert len(dags["src-d/go-git"][1][0]) == 9
 
 
 @with_defer
@@ -1907,20 +1914,20 @@ async def test__fetch_repository_commits_full(mdb, pdb, dag, cache, branch_miner
     )
     await wait_deferred()
     assert len(commits) == 1
-    assert len(commits["src-d/go-git"][0]) == 1919
+    assert len(commits["src-d/go-git"][1][0]) == 1919
     branches = branches[branches[Branch.branch_name.name] == "master"]
     commits = await fetch_repository_commits(
         commits, branches, cols, False, 1, (6366825,), mdb, pdb, cache,
     )
     await wait_deferred()
     assert len(commits) == 1
-    assert len(commits["src-d/go-git"][0]) == 1919  # with force-pushed commits
+    assert len(commits["src-d/go-git"][1][0]) == 1919  # with force-pushed commits
     commits = await fetch_repository_commits(
         commits, branches, cols, True, 1, (6366825,), mdb, pdb, cache,
     )
     await wait_deferred()
     assert len(commits) == 1
-    assert len(commits["src-d/go-git"][0]) == 1538  # without force-pushed commits
+    assert len(commits["src-d/go-git"][1][0]) == 1538  # without force-pushed commits
 
 
 @with_defer
@@ -2108,7 +2115,7 @@ def test_mark_dag_access_empty():
 
 
 async def test_partition_dag(dag):
-    hashes, vertexes, edges = dag["src-d/go-git"]
+    hashes, vertexes, edges = dag["src-d/go-git"][1]
     p = partition_dag(hashes, vertexes, edges, [b"ad9456267524e08efcf4486cadfb6cef8d182677"])
     assert p.tolist() == [b"ad9456267524e08efcf4486cadfb6cef8d182677"]
     p = partition_dag(hashes, vertexes, edges, [b"7cd021554eb318165dd28988fe1675a5e5c32601"])
@@ -2127,7 +2134,7 @@ def test_partition_dag_empty():
 
 
 async def test__fetch_commit_history_dag_stops(mdb, dag):
-    hashes, vertexes, edges = dag["src-d/go-git"]
+    hashes, vertexes, edges = dag["src-d/go-git"][1]
     subhashes, subvertexes, subedges = extract_subdag(
         hashes,
         vertexes,
@@ -2135,7 +2142,7 @@ async def test__fetch_commit_history_dag_stops(mdb, dag):
         np.array([b"364866fc77fac656e103c1048dd7da4764c6d9d9"], dtype="S40"),
     )
     assert len(subhashes) < len(hashes)
-    _, newhashes, newvertexes, newedges = await _fetch_commit_history_dag(
+    _, _, newhashes, newvertexes, newedges = await _fetch_commit_history_dag(
         subhashes,
         subvertexes,
         subedges,
@@ -2148,7 +2155,7 @@ async def test__fetch_commit_history_dag_stops(mdb, dag):
     assert (newhashes == subhashes).all()
     assert (newvertexes == subvertexes).all()
     assert (newedges == subedges).all()
-    _, newhashes, newvertexes, newedges = await _fetch_commit_history_dag(
+    _, _, newhashes, newvertexes, newedges = await _fetch_commit_history_dag(
         subhashes,
         subvertexes,
         subedges,
@@ -2175,7 +2182,7 @@ async def test_mark_dag_parents_smoke(
     release_loader,
     prefixer,
 ):
-    hashes, vertexes, edges = dag["src-d/go-git"]
+    hashes, vertexes, edges = dag["src-d/go-git"][1]
     time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
     releases, matched_bys = await release_loader.load_releases(
@@ -3765,7 +3772,7 @@ async def test__extract_released_commits_4_0_0(
     time_from = datetime(year=2016, month=1, day=8, tzinfo=timezone.utc)
     time_to = datetime(year=2018, month=1, day=9, tzinfo=timezone.utc)
     time_boundary = datetime(year=2018, month=1, day=7, tzinfo=timezone.utc)
-    dag = dag["src-d/go-git"]
+    dag = dag["src-d/go-git"][1]
     releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"],
         branches,

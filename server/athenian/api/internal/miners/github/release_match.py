@@ -85,7 +85,7 @@ async def load_commit_dags(
     mdb: Database,
     pdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Dict[str, DAG]:
+) -> Dict[str, Tuple[bool, DAG]]:
     """Produce the commit history DAGs which should contain the specified releases."""
     pdags = await fetch_precomputed_commit_history_dags(
         releases[Release.repository_full_name.name].unique(), account, pdb, cache,
@@ -108,7 +108,7 @@ class PullRequestToReleaseMapper:
         branches: pd.DataFrame,
         default_branches: Dict[str, str],
         time_to: datetime,
-        dags: Dict[str, DAG],
+        dags: Dict[str, Tuple[bool, DAG]],
         release_settings: ReleaseSettings,
         prefixer: Prefixer,
         account: int,
@@ -209,7 +209,7 @@ class PullRequestToReleaseMapper:
     async def _map_prs_to_releases(
         cls,
         prs: pd.DataFrame,
-        dags: Dict[str, DAG],
+        dags: Dict[str, Tuple[bool, DAG]],
         releases: pd.DataFrame,
     ) -> pd.DataFrame:
         if prs.empty:
@@ -245,7 +245,7 @@ class PullRequestToReleaseMapper:
             release_repo = unique_release_repos[release_pos]
             pr_repo = unique_pr_repos[pr_pos]
             if release_repo == pr_repo:
-                hashes, vertexes, edges = dags[drop_logical_repo(pr_repo)]
+                _, (hashes, vertexes, edges) = dags[drop_logical_repo(pr_repo)]
                 if len(hashes) == 0:
                     log.error("very suspicious: empty DAG for %s", pr_repo)
                 release_beg = release_repo_offsets[release_pos]
@@ -357,7 +357,7 @@ class ReleaseToPullRequestMapper:
         logical_settings: LogicalRepositorySettings,
         updated_min: Optional[datetime],
         updated_max: Optional[datetime],
-        pdags: Optional[Dict[str, DAG]],
+        pdags: Optional[Dict[str, Tuple[bool, DAG]]],
         prefixer: Prefixer,
         account: int,
         meta_ids: Tuple[int, ...],
@@ -375,7 +375,7 @@ class ReleaseToPullRequestMapper:
             pd.DataFrame,
             ReleaseSettings,
             Dict[str, ReleaseMatch],
-            Dict[str, DAG],
+            Dict[str, Tuple[bool, DAG]],
             Tuple[np.ndarray, np.ndarray],
         ],
         pd.DataFrame,
@@ -494,7 +494,7 @@ class ReleaseToPullRequestMapper:
         time_to: datetime,
         release_settings: ReleaseSettings,
         logical_settings: LogicalRepositorySettings,
-        pdags: Optional[Dict[str, DAG]],
+        pdags: Optional[Dict[str, Tuple[bool, DAG]]],
         prefixer: Prefixer,
         account: int,
         meta_ids: Tuple[int, ...],
@@ -509,7 +509,7 @@ class ReleaseToPullRequestMapper:
         pd.DataFrame,
         ReleaseSettings,
         Dict[str, ReleaseMatch],
-        Dict[str, DAG],
+        Dict[str, Tuple[bool, DAG]],
     ]:
         (
             matched_bys,
@@ -545,7 +545,7 @@ class ReleaseToPullRequestMapper:
             for repo, repo_releases in releases.groupby(rrfnk, sort=False):
                 if (repo_releases[rpak] >= time_from).any():
                     observed_commits = cls._extract_released_commits(
-                        repo_releases, dags[drop_logical_repo(repo)], time_from,
+                        repo_releases, dags[drop_logical_repo(repo)][1], time_from,
                     )
                     if len(observed_commits):
                         all_observed_commits.append(observed_commits)
@@ -581,7 +581,7 @@ class ReleaseToPullRequestMapper:
         until_today: bool,
         release_settings: ReleaseSettings,
         logical_settings: LogicalRepositorySettings,
-        pdags: Optional[Dict[str, DAG]],
+        pdags: Optional[Dict[str, Tuple[bool, DAG]]],
         prefixer: Prefixer,
         account: int,
         meta_ids: Tuple[int, ...],
@@ -595,7 +595,7 @@ class ReleaseToPullRequestMapper:
         pd.DataFrame,
         pd.DataFrame,
         ReleaseSettings,
-        Dict[str, DAG],
+        Dict[str, Tuple[bool, DAG]],
     ]:
         """
         Load releases with sufficient history depth.
@@ -646,7 +646,7 @@ class ReleaseToPullRequestMapper:
         lookbehind_depth_limit = time_from - timedelta(days=365)
         most_recent_time = time_from - timedelta(seconds=1)
 
-        async def fetch_dags() -> Dict[str, DAG]:
+        async def fetch_dags() -> Dict[str, Tuple[bool, DAG]]:
             nonlocal pdags
             if pdags is None:
                 pdags = await fetch_precomputed_commit_history_dags(
@@ -786,7 +786,7 @@ class ReleaseToPullRequestMapper:
                 in_range_repo_dates = in_range_dates[in_range_repo_indexes]
                 all_shas = np.concatenate([in_range_repo_shas, previous_repo_shas])
                 all_timestamps = np.concatenate([in_range_repo_dates, previous_repo_dates])
-                dag = dags[physical_repo]
+                dag = dags[physical_repo][1]
                 ownership = mark_dag_access(*dag, all_shas, True)
                 parents = mark_dag_parents(*dag, all_shas, all_timestamps, ownership)
                 if any((len(p) == 0) for p in parents[: len(in_range_repo_indexes)]):

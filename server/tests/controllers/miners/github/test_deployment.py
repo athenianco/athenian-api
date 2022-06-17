@@ -21,7 +21,7 @@ from athenian.api.internal.settings import LogicalRepositorySettings
 
 
 async def test_extract_pr_commits_smoke(dag):
-    dag = dag["src-d/go-git"]
+    dag = dag["src-d/go-git"][1]
     pr_commits = extract_pr_commits(
         *dag,
         np.array(
@@ -54,7 +54,7 @@ async def test_extract_pr_commits_fixture():
 
 
 async def test_extract_independent_ownership_no_stops(dag):
-    dag = dag["src-d/go-git"]
+    dag = dag["src-d/go-git"][1]
     stops = np.empty(4, dtype=object)
     stops.fill([])
     ownership = extract_independent_ownership(
@@ -77,7 +77,7 @@ async def test_extract_independent_ownership_no_stops(dag):
 
 
 async def test_extract_independent_ownership_smoke(dag):
-    dag = dag["src-d/go-git"]
+    dag = dag["src-d/go-git"][1]
     ownership = extract_independent_ownership(
         *dag,
         np.array(

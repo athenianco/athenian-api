@@ -192,7 +192,7 @@ async def extract_commits(
 
 def _take_commits_in_default_branches(
     commits: pd.DataFrame,
-    dags: Dict[str, DAG],
+    dags: Dict[str, Tuple[bool, DAG]],
     branches: pd.DataFrame,
     default_branches: Dict[str, str],
 ) -> pd.DataFrame:
@@ -224,7 +224,7 @@ def _take_commits_in_default_branches(
     ):
         repo_indexes = np.nonzero(commit_repo_indexes == commit_repo_index)[0]
         repo_hashes = commit_hashes[repo_indexes]
-        default_branch_hashes = extract_subdag(*dags[repo], np.array([head_sha]))[0]
+        default_branch_hashes = extract_subdag(*dags[repo][1], np.array([head_sha]))[0]
         accessible_indexes.append(
             repo_indexes[np.in1d(repo_hashes, default_branch_hashes, assume_unique=True)],
         )
@@ -233,7 +233,10 @@ def _take_commits_in_default_branches(
     return commits.take(accessible_indexes)
 
 
-def _remove_force_push_dropped(commits: pd.DataFrame, dags: Dict[str, DAG]) -> pd.DataFrame:
+def _remove_force_push_dropped(
+    commits: pd.DataFrame,
+    dags: Dict[str, Tuple[bool, DAG]],
+) -> pd.DataFrame:
     if commits.empty:
         return commits
     repos_order, indexes = np.unique(
@@ -245,7 +248,7 @@ def _remove_force_push_dropped(commits: pd.DataFrame, dags: Dict[str, DAG]) -> p
         repo_indexes = np.flatnonzero(indexes == i)
         repo_hashes = hashes[repo_indexes]
         accessible_indexes.append(
-            repo_indexes[np.in1d(repo_hashes, dags[repo][0], assume_unique=True)],
+            repo_indexes[np.in1d(repo_hashes, dags[repo][1][0], assume_unique=True)],
         )
     accessible_indexes = np.sort(np.concatenate(accessible_indexes))
     return commits.take(accessible_indexes)
@@ -270,7 +273,7 @@ def _remove_force_push_dropped(commits: pd.DataFrame, dags: Dict[str, DAG]) -> p
     refresh_on_access=True,
 )
 async def fetch_repository_commits(
-    repos: Dict[str, DAG],
+    repos: Dict[str, Tuple[bool, DAG]],
     branches: pd.DataFrame,
     columns: Tuple[
         Union[str, InstrumentedAttribute],
@@ -284,7 +287,7 @@ async def fetch_repository_commits(
     mdb: Database,
     pdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Dict[str, DAG]:
+) -> Dict[str, Tuple[bool, DAG]]:
     """
     Load full commit DAGs for the given repositories.
 
@@ -296,12 +299,12 @@ async def fetch_repository_commits(
                     3. Commit timestamp. \
                     4. Commit repository name.
     :param prune: Remove any commits that are not accessible from `branches`.
-    :return: Map from repository names to their DAGs.
+    :return: Map from repository names to their DAG consistency indicators and bodies.
     """
     if branches.empty:
         if not prune:
             return repos
-        return {key: _empty_dag() for key in repos}
+        return {key: (True, _empty_dag()) for key in repos}
     missed_counter = 0
     repo_heads = {}
     sha_col, id_col, dt_col, repo_col = (c if isinstance(c, str) else c.name for c in columns)
@@ -323,7 +326,7 @@ async def fetch_repository_commits(
         required_shas = required_shas[required_shas != b""]
         repo_heads[repo] = required_shas
         try:
-            hashes, vertexes, edges = repos[drop_logical_repo(repo)]
+            _, (hashes, vertexes, edges) = repos[drop_logical_repo(repo)]
         except KeyError:
             # totally OK, `branches` may include repositories from other ForSet-s
             continue
@@ -348,14 +351,14 @@ async def fetch_repository_commits(
         else:
             if prune:
                 hashes, vertexes, edges = extract_subdag(hashes, vertexes, edges, required_shas)
-            result[repo] = hashes, vertexes, edges
+            result[repo] = True, (hashes, vertexes, edges)
     # traverse commits starting from the missing branch heads
     add_pdb_hits(pdb, "fetch_repository_commits", len(df_shas) - missed_counter)
     add_pdb_misses(pdb, "fetch_repository_commits", missed_counter)
     if tasks:
         new_dags = await gather(*tasks, op="fetch_repository_commits/mdb")
         sql_values = []
-        for repo, hashes, vertexes, edges in new_dags:
+        for consistent, repo, hashes, vertexes, edges in new_dags:
             assert (hashes[1:] > hashes[:-1]).all(), repo
             sql_values.append(
                 GitHubCommitHistory(
@@ -368,7 +371,7 @@ async def fetch_repository_commits(
             )
             if prune:
                 hashes, vertexes, edges = extract_subdag(hashes, vertexes, edges, repo_heads[repo])
-            result[repo] = hashes, vertexes, edges
+            result[repo] = consistent, (hashes, vertexes, edges)
         if pdb.url.dialect == "postgresql":
             sql = postgres_insert(GitHubCommitHistory)
             sql = sql.on_conflict_do_update(
@@ -395,7 +398,7 @@ async def fetch_repository_commits(
         await defer(execute(), "fetch_repository_commits/pdb")
     for repo, pdag in repos.items():
         if repo not in result:
-            result[repo] = _empty_dag() if prune else pdag
+            result[repo] = (True, _empty_dag()) if prune else pdag
     return result
 
 
@@ -421,7 +424,7 @@ COMMIT_FETCH_COMMITS_COLUMNS = (
 
 @sentry_span
 async def fetch_repository_commits_no_branch_dates(
-    repos: Dict[str, DAG],
+    repos: Dict[str, Tuple[bool, DAG]],
     branches: pd.DataFrame,
     columns: Tuple[str, str, str, str],
     prune: bool,
@@ -430,7 +433,7 @@ async def fetch_repository_commits_no_branch_dates(
     mdb: Database,
     pdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Dict[str, DAG]:
+) -> Dict[str, Tuple[bool, DAG]]:
     """
     Load full commit DAGs for the given repositories.
 
@@ -454,7 +457,7 @@ async def fetch_repository_commits_from_scratch(
     mdb: Database,
     pdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Tuple[Dict[str, DAG], pd.DataFrame, Dict[str, str]]:
+) -> Tuple[Dict[str, Tuple[bool, DAG]], pd.DataFrame, Dict[str, str]]:
     """
     Load full commit DAGs for the given repositories.
 
@@ -473,7 +476,7 @@ async def fetch_repository_commits_from_scratch(
 
 @sentry_span
 @cached(
-    exptime=60 * 60,  # 1 hour
+    exptime=middle_term_exptime,
     serialize=pickle.dumps,
     deserialize=pickle.loads,
     key=lambda repos, **_: (",".join(sorted(repos)),),
@@ -483,7 +486,7 @@ async def fetch_precomputed_commit_history_dags(
     account: int,
     pdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Dict[str, DAG]:
+) -> Dict[str, Tuple[bool, DAG]]:
     """Load commit DAGs from the pdb."""
     ghrc = GitHubCommitHistory
     format_version = ghrc.__table__.columns[ghrc.format_version.key].default.arg
@@ -499,15 +502,14 @@ async def fetch_precomputed_commit_history_dags(
         )
     dags = {
         row[ghrc.repository_full_name.name]: (
-            (dag := DAGStruct(row[ghrc.dag.name])).hashes,
-            dag.vertexes,
-            dag.edges,
+            True,
+            ((dag := DAGStruct(row[ghrc.dag.name])).hashes, dag.vertexes, dag.edges),
         )
         for row in rows
     }
     for repo in repos:
         if repo not in dags:
-            dags[repo] = _empty_dag()
+            dags[repo] = True, _empty_dag()
     return dags
 
 
@@ -525,7 +527,8 @@ async def _fetch_commit_history_dag(
     repo: str,
     meta_ids: Tuple[int, ...],
     mdb: Database,
-) -> Tuple[str, np.ndarray, np.ndarray, np.ndarray]:
+) -> Tuple[bool, str, np.ndarray, np.ndarray, np.ndarray]:
+    consistent = True
     max_stop_heads = 25
     max_inner_partitions = 25
     log = logging.getLogger("%s._fetch_commit_history_dag" % metadata.__package__)
@@ -580,6 +583,7 @@ async def _fetch_commit_history_dag(
                 head_ids[:batch_size].tolist(),
                 new_edges if len(new_edges) < 100 else f"<{len(new_edges)} new edges>",
             )
+            consistent = False
             new_edges = []
         else:
             append_missing_heads(new_edges, head_hashes[:batch_size])
@@ -591,6 +595,7 @@ async def _fetch_commit_history_dag(
                 )
                 if latest_commit is None:
                     log.error("failed to fetch committed_date of %s", orphans.tolist())
+                    consistent = False
                     new_edges = []
                 else:
                     latest_commit = ensure_db_datetime_tz(latest_commit, mdb)
@@ -599,6 +604,7 @@ async def _fetch_commit_history_dag(
                             "skipping because some orphans are suspiciously young: %s",
                             orphans.tolist(),
                         )
+                        consistent = False
                         new_edges = []
         hashes, vertexes, edges = join_dags(hashes, vertexes, edges, new_edges)
         head_hashes = head_hashes[batch_size:]
@@ -610,7 +616,7 @@ async def _fetch_commit_history_dag(
             if len(collateral) > 0:
                 head_hashes = np.delete(head_hashes, collateral)
                 head_ids = np.delete(head_ids, collateral)
-    return repo, hashes, vertexes, edges
+    return consistent, repo, hashes, vertexes, edges
 
 
 async def _fetch_commit_history_edges(
@@ -689,7 +695,7 @@ async def fetch_dags_with_commits(
     mdb: Database,
     pdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Tuple[Dict[str, DAG], pd.DataFrame]:
+) -> Tuple[Dict[str, Tuple[bool, DAG]], pd.DataFrame]:
     """
     Load full commit DAGs for the given commit node IDs mapped from repository names.
 
