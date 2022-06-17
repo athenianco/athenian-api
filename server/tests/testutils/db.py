@@ -1,12 +1,13 @@
 """Db related test utilities."""
 
 from functools import reduce
-from typing import Any, Union, cast
+from typing import Any, Optional, Union, cast
 
 import asyncpg
 import sqlalchemy as sa
 from sqlalchemy.engine.row import Row
 from sqlalchemy.orm.decl_api import DeclarativeMeta
+from sqlalchemy.schema import Table
 from sqlalchemy.sql.expression import ClauseElement, Insert, Selectable
 
 from athenian.api.db import Database, DatabaseLike
@@ -47,6 +48,14 @@ async def assert_existing_row(
     row = await db.fetch_one(stmt)
     assert row is not None
     return row
+
+
+async def count(db: Database, table: Table, where: Optional[ClauseElement] = None) -> int:
+    """Execute a simple count query."""
+    stmt = sa.select(sa.func.count()).select_from(table)
+    if where is not None:
+        stmt = stmt.where(where)
+    return await db.fetch_val(stmt)
 
 
 def _build_table_where_clause(table: DeclarativeMeta, **kwargs: Any) -> ClauseElement:
