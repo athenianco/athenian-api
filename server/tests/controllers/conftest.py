@@ -381,7 +381,7 @@ async def fetch_dag(mdb, heads=None):
             2755363,
         ]
     edges = await _fetch_commit_history_edges(heads, [], (6366825,), mdb)
-    return {"src-d/go-git": join_dags(*_empty_dag(), edges)}
+    return {"src-d/go-git": (True, join_dags(*_empty_dag(), edges))}
 
 
 def with_only_master_branch(func):

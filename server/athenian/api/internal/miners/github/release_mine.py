@@ -370,7 +370,7 @@ async def _mine_releases(
         )
         all_hashes = []
         for repo, repo_releases in releases.groupby(Release.repository_full_name.name, sort=False):
-            hashes, vertexes, edges = dags[drop_logical_repo(repo)]
+            _, (hashes, vertexes, edges) = dags[drop_logical_repo(repo)]
             if len(hashes) == 0:
                 log.error("%s has an empty commit DAG, skipped from mining releases", repo)
                 continue
@@ -1681,7 +1681,7 @@ async def diff_releases(
             start_sha, finish_sha = (
                 repo_releases[x][0][Release.sha.name] for x in (start, finish)
             )
-            hashes, _, _ = extract_subdag(*dags[repo], np.array([finish_sha]))
+            hashes, _, _ = extract_subdag(*dags[repo][1], np.array([finish_sha]))
             if hashes[searchsorted_inrange(hashes, np.array([start_sha]))] == start_sha:
                 diff = []
                 for i in range(start + 1, finish + 1):

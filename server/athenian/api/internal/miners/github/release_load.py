@@ -302,6 +302,9 @@ class ReleaseLoader:
             add_pdb_misses(pdb, "releases/all", len(missing_all))
         if tasks:
             missings = await gather(*tasks)
+            if inconsistent := list(chain.from_iterable(m[1] for m in missings)):
+                log.warning("failed to load releases for inconsistent %s", inconsistent)
+            missings = [m[0] for m in missings]
             missings = pd.concat(missings, copy=False)
             assert matched_by_column in missings
             releases = pd.concat([releases, missings], copy=False)
@@ -343,6 +346,10 @@ class ReleaseLoader:
                         matches = applied_matches.copy()
                         for repo in ambiguous_branches_scanned:
                             matches[repo] = ReleaseMatch.branch
+                        for repo in inconsistent:
+                            # we must not update the spans for inconsistent repos by branch
+                            if matches[repo] == ReleaseMatch.branch:
+                                matches[repo] = ReleaseMatch.rejected
                         await cls._store_precomputed_release_match_spans(
                             match_groups, matches, time_from, time_to, account, pdb_conn,
                         )
@@ -479,7 +486,7 @@ class ReleaseLoader:
         pdb: Database,
         cache: Optional[aiomcache.Client],
         index: Optional[Union[str, Sequence[str]]] = None,
-    ) -> pd.DataFrame:
+    ) -> Tuple[pd.DataFrame, List[str]]:
         rel_matcher = ReleaseMatcher(account, meta_ids, mdb, pdb, cache)
         repos_by_tag = []
         repos_by_branch = []
@@ -509,10 +516,12 @@ class ReleaseLoader:
                 ),
             )
         result = await gather(*result)
-        result = pd.concat(result, ignore_index=True) if result else dummy_releases_df()
+        dfs = [r[0] for r in result]
+        inconsistent = list(chain.from_iterable(r[1] for r in result))
+        result = pd.concat(dfs, ignore_index=True) if dfs else dummy_releases_df()
         if index is not None:
             result.set_index(index, inplace=True)
-        return result
+        return result, inconsistent
 
     @classmethod
     @sentry_span
@@ -1064,7 +1073,7 @@ class ReleaseMatcher:
         time_to: datetime,
         release_settings: ReleaseSettings,
         releases: Optional[pd.DataFrame] = None,
-    ) -> pd.DataFrame:
+    ) -> Tuple[pd.DataFrame, List[str]]:
         """Return the releases matched by tag."""
         if releases is None:
             with sentry_sdk.start_span(op="fetch_tags"):
@@ -1176,8 +1185,8 @@ class ReleaseMatcher:
                 missing_count,
             )
             if missing_commit.any():
-                releases.disable_consolidate()
                 indexes = np.flatnonzero(~missing_commit)
+                releases.disable_consolidate()
                 releases = releases.take(indexes)
                 releases.reset_index(inplace=True, drop=True)
                 release_index_repos = release_index_repos[indexes]
@@ -1216,7 +1225,7 @@ class ReleaseMatcher:
         else:
             releases = releases.iloc[:0]
         releases[matched_by_column] = ReleaseMatch.tag.value
-        return releases
+        return releases, []
 
     @sentry_span
     async def match_releases_by_branch(
@@ -1227,8 +1236,8 @@ class ReleaseMatcher:
         time_from: datetime,
         time_to: datetime,
         release_settings: ReleaseSettings,
-    ) -> pd.DataFrame:
-        """Return the releases matched by branch."""
+    ) -> Tuple[pd.DataFrame, List[str]]:
+        """Return the releases matched by branch and the list of inconsistent repositories."""
         assert not contains_logical_repos(repos)
         branches = branches.take(
             np.flatnonzero(branches[Branch.repository_full_name.name].isin(repos).values),
@@ -1237,7 +1246,7 @@ class ReleaseMatcher:
             branches, default_branches, release_settings,
         )
         if not branches_matched:
-            return dummy_releases_df()
+            return dummy_releases_df(), []
         branches = pd.concat(branches_matched.values(), ignore_index=True)
         tasks = [
             load_branch_commit_dates(branches, self._meta_ids, self._mdb),
@@ -1257,10 +1266,16 @@ class ReleaseMatcher:
             self._pdb,
             self._cache,
         )
-        first_shas = [
-            extract_first_parents(*dags[repo], branches[Branch.commit_sha.name].values)
-            for repo, branches in branches_matched.items()
-        ]
+        first_shas = []
+        inconsistent = []
+        for repo, branches in branches_matched.items():
+            consistent, dag = dags[repo]
+            if not consistent:
+                inconsistent.append(repo)
+            else:
+                first_shas.append(
+                    extract_first_parents(*dag, branches[Branch.commit_sha.name].values),
+                )
         first_shas = np.sort(np.concatenate(first_shas))
         first_commits = await self._fetch_commits(first_shas, time_from, time_to)
         pseudo_releases = []
@@ -1305,8 +1320,8 @@ class ReleaseMatcher:
                 ),
             )
         if not pseudo_releases:
-            return dummy_releases_df()
-        return pd.concat(pseudo_releases, ignore_index=True, copy=False)
+            return dummy_releases_df(), inconsistent
+        return pd.concat(pseudo_releases, ignore_index=True, copy=False), inconsistent
 
     def _match_branches_by_release_settings(
         self,

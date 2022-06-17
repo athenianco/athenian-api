@@ -1309,7 +1309,7 @@ async def _submit_deployed_releases(
 @sentry_span
 async def _fetch_commit_stats(
     all_mentioned_hashes: np.ndarray,
-    dags: Dict[str, DAG],
+    dags: Dict[str, Tuple[bool, DAG]],
     logical_settings: LogicalRepositorySettings,
     meta_ids: Tuple[int, ...],
     mdb: Database,
@@ -1427,7 +1427,7 @@ async def _fetch_commit_stats(
     pr_commits = np.zeros_like(pr_lines)
     all_pr_hashes = []
     for repo, hashes in prs_by_repo.items():
-        dag = dags[repo]
+        dag = dags[repo][1]
         pr_hashes = extract_pr_commits(*dag, np.array(hashes, dtype="S40"))
         merge_sha_indexes = np.searchsorted(merge_shas, hashes)
         commit_counts = np.fromiter((len(c) for c in pr_hashes), int, len(pr_hashes))
@@ -1535,7 +1535,7 @@ async def _fetch_commit_stats(
     extra_pr_repo_names = []
     extra_pr_titles = []
     for repo_id, merges in force_pushed_per_repo.items():
-        dag = dags[(repo_name := repo_node_to_name[repo_id])]
+        dag = dags[(repo_name := repo_node_to_name[repo_id])][1]
         pr_hashes = extract_pr_commits(*dag, np.array([c[0] for c in merges], dtype="S40"))
         for (merge_sha, pr_number), shas in zip(merges, pr_hashes):
             try:
@@ -1609,7 +1609,7 @@ async def _extract_deployed_commits(
     components: pd.DataFrame,
     deployed_commits_df: pd.DataFrame,
     commit_relationship: Dict[str, Dict[str, Dict[int, Dict[int, CommitRelationship]]]],
-    dags: Dict[str, DAG],
+    dags: Dict[str, Tuple[bool, DAG]],
 ) -> Tuple[Dict[str, Dict[str, DeployedCommitDetails]], np.ndarray]:
     commit_ids_in_df = deployed_commits_df[PushCommit.node_id.name].values
     commit_shas_in_df = deployed_commits_df[PushCommit.sha.name].values
@@ -1624,7 +1624,7 @@ async def _extract_deployed_commits(
         [DeploymentNotification.environment.name, DeployedComponent.repository_full_name],
         sort=False,
     ).grouper.indices.items():
-        dag = dags[drop_logical_repo(repo_name)]
+        dag = dags[drop_logical_repo(repo_name)][1]
 
         grouped_deployment_finished_ats = deployment_finished_ats[indexes]
         order = np.argsort(grouped_deployment_finished_ats)[::-1]
@@ -1765,7 +1765,7 @@ async def _resolve_commit_relationship(
     cache: Optional[aiomcache.Client],
 ) -> Tuple[
     Dict[str, Dict[str, Dict[int, Dict[int, CommitRelationship]]]],
-    Dict[str, DAG],
+    Dict[str, Tuple[bool, DAG]],
     pd.DataFrame,
     List[str],
 ]:
@@ -1859,7 +1859,7 @@ async def _resolve_commit_relationship(
             found_failed_indexes = found_indexes[len(successful_commits) :][failed_remap]
             successful_shas = commit_shas_in_df[found_successful_indexes]
             failed_shas = commit_shas_in_df[found_failed_indexes]
-            dag = dags[drop_logical_repo(repo_name)]
+            dag = dags[drop_logical_repo(repo_name)][1]
             # commits deployed earlier must steal the ownership despite the DAG relationships
             ownership = mark_dag_access(*dag, successful_shas, True)
             all_shas = np.concatenate([successful_shas, failed_shas])
@@ -1898,7 +1898,7 @@ async def _resolve_commit_relationship(
             root_ids, root_shas, root_deployed_ats, success_len = root_details_per_repo[env][
                 repo_name
             ]
-            dag = dags[drop_logical_repo(repo_name)]
+            dag = dags[drop_logical_repo(repo_name)][1]
             successful_shas = np.concatenate([root_shas[:success_len], shas])
             # even if `sha` is a child, it was deployed earlier, hence must steal the ownership
             ownership = mark_dag_access(*dag, successful_shas, True)
@@ -1938,7 +1938,7 @@ async def _resolve_commit_relationship(
                 root_ids, root_shas, root_deployed_ats, success_len = root_details_per_repo[env][
                     repo_name
                 ]
-                dag = dags[drop_logical_repo(repo_name)]
+                dag = dags[drop_logical_repo(repo_name)][1]
                 successful_shas = np.concatenate([root_shas[:success_len], shas])
                 # even if `sha` is a child, it was deployed earlier, hence must steal the ownership
                 ownership = mark_dag_access(*dag, successful_shas, True)
@@ -2003,12 +2003,12 @@ async def _resolve_commit_relationship(
 @sentry_span
 async def _extend_dags_with_previous_commits(
     previous: Dict[str, Dict[str, Tuple[List[int], List[bytes], List[datetime]]]],
-    dags: Dict[str, DAG],
+    dags: Dict[str, Tuple[bool, DAG]],
     account: int,
     meta_ids: Tuple[int, ...],
     mdb: Database,
     pdb: Database,
-):
+) -> Dict[str, Tuple[bool, DAG]]:
     records = {}
     missing_sha = b"0" * 40
     for repos in previous.values():

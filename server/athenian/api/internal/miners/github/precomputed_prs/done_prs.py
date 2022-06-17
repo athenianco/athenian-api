@@ -1068,7 +1068,7 @@ async def delete_force_push_dropped_prs(
     del rows
     node_commit = aliased(NodeCommit, name="c")
     node_pr = aliased(NodePullRequest, name="pr")
-    tasks = [
+    pr_merges, dags = await gather(
         mdb.fetch_all(
             select([node_commit.sha, node_pr.node_id])
             .select_from(
@@ -1090,11 +1090,11 @@ async def delete_force_push_dropped_prs(
         fetch_repository_commits(
             dags, branches, BRANCH_FETCH_COMMITS_COLUMNS, True, account, meta_ids, mdb, pdb, cache,
         ),
-    ]
+        op="fetch merges + prune dags",
+    )
     del pr_node_ids
-    pr_merges, dags = await gather(*tasks, op="fetch merges + prune dags")
     if dags:
-        accessible_hashes = np.sort(np.concatenate([dag[0] for dag in dags.values()]))
+        accessible_hashes = np.sort(np.concatenate([dag[1][0] for dag in dags.values()]))
     else:
         accessible_hashes = np.array([], dtype="S40")
     merge_hashes = np.fromiter((r[0] for r in pr_merges), "S40", len(pr_merges))

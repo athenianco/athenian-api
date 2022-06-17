@@ -818,7 +818,7 @@ class PullRequestMiner:
         matched_bys: Dict[str, ReleaseMatch],
         branches: pd.DataFrame,
         default_branches: Dict[str, str],
-        dags: Dict[str, DAG],
+        dags: Dict[str, Tuple[bool, DAG]],
         release_settings: ReleaseSettings,
         logical_settings: LogicalRepositorySettings,
         prefixer: Prefixer,
@@ -881,7 +881,7 @@ class PullRequestMiner:
         matched_bys: Dict[str, ReleaseMatch],
         branches: pd.DataFrame,
         default_branches: Dict[str, str],
-        dags: Dict[str, DAG],
+        dags: Dict[str, Tuple[bool, DAG]],
         release_settings: ReleaseSettings,
         logical_settings: LogicalRepositorySettings,
         prefixer: Prefixer,
@@ -1364,7 +1364,7 @@ class PullRequestMiner:
         pr_blacklist: Optional[BinaryExpression],
         pr_whitelist: Optional[BinaryExpression],
         branches: pd.DataFrame,
-        dags: Optional[Dict[str, DAG]],
+        dags: Optional[Dict[str, Tuple[bool, DAG]]],
         account: int,
         meta_ids: Tuple[int, ...],
         mdb: Database,
@@ -1375,7 +1375,7 @@ class PullRequestMiner:
         updated_max: Optional[datetime] = None,
         fetch_branch_dags_task: Optional[asyncio.Task] = None,
         with_labels: bool = False,
-    ) -> Tuple[pd.DataFrame, Dict[str, DAG], Optional[pd.DataFrame]]:
+    ) -> Tuple[pd.DataFrame, Dict[str, Tuple[bool, DAG]], Optional[pd.DataFrame]]:
         """
         Query pull requests from mdb that satisfy the given filters.
 
@@ -1452,7 +1452,7 @@ class PullRequestMiner:
         cls,
         prs: pd.DataFrame,
         branches: pd.DataFrame,
-        dags: Dict[str, DAG],
+        dags: Dict[str, Tuple[bool, DAG]],
         meta_ids: Tuple[int, ...],
         mdb: Database,
         columns=PullRequest,
@@ -1499,7 +1499,7 @@ class PullRequestMiner:
             end_pos = pos + n_prs
             pos += n_prs
             repo_pr_merge_hashes = pr_merge_hashes[begin_pos:end_pos]
-            dag_hashes = dags[repo][0]
+            dag_hashes = dags[repo][1][0]
             if len(dag_hashes) == 0:
                 # no branches found in `fetch_repository_commits()`
                 continue
@@ -1577,7 +1577,7 @@ class PullRequestMiner:
             end_pos = pos + n_prs
             pos += n_prs
             repo_pr_merge_hashes = pr_merge_hashes[begin_pos:end_pos]
-            dag_hashes = dags[repo][0]
+            dag_hashes = dags[repo][1][0]
             found = (
                 dag_hashes[searchsorted_inrange(dag_hashes, repo_pr_merge_hashes)]
                 == repo_pr_merge_hashes
@@ -1611,14 +1611,14 @@ class PullRequestMiner:
     async def _fetch_branch_dags(
         cls,
         repositories: Iterable[str],
-        dags: Optional[Dict[str, DAG]],
+        dags: Optional[Dict[str, Tuple[bool, DAG]]],
         branches: pd.DataFrame,
         account: int,
         meta_ids: Tuple[int, ...],
         mdb: Database,
         pdb: Database,
         cache: Optional[aiomcache.Client],
-    ) -> Dict[str, DAG]:
+    ) -> Dict[str, Tuple[bool, DAG]]:
         if dags is None:
             dags = await fetch_precomputed_commit_history_dags(repositories, account, pdb, cache)
         return await fetch_repository_commits_no_branch_dates(
@@ -2449,7 +2449,7 @@ class PullRequestMiner:
         updated_min: Optional[datetime],
         updated_max: Optional[datetime],
         branches: pd.DataFrame,
-        dags: Optional[Dict[str, DAG]],
+        dags: Optional[Dict[str, Tuple[bool, DAG]]],
         account: int,
         meta_ids: Tuple[int, ...],
         mdb: Database,

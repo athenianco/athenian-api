@@ -5,6 +5,7 @@ from itertools import chain
 import pickle
 from typing import Any, Dict
 
+from numpy.testing import assert_array_equal
 import pandas as pd
 from pandas.core.dtypes.common import is_datetime64_any_dtype
 from pandas.testing import assert_frame_equal, assert_index_equal
@@ -1864,7 +1865,7 @@ async def test_fetch_prs_no_branches(mdb, pdb, dag, branch_miner, pr_miner, pref
     branches[Branch.repository_full_name.name] = "xxx"
     branches[Branch.commit_date] = [datetime.now(timezone.utc)]
     dags = dag.copy()
-    dags["xxx"] = _empty_dag()
+    dags["xxx"] = True, _empty_dag()
     args = [
         datetime(2015, 1, 1, tzinfo=timezone.utc),
         datetime(2021, 1, 1, tzinfo=timezone.utc),
@@ -1921,9 +1922,11 @@ async def test_fetch_prs_dead(mdb, pdb, branch_miner, pr_miner, prefixer):
     assert prs["dead"].sum() == len(force_push_dropped_go_git_pr_numbers)
     pdb_dag = DAG(await pdb.fetch_val(select([GitHubCommitHistory.dag])))
     dag = await fetch_dag(mdb, branches[Branch.commit_id.name].tolist())
-    assert not (set(dag["src-d/go-git"][0]) - set(pdb_dag.hashes))
+    assert not (set(dag["src-d/go-git"][1][0]) - set(pdb_dag.hashes))
     for i in range(3):
-        assert (xdags["src-d/go-git"][i] == pdb_dag[["hashes", "vertexes", "edges"][i]]).all()
+        assert_array_equal(
+            xdags["src-d/go-git"][1][i], pdb_dag[["hashes", "vertexes", "edges"][i]],
+        )
 
 
 @with_defer
