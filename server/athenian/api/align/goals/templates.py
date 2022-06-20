@@ -22,4 +22,13 @@ TEMPLATES_COLLECTION = {
     7: {
         "metric": PullRequestMetricID.PR_ALL_MAPPED_TO_JIRA,
     },
+    8: {
+        "metric": PullRequestMetricID.PR_WAIT_FIRST_REVIEW_TIME,
+    },
+    9: {
+        "metric": PullRequestMetricID.PR_OPEN_TIME,
+    },
+    10: {
+        "metric": JIRAMetricID.JIRA_LEAD_TIME,
+    },
 }
