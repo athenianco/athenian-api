@@ -5,19 +5,19 @@
 from posix.dlfcn cimport RTLD_LAZY, dlclose, dlopen, dlsym
 
 cimport cython
-from cpython cimport Py_INCREF, PyBytes_FromString, PyObject
+from cpython cimport Py_INCREF, PyObject
 from cython.operator cimport dereference, postincrement
 from libc.stdint cimport int8_t, int32_t, int64_t, uint32_t, uint64_t
 from libc.string cimport memcpy, memset, strlen, strncmp
 from libcpp cimport bool
-from libcpp.string cimport string
+from libcpp.algorithm cimport binary_search
 from libcpp.unordered_map cimport unordered_map
 from libcpp.unordered_set cimport unordered_set
 from libcpp.utility cimport pair
 from libcpp.vector cimport vector
 from numpy cimport PyArray_BYTES
 
-from typing import Any, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import asyncpg
 import numpy as np
@@ -34,11 +34,18 @@ cdef extern from "Python.h":
     long PyLong_AsLong(PyObject *) nogil
     # likewise, avoid refcounting
     void *PyUnicode_DATA(PyObject *) nogil
-    object PyUnicode_FromString(const char *)
+    object PyUnicode_FromStringAndSize(const char *, Py_ssize_t)
     # nogil!
     PyObject *PyList_GET_ITEM(PyObject *, Py_ssize_t) nogil
     PyObject *PyTuple_GET_ITEM(PyObject *, Py_ssize_t) nogil
     PyObject *Py_None
+
+
+cdef extern from "<string_view>" namespace "std" nogil:
+    cppclass string_view:
+        string_view() except +
+        string_view(const char *, size_t) except +
+        const char *data()
 
 
 # ApgRecord_New is not exported from the Python interface of asyncpg
@@ -165,8 +172,8 @@ def join_dags(hashes: np.ndarray,
         PyObject *record
         PyObject *obj
         char *new_hashes_data
-        unordered_map[string, int] new_hashes_map, hashes_map
-        unordered_map[string, int].iterator it
+        unordered_map[string_view, int] new_hashes_map, hashes_map
+        unordered_map[string_view, int].iterator it
         vector[Edge] *found_edges
         Edge edge
         bool exists
@@ -218,16 +225,15 @@ def join_dags(hashes: np.ndarray,
     new_hashes_data = PyArray_BYTES(new_hashes)
     with nogil:
         for i in range(size):
-            new_hashes_map[string(new_hashes_data + i * 40, 40)] = i
+            new_hashes_map[string_view(new_hashes_data + i * 40, 40)] = i
     if len(hashes) > 0:
         size = len(result_hashes)
         new_hashes_data = PyArray_BYTES(result_hashes)
         with nogil:
             for i in range(size):
-                hashes_map[string(new_hashes_data + i * 40, 40)] = i
+                hashes_map[string_view(new_hashes_data + i * 40, 40)] = i
     else:
         hashes_map = new_hashes_map
-    del new_hashes
 
     cdef:
         vector[vector[Edge]] new_edges_lists = vector[vector[Edge]](new_hashes_map.size())
@@ -242,7 +248,7 @@ def join_dags(hashes: np.ndarray,
                     # initial commit
                     continue
                 parent_oid = <const char *> PyUnicode_DATA(ApgRecord_GET_ITEM(record, 0))
-                it = new_hashes_map.find(parent_oid)
+                it = new_hashes_map.find(string_view(parent_oid, 40))
                 if it != new_hashes_map.end():
                     parent_index = PyLong_AsLong(ApgRecord_GET_ITEM(record, 2))
                     found_edges = &new_edges_lists[dereference(it).second]
@@ -253,7 +259,7 @@ def join_dags(hashes: np.ndarray,
                             break
                     if not exists:
                         # https://github.com/cython/cython/issues/1642
-                        edge.vertex = hashes_map[child_oid]
+                        edge.vertex = hashes_map[string_view(child_oid, 40)]
                         edge.position = parent_index
                         found_edges.push_back(edge)
                         new_edges_counter += 1
@@ -266,7 +272,7 @@ def join_dags(hashes: np.ndarray,
                     # initial commit
                     continue
                 parent_oid = <const char *> PyUnicode_DATA(PyTuple_GET_ITEM(record, 0))
-                it = new_hashes_map.find(parent_oid)
+                it = new_hashes_map.find(string_view(parent_oid, 40))
                 if it != new_hashes_map.end():
                     parent_index = PyLong_AsLong(PyTuple_GET_ITEM(record, 2))
                     found_edges = &new_edges_lists[dereference(it).second]
@@ -277,7 +283,7 @@ def join_dags(hashes: np.ndarray,
                             break
                     if not exists:
                         # https://github.com/cython/cython/issues/1642
-                        edge.vertex = hashes_map[child_oid]
+                        edge.vertex = hashes_map[string_view(child_oid, 40)]
                         edge.position = parent_index
                         found_edges.push_back(edge)
                         new_edges_counter += 1
@@ -349,8 +355,8 @@ cdef void _recalculate_vertices_and_edges(const int64_t[:] found_matches,
 def append_missing_heads(edges: List[Tuple[str, str, int]],
                          hashes: np.ndarray) -> None:
     cdef:
-        unordered_set[string] hashes_set
-        unordered_set[string].const_iterator it
+        unordered_set[string_view] hashes_set
+        unordered_set[string_view].const_iterator it
         Py_ssize_t size
         int i
         PyObject *record
@@ -361,37 +367,41 @@ def append_missing_heads(edges: List[Tuple[str, str, int]],
     hashes_data = PyArray_BYTES(hashes)
     with nogil:
         for i in range(size):
-            hashes_set.insert(string(hashes_data + 40 * i, 40))
+            hashes_set.insert(string_view(hashes_data + 40 * i, 40))
     size = len(edges)
     if size > 0:
         if isinstance(edges[0], asyncpg.Record):
             with nogil:
                 for i in range(size):
                     record = PyList_GET_ITEM(<PyObject *>edges, i)
-                    hashes_set.erase(<const char *> PyUnicode_DATA(ApgRecord_GET_ITEM(record, 0)))
-                    hashes_set.erase(<const char *> PyUnicode_DATA(ApgRecord_GET_ITEM(record, 1)))
+                    hashes_set.erase(string_view(
+                        <const char *> PyUnicode_DATA(ApgRecord_GET_ITEM(record, 0)), 40))
+                    hashes_set.erase(string_view(
+                        <const char *> PyUnicode_DATA(ApgRecord_GET_ITEM(record, 1)), 40))
                 desc = ApgRecord_GET_DESC(PyList_GET_ITEM(<PyObject *>edges, 0))
         else:
             assert isinstance(edges[0], tuple)
             with nogil:
                 for i in range(size):
                     record = PyList_GET_ITEM(<PyObject *>edges, i)
-                    hashes_set.erase(<const char *> PyUnicode_DATA(PyTuple_GET_ITEM(record, 0)))
-                    hashes_set.erase(<const char *> PyUnicode_DATA(PyTuple_GET_ITEM(record, 1)))
+                    hashes_set.erase(string_view(
+                        <const char *> PyUnicode_DATA(PyTuple_GET_ITEM(record, 0)), 40))
+                    hashes_set.erase(string_view(
+                        <const char *> PyUnicode_DATA(PyTuple_GET_ITEM(record, 1)), 40))
     it = hashes_set.const_begin()
     while it != hashes_set.const_end():
         if desc != Py_None:
             new_record = ApgRecord_New(asyncpg.Record, desc, 3)
-            elem = PyUnicode_FromString(dereference(it).c_str())
+            elem = PyUnicode_FromStringAndSize(dereference(it).data(), 40)
             Py_INCREF(elem)
             ApgRecord_SET_ITEM(new_record, 0, elem)
-            elem = PyUnicode_FromString("0" * 40)
+            elem = PyUnicode_FromStringAndSize("0" * 40, 40)
             Py_INCREF(elem)
             ApgRecord_SET_ITEM(new_record, 1, elem)
             Py_INCREF(0)  # interned
             ApgRecord_SET_ITEM(new_record, 2, 0)
         else:
-            new_record = (PyUnicode_FromString(dereference(it).c_str()), "0" * 40, 0)
+            new_record = (PyUnicode_FromStringAndSize(dereference(it).data(), 40), "0" * 40, 0)
         edges.append(new_record)
         postincrement(it)
 
@@ -400,159 +410,228 @@ ctypedef pair[int, const char *] RawEdge
 
 
 @cython.boundscheck(False)
-def validate_edges_integrity(edges: List[Tuple[str, str, int]]) -> bool:
+def verify_edges_integrity(edges: List[Tuple[str, str, int]]) -> List[int]:
     cdef:
-        Py_ssize_t size
+        Py_ssize_t size = len(edges)
+        Py_ssize_t children_size
         const char *oid
-        int indexes_sum, parent_index, i, j
-        unordered_map[string, vector[RawEdge]] children_indexes
-        unordered_map[string, vector[RawEdge]].iterator it
+        int indexes_sum, parent_index, i, j, is_asyncpg
+        unordered_map[string_view, vector[RawEdge]] children_indexes
+        unordered_map[string_view, vector[RawEdge]].iterator it
         PyObject *record
         PyObject *obj
         vector[RawEdge] *children_range
-        bool result, exists
+        vector[char] bads
+        unordered_map[string_view, int] edge_parent_map
+        unordered_map[string_view, vector[int]] reversed_edges
+        unordered_map[string_view, vector[int]].iterator parent_it
+        vector[const char *] edge_parents
+        vector[int] boilerplate
+        bool exists
 
-    size = len(edges)
     if size == 0:
-        return True
-    result = True
-    if isinstance(edges[0], asyncpg.Record):
-        with nogil:
+        return []
+    bads.resize(size)
+    edge_parents.resize(size)
+    is_asyncpg = isinstance(edges[0], asyncpg.Record)
+    if not is_asyncpg:
+        assert isinstance(edges[0], tuple)
+    with nogil:
+        if is_asyncpg:
             for i in range(size):
                 record = PyList_GET_ITEM(<PyObject *>edges, i)
                 obj = ApgRecord_GET_ITEM(record, 0)
                 if obj == Py_None:
-                    result = False
-                    break
-                oid = <const char*> PyUnicode_DATA(obj)
+                    bads[i] = 1
+                    continue
+                oid = <const char *> PyUnicode_DATA(obj)
                 if strlen(oid) != 40:
-                    result = False
-                    break
+                    bads[i] = 1
+                    continue
+                edge_parent_map[string_view(oid, 40)] = i
+                edge_parents[i] = oid
                 parent_index = PyLong_AsLong(ApgRecord_GET_ITEM(record, 2))
-                children_range = &children_indexes[oid]
+                children_range = &children_indexes[string_view(oid, 40)]
 
                 obj = ApgRecord_GET_ITEM(record, 1)
                 if obj == Py_None:
-                    result = False
-                    break
+                    bads[i] = 1
+                    continue
                 oid = <const char *> PyUnicode_DATA(obj)
                 if strlen(oid) != 40:
-                    result = False
-                    break
+                    bads[i] = 1
+                    continue
 
                 exists = False
                 for j in range(<int>children_range.size()):
                     if dereference(children_range)[j].first == parent_index:
                         exists = True
                         if strncmp(dereference(children_range)[j].second, oid, 40):
-                            result = False
+                            bads[i] = 1
                         break
+                reversed_edges[string_view(oid, 40)].push_back(i)
                 if not exists:
                     children_range.push_back(RawEdge(parent_index, oid))
-        if not result:
-            return False
-    else:
-        assert isinstance(edges[0], tuple)
-        with nogil:
+        else:
             for i in range(size):
                 record = PyList_GET_ITEM(<PyObject *>edges, i)
                 obj = PyTuple_GET_ITEM(record, 0)
                 if obj == Py_None:
-                    result = False
-                    break
+                    bads[i] = 1
+                    continue
                 oid = <const char *> PyUnicode_DATA(obj)
                 if strlen(oid) != 40:
-                    result = False
-                    break
+                    bads[i] = 1
+                    continue
+                edge_parent_map[string_view(oid, 40)] = i
+                edge_parents[i] = oid
                 parent_index = PyLong_AsLong(PyTuple_GET_ITEM(record, 2))
-                children_range = &children_indexes[oid]
+                children_range = &children_indexes[string_view(oid, 40)]
 
                 obj = PyTuple_GET_ITEM(record, 1)
                 if obj == Py_None:
-                    result = False
-                    break
+                    bads[i] = 1
+                    continue
                 oid = <const char *> PyUnicode_DATA(obj)
                 if strlen(oid) != 40:
-                    result = False
-                    break
+                    bads[i] = 1
+                    continue
 
                 exists = False
                 for j in range(<int>children_range.size()):
                     if dereference(children_range)[j].first == parent_index:
                         exists = True
                         if strncmp(dereference(children_range)[j].second, oid, 40):
-                            result = False
+                            bads[i] = 1
                         break
+                reversed_edges[string_view(oid, 40)].push_back(i)
                 if not exists:
                     children_range.push_back(RawEdge(parent_index, oid))
-        if not result:
-            return False
-    with nogil:
+
         it = children_indexes.begin()
         while it != children_indexes.end():
             children_range = &dereference(it).second
-            size = children_range.size()
+            children_size = children_range.size()
             indexes_sum = 0
-            for i in range(size):
+            for i in range(children_size):
                 indexes_sum += dereference(children_range)[i].first
-            indexes_sum -= ((size - 1) * size) // 2
+            indexes_sum -= ((children_size - 1) * children_size) // 2
             if indexes_sum != 0:
-                result = False
-                break
+                bads[edge_parent_map[dereference(it).first]] = 1
             postincrement(it)
+
+        # propagate up
+        edge_parent_map.clear()  # we will store tainted hashes here
+        for i in range(size):
+            if bads[i]:
+                boilerplate.push_back(i)
+                while not boilerplate.empty():
+                    parent_index = boilerplate.back()
+                    boilerplate.pop_back()
+                    oid = edge_parents[parent_index]
+                    if oid == NULL:
+                        continue
+                    edge_parent_map[string_view(oid, 40)] = True
+                    parent_it = reversed_edges.find(string_view(oid, 40))
+                    if parent_it != reversed_edges.end():
+                        for j in dereference(parent_it).second:
+                            if not bads[j]:
+                                boilerplate.push_back(j)
+                                bads[j] = 1
+
+    result = []
+    for i in range(size):
+        oid = edge_parents[i]
+        if (
+            bads[i]
+            or oid != NULL and edge_parent_map.find(string_view(oid, 40)) != edge_parent_map.end()
+        ):
+            result.append(i)
     return result
+
+
+ctypedef char sha_t[40]
+
+
+cdef inline bool _compare_shas(const char *first, const char *second) nogil:
+    return strncmp(first, second, 40) < 0
 
 
 @cython.boundscheck(False)
 def find_orphans(edges: List[Tuple[str, str, int]],
-                 attach_to: np.ndarray) -> np.ndarray:
+                 attach_to: np.ndarray) -> Dict[str, List[int]]:
     cdef:
-        Py_ssize_t size
+        Py_ssize_t size = len(edges)
         const char *child_oid
         const char *parent_oid
-        int i
-        unordered_set[string] parents
+        int i, is_asyncpg
+        unordered_set[string_view] parents
+        unordered_map[string_view, vector[RawEdge]] reversed_edges
+        unordered_map[string_view, vector[RawEdge]].iterator reversed_parents
+        sha_t *attach_data
+        Py_ssize_t attach_length = len(attach_to)
         PyObject *record
         PyObject *obj
-        vector[const char *] leaves
+        vector[RawEdge] leaves
+        vector[RawEdge] boilerplate
+        RawEdge edge
+        vector[unordered_set[int]] rejected
 
-    size = len(edges)
-    if size == 0:
-        return np.array([], dtype="S40")
-    if isinstance(edges[0], asyncpg.Record):
-        with nogil:
+    if size == 0 or attach_length == 0:
+        return {}
+
+    assert attach_to.dtype == "S40"
+    attach_data = <sha_t *>PyArray_BYTES(attach_to)
+    is_asyncpg = isinstance(edges[0], asyncpg.Record)
+    with nogil:
+        if is_asyncpg:
             for i in range(size):
                 record = PyList_GET_ITEM(<PyObject *>edges, i)
                 parent_oid = <const char *> PyUnicode_DATA(ApgRecord_GET_ITEM(record, 0))
                 child_oid = <const char *> PyUnicode_DATA(ApgRecord_GET_ITEM(record, 1))
                 if strncmp(child_oid, "0" * 40, 40):
-                    parents.insert(parent_oid)
-                    leaves.push_back(child_oid)
+                    parents.insert(string_view(parent_oid, 40))
+                    leaves.push_back(RawEdge(i, child_oid))
+                    reversed_edges[string_view(child_oid, 40)].push_back(RawEdge(i, parent_oid))
                 else:
-                    leaves.push_back(parent_oid)
-    else:
-        with nogil:
+                    leaves.push_back(RawEdge(i, parent_oid))
+        else:
             for i in range(size):
                 record = PyList_GET_ITEM(<PyObject *> edges, i)
                 parent_oid = <const char *> PyUnicode_DATA(PyTuple_GET_ITEM(record, 0))
                 child_oid = <const char *> PyUnicode_DATA(PyTuple_GET_ITEM(record, 1))
                 if strncmp(child_oid, "0" * 40, 40):
-                    parents.insert(parent_oid)
-                    leaves.push_back(child_oid)
+                    parents.insert(string_view(parent_oid, 40))
+                    leaves.push_back(RawEdge(i, child_oid))
+                    reversed_edges[string_view(child_oid, 40)].push_back(RawEdge(i, parent_oid))
                 else:
-                    leaves.push_back(parent_oid)
+                    leaves.push_back(RawEdge(i, parent_oid))
 
-    with nogil:
+        # propagate orphaned leaves up, recording the parents in `rejected`
         size = 0
         for i in range(<int>leaves.size()):
-            if parents.find(leaves[i]) == parents.end():
-                leaves[size] = leaves[i]
-                size += 1
-    leaves_arr = np.empty(size, dtype="S40")
-    for i in range(size):
-        leaves_arr[i] = PyBytes_FromString(leaves[i])
-    leaves_arr = np.unique(leaves_arr)
-    return leaves_arr[attach_to[searchsorted_inrange(attach_to, leaves_arr)] != leaves_arr]
+            if parents.find(string_view(leaves[i].second, 40)) == parents.end():
+                if not binary_search(attach_data, attach_data + attach_length,
+                                     dereference(<sha_t *>leaves[i].second), _compare_shas):
+                    boilerplate.push_back(leaves[i])
+                    leaves[size] = leaves[i]
+                    size += 1
+                    rejected.push_back(unordered_set[int]())
+                    while not boilerplate.empty():
+                        edge = boilerplate.back()
+                        rejected.back().insert(edge.first)
+                        boilerplate.pop_back()
+                        reversed_parents = reversed_edges.find(string_view(edge.second, 40))
+                        if reversed_parents != reversed_edges.end():
+                            for edge in dereference(reversed_parents).second:
+                                if rejected.back().find(edge.first) == rejected.back().end():
+                                    boilerplate.push_back(edge)
+
+    result = {
+        PyUnicode_FromStringAndSize(leaves[i].second, 40): list(rejected[i])
+        for i in range(size)
+    }
+    return result
 
 
 def mark_dag_access(hashes: np.ndarray,
