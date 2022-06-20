@@ -8,7 +8,7 @@ import aiomcache
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, desc, func, insert, outerjoin, select, union_all
+from sqlalchemy import and_, desc, insert, outerjoin, select, union_all
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
@@ -33,7 +33,7 @@ from athenian.api.internal.miners.github.dag_accelerated import (
     join_dags,
     partition_dag,
     searchsorted_inrange,
-    validate_edges_integrity,
+    verify_edges_integrity,
 )
 from athenian.api.internal.miners.types import DAG as DAGStruct
 from athenian.api.internal.prefixer import Prefixer
@@ -577,35 +577,39 @@ async def _fetch_commit_history_dag(
         new_edges = await _fetch_commit_history_edges(
             head_ids[:batch_size], stop_hashes, meta_ids, mdb,
         )
-        if not validate_edges_integrity(new_edges):
+        if bads := verify_edges_integrity(new_edges):
             log.warning(
-                "skipping because some children are not consistent: heads %s: %s",
-                head_ids[:batch_size].tolist(),
-                new_edges if len(new_edges) < 100 else f"<{len(new_edges)} new edges>",
+                "some new DAG edges are not consistent: %s",
+                [new_edges[i] for i in bads],
             )
             consistent = False
-            new_edges = []
-        else:
-            append_missing_heads(new_edges, head_hashes[:batch_size])
-            if len(hashes) and len(orphans := find_orphans(new_edges, hashes)):
-                latest_commit = await mdb.fetch_val(
-                    select([func.max(NodeCommit.committed_date)]).where(
+            for i in bads[::-1]:
+                new_edges.pop(i)
+        append_missing_heads(new_edges, head_hashes[:batch_size])
+        if orphans := find_orphans(new_edges, hashes):
+            committed_dates = dict(
+                await mdb.fetch_all(
+                    select(NodeCommit.oid, NodeCommit.committed_date).where(
                         and_(NodeCommit.acc_id.in_(meta_ids), NodeCommit.oid.in_(orphans)),
                     ),
-                )
-                if latest_commit is None:
-                    log.error("failed to fetch committed_date of %s", orphans.tolist())
-                    consistent = False
-                    new_edges = []
+                ),
+            )
+            removed_orphans = set()
+            for leaf, indexes in orphans.items():
+                try:
+                    committed_date = committed_dates[leaf]
+                except KeyError:
+                    log.error("failed to fetch committed_date of %s", leaf)
+                    removed_orphans.update(indexes)
                 else:
-                    latest_commit = ensure_db_datetime_tz(latest_commit, mdb)
-                    if datetime.now(timezone.utc) - latest_commit < timedelta(days=1, hours=6):
-                        log.warning(
-                            "skipping because some orphans are suspiciously young: %s",
-                            orphans.tolist(),
-                        )
-                        consistent = False
-                        new_edges = []
+                    committed_date = ensure_db_datetime_tz(committed_date, mdb)
+                    if datetime.now(timezone.utc) - committed_date < timedelta(days=1, hours=6):
+                        log.warning("skipping an orphan which is suspiciously young: %s", leaf)
+                        removed_orphans.update(indexes)
+            if removed_orphans:
+                consistent = False
+                for i in sorted(removed_orphans, reverse=True):
+                    new_edges.pop(i)
         hashes, vertexes, edges = join_dags(hashes, vertexes, edges, new_edges)
         head_hashes = head_hashes[batch_size:]
         head_ids = head_ids[batch_size:]

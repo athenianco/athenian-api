@@ -2141,7 +2141,7 @@ async def test__fetch_commit_history_dag_stops(mdb, dag):
         edges,
         np.array([b"364866fc77fac656e103c1048dd7da4764c6d9d9"], dtype="S40"),
     )
-    assert len(subhashes) < len(hashes)
+    assert len(subhashes) == 1414
     _, _, newhashes, newvertexes, newedges = await _fetch_commit_history_dag(
         subhashes,
         subvertexes,
@@ -2152,9 +2152,9 @@ async def test__fetch_commit_history_dag_stops(mdb, dag):
         (6366825,),
         mdb,
     )
-    assert (newhashes == subhashes).all()
-    assert (newvertexes == subvertexes).all()
-    assert (newedges == subedges).all()
+    assert_array_equal(newhashes, hashes)
+    assert_array_equal(newvertexes, vertexes)
+    assert_array_equal(newedges, edges)
     _, _, newhashes, newvertexes, newedges = await _fetch_commit_history_dag(
         subhashes,
         subvertexes,
@@ -2165,9 +2165,9 @@ async def test__fetch_commit_history_dag_stops(mdb, dag):
         (6366825,),
         mdb,
     )
-    assert (newhashes == hashes).all()
-    assert (newvertexes == vertexes).all()
-    assert (newedges == edges).all()
+    assert_array_equal(newhashes, hashes)
+    assert_array_equal(newvertexes, vertexes)
+    assert_array_equal(newedges, edges)
 
 
 @with_defer
