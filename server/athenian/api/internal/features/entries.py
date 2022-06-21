@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import asyncio
+import dataclasses
 from datetime import datetime, timezone
 from functools import partial, reduce
 from itertools import chain
@@ -42,7 +45,7 @@ from athenian.api.internal.features.github.pull_request_metrics import (
     calculate_logical_prs_duplication_mask,
     group_prs_by_lines,
     group_prs_by_participants,
-    need_jira_mapping,
+    need_jira_mapping as pr_metrics_need_jira_mapping,
 )
 from athenian.api.internal.features.github.release_metrics import (
     ReleaseBinnedMetricCalculator,
@@ -211,8 +214,108 @@ class MetricEntriesCalculator:
         exptime=short_term_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
+        key=lambda requests, quantiles, labels, jira, exclude_inactive, bots, release_settings, logical_settings, **kwargs: (  # noqa
+            ",".join(str(req) for req in requests),
+            ",".join(str(q) for q in quantiles),
+            labels,
+            jira,
+            exclude_inactive,
+            release_settings,
+            logical_settings,
+        ),
+        cache=lambda self, **_: self._cache,
+    )
+    async def batch_calc_pull_request_metrics_line_github(
+        self,
+        requests: Sequence[PullRequestMetricsLineRequest],
+        quantiles: Sequence[float | int],
+        labels: LabelFilter,
+        jira: JIRAFilter,
+        exclude_inactive: bool,
+        bots: set[str],
+        release_settings: ReleaseSettings,
+        logical_settings: LogicalRepositorySettings,
+        prefixer: Prefixer,
+        branches: pd.DataFrame,
+        default_branches: dict[str, str],
+        fresh: bool,
+    ) -> Sequence[np.ndarray]:
+        """Execute a set of requests for pull request metrics.
+
+        A numpy array is returned for every request in `requests`.  The numpy array has the same
+        format of the return type of `calc_pull_request_metrics_line_github()`.
+
+        Calling this method with multiple `requests` is more efficient than calling
+        `calc_pull_request_metrics_line_github()` multiple times.
+
+        """
+        all_repositories = set(
+            chain.from_iterable(chain.from_iterable(request.repositories) for request in requests),
+        )
+        all_participants = _merge_participants(
+            list(chain.from_iterable(request.participants for request in requests)),
+        )
+        all_intervals = list(chain.from_iterable(request.time_intervals for request in requests))
+        all_metrics = set(chain.from_iterable(request.metrics for request in requests))
+
+        time_from, time_to = self._align_time_min_max(all_intervals, quantiles)
+        df_facts = await self.calc_pull_request_facts_github(
+            time_from,
+            time_to,
+            all_repositories,
+            all_participants,
+            labels,
+            jira,
+            exclude_inactive,
+            bots,
+            release_settings,
+            logical_settings,
+            prefixer,
+            fresh,
+            pr_metrics_need_jira_mapping(all_metrics),
+            branches,
+            default_branches,
+        )
+        dedupe_mask = calculate_logical_prs_duplication_mask(
+            df_facts, release_settings, logical_settings,
+        )
+
+        results = []
+        for request in requests:
+            lines_grouper = partial(group_prs_by_lines, request.lines)
+            repo_grouper = partial(
+                group_by_repo, PullRequest.repository_full_name.name, request.repositories,
+            )
+            with_grouper = partial(group_prs_by_participants, request.participants)
+            calc = PullRequestBinnedMetricCalculator(
+                request.metrics,
+                quantiles,
+                self._quantile_stride,
+                exclude_inactive=exclude_inactive,
+                environments=request.environments,
+            )
+
+            groups = group_to_indexes(
+                df_facts,
+                lines_grouper,
+                repo_grouper,
+                with_grouper,
+                deduplicate_key=PullRequestFacts.f.node_id if dedupe_mask is not None else None,
+                deduplicate_mask=dedupe_mask,
+            )
+            results.append(calc(df_facts, request.time_intervals, groups))
+
+        return results
+
+    @sentry_span
+    @cached(
+        exptime=short_term_exptime,
+        serialize=pickle.dumps,
+        deserialize=pickle.loads,
         key=lambda metrics, time_intervals, quantiles, lines, repositories, participants, labels, jira, environments, exclude_inactive, release_settings, logical_settings, **_: (  # noqa
-            ",".join(sorted(metrics)),
+            # TODO: use sorted(metrics) in cache key and then use a postprocess step to reorder
+            # the cached value according to caller desired metrics order
+            ",".join(metrics),
             ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
             ",".join(str(q) for q in quantiles),
             ",".join(str(n) for n in lines),
@@ -253,9 +356,8 @@ class MetricEntriesCalculator:
         :return: lines x repositories x participants x granularities x time intervals x metrics.
         """
         assert isinstance(repositories, (tuple, list))
-        all_repositories, all_participants = _merge_repositories_and_participants(
-            repositories, participants,
-        )
+        all_repositories = set(chain.from_iterable(repositories))
+        all_participants = _merge_participants(participants)
         calc = PullRequestBinnedMetricCalculator(
             metrics,
             quantiles,
@@ -277,7 +379,7 @@ class MetricEntriesCalculator:
             logical_settings,
             prefixer,
             fresh,
-            need_jira_mapping(metrics),
+            pr_metrics_need_jira_mapping(metrics),
             branches,
             default_branches,
         )
@@ -345,9 +447,8 @@ class MetricEntriesCalculator:
 
         :return: defs x lines x repositories x participants -> List[Tuple[metric ID, Histogram]].
         """
-        all_repositories, all_participants = _merge_repositories_and_participants(
-            repositories, participants,
-        )
+        all_repositories = set(chain.from_iterable(repositories))
+        all_participants = _merge_participants(participants)
         try:
             calc = PullRequestBinnedHistogramCalculator(
                 defs.values(), quantiles, environments=[environment],
@@ -1032,10 +1133,10 @@ class MetricEntriesCalculator:
         logical_settings: LogicalRepositorySettings,
     ) -> Tuple[
         pd.DataFrame,
-        np.ndarray,
-        np.ndarray,
-        np.ndarray,  # groups  # how many suites in each group
-    ]:  # distinct suite sizes
+        np.ndarray,  # groups
+        np.ndarray,  # how many suites in each group
+        np.ndarray,  # distinct suite sizes
+    ]:
         all_repositories = set(chain.from_iterable(repositories))
         all_pushers = set(chain.from_iterable(pushers))
         df_check_runs = await mine_check_runs(
@@ -1413,19 +1514,13 @@ class MetricEntriesCalculator:
         return all_facts_df, with_jira_map
 
 
-def _merge_repositories_and_participants(
-    repositories: Sequence[Collection[str]],
-    participants: List[PRParticipants],
-) -> Tuple[Set[str], PRParticipants]:
-    all_repositories = set(chain.from_iterable(repositories))
+def _merge_participants(participants: Sequence[PRParticipants]) -> PRParticipants:
+    all_participants = {}
     if participants:
-        all_participants = {}
         for k in PRParticipationKind:
             if kp := reduce(lambda x, y: x.union(y), [p.get(k, set()) for p in participants]):
                 all_participants[k] = kp
-    else:
-        all_participants = {}
-    return all_repositories, all_participants
+    return all_participants
 
 
 def _compose_cache_key_repositories(repositories: Sequence[Collection[str]]) -> str:
@@ -1450,3 +1545,36 @@ def make_calculator(
     return MetricEntriesCalculator(
         account, meta_ids, DEFAULT_QUANTILE_STRIDE, mdb, pdb, rdb, cache,
     )
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class PullRequestMetricsLineRequest:
+    """Information for a single pull request metrics request."""
+
+    metrics: Sequence[str]
+    time_intervals: Sequence[Sequence[datetime]]
+    lines: Sequence[int]
+    environments: Sequence[str]
+    repositories: Sequence[Collection[str]]
+    participants: list[PRParticipants]
+
+    def __str__(self) -> str:
+        """Return the string representation of the object.
+
+        Representations are equals if and only if objects are equals.
+        """
+        components = ",".join(
+            (
+                ";".join(self.metrics),
+                ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in self.time_intervals),
+                ",".join(str(n) for n in self.lines),
+                ",".join(sorted(self.environments)),
+                _compose_cache_key_repositories(self.repositories),
+                _compose_cache_key_participants(self.participants),
+            ),
+        )
+        return f"[{components}]"
+
+    def __sentry_repr__(self) -> str:
+        """Return the sentry string representation of the object."""
+        return "\n".join(f"{f}[{len(value)}]" for f, value in dataclasses.asdict(self).items())
