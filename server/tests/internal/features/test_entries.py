@@ -1,6 +1,8 @@
 from datetime import timedelta
+from functools import partial
 from itertools import chain
 from typing import Any
+from unittest import mock
 
 from athenian.api.db import Database
 from athenian.api.defer import wait_deferred, with_defer
@@ -15,6 +17,7 @@ from athenian.api.internal.miners.github.branches import BranchMiner
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import LogicalRepositorySettings, Settings
 from athenian.api.models.web import PullRequestMetricID
+from tests.conftest import build_fake_cache
 from tests.testutils.time import dt
 
 
@@ -98,6 +101,55 @@ class TestBatchCalcPullRequestMetrics:
         assert batched_res_values[0] == timedelta(days=8, seconds=34252)
         assert batched_res_values[1] == 174
         assert batched_res_values[2] == 21
+
+    @with_defer
+    async def test_with_cache(
+        self,
+        mdb: Database,
+        pdb: Database,
+        rdb: Database,
+        sdb: Database,
+    ) -> None:
+        cache = build_fake_cache()
+        meta_ids = await get_metadata_account_ids(1, sdb, None)
+        shared_kwargs = await _calc_shared_kwargs(meta_ids, mdb, sdb)
+        requests = [
+            PullRequestMetricsLineRequest(
+                [PullRequestMetricID.PR_ALL_COUNT],
+                [[dt(2019, 8, 25), dt(2019, 9, 1)]],
+                [],
+                [],
+                [{"src-d/go-git"}],
+                [{}],
+            ),
+        ]
+        calculator = MetricEntriesCalculator(
+            1, meta_ids, DEFAULT_QUANTILE_STRIDE, mdb, pdb, rdb, cache,
+        )
+        calc = partial(
+            calculator.batch_calc_pull_request_metrics_line_github,
+            requests,
+            quantiles=(0, 1),
+            exclude_inactive=False,
+            bots=set(),
+            fresh=False,
+            **shared_kwargs,
+        )
+
+        calc_res = await calc()
+        pr_all_count = calc_res[0][0][0][0][0][0][0].value
+        await wait_deferred()
+
+        # the second time the cache is used and the underlying calc function must not be called
+        with mock.patch.object(
+            calculator,
+            "calc_pull_request_facts_github",
+            wraps=calculator.calc_pull_request_facts_github,
+        ) as calc_mock:
+            second_calc_res = await calc()
+
+        calc_mock.assert_not_called()
+        assert second_calc_res[0][0][0][0][0][0][0].value == pr_all_count
 
 
 async def _calc_shared_kwargs(
