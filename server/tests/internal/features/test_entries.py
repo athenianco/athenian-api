@@ -10,13 +10,15 @@ from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.features.entries import (
     MetricEntriesCalculator,
     PullRequestMetricsLineRequest,
+    ReleaseMetricsLineRequest,
 )
 from athenian.api.internal.features.metric_calculator import DEFAULT_QUANTILE_STRIDE
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.branches import BranchMiner
+from athenian.api.internal.miners.github.release_mine import mine_releases
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.settings import LogicalRepositorySettings, Settings
-from athenian.api.models.web import PullRequestMetricID
+from athenian.api.models.web import PullRequestMetricID, ReleaseMetricID
 from tests.conftest import build_fake_cache
 from tests.testutils.time import dt
 
@@ -150,6 +152,103 @@ class TestBatchCalcPullRequestMetrics:
 
         calc_mock.assert_not_called()
         assert second_calc_res[0][0][0][0][0][0][0].value == pr_all_count
+
+
+class TestBatchCalcReleaseMetrics:
+    @with_defer
+    async def test_compare_with_unbatched_calc(
+        self,
+        mdb: Database,
+        pdb: Database,
+        rdb: Database,
+        sdb: Database,
+    ):
+        meta_ids = await get_metadata_account_ids(1, sdb, None)
+
+        requests = [
+            ReleaseMetricsLineRequest(
+                metrics=[ReleaseMetricID.RELEASE_PRS, ReleaseMetricID.RELEASE_COUNT],
+                time_intervals=[[dt(2018, 6, 12), dt(2020, 11, 11)]],
+                repositories=[["src-d/go-git"]],
+                participants=[],
+            ),
+            ReleaseMetricsLineRequest(
+                metrics=[ReleaseMetricID.RELEASE_AGE],
+                time_intervals=[[dt(2018, 1, 1), dt(2018, 6, 1)]],
+                repositories=[["src-d/go-git"]],
+                participants=[],
+            ),
+        ]
+
+        all_metrics = list(chain.from_iterable(req.metrics for req in requests))
+        all_intervals = list(chain.from_iterable(req.time_intervals for req in requests))
+        calculator = MetricEntriesCalculator(1, meta_ids, 28, mdb, pdb, rdb, None)
+
+        shared_kwargs = await _calc_shared_kwargs(meta_ids, mdb, sdb)
+
+        global_calc_res, _ = await calculator.calc_release_metrics_line_github(
+            all_metrics,
+            all_intervals,
+            repositories=[["src-d/go-git"]],
+            participants=[],
+            quantiles=[0, 1],
+            **shared_kwargs,
+        )
+        await wait_deferred()
+
+        batched_calc_res = await calculator.batch_calc_release_metrics_line_github(
+            requests, quantiles=[0, 1], **shared_kwargs,
+        )
+
+        release_prs = global_calc_res[0][0][0][0][0]
+        assert release_prs.value == 130
+        assert batched_calc_res[0][0][0][0][0][0] == release_prs
+
+        release_count = global_calc_res[0][0][0][0][1]
+        assert release_count.value == 13
+        assert batched_calc_res[0][0][0][0][0][1] == release_count
+
+        release_age = global_calc_res[0][0][1][0][2]
+        assert release_age.value == timedelta(days=31, seconds=61494)
+        assert batched_calc_res[1][0][0][0][0][0] == release_age
+
+    @with_defer
+    async def test_with_cache(
+        self,
+        mdb: Database,
+        pdb: Database,
+        rdb: Database,
+        sdb: Database,
+    ) -> None:
+        cache = build_fake_cache()
+        meta_ids = await get_metadata_account_ids(1, sdb, None)
+        shared_kwargs = await _calc_shared_kwargs(meta_ids, mdb, sdb)
+
+        requests = [
+            ReleaseMetricsLineRequest(
+                metrics=[ReleaseMetricID.RELEASE_PRS, ReleaseMetricID.RELEASE_COUNT],
+                time_intervals=[[dt(2019, 1, 12), dt(2019, 3, 11)]],
+                repositories=[["src-d/go-git"]],
+                participants=[],
+            ),
+        ]
+
+        calculator = MetricEntriesCalculator(1, meta_ids, 28, mdb, pdb, rdb, cache)
+        first_res = await calculator.batch_calc_release_metrics_line_github(
+            requests, quantiles=[0, 1], **shared_kwargs,
+        )
+        await wait_deferred()
+
+        with mock.patch(
+            f"{MetricEntriesCalculator.__module__}.mine_releases", wraps=mine_releases,
+        ) as mine_mock:
+            second_res = await calculator.batch_calc_release_metrics_line_github(
+                requests, quantiles=[0, 1], **shared_kwargs,
+            )
+
+        mine_mock.assert_not_called()
+        assert second_res[0][0][0][0][0][0].value == first_res[0][0][0][0][0][0].value
+        assert second_res[0][0][0][0][0][1].value == first_res[0][0][0][0][0][1].value
 
 
 async def _calc_shared_kwargs(

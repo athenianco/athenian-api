@@ -1,6 +1,6 @@
 from collections import defaultdict
 from datetime import timedelta
-from typing import Dict, Generic, List, Optional, Sequence, Type, TypeVar
+from typing import Generic, Iterable, Optional, Sequence, Type, TypeVar
 
 import numpy as np
 import pandas as pd
@@ -25,14 +25,14 @@ from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMat
 from athenian.api.models.metadata.github import PullRequest
 from athenian.api.models.web import ReleaseMetricID
 
-metric_calculators: Dict[str, Type[MetricCalculator]] = {}
+metric_calculators: dict[str, Type[MetricCalculator]] = {}
 register_metric = make_register_metric(metric_calculators, None)
 T = TypeVar("T")
 
 
-def merge_release_participants(participants: List[ReleaseParticipants]) -> ReleaseParticipants:
+def merge_release_participants(participants: Iterable[ReleaseParticipants]) -> ReleaseParticipants:
     """Merge several groups of release participants together."""
-    merged = defaultdict(set)
+    merged: dict[ReleaseParticipationKind, set[int]] = defaultdict(set)
     for dikt in participants:
         for k, v in dikt.items():
             merged[k].update(v)
@@ -40,9 +40,9 @@ def merge_release_participants(participants: List[ReleaseParticipants]) -> Relea
 
 
 def group_releases_by_participants(
-    participants: List[ReleaseParticipants],
+    participants: list[ReleaseParticipants],
     df: pd.DataFrame,
-) -> List[np.ndarray]:
+) -> list[np.ndarray]:
     """Triage releases by their contributors."""
     if not participants or df.empty:
         return [np.arange(len(df))]
