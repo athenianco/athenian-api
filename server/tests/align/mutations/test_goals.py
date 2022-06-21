@@ -29,6 +29,7 @@ from tests.testutils.factory.state import (
     TeamGoalFactory,
     UserAccountFactory,
 )
+from tests.testutils.time import dt
 
 _USER_ID = "github|1"
 
@@ -363,6 +364,26 @@ class TestCreateGoals(BaseCreateGoalTest):
         assert "errors" not in res
 
         assert (await count(sdb, Goal)) == 4
+
+    @freeze_time("2022-03-01")
+    async def test_future_dates_are_accepted(self, client: TestClient, sdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(id=100))
+        variables: dict = {
+            "createGoalInput": self._mk_input(
+                templateId=1,
+                validFrom="2023-01-01",
+                expiresAt="2023-12-31",
+                teamGoals=[{"teamId": 100, "target": {"int": 1}}],
+            ),
+            "accountId": 1,
+        }
+        res = await self._request(variables, client)
+        assert "errors" not in res
+
+        new_goal_id = res["data"]["createGoal"]["goal"]["id"]
+        await assert_existing_row(
+            sdb, Goal, id=new_goal_id, valid_from=dt(2023, 1, 1), expires_at=dt(2024, 1, 1),
+        )
 
 
 class BaseRemoveGoalTest(BaseGoalTest):

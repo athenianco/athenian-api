@@ -391,14 +391,14 @@ class TestMetricsNasty(BaseMetricsTest):
             ],
         }
 
-    async def test_dates_far_future(self, client: TestClient, sample_teams) -> None:
+    async def test_dates_far_past(self, client: TestClient, sample_teams) -> None:
         res = await self._request(
             client,
             1,
             1,
             [JIRAMetricID.JIRA_RESOLVED],
-            date(2019, 1, 1),
-            date(2129, 1, 1),
+            date(1984, 1, 1),
+            date(2002, 1, 1),
         )
         assert res["errors"]
         assert res.get("data") is None
