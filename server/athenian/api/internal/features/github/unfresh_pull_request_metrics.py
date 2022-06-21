@@ -327,7 +327,7 @@ class UnfreshPullRequestFactsFetcher:
             return pd.Index([(k, r) for k, val in prs.items() for r in val])
         columns = [PullRequest.node_id, PullRequest.repository_full_name]
         query = await generate_jira_prs_query(
-            [PullRequest.node_id.in_(prs), PullRequest.acc_id.in_(meta_ids)],
+            [PullRequest.acc_id.in_(meta_ids), PullRequest.node_id.in_(prs)],
             jira,
             meta_ids,
             mdb,

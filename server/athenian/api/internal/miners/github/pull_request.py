@@ -1142,9 +1142,9 @@ class PullRequestMiner:
                 )
                 .where(
                     sql.and_(
-                        PullRequest.node_id.in_(node_ids),
                         PullRequest.acc_id.in_(meta_ids),
                         _issue.is_deleted.is_(False),
+                        PullRequest.node_id.in_(node_ids),
                     ),
                 ),
                 mdb,
@@ -1792,12 +1792,23 @@ class PullRequestMiner:
             cache,
         )
         if not jira:
-            return await read_sql_query(
-                sql.select([PullRequest]).where(PullRequest.node_id.in_(node_id_map)),
-                mdb,
-                PullRequest,
-                index=PullRequest.node_id.name,
-            )
+            query = sql.select([PullRequest])
+            if len(node_id_map) > 100:
+                query = (
+                    query.where(
+                        PullRequest.acc_id.in_(meta_ids),
+                        PullRequest.node_id.in_any_values(node_id_map),
+                    )
+                    .with_statement_hint("Leading(pr *VALUES*)")
+                    .with_statement_hint(f"Rows(pr *VALUES* #{len(node_id_map)})")
+                    .with_statement_hint(f"Rows(pr *VALUES* repo #{len(node_id_map)})")
+                )
+            else:
+                query = query.where(
+                    PullRequest.acc_id.in_(meta_ids),
+                    PullRequest.node_id.in_(node_id_map),
+                )
+            return await read_sql_query(query, mdb, PullRequest, index=PullRequest.node_id.name)
         df = await cls.filter_jira(node_id_map, jira, meta_ids, mdb, cache)
         if not has_logical_repos:
             return df
@@ -1832,8 +1843,9 @@ class PullRequestMiner:
     ) -> pd.DataFrame:
         """Filter PRs by JIRA properties."""
         assert jira
-        filters = [PullRequest.node_id.in_(pr_node_ids)]
-        query = await generate_jira_prs_query(filters, jira, meta_ids, mdb, cache, columns=columns)
+        query = await generate_jira_prs_query(
+            [PullRequest.node_id.in_(pr_node_ids)], jira, meta_ids, mdb, cache, columns=columns,
+        )
         # pr JOIN repo is always len(pr_node_ids)
         # speculate that m JOIN pr is ~0.5 of len(pr_node_ids), that is, half of PRs mapped to JIRA
         query = query.with_statement_hint(
