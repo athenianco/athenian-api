@@ -1277,7 +1277,7 @@ class ReleaseMatcher:
                     extract_first_parents(*dag, branches[Branch.commit_sha.name].values),
                 )
         if not first_shas:
-            dummy_releases_df(), inconsistent
+            return dummy_releases_df(), inconsistent
         first_shas = np.sort(np.concatenate(first_shas))
         first_commits = await self._fetch_commits(first_shas, time_from, time_to)
         pseudo_releases = []
