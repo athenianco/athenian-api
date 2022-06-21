@@ -139,8 +139,8 @@ async def _asyncpg_execute(self, query: str, args, limit, timeout, **kwargs):
         if len(description) >= MAX_SENTRY_STRING_LENGTH:
             transaction = sentry_sdk.Hub.current.scope.transaction
             if transaction is not None and transaction.sampled:
-                query_id = log_multipart(_sql_log, pickle.dumps((query, args)))
-                brief = _sql_str_re.sub("", query)
+                query_id = log_multipart(_sql_log, pickle.dumps((log_query, args)))
+                brief = _sql_str_re.sub("", log_query)
                 description = "%s\n%s" % (query_id, brief[:MAX_SENTRY_STRING_LENGTH])
     else:
         description = description[:1024]

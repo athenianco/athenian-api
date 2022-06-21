@@ -1549,6 +1549,7 @@ class PullRequestMiner:
                 query = batch[0]
             else:
                 query = sql.union_all(*batch)
+            query = query.with_statement_hint("IndexScan(cmm github_node_commit_rebase)")
             tasks.append(
                 read_sql_query(
                     query,
