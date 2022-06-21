@@ -14,46 +14,49 @@ from athenian.api.serialization import (
 )
 
 
-@freeze_time("2022-04-01")
-def test_deserialize_date() -> None:
-    dt = deserialize_date("2022-10-23")
-    assert dt == date(2022, 10, 23)
+class TestDeserializeDate:
+    @freeze_time("2022-04-01")
+    def test_dserialize(self) -> None:
+        dt = deserialize_date("2022-10-23")
+        assert dt == date(2022, 10, 23)
+
+    @freeze_time("2022-04-01")
+    def test_out_of_bounds(self) -> None:
+        for out_of_bounds_val in ("1492-01-12", "2025-04-02"):
+            with pytest.raises(OutOfBoundsDatetime):
+                deserialize_date(out_of_bounds_val)
 
 
-@freeze_time("2022-04-01")
-def test_deserialize_date_out_of_bounds() -> None:
-    for out_of_bounds_val in ("1492-01-12", "2023-08-24"):
+class TestDeserializeDatetime:
+    @freeze_time("2022-04-01")
+    def test_deserialize(self) -> None:
+        dt = deserialize_datetime("2022-10-23T10:54:32Z")
+        assert dt == datetime(2022, 10, 23, 10, 54, 32, tzinfo=timezone.utc)
+
+    @freeze_time("2022-01-01")
+    def test_deserialize_datatime_out_of_bounds(self) -> None:
+        for out_of_bounds_val in ("2024-10-10T12:20:20Z", "1984-01-10T12:20:20Z"):
+            with pytest.raises(OutOfBoundsDatetime):
+                deserialize_datetime(out_of_bounds_val)
+
+    @freeze_time("2022-01-01")
+    def test_deserialize_datatime_custom_bounds(self) -> None:
+        dt = datetime
+        assert deserialize_datetime("1901-07-30T05:00:00", min_=dt(1850, 1, 1)) == dt(
+            1901, 7, 30, 5,
+        )
         with pytest.raises(OutOfBoundsDatetime):
-            deserialize_date(out_of_bounds_val)
+            deserialize_datetime("1901-07-30T05:00:00", min_=dt(1950, 1, 1))
 
+        assert deserialize_datetime("2070-01-30T05:00:00", max_future_delta=None) == dt(
+            2070, 1, 30, 5,
+        )
+        assert deserialize_datetime(
+            "2022-01-30T05:00:00", max_future_delta=timedelta(days=100),
+        ) == dt(2022, 1, 30, 5)
 
-@freeze_time("2022-04-01")
-def test_deserialize_datetime() -> None:
-    dt = deserialize_datetime("2022-10-23T10:54:32Z")
-    assert dt == datetime(2022, 10, 23, 10, 54, 32, tzinfo=timezone.utc)
-
-
-@freeze_time("2022-01-01")
-def test_deserialize_datatime_out_of_bounds() -> None:
-    for out_of_bounds_val in ("2024-10-10T12:20:20Z", "1984-01-10T12:20:20Z"):
         with pytest.raises(OutOfBoundsDatetime):
-            deserialize_datetime(out_of_bounds_val)
-
-
-@freeze_time("2022-01-01")
-def test_deserialize_datatime_custom_bounds() -> None:
-    dt = datetime
-    assert deserialize_datetime("1901-07-30T05:00:00", min_=dt(1850, 1, 1)) == dt(1901, 7, 30, 5)
-    with pytest.raises(OutOfBoundsDatetime):
-        deserialize_datetime("1901-07-30T05:00:00", min_=dt(1950, 1, 1))
-
-    assert deserialize_datetime("2070-01-30T05:00:00", max_future_delta=None) == dt(2070, 1, 30, 5)
-    assert deserialize_datetime("2022-01-30T05:00:00", max_future_delta=timedelta(days=100)) == dt(
-        2022, 1, 30, 5,
-    )
-
-    with pytest.raises(OutOfBoundsDatetime):
-        deserialize_datetime("2022-01-30T05:00:00", max_future_delta=timedelta(days=10))
+            deserialize_datetime("2022-01-30T05:00:00", max_future_delta=timedelta(days=10))
 
 
 def test_serialize_date() -> None:
