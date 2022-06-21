@@ -1579,4 +1579,6 @@ class PullRequestMetricsLineRequest:
 
     def __sentry_repr__(self) -> str:
         """Return the sentry string representation of the object."""
-        return "\n".join(f"{f}[{len(value)}]" for f, value in dataclasses.asdict(self).items())
+        return "\n".join(
+            f"{f.name}[{len(getattr(self, f.name))}]" for f in dataclasses.fields(self)
+        )
