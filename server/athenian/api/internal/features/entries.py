@@ -212,7 +212,9 @@ class MetricEntriesCalculator:
         serialize=pickle.dumps,
         deserialize=pickle.loads,
         key=lambda metrics, time_intervals, quantiles, lines, repositories, participants, labels, jira, environments, exclude_inactive, release_settings, logical_settings, **_: (  # noqa
-            ",".join(sorted(metrics)),
+            # TODO: use sorted(metrics) in cache key and then use a postprocess step to reorder
+            # the cached value according to caller desired metrics order
+            ",".join(metrics),
             ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
             ",".join(str(q) for q in quantiles),
             ",".join(str(n) for n in lines),
