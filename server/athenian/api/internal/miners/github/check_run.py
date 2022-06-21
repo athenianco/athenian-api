@@ -202,7 +202,11 @@ async def mine_check_runs(
         """  # noqa: E501
         queries.append(query)
 
-    query = queries[0] if len(queries) == 1 else union_all(*queries)
+    query = (
+        queries[0].limit(maximum_processed_check_runs)
+        if len(queries) == 1
+        else union_all(*queries)
+    )
     df = await read_sql_query_with_join_collapse(
         query, mdb, CheckRun, soft_limit=maximum_processed_check_runs,
     )
