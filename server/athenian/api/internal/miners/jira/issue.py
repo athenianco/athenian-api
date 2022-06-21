@@ -68,7 +68,7 @@ async def generate_jira_prs_query(
                     seed, _map, sql.and_(on[0] == _map.node_id, on[1] == _map.node_acc),
                 ),
             )
-            .where(sql.and_(*filters, *meta_ids_cond, _map.node_id.is_(None)))
+            .where(sql.and_(*meta_ids_cond, _map.node_id.is_(None), *filters))
         )
     _issue = aliased(Issue, name="j")
     filters.extend(meta_ids_cond)
