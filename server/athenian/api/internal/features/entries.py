@@ -728,7 +728,8 @@ class MetricEntriesCalculator:
         serialize=pickle.dumps,
         deserialize=pickle.loads,
         key=lambda metrics, time_intervals, quantiles, repositories, participants, labels, jira, release_settings, logical_settings, **_: (  # noqa
-            ",".join(sorted(metrics)),
+            # TODO: use sorted(metrics), see TODO in calc_pull_request_metrics_line_github
+            ",".join(metrics),
             ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
             ",".join(str(q) for q in quantiles),
             ",".join(str(sorted(r)) for r in repositories),
