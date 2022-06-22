@@ -7,6 +7,7 @@ from morcilla import Database
 import pytest
 from sqlalchemy import insert
 
+from athenian.api.align.queries.metrics import TeamMetricsRequest, _simplify_requests
 from athenian.api.async_utils import gather
 from athenian.api.models.state.models import MappedJIRAIdentity
 from athenian.api.models.web import JIRAMetricID, PullRequestMetricID, ReleaseMetricID
@@ -18,6 +19,7 @@ from tests.align.utils import (
 from tests.conftest import DEFAULT_HEADERS
 from tests.testutils.db import models_insert
 from tests.testutils.factory.state import TeamFactory
+from tests.testutils.time import dt
 
 
 class BaseMetricsTest:
@@ -417,3 +419,88 @@ class TestMetricsNasty(BaseMetricsTest):
         )
         assert_extension_error(res, "validFrom cannot be in the future")
         assert res.get("data") is None
+
+
+class TestSimplifyRequests:
+    """Tests for the private function _simplify_requests."""
+
+    def test_single_request(self) -> None:
+        requests = [
+            TeamMetricsRequest(
+                (PullRequestMetricID.PR_CLOSED,),
+                ((dt(2001, 1, 1), dt(2001, 2, 1)),),
+                {1: [10], 2: [10, 20]},
+            ),
+        ]
+        simplified = _simplify_requests(requests)
+        assert simplified == requests
+
+    def test_metrics_merged(self) -> None:
+        INTERVALS = ((dt(2001, 1, 1), dt(2001, 2, 1)),)
+        requests = [
+            TeamMetricsRequest((PullRequestMetricID.PR_CLOSED,), INTERVALS, {1: [1], 2: [10, 2]}),
+            TeamMetricsRequest(
+                (PullRequestMetricID.PR_RELEASE_TIME,), INTERVALS, {1: [1], 2: [10, 2]},
+            ),
+        ]
+        simplified = _simplify_requests(requests)
+        assert len(simplified) == 1
+        expected = TeamMetricsRequest(
+            (PullRequestMetricID.PR_CLOSED, PullRequestMetricID.PR_RELEASE_TIME),
+            INTERVALS,
+            {1: [1], 2: [10, 2]},
+        )
+
+        self._assert_team_requests_equal(simplified[0], expected)
+
+    def test_teams_merged(self) -> None:
+        INTERVALS = ((dt(2001, 1, 1), dt(2001, 2, 1)),)
+        requests = [
+            TeamMetricsRequest((PullRequestMetricID.PR_CLOSED,), INTERVALS, {1: [10]}),
+            TeamMetricsRequest(
+                (PullRequestMetricID.PR_RELEASE_TIME,), INTERVALS, {1: [10], 2: [10, 20]},
+            ),
+            TeamMetricsRequest((PullRequestMetricID.PR_REVIEW_COUNT,), INTERVALS, {2: [10, 20]}),
+        ]
+
+        simplified = sorted(_simplify_requests(requests), key=lambda r: list(r.teams) == [2])
+        expected = [
+            TeamMetricsRequest(
+                (PullRequestMetricID.PR_RELEASE_TIME, PullRequestMetricID.PR_CLOSED),
+                INTERVALS,
+                {1: [10]},
+            ),
+            TeamMetricsRequest(
+                (PullRequestMetricID.PR_RELEASE_TIME, PullRequestMetricID.PR_REVIEW_COUNT),
+                INTERVALS,
+                {2: [10, 20]},
+            ),
+        ]
+
+        assert len(simplified) == 2
+        self._assert_team_requests_equal(simplified[0], expected[0])
+        self._assert_team_requests_equal(simplified[1], expected[1])
+
+    def test_different_intervals_are_not_merged(self) -> None:
+        INTERVALS_0 = ((dt(2001, 1, 1), dt(2001, 2, 1)),)
+        INTERVALS_1 = ((dt(2011, 1, 1), dt(2021, 2, 1)),)
+        requests = [
+            TeamMetricsRequest((PullRequestMetricID.PR_CLOSED,), INTERVALS_0, {1: [1]}),
+            TeamMetricsRequest((PullRequestMetricID.PR_OPENED,), INTERVALS_1, {1: [1]}),
+            TeamMetricsRequest((PullRequestMetricID.PR_CLOSED,), INTERVALS_0, {2: [2]}),
+        ]
+        simplified = sorted(_simplify_requests(requests), key=lambda r: list(r.teams) == [2])
+        assert len(simplified) == 2
+
+        expected = [
+            TeamMetricsRequest((PullRequestMetricID.PR_CLOSED,), INTERVALS_0, {1: [1], 2: [2]}),
+            TeamMetricsRequest((PullRequestMetricID.PR_OPENED,), INTERVALS_1, {1: [1]}),
+        ]
+        self._assert_team_requests_equal(simplified[0], expected[0])
+        self._assert_team_requests_equal(simplified[1], expected[1])
+
+    @classmethod
+    def _assert_team_requests_equal(cls, tr0: TeamMetricsRequest, tr1: TeamMetricsRequest) -> None:
+        assert sorted(tr0.metrics) == sorted(tr1.metrics)
+        assert sorted(tr0.time_intervals) == sorted(tr0.time_intervals)
+        assert tr0.teams == tr1.teams

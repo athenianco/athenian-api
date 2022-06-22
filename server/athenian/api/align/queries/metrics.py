@@ -1,19 +1,9 @@
-import asyncio
+from __future__ import annotations
+
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from itertools import chain
-from typing import (
-    Any,
-    Collection,
-    Dict,
-    Iterable,
-    List,
-    Mapping,
-    Optional,
-    Sequence,
-    Set,
-    Tuple,
-    Union,
-)
+from typing import Any, Collection, Generic, Iterable, Mapping, Optional, Sequence, TypeVar, cast
 
 import aiomcache
 from ariadne import ObjectType
@@ -33,7 +23,13 @@ from athenian.api.align.models import (
 from athenian.api.align.queries.teams import build_team_tree_from_rows
 from athenian.api.async_utils import gather
 from athenian.api.internal.account import get_metadata_account_ids
-from athenian.api.internal.features.entries import make_calculator
+from athenian.api.internal.features.entries import (
+    JIRAMetricsLineRequest,
+    MetricsLineRequest,
+    PullRequestMetricsLineRequest,
+    ReleaseMetricsLineRequest,
+    make_calculator,
+)
 from athenian.api.internal.features.github.pull_request_metrics import (
     metric_calculators as pr_metric_calculators,
 )
@@ -74,48 +70,39 @@ async def resolve_metrics_current_values(
     params: Mapping[str, Any],
 ) -> Any:
     """Serve metricsCurrentValues()."""
-    sdb, mdb, pdb, rdb, cache = (
-        info.context.sdb,
-        info.context.mdb,
-        info.context.pdb,
-        info.context.rdb,
-        info.context.cache,
-    )
     team_id = params[MetricParamsFields.teamId]
     team_rows, meta_ids = await gather(
         fetch_teams_recursively(
             accountId,
-            sdb,
+            info.context.sdb,
             select_entities=(Team.id, Team.name, Team.members, Team.parent_id),
             root_team_ids=[team_id],
         ),
-        get_metadata_account_ids(accountId, sdb, cache),
+        get_metadata_account_ids(accountId, info.context.sdb, info.context.cache),
     )
     time_interval = _parse_time_interval(params)
     teams_flat = flatten_teams(team_rows)
     teams = {row[Team.id.name]: teams_flat[row[Team.id.name]] for row in team_rows}
     team_metrics_all_intervals = await calculate_team_metrics(
-        params[MetricParamsFields.metrics],
-        [time_interval],
-        teams,
+        [TeamMetricsRequest(params[MetricParamsFields.metrics], [time_interval], teams)],
         accountId,
         meta_ids,
-        sdb,
-        mdb,
-        pdb,
-        rdb,
-        cache,
+        info.context.sdb,
+        info.context.mdb,
+        info.context.pdb,
+        info.context.rdb,
+        info.context.cache,
         info.context.app["slack"],
     )
     team_metrics = team_metrics_all_intervals[time_interval]
 
     team_tree = build_team_tree_from_rows(team_rows, team_id)
 
-    models = _build_metrics_response(team_tree, team_metrics)
+    models = _build_metrics_response(team_tree, params[MetricParamsFields.metrics], team_metrics)
     return [m.to_dict() for m in models]
 
 
-def _parse_time_interval(params: Mapping[str, Any]) -> Tuple[datetime, datetime]:
+def _parse_time_interval(params: Mapping[str, Any]) -> Interval:
     date_from, date_to = params[MetricParamsFields.validFrom], params[MetricParamsFields.expiresAt]
     if date_from > date_to:
         raise ResponseError(
@@ -137,7 +124,161 @@ def _parse_time_interval(params: Mapping[str, Any]) -> Tuple[datetime, datetime]
     return goal_dates_to_datetimes(date_from, date_to)
 
 
-def _triage_metrics(metrics: List[str]) -> Tuple[List[str], List[str], List[str]]:
+Interval = tuple[datetime, datetime]
+
+
+TeamMetricsResult = dict[Interval, dict[str, dict[int, object]]]
+
+
+@dataclass(frozen=True, slots=True)
+class TeamMetricsRequest:
+    """Request for multiple metrics/intervals/teams usable with calculate_team_metrics."""
+
+    metrics: Sequence[str]
+    time_intervals: Sequence[Interval]
+    teams: Mapping[int, Sequence[int]]
+    """A mapping of team id to team members."""
+
+
+@sentry_span
+async def calculate_team_metrics(
+    requests: Sequence[TeamMetricsRequest],
+    account: int,
+    meta_ids: tuple[int, ...],
+    sdb: Database,
+    mdb: Database,
+    pdb: Database,
+    rdb: Database,
+    cache: Optional[aiomcache.Client],
+    slack: Optional[SlackWebClient],
+) -> TeamMetricsResult:
+    """Calculate a set of metrics for each team and time interval.
+
+    The result will be a nested dict structure indexed first by interval, then by metric and
+    finally by team id.
+    """
+    requests = _simplify_requests(requests)
+    QUANTILES = (0, 0.95)
+    settings = Settings.from_account(account, sdb, mdb, cache, slack)
+    prefixer, account_bots, release_settings = await gather(
+        Prefixer.load(meta_ids, mdb, cache),
+        bots(account, meta_ids, mdb, sdb, cache),
+        settings.list_release_matches(),
+    )
+    repos = release_settings.native.keys()
+    (branches, default_branches), logical_settings = await gather(
+        BranchMiner.extract_branches(repos, prefixer, meta_ids, mdb, cache),
+        settings.list_logical_repositories(prefixer),
+    )
+
+    pr_collector = _PRTeamMetricsValueCollector()
+    release_collector = _ReleaseTeamMetricsValueCollector()
+    jira_collector = _JIRATeamMetricsValueCollector()
+
+    for request in requests:
+        team_members = request.teams.values()
+        team_ids = list(request.teams.keys())
+        pr_metrics, release_metrics, jira_metrics = _triage_metrics(request.metrics)
+
+        if pr_metrics:
+            participants = [
+                {PRParticipationKind.AUTHOR: team}
+                for team in _loginify_teams(team_members, prefixer)
+            ]
+            # FIXME: participants here is list[dict[PRParticipationKind, Set[str]]]
+            pr_request = PullRequestMetricsLineRequest(
+                pr_metrics, request.time_intervals, [], [], [repos], participants,
+            )
+            pr_collector.add_request(pr_request, team_ids)
+
+        if release_metrics:
+            release_participants: list[Mapping] = [
+                {
+                    ReleaseParticipationKind.PR_AUTHOR: team,
+                    ReleaseParticipationKind.COMMIT_AUTHOR: team,
+                    ReleaseParticipationKind.RELEASER: team,
+                }
+                for team in team_members
+            ]
+            release_request = ReleaseMetricsLineRequest(
+                release_metrics, request.time_intervals, [repos], release_participants,
+            )
+            release_collector.add_request(release_request, team_ids)
+
+        if jira_metrics:
+            jira_map = await load_mapped_jira_users(
+                account, set(chain.from_iterable(team_members)), sdb, mdb, cache,
+            )
+            jira_request = JIRAMetricsLineRequest(
+                jira_metrics, request.time_intervals, _jirafy_teams(team_members, jira_map),
+            )
+            jira_collector.add_request(jira_request, team_ids)
+
+    calculator = make_calculator(account, meta_ids, mdb, pdb, rdb, cache)
+    tasks = []
+    if pr_requests := pr_collector.get_requests():
+        pr_task = calculator.batch_calc_pull_request_metrics_line_github(
+            requests=pr_requests,
+            quantiles=QUANTILES,
+            labels=LabelFilter.empty(),
+            jira=JIRAFilter.empty(),
+            exclude_inactive=True,
+            bots=account_bots,
+            release_settings=release_settings,
+            logical_settings=logical_settings,
+            prefixer=prefixer,
+            branches=branches,
+            default_branches=default_branches,
+            fresh=False,
+        )
+        tasks.append(pr_task)
+
+    if release_requests := release_collector.get_requests():
+        release_task = calculator.batch_calc_release_metrics_line_github(
+            requests=release_requests,
+            quantiles=QUANTILES,
+            labels=LabelFilter.empty(),
+            jira=JIRAFilter.empty(),
+            release_settings=release_settings,
+            logical_settings=logical_settings,
+            prefixer=prefixer,
+            branches=branches,
+            default_branches=default_branches,
+        )
+        tasks.append(release_task)
+
+    if jira_requests := jira_collector.get_requests():
+        jira_conf = await get_jira_installation_or_none(account, sdb, mdb, cache)
+        jira_task = calculator.batch_calc_jira_metrics_line_github(
+            requests=jira_requests,
+            quantiles=QUANTILES,
+            label_filter=LabelFilter.empty(),
+            split_by_label=False,
+            priorities=[],
+            types=[],
+            epics=[],
+            exclude_inactive=True,
+            release_settings=release_settings,
+            logical_settings=logical_settings,
+            default_branches=default_branches,
+            jira_ids=jira_conf,
+        )
+        tasks.append(jira_task)
+
+    calc_results = list(await gather(*tasks, op="batch_calculators"))
+
+    team_metrics_res: TeamMetricsResult = {}
+    if pr_requests:
+        pr_collector.collect(calc_results.pop(0), team_metrics_res)
+    if release_requests:
+        release_collector.collect(calc_results.pop(0), team_metrics_res)
+    if jira_requests:
+        jira_collector.collect(calc_results[0], team_metrics_res)
+
+    return team_metrics_res
+
+
+def _triage_metrics(metrics: Sequence[str]) -> tuple[Sequence[str], Sequence[str], Sequence[str]]:
     pr_metrics = []
     release_metrics = []
     jira_metrics = []
@@ -145,14 +286,12 @@ def _triage_metrics(metrics: List[str]) -> Tuple[List[str], List[str], List[str]
     for metric in metrics:
         if metric in pr_metric_calculators:
             pr_metrics.append(metric)
-            continue
-        if metric in release_metric_calculators:
+        elif metric in release_metric_calculators:
             release_metrics.append(metric)
-            continue
-        if metric in jira_metric_calculators:
+        elif metric in jira_metric_calculators:
             jira_metrics.append(metric)
-            continue
-        unidentified.append(metric)
+        else:
+            unidentified.append(metric)
     if unidentified:
         raise ResponseError(
             InvalidRequestError(
@@ -163,7 +302,7 @@ def _triage_metrics(metrics: List[str]) -> Tuple[List[str], List[str], List[str]
     return pr_metrics, release_metrics, jira_metrics
 
 
-def _loginify_teams(teams: Iterable[Collection[int]], prefixer: Prefixer) -> List[Set[str]]:
+def _loginify_teams(teams: Iterable[Collection[int]], prefixer: Prefixer) -> list[set[str]]:
     result = []
     user_node_to_login = prefixer.user_node_to_login.__getitem__
     for team in teams:
@@ -180,8 +319,8 @@ def _loginify_teams(teams: Iterable[Collection[int]], prefixer: Prefixer) -> Lis
 def _jirafy_teams(
     teams: Iterable[Collection[int]],
     jira_map: Mapping[int, str],
-) -> List[JIRAParticipants]:
-    result: List[JIRAParticipants] = []
+) -> list[JIRAParticipants]:
+    result: list[JIRAParticipants] = []
     for team in teams:
         result.append({JIRAParticipationKind.ASSIGNEE: (assignees := [])})
         for dev in team:
@@ -192,185 +331,111 @@ def _jirafy_teams(
     return result
 
 
-Interval = Tuple[datetime, datetime]
+def _simplify_requests(requests: Sequence[TeamMetricsRequest]) -> Sequence[TeamMetricsRequest]:
+    """Simplify the list of requests and try to group them in less requests."""
+    # intervals => team id => metrics
+    requests_tree: dict[tuple[Interval, ...], dict[int, set[str]]] = {}
+
+    # this can be global across requests, team ids are always mapped to same team members
+    teams_members: dict[int, Sequence[int]] = {}
+
+    for req in requests:
+        req_time_intervals = tuple(req.time_intervals)
+        requests_tree.setdefault(req_time_intervals, {})
+
+        for team_id, team_members in req.teams.items():
+            teams_members[team_id] = team_members
+            requests_tree[req_time_intervals].setdefault(team_id, set())
+            for m in req.metrics:
+                requests_tree[req_time_intervals][team_id].add(m)
+
+    # intervals => metrics => team ids
+    simplified_tree: dict[Sequence[Interval], dict[tuple[str, ...], set[int]]] = {}
+    for intervals, intervals_tree in requests_tree.items():
+        simplified_tree[intervals] = {}
+
+        for team_id, metrics in intervals_tree.items():
+            sorted_metrics = tuple(sorted(metrics))
+            simplified_tree[intervals].setdefault(sorted_metrics, set()).add(team_id)
+
+    requests = []
+
+    for intervals_, intervals_tree_ in simplified_tree.items():
+        for metrics_, team_ids_ in intervals_tree_.items():
+            teams = {team_id: teams_members[team_id] for team_id in team_ids_}
+            requests.append(TeamMetricsRequest(metrics_, intervals_, teams))
+
+    return requests
 
 
-@sentry_span
-async def calculate_team_metrics(
-    metrics: List[str],
-    time_intervals: Sequence[Interval],
-    teams: Dict[int, List[int]],
-    account: int,
-    meta_ids: Tuple[int, ...],
-    sdb: Database,
-    mdb: Database,
-    pdb: Database,
-    rdb: Database,
-    cache: Optional[aiomcache.Client],
-    slack: Optional[SlackWebClient],
-) -> Dict[Interval, Dict[str, Dict[int, object]]]:
-    """Calculate a set of metrics for each team and time interval.
-
-    The result will be a nested dict structure indexed first by interval, then by metric and
-    finally by team id.
-    `teams` is a mapping of team id to team members.
-    """
-    pr_metrics, release_metrics, jira_metrics = _triage_metrics(metrics)
-    team_members = teams.values()
-
-    quantiles = (0, 0.95)
-    settings = Settings.from_account(account, sdb, mdb, cache, slack)
-    if jira_metrics:
-        jira_map_task = asyncio.create_task(
-            load_mapped_jira_users(
-                account, set(chain.from_iterable(team_members)), sdb, mdb, cache,
-            ),
-        )
-    prefixer, account_bots, jira_ids, release_settings = await gather(
-        Prefixer.load(meta_ids, mdb, cache),
-        bots(account, meta_ids, mdb, sdb, cache),
-        get_jira_installation_or_none(account, sdb, mdb, cache),
-        settings.list_release_matches(),
-    )
-    repos = release_settings.native.keys()
-    (branches, default_branches), logical_settings = await gather(
-        BranchMiner.extract_branches(repos, prefixer, meta_ids, mdb, cache),
-        settings.list_logical_repositories(prefixer),
-    )
-    calculator = make_calculator(account, meta_ids, mdb, pdb, rdb, cache)
-    tasks = []
-    if pr_metrics:
-        pr_participants = [
-            {
-                PRParticipationKind.AUTHOR: team,
-            }
-            for team in _loginify_teams(team_members, prefixer)
-        ]
-        tasks.append(
-            calculator.calc_pull_request_metrics_line_github(
-                pr_metrics,
-                time_intervals,
-                quantiles,
-                [],
-                [],
-                [repos],
-                pr_participants,
-                LabelFilter.empty(),
-                JIRAFilter.empty(),
-                True,
-                account_bots,
-                release_settings,
-                logical_settings,
-                prefixer,
-                branches,
-                default_branches,
-                False,
-            ),
-        )
-    if release_metrics:
-        release_participants = [
-            {
-                ReleaseParticipationKind.PR_AUTHOR: team,
-                ReleaseParticipationKind.COMMIT_AUTHOR: team,
-                ReleaseParticipationKind.RELEASER: team,
-            }
-            for team in team_members
-        ]
-        tasks.append(
-            calculator.calc_release_metrics_line_github(
-                release_metrics,
-                time_intervals,
-                quantiles,
-                [repos],
-                release_participants,
-                LabelFilter.empty(),
-                JIRAFilter.empty(),
-                release_settings,
-                logical_settings,
-                prefixer,
-                branches,
-                default_branches,
-            ),
-        )
-    if jira_metrics:
-        await jira_map_task
-        jira_map = jira_map_task.result()
-        tasks.append(
-            calculator.calc_jira_metrics_line_github(
-                jira_metrics,
-                time_intervals,
-                quantiles,
-                _jirafy_teams(team_members, jira_map),
-                LabelFilter.empty(),
-                False,
-                [],
-                [],
-                [],
-                True,
-                release_settings,
-                logical_settings,
-                default_branches,
-                jira_ids,
-            ),
-        )
-    raw_values = await gather(*tasks, op="calculators")
-    return _triage_metric_values(
-        pr_metrics, release_metrics, jira_metrics, list(teams), time_intervals, raw_values,
-    )
+_MetricsLineRequestGenT = TypeVar("_MetricsLineRequestGenT", bound=MetricsLineRequest)
 
 
-def _triage_metric_values(
-    pr_metrics: Sequence[str],
-    release_metrics: Sequence[str],
-    jira_metrics: Sequence[str],
-    teams: Sequence[int],
-    time_intervals: Sequence[Interval],
-    metric_values: Tuple[Union[np.ndarray, Tuple[np.ndarray, ...]], ...],
-) -> Dict[Interval, Dict[str, Dict[int, object]]]:
+class _BatchCalcResultCollector(Generic[_MetricsLineRequestGenT]):
+    """Convert the results coming from a MetricEntriesCalculator batch method."""
 
-    pr_metric_values = release_metric_values = jira_metric_values = []
-    if pr_metrics:
-        pr_metric_values, *metric_values = metric_values
-    if release_metrics:
-        (release_metric_values, *_), *metric_values = metric_values
-    if jira_metrics:
-        (jira_metric_values, *_), *metric_values = metric_values
+    def __init__(self) -> None:
+        self._requests: list[tuple[_MetricsLineRequestGenT, Sequence[int]]] = []
 
-    result: Dict[Interval, dict] = {}
+    def collect(
+        self,
+        batch_calc_results: Sequence[np.ndarray],
+        team_metrics_res: TeamMetricsResult,
+    ) -> None:
+        """Collect the results and merge it into TeamMetricsResult `team_metrics_res`.
 
-    for interval_idx, interval in enumerate(time_intervals):
-        result[interval] = {}
-        for metric_idx, metric in enumerate(pr_metrics):
-            metric_teams = result[interval][metric] = {}
-            for team, team_metric_values in zip(teams, pr_metric_values[0][0]):
-                metric_teams[team] = team_metric_values[interval_idx][0][metric_idx].value
+        `batch_calc_results` must be obtained by calling the batch calc method with
+        the requests in `get_requests()`.
+        """
+        for (request, team_ids), calc_result in zip(self._requests, batch_calc_results):
+            for interval_i, interval in enumerate(request.time_intervals):
+                int_ = cast(Interval, interval)
+                team_metrics_res.setdefault(int_, {})
+                for metric_i, metric in enumerate(request.metrics):
+                    team_metrics_res[int_].setdefault(metric, {})
+                    for team_i, team_id in enumerate(team_ids):
+                        val = self.get_val(calc_result, team_i, interval_i, metric_i)
+                        team_metrics_res[int_][metric][team_id] = val
 
-        for i, metric in enumerate(release_metrics):
-            metric_teams = result[interval][metric] = {}
-            for team, team_metric_values in zip(teams, release_metric_values):
-                metric_teams[team] = team_metric_values[0][interval_idx][0][i].value
+    def add_request(self, request: _MetricsLineRequestGenT, team_ids: Sequence[int]) -> None:
+        self._requests.append((request, team_ids))
 
-        for i, metric in enumerate(jira_metrics):
-            metric_teams = result[interval][metric] = {}
-            for team, team_metric_values in zip(teams, jira_metric_values):
-                metric_teams[team] = team_metric_values[0][interval_idx][0][i].value
+    def get_requests(self) -> Sequence[_MetricsLineRequestGenT]:
+        return tuple(req[0] for req in self._requests)
 
-    return result
+    def get_val(self, calc_res: np.ndarray, team_i: int, interval_i: int, metric_i: int) -> Any:
+        raise NotImplementedError()
+
+
+class _PRTeamMetricsValueCollector(_BatchCalcResultCollector[PullRequestMetricsLineRequest]):
+    def get_val(self, calc_res: np.ndarray, team_i: int, interval_i: int, metric_i: int) -> Any:
+        return calc_res[0][0][team_i][interval_i][0][metric_i].value
+
+
+class _ReleaseTeamMetricsValueCollector(_BatchCalcResultCollector[ReleaseMetricsLineRequest]):
+    def get_val(self, calc_res: np.ndarray, team_i: int, interval_i: int, metric_i: int) -> Any:
+        return calc_res[team_i][0][interval_i][0][metric_i].value
+
+
+class _JIRATeamMetricsValueCollector(_BatchCalcResultCollector[JIRAMetricsLineRequest]):
+    def get_val(self, calc_res: np.ndarray, team_i: int, interval_i: int, metric_i: int) -> Any:
+        return calc_res[team_i][0][interval_i][0][metric_i].value
 
 
 def _build_metrics_response(
     team_tree: TeamTree,
-    triaged: Dict[str, Dict[int, object]],
-) -> List[MetricValues]:
+    metrics: Sequence[str],
+    triaged: dict[str, dict[int, object]],
+) -> list[MetricValues]:
     return [
-        MetricValues(metric, _build_team_metric_value(team_tree, team_metric_values))
-        for metric, team_metric_values in triaged.items()
+        MetricValues(metric, _build_team_metric_value(team_tree, triaged[metric]))
+        for metric in metrics
     ]
 
 
 def _build_team_metric_value(
     team_tree: TeamTree,
-    metric_values: Dict[int, object],
+    metric_values: dict[int, object],
 ) -> TeamMetricValue:
     return TeamMetricValue(
         team=team_tree,
