@@ -1540,8 +1540,9 @@ class PullRequestMiner:
             return prs
         prs.loc[dead, "dead"] = True
         # we may have MANY queries here and Postgres responds with StatementTooComplexError
-        # split them by 100-sized batches to stay below the resource limits
-        batch_size = 100
+        # split them by batches to stay below the resource limits
+        # besides, PG doesn't execute UNION ALL in parallel here, hence the batch size is small
+        batch_size = 8
         tasks = []
         for batch_index in range(0, len(queries), batch_size):
             batch = queries[batch_index : batch_index + batch_size]
