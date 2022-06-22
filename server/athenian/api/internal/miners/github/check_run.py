@@ -120,12 +120,12 @@ async def mine_check_runs(
 
     def common_filters():
         nonlocal _common_filters
+        lookaround = time_from - timedelta(days=14), time_to + timedelta(days=1)
         if not _common_filters or mdb.url.dialect == "sqlite":
             _common_filters = [
-                CheckRun.started_at.between(time_from, time_to),
-                CheckRun.committed_date_hack.between(
-                    time_from - timedelta(days=14), time_to + timedelta(days=1),
-                ),
+                CheckRun.started_at.between(time_from, time_to),  # original seed
+                CheckRun.committed_date_hack.between(*lookaround),  # HashJoin constraint
+                CheckRun.committed_date.between(*lookaround),  # HashJoin constraint
             ]
             if len(pushers):
                 _common_filters.append(CheckRun.author_login.in_(pushers))
@@ -175,7 +175,7 @@ async def mine_check_runs(
             .with_statement_hint("IndexScan(sc ath_node_statuscontext_commit_created_at)")
             .with_statement_hint("IndexScan(cr github_node_check_run_repository_started_at)")
             .with_statement_hint("Rows(cr cs *400)")
-            .with_statement_hint("Rows(cr cs c *2)")
+            .with_statement_hint("Rows(cr cs c *100)")
             .with_statement_hint("Rows(c_1 sc *1000)")
             .with_statement_hint("HashJoin(cr cs)")
             .with_statement_hint("Set(enable_parallel_append 0)")
