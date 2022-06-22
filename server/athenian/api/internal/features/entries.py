@@ -1025,15 +1025,93 @@ class MetricEntriesCalculator:
         exptime=short_term_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
+        key=lambda requests, quantiles, label_filter, split_by_label, priorities, types, epics, exclude_inactive, release_settings, logical_settings, **_: (  # noqa
+            ",".join(str(req) for req in requests),
+            ",".join(str(q) for q in quantiles),
+            label_filter,
+            split_by_label,
+            ",".join(sorted(priorities)),
+            ",".join(sorted(types)),
+            ",".join(sorted(epics) if not isinstance(epics, bool) else ["<flying>"]),
+            exclude_inactive,
+            release_settings,
+            logical_settings,
+        ),
+        cache=lambda self, **_: self._cache,
+    )
+    async def batch_calc_jira_metrics_line_github(
+        self,
+        requests: Sequence[JIRAMetricsLineRequest],
+        quantiles: Sequence[float],
+        label_filter: LabelFilter,
+        split_by_label: bool,
+        priorities: Collection[str],
+        types: Collection[str],
+        epics: Union[Collection[str], bool],
+        exclude_inactive: bool,
+        release_settings: ReleaseSettings,
+        logical_settings: LogicalRepositorySettings,
+        default_branches: Dict[str, str],
+        jira_ids: Optional[JIRAConfig],
+    ) -> Sequence[np.ndarray]:
+        """Execute a set of requests for jira metrics.
+
+        A numpy array is returned for every request in `requests`.  The numpy array has the same
+        format as the first item returned by `calc_jira_metrics_line_github()`.
+
+        Calling this method with multiple `requests` is more efficient than calling
+        `calc_jira_metrics_line_github()` multiple times.
+
+        """
+        all_intervals = list(chain.from_iterable(request.time_intervals for request in requests))
+        time_from, time_to = self._align_time_min_max(all_intervals, quantiles)
+        all_participants = list(chain.from_iterable(req.participants for req in requests))
+        reporters, assignees, commenters = self._compile_jira_participants(all_participants)
+        issues = await fetch_jira_issues(
+            jira_ids,
+            time_from,
+            time_to,
+            exclude_inactive,
+            label_filter,
+            priorities,
+            types,
+            epics,
+            reporters,
+            assignees,
+            commenters,
+            False,
+            default_branches,
+            release_settings,
+            logical_settings,
+            self._account,
+            self._meta_ids,
+            self._mdb,
+            self._pdb,
+            self._cache,
+            extra_columns=participant_columns if len(all_participants) > 1 else (),
+        )
+        label_splitter = IssuesLabelSplitter(split_by_label, label_filter)
+
+        results = []
+        for request in requests:
+            calc = JIRABinnedMetricCalculator(request.metrics, quantiles, self._quantile_stride)
+            groupers = partial(split_issues_by_participants, request.participants), label_splitter
+            groups = group_to_indexes(issues, *groupers)
+            results.append(calc(issues, request.time_intervals, groups))
+
+        return results
+
+    @sentry_span
+    @cached(
+        exptime=short_term_exptime,
+        serialize=pickle.dumps,
+        deserialize=pickle.loads,
         key=lambda metrics, time_intervals, quantiles, participants, label_filter, split_by_label, priorities, types, epics, exclude_inactive, release_settings, logical_settings, default_branches, **_: (  # noqa
             # TODO: use sorted(metrics), see TODO in calc_pull_request_metrics_line_github
             ",".join(metrics),
             ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
             ",".join(str(q) for q in quantiles),
-            ";".join(
-                ",".join(f"{k.name}:{sorted(map(str, v))}" for k, v in sorted(p.items()))
-                for p in participants
-            ),
+            _compose_cache_key_participants(participants),
             label_filter,
             split_by_label,
             ",".join(sorted(priorities)),
@@ -1174,12 +1252,12 @@ class MetricEntriesCalculator:
 
     @staticmethod
     def _compile_jira_participants(
-        participants: List[JIRAParticipants],
+        participants: list[JIRAParticipants],
     ) -> Tuple[Collection[str], Collection[str], Collection[str]]:
         reporters = list(
             set(
                 chain.from_iterable(
-                    ([p.lower() for p in g.get(JIRAParticipationKind.REPORTER, [])])
+                    [p.lower() for p in g.get(JIRAParticipationKind.REPORTER, [])]
                     for g in participants
                 ),
             ),
@@ -1187,12 +1265,10 @@ class MetricEntriesCalculator:
         assignees = list(
             set(
                 chain.from_iterable(
-                    (
-                        [
-                            (p.lower() if p is not None else None)
-                            for p in g.get(JIRAParticipationKind.ASSIGNEE, [])
-                        ]
-                    )
+                    [
+                        (p.lower() if p is not None else None)
+                        for p in g.get(JIRAParticipationKind.ASSIGNEE, [])
+                    ]
                     for g in participants
                 ),
             ),
@@ -1200,7 +1276,7 @@ class MetricEntriesCalculator:
         commenters = list(
             set(
                 chain.from_iterable(
-                    ([p.lower() for p in g.get(JIRAParticipationKind.COMMENTER, [])])
+                    [p.lower() for p in g.get(JIRAParticipationKind.COMMENTER, [])]
                     for g in participants
                 ),
             ),
@@ -1616,9 +1692,10 @@ def _compose_cache_key_repositories(repositories: Sequence[Collection[str]]) -> 
     return ",".join(str(sorted(r)) for r in repositories)
 
 
-def _compose_cache_key_participants(
-    participants: Sequence[PRParticipants | ReleaseParticipants],
-) -> str:
+AnyParticipants = PRParticipants | ReleaseParticipants | JIRAParticipants
+
+
+def _compose_cache_key_participants(participants: Sequence[AnyParticipants]) -> str:
     return ";".join(
         ",".join("%s:%s" % (k.name, sorted(v)) for k, v in sorted(p.items())) for p in participants
     )
@@ -1692,6 +1769,35 @@ class ReleaseMetricsLineRequest:
                 ";".join(self.metrics),
                 ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in self.time_intervals),
                 _compose_cache_key_repositories(self.repositories),
+                _compose_cache_key_participants(self.participants),
+            ),
+        )
+        return f"[{components}]"
+
+    def __sentry_repr__(self) -> str:
+        """Return the sentry string representation of the object."""
+        return "\n".join(
+            f"{f.name}[{len(getattr(self, f.name))}]" for f in dataclasses.fields(self)
+        )
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class JIRAMetricsLineRequest:
+    """Information for a single jira metrics request."""
+
+    metrics: Sequence[str]
+    time_intervals: Sequence[Sequence[datetime]]
+    participants: List[JIRAParticipants]
+
+    def __str__(self) -> str:
+        """Return the string representation of the object.
+
+        Representations are equals if and only if objects are equals.
+        """
+        components = ",".join(
+            (
+                ";".join(self.metrics),
+                ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in self.time_intervals),
                 _compose_cache_key_participants(self.participants),
             ),
         )
