@@ -172,19 +172,17 @@ class FakeCache:
 
 def build_fake_cache() -> aiomcache.Client:
     cache = FakeCache()
-    setup_cache_metrics({CACHE_VAR_NAME: cache, PROMETHEUS_REGISTRY_VAR_NAME: None})
+    app = {CACHE_VAR_NAME: cache, PROMETHEUS_REGISTRY_VAR_NAME: None}
+    setup_cache_metrics(app)
     for v in cache.metrics["context"].values():
         v.set(defaultdict(int))
+    cache.metrics["context"] = app["cache_context"]
     return cast(aiomcache.Client, cache)
 
 
 @pytest.fixture(scope="function")
-def cache(event_loop, xapp):
-    xapp.app[CACHE_VAR_NAME] = fc = FakeCache()
-    setup_cache_metrics(xapp.app)
-    for v in fc.metrics["context"].values():
-        v.set(defaultdict(int))
-    return fc
+def cache(event_loop):
+    return build_fake_cache()
 
 
 @pytest.fixture(scope="function")
