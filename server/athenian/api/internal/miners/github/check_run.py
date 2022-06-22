@@ -175,7 +175,7 @@ async def mine_check_runs(
             .with_statement_hint("IndexScan(sc ath_node_statuscontext_commit_created_at)")
             .with_statement_hint("IndexScan(cr github_node_check_run_repository_started_at)")
             .with_statement_hint("Rows(cr cs *400)")
-            .with_statement_hint("Rows(cr cs c *100)")
+            .with_statement_hint("Rows(cr cs c *20)")
             .with_statement_hint("Rows(c_1 sc *1000)")
             .with_statement_hint("HashJoin(cr cs)")
             .with_statement_hint("Set(enable_parallel_append 0)")

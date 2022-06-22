@@ -1565,6 +1565,7 @@ async def test_pr_miner_unreleased_facts(
     await store_open_pull_request_facts(open_prs_and_facts, 1, pdb)
     await store_merged_unreleased_pull_request_facts(
         merged_unreleased_prs_and_facts,
+        datetime(2050, 1, 1, tzinfo=timezone.utc),
         matched_bys,
         default_branches,
         release_match_setting_tag,

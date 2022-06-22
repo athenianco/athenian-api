@@ -122,6 +122,7 @@ async def test_load_store_precomputed_done_smoke(pdb, pr_samples, done_prs_facts
     await store_precomputed_done_facts(
         prs,
         [with_mutables(s, names[i % len(names)]) for i, s in enumerate(samples)],
+        datetime(2050, 1, 1, tzinfo=timezone.utc),
         default_branches,
         settings,
         1,
@@ -131,6 +132,7 @@ async def test_load_store_precomputed_done_smoke(pdb, pr_samples, done_prs_facts
     await store_precomputed_done_facts(
         prs,
         [with_mutables(s, names[i % len(names)]) for i, s in enumerate(samples)],
+        datetime(2050, 1, 1, tzinfo=timezone.utc),
         default_branches,
         settings,
         1,
@@ -245,6 +247,7 @@ async def test_load_store_precomputed_done_filters(
     await store_precomputed_done_facts(
         prs,
         [with_mutables(s, i) for i, s in enumerate(samples)],
+        datetime(2050, 1, 1, tzinfo=timezone.utc),
         default_branches,
         settings,
         1,
@@ -345,7 +348,13 @@ async def test_load_store_precomputed_done_match_by(
         return s
 
     await store_precomputed_done_facts(
-        prs, [with_mutables(s) for s in samples], default_branches, settings, 1, pdb,
+        prs,
+        [with_mutables(s) for s in samples],
+        datetime(2050, 1, 1, tzinfo=timezone.utc),
+        default_branches,
+        settings,
+        1,
+        pdb,
     )
     time_from = samples[0].created.item().replace(tzinfo=timezone.utc) - timedelta(days=365)
     time_to = samples[0].released.item().replace(tzinfo=timezone.utc) + timedelta(days=1)
@@ -437,7 +446,13 @@ async def test_load_store_precomputed_done_match_by(
         return s
 
     await store_precomputed_done_facts(
-        prs, [with_mutables(s) for s in samples], default_branches, settings, 1, pdb,
+        prs,
+        [with_mutables(s) for s in samples],
+        datetime(2050, 1, 1, tzinfo=timezone.utc),
+        default_branches,
+        settings,
+        1,
+        pdb,
     )
     loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_filters(
         time_from,
@@ -549,7 +564,13 @@ async def test_load_store_precomputed_done_exclude_inactive(
         return s
 
     await store_precomputed_done_facts(
-        prs, [with_mutables(s) for s in samples], default_branches, settings, 1, pdb,
+        prs,
+        [with_mutables(s) for s in samples],
+        datetime(2050, 1, 1, tzinfo=timezone.utc),
+        default_branches,
+        settings,
+        1,
+        pdb,
     )
     time_from = samples[1].created.item().replace(tzinfo=timezone.utc) + timedelta(days=1)
     time_to = samples[0].first_comment_on_first_review.item().replace(tzinfo=timezone.utc)
@@ -653,6 +674,7 @@ async def test_load_precomputed_done_times_reponums_smoke(
     await store_precomputed_done_facts(
         prs,
         [with_mutables(s, i) for i, s in enumerate(samples)],
+        datetime(2050, 1, 1, tzinfo=timezone.utc),
         default_branches,
         settings,
         1,
@@ -794,7 +816,9 @@ def _gen_one_pr(pr_samples):
 
 
 async def test_store_precomputed_done_facts_empty(pdb):
-    await store_precomputed_done_facts([], [], None, None, 1, pdb)
+    await store_precomputed_done_facts(
+        [], [], datetime(2050, 1, 1, tzinfo=timezone.utc), None, None, 1, pdb,
+    )
 
 
 async def test_load_precomputed_done_candidates_smoke(
@@ -813,7 +837,13 @@ async def test_load_precomputed_done_candidates_smoke(
         return s
 
     await store_precomputed_done_facts(
-        prs, [with_mutables(s) for s in samples], default_branches, settings, 1, pdb,
+        prs,
+        [with_mutables(s) for s in samples],
+        datetime(2050, 1, 1, tzinfo=timezone.utc),
+        default_branches,
+        settings,
+        1,
+        pdb,
     )
     time_from = samples[0].created.item().replace(tzinfo=timezone.utc)
     time_to = samples[0].released.item().replace(tzinfo=timezone.utc)
@@ -847,7 +877,13 @@ async def test_load_precomputed_done_candidates_ambiguous(
         return s
 
     await store_precomputed_done_facts(
-        prs, [with_mutables(s) for s in samples], default_branches, settings, 1, pdb,
+        prs,
+        [with_mutables(s) for s in samples],
+        datetime(2050, 1, 1, tzinfo=timezone.utc),
+        default_branches,
+        settings,
+        1,
+        pdb,
     )
     time_from = samples[0].created.item().replace(tzinfo=timezone.utc)
     time_to = samples[0].released.item().replace(tzinfo=timezone.utc)
@@ -859,7 +895,13 @@ async def test_load_precomputed_done_candidates_ambiguous(
 
     prs[0].release[matched_by_column] = ReleaseMatch.tag
     await store_precomputed_done_facts(
-        prs, [with_mutables(s) for s in samples], default_branches, settings, 1, pdb,
+        prs,
+        [with_mutables(s) for s in samples],
+        datetime(2050, 1, 1, tzinfo=timezone.utc),
+        default_branches,
+        settings,
+        1,
+        pdb,
     )
     loaded_prs, ambiguous = await done_prs_facts_loader.load_precomputed_done_candidates(
         time_from, time_to, ["src-d/go-git"], default_branches, settings, 1, pdb,
@@ -887,7 +929,13 @@ async def test_load_precomputed_pr_releases_smoke(
         return s
 
     await store_precomputed_done_facts(
-        prs, [with_mutables(s) for s in samples], default_branches, settings, 1, pdb,
+        prs,
+        [with_mutables(s) for s in samples],
+        datetime(2050, 1, 1, tzinfo=timezone.utc),
+        default_branches,
+        settings,
+        1,
+        pdb,
     )
 
     def df_from_prs():
@@ -944,7 +992,13 @@ async def test_load_precomputed_pr_releases_time_to(
         return s
 
     await store_precomputed_done_facts(
-        prs, [with_mutables(s) for s in samples], default_branches, settings, 1, pdb,
+        prs,
+        [with_mutables(s) for s in samples],
+        datetime(2050, 1, 1, tzinfo=timezone.utc),
+        default_branches,
+        settings,
+        1,
+        pdb,
     )
 
     def df_from_prs():
@@ -989,7 +1043,13 @@ async def test_load_precomputed_pr_releases_release_mismatch(
         return s
 
     await store_precomputed_done_facts(
-        prs, [with_mutables(s) for s in samples], default_branches, settings, 1, pdb,
+        prs,
+        [with_mutables(s) for s in samples],
+        datetime(2050, 1, 1, tzinfo=timezone.utc),
+        default_branches,
+        settings,
+        1,
+        pdb,
     )
 
     def df_from_prs():
@@ -1044,7 +1104,13 @@ async def test_load_precomputed_pr_releases_tag(
         return s
 
     await store_precomputed_done_facts(
-        prs, [with_repository_full_name(s) for s in samples], default_branches, settings, 1, pdb,
+        prs,
+        [with_repository_full_name(s) for s in samples],
+        datetime(2050, 1, 1, tzinfo=timezone.utc),
+        default_branches,
+        settings,
+        1,
+        pdb,
     )
 
     def df_from_prs():
@@ -1109,7 +1175,7 @@ async def test_discover_update_unreleased_prs_smoke(
         PullRequest,
         index=[PullRequest.node_id.name, PullRequest.repository_full_name.name],
     )
-    prs[prs[PullRequest.merged_at.name].isnull()] = datetime.now(tz=timezone.utc)
+    prs[prs[PullRequest.merged_at.name].isnull()] = datetime(2021, 1, 1, tzinfo=timezone.utc)
     utc = timezone.utc
     releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"],
@@ -1166,7 +1232,7 @@ async def test_discover_update_unreleased_prs_smoke(
 
     assert len(releases) == 1
     assert matched_bys == {"src-d/go-git": ReleaseMatch.tag}
-    await update_unreleased_prs(
+    skipped = await update_unreleased_prs(
         prs,
         empty_rdf,
         datetime(2018, 11, 20, tzinfo=utc),
@@ -1178,6 +1244,7 @@ async def test_discover_update_unreleased_prs_smoke(
         pdb,
         asyncio.Event(),
     )
+    assert len(skipped) == 1
     unreleased_prs = await merged_prs_facts_loader.load_merged_unreleased_pull_request_facts(
         prs,
         datetime(2018, 11, 20, tzinfo=utc),
@@ -1210,7 +1277,7 @@ async def test_discover_update_unreleased_prs_smoke(
         1,
         pdb,
     )
-    assert set(prs.index) == set(unreleased_prs)
+    assert set(prs.index) - set(skipped) == set(unreleased_prs)
     releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"],
         None,
@@ -1343,7 +1410,7 @@ async def test_discover_update_unreleased_prs_released(
     await update_unreleased_prs(
         prs,
         released_prs,
-        time_to,
+        datetime(2020, 1, 1, tzinfo=timezone.utc),
         {},
         matched_bys,
         default_branches,
@@ -1502,7 +1569,7 @@ async def test_discover_update_unreleased_prs_exclude_inactive(
         time_from=datetime(2018, 10, 14, tzinfo=utc),
         exclude_inactive=True,
     )
-    assert len(unreleased_prs) == 7
+    assert len(unreleased_prs) == 6
     unreleased_prs = await merged_prs_facts_loader.load_merged_unreleased_pull_request_facts(
         prs,
         datetime(2018, 11, 1, tzinfo=utc),
@@ -1584,7 +1651,7 @@ async def test_discover_update_unreleased_prs_deployments(
         time_from=datetime(2018, 10, 16, tzinfo=utc),
         exclude_inactive=True,
     )
-    assert len(unreleased_prs) == 7  # 0 without deployments
+    assert len(unreleased_prs) == 6  # 0 without deployments
 
 
 @with_defer
@@ -1838,7 +1905,9 @@ async def test_store_precomputed_done_none_assert(pdb, pr_samples):
             check_run={PullRequestCheckRun.f.name: None},
         ),
     ]
-    await store_precomputed_done_facts(prs, [None], default_branches, settings, 1, pdb)
+    await store_precomputed_done_facts(
+        prs, [None], datetime(2050, 1, 1, tzinfo=timezone.utc), default_branches, settings, 1, pdb,
+    )
 
     def with_repository_full_name(s):
         s.repository_full_name = "one"
@@ -1848,6 +1917,7 @@ async def test_store_precomputed_done_none_assert(pdb, pr_samples):
         await store_precomputed_done_facts(
             prs,
             [with_repository_full_name(s) for s in samples],
+            datetime(2050, 1, 1, tzinfo=timezone.utc),
             default_branches,
             settings,
             1,
@@ -1890,7 +1960,7 @@ async def test_store_merged_unreleased_pull_request_facts_smoke(
     await update_unreleased_prs(
         dfs.prs,
         new_released_prs_df(),
-        datetime(2018, 11, 1, tzinfo=timezone.utc),
+        datetime(2050, 1, 1, tzinfo=timezone.utc),
         {},
         matched_bys,
         default_branches,
@@ -1916,6 +1986,7 @@ async def test_store_merged_unreleased_pull_request_facts_smoke(
     with pytest.raises(AssertionError):
         await store_merged_unreleased_pull_request_facts(
             zip(prs, samples_bad),
+            datetime(2050, 1, 1, tzinfo=timezone.utc),
             matched_bys,
             default_branches,
             release_match_setting_tag,
@@ -1925,6 +1996,7 @@ async def test_store_merged_unreleased_pull_request_facts_smoke(
         )
     await store_merged_unreleased_pull_request_facts(
         zip(prs, samples_good),
+        datetime(2050, 1, 1, tzinfo=timezone.utc),
         matched_bys,
         default_branches,
         release_match_setting_tag,
@@ -2075,7 +2147,13 @@ async def test_rescan_prs_mark_force_push_dropped(
         return s
 
     await store_precomputed_done_facts(
-        prs, [with_mutables(s) for s in samples], default_branches, settings, 1, pdb,
+        prs,
+        [with_mutables(s) for s in samples],
+        datetime(2050, 1, 1, tzinfo=timezone.utc),
+        default_branches,
+        settings,
+        1,
+        pdb,
     )
     release_match = await pdb.fetch_val(select([GitHubDonePullRequestFacts.release_match]))
     assert release_match == "branch|master"
@@ -2104,7 +2182,9 @@ async def test_load_precomputed_done_facts_ids(
         return s
 
     sfacts = [with_mutables(s) for s in sfacts]
-    await store_precomputed_done_facts(prs, sfacts, default_branches, settings, 1, pdb)
+    await store_precomputed_done_facts(
+        prs, sfacts, datetime(2050, 1, 1, tzinfo=timezone.utc), default_branches, settings, 1, pdb,
+    )
     pfacts, ambiguous = await done_prs_facts_loader.load_precomputed_done_facts_ids(
         [prs[0].pr[PullRequest.node_id.name]], default_branches, settings, prefixer, 1, pdb,
     )
