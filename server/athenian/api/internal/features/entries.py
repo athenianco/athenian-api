@@ -1716,11 +1716,17 @@ def make_calculator(
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class PullRequestMetricsLineRequest:
-    """Information for a single pull request metrics request."""
+class MetricsLineRequest:
+    """Common base for multiple metrics request classess."""
 
     metrics: Sequence[str]
     time_intervals: Sequence[Sequence[datetime]]
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class PullRequestMetricsLineRequest(MetricsLineRequest):
+    """Information for a single pull request metrics request."""
+
     lines: Sequence[int]
     environments: Sequence[str]
     repositories: Sequence[Collection[str]]
@@ -1751,11 +1757,9 @@ class PullRequestMetricsLineRequest:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class ReleaseMetricsLineRequest:
+class ReleaseMetricsLineRequest(MetricsLineRequest):
     """Information for a single release metrics request."""
 
-    metrics: Sequence[str]
-    time_intervals: Sequence[Sequence[datetime]]
     repositories: Sequence[Collection[str]]
     participants: List[ReleaseParticipants]
 
@@ -1782,11 +1786,9 @@ class ReleaseMetricsLineRequest:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class JIRAMetricsLineRequest:
+class JIRAMetricsLineRequest(MetricsLineRequest):
     """Information for a single jira metrics request."""
 
-    metrics: Sequence[str]
-    time_intervals: Sequence[Sequence[datetime]]
     participants: List[JIRAParticipants]
 
     def __str__(self) -> str:
