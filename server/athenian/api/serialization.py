@@ -94,7 +94,7 @@ def _deserialize_object(value: T) -> T:
 # default bounds for deserialize_date and deserialize_datetime
 _DATETIME_MIN = datetime(2000, 1, 1)
 _DATE_MIN = _DATETIME_MIN.date()
-_DATETIME_MAX_FUTURE_DELTA = timedelta(days=365)
+_DATETIME_MAX_FUTURE_DELTA = timedelta(days=365) * 2
 
 
 def deserialize_date(
