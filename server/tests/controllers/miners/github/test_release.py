@@ -406,7 +406,13 @@ async def test_map_prs_to_releases_precomputed_released(
             await dummy_mdb.execute(CreateTable(table.__table__))
 
         await store_precomputed_done_facts(
-            true_prs, facts, default_branches, release_match_setting_tag, 1, pdb,
+            true_prs,
+            facts,
+            datetime(2022, 1, 1, tzinfo=timezone.utc),
+            default_branches,
+            release_match_setting_tag,
+            1,
+            pdb,
         )
 
         released_prs, _, _ = await PullRequestToReleaseMapper.map_prs_to_releases(

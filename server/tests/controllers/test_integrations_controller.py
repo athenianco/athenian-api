@@ -127,7 +127,7 @@ async def test_get_everything_smoke(client, headers, dummy_deployment_label):
             depsrels_df = pd.read_parquet(depsrelsf)
         with zipf.open("deployments_labels.parquet") as depslblsf:
             depslbls_df = pd.read_parquet(depslblsf)
-    assert len(prs_df) == 679
+    assert len(prs_df) == 678
     assert set(prs_df) == {
         "first_comment_on_first_review",
         "merged_by_login",

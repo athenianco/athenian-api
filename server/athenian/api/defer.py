@@ -1,4 +1,4 @@
-from asyncio import Event, current_task, ensure_future, shield, sleep, wait
+from asyncio import Event, current_task, ensure_future, gather, shield, sleep
 from contextvars import ContextVar
 import logging
 from typing import Awaitable, Coroutine, List
@@ -237,4 +237,4 @@ class AllEvents:
 
     async def wait(self) -> None:
         """Block until all the events happen."""
-        await wait([e.wait() for e in self.events])
+        await gather(*(e.wait() for e in self.events), return_exceptions=True)

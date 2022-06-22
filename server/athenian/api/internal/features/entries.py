@@ -1460,6 +1460,7 @@ class MetricEntriesCalculator:
                 store_precomputed_done_facts(
                     mined_prs,
                     mined_facts.values(),
+                    time_to,
                     default_branches,
                     release_settings,
                     self._account,
@@ -1476,6 +1477,7 @@ class MetricEntriesCalculator:
             await defer(
                 store_merged_unreleased_pull_request_facts(
                     merged_unreleased_pr_facts,
+                    time_to,
                     matched_bys,
                     default_branches,
                     release_settings,

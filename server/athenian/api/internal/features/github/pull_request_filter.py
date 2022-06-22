@@ -861,7 +861,12 @@ async def _filter_pull_requests(
             nonlocal missed_done_facts
             await defer(
                 store_precomputed_done_facts(
-                    *zip(*missed_done_facts), default_branches, release_settings, account, pdb,
+                    *zip(*missed_done_facts),
+                    time_to,
+                    default_branches,
+                    release_settings,
+                    account,
+                    pdb,
                 ),
                 "store_precomputed_done_facts(%d)" % len(missed_done_facts),
             )
@@ -880,6 +885,7 @@ async def _filter_pull_requests(
             await defer(
                 store_merged_unreleased_pull_request_facts(
                     missed_merged_unreleased_facts,
+                    time_to,
                     matched_bys,
                     default_branches,
                     release_settings,

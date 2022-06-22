@@ -5,7 +5,7 @@ import morcilla
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, insert, select
+from sqlalchemy import and_, case, insert, select
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 
 from athenian.api.internal.logical_repos import drop_logical_repo
@@ -237,7 +237,13 @@ async def store_open_pull_request_facts(
             set_={
                 GitHubOpenPullRequestFacts.pr_updated_at.name: sql.excluded.pr_updated_at,
                 GitHubOpenPullRequestFacts.updated_at.name: sql.excluded.updated_at,
-                GitHubOpenPullRequestFacts.data.name: sql.excluded.data,
+                GitHubOpenPullRequestFacts.data.name: case(
+                    (
+                        sql.excluded.pr_updated_at >= GitHubOpenPullRequestFacts.pr_updated_at,
+                        sql.excluded.data,
+                    ),
+                    else_=GitHubOpenPullRequestFacts.data,
+                ),
             },
         )
     else:

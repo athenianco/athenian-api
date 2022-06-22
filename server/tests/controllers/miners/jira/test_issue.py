@@ -243,6 +243,7 @@ async def test__fetch_released_prs_release_settings_events(
     await store_precomputed_done_facts(
         prs,
         [with_mutables(s, i) for i, s in enumerate(samples)] * 2,
+        datetime(2050, 1, 1, tzinfo=timezone.utc),
         default_branches,
         settings,
         1,

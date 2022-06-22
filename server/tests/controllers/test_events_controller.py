@@ -366,7 +366,7 @@ async def test_clear_precomputed_event_releases_smoke(
     )
     assert response.status == 200, (await response.read()).decode("utf-8")
     for table, n in (
-        (GitHubDonePullRequestFacts, 293),
+        (GitHubDonePullRequestFacts, 292),
         (GitHubMergedPullRequestFacts, 246),
         (GitHubReleaseFacts, 53),
     ):

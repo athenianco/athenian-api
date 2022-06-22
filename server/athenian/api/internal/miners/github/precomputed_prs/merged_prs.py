@@ -321,7 +321,7 @@ async def update_unreleased_prs(
     account: int,
     pdb: morcilla.Database,
     unreleased_prs_event: asyncio.Event,
-) -> None:
+) -> List[Tuple[int, str]]:
     """
     Bump the last check timestamps for unreleased merged PRs.
 
@@ -329,11 +329,13 @@ async def update_unreleased_prs(
     :param released_prs: Released PRs among `merged_prs`. They should be marked as checked until \
                          the release publish time.
     :param time_to: Until when we checked releases for the specified PRs.
+    :return: The IDs of skipped PRs.
     """
     assert time_to.tzinfo is not None
     assert merged_prs.index.nlevels == 2
     time_to = min(time_to, datetime.now(timezone.utc))
     postgres = pdb.url.dialect == "postgresql"
+    ghmprf = GitHubMergedPullRequestFacts
     values = []
     if not released_prs.empty:
         assert released_prs.index.nlevels == 2
@@ -345,6 +347,7 @@ async def update_unreleased_prs(
         )
     else:
         release_times = {}
+    skipped = []
     with sentry_sdk.start_span(op="update_unreleased_prs/generate"):
         for repo, repo_prs in merged_prs.groupby(level=1, sort=False):
             if (
@@ -353,6 +356,7 @@ async def update_unreleased_prs(
                 )
             ) is None:
                 # no new releases
+                skipped.extend(repo_prs.index.values)
                 continue
             for node_id, merged_at, author, merger in zip(
                 repo_prs.index.get_level_values(0).values,
@@ -360,6 +364,10 @@ async def update_unreleased_prs(
                 repo_prs[PullRequest.user_node_id.name].values,
                 repo_prs[PullRequest.merged_by_id.name].values,
             ):
+                if merged_at > time_to:
+                    # we can miss data
+                    skipped.append((node_id, repo))
+                    continue
                 try:
                     released_time = release_times[(node_id, repo)]
                 except KeyError:
@@ -370,7 +378,7 @@ async def update_unreleased_prs(
                     else:
                         checked_until = merged_at  # force_push_drop
                 values.append(
-                    GitHubMergedPullRequestFacts(
+                    ghmprf(
                         acc_id=account,
                         pr_node_id=node_id,
                         release_match=release_match,
@@ -387,25 +395,24 @@ async def update_unreleased_prs(
                 )
         if not values:
             unreleased_prs_event.set()
-            return
+            return skipped
         if postgres:
-            sql = postgres_insert(GitHubMergedPullRequestFacts)
+            sql = postgres_insert(ghmprf)
             sql = sql.on_conflict_do_update(
-                constraint=GitHubMergedPullRequestFacts.__table__.primary_key,
+                constraint=ghmprf.__table__.primary_key,
                 set_={
-                    GitHubMergedPullRequestFacts.checked_until.name: greatest(
-                        GitHubMergedPullRequestFacts.checked_until, sql.excluded.checked_until,
+                    ghmprf.checked_until.name: greatest(
+                        ghmprf.checked_until, sql.excluded.checked_until,
                     ),
-                    GitHubMergedPullRequestFacts.labels.name: GitHubMergedPullRequestFacts.labels
-                    + sql.excluded.labels,
-                    GitHubMergedPullRequestFacts.updated_at.name: sql.excluded.updated_at,
-                    GitHubMergedPullRequestFacts.data.name: GitHubMergedPullRequestFacts.data,
+                    ghmprf.labels.name: ghmprf.labels + sql.excluded.labels,
+                    ghmprf.updated_at.name: greatest(ghmprf.updated_at, sql.excluded.updated_at),
+                    ghmprf.data.name: sql.excluded.data,
                 },
             )
         else:
             # this is wrong but we just cannot update SQLite properly
             # nothing will break though
-            sql = insert(GitHubMergedPullRequestFacts).prefix_with("OR REPLACE")
+            sql = insert(ghmprf).prefix_with("OR REPLACE")
     try:
         with sentry_sdk.start_span(op="update_unreleased_prs/execute"):
             if pdb.url.dialect == "sqlite":
@@ -417,11 +424,13 @@ async def update_unreleased_prs(
                 await pdb.execute_many(sql, values)
     finally:
         unreleased_prs_event.set()
+    return skipped
 
 
 @sentry_span
 async def store_merged_unreleased_pull_request_facts(
     merged_prs_and_facts: Iterable[Tuple[MinedPullRequest, PullRequestFacts]],
+    time_to: datetime,
     matched_bys: Dict[str, ReleaseMatch],
     default_branches: Dict[str, str],
     release_settings: ReleaseSettings,
@@ -439,8 +448,12 @@ async def store_merged_unreleased_pull_request_facts(
         assert pdb.url.dialect == "sqlite"
     values = []
     dt = datetime(2000, 1, 1, tzinfo=timezone.utc)
+    time_to = pd.Timestamp(time_to).to_numpy()
     for pr, facts in merged_prs_and_facts:
         assert facts.merged and not facts.released
+        if facts.merged > time_to:
+            # we can miss data
+            continue
         repo = pr.pr[PullRequest.repository_full_name.name]
         if (
             release_match := extract_release_match(
@@ -475,6 +488,9 @@ async def store_merged_unreleased_pull_request_facts(
             constraint=ghmprf.__table__.primary_key,
             set_={
                 ghmprf.data.name: sql.excluded.data,
+                ghmprf.checked_until.name: greatest(
+                    ghmprf.checked_until, sql.excluded.checked_until,
+                ),
                 ghmprf.activity_days.name: sql.excluded.activity_days,
             },
         )

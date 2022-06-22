@@ -927,6 +927,7 @@ class DonePRFactsLoader:
 async def store_precomputed_done_facts(
     prs: Iterable[MinedPullRequest],
     pr_facts: Iterable[Optional[PullRequestFacts]],
+    time_to: datetime,
     default_branches: Dict[str, str],
     release_settings: ReleaseSettings,
     account: int,
@@ -936,9 +937,11 @@ async def store_precomputed_done_facts(
     log = logging.getLogger("%s.store_precomputed_done_facts" % metadata.__package__)
     inserted = []
     sqlite = pdb.url.dialect == "sqlite"
+    time_to = pd.Timestamp(time_to).to_numpy()
     for pr, facts in zip(prs, pr_facts):
-        if facts is None:
+        if facts is None or facts.closed and facts.closed > time_to:
             # ImpossiblePullRequest
+            # potentially missing data about a PR
             continue
         pr_created = pr.pr[PullRequest.created_at.name]
         try:

@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+import numpy as np
+import pandas as pd
 from pandas.testing import assert_frame_equal
 import pytest
 from sqlalchemy import delete, select, update
@@ -48,6 +50,12 @@ async def test_fetch_pull_request_facts_unfresh_smoke(
     await wait_deferred()
     assert len(facts_fresh) == 230
     assert (facts_fresh["repository_full_name"] == "src-d/go-git").all()
+    facts_fresh = facts_fresh.take(
+        np.flatnonzero(
+            ~(facts_fresh[PullRequestFacts.f.closed].values > pd.Timestamp(time_to).to_numpy()),
+        ),
+    )
+    facts_fresh.reset_index(inplace=True, drop=True)
     orig_threshold = entries.unfresh_prs_threshold
     entries.unfresh_prs_threshold = 1
     try:
@@ -66,7 +74,7 @@ async def test_fetch_pull_request_facts_unfresh_smoke(
             False,
             False,
         )
-        assert len(facts_unfresh) == 230
+        assert len(facts_unfresh) == 222
         facts_unfresh.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
         assert_frame_equal(facts_fresh, facts_unfresh)
     finally:
@@ -186,6 +194,12 @@ async def test_fetch_pull_request_facts_unfresh_jira(
             ),
         )
     facts_fresh.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
+    facts_fresh = facts_fresh.take(
+        np.flatnonzero(
+            ~(facts_fresh[PullRequestFacts.f.closed].values > pd.Timestamp(time_to).to_numpy()),
+        ),
+    )
+    facts_fresh.reset_index(inplace=True, drop=True)
     orig_threshold = entries.unfresh_prs_threshold
     entries.unfresh_prs_threshold = 1
     try:
@@ -204,7 +218,7 @@ async def test_fetch_pull_request_facts_unfresh_jira(
             False,
             True,
         )
-        assert len(facts_unfresh) == 36
+        assert len(facts_unfresh) == 35
         facts_unfresh.sort_values(PullRequestFacts.f.created, inplace=True, ignore_index=True)
         for i in (5, 23):
             facts_unfresh.loc[i, PullRequestFacts.f.releaser] = "mcuadros"
@@ -216,9 +230,9 @@ async def test_fetch_pull_request_facts_unfresh_jira(
 @pytest.mark.parametrize(
     "repos, count",
     [
-        ({"src-d/go-git/alpha"}, 68),
-        ({"src-d/go-git/alpha", "src-d/go-git/beta"}, 122),
-        ({"src-d/go-git", "src-d/go-git/alpha"}, 185),
+        ({"src-d/go-git/alpha"}, 67),
+        ({"src-d/go-git/alpha", "src-d/go-git/beta"}, 119),
+        ({"src-d/go-git", "src-d/go-git/alpha"}, 179),
     ],
 )
 @pytest.mark.parametrize("exclude_inactive", [False, True])
@@ -260,6 +274,12 @@ async def test_fetch_pull_request_facts_unfresh_logical_title(
         inplace=True,
         ignore_index=True,
     )
+    facts_fresh = facts_fresh.take(
+        np.flatnonzero(
+            ~(facts_fresh[PullRequestFacts.f.closed].values > pd.Timestamp(time_to).to_numpy()),
+        ),
+    )
+    facts_fresh.reset_index(inplace=True, drop=True)
     await wait_deferred()
     assert len(facts_fresh) == count
     assert facts_fresh["repository_full_name"].isin(repos).all()
