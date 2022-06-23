@@ -104,9 +104,9 @@ class JIRAFilterWith(Model):
         """Convert to the internal representation."""
         result = {}
         if self.reporters:
-            result[JIRAParticipationKind.REPORTER] = self.reporters
+            result[JIRAParticipationKind.REPORTER] = [*{*self.reporters}]
         if self.assignees:
-            result[JIRAParticipationKind.ASSIGNEE] = self.assignees
+            result[JIRAParticipationKind.ASSIGNEE] = [*{*self.assignees}]
         if self.commenters:
-            result[JIRAParticipationKind.COMMENTER] = self.commenters
+            result[JIRAParticipationKind.COMMENTER] = [*{*self.commenters}]
         return result
