@@ -1489,7 +1489,8 @@ class PullRequestMiner:
         pos = 0
         queries = []
         dead = []
-        acc_id_cond = PushCommit.acc_id.in_(meta_ids)
+        # Postgres goes crazy from acc_id IN (1, 2, ...) here
+        acc_id_conds = {acc_id: PushCommit.acc_id == acc_id for acc_id in meta_ids}
         min_commit_date = merged_prs[PullRequest.merged_at.name].min()
         committed_date_cond = PushCommit.committed_date >= min_commit_date
         substr = sql.func.substr(PushCommit.message, 1, 32)
@@ -1510,32 +1511,33 @@ class PullRequestMiner:
             indexes = repo_order[begin_pos:end_pos][not_found]
             dead.extend(dead_node_ids := pr_node_ids[indexes])
             repo_cond = PushCommit.repository_full_name == repo
-            for pr_node_id, n in zip(dead_node_ids, pr_numbers[indexes]):
-                if sqlite:
-                    # SQLite does not support parameter recycling
-                    acc_id_cond = PushCommit.acc_id.in_(meta_ids)
-                    committed_date_cond = PushCommit.committed_date >= min_commit_date
-                    substr = sql.func.substr(PushCommit.message, 1, 32)
-                    repo_cond = PushCommit.repository_full_name == repo
-                queries.append(
-                    sql.select(
-                        [
-                            PushCommit.node_id.label("commit_node_id"),
-                            PushCommit.sha.label(PushCommit.sha.name),
-                            sql.literal_column("'" + repo + "'").label("repo"),
-                            sql.literal_column(str(pr_node_id)).label("pr_node_id"),
-                            PushCommit.committed_date,
-                            PushCommit.pushed_date,
-                        ],
-                    ).where(
-                        sql.and_(
-                            acc_id_cond,
-                            repo_cond,
-                            committed_date_cond,
-                            substr.like("Merge pull request #%d from %%" % n),
+            for acc_id in meta_ids:
+                for pr_node_id, n in zip(dead_node_ids, pr_numbers[indexes]):
+                    if sqlite:
+                        # SQLite does not support parameter recycling
+                        acc_id_conds = {acc_id: PushCommit.acc_id == acc_id}
+                        committed_date_cond = PushCommit.committed_date >= min_commit_date
+                        substr = sql.func.substr(PushCommit.message, 1, 32)
+                        repo_cond = PushCommit.repository_full_name == repo
+                    queries.append(
+                        sql.select(
+                            [
+                                PushCommit.node_id.label("commit_node_id"),
+                                PushCommit.sha.label(PushCommit.sha.name),
+                                sql.literal_column("'" + repo + "'").label("repo"),
+                                sql.literal_column(str(pr_node_id)).label("pr_node_id"),
+                                PushCommit.committed_date,
+                                PushCommit.pushed_date,
+                            ],
+                        ).where(
+                            sql.and_(
+                                acc_id_conds[acc_id],
+                                repo_cond,
+                                committed_date_cond,
+                                substr.like("Merge pull request #%d from %%" % n),
+                            ),
                         ),
-                    ),
-                )
+                    )
         if not queries:
             return prs
         prs.loc[dead, "dead"] = True
@@ -1801,9 +1803,13 @@ class PullRequestMiner:
                         PullRequest.acc_id.in_(meta_ids),
                         PullRequest.node_id.in_any_values(node_id_map),
                     )
-                    .with_statement_hint("Leading(pr *VALUES*)")
+                    .with_statement_hint("Leading(pr *VALUES* repo c ath math)")
+                    .with_statement_hint("HashJoin(pr *VALUES* repo c ath math)")
                     .with_statement_hint(f"Rows(pr *VALUES* #{len(node_id_map)})")
                     .with_statement_hint(f"Rows(pr *VALUES* repo #{len(node_id_map)})")
+                    .with_statement_hint(f"Rows(pr *VALUES* repo c #{len(node_id_map)})")
+                    .with_statement_hint(f"Rows(pr *VALUES* repo c ath #{len(node_id_map)})")
+                    .with_statement_hint(f"Rows(pr *VALUES* repo c ath math #{len(node_id_map)})")
                 )
             else:
                 query = query.where(
