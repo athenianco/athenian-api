@@ -13,10 +13,13 @@ import sys
 import tempfile
 import time
 import traceback
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, cast
 import warnings
 
+import aiomcache
 from filelock import FileLock
+
+from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME
 
 try:
     import nest_asyncio
@@ -165,6 +168,14 @@ class FakeCache:
 
     async def touch(self, key: bytes, exptime: int):
         pass
+
+
+def build_fake_cache() -> aiomcache.Client:
+    cache = FakeCache()
+    setup_cache_metrics({CACHE_VAR_NAME: cache, PROMETHEUS_REGISTRY_VAR_NAME: None})
+    for v in cache.metrics["context"].values():
+        v.set(defaultdict(int))
+    return cast(aiomcache.Client, cache)
 
 
 @pytest.fixture(scope="function")
