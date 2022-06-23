@@ -5,13 +5,13 @@ from typing import Any, Dict
 
 import aiohttp
 from flogging import flogging
-from sqlalchemy import distinct, func, select
+from sqlalchemy import select
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.cache import CancelCache, cached, max_exptime
 from athenian.api.internal.account import get_metadata_account_ids_or_empty
-from athenian.api.models.metadata.github import NodeRepository
+from athenian.api.models.metadata.github import Organization
 from athenian.api.models.state.models import UserAccount
 from athenian.api.request import AthenianWebRequest
 
@@ -69,22 +69,9 @@ class SegmentClient:
         ]
         meta_ids = list(chain.from_iterable(await gather(*tasks)))
         orgs = await request.mdb.fetch_all(
-            # we could use SPLIT_PART but it does not work in SQLite
-            select(
-                [
-                    distinct(
-                        func.substr(
-                            NodeRepository.name_with_owner,
-                            1,  # SQL strings are 1-based
-                            func.length(NodeRepository.name_with_owner)
-                            - func.length(NodeRepository.name)
-                            - 1,
-                        ),
-                    ),
-                ],
-            ).where(NodeRepository.acc_id.in_(meta_ids)),
+            select(Organization.name).where(Organization.acc_id.in_(meta_ids)),
         )
-        orgs = [org[0] for org in orgs]
+        orgs = [org[0].lower() for org in orgs]
         data = {
             "userId": user.id,
             "traits": {
@@ -104,7 +91,7 @@ class SegmentClient:
     async def _track(self, request: AthenianWebRequest) -> None:
         data = {
             "userId": request.uid,
-            "event": request.path,
+            "event": request.match_info.route.resource.canonical,
             "properties": {
                 **{
                     k.lower(): v
