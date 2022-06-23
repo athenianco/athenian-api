@@ -59,6 +59,9 @@ def compile_binary(binary, compiler, override_operator=None, **kw):
     if is_array := right_len == 1 and isinstance(values[0], np.ndarray):
         binary.right.value = values = values[0]
         right_len = len(values)
+    else:
+        # sqla may unbox the array for us, DEV-4494
+        is_array = isinstance(values, np.ndarray) and values.dtype != object
     render_any_values = (
         getattr(binary, "any_values", False)
         and compiler.dialect.name == "postgresql"
@@ -113,14 +116,18 @@ def _in_(self: ColumnOperators, other: Iterable, any_: bool = False):
     """Override IN (...) PostgreSQL operator."""
     if isinstance(other, np.ndarray) and (any_ or other.dtype != object):
         other = [other]  # performance hack to avoid conversion to list
-    return _original_in_(self, other)
+    expr = _original_in_(self, other)
+    expr.any_values = any_
+    return expr
 
 
 def _notin_(self: ColumnOperators, other: Iterable, any_: bool = False):
     """Override NOT IN (...) PostgreSQL operator."""
     if isinstance(other, np.ndarray) and (any_ or other.dtype != object):
         other = [other]  # performance hack to avoid conversion to list
-    return _original_notin_(self, other)
+    expr = _original_notin_(self, other)
+    expr.any_values = any_
+    return expr
 
 
 ColumnOperators.in_ = _in_
@@ -129,16 +136,12 @@ ColumnOperators.notin_ = _notin_
 
 def _in_any_values(self: ColumnOperators, other: Iterable):
     """Implement = ANY(VALUES (...), (...), ...) PostgreSQL operator."""
-    expr = self.in_(other, any_=True)
-    expr.any_values = True
-    return expr
+    return self.in_(other, any_=True)
 
 
 def _notin_any_values(self: ColumnOperators, other: Iterable):
     """Implement NOT = ANY(VALUES (...), (...), ...) PostgreSQL operator."""
-    expr = self.notin_(other, any_=True)
-    expr.any_values = True
-    return expr
+    return self.notin_(other, any_=True)
 
 
 ColumnOperators.in_any_values = _in_any_values

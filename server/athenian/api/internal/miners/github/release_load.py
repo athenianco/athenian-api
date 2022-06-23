@@ -1379,14 +1379,14 @@ class ReleaseMatcher:
             PushCommit.acc_id.in_(self._meta_ids),
             PushCommit.committed_date.between(time_from, time_to),
         ]
-        if len(commit_shas) < 100:
+        if small_scale := (len(commit_shas) < 100):
             filters.append(PushCommit.sha.in_(commit_shas))
         else:
             filters.append(PushCommit.sha.in_any_values(commit_shas))
         query = (
             select([PushCommit]).where(and_(*filters)).order_by(desc(PushCommit.committed_date))
         )
-        if len(commit_shas) < 100:
+        if small_scale:
             query = query.with_statement_hint(
                 "IndexScan(cmm github_node_commit_sha)",
             ).with_statement_hint(f"Rows(cmm repo #{len(commit_shas)})")
