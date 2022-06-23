@@ -1111,7 +1111,11 @@ class MetricEntriesCalculator:
             ",".join(metrics),
             ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
             ",".join(str(q) for q in quantiles),
-            _compose_cache_key_participants(participants),
+            # don't use _compose_cache_key_participants, it doesn't bear None-s
+            ";".join(
+                ",".join(f"{k.name}:{sorted(map(str, v))}" for k, v in sorted(p.items()))
+                for p in participants
+            ),
             label_filter,
             split_by_label,
             ",".join(sorted(priorities)),
