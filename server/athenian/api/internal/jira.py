@@ -455,7 +455,8 @@ async def disable_empty_projects(
     Scan all the existing projects. If the project is explicitly enabled in the settings, skip.
     """
     if (jira_id := await get_jira_installation_or_none(account, sdb, mdb, cache)) is None:
-        return None
+        return 0
+    log = logging.getLogger("%s.disable_empty_projects" % metadata.__package__)
     mapped_projects, all_projects, settings = await gather(
         mdb.fetch_all(
             select(Issue.project_id)
@@ -521,7 +522,12 @@ async def disable_empty_projects(
                 .explode(with_primary_keys=True),
             )
     await sdb.execute_many(insert(JIRAProjectSetting), disabled)
-    if slack is not None and len(disabled) > 0:
+    log.warning(
+        "Disabled JIRA projects on account %d: %s",
+        account,
+        [d[JIRAProjectSetting.key.name] for d in disabled],
+    )
+    if slack is not None and len(disabled) > 0 and len(settings) == 0:
         await slack.post_install(
             "disabled_jira_projects.jinja2",
             account=account,
