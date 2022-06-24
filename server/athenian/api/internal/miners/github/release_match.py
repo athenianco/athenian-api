@@ -1182,20 +1182,16 @@ class ReleaseToPullRequestMapper:
         time_boundary: datetime,
     ) -> np.ndarray:
         time_mask = (releases[Release.published_at.name] >= time_boundary).values
-        new_releases = releases.take(np.flatnonzero(time_mask))
-        assert not new_releases.empty, "you must check this before calling me"
-        hashes, vertexes, edges = dag
-        visited_hashes, _, _ = extract_subdag(
-            hashes, vertexes, edges, new_releases[Release.sha.name].values,
-        )
+        all_shas = releases[Release.sha.name].values
+        new_shas = all_shas if (everything := time_mask.all()) else all_shas[time_mask]
+        assert len(new_shas), "you must check this before calling me"
+        visited_hashes, _, _ = extract_subdag(*dag, new_shas)
         # we need to traverse the DAG from *all* the previous releases because of release branches
-        if not time_mask.all():
-            boundary_release_hashes = releases[Release.sha.name].values[~time_mask]
+        if not everything:
+            boundary_release_hashes = all_shas[~time_mask]
         else:
-            boundary_release_hashes = []
-        if len(boundary_release_hashes) == 0:
             return visited_hashes
-        ignored_hashes, _, _ = extract_subdag(hashes, vertexes, edges, boundary_release_hashes)
+        ignored_hashes, _, _ = extract_subdag(*dag, boundary_release_hashes)
         deleted_indexes = np.searchsorted(visited_hashes, ignored_hashes)
         # boundary_release_hash may touch some unique hashes not present in visited_hashes
         deleted_indexes = deleted_indexes[deleted_indexes < len(visited_hashes)]
