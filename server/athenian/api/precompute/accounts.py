@@ -72,12 +72,17 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> Optional
             continue
 
         duration_tracker = _DurationTracker(args.prometheus_pushgateway, context.log)
+
+        def track_time():
+            duration_tracker.track(reposet.owner_id, meta_ids, not reposet.precomputed)
+
         _set_sentry_scope(reposet)
 
         if not isolate:
             await precompute_reposet(
                 reposet, meta_ids, context, args, time_to, no_time_from, time_from,
             )
+            track_time()
             continue
         pid = os.fork()
         if pid == 0:
@@ -111,7 +116,7 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> Optional
                         reposet.owner_id,
                         status[1],
                     )
-            duration_tracker.track(reposet.owner_id, meta_ids, not reposet.precomputed)
+            track_time()
 
     log.info("failed: %d / %d", failed, len(to_precompute))
 
@@ -479,10 +484,11 @@ class _DurationTracker:
             return
 
         metrics = get_metrics()
+        metrics.precompute_account_seconds.clear()
         metrics.precompute_account_seconds.labels(
             account=account,
             github_account=",".join(map(str, sorted(meta_ids))),
             is_fresh=is_fresh,
         ).observe(elapsed)
-        self._log.info("Tracking precompute duration: %.3f seconds", elapsed)
+        self._log.info("tracking precompute duration: %.3f seconds", elapsed)
         push_metrics(self._gateway, self._PROMETHEUS_JOB)

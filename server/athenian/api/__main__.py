@@ -11,6 +11,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import platform
 import re
 import socket
 import sys
@@ -206,12 +207,13 @@ def setup_context(log: logging.Logger) -> None:
     _init_sentry(log, app_env)
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True, slots=True)
 class _ApplicationEnvironment:
     commit: Optional[str]
     build_date: Optional[str]
     username: str
     hostname: str
+    kernel: str
     dev_id: Optional[str]
 
     @classmethod
@@ -224,11 +226,12 @@ class _ApplicationEnvironment:
             log.info("Image built on %s", build_date)
         username = getpass.getuser()
         hostname = socket.getfqdn()
-        log.info("%s@%s -> %d", username, hostname, os.getpid())
+        kernel = platform.release()
+        log.info("%s@%s [%s] -> %d", username, hostname, kernel, os.getpid())
         if dev_id := os.getenv("ATHENIAN_DEV_ID"):
             log.info("Developer: %s", dev_id)
 
-        return cls(commit, build_date, username, hostname, dev_id)
+        return cls(commit, build_date, username, hostname, kernel, dev_id)
 
 
 def _init_sentry(log: logging.Logger, app_env: _ApplicationEnvironment) -> None:
