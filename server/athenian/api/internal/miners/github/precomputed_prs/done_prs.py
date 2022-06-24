@@ -1057,9 +1057,11 @@ async def delete_force_push_dropped_prs(
         pdb.fetch_all(
             select([ghdprf.pr_node_id]).where(
                 and_(
-                    ghdprf.repository_full_name.in_(repos),
                     ghdprf.acc_id == account,
+                    ghdprf.format_version
+                    == ghdprf.__table__.columns[ghdprf.format_version.key].default.arg,
                     ghdprf.release_match.like("%|%"),
+                    ghdprf.repository_full_name.in_(repos),
                 ),
             ),
         ),

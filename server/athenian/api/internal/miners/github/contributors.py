@@ -30,7 +30,6 @@ from athenian.api.models.metadata.github import (
     PullRequest,
     PullRequestComment,
     PullRequestReview,
-    PushCommit,
     Release,
     User,
 )
@@ -421,14 +420,14 @@ async def load_organization_members(
         return {}, {}, {}
     signature_rows = await mdb.fetch_all(
         union(
-            select([PushCommit.author_user_id, PushCommit.author_name, PushCommit.author_email])
-            .where(and_(PushCommit.acc_id.in_(meta_ids), PushCommit.author_user_id.in_(user_ids)))
+            select([NodeCommit.author_user_id, NodeCommit.author_name, NodeCommit.author_email])
+            .where(and_(NodeCommit.acc_id.in_(meta_ids), NodeCommit.author_user_id.in_(user_ids)))
             .distinct(),
             select(
-                [PushCommit.committer_user_id, PushCommit.committer_name, PushCommit.author_email],
+                [NodeCommit.committer_user_id, NodeCommit.committer_name, NodeCommit.author_email],
             )
             .where(
-                and_(PushCommit.acc_id.in_(meta_ids), PushCommit.committer_user_id.in_(user_ids)),
+                and_(NodeCommit.acc_id.in_(meta_ids), NodeCommit.committer_user_id.in_(user_ids)),
             )
             .distinct(),
         ),
@@ -437,10 +436,10 @@ async def load_organization_members(
     github_names = defaultdict(set)
     github_emails = defaultdict(set)
     for row in signature_rows:
-        node_id = row[PushCommit.author_user_id.name]
-        if name := row[PushCommit.author_name.name]:
+        node_id = row[NodeCommit.author_user_id.name]
+        if name := row[NodeCommit.author_name.name]:
             github_names[node_id].add(name)
-        if email := row[PushCommit.author_email.name]:
+        if email := row[NodeCommit.author_email.name]:
             github_emails[node_id].add(email)
     github_prefixed_logins = {}
     for row in user_rows:
