@@ -141,14 +141,14 @@ class TestEnsureBotTeam:
         )
         meta_ids = await get_metadata_account_ids(1, sdb, None)
         prefixer = await Prefixer.load(meta_ids, mdb, None)
-        assert await _ensure_bot_team(1, meta_ids, set(), 1, prefixer, sdb, mdb) == 3
+        assert await _ensure_bot_team(1, set(), 1, prefixer, sdb, mdb) == 3
 
     async def test_ensure_bot_team_not_existing(self, sdb: Database, mdb: Database) -> None:
         await models_insert(sdb, TeamFactory(id=10))
         meta_ids = await get_metadata_account_ids(1, sdb, None)
         prefixer = await Prefixer.load(meta_ids, mdb, None)
         bot_logins = {"gkwillie"}
-        assert await _ensure_bot_team(1, meta_ids, bot_logins, 10, prefixer, sdb, mdb) == 1
+        assert await _ensure_bot_team(1, bot_logins, 10, prefixer, sdb, mdb) == 1
 
         bot_team = await assert_existing_row(sdb, Team, name="Bots", owner_id=1, parent_id=10)
         assert len(bot_team[Team.members.name]) == 1
@@ -159,7 +159,7 @@ class TestEnsureBotTeam:
         meta_ids = await get_metadata_account_ids(1, sdb, None)
         prefixer = await Prefixer.load(meta_ids, mdb, None)
         bot_logins = {"gkwillie", "not-existing-gh-user"}
-        assert await _ensure_bot_team(1, meta_ids, bot_logins, 10, prefixer, sdb, mdb) == 1
+        assert await _ensure_bot_team(1, bot_logins, 10, prefixer, sdb, mdb) == 1
         bot_team = await sdb.fetch_one(sa.select(Team).where(Team.name == "Bots"))
         assert bot_team[Team.owner_id.name] == 1
         assert len(bot_team[Team.members.name]) == 1
