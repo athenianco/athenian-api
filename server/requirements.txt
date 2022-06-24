@@ -13,14 +13,14 @@ numpy==1.23.0
 scipy==1.8.1
 # end of remember to change in Dockerfile
 sentry-sdk[pure_eval]==1.5.12
-prometheus_client==0.8.0
+prometheus_client==0.14.1
 alembic==1.8.0
 mako==1.2.0
 pandas==1.1.5
 python-jose[cryptography]==3.3.0
 python-dateutil==2.8.2
 pyffx==0.3.0
-aiomcache==v0.7.0rc0
+aiomcache==v0.7.0
 uvloop==0.16.0
 bootstrapped==0.0.2
 tqdm==4.64.0
@@ -33,7 +33,7 @@ backoff==2.1.2
 pympler==1.0.1
 objgraph==3.5.0
 lz4==4.0.1
-jinja2==3.0.3
+jinja2==3.1.2
 git+ssh://git@github.com:/athenianco/precomputer@v0.2.99#egg=athenian-precomputer==0.2.99
 rsa>=4.7 # not directly required, pinned by Snyk to avoid a vulnerability
 names_matcher==2.0.7
