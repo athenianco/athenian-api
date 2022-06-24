@@ -9,7 +9,7 @@ morcilla[sqlite,postgresql]==0.5.21
 psycopg2-binary==2.9.3
 xxhash==3.0.0
 # remember to change these versions in Dockerfile and pyproject.toml, too!
-numpy==1.22.4
+numpy==1.23.0
 scipy==1.8.1
 # end of remember to change in Dockerfile
 sentry-sdk[pure_eval]==1.5.12
@@ -34,7 +34,7 @@ pympler==1.0.1
 objgraph==3.5.0
 lz4==4.0.1
 jinja2==3.0.3
-git+ssh://git@github.com:/athenianco/precomputer@v0.2.88#egg=athenian-precomputer==0.2.88
+git+ssh://git@github.com:/athenianco/precomputer@v0.2.99#egg=athenian-precomputer==0.2.99
 rsa>=4.7 # not directly required, pinned by Snyk to avoid a vulnerability
 names_matcher==2.0.7
 psutil==5.9.1

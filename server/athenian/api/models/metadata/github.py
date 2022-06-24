@@ -358,7 +358,11 @@ class NodeCommit(
     pushed_date = Column(TIMESTAMP(timezone=True))
     committed_date = Column(TIMESTAMP(timezone=True))
     committer_user_id = Column(BigInteger)
+    committer_email = Column(Text)
+    committer_name = Column(Text)
     author_user_id = Column(BigInteger)
+    author_email = Column(Text)
+    author_name = Column(Text)
     additions = Column(BigInteger, nullable=False)
     deletions = Column(BigInteger, nullable=False)
 
