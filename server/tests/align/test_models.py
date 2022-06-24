@@ -8,3 +8,19 @@ class TestTeamTree:
 
         assert copy is not tree
         assert copy == tree
+
+    def test_with_children(self) -> None:
+        tree = TeamTree(42, "foo", [], [10, 20])
+        new_children = [
+            TeamTree(43, "bar", [], [10]),
+            TeamTree(44, "baz", [], [10]),
+        ]
+        new_tree = tree.with_children(new_children)
+
+        assert new_tree is not tree
+        assert new_tree.id == tree.id
+
+        for i in range(len(new_children)):
+            assert new_tree.children[i] == new_tree.children[i]
+
+        assert tree.children == []

@@ -115,6 +115,16 @@ class TeamTree(Model):
             total_members_count = len(total_members)
         self._total_members_count = total_members_count
 
+    def with_children(self, children: list[TeamTree]) -> TeamTree:
+        """Return a copy of the object with children property replaced.
+
+        Properties depending from `children` retain the original value of the object.
+
+        """
+        copy = self.copy()
+        copy._children = children
+        return copy
+
     @property
     def id(self) -> int:
         """Get the identifier of the team."""
@@ -154,6 +164,13 @@ class TeamTree(Model):
     def members(self) -> list[int]:
         """Get the directly contained members of the team."""
         return self._members
+
+    def flatten_team_ids(self) -> list[int]:
+        """Return the flatten team id list of this team and all descendants."""
+        return [
+            self.id,
+            *chain.from_iterable(child.flatten_team_ids() for child in self.children),
+        ]
 
 
 TeamTree.attribute_types["children"] = list[TeamTree]
