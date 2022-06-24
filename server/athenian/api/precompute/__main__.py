@@ -159,7 +159,9 @@ def _execute_command(args: argparse.Namespace, log: logging.Logger) -> int:
         return command
     finally:
         if (pid := os.getpid()) == 1:
-            print("this should print only one", flush=True)
+            from time import time
+
+            print("this should print only once %s", time(), flush=True)
             print(logging.getLogger().handlers, flush=True)
         log.info("[%d] return", pid)
 
