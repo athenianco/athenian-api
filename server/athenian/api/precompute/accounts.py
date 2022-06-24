@@ -237,7 +237,6 @@ async def precompute_reposet(
             BranchMiner.extract_branches(repos, prefixer, meta_ids, mdb, None),
         )
         branches_count = len(branches)
-
         log.info("Mining the releases")
         releases, _, matches, _ = await mine_releases(
             repos,
@@ -414,13 +413,12 @@ async def create_teams(
     """
     root_team_id = await _ensure_root_team(account, sdb)
     _, num_teams = await copy_teams_as_needed(account, meta_ids, root_team_id, sdb, mdb, cache)
-    num_bots = await _ensure_bot_team(account, meta_ids, bots, root_team_id, prefixer, sdb, mdb)
+    num_bots = await _ensure_bot_team(account, bots, root_team_id, prefixer, sdb, mdb)
     return num_teams, num_bots
 
 
 async def _ensure_bot_team(
     account: int,
-    meta_ids: Sequence[int],
     bots: Set[str],
     root_team_id: int,
     prefixer: Prefixer,
