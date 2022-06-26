@@ -18,7 +18,7 @@ from sqlalchemy.sql import ClauseElement
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
-from athenian.api.cache import cached, cached_methods
+from athenian.api.cache import cached, cached_methods, middle_term_exptime
 from athenian.api.db import Database, add_pdb_hits, add_pdb_misses, greatest, least
 from athenian.api.defer import defer
 from athenian.api.internal.logical_repos import (
@@ -1088,14 +1088,42 @@ class ReleaseMatcher:
                     )
                     .order_by(desc(Release.published_at))
                 )
-                for hint in (
-                    "Rows(ref_2 repo_2 *250)",
-                    "Rows(ref_3 repo_3 *250)",
-                    "Rows(rel rrs *250)",
-                    "Leading(rel rrs)",
-                    "IndexScan(rel github_node_release_published_at)",
-                ):
-                    query = query.with_statement_hint(hint)
+                if time_to - time_from <= timedelta(days=365):
+                    hints = (
+                        "Rows(ref_2 repo_2 *250)",
+                        "Rows(ref_3 repo_3 *250)",
+                        "Rows(rel rrs *250)",
+                        "Leading(rel rrs)",
+                        "IndexScan(rel github_node_release_published_at)",
+                    )
+                else:
+                    # time_from..time_to will not help
+                    # we don't know the row counts but these convince PG to plan properly
+                    hints = (
+                        "Leading((((((repo rrs) rel) n1) n2) u))",
+                        "Rows(repo rrs #2000)",
+                        "Rows(repo rrs rel #2000)",
+                        "Rows(repo rrs rel n1 #2000)",
+                        "Rows(repo rrs rel n1 n2 #2000)",
+                        "Rows(repo rrs rel n1 n2 u #2000)",
+                        "Leading((((((((repo_2 n2_2) ref_2) rrs_2) t_2) n1_2) n3_2) c_2))",
+                        "Rows(repo_2 n2_2 #1000)",
+                        "Rows(repo_2 n2_2 ref_2 #50000)",
+                        "Rows(repo_2 n2_2 ref_2 rrs_2 #50000)",
+                        "Rows(repo_2 n2_2 ref_2 rrs_2 t_2 #50000)",
+                        "Rows(repo_2 n2_2 ref_2 rrs_2 t_2 n1_2 #50000)",
+                        "Rows(repo_2 n2_2 ref_2 rrs_2 t_2 n1_2 n3_2 #50000)",
+                        "Rows(repo_2 n2_2 ref_2 rrs_2 t_2 n1_2 n3_2 c_2 #50000)",
+                        "Leading(((((((repo_3 n2_3) ref_3) n3_3) rrs_3) n1_3) c_3))",
+                        "Rows(repo_3 n2_3 #1000)",
+                        "Rows(repo_3 n2_3 ref_3 #50000)",
+                        "Rows(repo_3 n2_3 ref_3 n3_3 #4000)",
+                        "Rows(repo_3 n2_3 ref_3 n3_3 rrs_3 #4000)",
+                        "Rows(repo_3 n2_3 ref_3 n3_3 rrs_3 n1_3 #4000)",
+                        "Rows(repo_3 n2_3 ref_3 n3_3 rrs_3 n1_3 c_3 #4000)",
+                    )
+                for hint in hints:
+                    query.with_statement_hint(hint)
                 releases = await read_sql_query(query, self._mdb, Release)
         if (duplicated := releases.index.duplicated(keep="first")).any():
             releases = releases.take(np.flatnonzero(~duplicated))
@@ -1351,7 +1379,7 @@ class ReleaseMatcher:
 
     @sentry_span
     @cached(
-        exptime=60 * 60,  # 1 hour
+        exptime=middle_term_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
         # commit_shas are already sorted
