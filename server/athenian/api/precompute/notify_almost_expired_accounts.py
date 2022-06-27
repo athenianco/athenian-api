@@ -5,6 +5,7 @@ from itertools import chain
 from sqlalchemy import and_, select
 
 from athenian.api.async_utils import gather
+from athenian.api.db import ensure_db_datetime_tz
 from athenian.api.internal.account import get_metadata_account_ids_or_empty
 from athenian.api.models.metadata.github import Account as GitHubAccount
 from athenian.api.models.state.models import Account, UserAccount
@@ -52,7 +53,7 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
                 account=acc,
                 name=names[acc],
                 user=users[acc],
-                expires=expires,
+                expires=ensure_db_datetime_tz(expires, sdb),
             )
             for acc, expires in accounts.items()
         ),

@@ -34,11 +34,11 @@ class TestMain:
         ctx = build_context(sdb=sdb, mdb=mdb, slack=slack_mock)
         await main(ctx, Namespace())
 
-        slack_mock.post_account.call_args.assert_called_once_with(
+        slack_mock.post_account.assert_called_once_with(
             "almost_expired.jinja2",
             account=5,
-            name=["foo"],
-            user=["u500"],
+            name="athenianco",
+            user="u500",
             expires=dt(2022, 1, 4, 14, 30),
         )
 
@@ -55,11 +55,11 @@ class TestMain:
         ctx = build_context(sdb=sdb, mdb=mdb, slack=slack_mock)
         await main(ctx, Namespace())
 
-        slack_mock.post_account.call_args.assert_called_once_with(
+        slack_mock.post_account.assert_called_once_with(
             "almost_expired.jinja2",
             account=5,
-            name=["<uninstalled>"],
-            user=["u500"],
+            name="<uninstalled>",
+            user="u500",
             expires=dt(2022, 1, 4, 14, 30),
         )
 
