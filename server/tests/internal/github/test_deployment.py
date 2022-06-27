@@ -12,6 +12,7 @@ from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.deployment import (
+    deployment_facts_extract_mentioned_people,
     hide_outlier_first_deployments,
     mine_deployments,
 )
@@ -71,7 +72,7 @@ async def test_mine_deployments_from_scratch(
         with_deployments=False,
     )
     await wait_deferred()
-    deps, people = await mine_deployments(
+    deps = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -95,6 +96,7 @@ async def test_mine_deployments_from_scratch(
         cache,
     )
     _validate_deployments(deps, 9, True)
+    deployment_facts_extract_mentioned_people(deps)
     await wait_deferred()
     commits = await pdb.fetch_all(select([GitHubCommitDeployment]))
     assert len(commits) == 4684
@@ -137,7 +139,7 @@ async def test_mine_deployments_middle(
         with_deployments=False,
     )
     await wait_deferred()
-    deps, people = await mine_deployments(
+    deps = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -161,6 +163,7 @@ async def test_mine_deployments_middle(
         cache,
     )
     _validate_deployments(deps, 7, False)
+    deployment_facts_extract_mentioned_people(deps)
 
 
 @with_defer
@@ -228,7 +231,7 @@ async def test_mine_deployments_append(
             ),
         ),
     )
-    deps, _ = await mine_deployments(
+    deps = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -368,7 +371,7 @@ async def test_mine_deployments_only_failed(
         )
     time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2019, 11, 2, tzinfo=timezone.utc)
-    deps, _ = await mine_deployments(
+    deps = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -436,7 +439,7 @@ async def test_mine_deployments_logical(
         with_deployments=False,
     )
     await wait_deferred()
-    deps, _ = await mine_deployments(
+    deps = await mine_deployments(
         ["src-d/go-git/alpha"],
         {},
         time_from,
@@ -540,7 +543,7 @@ async def test_mine_deployments_no_prs(
             ),
         ),
     )
-    deps, _ = await mine_deployments(
+    deps = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -580,7 +583,7 @@ async def test_mine_deployments_no_release_facts(
 ):
     time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
-    deps, people = await mine_deployments(
+    deps = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -605,6 +608,7 @@ async def test_mine_deployments_no_release_facts(
     )
     assert len(deps) == 1
     assert deps.iloc[0].name == "Dummy deployment"
+    deployment_facts_extract_mentioned_people(deps)
     obj = deps["releases"].iloc[0].to_dict()
     for val in obj.values():
         if isinstance(val, dict):
@@ -3899,7 +3903,7 @@ async def test_mine_deployments_precomputed_dummy(
 ):
     time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
-    deps1, people1 = await mine_deployments(
+    deps1 = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -3922,8 +3926,9 @@ async def test_mine_deployments_precomputed_dummy(
         rdb,
         None,
     )
+    people1 = deployment_facts_extract_mentioned_people(deps1)
     await wait_deferred()
-    deps2, people2 = await mine_deployments(
+    deps2 = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -3946,6 +3951,7 @@ async def test_mine_deployments_precomputed_dummy(
         rdb,
         None,
     )
+    people2 = deployment_facts_extract_mentioned_people(deps2)
     assert len(deps1) == len(deps2) == 1
     assert deps1.index.tolist() == deps2.index.tolist()
     assert (rel1 := deps1["releases"].iloc[0]).columns.tolist() == (
@@ -3972,7 +3978,7 @@ async def test_mine_deployments_precomputed_sample(
 ):
     time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
-    deps1, people1 = await mine_deployments(
+    deps1 = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -3995,8 +4001,9 @@ async def test_mine_deployments_precomputed_sample(
         rdb,
         None,
     )
+    people1 = deployment_facts_extract_mentioned_people(deps1)
     await wait_deferred()
-    deps2, people2 = await mine_deployments(
+    deps2 = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -4019,6 +4026,7 @@ async def test_mine_deployments_precomputed_sample(
         rdb,
         None,
     )
+    people2 = deployment_facts_extract_mentioned_people(deps2)
     assert len(deps1) == len(deps2) == 2 * 9
     assert deps1.index.tolist() == deps2.index.tolist()
     lensum = 0
@@ -4049,7 +4057,7 @@ async def test_mine_deployments_reversed(
 ):
     time_from = datetime(2018, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
-    deps1, people1 = await mine_deployments(
+    deps1 = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -4072,6 +4080,7 @@ async def test_mine_deployments_reversed(
         rdb,
         None,
     )
+    deployment_facts_extract_mentioned_people(deps1)
     await wait_deferred()
 
     name = "%s_%d_%02d_%02d" % ("production", 2019, 12, 1)
@@ -4102,7 +4111,7 @@ async def test_mine_deployments_reversed(
         ),
     )
 
-    deps2, people2 = await mine_deployments(
+    deps2 = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -4125,6 +4134,7 @@ async def test_mine_deployments_reversed(
         rdb,
         None,
     )
+    deployment_facts_extract_mentioned_people(deps2)
     assert len(deps2) == len(deps1) + 1
     assert deps1.index.tolist() == deps2.index.tolist()[1:]
     assert deps2.iloc[0][DeploymentFacts.f.commits_overall][0] == 0
@@ -4148,7 +4158,7 @@ async def test_mine_deployments_empty(
     await rdb.execute(delete(DeploymentNotification))
     time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
-    deps, _ = await mine_deployments(
+    deps = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -4173,7 +4183,7 @@ async def test_mine_deployments_empty(
     )
     assert len(deps) == 0
     await wait_deferred()
-    deps, _ = await mine_deployments(
+    deps = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -4254,7 +4264,7 @@ async def test_mine_deployments_event_releases(
             with_deployments=False,
         )
         await wait_deferred()
-    deps, people = await mine_deployments(
+    deps = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -4277,6 +4287,7 @@ async def test_mine_deployments_event_releases(
         rdb,
         cache,
     )
+    deployment_facts_extract_mentioned_people(deps)
     for depname in ("production_2019_11_01", "staging_2019_11_01"):
         df = deps.loc[depname]["releases"]
         assert len(df) == 1
@@ -4452,7 +4463,7 @@ class TestHideOutlierFirstDeployments:
         assert (await count(pdb, GitHubDeploymentFacts)) == 0
         assert (await count(pdb, GitHubPullRequestDeployment)) == 0
 
-        deps, people = await mine_deployments(
+        deps = await mine_deployments(
             ["src-d/go-git"],
             {},
             datetime(2015, 1, 1, tzinfo=timezone.utc),
@@ -4531,7 +4542,7 @@ class TestHideOutlierFirstDeployments:
         # delete notifications so that mine_deployments will find nothing
         await rdb.execute(sa.delete(DeploymentNotification))
 
-        deps, _ = await mine_deployments(
+        deps = await mine_deployments(
             ["src-d/go-git"],
             {},
             datetime(2015, 1, 1, tzinfo=timezone.utc),

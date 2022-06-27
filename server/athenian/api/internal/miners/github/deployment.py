@@ -174,11 +174,10 @@ async def mine_deployments(
     pdb: Database,
     rdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Tuple[pd.DataFrame, np.ndarray]:
+) -> pd.DataFrame:
     """Gather facts about deployments that satisfy the specified filters.
 
-    :return: 1. Deployment stats with deployed releases sub-dataframes. \
-             2. All the people ever mentioned anywhere in (1).
+    :return: Deployment stats with deployed releases sub-dataframes.
     """
     repo_name_to_node = prefixer.repo_name_to_node.get
     repo_node_ids = [repo_name_to_node(r, 0) for r in coerce_logical_repos(repositories)]
@@ -208,7 +207,7 @@ async def mine_deployments(
         logical_settings,
     )
     if notifications.empty:
-        return pd.DataFrame(), np.array([], dtype="U")
+        return pd.DataFrame()
     repo_names, release_settings = await _finalize_release_settings(
         notifications,
         time_from,
@@ -317,7 +316,7 @@ async def mine_deployments(
     subst = np.empty(no_labels.sum(), dtype=object)
     subst.fill(pd.DataFrame())
     joined["labels"].values[no_labels] = subst
-    return joined, _extract_mentioned_people(joined)
+    return joined
 
 
 @sentry_span
@@ -352,7 +351,8 @@ def _reduce_to_missed_notifications_if_possible(
 
 
 @sentry_span
-def _extract_mentioned_people(df: pd.DataFrame) -> np.ndarray:
+def deployment_facts_extract_mentioned_people(df: pd.DataFrame) -> np.ndarray:
+    """Return all the people ever mentioned anywhere in the deployment facts df."""
     if df.empty:
         return np.array([], dtype=int)
     everybody = np.concatenate(

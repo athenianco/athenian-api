@@ -364,7 +364,7 @@ async def mine_all_deployments(
         ),
     )
     envs = [r[0] for r in envs]
-    deps, _ = await mine_deployments(
+    deps = await mine_deployments(
         repos,
         {},
         now - timedelta(days=365 * 10),

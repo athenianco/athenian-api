@@ -334,7 +334,7 @@ async def precompute_reposet(
         del ignored_first_releases, ignored_released_prs
 
         log.info("Mining deployments")
-        deployment_facts, _ = await mine_deployments(
+        deployment_facts = await mine_deployments(
             repos,
             {},
             time_from,

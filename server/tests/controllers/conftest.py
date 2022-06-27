@@ -479,7 +479,7 @@ async def _precompute_deployments(
     pdb,
     rdb,
 ):
-    deps, _ = await mine_deployments(
+    deps = await mine_deployments(
         ["src-d/go-git"],
         {},
         datetime(2015, 1, 1, tzinfo=timezone.utc),
