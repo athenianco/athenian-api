@@ -84,8 +84,8 @@ class BaseGoalsTest:
         {goal_fragment}
         {team_fragment or ''}
         {value_fragment or ''}
-        query ($accountId: Int!, $teamId: Int!) {{
-          goals(accountId: $accountId, teamId: $teamId) {{
+        query ($accountId: Int!, $teamId: Int!, $onlyWithTargets: Boolean ) {{
+          goals(accountId: $accountId, teamId: $teamId, onlyWithTargets: $onlyWithTargets) {{
              {fields}
           }}
         }}
@@ -100,10 +100,15 @@ class BaseGoalsTest:
         value_fields=_ALL_VALUE_FIELDS,
         team_fields=_ALL_TEAM_FIELDS,
         depth: int = 6,
+        only_with_targets: bool = False,
     ) -> dict:
         body = {
             "query": self._query(goal_fields, value_fields, team_fields, depth=depth),
-            "variables": {"accountId": account_id, "teamId": team_id},
+            "variables": {
+                "accountId": account_id,
+                "teamId": team_id,
+                "onlyWithTargets": only_with_targets,
+            },
         }
         return await align_graphql_request(client, headers=DEFAULT_HEADERS, json=body)
 
@@ -352,3 +357,24 @@ class TestGoals(BaseGoalsTest):
         assert goal["teamGoal"]["value"]["target"]["str"] == "20001s"
         assert goal["teamGoal"]["value"]["current"]["str"] == "3727969s"
         assert goal["teamGoal"]["value"]["initial"]["str"] == "2126373s"
+
+    async def test_not_only_with_targets_param(self, client: TestClient, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=10, parent_id=None),
+            TeamFactory(id=11, parent_id=10),
+            TeamFactory(id=12, parent_id=11),
+            GoalFactory(id=20),
+            TeamGoalFactory(goal_id=20, team_id=11, target=1.23),
+        )
+        res = await self._request(1, 10, client, only_with_targets=True)
+
+        assert len(res["data"]["goals"]) == 1
+
+        goal = res["data"]["goals"][0]
+
+        assert (team_goal_10 := goal["teamGoal"])["team"]["id"] == 10
+        assert len(team_goal_10["children"]) == 1
+        assert (team_goal_11 := team_goal_10["children"][0])["team"]["id"] == 11
+        # team goal 12 is hidden
+        assert len(team_goal_11["children"]) == 0

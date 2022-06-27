@@ -40,6 +40,9 @@ class Slots(ABCMeta):
         return type.__subclasscheck__(cls, subclass)
 
 
+ModelT = typing.TypeVar("ModelT", bound="Model")
+
+
 class Model(metaclass=Slots):
     """Base API model class. Handles object -> {} and {} -> object transformations."""
 
@@ -87,7 +90,7 @@ class Model(metaclass=Slots):
 
         return result
 
-    def copy(self) -> "Model":
+    def copy(self: ModelT) -> ModelT:
         """Clone the object."""
         return type(self)(**{p: getattr(self, p) for p in self.attribute_types})
 

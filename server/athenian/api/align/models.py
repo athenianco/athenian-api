@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from itertools import chain
-from typing import Any, List, Optional, Union
+from typing import Any, Optional, Union
 
 import numpy as np
 
@@ -69,9 +69,9 @@ class TeamTree(Model):
         "members_count": int,
         "total_teams_count": int,
         "total_members_count": int,
-        "children": List[Model],  # List[TeamTree],
-        "members": List[int],
-        "total_members": List[int],
+        "children": list[Model],  # list[TeamTree],
+        "members": list[int],
+        "total_members": list[int],
     }
 
     attribute_map = {
@@ -84,22 +84,46 @@ class TeamTree(Model):
         self,
         id: int,
         name: str,
-        children: List[TeamTree],
-        members: List[int],
+        children: list[TeamTree],
+        members: list[int],
+        members_count: Optional[int] = None,
+        total_members: Optional[list[int]] = None,
+        total_teams_count: Optional[int] = None,
+        total_members_count: Optional[int] = None,
     ):
         """Init the TeamTree."""
         self._id = id
         self._name = name
-        self._members = members
         self._children = children
+        self._members = members
 
-        self._members_count = len(members)
-        self._total_members = sorted(
-            set(chain(members, *(child.total_members for child in children))),
-        )
-        self._total_teams_count = sum(child.total_teams_count for child in children) + len(
-            children,
-        )
+        if members_count is None:
+            members_count = len(members)
+        self._members_count = members_count
+
+        if total_members is None:
+            total_members = sorted(
+                set(chain(members, *(child.total_members for child in children))),
+            )
+        self._total_members = total_members
+
+        if total_teams_count is None:
+            total_teams_count = sum(child.total_teams_count for child in children) + len(children)
+        self._total_teams_count = total_teams_count
+
+        if total_members_count is None:
+            total_members_count = len(total_members)
+        self._total_members_count = total_members_count
+
+    def with_children(self, children: list[TeamTree]) -> TeamTree:
+        """Return a copy of the object with children property replaced.
+
+        Properties depending from `children` retain the original value of the object.
+
+        """
+        copy = self.copy()
+        copy._children = children
+        return copy
 
     @property
     def id(self) -> int:
@@ -124,25 +148,32 @@ class TeamTree(Model):
     @property
     def total_members_count(self) -> int:
         """Get the number of team members included in the team tree."""
-        return len(self._total_members)
+        return self._total_members_count
 
     @property
-    def children(self) -> List[TeamTree]:
+    def children(self) -> list[TeamTree]:
         """Get the direct child teams of the team."""
         return self._children
 
     @property
-    def total_members(self) -> List[int]:
+    def total_members(self) -> list[int]:
         """Get the team members recursively included in the team tree."""
         return self._total_members
 
     @property
-    def members(self) -> List[int]:
+    def members(self) -> list[int]:
         """Get the directly contained members of the team."""
         return self._members
 
+    def flatten_team_ids(self) -> list[int]:
+        """Return the flatten team id list of this team and all descendants."""
+        return [
+            self.id,
+            *chain.from_iterable(child.flatten_team_ids() for child in self.children),
+        ]
 
-TeamTree.attribute_types["children"] = List[TeamTree]
+
+TeamTree.attribute_types["children"] = list[TeamTree]
 
 
 class MetricValue(Model):
@@ -192,14 +223,14 @@ class TeamMetricValue(Model):
     attribute_types = {
         "team": TeamTree,
         "value": MetricValue,
-        "children": List[Model],  # List[TeamMetricValue],
+        "children": list[Model],  # list[TeamMetricValue],
     }
 
     attribute_map = {
         "team_id": "teamId",
     }
 
-    def __init__(self, team: TeamTree, value: MetricValue, children: List[TeamMetricValue]):
+    def __init__(self, team: TeamTree, value: MetricValue, children: list[TeamMetricValue]):
         """Initialize a new instance of TeamMetricValue."""
         self._team = team
         self._value = value
@@ -216,12 +247,12 @@ class TeamMetricValue(Model):
         return self._value
 
     @property
-    def children(self) -> List[TeamMetricValue]:
+    def children(self) -> list[TeamMetricValue]:
         """Return the list of child team metrics."""
         return self._children
 
 
-TeamMetricValue.attribute_types["children"] = List[TeamMetricValue]
+TeamMetricValue.attribute_types["children"] = list[TeamMetricValue]
 
 
 class MetricValues(Model):
@@ -325,10 +356,10 @@ class TeamGoalTree(Model):
     attribute_types = {
         "team": TeamTree,
         "value": GoalValue,
-        "children": List[Model],  # List[TeamGoalTree]
+        "children": list[Model],  # list[TeamGoalTree]
     }
 
-    def __init__(self, team: TeamTree, value: GoalValue, children: List[TeamGoalTree]):
+    def __init__(self, team: TeamTree, value: GoalValue, children: list[TeamGoalTree]):
         """Init the TeamGoalTree."""
         self._team = team
         self._value = value
@@ -345,12 +376,12 @@ class TeamGoalTree(Model):
         return self._value
 
     @property
-    def children(self) -> List[TeamGoalTree]:
+    def children(self) -> list[TeamGoalTree]:
         """Get the list of TeamGoalTree for the Team children."""
         return self._children
 
 
-TeamGoalTree.attribute_types["children"] = List[TeamGoalTree]
+TeamGoalTree.attribute_types["children"] = list[TeamGoalTree]
 
 
 class GoalTree(Model):
