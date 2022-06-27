@@ -33,7 +33,7 @@ from athenian.api.internal.miners.github.deployment import (
 from athenian.api.internal.miners.github.precomputed_prs import delete_force_push_dropped_prs
 from athenian.api.internal.miners.github.release_load import ReleaseLoader
 from athenian.api.internal.miners.github.release_mine import (
-    discover_first_releases,
+    discover_first_outlier_releases,
     hide_first_releases,
     mine_releases,
 )
@@ -268,9 +268,9 @@ async def precompute_reposet(
         releases_by_tag = sum(1 for r in releases if r[1].matched_by == ReleaseMatch.tag)
         releases_by_branch = sum(1 for r in releases if r[1].matched_by == ReleaseMatch.branch)
         releases_count = len(releases)
-        ignored_first_releases, ignored_released_prs = discover_first_releases(releases)
+        ignored_first_releases, ignored_released_prs = discover_first_outlier_releases(releases)
         del releases
-        release_settings = ReleaseLoader.disambiguate_release_settings(release_settings, matches)
+        _release_settings = ReleaseLoader.disambiguate_release_settings(release_settings, matches)
         if reposet.precomputed:
             log.info("Scanning for force push dropped PRs")
             await delete_force_push_dropped_prs(
@@ -294,7 +294,7 @@ async def precompute_reposet(
             JIRAFilter.empty(),
             False,
             bots,
-            release_settings,
+            _release_settings,
             logical_settings,
             prefixer,
             True,
@@ -334,7 +334,7 @@ async def precompute_reposet(
             {},
             LabelFilter.empty(),
             JIRAFilter.empty(),
-            release_settings,
+            _release_settings,
             logical_settings,
             branches,
             default_branches,
