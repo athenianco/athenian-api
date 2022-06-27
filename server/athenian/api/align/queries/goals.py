@@ -1,4 +1,4 @@
-from itertools import chain, groupby
+from itertools import groupby
 from operator import itemgetter
 from typing import Any, Iterable, Mapping
 
@@ -9,7 +9,7 @@ from athenian.api.align.goals.dates import goal_datetimes_to_dates, goal_initial
 from athenian.api.align.goals.dbaccess import fetch_team_goals
 from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
 from athenian.api.align.models import GoalTree, GoalValue, MetricValue, TeamGoalTree, TeamTree
-from athenian.api.align.queries.metrics import calculate_team_metrics
+from athenian.api.align.queries.metrics import TeamMetricsRequest, calculate_team_metrics
 from athenian.api.align.queries.teams import build_team_tree_from_rows
 from athenian.api.async_utils import gather
 from athenian.api.db import Row
@@ -50,8 +50,9 @@ async def resolve_goals(
     team_goal_rows = await fetch_team_goals(accountId, team_ids, info.context.sdb)
 
     # first iter all team goal rows, grouped by goal, to collect all parameters for the single
-    # metric request, and track what the goal requested in `goal_requests`
-    goal_requests = []
+    # metric request
+    team_metrics_requests = []
+    team_goal_rows_per_request = []
     for _, group_team_goal_rows_iter in groupby(team_goal_rows, itemgetter(Goal.id.name)):
         group_team_goal_rows = list(group_team_goal_rows_iter)
         group_goal_row = group_team_goal_rows[0]  # could be any row
@@ -60,23 +61,17 @@ async def resolve_goals(
 
         valid_from = group_goal_row[Goal.valid_from.name]
         expires_at = group_goal_row[Goal.expires_at.name]
-        initial_from, initial_to = goal_initial_query_interval(valid_from, expires_at)
         initial_interval = goal_initial_query_interval(valid_from, expires_at)
 
-        goal_requests.append(
-            {
-                "metric": metric,
-                "time_intervals": (initial_interval, (valid_from, expires_at)),
-                "team_goal_rows": group_team_goal_rows,
-            },
+        # all teams are requested in every request
+        team_metrics_request = TeamMetricsRequest(
+            [metric], (initial_interval, (valid_from, expires_at)), team_member_map,
         )
+        team_metrics_requests.append(team_metrics_request)
+        team_goal_rows_per_request.append(group_team_goal_rows)
 
     all_metric_values = await calculate_team_metrics(
-        metrics=list({r["metric"] for r in goal_requests}),
-        time_intervals=list(set(chain.from_iterable(r["time_intervals"] for r in goal_requests))),
-        # we always request all teams starting from root, since current and initial metrics are
-        # always included in the response
-        teams=team_member_map,
+        team_metrics_requests,
         account=accountId,
         meta_ids=meta_ids,
         sdb=info.context.sdb,
@@ -86,15 +81,14 @@ async def resolve_goals(
         cache=info.context.cache,
         slack=info.context.app["slack"],
     )
-
     res = []
-    for req in goal_requests:
-        initial_metrics = all_metric_values[req["time_intervals"][0]][req["metric"]]
-        current_metrics = all_metric_values[req["time_intervals"][1]][req["metric"]]
-
+    for i, req in enumerate(team_metrics_requests):
+        initial_metrics = all_metric_values[req.time_intervals[0]][req.metrics[0]]
+        current_metrics = all_metric_values[req.time_intervals[1]][req.metrics[0]]
         metric_values = GoalMetricValues(initial_metrics, current_metrics)
+        team_goal_rows = team_goal_rows_per_request[i]
         group_res = _team_tree_to_goal_tree(
-            team_tree, req["team_goal_rows"][0], req["team_goal_rows"], metric_values,
+            team_tree, team_goal_rows[0], team_goal_rows, metric_values,
         )
         res.append(group_res)
 
