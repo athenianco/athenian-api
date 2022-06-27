@@ -1329,10 +1329,10 @@ async def mine_releases_by_ids(
         **precomputed_facts_events,
     }
     add_pdb_hits(pdb, "release_facts", len(precomputed_facts))
-    add_pdb_misses(pdb, "release_facts", len(releases) - len(precomputed_facts))
     result, mentioned_authors, has_precomputed_facts = _build_mined_releases(
         releases, precomputed_facts, prefixer, with_avatars=with_avatars,
     )
+    add_pdb_misses(pdb, "release_facts", len(releases) - has_precomputed_facts.sum())
     if not (missing_releases := releases.take(np.flatnonzero(~has_precomputed_facts))).empty:
         repos = missing_releases[Release.repository_full_name.name].unique()
         time_from = missing_releases[Release.published_at.name].iloc[-1]
