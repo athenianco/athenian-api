@@ -1424,10 +1424,12 @@ class ReleaseMatcher:
             ).with_statement_hint(f"Rows(cmm repo #{len(commit_shas)})")
         else:
             query = (
-                query.with_statement_hint("Leading(((*VALUES* cmm) repo))")
+                query.with_statement_hint("Leading(((((*VALUES* cmm) repo) ath) cath))")
                 .with_statement_hint("Rows(cmm repo *1000)")
                 .with_statement_hint(f"Rows(*VALUES* cmm #{len(commit_shas)})")
                 .with_statement_hint(f"Rows(*VALUES* cmm repo #{len(commit_shas)})")
+                .with_statement_hint(f"Rows(*VALUES* cmm repo ath #{len(commit_shas)})")
+                .with_statement_hint(f"Rows(*VALUES* cmm repo ath cath #{len(commit_shas)})")
                 .with_statement_hint("IndexScan(cmm github_node_commit_committed_date)")
             )
 
