@@ -16,6 +16,7 @@ from athenian.api.precompute.accounts import (
     _DurationTracker,
     _ensure_bot_team,
     _ensure_root_team,
+    _StatusTracker,
     create_teams,
     main,
     precompute_reposet,
@@ -104,9 +105,48 @@ class TestMain:
         assert precompute_mock.call_args[0][0].name == RepositorySet.ALL
         assert precompute_mock.call_args[0][1] == (1011, 2011)
 
+    @with_defer
+    async def test_metrics_tracking(self, sdb, mdb, pdb, rdb, tqdm_disable) -> None:
+        await clear_all_accounts(sdb)
+        await models_insert(
+            sdb,
+            AccountFactory(id=11),
+            RepositorySetFactory(owner_id=11),
+            AccountGitHubAccount(id=1011, account_id=11),
+        )
+
+        ctx = build_context(sdb=sdb, mdb=mdb, pdb=pdb, rdb=rdb)
+        namespace = self._namespace(
+            account=["11"], disable_isolation=True, prometheus_pushgateway="host:9000",
+        )
+
+        with (
+            self._wrap_precompute() as precompute_mock,
+            _mock_prometheus_push_handler() as push_handler,
+        ):
+            await main(ctx, namespace)
+
+        assert precompute_mock.call_count == 1
+        assert push_handler.call_count == 2
+
+        call_args_data = [call[1]["data"].decode("utf-8") for call in push_handler.call_args_list]
+        call_args_data.sort(key=lambda data: "precompute_account_successes_total{" in data)
+
+        assert (
+            "precompute_account_seconds_count"
+            '{account="11",github_account="1011",is_fresh="True"} 1.0'
+            in call_args_data[0]
+        )
+        assert (
+            "precompute_account_successes_total"
+            '{account="11",github_account="1011",is_fresh="True"} 1.0'
+            in call_args_data[1]
+        )
+
     def _namespace(self, **kwargs: Any) -> Namespace:
         kwargs.setdefault("skip_jira", True)
         kwargs.setdefault("prometheus_pushgateway", None)
+        kwargs.setdefault("timeout", 1000)
         return Namespace(**kwargs)
 
     def _wrap_precompute(self) -> mock._patch:
@@ -186,9 +226,8 @@ class TestDurationTracker:
         with freeze_time("2021-01-10T10:10:10"):
             tracker = _DurationTracker("host:9000", logging.getLogger(__name__))
 
-        with freeze_time("2021-01-10T10:10:52"):
-            with self._mock_prometheus_push_handler() as push_handler:
-                tracker.track(1, [3, 4], False)
+        with (freeze_time("2021-01-10T10:10:52"), _mock_prometheus_push_handler() as push_handler):
+            tracker.track(1, [3, 4], False)
 
         push_handler.assert_called_once()
         data = push_handler.call_args_list[0][1]["data"].decode("utf-8")
@@ -202,18 +241,60 @@ class TestDurationTracker:
     def test_gateway_not_available(self) -> None:
         tracker = _DurationTracker(None, logging.getLogger(__name__))
 
-        with self._mock_prometheus_push_handler() as push_handler:
+        with _mock_prometheus_push_handler() as push_handler:
             tracker.track(1, [3, 4], False)
 
         push_handler.assert_not_called()
 
-    @contextlib.contextmanager
-    def _mock_prometheus_push_handler(self):
-        from prometheus_client.exposition import push_to_gateway
 
-        # change the handler= default argument of push_to_gateway with a mocked handler
-        handler_mock = mock.Mock()
-        orig_defaults = tuple(push_to_gateway.__defaults__)
-        mocked_defaults = orig_defaults[:2] + (handler_mock,)
-        with mock.patch.object(push_to_gateway, "__defaults__", mocked_defaults):
-            yield handler_mock
+class TestStatusTracker:
+    # tests for private class _StatusTracker
+    def test_gateway_available_success(self) -> None:
+        tracker = _StatusTracker("host:9000", logging.getLogger(__name__))
+
+        with _mock_prometheus_push_handler() as push_handler:
+            tracker.track_success(1, [3, 4], False)
+
+        push_handler.assert_called_once()
+        data = push_handler.call_args_list[0][1]["data"].decode("utf-8)")
+        assert "TYPE precompute_account_successes_total counter" in data
+        assert (
+            "precompute_account_successes_total"
+            '{account="1",github_account="3,4",is_fresh="False"} 1.0'
+            in data
+        )
+
+    def test_gateway_available_failure(self) -> None:
+        tracker = _StatusTracker("host:9000", logging.getLogger(__name__))
+
+        with _mock_prometheus_push_handler() as push_handler:
+            tracker.track_failure(1, [5], True)
+
+        push_handler.assert_called_once()
+        data = push_handler.call_args_list[0][1]["data"].decode("utf-8)")
+        assert "TYPE precompute_account_failures_total counter" in data
+        assert (
+            'precompute_account_failures_total{account="1",github_account="5",is_fresh="True"} 1.0'
+            in data
+        )
+
+    def test_gateway_not_available(self) -> None:
+        tracker = _StatusTracker(None, logging.getLogger(__name__))
+
+        with _mock_prometheus_push_handler() as push_handler:
+            tracker.track_success(1, [3, 4], False)
+            tracker.track_failure(2, [5], True)
+
+        push_handler.assert_not_called()
+
+
+@contextlib.contextmanager
+def _mock_prometheus_push_handler():
+    from prometheus_client.exposition import push_to_gateway
+
+    # change the handler= default argument of push_to_gateway with a mocked handler
+    handler_mock = mock.Mock()
+    orig_defaults = tuple(push_to_gateway.__defaults__)
+    mocked_defaults = orig_defaults[:2] + (handler_mock,)
+    with mock.patch.object(push_to_gateway, "__defaults__", mocked_defaults):
+        yield handler_mock

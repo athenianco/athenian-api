@@ -72,17 +72,26 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> Optional
             continue
 
         duration_tracker = _DurationTracker(args.prometheus_pushgateway, context.log)
+        status_tracker = _StatusTracker(args.prometheus_pushgateway, context.log)
 
-        def track_time():
+        def track_success():
             duration_tracker.track(reposet.owner_id, meta_ids, not reposet.precomputed)
+            status_tracker.track_success(reposet.owner_id, meta_ids, not reposet.precomputed)
+
+        def track_failure():
+            status_tracker.track_failure(reposet.owner_id, meta_ids, not reposet.precomputed)
 
         _set_sentry_scope(reposet)
 
         if not isolate:
-            await precompute_reposet(
-                reposet, meta_ids, context, args, time_to, no_time_from, time_from,
-            )
-            track_time()
+            try:
+                await precompute_reposet(
+                    reposet, meta_ids, context, args, time_to, no_time_from, time_from,
+                )
+            except Exception:
+                track_failure()
+            else:
+                track_success()
             continue
         pid = os.fork()
         if pid == 0:
@@ -116,7 +125,9 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> Optional
                         reposet.owner_id,
                         status[1],
                     )
-            track_time()
+                    track_failure()
+                else:
+                    track_success()
 
     log.info("failed: %d / %d", failed, len(to_precompute))
 
@@ -466,8 +477,6 @@ async def _ensure_root_team(account: int, sdb: Database) -> int:
 class _DurationTracker:
     """Track the duration of the precompute operation if prometheus pushgatway is configured."""
 
-    _PROMETHEUS_JOB = "precomputer"
-
     def __init__(self, gateway: Optional[str], log: logging.Logger):
         self._gateway = gateway
         self._start_t = time.perf_counter()
@@ -487,8 +496,54 @@ class _DurationTracker:
         metrics.precompute_account_seconds.clear()
         metrics.precompute_account_seconds.labels(
             account=account,
-            github_account=",".join(map(str, sorted(meta_ids))),
+            github_account=_github_account_tracking_label(meta_ids),
             is_fresh=is_fresh,
         ).observe(elapsed)
         self._log.info("tracking precompute duration: %.3f seconds", elapsed)
-        push_metrics(self._gateway, self._PROMETHEUS_JOB)
+        push_metrics(self._gateway)
+
+
+class _StatusTracker:
+    """Track the status (success, failure) of the precompute operation."""
+
+    def __init__(self, gateway: Optional[str], log: logging.Logger):
+        self._gateway = gateway
+        self._log = log
+
+    def track_success(self, account: int, meta_ids: Sequence[int], is_fresh: bool) -> None:
+        self._track_status(account, meta_ids, is_fresh, True)
+
+    def track_failure(self, account: int, meta_ids: Sequence[int], is_fresh: bool) -> None:
+        self._track_status(account, meta_ids, is_fresh, False)
+
+    def _track_status(
+        self,
+        account: int,
+        meta_ids: Sequence[int],
+        is_fresh: bool,
+        success: bool,
+    ) -> None:
+        label = "success" if success else "failure"
+        if self._gateway is None:
+            self._log.info("Prometheus Pushgateway not configured, not tracking %s status", label)
+            return
+
+        metrics = get_metrics()
+        metric = (
+            metrics.precompute_account_successes_total
+            if success
+            else metrics.precompute_account_failures_total
+        )
+
+        metric.clear()
+        metric.labels(
+            account=account,
+            github_account=_github_account_tracking_label(meta_ids),
+            is_fresh=is_fresh,
+        ).inc()
+        self._log.info("tracking precompute %s status", label)
+        push_metrics(self._gateway)
+
+
+def _github_account_tracking_label(meta_ids: Sequence[int]) -> str:
+    return ",".join(map(str, sorted(meta_ids)))
