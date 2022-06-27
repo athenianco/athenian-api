@@ -20,6 +20,8 @@ from .conftest import build_context
 
 
 class TestMain:
+    _MDB_GH_ACCOUNT_ID = 6366825  # <- id found in mdb fixture
+
     @freeze_time("2022-01-03T15:00:00")
     async def test_base(self, sdb: Database, mdb: Database) -> None:
         await sdb.execute(sa.delete(AccountGitHubAccount))
@@ -27,18 +29,18 @@ class TestMain:
             sdb,
             AccountFactory(id=5, expires_at=dt(2022, 1, 4, 14, 30)),
             UserAccountFactory(user_id="u500", account_id=5),
-            AccountGitHubAccountFactory(id=6366825, account_id=5),  # <- id found in mdb fixture
+            AccountGitHubAccountFactory(id=self._MDB_GH_ACCOUNT_ID, account_id=5),
             AccountFactory(id=6, expires_at=dt(2022, 1, 4, 18, 0)),
         )
         slack_mock = self._slack_mock()
         ctx = build_context(sdb=sdb, mdb=mdb, slack=slack_mock)
         await main(ctx, Namespace())
 
-        slack_mock.post_account.call_args.assert_called_once_with(
+        slack_mock.post_account.assert_called_once_with(
             "almost_expired.jinja2",
             account=5,
-            name=["foo"],
-            user=["u500"],
+            name="athenianco",
+            user="u500",
             expires=dt(2022, 1, 4, 14, 30),
         )
 
@@ -55,11 +57,32 @@ class TestMain:
         ctx = build_context(sdb=sdb, mdb=mdb, slack=slack_mock)
         await main(ctx, Namespace())
 
-        slack_mock.post_account.call_args.assert_called_once_with(
+        slack_mock.post_account.assert_called_once_with(
             "almost_expired.jinja2",
             account=5,
-            name=["<uninstalled>"],
-            user=["u500"],
+            name="<uninstalled>",
+            user="u500",
+            expires=dt(2022, 1, 4, 14, 30),
+        )
+
+    @freeze_time("2022-01-03T15:00:00")
+    async def test_missing_admin_user(self, sdb, mdb) -> None:
+        await sdb.execute(sa.delete(AccountGitHubAccount))
+        await models_insert(
+            sdb,
+            AccountFactory(id=5, expires_at=dt(2022, 1, 4, 14, 30)),
+            UserAccountFactory(user_id="u500", account_id=5, is_admin=False),
+            AccountGitHubAccountFactory(id=self._MDB_GH_ACCOUNT_ID, account_id=5),
+        )
+        slack_mock = self._slack_mock()
+        ctx = build_context(sdb=sdb, mdb=mdb, slack=slack_mock)
+        await main(ctx, Namespace())
+
+        slack_mock.post_account.assert_called_once_with(
+            "almost_expired.jinja2",
+            account=5,
+            name="athenianco",
+            user="<no admin user>",
             expires=dt(2022, 1, 4, 14, 30),
         )
 
