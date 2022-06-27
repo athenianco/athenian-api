@@ -62,6 +62,7 @@ from athenian.api.to_object_arrays import is_null
 from athenian.api.tracing import sentry_span
 
 tag_by_branch_probe_lookaround = timedelta(weeks=4)
+fresh_lookbehind = timedelta(days=7)
 unfresh_releases_threshold = 50
 unfresh_releases_lag = timedelta(hours=1)
 
@@ -221,6 +222,9 @@ class ReleaseLoader:
                 my_time_to = time_to
                 if applied_match == ReleaseMatch.tag_or_branch and match == ReleaseMatch.tag:
                     my_time_from -= tag_by_branch_probe_lookaround
+                    my_time_from = max(
+                        my_time_from, datetime.utcfromtimestamp(0).replace(tzinfo=timezone.utc),
+                    )
                     my_time_to += tag_by_branch_probe_lookaround
                 my_time_to = min(my_time_to, max_time_to)
                 missed = False
@@ -232,7 +236,7 @@ class ReleaseLoader:
                     # related: DEV-4267
                     if force_fresh:
                         # effectively, we break if metadata stays out of sync during > 1 week
-                        lookbehind = timedelta(days=7)
+                        lookbehind = fresh_lookbehind
                     else:
                         lookbehind = timedelta(hours=1)
                     missing_high.append((rt_to - lookbehind, (repo, match)))
@@ -1088,7 +1092,7 @@ class ReleaseMatcher:
                     )
                     .order_by(desc(Release.published_at))
                 )
-                if time_to - time_from <= timedelta(days=365):
+                if time_to - time_from < fresh_lookbehind:
                     hints = (
                         "Rows(ref_2 repo_2 *250)",
                         "Rows(ref_3 repo_3 *250)",
