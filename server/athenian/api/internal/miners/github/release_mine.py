@@ -1758,7 +1758,7 @@ async def _load_release_deployments(
     return depmap, deployments
 
 
-def discover_first_releases(
+def discover_first_outlier_releases(
     releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
     threshold_factor=100,
 ) -> Tuple[List[Tuple[Dict[str, Any], ReleaseFacts]], Dict[str, Sequence[int]]]:
@@ -1811,7 +1811,7 @@ async def hide_first_releases(
     """
     Hide the specified releases from calculating the metrics.
 
-    :param releases: First releases detected by `discover_first_releases()`.
+    :param releases: First releases detected by `discover_first_outlier_releases()`.
     :param prs: Pull requests belonging to the first releases.
     """
     log = logging.getLogger(f"{metadata.__package__}.hide_first_releases")
@@ -1896,6 +1896,10 @@ async def hide_first_releases(
             # don't require a transaction in Postgres, executemany() is atomic in new asyncpg
             await pdb.execute_many(sql, updates)
 
+    release_settings = ReleaseLoader.disambiguate_release_settings(
+        release_settings, {f.repository_full_name: f.matched_by for _, f in releases},
+    )
+
     with sentry_sdk.start_span(op="store_precomputed_done_facts/execute_many"):
         await gather(
             store_precomputed_release_facts(
@@ -1923,7 +1927,7 @@ async def override_first_releases(
     threshold_factor=100,
 ) -> int:
     """Exclude outlier first releases from calculating PR and release metrics."""
-    first_releases, prs = discover_first_releases(releases, threshold_factor)
+    first_releases, prs = discover_first_outlier_releases(releases, threshold_factor)
     await hide_first_releases(
         first_releases, prs, default_branches, release_settings, account, pdb,
     )
