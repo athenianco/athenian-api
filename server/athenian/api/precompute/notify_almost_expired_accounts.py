@@ -52,7 +52,7 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
                 "almost_expired.jinja2",
                 account=acc,
                 name=names[acc],
-                user=users[acc],
+                user=users.get(acc, "<no admin user>"),
                 expires=ensure_db_datetime_tz(expires, sdb),
             )
             for acc, expires in accounts.items()
