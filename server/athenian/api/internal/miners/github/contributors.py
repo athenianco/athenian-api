@@ -418,6 +418,8 @@ async def load_organization_members(
     log.info("Excluded %d bots", len(bot_ids))
     if not user_ids:
         return {}, {}, {}
+    # this may show up in Cloud Insights, but we cannot optimize the query much
+    # the used indexes are rare and have to be read from disk
     signature_rows = await mdb.fetch_all(
         union(
             select([NodeCommit.author_user_id, NodeCommit.author_name, NodeCommit.author_email])
