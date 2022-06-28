@@ -32,7 +32,8 @@ from athenian.api.models.precomputed.models import (
     GitHubPullRequestDeployment,
     GitHubReleaseDeployment,
 )
-from tests.testutils.db import count
+from tests.conftest import get_default_branches, get_release_match_setting_tag
+from tests.testutils.db import assert_existing_row, assert_missing_row, count
 
 
 @with_defer
@@ -4456,14 +4457,11 @@ class TestHideOutlierFirstDeployments:
     async def test_base(
         self,
         sample_deployments,
-        release_match_setting_tag_or_branch,
         branches,
-        default_branches,
         prefixer,
         mdb,
         pdb,
         rdb,
-        cache,
         sdb,
     ) -> None:
         meta_ids = await get_metadata_account_ids(1, sdb, None)
@@ -4471,27 +4469,12 @@ class TestHideOutlierFirstDeployments:
         assert (await count(pdb, GitHubPullRequestDeployment)) == 0
 
         deps, computed_mask = await mine_deployments(
-            ["src-d/go-git"],
-            {},
-            datetime(2015, 1, 1, tzinfo=timezone.utc),
-            datetime(2020, 1, 1, tzinfo=timezone.utc),
-            ["production", "staging"],
-            [],
-            {},
-            {},
-            LabelFilter.empty(),
-            JIRAFilter.empty(),
-            release_match_setting_tag_or_branch,
-            LogicalRepositorySettings.empty(),
-            branches,
-            default_branches,
-            prefixer,
-            1,
-            (6366825,),
-            mdb,
-            pdb,
-            rdb,
-            cache,
+            **self._mine_common_kwargs(),
+            branches=branches,
+            prefixer=prefixer,
+            mdb=mdb,
+            pdb=pdb,
+            rdb=rdb,
         )
         assert np.array_equal(computed_mask, np.full(len(deps), True))
         # wait deferred tasks writing to pdb to complete
@@ -4511,7 +4494,9 @@ class TestHideOutlierFirstDeployments:
         pre_hiding_release_count = await count(pdb, GitHubReleaseDeployment)
         to_be_removed_release_count = await count(pdb, GitHubReleaseDeployment, rel_where)
 
-        await hide_outlier_first_deployments(deps, 1, meta_ids, mdb, pdb, 1.1)
+        await hide_outlier_first_deployments(
+            deps, np.full(len(deps), True), 1, meta_ids, mdb, pdb, 1.1,
+        )
 
         post_hiding_pr_count = await count(pdb, GitHubPullRequestDeployment)
         post_hiding_commit_count = await count(pdb, GitHubCommitDeployment)
@@ -4536,14 +4521,11 @@ class TestHideOutlierFirstDeployments:
     async def test_no_deployment_facts(
         self,
         sample_deployments,
-        release_match_setting_tag_or_branch,
         branches,
-        default_branches,
         prefixer,
         mdb,
         pdb,
         rdb,
-        cache,
         sdb,
     ) -> None:
         meta_ids = await get_metadata_account_ids(1, sdb, None)
@@ -4551,28 +4533,14 @@ class TestHideOutlierFirstDeployments:
         await rdb.execute(sa.delete(DeploymentNotification))
 
         deps, computed_mask = await mine_deployments(
-            ["src-d/go-git"],
-            {},
-            datetime(2015, 1, 1, tzinfo=timezone.utc),
-            datetime(2020, 1, 1, tzinfo=timezone.utc),
-            ["production", "staging"],
-            [],
-            {},
-            {},
-            LabelFilter.empty(),
-            JIRAFilter.empty(),
-            release_match_setting_tag_or_branch,
-            LogicalRepositorySettings.empty(),
-            branches,
-            default_branches,
-            prefixer,
-            1,
-            (6366825,),
-            mdb,
-            pdb,
-            rdb,
-            cache,
+            **self._mine_common_kwargs(),
+            branches=branches,
+            prefixer=prefixer,
+            mdb=mdb,
+            pdb=pdb,
+            rdb=rdb,
         )
+
         assert deps.empty
         # wait deferred tasks writing to pdb to complete
         await wait_deferred()
@@ -4581,4 +4549,67 @@ class TestHideOutlierFirstDeployments:
         assert (await count(pdb, GitHubCommitDeployment)) == 0
         assert (await count(pdb, GitHubReleaseDeployment)) == 0
 
-        await hide_outlier_first_deployments(deps, 1, meta_ids, mdb, pdb, 1.1)
+        await hide_outlier_first_deployments(
+            deps, np.full(len(deps), True), 1, meta_ids, mdb, pdb, 1.1,
+        )
+
+    @with_defer
+    async def test_ignore_not_computed_deploys(
+        self,
+        sample_deployments,
+        branches,
+        prefixer,
+        mdb,
+        pdb,
+        rdb,
+        sdb,
+    ) -> None:
+        meta_ids = await get_metadata_account_ids(1, sdb, None)
+        assert (await count(pdb, GitHubDeploymentFacts)) == 0
+        assert (await count(pdb, GitHubPullRequestDeployment)) == 0
+
+        deps, _ = await mine_deployments(
+            **self._mine_common_kwargs(),
+            branches=branches,
+            prefixer=prefixer,
+            mdb=mdb,
+            pdb=pdb,
+            rdb=rdb,
+        )
+        # wait deferred tasks writing to pdb to complete
+        await wait_deferred()
+
+        computed_mask = ~np.isin(deps.index.values, ["production_2016_07_06"])
+        # computed_mask = np.full(len(deps), True)
+
+        await hide_outlier_first_deployments(deps, computed_mask, 1, meta_ids, mdb, pdb, 1.1)
+
+        # production_2016_07_06 is an outlier  but will not be cleard since it was not computed
+        await assert_existing_row(
+            pdb, GitHubPullRequestDeployment, deployment_name="production_2016_07_06",
+        )
+        # other outlier has been cleared
+        await assert_missing_row(
+            pdb, GitHubPullRequestDeployment, deployment_name="staging_2016_07_06",
+        )
+
+    @classmethod
+    def _mine_common_kwargs(cls) -> dict:
+        return {
+            "repositories": ["src-d/go-git"],
+            "participants": {},
+            "time_from": datetime(2015, 1, 1, tzinfo=timezone.utc),
+            "time_to": datetime(2020, 1, 1, tzinfo=timezone.utc),
+            "environments": ["production", "staging"],
+            "conclusions": [],
+            "with_labels": {},
+            "without_labels": {},
+            "pr_labels": LabelFilter.empty(),
+            "jira": JIRAFilter.empty(),
+            "release_settings": get_release_match_setting_tag(),
+            "logical_settings": LogicalRepositorySettings.empty(),
+            "default_branches": get_default_branches(),
+            "account": 1,
+            "meta_ids": (6366825,),
+            "cache": None,
+        }

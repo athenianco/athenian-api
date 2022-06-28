@@ -23,6 +23,7 @@ from athenian.api.precompute.accounts import (
 )
 from tests.testutils.db import assert_existing_row, model_insert_stmt, models_insert
 from tests.testutils.factory.state import AccountFactory, RepositorySetFactory, TeamFactory
+from tests.testutils.time import dt
 
 from .conftest import build_context, clear_all_accounts
 
@@ -43,7 +44,7 @@ class TestMain:
         )
 
         ctx = build_context(sdb=sdb, mdb=mdb, pdb=pdb, rdb=rdb)
-        namespace = self._namespace(account=["11", "12"], disable_isolation=True)
+        namespace = _namespace(account=["11", "12"], disable_isolation=True)
 
         with self._wrap_precompute() as precompute_mock:
             await main(ctx, namespace)
@@ -73,7 +74,7 @@ class TestMain:
             AccountGitHubAccount(id=1011, account_id=11),
         )
         ctx = build_context(sdb=sdb, mdb=mdb, pdb=pdb, rdb=rdb)
-        namespace = self._namespace(account=["11", "12"], disable_isolation=True)
+        namespace = _namespace(account=["11", "12"], disable_isolation=True)
 
         with self._wrap_precompute() as precompute_mock:
             await main(ctx, namespace)
@@ -95,7 +96,7 @@ class TestMain:
             AccountGitHubAccount(id=2011, account_id=11),
         )
         ctx = build_context(sdb=sdb, mdb=mdb, pdb=pdb, rdb=rdb)
-        namespace = self._namespace(account=["11"], disable_isolation=True)
+        namespace = _namespace(account=["11"], disable_isolation=True)
 
         with self._wrap_precompute() as precompute_mock:
             await main(ctx, namespace)
@@ -116,7 +117,7 @@ class TestMain:
         )
 
         ctx = build_context(sdb=sdb, mdb=mdb, pdb=pdb, rdb=rdb)
-        namespace = self._namespace(
+        namespace = _namespace(
             account=["11"], disable_isolation=True, prometheus_pushgateway="host:9000",
         )
 
@@ -143,15 +144,38 @@ class TestMain:
             in call_args_data[1]
         )
 
-    def _namespace(self, **kwargs: Any) -> Namespace:
-        kwargs.setdefault("skip_jira", True)
-        kwargs.setdefault("prometheus_pushgateway", None)
-        kwargs.setdefault("timeout", 1000)
-        return Namespace(**kwargs)
-
     def _wrap_precompute(self) -> mock._patch:
         mock_path = f"{main.__module__}.precompute_reposet"
         return mock.patch(mock_path, wraps=precompute_reposet)
+
+
+class TestPrecomputeReposet:
+    @with_defer
+    async def test(self, sdb: Database, mdb: Database, pdb: Database, rdb: Database) -> None:
+        await clear_all_accounts(sdb)
+        await models_insert(
+            sdb,
+            AccountFactory(id=11),
+            AccountGitHubAccount(id=1011, account_id=11),
+            RepositorySetFactory(owner_id=11),
+        )
+
+        reposet_row = await sdb.fetch_one(
+            sa.select(RepositorySet).where(RepositorySet.owner_id == 11),
+        )
+        reposet = RepositorySet(**reposet_row)
+        ctx = build_context(sdb=sdb, mdb=mdb, pdb=pdb, rdb=rdb)
+
+        await precompute_reposet(
+            reposet, (1011,), ctx, _namespace(), dt(2050, 1, 1), dt(1970, 1, 1), dt(1970, 1, 1),
+        )
+
+
+def _namespace(**kwargs: Any) -> Namespace:
+    kwargs.setdefault("skip_jira", True)
+    kwargs.setdefault("prometheus_pushgateway", None)
+    kwargs.setdefault("timeout", 1000)
+    return Namespace(**kwargs)
 
 
 class TestCreateTeams:

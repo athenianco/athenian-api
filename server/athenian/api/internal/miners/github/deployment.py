@@ -2624,6 +2624,7 @@ async def load_jira_issues_for_deployments(
 
 async def hide_outlier_first_deployments(
     deployment_facts: pd.DataFrame,
+    computed_mask: npt.NDArray[np.bool_],
     account: int,
     meta_ids: Sequence[int],
     mdb: Database,
@@ -2641,11 +2642,13 @@ async def hide_outlier_first_deployments(
     outlier_deploys = await _search_outlier_first_deployments(
         deployment_facts, meta_ids, mdb, log, threshold,
     )
+    computed_names = set(deployment_facts.index.values[computed_mask])
+    toclear_deploys = [d for d in outlier_deploys if d.deployment_name in computed_names]
 
-    if not outlier_deploys:
+    if not toclear_deploys:
         return
 
-    log.info("Clearing %d outlier first deployments", len(outlier_deploys))
+    log.info("Clearing %d outlier first deployments", len(toclear_deploys))
 
     stmts: list[Executable] = []
 
@@ -2653,7 +2656,7 @@ async def hide_outlier_first_deployments(
     grouped_deploys = (
         (name, [d.repository_full_name for d in name_groups])
         for name, name_groups in groupby(
-            sorted(outlier_deploys, key=attrgetter("deployment_name")),
+            sorted(toclear_deploys, key=attrgetter("deployment_name")),
             key=attrgetter("deployment_name"),
         )
     )
@@ -2672,7 +2675,7 @@ async def hide_outlier_first_deployments(
     depl_facts_stmt = sa.select(GitHubDeploymentFacts).where(
         sa.and_(
             FactsT.acc_id == account,
-            FactsT.deployment_name.in_(d.deployment_name for d in outlier_deploys),
+            FactsT.deployment_name.in_(d.deployment_name for d in toclear_deploys),
         ),
     )
     depl_facts_rows = await pdb.fetch_all(depl_facts_stmt)
@@ -2758,7 +2761,7 @@ async def _search_outlier_first_deployments(
             deploy = _OutlierDeployment(repo, group["name"].values[first_deploy_idx])
             # same deploy can be selected from different environments
             if deploy not in result:
-                log.info(
+                log.debug(
                     "Deployment %s detected as outlier first in repository %s",
                     deploy.deployment_name,
                     deploy.repository_full_name,

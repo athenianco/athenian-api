@@ -334,7 +334,7 @@ async def precompute_reposet(
         del ignored_first_releases, ignored_released_prs
 
         log.info("Mining deployments")
-        deployment_facts, _ = await mine_deployments(
+        deployment_facts, computed_mask = await mine_deployments(
             repos,
             {},
             time_from,
@@ -358,8 +358,9 @@ async def precompute_reposet(
             None,  # yes, disable the cache
         )
         await wait_deferred()
+
         await hide_outlier_first_deployments(
-            deployment_facts, reposet.owner_id, meta_ids, mdb, pdb,
+            deployment_facts, computed_mask, reposet.owner_id, meta_ids, mdb, pdb,
         )
 
         if not reposet.precomputed and slack is not None:
