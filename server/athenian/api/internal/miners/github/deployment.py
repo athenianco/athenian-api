@@ -11,6 +11,7 @@ from typing import Any, Collection, Dict, List, Mapping, NamedTuple, Optional, S
 
 import aiomcache
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 import sentry_sdk
 import sqlalchemy as sa
@@ -174,10 +175,12 @@ async def mine_deployments(
     pdb: Database,
     rdb: Database,
     cache: Optional[aiomcache.Client],
-) -> pd.DataFrame:
+) -> Tuple[pd.DataFrame, npt.NDArray[np.bool_]]:
     """Gather facts about deployments that satisfy the specified filters.
 
-    :return: Deployment stats with deployed releases sub-dataframes.
+    :return: 1. Deployment stats with deployed releases sub-dataframes.
+             2. Bitmask applicable to 1. to select deployment facts that were
+                not found in pdb and were just computed.
     """
     repo_name_to_node = prefixer.repo_name_to_node.get
     repo_node_ids = [repo_name_to_node(r, 0) for r in coerce_logical_repos(repositories)]
@@ -207,7 +210,7 @@ async def mine_deployments(
         logical_settings,
     )
     if notifications.empty:
-        return pd.DataFrame()
+        return pd.DataFrame(), np.array([], dtype=np.bool_)
     repo_names, release_settings = await _finalize_release_settings(
         notifications,
         time_from,
@@ -290,10 +293,14 @@ async def mine_deployments(
             rdb,
             cache,
         )
+        missed_deployment_names = missed_facts.index.values
+
         if not missed_facts.empty:
             facts = pd.concat([facts, missed_facts])
     else:
         missed_releases = pd.DataFrame()
+        missed_deployment_names = np.array([], dtype=object)
+
     facts = await _filter_by_participants(facts, participants)
     if pr_labels or jira:
         facts = await _filter_by_prs(facts, pr_labels, jira, meta_ids, mdb, cache)
@@ -316,7 +323,9 @@ async def mine_deployments(
     subst = np.empty(no_labels.sum(), dtype=object)
     subst.fill(pd.DataFrame())
     joined["labels"].values[no_labels] = subst
-    return joined
+
+    computed_mask = np.isin(joined.index.values, missed_deployment_names, assume_unique=True)
+    return joined, computed_mask
 
 
 @sentry_span

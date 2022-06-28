@@ -986,7 +986,7 @@ class MetricEntriesCalculator:
         :return: participants x repositories x environments x granularities x time intervals x metrics.
         """  # noqa
         time_from, time_to = self._align_time_min_max(time_intervals, quantiles)
-        deps = await mine_deployments(
+        deps, _ = await mine_deployments(
             set(chain.from_iterable(repositories)),
             participants[0] if len(participants) == 1 else {},
             time_from,

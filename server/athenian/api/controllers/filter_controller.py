@@ -1132,7 +1132,7 @@ async def filter_deployments(request: AthenianWebRequest, body: dict) -> web.Res
         settings.list_release_matches(),
         BranchMiner.extract_branches(None, prefixer, meta_ids, request.mdb, request.cache),
     )
-    deployments = await mine_deployments(
+    deployments, _ = await mine_deployments(
         repositories=repos,
         participants=participants,
         time_from=time_from,
