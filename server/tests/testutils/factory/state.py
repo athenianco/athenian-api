@@ -8,6 +8,7 @@ from athenian.api.controllers.invitation_controller import _generate_account_sec
 from athenian.api.models.state.models import (
     Account,
     AccountGitHubAccount,
+    AccountJiraInstallation,
     Goal,
     LogicalRepository,
     MappedJIRAIdentity,
@@ -45,6 +46,14 @@ class AccountFactory(SQLAlchemyModelFactory):
 class AccountGitHubAccountFactory(SQLAlchemyModelFactory):
     class Meta:
         model = AccountGitHubAccount
+
+    id = factory.Sequence(lambda n: n + 3)
+    account_id = factory.Sequence(lambda n: n + 3)
+
+
+class AccountJiraInstallationFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = AccountJiraInstallation
 
     id = factory.Sequence(lambda n: n + 3)
     account_id = factory.Sequence(lambda n: n + 3)

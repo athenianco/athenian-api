@@ -4,7 +4,7 @@ import logging
 import marshal
 import pickle
 import re
-from typing import Dict, Iterable, List, NamedTuple, Optional, Set, Tuple
+from typing import Iterable, NamedTuple, Optional
 
 import aiomcache
 from names_matcher import NamesMatcher
@@ -66,14 +66,14 @@ class JIRAConfig(
         "JIRAConfig",
         [
             ("acc_id", int),
-            ("projects", Dict[str, str]),
-            ("epics", Dict[str, List[str]]),
+            ("projects", dict[str, str]),
+            ("epics", dict[str, list[str]]),
         ],
     ),
 ):
     """JIRA attributes: account ID, project id -> key mapping, epic issue types."""
 
-    def epic_candidate_types(self) -> Set[str]:
+    def epic_candidate_types(self) -> set[str]:
         """Return all possible issue types that can be epics."""
         return set(chain.from_iterable(self.epics.values())).union({"epic"})
 
@@ -211,7 +211,7 @@ async def resolve_projects(
     keys: Iterable[str],
     jira_acc: int,
     mdb: DatabaseLike,
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """Lookup JIRA project IDs by their keys."""
     rows = await mdb.fetch_all(
         select([Project.id, Project.key]).where(
@@ -228,7 +228,7 @@ async def load_mapped_jira_users(
     sdb: DatabaseLike,
     mdb: DatabaseLike,
     cache: Optional[aiomcache.Client],
-) -> Dict[int, str]:
+) -> dict[int, str]:
     """Fetch the map from GitHub developer IDs to JIRA names."""
     cache_dropped = not await load_jira_identity_mapping_sentinel(account, cache)
     try:
@@ -240,10 +240,10 @@ async def load_mapped_jira_users(
 
 
 def _postprocess_load_mapped_jira_users(
-    result: Dict[str, str],
+    result: dict[str, str],
     cache_dropped: bool,
     **_,
-) -> Dict[str, str]:
+) -> dict[str, str]:
     if not cache_dropped:
         return result
     raise CancelCache()
@@ -264,7 +264,7 @@ async def _load_mapped_jira_users(
     mdb: DatabaseLike,
     cache: Optional[aiomcache.Client],
     cache_dropped: bool,
-) -> Dict[int, str]:
+) -> dict[int, str]:
     tasks = [
         sdb.fetch_all(
             select([MappedJIRAIdentity.github_user_id, MappedJIRAIdentity.jira_user_id]).where(
@@ -305,7 +305,7 @@ async def load_jira_identity_mapping_sentinel(
 
 async def match_jira_identities(
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     sdb: DatabaseLike,
     mdb: DatabaseLike,
     slack: Optional[SlackWebClient],
@@ -337,11 +337,11 @@ ALLOWED_USER_TYPES = ("atlassian", "on-prem")
 
 async def _match_jira_identities(
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     sdb: DatabaseLike,
     mdb: DatabaseLike,
     cache: Optional[aiomcache.Client],
-) -> Optional[Tuple[int, int, int, bool]]:
+) -> Optional[tuple[int, int, int, bool]]:
     log = logging.getLogger("%s.match_jira_identities" % metadata.__package__)
     if (jira_id := await get_jira_installation_or_none(account, sdb, mdb, cache)) is None:
         return None
@@ -443,16 +443,20 @@ def normalize_user_type(type_: str) -> str:
 
 async def disable_empty_projects(
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     sdb: DatabaseLike,
     mdb: DatabaseLike,
     slack: Optional[SlackWebClient],
     cache: Optional[aiomcache.Client],
 ) -> int:
     """
-    If a JIRA project doesn't contain issues with mapped PRs, disable it.
+    Disable jira unused projects by creating entries in JIRAProjectSetting table.
 
-    Scan all the existing projects. If the project is explicitly enabled in the settings, skip.
+    A project is disabled when:
+    - doesn't contain issues with mapped PRs
+    - it has issues and its first issue is not recent (more than a month ago)
+    - it is not explicitly enabled in JIRAProjectSetting table
+
     """
     if (jira_id := await get_jira_installation_or_none(account, sdb, mdb, cache)) is None:
         return 0
@@ -484,10 +488,7 @@ async def disable_empty_projects(
                 join(
                     Project,
                     Issue,
-                    and_(
-                        Project.acc_id == Issue.acc_id,
-                        Project.id == Issue.project_id,
-                    ),
+                    and_(Project.acc_id == Issue.acc_id, Project.id == Issue.project_id),
                     isouter=True,
                 ),
             )
@@ -500,34 +501,37 @@ async def disable_empty_projects(
     )
     mapped_projects = {r[0] for r in mapped_projects}
     settings = {r[0] for r in settings}
-    disabled = []
     one_month_ago = datetime.now(timezone.utc) - timedelta(days=30)
     if not await is_postgresql(mdb):
         one_month_ago = one_month_ago.replace(tzinfo=None)
-    for row in all_projects:
-        project_id, project_key, first_issue = row
+
+    # multiple project_id can have the same project_key, but projects can be disabled in
+    # JIRAProjectSetting by key and not by id; so a project key will be disabled only when
+    # all the projects with that key are to be disabled
+    keys_with_disabled_projs = set()
+    keys_with_enabled_projs = set()
+    for project_id, project_key, first_issue in all_projects:
         if (
             project_id not in mapped_projects
             and project_key not in settings
             and first_issue is not None
             and first_issue <= one_month_ago
         ):
-            disabled.append(
-                JIRAProjectSetting(
-                    key=project_key,
-                    enabled=False,
-                    account_id=account,
-                )
-                .create_defaults()
-                .explode(with_primary_keys=True),
-            )
-    await sdb.execute_many(insert(JIRAProjectSetting), disabled)
-    log.warning(
-        "Disabled JIRA projects on account %d: %s",
-        account,
-        [d[JIRAProjectSetting.key.name] for d in disabled],
-    )
-    if slack is not None and len(disabled) > 0 and len(settings) == 0:
+            keys_with_disabled_projs.add(project_key)
+        else:
+            keys_with_enabled_projs.add(project_key)
+
+    disabled = keys_with_disabled_projs - keys_with_enabled_projs
+
+    project_setting_values = [
+        JIRAProjectSetting(key=key, enabled=False, account_id=account)
+        .create_defaults()
+        .explode(with_primary_keys=True)
+        for key in disabled
+    ]
+    await sdb.execute_many(insert(JIRAProjectSetting), project_setting_values)
+    log.warning("Disabled JIRA projects on account %d: %s", account, sorted(disabled))
+    if slack is not None and len(project_setting_values) > 0 and len(settings) == 0:
         await slack.post_install(
             "disabled_jira_projects.jinja2",
             account=account,
