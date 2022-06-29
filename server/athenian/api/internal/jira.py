@@ -450,9 +450,13 @@ async def disable_empty_projects(
     cache: Optional[aiomcache.Client],
 ) -> int:
     """
-    If a JIRA project doesn't contain issues with mapped PRs, disable it.
+    Disable jira unused projects by creating entries in JIRAProjectSetting table.
 
-    Scan all the existing projects. If the project is explicitly enabled in the settings, skip.
+    A project is disabled when:
+    - doesn't contain issues with mapped PRs
+    - it has issues and its first issue is not recent (more than a month ago)
+    - it is not explicitly enabled in JIRAProjectSetting table
+
     """
     if (jira_id := await get_jira_installation_or_none(account, sdb, mdb, cache)) is None:
         return 0
@@ -484,10 +488,7 @@ async def disable_empty_projects(
                 join(
                     Project,
                     Issue,
-                    and_(
-                        Project.acc_id == Issue.acc_id,
-                        Project.id == Issue.project_id,
-                    ),
+                    and_(Project.acc_id == Issue.acc_id, Project.id == Issue.project_id),
                     isouter=True,
                 ),
             )
@@ -500,34 +501,37 @@ async def disable_empty_projects(
     )
     mapped_projects = {r[0] for r in mapped_projects}
     settings = {r[0] for r in settings}
-    disabled = []
     one_month_ago = datetime.now(timezone.utc) - timedelta(days=30)
     if not await is_postgresql(mdb):
         one_month_ago = one_month_ago.replace(tzinfo=None)
-    for row in all_projects:
-        project_id, project_key, first_issue = row
+
+    # multiple project_id can have the same project_key, but projects can be disabled in
+    # JIRAProjectSetting by key and not by id; so a project key will be disabled only when
+    # all the projects with that key are to be disabled
+    keys_with_disabled_projs = set()
+    keys_with_enabled_projs = set()
+    for project_id, project_key, first_issue in all_projects:
         if (
             project_id not in mapped_projects
             and project_key not in settings
             and first_issue is not None
             and first_issue <= one_month_ago
         ):
-            disabled.append(
-                JIRAProjectSetting(
-                    key=project_key,
-                    enabled=False,
-                    account_id=account,
-                )
-                .create_defaults()
-                .explode(with_primary_keys=True),
-            )
-    await sdb.execute_many(insert(JIRAProjectSetting), disabled)
-    log.warning(
-        "Disabled JIRA projects on account %d: %s",
-        account,
-        [d[JIRAProjectSetting.key.name] for d in disabled],
-    )
-    if slack is not None and len(disabled) > 0 and len(settings) == 0:
+            keys_with_disabled_projs.add(project_key)
+        else:
+            keys_with_enabled_projs.add(project_key)
+
+    disabled = keys_with_disabled_projs - keys_with_enabled_projs
+
+    project_setting_values = [
+        JIRAProjectSetting(key=key, enabled=False, account_id=account)
+        .create_defaults()
+        .explode(with_primary_keys=True)
+        for key in disabled
+    ]
+    await sdb.execute_many(insert(JIRAProjectSetting), project_setting_values)
+    log.warning("Disabled JIRA projects on account %d: %s", account, sorted(disabled))
+    if slack is not None and len(project_setting_values) > 0 and len(settings) == 0:
         await slack.post_install(
             "disabled_jira_projects.jinja2",
             account=account,
