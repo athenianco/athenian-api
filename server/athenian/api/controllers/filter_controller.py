@@ -47,6 +47,7 @@ from athenian.api.internal.miners.github.branches import BranchMiner
 from athenian.api.internal.miners.github.commit import FilterCommitsProperty, extract_commits
 from athenian.api.internal.miners.github.contributors import mine_contributors
 from athenian.api.internal.miners.github.deployment import (
+    deployment_facts_extract_mentioned_people,
     load_jira_issues_for_deployments,
     mine_deployments,
 )
@@ -1131,7 +1132,7 @@ async def filter_deployments(request: AthenianWebRequest, body: dict) -> web.Res
         settings.list_release_matches(),
         BranchMiner.extract_branches(None, prefixer, meta_ids, request.mdb, request.cache),
     )
-    deployments, people = await mine_deployments(
+    deployments, _ = await mine_deployments(
         repositories=repos,
         participants=participants,
         time_from=time_from,
@@ -1154,6 +1155,7 @@ async def filter_deployments(request: AthenianWebRequest, body: dict) -> web.Res
         rdb=request.rdb,
         cache=request.cache,
     )
+    people = deployment_facts_extract_mentioned_people(deployments)
     avatars, issues = await gather(
         mine_user_avatars(
             UserAvatarKeys.PREFIXED_LOGIN, meta_ids, request.mdb, request.cache, nodes=people,

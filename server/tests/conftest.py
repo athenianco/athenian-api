@@ -803,8 +803,7 @@ def release_match_setting_tag_or_branch():
     )
 
 
-@pytest.fixture(scope="session")
-def release_match_setting_tag():
+def get_release_match_setting_tag() -> ReleaseSettings:
     return ReleaseSettings(
         {
             "github.com/src-d/go-git": ReleaseMatchSetting(
@@ -812,6 +811,11 @@ def release_match_setting_tag():
             ),
         },
     )
+
+
+@pytest.fixture(scope="session")
+def release_match_setting_tag():
+    return get_release_match_setting_tag()
 
 
 @pytest.fixture(scope="session")
@@ -851,13 +855,17 @@ def release_match_setting_tag_logical(release_match_setting_tag):
     )
 
 
-@pytest.fixture(scope="session")
-def default_branches():
+def get_default_branches() -> dict:
     return {
         "src-d/go-git": "master",
         "src-d/gitbase": "master",
         "src-d/hercules": "master",
     }
+
+
+@pytest.fixture(scope="session")
+def default_branches():
+    return get_default_branches()
 
 
 _branches = None

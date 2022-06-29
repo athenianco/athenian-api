@@ -11,6 +11,7 @@ from typing import Any, Collection, Dict, List, Mapping, NamedTuple, Optional, S
 
 import aiomcache
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 import sentry_sdk
 import sqlalchemy as sa
@@ -174,11 +175,12 @@ async def mine_deployments(
     pdb: Database,
     rdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Tuple[pd.DataFrame, np.ndarray]:
+) -> Tuple[pd.DataFrame, npt.NDArray[np.bool_]]:
     """Gather facts about deployments that satisfy the specified filters.
 
-    :return: 1. Deployment stats with deployed releases sub-dataframes. \
-             2. All the people ever mentioned anywhere in (1).
+    :return: 1. Deployment stats with deployed releases sub-dataframes.
+             2. Bitmask applicable to 1. to select deployment facts that were
+                not found in pdb and were just computed.
     """
     repo_name_to_node = prefixer.repo_name_to_node.get
     repo_node_ids = [repo_name_to_node(r, 0) for r in coerce_logical_repos(repositories)]
@@ -208,7 +210,7 @@ async def mine_deployments(
         logical_settings,
     )
     if notifications.empty:
-        return pd.DataFrame(), np.array([], dtype="U")
+        return pd.DataFrame(), np.array([], dtype=np.bool_)
     repo_names, release_settings = await _finalize_release_settings(
         notifications,
         time_from,
@@ -291,10 +293,14 @@ async def mine_deployments(
             rdb,
             cache,
         )
+        missed_deployment_names = missed_facts.index.values
+
         if not missed_facts.empty:
             facts = pd.concat([facts, missed_facts])
     else:
         missed_releases = pd.DataFrame()
+        missed_deployment_names = np.array([], dtype=object)
+
     facts = await _filter_by_participants(facts, participants)
     if pr_labels or jira:
         facts = await _filter_by_prs(facts, pr_labels, jira, meta_ids, mdb, cache)
@@ -317,7 +323,9 @@ async def mine_deployments(
     subst = np.empty(no_labels.sum(), dtype=object)
     subst.fill(pd.DataFrame())
     joined["labels"].values[no_labels] = subst
-    return joined, _extract_mentioned_people(joined)
+
+    computed_mask = np.isin(joined.index.values, missed_deployment_names, assume_unique=True)
+    return joined, computed_mask
 
 
 @sentry_span
@@ -352,7 +360,8 @@ def _reduce_to_missed_notifications_if_possible(
 
 
 @sentry_span
-def _extract_mentioned_people(df: pd.DataFrame) -> np.ndarray:
+def deployment_facts_extract_mentioned_people(df: pd.DataFrame) -> np.ndarray:
+    """Return all the people ever mentioned anywhere in the deployment facts df."""
     if df.empty:
         return np.array([], dtype=int)
     everybody = np.concatenate(
@@ -2615,6 +2624,7 @@ async def load_jira_issues_for_deployments(
 
 async def hide_outlier_first_deployments(
     deployment_facts: pd.DataFrame,
+    computed_mask: npt.NDArray[np.bool_],
     account: int,
     meta_ids: Sequence[int],
     mdb: Database,
@@ -2632,11 +2642,13 @@ async def hide_outlier_first_deployments(
     outlier_deploys = await _search_outlier_first_deployments(
         deployment_facts, meta_ids, mdb, log, threshold,
     )
+    computed_names = set(deployment_facts.index.values[computed_mask])
+    toclear_deploys = [d for d in outlier_deploys if d.deployment_name in computed_names]
 
-    if not outlier_deploys:
+    if not toclear_deploys:
         return
 
-    log.info("Clearing %d outlier first deployments", len(outlier_deploys))
+    log.info("Clearing %d outlier first deployments", len(toclear_deploys))
 
     stmts: list[Executable] = []
 
@@ -2644,7 +2656,7 @@ async def hide_outlier_first_deployments(
     grouped_deploys = (
         (name, [d.repository_full_name for d in name_groups])
         for name, name_groups in groupby(
-            sorted(outlier_deploys, key=attrgetter("deployment_name")),
+            sorted(toclear_deploys, key=attrgetter("deployment_name")),
             key=attrgetter("deployment_name"),
         )
     )
@@ -2663,7 +2675,7 @@ async def hide_outlier_first_deployments(
     depl_facts_stmt = sa.select(GitHubDeploymentFacts).where(
         sa.and_(
             FactsT.acc_id == account,
-            FactsT.deployment_name.in_(d.deployment_name for d in outlier_deploys),
+            FactsT.deployment_name.in_(d.deployment_name for d in toclear_deploys),
         ),
     )
     depl_facts_rows = await pdb.fetch_all(depl_facts_stmt)
@@ -2749,7 +2761,7 @@ async def _search_outlier_first_deployments(
             deploy = _OutlierDeployment(repo, group["name"].values[first_deploy_idx])
             # same deploy can be selected from different environments
             if deploy not in result:
-                log.info(
+                log.debug(
                     "Deployment %s detected as outlier first in repository %s",
                     deploy.deployment_name,
                     deploy.repository_full_name,

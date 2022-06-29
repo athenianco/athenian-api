@@ -12,6 +12,7 @@ from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.deployment import (
+    deployment_facts_extract_mentioned_people,
     hide_outlier_first_deployments,
     mine_deployments,
 )
@@ -31,7 +32,8 @@ from athenian.api.models.precomputed.models import (
     GitHubPullRequestDeployment,
     GitHubReleaseDeployment,
 )
-from tests.testutils.db import count
+from tests.conftest import get_default_branches, get_release_match_setting_tag
+from tests.testutils.db import assert_existing_row, assert_missing_row, count
 
 
 @with_defer
@@ -71,7 +73,7 @@ async def test_mine_deployments_from_scratch(
         with_deployments=False,
     )
     await wait_deferred()
-    deps, people = await mine_deployments(
+    deps, computed_mask = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -95,6 +97,8 @@ async def test_mine_deployments_from_scratch(
         cache,
     )
     _validate_deployments(deps, 9, True)
+    deployment_facts_extract_mentioned_people(deps)
+    assert np.array_equal(computed_mask, np.full(len(deps), True))
     await wait_deferred()
     commits = await pdb.fetch_all(select([GitHubCommitDeployment]))
     assert len(commits) == 4684
@@ -137,7 +141,7 @@ async def test_mine_deployments_middle(
         with_deployments=False,
     )
     await wait_deferred()
-    deps, people = await mine_deployments(
+    deps, computed_mask = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -161,6 +165,8 @@ async def test_mine_deployments_middle(
         cache,
     )
     _validate_deployments(deps, 7, False)
+    deployment_facts_extract_mentioned_people(deps)
+    assert np.array_equal(computed_mask, np.full(len(deps), True))
 
 
 @with_defer
@@ -228,7 +234,7 @@ async def test_mine_deployments_append(
             ),
         ),
     )
-    deps, _ = await mine_deployments(
+    deps, computed_mask = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -255,6 +261,11 @@ async def test_mine_deployments_append(
     assert len(deps.loc[name]["prs"]) == 0
     assert len(deps.loc[name]["releases"]) == 0
     await _validate_deployed_prs(pdb)
+
+    assert len(deps) == len(computed_mask)
+    # only 1 deployment has been computed now
+    assert len(deps[computed_mask]) == 1
+    assert deps[computed_mask].iloc[0].name == name
 
 
 @with_defer
@@ -368,7 +379,7 @@ async def test_mine_deployments_only_failed(
         )
     time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2019, 11, 2, tzinfo=timezone.utc)
-    deps, _ = await mine_deployments(
+    deps, computed_mask = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -580,7 +591,7 @@ async def test_mine_deployments_no_release_facts(
 ):
     time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
-    deps, people = await mine_deployments(
+    deps, _ = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -605,6 +616,7 @@ async def test_mine_deployments_no_release_facts(
     )
     assert len(deps) == 1
     assert deps.iloc[0].name == "Dummy deployment"
+    deployment_facts_extract_mentioned_people(deps)
     obj = deps["releases"].iloc[0].to_dict()
     for val in obj.values():
         if isinstance(val, dict):
@@ -3899,7 +3911,7 @@ async def test_mine_deployments_precomputed_dummy(
 ):
     time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
-    deps1, people1 = await mine_deployments(
+    deps1, _ = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -3922,8 +3934,9 @@ async def test_mine_deployments_precomputed_dummy(
         rdb,
         None,
     )
+    people1 = deployment_facts_extract_mentioned_people(deps1)
     await wait_deferred()
-    deps2, people2 = await mine_deployments(
+    deps2, _ = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -3946,6 +3959,7 @@ async def test_mine_deployments_precomputed_dummy(
         rdb,
         None,
     )
+    people2 = deployment_facts_extract_mentioned_people(deps2)
     assert len(deps1) == len(deps2) == 1
     assert deps1.index.tolist() == deps2.index.tolist()
     assert (rel1 := deps1["releases"].iloc[0]).columns.tolist() == (
@@ -3972,7 +3986,7 @@ async def test_mine_deployments_precomputed_sample(
 ):
     time_from = datetime(2015, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
-    deps1, people1 = await mine_deployments(
+    deps1, _ = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -3995,8 +4009,9 @@ async def test_mine_deployments_precomputed_sample(
         rdb,
         None,
     )
+    people1 = deployment_facts_extract_mentioned_people(deps1)
     await wait_deferred()
-    deps2, people2 = await mine_deployments(
+    deps2, _ = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -4019,6 +4034,7 @@ async def test_mine_deployments_precomputed_sample(
         rdb,
         None,
     )
+    people2 = deployment_facts_extract_mentioned_people(deps2)
     assert len(deps1) == len(deps2) == 2 * 9
     assert deps1.index.tolist() == deps2.index.tolist()
     lensum = 0
@@ -4049,7 +4065,7 @@ async def test_mine_deployments_reversed(
 ):
     time_from = datetime(2018, 1, 1, tzinfo=timezone.utc)
     time_to = datetime(2020, 1, 1, tzinfo=timezone.utc)
-    deps1, people1 = await mine_deployments(
+    deps1, _ = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -4072,6 +4088,7 @@ async def test_mine_deployments_reversed(
         rdb,
         None,
     )
+    deployment_facts_extract_mentioned_people(deps1)
     await wait_deferred()
 
     name = "%s_%d_%02d_%02d" % ("production", 2019, 12, 1)
@@ -4102,7 +4119,7 @@ async def test_mine_deployments_reversed(
         ),
     )
 
-    deps2, people2 = await mine_deployments(
+    deps2, _ = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -4125,6 +4142,7 @@ async def test_mine_deployments_reversed(
         rdb,
         None,
     )
+    deployment_facts_extract_mentioned_people(deps2)
     assert len(deps2) == len(deps1) + 1
     assert deps1.index.tolist() == deps2.index.tolist()[1:]
     assert deps2.iloc[0][DeploymentFacts.f.commits_overall][0] == 0
@@ -4254,7 +4272,7 @@ async def test_mine_deployments_event_releases(
             with_deployments=False,
         )
         await wait_deferred()
-    deps, people = await mine_deployments(
+    deps, _ = await mine_deployments(
         ["src-d/go-git"],
         {},
         time_from,
@@ -4277,6 +4295,7 @@ async def test_mine_deployments_event_releases(
         rdb,
         cache,
     )
+    deployment_facts_extract_mentioned_people(deps)
     for depname in ("production_2019_11_01", "staging_2019_11_01"):
         df = deps.loc[depname]["releases"]
         assert len(df) == 1
@@ -4438,43 +4457,26 @@ class TestHideOutlierFirstDeployments:
     async def test_base(
         self,
         sample_deployments,
-        release_match_setting_tag_or_branch,
         branches,
-        default_branches,
         prefixer,
         mdb,
         pdb,
         rdb,
-        cache,
         sdb,
     ) -> None:
         meta_ids = await get_metadata_account_ids(1, sdb, None)
         assert (await count(pdb, GitHubDeploymentFacts)) == 0
         assert (await count(pdb, GitHubPullRequestDeployment)) == 0
 
-        deps, people = await mine_deployments(
-            ["src-d/go-git"],
-            {},
-            datetime(2015, 1, 1, tzinfo=timezone.utc),
-            datetime(2020, 1, 1, tzinfo=timezone.utc),
-            ["production", "staging"],
-            [],
-            {},
-            {},
-            LabelFilter.empty(),
-            JIRAFilter.empty(),
-            release_match_setting_tag_or_branch,
-            LogicalRepositorySettings.empty(),
-            branches,
-            default_branches,
-            prefixer,
-            1,
-            (6366825,),
-            mdb,
-            pdb,
-            rdb,
-            cache,
+        deps, computed_mask = await mine_deployments(
+            **self._mine_common_kwargs(),
+            branches=branches,
+            prefixer=prefixer,
+            mdb=mdb,
+            pdb=pdb,
+            rdb=rdb,
         )
+        assert np.array_equal(computed_mask, np.full(len(deps), True))
         # wait deferred tasks writing to pdb to complete
         await wait_deferred()
 
@@ -4492,7 +4494,9 @@ class TestHideOutlierFirstDeployments:
         pre_hiding_release_count = await count(pdb, GitHubReleaseDeployment)
         to_be_removed_release_count = await count(pdb, GitHubReleaseDeployment, rel_where)
 
-        await hide_outlier_first_deployments(deps, 1, meta_ids, mdb, pdb, 1.1)
+        await hide_outlier_first_deployments(
+            deps, np.full(len(deps), True), 1, meta_ids, mdb, pdb, 1.1,
+        )
 
         post_hiding_pr_count = await count(pdb, GitHubPullRequestDeployment)
         post_hiding_commit_count = await count(pdb, GitHubCommitDeployment)
@@ -4517,43 +4521,26 @@ class TestHideOutlierFirstDeployments:
     async def test_no_deployment_facts(
         self,
         sample_deployments,
-        release_match_setting_tag_or_branch,
         branches,
-        default_branches,
         prefixer,
         mdb,
         pdb,
         rdb,
-        cache,
         sdb,
     ) -> None:
         meta_ids = await get_metadata_account_ids(1, sdb, None)
         # delete notifications so that mine_deployments will find nothing
         await rdb.execute(sa.delete(DeploymentNotification))
 
-        deps, _ = await mine_deployments(
-            ["src-d/go-git"],
-            {},
-            datetime(2015, 1, 1, tzinfo=timezone.utc),
-            datetime(2020, 1, 1, tzinfo=timezone.utc),
-            ["production", "staging"],
-            [],
-            {},
-            {},
-            LabelFilter.empty(),
-            JIRAFilter.empty(),
-            release_match_setting_tag_or_branch,
-            LogicalRepositorySettings.empty(),
-            branches,
-            default_branches,
-            prefixer,
-            1,
-            (6366825,),
-            mdb,
-            pdb,
-            rdb,
-            cache,
+        deps, computed_mask = await mine_deployments(
+            **self._mine_common_kwargs(),
+            branches=branches,
+            prefixer=prefixer,
+            mdb=mdb,
+            pdb=pdb,
+            rdb=rdb,
         )
+
         assert deps.empty
         # wait deferred tasks writing to pdb to complete
         await wait_deferred()
@@ -4562,4 +4549,67 @@ class TestHideOutlierFirstDeployments:
         assert (await count(pdb, GitHubCommitDeployment)) == 0
         assert (await count(pdb, GitHubReleaseDeployment)) == 0
 
-        await hide_outlier_first_deployments(deps, 1, meta_ids, mdb, pdb, 1.1)
+        await hide_outlier_first_deployments(
+            deps, np.full(len(deps), True), 1, meta_ids, mdb, pdb, 1.1,
+        )
+
+    @with_defer
+    async def test_ignore_not_computed_deploys(
+        self,
+        sample_deployments,
+        branches,
+        prefixer,
+        mdb,
+        pdb,
+        rdb,
+        sdb,
+    ) -> None:
+        meta_ids = await get_metadata_account_ids(1, sdb, None)
+        assert (await count(pdb, GitHubDeploymentFacts)) == 0
+        assert (await count(pdb, GitHubPullRequestDeployment)) == 0
+
+        deps, _ = await mine_deployments(
+            **self._mine_common_kwargs(),
+            branches=branches,
+            prefixer=prefixer,
+            mdb=mdb,
+            pdb=pdb,
+            rdb=rdb,
+        )
+        # wait deferred tasks writing to pdb to complete
+        await wait_deferred()
+
+        computed_mask = ~np.isin(deps.index.values, ["production_2016_07_06"])
+        # computed_mask = np.full(len(deps), True)
+
+        await hide_outlier_first_deployments(deps, computed_mask, 1, meta_ids, mdb, pdb, 1.1)
+
+        # production_2016_07_06 is an outlier  but will not be cleard since it was not computed
+        await assert_existing_row(
+            pdb, GitHubPullRequestDeployment, deployment_name="production_2016_07_06",
+        )
+        # other outlier has been cleared
+        await assert_missing_row(
+            pdb, GitHubPullRequestDeployment, deployment_name="staging_2016_07_06",
+        )
+
+    @classmethod
+    def _mine_common_kwargs(cls) -> dict:
+        return {
+            "repositories": ["src-d/go-git"],
+            "participants": {},
+            "time_from": datetime(2015, 1, 1, tzinfo=timezone.utc),
+            "time_to": datetime(2020, 1, 1, tzinfo=timezone.utc),
+            "environments": ["production", "staging"],
+            "conclusions": [],
+            "with_labels": {},
+            "without_labels": {},
+            "pr_labels": LabelFilter.empty(),
+            "jira": JIRAFilter.empty(),
+            "release_settings": get_release_match_setting_tag(),
+            "logical_settings": LogicalRepositorySettings.empty(),
+            "default_branches": get_default_branches(),
+            "account": 1,
+            "meta_ids": (6366825,),
+            "cache": None,
+        }
