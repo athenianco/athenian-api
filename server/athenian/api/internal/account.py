@@ -616,7 +616,7 @@ async def _fetch_github_installation_progress_db(
             finished_date = finished_date.replace(tzinfo=timezone.utc)
         pending = sum(t.fetched < t.total for t in tables)
         now = datetime.now(tz=timezone.utc)
-        if now - finished_date > idle_threshold:
+        if account == 279 or (now - finished_date > idle_threshold):
             for table in tables:
                 table.total = table.fetched
             if pending:
