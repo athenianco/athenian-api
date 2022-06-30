@@ -313,7 +313,7 @@ def _test_same_team(actual, expected, no_timings=True):
 
 
 async def test_resync_teams_smoke(client, headers, sdb, disable_default_user):
-    await sdb.execute(model_insert_stmt(TeamFactory(parent_id=None)))
+    await sdb.execute(model_insert_stmt(TeamFactory(parent_id=None), with_primary_keys=False))
     response = await client.request(method="DELETE", path="/v1/teams/1", headers=headers)
     body = await response.json()
     assert response.status == 200, "Response body is : " + body
