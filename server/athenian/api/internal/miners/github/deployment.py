@@ -2639,6 +2639,7 @@ async def hide_outlier_first_deployments(
       the median of time distances of each deployment with the previous one
     """
     log = logging.getLogger(f"{__name__}.hide_outlier_first_deployments")
+    log.info("Searching for outlier first deployments")
     outlier_deploys = await _search_outlier_first_deployments(
         deployment_facts, meta_ids, mdb, log, threshold,
     )
