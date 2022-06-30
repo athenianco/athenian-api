@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Dict, Sequence, Union
 
 from ariadne import MutationType
@@ -28,7 +29,6 @@ from athenian.api.align.models import (
 from athenian.api.ariadne import ariadne_disable_default_user
 from athenian.api.models.state.models import Goal, TeamGoal
 from athenian.api.tracing import sentry_span
-from athenian.api.typing_utils import dataclass
 
 mutation = MutationType()
 

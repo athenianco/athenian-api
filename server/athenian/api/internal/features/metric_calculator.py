@@ -43,6 +43,7 @@ from athenian.api.internal.logical_repos import coerce_logical_repos
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings
 from athenian.api.sparse_mask import SparseMask
 from athenian.api.tracing import sentry_span
+from athenian.api.typing_utils import dataclass_asdict
 from athenian.api.unordered_unique import unordered_unique
 
 DEFAULT_QUANTILE_STRIDE = 14
@@ -879,7 +880,7 @@ class BinnedHistogramCalculator(BinnedEnsemblesCalculator[Histogram]):
         kwargs: Iterable[Mapping[str, Any]],
     ) -> list[dict[str, list[list[Histogram]]]]:
         return [
-            {k: v for k, v in ensemble.histograms(**ekw).items()}
+            {k: v for k, v in ensemble.histograms(**dataclass_asdict(ekw)).items()}
             for ensemble, ekw in zip(self.ensembles, kwargs)
         ]
 

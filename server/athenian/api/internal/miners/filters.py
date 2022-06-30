@@ -1,8 +1,8 @@
+from dataclasses import dataclass
 from typing import Iterable, List, Optional, Set, Tuple
 
 from athenian.api.internal.jira import JIRAConfig, normalize_issue_type
 from athenian.api.models.web.jira_filter import JIRAFilter as WebJIRAFilter
-from athenian.api.typing_utils import dataclass
 
 
 @dataclass(slots=True, frozen=True)

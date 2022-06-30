@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from collections import defaultdict
 from contextvars import ContextVar
+from dataclasses import dataclass
 import logging
 from typing import Optional
 
@@ -20,7 +21,6 @@ from athenian.api.models.persistentdata import (
     dereference_schemas as dereference_persistentdata_schemas,
 )
 from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME
-from athenian.api.typing_utils import dataclass
 from athenian.precomputer.db import dereference_schemas as dereference_precomputed_schemas
 
 

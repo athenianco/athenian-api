@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import pickle
 from typing import Collection, List, Optional, Sequence, Set, Tuple
 
@@ -12,7 +13,6 @@ from athenian.api.db import DatabaseLike
 from athenian.api.internal.miners.filters import LabelFilter
 from athenian.api.models.metadata.github import PullRequestLabel
 from athenian.api.tracing import sentry_span
-from athenian.api.typing_utils import dataclass
 
 
 @dataclass(slots=True, frozen=True)

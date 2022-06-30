@@ -1,10 +1,9 @@
+from dataclasses import dataclass
 from datetime import timedelta
 from enum import IntEnum
 from typing import Any, Generic, List, Optional, Tuple, TypeVar
 
 import numpy as np
-
-from athenian.api.typing_utils import dataclass
 
 T = TypeVar("T", float, int, timedelta)
 

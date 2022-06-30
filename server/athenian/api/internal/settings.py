@@ -1,4 +1,5 @@
 from collections import defaultdict
+from dataclasses import dataclass
 from enum import IntEnum
 from itertools import chain
 import re
@@ -43,7 +44,6 @@ from athenian.api.models.state.models import LogicalRepository, ReleaseSetting
 from athenian.api.models.web import InvalidRequestError, MissingSettingsError, ReleaseMatchStrategy
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError
-from athenian.api.typing_utils import dataclass
 
 # rejected: PR was closed without merging.
 # force_push_drop: commit history was overwritten and the PR's merge commit no longer exists.

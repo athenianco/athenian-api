@@ -144,6 +144,7 @@ from athenian.api.models.web.release_diff import ReleaseDiff
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError, model_response
 from athenian.api.tracing import sentry_span
+from athenian.api.typing_utils import dataclass_asdict
 
 
 @weight(2.5)
@@ -461,7 +462,7 @@ def web_pr_from_struct(
 ) -> Generator[T, None, None]:
     """Convert an intermediate PR representation to the web model."""
     for pr in prs:
-        props = dict(pr)
+        props = dict(dataclass_asdict(pr))
         del props["node_id"]
         del props["deployments"]
         repo = props["repository"]
@@ -492,9 +493,9 @@ def web_pr_from_struct(
                     log.error("Failed to resolve user %s", pid)
         props["participants"] = sorted(PullRequestParticipant(*p) for p in participants.items())
         if pr.labels is not None:
-            props["labels"] = [PullRequestLabel(**label) for label in pr.labels]
+            props["labels"] = [PullRequestLabel(**dataclass_asdict(label)) for label in pr.labels]
         if pr.jira is not None:
-            props["jira"] = jira = [LinkedJIRAIssue(**issue) for issue in pr.jira]
+            props["jira"] = jira = [LinkedJIRAIssue(**dataclass_asdict(iss)) for iss in pr.jira]
             for issue in jira:
                 if issue.labels is not None:
                     # it is a set, must be a list
@@ -942,7 +943,7 @@ async def filter_labels(request: AthenianWebRequest, body: dict) -> web.Response
         raise ResponseError(InvalidRequestError(getattr(e, "path", "?"), detail=str(e))) from e
     repos, meta_ids, _, _ = await _repos_preprocess(filt.repositories, filt.account, request)
     labels = await mine_labels(repos, meta_ids, request.mdb, request.cache)
-    labels = [FilteredLabel(**label) for label in labels]
+    labels = [FilteredLabel(**dataclass_asdict(label)) for label in labels]
     return model_response(labels)
 
 
@@ -1090,8 +1091,8 @@ async def filter_code_checks(request: AthenianWebRequest, body: dict) -> web.Res
                 last_execution_time=cr.last_execution_time,
                 last_execution_url=cr.last_execution_url,
                 size_groups=cr.size_groups,
-                total_stats=CodeCheckRunStatistics(**cr.total_stats),
-                prs_stats=CodeCheckRunStatistics(**cr.prs_stats),
+                total_stats=CodeCheckRunStatistics(**dataclass_asdict(cr.total_stats)),
+                prs_stats=CodeCheckRunStatistics(**dataclass_asdict(cr.prs_stats)),
             )
             for cr in check_runs
         ],
@@ -1299,7 +1300,7 @@ async def _build_deployments_response(
         ],
         include=ReleaseSetInclude(
             users={u: IncludedNativeUser(avatar=a) for u, a in people},
-            jira={k: LinkedJIRAIssue(**v) for k, v in issues.items()},
+            jira={k: LinkedJIRAIssue(**dataclass_asdict(v)) for k, v in issues.items()},
         ),
     )
 
@@ -1330,5 +1331,5 @@ async def filter_environments(request: AthenianWebRequest, body: dict) -> web.Re
                 detail="Submit at least one deployment notification with `/events/deployments`.",
             ),
         ) from e
-    envs = [FilteredEnvironment(**env) for env in envs]
+    envs = [FilteredEnvironment(**dataclass_asdict(env)) for env in envs]
     return model_response(envs)

@@ -1,5 +1,6 @@
 import asyncio
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from itertools import chain, groupby, product, repeat
 import json
@@ -125,7 +126,7 @@ from athenian.api.models.precomputed.models import (
 )
 from athenian.api.to_object_arrays import is_not_null
 from athenian.api.tracing import sentry_span
-from athenian.api.typing_utils import dataclass, df_from_structs
+from athenian.api.typing_utils import df_from_structs
 from athenian.api.unordered_unique import unordered_unique
 
 

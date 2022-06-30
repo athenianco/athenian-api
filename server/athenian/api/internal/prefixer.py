@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import pickle
 from typing import Dict, Iterable, List, Optional
 
@@ -8,7 +9,6 @@ from athenian.api.async_utils import gather
 from athenian.api.cache import cached, short_term_exptime
 from athenian.api.db import DatabaseLike
 from athenian.api.models.metadata.github import Repository, User
-from athenian.api.typing_utils import dataclass
 
 
 def strip_proto(url: str) -> str:
