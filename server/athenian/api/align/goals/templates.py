@@ -31,4 +31,7 @@ TEMPLATES_COLLECTION = {
     10: {
         "metric": JIRAMetricID.JIRA_LEAD_TIME,
     },
+    11: {
+        "metric": PullRequestMetricID.PR_REVIEWED_RATIO,
+    },
 }
