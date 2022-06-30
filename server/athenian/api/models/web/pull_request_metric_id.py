@@ -38,6 +38,7 @@ class PullRequestMetricID(Model, metaclass=Enum):
     PR_REJECTED = "pr-rejected"
     PR_CLOSED = "pr-closed"
     PR_DONE = "pr-done"
+    PR_REVIEWED_RATIO = "pr-reviewed-ratio"
     PR_WAIT_FIRST_REVIEW_TIME = "pr-wait-first-review-time"
     PR_WAIT_FIRST_REVIEW_COUNT = "pr-wait-first-review-count"
     PR_WAIT_FIRST_REVIEW_COUNT_Q = "pr-wait-first-review-count-q"

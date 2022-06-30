@@ -434,22 +434,11 @@ class TestCalcMetricsPRs:
         if with_bots:
             await sdb.execute(
                 insert(Team).values(
-                    Team(
-                        owner_id=1,
-                        name=Team.BOTS,
-                        members=[39789],
-                    )
-                    .create_defaults()
-                    .explode(),
+                    Team(owner_id=1, name=Team.BOTS, members=[39789]).create_defaults().explode(),
                 ),
             )
         body = {
-            "for": [
-                {
-                    "with": {},
-                    "repositories": ["{1}"],
-                },
-            ],
+            "for": [{"with": {}, "repositories": ["{1}"]}],
             "metrics": [
                 PullRequestMetricID.PR_PARTICIPANTS_PER,
                 PullRequestMetricID.PR_REVIEWS_PER,
@@ -1144,6 +1133,35 @@ class TestCalcMetricsPRs:
         assert ignored == 1
         result = await self._request(client, json=body)
         assert result["calculated"][0]["values"][0]["values"] == ["779385s", 65, 61, 21, 102]
+
+    # TODO: fix response validation against the schema
+    @pytest.mark.app_validate_responses(False)
+    async def test_pr_reviewed_ratio(self, client, headers):
+        body = {
+            "date_from": "2016-01-01",
+            "date_to": "2020-01-16",
+            "for": [{"repositories": ["github.com/src-d/go-git"]}],
+            "granularities": ["month"],
+            "exclude_inactive": False,
+            "account": 1,
+            "metrics": [
+                PullRequestMetricID.PR_REVIEWED_RATIO,
+                PullRequestMetricID.PR_REVIEWED,
+                PullRequestMetricID.PR_NOT_REVIEWED,
+            ],
+        }
+        res = await self._request(client, json=body)
+        cm = CalculatedPullRequestMetrics.from_dict(res)
+
+        for v in cm.calculated[0].values:
+            ratio, reviewed, not_reviewed = v.values
+            print(ratio, reviewed, not_reviewed)
+            if reviewed == 0 and not_reviewed == 0:
+                assert ratio is None
+            elif reviewed == 0:
+                assert ratio == 0
+            else:
+                assert ratio == pytest.approx(reviewed / (reviewed + not_reviewed), rel=0.001)
 
 
 # TODO: fix response validation against the schema
