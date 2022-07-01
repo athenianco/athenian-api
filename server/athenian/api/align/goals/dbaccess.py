@@ -147,6 +147,16 @@ async def fetch_team_goals(
     return await sdb.fetch_all(stmt)
 
 
+async def delete_empty_goals(account: int, sdb_conn: DatabaseLike) -> None:
+    """Delete all account Goal-s having no more TeamGoal-s assigned."""
+    delete_stmt = sa.delete(Goal).where(
+        sa.and_(
+            Goal.account_id == account, Goal.id.not_in(sa.select(TeamGoal.goal_id).distinct()),
+        ),
+    )
+    await sdb_conn.execute(delete_stmt)
+
+
 async def _validate_goal_creation_info(
     creation_info: GoalCreationInfo,
     sdb_conn: DatabaseLike,
