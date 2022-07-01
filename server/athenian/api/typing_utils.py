@@ -618,3 +618,14 @@ def df_from_structs(
     df = pd.DataFrame.from_dict(columns)
     sentry_sdk.Hub.current.scope.span.description = str(len(df))
     return df
+
+
+def dataclass_asdict(dataclass_obj: Any) -> Mapping[str, Any]:
+    """Convert a dataclass instance to a dict.
+
+    This is lighter than stdlib dataclasses.asdict since fields are not recursed and
+    complex values are not deep-copied.
+    Simply field name/value couples will be the values of the dict.
+    Dataclass fields order is preserved in the returned dict.
+    """
+    return {f.name: getattr(dataclass_obj, f.name) for f in dataclasses.fields(dataclass_obj)}
