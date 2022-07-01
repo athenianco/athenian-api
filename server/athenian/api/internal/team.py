@@ -1,18 +1,18 @@
+from datetime import datetime, timezone
 from http import HTTPStatus
 import logging
-from typing import Any, Collection, Dict, Iterable, Mapping, Optional, Sequence, Tuple, Union
+from typing import Any, Collection, Iterable, Mapping, Optional, Sequence, Union
 
 import aiomcache
-import morcilla
 import sqlalchemy as sa
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api.async_utils import gather
-from athenian.api.db import DatabaseLike
+from athenian.api.db import Connection, Database, DatabaseLike, Row, conn_in_transaction
 from athenian.api.internal.jira import load_mapped_jira_users
 from athenian.api.models.metadata.github import User
 from athenian.api.models.state.models import Team
-from athenian.api.models.web import Contributor, GenericError
+from athenian.api.models.web import BadRequestError, Contributor, GenericError
 from athenian.api.response import ResponseError
 
 
@@ -90,11 +90,11 @@ async def get_team_from_db(
 async def get_all_team_members(
     gh_user_ids: Iterable[int],
     account: int,
-    meta_ids: Tuple[int, ...],
-    mdb: morcilla.Database,
-    sdb: morcilla.Database,
+    meta_ids: tuple[int, ...],
+    mdb: Database,
+    sdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Dict[int, Contributor]:
+) -> dict[int, Contributor]:
     """Return contributor objects for given github user identifiers."""
     user_rows, mapped_jira = await gather(
         mdb.fetch_all(
@@ -190,3 +190,22 @@ async def fetch_teams_recursively(
     if missing := set(root_team_ids or set()) - {r[Team.root_id] for r in rows}:
         raise TeamNotFoundError(*missing)
     return rows
+
+
+async def delete_team(team: Row, sdb_conn: Connection) -> None:
+    """Delete a Team row from the DB.
+
+    Related objects like TeamGoals are also deleted.
+    """
+    assert await conn_in_transaction(sdb_conn)
+    if (parent_id := team[Team.parent_id.name]) is None:
+        raise ResponseError(BadRequestError(detail="Root team cannot be deleted."))
+    team_id = team[Team.id.name]
+
+    await sdb_conn.execute(
+        sa.update(Team)
+        .where(Team.parent_id == team_id)
+        .values({Team.parent_id: parent_id, Team.updated_at: datetime.now(timezone.utc)}),
+    )
+
+    await sdb_conn.execute(sa.delete(Team).where(Team.id == team_id))

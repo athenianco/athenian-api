@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from itertools import chain
 from sqlite3 import IntegrityError, OperationalError
-from typing import Any, List, Mapping, Optional, Tuple, Union
+from typing import Any, Mapping, Optional, Union
 
 from aiohttp import web
 from asyncpg import UniqueViolationError
@@ -16,7 +16,11 @@ from athenian.api.internal.account import (
     get_metadata_account_ids,
     get_user_account_status_from_request,
 )
-from athenian.api.internal.team import get_all_team_members, get_root_team
+from athenian.api.internal.team import (
+    delete_team as db_delete_team,
+    get_all_team_members,
+    get_root_team,
+)
 from athenian.api.models.metadata.github import User
 from athenian.api.models.state.models import Team
 from athenian.api.models.web import (
@@ -76,19 +80,10 @@ async def delete_team(request: AthenianWebRequest, id: int) -> web.Response:
         async with sdb_conn.transaction():
             team = await sdb_conn.fetch_one(select(Team).where(Team.id == id))
             if team is None:
-                return ResponseError(NotFoundError("Team %d was not found." % id)).response
+                return ResponseError(NotFoundError(f"Team {id} was not found.")).response
             await get_user_account_status_from_request(request, team[Team.owner_id.name])
+            await db_delete_team(team, sdb_conn)
 
-            if (parent_id := team[Team.parent_id.name]) is None:
-                raise ResponseError(BadRequestError(detail="Root team cannot be deleted."))
-
-            await sdb_conn.execute(
-                update(Team)
-                .where(Team.parent_id == id)
-                .values({Team.parent_id: parent_id, Team.updated_at: datetime.now(timezone.utc)}),
-            )
-
-            await sdb_conn.execute(delete(Team).where(Team.id == id))
     return web.json_response({})
 
 
@@ -134,9 +129,9 @@ async def list_teams(request: AthenianWebRequest, id: int) -> web.Response:
 
 
 async def _list_loaded_teams(
-    teams: List[Mapping[str, Any]],
+    teams: list[Mapping[str, Any]],
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     request: AthenianWebRequest,
 ) -> web.Response:
     gh_user_ids = set(chain.from_iterable([t[Team.members.name] for t in teams]))
@@ -229,10 +224,10 @@ def _check_name(name: str) -> str:
 
 
 async def _resolve_members(
-    members: List[str],
-    meta_ids: Tuple[int, ...],
+    members: list[str],
+    meta_ids: tuple[int, ...],
     mdb: DatabaseLike,
-) -> List[int]:
+) -> list[int]:
     to_fetch = set()
     members = set(members)
     for m in members:

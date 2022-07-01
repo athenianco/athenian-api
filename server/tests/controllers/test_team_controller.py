@@ -494,7 +494,7 @@ class TestUpdateTeam:
 
 
 class TestDeleteTeam:
-    async def test_smoke(self, client, headers, sdb, disable_default_user):
+    async def test_smoke(self, client, sdb, disable_default_user):
         for model in (TeamFactory(id=1, name="Root"), TeamFactory(id=2, parent_id=1, name="Test")):
             await sdb.execute(model_insert_stmt(model))
 
@@ -504,7 +504,7 @@ class TestDeleteTeam:
         assert teams[0][Team.name.name] == "Root"
         assert teams[0][Team.parent_id.name] is None
 
-    async def test_default_user(self, client, headers, sdb):
+    async def test_default_user(self, client, sdb):
         for model in (TeamFactory(id=1), TeamFactory(id=2, parent_id=1)):
             await sdb.execute(model_insert_stmt(model))
 
@@ -521,7 +521,6 @@ class TestDeleteTeam:
     async def test_nasty_input(
         self,
         client,
-        headers,
         sdb,
         disable_default_user,
         owner,
@@ -535,7 +534,6 @@ class TestDeleteTeam:
     async def test_team_forbidden(
         self,
         client: TestClient,
-        headers: dict,
         sdb: Database,
         disable_default_user: None,
     ) -> None:
@@ -547,7 +545,6 @@ class TestDeleteTeam:
     async def test_children_parent_is_updated(
         self,
         client: TestClient,
-        headers: dict,
         sdb: Database,
         disable_default_user: None,
     ) -> None:
