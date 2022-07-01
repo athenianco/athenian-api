@@ -7,7 +7,7 @@ import logging
 import pickle
 import struct
 import time
-from typing import Any, Callable, Coroutine, Mapping, Optional, Tuple, Union
+from typing import Any, Callable, Coroutine, Mapping, Optional, Union
 from wsgiref.handlers import format_date_time
 
 from aiohttp import web
@@ -24,7 +24,7 @@ from athenian.api.defer import defer
 from athenian.api.metadata import __package__, __version__
 from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME
 from athenian.api.request import AthenianWebRequest
-from athenian.api.typing_utils import serialize_mutable_fields_in_dataclasses, wraps
+from athenian.api.typing_utils import wraps
 
 pickle.dumps = functools.partial(pickle.dumps, protocol=-1)
 max_exptime = 30 * 24 * 3600  # 30 days according to the docs
@@ -51,7 +51,7 @@ def cached(
     exptime: Union[int, Callable[..., int]],
     serialize: Callable[[Any], bytes],
     deserialize: Callable[[bytes], Any],
-    key: Callable[..., Optional[Tuple]],
+    key: Callable[..., Optional[tuple]],
     cache: Optional[Callable[..., Optional[aiomcache.Client]]] = None,
     refresh_on_access=False,
     postprocess: Optional[Callable[..., Any]] = None,
@@ -191,8 +191,7 @@ def cached(
                 t = exptime(result=result, **args_dict) if callable(exptime) else exptime
                 try:
                     with sentry_sdk.start_span(op="serialize") as span:
-                        with serialize_mutable_fields_in_dataclasses():
-                            payload = serialize(result)
+                        payload = serialize(result)
                         uncompressed_payload_size = len(payload)
                         span.description = str(uncompressed_payload_size)
                 except Exception as e:
