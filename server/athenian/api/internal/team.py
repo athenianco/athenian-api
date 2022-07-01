@@ -7,6 +7,7 @@ import aiomcache
 import sqlalchemy as sa
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
+from athenian.api.align.goals.dbaccess import delete_empty_goals
 from athenian.api.async_utils import gather
 from athenian.api.db import Connection, Database, DatabaseLike, Row, conn_in_transaction
 from athenian.api.internal.jira import load_mapped_jira_users
@@ -207,5 +208,6 @@ async def delete_team(team: Row, sdb_conn: Connection) -> None:
         .where(Team.parent_id == team_id)
         .values({Team.parent_id: parent_id, Team.updated_at: datetime.now(timezone.utc)}),
     )
-
     await sdb_conn.execute(sa.delete(Team).where(Team.id == team_id))
+    # TeamGoal-s have been deleted by ON DELETE CASCADE on team_id, now empty Goals must be removed
+    await delete_empty_goals(team[Team.owner_id.name], sdb_conn)

@@ -13,9 +13,9 @@ from athenian.api.internal.team import (
     get_root_team,
     get_team_from_db,
 )
-from athenian.api.models.state.models import Team
-from tests.testutils.db import assert_existing_row, models_insert
-from tests.testutils.factory.state import TeamFactory
+from athenian.api.models.state.models import Goal, Team, TeamGoal
+from tests.testutils.db import assert_existing_row, assert_missing_row, models_insert
+from tests.testutils.factory.state import GoalFactory, TeamFactory, TeamGoalFactory
 
 
 class TestGetRootTeam:
@@ -111,3 +111,31 @@ class TestDeleteTeam:
                 await delete_team(team_row, sdb_conn)
 
         await assert_existing_row(sdb, Team, id=1)
+
+    async def test_goal_left_empty_is_removed(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=1),
+            TeamFactory(id=10, parent_id=1),
+            TeamFactory(id=11, parent_id=1),
+            GoalFactory(id=20),
+            GoalFactory(id=21),
+            TeamGoalFactory(team_id=10, goal_id=20),
+            TeamGoalFactory(team_id=11, goal_id=21),
+        )
+
+        team_row = await sdb.fetch_one(sa.select(Team).where(Team.id == 10))
+
+        async with sdb.connection() as sdb_conn:
+            async with sdb_conn.transaction():
+                await delete_team(team_row, sdb_conn)
+
+        await assert_missing_row(sdb, Team, id=10)
+        await assert_missing_row(sdb, TeamGoal, team_id=10)
+        await assert_missing_row(sdb, Goal, id=20)
+
+        await assert_existing_row(sdb, Team, id=1)
+        await assert_existing_row(sdb, Team, id=11)
+        await assert_existing_row(sdb, Team, id=1)
+        await assert_existing_row(sdb, Goal, id=21)
+        await assert_existing_row(sdb, TeamGoal, team_id=11, goal_id=21)
