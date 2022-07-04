@@ -1,25 +1,23 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from datetime import datetime, timedelta
 from functools import reduce
-from graphlib import TopologicalSorter  # noqa
-from itertools import chain  # noqa
+from graphlib import TopologicalSorter
+from itertools import chain
 from typing import (
     Any,
     Callable,
     Collection,
-    Dict,
     Generic,
     Iterable,
     KeysView,
-    List,
     Mapping,
     Optional,
     Sequence,
-    Tuple,
     Type,
     TypeVar,
-    Union,
 )
 import warnings
 
@@ -45,6 +43,7 @@ from athenian.api.internal.logical_repos import coerce_logical_repos
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings
 from athenian.api.sparse_mask import SparseMask
 from athenian.api.tracing import sentry_span
+from athenian.api.typing_utils import dataclass_asdict
 from athenian.api.unordered_unique import unordered_unique
 
 DEFAULT_QUANTILE_STRIDE = 14
@@ -60,7 +59,7 @@ class MetricCalculator(Generic[T], ABC):
     """
 
     # Types of dependencies - upstream MetricCalculator-s.
-    deps: Tuple[Type["MetricCalculator"], ...] = tuple()
+    deps: tuple[Type["MetricCalculator"], ...] = tuple()
 
     # specific Metric class
     metric: Type[NumpyMetric] = None
@@ -85,19 +84,19 @@ class MetricCalculator(Generic[T], ABC):
         return nan != nan
 
     @property
-    def calcs(self) -> List[Union["MetricCalculator", List["MetricCalculator"]]]:
+    def calcs(self) -> list[MetricCalculator | list[MetricCalculator]]:
         """Return the dependencies."""
         return self._calcs
 
     def __init__(
         self,
-        *deps: Union["MetricCalculator", Tuple["MetricCalculator"], List["MetricCalculator"]],
+        *deps: MetricCalculator | tuple[MetricCalculator] | list[MetricCalculator],
         quantiles: Sequence[float],
         **kwargs,
     ):
         """Initialize a new `MetricCalculator` instance."""
         self.reset()
-        self._calcs: List[Union[MetricCalculator, List[MetricCalculator]]] = []
+        self._calcs: list[MetricCalculator | list[MetricCalculator]] = []
         self._quantiles = tuple(quantiles)
         assert len(self._quantiles) == 2
         assert self._quantiles[0] >= 0
@@ -198,7 +197,7 @@ class MetricCalculator(Generic[T], ABC):
         self._samples = self._samples.reshape((len(groups_mask), len(peek)))
 
     @property
-    def values(self) -> List[List[Metric[T]]]:
+    def values(self) -> list[list[Metric[T]]]:
         """
         Calculate the current metric values.
 
@@ -249,7 +248,7 @@ class MetricCalculator(Generic[T], ABC):
         )
         self._last_values = None
 
-    def split(self) -> List["MetricCalculator"]:
+    def split(self) -> list["MetricCalculator"]:
         """Replicate yourself depending on the previously set external keyword arguments."""
         return [self]
 
@@ -280,7 +279,7 @@ class MetricCalculator(Generic[T], ABC):
         """Calculate the metric values from the current samples."""
         raise NotImplementedError
 
-    def _values(self) -> List[List[Metric[T]]]:
+    def _values(self) -> list[list[Metric[T]]]:
         return [[self._value(s) for s in gs] for gs in self._samples]
 
     @classmethod
@@ -460,7 +459,7 @@ class Counter(MetricCalculator[int], ABC):
         self._grouped_sample_mask = calc.grouped_sample_mask
         self._samples = calc.samples
 
-    def _values(self) -> List[List[Metric[T]]]:
+    def _values(self) -> list[list[Metric[T]]]:
         if self._quantiles != (0, 1):
             # if we've got the quantiles, report the lengths
             return [
@@ -494,7 +493,7 @@ class HistogramCalculator(MetricCalculator, ABC):
         scale: Optional[Scale],
         bins: Optional[int],
         ticks: Optional[list],
-    ) -> List[List[Histogram[T]]]:
+    ) -> list[list[Histogram[T]]]:
         """Calculate the histogram over the current distribution."""
         histograms = []
         for group_samples in self.samples:
@@ -514,7 +513,7 @@ class MetricCalculatorEnsemble:
     def __init__(
         self,
         *metrics: str,
-        class_mapping: Dict[str, Type[MetricCalculator]],
+        class_mapping: dict[str, Type[MetricCalculator]],
         quantiles: Sequence[float],
         quantile_stride: int,
         **kwargs,
@@ -529,7 +528,7 @@ class MetricCalculatorEnsemble:
         if self._quantiles != (0, 1):
             assert self._quantile_stride
 
-    def __getitem__(self, metric: str) -> List[MetricCalculator]:
+    def __getitem__(self, metric: str) -> list[MetricCalculator]:
         """Return the owned calculator for the given metric."""
         return self._metrics[metric]
 
@@ -543,10 +542,10 @@ class MetricCalculatorEnsemble:
 
     @staticmethod
     def _plan_classes(
-        metric_classes: Dict[Type[MetricCalculator], List[str]],
+        metric_classes: dict[Type[MetricCalculator], list[str]],
         quantiles: Sequence[float],
         **kwargs,
-    ) -> Tuple[List[MetricCalculator], Dict[str, List[MetricCalculator]]]:
+    ) -> tuple[list[MetricCalculator], dict[str, list[MetricCalculator]]]:
         dig = {}
         required_classes = list(metric_classes)
         while required_classes:
@@ -577,7 +576,7 @@ class MetricCalculatorEnsemble:
         min_time: np.datetime64,
         max_time: np.datetime64,
         quantile_stride: int,
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Calculate the additional time intervals needed to filter out the local outliers."""
         zero = np.datetime64("2000-01-03")
         min_qli = (min_time.astype("datetime64[D]") - zero) // np.timedelta64(quantile_stride, "D")
@@ -596,7 +595,7 @@ class MetricCalculatorEnsemble:
         self,
         min_time: np.datetime64,
         max_time: np.datetime64,
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         return self.compose_quantile_time_intervals(min_time, max_time, self._quantile_stride)
 
     @sentry_span
@@ -625,7 +624,7 @@ class MetricCalculatorEnsemble:
         return bool(len(self._calcs))
 
     @sentry_span
-    def values(self) -> Dict[str, List[List[Metric[T]]]]:
+    def values(self) -> dict[str, list[list[Metric[T]]]]:
         """
         Calculate the current metric values.
 
@@ -652,7 +651,7 @@ class HistogramCalculatorEnsemble(MetricCalculatorEnsemble):
     def __init__(
         self,
         *metrics: str,
-        class_mapping: Dict[str, Type[MetricCalculator]],
+        class_mapping: dict[str, Type[MetricCalculator]],
         quantiles: Sequence[float],
         **kwargs,
     ):
@@ -669,7 +668,7 @@ class HistogramCalculatorEnsemble(MetricCalculatorEnsemble):
         self,
         min_time: np.datetime64,
         max_time: np.datetime64,
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         # matches the legacy outliers behavior - unstable, but suites histograms better
         return np.array([min_time]), np.array([max_time])
 
@@ -678,7 +677,7 @@ class HistogramCalculatorEnsemble(MetricCalculatorEnsemble):
         scale: Optional[Scale],
         bins: Optional[int],
         ticks: Optional[list],
-    ) -> Dict[str, Histogram]:
+    ) -> dict[str, Histogram]:
         """Calculate the current histograms."""
         return {k: v[0].histogram(scale, bins, ticks) for k, v in self._metrics.items()}
 
@@ -746,7 +745,7 @@ class BinnedEnsemblesCalculator(Generic[M]):
                  x time intervals primary \
                  x time intervals secondary \
                  x metrics; \
-                 3D numpy array of List[List[Metric]]] (dtype object).
+                 3D numpy array of list[list[Metric]]] (dtype object).
         """
         assert isinstance(items, pd.DataFrame)
         assert isinstance(groups, np.ndarray)
@@ -764,7 +763,7 @@ class BinnedEnsemblesCalculator(Generic[M]):
         metrics = self._metrics
 
         def fill_ensemble_group(ensemble_index: int, group_index: int) -> np.ndarray:
-            """Return Array[List[List[M]]]."""
+            """Return Array[list[list[M]]]."""
             cell = np.full(len(time_intervals), None, object)
             cell[:] = [[[] for _ in range(len(ts) - 1)] for ts in time_intervals]
             values_dict = values_dicts[ensemble_index]
@@ -787,7 +786,7 @@ class BinnedEnsemblesCalculator(Generic[M]):
     def _make_min_max_times(
         cls,
         time_intervals: Sequence[Sequence[datetime]],
-    ) -> Tuple[np.ndarray, np.ndarray, List[Tuple[int, int]]]:
+    ) -> tuple[np.ndarray, np.ndarray, list[tuple[int, int]]]:
         sizes = np.zeros(len(time_intervals) + 1, dtype=int)
         for i, ts in enumerate(time_intervals):
             size = len(ts)
@@ -818,7 +817,7 @@ class BinnedEnsemblesCalculator(Generic[M]):
     def _aggregate_ensembles(
         self,
         kwargs: Iterable[Mapping[str, Any]],
-    ) -> List[Dict[str, List[List[M]]]]:
+    ) -> list[dict[str, list[list[M]]]]:
         raise NotImplementedError
 
 
@@ -850,14 +849,14 @@ class BinnedMetricCalculator(BinnedEnsemblesCalculator[Metric]):
         """
         Override the parent's method to reduce the level of nesting.
 
-        :return: array of List[List[Metric]]].
+        :return: array of list[list[Metric]]].
         """
         return super().__call__(items, time_intervals, groups, [{}])[0]
 
     def _aggregate_ensembles(
         self,
         kwargs: Iterable[Mapping[str, Any]],
-    ) -> List[Dict[str, List[List[Metric]]]]:
+    ) -> list[dict[str, list[list[Metric]]]]:
         return [self.ensembles[0].values()]
 
 
@@ -879,16 +878,16 @@ class BinnedHistogramCalculator(BinnedEnsemblesCalculator[Histogram]):
     def _aggregate_ensembles(
         self,
         kwargs: Iterable[Mapping[str, Any]],
-    ) -> List[Dict[str, List[List[Histogram]]]]:
+    ) -> list[dict[str, list[list[Histogram]]]]:
         return [
-            {k: v for k, v in ensemble.histograms(**ekw).items()}
+            {k: v for k, v in ensemble.histograms(**dataclass_asdict(ekw)).items()}
             for ensemble, ekw in zip(self.ensembles, kwargs)
         ]
 
 
 def group_to_indexes(
     items: pd.DataFrame,
-    *groupers: Callable[[pd.DataFrame], List[np.ndarray]],
+    *groupers: Callable[[pd.DataFrame], list[np.ndarray]],
     deduplicate_key: Optional[str] = None,
     deduplicate_mask: Optional[np.ndarray] = None,
 ) -> np.ndarray:
@@ -932,7 +931,7 @@ def group_by_repo(
     repository_full_name_column_name: str,
     repos: Sequence[Collection[str]],
     df: pd.DataFrame,
-) -> List[np.ndarray]:
+) -> list[np.ndarray]:
     """Group items by the value of their "repository_full_name" column."""
     if df.empty:
         return [np.array([], dtype=int)] * len(repos)
@@ -960,7 +959,7 @@ def group_by_repo(
     return result
 
 
-def group_by_lines(lines: Sequence[int], column: np.ndarray) -> List[np.ndarray]:
+def group_by_lines(lines: Sequence[int], column: np.ndarray) -> list[np.ndarray]:
     """
     Bin items by the number of changed `lines` represented by `column`.
 
@@ -1054,7 +1053,7 @@ class RatioCalculator(WithoutQuantilesMixin, MetricCalculator[float]):
             self._calcs = list(reversed(self._calcs))
         self._opened, self._closed = self._calcs
 
-    def _values(self) -> List[List[Metric[float]]]:
+    def _values(self) -> list[list[Metric[float]]]:
         metrics = [
             [self.metric.from_fields(False, None, None, None)] * len(samples)
             for samples in self.samples
@@ -1087,8 +1086,8 @@ class RatioCalculator(WithoutQuantilesMixin, MetricCalculator[float]):
 
 
 def make_register_metric(
-    metric_calculators: Dict[str, Type[MetricCalculator]],
-    histogram_calculators: Optional[Dict[str, Type[HistogramCalculator]]],
+    metric_calculators: dict[str, Type[MetricCalculator]],
+    histogram_calculators: Optional[dict[str, Type[HistogramCalculator]]],
 ):
     """Create the decorator to keep track of the metric and histogram calculators."""
 

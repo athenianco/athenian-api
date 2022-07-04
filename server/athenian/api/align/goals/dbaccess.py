@@ -1,5 +1,6 @@
 """DB access layer utilities for Align Goals objects."""
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from http import HTTPStatus
 from typing import Iterable, Sequence, Union
@@ -16,7 +17,6 @@ from athenian.api.db import (
     integrity_errors,
 )
 from athenian.api.models.state.models import Goal, Team, TeamGoal
-from athenian.api.typing_utils import dataclass
 
 
 @dataclass(frozen=True)

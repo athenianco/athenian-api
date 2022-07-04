@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import IntEnum, auto
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple, Type, Union
@@ -13,7 +14,7 @@ from athenian.api.models.metadata.github import (
     PullRequestReview,
     Release,
 )
-from athenian.api.typing_utils import dataclass, numpy_struct
+from athenian.api.typing_utils import numpy_struct
 
 
 class PRParticipationKind(IntEnum):
@@ -128,7 +129,7 @@ class PullRequestJIRAIssueItem:
     type: str
 
 
-@dataclass(slots=True, frozen=True, first_mutable="merged_with_failed_check_runs")
+@dataclass(slots=True, frozen=True)
 class PullRequestListItem:
     """
     General PR properties used to list PRs on the frontend.

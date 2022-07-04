@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from itertools import chain
 import logging
@@ -46,7 +47,6 @@ from athenian.api.models.state.models import AccountGitHubAccount, RepositorySet
 from athenian.api.precompute.context import PrecomputeContext
 from athenian.api.precompute.prometheus import get_metrics, push_metrics
 from athenian.api.tracing import sentry_span
-from athenian.api.typing_utils import dataclass
 
 
 async def main(context: PrecomputeContext, args: argparse.Namespace) -> Optional[Callable]:

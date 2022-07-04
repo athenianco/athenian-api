@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from itertools import groupby
 from operator import itemgetter
 from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
@@ -18,7 +19,6 @@ from athenian.api.internal.team import fetch_teams_recursively
 from athenian.api.internal.with_ import flatten_teams
 from athenian.api.models.state.models import Goal, Team, TeamGoal
 from athenian.api.tracing import sentry_span
-from athenian.api.typing_utils import dataclass
 
 query = ObjectType("Query")
 

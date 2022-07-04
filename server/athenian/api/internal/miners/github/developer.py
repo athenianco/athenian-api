@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
 from itertools import chain
@@ -29,7 +30,6 @@ from athenian.api.models.metadata.github import (
     User,
 )
 from athenian.api.tracing import sentry_span
-from athenian.api.typing_utils import dataclass
 
 
 class DeveloperTopic(Enum):

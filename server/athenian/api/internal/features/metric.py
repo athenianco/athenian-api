@@ -1,10 +1,11 @@
+from dataclasses import dataclass
 from datetime import timedelta
 from types import new_class
 from typing import Any, Generic, List, Optional, Tuple, Type, TypeVar, Union
 
 import numpy as np
 
-from athenian.api.typing_utils import dataclass, numpy_struct
+from athenian.api.typing_utils import numpy_struct
 
 T = TypeVar("T", float, int, timedelta, type(None))
 np.seterr(divide="raise")

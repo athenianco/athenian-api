@@ -1,4 +1,4 @@
-from athenian.api.typing_utils import dataclass
+from dataclasses import dataclass
 
 
 @dataclass(slots=True, frozen=True)

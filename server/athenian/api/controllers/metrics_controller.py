@@ -1,4 +1,5 @@
 from collections import defaultdict
+from dataclasses import dataclass
 from itertools import chain
 from typing import Any, Collection, Dict, List, Optional, Sequence, Set, Tuple
 
@@ -61,7 +62,6 @@ from athenian.api.models.web.pull_request_metrics_request import PullRequestMetr
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError, model_response
 from athenian.api.tracing import sentry_span
-from athenian.api.typing_utils import dataclass
 
 
 @dataclass(slots=True, frozen=True)
