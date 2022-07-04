@@ -142,7 +142,6 @@ def patch_pandas():
 
 
 def _maybe_add_join_keys(self, result, left_indexer, right_indexer):
-
     left_has_missing = None
     right_has_missing = None
 
@@ -154,10 +153,8 @@ def _maybe_add_join_keys(self, result, left_indexer, right_indexer):
         take_left, take_right = None, None
 
         if name in result:
-
             if left_indexer is not None and right_indexer is not None:
                 if name in self.left:
-
                     if left_has_missing is None:
                         left_has_missing = (left_indexer == -1).any()
 
@@ -168,7 +165,6 @@ def _maybe_add_join_keys(self, result, left_indexer, right_indexer):
                             take_left = self.left[name]._values
 
                 elif name in self.right:
-
                     if right_has_missing is None:
                         right_has_missing = (right_indexer == -1).any()
 
@@ -183,7 +179,6 @@ def _maybe_add_join_keys(self, result, left_indexer, right_indexer):
             take_right = self.right_join_keys[i]
 
         if take_left is not None or take_right is not None:
-
             if take_left is None:
                 lvals = result[name]._values
             else:

@@ -250,7 +250,7 @@ class TestDurationTracker:
         with freeze_time("2021-01-10T10:10:10"):
             tracker = _DurationTracker("host:9000", logging.getLogger(__name__))
 
-        with (freeze_time("2021-01-10T10:10:52"), _mock_prometheus_push_handler() as push_handler):
+        with freeze_time("2021-01-10T10:10:52"), _mock_prometheus_push_handler() as push_handler:
             tracker.track(1, [3, 4], False)
 
         push_handler.assert_called_once()
