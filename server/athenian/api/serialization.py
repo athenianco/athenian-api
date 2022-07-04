@@ -224,7 +224,8 @@ class FriendlyJson:
 
     @classmethod
     def serialize(klass, obj):
-        """Format timedeltas and dates according to https://athenianco.atlassian.net/browse/ENG-125"""  # noqa
+        """Format timedeltas and dates according to https://athenianco.atlassian.net/browse/ENG-125
+        """  # noqa
         if isinstance(obj, (timedelta, np.timedelta64)):
             if isinstance(obj, np.timedelta64):
                 obj = obj.astype("timedelta64[s]").item()
