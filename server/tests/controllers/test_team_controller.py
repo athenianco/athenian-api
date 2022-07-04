@@ -9,13 +9,18 @@ import pytest
 from sqlalchemy import insert, select, update
 
 from athenian.api.db import Database, ensure_db_datetime_tz
-from athenian.api.models.state.models import AccountGitHubAccount, Team
+from athenian.api.models.state.models import AccountGitHubAccount, Goal, Team
 from athenian.api.models.web import TeamUpdateRequest
 from athenian.api.models.web.team import Team as TeamListItem
 from athenian.api.models.web.team_create_request import TeamCreateRequest
 from tests.conftest import DEFAULT_HEADERS
-from tests.testutils.db import assert_existing_row, model_insert_stmt, models_insert
-from tests.testutils.factory.state import TeamFactory
+from tests.testutils.db import (
+    assert_existing_row,
+    assert_missing_row,
+    model_insert_stmt,
+    models_insert,
+)
+from tests.testutils.factory.state import GoalFactory, TeamFactory, TeamGoalFactory
 
 
 class TestCreateTeam:
@@ -494,20 +499,19 @@ class TestUpdateTeam:
 
 
 class TestDeleteTeam:
-    async def test_smoke(self, client, headers, sdb, disable_default_user):
-        for model in (TeamFactory(id=1, name="Root"), TeamFactory(id=2, parent_id=1, name="Test")):
-            await sdb.execute(model_insert_stmt(model))
+    async def test_smoke(self, client, sdb, disable_default_user):
+        await models_insert(
+            sdb, TeamFactory(id=1, name="Root"), TeamFactory(id=2, parent_id=1, name="Test"),
+        )
 
-        await self._request(client, 2, 200)
+        await self._request(client, 2)
         teams = await sdb.fetch_all(select(Team))
         assert len(teams) == 1
         assert teams[0][Team.name.name] == "Root"
         assert teams[0][Team.parent_id.name] is None
 
-    async def test_default_user(self, client, headers, sdb):
-        for model in (TeamFactory(id=1), TeamFactory(id=2, parent_id=1)):
-            await sdb.execute(model_insert_stmt(model))
-
+    async def test_default_user(self, client, sdb):
+        await models_insert(sdb, TeamFactory(id=1), TeamFactory(id=2, parent_id=1))
         await self._request(client, 2, 403)
 
     @pytest.mark.parametrize(
@@ -521,25 +525,26 @@ class TestDeleteTeam:
     async def test_nasty_input(
         self,
         client,
-        headers,
         sdb,
         disable_default_user,
         owner,
         id,
         status,
     ):
-        await sdb.execute(model_insert_stmt(TeamFactory(id=9, parent_id=None, owner_id=owner)))
-        await sdb.execute(model_insert_stmt(TeamFactory(id=1, parent_id=9, owner_id=owner)))
+        await models_insert(
+            sdb,
+            TeamFactory(id=9, parent_id=None, owner_id=owner),
+            TeamFactory(id=1, parent_id=9, owner_id=owner),
+        )
         await self._request(client, id, status)
 
     async def test_team_forbidden(
         self,
         client: TestClient,
-        headers: dict,
         sdb: Database,
         disable_default_user: None,
     ) -> None:
-        await sdb.execute(model_insert_stmt(TeamFactory(id=1, parent_id=None)))
+        await models_insert(sdb, TeamFactory(id=1, parent_id=None))
         response = await self._request(client, 1, 400)
         assert response["detail"] == "Root team cannot be deleted."
         await assert_existing_row(sdb, Team, id=1)
@@ -547,21 +552,20 @@ class TestDeleteTeam:
     async def test_children_parent_is_updated(
         self,
         client: TestClient,
-        headers: dict,
         sdb: Database,
         disable_default_user: None,
     ) -> None:
-        for model in (
+        await models_insert(
+            sdb,
             TeamFactory(id=1, parent_id=None),
             TeamFactory(id=2, parent_id=1),
             TeamFactory(id=3, parent_id=2),
             TeamFactory(id=4, parent_id=2),
             TeamFactory(id=5, parent_id=1),
             TeamFactory(id=6, parent_id=5),
-        ):
-            await sdb.execute(model_insert_stmt(model))
+        )
 
-        await self._request(client, 2, 200)
+        await self._request(client, 2)
         rows = await sdb.fetch_all(select(Team.id, Team.parent_id).order_by(Team.id))
 
         assert rows[0] == (1, None)
@@ -570,7 +574,27 @@ class TestDeleteTeam:
         assert rows[3] == (5, 1)
         assert rows[4] == (6, 5)
 
-    async def _request(self, client: TestClient, team_id: int, assert_status: int) -> dict:
+    async def test_goal_left_empty_is_removed(
+        self,
+        client: TestClient,
+        sdb: Database,
+        disable_default_user: None,
+    ) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=1, parent_id=None),
+            TeamFactory(id=2, parent_id=1),
+            GoalFactory(id=20),
+            TeamGoalFactory(goal_id=20, team_id=2),
+        )
+
+        await self._request(client, 2)
+
+        await assert_missing_row(sdb, Team, id=2)
+        await assert_missing_row(sdb, Team, id=2)
+        await assert_missing_row(sdb, Goal, id=20)
+
+    async def _request(self, client: TestClient, team_id: int, assert_status: int = 200) -> dict:
         response = await client.request(
             method="DELETE", path=f"/v1/team/{team_id}", headers=DEFAULT_HEADERS, json={},
         )
