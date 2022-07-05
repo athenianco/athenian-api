@@ -10,13 +10,14 @@ import aiomcache
 import numpy as np
 import pandas as pd
 import sentry_sdk
+import sqlalchemy as sa
 from sqlalchemy import and_, func, insert, join, select, union_all
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import CancelCache, cached, middle_term_exptime, short_term_exptime
-from athenian.api.db import Database, add_pdb_hits, add_pdb_misses
+from athenian.api.db import Database, DatabaseLike, add_pdb_hits, add_pdb_misses
 from athenian.api.defer import defer
 from athenian.api.int_to_str import int_to_str
 from athenian.api.internal.logical_repos import (
@@ -415,32 +416,11 @@ async def _mine_releases(
             )
             all_hashes.append(hashes)
             repo_releases_analyzed[repo] = repo_releases, grouped_owned_hashes, parents
-        commits_df_columns = [
-            NodeCommit.sha,
-            NodeCommit.additions,
-            NodeCommit.deletions,
-            NodeCommit.author_user_id,
-            NodeCommit.node_id,
-        ]
         all_hashes = np.concatenate(all_hashes) if all_hashes else []
         with sentry_sdk.start_span(
             op="mine_releases/fetch_commits", description=str(len(all_hashes)),
         ):
-            commits_df = await read_sql_query(
-                select(commits_df_columns)
-                .where(
-                    and_(
-                        NodeCommit.sha.in_any_values(all_hashes), NodeCommit.acc_id.in_(meta_ids),
-                    ),
-                )
-                .order_by(NodeCommit.sha)
-                .with_statement_hint(
-                    f"Rows({NodeCommit.__tablename__} *VALUES* #{len(all_hashes)})",
-                )
-                .with_statement_hint(f"Leading(*VALUES* {NodeCommit.__tablename__})"),
-                mdb,
-                commits_df_columns,
-            )
+            commits_df = await _fetch_commits(all_hashes, meta_ids, mdb)
         log.info("Loaded %d commits", len(commits_df))
         commits_index = commits_df[NodeCommit.sha.name].values
         commit_ids = commits_df[NodeCommit.node_id.name].values
@@ -1932,3 +1912,52 @@ async def override_first_releases(
         first_releases, prs, default_branches, release_settings, account, pdb,
     )
     return len(first_releases)
+
+
+_FETCH_COMMIT_BATCH_SIZE = 80_000
+
+
+async def _fetch_commits(hashes: Sequence[str], meta_ids: Sequence[int], mdb: DatabaseLike):
+    """Fetch from mdb all commits with the given hashes."""
+    log = logging.getLogger(f"{__package__}.hide_first_releases")
+
+    batch_size = _FETCH_COMMIT_BATCH_SIZE
+    columns = [
+        NodeCommit.sha,
+        NodeCommit.additions,
+        NodeCommit.deletions,
+        NodeCommit.author_user_id,
+        NodeCommit.node_id,
+    ]
+    order_column = NodeCommit.sha
+
+    if len(hashes) <= batch_size:
+        log.info("fetching %d commits in a single query", len(hashes))
+        # just 1 query, we can let db order
+        query = _fetch_commits_query(hashes, columns, meta_ids).order_by(order_column)
+        return await read_sql_query(query, mdb, columns)
+    else:
+        batches = [hashes[ix : ix + batch_size] for ix in range(0, len(hashes), batch_size)]
+        queries = [_fetch_commits_query(batch, columns, meta_ids) for batch in batches]
+        log.info(
+            "fetching %d commits with %d queries, batch size %d",
+            len(hashes),
+            len(queries),
+            batch_size,
+        )
+        results = await gather(
+            *[read_sql_query(q, mdb, columns) for q in queries], op="release_mine_fetch_commits",
+        )
+        # union and order in memory
+        result = pd.concat(results)
+        result.sort_values(order_column.name, inplace=True, ignore_index=True)
+        return result
+
+
+def _fetch_commits_query(hashes: Sequence[str], columns, meta_ids: Sequence[int]):
+    return (
+        sa.select(columns)
+        .where(and_(NodeCommit.sha.in_any_values(hashes), NodeCommit.acc_id.in_(meta_ids)))
+        .with_statement_hint(f"Rows({NodeCommit.__tablename__} *VALUES* #{len(hashes)})")
+        .with_statement_hint(f"Leading(*VALUES* {NodeCommit.__tablename__})")
+    )
