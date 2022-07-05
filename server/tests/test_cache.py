@@ -169,3 +169,22 @@ async def test_expires_header(client, headers, client_cache):
     )
     exp2 = response.headers["expires"]
     assert exp1 == exp2
+
+
+class TestPickleDumpsPatch:
+    def test(self) -> None:
+        # importing module should patch pickle.dumps to default to the last protocol version
+        import athenian.api.cache  # noqa
+
+        buf = pickle.dumps(object())
+        protocol_version = int(buf[1])
+        assert protocol_version == pickle.HIGHEST_PROTOCOL
+
+        # protocol can still be manually overridden
+        buf = pickle.dumps(object(), 2)
+        protocol_version = int(buf[1])
+        assert protocol_version == 2
+
+        buf = pickle.dumps(object(), protocol=3)
+        protocol_version = int(buf[1])
+        assert protocol_version == 3

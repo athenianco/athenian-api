@@ -26,7 +26,18 @@ from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME
 from athenian.api.request import AthenianWebRequest
 from athenian.api.typing_utils import wraps
 
-pickle.dumps = functools.partial(pickle.dumps, protocol=-1)
+# change pickle.dumps protocol default to last version (-1)
+orig_pickle_dumps = pickle.dumps
+
+
+def _pickle_dumps(obj, protocol=None, **kwargs):
+    if protocol is None:
+        protocol = -1
+    return orig_pickle_dumps(obj, protocol, **kwargs)
+
+
+pickle.dumps = _pickle_dumps
+
 max_exptime = 30 * 24 * 3600  # 30 days according to the docs
 short_term_exptime = 5 * 60  # 5 minutes
 middle_term_exptime = 60 * 60  # 1 hour
