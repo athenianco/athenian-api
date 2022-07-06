@@ -3,6 +3,7 @@ from typing import Any
 from ariadne import QueryType
 from graphql import GraphQLResolveInfo
 
+from athenian.api.align.models import Member
 from athenian.api.async_utils import gather
 from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.team import (
@@ -41,12 +42,10 @@ async def resolve_members(
         member_ids = team[Team.members.name]
     members = await get_all_team_members(member_ids, accountId, meta_ids, mdb, sdb, cache)
 
-    def sort_key(contributor) -> tuple[bool, str, str]:
-        return (
-            contributor.name is None,  # first users with a name
-            (contributor.name or "").lower(),
-            contributor.login.lower(),
-        )
+    def sort_key(member: Member) -> tuple[bool, str, str]:
+        # first users with a name
+        return (member.name is None, (member.name or "").lower(), member.login.lower())
 
-    # Contributor web model is exactly the same as GraphQL Member
-    return sorted(members.values(), key=sort_key)
+    # Contributor-s returned by get_all_team_members need to be wrapped in Member
+    # to include the `jiraUser` field
+    return sorted((Member(**c.to_dict()) for c in members.values()), key=sort_key)
