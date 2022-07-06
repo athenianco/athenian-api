@@ -15,8 +15,6 @@ from athenian.api.defer import with_defer
 from athenian.api.internal.features.entries import MetricEntriesCalculator
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github import deployment_light
-from athenian.api.internal.miners.github.commit import _empty_dag, _fetch_commit_history_edges
-from athenian.api.internal.miners.github.dag_accelerated import join_dags
 from athenian.api.internal.miners.github.deployment import mine_deployments
 from athenian.api.internal.miners.types import PullRequestFacts, nonemin
 from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMatch
@@ -318,69 +316,60 @@ async def no_jira(sdb):
     await sdb.execute(delete(AccountJiraInstallation))
 
 
+SAMPLE_BOTS = {
+    "login",
+    "similar-code-searcher",
+    "prettierci",
+    "pull",
+    "dependabot",
+    "changeset-bot",
+    "jira",
+    "depfu",
+    "codecov-io",
+    "linear-app",
+    "pull-assistant",
+    "stale",
+    "codecov",
+    "sentry-io",
+    "minimum-review-bot",
+    "sonarcloud",
+    "thehub-integration",
+    "release-drafter",
+    "netlify",
+    "height",
+    "allcontributors",
+    "linc",
+    "cla-checker-service",
+    "unfurl-links",
+    "probot-auto-merge",
+    "snyk-bot",
+    "slash-commands",
+    "greenkeeper",
+    "cypress",
+    "gally-bot",
+    "commitlint",
+    "monocodus",
+    "dependabot-preview",
+    "vercel",
+    "codecov-commenter",
+    "botelastic",
+    "renovate",
+    "markdownify",
+    "coveralls",
+    "github-actions",
+    "codeclimate",
+    "zube",
+}
+
+
 @pytest.fixture(scope="session")
 def bots() -> Set[str]:
-    return {
-        "login",
-        "similar-code-searcher",
-        "prettierci",
-        "pull",
-        "dependabot",
-        "changeset-bot",
-        "jira",
-        "depfu",
-        "codecov-io",
-        "linear-app",
-        "pull-assistant",
-        "stale",
-        "codecov",
-        "sentry-io",
-        "minimum-review-bot",
-        "sonarcloud",
-        "thehub-integration",
-        "release-drafter",
-        "netlify",
-        "height",
-        "allcontributors",
-        "linc",
-        "cla-checker-service",
-        "unfurl-links",
-        "probot-auto-merge",
-        "snyk-bot",
-        "slash-commands",
-        "greenkeeper",
-        "cypress",
-        "gally-bot",
-        "commitlint",
-        "monocodus",
-        "dependabot-preview",
-        "vercel",
-        "codecov-commenter",
-        "botelastic",
-        "renovate",
-        "markdownify",
-        "coveralls",
-        "github-actions",
-        "codeclimate",
-        "zube",
-    }
-
-
-_dag = None
+    return SAMPLE_BOTS
 
 
 class FakeFacts(PullRequestFacts):
     def __init__(self):
         super().__init__(b"\0" * PullRequestFacts.dtype.itemsize)
-
-
-async def fetch_dag(mdb, heads=None):
-    if heads is None:
-        heads = [
-            2755363,
-        ]
-    edges = await _fetch_commit_history_edges(heads, [], (6366825,), mdb)
-    return {"src-d/go-git": (True, join_dags(*_empty_dag(), edges))}
 
 
 def with_only_master_branch(func):
@@ -395,15 +384,6 @@ def with_only_master_branch(func):
                 await mdb.execute(insert(Branch).values(branch))
 
     return wraps(wrapped_with_only_master_branch, func)
-
-
-@pytest.fixture(scope="function")  # we cannot declare it "module" because of mdb's scope
-async def dag(mdb):
-    global _dag
-    if _dag is not None:
-        return _dag
-    _dag = await fetch_dag(mdb)
-    return _dag
 
 
 @pytest.fixture(scope="function")
