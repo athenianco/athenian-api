@@ -2,10 +2,11 @@ from datetime import datetime, timedelta, timezone
 
 import factory
 
-from athenian.api.models.metadata.github import Account, AccountRepository, FetchProgress
+from athenian.api.models.metadata.github import Account, AccountRepository, FetchProgress, User
 from athenian.api.models.metadata.jira import Issue, Project
 
 from .alchemy import SQLAlchemyModelFactory
+from .common import DEFAULT_MD_ACCOUNT_ID
 
 
 class AccountRepositoryFactory(SQLAlchemyModelFactory):
@@ -40,6 +41,17 @@ class FetchProgressFactory(SQLAlchemyModelFactory):
     nodes_total = 100
     created_at = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=3))
     updated_at = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=1))
+
+
+class UserFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = User
+
+    acc_id = DEFAULT_MD_ACCOUNT_ID
+    node_id = factory.Sequence(lambda n: n + 1)
+    avatar_url = factory.LazyAttribute(lambda user: f"https://github.com/user-{user.node_id}.jpg")
+    login = factory.LazyAttribute(lambda user: f"user-{user.node_id}")
+    html_url = factory.LazyAttribute(lambda user: f"https://github.com/user-{user.node_id}")
 
 
 class JIRAProjectFactory(SQLAlchemyModelFactory):

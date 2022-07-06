@@ -1,4 +1,3 @@
-from operator import attrgetter
 from typing import Any
 
 from ariadne import QueryType
@@ -42,5 +41,12 @@ async def resolve_members(
         member_ids = team[Team.members.name]
     members = await get_all_team_members(member_ids, accountId, meta_ids, mdb, sdb, cache)
 
+    def sort_key(contributor) -> tuple[bool, str, str]:
+        return (
+            contributor.name is None,  # first users with a name
+            (contributor.name or "").lower(),
+            contributor.login.lower(),
+        )
+
     # Contributor web model is exactly the same as GraphQL Member
-    return sorted(members.values(), key=attrgetter("login"))
+    return sorted(members.values(), key=sort_key)
