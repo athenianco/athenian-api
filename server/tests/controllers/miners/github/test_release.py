@@ -1,7 +1,6 @@
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 import pickle
-from unittest import mock
 
 from freezegun import freeze_time
 import numpy as np
@@ -9,7 +8,6 @@ from numpy.testing import assert_array_equal
 import pandas as pd
 from pandas.testing import assert_frame_equal
 import pytest
-import sqlalchemy as sa
 from sqlalchemy import delete, insert, select
 
 from athenian.api.db import Database
@@ -1660,39 +1658,6 @@ class TestMineReleases:
         )
         releases, avatars, _, _ = await mine_releases(**kwargs)
         assert len(releases) == 12
-
-    @with_defer
-    async def test_batch_query(self, mdb, pdb, rdb, release_match_setting_tag, prefixer):
-        time_from = datetime(year=2015, month=1, day=1, tzinfo=timezone.utc)
-        time_to = datetime(year=2020, month=12, day=1, tzinfo=timezone.utc)
-        kwargs = self._kwargs(
-            time_from=time_from,
-            time_to=time_to,
-            release_settings=release_match_setting_tag,
-            prefixer=prefixer,
-            mdb=mdb,
-            pdb=pdb,
-            rdb=rdb,
-            with_deployments=False,
-        )
-
-        with mock.patch(f"{mine_releases.__module__}._FETCH_COMMIT_BATCH_SIZE", 500):
-            releases0, *_ = await mine_releases(**kwargs)
-        await wait_deferred()
-
-        # clear pdb, else commits are not refetched
-        await pdb.execute(sa.delete(GitHubReleaseFacts))
-
-        with mock.patch(f"{mine_releases.__module__}._FETCH_COMMIT_BATCH_SIZE", 444):
-            releases1, *_ = await mine_releases(**kwargs)
-        await wait_deferred()
-
-        await pdb.execute(sa.delete(GitHubReleaseFacts))
-
-        with mock.patch(f"{mine_releases.__module__}._FETCH_COMMIT_BATCH_SIZE", 9999999):
-            releases2, *_ = await mine_releases(**kwargs)
-
-        assert releases0 == releases1 and releases0 == releases2
 
     @classmethod
     def _kwargs(cls, **extra):

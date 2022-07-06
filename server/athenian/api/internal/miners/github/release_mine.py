@@ -8,6 +8,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set,
 
 import aiomcache
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 import sentry_sdk
 import sqlalchemy as sa
@@ -17,7 +18,7 @@ from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import CancelCache, cached, middle_term_exptime, short_term_exptime
-from athenian.api.db import Database, DatabaseLike, add_pdb_hits, add_pdb_misses, is_postgresql
+from athenian.api.db import Database, DatabaseLike, add_pdb_hits, add_pdb_misses
 from athenian.api.defer import defer
 from athenian.api.int_to_str import int_to_str
 from athenian.api.internal.logical_repos import (
@@ -1914,16 +1915,10 @@ async def override_first_releases(
     return len(first_releases)
 
 
-# joining with VALUES alias is faster then doing IN VALUES ...
-# but a limit of 32768 elements is triggered with the VALUES alias
-_FETCH_COMMIT_BATCH_SIZE = 30_000
-
-
-async def _fetch_commits(hashes: Sequence[bytes], meta_ids: Sequence[int], mdb: DatabaseLike):
+async def _fetch_commits(hashes: npt.NDArray[bytes], meta_ids: Sequence[int], mdb: DatabaseLike):
     """Fetch from mdb all commits with the given hashes."""
     log = logging.getLogger(f"{__package__}.hide_first_releases")
 
-    batch_size = _FETCH_COMMIT_BATCH_SIZE
     columns = [
         NodeCommit.sha,
         NodeCommit.additions,
@@ -1933,48 +1928,14 @@ async def _fetch_commits(hashes: Sequence[bytes], meta_ids: Sequence[int], mdb: 
     ]
     order_column = NodeCommit.sha
 
-    if len(hashes) <= batch_size:
-        log.info("fetching %d commits in a single query", len(hashes))
-        # just 1 query, we can let db order
-        query = (await _fetch_commits_query(hashes, columns, meta_ids, mdb)).order_by(order_column)
-        return await read_sql_query(query, mdb, columns)
-    else:
-        batches = [hashes[ix : ix + batch_size] for ix in range(0, len(hashes), batch_size)]
-        queries = [
-            (await _fetch_commits_query(batch, columns, meta_ids, mdb)) for batch in batches
-        ]
-        log.info(
-            "fetching %d commits with %d queries, batch size %d",
-            len(hashes),
-            len(queries),
-            batch_size,
-        )
-        results = await gather(
-            *[read_sql_query(q, mdb, columns) for q in queries], op="release_mine_fetch_commits",
-        )
-        # union and order in memory
-        result = pd.concat(results)
-        result.sort_values(order_column.name, inplace=True, ignore_index=True)
-        return result
+    log.info("fetching %d commits", len(hashes))
 
+    query = (
+        sa.select(columns)
+        .where(and_(NodeCommit.sha.in_any_values(hashes), NodeCommit.acc_id.in_(meta_ids)))
+        .order_by(order_column)
+        .with_statement_hint(f"Rows({NodeCommit.__tablename__} *VALUES* #{len(hashes)})")
+        .with_statement_hint(f"Leading(*VALUES* {NodeCommit.__tablename__})")
+    )
 
-async def _fetch_commits_query(
-    hashes: Sequence[bytes],
-    columns,
-    meta_ids: Sequence[int],
-    db: DatabaseLike,
-):
-    # TODO: empty values does not work, find a way to use a single query on postgres
-    if len(hashes) and (await is_postgresql(db)):
-        values = sa.values(sa.column("oid", sa.Text), name="oids").data(
-            [[h.decode("ascii")] for h in hashes],
-        )
-        return (
-            sa.select(columns)
-            .join(values, onclause=NodeCommit.sha == values.c.oid)
-            .where(NodeCommit.acc_id.in_(meta_ids))
-        )
-    else:
-        return sa.select(columns).where(
-            and_(NodeCommit.sha.in_any_values(hashes), NodeCommit.acc_id.in_(meta_ids)),
-        )
+    return await read_sql_query(query, mdb, columns)
