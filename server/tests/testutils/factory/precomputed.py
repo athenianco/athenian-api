@@ -1,4 +1,4 @@
-"""Test factories for models in state precomputed DB."""
+"""Test factories for models in precomputed DB."""
 
 from datetime import datetime, timedelta, timezone
 import hashlib

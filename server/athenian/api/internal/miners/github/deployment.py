@@ -2753,13 +2753,15 @@ async def _search_outlier_first_deployments(
             # missing two successful deployments to compute median deploy interval
             # skip the analysis, don't hide the deployment
             continue
-        median_interval_ = np.median(np.diff(deploy_times))
+
+        # deploy_times are declared by user so it's possible to have duplicated values and 0 median
+        median_interval = np.median(np.diff(deploy_times)) or np.timedelta64(1, "s")
 
         first_deploy_idx = np.argmin(group["started_at"].values)
         first_deploy_time = group["started_at"].values[first_deploy_idx]
         first_deploy_interval_ = first_deploy_time - repo_creation_times[repo]
 
-        if (first_deploy_interval_ / median_interval_) > threshold:
+        if (first_deploy_interval_ / median_interval) > threshold:
             deploy = _OutlierDeployment(repo, group["name"].values[first_deploy_idx])
             # same deploy can be selected from different environments
             if deploy not in result:

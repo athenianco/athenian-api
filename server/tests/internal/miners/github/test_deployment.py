@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import morcilla
 import numpy as np
+from numpy.testing import assert_array_equal
 import pandas as pd
 from pandas.testing import assert_frame_equal
 import pytest
@@ -33,7 +34,12 @@ from athenian.api.models.precomputed.models import (
     GitHubReleaseDeployment,
 )
 from tests.conftest import get_default_branches, get_release_match_setting_tag
-from tests.testutils.db import assert_existing_row, assert_missing_row, count
+from tests.testutils.db import assert_existing_row, assert_missing_row, count, models_insert
+from tests.testutils.factory.persistentdata import (
+    DeployedComponentFactory,
+    DeploymentNotificationFactory,
+)
+from tests.testutils.time import dt
 
 
 @with_defer
@@ -4520,7 +4526,6 @@ class TestHideOutlierFirstDeployments:
     @with_defer
     async def test_no_deployment_facts(
         self,
-        sample_deployments,
         branches,
         prefixer,
         mdb,
@@ -4540,6 +4545,7 @@ class TestHideOutlierFirstDeployments:
             pdb=pdb,
             rdb=rdb,
         )
+        assert_array_equal(computed_mask, np.full(len(deps), True))
 
         assert deps.empty
         # wait deferred tasks writing to pdb to complete
@@ -4549,9 +4555,7 @@ class TestHideOutlierFirstDeployments:
         assert (await count(pdb, GitHubCommitDeployment)) == 0
         assert (await count(pdb, GitHubReleaseDeployment)) == 0
 
-        await hide_outlier_first_deployments(
-            deps, np.full(len(deps), True), 1, meta_ids, mdb, pdb, 1.1,
-        )
+        await hide_outlier_first_deployments(deps, computed_mask, 1, meta_ids, mdb, pdb, 1.1)
 
     @with_defer
     async def test_ignore_not_computed_deploys(
@@ -4580,7 +4584,6 @@ class TestHideOutlierFirstDeployments:
         await wait_deferred()
 
         computed_mask = ~np.isin(deps.index.values, ["production_2016_07_06"])
-        # computed_mask = np.full(len(deps), True)
 
         await hide_outlier_first_deployments(deps, computed_mask, 1, meta_ids, mdb, pdb, 1.1)
 
@@ -4592,6 +4595,41 @@ class TestHideOutlierFirstDeployments:
         await assert_missing_row(
             pdb, GitHubPullRequestDeployment, deployment_name="staging_2016_07_06",
         )
+
+    @with_defer
+    async def test_multiple_deployments_same_time(
+        self,
+        branches,
+        prefixer,
+        mdb,
+        pdb,
+        rdb,
+        sdb,
+    ) -> None:
+        meta_ids = await get_metadata_account_ids(1, sdb, None)
+        await rdb.execute(sa.delete(DeploymentNotification))
+        started_at = dt(2019, 1, 1)
+        await models_insert(
+            rdb,
+            DeploymentNotificationFactory(name="deploy0", started_at=started_at),
+            DeploymentNotificationFactory(name="deploy1", started_at=started_at),
+            DeployedComponentFactory(deployment_name="deploy0", repository_node_id=40550),
+            DeployedComponentFactory(deployment_name="deploy1", repository_node_id=40550),
+        )
+
+        deps, computed_mask = await mine_deployments(
+            **self._mine_common_kwargs(),
+            branches=branches,
+            prefixer=prefixer,
+            mdb=mdb,
+            pdb=pdb,
+            rdb=rdb,
+        )
+        await wait_deferred()
+
+        await hide_outlier_first_deployments(deps, computed_mask, 1, meta_ids, mdb, pdb, 1.1)
+
+        await assert_missing_row(pdb, GitHubPullRequestDeployment, deployment_name="deploy0")
 
     @classmethod
     def _mine_common_kwargs(cls) -> dict:
