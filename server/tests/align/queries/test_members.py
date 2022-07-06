@@ -11,7 +11,7 @@ from tests.align.utils import (
 from tests.conftest import DEFAULT_HEADERS
 from tests.testutils.db import DBCleaner, model_insert_stmt, models_insert
 from tests.testutils.factory import metadata as md_factory
-from tests.testutils.factory.state import TeamFactory
+from tests.testutils.factory.state import MappedJIRAIdentityFactory, TeamFactory
 
 
 class BaseMembersTest:
@@ -167,3 +167,23 @@ class TestMembers(BaseMembersTest):
         members = res["data"]["members"]
         assert [m["login"] for m in members] == ["d", "c", "b", "a"]
         assert [m["name"] for m in members] == ["aa", "Foo Bar", "zz-Top", None]
+
+    async def test_jira_user_field(self, client: TestClient, sdb: Database, mdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=1, members=[100, 101]),
+            MappedJIRAIdentityFactory(github_user_id=100, jira_user_id="200"),
+        )
+
+        async with DBCleaner(mdb) as mdb_cleaner:
+            models = [
+                md_factory.UserFactory(node_id=100),
+                md_factory.UserFactory(node_id=101),
+                md_factory.JIRAUserFactory(id="200", display_name="My JIRA name"),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb, *models)
+            res = await self._request(1, 1, client)
+
+        members = res["data"]["members"]
+        assert [m["jiraUser"] for m in members] == ["My JIRA name", None]

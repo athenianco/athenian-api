@@ -6,6 +6,7 @@ from typing import Any, Optional, Union
 
 import numpy as np
 
+from athenian.api.models.web import Contributor
 from athenian.api.models.web.base_model_ import Enum, Model
 
 
@@ -441,3 +442,15 @@ class GoalTree(Model):
     def team_goal(self) -> TeamGoalTree:
         """Get the root of the `TeamGoalTree` attached to the goal."""
         return self._team_goal
+
+
+class Member(Contributor):
+    """A member of a team.
+
+    This is equal to OpenAPI Contributor model, except that jira_user is aliased to jiraUser.
+    """
+
+    @property
+    def jiraUser(self) -> Optional[str]:
+        """Alias of self.jira_user."""
+        return self.jira_user

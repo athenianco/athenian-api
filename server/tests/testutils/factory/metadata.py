@@ -3,10 +3,10 @@ from datetime import datetime, timedelta, timezone
 import factory
 
 from athenian.api.models.metadata.github import Account, AccountRepository, FetchProgress, User
-from athenian.api.models.metadata.jira import Issue, Project
+from athenian.api.models.metadata.jira import Issue, Project, User as JIRAUser
 
 from .alchemy import SQLAlchemyModelFactory
-from .common import DEFAULT_MD_ACCOUNT_ID
+from .common import DEFAULT_JIRA_ACCOUNT_ID, DEFAULT_MD_ACCOUNT_ID
 
 
 class AccountRepositoryFactory(SQLAlchemyModelFactory):
@@ -93,3 +93,14 @@ class JIRAIssueFactory(SQLAlchemyModelFactory):
         # adding athenian_epic_id attr is required since explode_model() doesn't
         # work with aliased columns, i.e. epic_id = Column("athenian_epic_id", Text)
         obj.athenian_epic_id = obj.epic_id
+
+
+class JIRAUserFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = JIRAUser
+
+    acc_id = DEFAULT_JIRA_ACCOUNT_ID
+    id = factory.Sequence(lambda n: f"{n + 1}")
+    type = "?"
+    display_name = factory.LazyAttribute(lambda user: f"jira user {user.id}")
+    avatar_url = factory.LazyAttribute(lambda user: f"https://jira.com/user-{user.id}.jpg")
