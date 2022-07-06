@@ -497,18 +497,6 @@ def detect_deployments(request):
     request.addfinalizer(restore_repository_environment_threshold)
 
 
-def pytest_configure(config):
-    for mark in (
-        "filter_repositories",
-        "filter_contributors",
-        "filter_pull_requests",
-        "filter_commits",
-        "filter_releases",
-        "filter_labels",
-    ):
-        config.addinivalue_line("markers", mark)
-
-
 @pytest.fixture(scope="function")
 async def sample_team(sdb):
     return await sdb.execute(
