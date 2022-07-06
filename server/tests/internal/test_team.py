@@ -9,6 +9,7 @@ from athenian.api.internal.team import (
     RootTeamNotFoundError,
     TeamNotFoundError,
     delete_team,
+    fetch_team_members_recursively,
     fetch_teams_recursively,
     get_root_team,
     get_team_from_db,
@@ -99,6 +100,28 @@ class TestFetchTeamsRecursively:
         assert rows[0] == (1, 1)
         assert rows[1] == (2, 1)
         assert rows[2] == (4, 4)
+
+
+class TestFetchTeamMembersecursively:
+    async def test_team_not_found(self, sdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(id=1))
+        with pytest.raises(TeamNotFoundError):
+            await fetch_team_members_recursively(1, sdb, 2)
+
+    async def test_leaf_team(self, sdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(id=2, members=[1]), TeamFactory(id=3, members=[2, 3]))
+        members = await fetch_team_members_recursively(1, sdb, 3)
+        assert sorted(members) == [2, 3]
+
+    async def test_base(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=2, members=[1]),
+            TeamFactory(id=3, parent_id=2, members=[2, 3]),
+            TeamFactory(id=4, parent_id=2, members=[1, 2, 4]),
+        )
+        members = await fetch_team_members_recursively(1, sdb, 2)
+        assert sorted(members) == [1, 2, 3, 4]
 
 
 class TestDeleteTeam:

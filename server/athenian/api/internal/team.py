@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from http import HTTPStatus
+from itertools import chain
 import logging
 from typing import Any, Collection, Iterable, Mapping, Optional, Sequence, Union
 
@@ -191,6 +192,17 @@ async def fetch_teams_recursively(
     if missing := set(root_team_ids or set()) - {r[Team.root_id] for r in rows}:
         raise TeamNotFoundError(*missing)
     return rows
+
+
+async def fetch_team_members_recursively(
+    account: int,
+    sdb: DatabaseLike,
+    team_id: int,
+) -> Sequence[int]:
+    """Return the members belonging to the team or to one of its descendant teams."""
+    team_rows = await fetch_teams_recursively(account, sdb, [Team.members], [team_id])
+    members = set(chain.from_iterable(row[Team.members.name] for row in team_rows))
+    return list(members)
 
 
 async def delete_team(team: Row, sdb_conn: Connection) -> None:
