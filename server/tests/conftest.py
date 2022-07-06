@@ -19,8 +19,6 @@ import warnings
 import aiomcache
 from filelock import FileLock
 
-from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME
-
 try:
     import nest_asyncio
 except ImportError:
@@ -66,6 +64,8 @@ from athenian.api.defer import with_defer
 from athenian.api.faster_pandas import patch_pandas
 from athenian.api.internal import account
 from athenian.api.internal.miners.github.branches import BranchMiner
+from athenian.api.internal.miners.github.commit import _empty_dag, _fetch_commit_history_edges
+from athenian.api.internal.miners.github.dag_accelerated import join_dags
 from athenian.api.internal.miners.github.precomputed_prs import (
     DonePRFactsLoader,
     MergedPRFactsLoader,
@@ -100,6 +100,7 @@ from athenian.api.models.persistentdata.models import (
 )
 from athenian.api.models.precomputed.models import GitHubBase as PrecomputedBase
 from athenian.api.models.state.models import Base as StateBase, God
+from athenian.api.prometheus import PROMETHEUS_REGISTRY_VAR_NAME
 from athenian.api.request import AthenianWebRequest
 from athenian.precomputer.db import dereference_schemas as dereference_precomputed_schemas
 from tests.sample_db_data import (
@@ -899,3 +900,24 @@ def logical_settings_full():
             "src-d/go-git/beta": {"title": "prod|.*2019"},
         },
     )
+
+
+_dag = None
+
+
+async def fetch_dag(mdb, heads=None):
+    if heads is None:
+        heads = [
+            2755363,
+        ]
+    edges = await _fetch_commit_history_edges(heads, [], (6366825,), mdb)
+    return {"src-d/go-git": (True, join_dags(*_empty_dag(), edges))}
+
+
+@pytest.fixture(scope="function")  # we cannot declare it "module" because of mdb's scope
+async def dag(mdb):
+    global _dag
+    if _dag is not None:
+        return _dag
+    _dag = await fetch_dag(mdb)
+    return _dag

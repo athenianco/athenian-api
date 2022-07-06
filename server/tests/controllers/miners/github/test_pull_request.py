@@ -42,8 +42,8 @@ from athenian.api.models.precomputed.models import (
     GitHubDonePullRequestFacts,
     GitHubMergedPullRequestFacts,
 )
-from tests.conftest import has_memcached
-from tests.controllers.conftest import FakeFacts, fetch_dag
+from tests.conftest import fetch_dag, has_memcached
+from tests.controllers.conftest import FakeFacts
 from tests.controllers.test_filter_controller import force_push_dropped_go_git_pr_numbers
 
 

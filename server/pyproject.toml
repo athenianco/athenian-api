@@ -5,6 +5,12 @@ requires = ["setuptools!=60.6.0", "wheel", "Cython>=0.29.30", "numpy==1.23.0"]
 asyncio_mode = "auto"
 markers = [
     "app_validate_responses",
+    "filter_repositories",
+    "filter_contributors",
+    "filter_pull_requests",
+    "filter_commits",
+    "filter_releases",
+    "filter_labels",
 ]
 
 [tool.isort]
