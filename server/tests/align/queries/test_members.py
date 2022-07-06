@@ -14,9 +14,9 @@ from tests.testutils.factory.state import TeamFactory
 
 
 class BaseMembersTest:
-    def _query(self, fields=None):
-        if fields is None:
-            fields = ("login", "name", "email", "picture", "jiraUser")
+    _DEFAULT_FIELDS = ("login", "name", "email", "picture", "jiraUser")
+
+    def _query(self, fields: Sequence[str]):
         fields_section = "\n".join(fields)
         fragment = f"""
             fragment memberFields on Member {{
@@ -26,8 +26,8 @@ class BaseMembersTest:
         return (
             fragment
             + """
-            query ($accountId: Int!, $teamId: Int!) {
-              members(accountId: $accountId, teamId: $teamId) {
+            query ($accountId: Int!, $teamId: Int!, $recursive: Boolean) {
+              members(accountId: $accountId, teamId: $teamId, recursive: $recursive) {
                 ...memberFields
               }
             }
@@ -40,12 +40,13 @@ class BaseMembersTest:
         team_id: int,
         client: TestClient,
         extra_headers: Optional[dict] = None,
-        fields: Sequence[str] = None,
+        fields: Sequence[str] = _DEFAULT_FIELDS,
+        recursive: Optional[bool] = None,
     ) -> dict:
-        body = {
-            "query": self._query(fields),
-            "variables": {"accountId": account_id, "teamId": team_id},
-        }
+        variables = {"accountId": account_id, "teamId": team_id}
+        if recursive is not None:
+            variables["recursive"] = recursive
+        body = {"query": self._query(fields), "variables": variables}
         headers = {**DEFAULT_HEADERS, **extra_headers} if extra_headers else DEFAULT_HEADERS
         return await align_graphql_request(client, headers=headers, json=body)
 
@@ -60,6 +61,10 @@ class TestMembersErrors(BaseMembersTest):
 
     async def test_team_not_found(self, client: TestClient) -> None:
         res = await self._request(1, 999, client)
+        assert_extension_error(res, "Team 999 not found or access denied")
+
+    async def test_team_not_found_recursive(self, client: TestClient) -> None:
+        res = await self._request(1, 999, client, recursive=True)
         assert_extension_error(res, "Team 999 not found or access denied")
 
     async def test_root_team_multiple_roots(self, client: TestClient, sdb: Database):
@@ -120,3 +125,22 @@ class TestMembers(BaseMembersTest):
         )
         res = await self._request(1, 0, client, fields=("login",))
         assert res["data"]["members"] == []
+
+    async def test_recursive_param(self, client: TestClient, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=1, members=[39652900]),
+            TeamFactory(id=2, parent_id=1, members=[40078]),
+        )
+
+        res = await self._request(1, 1, client, recursive=True)
+        expected = ["github.com/leantrace", "github.com/reujab"]
+        assert [m["login"] for m in res["data"]["members"]] == expected
+
+        res = await self._request(1, 1, client, recursive=False)
+        expected = ["github.com/leantrace"]
+        assert [m["login"] for m in res["data"]["members"]] == expected
+
+        res = await self._request(1, 1, client)
+        expected = ["github.com/leantrace"]
+        assert [m["login"] for m in res["data"]["members"]] == expected
