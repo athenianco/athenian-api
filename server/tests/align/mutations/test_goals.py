@@ -623,7 +623,7 @@ class TestUpdateGoal(BaseUpdateGoalTest):
     async def test_some_changes(self, client: TestClient, sdb: Database) -> None:
         await models_insert(
             sdb,
-            GoalFactory(id=100),
+            GoalFactory(id=100, archived=False),
             TeamFactory(id=10),
             TeamFactory(id=20),
             TeamFactory(id=30),
@@ -647,6 +647,8 @@ class TestUpdateGoal(BaseUpdateGoalTest):
         assert "errors" not in res
         assert res["data"]["updateGoal"]["goal"]["id"] == 100
 
+        await assert_existing_row(sdb, Goal, id=100, archived=False)
+
         await assert_missing_row(sdb, TeamGoal, team_id=10, goal_id=100)
 
         team_goal_20_row = await assert_existing_row(sdb, TeamGoal, team_id=20, goal_id=100)
@@ -658,3 +660,10 @@ class TestUpdateGoal(BaseUpdateGoalTest):
 
         team_goal_30_row = await assert_existing_row(sdb, TeamGoal, team_id=30, goal_id=100)
         assert team_goal_30_row["target"] == 7777
+
+    async def test_update_archived(self, client: TestClient, sdb: Database) -> None:
+        await models_insert(sdb, GoalFactory(id=100, archived=False))
+        variables = {"accountId": 1, "input": {"goalId": 100, "archived": True}}
+        res = await self._request(variables, client)
+        assert "errors" not in res
+        await assert_existing_row(sdb, Goal, id=100, archived=True)
