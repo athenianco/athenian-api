@@ -1,11 +1,13 @@
 from operator import itemgetter
 
+import pytest
 import sqlalchemy as sa
 
-from athenian.api.align.goals.dbaccess import delete_empty_goals, fetch_team_goals
+from athenian.api.align.exceptions import GoalMutationError
+from athenian.api.align.goals.dbaccess import delete_empty_goals, fetch_team_goals, update_goal
 from athenian.api.db import Database
 from athenian.api.models.state.models import Goal, TeamGoal
-from tests.testutils.db import models_insert
+from tests.testutils.db import assert_existing_row, models_insert
 from tests.testutils.factory.state import GoalFactory, TeamFactory, TeamGoalFactory
 
 
@@ -36,6 +38,33 @@ class TestFetchTeamGoals:
         assert rows[0][TeamGoal.team_id.name] == 10
         assert rows[1][TeamGoal.team_id.name] == 11
         assert rows[2][TeamGoal.team_id.name] == 10
+
+
+class TestUpdateGoal:
+    async def test_set_archived(self, sdb: Database) -> None:
+        await models_insert(sdb, GoalFactory(id=10, archived=False))
+        await self._update(1, 10, sdb, archived=True)
+
+        goal = await assert_existing_row(sdb, Goal, id=10)
+        assert goal[Goal.archived.name]
+
+        await self._update(1, 10, sdb, archived=True)
+        goal = await assert_existing_row(sdb, Goal, id=10)
+        assert goal[Goal.archived.name]
+
+        await self._update(1, 10, sdb, archived=False)
+        goal = await assert_existing_row(sdb, Goal, id=10)
+        assert not goal[Goal.archived.name]
+
+    async def test_goal_not_found(self, sdb: Database) -> None:
+        with pytest.raises(GoalMutationError):
+            await self._update(1, 1, sdb, archived=False)
+
+    @classmethod
+    async def _update(cls, acc_id: int, goal_id: int, sdb: Database, *, archived: bool) -> None:
+        async with sdb.connection() as sdb_conn:
+            async with sdb_conn.transaction():
+                await update_goal(acc_id, goal_id, sdb_conn, archived=archived)
 
 
 class TestDeleteEmptyGoals:

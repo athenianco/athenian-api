@@ -380,6 +380,7 @@ class Goal(create_time_mixin(created_at=True, updated_at=True), Base):
     template_id = Column(Integer(), nullable=False)
     valid_from = Column(TIMESTAMP(timezone=True), nullable=False)
     expires_at = Column(TIMESTAMP(timezone=True), nullable=False)
+    archived = Column(Boolean, default=False, nullable=False, server_default="false")
 
 
 class TeamGoal(create_time_mixin(created_at=True, updated_at=True), Base):

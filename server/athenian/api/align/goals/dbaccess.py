@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from http import HTTPStatus
-from typing import Iterable, Sequence, Union
+from typing import Iterable, Sequence
 
 import sqlalchemy as sa
 
@@ -37,7 +37,7 @@ class TeamGoalTargetAssignment:
     """The assignment of a new goal target for a team."""
 
     team_id: int
-    target: Union[int, float, str]
+    target: int | float | str
 
 
 async def insert_goal(creation_info: GoalCreationInfo, sdb_conn: DatabaseLike) -> int:
@@ -127,6 +127,27 @@ async def assign_team_goals(
         },
     )
     await sdb_conn.execute_many(upsert_stmt, values)
+
+
+async def update_goal(
+    account_id: int,
+    goal_id: int,
+    sdb_conn: Connection,
+    *,
+    archived: bool,
+) -> None:
+    """Update the properties of an existing Goal."""
+    assert await conn_in_transaction(sdb_conn)
+
+    # morcilla/asyncpg don't return update rowcount, two queries are needed
+    where = sa.and_(Goal.account_id == account_id, Goal.id == goal_id)
+    select_stmt = sa.select(Goal).where(where).with_for_update()
+    if await sdb_conn.fetch_one(select_stmt) is None:
+        raise GoalMutationError(f"Goal {goal_id} not found", HTTPStatus.NOT_FOUND)
+
+    values = {Goal.archived.name: archived, Goal.updated_at: datetime.now(timezone.utc)}
+    update_stmt = sa.update(Goal).where(where).values(values)
+    await sdb_conn.execute(update_stmt)
 
 
 async def fetch_team_goals(

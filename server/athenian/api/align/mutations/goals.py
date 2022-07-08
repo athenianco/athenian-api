@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Sequence, Union
+from typing import Any, Optional, Sequence
 
 from ariadne import MutationType
 from graphql import GraphQLResolveInfo
@@ -15,6 +15,7 @@ from athenian.api.align.goals.dbaccess import (
     delete_goal,
     delete_team_goals,
     insert_goal,
+    update_goal,
 )
 from athenian.api.align.goals.templates import TEMPLATES_COLLECTION
 from athenian.api.align.models import (
@@ -40,8 +41,8 @@ async def resolve_create_goal(
     _: Any,
     info: GraphQLResolveInfo,
     accountId: int,
-    input: Dict[str, Any],
-) -> Dict[str, Any]:
+    input: dict[str, Any],
+) -> dict[str, Any]:
     """Create a Goal."""
     creation_info = _parse_create_goal_input(input, accountId)
 
@@ -61,7 +62,7 @@ async def resolve_remove_goal(
     info: GraphQLResolveInfo,
     accountId: int,
     goalId: int,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Remove a Goal and referring TeamGoal-s."""
     async with info.context.sdb.connection() as sdb_conn:
         async with sdb_conn.transaction():
@@ -86,7 +87,7 @@ async def resolve_update_goal(
 
     deletions = update.team_goal_deletions
     assignments = update.team_goal_assignments
-    if not deletions and not assignments:
+    if not deletions and not assignments and update.archived is None:
         return result
 
     async with info.context.sdb.connection() as sdb_conn:
@@ -95,11 +96,13 @@ async def resolve_update_goal(
                 await delete_team_goals(accountId, goal_id, deletions, sdb_conn)
             if assignments:
                 await assign_team_goals(accountId, goal_id, assignments, sdb_conn)
+            if update.archived is not None:
+                await update_goal(accountId, goal_id, sdb_conn, archived=update.archived)
 
     return result
 
 
-def _parse_create_goal_input(input: Dict[str, Any], account_id: int) -> GoalCreationInfo:
+def _parse_create_goal_input(input: dict[str, Any], account_id: int) -> GoalCreationInfo:
     """Parse CreateGoalInput into GoalCreationInfo."""
     template_id = input[CreateGoalInputFields.templateId]
     if template_id not in TEMPLATES_COLLECTION:
@@ -140,7 +143,7 @@ def _parse_team_goal_input(team_goal_input: dict) -> TeamGoal:
     return TeamGoal(team_id=team_id, target=target)
 
 
-def _parse_team_goal_target(team_goal_target: dict) -> Union[int, float, str]:
+def _parse_team_goal_target(team_goal_target: dict) -> int | float | str:
     """Get the first non null value in GoalTargetInput."""
     return next(tgt for tgt in team_goal_target.values() if tgt is not None)
 
@@ -151,9 +154,10 @@ class GoalUpdateInfo:
 
     team_goal_deletions: Sequence[int]
     team_goal_assignments: Sequence[TeamGoalTargetAssignment]
+    archived: Optional[bool]
 
 
-def _parse_update_goal_input(input: Dict[str, Any], account_id: int) -> GoalUpdateInfo:
+def _parse_update_goal_input(input: dict[str, Any], account_id: int) -> GoalUpdateInfo:
     deletions = []
     assignments = []
 
@@ -196,4 +200,4 @@ def _parse_update_goal_input(input: Dict[str, Any], account_id: int) -> GoalUpda
     if errors:
         raise GoalMutationError("; ".join(errors))
 
-    return GoalUpdateInfo(deletions, assignments)
+    return GoalUpdateInfo(deletions, assignments, input.get("archived"))
