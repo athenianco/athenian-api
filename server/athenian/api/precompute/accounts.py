@@ -99,9 +99,14 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> Optional
 
             # must execute `callback` in a new event loop
             async def callback(context: PrecomputeContext):
-                await precompute_reposet(
-                    reposet, meta_ids, context, args, time_to, no_time_from, time_from,
-                )
+                with sentry_sdk.start_transaction(
+                    name="precomputer[account]",
+                    op="precomputer[account]",
+                    description=f"account {reposet.owner_id}",
+                ):
+                    await precompute_reposet(
+                        reposet, meta_ids, context, args, time_to, no_time_from, time_from,
+                    )
 
             return callback
         else:
