@@ -358,7 +358,7 @@ class TestGoals(BaseGoalsTest):
         assert goal["teamGoal"]["value"]["current"]["str"] == "3727969s"
         assert goal["teamGoal"]["value"]["initial"]["str"] == "2126373s"
 
-    async def test_not_only_with_targets_param(self, client: TestClient, sdb: Database) -> None:
+    async def test_only_with_targets_param(self, client: TestClient, sdb: Database) -> None:
         await models_insert(
             sdb,
             TeamFactory(id=10, parent_id=None),
@@ -378,3 +378,17 @@ class TestGoals(BaseGoalsTest):
         assert (team_goal_11 := team_goal_10["children"][0])["team"]["id"] == 11
         # team goal 12 is hidden
         assert len(team_goal_11["children"]) == 0
+
+    async def test_archived_goals_are_excluded(self, client: TestClient, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=10),
+            GoalFactory(id=20),
+            GoalFactory(id=21, archived=True),
+            TeamGoalFactory(goal_id=20, team_id=10),
+            TeamGoalFactory(goal_id=21, team_id=10),
+        )
+        res = await self._request(1, 10, client)
+
+        goals = res["data"]["goals"]
+        assert [goal["id"] for goal in goals] == [20]
