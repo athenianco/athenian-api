@@ -100,6 +100,20 @@ class TestFetchTeamGoals:
         assert rows[1][TeamGoal.team_id.name] == 11
         assert rows[2][TeamGoal.team_id.name] == 10
 
+    async def test_archived_goals_are_excluded(self, sdb: Database) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=10),
+            GoalFactory(id=20),
+            GoalFactory(id=21, archived=True),
+            GoalFactory(id=22),
+            TeamGoalFactory(team_id=10, goal_id=20),
+            TeamGoalFactory(team_id=10, goal_id=21),
+        )
+
+        rows = await fetch_team_goals(1, [10], sdb)
+        assert [r[Goal.id.name] for r in rows] == [20]
+
 
 class TestDeleteEmptyGoals:
     async def test_delete(self, sdb: Database) -> None:
