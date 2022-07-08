@@ -205,20 +205,21 @@ async def _validate_team_goal_deletions(
     sdb_conn: DatabaseLike,
 ) -> None:
     where_clause = sa.and_(
-        Goal.account_id == account_id,
-        Team.owner_id == account_id,
-        TeamGoal.goal_id == goal_id,
-        TeamGoal.team_id.in_(team_ids),
+        Goal.account_id == account_id, Team.owner_id == account_id, TeamGoal.goal_id == goal_id,
     )
     select_stmt = (
-        sa.select([TeamGoal.team_id]).join_from(TeamGoal, Goal).join(Team).where(where_clause)
+        sa.select(TeamGoal.team_id).join_from(TeamGoal, Goal).join(Team).where(where_clause)
     )
     found = {row[0] for row in await sdb_conn.fetch_all(select_stmt)}
+
     if missing := [team_id for team_id in team_ids if team_id not in found]:
         missing_repr = ",".join(map(str, missing))
         raise GoalMutationError(
             f"TeamGoal-s to remove not found for teams: {missing_repr}", HTTPStatus.NOT_FOUND,
         )
+
+    if len(set(team_ids)) == len(found):
+        raise GoalMutationError("Impossible to remove all TeamGoal-s from the Goal")
 
 
 async def _validate_team_goal_assignments(
