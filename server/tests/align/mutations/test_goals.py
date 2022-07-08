@@ -586,6 +586,17 @@ class TestUpdateGoalErrors(BaseUpdateGoalTest):
         assert get_extension_error_obj(res)["type"] == "/errors/ForbiddenError"
         await assert_missing_row(sdb, TeamGoal, team_id=10)
 
+    async def test_cannot_delete_all_team_goals(self, client: TestClient, sdb: Database) -> None:
+        await models_insert(
+            sdb, GoalFactory(id=20), TeamFactory(id=10), TeamGoalFactory(team_id=10, goal_id=20),
+        )
+        team_changes = {"teamId": 10, "remove": True}
+        variables = {"accountId": 1, "input": {"goalId": 20, "teamGoalChanges": team_changes}}
+        res = await self._request(variables, client)
+        assert_extension_error(res, "Impossible to remove all TeamGoal-s from the Goal")
+
+        await assert_existing_row(sdb, TeamGoal, team_id=10, goal_id=20)
+
 
 class TestUpdateGoal(BaseUpdateGoalTest):
     async def test_no_team_goal_changes(self, client: TestClient, sdb: Database) -> None:

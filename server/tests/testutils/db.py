@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 from functools import reduce
-from typing import Any, Optional, Union, cast
+from typing import Any, AsyncIterator, Optional, Union, cast
 
 import asyncpg
 import sqlalchemy as sa
@@ -12,7 +13,7 @@ from sqlalchemy.orm.decl_api import DeclarativeMeta
 from sqlalchemy.schema import Table
 from sqlalchemy.sql.expression import ClauseElement, Insert, Selectable
 
-from athenian.api.db import Database, DatabaseLike
+from athenian.api.db import Connection, Database, DatabaseLike
 from athenian.precomputer.db.base import BaseType, explode_model
 
 
@@ -98,6 +99,14 @@ class DBCleaner:
         for table, params in self._to_clean:
             where_clause = _build_table_where_clause(table, **params)
             await self._db.execute(sa.delete(table).where(where_clause))
+
+
+@contextlib.asynccontextmanager
+async def transaction_conn(db: Database) -> AsyncIterator[Connection]:
+    """Async context manager to have a connection with a transaction started."""
+    async with db.connection() as conn:
+        async with conn.transaction():
+            yield conn
 
 
 def _build_table_where_clause(table: DeclarativeMeta, **kwargs: Any) -> ClauseElement:
