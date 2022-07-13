@@ -1191,10 +1191,14 @@ async def _map_releases_to_deployments(
     )
     if not extra_releases.empty:
         releases = pd.concat([releases, extra_releases], copy=False, ignore_index=True)
-    release_commit_shas = np.char.add(
-        releases[Release.sha.name].values,
-        releases[Release.repository_full_name.name].values.astype("S"),
-    )
+
+    if releases.empty:
+        release_commit_shas = np.ndarray([], dtype="S")
+    else:
+        release_commit_shas = np.char.add(
+            releases[Release.sha.name].values,
+            releases[Release.repository_full_name.name].values.astype("S"),
+        )
     positions = searchsorted_inrange(all_commit_sha_repos, release_commit_shas)
     if len(all_commit_sha_repos):
         positions[all_commit_sha_repos[positions] != release_commit_shas] = len(
