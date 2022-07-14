@@ -1673,6 +1673,15 @@ class MetricEntriesCalculator:
             empty_list = []
             for f in precomputed_facts.values():
                 f.jira_ids = empty_list
+
+        # TODO: miner returns in dfs.deployments some PRs included in blacklist,
+        # so some PRs can be both in done_deps and new_deps, find out why
+        dupl_new_deps = np.intersect1d(
+            new_deps.index.values, done_deps.index.values, assume_unique=True,
+        )
+        if dupl_new_deps:
+            new_deps.drop(dupl_new_deps, inplace=True)
+
         self.unfresh_pr_facts_fetcher.append_deployments(
             precomputed_facts, pd.concat([done_deps, new_deps]), self._log,
         )
