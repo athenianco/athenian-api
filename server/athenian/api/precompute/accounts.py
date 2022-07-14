@@ -115,6 +115,8 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> Optional
             try:
                 for _ in range(args.timeout * 100):
                     if (status := os.waitpid(pid, os.WNOHANG)) != (0, 0):
+                        exit_code = os.waitstatus_to_exitcode(status[1])
+                        log.info("supervisor: child exited with %d", exit_code)
                         break
                     await asyncio.sleep(0.01)
                 else:
@@ -123,12 +125,13 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> Optional
             finally:
                 if status == (0, 0):
                     status = os.wait()
-                if status[1] != 0:
+                exit_code = os.waitstatus_to_exitcode(status[1])
+                if exit_code != 0:
                     failed += 1
                     log.error(
                         "failed to precompute account %d: exit code %d",
                         reposet.owner_id,
-                        status[1],
+                        exit_code,
                     )
                     track_failure()
                 else:
