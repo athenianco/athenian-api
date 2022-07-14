@@ -69,6 +69,9 @@ def _parse_args() -> argparse.Namespace:
         required=False,
         help="Prometheus pushgateway endpoint; if missing no metric will be reported",
     )
+    parser.add_argument(
+        "--uvloop", action="store_true", help="Use the uvloop asyncio loop implementation",
+    )
 
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("sync-labels", help="Update the labels in the precomputed PRs")
@@ -110,6 +113,15 @@ def _main() -> int:
     patch_pandas()
     log = logging.getLogger("precomputer")
     args = _parse_args()
+
+    if args.uvloop:
+        log.info("using uvloop")
+        import uvloop
+
+        uvloop.install()
+    else:
+        log.info("using standard library asyncio event loop")
+
     setup_context(log)
     if args.max_mem:
         resource.setrlimit(resource.RLIMIT_AS, (args.max_mem,) * 2)
