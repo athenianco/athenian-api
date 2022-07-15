@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import asyncio
 import pickle
 from time import time
-from typing import Dict, FrozenSet, Optional, Set, Tuple, Union
+from typing import Optional
 
 import aiomcache
 import morcilla
@@ -18,19 +20,20 @@ class Bots:
 
     def __init__(self):
         """Initialize a new instance of the Bots class."""
-        self._bots = None  # type: Optional[Dict[int, Union[Set[str], FrozenSet[str]]]]
+        self._bots: Optional[dict[int, frozenset[str]]] = None
         self._timestamp = time()
-        self._lock = None  # type: Optional[asyncio.Lock]
+        self._lock: Optional[asyncio.Lock] = None
 
     async def _fetch(self, mdb: morcilla.Database) -> None:
         rows, extra = await gather(
             mdb.fetch_all(select([Bot.acc_id, Bot.login])),
             mdb.fetch_all(select([ExtraBot.login])),
         )
-        self._bots = bots = {}
+        bots: dict[int, set[str]] = {}
         for row in rows:
             bots.setdefault(row[Bot.acc_id.name], set()).add(row[Bot.login.name])
-        bots[0] = frozenset(r[0] for r in extra)
+        self._bots = {n: frozenset(v) for n, v in bots.items()}
+        self._bots[0] = frozenset(r[0] for r in extra)
         self._timestamp = time()
 
     async def _ensure_fetched(self, mdb: morcilla.Database) -> None:
@@ -42,9 +45,10 @@ class Bots:
                 if self._bots is None or time() - self._timestamp >= middle_term_exptime:
                     await self._fetch(mdb)
 
-    async def extra(self, mdb: morcilla.Database) -> FrozenSet[str]:
+    async def extra(self, mdb: morcilla.Database) -> frozenset[str]:
         """Return additional bots from "github_bots_extra" table."""
         await self._ensure_fetched(mdb)
+        assert self._bots is not None
         return self._bots[0]
 
     @cached(
@@ -56,17 +60,18 @@ class Bots:
     async def __call__(
         self,
         account: int,
-        meta_ids: Tuple[int, ...],
+        meta_ids: tuple[int, ...],
         mdb: morcilla.Database,
         sdb: morcilla.Database,
         cache: Optional[aiomcache.Client],
-    ) -> FrozenSet[str]:
+    ) -> frozenset[str]:
         """
         Return the bot logins.
 
         There are two parts: global bots in mdb and local bots in the Bots team in sdb.
         """
         await self._ensure_fetched(mdb)
+        assert self._bots is not None
         team = (
             await sdb.fetch_val(
                 select([Team.members]).where(
