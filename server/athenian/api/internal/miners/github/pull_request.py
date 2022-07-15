@@ -1874,11 +1874,12 @@ class PullRequestMiner:
         ghprd = GitHubPullRequestDeployment
         sentry_sdk.Hub.current.scope.span.description = str(len(pr_node_ids))
         cols = [ghprd.pull_request_id, ghprd.deployment_name, ghprd.repository_full_name]
-        query = sql.select(cols).where(
-            sql.and_(ghprd.acc_id == account, ghprd.pull_request_id.in_any_values(pr_node_ids))
+        pull_request_id_cond = (
+            ghprd.pull_request_id.in_any_values(pr_node_ids)
             if len(pr_node_ids) >= 100
-            else ghprd.pull_request_id.in_(pr_node_ids),
+            else ghprd.pull_request_id.in_(pr_node_ids)
         )
+        query = sql.select(cols).where(sql.and_(ghprd.acc_id == account, pull_request_id_cond))
         if len(pr_node_ids) >= 100:
             query = query.with_statement_hint(
                 f"Rows({ghprd.__tablename__} *VALUES* #{len(pr_node_ids)})",
