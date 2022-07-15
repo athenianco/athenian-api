@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import pickle
 from time import time
 from typing import Optional
 
 import aiomcache
-import morcilla
 from sqlalchemy import and_, select
 
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached, middle_term_exptime, short_term_exptime
+from athenian.api.db import Database
 from athenian.api.models.metadata.github import Bot, ExtraBot, User
 from athenian.api.models.state.models import Team
 
@@ -24,7 +25,7 @@ class Bots:
         self._timestamp = time()
         self._lock: Optional[asyncio.Lock] = None
 
-    async def _fetch(self, mdb: morcilla.Database) -> None:
+    async def _fetch(self, mdb: Database) -> None:
         rows, extra = await gather(
             mdb.fetch_all(select([Bot.acc_id, Bot.login])),
             mdb.fetch_all(select([ExtraBot.login])),
@@ -36,7 +37,7 @@ class Bots:
         self._bots[0] = frozenset(r[0] for r in extra)
         self._timestamp = time()
 
-    async def _ensure_fetched(self, mdb: morcilla.Database) -> None:
+    async def _ensure_fetched(self, mdb: Database) -> None:
         if self._bots is None or time() - self._timestamp >= middle_term_exptime:
             if self._lock is None:
                 # we don't run multi-threaded
@@ -45,7 +46,7 @@ class Bots:
                 if self._bots is None or time() - self._timestamp >= middle_term_exptime:
                     await self._fetch(mdb)
 
-    async def extra(self, mdb: morcilla.Database) -> frozenset[str]:
+    async def extra(self, mdb: Database) -> frozenset[str]:
         """Return additional bots from "github_bots_extra" table."""
         await self._ensure_fetched(mdb)
         assert self._bots is not None
@@ -61,8 +62,8 @@ class Bots:
         self,
         account: int,
         meta_ids: tuple[int, ...],
-        mdb: morcilla.Database,
-        sdb: morcilla.Database,
+        mdb: Database,
+        sdb: Database,
         cache: Optional[aiomcache.Client],
     ) -> frozenset[str]:
         """
@@ -97,6 +98,37 @@ class Bots:
             ),
         )
         return bots
+
+    async def get_account_bots(
+        self,
+        account: int,
+        meta_ids: tuple[int, ...],
+        mdb: Database,
+        sdb: Database,
+        cache: Optional[aiomcache.Client],
+    ) -> AccountBots:
+        """Return the account bots collection."""
+        all_bots = await self(account, meta_ids, mdb, sdb, cache)
+        global_bots = await self.extra(mdb)
+        return AccountBots(global_bots, all_bots - global_bots)
+
+
+@dataclasses.dataclass(frozen=True)
+class AccountBots:
+    """The collection of bots for an account.
+
+    Bots are partitioned into global (common to every account)
+    and local (specific of this account) groups
+
+    """
+
+    global_bots: frozenset[str]
+    local_bots: frozenset[str]
+    all_bots: frozenset[str] = dataclasses.field(init=False)
+
+    def __post_init__(self) -> None:
+        """Set the auto generated all_bots field."""
+        super().__setattr__("all_bots", self.global_bots | self.local_bots)
 
 
 bots = Bots()
