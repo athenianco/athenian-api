@@ -4,7 +4,7 @@ on:
   push:
     branches:
     - master
-  pull_request_target:
+  pull_request:
 
 env:
   PIP_CACHE: |
@@ -249,6 +249,14 @@ jobs:
         echo 'SLACK_API_TOKEN=${{ secrets.SLACK_API_TOKEN }}' >>.env
         echo 'SLACK_ACCOUNT_CHANNEL="${{ secrets.SLACK_ACCOUNT_CHANNEL }}"' >>.env
         echo 'SLACK_INSTALL_CHANNEL="${{ secrets.SLACK_INSTALL_CHANNEL }}"' >>.env
+        ls /usr/share/zoneinfo
+        dpkg -l | fgrep tzdata
+        python3 -Wall -c "import dateutil.parser; print(dateutil.parser.parse(\"2022-07-05 23:14:11 CEST\"))"
+        python3 -Wall -c "import dateutil.parser; print(dateutil.parser.parse(\"2022-07-05 23:14:11 EST\"))"
+        python3 -Wall -c "import dateutil.parser; print(dateutil.parser.parse(\"2022-07-05 23:14:11 CET\"))"
+        python3 -Wall -c "from dateutil.tz import gettz; print(gettz(\"EST\"))"
+        python3 -Wall -c "from dateutil.tz import gettz; print(gettz(\"CET\"))"
+        python3 -Wall -c "from dateutil.tz import gettz; print(gettz(\"CEST\"))"
     - name: test slim
       if: matrix.type == 'slim'
       working-directory: server
