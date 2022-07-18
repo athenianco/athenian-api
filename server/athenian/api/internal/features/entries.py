@@ -1106,7 +1106,7 @@ class MetricEntriesCalculator:
         exptime=short_term_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda metrics, time_intervals, quantiles, participants, label_filter, split_by_label, priorities, types, epics, exclude_inactive, release_settings, logical_settings, default_branches, **_: (  # noqa
+        key=lambda metrics, time_intervals, quantiles, participants, label_filter, split_by_label, priorities, types, epics, exclude_inactive, release_settings, logical_settings, default_branches, jira_ids, **_: (  # noqa
             # TODO: use sorted(metrics), see TODO in calc_pull_request_metrics_line_github
             ",".join(metrics),
             ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
@@ -1120,6 +1120,7 @@ class MetricEntriesCalculator:
             split_by_label,
             ",".join(sorted(priorities)),
             ",".join(sorted(types)),
+            ",".join(sorted(jira_ids.projects)),
             ",".join(sorted(epics) if not isinstance(epics, bool) else ["<flying>"]),
             exclude_inactive,
             release_settings,
@@ -1186,7 +1187,7 @@ class MetricEntriesCalculator:
         exptime=short_term_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda defs, time_from, time_to, quantiles, participants, label_filter, priorities, types, epics, exclude_inactive, release_settings, logical_settings, default_branches, **_: (  # noqa
+        key=lambda defs, time_from, time_to, quantiles, participants, label_filter, priorities, types, epics, exclude_inactive, release_settings, logical_settings, default_branches, jira_ids, **_: (  # noqa
             ",".join("%s:%s" % (k, sorted(v)) for k, v in sorted(defs.items())),
             time_from.timestamp(),
             time_to.timestamp(),
@@ -1198,6 +1199,7 @@ class MetricEntriesCalculator:
             label_filter,
             ",".join(sorted(priorities)),
             ",".join(sorted(types)),
+            ",".join(sorted(jira_ids.projects)),
             ",".join(sorted(epics) if not isinstance(epics, bool) else ["<flying>"]),
             exclude_inactive,
             release_settings,
