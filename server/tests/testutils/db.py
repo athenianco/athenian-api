@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import contextlib
 from functools import reduce
-from typing import Any, AsyncIterator, Optional, Union, cast
+from typing import Any, AsyncIterator, Optional, Sequence, cast
 
-import asyncpg
 import sqlalchemy as sa
 from sqlalchemy.engine.row import Row
 from sqlalchemy.orm.decl_api import DeclarativeMeta
@@ -40,17 +39,25 @@ async def assert_missing_row(db: DatabaseLike, table: DeclarativeMeta, **kwargs:
     assert row is None
 
 
-async def assert_existing_row(
+async def assert_existing_row(db: DatabaseLike, table: DeclarativeMeta, **kwargs: Any) -> Row:
+    """Assert that a single row with the given properties exists, and return the row."""
+    rows = await assert_existing_rows(db, table, **kwargs)
+    if len(rows) > 1:
+        raise AssertionError("More than one row returned")
+    return rows[0]
+
+
+async def assert_existing_rows(
     db: DatabaseLike,
     table: DeclarativeMeta,
     **kwargs: Any,
-) -> Union[asyncpg.Record, Row]:
-    """Assert that a row with the given properties exists, and return the row."""
+) -> Sequence[Row]:
     where_clause = _build_table_where_clause(table, **kwargs)
     stmt = sa.select(table).where(where_clause)
-    row = await db.fetch_one(stmt)
-    assert row is not None
-    return row
+    rows = await db.fetch_all(stmt)
+    if not rows:
+        raise AssertionError("No row returned")
+    return rows
 
 
 async def count(db: Database, table: Table, where: Optional[ClauseElement] = None) -> int:
