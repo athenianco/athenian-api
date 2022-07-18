@@ -9,6 +9,7 @@ from typing import Any, Collection, Dict, List, Mapping, Optional, Set, Tuple, T
 from aiohttp import web
 import aiomcache
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 from sqlalchemy import and_, select, union_all
 from sqlalchemy.orm.attributes import InstrumentedAttribute
@@ -92,6 +93,7 @@ from athenian.api.models.web import (
 from athenian.api.request import AthenianWebRequest
 from athenian.api.response import ResponseError, model_response
 from athenian.api.tracing import sentry_span
+from athenian.api.unordered_unique import unordered_unique
 
 
 @expires_header(short_term_exptime)
@@ -360,7 +362,7 @@ async def _epic_flow(
         epics.append(
             epic := JIRAEpic(
                 id=epic_key,
-                project=project_id,
+                project=project_id.decode(),
                 children=[],
                 title=epic_title,
                 created=epic_created,
@@ -474,7 +476,7 @@ async def _epic_flow(
             if epic.work_began is not None:
                 epic.lead_time = now - pd.to_datetime(epic.work_began)
     if JIRAFilterReturn.PRIORITIES in return_:
-        priority_ids = np.unique(
+        priority_ids = unordered_unique(
             np.concatenate(
                 [
                     epics_df[Issue.priority_id.name].values,
@@ -483,10 +485,10 @@ async def _epic_flow(
             ),
         )
     else:
-        priority_ids = []
+        priority_ids = np.array([], dtype="S")
     if JIRAFilterReturn.STATUSES in return_:
         # status IDs are account-wide unique
-        status_ids = np.unique(
+        status_ids = unordered_unique(
             np.concatenate(
                 [
                     epics_df[Issue.status_id.name].values,
@@ -507,7 +509,7 @@ async def _epic_flow(
         ):
             status_project_map[status_id].add(project_id)
     else:
-        status_ids = []
+        status_ids = np.array([], dtype="S")
         status_project_map = {}
     priorities, statuses, types = await gather(
         _fetch_priorities(priority_ids, jira_ids[0], return_, mdb),
@@ -531,7 +533,7 @@ async def _epic_flow(
         log.error("issues are parents of children outside of the epics: %s", invalid_parent_id)
     for row in types:
         name = row[IssueType.name.name]
-        key = row[IssueType.project_id.name], row[IssueType.id.name]
+        key = row[IssueType.project_id.name].encode(), row[IssueType.id.name].encode()
         for epic in epics_by_type.get(key, []):
             epic.type = name
         for child in children_by_type.get(key, []):
@@ -930,20 +932,27 @@ async def _issue_flow(
         issue_types.sort(
             key=lambda row: (
                 row[IssueType.normalized_name.name],
-                issue_type_counts[(row[IssueType.project_id.name], row[IssueType.id.name])],
+                issue_type_counts[
+                    (row[IssueType.project_id.name].encode(), row[IssueType.id.name].encode())
+                ],
             ),
         )
     else:
         issue_types = []
+    # fmt: off
     issue_type_names = {
-        (row[IssueType.project_id.name], row[IssueType.id.name]): row[IssueType.name.name]
+        (row[IssueType.project_id.name].encode(), row[IssueType.id.name].encode()):
+            row[IssueType.name.name]
         for row in issue_types
     }
+    # fmt: on
     issue_types = [
         JIRAIssueType(
             name=row[IssueType.name.name],
             image=row[IssueType.icon_url.name],
-            count=issue_type_counts[(row[IssueType.project_id.name], row[IssueType.id.name])],
+            count=issue_type_counts[
+                (row[IssueType.project_id.name].encode(), row[IssueType.id.name].encode())
+            ],
             project=row[IssueType.project_id.name],
             is_subtask=row[IssueType.is_subtask.name],
             is_epic=row[IssueType.is_epic.name],
@@ -1041,7 +1050,7 @@ async def _issue_flow(
                     comments=issue_comments,
                     priority=issue_priority,
                     status=issue_status,
-                    project=issue_project,
+                    project=issue_project.decode(),
                     type=issue_type_names[(issue_project, issue_type)],
                     prs=[prs[node_id] for node_id in issue_prs if node_id in prs],
                     url=issue_url,
@@ -1054,7 +1063,7 @@ async def _issue_flow(
 
 @sentry_span
 async def _fetch_priorities(
-    priorities: Collection[str],
+    priorities: npt.NDArray[bytes],
     acc_id: int,
     return_: Set[str],
     mdb: Database,
@@ -1086,8 +1095,8 @@ async def _fetch_priorities(
 
 @sentry_span
 async def _fetch_statuses(
-    statuses: Collection[str],
-    status_project_map: Dict[str, Set[str]],
+    statuses: npt.NDArray[bytes],
+    status_project_map: Dict[bytes, Set[bytes]],
     acc_id: int,
     return_: Set[str],
     mdb: Database,
@@ -1111,16 +1120,16 @@ async def _fetch_statuses(
         JIRAStatus(
             name=row[Status.name.name],
             stage=row[Status.category_name.name],
-            project=project,
+            project=project.decode(),
         )
         for row in rows
-        for project in status_project_map[row[Status.id.name]]
+        for project in status_project_map[row[Status.id.name].encode()]
     ]
 
 
 @sentry_span
 async def _fetch_types(
-    issue_type_projects: Mapping[str, Collection[str]],
+    issue_type_projects: Mapping[bytes, set[bytes]],
     acc_id: int,
     return_: Set[str],
     mdb: Database,
@@ -1147,9 +1156,9 @@ async def _fetch_types(
     queries = [
         select(columns).where(
             and_(
-                IssueType.id.in_(ids),
+                IssueType.id.in_(np.fromiter(ids, "S8", len(ids))),
                 IssueType.acc_id == acc_id,
-                IssueType.project_id == project_id,
+                IssueType.project_id == project_id.decode(),
             ),
         )
         for project_id, ids in issue_type_projects.items()

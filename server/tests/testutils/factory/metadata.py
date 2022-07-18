@@ -86,6 +86,8 @@ class JIRAIssueFactory(SQLAlchemyModelFactory):
     comments_count = 0
     priority_id = "1"
     priority_name = "HIGH"
+    status_id = "1"
+    status = "todo"
     url = factory.LazyAttribute(lambda issue: f"https://jira.com/issue-{issue.id}")
 
     @factory.post_generation

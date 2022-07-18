@@ -25,15 +25,16 @@ class Epic(Base):
 class Issue(Base):
     __tablename__ = "issue"
 
+    # TODO(vmarkovtsev): add info={"dtype": "S12", "erase_nulls": True} to PK
     id = Column(Text, primary_key=True)
-    project_id = Column(Text, nullable=False)
+    project_id = Column(Text, nullable=False, info={"dtype": "S8", "reset_nulls": True})
     parent_id = Column(Text)
     key = Column(Text, nullable=False)
     title = Column(Text, nullable=False)
     type = Column(Text, nullable=False)
-    type_id = Column(Text, nullable=False)
+    type_id = Column(Text, nullable=False, info={"dtype": "S8", "reset_nulls": True})
     status = Column(Text)
-    status_id = Column(Text)
+    status_id = Column(Text, nullable=False, info={"dtype": "S8", "reset_nulls": True})
     labels = Column(
         postgresql.ARRAY(Text).with_variant(JSON(), sqlite.dialect.name), nullable=False,
     )
@@ -51,7 +52,7 @@ class Issue(Base):
         postgresql.ARRAY(Text).with_variant(JSON(), sqlite.dialect.name),
     )
     comments_count = Column(Integer, nullable=False)
-    priority_id = Column(Text)  # TODO(vmarkovtsev): make it nullable=False
+    priority_id = Column(Text, nullable=False, info={"dtype": "S8", "reset_nulls": True})
     priority_name = Column(Text, nullable=False)
     url = Column(Text, nullable=False)
     is_deleted = Column(Boolean, nullable=False, default=False, server_default="false")
@@ -77,7 +78,7 @@ class User(Base):
 class Priority(Base):
     __tablename__ = "priority"
 
-    id = Column(Text, primary_key=True)
+    id = Column(Text, primary_key=True, info={"dtype": "S8", "erase_nulls": True})
     name = Column(Text, nullable=False)
     rank = Column(SmallInteger, nullable=False)
     status_color = Column(Text, nullable=False)
@@ -91,7 +92,7 @@ class Status(Base):
     CATEGORY_IN_PROGRESS = "In Progress"
     CATEGORY_DONE = "Done"
 
-    id = Column(Text, primary_key=True)
+    id = Column(Text, primary_key=True, info={"dtype": "S8", "erase_nulls": True})
     name = Column(Text, nullable=False)
     category_name = Column(Text, nullable=False)
     color = Column(Text)
@@ -117,7 +118,7 @@ class Installation(Base):
 class Project(Base):
     __tablename__ = "project"
 
-    id = Column(Text, primary_key=True)
+    id = Column(Text, primary_key=True, info={"dtype": "S8", "erase_nulls": True})
     key = Column(Text)
     name = Column(Text)
     avatar_url = Column(Text)
@@ -127,7 +128,7 @@ class Project(Base):
 class IssueType(Base):
     __tablename__ = "issue_type"
 
-    id = Column(Text, primary_key=True)
+    id = Column(Text, primary_key=True, info={"dtype": "S8", "erase_nulls": True})
     project_id = Column(Text, nullable=False)
     name = Column(Text, nullable=False)
     description = Column(Text)
