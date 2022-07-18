@@ -1146,22 +1146,21 @@ class TestCalcMetricsPRs:
             "account": 1,
             "metrics": [
                 PullRequestMetricID.PR_REVIEWED_RATIO,
-                PullRequestMetricID.PR_REVIEWED,
-                PullRequestMetricID.PR_NOT_REVIEWED,
+                PullRequestMetricID.PR_REVIEWED_CLOSED,
+                PullRequestMetricID.PR_CLOSED,
             ],
         }
         res = await self._request(client, json=body)
         cm = CalculatedPullRequestMetrics.from_dict(res)
 
         for v in cm.calculated[0].values:
-            ratio, reviewed, not_reviewed = v.values
-            print(ratio, reviewed, not_reviewed)
-            if reviewed == 0 and not_reviewed == 0:
+            ratio, reviewed, closed = v.values
+            if reviewed == 0 and closed == 0:
                 assert ratio is None
             elif reviewed == 0:
                 assert ratio == 0
             else:
-                assert ratio == pytest.approx(reviewed / (reviewed + not_reviewed), rel=0.001)
+                assert ratio == pytest.approx(reviewed / closed, rel=0.001)
 
 
 # TODO: fix response validation against the schema

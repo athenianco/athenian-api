@@ -827,7 +827,7 @@ class ClosedCalculator(SumMetricCalculator[int]):
 
 @register_metric(PullRequestMetricID.PR_NOT_REVIEWED)
 class NotReviewedCalculator(SumMetricCalculator[int]):
-    """Number of non-reviewed PRs."""
+    """Number of non-reviewed closed PRs."""
 
     deps = (ReviewedCalculator, ClosedCalculator)
     metric = MetricInt
@@ -839,10 +839,28 @@ class NotReviewedCalculator(SumMetricCalculator[int]):
         max_times: np.ndarray,
         **kwargs,
     ) -> np.ndarray:
-        not_reviewed = self._calcs[0].peek == self._calcs[0].nan
-        closed = self._calcs[1].peek != self._calcs[1].nan
-        result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
-        result[closed & not_reviewed] = 1
+        not_reviewed = self._calcs[0].peek == self.nan
+        result = not_reviewed.astype(self.dtype)
+        result[(self._calcs[1].peek == self.nan) | ~not_reviewed] = self.nan
+        return result
+
+
+@register_metric(PullRequestMetricID.PR_REVIEWED_CLOSED)
+class ReviewedClosedCalculator(SumMetricCalculator[int]):
+    """Number of closed PRs that were reviewed."""
+
+    deps = (ReviewedCalculator, ClosedCalculator)
+    metric = MetricInt
+
+    def _analyze(
+        self,
+        facts: np.ndarray,
+        min_times: np.ndarray,
+        max_times: np.ndarray,
+        **kwargs,
+    ) -> np.ndarray:
+        result = self._calcs[0].peek.copy()
+        result[self._calcs[1].peek == self.nan] = self.nan
         return result
 
 
@@ -872,48 +890,11 @@ class DoneCalculator(SumMetricCalculator[int]):
         return result
 
 
-class _ReviewedPlusNotReviewedCalculator(MetricCalculator[int]):
-    """Calculate the sum reviewed + non-reviewed PRs.
-
-    This metric is not exposed but only used to compute PR_REVIEWED_RATIO.
-    """
-
-    deps = (ReviewedCalculator, NotReviewedCalculator)
-    metric = MetricInt
-
-    def _values(self) -> list[list[Metric[int]]]:
-        metrics = [
-            [self.metric.from_fields(False, None, None, None)] * len(samples)
-            for samples in self.samples
-        ]
-        a, b = self._calcs
-        for i, (a_group, b_group) in enumerate(zip(a.values, b.values)):
-            for j, (a_metric, b_metric) in enumerate(zip(a_group, b_group)):
-                tot = 0
-                if a_metric.exists or b_metric.exists:
-                    tot += (a_metric.value or 0) + (b_metric.value or 0)
-                    metrics[i][j] = self.metric.from_fields(True, tot, None, None)
-
-        return metrics
-
-    def _analyze(
-        self,
-        facts: pd.DataFrame,
-        min_times: np.ndarray,
-        max_times: np.ndarray,
-        **kwargs,
-    ) -> np.ndarray:
-        return np.full((len(min_times), len(facts)), self.nan, self.dtype)
-
-    def _value(self, samples: np.ndarray) -> Metric[timedelta]:
-        raise AssertionError("this must be never called")
-
-
 @register_metric(PullRequestMetricID.PR_REVIEWED_RATIO)
 class ReviewedRatioCalculator(RatioCalculator):
-    """Calculate the PR reviewed ratio = reviewed / closed."""
+    """Calculate the PR reviewed ratio = (reviewed and closed) / closed."""
 
-    deps = (ReviewedCalculator, _ReviewedPlusNotReviewedCalculator)
+    deps = (ReviewedClosedCalculator, ClosedCalculator)
 
 
 @register_metric(PullRequestMetricID.PR_FLOW_RATIO)
