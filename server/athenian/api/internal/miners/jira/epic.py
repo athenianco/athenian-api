@@ -80,11 +80,11 @@ async def filter_epics(
         return (
             epics,
             pd.DataFrame(
-                columns=[
-                    Issue.priority_id.name,
-                    Issue.status_id.name,
-                    Issue.project_id.name,
-                ],
+                {
+                    Issue.priority_id.name: np.array([], dtype="S8"),
+                    Issue.status_id.name: np.array([], dtype="S8"),
+                    Issue.project_id.name: np.array([], dtype="S8"),
+                },
             ),
             [],
             {},
