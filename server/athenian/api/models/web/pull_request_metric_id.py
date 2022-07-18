@@ -33,6 +33,7 @@ class PullRequestMetricID(Model, metaclass=Enum):
     PR_FLOW_RATIO = "pr-flow-ratio"
     PR_OPENED = "pr-opened"
     PR_REVIEWED = "pr-reviewed"
+    PR_REVIEWED_CLOSED = "pr-reviewed-closed"
     PR_NOT_REVIEWED = "pr-not-reviewed"
     PR_MERGED = "pr-merged"
     PR_REJECTED = "pr-rejected"

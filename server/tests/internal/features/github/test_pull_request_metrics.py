@@ -4,10 +4,9 @@ import pytest
 
 from athenian.api.internal.features.github.pull_request_metrics import (
     ClosedCalculator,
-    NotReviewedCalculator,
     ReviewedCalculator,
+    ReviewedClosedCalculator,
     ReviewedRatioCalculator,
-    _ReviewedPlusNotReviewedCalculator,
     group_prs_by_participants,
 )
 from athenian.api.internal.miners.types import PRParticipationKind
@@ -82,12 +81,11 @@ class TestReviewedRatioCalculator:
 
         reviewed_calc = ReviewedCalculator(quantiles=(0, 1))
         closed_calc = ClosedCalculator(quantiles=(0, 1))
-        not_reviewed_calc = NotReviewedCalculator(reviewed_calc, closed_calc, quantiles=(0, 1))
-        rev_non_rev_calc = _ReviewedPlusNotReviewedCalculator(
-            reviewed_calc, not_reviewed_calc, quantiles=(0, 1),
+        reviewed_closed_calc = ReviewedClosedCalculator(
+            reviewed_calc, closed_calc, quantiles=(0, 1),
         )
         reviewed_ratio_calc = ReviewedRatioCalculator(
-            reviewed_calc, rev_non_rev_calc, quantiles=(0, 1),
+            reviewed_closed_calc, closed_calc, quantiles=(0, 1),
         )
 
         min_times = dt64arr_ns(dt(2001, 1, 1))
@@ -96,15 +94,14 @@ class TestReviewedRatioCalculator:
 
         reviewed_calc(*calc_args)
         closed_calc(*calc_args)
-        not_reviewed_calc(*calc_args)
-        rev_non_rev_calc(*calc_args)
+        reviewed_closed_calc(*calc_args)
         reviewed_ratio_calc(*calc_args)
 
-        reviewed = reviewed_calc.values[0][0].value
-        not_reviewed = not_reviewed_calc.values[0][0].value
+        reviewed = reviewed_closed_calc.values[0][0].value
+        closed = closed_calc.values[0][0].value
         reviewed_ratio = reviewed_ratio_calc.values[0][0].value
 
         assert reviewed is not None
-        assert not_reviewed is not None
+        assert closed is not None
 
-        assert reviewed_ratio == pytest.approx(reviewed / (reviewed + not_reviewed), rel=0.001)
+        assert reviewed_ratio == pytest.approx(reviewed / closed, rel=0.001)
