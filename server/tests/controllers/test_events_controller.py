@@ -24,6 +24,8 @@ from athenian.api.models.precomputed.models import (
 from athenian.api.models.state.models import AccountGitHubAccount, UserToken
 from athenian.api.models.web import ReleaseNotificationStatus
 from tests.conftest import DEFAULT_HEADERS
+from tests.testutils.db import models_insert
+from tests.testutils.factory.precomputed import GitHubDonePullRequestFactsFactory
 
 
 @pytest.fixture(scope="function")
@@ -289,42 +291,22 @@ async def test_notify_release_default_user(client, headers, sdb):
     assert response.status == 403
 
 
-# TODO: fix response validation against the schema
-@pytest.mark.app_validate_responses(False)
-@pytest.mark.parametrize("devenv", [False, True])
-@freeze_time("2020-01-01")
-async def test_clear_precomputed_event_releases_smoke(
-    client,
-    headers,
-    pdb,
-    disable_default_user,
-    app,
-    devenv,
-):
-    await pdb.execute(
-        insert(GitHubDonePullRequestFacts).values(
-            GitHubDonePullRequestFacts(
+class TestClearPrecomputedEvents:
+    # TODO: fix response validation against the schema
+    @pytest.mark.app_validate_responses(False)
+    @pytest.mark.parametrize("devenv", [False, True])
+    @freeze_time("2020-01-01")
+    async def test_clear_releases_smoke(self, client, pdb, disable_default_user, app, devenv):
+        await models_insert(
+            pdb,
+            GitHubDonePullRequestFactsFactory(
                 acc_id=1,
                 release_match="event",
                 pr_node_id=111,
                 repository_full_name="src-d/go-git",
                 pr_created_at=datetime.now(timezone.utc),
                 pr_done_at=datetime.now(timezone.utc),
-                number=1,
-                reviewers={},
-                commenters={},
-                commit_authors={},
-                commit_committers={},
-                labels={},
-                activity_days=[],
-                data=b"data",
-            )
-            .create_defaults()
-            .explode(with_primary_keys=True),
-        ),
-    )
-    await pdb.execute(
-        insert(GitHubMergedPullRequestFacts).values(
+            ),
             GitHubMergedPullRequestFacts(
                 acc_id=1,
                 release_match="event",
@@ -334,13 +316,7 @@ async def test_clear_precomputed_event_releases_smoke(
                 checked_until=datetime.now(timezone.utc),
                 labels={},
                 activity_days=[],
-            )
-            .create_defaults()
-            .explode(with_primary_keys=True),
-        ),
-    )
-    await pdb.execute(
-        insert(GitHubReleaseFacts).values(
+            ).create_defaults(),
             GitHubReleaseFacts(
                 acc_id=1,
                 id=333,
@@ -348,86 +324,72 @@ async def test_clear_precomputed_event_releases_smoke(
                 repository_full_name="src-d/go-git",
                 published_at=datetime.now(timezone.utc),
                 data=b"data",
-            )
-            .create_defaults()
-            .explode(with_primary_keys=True),
-        ),
-    )
-    body = {
-        "account": 1,
-        "repositories": ["{1}"],
-        "targets": ["release"],
-    }
-    app._devenv = devenv
-    response = await client.request(
-        method="POST", path="/v1/events/clear_cache", headers=headers, json=body,
-    )
-    assert response.status == 200, (await response.read()).decode("utf-8")
-    for table, n in (
-        (GitHubDonePullRequestFacts, 292),
-        (GitHubMergedPullRequestFacts, 246),
-        (GitHubReleaseFacts, 53),
-    ):
-        assert len(await pdb.fetch_all(select([table]))) == n, table
+            ).create_defaults(),
+        )
+        body = {"account": 1, "repositories": ["{1}"], "targets": ["release"]}
+        app._devenv = devenv
+        await self._request(client, json=body)
+        for table, n in (
+            (GitHubDonePullRequestFacts, 292),
+            (GitHubMergedPullRequestFacts, 246),
+            (GitHubReleaseFacts, 53),
+        ):
+            assert len(await pdb.fetch_all(select([table]))) == n, table
 
+    # TODO: fix response validation against the schema
+    @pytest.mark.app_validate_responses(False)
+    @freeze_time("2020-01-01")
+    async def test_clear_deployments(self, client, pdb, disable_default_user):
+        await pdb.execute(
+            insert(GitHubDeploymentFacts).values(
+                GitHubDeploymentFacts(
+                    acc_id=1,
+                    deployment_name="Dummy deployment",
+                    release_matches="abracadabra",
+                    format_version=1,
+                    data=b"0",
+                ).explode(with_primary_keys=True),
+            ),
+        )
+        body = {"account": 1, "repositories": ["{1}"], "targets": ["deployment"]}
+        await self._request(client, json=body)
+        rows = await pdb.fetch_all(select([GitHubDeploymentFacts]))
+        assert len(rows) == 1
+        row = rows[0]
+        assert row[GitHubDeploymentFacts.deployment_name.name] == "Dummy deployment"
+        assert len(row[GitHubDeploymentFacts.data.name]) > 1
 
-# TODO: fix response validation against the schema
-@pytest.mark.app_validate_responses(False)
-@freeze_time("2020-01-01")
-async def test_clear_precomputed_deployments_smoke(client, headers, pdb, disable_default_user):
-    await pdb.execute(
-        insert(GitHubDeploymentFacts).values(
-            GitHubDeploymentFacts(
-                acc_id=1,
-                deployment_name="Dummy deployment",
-                release_matches="abracadabra",
-                format_version=1,
-                data=b"0",
-            ).explode(with_primary_keys=True),
-        ),
+    # TODO: fix response validation against the schema
+    @pytest.mark.app_validate_responses(False)
+    @pytest.mark.parametrize(
+        "status, body",
+        [
+            (200, {"account": 1, "repositories": ["github.com/src-d/go-git"], "targets": []}),
+            (
+                400,
+                {"account": 1, "repositories": ["github.com/src-d/go-git"], "targets": ["wrong"]},
+            ),
+            (422, {"account": 2, "repositories": ["github.com/src-d/go-git"], "targets": []}),
+            (404, {"account": 3, "repositories": ["github.com/src-d/go-git"], "targets": []}),
+            (
+                403,
+                {
+                    "account": 1,
+                    "repositories": ["github.com/athenianco/athenian-api"],
+                    "targets": [],
+                },
+            ),
+        ],
     )
-    body = {
-        "account": 1,
-        "repositories": ["{1}"],
-        "targets": ["deployment"],
-    }
-    response = await client.request(
-        method="POST", path="/v1/events/clear_cache", headers=headers, json=body,
-    )
-    assert response.status == 200
-    rows = await pdb.fetch_all(select([GitHubDeploymentFacts]))
-    assert len(rows) == 1
-    row = rows[0]
-    assert row[GitHubDeploymentFacts.deployment_name.name] == "Dummy deployment"
-    assert len(row[GitHubDeploymentFacts.data.name]) > 1
+    async def test_nasty_input(self, client, body, status, disable_default_user):
+        await self._request(client, status, json=body)
 
-
-# TODO: fix response validation against the schema
-@pytest.mark.app_validate_responses(False)
-@pytest.mark.parametrize(
-    "status, body",
-    [
-        (200, {"account": 1, "repositories": ["github.com/src-d/go-git"], "targets": []}),
-        (400, {"account": 1, "repositories": ["github.com/src-d/go-git"], "targets": ["wrong"]}),
-        (422, {"account": 2, "repositories": ["github.com/src-d/go-git"], "targets": []}),
-        (404, {"account": 3, "repositories": ["github.com/src-d/go-git"], "targets": []}),
-        (
-            403,
-            {"account": 1, "repositories": ["github.com/athenianco/athenian-api"], "targets": []},
-        ),
-    ],
-)
-async def test_clear_precomputed_events_nasty_input(
-    client,
-    headers,
-    body,
-    status,
-    disable_default_user,
-):
-    response = await client.request(
-        method="POST", path="/v1/events/clear_cache", headers=headers, json=body,
-    )
-    assert response.status == status
+    @classmethod
+    async def _request(cls, client: TestClient, assert_status: int = 200, **kwargs: Any) -> None:
+        path = "/v1/events/clear_cache"
+        headers = DEFAULT_HEADERS
+        response = await client.request(method="POST", path=path, headers=headers, **kwargs)
+        assert response.status == assert_status
 
 
 class TestNotifyDeployments:
