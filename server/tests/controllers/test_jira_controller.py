@@ -1821,7 +1821,7 @@ async def test_jira_metrics_disabled_projects(client, headers, disabled_dev):
     _check_metrics_no_dev_project(items)
 
 
-async def test_jira_metrics_selected_projects(client, headers):
+async def test_jira_metrics_selected_projects(client, headers, client_cache):
     body = {
         "date_from": "2020-01-01",
         "date_to": "2020-10-23",
@@ -1835,10 +1835,20 @@ async def test_jira_metrics_selected_projects(client, headers):
     response = await client.request(
         method="POST", path="/v1/metrics/jira", headers=headers, json=body,
     )
-    body = (await response.read()).decode("utf-8")
-    assert response.status == 200, "Response body is : " + body
-    items = [CalculatedJIRAMetricValues.from_dict(i) for i in json.loads(body)]
+    result = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + result
+    items = [CalculatedJIRAMetricValues.from_dict(i) for i in json.loads(result)]
     _check_metrics_no_dev_project(items)
+
+    del body["projects"]
+    response = await client.request(
+        method="POST", path="/v1/metrics/jira", headers=headers, json=body,
+    )
+    result = (await response.read()).decode("utf-8")
+    assert response.status == 200, "Response body is : " + result
+    items = [CalculatedJIRAMetricValues.from_dict(i) for i in json.loads(result)]
+    with pytest.raises(AssertionError):
+        _check_metrics_no_dev_project(items)
 
 
 def _check_metrics_no_dev_project(items: List[CalculatedJIRAMetricValues]) -> None:
