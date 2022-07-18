@@ -10,6 +10,7 @@ import sqlalchemy as sa
 from athenian.api.db import Database
 from athenian.api.defer import with_defer
 from athenian.api.internal.account import get_metadata_account_ids
+from athenian.api.internal.miners.github.bots import bots as fetch_bots
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.models.state.models import AccountGitHubAccount, RepositorySet, Team
 from athenian.api.precompute.accounts import (
@@ -17,11 +18,20 @@ from athenian.api.precompute.accounts import (
     _ensure_bot_team,
     _ensure_root_team,
     _StatusTracker,
+    _sync_bots_team_members,
     create_teams,
     main,
     precompute_reposet,
 )
-from tests.testutils.db import assert_existing_row, model_insert_stmt, models_insert
+from tests.testutils.db import (
+    DBCleaner,
+    assert_existing_row,
+    assert_missing_row,
+    model_insert_stmt,
+    models_insert,
+)
+from tests.testutils.factory import metadata as md_factory
+from tests.testutils.factory.common import DEFAULT_MD_ACCOUNT_ID
 from tests.testutils.factory.state import AccountFactory, RepositorySetFactory, TeamFactory
 from tests.testutils.time import dt
 
@@ -151,7 +161,7 @@ class TestMain:
 
 class TestPrecomputeReposet:
     @with_defer
-    async def test(self, sdb: Database, mdb: Database, pdb: Database, rdb: Database) -> None:
+    async def test_smoke(self, sdb: Database, mdb: Database, pdb: Database, rdb: Database) -> None:
         await clear_all_accounts(sdb)
         await models_insert(
             sdb,
@@ -160,15 +170,60 @@ class TestPrecomputeReposet:
             RepositorySetFactory(owner_id=11),
         )
 
-        reposet_row = await sdb.fetch_one(
-            sa.select(RepositorySet).where(RepositorySet.owner_id == 11),
-        )
+        reposet_row = await assert_existing_row(sdb, RepositorySet, owner_id=11)
         reposet = RepositorySet(**reposet_row)
         ctx = build_context(sdb=sdb, mdb=mdb, pdb=pdb, rdb=rdb)
 
         await precompute_reposet(
             reposet, (1011,), ctx, _namespace(), dt(2050, 1, 1), dt(1970, 1, 1), dt(1970, 1, 1),
         )
+
+    @with_defer
+    async def test_bots_team_members_are_synced(
+        self,
+        sdb: Database,
+        mdb: Database,
+        pdb: Database,
+        rdb: Database,
+    ) -> None:
+        await clear_all_accounts(sdb)
+        meta_id = 1011
+        await models_insert(
+            sdb,
+            AccountFactory(id=11),
+            AccountGitHubAccount(id=meta_id, account_id=11),
+            RepositorySetFactory(owner_id=11, precomputed=True),
+            TeamFactory(owner_id=11, name=Team.BOTS, members=[]),
+        )
+        async with DBCleaner(mdb) as mdb_cleaner:
+            models = [
+                # to be recognized as bots by Bots an entry must be in Bot table
+                md_factory.BotFactory(acc_id=meta_id, login="bot0"),
+                md_factory.UserFactory(acc_id=meta_id, node_id=100, login="bot0"),
+                md_factory.UserFactory(acc_id=meta_id, node_id=101, login="u0"),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb, *models)
+            await mdb.fetch_all(sa.select(md_factory.BotFactory._meta.model))
+
+            reposet_row = await assert_existing_row(sdb, RepositorySet, owner_id=11)
+            reposet = RepositorySet(**reposet_row)
+            ctx = build_context(sdb=sdb, mdb=mdb, pdb=pdb, rdb=rdb)
+
+            ns = _namespace()
+            await precompute_reposet(
+                reposet, (meta_id,), ctx, ns, dt(2050, 1, 1), dt(1970, 1, 1), dt(1970, 1, 1),
+            )
+
+        bots_team_row = await assert_existing_row(sdb, Team, owner_id=11, name=Team.BOTS)
+        assert bots_team_row[Team.members.name] == [100]
+
+    # reset Bots singleton cache
+    def setup_method(self) -> None:
+        fetch_bots._bots = None
+
+    def teardown_method(self) -> None:
+        fetch_bots._bots = None
 
 
 def _namespace(**kwargs: Any) -> Namespace:
@@ -242,6 +297,50 @@ class TestEnsureRootTeam:
             sdb, Team, id=root_team_id, name=Team.ROOT, parent_id=None,
         )
         assert root_team_row[Team.members.name] == []
+
+
+class TestSyncBotsTeamMembers:
+    async def test_members_are_added(self, sdb: Database, mdb: Database) -> None:
+        async with DBCleaner(mdb) as mdb_cleaner:
+            models = [
+                md_factory.UserFactory(node_id=100, login="u0"),
+                md_factory.UserFactory(node_id=101, login="u1"),
+                md_factory.UserFactory(node_id=102, login="u2"),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb, *models)
+
+            await models_insert(sdb, TeamFactory(name=Team.BOTS, members=[100]))
+
+            local_bots = ["u0", "u1", "u2"]
+
+            prefixer = await Prefixer.load([DEFAULT_MD_ACCOUNT_ID], mdb, None)
+            await _sync_bots_team_members(1, local_bots, prefixer, sdb, logging.getLogger(""))
+
+            team_row = await assert_existing_row(sdb, Team, name=Team.BOTS)
+            assert team_row[Team.members.name] == [100, 101, 102]
+
+    async def test_no_update_needed(self, sdb: Database, mdb: Database) -> None:
+        async with DBCleaner(mdb) as mdb_cleaner:
+            models = [
+                md_factory.UserFactory(node_id=100, login="u0"),
+                md_factory.UserFactory(node_id=101, login="u1"),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb, *models)
+
+            await models_insert(sdb, TeamFactory(name=Team.BOTS, members=[100, 101]))
+
+            prefixer = await Prefixer.load([DEFAULT_MD_ACCOUNT_ID], mdb, None)
+            await _sync_bots_team_members(1, ["u0"], prefixer, sdb, logging.getLogger(""))
+
+            team_row = await assert_existing_row(sdb, Team, name=Team.BOTS)
+            assert team_row[Team.members.name] == [100, 101]
+
+    async def test_bots_team_not_exising(self, sdb: Database, mdb: Database) -> None:
+        prefixer = await Prefixer.load([DEFAULT_MD_ACCOUNT_ID], mdb, None)
+        await _sync_bots_team_members(1, [], prefixer, sdb, logging.getLogger(""))
+        await assert_missing_row(sdb, Team, name=Team.BOTS)
 
 
 class TestDurationTracker:
