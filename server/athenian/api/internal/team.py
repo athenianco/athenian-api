@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from http import HTTPStatus
 from itertools import chain
 import logging
-from typing import Any, Collection, Iterable, Mapping, Optional, Sequence, Union
+from typing import Collection, Iterable, Optional, Sequence
 
 import aiomcache
 import sqlalchemy as sa
@@ -63,7 +63,7 @@ class MultipleRootTeamsError(ResponseError):
         super().__init__(wrapped_error)
 
 
-async def get_root_team(account_id: int, sdb_conn: DatabaseLike) -> Mapping[Union[int, str], Any]:
+async def get_root_team(account_id: int, sdb_conn: DatabaseLike) -> Row:
     """Return the root team for the account."""
     stmt = sa.select(Team).where(sa.and_(Team.owner_id == account_id, Team.parent_id.is_(None)))
     root_teams = await sdb_conn.fetch_all(stmt)
@@ -74,19 +74,25 @@ async def get_root_team(account_id: int, sdb_conn: DatabaseLike) -> Mapping[Unio
     return root_teams[0]
 
 
-async def get_team_from_db(
-    account_id: int,
-    team_id: int,
-    sdb_conn: DatabaseLike,
-) -> Mapping[Union[int, str], Any]:
+async def get_team_from_db(account_id: int, team_id: int, sdb_conn: DatabaseLike) -> Row:
     """Return a team owned by an account."""
-    stmt = sa.select(Team).where(
-        sa.and_(Team.owner_id == account_id, Team.id == team_id),
-    )  # noqa F821
+    stmt = sa.select(Team).where(sa.and_(Team.owner_id == account_id, Team.id == team_id))
     team = await sdb_conn.fetch_one(stmt)
     if team is None:
         raise TeamNotFoundError(team_id)
     return team
+
+
+async def get_bots_team(
+    account_id: int,
+    sdb_conn: DatabaseLike,
+    select_entities: Sequence[InstrumentedAttribute] = (Team.id, Team.members),
+) -> Optional[Row]:
+    """Return the Bots team for the account, if existing."""
+    stmt = sa.select(*select_entities).where(
+        sa.and_(Team.owner_id == account_id, Team.name == Team.BOTS),
+    )
+    return await sdb_conn.fetch_one(stmt)
 
 
 async def get_all_team_members(
@@ -142,7 +148,7 @@ async def fetch_teams_recursively(
     select_entities: Sequence[InstrumentedAttribute] = (Team.id,),
     root_team_ids: Optional[Collection] = None,
     max_depth: int = None,
-) -> Sequence[Mapping[Union[int, str], Any]]:
+) -> Sequence[Row]:
     """Return the recursively collected list of teams for the account.
 
     If `root_team_ids` is passed those will be taken as base for the recursion.
@@ -223,3 +229,30 @@ async def delete_team(team: Row, sdb_conn: Connection) -> None:
     await sdb_conn.execute(sa.delete(Team).where(Team.id == team_id))
     # TeamGoal-s have been deleted by ON DELETE CASCADE on team_id, now empty Goals must be removed
     await delete_empty_goals(team[Team.owner_id.name], sdb_conn)
+
+
+async def sync_team_members(
+    team: Row,
+    members: Sequence[int],
+    sdb_conn: Connection,
+) -> Sequence[int]:
+    """Update the members of the Team if `members` contain new members.
+
+    Existing members are never removed.
+    Return the members added to the Team.
+
+    """
+    assert await conn_in_transaction(sdb_conn)
+    members_set = set(members)
+    db_members = team[Team.members.name]
+    new_members = members_set.difference(db_members)
+
+    if new_members:
+        all_members = sorted(chain(new_members, db_members))
+        await sdb_conn.execute(
+            sa.update(Team)
+            .where(Team.id == team[Team.id.name])
+            .values({Team.updated_at: datetime.now(timezone.utc), Team.members: all_members}),
+        )
+        return sorted(new_members)
+    return ()
