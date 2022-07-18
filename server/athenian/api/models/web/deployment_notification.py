@@ -66,6 +66,10 @@ class DeploymentNotificationUnsealed(Model, sealed=False):
 
     def validate_timestamps(self) -> None:
         """Post-check the request data."""
+        for field in ("date_finished", "date_started"):
+            if getattr(self, field).tzinfo is None:
+                raise ResponseError(InvalidRequestError(f"`{field}` must include the timezone"))
+
         if self.date_finished < self.date_started:
             raise ResponseError(
                 InvalidRequestError("`date_finished` must be later than `date_started`"),

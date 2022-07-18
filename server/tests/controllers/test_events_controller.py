@@ -603,6 +603,32 @@ class TestNotifyDeployments:
         ]
         await self._request(client, token, 403, json=json)
 
+    async def test_date_invalid_timezone_name(self, client, token, disable_default_user, rdb):
+        await rdb.execute(sa.delete(DeploymentNotification))
+        body = [
+            {
+                "components": [{"repository": "github.com/src-d/go-git", "reference": "4.2.0"}],
+                "environment": "production",
+                "date_started": "2021-01-12T10:00:00 MET",
+                "date_finished": "2021-01-12T12:00:00 MET",
+                "conclusion": "SUCCESS",
+            },
+        ]
+        await self._request(client, token, 400, json=body)
+
+    async def test_date_with_no_timezone_received(self, client, token, disable_default_user, rdb):
+        await rdb.execute(sa.delete(DeploymentNotification))
+        body = [
+            {
+                "components": [{"repository": "github.com/src-d/go-git", "reference": "4.2.0"}],
+                "environment": "production",
+                "date_started": "2021-01-12T10:00:00Z",
+                "date_finished": "2021-01-12T12:00:00",
+                "conclusion": "SUCCESS",
+            },
+        ]
+        await self._request(client, token, 400, json=body)
+
     @classmethod
     async def _request(
         cls,
