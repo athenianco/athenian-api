@@ -431,8 +431,6 @@ async def test_clear_precomputed_events_nasty_input(
 
 
 class TestNotifyDeployments:
-    # TODO: fix response validation against the schema
-    @pytest.mark.app_validate_responses(False)
     @pytest.mark.parametrize(
         "ref, vhash",
         [
@@ -517,8 +515,6 @@ class TestNotifyDeployments:
             "environment": "production",
         }
 
-    # TODO: fix response validation against the schema
-    @pytest.mark.app_validate_responses(False)
     async def test_duplicate(self, client, token, disable_default_user):
         body = [
             {
@@ -666,7 +662,7 @@ class TestNotifyDeployments:
         response = await client.request(method="POST", path=path, headers=headers, **kwargs)
         assert response.status == assert_status
         if assert_status == 200:
-            assert (await response.read()).decode("utf-8") == ""
+            assert await response.json() == {}
 
 
 @pytest.mark.parametrize("unresolved", [False, True])

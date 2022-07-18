@@ -537,7 +537,7 @@ async def notify_deployments(request: AthenianWebRequest, body: List[dict]) -> w
         await gather(*tasks, op=f"_notify_deployment_interval({len(tasks)})")
     except (sqlite3.IntegrityError, asyncpg.IntegrityConstraintViolationError):
         raise ResponseError(DatabaseConflict("Specified deployment(s) already exist.")) from None
-    return web.Response(status=200)
+    return web.json_response({})
 
 
 def _normalize_reference(ref: str) -> str:
