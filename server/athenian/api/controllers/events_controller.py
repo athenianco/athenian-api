@@ -484,7 +484,7 @@ async def clear_precomputed_events(request: AthenianWebRequest, body: dict) -> w
     ]
     await gather(*tasks, op="clear_precomputed_events/gather drops")
     await wait_deferred(final=True)
-    return web.Response(status=200)
+    return web.json_response({})
 
 
 @disable_default_user

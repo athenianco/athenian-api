@@ -292,8 +292,6 @@ async def test_notify_release_default_user(client, headers, sdb):
 
 
 class TestClearPrecomputedEvents:
-    # TODO: fix response validation against the schema
-    @pytest.mark.app_validate_responses(False)
     @pytest.mark.parametrize("devenv", [False, True])
     @freeze_time("2020-01-01")
     async def test_clear_releases_smoke(self, client, pdb, disable_default_user, app, devenv):
@@ -336,8 +334,6 @@ class TestClearPrecomputedEvents:
         ):
             assert len(await pdb.fetch_all(select([table]))) == n, table
 
-    # TODO: fix response validation against the schema
-    @pytest.mark.app_validate_responses(False)
     @freeze_time("2020-01-01")
     async def test_clear_deployments(self, client, pdb, disable_default_user):
         await pdb.execute(
@@ -359,8 +355,6 @@ class TestClearPrecomputedEvents:
         assert row[GitHubDeploymentFacts.deployment_name.name] == "Dummy deployment"
         assert len(row[GitHubDeploymentFacts.data.name]) > 1
 
-    # TODO: fix response validation against the schema
-    @pytest.mark.app_validate_responses(False)
     @pytest.mark.parametrize(
         "status, body",
         [
