@@ -1681,7 +1681,7 @@ class MetricEntriesCalculator:
         dupl_new_deps = np.intersect1d(
             new_deps.index.values, done_deps.index.values, assume_unique=True,
         )
-        if dupl_new_deps:
+        if dupl_new_deps.size > 0:
             new_deps.drop(dupl_new_deps, inplace=True)
 
         self.unfresh_pr_facts_fetcher.append_deployments(
