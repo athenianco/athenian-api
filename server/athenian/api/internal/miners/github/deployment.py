@@ -1369,7 +1369,22 @@ async def _fetch_commit_stats(
         )
         .order_by(func.coalesce(NodePullRequest.merged_at, NodeCommit.committed_date)),
     )
-    assert len(commit_rows) == len(all_mentioned_hashes)
+
+    if len(commit_rows) != len(all_mentioned_hashes):
+        log = logging.getLogger(f"{__name__}._fetch_commit_stats")
+        log.error(
+            "number of retrieved commit rows is different than requested hashes, "
+            "probably multiple PRs in mdb github.node_pull_request have "
+            "the same commit as their merge commit",
+        )
+        seen_commit_ids: set[int] = set()
+        dedup_commit_rows = []
+        for r in commit_rows:
+            if (id_ := r[NodeCommit.id.name]) not in seen_commit_ids:
+                dedup_commit_rows.append(r)
+                seen_commit_ids.add(id_)
+        commit_rows = dedup_commit_rows
+
     shas = np.zeros(len(commit_rows), "S40")
     lines = np.zeros(len(commit_rows), int)
     commit_authors = np.zeros_like(lines)
