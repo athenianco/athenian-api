@@ -1,10 +1,8 @@
 from datetime import datetime
-import struct
 from typing import Dict, List, Optional
 
 import dateutil.parser
 
-from athenian.api.ffx import encrypt
 from athenian.api.models.web.account_status import AccountStatus
 from athenian.api.models.web.base_model_ import Model
 from athenian.api.typing_utils import VerbatimOptional
@@ -38,8 +36,6 @@ class User(Model):
         "accounts": "accounts",
         "impersonated_by": "impersonated_by",
     }
-
-    EMPTY_EMAIL = "<empty email>"
 
     def __init__(
         self,
@@ -83,7 +79,6 @@ class User(Model):
         nickname: str,
         picture: str,
         updated_at: str,
-        encryption_key: str,
         email: Optional[str] = None,
         sub: Optional[str] = None,
         user_id: Optional[str] = None,
@@ -99,14 +94,8 @@ class User(Model):
             native_id = identities[0]["user_id"]
         else:
             native_id = id.rsplit("|", 1)[1]
-        if not email:
-            email = cls.EMPTY_EMAIL
-        else:
-            try:
-                salt = struct.pack("!I", int(native_id))
-            except ValueError:
-                salt = native_id.encode()
-            email = encrypt(email.encode() + b"|" + salt, encryption_key.encode())
+        if email is None:
+            email = ""
         user = cls(
             id=id,
             native_id=native_id,

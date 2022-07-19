@@ -15,7 +15,6 @@ from athenian.api.controllers.invitation_controller import (
     jira_url_template,
     url_prefix,
 )
-from athenian.api.ffx import decrypt
 from athenian.api.models.metadata.github import FetchProgress
 from athenian.api.models.metadata.jira import Progress as JIRAProgress
 from athenian.api.models.state.models import (
@@ -276,8 +275,7 @@ async def test_accept_invitation_user_profile(
 
     assert response.status == 200, rbody
     assert user.name == name
-    decrypted = decrypt(user.email, b"vadim")
-    assert decrypted.split(b"|")[0].decode() == email
+    assert user.email == email
 
 
 async def test_accept_invitation_bad_email(client, headers, disable_default_user, sdb, app):

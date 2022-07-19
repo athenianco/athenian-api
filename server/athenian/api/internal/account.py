@@ -239,7 +239,7 @@ async def _report_user_rejected(
         "user_rejected.jinja2",
         user=user,
         user_name=user_info.login,
-        user_email=user_info.email if user_info.email != User.EMPTY_EMAIL else "",
+        user_email=user_info.email,
         account=account,
         account_name=name,
         context=context,

@@ -22,12 +22,8 @@ from athenian.api.request import AthenianWebRequest
 from athenian.api.serialization import deserialize_datetime
 from tests.conftest import disable_default_user
 
-vadim_email = (
-    "698650fc6af024b6679c2d9939cd828be15d7ca32a49ccf8a78e00a67688c4851858cce84d88fac228e8"  # noqa
-)
-eiso_email = (
-    "18fe5f66fce88e4791d0117a311c6c2b2102216e18585c1199f90516186aa4461df7a2453857d781b6"  # noqa
-)
+vadim_email = "vadim@athenian.co"
+eiso_email = "eiso@athenian.co"
 
 
 async def test_get_user_smoke(client, headers, app):
@@ -38,7 +34,7 @@ async def test_get_user_smoke(client, headers, app):
     del items["updated"]
     assert items == {
         "id": "auth0|62a1ae88b6bba16c6dbc6870",
-        "email": "vadim@athenian.co",
+        "email": vadim_email,
         "login": "vadim",
         "name": "Vadim Markovtsev",
         "native_id": "62a1ae88b6bba16c6dbc6870",
@@ -97,7 +93,6 @@ async def test_get_default_user(client, headers, lazy_gkwillie):
         "id": "github|60340680",
         "login": "gkwillie",
         "name": "Groundskeeper Willie",
-        "email": "<empty email>",
         "native_id": "60340680",
         "picture": "https://avatars0.githubusercontent.com/u/60340680?v=4",
         "accounts": {},
@@ -114,7 +109,7 @@ async def test_get_user_sso_join(client, headers, app, sdb):
     del items["updated"]
     assert items == {
         "id": "auth0|62a1ae88b6bba16c6dbc6870",
-        "email": "vadim@athenian.co",
+        "email": vadim_email,
         "login": "vadim",
         "name": "Vadim Markovtsev",
         "native_id": "62a1ae88b6bba16c6dbc6870",
@@ -156,6 +151,8 @@ async def test_get_account_details_smoke(client, headers):
     assert body.jira.projects == ["CON", "CS", "DEV", "ENG", "GRW", "OPS", "PRO"]
 
 
+# TODO(vmarkovtsev): remove app_validate_responses(False) after we don't test the pentest
+@pytest.mark.app_validate_responses(False)
 @pytest.mark.parametrize("account, code", [[2, 200], [3, 403], [4, 404]])
 async def test_get_account_details_nasty_input(client, headers, account, code):
     response = await client.request(
