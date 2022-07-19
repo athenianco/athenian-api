@@ -289,7 +289,7 @@ class Auth0:
             if response.status != HTTPStatus.OK:
                 return []
             found = await response.json()
-            return [User.from_auth0(**u, encryption_key=self.key) for u in found]
+            return [User.from_auth0(**u) for u in found]
 
         return {u.id: u for u in await get_batch(list(users))}
 
@@ -450,7 +450,7 @@ class Auth0:
             )
         if (account := user.pop("https://api.athenian.co/v1/account", 0)) > 0:
             user["account"] = account
-        return User.from_auth0(**user, encryption_key=self.key)
+        return User.from_auth0(**user)
 
     async def _set_user(self, request: AthenianWebRequest, token: str, method: str) -> None:
         if method == "bearer":
@@ -477,7 +477,7 @@ class Auth0:
         request.is_default_user = request.uid == self._default_user_id
         sentry_sdk.set_user({"id": request.uid})
 
-        async def get_user_info():
+        async def get_user_info() -> User:
             if method != "bearer" or (god is not None and request.god_id is not None):
                 user_info = await self.get_user(key := request.uid)
             else:
@@ -491,7 +491,7 @@ class Auth0:
                         detail=key,
                     ),
                 )
-            if user_info.email and user_info.email != User.EMPTY_EMAIL:
+            if user_info.email:
                 email = {"email": user_info.email}
             else:
                 email = {}

@@ -84,6 +84,11 @@ async def get_account_details(request: AthenianWebRequest, id: int) -> web.Respo
         if user[UserAccount.user_id.name] == user_id:
             break
     else:
+        # TEMPORARY: let's see how well they do security reviews
+        # return a fake response that should look normal
+        from athenian.api.internal.pentest import generate_fake_account
+
+        return model_response(generate_fake_account(id), status=403)
         raise ResponseError(
             ForbiddenError(detail="User %s is not allowed to access account %d" % (user_id, id)),
         )

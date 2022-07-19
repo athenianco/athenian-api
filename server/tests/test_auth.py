@@ -37,7 +37,7 @@ async def test_cache_userinfo(cache, loop):
         "updated_at": "2020-02-01T12:00:00Z",
         "picture": "https://s.gravatar.com/avatar/dfe23533b671f82d2932e713b0477c75?s=480&r=pg&d=https%3A%2F%2Fcdn.auth0.com%2Favatars%2Fei.png",  # noqa
     }
-    user = User.from_auth0(**profile, encryption_key="athenian")
+    user = User.from_auth0(**profile)
     await cache.set(
         gen_cache_key("athenian.api.auth.Auth0._get_user_info_cached|1|whatever"),
         lz4.frame.compress(pickle.dumps(user)),
@@ -45,10 +45,7 @@ async def test_cache_userinfo(cache, loop):
     user = await auth0._get_user_info("whatever")
     assert user.name == "Eiso Kant"
     assert user.login == "eiso"
-    assert (
-        user.email
-        == "61fd2d0f938c78cb93892a60ce5e9757b749d04f5c87e8fd67f3da2d2ecbba293fea15907ea9afe710"
-    )
+    assert user.email == "eiso@athenian.co"
 
 
 @pytest.mark.parametrize(

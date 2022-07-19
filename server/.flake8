@@ -11,3 +11,4 @@ per-file-ignores=
     athenian/api/models/metadata/jira.py:D101
     athenian/api/models/*/versions/*.py:D103,D400
     tests/conftest.py:E402,D
+    athenian/api/internal/pentest.py:F405
