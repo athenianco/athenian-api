@@ -530,7 +530,9 @@ class PullRequestListMiner:
             dep_index = searchsorted_inrange(self._environments, [self._environment])[0]
         if self._environments[dep_index] == self._environment:
             prs = dfs.prs.index.values
-            deployed = self._calcs["deploy"]["time"][dep_index].calc_deployed()
+            deployed = self._calcs["deploy"]["time"][dep_index].calc_deployed(
+                columns=(dfs.prs[PullRequest.merged_at.name].values, prs),
+            )
             events_time_machine[PullRequestEvent.DEPLOYED] = set(
                 prs[deployed < np.array(self._time_to, dtype=deployed.dtype)],
             )
