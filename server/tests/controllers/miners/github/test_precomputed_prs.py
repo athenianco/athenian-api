@@ -320,6 +320,20 @@ async def test_load_store_precomputed_done_filters(
         time_to,
         names,
         {},
+        LabelFilter({"bug,bad"}, set()),
+        default_branches,
+        False,
+        settings,
+        prefixer,
+        1,
+        pdb,
+    )
+    assert len(loaded_prs) == 25
+    loaded_prs, _ = await done_prs_facts_loader.load_precomputed_done_facts_filters(
+        time_from,
+        time_to,
+        names,
+        {},
         LabelFilter({"bug"}, {"bad"}),
         default_branches,
         False,
