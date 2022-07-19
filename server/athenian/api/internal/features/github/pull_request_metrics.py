@@ -4,6 +4,7 @@ import logging
 from typing import Dict, Iterable, List, Optional, Sequence, Type
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 
 from athenian.api import metadata
@@ -1337,7 +1338,11 @@ class DeploymentMetricBase(MetricCalculator[T]):
         ]
         return clones
 
-    def calc_deployed(self) -> np.ndarray:
+    def calc_deployed(
+        self,
+        facts: Optional[pd.DataFrame] = None,
+        columns: Optional[tuple[npt.NDArray[np.timedelta64], npt.NDArray[int]]] = None,
+    ) -> npt.NDArray[np.timedelta64]:
         """
         Return the first successful deployment time for each PR in the analyzed `facts`.
 
@@ -1357,6 +1362,20 @@ class DeploymentMetricBase(MetricCalculator[T]):
                 f"{successful_sum} vs. {len(nnz_finished)}"
             )
             finished[indexes] = nnz_finished
+        columns = columns or (
+            facts[PullRequestFacts.f.merged].values,
+            facts[PullRequestFacts.f.node_id].values,
+        )
+        merged, pr_node_ids = columns
+        mask = finished < merged
+        if (contradictions := mask.sum()) > 0:
+            log = logging.getLogger(f"{metadata.__package__}.{type(self).__name__}")
+            log.error(
+                "%d PRs are deployed before they were merged%s",
+                contradictions,
+                f": {pr_node_ids[mask].tolist()}" if contradictions < 10 else "",
+            )
+            finished[mask] = self.nan
         return finished
 
 
@@ -1381,7 +1400,7 @@ class DeploymentTimeCalculator(DeploymentMetricBase, AverageMetricCalculator[tim
         override_event_indexes: Optional[np.ndarray] = None,
         **kwargs,
     ) -> np.ndarray:
-        finished = self.calc_deployed()
+        finished = self.calc_deployed(facts)
         if override_event_time is not None:
             finished[override_event_indexes] = override_event_time
         started = facts[PullRequestFacts.f.merged].values.copy()
@@ -1422,7 +1441,7 @@ class DeploymentPendingMarker(DeploymentMetricBase):
         max_times: np.ndarray,
         **kwargs,
     ) -> np.ndarray:
-        finished = self.calc_deployed()
+        finished = self.calc_deployed(facts)
         repo_mask = np.in1d(
             facts[PullRequestFacts.f.repository_full_name].values,
             self.repositories[self.environment],
@@ -1460,7 +1479,7 @@ class LeadDeploymentTimeCalculator(DeploymentMetricBase, AverageMetricCalculator
         **kwargs,
     ) -> np.ndarray:
         result = np.full((len(min_times), len(facts)), self.nan, self.dtype)
-        finished = self.calc_deployed()
+        finished = self.calc_deployed(facts)
         work_began = facts[PullRequestFacts.f.work_began].values
         delta = finished - work_began
         finished_in_range = (min_times[:, None] <= finished) & (finished < max_times[:, None])
