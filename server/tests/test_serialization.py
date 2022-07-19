@@ -12,6 +12,7 @@ from athenian.api.serialization import (
     deserialize_datetime,
     serialize_timedelta,
 )
+from tests.testutils.time import dt
 
 
 class TestDeserializeDate:
@@ -40,23 +41,38 @@ class TestDeserializeDatetime:
                 deserialize_datetime(out_of_bounds_val)
 
     @freeze_time("2022-01-01")
-    def test_deserialize_datatime_custom_bounds(self) -> None:
-        dt = datetime
-        assert deserialize_datetime("1901-07-30T05:00:00", min_=dt(1850, 1, 1)) == dt(
+    def test_custom_bounds(self) -> None:
+        assert deserialize_datetime("1901-07-30T05:00:00Z", min_=dt(1850, 1, 1)) == dt(
             1901, 7, 30, 5,
         )
         with pytest.raises(OutOfBoundsDatetime):
-            deserialize_datetime("1901-07-30T05:00:00", min_=dt(1950, 1, 1))
+            deserialize_datetime("1901-07-30T05:00:00Z", min_=dt(1950, 1, 1))
 
-        assert deserialize_datetime("2070-01-30T05:00:00", max_future_delta=None) == dt(
+        assert deserialize_datetime("2070-01-30T05:00:00Z", max_future_delta=None) == dt(
             2070, 1, 30, 5,
         )
         assert deserialize_datetime(
-            "2022-01-30T05:00:00", max_future_delta=timedelta(days=100),
+            "2022-01-30T05:00:00Z", max_future_delta=timedelta(days=100),
         ) == dt(2022, 1, 30, 5)
 
         with pytest.raises(OutOfBoundsDatetime):
-            deserialize_datetime("2022-01-30T05:00:00", max_future_delta=timedelta(days=10))
+            deserialize_datetime("2022-01-30T05:00:00Z", max_future_delta=timedelta(days=10))
+
+    @freeze_time("2022-01-01")
+    def test_with_timezone_name(self) -> None:
+        for s in ("2022-07-05 23:14:11 GMT", "2022-07-05 23:14:11 MET", "2022-07-05 23:14:11 WST"):
+            with pytest.raises(ValueError):
+                deserialize_datetime(s)
+
+    @freeze_time("2022-01-01")
+    def test_timezone_offset(self) -> None:
+        s = "2022-07-05 23:14:11+03:00"
+        assert deserialize_datetime(s) == dt(2022, 7, 5, 20, 14, 11)
+
+    @freeze_time("2022-01-01")
+    def test_parse_naive_datetime(self) -> None:
+        s = "2022-07-05 23:14:11"
+        assert deserialize_datetime(s) == datetime(2022, 7, 5, 23, 14, 11, tzinfo=None)
 
 
 def test_serialize_date() -> None:

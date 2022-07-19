@@ -484,7 +484,7 @@ async def clear_precomputed_events(request: AthenianWebRequest, body: dict) -> w
     ]
     await gather(*tasks, op="clear_precomputed_events/gather drops")
     await wait_deferred(final=True)
-    return web.Response(status=200)
+    return web.json_response({})
 
 
 @disable_default_user
@@ -537,7 +537,7 @@ async def notify_deployments(request: AthenianWebRequest, body: List[dict]) -> w
         await gather(*tasks, op=f"_notify_deployment_interval({len(tasks)})")
     except (sqlite3.IntegrityError, asyncpg.IntegrityConstraintViolationError):
         raise ResponseError(DatabaseConflict("Specified deployment(s) already exist.")) from None
-    return web.Response(status=200)
+    return web.json_response({})
 
 
 def _normalize_reference(ref: str) -> str:

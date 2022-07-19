@@ -34,7 +34,7 @@ from athenian.api.models.precomputed.models import (
     GitHubReleaseDeployment,
 )
 from tests.conftest import get_default_branches, get_release_match_setting_tag
-from tests.testutils.db import assert_existing_row, assert_missing_row, count, models_insert
+from tests.testutils.db import assert_existing_rows, assert_missing_row, count, models_insert
 from tests.testutils.factory.persistentdata import (
     DeployedComponentFactory,
     DeploymentNotificationFactory,
@@ -4588,7 +4588,7 @@ class TestHideOutlierFirstDeployments:
         await hide_outlier_first_deployments(deps, computed_mask, 1, meta_ids, mdb, pdb, 1.1)
 
         # production_2016_07_06 is an outlier  but will not be cleard since it was not computed
-        await assert_existing_row(
+        await assert_existing_rows(
             pdb, GitHubPullRequestDeployment, deployment_name="production_2016_07_06",
         )
         # other outlier has been cleared

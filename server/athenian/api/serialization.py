@@ -3,7 +3,7 @@ import json
 import typing
 from typing import Optional, Union
 
-from dateutil.parser import parse as parse_datetime
+import dateutil.parser
 from dateutil.tz import tzutc
 import numpy as np
 import pandas as pd
@@ -108,7 +108,7 @@ def deserialize_date(
     Using `min_` and `max_future_delta` parameters the date can be validated
     for inclusion in the given bounds.
     """
-    d = parse_datetime(string, ignoretz=True, yearfirst=True).date()
+    d = dateutil.parser.parse(string, ignoretz=True, yearfirst=True).date()
     if min_ is not None and d < min_:
         raise pd.errors.OutOfBoundsDatetime(f"{d} is too far in the past")
     if max_future_delta is not None and d > date.today() + max_future_delta:
@@ -128,7 +128,8 @@ def deserialize_datetime(
     Using `min_` and `max_future_delta` parameters the datetime can be validated
     for inclusion in the given bounds.
     """
-    dt = parse_datetime(string, yearfirst=True)
+    dt = dateutil.parser.isoparse(string)
+
     if min_ is not None and dt < min_.replace(tzinfo=dt.tzinfo):
         raise pd.errors.OutOfBoundsDatetime(f"{dt} is too far in the past")
     if max_future_delta is not None and dt > datetime.now(dt.tzinfo) + max_future_delta:
