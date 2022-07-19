@@ -91,7 +91,11 @@ def build_labels_filters(
             or_items = []
             if singles:
                 or_items.append(model.labels.has_any(singles))
-            or_items.extend(model.labels.contains(m) for m in multiples)
+            try:
+                multigen = model.labels.has_all  # HSTORE
+            except AttributeError:
+                multigen = model.labels.contains  # ARRAY
+            or_items.extend(multigen(m) for m in multiples)
             filters.append(or_(*or_items))
         if labels.exclude:
             filters.append(not_(model.labels.has_any(labels.exclude)))
