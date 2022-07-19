@@ -378,6 +378,50 @@ async def test_load_releases_events_logical(
     assert list(releases[Release.repository_node_id.name]) == [40550]
 
 
+# TODO: fixed in DEV-4648
+@pytest.mark.xfail
+@with_defer
+async def test_load_releases_branch_logical(
+    branches,
+    default_branches,
+    mdb,
+    pdb,
+    rdb,
+    release_loader,
+    prefixer,
+    logical_settings,
+):
+    await models_insert(
+        rdb,
+        ReleaseNotificationFactory(
+            repository_node_id=40550, published_at=dt(2019, 2, 2), commit_hash_prefix="8d20cc5",
+        ),
+    )
+    release_settings = ReleaseSettings(
+        {
+            "github.com/src-d/go-git/alpha": _mk_rel_match_settings(events=".*"),
+            "github.com/src-d/go-git/beta": _mk_rel_match_settings(branches="{{default}}"),
+        },
+    )
+    # fails in group_repos_by_release_match
+    releases, _ = await release_loader.load_releases(
+        ["src-d/go-git/alpha", "src-d/go-git/beta"],
+        branches,
+        default_branches,
+        dt(2015, 1, 1),
+        dt(2020, 10, 22),
+        release_settings,
+        logical_settings,
+        prefixer,
+        1,
+        (6366825,),
+        mdb,
+        pdb,
+        rdb,
+        None,
+    )
+
+
 @with_defer
 async def test_load_releases_events_logical_release_name_match(
     branches,
