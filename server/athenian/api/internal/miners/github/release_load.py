@@ -603,15 +603,16 @@ class ReleaseLoader:
         if not repos:
             return dummy_releases_df(index)
         repo_name_to_node = prefixer.repo_name_to_node.get
-        repos_inverted = {}
+        repo_patterns = {}
         for pattern, pattern_repos in repos.items():
-            pattern = re.compile(pattern)
+            compiled_pattern = re.compile(pattern)
             for repo in pattern_repos:
-                repos_inverted[repo] = pattern
-        repos = repos_inverted
-        repo_ids = {repo_name_to_node(r): r for r in coerce_logical_repos(repos)}
+                repo_patterns[repo] = compiled_pattern
+
+        repo_ids = {repo_name_to_node(r): r for r in coerce_logical_repos(repo_patterns)}
+
         release_rows = await rdb.fetch_all(
-            select([ReleaseNotification])
+            select(ReleaseNotification)
             .where(
                 and_(
                     ReleaseNotification.account_id == account,
@@ -695,8 +696,6 @@ class ReleaseLoader:
         for row in release_rows:
             repo = row[ReleaseNotification.repository_node_id.name]
             repo_name = repo_ids[repo]
-            if not repos[repo_name].match(repo_name):
-                continue
             if (commit_node_id := row[ReleaseNotification.resolved_commit_node_id.name]) is None:
                 commit_node_id, commit_hash = resolved_commits.get(
                     (repo, commit_prefix := row[ReleaseNotification.commit_hash_prefix.name]),
@@ -714,7 +713,15 @@ class ReleaseLoader:
                 logical_repos = logical_settings.prs(repo_name).logical_repositories
             except KeyError:
                 logical_repos = [repo_name]
+
             for logical_repo in logical_repos:
+                # repository hasn't a ReleaseMatchSetting of type `event`, skipping
+                if (repo_pattern := repo_patterns.get(logical_repo)) is None:
+                    continue
+                # notified release name doesn't match pattern in repo release setting, skipping
+                if not repo_pattern.match(name or ""):  # db column is nullable
+                    continue
+
                 releases.append(
                     {
                         Release.author.name: user_map.get(author, author),

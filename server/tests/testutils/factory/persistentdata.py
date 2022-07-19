@@ -4,7 +4,11 @@ from datetime import datetime, timedelta, timezone
 
 import factory
 
-from athenian.api.models.persistentdata.models import DeployedComponent, DeploymentNotification
+from athenian.api.models.persistentdata.models import (
+    DeployedComponent,
+    DeploymentNotification,
+    ReleaseNotification,
+)
 
 from .alchemy import SQLAlchemyModelFactory
 from .common import DEFAULT_ACCOUNT_ID
@@ -34,3 +38,13 @@ class DeployedComponentFactory(SQLAlchemyModelFactory):
     repository_full_name = "org.org/repo"
     reference = "ABCDEF00"
     resolved_commit_node_id = 2756224  # magic number from mdb
+
+
+class ReleaseNotificationFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = ReleaseNotification
+
+    account_id = DEFAULT_ACCOUNT_ID
+    repository_node_id = 1
+    commit_hash_prefix = "AAAAAAA"
+    published_at = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=50))

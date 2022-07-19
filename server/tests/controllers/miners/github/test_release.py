@@ -1,6 +1,7 @@
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 import pickle
+from typing import Optional
 
 from freezegun import freeze_time
 import numpy as np
@@ -42,6 +43,9 @@ from athenian.api.internal.settings import (
 from athenian.api.models.metadata.github import Branch, NodeCommit, PullRequest, Release
 from athenian.api.models.persistentdata.models import ReleaseNotification
 from athenian.api.models.precomputed.models import GitHubDonePullRequestFacts, GitHubReleaseFacts
+from tests.testutils.db import models_insert
+from tests.testutils.factory.persistentdata import ReleaseNotificationFactory
+from tests.testutils.time import dt
 
 
 def check_branch_releases(releases: pd.DataFrame, n: int, time_from: datetime, time_to: datetime):
@@ -79,13 +83,7 @@ async def test_load_releases_branches(
         default_branches,
         time_from,
         time_to,
-        ReleaseSettings(
-            {
-                "github.com/src-d/go-git": ReleaseMatchSetting(
-                    branches=branches_, tags="", events="", match=ReleaseMatch.branch,
-                ),
-            },
-        ),
+        ReleaseSettings({"github.com/src-d/go-git": _mk_rel_match_settings(branches=branches_)}),
         LogicalRepositorySettings.empty(),
         prefixer,
         1,
@@ -118,13 +116,7 @@ async def test_load_releases_branches_empty(
         default_branches,
         time_from,
         time_to,
-        ReleaseSettings(
-            {
-                "github.com/src-d/go-git": ReleaseMatchSetting(
-                    branches="unknown", tags="", events="", match=ReleaseMatch.branch,
-                ),
-            },
-        ),
+        ReleaseSettings({"github.com/src-d/go-git": _mk_rel_match_settings(branches="unknown")}),
         LogicalRepositorySettings.empty(),
         prefixer,
         1,
@@ -184,11 +176,7 @@ async def test_load_releases_tag_or_branch_dates(
         await wait_deferred()
 
     release_settings = ReleaseSettings(
-        {
-            "github.com/src-d/go-git": ReleaseMatchSetting(
-                branches="master", tags=".*", events=".*", match=ReleaseMatch.tag_or_branch,
-            ),
-        },
+        {"github.com/src-d/go-git": _mk_rel_match_settings(branches="master", tags=".*")},
     )
     releases, matched_bys = await release_loader.load_releases(
         ["src-d/go-git"],
@@ -247,13 +235,7 @@ async def test_load_releases_tag_or_branch_initial(
         default_branches,
         time_from,
         time_to,
-        ReleaseSettings(
-            {
-                "github.com/src-d/go-git": ReleaseMatchSetting(
-                    branches="master", tags="", events=".*", match=ReleaseMatch.branch,
-                ),
-            },
-        ),
+        ReleaseSettings({"github.com/src-d/go-git": _mk_rel_match_settings(branches="master")}),
         LogicalRepositorySettings.empty(),
         prefixer,
         1,
@@ -353,6 +335,97 @@ async def test_load_releases_tag_logical(
 
 
 @with_defer
+async def test_load_releases_events_logical(
+    branches,
+    default_branches,
+    mdb,
+    pdb,
+    rdb,
+    release_loader,
+    prefixer,
+    logical_settings,
+):
+    await models_insert(
+        rdb,
+        ReleaseNotificationFactory(
+            repository_node_id=40550, published_at=dt(2019, 2, 2), commit_hash_prefix="8d20cc5",
+        ),
+    )
+    release_settings = ReleaseSettings(
+        {
+            "github.com/src-d/go-git/alpha": _mk_rel_match_settings(events=".*"),
+            "github.com/src-d/go-git/beta": _mk_rel_match_settings(tags=".*~beta.*"),
+        },
+    )
+    releases, _ = await release_loader.load_releases(
+        ["src-d/go-git/alpha", "src-d/go-git/beta"],
+        branches,
+        default_branches,
+        dt(2015, 1, 1),
+        dt(2020, 10, 22),
+        release_settings,
+        logical_settings,
+        prefixer,
+        1,
+        (6366825,),
+        mdb,
+        pdb,
+        rdb,
+        None,
+    )
+    # only release for logical repo alpha has been created, beta has "tag" release settings
+    assert list(releases[Release.repository_full_name.name]) == ["src-d/go-git/alpha"]
+    assert list(releases[Release.repository_node_id.name]) == [40550]
+
+
+@with_defer
+async def test_load_releases_events_logical_release_name_match(
+    branches,
+    default_branches,
+    mdb,
+    pdb,
+    rdb,
+    release_loader,
+    prefixer,
+    logical_settings,
+):
+    await models_insert(
+        rdb,
+        ReleaseNotificationFactory(
+            repository_node_id=40550,
+            published_at=dt(2019, 2, 2),
+            commit_hash_prefix="8d20cc5",
+            name="alpha-1.1.1",
+        ),
+    )
+    release_settings = ReleaseSettings(
+        {
+            "github.com/src-d/go-git/alpha": _mk_rel_match_settings(events="^alpha.*"),
+            "github.com/src-d/go-git/beta": _mk_rel_match_settings(events="^beta.*"),
+        },
+    )
+    releases, _ = await release_loader.load_releases(
+        ["src-d/go-git/alpha", "src-d/go-git/beta"],
+        branches,
+        default_branches,
+        dt(2015, 1, 1),
+        dt(2020, 10, 22),
+        release_settings,
+        logical_settings,
+        prefixer,
+        1,
+        (6366825,),
+        mdb,
+        pdb,
+        rdb,
+        None,
+    )
+    # only events release setting for repo alpha matches
+    assert list(releases[Release.repository_full_name.name]) == ["src-d/go-git/alpha"]
+    assert list(releases[Release.repository_node_id.name]) == [40550]
+
+
+@with_defer
 async def test_map_releases_to_prs_branches(
     branches,
     default_branches,
@@ -365,11 +438,7 @@ async def test_map_releases_to_prs_branches(
     time_from = datetime(year=2015, month=4, day=1, tzinfo=timezone.utc)
     time_to = datetime(year=2015, month=5, day=1, tzinfo=timezone.utc)
     release_settings = ReleaseSettings(
-        {
-            "github.com/src-d/go-git": ReleaseMatchSetting(
-                branches="master", tags="", events=".*", match=ReleaseMatch.branch,
-            ),
-        },
+        {"github.com/src-d/go-git": _mk_rel_match_settings(branches="master")},
     )
     (
         prs,
@@ -464,13 +533,7 @@ async def test_load_releases_empty(
         default_branches,
         datetime(year=2020, month=6, day=30, tzinfo=timezone.utc),
         datetime(year=2020, month=7, day=30, tzinfo=timezone.utc),
-        ReleaseSettings(
-            {
-                "github.com/src-d/gitbase": ReleaseMatchSetting(
-                    branches=".*", tags=".*", events=".*", match=ReleaseMatch.branch,
-                ),
-            },
-        ),
+        ReleaseSettings({"github.com/src-d/gitbase": _mk_rel_match_settings(branches=".*")}),
         LogicalRepositorySettings.empty(),
         prefixer,
         1,
@@ -492,13 +555,7 @@ async def test_load_releases_empty(
         default_branches,
         time_from,
         time_to,
-        ReleaseSettings(
-            {
-                "github.com/src-d/go-git": ReleaseMatchSetting(
-                    branches="master", tags="", events=".*", match=ReleaseMatch.tag,
-                ),
-            },
-        ),
+        ReleaseSettings({"github.com/src-d/go-git": _mk_rel_match_settings(tags="")}),
         LogicalRepositorySettings.empty(),
         prefixer,
         1,
@@ -516,13 +573,7 @@ async def test_load_releases_empty(
         default_branches,
         time_from,
         time_to,
-        ReleaseSettings(
-            {
-                "github.com/src-d/go-git": ReleaseMatchSetting(
-                    branches="", tags=".*", events=".*", match=ReleaseMatch.branch,
-                ),
-            },
-        ),
+        ReleaseSettings({"github.com/src-d/go-git": _mk_rel_match_settings(branches="")}),
         LogicalRepositorySettings.empty(),
         prefixer,
         1,
@@ -567,13 +618,7 @@ async def test_load_releases_events_settings(
         default_branches,
         datetime(year=2019, month=1, day=30, tzinfo=timezone.utc),
         datetime(year=2020, month=7, day=30, tzinfo=timezone.utc),
-        ReleaseSettings(
-            {
-                "github.com/src-d/go-git": ReleaseMatchSetting(
-                    branches=".*", tags=".*", events=".*", match=ReleaseMatch.tag,
-                ),
-            },
-        ),
+        ReleaseSettings({"github.com/src-d/go-git": _mk_rel_match_settings(tags=".*")}),
         LogicalRepositorySettings.empty(),
         prefixer,
         1,
@@ -593,13 +638,7 @@ async def test_load_releases_events_settings(
         default_branches,
         datetime(year=2019, month=1, day=30, tzinfo=timezone.utc),
         datetime(year=2020, month=7, day=30, tzinfo=timezone.utc),
-        ReleaseSettings(
-            {
-                "github.com/src-d/go-git": ReleaseMatchSetting(
-                    branches=".*", tags=".*", events=".*", match=ReleaseMatch.event,
-                ),
-            },
-        ),
+        ReleaseSettings({"github.com/src-d/go-git": _mk_rel_match_settings(events=".*")}),
         LogicalRepositorySettings.empty(),
         prefixer,
         1,
@@ -685,13 +724,7 @@ async def test_load_releases_events_unresolved(
         default_branches,
         datetime(year=2019, month=1, day=30, tzinfo=timezone.utc),
         datetime(year=2020, month=7, day=30, tzinfo=timezone.utc),
-        ReleaseSettings(
-            {
-                "github.com/src-d/go-git": ReleaseMatchSetting(
-                    branches=".*", tags=".*", events=".*", match=ReleaseMatch.event,
-                ),
-            },
-        ),
+        ReleaseSettings({"github.com/src-d/go-git": _mk_rel_match_settings(events=".*")}),
         LogicalRepositorySettings.empty(),
         prefixer,
         1,
@@ -2557,3 +2590,24 @@ async def test_mine_releases_by_name(
         cache,
     )
     assert str(releases) == str(releases2)
+
+
+def _mk_rel_match_settings(
+    *,
+    branches: Optional[str] = None,
+    tags: Optional[str] = None,
+    events: Optional[str] = None,
+) -> ReleaseMatchSetting:
+    kwargs = {"branches": branches or "", "tags": tags or "", "events": events or ""}
+
+    if branches is not None and tags is not None:
+        kwargs["match"] = ReleaseMatch.tag_or_branch
+    elif branches is not None:
+        kwargs["match"] = ReleaseMatch.branch
+    elif tags is not None:
+        kwargs["match"] = ReleaseMatch.tag
+    elif events is not None:
+        kwargs["match"] = ReleaseMatch.event
+    else:
+        raise ValueError("At least one keywork argument is needed")
+    return ReleaseMatchSetting(**kwargs)
