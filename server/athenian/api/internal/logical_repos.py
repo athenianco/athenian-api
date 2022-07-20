@@ -1,4 +1,4 @@
-from typing import Dict, Iterable, Set
+from typing import Iterable
 
 
 def is_logical_repo(repo: str) -> bool:
@@ -16,17 +16,17 @@ def drop_prefixed_logical_repo(repo: str) -> str:
     return "/".join(repo.split("/", 3)[:3])
 
 
-def coerce_logical_repos(repos: Iterable[str]) -> Dict[str, Set[str]]:
+def coerce_logical_repos(repos: Iterable[str]) -> dict[str, set[str]]:
     """Remove the logical part of the repository names + deduplicate."""
-    result = {}
+    result: dict[str, set[str]] = {}
     for r in repos:
         result.setdefault(drop_logical_repo(r), set()).add(r)
     return result
 
 
-def coerce_prefixed_logical_repos(repos: Iterable[str]) -> Dict[str, Set[str]]:
+def coerce_prefixed_logical_repos(repos: Iterable[str]) -> dict[str, set[str]]:
     """Remove the logical part of the prefixed repository names + deduplicate."""
-    result = {}
+    result: dict[str, set[str]] = {}
     for r in repos:
         result.setdefault(drop_prefixed_logical_repo(r), set()).add(r)
     return result

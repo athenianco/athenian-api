@@ -4,7 +4,7 @@ from itertools import chain
 import logging
 import pickle
 import re
-from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
+from typing import Iterable, Mapping, Optional, Sequence
 
 import aiomcache
 import asyncpg
@@ -76,21 +76,21 @@ class ReleaseLoader:
         cls,
         repos: Iterable[str],
         branches: pd.DataFrame,
-        default_branches: Dict[str, str],
+        default_branches: dict[str, str],
         time_from: datetime,
         time_to: datetime,
         release_settings: ReleaseSettings,
         logical_settings: LogicalRepositorySettings,
         prefixer: Prefixer,
         account: int,
-        meta_ids: Tuple[int, ...],
+        meta_ids: tuple[int, ...],
         mdb: Database,
         pdb: Database,
         rdb: Database,
         cache: Optional[aiomcache.Client],
-        index: Optional[Union[str, Sequence[str]]] = None,
+        index: Optional[str | Sequence[str]] = None,
         force_fresh: bool = False,
-    ) -> Tuple[pd.DataFrame, Dict[str, ReleaseMatch]]:
+    ) -> tuple[pd.DataFrame, dict[str, ReleaseMatch]]:
         """
         Fetch releases from the metadata DB according to the match settings.
 
@@ -147,7 +147,7 @@ class ReleaseLoader:
         # releases = releases.iloc[:0]
         # spans = {}
 
-        def gather_applied_matches() -> Dict[str, ReleaseMatch]:
+        def gather_applied_matches() -> dict[str, ReleaseMatch]:
             # nlargest(1) puts `tag` in front of `branch` for `tag_or_branch` repositories with
             # both options precomputed
             # We cannot use nlargest(1) because it produces an inconsistent index:
@@ -412,7 +412,7 @@ class ReleaseLoader:
     def disambiguate_release_settings(
         cls,
         settings: ReleaseSettings,
-        matched_bys: Dict[str, ReleaseMatch],
+        matched_bys: dict[str, ReleaseMatch],
     ) -> ReleaseSettings:
         """Resolve "tag_or_branch" to either "tag" or "branch"."""
         settings = settings.copy()
@@ -435,10 +435,10 @@ class ReleaseLoader:
     @sentry_span
     async def fetch_precomputed_release_match_spans(
         cls,
-        match_groups: Dict[ReleaseMatch, Dict[str, List[str]]],
+        match_groups: dict[ReleaseMatch, dict[str, list[str]]],
         account: int,
         pdb: Database,
-    ) -> Dict[str, Dict[str, Tuple[datetime, datetime]]]:
+    ) -> dict[str, dict[str, tuple[datetime, datetime]]]:
         """Find out the precomputed time intervals for each release match group of repositories."""
         ghrts = GitHubReleaseMatchTimespan
         sqlite = pdb.url.dialect == "sqlite"
@@ -478,19 +478,19 @@ class ReleaseLoader:
     @sentry_span
     async def _load_releases(
         cls,
-        repos: Iterable[Tuple[str, ReleaseMatch]],
+        repos: Iterable[tuple[str, ReleaseMatch]],
         branches: pd.DataFrame,
-        default_branches: Dict[str, str],
+        default_branches: dict[str, str],
         time_from: datetime,
         time_to: datetime,
         release_settings: ReleaseSettings,
         account: int,
-        meta_ids: Tuple[int, ...],
+        meta_ids: tuple[int, ...],
         mdb: Database,
         pdb: Database,
         cache: Optional[aiomcache.Client],
-        index: Optional[Union[str, Sequence[str]]] = None,
-    ) -> Tuple[pd.DataFrame, List[str]]:
+        index: Optional[str | Sequence[str]] = None,
+    ) -> tuple[pd.DataFrame, list[str]]:
         rel_matcher = ReleaseMatcher(account, meta_ids, mdb, pdb, cache)
         repos_by_tag = []
         repos_by_branch = []
@@ -531,13 +531,13 @@ class ReleaseLoader:
     @sentry_span
     async def _fetch_precomputed_releases(
         cls,
-        match_groups: Dict[ReleaseMatch, Dict[str, List[str]]],
+        match_groups: dict[ReleaseMatch, dict[str, list[str]]],
         time_from: datetime,
         time_to: datetime,
         prefixer: Prefixer,
         account: int,
         pdb: Database,
-        index: Optional[Union[str, Sequence[str]]] = None,
+        index: Optional[str | Sequence[str]] = None,
     ) -> pd.DataFrame:
         prel = PrecomputedRelease
         or_items, _ = match_groups_to_sql(match_groups, prel)
@@ -588,30 +588,31 @@ class ReleaseLoader:
     @sentry_span
     async def _fetch_release_events(
         cls,
-        repos: Mapping[str, List[str]],
+        repos: Mapping[str, list[str]],
         account: int,
-        meta_ids: Tuple[int, ...],
+        meta_ids: tuple[int, ...],
         time_from: datetime,
         time_to: datetime,
         logical_settings: LogicalRepositorySettings,
         prefixer: Prefixer,
         mdb: Database,
         rdb: Database,
-        index: Optional[Union[str, Sequence[str]]] = None,
+        index: Optional[str | Sequence[str]] = None,
     ) -> pd.DataFrame:
         """Load pushed releases from persistentdata DB."""
         if not repos:
             return dummy_releases_df(index)
         repo_name_to_node = prefixer.repo_name_to_node.get
-        repos_inverted = {}
+        repo_patterns = {}
         for pattern, pattern_repos in repos.items():
-            pattern = re.compile(pattern)
+            compiled_pattern = re.compile(pattern)
             for repo in pattern_repos:
-                repos_inverted[repo] = pattern
-        repos = repos_inverted
-        repo_ids = {repo_name_to_node(r): r for r in coerce_logical_repos(repos)}
+                repo_patterns[repo] = compiled_pattern
+
+        repo_ids = {repo_name_to_node(r): r for r in coerce_logical_repos(repo_patterns)}
+
         release_rows = await rdb.fetch_all(
-            select([ReleaseNotification])
+            select(ReleaseNotification)
             .where(
                 and_(
                     ReleaseNotification.account_id == account,
@@ -695,8 +696,6 @@ class ReleaseLoader:
         for row in release_rows:
             repo = row[ReleaseNotification.repository_node_id.name]
             repo_name = repo_ids[repo]
-            if not repos[repo_name].match(repo_name):
-                continue
             if (commit_node_id := row[ReleaseNotification.resolved_commit_node_id.name]) is None:
                 commit_node_id, commit_hash = resolved_commits.get(
                     (repo, commit_prefix := row[ReleaseNotification.commit_hash_prefix.name]),
@@ -714,7 +713,15 @@ class ReleaseLoader:
                 logical_repos = logical_settings.prs(repo_name).logical_repositories
             except KeyError:
                 logical_repos = [repo_name]
+
             for logical_repo in logical_repos:
+                # repository hasn't a ReleaseMatchSetting of type `event`, skipping
+                if (repo_pattern := repo_patterns.get(logical_repo)) is None:
+                    continue
+                # notified release name doesn't match pattern in repo release setting, skipping
+                if not repo_pattern.match(name or ""):  # db column is nullable
+                    continue
+
                 releases.append(
                     {
                         Release.author.name: user_map.get(author, author),
@@ -770,8 +777,8 @@ class ReleaseLoader:
     @sentry_span
     async def _store_precomputed_release_match_spans(
         cls,
-        match_groups: Dict[ReleaseMatch, Dict[str, List[str]]],
-        matched_bys: Dict[str, ReleaseMatch],
+        match_groups: dict[ReleaseMatch, dict[str, list[str]]],
+        matched_bys: dict[str, ReleaseMatch],
         time_from: datetime,
         time_to: datetime,
         account: int,
@@ -831,7 +838,7 @@ class ReleaseLoader:
     async def _store_precomputed_releases(
         cls,
         releases: pd.DataFrame,
-        default_branches: Dict[str, str],
+        default_branches: dict[str, str],
         settings: ReleaseSettings,
         account: int,
         pdb: morcilla.core.Connection,
@@ -883,7 +890,7 @@ class ReleaseLoader:
                 await pdb.execute_many(sql, inserted)
 
 
-def dummy_releases_df(index: Optional[Union[str, Sequence[str]]] = None) -> pd.DataFrame:
+def dummy_releases_df(index: Optional[str | Sequence[str]] = None) -> pd.DataFrame:
     """Create an empty releases DataFrame."""
     df = pd.DataFrame(
         columns=[c.name for c in Release.__table__.columns if c.name != Release.acc_id.name]
@@ -926,9 +933,9 @@ def _adjust_release_dtypes(df: pd.DataFrame) -> pd.DataFrame:
 
 def group_repos_by_release_match(
     repos: Iterable[str],
-    default_branches: Dict[str, str],
+    default_branches: dict[str, str],
     release_settings: ReleaseSettings,
-) -> Tuple[Dict[ReleaseMatch, Dict[str, List[str]]], int]:
+) -> tuple[dict[ReleaseMatch, dict[str, list[str]]], int]:
     """
     Aggregate repository lists by specific release matches.
 
@@ -956,9 +963,9 @@ def group_repos_by_release_match(
 
 
 def match_groups_to_sql(
-    match_groups: Dict[ReleaseMatch, Dict[str, Iterable[str]]],
+    match_groups: dict[ReleaseMatch, dict[str, Iterable[str]]],
     model,
-) -> Tuple[List[ClauseElement], List[Iterable[str]]]:
+) -> tuple[list[ClauseElement], list[Iterable[str]]]:
     """
     Convert the grouped release matches to a list of SQL conditions.
 
@@ -978,9 +985,9 @@ def match_groups_to_sql(
 
 
 def match_groups_to_conditions(
-    match_groups: Dict[ReleaseMatch, Dict[str, Iterable[str]]],
+    match_groups: dict[ReleaseMatch, dict[str, Iterable[str]]],
     model,
-) -> Tuple[List[List[dict]], List[Iterable[str]]]:
+) -> tuple[list[list[dict]], list[Iterable[str]]]:
     """
     Convert the grouped release matches to a list of conditions.
 
@@ -1057,7 +1064,7 @@ class ReleaseMatcher:
     def __init__(
         self,
         account: int,
-        meta_ids: Tuple[int, ...],
+        meta_ids: tuple[int, ...],
         mdb: Database,
         pdb: Database,
         cache: Optional[aiomcache.Client],
@@ -1077,7 +1084,7 @@ class ReleaseMatcher:
         time_to: datetime,
         release_settings: ReleaseSettings,
         releases: Optional[pd.DataFrame] = None,
-    ) -> Tuple[pd.DataFrame, List[str]]:
+    ) -> tuple[pd.DataFrame, list[str]]:
         """Return the releases matched by tag."""
         if releases is None:
             with sentry_sdk.start_span(op="fetch_tags"):
@@ -1264,11 +1271,11 @@ class ReleaseMatcher:
         self,
         repos: Iterable[str],
         branches: pd.DataFrame,
-        default_branches: Dict[str, str],
+        default_branches: dict[str, str],
         time_from: datetime,
         time_to: datetime,
         release_settings: ReleaseSettings,
-    ) -> Tuple[pd.DataFrame, List[str]]:
+    ) -> tuple[pd.DataFrame, list[str]]:
         """Return the releases matched by branch and the list of inconsistent repositories."""
         assert not contains_logical_repos(repos)
         branches = branches.take(
@@ -1360,9 +1367,9 @@ class ReleaseMatcher:
     def _match_branches_by_release_settings(
         self,
         branches: pd.DataFrame,
-        default_branches: Dict[str, str],
+        default_branches: dict[str, str],
         settings: ReleaseSettings,
-    ) -> Dict[str, pd.DataFrame]:
+    ) -> dict[str, pd.DataFrame]:
         branches_matched = {}
         regexp_cache = {}
         for repo, repo_branches in branches.groupby(Branch.repository_full_name.name, sort=False):
@@ -1403,7 +1410,7 @@ class ReleaseMatcher:
     )
     async def _fetch_commits(
         self,
-        commit_shas: Union[Sequence[str], np.ndarray],
+        commit_shas: Sequence[str] | np.ndarray,
         time_from: datetime,
         time_to: datetime,
     ) -> pd.DataFrame:
