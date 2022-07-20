@@ -2,6 +2,7 @@ import sqlalchemy as sa
 
 from athenian.api.db import Database
 from athenian.api.internal.account import copy_teams_as_needed, get_multiple_metadata_account_ids
+from athenian.api.models.metadata.github import Team as MetaTeam
 from athenian.api.models.state.models import Team
 from tests.testutils.db import model_insert_stmt, models_insert
 from tests.testutils.factory.state import AccountFactory, AccountGitHubAccountFactory, TeamFactory
@@ -48,10 +49,16 @@ class TestCopyTeamsAsNeeded:
             "admin",
             "automation",
         }
+
         assert loaded_teams["product"][Team.members.name] == [29, 39936]
         assert loaded_teams["product"][Team.parent_id.name] == loaded_teams["team"][Team.id.name]
         # team "team" hasn't a real parent team, so its parent team becomes root_team_id
         assert loaded_teams["team"][Team.parent_id.name] == root_team_id
+
+        for team_name in ("team", "business", "admin"):
+            assert loaded_teams[team_name][Team.origin_node_id.name] == await mdb.fetch_val(
+                sa.select(MetaTeam.id).where(MetaTeam.name == team_name),
+            )
 
         assert not any(team[Team.parent_id.name] is None for team in loaded_teams.values())
 
