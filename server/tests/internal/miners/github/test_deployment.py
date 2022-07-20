@@ -9,6 +9,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy import and_, delete, func, insert, select
 
+from athenian.api.async_utils import read_sql_query
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
@@ -17,10 +18,11 @@ from athenian.api.internal.miners.github.deployment import (
     hide_outlier_first_deployments,
     mine_deployments,
 )
+from athenian.api.internal.miners.github.pull_request import PullRequestMiner
 from athenian.api.internal.miners.github.release_mine import mine_releases
 from athenian.api.internal.miners.types import DeploymentConclusion, DeploymentFacts
 from athenian.api.internal.settings import LogicalRepositorySettings
-from athenian.api.models.metadata.github import Release
+from athenian.api.models.metadata.github import PullRequest, Release
 from athenian.api.models.persistentdata.models import (
     DeployedComponent,
     DeployedLabel,
@@ -410,9 +412,9 @@ async def test_mine_deployments_only_failed(
     )
     await wait_deferred()
     assert len(deps) == 1
-    assert len(deps.iloc[0]["prs"]) == 246
+    assert len(deps.iloc[0]["prs"]) == 212
     rows = await pdb.fetch_all(select([GitHubPullRequestDeployment]))
-    assert len(rows) == 246
+    assert len(rows) == 212
 
 
 @with_defer
@@ -4563,6 +4565,7 @@ class TestHideOutlierFirstDeployments:
         sample_deployments,
         branches,
         prefixer,
+        dag,
         mdb,
         pdb,
         rdb,
@@ -4571,6 +4574,11 @@ class TestHideOutlierFirstDeployments:
         meta_ids = await get_metadata_account_ids(1, sdb, None)
         assert (await count(pdb, GitHubDeploymentFacts)) == 0
         assert (await count(pdb, GitHubPullRequestDeployment)) == 0
+        prs = await read_sql_query(
+            select(PullRequest), mdb, PullRequest, index=PullRequest.node_id,
+        )
+        await PullRequestMiner.mark_dead_prs(prs, branches, dag, 1, (6366825,), mdb, pdb)
+        await wait_deferred()
 
         deps, _ = await mine_deployments(
             **self._mine_common_kwargs(),
@@ -4587,7 +4595,7 @@ class TestHideOutlierFirstDeployments:
 
         await hide_outlier_first_deployments(deps, computed_mask, 1, meta_ids, mdb, pdb, 1.1)
 
-        # production_2016_07_06 is an outlier  but will not be cleard since it was not computed
+        # production_2016_07_06 is an outlier  but will not be cleared since it was not computed
         await assert_existing_rows(
             pdb, GitHubPullRequestDeployment, deployment_name="production_2016_07_06",
         )

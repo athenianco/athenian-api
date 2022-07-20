@@ -409,9 +409,9 @@ async def insert_or_ignore(
         raise AssertionError(f"Unsupported database dialect: {db.url.dialect}")
     with sentry_sdk.start_span(op=f"{caller}/execute_many"):
         if db.url.dialect == "sqlite":
-            async with db.connection() as pdb_conn:
-                async with pdb_conn.transaction():
-                    await pdb_conn.execute_many(sql, values)
+            async with db.connection() as db_conn:
+                async with db_conn.transaction():
+                    await db_conn.execute_many(sql, values)
         else:
             await db.execute_many(sql, values)
 
@@ -436,9 +436,16 @@ def _conn_backend_in_transaction(raw_connection: Any) -> bool:
     raise AssertionError(f"Unhandled db connection type {type(raw_connection)}")
 
 
-async def dialect_specific_insert(con: Connection) -> Callable:
+async def dialect_specific_insert(db: DatabaseLike) -> Callable:
     """Return the specific insertion function for the connection's SQL dialect."""
-    async with con.raw_connection() as raw_connection:
+    if isinstance(db, Database):
+        if db.url.dialect == "postgresql":
+            return postgres_insert
+        elif db.url.dialect == "sqlite":
+            return sqlite_insert
+        else:
+            raise AssertionError(f"Unhandled DB dialect {db.url.dialect}")
+    async with db.raw_connection() as raw_connection:
         if isinstance(raw_connection, aiosqlite.Connection):
             return sqlite_insert
         elif isinstance(raw_connection, asyncpg.Connection):

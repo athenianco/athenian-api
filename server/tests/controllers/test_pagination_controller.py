@@ -266,4 +266,4 @@ async def test_paginate_prs_same_day(client, headers, sdb):
         model = PullRequestPaginationPlan.from_dict(obj)
     except Exception as e:
         raise ValueError(text) from e
-    assert model.updated == [date(2015, 12, 13), date(2015, 12, 13)]
+    assert model.updated == [date(2015, 10, 23), date(2015, 10, 23)]

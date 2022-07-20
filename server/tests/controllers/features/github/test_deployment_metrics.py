@@ -214,7 +214,7 @@ async def test_deployment_metrics_calculators_smoke(
             DeploymentMetricID.DEP_SUCCESS_RATIO: 0.8571428656578064,
             DeploymentMetricID.DEP_DURATION_SUCCESSFUL: timedelta(seconds=600),
             DeploymentMetricID.DEP_DURATION_FAILED: timedelta(seconds=600),
-            DeploymentMetricID.DEP_SIZE_PRS: 90.28571319580078,
-            DeploymentMetricID.DEP_PRS_COUNT: 632,
+            DeploymentMetricID.DEP_SIZE_PRS: 85.14286041259766,
+            DeploymentMetricID.DEP_PRS_COUNT: 596,
             DeploymentMetricID.DEP_SUCCESS_COUNT: 6,
         }

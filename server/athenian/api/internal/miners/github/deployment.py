@@ -7,7 +7,6 @@ import json
 import logging
 from operator import attrgetter
 import pickle
-import re
 from typing import Any, Collection, Dict, List, Mapping, NamedTuple, Optional, Sequence, Set, Tuple
 
 import aiomcache
@@ -121,6 +120,7 @@ from athenian.api.models.precomputed.models import (
     GitHubCommitDeployment,
     GitHubDeploymentFacts,
     GitHubPullRequestDeployment,
+    GitHubRebasedPullRequest,
     GitHubRelease as PrecomputedRelease,
     GitHubReleaseDeployment,
 )
@@ -766,7 +766,9 @@ async def _compute_deployment_facts(
     )
     max_release_time_to = notifications[DeploymentNotification.finished_at.name].max()
     commit_stats, releases = await gather(
-        _fetch_commit_stats(all_mentioned_hashes, dags, logical_settings, meta_ids, mdb),
+        _fetch_commit_stats(
+            all_mentioned_hashes, dags, prefixer, logical_settings, account, meta_ids, mdb, pdb,
+        ),
         _map_releases_to_deployments(
             deployed_commits_per_repo_per_env,
             all_mentioned_hashes,
@@ -1324,9 +1326,12 @@ async def _submit_deployed_releases(
 async def _fetch_commit_stats(
     all_mentioned_hashes: np.ndarray,
     dags: Dict[str, Tuple[bool, DAG]],
+    prefixer: Prefixer,
     logical_settings: LogicalRepositorySettings,
+    account: int,
     meta_ids: Tuple[int, ...],
     mdb: Database,
+    pdb: Database,
 ) -> DeployedCommitStats:
     selected = [
         NodeCommit.id,
@@ -1340,35 +1345,50 @@ async def _fetch_commit_stats(
     ]
     if has_logical := logical_settings.has_logical_deployments():
         selected.append(NodePullRequest.title)
-    commit_rows = await mdb.fetch_all(
-        select(selected)
-        .select_from(
-            join(
+    commit_rows, rebased_pr_rows = await gather(
+        mdb.fetch_all(
+            select(selected)
+            .select_from(
                 join(
-                    NodeCommit,
-                    NodePullRequest,
+                    join(
+                        NodeCommit,
+                        NodePullRequest,
+                        and_(
+                            NodeCommit.acc_id == NodePullRequest.acc_id,
+                            NodeCommit.id == NodePullRequest.merge_commit_id,
+                        ),
+                        isouter=True,
+                    ),
+                    NodeRepository,
                     and_(
-                        NodeCommit.acc_id == NodePullRequest.acc_id,
-                        NodeCommit.id == NodePullRequest.merge_commit_id,
+                        NodeCommit.acc_id == NodeRepository.acc_id,
+                        NodeCommit.repository_id == NodeRepository.id,
                     ),
                     isouter=True,
                 ),
-                NodeRepository,
+            )
+            .where(
                 and_(
-                    NodeCommit.acc_id == NodeRepository.acc_id,
-                    NodeCommit.repository_id == NodeRepository.id,
+                    NodeCommit.acc_id.in_(meta_ids),
+                    NodeCommit.sha.in_any_values(all_mentioned_hashes),
                 ),
-                isouter=True,
+            )
+            .order_by(func.coalesce(NodePullRequest.merged_at, NodeCommit.committed_date)),
+        ),
+        pdb.fetch_all(
+            select(
+                GitHubRebasedPullRequest.pr_node_id,
+                GitHubRebasedPullRequest.matched_merge_commit_sha,
+            ).where(
+                GitHubRebasedPullRequest.acc_id == account,
+                # look for ANY hash, even inside found PRs
+                # merge by rebase can make even the merge hash another PR's match
+                GitHubRebasedPullRequest.matched_merge_commit_sha.in_(all_mentioned_hashes),
             ),
-        )
-        .where(
-            and_(
-                NodeCommit.acc_id.in_(meta_ids),
-                NodeCommit.sha.in_any_values(all_mentioned_hashes),
-            ),
-        )
-        .order_by(func.coalesce(NodePullRequest.merged_at, NodeCommit.committed_date)),
+        ),
     )
+    rebased_map = dict(rebased_pr_rows)
+    del rebased_pr_rows
 
     if len(commit_rows) != len(all_mentioned_hashes):
         log = logging.getLogger(f"{__name__}._fetch_commit_stats")
@@ -1454,7 +1474,6 @@ async def _fetch_commit_stats(
     pr_lines = pr_lines[sha_order]
     pr_repo_names = pr_repo_names[sha_order]
     pr_commits = np.zeros_like(pr_lines)
-    all_pr_hashes = []
     for repo, hashes in prs_by_repo.items():
         dag = dags[repo][1]
         pr_hashes = extract_pr_commits(*dag, np.array(hashes, dtype="S40"))
@@ -1467,66 +1486,6 @@ async def _fetch_commit_stats(
                 merge_sha_indexes + sha_counts - sha_counts.cumsum(), sha_counts,
             ) + np.arange(len(merge_sha_indexes))
         pr_commits[merge_sha_indexes] = commit_counts
-        all_pr_hashes.extend(pr_hashes)
-    if all_pr_hashes:
-        all_pr_hashes = np.unique(np.concatenate(all_pr_hashes))
-    not_pr_commits = np.setdiff1d(all_mentioned_hashes, all_pr_hashes, assume_unique=True)
-    if len(not_pr_commits) == 0:
-        return DeployedCommitStats(
-            commit_authors=commit_authors,
-            lines=lines,
-            merge_shas=merge_shas,
-            pull_requests=pr_ids,
-            pr_authors=pr_authors,
-            pr_lines=pr_lines,
-            pr_commit_counts=pr_commits,
-            pr_repository_full_names=pr_repo_names,
-        )
-    force_pushed_pr_merge_hashes = await mdb.fetch_all(
-        select(
-            [
-                NodeCommit.sha,
-                NodeCommit.repository_id,
-                NodeCommit.message,
-                NodeRepository.name_with_owner,
-            ],
-        )
-        .select_from(
-            join(
-                NodeCommit,
-                NodeRepository,
-                and_(
-                    NodeCommit.acc_id == NodeRepository.acc_id,
-                    NodeCommit.repository_id == NodeRepository.id,
-                ),
-                isouter=True,
-            ),
-        )
-        .where(
-            and_(
-                NodeCommit.acc_id.in_(meta_ids),
-                NodeCommit.sha.in_any_values(not_pr_commits),
-                func.substr(NodeCommit.message, 1, 32).like("Merge pull request #% from %"),
-            ),
-        ),
-    )
-    force_pushed_per_repo = defaultdict(list)
-    pr_number_re = re.compile(r"(Merge pull request #)(\d+)( from)")
-    repo_node_to_name = {}
-    for row in force_pushed_pr_merge_hashes:
-        repo_node_to_name.setdefault(
-            (repo_id := row[NodeCommit.repository_id.name]),
-            row[NodeRepository.name_with_owner.name],
-        )
-        try:
-            force_pushed_per_repo[repo_id].append(
-                (
-                    row[NodeCommit.sha.name].encode(),
-                    int(pr_number_re.match(row[NodeCommit.message.name])[2]),
-                ),
-            )
-        except (ValueError, IndexError):
-            continue
     selected = [
         NodePullRequest.id,
         NodePullRequest.repository_id,
@@ -1536,26 +1495,23 @@ async def _fetch_commit_stats(
     ]
     if has_logical:
         selected.append(NodePullRequest.title)
-    pr_number_queries = [
-        select(selected).where(
-            and_(
-                NodePullRequest.acc_id.in_(meta_ids),
-                NodePullRequest.repository_id == repo,
-                NodePullRequest.merged,
-                NodePullRequest.number.in_([m[1] for m in merges]),
+    if rebased_map:
+        rebased_pr_rows = await mdb.fetch_all(
+            select(selected).where(
+                and_(
+                    NodePullRequest.acc_id.in_(meta_ids),
+                    NodePullRequest.node_id.in_(rebased_map),
+                ),
             ),
         )
-        for repo, merges in force_pushed_per_repo.items()
-    ]
-    if pr_number_queries:
-        pr_node_rows = await mdb.fetch_all(union_all(*pr_number_queries))
     else:
-        pr_node_rows = []
-    pr_by_repo_number = {}
-    for row in pr_node_rows:
-        pr_by_repo_number[
-            (row[NodePullRequest.repository_id.name], row[NodePullRequest.number.name])
-        ] = row
+        rebased_pr_rows = []
+    rebased_prs_by_repo = {}
+    for pr_row in rebased_pr_rows:
+        repo_id = pr_row[NodePullRequest.repository_id.name]
+        rebased_prs_by_repo.setdefault(repo_id, []).append(pr_row)
+    del rebased_pr_rows
+    repo_node_to_name = prefixer.repo_node_to_name.__getitem__
     extra_merges = []
     extra_pr_ids = []
     extra_pr_authors = []
@@ -1563,14 +1519,13 @@ async def _fetch_commit_stats(
     extra_pr_commits = []
     extra_pr_repo_names = []
     extra_pr_titles = []
-    for repo_id, merges in force_pushed_per_repo.items():
-        dag = dags[(repo_name := repo_node_to_name[repo_id])][1]
-        pr_hashes = extract_pr_commits(*dag, np.array([c[0] for c in merges], dtype="S40"))
-        for (merge_sha, pr_number), shas in zip(merges, pr_hashes):
-            try:
-                pr = pr_by_repo_number[(repo_id, pr_number)]
-            except KeyError:
-                continue
+    for repo_id, pr_rows in rebased_prs_by_repo.items():
+        dag = dags[(repo_name := repo_node_to_name(repo_id))][1]
+        rebased_merge_shas = np.array(
+            [rebased_map[pr_row[NodePullRequest.id.name]] for pr_row in pr_rows], dtype="S40",
+        )
+        pr_hashes = extract_pr_commits(*dag, rebased_merge_shas)
+        for pr, merge_sha, shas in zip(pr_rows, rebased_merge_shas, pr_hashes):
             extra_merges.append(merge_sha)
             extra_pr_ids.append(pr[NodePullRequest.id.name])
             extra_pr_authors.append(pr[NodePullRequest.author_id.name] or 0)

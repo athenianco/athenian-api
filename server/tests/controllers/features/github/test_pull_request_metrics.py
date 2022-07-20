@@ -9,6 +9,7 @@ from pandas.testing import assert_frame_equal
 import pytest
 from sqlalchemy import insert, select
 
+from athenian.api.async_utils import read_sql_query
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.features.github.pull_request_metrics import (
     AllCounter,
@@ -50,6 +51,7 @@ from athenian.api.internal.features.metric_calculator import (
 )
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.deployment import mine_deployments
+from athenian.api.internal.miners.github.pull_request import PullRequestMiner
 from athenian.api.internal.miners.types import PullRequestFacts
 from athenian.api.internal.settings import (
     LogicalDeploymentSettings,
@@ -58,6 +60,7 @@ from athenian.api.internal.settings import (
     ReleaseMatchSetting,
     ReleaseSettings,
 )
+from athenian.api.models.metadata.github import PullRequest
 from athenian.api.models.persistentdata.models import ReleaseNotification
 from athenian.api.models.precomputed.models import (
     GitHubMergedPullRequestFacts,
@@ -815,13 +818,13 @@ async def test_calc_pull_request_metrics_line_github_quantiles(
         0
     ][0]
     await wait_deferred()
-    assert metrics.value == 26
+    assert metrics.value == 25
     args[2] = [0, 1]
     metrics = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
         0
     ][0]
     await wait_deferred()
-    assert metrics.value == 26  # != 7 from the previous test!
+    assert metrics.value == 25
     # yes, see _fetch_inactive_merged_unreleased_prs
 
 
@@ -865,12 +868,12 @@ async def test_calc_pull_request_metrics_line_github_tag_after_branch(
         0
     ][0]
     await wait_deferred()
-    assert metrics.value == timedelta(seconds=395)
+    assert metrics.value == timedelta(seconds=393)
     args[-6] = release_match_setting_tag_or_branch
     metrics = (await metrics_calculator.calc_pull_request_metrics_line_github(*args))[0][0][0][0][
         0
     ][0]
-    assert metrics.value == timedelta(days=41, seconds=19129)
+    assert metrics.value == timedelta(days=41, seconds=2636)
 
 
 @with_defer
@@ -1635,6 +1638,7 @@ async def test_pull_request_count_logical_alpha_beta(
     bots,
     branches,
     default_branches,
+    dag,
 ):
     logical_settings = deepcopy(logical_settings)
     logical_settings._deployments["src-d/go-git"] = LogicalDeploymentSettings(
@@ -1643,6 +1647,9 @@ async def test_pull_request_count_logical_alpha_beta(
         },
         "src-d/go-git",
     )
+    prs = await read_sql_query(select(PullRequest), mdb, PullRequest, index=PullRequest.node_id)
+    await PullRequestMiner.mark_dead_prs(prs, branches, dag, 1, (6366825,), mdb, pdb)
+    await wait_deferred()
     await mine_deployments(
         ["src-d/go-git/alpha"],
         {},
@@ -1706,14 +1713,14 @@ async def test_pull_request_count_logical_alpha_beta(
             assert values[0, 0, 0, 0][0][0].value == 159
             assert values[0, 0, 0, 0][0][1].value == 24
             assert values[0, 0, 0, 0][0][2].value == 105
-            assert values[0, 0, 0, 0][0][3].value == 119
-            assert values[0, 0, 0, 0][0][4].value == 119
+            assert values[0, 0, 0, 0][0][3].value == 144
+            assert values[0, 0, 0, 0][0][4].value == 121
 
             assert values[0, 1, 0, 0][0][0].value == 107
             assert values[0, 1, 0, 0][0][1].value == 29
             assert values[0, 1, 0, 0][0][2].value == 99
             assert values[0, 1, 0, 0][0][3].value == 0  # TODO(vmarkovtsev): set to 79 when ready
-            assert values[0, 1, 0, 0][0][4].value == 78
+            assert values[0, 1, 0, 0][0][4].value == 79
 
         check_metrics()
 
@@ -1767,8 +1774,8 @@ async def test_pull_request_count_logical_root(
         assert values[0, 2, 0, 0][0][0].value == 304
         assert values[0, 2, 0, 0][0][1].value == 57
         assert values[0, 2, 0, 0][0][2].value == 267
-        assert values[0, 2, 0, 0][0][3].value == 231
-        assert values[0, 2, 0, 0][0][4].value == 228
+        assert values[0, 2, 0, 0][0][3].value == 211
+        assert values[0, 2, 0, 0][0][4].value == 230
         args[5] = [["src-d/go-git"]]
         values = await metrics_calculator.calc_pull_request_metrics_line_github(*args)
         await wait_deferred()
@@ -1776,8 +1783,8 @@ async def test_pull_request_count_logical_root(
         assert values[0, 0, 0, 0][0][0].value == 554
         assert values[0, 0, 0, 0][0][1].value == 107
         assert values[0, 0, 0, 0][0][2].value == 461
-        assert values[0, 0, 0, 0][0][3].value == 418
-        assert values[0, 0, 0, 0][0][4].value == 414
+        assert values[0, 0, 0, 0][0][3].value == 384
+        assert values[0, 0, 0, 0][0][4].value == 418
 
 
 async def test_pull_request_stage_times(precomputed_deployments, real_pr_samples):
@@ -1801,11 +1808,11 @@ async def test_pull_request_stage_times(precomputed_deployments, real_pr_samples
         (PullRequestMetricID.PR_REVIEW_TIME, timedelta(days=4, seconds=85421)),
         (PullRequestMetricID.PR_MERGING_TIME, timedelta(days=5, seconds=1952)),
         (PullRequestMetricID.PR_OPEN_TIME, timedelta(days=9, seconds=20554)),
-        (PullRequestMetricID.PR_RELEASE_TIME, timedelta(days=29, seconds=50065)),
-        (PullRequestMetricID.PR_DEPLOYMENT_TIME, [None, None, timedelta(days=663, seconds=69791)]),
+        (PullRequestMetricID.PR_RELEASE_TIME, timedelta(days=29, seconds=33615)),
+        (PullRequestMetricID.PR_DEPLOYMENT_TIME, [None, None, timedelta(days=604, seconds=55281)]),
         (
             PullRequestMetricID.PR_LEAD_DEPLOYMENT_TIME,
-            [None, None, timedelta(days=700, seconds=78816)],
+            [None, None, timedelta(days=643, seconds=57124)],
         ),
     ]:
         assert values[metric][0][0].value == td, metric
@@ -1818,17 +1825,17 @@ async def test_pull_request_deployment_stage_counts(precomputed_deployments, rea
         PullRequestMetricID.PR_LEAD_DEPLOYMENT_COUNT,
         PullRequestMetricID.PR_LEAD_DEPLOYMENT_COUNT_Q,
         quantile_stride=180,
-        quantiles=(0, 0.95),
+        quantiles=(0, 0.8),
         environments=["staging", "mirror", "production"],
     )
     time_from, time_to, samples = real_pr_samples
     ensemble(samples, dt64arr_ns(time_from), dt64arr_ns(time_to), [np.arange(len(samples))])
     values = ensemble.values()
     for metric, td in [
-        (PullRequestMetricID.PR_DEPLOYMENT_COUNT, [0, 0, 418]),
-        (PullRequestMetricID.PR_DEPLOYMENT_COUNT_Q, [0, 0, 398]),
-        (PullRequestMetricID.PR_LEAD_DEPLOYMENT_COUNT, [0, 0, 418]),
-        (PullRequestMetricID.PR_LEAD_DEPLOYMENT_COUNT_Q, [0, 0, 397]),
+        (PullRequestMetricID.PR_DEPLOYMENT_COUNT, [0, 0, 384]),
+        (PullRequestMetricID.PR_DEPLOYMENT_COUNT_Q, [0, 0, 313]),
+        (PullRequestMetricID.PR_LEAD_DEPLOYMENT_COUNT, [0, 0, 384]),
+        (PullRequestMetricID.PR_LEAD_DEPLOYMENT_COUNT_Q, [0, 0, 307]),
     ]:
         assert values[metric][0][0].value == td, metric
 
@@ -1854,10 +1861,10 @@ async def test_pull_request_cycle_deployment_time(
     for metric, td in [
         (
             PullRequestMetricID.PR_CYCLE_DEPLOYMENT_TIME,
-            [None, None, timedelta(days=659, seconds=86161)],
+            [None, None, timedelta(days=636, seconds=70332)],
         ),
-        (PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT, [0, 0, 418]),
-        (PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT_Q, [0, 0, 377]),
+        (PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT, [0, 0, 384]),
+        (PullRequestMetricID.PR_CYCLE_DEPLOYMENT_COUNT_Q, [0, 0, 363]),
     ]:
         assert values[metric][0][0].value == td, metric
 
@@ -1877,5 +1884,5 @@ async def test_pull_request_deployment_time_with_failed(
     values = ensemble.values()
     assert (
         values[PullRequestMetricID.PR_DEPLOYMENT_TIME][0][0].value
-        == [timedelta(days=128, seconds=86233)] * 2
+        == [timedelta(days=127, seconds=3231)] * 2
     )

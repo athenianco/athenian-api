@@ -118,7 +118,7 @@ async def read_sql_query(
         PrecomputedBase,
         StateBase,
     ],
-    index: Optional[Union[str, Sequence[str]]] = None,
+    index: Optional[Union[str, Sequence[str], InstrumentedAttribute]] = None,
     soft_limit: Optional[int] = None,
 ) -> pd.DataFrame:
     """Read SQL query into a DataFrame.
@@ -145,6 +145,8 @@ async def read_sql_query(
     Any datetime values with time zone information parsed via the `parse_dates`
     parameter will be converted to UTC.
     """
+    if isinstance(index, InstrumentedAttribute):
+        index = index.name
     if await is_postgresql(con):
         if not isinstance(columns, Sequence):
             columns = columns.__table__.columns
