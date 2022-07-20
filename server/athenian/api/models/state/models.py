@@ -257,7 +257,7 @@ class Feature(create_time_mixin(updated_at=True), Base):
     )
 
 
-class AccountFeature(create_time_mixin(updated_at=True), Base):
+class AccountFeature(create_time_mixin(created_at=True, updated_at=True), Base):
     """Product features -> accounts many-to-many mapping."""
 
     __tablename__ = "account_features"
