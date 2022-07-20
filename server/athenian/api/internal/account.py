@@ -1,7 +1,7 @@
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from graphlib import CycleError, TopologicalSorter  # noqa
-from itertools import chain  # noqa
+from itertools import chain
 import logging
 import marshal
 import os
@@ -9,7 +9,7 @@ import pickle
 from sqlite3 import IntegrityError
 import struct
 import time
-from typing import Any, Callable, Collection, Coroutine, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Collection, Coroutine, List, Mapping, Optional, Sequence, Tuple
 
 from aiohttp import web
 import aiomcache
@@ -17,6 +17,7 @@ import aiosqlite
 from asyncpg import UniqueViolationError
 import morcilla.core
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
+import sqlalchemy as sa
 from sqlalchemy import and_, func, insert, select
 
 from athenian.api import metadata
@@ -105,6 +106,29 @@ async def get_metadata_account_ids_or_empty(
         return await get_metadata_account_ids(account, sdb, cache)
     except ResponseError:
         return ()
+
+
+@cached(
+    exptime=middle_term_exptime,
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda accounts, **_: (sorted(accounts),),
+)
+async def get_multiple_metadata_account_ids(
+    accounts: Sequence[int],
+    sdb: DatabaseLike,
+    cache: Optional[aiomcache.Client],
+) -> dict[int, list[int]]:
+    """Fetch the metadata account IDs for many accounts."""
+    query = sa.select(AccountGitHubAccount.id, AccountGitHubAccount.account_id).where(
+        AccountGitHubAccount.account_id.in_(accounts),
+    )
+    accounts_meta_ids: dict[int, list[int]] = {account: [] for account in accounts}
+    for row in await sdb.fetch_all(query):
+        accounts_meta_ids[row[AccountGitHubAccount.account_id.name]].append(
+            row[AccountGitHubAccount.id.name],
+        )
+    return accounts_meta_ids
 
 
 async def match_metadata_installation(
