@@ -52,6 +52,7 @@ class TestCreateTeam:
                 "name": "Engineering",
                 "owner_id": account,
                 "parent_id": root_team_id,
+                "origin_node_id": None,
             },
         )
 
@@ -69,6 +70,7 @@ class TestCreateTeam:
                 "name": "Management",
                 "owner_id": account,
                 "parent_id": eng_team_id,
+                "origin_node_id": None,
             },
         )
 
@@ -92,6 +94,7 @@ class TestCreateTeam:
                 "name": "Engineering",
                 "owner_id": 1,
                 "parent_id": 100,
+                "origin_node_id": None,
             },
         )
 
@@ -193,6 +196,7 @@ class TestCreateTeam:
                 "name": "Engineering",
                 "owner_id": 1,
                 "parent_id": 10,
+                "origin_node_id": None,
             },
         )
 
@@ -321,7 +325,7 @@ async def test_resync_teams_smoke(client, headers, sdb, disable_default_user):
     await sdb.execute(model_insert_stmt(TeamFactory(parent_id=None), with_primary_keys=False))
     response = await client.request(method="DELETE", path="/v1/teams/1", headers=headers)
     body = await response.json()
-    assert response.status == 200, "Response body is : " + body
+    assert response.status == 200, f"Response body is : {body}"
     teams = {t["name"]: TeamListItem.from_dict(t) for t in body}
     actual_teams = await sdb.fetch_all(select([Team]).where(Team.owner_id == 1))
     assert len(teams) == len(actual_teams) - 1  # root team is not included in the response

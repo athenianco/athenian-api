@@ -1,7 +1,7 @@
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from graphlib import CycleError, TopologicalSorter  # noqa
-from itertools import chain  # noqa
+from itertools import chain
 import logging
 import marshal
 import os
@@ -9,7 +9,7 @@ import pickle
 from sqlite3 import IntegrityError
 import struct
 import time
-from typing import Any, Callable, Collection, Coroutine, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Collection, Coroutine, Mapping, Optional, Sequence
 
 from aiohttp import web
 import aiomcache
@@ -17,6 +17,7 @@ import aiosqlite
 from asyncpg import UniqueViolationError
 import morcilla.core
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
+import sqlalchemy as sa
 from sqlalchemy import and_, func, insert, select
 
 from athenian.api import metadata
@@ -70,7 +71,7 @@ async def get_metadata_account_ids(
     account: int,
     sdb: DatabaseLike,
     cache: Optional[aiomcache.Client],
-) -> Tuple[int, ...]:
+) -> tuple[int, ...]:
     """Fetch the metadata account IDs for the given API account ID."""
     ids = await sdb.fetch_all(
         select([AccountGitHubAccount.id]).where(AccountGitHubAccount.account_id == account),
@@ -95,7 +96,7 @@ async def get_metadata_account_ids_or_empty(
     account: int,
     sdb: DatabaseLike,
     cache: Optional[aiomcache.Client],
-) -> Tuple[int, ...]:
+) -> tuple[int, ...]:
     """
     Fetch the metadata account IDs for the given API account ID.
 
@@ -105,6 +106,29 @@ async def get_metadata_account_ids_or_empty(
         return await get_metadata_account_ids(account, sdb, cache)
     except ResponseError:
         return ()
+
+
+@cached(
+    exptime=middle_term_exptime,
+    serialize=pickle.dumps,
+    deserialize=pickle.loads,
+    key=lambda accounts, **_: (sorted(accounts),),
+)
+async def get_multiple_metadata_account_ids(
+    accounts: Sequence[int],
+    sdb: DatabaseLike,
+    cache: Optional[aiomcache.Client],
+) -> dict[int, list[int]]:
+    """Fetch the metadata account IDs for many accounts."""
+    query = sa.select(AccountGitHubAccount.id, AccountGitHubAccount.account_id).where(
+        AccountGitHubAccount.account_id.in_(accounts),
+    )
+    accounts_meta_ids: dict[int, list[int]] = {account: [] for account in accounts}
+    for row in await sdb.fetch_all(query):
+        accounts_meta_ids[row[AccountGitHubAccount.account_id.name]].append(
+            row[AccountGitHubAccount.id.name],
+        )
+    return accounts_meta_ids
 
 
 async def match_metadata_installation(
@@ -187,7 +211,7 @@ async def get_account_name(
     sdb: DatabaseLike,
     mdb: DatabaseLike,
     cache: Optional[aiomcache.Client],
-    meta_ids: Optional[Tuple[int, ...]] = None,
+    meta_ids: Optional[tuple[int, ...]] = None,
 ) -> str:
     """Load the human-readable name of the account."""
     if meta_ids is None:
@@ -203,7 +227,7 @@ async def get_account_name_or_stub(
     sdb: DatabaseLike,
     mdb: DatabaseLike,
     cache: Optional[aiomcache.Client],
-    meta_ids: Optional[Tuple[int, ...]] = None,
+    meta_ids: Optional[tuple[int, ...]] = None,
 ) -> str:
     """Load the human-readable name of the account or a placeholder if no name exists."""
     try:
@@ -334,7 +358,7 @@ async def get_account_repositories(
     account: int,
     with_prefix: bool,
     sdb: DatabaseLike,
-) -> List[str]:
+) -> list[str]:
     """Fetch all the repositories belonging to the account."""
     repos = await sdb.fetch_val(
         select([RepositorySet.items]).where(
@@ -368,7 +392,7 @@ async def get_account_organizations(
     sdb: DatabaseLike,
     mdb: DatabaseLike,
     cache: Optional[aiomcache.Client],
-) -> List[Organization]:
+) -> list[Organization]:
     """Fetch the list of GitHub organizations installed for the account."""
     ghids = await get_metadata_account_ids(account, sdb, cache)
     rows = await mdb.fetch_all(select([Organization]).where(Organization.acc_id.in_(ghids)))
@@ -377,12 +401,12 @@ async def get_account_organizations(
 
 async def copy_teams_as_needed(
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     root_team_id: int,
     sdb: DatabaseLike,
     mdb: DatabaseLike,
     cache: Optional[aiomcache.Client],
-) -> Tuple[List[Mapping[str, Any]], int]:
+) -> tuple[list[Mapping[str, Any]], int]:
     """
     Copy the teams from GitHub organization if none exist yet.
 
@@ -390,12 +414,10 @@ async def copy_teams_as_needed(
     """
     log = logging.getLogger("%s.create_teams_as_needed" % metadata.__package__)
     existing = await sdb.fetch_val(
-        select([func.count(StateTeam.id)]).where(
-            and_(
-                StateTeam.owner_id == account,
-                StateTeam.name != StateTeam.BOTS,
-                StateTeam.id != root_team_id,
-            ),
+        select(func.count(StateTeam.id)).where(
+            StateTeam.owner_id == account,
+            StateTeam.name != StateTeam.BOTS,
+            StateTeam.id != root_team_id,
         ),
     )
     if existing > 0:
@@ -403,7 +425,7 @@ async def copy_teams_as_needed(
         return [], existing
     orgs = [org.id for org in await get_account_organizations(account, sdb, mdb, cache)]
     team_rows = await mdb.fetch_all(
-        select([MetadataTeam]).where(
+        select(MetadataTeam).where(
             and_(MetadataTeam.organization_id.in_(orgs), MetadataTeam.acc_id.in_(meta_ids)),
         ),
     )
@@ -415,9 +437,9 @@ async def copy_teams_as_needed(
     for row in team_rows:
         team_id = row[MetadataTeam.id.name]
         if (parent_id := row[MetadataTeam.parent_team_id.name]) is not None:
-            dig.setdefault(team_id, []).append(parent_id)
+            dig[team_id] = [parent_id]
         else:
-            dig.setdefault(team_id, [])
+            dig[team_id] = []
     try:
         TopologicalSorter(dig).prepare()
     except CycleError as e:
@@ -425,7 +447,7 @@ async def copy_teams_as_needed(
         return [], 0
     teams = {t[MetadataTeam.id.name]: t for t in team_rows}
     member_rows = await mdb.fetch_all(
-        select([TeamMember.parent_id, TeamMember.child_id]).where(
+        select(TeamMember.parent_id, TeamMember.child_id).where(
             and_(TeamMember.parent_id.in_(teams), TeamMember.acc_id.in_(meta_ids)),
         ),
     )
@@ -450,6 +472,7 @@ async def copy_teams_as_needed(
                 name=team[MetadataTeam.name.name],
                 members=sorted(members.get(team[MetadataTeam.id.name], [])),
                 parent_id=parent_id,
+                origin_node_id=team[MetadataTeam.id.name],
             )
             .create_defaults()
             .explode()
@@ -497,7 +520,7 @@ async def get_installation_event_ids(
     sdb: DatabaseLike,
     mdb: DatabaseLike,
     cache: Optional[aiomcache.Client],
-) -> List[Tuple[int, str]]:
+) -> list[tuple[int, str]]:
     """Load the GitHub account and delivery event IDs for the given sdb account."""
     meta_ids = await get_metadata_account_ids(account, sdb, cache)
     rows = await mdb.fetch_all(
@@ -557,7 +580,7 @@ async def _fetch_github_installation_progress_timed(
     sdb: DatabaseLike,
     mdb: DatabaseLike,
     cache: Optional[aiomcache.Client],
-) -> Tuple[InstallationProgress, float]:
+) -> tuple[InstallationProgress, float]:
     start_time = time.time()
     if isinstance(mdb, Database):
         async with mdb.connection() as mdb_conn:

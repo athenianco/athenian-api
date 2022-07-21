@@ -1,6 +1,5 @@
 import argparse
 import asyncio
-from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from itertools import chain
@@ -21,7 +20,7 @@ from tqdm import tqdm
 from athenian.api.async_utils import gather
 from athenian.api.db import Database
 from athenian.api.defer import defer, wait_deferred
-from athenian.api.internal.account import copy_teams_as_needed
+from athenian.api.internal.account import copy_teams_as_needed, get_multiple_metadata_account_ids
 from athenian.api.internal.features.entries import MetricEntriesCalculator
 from athenian.api.internal.jira import disable_empty_projects, match_jira_identities
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
@@ -43,7 +42,7 @@ from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.reposet import refresh_repository_names
 from athenian.api.internal.settings import ReleaseMatch, Settings
 from athenian.api.internal.team import RootTeamNotFoundError, get_root_team
-from athenian.api.models.state.models import AccountGitHubAccount, RepositorySet, Team
+from athenian.api.models.state.models import RepositorySet, Team
 from athenian.api.precompute.context import PrecomputeContext
 from athenian.api.precompute.prometheus import get_metrics, push_metrics
 from athenian.api.tracing import sentry_span
@@ -155,19 +154,9 @@ async def _get_reposets_to_precompute(
     reposet_stmt = sa.select(RepositorySet).where(
         sa.and_(RepositorySet.name == RepositorySet.ALL, RepositorySet.owner_id.in_(accounts)),
     )
-    meta_ids_stmt = sa.select(AccountGitHubAccount).where(
-        AccountGitHubAccount.account_id.in_(accounts),
+    reposet_rows, accounts_meta_ids = await gather(
+        sdb.fetch_all(reposet_stmt), get_multiple_metadata_account_ids(accounts, sdb, None),
     )
-
-    reposet_rows, meta_ids_rows = await gather(
-        sdb.fetch_all(reposet_stmt), sdb.fetch_all(meta_ids_stmt),
-    )
-
-    accounts_meta_ids = defaultdict(list)
-    for meta_ids_row in meta_ids_rows:
-        accounts_meta_ids[meta_ids_row[AccountGitHubAccount.account_id.name]].append(
-            meta_ids_row[AccountGitHubAccount.id.name],
-        )
 
     res = []
     for reposet_row in reposet_rows:

@@ -159,6 +159,16 @@ class Team(
     )
     parent_id = Column(Integer(), ForeignKey("teams.id", name="fk_team_parent"))
     root_id = "root_id"
+    origin_node_id = Column(BigInteger())
+    """The id of the corresponding team in metadata DB, pointing github.node_team.graph_id
+
+    Will be NULL for
+    - special BOTS and ROOT teams
+    - locally created teams
+    - teams existing at the time the field was introduced, and for which the migration failed to
+      discover the metadata team id
+
+    """
 
 
 class AccountGitHubAccount(create_time_mixin(created_at=True, nullable=True), Base):
@@ -257,7 +267,7 @@ class Feature(create_time_mixin(updated_at=True), Base):
     )
 
 
-class AccountFeature(create_time_mixin(updated_at=True), Base):
+class AccountFeature(create_time_mixin(created_at=True, updated_at=True), Base):
     """Product features -> accounts many-to-many mapping."""
 
     __tablename__ = "account_features"
