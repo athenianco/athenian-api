@@ -891,11 +891,48 @@ class DoneCalculator(SumMetricCalculator[int]):
         return result
 
 
+class _ReviewedPlusNotReviewedCalculator(MetricCalculator[int]):
+    """Calculate the sum reviewed + non-reviewed PRs.
+
+    This metric is not exposed but only used to compute PR_REVIEWED_RATIO.
+    """
+
+    deps = (ReviewedCalculator, NotReviewedCalculator)
+    metric = MetricInt
+
+    def _values(self) -> list[list[Metric[int]]]:
+        metrics = [
+            [self.metric.from_fields(False, None, None, None)] * len(samples)
+            for samples in self.samples
+        ]
+        a, b = self._calcs
+        for i, (a_group, b_group) in enumerate(zip(a.values, b.values)):
+            for j, (a_metric, b_metric) in enumerate(zip(a_group, b_group)):
+                tot = 0
+                if a_metric.exists or b_metric.exists:
+                    tot += (a_metric.value or 0) + (b_metric.value or 0)
+                    metrics[i][j] = self.metric.from_fields(True, tot, None, None)
+
+        return metrics
+
+    def _analyze(
+        self,
+        facts: pd.DataFrame,
+        min_times: np.ndarray,
+        max_times: np.ndarray,
+        **kwargs,
+    ) -> np.ndarray:
+        return np.full((len(min_times), len(facts)), self.nan, self.dtype)
+
+    def _value(self, samples: np.ndarray) -> Metric[timedelta]:
+        raise AssertionError("this must be never called")
+
+
 @register_metric(PullRequestMetricID.PR_REVIEWED_RATIO)
 class ReviewedRatioCalculator(RatioCalculator):
-    """Calculate the PR reviewed ratio = (reviewed and closed) / closed."""
+    """Calculate the PR reviewed ratio = pr-reviewed / (pr-reviewed + pr-not-reviewed)."""
 
-    deps = (ReviewedClosedCalculator, ClosedCalculator)
+    deps = (ReviewedCalculator, _ReviewedPlusNotReviewedCalculator)
 
 
 @register_metric(PullRequestMetricID.PR_FLOW_RATIO)
