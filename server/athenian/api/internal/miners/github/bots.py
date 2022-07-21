@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import dataclasses
 import pickle
 from time import time
 from typing import Optional
@@ -52,6 +51,17 @@ class Bots:
         assert self._bots is not None
         return self._bots[0]
 
+    async def team(self, account: int, sdb: Database) -> Optional[list[int]]:
+        """Return the "Bots" team members."""
+        return await sdb.fetch_val(
+            select([Team.members]).where(
+                and_(
+                    Team.owner_id == account,
+                    Team.name == Team.BOTS,
+                ),
+            ),
+        )
+
     @cached(
         exptime=short_term_exptime,
         serialize=pickle.dumps,
@@ -73,16 +83,7 @@ class Bots:
         """
         await self._ensure_fetched(mdb)
         assert self._bots is not None
-        team = (
-            await sdb.fetch_val(
-                select([Team.members]).where(
-                    and_(
-                        Team.owner_id == account,
-                        Team.name == Team.BOTS,
-                    ),
-                ),
-            )
-        ) or []
+        team = (await self.team(account, sdb)) or []
         team_logins = await mdb.fetch_all(
             select([User.login]).where(
                 and_(
@@ -98,37 +99,6 @@ class Bots:
             ),
         )
         return bots
-
-    async def get_account_bots(
-        self,
-        account: int,
-        meta_ids: tuple[int, ...],
-        mdb: Database,
-        sdb: Database,
-        cache: Optional[aiomcache.Client],
-    ) -> AccountBots:
-        """Return the account bots collection."""
-        all_bots = await self(account, meta_ids, mdb, sdb, cache)
-        global_bots = await self.extra(mdb)
-        return AccountBots(global_bots, all_bots - global_bots)
-
-
-@dataclasses.dataclass(frozen=True)
-class AccountBots:
-    """The collection of bots for an account.
-
-    Bots are partitioned into global (common to every account)
-    and local (specific of this account) groups
-
-    """
-
-    global_bots: frozenset[str]
-    local_bots: frozenset[str]
-    all_bots: frozenset[str] = dataclasses.field(init=False)
-
-    def __post_init__(self) -> None:
-        """Set the auto generated all_bots field."""
-        super().__setattr__("all_bots", self.global_bots | self.local_bots)
 
 
 bots = Bots()
