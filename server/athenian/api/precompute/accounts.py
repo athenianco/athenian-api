@@ -9,12 +9,12 @@ import signal
 import sys
 import time
 import traceback
-from typing import Callable, Optional, Sequence, Set, Tuple
+from typing import Callable, Collection, Optional, Sequence
 
 import aiomcache
 import sentry_sdk
 import sqlalchemy as sa
-from sqlalchemy import and_, insert, select, update
+from sqlalchemy import insert, update
 from tqdm import tqdm
 
 from athenian.api.async_utils import gather
@@ -41,7 +41,12 @@ from athenian.api.internal.miners.types import PullRequestFacts
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.reposet import refresh_repository_names
 from athenian.api.internal.settings import ReleaseMatch, Settings
-from athenian.api.internal.team import RootTeamNotFoundError, get_root_team
+from athenian.api.internal.team import (
+    RootTeamNotFoundError,
+    get_bots_team,
+    get_root_team,
+    sync_team_members,
+)
 from athenian.api.models.state.models import RepositorySet, Team
 from athenian.api.precompute.context import PrecomputeContext
 from athenian.api.precompute.prometheus import get_metrics, push_metrics
@@ -144,7 +149,7 @@ class RepoSetToPrecompute:
     """A repository set to precompute."""
 
     reposet: RepositorySet
-    meta_ids: Tuple[int, ...]
+    meta_ids: tuple[int, ...]
 
 
 async def _get_reposets_to_precompute(
@@ -176,7 +181,7 @@ def _set_sentry_scope(reposet: RepositorySet) -> None:
 @sentry_span
 async def precompute_reposet(
     reposet: RepositorySet,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     context: PrecomputeContext,
     args: argparse.Namespace,
     time_to: datetime,
@@ -201,7 +206,7 @@ async def precompute_reposet(
     try:
         prefixer, bots, new_items = await gather(
             Prefixer.load(meta_ids, mdb, cache),
-            fetch_bots(reposet.owner_id, meta_ids, mdb, sdb, None),
+            fetch_bots.get_account_bots(reposet.owner_id, meta_ids, mdb, sdb, None),
             refresh_repository_names(reposet.owner_id, meta_ids, sdb, mdb),
         )
     except Exception as e:
@@ -209,18 +214,19 @@ async def precompute_reposet(
         sentry_sdk.capture_exception(e)
         return
     reposet.items = new_items
-    log.info("Loaded %d bots", len(bots))
+    log.info("loaded %d bots", len(bots.all_bots))
     if not reposet.precomputed:
-        log.info("Considering account %d as brand new, creating the teams", reposet.owner_id)
+        log.info("considering account %d as brand new, creating the teams", reposet.owner_id)
         try:
             num_teams, num_bots = await create_teams(
-                reposet.owner_id, meta_ids, bots, prefixer, sdb, mdb, cache,
+                reposet.owner_id, meta_ids, bots.local_bots, prefixer, sdb, mdb, cache,
             )
         except Exception as e:
             log.warning("teams %d: %s: %s", reposet.owner_id, type(e).__name__, e)
             sentry_sdk.capture_exception(e)
             num_teams = num_bots = 0
             # no return
+    await _sync_bots_team_members(reposet.owner_id, bots.local_bots, prefixer, sdb, log)
     if not args.skip_jira:
         try:
             await match_jira_identities(reposet.owner_id, meta_ids, sdb, mdb, slack, cache)
@@ -301,7 +307,7 @@ async def precompute_reposet(
             LabelFilter.empty(),
             JIRAFilter.empty(),
             False,
-            bots,
+            bots.all_bots,
             _release_settings,
             logical_settings,
             prefixer,
@@ -413,13 +419,13 @@ async def precompute_reposet(
 
 async def create_teams(
     account: int,
-    meta_ids: Tuple[int, ...],
-    bots: Set[str],
+    meta_ids: tuple[int, ...],
+    bots: Collection[str],
     prefixer: Prefixer,
     sdb: Database,
     mdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Tuple[int, int]:
+) -> tuple[int, int]:
     """Copy the existing teams from GitHub and create a new team with all the involved bots \
     for the specified account.
 
@@ -433,22 +439,17 @@ async def create_teams(
 
 async def _ensure_bot_team(
     account: int,
-    bots: Set[str],
+    local_bots: Collection[str],
     root_team_id: int,
     prefixer: Prefixer,
     sdb: Database,
     mdb: Database,
 ) -> int:
-    bot_team = await sdb.fetch_one(
-        select([Team.id, Team.members]).where(
-            and_(Team.name == Team.BOTS, Team.owner_id == account),
-        ),
-    )
+    bot_team = await get_bots_team(account, sdb)
     if bot_team is not None:
         return len(bot_team[Team.members.name])
 
-    bots -= await fetch_bots.extra(mdb)
-    bot_ids = set(chain.from_iterable(prefixer.user_login_to_node.get(u, ()) for u in bots))
+    bot_ids = set(chain.from_iterable(prefixer.user_login_to_node.get(u, ()) for u in local_bots))
     await sdb.execute(
         insert(Team).values(
             Team(name=Team.BOTS, owner_id=account, parent_id=root_team_id, members=sorted(bot_ids))
@@ -470,6 +471,33 @@ async def _ensure_root_team(account: int, sdb: Database) -> int:
 
     team = Team(name=Team.ROOT, owner_id=account, members=[], parent_id=None)
     return await sdb.execute(insert(Team).values(team.create_defaults().explode()))
+
+
+async def _sync_bots_team_members(
+    account: int,
+    local_bots: Collection[str],
+    prefixer: Prefixer,
+    sdb: Database,
+    log: logging.Logger,
+) -> None:
+    """Update the members of the bots team if needed.
+
+    Missing bots are added to the Bots team in sdb.
+    Existing bots in the Bots team are never removed.
+    """
+    bot_ids = list(
+        set(chain.from_iterable(prefixer.user_login_to_node.get(u, ()) for u in local_bots)),
+    )
+
+    async with sdb.connection() as sdb_conn:
+        async with sdb_conn.transaction():
+            bot_team = await get_bots_team(account, sdb)
+            if bot_team is None:
+                return
+            log.info("syncing bots team members")
+            new_members = await sync_team_members(bot_team, bot_ids, sdb_conn)
+            if new_members:
+                log.info("added members to Bots team: %s", ",".join(map(str, new_members)))
 
 
 class _DurationTracker:

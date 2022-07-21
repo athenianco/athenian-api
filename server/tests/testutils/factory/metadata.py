@@ -2,7 +2,13 @@ from datetime import datetime, timedelta, timezone
 
 import factory
 
-from athenian.api.models.metadata.github import Account, AccountRepository, FetchProgress, User
+from athenian.api.models.metadata.github import (
+    Account,
+    AccountRepository,
+    Bot,
+    FetchProgress,
+    User,
+)
 from athenian.api.models.metadata.jira import Issue, Project, User as JIRAUser
 
 from .alchemy import SQLAlchemyModelFactory
@@ -52,6 +58,14 @@ class UserFactory(SQLAlchemyModelFactory):
     avatar_url = factory.LazyAttribute(lambda user: f"https://github.com/user-{user.node_id}.jpg")
     login = factory.LazyAttribute(lambda user: f"user-{user.node_id}")
     html_url = factory.LazyAttribute(lambda user: f"https://github.com/user-{user.node_id}")
+
+
+class BotFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = Bot
+
+    acc_id = DEFAULT_MD_ACCOUNT_ID
+    login = factory.LazyAttribute(lambda bot: f"bot-{bot.node_id}")
 
 
 class JIRAProjectFactory(SQLAlchemyModelFactory):
