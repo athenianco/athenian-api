@@ -291,6 +291,7 @@ async def precompute_reposet(
                 repos, branches, reposet.owner_id, meta_ids, mdb, pdb, None,
             )
         log.info("Extracting PR facts")
+        pr_snapshot_time = datetime.now(timezone.utc)
         facts = await MetricEntriesCalculator(
             reposet.owner_id,
             meta_ids,
@@ -341,7 +342,7 @@ async def precompute_reposet(
             repos,
             {},
             time_from,
-            time_to,
+            min(pr_snapshot_time, time_to),  # sacrifice for proper rebased PRs ownership
             [],
             [],
             {},

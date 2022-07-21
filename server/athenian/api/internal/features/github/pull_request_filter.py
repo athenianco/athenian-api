@@ -1205,7 +1205,7 @@ async def unwrap_pull_requests(
             dags, branches, BRANCH_FETCH_COMMITS_COLUMNS, True, account, meta_ids, mdb, pdb, cache,
         )
         prs_df = await PullRequestMiner.mark_dead_prs(
-            prs_df, branches, dags, meta_ids, mdb, PullRequest,
+            prs_df, branches, dags, account, meta_ids, mdb, pdb, PullRequest,
         )
     facts, ambiguous = precomputed_done_facts, precomputed_ambiguous_done_facts
     PullRequestMiner.adjust_pr_closed_merged_timestamps(prs_df)

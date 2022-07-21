@@ -6,6 +6,7 @@ from enum import Enum
 from itertools import chain, repeat
 import logging
 import pickle
+import re
 from typing import (
     Collection,
     Dict,
@@ -26,7 +27,7 @@ import numpy as np
 import pandas as pd
 from pandas.core.common import flatten
 import sentry_sdk
-from sqlalchemy import sql
+from sqlalchemy import BigInteger, sql
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.orm import aliased
 from sqlalchemy.orm.attributes import InstrumentedAttribute
@@ -64,6 +65,11 @@ from athenian.api.internal.miners.github.precomputed_prs import (
     discover_inactive_merged_unreleased_prs,
     update_unreleased_prs,
 )
+from athenian.api.internal.miners.github.precomputed_prs.dead_prs import (
+    drop_undead_duplicates,
+    load_undead_prs,
+    store_undead_prs,
+)
 from athenian.api.internal.miners.github.release_load import ReleaseLoader
 from athenian.api.internal.miners.github.release_match import (
     PullRequestToReleaseMapper,
@@ -88,6 +94,7 @@ from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseMat
 from athenian.api.models.metadata.github import (
     Base,
     CheckRun,
+    NodeCommit,
     NodePullRequestCommit,
     NodePullRequestJiraIssues,
     PullRequest,
@@ -97,7 +104,6 @@ from athenian.api.models.metadata.github import (
     PullRequestReview,
     PullRequestReviewComment,
     PullRequestReviewRequest,
-    PushCommit,
     Release,
 )
 from athenian.api.models.metadata.jira import Component, Issue
@@ -106,8 +112,10 @@ from athenian.api.models.precomputed.models import (
     GitHubPullRequestCheckRuns,
     GitHubPullRequestDeployment,
 )
+from athenian.api.to_object_arrays import is_not_null
 from athenian.api.tracing import sentry_span
 from athenian.api.typing_utils import df_from_structs
+from athenian.precomputer.db.models import GitHubRebasedPullRequest
 
 
 @dataclass
@@ -1442,7 +1450,7 @@ class PullRequestMiner:
             return await fetch_labels_to_filter(prs.index.values, meta_ids, mdb)
 
         prs, labels = await gather(
-            cls.mark_dead_prs(prs, branches, dags, meta_ids, mdb, columns),
+            cls.mark_dead_prs(prs, branches, dags, account, meta_ids, mdb, pdb, columns),
             load_labels(),
         )
         return prs, dags, labels
@@ -1453,8 +1461,10 @@ class PullRequestMiner:
         prs: pd.DataFrame,
         branches: pd.DataFrame,
         dags: Dict[str, Tuple[bool, DAG]],
+        account: int,
         meta_ids: Tuple[int, ...],
         mdb: Database,
+        pdb: Database,
         columns=PullRequest,
     ) -> pd.DataFrame:
         """
@@ -1463,15 +1473,14 @@ class PullRequestMiner:
         A PR is considered dead (force-push-dropped) if it does not exist in the commit DAG and \
         we cannot detect its rebased clone.
         """
+        substr_len = 32
         prs["dead"] = False
         if branches.empty:
             return prs
         merged_prs = prs.take(
             np.flatnonzero(
-                (
-                    prs[PullRequest.merged_at.name]
-                    <= datetime.now(timezone.utc) - timedelta(hours=1)
-                ).values,
+                prs[PullRequest.merged_at.name].values
+                <= (pd.Timestamp.now(timezone.utc) - timedelta(hours=1)).to_numpy(),
             ),
         )
         # timedelta(hours=1) must match the `exptime` of `fetch_repository_commits()`
@@ -1479,28 +1488,29 @@ class PullRequestMiner:
         # appear as wrongly force push dropped; see also: DEV-554
         if merged_prs.empty:
             return prs
-        pr_numbers = merged_prs[PullRequest.number.name].values
         assert merged_prs.index.nlevels == 1
         pr_node_ids = merged_prs.index.values
-        pr_repos = merged_prs[PullRequest.repository_full_name.name].values
-        repo_order = np.argsort(pr_repos)
-        unique_pr_repos, pr_repo_counts = np.unique(pr_repos, return_counts=True)
+        pr_repo_ids = merged_prs[PullRequest.repository_node_id.name].values
+        repo_order = np.argsort(pr_repo_ids)
+        unique_pr_repos, first_repo_indexes, pr_repo_counts = np.unique(
+            pr_repo_ids, return_counts=True, return_index=True,
+        )
         pr_merge_hashes = merged_prs[PullRequest.merge_commit_sha.name].values[repo_order]
+        unique_pr_repo_names = merged_prs[PullRequest.repository_full_name.name].values[
+            first_repo_indexes
+        ]
         pos = 0
-        queries = []
         dead = []
-        # Postgres goes crazy from acc_id IN (1, 2, ...) here
-        acc_id_conds = {acc_id: PushCommit.acc_id == acc_id for acc_id in meta_ids}
-        min_commit_date = merged_prs[PullRequest.merged_at.name].min()
-        committed_date_cond = PushCommit.committed_date >= min_commit_date
-        substr = sql.func.substr(PushCommit.message, 1, 32)
-        sqlite = mdb.url.dialect == "sqlite"
-        for repo, n_prs in zip(unique_pr_repos, pr_repo_counts):
+        repo_node_map = {}
+        for repo_id, repo_name, n_prs in zip(
+            unique_pr_repos, unique_pr_repo_names, pr_repo_counts,
+        ):
+            repo_node_map[repo_id] = repo_name
             begin_pos = pos
             end_pos = pos + n_prs
             pos += n_prs
             repo_pr_merge_hashes = pr_merge_hashes[begin_pos:end_pos]
-            dag_hashes = dags[repo][1][0]
+            dag_hashes = dags[repo_name][1][0]
             if len(dag_hashes) == 0:
                 # no branches found in `fetch_repository_commits()`
                 continue
@@ -1509,38 +1519,135 @@ class PullRequestMiner:
                 != repo_pr_merge_hashes
             )
             indexes = repo_order[begin_pos:end_pos][not_found]
-            dead.extend(dead_node_ids := pr_node_ids[indexes])
-            repo_cond = PushCommit.repository_full_name == repo
-            for acc_id in meta_ids:
-                for pr_node_id, n in zip(dead_node_ids, pr_numbers[indexes]):
-                    if sqlite:
+            dead.append((repo_id, indexes))
+        del pr_merge_hashes, unique_pr_repo_names
+
+        if not dead:
+            return prs
+        # by default, set all the missing PRs as dead
+        dead_suspects = np.concatenate([pr_node_ids[i] for _, i in dead])
+        prs.loc[dead_suspects, "dead"] = True
+
+        # try to load from pdb first
+        precomputed_matches = await load_undead_prs(dead_suspects, account, pdb)
+        cls._set_prs_alive(prs, precomputed_matches, columns)
+
+        pr_merge_commit_ids = merged_prs[PullRequest.merge_commit_id.name].values
+        commit_ids_to_fetch_message = np.concatenate([pr_merge_commit_ids[i] for _, i in dead])
+        if commit_ids_to_fetch_message.dtype != int:
+            commit_ids_to_fetch_message = commit_ids_to_fetch_message[
+                is_not_null(commit_ids_to_fetch_message)
+            ].astype(int)
+        commit_ids_to_fetch_message = commit_ids_to_fetch_message[
+            np.in1d(
+                commit_ids_to_fetch_message,
+                precomputed_matches[GitHubRebasedPullRequest.matched_merge_commit_id.name].values,
+                assume_unique=True,
+                invert=True,
+            )
+        ]
+        if len(commit_ids_to_fetch_message) == 0:
+            return prs
+        if postgres := (mdb.url.dialect == "postgresql"):
+            func_max = sql.func.greatest
+            func_strpos = sql.func.strpos
+        else:
+            func_max = sql.func.max
+            func_strpos = sql.func.instr
+        message_map = dict(
+            await mdb.fetch_all(
+                sql.select(
+                    NodeCommit.node_id,
+                    sql.func.substr(
+                        NodeCommit.message,
+                        1,
+                        func_max(
+                            func_strpos(NodeCommit.message, "\n") - 1,
+                            sql.func.length(NodeCommit.message),
+                        ),
+                    ),
+                ).where(
+                    sql.and_(
+                        NodeCommit.acc_id.in_(meta_ids),
+                        NodeCommit.node_id.in_(commit_ids_to_fetch_message),
+                    ),
+                ),
+            ),
+        )
+        del commit_ids_to_fetch_message
+
+        pr_numbers = merged_prs[PullRequest.number.name].values
+        pr_merged_ats = merged_prs[PullRequest.merged_at.name].values
+        # Postgres goes crazy from acc_id IN (1, 2, ...) here
+        acc_id_conds = {acc_id: NodeCommit.acc_id == acc_id for acc_id in meta_ids}
+        substr = sql.func.substr(NodeCommit.message, 1, substr_len)
+        queries = []
+        jira_re = re.compile(r"[A-Z][A-Z\d]+-[1-9]\d*")
+        ghrpr = GitHubRebasedPullRequest
+        for repo_id, dead_indexes in dead:
+            dead_node_ids = pr_node_ids[dead_indexes]
+            mask = np.in1d(
+                dead_node_ids,
+                precomputed_matches[ghrpr.pr_node_id.name].values,
+                assume_unique=True,
+                invert=True,
+            )
+            dead_indexes = dead_indexes[mask]
+            if len(dead_indexes) == 0:
+                continue
+            dead_node_ids = dead_node_ids[mask]
+            dead_merge_commit_ids = pr_merge_commit_ids[dead_indexes]
+            dead_merged_ats = pr_merged_ats[dead_indexes]
+            dead_numbers = pr_numbers[dead_indexes]
+            repo_cond = NodeCommit.repository_id == repo_id
+            for pr_node_id, commit_id, merged_at, n in zip(
+                dead_node_ids, dead_merge_commit_ids, dead_merged_ats, dead_numbers,
+            ):
+                message = message_map.get(commit_id, "")
+                if not (f"#{n}" in message or jira_re.search(message)):
+                    # last resort: there are possible merge commits which changed the message
+                    message = f"Merge pull request #{n} from "
+                message = message.replace("%", r"\%")[:substr_len].rstrip("\\") + "%"
+                merged_at = pd.Timestamp(merged_at, tz=timezone.utc)
+                committed_date_cond = NodeCommit.committed_date >= merged_at
+                substr_cond = substr.like(message)
+                for acc_id in meta_ids:
+                    if not postgres:
                         # SQLite does not support parameter recycling
-                        acc_id_conds = {acc_id: PushCommit.acc_id == acc_id}
-                        committed_date_cond = PushCommit.committed_date >= min_commit_date
-                        substr = sql.func.substr(PushCommit.message, 1, 32)
-                        repo_cond = PushCommit.repository_full_name == repo
+                        acc_id_conds = {acc_id: NodeCommit.acc_id == acc_id}
+                        committed_date_cond = NodeCommit.committed_date >= merged_at
+                        repo_cond = NodeCommit.repository_id == repo_id
+                        substr_cond = substr.like(message)
                     queries.append(
                         sql.select(
                             [
-                                PushCommit.node_id.label("commit_node_id"),
-                                PushCommit.sha.label(PushCommit.sha.name),
-                                sql.literal_column("'" + repo + "'").label("repo"),
-                                sql.literal_column(str(pr_node_id)).label("pr_node_id"),
-                                PushCommit.committed_date,
-                                PushCommit.pushed_date,
+                                NodeCommit.node_id.label(ghrpr.matched_merge_commit_id.name),
+                                NodeCommit.sha.label(ghrpr.matched_merge_commit_sha.name),
+                                sql.literal_column(str(repo_id))
+                                .label(NodeCommit.repository_id.name)
+                                .cast(BigInteger),
+                                sql.literal_column(str(pr_node_id))
+                                .label(ghrpr.pr_node_id.name)
+                                .cast(BigInteger),
+                                NodeCommit.committed_date.label(
+                                    ghrpr.matched_merge_commit_committed_date.name,
+                                ),
+                                NodeCommit.pushed_date.label(
+                                    ghrpr.matched_merge_commit_pushed_date.name,
+                                ),
                             ],
                         ).where(
                             sql.and_(
                                 acc_id_conds[acc_id],
                                 repo_cond,
                                 committed_date_cond,
-                                substr.like("Merge pull request #%d from %%" % n),
+                                substr_cond,
                             ),
                         ),
                     )
         if not queries:
             return prs
-        prs.loc[dead, "dead"] = True
+
         # we may have MANY queries here and Postgres responds with StatementTooComplexError
         # split them by batches to stay below the resource limits
         # besides, PG doesn't execute UNION ALL in parallel here, hence the batch size is small
@@ -1552,28 +1659,30 @@ class PullRequestMiner:
                 query = batch[0]
             else:
                 query = sql.union_all(*batch)
-            query = query.with_statement_hint("IndexScan(cmm github_node_commit_rebase)")
+            query = query.with_statement_hint(
+                f"IndexScan({NodeCommit.__tablename__} github_node_commit_rebase)",
+            )
             tasks.append(
                 read_sql_query(
                     query,
                     mdb,
                     [
-                        "commit_node_id",
-                        PushCommit.sha,
-                        "repo",
-                        "pr_node_id",
-                        PushCommit.committed_date,
-                        PushCommit.pushed_date,
+                        ghrpr.matched_merge_commit_id,
+                        ghrpr.matched_merge_commit_sha,
+                        NodeCommit.repository_id,
+                        ghrpr.pr_node_id,
+                        ghrpr.matched_merge_commit_committed_date,
+                        ghrpr.matched_merge_commit_pushed_date,
                     ],
                 ),
             )
         resolveds = await gather(*tasks, op="mark_dead_prs commit SQL UNION ALL-s")
         resolved = pd.concat(resolveds, ignore_index=True)
         # look up the candidates in the DAGs
-        pr_repos = resolved["repo"].values
+        pr_repos = resolved[NodeCommit.repository_id.name].values
         repo_order = np.argsort(pr_repos)
         unique_pr_repos, pr_repo_counts = np.unique(pr_repos, return_counts=True)
-        pr_merge_hashes = resolved[PushCommit.sha.name].values[repo_order]
+        pr_merge_hashes = resolved[ghrpr.matched_merge_commit_sha.name].values[repo_order]
         pos = 0
         alive_indexes = []
         for repo, n_prs in zip(unique_pr_repos, pr_repo_counts):
@@ -1581,7 +1690,7 @@ class PullRequestMiner:
             end_pos = pos + n_prs
             pos += n_prs
             repo_pr_merge_hashes = pr_merge_hashes[begin_pos:end_pos]
-            dag_hashes = dags[repo][1][0]
+            dag_hashes = dags[repo_node_map[repo]][1][0]
             found = (
                 dag_hashes[searchsorted_inrange(dag_hashes, repo_pr_merge_hashes)]
                 == repo_pr_merge_hashes
@@ -1591,22 +1700,26 @@ class PullRequestMiner:
             return prs
         # take the commit that was committed the latest; if there are multiple, prefer the one
         # with pushed_date = null
-        resolved.sort_values(
-            [PushCommit.committed_date.name, PushCommit.pushed_date.name],
-            ascending=False,
-            inplace=True,
-            na_position="first",
-        )
-        resolved.drop_duplicates("pr_node_id", inplace=True)
+        resolved = drop_undead_duplicates(resolved)
+        await defer(store_undead_prs(resolved, account, pdb), "mark_dead_prs/pdb")
+        return cls._set_prs_alive(prs, resolved, columns)
+
+    @classmethod
+    def _set_prs_alive(
+        cls,
+        prs: pd.DataFrame,
+        resolved: pd.DataFrame,
+        columns=PullRequest,
+    ) -> pd.DataFrame:
         # patch the commit IDs and the hashes
-        alive_node_ids = resolved["pr_node_id"].values
+        alive_node_ids = resolved[GitHubRebasedPullRequest.pr_node_id.name].values
         if columns is PullRequest or PullRequest.merge_commit_id in columns:
             prs.loc[alive_node_ids, PullRequest.merge_commit_id.name] = resolved[
-                "commit_node_id"
+                GitHubRebasedPullRequest.matched_merge_commit_id.name
             ].values
         if columns is PullRequest or PullRequest.merge_commit_sha in columns:
             prs.loc[alive_node_ids, PullRequest.merge_commit_sha.name] = resolved[
-                PushCommit.sha.name
+                GitHubRebasedPullRequest.matched_merge_commit_sha.name
             ].values
         prs.loc[alive_node_ids, "dead"] = False
         return prs
@@ -2745,8 +2858,8 @@ class PullRequestFactsMiner:
                     ),
                     pr.commits[PullRequestCommit.committed_date.name].values,
                     pr.review_requests[PullRequestReviewRequest.created_at.name].values,
-                    review_submitted_ats,
-                    comment_created_ats,
+                    review_submitted_ats.values,
+                    comment_created_ats.values,
                 ],
                 casting="unsafe",
             )

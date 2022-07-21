@@ -357,10 +357,10 @@ class TestCalcMetricsPRs:
             (PullRequestMetricID.PR_WIP_COUNT, 596),
             (PullRequestMetricID.PR_REVIEW_COUNT, 433),
             (PullRequestMetricID.PR_MERGING_COUNT, 589),
-            (PullRequestMetricID.PR_RELEASE_COUNT, 408),
+            (PullRequestMetricID.PR_RELEASE_COUNT, 412),
             (PullRequestMetricID.PR_OPEN_COUNT, 589),
-            (PullRequestMetricID.PR_LEAD_COUNT, 408),
-            (PullRequestMetricID.PR_CYCLE_COUNT, 932),
+            (PullRequestMetricID.PR_LEAD_COUNT, 412),
+            (PullRequestMetricID.PR_CYCLE_COUNT, 935),
             (PullRequestMetricID.PR_OPENED, 596),
             (PullRequestMetricID.PR_REVIEWED, 373),
             (PullRequestMetricID.PR_NOT_REVIEWED, 276),
@@ -403,33 +403,33 @@ class TestCalcMetricsPRs:
                 s += val
         assert s == count
 
+    # fmt: off
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
     @pytest.mark.parametrize(
-        "with_bots, values",
-        [
+        "with_bots, values", [
             (
                 False,
                 [
                     [2.461538553237915, None, None, None],
-                    [2.8328359127044678, 2.452173948287964, 7.439024448394775, 8.300812721252441],
-                    [3.003115177154541, 2.5336787700653076, 5.616822242736816, 6.504673004150391],
-                    [2.9247312545776367, 2.4838709831237793, 6.034883499145508, 6.813953399658203],
-                    [2.660493850708008, 2.5050504207611084, 7.74545431137085, 8.163636207580566],
+                    [2.830357074737549, 2.452173948287964, 7.439024448394775, 8.300812721252441],
+                    [3.0063090324401855, 2.5473685264587402, 5.605769157409668, 6.509615421295166],
+                    [2.9272727966308594, 2.5, 6.036144733428955, 6.831325531005859],
+                    [2.6582279205322266, 2.53125, 7.846153736114502, 8.269230842590332],
                 ],
-            ),
-            (
+            ), (
                 True,
                 [
                     [1.4807692766189575, None, None, None],
-                    [1.9402985572814941, 2.2058823108673096, 7.699999809265137, 8.050000190734863],
-                    [2.121495246887207, 2.3231706619262695, 5.641975402832031, 6.111111164093018],
-                    [2.0465950965881348, 2.2727272510528564, 6.234375, 6.75],
-                    [1.814814805984497, 2.4146342277526855, 7.767441749572754, 7.860465049743652],
+                    [1.9375, 2.2058823108673096, 7.699999809265137, 8.050000190734863],
+                    [2.126183032989502, 2.3416149616241455, 5.641025543212891, 6.115384578704834],
+                    [2.0509090423583984, 2.2945735454559326, 6.262295246124268, 6.7868852615356445],  # noqa
+                    [1.8164557218551636, 2.4556961059570312, 7.925000190734863, 8.0],
                 ],
             ),
         ],
     )
+    # fmt: on
     async def test_averages(self, client, with_bots, values, sdb):
         if with_bots:
             await sdb.execute(
@@ -972,7 +972,7 @@ class TestCalcMetricsPRs:
         res = await self._request(client, json=body)
         values = [v["values"] for v in res["calculated"][0]["values"]]
         assert values == [
-            [[None, "57352991s"], [None, "60558816s"], [None, "61066621s"], [0, 418]],
+            [[None, "52240881s"], [None, "55612324s"], [None, "55938061s"], [0, 384]],
         ]
 
     # TODO: fix response validation against the schema
@@ -980,8 +980,8 @@ class TestCalcMetricsPRs:
     @pytest.mark.parametrize(
         "second_repo, counts",
         [
-            ("/beta", [266, 52, 204, 197]),
-            ("", [463, 81, 372, 347]),
+            ("/beta", [266, 52, 204, 200]),
+            ("", [463, 81, 372, 351]),
         ],
     )
     async def test_logical_smoke(
@@ -1070,7 +1070,7 @@ class TestCalcMetricsPRs:
         }
         res = await self._request(client, json=body)
         values = [v["values"] for v in res["calculated"][0]["values"]]
-        assert values == [[250, 49, 194, 186]]
+        assert values == [[250, 49, 194, 188]]
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)

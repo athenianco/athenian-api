@@ -45,7 +45,7 @@ def time_from_to():
         (PullRequestStage.MERGING, 4),
         (PullRequestStage.RELEASING, 130),
         (PullRequestStage.DONE, 529),
-        (PullRequestStage.FORCE_PUSH_DROPPED, 10),
+        (PullRequestStage.FORCE_PUSH_DROPPED, 6),
     ],
 )
 @with_defer
@@ -910,7 +910,7 @@ async def test_pr_list_miner_deployments_production(
         rdb,
         None,
     )
-    assert len(prs) == 486
+    assert len(prs) == 452
     deps = 0
     merged_undeployed = 0
     deployed_margin = datetime(2019, 11, 1, 12, 15) - datetime(2015, 5, 2)
@@ -934,7 +934,7 @@ async def test_pr_list_miner_deployments_production(
             assert PullRequestEvent.DEPLOYED not in pr.events_time_machine
             assert PullRequestStage.DEPLOYED not in pr.stages_now
             assert PullRequestStage.DEPLOYED not in pr.stages_time_machine
-    assert deps == 418
+    assert deps == 384
     assert merged_undeployed == 11
 
 
@@ -1029,7 +1029,7 @@ async def test_pr_list_miner_deployments_staging(
         rdb,
         None,
     )
-    assert len(prs) == 486
+    assert len(prs) == 452
     deps = 0
     for pr in prs:
         if pr.deployments:
@@ -1040,7 +1040,7 @@ async def test_pr_list_miner_deployments_staging(
         assert PullRequestEvent.DEPLOYED not in pr.events_time_machine
         assert PullRequestStage.DEPLOYED not in pr.stages_now
         assert PullRequestStage.DEPLOYED not in pr.stages_time_machine
-    assert deps == 418
+    assert deps == 384
 
 
 @pytest.mark.parametrize(
@@ -1089,9 +1089,9 @@ async def test_pr_list_miner_deployments_staging(
         (
             PullRequestStage.FORCE_PUSH_DROPPED,
             {
-                "": 6,
-                "/alpha": 3,
-                "/beta": 2,
+                "": 4,
+                "/alpha": 1,
+                "/beta": 1,
             },
         ),
     ],
@@ -1523,8 +1523,8 @@ async def test_filter_pull_requests_deployments(
     check_pr_deployments(prs, deps, 0)  # unmerged PR cannot be deployed!
     args[1] = {PullRequestStage.DONE}
     prs, deps = await filter_pull_requests(*args)
-    assert len(prs) == 423
-    check_pr_deployments(prs, deps, 413)
+    assert len(prs) == 394
+    check_pr_deployments(prs, deps, 384)
 
 
 def check_pr_deployments(

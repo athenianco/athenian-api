@@ -40,7 +40,7 @@ from athenian.api.serialization import FriendlyJson
                         "1330200s",
                         "2591999s",
                     ],
-                    [4, 4, 7, 14, 12, 15, 21, 19, 18, 17, 29, 25, 57, 63, 69, 304],
+                    [4, 4, 7, 14, 12, 14, 20, 19, 19, 16, 30, 26, 56, 62, 69, 306],
                     {"left": "123003s", "right": "2592000s"},
                 ),
                 (
@@ -69,8 +69,8 @@ from athenian.api.serialization import FriendlyJson
                         "1839373s",
                         "2591999s",
                     ],
-                    [1, 0, 7, 1, 2, 3, 0, 1, 4, 5, 0, 4, 5, 5, 8, 17, 10, 27, 30, 20, 31, 233],
-                    {"left": "691126s", "right": "2592000s"},
+                    [1, 0, 7, 1, 2, 3, 1, 1, 4, 5, 0, 5, 5, 5, 8, 17, 10, 27, 30, 20, 32, 234],
+                    {"left": "680071s", "right": "2592000s"},
                 ),
             ],
         ),
@@ -355,8 +355,8 @@ async def test_calc_histogram_prs_team(client, headers, sample_team):
                 "2332806s",
                 "2592000s",
             ],
-            "frequencies": [91, 33, 25, 21, 8, 14, 21, 9, 20, 146],
-            "interquartile": {"left": "283986s", "right": "2592000s"},
+            "frequencies": [93, 34, 24, 21, 8, 15, 21, 10, 20, 146],
+            "interquartile": {"left": "280188s", "right": "2592000s"},
         },
     ]
 
@@ -454,8 +454,8 @@ async def test_calc_histogram_prs_ticks(client, headers):
             "metric": "pr-release-time",
             "scale": "linear",
             "ticks": ["60s", "10000s", "100000s", "2592000s"],
-            "frequencies": [39, 29, 346],
-            "interquartile": {"left": "322517s", "right": "2592000s"},
+            "frequencies": [39, 31, 348],
+            "interquartile": {"left": "317657s", "right": "2592000s"},
         },
     ]
     body["histograms"][0]["ticks"].append(f"{2 * 365 * 24 * 3600}s")
@@ -635,7 +635,7 @@ async def test_calc_histogram_prs_deployment_time(client, headers, precomputed_d
         "metric": "pr-deployment-time",
         "scale": "log",
         "ticks": ["1572127s", "4273485s"],
-        "frequencies": [418],
+        "frequencies": [384],
         "interquartile": {"left": "2592000s", "right": "2592000s"},
     }
 
