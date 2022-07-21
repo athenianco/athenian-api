@@ -7,11 +7,11 @@ from typing import Any, Dict, Iterable, List, Tuple
 import morcilla
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, desc, insert, or_, select, union_all
-from sqlalchemy.dialects.postgresql import insert as postgres_insert
+from sqlalchemy import and_, desc, or_, select, union_all
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
+from athenian.api.db import dialect_specific_insert
 from athenian.api.internal.miners.github.released_pr import matched_by_column
 from athenian.api.internal.miners.types import ReleaseFacts
 from athenian.api.internal.settings import ReleaseMatch, ReleaseSettings, default_branch_alias
@@ -182,21 +182,15 @@ async def store_precomputed_release_facts(
     if skipped:
         log = logging.getLogger(f"{metadata.__package__}.store_precomputed_release_facts")
         log.warning("Ignored mined releases: %s", dict(skipped))
-    if pdb.url.dialect == "postgresql":
-        sql = postgres_insert(GitHubReleaseFacts)
-        if on_conflict_replace:
-            sql = sql.on_conflict_do_update(
-                constraint=GitHubReleaseFacts.__table__.primary_key,
-                set_={GitHubReleaseFacts.data.name: sql.excluded.data},
-            )
-        else:
-            sql = sql.on_conflict_do_nothing()
+
+    sql = (await dialect_specific_insert(pdb))(GitHubReleaseFacts)
+    if on_conflict_replace:
+        sql = sql.on_conflict_do_update(
+            index_elements=GitHubReleaseFacts.__table__.primary_key.columns,
+            set_={GitHubReleaseFacts.data.name: sql.excluded.data},
+        )
     else:
-        sql = insert(GitHubReleaseFacts)
-        if on_conflict_replace:
-            sql = sql.prefix_with("OR REPLACE")
-        else:
-            sql = sql.prefix_with("OR IGNORE")
+        sql = sql.on_conflict_do_nothing()
     with sentry_sdk.start_span(op="store_precomputed_release_facts/execute_many"):
         if pdb.url.dialect == "sqlite":
             async with pdb.connection() as pdb_conn:

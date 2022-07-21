@@ -24,13 +24,12 @@ from sqlalchemy import (
     union_all,
     update,
 )
-from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from xxhash._xxhash import xxh32_intdigest
 
 from athenian.api.async_utils import gather
 from athenian.api.auth import disable_default_user
 from athenian.api.balancing import weight
-from athenian.api.db import Connection, Database
+from athenian.api.db import Connection, Database, dialect_specific_insert
 from athenian.api.defer import defer, launch_defer_from_request, wait_deferred
 from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.features.entries import MetricEntriesCalculator
@@ -229,19 +228,16 @@ async def notify_releases(request: AthenianWebRequest, body: List[dict]) -> web.
             .create_defaults()
             .explode(with_primary_keys=True),
         )
-    if rdb.url.dialect == "postgresql":
-        sql = postgres_insert(ReleaseNotification)
-        sql = sql.on_conflict_do_update(
-            constraint=ReleaseNotification.__table__.primary_key,
-            set_={
-                ReleaseNotification.name.name: sql.excluded.name,
-                ReleaseNotification.author_node_id.name: sql.excluded.author_node_id,
-                ReleaseNotification.url.name: sql.excluded.url,
-                ReleaseNotification.published_at.name: sql.excluded.published_at,
-            },
-        )
-    else:  # sqlite
-        sql = insert(ReleaseNotification).prefix_with("OR REPLACE")
+    sql = (await dialect_specific_insert(rdb))(ReleaseNotification)
+    sql = sql.on_conflict_do_update(
+        index_elements=ReleaseNotification.__table__.primary_key.columns,
+        set_={
+            ReleaseNotification.name.name: sql.excluded.name,
+            ReleaseNotification.author_node_id.name: sql.excluded.author_node_id,
+            ReleaseNotification.url.name: sql.excluded.url,
+            ReleaseNotification.published_at.name: sql.excluded.published_at,
+        },
+    )
     if rdb.url.dialect == "sqlite":
         async with rdb.connection() as perdata_conn:
             async with perdata_conn.transaction():

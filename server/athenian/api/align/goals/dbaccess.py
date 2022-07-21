@@ -120,7 +120,7 @@ async def assign_team_goals(
     insert = await dialect_specific_insert(sdb_conn)
     stmt = insert(TeamGoal)
     upsert_stmt = stmt.on_conflict_do_update(
-        index_elements=[TeamGoal.goal_id, TeamGoal.team_id],
+        index_elements=TeamGoal.__table__.primary_key.columns,
         set_={
             TeamGoal.target.name: stmt.excluded.target,
             TeamGoal.updated_at.name: stmt.excluded.updated_at,

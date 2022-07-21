@@ -19,12 +19,11 @@ import morcilla.core
 from morcilla.interfaces import ConnectionBackend, TransactionBackend
 import numpy as np
 import sentry_sdk
-from sqlalchemy import insert
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm.attributes import InstrumentedAttribute
-from sqlalchemy.sql import CompoundSelect, Select
+from sqlalchemy.sql import CompoundSelect, Select, func
 from sqlalchemy.sql.functions import ReturnTypeFromArgs
 
 import athenian
@@ -171,14 +170,6 @@ asyncpg.Connection._execute_original = asyncpg.Connection._Connection__execute
 asyncpg.Connection._Connection__execute = _asyncpg_execute
 asyncpg.Connection._executemany_original = asyncpg.Connection._executemany
 asyncpg.Connection._executemany = _asyncpg_executemany
-
-
-class greatest(ReturnTypeFromArgs):  # noqa
-    """SQL GREATEST function."""
-
-
-class least(ReturnTypeFromArgs):  # noqa
-    """SQL LEAST function."""
 
 
 db_retry_intervals = [0, 0.1, 0.5, 1.4, None]
@@ -363,6 +354,20 @@ def _with_statement_hint(self, text, dialect_name="*"):
     return self
 
 
+async def greatest(db: DatabaseLike) -> ReturnTypeFromArgs:
+    """Return SQL GREATEST/MAX function."""
+    if await is_postgresql(db):
+        return func.greatest
+    return func.max
+
+
+async def least(db: DatabaseLike) -> ReturnTypeFromArgs:
+    """Return SQL LEAST/MIN function."""
+    if await is_postgresql(db):
+        return func.least
+    return func.min
+
+
 CompoundSelect._statement_hints = ()
 CompoundSelect.with_statement_hint = _with_statement_hint
 
@@ -398,20 +403,19 @@ async def insert_or_ignore(
     model,
     values: List[Mapping[str, Any]],
     caller: str,
-    db: Database,
+    db: DatabaseLike,
 ) -> None:
     """Insert records to the table corresponding to the `model`. Ignore PK collisions."""
-    if db.url.dialect == "postgresql":
-        sql = postgres_insert(model).on_conflict_do_nothing()
-    elif db.url.dialect == "sqlite":
-        sql = insert(model).prefix_with("OR IGNORE")
-    else:
-        raise AssertionError(f"Unsupported database dialect: {db.url.dialect}")
+    sql = (await dialect_specific_insert(db))(model).on_conflict_do_nothing()
     with sentry_sdk.start_span(op=f"{caller}/execute_many"):
-        if db.url.dialect == "sqlite":
-            async with db.connection() as db_conn:
-                async with db_conn.transaction():
-                    await db_conn.execute_many(sql, values)
+        if not await is_postgresql(db):
+            if isinstance(db, Database):
+                async with db.connection() as db_conn:
+                    async with db_conn.transaction():
+                        await db_conn.execute_many(sql, values)
+            else:
+                async with db.transaction():
+                    await db.execute_many(sql, values)
         else:
             await db.execute_many(sql, values)
 

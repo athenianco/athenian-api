@@ -25,10 +25,9 @@ import aiosqlite.core
 import numpy as np
 import pandas as pd
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
-from sqlalchemy import and_, insert, select
-from sqlalchemy.dialects.postgresql import insert as postgres_insert
+from sqlalchemy import and_, select
 
-from athenian.api.db import Database, DatabaseLike
+from athenian.api.db import Database, DatabaseLike, dialect_specific_insert
 from athenian.api.internal.account import get_account_repositories, get_metadata_account_ids
 from athenian.api.internal.logical_repos import (
     coerce_logical_repos,
@@ -847,20 +846,17 @@ class Settings:
         else:
             async with self._sdb.raw_connection() as raw_connection:
                 sqlite = isinstance(raw_connection, aiosqlite.core.Connection)
-        if sqlite:
-            query = insert(ReleaseSetting).prefix_with("OR REPLACE")
-        else:
-            query = postgres_insert(ReleaseSetting)
-            query = query.on_conflict_do_update(
-                constraint=ReleaseSetting.__table__.primary_key,
-                set_={
-                    ReleaseSetting.match.name: query.excluded.match,
-                    ReleaseSetting.branches.name: query.excluded.branches,
-                    ReleaseSetting.tags.name: query.excluded.tags,
-                    ReleaseSetting.events.name: query.excluded.events,
-                    ReleaseSetting.updated_at.name: query.excluded.updated_at,
-                },
-            )
+        query = (await dialect_specific_insert(self._sdb))(ReleaseSetting)
+        query = query.on_conflict_do_update(
+            index_elements=ReleaseSetting.__table__.primary_key.columns,
+            set_={
+                ReleaseSetting.match.name: query.excluded.match,
+                ReleaseSetting.branches.name: query.excluded.branches,
+                ReleaseSetting.tags.name: query.excluded.tags,
+                ReleaseSetting.events.name: query.excluded.events,
+                ReleaseSetting.updated_at.name: query.excluded.updated_at,
+            },
+        )
 
         if isinstance(self._sdb, Database):
             async with self._sdb.connection() as sdb_conn:

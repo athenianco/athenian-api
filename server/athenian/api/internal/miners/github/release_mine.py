@@ -12,13 +12,18 @@ import numpy.typing as npt
 import pandas as pd
 import sentry_sdk
 import sqlalchemy as sa
-from sqlalchemy import and_, func, insert, join, select, union_all
-from sqlalchemy.dialects.postgresql import insert as postgres_insert
+from sqlalchemy import and_, func, join, select, union_all
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import CancelCache, cached, middle_term_exptime, short_term_exptime
-from athenian.api.db import Database, DatabaseLike, add_pdb_hits, add_pdb_misses
+from athenian.api.db import (
+    Database,
+    DatabaseLike,
+    add_pdb_hits,
+    add_pdb_misses,
+    dialect_specific_insert,
+)
 from athenian.api.defer import defer
 from athenian.api.int_to_str import int_to_str
 from athenian.api.internal.logical_repos import (
@@ -1856,19 +1861,14 @@ async def hide_first_releases(
                     **{k.name: row[k.name] for k in extra_cols},
                 },
             )
-        if pdb.url.dialect == "postgresql":
-            sql = postgres_insert(ghdprf)
-            sql = sql.on_conflict_do_update(
-                constraint=ghdprf.__table__.primary_key,
-                set_={
-                    col.name: getattr(sql.excluded, col.name)
-                    for col in (ghdprf.pr_done_at, ghdprf.updated_at, ghdprf.data)
-                },
-            )
-        elif pdb.url.dialect == "sqlite":
-            sql = insert(ghdprf).prefix_with("OR REPLACE")
-        else:
-            raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
+        sql = (await dialect_specific_insert(pdb))(ghdprf)
+        sql = sql.on_conflict_do_update(
+            index_elements=ghdprf.__table__.primary_key.columns,
+            set_={
+                col.name: getattr(sql.excluded, col.name)
+                for col in (ghdprf.pr_done_at, ghdprf.updated_at, ghdprf.data)
+            },
+        )
         if pdb.url.dialect == "sqlite":
             async with pdb.connection() as pdb_conn:
                 async with pdb_conn.transaction():

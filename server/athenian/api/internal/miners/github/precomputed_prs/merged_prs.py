@@ -11,26 +11,12 @@ import morcilla
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import (
-    and_,
-    desc,
-    exists,
-    false,
-    insert,
-    join,
-    not_,
-    select,
-    true,
-    union_all,
-    update,
-)
-from sqlalchemy.dialects.postgresql import insert as postgres_insert
+from sqlalchemy import and_, desc, exists, false, join, not_, select, true, union_all
 from sqlalchemy.sql.functions import coalesce
 
 from athenian.api import metadata
-from athenian.api.async_utils import gather
 from athenian.api.cache import cached
-from athenian.api.db import add_pdb_hits, greatest
+from athenian.api.db import add_pdb_hits, dialect_specific_insert, greatest
 from athenian.api.internal.logical_repos import drop_logical_repo
 from athenian.api.internal.miners.filters import LabelFilter
 from athenian.api.internal.miners.github.precomputed_prs.utils import (
@@ -334,8 +320,8 @@ async def update_unreleased_prs(
     assert time_to.tzinfo is not None
     assert merged_prs.index.nlevels == 2
     time_to = min(time_to, datetime.now(timezone.utc))
-    postgres = pdb.url.dialect == "postgresql"
     ghmprf = GitHubMergedPullRequestFacts
+    sqlite = pdb.url.dialect == "sqlite"
     values = []
     if not released_prs.empty:
         assert released_prs.index.nlevels == 2
@@ -396,26 +382,28 @@ async def update_unreleased_prs(
         if not values:
             unreleased_prs_event.set()
             return skipped
-        if postgres:
-            sql = postgres_insert(ghmprf)
-            sql = sql.on_conflict_do_update(
-                constraint=ghmprf.__table__.primary_key,
-                set_={
-                    ghmprf.checked_until.name: greatest(
-                        ghmprf.checked_until, sql.excluded.checked_until,
-                    ),
-                    ghmprf.labels.name: ghmprf.labels + sql.excluded.labels,
-                    ghmprf.updated_at.name: greatest(ghmprf.updated_at, sql.excluded.updated_at),
-                    ghmprf.data.name: sql.excluded.data,
-                },
-            )
+        sql = (await dialect_specific_insert(pdb))(ghmprf)
+        if sqlite:
+            # sqlite concatenates strings
+            set_labels = {}
         else:
-            # this is wrong but we just cannot update SQLite properly
-            # nothing will break though
-            sql = insert(ghmprf).prefix_with("OR REPLACE")
+            set_labels = {ghmprf.labels.name: ghmprf.labels + sql.excluded.labels}
+        sql = sql.on_conflict_do_update(
+            index_elements=ghmprf.__table__.primary_key.columns,
+            set_={
+                ghmprf.checked_until.name: (await greatest(pdb))(
+                    ghmprf.checked_until, sql.excluded.checked_until,
+                ),
+                **set_labels,
+                ghmprf.updated_at.name: (await greatest(pdb))(
+                    ghmprf.updated_at, sql.excluded.updated_at,
+                ),
+                ghmprf.data.name: sql.excluded.data,
+            },
+        )
     try:
         with sentry_sdk.start_span(op="update_unreleased_prs/execute"):
-            if pdb.url.dialect == "sqlite":
+            if sqlite:
                 async with pdb.connection() as pdb_conn:
                     async with pdb_conn.transaction():
                         await pdb_conn.execute_many(sql, values)
@@ -482,48 +470,25 @@ async def store_merged_unreleased_pull_request_facts(
         )
     await unreleased_prs_event.wait()
     ghmprf = GitHubMergedPullRequestFacts
-    if postgres:
-        sql = postgres_insert(ghmprf)
-        sql = sql.on_conflict_do_update(
-            constraint=ghmprf.__table__.primary_key,
-            set_={
-                ghmprf.data.name: sql.excluded.data,
-                ghmprf.checked_until.name: greatest(
-                    ghmprf.checked_until, sql.excluded.checked_until,
-                ),
-                ghmprf.activity_days.name: sql.excluded.activity_days,
-            },
-        )
-        with sentry_sdk.start_span(op="store_merged_unreleased_pull_request_facts/execute"):
-            if pdb.url.dialect == "sqlite":
-                async with pdb.connection() as pdb_conn:
-                    async with pdb_conn.transaction():
-                        await pdb_conn.execute_many(sql, values)
-            else:
-                # don't require a transaction in Postgres, executemany() is atomic in new asyncpg
-                await pdb.execute_many(sql, values)
-    else:
-        tasks = [
-            pdb.execute(
-                update(ghmprf)
-                .where(
-                    and_(
-                        ghmprf.pr_node_id == v[ghmprf.pr_node_id.name],
-                        ghmprf.release_match == v[ghmprf.release_match.name],
-                        ghmprf.format_version == v[ghmprf.format_version.name],
-                    ),
-                )
-                .values(
-                    {
-                        ghmprf.data: v[ghmprf.data.name],
-                        ghmprf.activity_days: v[ghmprf.activity_days.name],
-                        ghmprf.updated_at: datetime.now(timezone.utc),
-                    },
-                ),
-            )
-            for v in values
-        ]
-        await gather(*tasks)
+    sql = (await dialect_specific_insert(pdb))(ghmprf)
+    sql = sql.on_conflict_do_update(
+        index_elements=ghmprf.__table__.primary_key.columns,
+        set_={
+            ghmprf.data.name: sql.excluded.data,
+            ghmprf.checked_until.name: (await greatest(pdb))(
+                ghmprf.checked_until, sql.excluded.checked_until,
+            ),
+            ghmprf.activity_days.name: sql.excluded.activity_days,
+        },
+    )
+    with sentry_sdk.start_span(op="store_merged_unreleased_pull_request_facts/execute"):
+        if pdb.url.dialect == "sqlite":
+            async with pdb.connection() as pdb_conn:
+                async with pdb_conn.transaction():
+                    await pdb_conn.execute_many(sql, values)
+        else:
+            # don't require a transaction in Postgres, executemany() is atomic in new asyncpg
+            await pdb.execute_many(sql, values)
 
 
 @sentry_span

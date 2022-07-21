@@ -7,19 +7,25 @@ import re
 from typing import Iterable, Mapping, Optional, Sequence
 
 import aiomcache
-import asyncpg
 import morcilla
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, desc, false, func, insert, or_, select, true, union_all, update
-from sqlalchemy.dialects.postgresql import insert as postgres_insert
+from sqlalchemy import and_, desc, false, func, or_, select, true, union_all, update
 from sqlalchemy.sql import ClauseElement
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import cached, cached_methods, middle_term_exptime
-from athenian.api.db import Database, add_pdb_hits, add_pdb_misses, greatest, least
+from athenian.api.db import (
+    Database,
+    add_pdb_hits,
+    add_pdb_misses,
+    dialect_specific_insert,
+    greatest,
+    insert_or_ignore,
+    least,
+)
 from athenian.api.defer import defer
 from athenian.api.internal.logical_repos import (
     coerce_logical_repos,
@@ -813,23 +819,18 @@ class ReleaseLoader:
                         )
         if not inserted:
             return
-        async with pdb.raw_connection() as raw_connection:
-            postgres = isinstance(raw_connection, asyncpg.Connection)
-        if postgres:
-            sql = postgres_insert(GitHubReleaseMatchTimespan)
-            sql = sql.on_conflict_do_update(
-                constraint=GitHubReleaseMatchTimespan.__table__.primary_key,
-                set_={
-                    GitHubReleaseMatchTimespan.time_from.name: least(
-                        sql.excluded.time_from, GitHubReleaseMatchTimespan.time_from,
-                    ),
-                    GitHubReleaseMatchTimespan.time_to.name: greatest(
-                        sql.excluded.time_to, GitHubReleaseMatchTimespan.time_to,
-                    ),
-                },
-            )
-        else:
-            sql = insert(GitHubReleaseMatchTimespan).prefix_with("OR REPLACE")
+        sql = (await dialect_specific_insert(pdb))(GitHubReleaseMatchTimespan)
+        sql = sql.on_conflict_do_update(
+            index_elements=GitHubReleaseMatchTimespan.__table__.primary_key.columns,
+            set_={
+                GitHubReleaseMatchTimespan.time_from.name: (await least(pdb))(
+                    sql.excluded.time_from, GitHubReleaseMatchTimespan.time_from,
+                ),
+                GitHubReleaseMatchTimespan.time_to.name: (await greatest(pdb))(
+                    sql.excluded.time_to, GitHubReleaseMatchTimespan.time_to,
+                ),
+            },
+        )
         with sentry_sdk.start_span(op="_store_precomputed_release_match_spans/execute_many"):
             await pdb.execute_many(sql, inserted)
 
@@ -879,15 +880,9 @@ class ReleaseLoader:
             inserted.append(obj)
 
         if inserted:
-            async with pdb.raw_connection() as raw_connection:
-                if isinstance(raw_connection, asyncpg.Connection):
-                    sql = postgres_insert(PrecomputedRelease)
-                    sql = sql.on_conflict_do_nothing()
-                else:
-                    sql = insert(PrecomputedRelease).prefix_with("OR IGNORE")
-
-            with sentry_sdk.start_span(op="_store_precomputed_releases/execute_many"):
-                await pdb.execute_many(sql, inserted)
+            await insert_or_ignore(
+                PrecomputedRelease, inserted, "_store_precomputed_releases", pdb,
+            )
 
 
 def dummy_releases_df(index: Optional[str | Sequence[str]] = None) -> pd.DataFrame:

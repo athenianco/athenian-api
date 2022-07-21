@@ -7,13 +7,12 @@ from typing import Optional, Sequence, Tuple
 from aiohttp import web
 from morcilla import Connection
 from sqlalchemy import and_, delete, distinct, func, insert, select, union, update
-from sqlalchemy.dialects.postgresql import insert as postgres_insert
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.auth import disable_default_user
 from athenian.api.balancing import weight
-from athenian.api.db import Database, DatabaseLike
+from athenian.api.db import Database, DatabaseLike, dialect_specific_insert
 from athenian.api.internal.account import (
     get_metadata_account_ids,
     get_user_account_status_from_request,
@@ -294,18 +293,15 @@ async def set_jira_identities(request: AthenianWebRequest, body: dict) -> web.Re
                         ),
                     ),
                 )
-                if sdb.url.dialect == "postgresql":
-                    sql = postgres_insert(MappedJIRAIdentity)
-                    sql = sql.on_conflict_do_update(
-                        constraint=MappedJIRAIdentity.__table__.primary_key,
-                        set_={
-                            MappedJIRAIdentity.jira_user_id.name: sql.excluded.jira_user_id,
-                            MappedJIRAIdentity.updated_at.name: sql.excluded.updated_at,
-                            MappedJIRAIdentity.confidence.name: sql.excluded.confidence,
-                        },
-                    )
-                else:
-                    sql = insert(MappedJIRAIdentity).prefix_with("OR REPLACE")
+                sql = (await dialect_specific_insert(sdb))(MappedJIRAIdentity)
+                sql = sql.on_conflict_do_update(
+                    index_elements=MappedJIRAIdentity.__table__.primary_key.columns,
+                    set_={
+                        MappedJIRAIdentity.jira_user_id.name: sql.excluded.jira_user_id,
+                        MappedJIRAIdentity.updated_at.name: sql.excluded.updated_at,
+                        MappedJIRAIdentity.confidence.name: sql.excluded.confidence,
+                    },
+                )
                 await sdb_conn.execute_many(
                     sql,
                     [
@@ -433,17 +429,14 @@ async def set_work_type(request: AthenianWebRequest, body: dict) -> web.Response
     """Create or update a work type - a rule set to group PRs, releases, etc. together."""
     model = WorkTypePutRequest.from_dict(body)
     sdb = request.sdb
-    if sdb.url.dialect == "postgresql":
-        sql = postgres_insert(WorkType)
-        sql = sql.on_conflict_do_update(
-            constraint="uc_work_type",
-            set_={
-                col.name: getattr(sql.excluded, col.name)
-                for col in (WorkType.color, WorkType.rules, WorkType.updated_at)
-            },
-        )
-    else:
-        sql = insert(WorkType).prefix_with("OR REPLACE")
+    sql = (await dialect_specific_insert(sdb))(WorkType)
+    sql = sql.on_conflict_do_update(
+        index_elements=[WorkType.account_id, WorkType.name],
+        set_={
+            col.name: getattr(sql.excluded, col.name)
+            for col in (WorkType.color, WorkType.rules, WorkType.updated_at)
+        },
+    )
     await sdb.execute(
         sql.values(
             WorkType(
