@@ -5,9 +5,9 @@ import morcilla
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, case, insert, select
-from sqlalchemy.dialects.postgresql import insert as postgres_insert
+from sqlalchemy import and_, case, select
 
+from athenian.api.db import dialect_specific_insert
 from athenian.api.internal.logical_repos import drop_logical_repo
 from athenian.api.internal.miners.github.precomputed_prs.utils import (
     append_activity_days_filter,
@@ -230,24 +230,21 @@ async def store_open_pull_request_facts(
             .create_defaults()
             .explode(with_primary_keys=True),
         )
-    if postgres:
-        sql = postgres_insert(GitHubOpenPullRequestFacts)
-        sql = sql.on_conflict_do_update(
-            constraint=GitHubOpenPullRequestFacts.__table__.primary_key,
-            set_={
-                GitHubOpenPullRequestFacts.pr_updated_at.name: sql.excluded.pr_updated_at,
-                GitHubOpenPullRequestFacts.updated_at.name: sql.excluded.updated_at,
-                GitHubOpenPullRequestFacts.data.name: case(
-                    (
-                        sql.excluded.pr_updated_at >= GitHubOpenPullRequestFacts.pr_updated_at,
-                        sql.excluded.data,
-                    ),
-                    else_=GitHubOpenPullRequestFacts.data,
+    sql = (await dialect_specific_insert(pdb))(GitHubOpenPullRequestFacts)
+    sql = sql.on_conflict_do_update(
+        index_elements=GitHubOpenPullRequestFacts.__table__.primary_key.columns,
+        set_={
+            GitHubOpenPullRequestFacts.pr_updated_at.name: sql.excluded.pr_updated_at,
+            GitHubOpenPullRequestFacts.updated_at.name: sql.excluded.updated_at,
+            GitHubOpenPullRequestFacts.data.name: case(
+                (
+                    sql.excluded.pr_updated_at >= GitHubOpenPullRequestFacts.pr_updated_at,
+                    sql.excluded.data,
                 ),
-            },
-        )
-    else:
-        sql = insert(GitHubOpenPullRequestFacts).prefix_with("OR REPLACE")
+                else_=GitHubOpenPullRequestFacts.data,
+            ),
+        },
+    )
     with sentry_sdk.start_span(op="store_open_pull_request_facts/execute"):
         if pdb.url.dialect == "sqlite":
             async with pdb.connection() as pdb_conn:

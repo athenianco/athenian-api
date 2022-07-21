@@ -7,13 +7,11 @@ import logging
 
 from flogging import flogging
 import sentry_sdk
-from sqlalchemy import insert
-from sqlalchemy.dialects.postgresql import insert as postgres_insert
 
 import athenian
 from athenian.api.__main__ import check_schema_versions, setup_context
 from athenian.api.async_utils import gather
-from athenian.api.db import Database, measure_db_overhead_and_retry
+from athenian.api.db import Database, insert_or_ignore, measure_db_overhead_and_retry
 from athenian.api.defer import enable_defer
 from athenian.api.faster_pandas import patch_pandas
 from athenian.api.internal.account import get_metadata_account_ids
@@ -154,13 +152,7 @@ def main():
                 .create_defaults()
                 .explode(with_primary_keys=True),
             )
-        if rdb.url.dialect == "postgresql":
-            sql = postgres_insert(ReleaseNotification).on_conflict_do_nothing()
-        else:  # sqlite
-            sql = insert(ReleaseNotification).prefix_with("OR IGNORE")
-        async with rdb.connection() as perdata_conn:
-            async with perdata_conn.transaction():
-                await perdata_conn.execute_many(sql, inserted)
+        await insert_or_ignore(ReleaseNotification, inserted, "push_copy_releases", rdb)
 
     async def sentry_wrapper():
         nonlocal return_code

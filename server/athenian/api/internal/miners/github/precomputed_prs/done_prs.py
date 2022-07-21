@@ -22,20 +22,7 @@ import morcilla
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import (
-    and_,
-    delete,
-    exists,
-    false,
-    insert,
-    join,
-    not_,
-    or_,
-    select,
-    true,
-    union_all,
-)
-from sqlalchemy.dialects.postgresql import insert as postgres_insert
+from sqlalchemy import and_, delete, exists, false, join, not_, or_, select, true, union_all
 from sqlalchemy.orm import aliased
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql import ClauseElement, Select
@@ -43,7 +30,7 @@ from sqlalchemy.sql import ClauseElement, Select
 from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached
-from athenian.api.db import Database
+from athenian.api.db import Database, dialect_specific_insert
 from athenian.api.internal.logical_repos import drop_logical_repo
 from athenian.api.internal.miners.filters import LabelFilter
 from athenian.api.internal.miners.github.branches import load_branch_commit_dates
@@ -1004,28 +991,23 @@ async def store_precomputed_done_facts(
         )
     if not inserted:
         return
-    if pdb.url.dialect == "postgresql":
-        sql = postgres_insert(GitHubDonePullRequestFacts)
-        sql = sql.on_conflict_do_update(
-            constraint=GitHubDonePullRequestFacts.__table__.primary_key,
-            set_={
-                col.name: getattr(sql.excluded, col.name)
-                for col in (
-                    GitHubDonePullRequestFacts.pr_done_at,
-                    GitHubDonePullRequestFacts.updated_at,
-                    GitHubDonePullRequestFacts.release_url,
-                    GitHubDonePullRequestFacts.release_node_id,
-                    GitHubDonePullRequestFacts.merger,
-                    GitHubDonePullRequestFacts.releaser,
-                    GitHubDonePullRequestFacts.activity_days,
-                    GitHubDonePullRequestFacts.data,
-                )
-            },
-        )
-    elif pdb.url.dialect == "sqlite":
-        sql = insert(GitHubDonePullRequestFacts).prefix_with("OR REPLACE")
-    else:
-        raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
+    sql = (await dialect_specific_insert(pdb))(GitHubDonePullRequestFacts)
+    sql = sql.on_conflict_do_update(
+        index_elements=GitHubDonePullRequestFacts.__table__.primary_key.columns,
+        set_={
+            col.name: getattr(sql.excluded, col.name)
+            for col in (
+                GitHubDonePullRequestFacts.pr_done_at,
+                GitHubDonePullRequestFacts.updated_at,
+                GitHubDonePullRequestFacts.release_url,
+                GitHubDonePullRequestFacts.release_node_id,
+                GitHubDonePullRequestFacts.merger,
+                GitHubDonePullRequestFacts.releaser,
+                GitHubDonePullRequestFacts.activity_days,
+                GitHubDonePullRequestFacts.data,
+            )
+        },
+    )
     with sentry_sdk.start_span(op="store_precomputed_done_facts/execute_many"):
         if pdb.url.dialect == "sqlite":
             async with pdb.connection() as pdb_conn:

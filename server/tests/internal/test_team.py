@@ -4,6 +4,7 @@ import pytest
 import sqlalchemy as sa
 
 from athenian.api.db import Database
+from athenian.api.internal.miners.github.bots import bots
 from athenian.api.internal.team import (
     MultipleRootTeamsError,
     RootTeamNotFoundError,
@@ -11,7 +12,6 @@ from athenian.api.internal.team import (
     delete_team,
     fetch_team_members_recursively,
     fetch_teams_recursively,
-    get_bots_team,
     get_root_team,
     get_team_from_db,
     sync_team_members,
@@ -58,12 +58,11 @@ class TestGetTeamFromDB:
 class TestGetBotsTeam:
     async def test_found(self, sdb: Database) -> None:
         await models_insert(sdb, TeamFactory(id=99, name=Team.BOTS, owner_id=1))
-        team = await get_bots_team(1, sdb)
-        assert team is not None
-        assert team[Team.id.name] == 99
+        team = await bots.team(1, sdb)
+        assert isinstance(team, list)
 
     async def test_not_found(self, sdb: Database) -> None:
-        team = await get_bots_team(1, sdb)
+        team = await bots.team(1, sdb)
         assert team is None
 
 
@@ -183,22 +182,20 @@ class TestDeleteTeam:
 
 
 class TestSyncTeamMembers:
-    async def test_no_update_needed(self, sdb: Database) -> None:
+    async def test_update(self, sdb: Database) -> None:
         await models_insert(sdb, TeamFactory(id=99, members=[1, 2, 3]))
         team_row = await assert_existing_row(sdb, Team, id=99)
         async with transaction_conn(sdb) as sdb_conn:
-            added = await sync_team_members(team_row, [2, 3], sdb_conn)
+            await sync_team_members(team_row, [2, 3], sdb_conn)
 
-        assert not added
+        team_row = await assert_existing_row(sdb, Team, id=99)
+        assert team_row[Team.members.name] == [2, 3]
+
+    async def test_no_update(self, sdb: Database) -> None:
+        await models_insert(sdb, TeamFactory(id=99, members=[1, 2, 3]))
+        team_row = await assert_existing_row(sdb, Team, id=99)
+        async with transaction_conn(sdb) as sdb_conn:
+            await sync_team_members(team_row, [1, 2, 3], sdb_conn)
+
         team_row = await assert_existing_row(sdb, Team, id=99)
         assert team_row[Team.members.name] == [1, 2, 3]
-
-    async def test_update_done(self, sdb: Database) -> None:
-        await models_insert(sdb, TeamFactory(id=99, members=[1, 2, 3]))
-        team_row = await assert_existing_row(sdb, Team, id=99)
-        async with transaction_conn(sdb) as sdb_conn:
-            added = await sync_team_members(team_row, [5, 4, 3], sdb_conn)
-
-        assert added == [4, 5]
-        team_row = await assert_existing_row(sdb, Team, id=99)
-        assert team_row[Team.members.name] == [1, 2, 3, 4, 5]

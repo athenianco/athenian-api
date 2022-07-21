@@ -120,7 +120,7 @@ async def assign_team_goals(
     insert = await dialect_specific_insert(sdb_conn)
     stmt = insert(TeamGoal)
     upsert_stmt = stmt.on_conflict_do_update(
-        index_elements=[TeamGoal.goal_id, TeamGoal.team_id],
+        index_elements=TeamGoal.__table__.primary_key.columns,
         set_={
             TeamGoal.target.name: stmt.excluded.target,
             TeamGoal.updated_at.name: stmt.excluded.updated_at,
@@ -175,7 +175,10 @@ async def delete_empty_goals(account: int, sdb_conn: DatabaseLike) -> None:
     """Delete all account Goal-s having no more TeamGoal-s assigned."""
     delete_stmt = sa.delete(Goal).where(
         sa.and_(
-            Goal.account_id == account, Goal.id.not_in(sa.select(TeamGoal.goal_id).distinct()),
+            Goal.account_id == account,
+            sa.not_(sa.exists().where(TeamGoal.goal_id == Goal.id)),
+            # inefficient, generates a subquery:
+            # Goal.id.not_in(sa.select(TeamGoal.goal_id).distinct()),
         ),
     )
     await sdb_conn.execute(delete_stmt)

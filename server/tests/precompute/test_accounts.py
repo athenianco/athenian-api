@@ -18,18 +18,11 @@ from athenian.api.precompute.accounts import (
     _ensure_bot_team,
     _ensure_root_team,
     _StatusTracker,
-    _sync_bots_team_members,
-    create_teams,
+    ensure_teams,
     main,
     precompute_reposet,
 )
-from tests.testutils.db import (
-    DBCleaner,
-    assert_existing_row,
-    assert_missing_row,
-    model_insert_stmt,
-    models_insert,
-)
+from tests.testutils.db import DBCleaner, assert_existing_row, model_insert_stmt, models_insert
 from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.common import DEFAULT_MD_ACCOUNT_ID
 from tests.testutils.factory.state import AccountFactory, RepositorySetFactory, TeamFactory
@@ -233,11 +226,13 @@ def _namespace(**kwargs: Any) -> Namespace:
     return Namespace(**kwargs)
 
 
-class TestCreateTeams:
+class TestEnsureTeams:
     async def test_create_all(self, sdb: Database, mdb: Database) -> None:
         meta_ids = await get_metadata_account_ids(1, sdb, None)
         prefixer = await Prefixer.load(meta_ids, mdb, None)
-        n_imported, _ = await create_teams(1, meta_ids, set(), prefixer, sdb, mdb, None)
+        n_imported, _ = await ensure_teams(
+            1, False, set(), prefixer, meta_ids, sdb, mdb, None, logging.getLogger(),
+        )
 
         root_teams = await sdb.fetch_all(sa.select(Team).where(Team.parent_id.is_(None)))
         assert len(root_teams) == 1
@@ -260,14 +255,16 @@ class TestEnsureBotTeam:
         )
         meta_ids = await get_metadata_account_ids(1, sdb, None)
         prefixer = await Prefixer.load(meta_ids, mdb, None)
-        assert await _ensure_bot_team(1, set(), 1, prefixer, sdb, mdb) == 3
+        assert await _ensure_bot_team(1, set(), 1, prefixer, sdb, mdb, logging.getLogger()) == 3
 
     async def test_ensure_bot_team_not_existing(self, sdb: Database, mdb: Database) -> None:
         await models_insert(sdb, TeamFactory(id=10))
         meta_ids = await get_metadata_account_ids(1, sdb, None)
         prefixer = await Prefixer.load(meta_ids, mdb, None)
         bot_logins = {"gkwillie"}
-        assert await _ensure_bot_team(1, bot_logins, 10, prefixer, sdb, mdb) == 1
+        assert (
+            await _ensure_bot_team(1, bot_logins, 10, prefixer, sdb, mdb, logging.getLogger()) == 1
+        )
 
         bot_team = await assert_existing_row(sdb, Team, name="Bots", owner_id=1, parent_id=10)
         assert len(bot_team[Team.members.name]) == 1
@@ -278,7 +275,9 @@ class TestEnsureBotTeam:
         meta_ids = await get_metadata_account_ids(1, sdb, None)
         prefixer = await Prefixer.load(meta_ids, mdb, None)
         bot_logins = {"gkwillie", "not-existing-gh-user"}
-        assert await _ensure_bot_team(1, bot_logins, 10, prefixer, sdb, mdb) == 1
+        assert (
+            await _ensure_bot_team(1, bot_logins, 10, prefixer, sdb, mdb, logging.getLogger()) == 1
+        )
         bot_team = await sdb.fetch_one(sa.select(Team).where(Team.name == "Bots"))
         assert bot_team[Team.owner_id.name] == 1
         assert len(bot_team[Team.members.name]) == 1
@@ -309,13 +308,13 @@ class TestSyncBotsTeamMembers:
             ]
             mdb_cleaner.add_models(*models)
             await models_insert(mdb, *models)
-
+            await models_insert(sdb, TeamFactory(name=Team.ROOT, id=97))
             await models_insert(sdb, TeamFactory(name=Team.BOTS, members=[100]))
 
-            local_bots = ["u0", "u1", "u2"]
+            local_bots = {"u0", "u1", "u2"}
 
             prefixer = await Prefixer.load([DEFAULT_MD_ACCOUNT_ID], mdb, None)
-            await _sync_bots_team_members(1, local_bots, prefixer, sdb, logging.getLogger(""))
+            await _ensure_bot_team(1, local_bots, 97, prefixer, sdb, mdb, logging.getLogger())
 
             team_row = await assert_existing_row(sdb, Team, name=Team.BOTS)
             assert team_row[Team.members.name] == [100, 101, 102]
@@ -332,15 +331,16 @@ class TestSyncBotsTeamMembers:
             await models_insert(sdb, TeamFactory(name=Team.BOTS, members=[100, 101]))
 
             prefixer = await Prefixer.load([DEFAULT_MD_ACCOUNT_ID], mdb, None)
-            await _sync_bots_team_members(1, ["u0"], prefixer, sdb, logging.getLogger(""))
+            await _ensure_bot_team(1, {"u0"}, 1, prefixer, sdb, mdb, logging.getLogger())
 
             team_row = await assert_existing_row(sdb, Team, name=Team.BOTS)
             assert team_row[Team.members.name] == [100, 101]
 
     async def test_bots_team_not_exising(self, sdb: Database, mdb: Database) -> None:
         prefixer = await Prefixer.load([DEFAULT_MD_ACCOUNT_ID], mdb, None)
-        await _sync_bots_team_members(1, [], prefixer, sdb, logging.getLogger(""))
-        await assert_missing_row(sdb, Team, name=Team.BOTS)
+        await sdb.execute(model_insert_stmt(TeamFactory(parent_id=None, name=Team.ROOT, id=97)))
+        await _ensure_bot_team(1, set(), 97, prefixer, sdb, mdb, logging.getLogger())
+        await assert_existing_row(sdb, Team, name=Team.BOTS)
 
 
 class TestDurationTracker:

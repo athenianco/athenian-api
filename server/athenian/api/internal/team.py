@@ -83,18 +83,6 @@ async def get_team_from_db(account_id: int, team_id: int, sdb_conn: DatabaseLike
     return team
 
 
-async def get_bots_team(
-    account_id: int,
-    sdb_conn: DatabaseLike,
-    select_entities: Sequence[InstrumentedAttribute] = (Team.id, Team.members),
-) -> Optional[Row]:
-    """Return the Bots team for the account, if existing."""
-    stmt = sa.select(*select_entities).where(
-        sa.and_(Team.owner_id == account_id, Team.name == Team.BOTS),
-    )
-    return await sdb_conn.fetch_one(stmt)
-
-
 async def get_all_team_members(
     gh_user_ids: Iterable[int],
     account: int,
@@ -235,24 +223,20 @@ async def sync_team_members(
     team: Row,
     members: Sequence[int],
     sdb_conn: Connection,
-) -> Sequence[int]:
+) -> None:
     """Update the members of the Team if `members` contain new members.
 
     Existing members are never removed.
     Return the members added to the Team.
 
+    Dp not return anything because we can either delete or insert people.
     """
     assert await conn_in_transaction(sdb_conn)
-    members_set = set(members)
-    db_members = team[Team.members.name]
-    new_members = members_set.difference(db_members)
 
-    if new_members:
-        all_members = sorted(chain(new_members, db_members))
+    if (members := sorted(members)) != team[Team.members.name]:
+        # invariant: the team members are always sorted, so there is no need to compare sets
         await sdb_conn.execute(
             sa.update(Team)
             .where(Team.id == team[Team.id.name])
-            .values({Team.updated_at: datetime.now(timezone.utc), Team.members: all_members}),
+            .values({Team.updated_at: datetime.now(timezone.utc), Team.members: members}),
         )
-        return sorted(new_members)
-    return ()

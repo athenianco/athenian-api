@@ -8,12 +8,11 @@ import aiomcache
 import morcilla
 import sentry_sdk
 from sqlalchemy import and_, delete, insert, select, update
-from sqlalchemy.dialects.postgresql import insert as postgres_insert
 
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached, max_exptime
 from athenian.api.controllers.invitation_controller import join_account
-from athenian.api.db import DatabaseLike
+from athenian.api.db import DatabaseLike, dialect_specific_insert
 from athenian.api.internal.account import (
     get_account_organizations,
     get_user_account_status_from_request,
@@ -256,17 +255,14 @@ async def set_account_features(request: AthenianWebRequest, id: int, body: dict)
                             detail=f"Feature is not supported: {feature.name}",
                         ),
                     )
-                if request.sdb.url.dialect == "postgresql":
-                    query = postgres_insert(AccountFeature)
-                    query = query.on_conflict_do_update(
-                        constraint=AccountFeature.__table__.primary_key,
-                        set_={
-                            AccountFeature.enabled.name: query.excluded.enabled,
-                            AccountFeature.parameters.name: query.excluded.parameters,
-                        },
-                    )
-                else:
-                    query = insert(AccountFeature).prefix_with("OR REPLACE")
+                query = (await dialect_specific_insert(conn))(AccountFeature)
+                query = query.on_conflict_do_update(
+                    index_elements=AccountFeature.__table__.primary_key.columns,
+                    set_={
+                        AccountFeature.enabled.name: query.excluded.enabled,
+                        AccountFeature.parameters.name: query.excluded.parameters,
+                    },
+                )
                 await conn.execute(
                     query.values(
                         AccountFeature(

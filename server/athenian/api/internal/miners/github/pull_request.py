@@ -28,7 +28,6 @@ import pandas as pd
 from pandas.core.common import flatten
 import sentry_sdk
 from sqlalchemy import BigInteger, sql
-from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.orm import aliased
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.sql.elements import BinaryExpression
@@ -36,7 +35,13 @@ from sqlalchemy.sql.elements import BinaryExpression
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
 from athenian.api.cache import CancelCache, cached, short_term_exptime
-from athenian.api.db import Database, DatabaseLike, add_pdb_hits, add_pdb_misses
+from athenian.api.db import (
+    Database,
+    DatabaseLike,
+    add_pdb_hits,
+    add_pdb_misses,
+    dialect_specific_insert,
+)
 from athenian.api.defer import AllEvents, defer
 from athenian.api.int_to_str import int_to_str
 from athenian.api.internal.logical_repos import coerce_logical_repos
@@ -2205,16 +2210,13 @@ class PullRequestMiner:
 
     @classmethod
     async def _upsert_pr_check_runs(cls, values: List[dict], pdb: Database):
-        if pdb.url.dialect == "postgresql":
-            expr = postgres_insert(GitHubPullRequestCheckRuns)
-            expr = expr.on_conflict_do_update(
-                constraint=GitHubPullRequestCheckRuns.__table__.primary_key,
-                set_={
-                    GitHubPullRequestCheckRuns.data.name: expr.excluded.data,
-                },
-            )
-        else:
-            expr = sql.insert(GitHubPullRequestCheckRuns).prefix_with("OR REPLACE")
+        expr = (await dialect_specific_insert(pdb))(GitHubPullRequestCheckRuns)
+        expr = expr.on_conflict_do_update(
+            index_elements=GitHubPullRequestCheckRuns.__table__.primary_key.columns,
+            set_={
+                GitHubPullRequestCheckRuns.data.name: expr.excluded.data,
+            },
+        )
         await pdb.execute_many(expr, values)
 
     @classmethod

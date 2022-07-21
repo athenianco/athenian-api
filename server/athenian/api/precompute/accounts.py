@@ -9,7 +9,7 @@ import signal
 import sys
 import time
 import traceback
-from typing import Callable, Collection, Optional, Sequence
+from typing import Callable, Optional, Sequence
 
 import aiomcache
 import sentry_sdk
@@ -18,7 +18,7 @@ from sqlalchemy import insert, update
 from tqdm import tqdm
 
 from athenian.api.async_utils import gather
-from athenian.api.db import Database
+from athenian.api.db import Database, dialect_specific_insert
 from athenian.api.defer import defer, wait_deferred
 from athenian.api.internal.account import copy_teams_as_needed, get_multiple_metadata_account_ids
 from athenian.api.internal.features.entries import MetricEntriesCalculator
@@ -41,12 +41,7 @@ from athenian.api.internal.miners.types import PullRequestFacts
 from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.reposet import refresh_repository_names
 from athenian.api.internal.settings import ReleaseMatch, Settings
-from athenian.api.internal.team import (
-    RootTeamNotFoundError,
-    get_bots_team,
-    get_root_team,
-    sync_team_members,
-)
+from athenian.api.internal.team import RootTeamNotFoundError, get_root_team
 from athenian.api.models.state.models import RepositorySet, Team
 from athenian.api.precompute.context import PrecomputeContext
 from athenian.api.precompute.prometheus import get_metrics, push_metrics
@@ -206,7 +201,7 @@ async def precompute_reposet(
     try:
         prefixer, bots, new_items = await gather(
             Prefixer.load(meta_ids, mdb, cache),
-            fetch_bots.get_account_bots(reposet.owner_id, meta_ids, mdb, sdb, None),
+            fetch_bots(reposet.owner_id, meta_ids, mdb, sdb, None),
             refresh_repository_names(reposet.owner_id, meta_ids, sdb, mdb),
         )
     except Exception as e:
@@ -214,19 +209,10 @@ async def precompute_reposet(
         sentry_sdk.capture_exception(e)
         return
     reposet.items = new_items
-    log.info("loaded %d bots", len(bots.all_bots))
-    if not reposet.precomputed:
-        log.info("considering account %d as brand new, creating the teams", reposet.owner_id)
-        try:
-            num_teams, num_bots = await create_teams(
-                reposet.owner_id, meta_ids, bots.local_bots, prefixer, sdb, mdb, cache,
-            )
-        except Exception as e:
-            log.warning("teams %d: %s: %s", reposet.owner_id, type(e).__name__, e)
-            sentry_sdk.capture_exception(e)
-            num_teams = num_bots = 0
-            # no return
-    await _sync_bots_team_members(reposet.owner_id, bots.local_bots, prefixer, sdb, log)
+    log.info("loaded %d bots", len(bots))
+    num_teams, num_bots = await ensure_teams(
+        reposet.owner_id, reposet.precomputed, bots, prefixer, meta_ids, sdb, mdb, cache, log,
+    )
     if not args.skip_jira:
         try:
             await match_jira_identities(reposet.owner_id, meta_ids, sdb, mdb, slack, cache)
@@ -308,7 +294,7 @@ async def precompute_reposet(
             LabelFilter.empty(),
             JIRAFilter.empty(),
             False,
-            bots.all_bots,
+            bots,
             _release_settings,
             logical_settings,
             prefixer,
@@ -418,47 +404,96 @@ async def precompute_reposet(
         await wait_deferred()
 
 
-async def create_teams(
+async def ensure_teams(
     account: int,
-    meta_ids: tuple[int, ...],
-    bots: Collection[str],
+    precomputed: bool,
+    bots: frozenset[str] | set[str],
     prefixer: Prefixer,
+    meta_ids: tuple[int, ...],
     sdb: Database,
     mdb: Database,
     cache: Optional[aiomcache.Client],
+    log: logging.Logger,
 ) -> tuple[int, int]:
-    """Copy the existing teams from GitHub and create a new team with all the involved bots \
-    for the specified account.
-
-    :return: Number of copied teams and the number of noticed bots.
     """
-    root_team_id = await _ensure_root_team(account, sdb)
-    _, num_teams = await copy_teams_as_needed(account, meta_ids, root_team_id, sdb, mdb, cache)
-    num_bots = await _ensure_bot_team(account, bots, root_team_id, prefixer, sdb, mdb)
+    Take care of everything related to the teams.
+
+    Create the root team and the bots team if they are missing.
+    Update the bots team with new bots from mdb.
+    If not precomputed, copy the teams from GitHub. Otherwise, synchronize them if the feature \
+    flag is enabled.
+    """
+    try:
+        root_team_id = await _ensure_root_team(account, sdb)
+    except Exception as e:
+        log.warning("root team %d: %s: %s", account, type(e).__name__, e)
+        sentry_sdk.capture_exception(e)
+        return 0, 0
+    try:
+        num_bots = await _ensure_bot_team(account, bots, root_team_id, prefixer, sdb, mdb, log)
+    except Exception as e:
+        log.warning("bots %d: %s: %s", account, type(e).__name__, e)
+        sentry_sdk.capture_exception(e)
+        num_bots = 0
+        # no return
+    if not precomputed:
+        log.info("considering account %d as brand new, creating the teams", account)
+        try:
+            _, num_teams = await copy_teams_as_needed(
+                account, meta_ids, root_team_id, sdb, mdb, cache,
+            )
+        except Exception as e:
+            log.warning("teams %d: %s: %s", account, type(e).__name__, e)
+            sentry_sdk.capture_exception(e)
+            num_teams = 0
+            # no return
+    else:
+        num_teams = 0
     return num_teams, num_bots
 
 
 async def _ensure_bot_team(
     account: int,
-    local_bots: Collection[str],
+    bots: frozenset[str] | set[str],
     root_team_id: int,
     prefixer: Prefixer,
     sdb: Database,
     mdb: Database,
+    log: logging.Logger,
 ) -> int:
-    bot_team = await get_bots_team(account, sdb)
-    if bot_team is not None:
-        return len(bot_team[Team.members.name])
-
-    bot_ids = set(chain.from_iterable(prefixer.user_login_to_node.get(u, ()) for u in local_bots))
-    await sdb.execute(
-        insert(Team).values(
-            Team(name=Team.BOTS, owner_id=account, parent_id=root_team_id, members=sorted(bot_ids))
-            .create_defaults()
-            .explode(),
-        ),
-    )
-    return len(bot_ids)
+    async with sdb.connection() as sdb_conn:
+        async with sdb_conn.transaction():
+            old_team = await fetch_bots.team(account, sdb_conn)
+            new_team = set(
+                chain.from_iterable(
+                    prefixer.user_login_to_node.get(u, ())
+                    for u in (bots - await fetch_bots.extra(mdb))
+                ),
+            )
+            if old_team is not None and set(old_team).issuperset(new_team):
+                return len(old_team)
+            log.info("writing %d bots for account %d", len(new_team), account)
+            sql = (await dialect_specific_insert(sdb))(Team)
+            sql = sql.on_conflict_do_update(
+                index_elements=[Team.owner_id, Team.name],
+                set_={
+                    col.name: getattr(sql.excluded, col.name)
+                    for col in (Team.members, Team.updated_at)
+                },
+            )
+            await sdb_conn.execute(
+                sql.values(
+                    Team(
+                        name=Team.BOTS,
+                        owner_id=account,
+                        parent_id=root_team_id,
+                        members=sorted(new_team),
+                    )
+                    .create_defaults()
+                    .explode(),
+                ),
+            )
+            return len(new_team)
 
 
 async def _ensure_root_team(account: int, sdb: Database) -> int:
@@ -472,33 +507,6 @@ async def _ensure_root_team(account: int, sdb: Database) -> int:
 
     team = Team(name=Team.ROOT, owner_id=account, members=[], parent_id=None)
     return await sdb.execute(insert(Team).values(team.create_defaults().explode()))
-
-
-async def _sync_bots_team_members(
-    account: int,
-    local_bots: Collection[str],
-    prefixer: Prefixer,
-    sdb: Database,
-    log: logging.Logger,
-) -> None:
-    """Update the members of the bots team if needed.
-
-    Missing bots are added to the Bots team in sdb.
-    Existing bots in the Bots team are never removed.
-    """
-    bot_ids = list(
-        set(chain.from_iterable(prefixer.user_login_to_node.get(u, ()) for u in local_bots)),
-    )
-
-    async with sdb.connection() as sdb_conn:
-        async with sdb_conn.transaction():
-            bot_team = await get_bots_team(account, sdb)
-            if bot_team is None:
-                return
-            log.info("syncing bots team members")
-            new_members = await sync_team_members(bot_team, bot_ids, sdb_conn)
-            if new_members:
-                log.info("added members to Bots team: %s", ",".join(map(str, new_members)))
 
 
 class _DurationTracker:

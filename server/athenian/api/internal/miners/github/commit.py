@@ -8,8 +8,7 @@ import aiomcache
 import numpy as np
 import pandas as pd
 import sentry_sdk
-from sqlalchemy import and_, desc, insert, outerjoin, select, union_all
-from sqlalchemy.dialects.postgresql import insert as postgres_insert
+from sqlalchemy import and_, desc, outerjoin, select, union_all
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from athenian.api import metadata
@@ -20,6 +19,7 @@ from athenian.api.db import (
     DatabaseLike,
     add_pdb_hits,
     add_pdb_misses,
+    dialect_specific_insert,
     ensure_db_datetime_tz,
 )
 from athenian.api.defer import defer
@@ -372,19 +372,14 @@ async def fetch_repository_commits(
             if prune:
                 hashes, vertexes, edges = extract_subdag(hashes, vertexes, edges, repo_heads[repo])
             result[repo] = consistent, (hashes, vertexes, edges)
-        if pdb.url.dialect == "postgresql":
-            sql = postgres_insert(GitHubCommitHistory)
-            sql = sql.on_conflict_do_update(
-                constraint=GitHubCommitHistory.__table__.primary_key,
-                set_={
-                    GitHubCommitHistory.dag.name: sql.excluded.dag,
-                    GitHubCommitHistory.updated_at.name: sql.excluded.updated_at,
-                },
-            )
-        elif pdb.url.dialect == "sqlite":
-            sql = insert(GitHubCommitHistory).prefix_with("OR REPLACE")
-        else:
-            raise AssertionError("Unsupported database dialect: %s" % pdb.url.dialect)
+        sql = (await dialect_specific_insert(pdb))(GitHubCommitHistory)
+        sql = sql.on_conflict_do_update(
+            index_elements=GitHubCommitHistory.__table__.primary_key.columns,
+            set_={
+                GitHubCommitHistory.dag.name: sql.excluded.dag,
+                GitHubCommitHistory.updated_at.name: sql.excluded.updated_at,
+            },
+        )
 
         async def execute():
             if pdb.url.dialect == "sqlite":
