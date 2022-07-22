@@ -12,17 +12,21 @@ from athenian.api.internal.team import (
     delete_team,
     fetch_team_members_recursively,
     fetch_teams_recursively,
+    get_meta_teams_members,
     get_root_team,
     get_team_from_db,
     sync_team_members,
 )
 from athenian.api.models.state.models import Goal, Team, TeamGoal
 from tests.testutils.db import (
+    DBCleaner,
     assert_existing_row,
     assert_missing_row,
     models_insert,
     transaction_conn,
 )
+from tests.testutils.factory import metadata as md_factory
+from tests.testutils.factory.common import DEFAULT_MD_ACCOUNT_ID
 from tests.testutils.factory.state import GoalFactory, TeamFactory, TeamGoalFactory
 
 
@@ -199,3 +203,26 @@ class TestSyncTeamMembers:
 
         team_row = await assert_existing_row(sdb, Team, id=99)
         assert team_row[Team.members.name] == [1, 2, 3]
+
+
+class TestGetMetaTeamsMembers:
+    async def test_base(self, mdb: Database) -> None:
+        async with DBCleaner(mdb) as mdb_cleaner:
+            models = (
+                md_factory.TeamFactory(id=200),
+                md_factory.TeamFactory(id=201),
+                md_factory.TeamFactory(id=202),
+                md_factory.TeamFactory(id=203),
+                md_factory.TeamMemberFactory(parent_id=200, child_id=10),
+                md_factory.TeamMemberFactory(parent_id=200, child_id=11),
+                md_factory.TeamMemberFactory(parent_id=201, child_id=12),
+                md_factory.TeamMemberFactory(parent_id=203, child_id=13),
+            )
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb, *models)
+
+            members = await get_meta_teams_members([200, 201, 202], [DEFAULT_MD_ACCOUNT_ID], mdb)
+            assert members[200] == [10, 11]
+            assert members[201] == [12]
+            assert members[202] == []
+            assert members[203] == []

@@ -1,3 +1,4 @@
+from collections import defaultdict
 from datetime import datetime, timezone
 from http import HTTPStatus
 from itertools import chain
@@ -12,7 +13,7 @@ from athenian.api.align.goals.dbaccess import delete_empty_goals
 from athenian.api.async_utils import gather
 from athenian.api.db import Connection, Database, DatabaseLike, Row, conn_in_transaction
 from athenian.api.internal.jira import load_mapped_jira_users
-from athenian.api.models.metadata.github import User
+from athenian.api.models.metadata.github import TeamMember as MetadataTeamMember, User
 from athenian.api.models.state.models import Team
 from athenian.api.models.web import BadRequestError, Contributor, GenericError
 from athenian.api.response import ResponseError
@@ -239,3 +240,26 @@ async def sync_team_members(
             .where(Team.id == team[Team.id.name])
             .values({Team.updated_at: datetime.now(timezone.utc), Team.members: members}),
         )
+
+
+async def get_meta_teams_members(
+    meta_team_ids: Sequence[int],
+    meta_ids: Sequence[int],
+    mdb: DatabaseLike,
+) -> dict[int, list[int]]:
+    """Return the members for the given metadata teams.
+
+    A dict of metadata team id => list of members is returned.
+    """
+    member_rows = await mdb.fetch_all(
+        sa.select(MetadataTeamMember.parent_id, MetadataTeamMember.child_id).where(
+            MetadataTeamMember.parent_id.in_(meta_team_ids),
+            MetadataTeamMember.acc_id.in_(meta_ids),
+        ),
+    )
+    members = defaultdict(list)
+    for row in member_rows:
+        members[row[MetadataTeamMember.parent_id.name]].append(
+            row[MetadataTeamMember.child_id.name],
+        )
+    return members
