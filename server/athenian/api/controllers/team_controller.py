@@ -7,6 +7,7 @@ from aiohttp import web
 from asyncpg import UniqueViolationError
 from sqlalchemy import and_, delete, insert, select, update
 
+from athenian.api.align.goals.dbaccess import delete_empty_goals
 from athenian.api.async_utils import gather
 from athenian.api.auth import disable_default_user
 from athenian.api.balancing import weight
@@ -275,6 +276,8 @@ async def resync_teams(request: AthenianWebRequest, id: int) -> web.Response:
 
     The "Bots" team and the "Root" artificial team will remain intact.
     The rest of the teams will be identical to what's on GitHub.
+    Goals assignments will be removed except for "Bots" and "Root" teams, and empty goals
+    will be removed too.
     "Root" team will need to be already present for this operation to succeed.
 
     :param id: Numeric identifier of the account.
@@ -297,6 +300,7 @@ async def resync_teams(request: AthenianWebRequest, id: int) -> web.Response:
                     ),
                 ),
             )
+            await delete_empty_goals(account, sdb_conn)
             teams, _ = await copy_teams_as_needed(
                 account, meta_ids, root_team_id, sdb_conn, request.mdb, request.cache,
             )

@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy import insert, select, update
 
 from athenian.api.db import Database, ensure_db_datetime_tz
-from athenian.api.models.state.models import AccountGitHubAccount, Goal, Team
+from athenian.api.models.state.models import AccountGitHubAccount, Goal, Team, TeamGoal
 from athenian.api.models.web import TeamUpdateRequest
 from athenian.api.models.web.team import Team as TeamListItem
 from athenian.api.models.web.team_create_request import TeamCreateRequest
@@ -351,6 +351,31 @@ class TestResyncTeams:
 
     async def test_regular_user(self, client, headers, disable_default_user):
         await self._request(client, 2, 403)
+
+    async def test_goals_are_removed(
+        self,
+        client: TestClient,
+        sdb: Database,
+        disable_default_user,
+    ) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=100, parent_id=None),
+            TeamFactory(id=101, parent_id=100),
+            GoalFactory(id=20),
+            GoalFactory(id=21),
+            TeamGoalFactory(goal_id=20, team_id=101),
+            TeamGoalFactory(goal_id=21, team_id=100),
+            TeamGoalFactory(goal_id=21, team_id=101),
+        )
+
+        await self._request(client, 1)
+
+        await assert_missing_row(sdb, Team, id=101)
+        await assert_missing_row(sdb, Goal, id=20)
+        await assert_existing_row(sdb, Goal, id=21)
+        await assert_missing_row(sdb, TeamGoal, goal_id=21, team_id=101)
+        await assert_existing_row(sdb, TeamGoal, goal_id=21, team_id=100)
 
     async def _request(
         self,
