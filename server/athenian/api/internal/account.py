@@ -1,6 +1,5 @@
-from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from graphlib import CycleError, TopologicalSorter  # noqa
+from graphlib import CycleError, TopologicalSorter
 from itertools import chain
 import logging
 import marshal
@@ -23,8 +22,9 @@ from sqlalchemy import and_, func, insert, select
 from athenian.api import metadata
 from athenian.api.async_utils import gather
 from athenian.api.cache import cached, max_exptime, middle_term_exptime, short_term_exptime
-from athenian.api.db import Connection, Database, DatabaseLike
+from athenian.api.db import Connection, Database, DatabaseLike, Row
 from athenian.api.defer import defer
+from athenian.api.internal.team_meta import get_meta_teams_members
 from athenian.api.models.metadata.github import (
     Account as MetadataAccount,
     AccountRepository,
@@ -32,7 +32,6 @@ from athenian.api.models.metadata.github import (
     NodeUser,
     Organization,
     Team as MetadataTeam,
-    TeamMember,
 )
 from athenian.api.models.state.models import (
     Account,
@@ -445,15 +444,8 @@ async def copy_teams_as_needed(
     except CycleError as e:
         log.error("Found a metadata parent-child team reference cycle: %s", e)
         return [], 0
-    teams = {t[MetadataTeam.id.name]: t for t in team_rows}
-    member_rows = await mdb.fetch_all(
-        select(TeamMember.parent_id, TeamMember.child_id).where(
-            and_(TeamMember.parent_id.in_(teams), TeamMember.acc_id.in_(meta_ids)),
-        ),
-    )
-    members = defaultdict(list)
-    for row in member_rows:
-        members[row[TeamMember.parent_id.name]].append(row[TeamMember.child_id.name])
+    teams: dict[int, Row] = {t[MetadataTeam.id.name]: t for t in team_rows}
+    members = await get_meta_teams_members(teams, meta_ids, mdb)
     db_ids = {}
     created_teams = []
     for node_id in TopologicalSorter(dig).static_order():
