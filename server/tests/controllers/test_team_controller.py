@@ -321,46 +321,47 @@ def _test_same_team(actual, expected, no_timings=True):
     assert actual == expected
 
 
-async def test_resync_teams_smoke(client, headers, sdb, disable_default_user):
-    await sdb.execute(model_insert_stmt(TeamFactory(parent_id=None), with_primary_keys=False))
-    response = await client.request(method="DELETE", path="/v1/teams/1", headers=headers)
-    body = await response.json()
-    assert response.status == 200, f"Response body is : {body}"
-    teams = {t["name"]: TeamListItem.from_dict(t) for t in body}
-    actual_teams = await sdb.fetch_all(select([Team]).where(Team.owner_id == 1))
-    assert len(teams) == len(actual_teams) - 1  # root team is not included in the response
+class TestResyncTeams:
+    async def test_smoke(self, client, headers, sdb, disable_default_user):
+        await sdb.execute(model_insert_stmt(TeamFactory(parent_id=None), with_primary_keys=False))
+        body = await self._request(client, 1)
+        teams = {t["name"]: TeamListItem.from_dict(t) for t in body}
+        actual_teams = await sdb.fetch_all(select([Team]).where(Team.owner_id == 1))
+        assert len(teams) == len(actual_teams) - 1  # root team is not included in the response
 
-    assert teams.keys() == {
-        "team",
-        "engineering",
-        "business",
-        "operations",
-        "product",
-        "admin",
-        "automation",
-    }
-    assert [m.login for m in teams["product"].members] == ["github.com/warenlg", "github.com/eiso"]
+        assert teams.keys() == {
+            "team",
+            "engineering",
+            "business",
+            "operations",
+            "product",
+            "admin",
+            "automation",
+        }
+        assert [m.login for m in teams["product"].members] == [
+            "github.com/warenlg",
+            "github.com/eiso",
+        ]
 
+    async def test_default_user(self, client: TestClient) -> None:
+        await self._request(client, 1, 403)
 
-async def test_resync_teams_default_user(client, headers):
-    response = await client.request(method="DELETE", path="/v1/teams/1", headers=headers)
+    async def test_wrong_user(self, client, headers, disable_default_user):
+        await self._request(client, 3, 404)
 
-    body = (await response.read()).decode("utf-8")
-    assert response.status == 403, "Response body is : " + body
+    async def test_regular_user(self, client, headers, disable_default_user):
+        await self._request(client, 2, 403)
 
-
-async def test_resync_teams_wrong_user(client, headers, disable_default_user):
-    response = await client.request(method="DELETE", path="/v1/teams/3", headers=headers)
-
-    body = (await response.read()).decode("utf-8")
-    assert response.status == 404, "Response body is : " + body
-
-
-async def test_resync_teams_regular_user(client, headers, disable_default_user):
-    response = await client.request(method="DELETE", path="/v1/teams/2", headers=headers)
-
-    body = (await response.read()).decode("utf-8")
-    assert response.status == 403, "Response body is : " + body
+    async def _request(
+        self,
+        client: TestClient,
+        account_id: int,
+        assert_status: int = 200,
+    ) -> list[dict]:
+        path = f"/v1/teams/{account_id}"
+        response = await client.request(method="DELETE", path=path, headers=DEFAULT_HEADERS)
+        assert response.status == assert_status
+        return await response.json()
 
 
 class TestUpdateTeam:
