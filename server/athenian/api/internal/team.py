@@ -224,12 +224,11 @@ async def sync_team_members(
     members: Sequence[int],
     sdb_conn: Connection,
 ) -> None:
-    """Update the members of the Team if `members` contain new members.
+    """Update the members of the Team.
 
-    Existing members are never removed.
-    Return the members added to the Team.
+    No update is done if team already contains exactly the same members.
 
-    Dp not return anything because we can either delete or insert people.
+    Do not return anything because we can either delete or insert people.
     """
     assert await conn_in_transaction(sdb_conn)
 
