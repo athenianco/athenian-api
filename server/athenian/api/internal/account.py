@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from graphlib import CycleError, TopologicalSorter
+from graphlib import CycleError
 from itertools import chain
 import logging
 import marshal
@@ -430,26 +430,20 @@ async def copy_teams_as_needed(
     if not team_rows:
         log.warning("Found 0 metadata teams for account %d", account)
         return [], 0
-    # check for cycles - who knows?
-    dig = {}
-    for row in team_rows:
-        team_id = row[MetadataTeam.id.name]
-        if (parent_id := row[MetadataTeam.parent_team_id.name]) is not None:
-            dig[team_id] = [parent_id]
-        else:
-            dig[team_id] = []
+    # TODO: avoid cyclic import
+    from athenian.api.internal.team import get_meta_teams_members, get_meta_teams_topological_order
+
     try:
-        TopologicalSorter(dig).prepare()
+        teams_topological_order = get_meta_teams_topological_order(team_rows)
     except CycleError as e:
         log.error("Found a metadata parent-child team reference cycle: %s", e)
         return [], 0
     teams: dict[int, Row] = {t[MetadataTeam.id.name]: t for t in team_rows}
-    from athenian.api.internal.team import get_meta_teams_members  # TODO: avoid cyclic import
 
     members = await get_meta_teams_members(teams, meta_ids, mdb)
     db_ids = {}
     created_teams = []
-    for node_id in TopologicalSorter(dig).static_order():
+    for node_id in teams_topological_order:
         team = teams[node_id]
 
         parent_id = root_team_id

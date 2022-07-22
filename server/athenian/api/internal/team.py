@@ -1,9 +1,10 @@
 from collections import defaultdict
 from datetime import datetime, timezone
+import graphlib
 from http import HTTPStatus
 from itertools import chain
 import logging
-from typing import Collection, Iterable, Optional, Sequence
+from typing import Any, Collection, Iterable, Optional, Sequence
 
 import aiomcache
 import sqlalchemy as sa
@@ -13,7 +14,11 @@ from athenian.api.align.goals.dbaccess import delete_empty_goals
 from athenian.api.async_utils import gather
 from athenian.api.db import Connection, Database, DatabaseLike, Row, conn_in_transaction
 from athenian.api.internal.jira import load_mapped_jira_users
-from athenian.api.models.metadata.github import TeamMember as MetadataTeamMember, User
+from athenian.api.models.metadata.github import (
+    Team as MetadataTeam,
+    TeamMember as MetadataTeamMember,
+    User,
+)
 from athenian.api.models.state.models import Team
 from athenian.api.models.web import BadRequestError, Contributor, GenericError
 from athenian.api.response import ResponseError
@@ -263,3 +268,17 @@ async def get_meta_teams_members(
             row[MetadataTeamMember.child_id.name],
         )
     return members
+
+
+def get_meta_teams_topological_order(meta_team_rows: Iterable[Row]) -> Iterable[Any]:
+    """Return the team IDs in topological order according to parentship relation.
+
+    Raise an error if the graph includes cycles.
+    """
+    graph: graphlib.TopologicalSorter = graphlib.TopologicalSorter()
+    for row in meta_team_rows:
+        if (parent_id := row[MetadataTeam.parent_team_id.name]) is not None:
+            graph.add(row[MetadataTeam.id.name], parent_id)
+        else:
+            graph.add(row[MetadataTeam.id.name])
+    return graph.static_order()
