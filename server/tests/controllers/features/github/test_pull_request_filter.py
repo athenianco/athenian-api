@@ -45,7 +45,7 @@ def time_from_to():
         (PullRequestStage.MERGING, 4),
         (PullRequestStage.RELEASING, 130),
         (PullRequestStage.DONE, 529),
-        (PullRequestStage.FORCE_PUSH_DROPPED, 6),
+        (PullRequestStage.FORCE_PUSH_DROPPED, 5),
     ],
 )
 @with_defer
@@ -910,7 +910,7 @@ async def test_pr_list_miner_deployments_production(
         rdb,
         None,
     )
-    assert len(prs) == 452
+    assert len(prs) == 581
     deps = 0
     merged_undeployed = 0
     deployed_margin = datetime(2019, 11, 1, 12, 15) - datetime(2015, 5, 2)
@@ -934,7 +934,7 @@ async def test_pr_list_miner_deployments_production(
             assert PullRequestEvent.DEPLOYED not in pr.events_time_machine
             assert PullRequestStage.DEPLOYED not in pr.stages_now
             assert PullRequestStage.DEPLOYED not in pr.stages_time_machine
-    assert deps == 384
+    assert deps == 513
     assert merged_undeployed == 11
 
 
@@ -1029,7 +1029,7 @@ async def test_pr_list_miner_deployments_staging(
         rdb,
         None,
     )
-    assert len(prs) == 452
+    assert len(prs) == 581
     deps = 0
     for pr in prs:
         if pr.deployments:
@@ -1040,7 +1040,7 @@ async def test_pr_list_miner_deployments_staging(
         assert PullRequestEvent.DEPLOYED not in pr.events_time_machine
         assert PullRequestStage.DEPLOYED not in pr.stages_now
         assert PullRequestStage.DEPLOYED not in pr.stages_time_machine
-    assert deps == 384
+    assert deps == 513
 
 
 @pytest.mark.parametrize(
@@ -1090,7 +1090,7 @@ async def test_pr_list_miner_deployments_staging(
             PullRequestStage.FORCE_PUSH_DROPPED,
             {
                 "": 4,
-                "/alpha": 1,
+                "/alpha": 0,
                 "/beta": 1,
             },
         ),
@@ -1519,12 +1519,13 @@ async def test_filter_pull_requests_deployments(
     )
     await wait_deferred()
     prs, deps = await filter_pull_requests(*args)
+    await wait_deferred()
     assert len(prs) == 8 if exclude_inactive else 15
     check_pr_deployments(prs, deps, 0)  # unmerged PR cannot be deployed!
     args[1] = {PullRequestStage.DONE}
     prs, deps = await filter_pull_requests(*args)
-    assert len(prs) == 394
-    check_pr_deployments(prs, deps, 384)
+    assert len(prs) == 404
+    check_pr_deployments(prs, deps, 394)
 
 
 def check_pr_deployments(

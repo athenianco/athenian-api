@@ -147,6 +147,7 @@ class GoalMetricValues:
     current: Mapping[int, Any]
 
 
+@sentry_span
 def _team_tree_to_goal_tree(
     team_tree: TeamTree,
     goal_row: Row,
@@ -199,6 +200,7 @@ class _TeamFilterFromTeamGoalRows:
         return team_id in self._team_ids
 
 
+@sentry_span
 def _team_tree_prune_empty_branches(
     team_tree: TeamTree,
     keep_team_fn: Callable[[int], bool],

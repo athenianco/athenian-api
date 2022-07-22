@@ -368,6 +368,13 @@ async def least(db: DatabaseLike) -> ReturnTypeFromArgs:
     return func.min
 
 
+async def strpos(db: DatabaseLike) -> ReturnTypeFromArgs:
+    """Return SQL STRPOS/INSTR function."""
+    if await is_postgresql(db):
+        return func.strpos
+    return func.instr
+
+
 CompoundSelect._statement_hints = ()
 CompoundSelect.with_statement_hint = _with_statement_hint
 

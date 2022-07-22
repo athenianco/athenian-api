@@ -331,6 +331,7 @@ def _jirafy_teams(
     return result
 
 
+@sentry_span
 def _simplify_requests(requests: Sequence[TeamMetricsRequest]) -> Sequence[TeamMetricsRequest]:
     """Simplify the list of requests and try to group them in less requests."""
     # intervals => team id => metrics
@@ -377,6 +378,7 @@ class _BatchCalcResultCollector(Generic[_MetricsLineRequestGenT]):
     def __init__(self) -> None:
         self._requests: list[tuple[_MetricsLineRequestGenT, Sequence[int]]] = []
 
+    @sentry_span
     def collect(
         self,
         batch_calc_results: Sequence[np.ndarray],
@@ -422,6 +424,7 @@ class _JIRATeamMetricsValueCollector(_BatchCalcResultCollector[JIRAMetricsLineRe
         return calc_res[team_i][0][interval_i][0][metric_i].value
 
 
+@sentry_span
 def _build_metrics_response(
     team_tree: TeamTree,
     metrics: Sequence[str],

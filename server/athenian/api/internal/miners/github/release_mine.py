@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 import logging
 import pickle
 import re
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
+from typing import Any, Callable, Collection, Iterable, Optional, Sequence, Union
 
 import aiomcache
 import numpy as np
@@ -13,6 +13,7 @@ import pandas as pd
 import sentry_sdk
 import sqlalchemy as sa
 from sqlalchemy import and_, func, join, select, union_all
+from sqlalchemy.sql.elements import BinaryExpression
 
 from athenian.api import metadata
 from athenian.api.async_utils import gather, read_sql_query
@@ -54,6 +55,7 @@ from athenian.api.internal.miners.github.precomputed_releases import (
     reverse_release_settings,
     store_precomputed_release_facts,
 )
+from athenian.api.internal.miners.github.rebased_pr import match_rebased_prs
 from athenian.api.internal.miners.github.release_load import (
     ReleaseLoader,
     group_repos_by_release_match,
@@ -87,6 +89,7 @@ from athenian.api.models.metadata.github import (
 )
 from athenian.api.models.precomputed.models import (
     GitHubDonePullRequestFacts,
+    GitHubRebasedPullRequest,
     GitHubReleaseDeployment,
 )
 from athenian.api.to_object_arrays import is_null
@@ -97,7 +100,7 @@ async def mine_releases(
     repos: Iterable[str],
     participants: ReleaseParticipants,
     branches: pd.DataFrame,
-    default_branches: Dict[str, str],
+    default_branches: dict[str, str],
     time_from: datetime,
     time_to: datetime,
     labels: LabelFilter,
@@ -106,7 +109,7 @@ async def mine_releases(
     logical_settings: LogicalRepositorySettings,
     prefixer: Prefixer,
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: Database,
     pdb: Database,
     rdb: Database,
@@ -115,11 +118,11 @@ async def mine_releases(
     with_avatars: bool = True,
     with_pr_titles: bool = False,
     with_deployments: bool = True,
-) -> Tuple[
-    List[Tuple[Dict[str, Any], ReleaseFacts]],
-    Union[List[Tuple[int, str]], List[int]],
-    Dict[str, ReleaseMatch],
-    Dict[str, Deployment],
+) -> tuple[
+    list[tuple[dict[str, Any], ReleaseFacts]],
+    Union[list[tuple[int, str]], list[int]],
+    dict[str, ReleaseMatch],
+    dict[str, Deployment],
 ]:
     """Collect details about each release published between `time_from` and `time_to` and \
     calculate various statistics.
@@ -132,7 +135,7 @@ async def mine_releases(
     :param with_pr_titles: Indicates whether released PR titles must be fetched.
     :param with_deployments: Indicates whether we must load the deployments to which the filtered
                              releases belong.
-    :return: 1. List of releases (general info, computed facts). \
+    :return: 1. list of releases (general info, computed facts). \
              2. User avatars if `with_avatars` else *only newly mined* mentioned people nodes. \
              3. Release matched_by-s.
              4. Deployments that mention the returned releases. Empty if not `with_deployments`.
@@ -164,11 +167,11 @@ async def mine_releases(
 
 
 def _triage_flags(
-    result: Tuple[
-        List[Tuple[Dict[str, Any], ReleaseFacts]],
-        Union[List[Tuple[int, str]], List[int]],
-        Dict[str, ReleaseMatch],
-        Dict[str, Deployment],
+    result: tuple[
+        list[tuple[dict[str, Any], ReleaseFacts]],
+        Union[list[tuple[int, str]], list[int]],
+        dict[str, ReleaseMatch],
+        dict[str, Deployment],
         bool,
         bool,
         bool,
@@ -177,11 +180,11 @@ def _triage_flags(
     with_pr_titles: bool = False,
     with_deployments: bool = True,
     **_,
-) -> Tuple[
-    List[Tuple[Dict[str, Any], ReleaseFacts]],
-    Union[List[Tuple[int, str]], List[int]],
-    Dict[str, ReleaseMatch],
-    Dict[str, Deployment],
+) -> tuple[
+    list[tuple[dict[str, Any], ReleaseFacts]],
+    Union[list[tuple[int, str]], list[int]],
+    dict[str, ReleaseMatch],
+    dict[str, Deployment],
     bool,
     bool,
     bool,
@@ -224,10 +227,10 @@ def _triage_flags(
     postprocess=_triage_flags,
 )
 async def _mine_releases(
-    repos: Iterable[str],
+    repos: Collection[str],
     participants: ReleaseParticipants,
     branches: pd.DataFrame,
-    default_branches: Dict[str, str],
+    default_branches: dict[str, str],
     time_from: datetime,
     time_to: datetime,
     labels: LabelFilter,
@@ -236,7 +239,7 @@ async def _mine_releases(
     logical_settings: LogicalRepositorySettings,
     prefixer: Prefixer,
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: Database,
     pdb: Database,
     rdb: Database,
@@ -245,11 +248,11 @@ async def _mine_releases(
     with_avatars: bool,
     with_pr_titles: bool,
     with_deployments: bool,
-) -> Tuple[
-    List[Tuple[Dict[str, Any], ReleaseFacts]],
-    Union[List[Tuple[int, str]], List[int]],
-    Dict[str, ReleaseMatch],
-    Dict[str, Deployment],
+) -> tuple[
+    list[tuple[dict[str, Any], ReleaseFacts]],
+    Union[list[tuple[int, str]], list[int]],
+    dict[str, ReleaseMatch],
+    dict[str, Deployment],
     bool,
     bool,
     bool,
@@ -448,7 +451,10 @@ async def _mine_releases(
             commits_df, NodeCommit.author_user_id.name,
         )
 
-        tasks = [_load_prs_by_merge_commit_ids(commit_ids, repos, logical_settings, meta_ids, mdb)]
+        tasks = [
+            _load_prs_by_merge_commit_ids(commit_ids, repos, logical_settings, meta_ids, mdb),
+            _load_rebased_prs(commit_ids, repos, logical_settings, account, meta_ids, mdb, pdb),
+        ]
         if jira:
             query = await generate_jira_prs_query(
                 [PullRequest.merge_commit_id.in_(commit_ids)],
@@ -460,9 +466,12 @@ async def _mine_releases(
             )
             query = query.with_statement_hint(f"Rows(pr repo #{len(commit_ids)})")
             tasks.append(read_sql_query(query, mdb, columns=[PullRequest.merge_commit_id]))
-        (prs_df, prs_commit_ids), *rest = await gather(
+        (prs_df, prs_commit_ids), (rebased_prs_df, rebased_commit_ids), *rest = await gather(
             *tasks, op="mine_releases/fetch_pull_requests", description=str(len(commit_ids)),
         )
+        if not rebased_prs_df.empty:
+            prs_df = pd.concat([prs_df, rebased_prs_df], ignore_index=True)
+            prs_commit_ids = np.concatenate([prs_commit_ids, rebased_commit_ids])
         if jira:
             filtered_prs_commit_ids = rest[0][PullRequest.merge_commit_id.name].unique()
         original_prs_commit_ids = prs_df[PullRequest.merge_commit_id.name].values
@@ -733,7 +742,7 @@ async def _mine_releases(
     )
 
 
-def _null_to_zero_int(df: pd.DataFrame, col: str) -> Tuple[np.ndarray, np.ndarray]:
+def _null_to_zero_int(df: pd.DataFrame, col: str) -> tuple[np.ndarray, np.ndarray]:
     vals = df[col]
     vals_z = is_null(vals.values)
     vals.values[vals_z] = 0
@@ -747,7 +756,7 @@ def group_hashes_by_ownership(
     hashes: np.ndarray,
     groups: int,
     on_missing: Optional[Callable[[np.ndarray], None]],
-) -> List[np.ndarray]:
+) -> list[np.ndarray]:
     """Return owned commit hashes for each release according to the ownership analysis."""
     order = np.argsort(ownership)
     sorted_hashes = hashes[order]
@@ -773,10 +782,10 @@ def group_hashes_by_ownership(
 
 def _build_mined_releases(
     releases: pd.DataFrame,
-    precomputed_facts: Dict[Tuple[int, str], ReleaseFacts],
+    precomputed_facts: dict[tuple[int, str], ReleaseFacts],
     prefixer: Prefixer,
     with_avatars: bool,
-) -> Tuple[List[Tuple[Dict[str, Any], ReleaseFacts]], Optional[np.ndarray], np.ndarray]:
+) -> tuple[list[tuple[dict[str, Any], ReleaseFacts]], Optional[np.ndarray], np.ndarray]:
     release_repos = releases[Release.repository_full_name.name].values.astype("S")
     release_keys = np.char.add(int_to_str(releases[Release.node_id.name].values), release_repos)
     precomputed_keys = np.char.add(
@@ -830,9 +839,9 @@ def _build_mined_releases(
 
 
 def _filter_by_participants(
-    releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
+    releases: list[tuple[dict[str, Any], ReleaseFacts]],
     participants: ReleaseParticipants,
-) -> List[Tuple[Dict[str, Any], ReleaseFacts]]:
+) -> list[tuple[dict[str, Any], ReleaseFacts]]:
     if not releases or not participants:
         return releases
     participants = {k: np.array(v, dtype=int) for k, v in participants.items()}
@@ -868,10 +877,10 @@ def _filter_by_participants(
 
 
 def _filter_by_labels(
-    releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
+    releases: list[tuple[dict[str, Any], ReleaseFacts]],
     labels_df: pd.DataFrame,
     labels_filter: LabelFilter,
-) -> List[Tuple[Dict[str, Any], ReleaseFacts]]:
+) -> list[tuple[dict[str, Any], ReleaseFacts]]:
     if not releases:
         return releases
     key = "prs_" + PullRequest.node_id.name
@@ -909,12 +918,12 @@ def _filter_by_labels(
 
 @sentry_span
 async def _filter_precomputed_release_facts_by_jira(
-    precomputed_facts: Dict[Tuple[int, str], ReleaseFacts],
+    precomputed_facts: dict[tuple[int, str], ReleaseFacts],
     jira: JIRAFilter,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Dict[Tuple[int, str], ReleaseFacts]:
+) -> dict[tuple[int, str], ReleaseFacts]:
     assert jira
     pr_ids = [getattr(f, "prs_" + PullRequest.node_id.name) for f in precomputed_facts.values()]
     if not pr_ids:
@@ -952,13 +961,34 @@ async def _filter_precomputed_release_facts_by_jira(
 
 @sentry_span
 async def _load_prs_by_merge_commit_ids(
-    commit_ids: Sequence[str],
-    repos: Set[str],
+    commit_ids: Sequence[int],
+    repos: Collection[str],
     logical_settings: LogicalRepositorySettings,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: Database,
-) -> Tuple[pd.DataFrame, np.ndarray]:
-    log = logging.getLogger(f"{metadata.__package__}._load_prs_by_merge_commit_ids")
+) -> tuple[pd.DataFrame, npt.NDArray[int]]:
+    return await _load_prs_by_ids(
+        commit_ids,
+        lambda model, ids: model.merge_commit_id.in_(ids),
+        repos,
+        logical_settings,
+        True,
+        meta_ids,
+        mdb,
+    )
+
+
+@sentry_span
+async def _load_prs_by_ids(
+    ids: Sequence[int],
+    filter_builder: Callable[[Any, Sequence[int]], BinaryExpression],
+    repos: Collection[str],
+    logical_settings: LogicalRepositorySettings,
+    logical_sort: bool,
+    meta_ids: tuple[int, ...],
+    mdb: Database,
+) -> tuple[pd.DataFrame, npt.NDArray[int]]:
+    log = logging.getLogger(f"{metadata.__package__}._load_prs_by_ids")
     has_logical_prs = logical_settings.has_logical_prs()
     model = PullRequest if has_logical_prs else NodePullRequest
     columns = [model.merge_commit_id, *released_prs_columns(model)]
@@ -968,13 +998,13 @@ async def _load_prs_by_merge_commit_ids(
     # we can have 7,600,000 commit ids here and the DB breaks
     batch_size = 100_000
     tasks = []
-    while len(commit_ids):
+    while len(ids):
         tasks.append(
             read_sql_query(
                 select(columns)
                 .where(
                     and_(
-                        model.merge_commit_id.in_(commit_ids[:batch_size]),
+                        filter_builder(model, ids[:batch_size]),
                         model.acc_id.in_(meta_ids),
                     ),
                 )
@@ -1004,7 +1034,7 @@ async def _load_prs_by_merge_commit_ids(
                     )
                     .where(
                         and_(
-                            NodePullRequest.merge_commit_id.in_(commit_ids[:batch_size]),
+                            filter_builder(NodePullRequest, ids[:batch_size]),
                             NodePullRequest.acc_id.in_(meta_ids),
                         ),
                     )
@@ -1014,7 +1044,7 @@ async def _load_prs_by_merge_commit_ids(
                     index=PullRequestLabel.pull_request_node_id.name,
                 ),
             )
-        commit_ids = commit_ids[batch_size:]
+        ids = ids[batch_size:]
     if tasks:
         dfs = await gather(*tasks)
         if has_prs_by_label:
@@ -1037,8 +1067,10 @@ async def _load_prs_by_merge_commit_ids(
         )
         if has_logical_prs:
             log.info("Logical PRs: %d -> %d", original_prs_count, len(df_prs))
-        prs_commit_ids = df_prs[PullRequest.merge_commit_id.name].values.astype(int, copy=False)
-        if has_logical_prs:
+        prs_commit_ids = df_prs[PullRequest.merge_commit_id.name].values
+        prs_commit_ids[is_null(prs_commit_ids)] = 0
+        prs_commit_ids = prs_commit_ids.astype(int, copy=False)
+        if has_logical_prs and logical_sort:
             prs_commit_ids = np.char.add(
                 int_to_str(prs_commit_ids),
                 df_prs[PullRequest.repository_full_name.name].values.astype("S"),
@@ -1054,6 +1086,48 @@ async def _load_prs_by_merge_commit_ids(
 
 
 @sentry_span
+async def _load_rebased_prs(
+    commit_ids: npt.NDArray[int],
+    repository_names: Collection[str],
+    logical_settings: LogicalRepositorySettings,
+    account: int,
+    meta_ids: tuple[int, ...],
+    mdb: Database,
+    pdb: Database,
+) -> tuple[pd.DataFrame, npt.NDArray[int]]:
+    rebased_df = await match_rebased_prs(account, meta_ids, mdb, pdb, commit_ids=commit_ids)
+    if rebased_df.empty:
+        return pd.DataFrame(), np.array([], dtype=int)
+    rebased_pr_node_ids = rebased_df[GitHubRebasedPullRequest.pr_node_id.name].values
+    df, labels = await _load_prs_by_ids(
+        rebased_pr_node_ids,
+        lambda model, ids: model.node_id.in_(ids),
+        repository_names,
+        logical_settings,
+        False,
+        meta_ids,
+        mdb,
+    )
+    order = np.argsort(rebased_pr_node_ids)
+    rebased_pr_node_ids = rebased_pr_node_ids[order]
+    rebased_commit_ids = rebased_df[GitHubRebasedPullRequest.matched_merge_commit_id.name].values
+    prs_commit_ids = rebased_commit_ids[
+        order[np.searchsorted(rebased_pr_node_ids, df.index.get_level_values(0))]
+    ]
+    df[PullRequest.merge_commit_id.name] = prs_commit_ids
+    if logical_settings.has_logical_prs():
+        prs_commit_ids = np.char.add(
+            int_to_str(prs_commit_ids),
+            df[PullRequest.repository_full_name.name].values.astype("S"),
+        )
+        order = np.argsort(prs_commit_ids)
+        prs_commit_ids = prs_commit_ids[order]
+        df.disable_consolidate()
+        df = df.take(order)
+    return df, prs_commit_ids
+
+
+@sentry_span
 @cached(
     exptime=short_term_exptime,
     serialize=pickle.dumps,
@@ -1065,20 +1139,20 @@ async def _load_prs_by_merge_commit_ids(
     ),
 )
 async def mine_releases_by_name(
-    names: Dict[str, Iterable[str]],
+    names: dict[str, Iterable[str]],
     release_settings: ReleaseSettings,
     logical_settings: LogicalRepositorySettings,
     prefixer: Prefixer,
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: Database,
     pdb: Database,
     rdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Tuple[
-    List[Tuple[Dict[str, Any], ReleaseFacts]],
-    List[Tuple[str, str]],
-    Dict[str, Deployment],
+) -> tuple[
+    list[tuple[dict[str, Any], ReleaseFacts]],
+    list[tuple[str, str]],
+    dict[str, Deployment],
 ]:
     """Collect details about each release specified by the mapping from repository names to \
     release names."""
@@ -1247,12 +1321,12 @@ async def mine_releases_by_name(
 async def mine_releases_by_ids(
     releases: pd.DataFrame,
     branches: pd.DataFrame,
-    default_branches: Dict[str, str],
+    default_branches: dict[str, str],
     release_settings: ReleaseSettings,
     logical_settings: LogicalRepositorySettings,
     prefixer: Prefixer,
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: Database,
     pdb: Database,
     rdb: Database,
@@ -1260,8 +1334,8 @@ async def mine_releases_by_ids(
     *,
     with_avatars: bool,
 ) -> Union[
-    Tuple[List[Tuple[Dict[str, Any], ReleaseFacts]], List[Tuple[str, str]]],
-    List[Tuple[Dict[str, Any], ReleaseFacts]],
+    tuple[list[tuple[dict[str, Any], ReleaseFacts]], list[tuple[str, str]]],
+    list[tuple[dict[str, Any], ReleaseFacts]],
 ]:
     """Collect details about releases in the DataFrame (`load_releases()`-like)."""
     settings_tags, settings_branches, settings_events = {}, {}, {}
@@ -1401,18 +1475,18 @@ async def mine_releases_by_ids(
 
 
 async def _load_releases_by_name(
-    names: Dict[str, Set[str]],
+    names: dict[str, set[str]],
     log: logging.Logger,
     release_settings: ReleaseSettings,
     logical_settings: LogicalRepositorySettings,
     prefixer: Prefixer,
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: Database,
     pdb: Database,
     rdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Tuple[pd.DataFrame, Dict[str, Dict[str, str]], pd.DataFrame, Dict[str, str]]:
+) -> tuple[pd.DataFrame, dict[str, dict[str, str]], pd.DataFrame, dict[str, str]]:
     names = await _complete_commit_hashes(names, meta_ids, mdb)
     tasks = [
         BranchMiner.extract_branches(names, prefixer, meta_ids, mdb, cache),
@@ -1508,10 +1582,10 @@ commit_prefix_re = re.compile(r"[a-f0-9]{7}")
 
 @sentry_span
 async def _complete_commit_hashes(
-    names: Dict[str, Set[str]],
-    meta_ids: Tuple[int, ...],
+    names: dict[str, set[str]],
+    meta_ids: tuple[int, ...],
     mdb: Database,
-) -> Dict[str, Dict[str, str]]:
+) -> dict[str, dict[str, str]]:
     candidates = defaultdict(list)
     for repo, strs in names.items():
         for name in strs:
@@ -1562,19 +1636,19 @@ async def _complete_commit_hashes(
     ),
 )
 async def diff_releases(
-    borders: Dict[str, List[Tuple[str, str]]],
+    borders: dict[str, list[tuple[str, str]]],
     release_settings: ReleaseSettings,
     logical_settings: LogicalRepositorySettings,
     prefixer: Prefixer,
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: Database,
     pdb: Database,
     rdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Tuple[
-    Dict[str, List[Tuple[str, str, List[Tuple[Dict[str, Any], ReleaseFacts]]]]],
-    List[Tuple[str, str]],
+) -> tuple[
+    dict[str, list[tuple[str, str, list[tuple[dict[str, Any], ReleaseFacts]]]]],
+    list[tuple[str, str]],
 ]:
     """Collect details about inner releases between the given boundaries for each repo."""
     log = logging.getLogger("%s.diff_releases" % metadata.__package__)
@@ -1686,17 +1760,17 @@ async def diff_releases(
 @sentry_span
 async def _load_release_deployments(
     releases_in_time_range: pd.DataFrame,
-    default_branches: Dict[str, str],
+    default_branches: dict[str, str],
     release_settings: ReleaseSettings,
     logical_settings: LogicalRepositorySettings,
     prefixer: Prefixer,
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: Database,
     pdb: Database,
     rdb: Database,
     cache: Optional[aiomcache.Client],
-) -> Tuple[Dict[int, np.ndarray], Dict[str, Deployment]]:
+) -> tuple[dict[int, np.ndarray], dict[str, Deployment]]:
     if releases_in_time_range.empty:
         return {}, {}
     ghrd = GitHubReleaseDeployment
@@ -1745,9 +1819,9 @@ async def _load_release_deployments(
 
 
 def discover_first_outlier_releases(
-    releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
+    releases: list[tuple[dict[str, Any], ReleaseFacts]],
     threshold_factor=100,
-) -> Tuple[List[Tuple[Dict[str, Any], ReleaseFacts]], Dict[str, Sequence[int]]]:
+) -> tuple[list[tuple[dict[str, Any], ReleaseFacts]], dict[str, Sequence[int]]]:
     """
     Apply heuristics to find first releases that should be hidden from the metrics.
 
@@ -1787,9 +1861,9 @@ def discover_first_outlier_releases(
 
 
 async def hide_first_releases(
-    releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
-    prs: Dict[str, Sequence[int]],
-    default_branches: Dict[str, str],
+    releases: list[tuple[dict[str, Any], ReleaseFacts]],
+    prs: dict[str, Sequence[int]],
+    default_branches: dict[str, str],
     release_settings: ReleaseSettings,
     account: int,
     pdb: Database,
@@ -1900,8 +1974,8 @@ async def hide_first_releases(
 
 
 async def override_first_releases(
-    releases: List[Tuple[Dict[str, Any], ReleaseFacts]],
-    default_branches: Dict[str, str],
+    releases: list[tuple[dict[str, Any], ReleaseFacts]],
+    default_branches: dict[str, str],
     release_settings: ReleaseSettings,
     account: int,
     pdb: Database,

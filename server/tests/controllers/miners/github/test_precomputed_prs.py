@@ -774,7 +774,7 @@ async def test_load_precomputed_done_times_deployments(
         1,
         pdb,
     )
-    assert len(loaded_prs) == 386  # 2 without deployments
+    assert len(loaded_prs) == 396  # 2 without deployments
 
 
 def _gen_one_pr(pr_samples):

@@ -16,6 +16,7 @@ from athenian.api.models.metadata.github import User
 from athenian.api.models.state.models import Team
 from athenian.api.models.web import BadRequestError, Contributor, GenericError
 from athenian.api.response import ResponseError
+from athenian.api.tracing import sentry_span
 
 
 class TeamNotFoundError(ResponseError):
@@ -63,6 +64,7 @@ class MultipleRootTeamsError(ResponseError):
         super().__init__(wrapped_error)
 
 
+@sentry_span
 async def get_root_team(account_id: int, sdb_conn: DatabaseLike) -> Row:
     """Return the root team for the account."""
     stmt = sa.select(Team).where(sa.and_(Team.owner_id == account_id, Team.parent_id.is_(None)))
@@ -74,6 +76,7 @@ async def get_root_team(account_id: int, sdb_conn: DatabaseLike) -> Row:
     return root_teams[0]
 
 
+@sentry_span
 async def get_team_from_db(account_id: int, team_id: int, sdb_conn: DatabaseLike) -> Row:
     """Return a team owned by an account."""
     stmt = sa.select(Team).where(sa.and_(Team.owner_id == account_id, Team.id == team_id))
@@ -83,6 +86,7 @@ async def get_team_from_db(account_id: int, team_id: int, sdb_conn: DatabaseLike
     return team
 
 
+@sentry_span
 async def get_all_team_members(
     gh_user_ids: Iterable[int],
     account: int,
@@ -130,6 +134,7 @@ async def get_all_team_members(
     return all_contributors
 
 
+@sentry_span
 async def fetch_teams_recursively(
     account: int,
     sdb: DatabaseLike,
@@ -199,6 +204,7 @@ async def fetch_team_members_recursively(
     return list(members)
 
 
+@sentry_span
 async def delete_team(team: Row, sdb_conn: Connection) -> None:
     """Delete a Team row from the DB.
 
@@ -219,6 +225,7 @@ async def delete_team(team: Row, sdb_conn: Connection) -> None:
     await delete_empty_goals(team[Team.owner_id.name], sdb_conn)
 
 
+@sentry_span
 async def sync_team_members(
     team: Row,
     members: Sequence[int],

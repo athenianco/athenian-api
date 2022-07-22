@@ -9,7 +9,6 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy import and_, delete, func, insert, select
 
-from athenian.api.async_utils import read_sql_query
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.account import get_metadata_account_ids
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
@@ -18,11 +17,10 @@ from athenian.api.internal.miners.github.deployment import (
     hide_outlier_first_deployments,
     mine_deployments,
 )
-from athenian.api.internal.miners.github.pull_request import PullRequestMiner
 from athenian.api.internal.miners.github.release_mine import mine_releases
 from athenian.api.internal.miners.types import DeploymentConclusion, DeploymentFacts
 from athenian.api.internal.settings import LogicalRepositorySettings
-from athenian.api.models.metadata.github import PullRequest, Release
+from athenian.api.models.metadata.github import Release
 from athenian.api.models.persistentdata.models import (
     DeployedComponent,
     DeployedLabel,
@@ -412,9 +410,9 @@ async def test_mine_deployments_only_failed(
     )
     await wait_deferred()
     assert len(deps) == 1
-    assert len(deps.iloc[0]["prs"]) == 212
+    assert len(deps.iloc[0]["prs"]) == 340
     rows = await pdb.fetch_all(select([GitHubPullRequestDeployment]))
-    assert len(rows) == 212
+    assert len(rows) == 340
 
 
 @with_defer
@@ -919,7 +917,7 @@ async def test_mine_deployments_no_release_facts(
                 163240,
                 163251,
             ],
-            (41482, "src-d/go-git"): [163231, 163218, 163219, 163216, 163232, 163215, 163213],
+            (41482, "src-d/go-git"): [163231, 163219, 163216, 163232, 163215, 163213],
             (41481, "src-d/go-git"): [163230, 163226, 163225, 163229, 163224, 163228],
             (41480, "src-d/go-git"): [163198, 163201, 163208],
             (41479, "src-d/go-git"): [163205, 163206, 163207, 163167],
@@ -998,7 +996,6 @@ async def test_mine_deployments_no_release_facts(
                 163128,
                 163117,
                 163097,
-                163142,
                 163123,
             ],
             (41514, "src-d/go-git"): [163048, 163049, 163046, 163051, 163053],
@@ -1009,7 +1006,6 @@ async def test_mine_deployments_no_release_facts(
                 163091,
                 163042,
                 163044,
-                163030,
                 163092,
                 163090,
                 163029,
@@ -1036,7 +1032,6 @@ async def test_mine_deployments_no_release_facts(
                 163068,
                 163081,
                 163086,
-                163080,
                 163063,
                 163088,
                 163072,
@@ -1077,7 +1072,6 @@ async def test_mine_deployments_no_release_facts(
                 162975,
                 163026,
                 163002,
-                163000,
                 162998,
                 163025,
                 162989,
@@ -1108,7 +1102,6 @@ async def test_mine_deployments_no_release_facts(
                 162974,
                 162927,
                 162924,
-                162966,
                 162899,
                 162969,
                 163018,
@@ -1144,7 +1137,6 @@ async def test_mine_deployments_no_release_facts(
                 162926,
                 163020,
                 162982,
-                162888,
                 162915,
                 162921,
                 162987,
@@ -1289,7 +1281,7 @@ async def test_mine_deployments_no_release_facts(
                 916,
                 898,
             ],
-            (41482, "src-d/go-git"): [857, 873, 874, 870, 859, 869, 864],
+            (41482, "src-d/go-git"): [857, 874, 870, 859, 869, 864],
             (41481, "src-d/go-git"): [856, 848, 846, 855, 845, 854],
             (41480, "src-d/go-git"): [825, 833, 815],
             (41479, "src-d/go-git"): [807, 808, 810, 706],
@@ -1359,7 +1351,6 @@ async def test_mine_deployments_no_release_facts(
                 669,
                 657,
                 610,
-                696,
                 664,
             ],
             (41514, "src-d/go-git"): [572, 573, 569, 576, 578],
@@ -1370,7 +1361,6 @@ async def test_mine_deployments_no_release_facts(
                 526,
                 563,
                 565,
-                540,
                 527,
                 522,
                 538,
@@ -1397,7 +1387,6 @@ async def test_mine_deployments_no_release_facts(
                 491,
                 509,
                 514,
-                507,
                 484,
                 516,
                 496,
@@ -1438,7 +1427,6 @@ async def test_mine_deployments_no_release_facts(
                 369,
                 411,
                 442,
-                440,
                 436,
                 409,
                 418,
@@ -1469,7 +1457,6 @@ async def test_mine_deployments_no_release_facts(
                 368,
                 303,
                 299,
-                356,
                 268,
                 363,
                 394,
@@ -1505,7 +1492,6 @@ async def test_mine_deployments_no_release_facts(
                 302,
                 398,
                 388,
-                250,
                 288,
                 295,
                 320,
@@ -1634,7 +1620,7 @@ async def test_mine_deployments_no_release_facts(
                 276,
                 831,
             ],
-            (41482, "src-d/go-git"): [9, 2, 297, 49, 39, 12, 82],
+            (41482, "src-d/go-git"): [9, 297, 49, 39, 12, 82],
             (41481, "src-d/go-git"): [19, 73, 67, 26, 4, 9],
             (41480, "src-d/go-git"): [285, 22, 62],
             (41479, "src-d/go-git"): [23, 1, 132, 33],
@@ -1704,7 +1690,6 @@ async def test_mine_deployments_no_release_facts(
                 928,
                 3,
                 97,
-                4,
                 1,
             ],
             (41514, "src-d/go-git"): [277, 118, 15, 57, 33],
@@ -1715,7 +1700,6 @@ async def test_mine_deployments_no_release_facts(
                 61,
                 76,
                 23,
-                6,
                 75,
                 11,
                 20,
@@ -1742,7 +1726,6 @@ async def test_mine_deployments_no_release_facts(
                 118,
                 300,
                 154,
-                387,
                 46,
                 28,
                 18,
@@ -1783,7 +1766,6 @@ async def test_mine_deployments_no_release_facts(
                 25,
                 35,
                 6,
-                24,
                 198,
                 37,
                 189,
@@ -1814,7 +1796,6 @@ async def test_mine_deployments_no_release_facts(
                 114,
                 483,
                 5,
-                41,
                 12,
                 142,
                 20,
@@ -1850,7 +1831,6 @@ async def test_mine_deployments_no_release_facts(
                 26,
                 74,
                 1614,
-                109,
                 56,
                 52,
                 6,
@@ -1961,7 +1941,7 @@ async def test_mine_deployments_no_release_facts(
                 53,
                 47,
             ],
-            (41482, "src-d/go-git"): [8, 2, 9, 5, 1, 2, 94],
+            (41482, "src-d/go-git"): [8, 9, 5, 1, 2, 94],
             (41481, "src-d/go-git"): [4, 12, 23, 1, 4, 10],
             (41480, "src-d/go-git"): [7, 2, 8],
             (41479, "src-d/go-git"): [3, 0, 2, 8],
@@ -2031,7 +2011,6 @@ async def test_mine_deployments_no_release_facts(
                 74,
                 1,
                 4,
-                11,
                 1,
             ],
             (41514, "src-d/go-git"): [130, 6, 10, 13, 6],
@@ -2042,7 +2021,6 @@ async def test_mine_deployments_no_release_facts(
                 2,
                 24,
                 1,
-                0,
                 2,
                 8,
                 6,
@@ -2069,7 +2047,6 @@ async def test_mine_deployments_no_release_facts(
                 47,
                 66,
                 113,
-                42,
                 1,
                 1,
                 0,
@@ -2110,7 +2087,6 @@ async def test_mine_deployments_no_release_facts(
                 31,
                 1,
                 6,
-                1,
                 27,
                 15,
                 39,
@@ -2141,7 +2117,6 @@ async def test_mine_deployments_no_release_facts(
                 52,
                 483,
                 5,
-                13,
                 1,
                 9,
                 4,
@@ -2177,7 +2152,6 @@ async def test_mine_deployments_no_release_facts(
                 2,
                 0,
                 1,
-                2,
                 11,
                 42,
                 1,
@@ -2335,7 +2309,7 @@ async def test_mine_deployments_no_release_facts(
                 39849,
                 39849,
             ],
-            (41482, "src-d/go-git"): [39957, 40070, 40070, 39789, 40107, 40135, 40070],
+            (41482, "src-d/go-git"): [39957, 40070, 39789, 40107, 40135, 40070],
             (41481, "src-d/go-git"): [40189, 39788, 40135, 39849, 40135, 39926],
             (41480, "src-d/go-git"): [39804, 39849, 40189],
             (41479, "src-d/go-git"): [40374, 39849, 39849, 40175],
@@ -2405,7 +2379,6 @@ async def test_mine_deployments_no_release_facts(
                 40374,
                 39926,
                 40374,
-                40283,
                 40239,
             ],
             (41514, "src-d/go-git"): [39789, 40239, 39957, 39789, 39957],
@@ -2416,7 +2389,6 @@ async def test_mine_deployments_no_release_facts(
                 40123,
                 39957,
                 40374,
-                39818,
                 40374,
                 39799,
                 40421,
@@ -2443,7 +2415,6 @@ async def test_mine_deployments_no_release_facts(
                 40070,
                 39789,
                 40070,
-                39789,
                 40239,
                 40070,
                 39912,
@@ -2484,7 +2455,6 @@ async def test_mine_deployments_no_release_facts(
                 40070,
                 39926,
                 39926,
-                39926,
                 39789,
                 40070,
                 40070,
@@ -2515,7 +2485,6 @@ async def test_mine_deployments_no_release_facts(
                 40070,
                 39926,
                 39926,
-                39789,
                 40418,
                 40070,
                 39926,
@@ -2551,7 +2520,6 @@ async def test_mine_deployments_no_release_facts(
                 40284,
                 39789,
                 39926,
-                39789,
                 39926,
                 39926,
                 39912,
@@ -2740,7 +2708,6 @@ async def test_mine_deployments_no_release_facts(
             ],
             (41482, "src-d/go-git"): [
                 "storage: filesystem, make ObjectStorage constructor public",
-                "utils: diff, skip useless rune->string conversion",
                 "plumbing: add context to allow cancel on diff/patch computing",
                 "Remote.Fetch: error on missing remote reference",
                 "plumbing/transport: http, Adds token authentication support [Fixes #858]",
@@ -2866,7 +2833,6 @@ async def test_mine_deployments_no_release_facts(
                 "storage/repository: add new functions for garbage collection",
                 "plumbing: transport/http, Close http.Body reader when needed",
                 "remote: add the last 100 commits for each ref in haves list",
-                "*: simplication",
                 "plumbing/transport: Fix truncated comment in Endpoint",
             ],
             (41514, "src-d/go-git"): [
@@ -2883,7 +2849,6 @@ async def test_mine_deployments_no_release_facts(
                 "Normalize filenames before comparing.",
                 "dotgit: rewrite the way references are looked up",
                 "plumbing: use sliding window in delta calculations, like git CL",
-                "*: windows support, skipped receive_pack_test for git transport",
                 "plumbing: fix pack commands for the file client on Windows",
                 "reuse Auth method when recursing submodules, fixes #521",
                 "Avoid using user.Current()",
@@ -2910,8 +2875,6 @@ async def test_mine_deployments_no_release_facts(
                 "*: add more IO error checks",
                 "*: package context support in Repository, Remote and Submodule",
                 "cache: reuse object cache for delta resolution, use LRU policy",
-                "transport: context package support allowing cancellation of any network "
-                "operation",
                 "Add example code for listing tags",
                 "revlist: ignore all objects reachable from ignored objects",
                 "Implement a NoTags mode for fetch that mimics git fetch --no-tags",
@@ -2952,7 +2915,6 @@ async def test_mine_deployments_no_release_facts(
                 "Partial windows support",
                 "packfile: A copy operation cannot be bigger than 64kb",
                 "internal/dotgit: rewrite code to avoid stackoverflow errors",
-                "revlist: ignore treeEntries that are submodules.",
                 "worktree: symlink support",
                 "storage/filesystem: call initialization explicitly, fixes #408",
                 "fix push on git and ssh",
@@ -2983,7 +2945,6 @@ async def test_mine_deployments_no_release_facts(
                 "do not convert local paths to URL",
                 "project: move imports from srcd.works to gopkg.in",
                 "Return values of Read not checked (fix #65)",
-                "transport: ssh, new DefaultAuthBuilder variable",
                 "merkletrie: fix const action type fuck up",
                 "add support for .git as file, fixes #348",
                 "transport/server: use Endpoint string representation as a map key.",
@@ -3019,7 +2980,6 @@ async def test_mine_deployments_no_release_facts(
                 "Support slash separated branch",
                 "storage: filesystem, initialize the default folder scaffolding",
                 "format/diff: unified diff encoder and public API",
-                "examples: aerospike example",
                 "plumbing: improve documentation (Fix #242)",
                 "improve git package documentation (fix #231)",
                 "Work around a Go bug when parsing timezones",
@@ -4309,8 +4269,8 @@ async def test_mine_deployments_event_releases(
         assert len(df) == 1
         assert len(df.iloc[0][DeploymentFacts.f.commit_authors]) == 113
         assert len(set(df.iloc[0][DeploymentFacts.f.commit_authors])) == 113
-        assert len(df.iloc[0]["prs_node_id"]) == 380
-        assert len(set(df.iloc[0]["prs_node_id"])) == 380
+        assert len(df.iloc[0]["prs_node_id"]) == 373
+        assert len(set(df.iloc[0]["prs_node_id"])) == 373
         assert df.iloc[0][Release.name.name] == "Pushed!"
         assert df.iloc[0][Release.sha.name] == b"1edb992dbc419a0767b1cf3a524b0d35529799f5"
 
@@ -4574,11 +4534,6 @@ class TestHideOutlierFirstDeployments:
         meta_ids = await get_metadata_account_ids(1, sdb, None)
         assert (await count(pdb, GitHubDeploymentFacts)) == 0
         assert (await count(pdb, GitHubPullRequestDeployment)) == 0
-        prs = await read_sql_query(
-            select(PullRequest), mdb, PullRequest, index=PullRequest.node_id,
-        )
-        await PullRequestMiner.mark_dead_prs(prs, branches, dag, 1, (6366825,), mdb, pdb)
-        await wait_deferred()
 
         deps, _ = await mine_deployments(
             **self._mine_common_kwargs(),
