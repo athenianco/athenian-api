@@ -1,11 +1,12 @@
 """Interaction with teams on metadata DB."""
 from collections import defaultdict
-from typing import Sequence
+import graphlib
+from typing import Any, Iterable, Sequence
 
 import sqlalchemy as sa
 
-from athenian.api.db import DatabaseLike
-from athenian.api.models.metadata.github import TeamMember
+from athenian.api.db import DatabaseLike, Row
+from athenian.api.models.metadata.github import Team, TeamMember
 
 
 async def get_meta_teams_members(
@@ -27,3 +28,17 @@ async def get_meta_teams_members(
     for row in member_rows:
         members[row[TeamMember.parent_id.name]].append(row[TeamMember.child_id.name])
     return members
+
+
+def get_meta_teams_topological_order(meta_team_rows: Iterable[Row]) -> Iterable[Any]:
+    """Return the team IDs in topological order according to parentship relation.
+
+    Raise an error if the graph includes cycles.
+    """
+    graph: graphlib.TopologicalSorter = graphlib.TopologicalSorter()
+    for row in meta_team_rows:
+        if (parent_id := row[Team.parent_team_id.name]) is not None:
+            graph.add(row[Team.id.name], parent_id)
+        else:
+            graph.add(row[Team.id.name])
+    return graph.static_order()
