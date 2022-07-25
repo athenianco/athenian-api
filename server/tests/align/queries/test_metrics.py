@@ -135,7 +135,7 @@ class TestMetrics(BaseMetricsTest):
                             "team": {
                                 "id": 1,
                             },
-                            "value": {"str": "2928955s", "int": None, "float": None},
+                            "value": {"str": "2939453s", "int": None, "float": None},
                             "children": [
                                 {
                                     "team": {
@@ -153,13 +153,13 @@ class TestMetrics(BaseMetricsTest):
                             "team": {
                                 "id": 1,
                             },
-                            "value": {"str": None, "int": 324, "float": None},
+                            "value": {"str": None, "int": 317, "float": None},
                             "children": [
                                 {
                                     "team": {
                                         "id": 2,
                                     },
-                                    "value": {"str": None, "int": 248, "float": None},
+                                    "value": {"str": None, "int": 243, "float": None},
                                     "children": [],
                                 },
                             ],
@@ -190,8 +190,8 @@ class TestMetrics(BaseMetricsTest):
     @pytest.mark.parametrize(
         "metric, value",
         [
-            ("pr-lead-time", {"str": "2928955s", "children": [{"str": "4337530s"}]}),
-            ("release-prs", {"int": 324, "children": [{"int": 248}]}),
+            ("pr-lead-time", {"str": "2939453s", "children": [{"str": "4337530s"}]}),
+            ("release-prs", {"int": 317, "children": [{"int": 243}]}),
             ("jira-resolved", {"int": 0, "children": [{"int": 0}]}),
         ],
     )

@@ -2027,8 +2027,8 @@ async def test_mine_releases_logical_title(
             "github.com/src-d/go-git/beta": 28,
         }
         assert prs == {
-            "github.com/src-d/go-git/alpha": 92,
-            "github.com/src-d/go-git/beta": 58,
+            "github.com/src-d/go-git/alpha": 93,
+            "github.com/src-d/go-git/beta": 59,
         }
 
 
@@ -2084,16 +2084,16 @@ async def test_mine_releases_logical_label(
             "github.com/src-d/go-git/beta": 37,
         }
         assert prs == {
-            "github.com/src-d/go-git/alpha": 8,
-            "github.com/src-d/go-git/beta": 5,
+            "github.com/src-d/go-git/alpha": 9,
+            "github.com/src-d/go-git/beta": 6,
         }
         assert deltas == {
-            "github.com/src-d/go-git/alpha": 5564,
-            "github.com/src-d/go-git/beta": 271,
+            "github.com/src-d/go-git/alpha": 6569,
+            "github.com/src-d/go-git/beta": 280,
         }
         assert commits == {
-            "github.com/src-d/go-git/alpha": 49,
-            "github.com/src-d/go-git/beta": 6,
+            "github.com/src-d/go-git/alpha": 58,
+            "github.com/src-d/go-git/beta": 7,
         }
 
 

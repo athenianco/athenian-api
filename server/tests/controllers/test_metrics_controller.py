@@ -357,10 +357,10 @@ class TestCalcMetricsPRs:
             (PullRequestMetricID.PR_WIP_COUNT, 596),
             (PullRequestMetricID.PR_REVIEW_COUNT, 433),
             (PullRequestMetricID.PR_MERGING_COUNT, 589),
-            (PullRequestMetricID.PR_RELEASE_COUNT, 412),
+            (PullRequestMetricID.PR_RELEASE_COUNT, 413),
             (PullRequestMetricID.PR_OPEN_COUNT, 589),
-            (PullRequestMetricID.PR_LEAD_COUNT, 412),
-            (PullRequestMetricID.PR_CYCLE_COUNT, 935),
+            (PullRequestMetricID.PR_LEAD_COUNT, 413),
+            (PullRequestMetricID.PR_CYCLE_COUNT, 934),
             (PullRequestMetricID.PR_OPENED, 596),
             (PullRequestMetricID.PR_REVIEWED, 373),
             (PullRequestMetricID.PR_NOT_REVIEWED, 276),
@@ -412,19 +412,19 @@ class TestCalcMetricsPRs:
                 False,
                 [
                     [2.461538553237915, None, None, None],
-                    [2.830357074737549, 2.452173948287964, 7.439024448394775, 8.300812721252441],
-                    [3.0063090324401855, 2.5473685264587402, 5.605769157409668, 6.509615421295166],
-                    [2.9272727966308594, 2.5, 6.036144733428955, 6.831325531005859],
-                    [2.6582279205322266, 2.53125, 7.846153736114502, 8.269230842590332],
+                    [2.8328359127044678, 2.452173948287964, 7.439024448394775, 8.300812721252441],
+                    [3.009493589401245, 2.5473685264587402, 5.605769157409668, 6.509615421295166],
+                    [2.930656909942627, 2.5, 6.036144733428955, 6.831325531005859],
+                    [2.6624202728271484, 2.53125, 7.846153736114502, 8.269230842590332],
                 ],
             ), (
                 True,
                 [
                     [1.4807692766189575, None, None, None],
-                    [1.9375, 2.2058823108673096, 7.699999809265137, 8.050000190734863],
-                    [2.126183032989502, 2.3416149616241455, 5.641025543212891, 6.115384578704834],
-                    [2.0509090423583984, 2.2945735454559326, 6.262295246124268, 6.7868852615356445],  # noqa
-                    [1.8164557218551636, 2.4556961059570312, 7.925000190734863, 8.0],
+                    [1.9402985572814941, 2.2058823108673096, 7.699999809265137, 8.050000190734863],
+                    [2.129746913909912, 2.3416149616241455, 5.641025543212891, 6.115384578704834],
+                    [2.0547444820404053, 2.2945735454559326, 6.262295246124268, 6.7868852615356445],  # noqa
+                    [1.8216561079025269, 2.4556961059570312, 7.925000190734863, 8.0],
                 ],
             ),
         ],
@@ -972,7 +972,7 @@ class TestCalcMetricsPRs:
         res = await self._request(client, json=body)
         values = [v["values"] for v in res["calculated"][0]["values"]]
         assert values == [
-            [[None, "52240881s"], [None, "55612324s"], [None, "55938061s"], [0, 384]],
+            [[None, "62533037s"], [None, "65158487s"], [None, "66241187s"], [0, 513]],
         ]
 
     # TODO: fix response validation against the schema
@@ -980,8 +980,8 @@ class TestCalcMetricsPRs:
     @pytest.mark.parametrize(
         "second_repo, counts",
         [
-            ("/beta", [266, 52, 204, 200]),
-            ("", [463, 81, 372, 351]),
+            ("/beta", [266, 52, 204, 201]),
+            ("", [463, 81, 372, 352]),
         ],
     )
     async def test_logical_smoke(
@@ -1070,7 +1070,7 @@ class TestCalcMetricsPRs:
         }
         res = await self._request(client, json=body)
         values = [v["values"] for v in res["calculated"][0]["values"]]
-        assert values == [[250, 49, 194, 188]]
+        assert values == [[250, 49, 194, 189]]
 
     # TODO: fix response validation against the schema
     @pytest.mark.app_validate_responses(False)
@@ -2117,7 +2117,7 @@ async def test_release_metrics_jira(client, headers):
     rbody = json.loads(rbody)
     models = [CalculatedReleaseMetric.from_dict(i) for i in rbody]
     assert len(models) == 1
-    assert models[0].values[0].values == [8, 43]
+    assert models[0].values[0].values == [8, 42]
     del body["jira"]
 
     response = await client.request(
@@ -2128,7 +2128,7 @@ async def test_release_metrics_jira(client, headers):
     rbody = json.loads(rbody)
     models = [CalculatedReleaseMetric.from_dict(i) for i in rbody]
     assert len(models) == 1
-    assert models[0].values[0].values == [22, 234]
+    assert models[0].values[0].values == [22, 232]
 
 
 async def test_release_metrics_labels(client, headers):
@@ -2160,7 +2160,7 @@ async def test_release_metrics_labels(client, headers):
     rbody = json.loads(rbody)
     models = [CalculatedReleaseMetric.from_dict(i) for i in rbody]
     assert len(models) == 1
-    assert models[0].values[0].values == [22, 234]
+    assert models[0].values[0].values == [22, 233]
 
 
 @pytest.mark.parametrize(

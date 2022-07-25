@@ -71,6 +71,7 @@ from athenian.api.internal.miners.github.precomputed_releases import (
     compose_release_match,
     reverse_release_settings,
 )
+from athenian.api.internal.miners.github.rebased_pr import match_rebased_prs
 from athenian.api.internal.miners.github.release_load import (
     ReleaseLoader,
     dummy_releases_df,
@@ -767,7 +768,14 @@ async def _compute_deployment_facts(
     max_release_time_to = notifications[DeploymentNotification.finished_at.name].max()
     commit_stats, releases = await gather(
         _fetch_commit_stats(
-            all_mentioned_hashes, dags, prefixer, logical_settings, account, meta_ids, mdb, pdb,
+            all_mentioned_hashes,
+            dags,
+            prefixer,
+            logical_settings,
+            account,
+            meta_ids,
+            mdb,
+            pdb,
         ),
         _map_releases_to_deployments(
             deployed_commits_per_repo_per_env,
@@ -1345,7 +1353,7 @@ async def _fetch_commit_stats(
     ]
     if has_logical := logical_settings.has_logical_deployments():
         selected.append(NodePullRequest.title)
-    commit_rows, rebased_pr_rows = await gather(
+    commit_rows, rebased_prs = await gather(
         mdb.fetch_all(
             select(selected)
             .select_from(
@@ -1375,20 +1383,17 @@ async def _fetch_commit_stats(
             )
             .order_by(func.coalesce(NodePullRequest.merged_at, NodeCommit.committed_date)),
         ),
-        pdb.fetch_all(
-            select(
-                GitHubRebasedPullRequest.pr_node_id,
-                GitHubRebasedPullRequest.matched_merge_commit_sha,
-            ).where(
-                GitHubRebasedPullRequest.acc_id == account,
-                # look for ANY hash, even inside found PRs
-                # merge by rebase can make even the merge hash another PR's match
-                GitHubRebasedPullRequest.matched_merge_commit_sha.in_(all_mentioned_hashes),
-            ),
-        ),
+        match_rebased_prs(account, meta_ids, mdb, pdb, commit_shas=all_mentioned_hashes),
     )
-    rebased_map = dict(rebased_pr_rows)
-    del rebased_pr_rows
+    if not rebased_prs.empty:
+        rebased_map = dict(
+            zip(
+                rebased_prs[GitHubRebasedPullRequest.pr_node_id.name].values,
+                rebased_prs[GitHubRebasedPullRequest.matched_merge_commit_sha.name].values,
+            ),
+        )
+    else:
+        rebased_map = {}
 
     if len(commit_rows) != len(all_mentioned_hashes):
         log = logging.getLogger(f"{__name__}._fetch_commit_stats")

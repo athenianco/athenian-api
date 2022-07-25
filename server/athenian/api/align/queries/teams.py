@@ -31,6 +31,7 @@ async def resolve_teams(obj: Any, info: GraphQLResolveInfo, accountId: int, team
     return team_tree.to_dict()
 
 
+@sentry_span
 async def fetch_team_tree(
     account: int,
     root_team_id: Optional[int],
@@ -44,6 +45,7 @@ async def fetch_team_tree(
     return build_team_tree_from_rows(team_rows, root_team_id)
 
 
+@sentry_span
 def build_team_tree_from_rows(rows: Sequence[Row], root_team_id: Optional[int]) -> TeamTree:
     """Build the TeamTree for the Team root_team_id starting from the retrieved team rows.
 
@@ -54,6 +56,7 @@ def build_team_tree_from_rows(rows: Sequence[Row], root_team_id: Optional[int]) 
     return _build_team_tree_from_node(nodes[root_team_id], nodes)
 
 
+@sentry_span
 def _build_team_tree_nodes_from_rows(
     team_rows: Iterable[Row],
     root_team_id: Optional[int],

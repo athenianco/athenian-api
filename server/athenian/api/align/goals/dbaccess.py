@@ -17,6 +17,7 @@ from athenian.api.db import (
     integrity_errors,
 )
 from athenian.api.models.state.models import Goal, Team, TeamGoal
+from athenian.api.tracing import sentry_span
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,7 @@ class TeamGoalTargetAssignment:
     target: int | float | str
 
 
+@sentry_span
 async def insert_goal(creation_info: GoalCreationInfo, sdb_conn: DatabaseLike) -> int:
     """Insert the goal and related objects into DB."""
     await _validate_goal_creation_info(creation_info, sdb_conn)
@@ -66,6 +68,7 @@ async def insert_goal(creation_info: GoalCreationInfo, sdb_conn: DatabaseLike) -
     return new_goal_id
 
 
+@sentry_span
 async def delete_goal(account_id: int, goal_id: int, sdb_conn: Connection) -> None:
     """Delete a goal from DB with related team goals."""
     assert await conn_in_transaction(sdb_conn)
@@ -79,6 +82,7 @@ async def delete_goal(account_id: int, goal_id: int, sdb_conn: Connection) -> No
     await sdb_conn.execute(sa.delete(Goal).where(where_clause))
 
 
+@sentry_span
 async def delete_team_goals(
     account_id: int,
     goal_id: int,
@@ -96,6 +100,7 @@ async def delete_team_goals(
     await sdb_conn.execute(delete_stmt)
 
 
+@sentry_span
 async def assign_team_goals(
     account_id: int,
     goal_id: int,
@@ -129,6 +134,7 @@ async def assign_team_goals(
     await sdb_conn.execute_many(upsert_stmt, values)
 
 
+@sentry_span
 async def update_goal(
     account_id: int,
     goal_id: int,
@@ -150,6 +156,7 @@ async def update_goal(
     await sdb_conn.execute(update_stmt)
 
 
+@sentry_span
 async def fetch_team_goals(
     account: int,
     team_ids: Iterable[int],
@@ -171,6 +178,7 @@ async def fetch_team_goals(
     return await sdb.fetch_all(stmt)
 
 
+@sentry_span
 async def delete_empty_goals(account: int, sdb_conn: DatabaseLike) -> None:
     """Delete all account Goal-s having no more TeamGoal-s assigned."""
     delete_stmt = sa.delete(Goal).where(
@@ -184,6 +192,7 @@ async def delete_empty_goals(account: int, sdb_conn: DatabaseLike) -> None:
     await sdb_conn.execute(delete_stmt)
 
 
+@sentry_span
 async def _validate_goal_creation_info(
     creation_info: GoalCreationInfo,
     sdb_conn: DatabaseLike,
@@ -204,6 +213,7 @@ async def _validate_goal_creation_info(
         )
 
 
+@sentry_span
 async def _validate_team_goal_deletions(
     account_id: int,
     goal_id: int,

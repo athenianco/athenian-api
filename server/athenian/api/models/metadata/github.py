@@ -356,7 +356,7 @@ class NodeCommit(
     repository_id = Column(BigInteger, nullable=False)
     message = Column(Text, nullable=False)
     pushed_date = Column(TIMESTAMP(timezone=True))
-    committed_date = Column(TIMESTAMP(timezone=True))
+    committed_date = Column(TIMESTAMP(timezone=True), nullable=False)
     committer_user_id = Column(BigInteger)
     committer_email = Column(Text)
     committer_name = Column(Text)

@@ -102,6 +102,7 @@ async def resolve_update_goal(
     return result
 
 
+@sentry_span
 def _parse_create_goal_input(input: dict[str, Any], account_id: int) -> GoalCreationInfo:
     """Parse CreateGoalInput into GoalCreationInfo."""
     template_id = input[CreateGoalInputFields.templateId]
@@ -132,6 +133,7 @@ def _parse_create_goal_input(input: dict[str, Any], account_id: int) -> GoalCrea
     return GoalCreationInfo(goal, team_goals)
 
 
+@sentry_span
 def _parse_team_goal_input(team_goal_input: dict) -> TeamGoal:
     """Parse TeamGoalInput into a Team model."""
     team_id = team_goal_input[TeamGoalInputFields.teamId]
@@ -157,6 +159,7 @@ class GoalUpdateInfo:
     archived: Optional[bool]
 
 
+@sentry_span
 def _parse_update_goal_input(input: dict[str, Any], account_id: int) -> GoalUpdateInfo:
     deletions = []
     assignments = []

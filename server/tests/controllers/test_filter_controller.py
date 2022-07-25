@@ -600,7 +600,7 @@ async def test_filter_prs_stage_deployed(
     text = (await response.read()).decode("utf-8")
     assert response.status == 200, text
     prs = PullRequestSet.from_dict(json.loads(text))
-    assert len(prs.data) == 384
+    assert len(prs.data) == 513
 
 
 # TODO: fix response validation against the schema
@@ -662,7 +662,7 @@ async def test_filter_prs_event_deployed(
     text = (await response.read()).decode("utf-8")
     assert response.status == 200, text
     prs = PullRequestSet.from_dict(json.loads(text))
-    assert len(prs.data) == 384
+    assert len(prs.data) == 513
 
 
 # TODO: fix response validation against the schema
@@ -1353,6 +1353,7 @@ rebased_resolved_pr_numbers = frozenset(
         26,
         27,
         28,
+        30,
         32,
         34,
         35,
@@ -1368,6 +1369,7 @@ rebased_resolved_pr_numbers = frozenset(
         64,
         66,
         68,
+        69,
         70,
         74,
         83,
@@ -1397,6 +1399,7 @@ rebased_resolved_pr_numbers = frozenset(
         113,
         114,
         115,
+        116,
         117,
         118,
         121,
@@ -1417,7 +1420,7 @@ rebased_resolved_pr_numbers = frozenset(
         145,
         146,
         147,
-        149,
+        148,
         150,
         151,
         153,
@@ -1440,6 +1443,7 @@ rebased_resolved_pr_numbers = frozenset(
         173,
         174,
         175,
+        176,
         177,
         178,
         179,
@@ -1452,17 +1456,33 @@ rebased_resolved_pr_numbers = frozenset(
         187,
         188,
         189,
+        190,
         191,
         192,
+        200,
+        201,
         204,
         205,
+        207,
+        209,
         210,
+        212,
+        213,
+        214,
         215,
+        218,
+        219,
+        221,
         224,
+        227,
+        229,
+        230,
         233,
         235,
+        237,
         240,
         241,
+        244,
         907,
     ],
 )
@@ -2409,7 +2429,7 @@ async def test_filter_releases_by_event(client, headers, with_event_releases):
     assert response.status == 200, response_text
     releases = ReleaseSet.from_dict(json.loads(response_text))
     assert len(releases.data) == 1
-    assert len(releases.data[0].prs) == 391
+    assert len(releases.data[0].prs) == 387
 
 
 # TODO: fix response validation against the schema
@@ -3835,13 +3855,13 @@ async def test_filter_deployments_smoke(client, headers):
     response_text = (await response.read()).decode("utf-8")
     assert response.status == 200, response_text
     deps = FilteredDeployments.from_dict(json.loads(response_text))
-    assert len(deps.include.users) == 123
+    assert len(deps.include.users) == 124
     assert len(deps.include.jira) == 42
     deps = deps.deployments
     assert len(deps) == 1
     assert deps[0].code.to_dict() == {
         "commits_overall": {"github.com/src-d/go-git": 1508},
-        "commits_prs": {"github.com/src-d/go-git": 1029},
+        "commits_prs": {"github.com/src-d/go-git": 1070},
         "jira": {
             "github.com/src-d/go-git": [
                 "DEV-139",
@@ -3892,8 +3912,8 @@ async def test_filter_deployments_smoke(client, headers):
             ],
         },
         "lines_overall": {"github.com/src-d/go-git": 258545},
-        "lines_prs": {"github.com/src-d/go-git": 74277},
-        "prs": {"github.com/src-d/go-git": 384},
+        "lines_prs": {"github.com/src-d/go-git": 136819},
+        "prs": {"github.com/src-d/go-git": 513},
     }
 
 

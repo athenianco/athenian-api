@@ -6,7 +6,6 @@ from enum import Enum
 from itertools import chain, repeat
 import logging
 import pickle
-import re
 from typing import (
     Collection,
     Dict,
@@ -74,6 +73,11 @@ from athenian.api.internal.miners.github.precomputed_prs.dead_prs import (
     drop_undead_duplicates,
     load_undead_prs,
     store_undead_prs,
+)
+from athenian.api.internal.miners.github.rebased_pr import (
+    commit_message_substr_len,
+    first_line_of_commit_message,
+    jira_key_re,
 )
 from athenian.api.internal.miners.github.release_load import ReleaseLoader
 from athenian.api.internal.miners.github.release_match import (
@@ -1478,7 +1482,6 @@ class PullRequestMiner:
         A PR is considered dead (force-push-dropped) if it does not exist in the commit DAG and \
         we cannot detect its rebased clone.
         """
-        substr_len = 32
         prs["dead"] = False
         if branches.empty:
             return prs
@@ -1553,25 +1556,9 @@ class PullRequestMiner:
         ]
         if len(commit_ids_to_fetch_message) == 0:
             return prs
-        if postgres := (mdb.url.dialect == "postgresql"):
-            func_max = sql.func.greatest
-            func_strpos = sql.func.strpos
-        else:
-            func_max = sql.func.max
-            func_strpos = sql.func.instr
         message_map = dict(
             await mdb.fetch_all(
-                sql.select(
-                    NodeCommit.node_id,
-                    sql.func.substr(
-                        NodeCommit.message,
-                        1,
-                        func_max(
-                            func_strpos(NodeCommit.message, "\n") - 1,
-                            sql.func.length(NodeCommit.message),
-                        ),
-                    ),
-                ).where(
+                sql.select(NodeCommit.node_id, await first_line_of_commit_message(mdb)).where(
                     sql.and_(
                         NodeCommit.acc_id.in_(meta_ids),
                         NodeCommit.node_id.in_(commit_ids_to_fetch_message),
@@ -1585,10 +1572,19 @@ class PullRequestMiner:
         pr_merged_ats = merged_prs[PullRequest.merged_at.name].values
         # Postgres goes crazy from acc_id IN (1, 2, ...) here
         acc_id_conds = {acc_id: NodeCommit.acc_id == acc_id for acc_id in meta_ids}
-        substr = sql.func.substr(NodeCommit.message, 1, substr_len)
+        substr = sql.func.substr(NodeCommit.message, 1, commit_message_substr_len)
         queries = []
-        jira_re = re.compile(r"[A-Z][A-Z\d]+-[1-9]\d*")
+        jira_re = jira_key_re
         ghrpr = GitHubRebasedPullRequest
+        message_by_pr_node_id = {}
+        number_by_pr_node_id = {}
+
+        def normalize_message(message: str, n: int) -> str:
+            if not (f"#{n}" in message or jira_re.search(message)):
+                # last resort: there are possible merge commits which changed the message
+                message = f"Merge pull request #{n} from "
+            return message
+
         for repo_id, dead_indexes in dead:
             dead_node_ids = pr_node_ids[dead_indexes]
             mask = np.in1d(
@@ -1605,15 +1601,18 @@ class PullRequestMiner:
             dead_merged_ats = pr_merged_ats[dead_indexes]
             dead_numbers = pr_numbers[dead_indexes]
             repo_cond = NodeCommit.repository_id == repo_id
+            postgres = mdb.url.dialect == "postgresql"
             for pr_node_id, commit_id, merged_at, n in zip(
                 dead_node_ids, dead_merge_commit_ids, dead_merged_ats, dead_numbers,
             ):
-                message = message_map.get(commit_id, "")
-                if not (f"#{n}" in message or jira_re.search(message)):
-                    # last resort: there are possible merge commits which changed the message
-                    message = f"Merge pull request #{n} from "
-                message = message.replace("%", r"\%")[:substr_len].rstrip("\\") + "%"
-                merged_at = pd.Timestamp(merged_at, tz=timezone.utc)
+                message = normalize_message(message_map.get(commit_id, ""), n)
+                message_by_pr_node_id[pr_node_id] = message
+                number_by_pr_node_id[pr_node_id] = n
+                message = (
+                    message.replace("%", r"\%")[:commit_message_substr_len].rstrip("\\") + "%"
+                )
+                # allow some clock dribble
+                merged_at = pd.Timestamp(merged_at, tz=timezone.utc) - timedelta(seconds=10)
                 committed_date_cond = NodeCommit.committed_date >= merged_at
                 substr_cond = substr.like(message)
                 for acc_id in meta_ids:
@@ -1639,6 +1638,9 @@ class PullRequestMiner:
                                 ),
                                 NodeCommit.pushed_date.label(
                                     ghrpr.matched_merge_commit_pushed_date.name,
+                                ),
+                                (await first_line_of_commit_message(mdb)).label(
+                                    NodeCommit.message.name,
                                 ),
                             ],
                         ).where(
@@ -1678,11 +1680,31 @@ class PullRequestMiner:
                         ghrpr.pr_node_id,
                         ghrpr.matched_merge_commit_committed_date,
                         ghrpr.matched_merge_commit_pushed_date,
+                        NodeCommit.message,
                     ],
                 ),
             )
-        resolveds = await gather(*tasks, op="mark_dead_prs commit SQL UNION ALL-s")
-        resolved = pd.concat(resolveds, ignore_index=True)
+        resolved = await gather(*tasks, op="mark_dead_prs commit SQL UNION ALL-s")
+        if len(resolved) == 1:
+            resolved = resolved[0]
+        else:
+            resolved = pd.concat(resolved, ignore_index=True)
+
+        # re-check the commit messages: full line instead of the first 32 chars
+        passed = []
+        for i, (pr_node_id, message) in enumerate(
+            zip(
+                resolved[ghrpr.pr_node_id.name].values,
+                resolved[NodeCommit.message.name].values,
+            ),
+        ):
+            n = number_by_pr_node_id[pr_node_id]
+            if normalize_message(message, n).startswith(message_by_pr_node_id[pr_node_id]):
+                passed.append(i)
+        del resolved[NodeCommit.message.name]
+        if len(passed) < len(resolved):
+            resolved = resolved.take(passed)
+
         # look up the candidates in the DAGs
         pr_repos = resolved[NodeCommit.repository_id.name].values
         repo_order = np.argsort(pr_repos)
