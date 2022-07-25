@@ -24,6 +24,7 @@ from athenian.api.async_utils import gather
 from athenian.api.cache import cached, max_exptime, middle_term_exptime, short_term_exptime
 from athenian.api.db import Connection, Database, DatabaseLike, Row
 from athenian.api.defer import defer
+from athenian.api.internal.account_feature import is_feature_enabled
 from athenian.api.internal.team_meta import (
     get_meta_teams_members,
     get_meta_teams_topological_order,
@@ -38,10 +39,8 @@ from athenian.api.models.metadata.github import (
 )
 from athenian.api.models.state.models import (
     Account,
-    AccountFeature,
     AccountGitHubAccount,
     Feature,
-    FeatureComponent,
     RepositorySet,
     Team as StateTeam,
     UserAccount,
@@ -686,34 +685,12 @@ async def _fetch_github_installation_progress_db(
 
 async def is_membership_check_enabled(account: int, sdb: DatabaseLike) -> bool:
     """Check whether the user registration requires the organization membership."""
-    return await _get_feature_bool(account, Feature.USER_ORG_MEMBERSHIP_CHECK, sdb)
+    return await is_feature_enabled(account, Feature.USER_ORG_MEMBERSHIP_CHECK, sdb)
 
 
 async def is_github_login_enabled(account: int, sdb: DatabaseLike) -> bool:
     """Check whether we accept invitations for GitHub users."""
-    return await _get_feature_bool(account, Feature.GITHUB_LOGIN_ENABLED, sdb)
-
-
-async def _get_feature_bool(account: int, name: str, sdb: DatabaseLike) -> bool:
-    enabled = False
-    global_row = await sdb.fetch_one(
-        select([Feature.id, Feature.enabled]).where(
-            and_(Feature.name == name, Feature.component == FeatureComponent.server),
-        ),
-    )
-    if global_row is not None:
-        feature_id = global_row[Feature.id.name]
-        default_enabled = global_row[Feature.enabled.name]
-        enabled = await sdb.fetch_val(
-            select([AccountFeature.enabled]).where(
-                and_(
-                    AccountFeature.account_id == account,
-                    AccountFeature.feature_id == feature_id,
-                ),
-            ),
-        )
-        enabled = (enabled is None and default_enabled) or enabled
-    return enabled
+    return await is_feature_enabled(account, Feature.GITHUB_LOGIN_ENABLED, sdb)
 
 
 async def check_account_expired(context: AthenianWebRequest, log: logging.Logger) -> bool:

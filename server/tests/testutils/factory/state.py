@@ -7,8 +7,11 @@ import factory
 from athenian.api.controllers.invitation_controller import _generate_account_secret
 from athenian.api.models.state.models import (
     Account,
+    AccountFeature,
     AccountGitHubAccount,
     AccountJiraInstallation,
+    Feature,
+    FeatureComponent,
     Goal,
     LogicalRepository,
     MappedJIRAIdentity,
@@ -57,6 +60,25 @@ class AccountJiraInstallationFactory(SQLAlchemyModelFactory):
 
     id = factory.Sequence(lambda n: n + 3)
     account_id = factory.Sequence(lambda n: n + 3)
+
+
+class FeatureFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = Feature
+
+    updated_at = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=50))
+    id = factory.Sequence(lambda n: n + 1)
+    name = factory.LazyAttribute(lambda ft: f"feature-{ft.id}")
+    component = FeatureComponent.server
+
+
+class AccountFeatureFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = AccountFeature
+
+    updated_at = factory.LazyFunction(lambda: datetime.now(timezone.utc) - timedelta(days=50))
+    account_id = DEFAULT_ACCOUNT_ID
+    feature_id = factory.Sequence(lambda n: n + 1)
 
 
 class UserAccountFactory(SQLAlchemyModelFactory):
