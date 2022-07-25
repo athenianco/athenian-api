@@ -21,6 +21,7 @@ from athenian.api.async_utils import gather
 from athenian.api.db import Database, dialect_specific_insert
 from athenian.api.defer import defer, wait_deferred
 from athenian.api.internal.account import copy_teams_as_needed, get_multiple_metadata_account_ids
+from athenian.api.internal.account_feature import is_feature_enabled
 from athenian.api.internal.features.entries import MetricEntriesCalculator
 from athenian.api.internal.jira import disable_empty_projects, match_jira_identities
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
@@ -42,7 +43,8 @@ from athenian.api.internal.prefixer import Prefixer
 from athenian.api.internal.reposet import refresh_repository_names
 from athenian.api.internal.settings import ReleaseMatch, Settings
 from athenian.api.internal.team import RootTeamNotFoundError, get_root_team
-from athenian.api.models.state.models import RepositorySet, Team
+from athenian.api.internal.team_sync import SyncTeamsError, sync_teams
+from athenian.api.models.state.models import Feature, RepositorySet, Team
 from athenian.api.precompute.context import PrecomputeContext
 from athenian.api.precompute.prometheus import get_metrics, push_metrics
 from athenian.api.tracing import sentry_span
@@ -447,6 +449,13 @@ async def ensure_teams(
             num_teams = 0
             # no return
     else:
+        if await is_feature_enabled(account, Feature.TEAM_SYNC_ENABLED, sdb):
+            try:
+                await sync_teams(account, meta_ids, sdb, mdb)
+            except SyncTeamsError as e:
+                log.error("error during team sync: %s", e)
+        else:
+            log.info("team sync not enabled for the account")
         num_teams = 0
     return num_teams, num_bots
 

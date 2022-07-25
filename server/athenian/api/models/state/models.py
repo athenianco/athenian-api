@@ -254,6 +254,7 @@ class Feature(create_time_mixin(updated_at=True), Base):
     USER_ORG_MEMBERSHIP_CHECK = "user_org_membership_check"
     GITHUB_LOGIN_ENABLED = "github_login_enabled"
     QUANTILE_STRIDE = "quantile_stride"
+    TEAM_SYNC_ENABLED = "team_sync_enabled"
 
     id = Column(Integer(), primary_key=True)
     name = Column(String(), nullable=False)
