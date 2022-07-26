@@ -909,6 +909,7 @@ DeployedCommitStats = NamedTuple(
         ("pr_authors", np.ndarray),
         ("pr_commit_counts", np.ndarray),
         ("pr_repository_full_names", np.ndarray),
+        ("ambiguous_prs", dict[str, list[int]]),
     ],
 )
 
@@ -943,7 +944,7 @@ async def _generate_deployment_facts(
             notifications[DeploymentNotification.finished_at.name].values,
         ),
     )
-    pr_inserts = []
+    pr_inserts = {}
     all_releases_authors = defaultdict(set)
     if not releases.empty:
         for name, subdf in zip(releases.index.values, releases["releases"].values):
@@ -965,7 +966,16 @@ async def _generate_deployment_facts(
                 matched_repo_indexes = np.sort(
                     repo_order[matched_repo_offset_beg:matched_repo_offset_end],
                 )
-            for deployment_name, deployed_shas in zip(details.deployments, details.shas):
+            ambiguous_prs = np.array(commit_stats.ambiguous_prs[repo_name])
+            has_ambiguous_prs = bool(len(ambiguous_prs))
+            ambiguous_pr_deployments = defaultdict(list)
+
+            def calc_deployment_facts(
+                deployment_name: str,
+                deployed_shas: np.ndarray,
+                pr_blocklist: Sequence[int],
+            ) -> None:
+                finished = pd.Timestamp(name_to_finished[deployment_name], tzinfo=timezone.utc)
                 indexes = np.searchsorted(all_mentioned_hashes, deployed_shas)
                 if has_merged_commits:
                     pr_indexes = searchsorted_inrange(
@@ -979,7 +989,16 @@ async def _generate_deployment_facts(
                     ]
                 else:
                     pr_indexes = []
+                if len(pr_blocklist):
+                    passed_mask = np.ones(len(pr_indexes), dtype=bool)
+                    passed_mask[pr_blocklist] = False
+                    pr_indexes = pr_indexes[passed_mask]
                 prs = commit_stats.pull_requests[pr_indexes]
+                if has_ambiguous_prs:
+                    for i in np.flatnonzero(np.in1d(prs, ambiguous_prs, assume_unique=True)):
+                        ambiguous_pr_deployments[prs[i]].append(
+                            (finished, deployment_name, deployed_shas, i),
+                        )
                 deployed_lines = commit_stats.lines[indexes]
                 pr_deployed_lines = commit_stats.pr_lines[pr_indexes]
                 commit_authors = np.unique(commit_stats.commit_authors[indexes])
@@ -996,9 +1015,30 @@ async def _generate_deployment_facts(
                     commits_overall=len(indexes),
                     prs=prs,
                 )
-                finished = pd.Timestamp(name_to_finished[deployment_name], tzinfo=timezone.utc)
-                for pr in prs:
-                    pr_inserts.append((deployment_name, finished, repo_name, pr))
+                pr_inserts[(deployment_name, repo_name)] = (
+                    (deployment_name, finished, repo_name, pr) for pr in prs
+                )
+
+            for deployment_name, deployed_shas in zip(details.deployments, details.shas):
+                calc_deployment_facts(deployment_name, deployed_shas, [])
+
+            if ambiguous_pr_deployments:
+                has_ambiguous_prs = False  # don't write them twice
+                for addrs in ambiguous_pr_deployments.values():
+                    if len(addrs) == 1:
+                        continue
+                    addrs.sort()
+                    # erase everything after the oldest deployment
+                    removed_by_deployment = defaultdict(list)
+                    deployed_shas_by_name = {}
+                    for _, deployment_name, deployed_shas, i in addrs[1:]:
+                        deployed_shas_by_name[deployment_name] = deployed_shas
+                        removed_by_deployment[deployment_name].append(i)
+                    for deployment_name, removed in removed_by_deployment.items():
+                        calc_deployment_facts(
+                            deployment_name, deployed_shas_by_name[deployment_name], removed,
+                        )
+    pr_inserts = list(chain.from_iterable(pr_inserts.values()))
     facts = []
     for deployment_name, repos in facts_per_repo_per_deployment.items():
         repo_index = []
@@ -1422,16 +1462,20 @@ async def _fetch_commit_stats(
     pr_titles = []
     pr_repo_names = []
     prs_by_repo = defaultdict(list)
+    ambiguous_prs = defaultdict(list)
     for i, row in enumerate(commit_rows):
         shas[i] = (sha := row[NodeCommit.sha.name].encode())
         lines[i] = row["lines"]
         commit_authors[i] = row[NodeCommit.author_user_id.name] or 0
         if pr := row["pull_request_id"]:
+            repo = row[PullRequest.repository_full_name.name]
+            if pr in rebased_map:
+                ambiguous_prs[repo].append(pr)
             merge_shas.append(sha)
             pr_ids.append(pr)
             pr_authors.append(row["pr_author"] or 0)
             pr_lines.append(row["pr_lines"])
-            prs_by_repo[(repo := row[PullRequest.repository_full_name.name])].append(sha)
+            prs_by_repo[repo].append(sha)
             pr_repo_names.append(repo)
             if has_logical:
                 pr_titles.append(row[NodePullRequest.title.name])
@@ -1591,6 +1635,7 @@ async def _fetch_commit_stats(
         pr_lines=pr_lines,
         pr_commit_counts=pr_commits,
         pr_repository_full_names=pr_repo_names,
+        ambiguous_prs=ambiguous_prs,
     )
 
 
