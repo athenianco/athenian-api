@@ -521,7 +521,7 @@ class Team(
     GitHubSchemaMixin,
     IDMixinNode,
 ):
-    __tablename__ = "node_team"
+    __tablename__ = "api_teams"
 
     organization_id = Column(BigInteger, nullable=False)
     name = Column(Text, nullable=False)
