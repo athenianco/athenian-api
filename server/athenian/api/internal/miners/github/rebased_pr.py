@@ -1,7 +1,7 @@
 from collections import defaultdict
 from datetime import timedelta
 import re
-from typing import Optional
+from typing import Collection, Optional
 
 import numpy as np
 import numpy.typing as npt
@@ -49,6 +49,7 @@ async def first_line_of_commit_message(db: Database):
 
 @sentry_span
 async def match_rebased_prs(
+    repo_ids: Collection[int],
     account: int,
     meta_ids: tuple[int, ...],
     mdb: Database,
@@ -147,6 +148,11 @@ async def match_rebased_prs(
         )
     else:
         known_commits = checked_commits
+
+    # uncomment to disable pdb
+    # known_commits = known_commits[:0]
+    # precomputed_rebased_prs = precomputed_rebased_prs.iloc[:0]
+
     if commit_ids is not None:
         commit_ids = np.setdiff1d(commit_ids, known_commits, assume_unique=True)
         left_count = len(commit_ids)
@@ -159,7 +165,7 @@ async def match_rebased_prs(
         return precomputed_rebased_prs
 
     new_prs = await _match_rebased_prs_from_scratch(
-        account, meta_ids, mdb, pdb, commit_ids=commit_ids, commit_shas=commit_shas,
+        repo_ids, account, meta_ids, mdb, pdb, commit_ids=commit_ids, commit_shas=commit_shas,
     )
     if not new_prs.empty:
         rebased_prs = pd.concat(
@@ -175,6 +181,7 @@ async def match_rebased_prs(
 
 @sentry_span
 async def _match_rebased_prs_from_scratch(
+    repo_ids: Collection[int],
     account: int,
     meta_ids: tuple[int, ...],
     mdb: Database,
@@ -236,6 +243,18 @@ async def _match_rebased_prs_from_scratch(
     message_pr_merge_map = defaultdict(lambda: defaultdict(list))
     merge_message_re = re.compile(r"Merge pull request #(\d+) from ")
     extra_prs = defaultdict(list)
+
+    # required if we search by commit hash - we may match more than one repo
+    # do not push this down to SQL, the query is already very heavy
+    repo_matched = np.flatnonzero(
+        np.in1d(
+            searched_commits[NodeCommit.repository_id.name].values,
+            np.asarray(repo_ids if not isinstance(repo_ids, (set, frozenset)) else list(repo_ids)),
+        ),
+    )
+    if len(repo_matched) < len(searched_commits):
+        searched_commits = searched_commits.take(repo_matched)
+
     for i, (msg, repo_id) in enumerate(
         zip(
             searched_commits[NodeCommit.message.name].values,

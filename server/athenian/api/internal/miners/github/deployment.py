@@ -769,6 +769,7 @@ async def _compute_deployment_facts(
     commit_stats, releases = await gather(
         _fetch_commit_stats(
             all_mentioned_hashes,
+            components[DeployedComponent.repository_node_id.name].unique(),
             dags,
             prefixer,
             logical_settings,
@@ -1333,6 +1334,7 @@ async def _submit_deployed_releases(
 @sentry_span
 async def _fetch_commit_stats(
     all_mentioned_hashes: np.ndarray,
+    repo_ids: Collection[int],
     dags: Dict[str, Tuple[bool, DAG]],
     prefixer: Prefixer,
     logical_settings: LogicalRepositorySettings,
@@ -1383,7 +1385,7 @@ async def _fetch_commit_stats(
             )
             .order_by(func.coalesce(NodePullRequest.merged_at, NodeCommit.committed_date)),
         ),
-        match_rebased_prs(account, meta_ids, mdb, pdb, commit_shas=all_mentioned_hashes),
+        match_rebased_prs(repo_ids, account, meta_ids, mdb, pdb, commit_shas=all_mentioned_hashes),
     )
     if not rebased_prs.empty:
         rebased_map = dict(

@@ -39,7 +39,7 @@ async def test_calc_release_metrics_line_github_jira_cache(
         default_branches,
     )
     await wait_deferred()
-    assert metrics[0][0][0][0][0].value == 130
+    assert metrics[0][0][0][0][0].value == 131
     metrics, _ = await metrics_calculator.calc_release_metrics_line_github(
         [ReleaseMetricID.RELEASE_PRS],
         [

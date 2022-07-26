@@ -1432,7 +1432,7 @@ class TestMineReleases:
         )
         releases, avatars, matched_bys, _ = await mine_releases(**kwargs)
         assert len(releases) == 53
-        assert len(avatars) == 124
+        assert len(avatars) == 125
         assert matched_bys == {"github.com/src-d/go-git": ReleaseMatch.tag}
         for details, facts in releases:
             assert details[Release.name.name]
@@ -1479,7 +1479,7 @@ class TestMineReleases:
         kwargs["with_deployments"] = False
         releases, avatars, _, _ = await mine_releases(**kwargs)
         assert len(releases) == 53
-        assert len(avatars) == 124
+        assert len(avatars) == 125
 
         kwargs = self._kwargs(
             time_from=time_to,
@@ -1508,12 +1508,12 @@ class TestMineReleases:
         )
         releases, avatars, _, _ = await mine_releases(**kwargs)
         assert len(releases) == 772
-        assert len(avatars) == 131
+        assert len(avatars) == 132
         await wait_deferred()
 
         releases, avatars, _, _ = await mine_releases(**kwargs)
         assert len(releases) == 772
-        assert len(avatars) == 131
+        assert len(avatars) == 132
 
     @with_defer
     async def test_precomputed_time_range(
@@ -2027,8 +2027,8 @@ async def test_mine_releases_logical_title(
             "github.com/src-d/go-git/beta": 28,
         }
         assert prs == {
-            "github.com/src-d/go-git/alpha": 93,
-            "github.com/src-d/go-git/beta": 59,
+            "github.com/src-d/go-git/alpha": 128,
+            "github.com/src-d/go-git/beta": 83,
         }
 
 
@@ -2084,15 +2084,15 @@ async def test_mine_releases_logical_label(
             "github.com/src-d/go-git/beta": 37,
         }
         assert prs == {
-            "github.com/src-d/go-git/alpha": 9,
+            "github.com/src-d/go-git/alpha": 10,
             "github.com/src-d/go-git/beta": 6,
         }
         assert deltas == {
-            "github.com/src-d/go-git/alpha": 6569,
+            "github.com/src-d/go-git/alpha": 6626,
             "github.com/src-d/go-git/beta": 280,
         }
         assert commits == {
-            "github.com/src-d/go-git/alpha": 58,
+            "github.com/src-d/go-git/alpha": 59,
             "github.com/src-d/go-git/beta": 7,
         }
 

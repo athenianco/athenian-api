@@ -2429,7 +2429,7 @@ async def test_filter_releases_by_event(client, headers, with_event_releases):
     assert response.status == 200, response_text
     releases = ReleaseSet.from_dict(json.loads(response_text))
     assert len(releases.data) == 1
-    assert len(releases.data[0].prs) == 387
+    assert len(releases.data[0].prs) == 520
 
 
 # TODO: fix response validation against the schema
