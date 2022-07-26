@@ -7,6 +7,8 @@ from athenian.api.models.metadata.github import (
     AccountRepository,
     Bot,
     FetchProgress,
+    Team,
+    TeamMember,
     User,
 )
 from athenian.api.models.metadata.jira import Issue, Project, User as JIRAUser
@@ -66,6 +68,25 @@ class BotFactory(SQLAlchemyModelFactory):
 
     acc_id = DEFAULT_MD_ACCOUNT_ID
     login = factory.LazyAttribute(lambda bot: f"bot-{bot.node_id}")
+
+
+class TeamFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = Team
+
+    acc_id = DEFAULT_MD_ACCOUNT_ID
+    node_id = factory.Sequence(lambda n: n + 1)
+    organization_id = 40469
+    name = factory.LazyAttribute(lambda team: f"team-{team.node_id}")
+
+
+class TeamMemberFactory(SQLAlchemyModelFactory):
+    class Meta:
+        model = TeamMember
+
+    acc_id = DEFAULT_MD_ACCOUNT_ID
+    parent_id = factory.Sequence(lambda n: n + 1)
+    child_id = factory.Sequence(lambda n: n + 2)
 
 
 class JIRAProjectFactory(SQLAlchemyModelFactory):

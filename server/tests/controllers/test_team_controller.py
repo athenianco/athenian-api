@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy import insert, select, update
 
 from athenian.api.db import Database, ensure_db_datetime_tz
-from athenian.api.models.state.models import AccountGitHubAccount, Goal, Team
+from athenian.api.models.state.models import AccountGitHubAccount, Goal, Team, TeamGoal
 from athenian.api.models.web import TeamUpdateRequest
 from athenian.api.models.web.team import Team as TeamListItem
 from athenian.api.models.web.team_create_request import TeamCreateRequest
@@ -321,46 +321,72 @@ def _test_same_team(actual, expected, no_timings=True):
     assert actual == expected
 
 
-async def test_resync_teams_smoke(client, headers, sdb, disable_default_user):
-    await sdb.execute(model_insert_stmt(TeamFactory(parent_id=None), with_primary_keys=False))
-    response = await client.request(method="DELETE", path="/v1/teams/1", headers=headers)
-    body = await response.json()
-    assert response.status == 200, f"Response body is : {body}"
-    teams = {t["name"]: TeamListItem.from_dict(t) for t in body}
-    actual_teams = await sdb.fetch_all(select([Team]).where(Team.owner_id == 1))
-    assert len(teams) == len(actual_teams) - 1  # root team is not included in the response
+class TestResyncTeams:
+    async def test_smoke(self, client, headers, sdb, disable_default_user):
+        await sdb.execute(model_insert_stmt(TeamFactory(parent_id=None), with_primary_keys=False))
+        body = await self._request(client, 1)
+        teams = {t["name"]: TeamListItem.from_dict(t) for t in body}
+        actual_teams = await sdb.fetch_all(select([Team]).where(Team.owner_id == 1))
+        assert len(teams) == len(actual_teams) - 1  # root team is not included in the response
 
-    assert teams.keys() == {
-        "team",
-        "engineering",
-        "business",
-        "operations",
-        "product",
-        "admin",
-        "automation",
-    }
-    assert [m.login for m in teams["product"].members] == ["github.com/warenlg", "github.com/eiso"]
+        assert teams.keys() == {
+            "team",
+            "engineering",
+            "business",
+            "operations",
+            "product",
+            "admin",
+            "automation",
+        }
+        assert [m.login for m in teams["product"].members] == [
+            "github.com/warenlg",
+            "github.com/eiso",
+        ]
 
+    async def test_default_user(self, client: TestClient) -> None:
+        await self._request(client, 1, 403)
 
-async def test_resync_teams_default_user(client, headers):
-    response = await client.request(method="DELETE", path="/v1/teams/1", headers=headers)
+    async def test_wrong_user(self, client, headers, disable_default_user):
+        await self._request(client, 3, 404)
 
-    body = (await response.read()).decode("utf-8")
-    assert response.status == 403, "Response body is : " + body
+    async def test_regular_user(self, client, headers, disable_default_user):
+        await self._request(client, 2, 403)
 
+    async def test_goals_are_removed(
+        self,
+        client: TestClient,
+        sdb: Database,
+        disable_default_user,
+    ) -> None:
+        await models_insert(
+            sdb,
+            TeamFactory(id=100, parent_id=None),
+            TeamFactory(id=101, parent_id=100),
+            GoalFactory(id=20),
+            GoalFactory(id=21),
+            TeamGoalFactory(goal_id=20, team_id=101),
+            TeamGoalFactory(goal_id=21, team_id=100),
+            TeamGoalFactory(goal_id=21, team_id=101),
+        )
 
-async def test_resync_teams_wrong_user(client, headers, disable_default_user):
-    response = await client.request(method="DELETE", path="/v1/teams/3", headers=headers)
+        await self._request(client, 1)
 
-    body = (await response.read()).decode("utf-8")
-    assert response.status == 404, "Response body is : " + body
+        await assert_missing_row(sdb, Team, id=101)
+        await assert_missing_row(sdb, Goal, id=20)
+        await assert_existing_row(sdb, Goal, id=21)
+        await assert_missing_row(sdb, TeamGoal, goal_id=21, team_id=101)
+        await assert_existing_row(sdb, TeamGoal, goal_id=21, team_id=100)
 
-
-async def test_resync_teams_regular_user(client, headers, disable_default_user):
-    response = await client.request(method="DELETE", path="/v1/teams/2", headers=headers)
-
-    body = (await response.read()).decode("utf-8")
-    assert response.status == 403, "Response body is : " + body
+    async def _request(
+        self,
+        client: TestClient,
+        account_id: int,
+        assert_status: int = 200,
+    ) -> list[dict]:
+        path = f"/v1/teams/{account_id}"
+        response = await client.request(method="DELETE", path=path, headers=DEFAULT_HEADERS)
+        assert response.status == assert_status
+        return await response.json()
 
 
 class TestUpdateTeam:

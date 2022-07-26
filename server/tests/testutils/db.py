@@ -1,4 +1,4 @@
-"""Db related test utilities."""
+"""DB related test utilities."""
 
 from __future__ import annotations
 
@@ -29,6 +29,17 @@ async def models_insert(db: Database, *models: BaseType) -> None:
     async with db.connection() as conn:
         for model in models:
             await conn.execute(model_insert_stmt(model))
+
+
+async def models_insert_auto_pk(db: Database, *models: BaseType) -> list[Any]:
+    """Insert a new model, letting DB handle primary key generation. Inserted PK is returned."""
+
+    results = []
+    async with db.connection() as conn:
+        for model in models:
+            stmt = model_insert_stmt(model, with_primary_keys=False)
+            results.append(await conn.execute(stmt))
+    return results
 
 
 async def assert_missing_row(db: DatabaseLike, table: DeclarativeMeta, **kwargs: Any) -> None:
