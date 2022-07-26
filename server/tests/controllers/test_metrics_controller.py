@@ -2117,7 +2117,7 @@ async def test_release_metrics_jira(client, headers):
     rbody = json.loads(rbody)
     models = [CalculatedReleaseMetric.from_dict(i) for i in rbody]
     assert len(models) == 1
-    assert models[0].values[0].values == [8, 42]
+    assert models[0].values[0].values == [8, 43]
     del body["jira"]
 
     response = await client.request(
@@ -2128,7 +2128,7 @@ async def test_release_metrics_jira(client, headers):
     rbody = json.loads(rbody)
     models = [CalculatedReleaseMetric.from_dict(i) for i in rbody]
     assert len(models) == 1
-    assert models[0].values[0].values == [22, 232]
+    assert models[0].values[0].values == [22, 235]
 
 
 async def test_release_metrics_labels(client, headers):
@@ -2160,14 +2160,14 @@ async def test_release_metrics_labels(client, headers):
     rbody = json.loads(rbody)
     models = [CalculatedReleaseMetric.from_dict(i) for i in rbody]
     assert len(models) == 1
-    assert models[0].values[0].values == [22, 233]
+    assert models[0].values[0].values == [22, 235]
 
 
 @pytest.mark.parametrize(
     "second_repo, counts",
     [
-        ("/beta", [44, 118]),
-        ("", [44, 191]),
+        ("/beta", [44, 119]),
+        ("", [44, 192]),
     ],
 )
 async def test_release_metrics_logical(

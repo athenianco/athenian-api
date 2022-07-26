@@ -31,10 +31,10 @@ async def test_match_rebased_prs_shas_smoke(mdb, pdb, dag):
 
 
 async def _test_match_rebased_smoke(mdb, pdb, kwarg) -> None:
-    prs1 = await match_rebased_prs(1, (6366825,), mdb, pdb, **kwarg)
+    prs1 = await match_rebased_prs([40550], 1, (6366825,), mdb, pdb, **kwarg)
     await wait_deferred()
     assert len(prs1) == 129
-    prs2 = await match_rebased_prs(1, (6366825,), mdb, pdb, **kwarg)
+    prs2 = await match_rebased_prs([40550], 1, (6366825,), mdb, pdb, **kwarg)
     for df in (prs1, prs2):
         df.sort_index(axis=1, inplace=True)
         df.sort_values(GitHubRebasedPullRequest.pr_node_id.name, inplace=True, ignore_index=True)
@@ -70,7 +70,7 @@ async def test_mark_dead_prs_smoke(mdb, pdb, branches, dag):
     matched = np.in1d(forward[PullRequest.merge_commit_sha.name].values, dag_shas)
     prs_forward = set(forward.index.values[matched & ~alive])
     backward = await match_rebased_prs(
-        1, (6366825,), mdb, pdb, commit_shas=dag["src-d/go-git"][1][0],
+        [40550], 1, (6366825,), mdb, pdb, commit_shas=dag["src-d/go-git"][1][0],
     )
     prs_backward = set(backward[GitHubRebasedPullRequest.pr_node_id.name].values)
     assert not (prs_backward - prs_forward)

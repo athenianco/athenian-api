@@ -204,7 +204,7 @@ class TestBatchCalcReleaseMetrics:
         )
 
         release_prs = global_calc_res[0][0][0][0][0]
-        assert release_prs.value == 129
+        assert release_prs.value == 131
         assert batched_calc_res[0][0][0][0][0][0] == release_prs
 
         release_count = global_calc_res[0][0][0][0][1]

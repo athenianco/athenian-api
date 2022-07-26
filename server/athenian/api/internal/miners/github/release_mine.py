@@ -453,7 +453,16 @@ async def _mine_releases(
 
         tasks = [
             _load_prs_by_merge_commit_ids(commit_ids, repos, logical_settings, meta_ids, mdb),
-            _load_rebased_prs(commit_ids, repos, logical_settings, account, meta_ids, mdb, pdb),
+            _load_rebased_prs(
+                commit_ids,
+                repos,
+                releases[Release.repository_node_id.name].unique(),
+                logical_settings,
+                account,
+                meta_ids,
+                mdb,
+                pdb,
+            ),
         ]
         if jira:
             query = await generate_jira_prs_query(
@@ -472,6 +481,9 @@ async def _mine_releases(
         if not rebased_prs_df.empty:
             prs_df = pd.concat([prs_df, rebased_prs_df], ignore_index=True)
             prs_commit_ids = np.concatenate([prs_commit_ids, rebased_commit_ids])
+            order = np.argsort(prs_commit_ids)
+            prs_commit_ids = prs_commit_ids[order]
+            prs_df = prs_df.take(order)
         if jira:
             filtered_prs_commit_ids = rest[0][PullRequest.merge_commit_id.name].unique()
         original_prs_commit_ids = prs_df[PullRequest.merge_commit_id.name].values
@@ -1089,17 +1101,20 @@ async def _load_prs_by_ids(
 async def _load_rebased_prs(
     commit_ids: npt.NDArray[int],
     repository_names: Collection[str],
+    repository_ids: Collection[int],
     logical_settings: LogicalRepositorySettings,
     account: int,
     meta_ids: tuple[int, ...],
     mdb: Database,
     pdb: Database,
 ) -> tuple[pd.DataFrame, npt.NDArray[int]]:
-    rebased_df = await match_rebased_prs(account, meta_ids, mdb, pdb, commit_ids=commit_ids)
+    rebased_df = await match_rebased_prs(
+        repository_ids, account, meta_ids, mdb, pdb, commit_ids=commit_ids,
+    )
     if rebased_df.empty:
         return pd.DataFrame(), np.array([], dtype=int)
     rebased_pr_node_ids = rebased_df[GitHubRebasedPullRequest.pr_node_id.name].values
-    df, labels = await _load_prs_by_ids(
+    df, _ = await _load_prs_by_ids(
         rebased_pr_node_ids,
         lambda model, ids: model.node_id.in_(ids),
         repository_names,
@@ -1112,7 +1127,7 @@ async def _load_rebased_prs(
     rebased_pr_node_ids = rebased_pr_node_ids[order]
     rebased_commit_ids = rebased_df[GitHubRebasedPullRequest.matched_merge_commit_id.name].values
     prs_commit_ids = rebased_commit_ids[
-        order[np.searchsorted(rebased_pr_node_ids, df.index.get_level_values(0))]
+        order[np.searchsorted(rebased_pr_node_ids, df[PullRequest.node_id.name].values)]
     ]
     df[PullRequest.merge_commit_id.name] = prs_commit_ids
     if logical_settings.has_logical_prs():
