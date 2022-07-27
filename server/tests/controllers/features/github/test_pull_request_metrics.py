@@ -9,7 +9,6 @@ from pandas.testing import assert_frame_equal
 import pytest
 from sqlalchemy import insert, select
 
-from athenian.api.async_utils import read_sql_query
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.features.github.pull_request_metrics import (
     AllCounter,
@@ -51,7 +50,6 @@ from athenian.api.internal.features.metric_calculator import (
 )
 from athenian.api.internal.miners.filters import JIRAFilter, LabelFilter
 from athenian.api.internal.miners.github.deployment import mine_deployments
-from athenian.api.internal.miners.github.pull_request import PullRequestMiner
 from athenian.api.internal.miners.types import PullRequestFacts
 from athenian.api.internal.settings import (
     LogicalDeploymentSettings,
@@ -60,7 +58,6 @@ from athenian.api.internal.settings import (
     ReleaseMatchSetting,
     ReleaseSettings,
 )
-from athenian.api.models.metadata.github import PullRequest
 from athenian.api.models.persistentdata.models import ReleaseNotification
 from athenian.api.models.precomputed.models import (
     GitHubMergedPullRequestFacts,
@@ -1647,9 +1644,6 @@ async def test_pull_request_count_logical_alpha_beta(
         },
         "src-d/go-git",
     )
-    prs = await read_sql_query(select(PullRequest), mdb, PullRequest, index=PullRequest.node_id)
-    await PullRequestMiner.mark_dead_prs(prs, branches, dag, 1, (6366825,), mdb, pdb)
-    await wait_deferred()
     await mine_deployments(
         ["src-d/go-git/alpha"],
         {},
@@ -1713,7 +1707,7 @@ async def test_pull_request_count_logical_alpha_beta(
             assert values[0, 0, 0, 0][0][0].value == 159
             assert values[0, 0, 0, 0][0][1].value == 24
             assert values[0, 0, 0, 0][0][2].value == 105
-            assert values[0, 0, 0, 0][0][3].value == 154
+            assert values[0, 0, 0, 0][0][3].value == 148
             assert values[0, 0, 0, 0][0][4].value == 122
 
             assert values[0, 1, 0, 0][0][0].value == 107
