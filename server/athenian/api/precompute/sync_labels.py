@@ -5,6 +5,7 @@ from itertools import chain
 
 import numpy as np
 from sqlalchemy import and_, func, select, update
+from tqdm import tqdm
 
 from athenian.api.async_utils import gather
 from athenian.api.internal.miners.github.dag_accelerated import searchsorted_inrange
@@ -99,6 +100,12 @@ async def main(context: PrecomputeContext, args: argparse.Namespace) -> None:
     if not tasks:
         return
     log.info("Updating %d records", len(tasks))
-    while tasks:
-        batch, tasks = tasks[:1000], tasks[1000:]
-        await gather(*batch)
+    batch_size = 1000
+    bar = tqdm(total=len(tasks))
+    try:
+        while tasks:
+            batch, tasks = tasks[:batch_size], tasks[batch_size:]
+            await gather(*batch)
+            bar.update(len(batch))
+    finally:
+        bar.close()
