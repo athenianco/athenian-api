@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import graphlib
 import logging
 import re
-from typing import Any, Sequence
+from typing import Any, Optional, Sequence
 
 import sqlalchemy as sa
 from sqlalchemy.orm.attributes import InstrumentedAttribute
@@ -127,6 +127,14 @@ class _StateTeams:
             return existing_row[Team.id.name]
         return self._created[origin_node_id]
 
+    def get_parent_id(self, parent_origin_node_id: Optional[int]) -> int:
+        if parent_origin_node_id is None:
+            return self._root_team_id
+        try:
+            return self.get_id(parent_origin_node_id)
+        except KeyError:  # this happens when meta team has an invalid, inexisting parent
+            return self._root_team_id
+
     def get_gone(self, meta_teams) -> Sequence[Row]:
         rows = self._existing.values()
         return [r for r in rows if r[Team.origin_node_id.name] not in meta_teams.by_id]
@@ -205,12 +213,9 @@ class _StateDBOperator(_StateDBOperatorI):
             real_name = meta_team_row[MetadataTeam.name.name]
             name = _NameMangler.apply(real_name)
 
-            if (meta_parent_id := meta_team_row[MetadataTeam.parent_team_id.name]) is None:
-                parent_id = state_teams.root_team_id
-            else:
-                # parent team can be either created in a *previous* iteration
-                # (thanks to _new_meta_teams_insertion_order) or in existing teams
-                parent_id = state_teams.get_id(meta_parent_id)
+            # parent team can be either created in a *previous* iteration
+            # (thanks to _new_meta_teams_insertion_order) or in existing teams
+            parent_id = state_teams.get_parent_id(meta_team_row[MetadataTeam.parent_team_id.name])
 
             team = Team(
                 owner_id=self._account,
@@ -304,11 +309,7 @@ def _get_team_updates(meta_row: Row, members: list[int], state_teams: _StateTeam
     if sorted(state_team_row[Team.members.name]) != members:
         updates[Team.members] = members
 
-    meta_parent_id = meta_row[MetadataTeam.parent_team_id.name]
-    if meta_parent_id is None:
-        parent_id = state_teams.root_team_id
-    else:
-        parent_id = state_teams.get_id(meta_parent_id)
+    parent_id = state_teams.get_parent_id(meta_row[MetadataTeam.parent_team_id.name])
     if state_team_row[Team.parent_id.name] != parent_id:
         updates[Team.parent_id] = parent_id
 
