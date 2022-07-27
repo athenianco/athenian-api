@@ -242,7 +242,7 @@ class FeatureComponent(enum.IntEnum):
     server = 2
 
 
-class Feature(create_time_mixin(updated_at=True), Base):
+class Feature(create_time_mixin(created_at=True, updated_at=True), Base):
     """Product features."""
 
     __tablename__ = "features"
