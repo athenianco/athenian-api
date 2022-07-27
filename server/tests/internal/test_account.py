@@ -4,7 +4,8 @@ from athenian.api.db import Database
 from athenian.api.internal.account import copy_teams_as_needed, get_multiple_metadata_account_ids
 from athenian.api.models.metadata.github import Team as MetaTeam
 from athenian.api.models.state.models import Team
-from tests.testutils.db import model_insert_stmt, models_insert
+from tests.testutils.db import DBCleaner, assert_existing_row, models_insert, models_insert_auto_pk
+from tests.testutils.factory import metadata as md_factory
 from tests.testutils.factory.state import AccountFactory, AccountGitHubAccountFactory, TeamFactory
 
 
@@ -29,11 +30,8 @@ class TestGetMultipleMetadataMetadataIds:
 
 
 class TestCopyTeamsAsNeeded:
-    async def test_base(self, sdb: Database, mdb: Database):
-        root_team_model = TeamFactory(name=Team.ROOT, parent_id=None)
-        root_team_id = await sdb.execute(
-            model_insert_stmt(root_team_model, with_primary_keys=False),
-        )
+    async def test_base(self, sdb: Database, mdb: Database) -> None:
+        (root_team_id,) = await models_insert_auto_pk(sdb, TeamFactory(name=Team.ROOT))
 
         created_teams, n = await copy_teams_as_needed(1, (6366825,), root_team_id, sdb, mdb, None)
         loaded_team_rows = await sdb.fetch_all(sa.select(Team).where(Team.id != root_team_id))
@@ -65,3 +63,14 @@ class TestCopyTeamsAsNeeded:
         created_teams, n = await copy_teams_as_needed(1, (6366825,), root_team_id, sdb, mdb, None)
         assert created_teams == []
         assert n == len(loaded_teams)
+
+    async def test_meta_team_invalid_parent(self, sdb: Database, mdb: Database) -> None:
+        (root_team_id,) = await models_insert_auto_pk(sdb, TeamFactory(name=Team.ROOT))
+
+        async with DBCleaner(mdb) as mdb_cleaner:
+            models = (md_factory.TeamFactory(node_id=101, parent_team_id=1010110101, name="T"),)
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb, *models)
+            await copy_teams_as_needed(1, (6366825,), root_team_id, sdb, mdb, None)
+
+        await assert_existing_row(sdb, Team, name="T", origin_node_id=101, parent_id=root_team_id)
