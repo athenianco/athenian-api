@@ -20,6 +20,8 @@ import aiomcache
 from filelock import FileLock
 import sentry_sdk
 
+from athenian.api.async_utils import read_sql_query
+
 try:
     import nest_asyncio
 except ImportError:
@@ -947,3 +949,10 @@ async def dag(mdb):
         return _dag
     _dag = await fetch_dag(mdb)
     return _dag
+
+
+@pytest.fixture(scope="function")
+@with_defer
+async def precomputed_dead_prs(mdb, pdb, branches, dag) -> None:
+    prs = await read_sql_query(select(PullRequest), mdb, PullRequest, index=PullRequest.node_id)
+    await PullRequestMiner.mark_dead_prs(prs, branches, dag, 1, (6366825,), mdb, pdb)

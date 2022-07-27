@@ -113,9 +113,13 @@ async def sample_teams(sdb: Database) -> None:
 
 
 class TestMetrics(BaseMetricsTest):
-    async def test_fetch_all_kinds(self, client: TestClient, sample_teams, mdb) -> None:
-        if mdb.url.dialect != "postgresql":
-            pytest.skip("SQLite shows a race with different counts")
+    async def test_fetch_all_kinds(
+        self,
+        client: TestClient,
+        sample_teams,
+        mdb,
+        precomputed_dead_prs,
+    ) -> None:
         res = await self._request(
             client,
             1,
@@ -155,13 +159,13 @@ class TestMetrics(BaseMetricsTest):
                             "team": {
                                 "id": 1,
                             },
-                            "value": {"str": None, "int": 461, "float": None},
+                            "value": {"str": None, "int": 474, "float": None},
                             "children": [
                                 {
                                     "team": {
                                         "id": 2,
                                     },
-                                    "value": {"str": None, "int": 376, "float": None},
+                                    "value": {"str": None, "int": 382, "float": None},
                                     "children": [],
                                 },
                             ],
