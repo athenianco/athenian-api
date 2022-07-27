@@ -311,7 +311,7 @@ class Auth0:
                     retry,
                     data={
                         **({"name": name} if name else {}),
-                        **({"email": email} if email else {}),
+                        **({"user_metadata": {"email": email}} if email else {}),
                     },
                     method="patch",
                 )
@@ -450,6 +450,8 @@ class Auth0:
             )
         if (account := user.pop("https://api.athenian.co/v1/account", 0)) > 0:
             user["account"] = account
+        if (email := user.pop("https://api.athenian.co/v1/email", None)) is not None:
+            user["email"] = email
         return User.from_auth0(**user)
 
     async def _set_user(self, request: AthenianWebRequest, token: str, method: str) -> None:
