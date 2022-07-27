@@ -18,6 +18,7 @@ import warnings
 
 import aiomcache
 from filelock import FileLock
+import sentry_sdk
 
 try:
     import nest_asyncio
@@ -46,6 +47,7 @@ except ImportError:
             return lambda fn: fn
 
 
+import pytest_sentry
 from sqlalchemy import create_engine, delete, func, insert, select
 from sqlalchemy.ext.declarative import DeclarativeMeta
 from sqlalchemy.orm import sessionmaker
@@ -54,7 +56,13 @@ import uvloop
 # This must stay before any athenian.api import to override any external ATHENIAN_INVITATION_KEY
 os.environ["ATHENIAN_INVITATION_KEY"] = "vadim"
 
-from athenian.api.__main__ import create_mandrill, create_memcached, create_slack
+from athenian.api.__main__ import (
+    _ApplicationEnvironment,
+    _init_sentry,
+    create_mandrill,
+    create_memcached,
+    create_slack,
+)
 from athenian.api.application import AthenianApp
 from athenian.api.auth import Auth0, User
 from athenian.api.cache import CACHE_VAR_NAME, setup_cache_metrics
@@ -131,6 +139,14 @@ override_rdb = os.getenv("OVERRIDE_RDB")
 override_memcached = os.getenv("OVERRIDE_MEMCACHED")
 logging.getLogger("aiosqlite").setLevel(logging.CRITICAL)
 db_retry_intervals.insert(-2, 5)  # reduce the probability of TooManyConnectionsError in Postgres
+os.environ["SENTRY_SAMPLING_RATE"] = "1.0"
+os.environ["SENTRY_ENV"] = "test"
+if _init_sentry(
+    log := logging.getLogger("test-api"),
+    _ApplicationEnvironment.discover(log),
+    extra_integrations=[pytest_sentry.PytestIntegration(always_report=True)],
+):
+    pytest_sentry.DEFAULT_HUB = sentry_sdk.Hub.current
 
 
 class FakeCache:
@@ -232,7 +248,13 @@ def memcached(event_loop, xapp, request):
 
 
 def check_memcached():
-    client = create_memcached(override_memcached or "0.0.0.0:11211", logging.getLogger("pytest"))
+    loop = asyncio.new_event_loop()
+
+    client = create_memcached(
+        override_memcached or "0.0.0.0:11211",
+        logging.getLogger("pytest"),
+        loop=loop,
+    )
     client.version_future.cancel()
 
     async def probe():
@@ -244,7 +266,11 @@ def check_memcached():
         finally:
             await client.close()
 
-    return asyncio.get_event_loop().run_until_complete(probe())
+    try:
+        result = loop.run_until_complete(probe())
+    finally:
+        loop.close()
+    return result
 
 
 has_memcached = check_memcached()

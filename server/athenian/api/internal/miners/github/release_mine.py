@@ -666,6 +666,8 @@ async def _mine_releases(
         user_node_to_login = prefixer.user_node_to_login
         all_author_logins = []
         missing_nodes = []
+        if len(all_authors) and all_authors[0] == 0:
+            all_authors = all_authors[1:]
         for u in all_authors:
             try:
                 all_author_logins.append(user_node_to_login[u])

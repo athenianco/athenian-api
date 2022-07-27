@@ -335,7 +335,7 @@ class MetricCalculator(Generic[T], ABC):
                     warnings.filterwarnings("ignore", "All-NaN slice encountered")
                     cut_values = np.moveaxis(
                         np.nanquantile(
-                            surrogate_samples, self._quantiles, interpolation="nearest", axis=-1,
+                            surrogate_samples, self._quantiles, method="nearest", axis=-1,
                         ).astype(dtype),
                         0,
                         -1,
