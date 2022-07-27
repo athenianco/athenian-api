@@ -15,7 +15,7 @@ import platform
 import re
 import socket
 import sys
-from typing import Callable, Optional
+from typing import Callable, Iterable, Optional
 import warnings
 
 import aiohttp.web
@@ -234,20 +234,24 @@ class _ApplicationEnvironment:
         return cls(commit, build_date, username, hostname, kernel, dev_id)
 
 
-def _init_sentry(log: logging.Logger, app_env: _ApplicationEnvironment) -> None:
+def _init_sentry(
+    log: logging.Logger,
+    app_env: _ApplicationEnvironment,
+    extra_integrations: Iterable[sentry_sdk.integrations.Integration] = (),
+) -> bool:
     sentry_key, sentry_project = os.getenv("SENTRY_KEY"), os.getenv("SENTRY_PROJECT")
 
     def warn(env_name):
         logging.getLogger(metadata.__package__).warning(
-            "Skipped Sentry initialization: %s envvar is missing", env_name,
+            "skipped Sentry initialization: %s envvar is missing", env_name,
         )
 
     if not sentry_key:
         warn("SENTRY_KEY")
-        return
+        return False
     if not sentry_project:
         warn("SENTRY_PROJECT")
-        return
+        return False
     sentry_env = os.getenv("SENTRY_ENV", "development")
     log.info("Sentry: https://[secure]@sentry.io/%s#%s" % (sentry_project, sentry_env))
 
@@ -324,6 +328,7 @@ def _init_sentry(log: logging.Logger, app_env: _ApplicationEnvironment) -> None:
             SqlalchemyIntegration(),
             PureEvalIntegration(),
             ExecutingIntegration(),
+            *extra_integrations,
         ],
         auto_enabling_integrations=False,
         send_default_pii=True,
@@ -338,7 +343,7 @@ def _init_sentry(log: logging.Logger, app_env: _ApplicationEnvironment) -> None:
     sentry_sdk.utils.MAX_STRING_LENGTH = MAX_SENTRY_STRING_LENGTH
     sentry_sdk.serializer.MAX_DATABAG_BREADTH = 16  # e.g., max number of locals in a stack frame
     with sentry_sdk.configure_scope() as scope:
-        if sentry_env == "development":
+        if sentry_env in ("development", "test"):
             scope.set_tag("username", app_env.username)
         if app_env.dev_id:
             scope.set_tag("developer", app_env.dev_id)
@@ -346,9 +351,14 @@ def _init_sentry(log: logging.Logger, app_env: _ApplicationEnvironment) -> None:
             scope.set_tag("commit", app_env.commit)
         if app_env.build_date is not None:
             scope.set_tag("build_date", app_env.build_date)
+    return True
 
 
-def create_memcached(addr: str, log: logging.Logger) -> Optional[aiomcache.Client]:
+def create_memcached(
+    addr: str,
+    log: logging.Logger,
+    loop: Optional[asyncio.AbstractEventLoop] = None,
+) -> Optional[aiomcache.Client]:
     """Create the memcached client, if possible."""
     if not addr:
         return None
@@ -382,7 +392,7 @@ def create_memcached(addr: str, log: logging.Logger) -> Optional[aiomcache.Clien
         log.info("memcached: %s on %s", version.decode(), addr)
         delattr(client, "version_future")
 
-    client.version_future = asyncio.ensure_future(print_memcached_version())
+    client.version_future = asyncio.ensure_future(print_memcached_version(), loop=loop)
     return client
 
 

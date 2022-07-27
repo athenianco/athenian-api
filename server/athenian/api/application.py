@@ -284,7 +284,7 @@ class AthenianApp(especifico.AioHttpApp):
             server_args={"client_max_size": client_max_size},
         )
         self.api_cls = AthenianAioHttpApi
-        self._devenv = os.getenv("SENTRY_ENV", "development") == "development"
+        self._devenv = os.getenv("SENTRY_ENV", "development") in ("development", "test")
         invitation_controller.validate_env()
         self.app["auth"] = self._auth0 = auth0_cls(
             whitelist=[

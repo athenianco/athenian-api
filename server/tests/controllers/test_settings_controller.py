@@ -709,7 +709,7 @@ async def test_set_jira_identities_reset_cache(client, headers, denys_id_mapping
     response = await client.request(
         method="PATCH", path="/v1/settings/jira/identities", headers=headers, json=body,
     )
-    assert response.status == 200
+    assert response.status == 200, (await response.read()).decode()
     contribs2 = await fetch_contribs()
     assert contribs1 != contribs2
     assert contribs2 != contribs3

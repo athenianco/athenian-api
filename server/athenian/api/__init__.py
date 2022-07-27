@@ -12,4 +12,7 @@ sys.setdlopenflags(sys.getdlopenflags() | ctypes.RTLD_GLOBAL)
 # Workaround https://github.com/pandas-dev/pandas/issues/32619
 pytz.UTC = pytz.utc = timezone.utc
 
-is_testing = "pytest" in sys.modules or os.getenv("SENTRY_ENV", "development") == "development"
+is_testing = "pytest" in sys.modules or os.getenv("SENTRY_ENV", "development") in (
+    "development",
+    "test",
+)
