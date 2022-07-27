@@ -283,7 +283,7 @@ class AccountFeature(create_time_mixin(created_at=True, updated_at=True), Base):
     parameters = Column(JSONB().with_variant(JSON(), sqlite.dialect.name))
 
 
-class UserToken(create_time_mixin(updated_at=True), Base):
+class UserToken(create_time_mixin(created_at=True, updated_at=True), Base):
     """Personal Access Tokens of the accounts."""
 
     __tablename__ = "user_tokens"
