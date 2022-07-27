@@ -311,7 +311,7 @@ class Auth0:
                     retry,
                     data={
                         **({"name": name} if name else {}),
-                        **({"email": email} if name else {}),
+                        **({"email": email} if email else {}),
                     },
                     method="patch",
                 )
