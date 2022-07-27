@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import dateutil.parser
 
@@ -84,6 +84,7 @@ class User(Model):
         user_id: Optional[str] = None,
         identities: Optional[List[dict]] = None,
         account: Optional[int] = None,
+        user_metadata: Optional[dict[str, Any]] = None,
         **_,
     ):
         """Create a new User object from Auth0 /userinfo."""
@@ -94,6 +95,8 @@ class User(Model):
             native_id = identities[0]["user_id"]
         else:
             native_id = id.rsplit("|", 1)[1]
+        if user_metadata is not None:
+            email = user_metadata.get("email", email)
         if email is None:
             email = ""
         user = cls(
