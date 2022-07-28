@@ -70,7 +70,7 @@ jobs:
     runs-on: ubuntu-22.04
     services:
       postgres:
-        image: postgres:11.8
+        image: postgres:13.6
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -160,7 +160,7 @@ jobs:
         env:
           MEMCACHED_EXTRA_FLAGS: -m 128 -I 64m
       postgres:
-        image: postgres:11.8
+        image: postgres:13.6
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -346,7 +346,7 @@ jobs:
     runs-on: ubuntu-22.04
     services:
       postgres:
-        image: postgres:11.8
+        image: postgres:13.6
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
