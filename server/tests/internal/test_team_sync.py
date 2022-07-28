@@ -244,6 +244,24 @@ class TestSyncTeams(BaseTestSyncTeams):
         await assert_missing_row(sdb, TeamGoal, team_id=teams[0])
         await assert_existing_row(sdb, TeamGoal, team_id=teams[1], goal_id=21)
 
+    async def test_invalid_meta_team_parent(self, sdb: Database, mdb: Database) -> None:
+        root_team_id = await self._mk_root_team(sdb)
+
+        async with DBCleaner(mdb) as mdb_cleaner:
+            models = [
+                md_factory.TeamFactory(node_id=101),
+                md_factory.TeamFactory(node_id=102, parent_team_id=101),
+                md_factory.TeamFactory(node_id=103, parent_team_id=1010000),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb, *models)
+            await sync_teams(DEFAULT_ACCOUNT_ID, [DEFAULT_MD_ACCOUNT_ID], sdb, mdb)
+
+        team_101 = await assert_existing_row(sdb, Team, origin_node_id=101, parent_id=root_team_id)
+        await assert_existing_row(sdb, Team, origin_node_id=102, parent_id=team_101[Team.id.name])
+        # team 103 parent is root since 1010000 does not exist
+        await assert_existing_row(sdb, Team, origin_node_id=103, parent_id=root_team_id)
+
 
 class TestSyncTeamsErrors(BaseTestSyncTeams):
     async def test_fail_with_unmapped_teams(self, sdb: Database, mdb: Database) -> None:

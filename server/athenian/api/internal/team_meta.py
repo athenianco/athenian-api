@@ -33,11 +33,13 @@ async def get_meta_teams_members(
 def get_meta_teams_topological_order(meta_team_rows: Iterable[Row]) -> Iterable[Any]:
     """Return the team IDs in topological order according to parentship relation.
 
+    Invalid parents are ignored: a parent not having a row will not be included in the order.
     Raise an error if the graph includes cycles.
     """
+    all_team_ids = {r[Team.id.name] for r in meta_team_rows}
     graph: graphlib.TopologicalSorter = graphlib.TopologicalSorter()
     for row in meta_team_rows:
-        if (parent_id := row[Team.parent_team_id.name]) is not None:
+        if (parent_id := row[Team.parent_team_id.name]) is not None and parent_id in all_team_ids:
             graph.add(row[Team.id.name], parent_id)
         else:
             graph.add(row[Team.id.name])
