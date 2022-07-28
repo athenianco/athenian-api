@@ -21,7 +21,6 @@ from typing import (
 )
 
 import aiomcache
-import aiosqlite.core
 import numpy as np
 import pandas as pd
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
@@ -849,11 +848,6 @@ class Settings:
                 .create_defaults()
                 .explode(with_primary_keys=True),
             )
-        if isinstance(self._sdb, Database):
-            sqlite = self._sdb.url.dialect == "sqlite"
-        else:
-            async with self._sdb.raw_connection() as raw_connection:
-                sqlite = isinstance(raw_connection, aiosqlite.core.Connection)
         query = (await dialect_specific_insert(self._sdb))(ReleaseSetting)
         query = query.on_conflict_do_update(
             index_elements=ReleaseSetting.__table__.primary_key.columns,
