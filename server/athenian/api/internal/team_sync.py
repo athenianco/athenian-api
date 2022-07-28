@@ -306,8 +306,8 @@ def _get_team_updates(meta_row: Row, members: list[int], state_teams: _StateTeam
     if state_team_row[Team.name.name] != (meta_name := meta_row[MetadataTeam.name.name]):
         updates[Team.name] = _NameMangler.apply(meta_name)
 
-    if sorted(state_team_row[Team.members.name]) != members:
-        updates[Team.members] = members
+    if state_team_row[Team.members.name] != (sorted_members := sorted(members)):
+        updates[Team.members] = sorted_members
 
     parent_id = state_teams.get_parent_id(meta_row[MetadataTeam.parent_team_id.name])
     if state_team_row[Team.parent_id.name] != parent_id:

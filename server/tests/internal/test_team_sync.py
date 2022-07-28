@@ -262,6 +262,28 @@ class TestSyncTeams(BaseTestSyncTeams):
         # team 103 parent is root since 1010000 does not exist
         await assert_existing_row(sdb, Team, origin_node_id=103, parent_id=root_team_id)
 
+    async def test_updated_members_are_sorted(self, sdb: Database, mdb: Database) -> None:
+        root_team_id = await self._mk_root_team(sdb)
+        await models_insert_auto_pk(
+            sdb,
+            TeamFactory(parent_id=root_team_id, origin_node_id=100, members=[200]),
+        )
+
+        async with DBCleaner(mdb) as mdb_cleaner:
+            models = [
+                md_factory.TeamFactory(node_id=100),
+                md_factory.TeamMemberFactory(parent_id=100, child_id=202),
+                md_factory.TeamMemberFactory(parent_id=100, child_id=200),
+                md_factory.TeamMemberFactory(parent_id=100, child_id=201),
+                md_factory.TeamMemberFactory(parent_id=100, child_id=199),
+            ]
+            mdb_cleaner.add_models(*models)
+            await models_insert(mdb, *models)
+            await sync_teams(DEFAULT_ACCOUNT_ID, [DEFAULT_MD_ACCOUNT_ID], sdb, mdb)
+
+        team_row = await assert_existing_row(sdb, Team, origin_node_id=100)
+        assert team_row[Team.members.name] == [199, 200, 201, 202]
+
 
 class TestSyncTeamsErrors(BaseTestSyncTeams):
     async def test_fail_with_unmapped_teams(self, sdb: Database, mdb: Database) -> None:
