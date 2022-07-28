@@ -35,7 +35,7 @@ def check_schema_version(conn_str: str, log: logging.Logger) -> None:
         version = session.query(SchemaMigration.version).scalar()
     finally:
         session.close()
-    if version < __min_version__:
+    if version is None or version < __min_version__:
         raise DBSchemaMismatchError(
             "%s version: required: %s connected: %s" % (conn_str, __min_version__, version),
         )
