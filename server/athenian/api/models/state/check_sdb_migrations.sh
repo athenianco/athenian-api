@@ -20,8 +20,6 @@ else
 fi
 
 python3 -m athenian.api.models.state "postgresql://$PGUSER:$PGPASSWORD@0.0.0.0:5432/$dbname"
-# a spurious backup table is left by migrations
-psql -c "DROP TABLE jira_identity_mapping_old" -h 0.0.0.0 -p 5432  -d $dbname
 
 if [ -n "$tmpfile" ]; then
     mv "$tmpfile" alembic.ini
@@ -29,6 +27,5 @@ fi
 
 
 alembic-autogen-check
-
 
 psql -c "DROP DATABASE $dbname" -h 0.0.0.0 -p 5432  -d postgres
