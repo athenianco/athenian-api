@@ -12,6 +12,7 @@ from athenian.api.internal.features.entries import (
     MetricEntriesCalculator,
     PullRequestMetricsLineRequest,
     ReleaseMetricsLineRequest,
+    make_calculator,
 )
 from athenian.api.internal.features.metric_calculator import DEFAULT_QUANTILE_STRIDE
 from athenian.api.internal.jira import JIRAConfig, get_jira_installation
@@ -20,10 +21,70 @@ from athenian.api.internal.miners.github.branches import BranchMiner
 from athenian.api.internal.miners.github.release_mine import mine_releases
 from athenian.api.internal.miners.jira.issue import fetch_jira_issues
 from athenian.api.internal.prefixer import Prefixer
-from athenian.api.internal.settings import LogicalRepositorySettings, Settings
+from athenian.api.internal.settings import LogicalRepositorySettings, ReleaseSettings, Settings
 from athenian.api.models.web import JIRAMetricID, PullRequestMetricID, ReleaseMetricID
 from tests.conftest import build_fake_cache
 from tests.testutils.time import dt
+
+
+class TestMakeCalculator:
+    async def test_get_calculator(self, mdb, pdb, rdb, cache):
+        calc = make_calculator(1, (1,), mdb, pdb, rdb, cache)
+        assert isinstance(calc, MetricEntriesCalculator)
+
+
+class TestCalcPullRequestFactsGithub:
+    @with_defer
+    async def test_gaetano_bug(
+        self,
+        mdb: Database,
+        pdb: Database,
+        rdb: Database,
+        sdb: Database,
+        release_match_setting_tag: ReleaseSettings,
+    ) -> None:
+        meta_ids = (6366825,)
+        calculator = MetricEntriesCalculator(
+            1, meta_ids, DEFAULT_QUANTILE_STRIDE, mdb, pdb, rdb, None,
+        )
+        prefixer = await Prefixer.load(meta_ids, mdb, None)
+        repos = release_match_setting_tag.native.keys()
+        branches, default_branches = await BranchMiner.extract_branches(
+            repos, prefixer, meta_ids, mdb, None,
+        )
+        base_kwargs = dict(
+            repositories={"src-d/go-git"},
+            participants={},
+            labels=LabelFilter.empty(),
+            jira=JIRAFilter.empty(),
+            exclude_inactive=False,
+            bots=set(),
+            release_settings=release_match_setting_tag,
+            logical_settings=LogicalRepositorySettings.empty(),
+            prefixer=prefixer,
+            fresh=False,
+            with_jira_map=False,
+            branches=branches,
+            default_branches=default_branches,
+        )
+        facts = await calculator.calc_pull_request_facts_github(
+            time_from=dt(2017, 8, 10), time_to=dt(2017, 9, 1), **base_kwargs,
+        )
+        # await wait_deferred()
+        last_review = facts[facts.node_id == 163078].last_review.values[0]
+
+        await calculator.calc_pull_request_facts_github(
+            time_from=dt(2017, 8, 10), time_to=dt(2017, 8, 20), **base_kwargs,
+        )
+        facts = await calculator.calc_pull_request_facts_github(
+            time_from=dt(2017, 8, 10), time_to=dt(2017, 9, 1), **base_kwargs,
+        )
+        assert facts[facts.node_id == 163078].last_review.values[0] == last_review
+
+        facts = await calculator.calc_pull_request_facts_github(
+            time_from=dt(2017, 8, 10), time_to=dt(2017, 9, 1), **base_kwargs,
+        )
+        assert facts[facts.node_id == 163078].last_review.values[0] == last_review
 
 
 class TestBatchCalcPullRequestMetrics:
