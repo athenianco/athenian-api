@@ -73,6 +73,8 @@ async def mine_repositories(
     assert isinstance(time_from, datetime)
     assert isinstance(time_to, datetime)
     repo_name_to_node = prefixer.repo_name_to_node.get
+    # repo_ids will include None for logical repos,
+    # but they will be ignored in queries  IN (..., NULL, ...)
     repo_ids = [repo_name_to_node(r) for r in repos]
     if not isinstance(repos, (set, KeysView)):
         repos = set(repos)
@@ -80,32 +82,26 @@ async def mine_repositories(
     @sentry_span
     async def fetch_active_prs():
         query_released = [
-            select([distinct(GitHubDonePullRequestFacts.repository_full_name)]).where(
-                and_(
-                    GitHubDonePullRequestFacts.repository_full_name.in_(repos),
-                    GitHubDonePullRequestFacts.acc_id == account,
-                    col.between(time_from, time_to),
-                ),
+            select(distinct(GitHubDonePullRequestFacts.repository_full_name)).where(
+                GitHubDonePullRequestFacts.repository_full_name.in_(repos),
+                GitHubDonePullRequestFacts.acc_id == account,
+                col.between(time_from, time_to),
             )
             for col in (
                 GitHubDonePullRequestFacts.pr_done_at,
                 GitHubDonePullRequestFacts.pr_created_at,
             )
         ]
-        query_merged = select([distinct(GitHubMergedPullRequestFacts.repository_full_name)]).where(
-            and_(
-                GitHubMergedPullRequestFacts.repository_full_name.in_(repos),
-                GitHubMergedPullRequestFacts.acc_id == account,
-                GitHubMergedPullRequestFacts.merged_at.between(time_from, time_to),
-            ),
+        query_merged = select(distinct(GitHubMergedPullRequestFacts.repository_full_name)).where(
+            GitHubMergedPullRequestFacts.repository_full_name.in_(repos),
+            GitHubMergedPullRequestFacts.acc_id == account,
+            GitHubMergedPullRequestFacts.merged_at.between(time_from, time_to),
         )
         query_open = [
-            select([distinct(GitHubOpenPullRequestFacts.repository_full_name)]).where(
-                and_(
-                    GitHubOpenPullRequestFacts.repository_full_name.in_(repos),
-                    GitHubOpenPullRequestFacts.acc_id == account,
-                    col.between(time_from, time_to),
-                ),
+            select(distinct(GitHubOpenPullRequestFacts.repository_full_name)).where(
+                GitHubOpenPullRequestFacts.repository_full_name.in_(repos),
+                GitHubOpenPullRequestFacts.acc_id == account,
+                col.between(time_from, time_to),
             )
             for col in (
                 GitHubOpenPullRequestFacts.pr_updated_at,
@@ -117,14 +113,12 @@ async def mine_repositories(
     @sentry_span
     async def fetch_inactive_open_prs():
         return await mdb.fetch_all(
-            select([distinct(PullRequest.repository_full_name)]).where(
-                and_(
-                    PullRequest.repository_node_id.in_(repo_ids),
-                    PullRequest.hidden.is_(False),
-                    PullRequest.acc_id.in_(meta_ids),
-                    PullRequest.created_at < time_from,
-                    coalesce(PullRequest.closed, False).is_(False),
-                ),
+            select(distinct(PullRequest.repository_full_name)).where(
+                PullRequest.repository_node_id.in_(repo_ids),
+                PullRequest.hidden.is_(False),
+                PullRequest.acc_id.in_(meta_ids),
+                PullRequest.created_at < time_from,
+                coalesce(PullRequest.closed, False).is_(False),
             ),
         )
 
@@ -159,11 +153,9 @@ async def mine_repositories(
         )
         query_commits = (
             select(
-                [
-                    distinct(NodeRepository.name_with_owner).label(
-                        PushCommit.repository_full_name.name,
-                    ),
-                ],
+                distinct(NodeRepository.name_with_owner).label(
+                    PushCommit.repository_full_name.name,
+                ),
             )
             .select_from(
                 join(
