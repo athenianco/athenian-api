@@ -12,6 +12,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Integer,
     SmallInteger,
     String,
@@ -186,6 +187,7 @@ class AccountJiraInstallation(create_time_mixin(created_at=True, nullable=True),
     """Mapping account -> installation_id, one-to-many."""
 
     __tablename__ = "account_jira_installations"
+    __table_args__ = (UniqueConstraint("account_id", name="uc_jira_installations_account_id"),)
 
     id = Column(BigInteger(), primary_key=True, autoincrement=False)
     account_id = Column(
@@ -242,7 +244,7 @@ class FeatureComponent(enum.IntEnum):
     server = 2
 
 
-class Feature(create_time_mixin(updated_at=True), Base):
+class Feature(create_time_mixin(created_at=True, updated_at=True), Base):
     """Product features."""
 
     __tablename__ = "features"
@@ -283,7 +285,7 @@ class AccountFeature(create_time_mixin(created_at=True, updated_at=True), Base):
     parameters = Column(JSONB().with_variant(JSON(), sqlite.dialect.name))
 
 
-class UserToken(create_time_mixin(updated_at=True), Base):
+class UserToken(create_time_mixin(created_at=True, updated_at=True), Base):
     """Personal Access Tokens of the accounts."""
 
     __tablename__ = "user_tokens"
@@ -325,6 +327,14 @@ class MappedJIRAIdentity(create_time_mixin(created_at=True, updated_at=True), Ba
     """JIRA identity mapping."""
 
     __tablename__ = "jira_identity_mapping"
+    __table_args__ = (
+        Index(
+            "jira_identity_mapping_jira_user_id",
+            "account_id",
+            "jira_user_id",
+            postgresql_include=["github_user_id"],
+        ),
+    )
 
     account_id = Column(
         Integer(),

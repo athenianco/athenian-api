@@ -68,6 +68,22 @@ jobs:
     name: custom checks
     if: "!contains(github.event.head_commit.message, 'Bump version') || github.event_name != 'push'"
     runs-on: ubuntu-22.04
+    services:
+      postgres:
+        image: postgres:13.6
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+        - 5432:5432
+        options: >-
+          --mount type=tmpfs,destination=/var/lib/postgresql/data
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 1s
+          --health-retries 10
+          --health-start-period 2s
     steps:
     - uses: tspascoal/get-user-teams-membership@v1
       id: membership
@@ -93,7 +109,7 @@ jobs:
       uses: actions/cache@v2
       with:
         path: ${{ env.PIP_CACHE }}
-        key: ubuntu-22.04-pip-custom-checks-${{ hashFiles('server/requirements.txt', 'server/requirements-lint.txt') }}
+        key: ubuntu-22.04-pip-custom-checks-${{ hashFiles('server/requirements.txt', 'server/requirements-lint.txt', 'server/requirements-test.txt') }}
         restore-keys: ubuntu-22.04-pip-custom-checks-
     - name: pip
       run: |
@@ -103,6 +119,7 @@ jobs:
         sed -i "s/git+ssh:\/\/git@/git+https:\/\/gkwillie:${{ secrets.GKWILLIE_TOKEN }}@/g" server/requirements.txt
         python3 -m pip install -r server/requirements.txt --no-warn-script-location
         python3 -m pip install -r server/requirements-lint.txt --no-warn-script-location
+        python3 -m pip install -r server/requirements-test.txt --no-warn-script-location
         git checkout -f server/requirements.txt
         python3 -m pip install --user --no-deps -e server/
         python3 -m pip list
@@ -116,8 +133,13 @@ jobs:
         test -z "$(git status --porcelain)"
     - name: migrations
       working-directory: server
+      env:
+        PGPASSWORD: postgres
+        PGUSER: postgres
       run: |
+        set -e
         (! grep -R 'athenian\.api\.models' athenian/api/models/state/versions)
+        athenian/api/models/state/check_sdb_migrations.sh
   test:
     name: test
     if: "!contains(github.event.head_commit.message, 'Bump version') || github.event_name != 'push'"
@@ -138,7 +160,7 @@ jobs:
         env:
           MEMCACHED_EXTRA_FLAGS: -m 128 -I 64m
       postgres:
-        image: postgres:11.8
+        image: postgres:13.6
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -324,7 +346,7 @@ jobs:
     runs-on: ubuntu-22.04
     services:
       postgres:
-        image: postgres:11.8
+        image: postgres:13.6
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
