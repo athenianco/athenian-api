@@ -387,6 +387,9 @@ async def mine_all_deployments(
         rdb,
         cache,
     )
+    if deps.empty:
+        return {}
+    result = {"": deps}
     del deps[DeploymentNotification.name.name]  # it is the index
     split_cols = ["releases", "components", "labels"]
     for name, *dfs in zip(deps.index.values, *(deps[col].values for col in split_cols)):
@@ -396,7 +399,6 @@ async def mine_all_deployments(
                 del df["account_id"]
             except KeyError:
                 pass
-    result = {"": deps}
     for col in split_cols:
         children = deps[col].values
         del deps[col]
