@@ -109,7 +109,7 @@ def _df_to_parquet(df: pd.DataFrame, fout) -> None:
             df[col] = df[col].dt.tz_localize(None)
         elif df[col].dtype.type is np.timedelta64:
             df[col] = zero + df[col]
-    df.to_parquet(fout, engine="pyarrow", version="2.0")
+    df.to_parquet(fout, engine="pyarrow", version="2.6")
 
 
 _get_everything_formats = {

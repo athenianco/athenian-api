@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 from sqlalchemy import delete
 
+from athenian.api.models.persistentdata.models import DeployedComponent, DeploymentNotification
 from athenian.api.models.state.models import UserAccount
 from athenian.api.models.web import ContributorIdentity, MatchedIdentity, PullRequestMetricID
 from athenian.api.serialization import FriendlyJson
@@ -338,3 +339,14 @@ async def test_get_everything_nasty_input(client, headers, query, code, sdb):
         await sdb.execute(delete(UserAccount).where(UserAccount.account_id == 2))
     response = await client.request(method="GET", path=f"/v1/get/export{query}", headers=headers)
     assert response.status == code
+
+
+# TODO: fix response validation against the schema
+@pytest.mark.app_validate_responses(False)
+async def test_get_everything_no_deployments(client, headers, rdb):
+    await rdb.execute(delete(DeployedComponent))
+    await rdb.execute(delete(DeploymentNotification))
+    response = await client.request(
+        method="GET", path="/v1/get/export?account=1", headers=headers,
+    )
+    assert response.status == 200, (await response.read()).decode()
