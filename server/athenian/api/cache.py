@@ -7,7 +7,7 @@ import logging
 import pickle
 import struct
 import time
-from typing import Any, Callable, Coroutine, Mapping, Optional, Union
+from typing import Any, Callable, Coroutine, Mapping, Optional
 from wsgiref.handlers import format_date_time
 
 from aiohttp import web
@@ -59,12 +59,13 @@ def gen_cache_key(fmt: str, *args) -> bytes:
 
 
 def cached(
-    exptime: Union[int, Callable[..., int]],
+    exptime: int | Callable[..., int],
     serialize: Callable[[Any], bytes],
     deserialize: Callable[[bytes], Any],
     key: Callable[..., Optional[tuple]],
     cache: Optional[Callable[..., Optional[aiomcache.Client]]] = None,
     refresh_on_access=False,
+    preprocess: Optional[Callable[..., Any]] = None,
     postprocess: Optional[Callable[..., Any]] = None,
     version: int = 1,
 ) -> Callable[[Callable[..., Coroutine]], Callable[..., Coroutine]]:
@@ -81,6 +82,8 @@ def cached(
     :param cache: Cache client extractor. The decorated function's arguments are converted to \
                   **kwargs. If is None, the client is assigned to the function's "cache" argument.
     :param refresh_on_access: Reset the cache item's expiration period on each access.
+    :param preprocess: Execute an arbitrary function on the function result before serializing
+                       and storing into cache; this function *must not* modify the result
     :param postprocess: Execute an arbitrary function on the deserialized "result" with \
                         the arguments passed to the wrapped function.
     :param version: Version of the cache payload format.
@@ -202,7 +205,10 @@ def cached(
                 t = exptime(result=result, **args_dict) if callable(exptime) else exptime
                 try:
                     with sentry_sdk.start_span(op="serialize") as span:
-                        payload = serialize(result)
+                        result_to_store = (
+                            result if preprocess is None else preprocess(result, **args_dict)
+                        )
+                        payload = serialize(result_to_store)
                         uncompressed_payload_size = len(payload)
                         span.description = str(uncompressed_payload_size)
                 except Exception as e:
@@ -319,7 +325,7 @@ def cached_methods(cls):
 CACHE_VAR_NAME = "cache"
 
 
-def setup_cache_metrics(app: Union[web.Application, Mapping]) -> None:
+def setup_cache_metrics(app: web.Application | Mapping) -> None:
     """Initialize the Prometheus metrics for tracking the cache interoperability."""
     cache = app[CACHE_VAR_NAME]
     registry = app[PROMETHEUS_REGISTRY_VAR_NAME]

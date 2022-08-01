@@ -2,7 +2,8 @@ import asyncio
 import marshal
 import pickle
 import time
-from typing import Optional
+from typing import Callable, Optional
+from unittest import mock
 
 import aiomcache
 from freezegun import freeze_time
@@ -11,7 +12,7 @@ import pytest
 from athenian.api.cache import cached, cached_methods, gen_cache_key
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.tracing import sentry_span
-from tests.conftest import has_memcached
+from tests.conftest import build_fake_cache, has_memcached
 
 
 @pytest.mark.parametrize(
@@ -43,67 +44,99 @@ def test_gen_cache_key_distinct():
     assert key1 != key2
 
 
-@cached(
-    exptime=1,
-    serialize=marshal.dumps,
-    deserialize=marshal.loads,
-    key=lambda number, **_: (number,),
-)
-async def add_one(eval_notify: callable, number: int, cache: Optional[aiomcache.Client]) -> int:
-    eval_notify()
-    return number + 1
+class TestCached:
+    @pytest.mark.flaky(reruns=3, reruns_delay=1)
+    @pytest.mark.skipif(not has_memcached, reason="memcached is unavailable")
+    @with_defer
+    async def test_cached(self, memcached):
+        @cached(
+            exptime=1,
+            serialize=marshal.dumps,
+            deserialize=marshal.loads,
+            key=lambda number, **_: (number,),
+        )
+        async def add_one(
+            eval_notify: Callable,
+            number: int,
+            cache: Optional[aiomcache.Client],
+        ) -> int:
+            eval_notify()
+            return number + 1
 
+        evaluated = 0
 
-@pytest.mark.flaky(reruns=3, reruns_delay=1)
-@pytest.mark.skipif(not has_memcached, reason="memcached is unavailable")
-@with_defer
-async def test_cached(memcached):
-    evaluated = 0
+        def inc_evaluated():
+            nonlocal evaluated
+            evaluated += 1
 
-    def inc_evaluated():
-        nonlocal evaluated
-        evaluated += 1
+        assert await add_one(inc_evaluated, 1, memcached) == 2
+        await wait_deferred()
+        assert await add_one(inc_evaluated, 1, memcached) == 2
+        await wait_deferred()
+        assert evaluated == 1
+        await asyncio.sleep(1.1)
+        assert await add_one(inc_evaluated, 1, memcached) == 2
+        await wait_deferred()
+        assert evaluated == 2
 
-    assert await add_one(inc_evaluated, 1, memcached) == 2
-    await wait_deferred()
-    assert await add_one(inc_evaluated, 1, memcached) == 2
-    await wait_deferred()
-    assert evaluated == 1
-    await asyncio.sleep(1.1)
-    assert await add_one(inc_evaluated, 1, memcached) == 2
-    await wait_deferred()
-    assert evaluated == 2
+    @with_defer
+    async def test_serialization_errors(self, cache):
+        def crash(*_):
+            raise ValueError
 
+        @cached(exptime=1, serialize=crash, deserialize=pickle.loads, key=lambda **_: tuple())
+        async def test(cache):
+            return 1
 
-@with_defer
-async def test_cache_serialization_errors(cache):
-    def crash(*_):
-        raise ValueError
+        await test(cache)
+        await wait_deferred()
 
-    @cached(
-        exptime=1,
-        serialize=crash,
-        deserialize=pickle.loads,
-        key=lambda **_: tuple(),
-    )
-    async def test(cache):
-        return 1
+        @cached(exptime=1, serialize=pickle.dumps, deserialize=crash, key=lambda **_: tuple())
+        async def test(cache):
+            return 1
 
-    await test(cache)
-    await wait_deferred()
+        await test(cache)
+        await wait_deferred()
+        await test(cache)
 
-    @cached(
-        exptime=1,
-        serialize=pickle.dumps,
-        deserialize=crash,
-        key=lambda **_: tuple(),
-    )
-    async def test(cache):
-        return 1
+    @with_defer
+    async def test_preprocess(self) -> None:
+        def preprocess(result, **kw: list[str]) -> list[str]:
+            return list(reversed(result))
 
-    await test(cache)
-    await wait_deferred()
-    await test(cache)
+        preprocess = mock.Mock(wraps=preprocess)
+
+        def postprocess(result, **kw: list[str]) -> list[str]:
+            return list(reversed(result))
+
+        postprocess = mock.Mock(wraps=postprocess)
+
+        n_calls = 0
+
+        @cached(
+            2 * 16,
+            preprocess=preprocess,
+            postprocess=postprocess,
+            serialize=pickle.dumps,
+            deserialize=pickle.loads,
+            key=lambda **kw: ("a",),
+        )
+        async def func(cache) -> list[str]:
+            nonlocal n_calls
+            n_calls += 1
+            return ["a", "b", "c"]
+
+        cache = build_fake_cache()
+        assert (await func(cache)) == ["a", "b", "c"]
+        assert n_calls == 1
+        preprocess.assert_called_once()
+
+        # wait cache write to finish
+        await wait_deferred()
+
+        assert (await func(cache)) == ["a", "b", "c"]
+        assert n_calls == 1
+        postprocess.assert_called_once()
 
 
 @cached_methods
