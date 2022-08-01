@@ -3029,7 +3029,10 @@ class PullRequestFactsMiner:
             deployed=deployed,
             merged_with_failed_check_runs=merged_with_failed_check_runs,
         )
-        self._validate(facts, pr.pr[PullRequest.htmlurl.name])
+        self._validate(
+            facts,
+            f"{pr.pr[PullRequest.repository_full_name.name]}#{pr.pr[PullRequest.number.name]}",
+        )
         return facts
 
     def _validate(self, facts: PullRequestFacts, url: str) -> None:

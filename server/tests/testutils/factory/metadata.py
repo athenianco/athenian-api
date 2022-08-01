@@ -37,6 +37,9 @@ class AccountFactory(SQLAlchemyModelFactory):
     owner_id = factory.Sequence(lambda n: n)
     owner_login = factory.Sequence(lambda n: f"login-{n}")
     name = factory.Sequence(lambda n: f"name-{n}")
+    install_url = factory.Sequence(
+        lambda n: f"https://github.com/organizations/athenianco/settings/installations/{n}",
+    )
 
 
 class FetchProgressFactory(SQLAlchemyModelFactory):

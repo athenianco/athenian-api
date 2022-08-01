@@ -155,7 +155,6 @@ async def test_get_everything_smoke(client, headers, dummy_deployment_label):
         "stage_time_merge",
         "created_at",
         "user_login",
-        "htmlurl",
         "approved",
         "closed_at",
         "changed_files",
