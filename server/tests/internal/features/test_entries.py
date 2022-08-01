@@ -87,6 +87,60 @@ class TestCalcPullRequestFactsGithub:
         assert facts[facts.node_id == 163078].last_review.values[0] == last_review
 
 
+class TestCalcPullRequestMetricsLineGithub:
+    @with_defer
+    async def test_cache_shared_with_different_metrics_order(
+        self,
+        mdb: Database,
+        pdb: Database,
+        rdb: Database,
+        sdb: Database,
+    ) -> None:
+        cache = build_fake_cache()
+        meta_ids = await get_metadata_account_ids(1, sdb, None)
+        shared_kwargs = await _calc_shared_kwargs(meta_ids, mdb, sdb)
+        time_intervals = [[dt(2017, 8, 10), dt(2017, 8, 12)], [dt(2017, 8, 13), dt(2017, 9, 1)]]
+        kwargs = {
+            "quantiles": [0, 1],
+            "exclude_inactive": False,
+            "bots": set(),
+            "fresh": False,
+            "time_intervals": time_intervals,
+            "lines": [],
+            "environments": [],
+            "repositories": [{"src-d/go-git"}],
+            "participants": [{}],
+            **shared_kwargs,
+        }
+        calculator = MetricEntriesCalculator(
+            1, meta_ids, DEFAULT_QUANTILE_STRIDE, mdb, pdb, rdb, cache,
+        )
+
+        metrics = [PullRequestMetricID.PR_REVIEW_TIME, PullRequestMetricID.PR_REVIEW_COUNT]
+
+        with mock.patch.object(
+            calculator,
+            "calc_pull_request_facts_github",
+            wraps=calculator.calc_pull_request_facts_github,
+        ) as calc_mock:
+            res0 = await calculator.calc_pull_request_metrics_line_github(
+                metrics=metrics, **kwargs,
+            )
+            # wait cache to be written
+            await wait_deferred()
+            res1 = await calculator.calc_pull_request_metrics_line_github(
+                metrics=list(reversed(metrics)), **kwargs,
+            )
+
+        # result must be cached, so calc_pull_request_facts_github only called once
+        calc_mock.assert_called_once()
+
+        assert res1[0][0][0][0][0][0].value == res0[0][0][0][0][0][1].value
+        assert res1[0][0][0][0][0][1].value == res0[0][0][0][0][0][0].value
+        assert res1[0][0][0][1][0][0].value == res0[0][0][0][1][0][1].value
+        assert res1[0][0][0][1][0][1].value == res0[0][0][0][1][0][0].value
+
+
 class TestBatchCalcPullRequestMetrics:
     @with_defer
     async def test_compare_with_separate_calc(

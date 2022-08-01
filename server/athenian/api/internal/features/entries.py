@@ -7,7 +7,7 @@ from functools import partial, reduce
 from itertools import chain
 import logging
 import pickle
-from typing import Any, Collection, Mapping, Optional, Sequence
+from typing import Any, Collection, Iterable, Mapping, Optional, Sequence
 
 import aiomcache
 import numpy as np
@@ -128,6 +128,32 @@ def _postprocess_cached_facts(
     if with_jira_map and not result[1]:
         raise CancelCache()
     return result
+
+
+class _PRMetricsLineGHCache:
+    @staticmethod
+    def postprocess(result: np.ndarray, *, metrics: Sequence[str], **kwargs: Any) -> np.ndarray:
+        # cache value has been stored with sorted(metrics), adapt before returning to caller
+        if sorted(metrics) != metrics:
+            sort_indexes = np.argsort(metrics)
+            return _sorted_result_metrics(result, sort_indexes)
+
+        return result
+
+    @staticmethod
+    def preprocess(result: np.ndarray, *, metrics: Sequence[str], **kwargs: Any) -> np.ndarray:
+        # cache value must be stored with sorted(metrics), adapt if needed
+        if (sorted_metrics := sorted(metrics)) != metrics:
+            sort_indexes = np.searchsorted(sorted_metrics, metrics)
+            return _sorted_result_metrics(result, sort_indexes)
+        return result
+
+
+def _sorted_result_metrics(result: np.ndarray, metrics_sort_indexes: Iterable[int]) -> np.ndarray:
+    flat_copy = result.ravel().copy()
+    # each element of `copy` is a list of list of metrics
+    flat_copy[:] = [[[m[idx] for idx in metrics_sort_indexes] for m in obj] for obj in flat_copy]
+    return flat_copy.reshape(result.shape)
 
 
 class UnsupportedMetricError(Exception):
@@ -313,9 +339,8 @@ class MetricEntriesCalculator:
         serialize=pickle.dumps,
         deserialize=pickle.loads,
         key=lambda metrics, time_intervals, quantiles, lines, repositories, participants, labels, jira, environments, exclude_inactive, release_settings, logical_settings, **_: (  # noqa
-            # TODO: use sorted(metrics) in cache key and then use a postprocess step to reorder
-            # the cached value according to caller desired metrics order
-            ",".join(metrics),
+            # result can be cached independently from metrics order, see _PRMetricsLineGHCache
+            ",".join(sorted(metrics)),
             ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
             ",".join(str(q) for q in quantiles),
             ",".join(str(n) for n in lines),
@@ -328,7 +353,10 @@ class MetricEntriesCalculator:
             release_settings,
             logical_settings,
         ),
+        preprocess=_PRMetricsLineGHCache.preprocess,
+        postprocess=_PRMetricsLineGHCache.postprocess,
         cache=lambda self, **_: self._cache,
+        version=2,
     )
     async def calc_pull_request_metrics_line_github(
         self,
