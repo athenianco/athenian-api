@@ -205,13 +205,14 @@ class AthenianWebApplication(aiohttp.web.Application):
 class ServerCrashedError(GenericError):
     """HTTP 500."""
 
-    def __init__(self, instance: Optional[str]):
+    def __init__(self, instance: Optional[str], type_="/errors/InternalServerError"):
         """Initialize a new instance of ServerCrashedError.
 
         :param instance: Sentry event ID of this error.
+        :param type: Specific flavor of the crash.
         """
         super().__init__(
-            type="/errors/InternalServerError",
+            type=type_,
             title=HTTPStatus.INTERNAL_SERVER_ERROR.phrase,
             status=HTTPStatus.INTERNAL_SERVER_ERROR,
             instance=instance,
@@ -237,6 +238,7 @@ class AthenianApp(especifico.AioHttpApp):
     """Athenian API especifico application, everything roots here."""
 
     log = logging.getLogger(metadata.__package__)
+    TIMEOUT: Optional[int] = 5 * 60  # max request processing time in seconds
 
     def __init__(
         self,
@@ -297,6 +299,8 @@ class AthenianApp(especifico.AioHttpApp):
         )
         self.api_cls = AthenianAioHttpApi
         self._devenv = os.getenv("SENTRY_ENV", "development") in ("development", "test")
+        if self._devenv:
+            self.TIMEOUT = None
         invitation_controller.validate_env()
         self.app["auth"] = self._auth0 = auth0_cls(
             whitelist=[
@@ -660,17 +664,14 @@ class AthenianApp(especifico.AioHttpApp):
             ),
         ).response
 
-    @staticmethod
-    def _summarize_request(request: aiohttp.web.Request) -> str:
-        return f"{request.method} {request.path}"
-
     async def _shielded(
         self,
         request: aiohttp.web.Request,
         handler: Callable[..., Coroutine],
     ) -> aiohttp.web.Response:
         start_time = time.time()
-        asyncio.current_task().set_name("shield %s %s" % (request.method, request.path))
+        summary = f"{request.method} {request.path}"
+        asyncio.current_task().set_name(f"shield/wait {summary}")
 
         if request.method != "OPTIONS":
             load = extract_handler_weight(handler)
@@ -704,13 +705,27 @@ class AthenianApp(especifico.AioHttpApp):
             self.load = new_load  # GIL + no await-s => no races
         else:
             load = custom_load_delta = 0
-        self._requests.append(self._summarize_request(request))
+        self._requests.append(summary)
 
         enable_defer(explicit_launch=not self._devenv)
         traced = self._set_request_sentry_context(request)
         aborted = False
+
+        async def trampoline() -> aiohttp.web.Response:
+            __tracebackhide__ = True  # noqa: F841
+            asyncio.current_task().set_name(f"exec {summary}")
+            try:
+                return await handler(request)
+            except asyncio.TimeoutError as e:
+                # re-package any internal timeouts
+                raise RuntimeError("TimeoutError") from e
+
+        # we must set an absolute timeout for request processing
+        # so that we always decrease the load and avoid hanging forever
+        # when something goes very wrong
+
         try:
-            return await handler(request)
+            return await asyncio.wait_for(trampoline(), self.TIMEOUT)
         except ResponseError as e:
             return e.response
         except AriadneException as e:
@@ -746,6 +761,10 @@ class AthenianApp(especifico.AioHttpApp):
                     },
                 )
             raise e from None
+        except asyncio.TimeoutError:
+            self.log.error("internal timeout %s", summary)
+            # nginx has already cancelled the request, we can return whatever
+            return ResponseError(ServerCrashedError(None, "/errors/ServerTimeout")).response
         except bdb.BdbQuit:
             # breakpoint() helper
             raise GracefulExit() from None
@@ -762,7 +781,7 @@ class AthenianApp(especifico.AioHttpApp):
             return self._respond_shutting_down()
         except asyncio.CancelledError as e:
             # this should never happen: we are shielded
-            self.log.error("cancelled %s", self._summarize_request(request))
+            self.log.error("cancelled %s", summary)
             raise e from None
         except Exception as e:  # note: not BaseException
             if self._devenv:
@@ -787,7 +806,7 @@ class AthenianApp(especifico.AioHttpApp):
                 else:
                     sentry_sdk.capture_exception(e)
             finally:
-                self._requests.remove(self._summarize_request(request))
+                self._requests.remove(summary)
                 self.load -= load + custom_load_delta
                 if not self._requests and self._shutting_down:
                     asyncio.ensure_future(self._raise_graceful_exit())
