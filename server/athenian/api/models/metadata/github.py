@@ -619,6 +619,7 @@ class CheckRunByPR(CheckRunByPRMixin, Base):
 class _CheckRunByPR(CheckRunByPRMixin, ShadowBase):
     """Hidden version of "CheckRun" used in DDL-s."""
 
+    pull_request_node_id = Column(BigInteger, info={"reset_nulls": True}, nullable=True)
     __table_args__ = (
         UniqueConstraint(
             "acc_id",
