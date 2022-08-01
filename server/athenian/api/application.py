@@ -218,6 +218,18 @@ class ServerCrashedError(GenericError):
         )
 
 
+class RequestCancelledError(GenericError):
+    """The request has been cancelled and we abort."""
+
+    def __init__(self):
+        """Initialize a new instance of RequestCancelledError."""
+        super().__init__(
+            type="/errors/RequestCancelledError",
+            title=HTTPStatus.MISDIRECTED_REQUEST.phrase,
+            status=HTTPStatus.MISDIRECTED_REQUEST,
+        )
+
+
 ADJUST_LOAD_VAR_NAME = "adjust_load"
 
 
@@ -389,9 +401,9 @@ class AthenianApp(especifico.AioHttpApp):
                         dereference_persistentdata_schemas()
                     elif shortcut == "pdb":
                         dereference_precomputed_schemas()
-            except Exception as e:
-                if isinstance(e, asyncio.CancelledError):
-                    return
+            except asyncio.CancelledError:
+                return
+            except Exception:
                 self.log.exception("Failed to connect to the %s DB at %s", name, db_conn)
                 raise GracefulExit() from None
 
@@ -633,7 +645,11 @@ class AthenianApp(especifico.AioHttpApp):
             return self._respond_shutting_down()
 
         asyncio.current_task().set_name("entry %s %s" % (request.method, request.path))
-        return await asyncio.shield(self._shielded(request, handler))
+        try:
+            return await asyncio.shield(self._shielded(request, handler))
+        except asyncio.CancelledError:
+            # typical reason: client disconnected
+            return ResponseError(RequestCancelledError()).response
 
     @staticmethod
     def _respond_shutting_down() -> aiohttp.web.Response:
@@ -643,6 +659,10 @@ class AthenianApp(especifico.AioHttpApp):
                 detail="This server is shutting down, please repeat your request.",
             ),
         ).response
+
+    @staticmethod
+    def _summarize_request(request: aiohttp.web.Request) -> str:
+        return f"{request.method} {request.path}"
 
     async def _shielded(
         self,
@@ -684,7 +704,7 @@ class AthenianApp(especifico.AioHttpApp):
             self.load = new_load  # GIL + no await-s => no races
         else:
             load = custom_load_delta = 0
-        self._requests.append(request.path)
+        self._requests.append(self._summarize_request(request))
 
         enable_defer(explicit_launch=not self._devenv)
         traced = self._set_request_sentry_context(request)
@@ -732,7 +752,7 @@ class AthenianApp(especifico.AioHttpApp):
         except GeneratorExit:
             # DEV-3413
             # our defer context is likely broken at this point
-            self.log.error("Aborted request with force")
+            self.log.error("aborted request with force")
             aborted = True
             return self._respond_shutting_down()
         except (KeyboardInterrupt, SystemExit) as e:
@@ -740,26 +760,37 @@ class AthenianApp(especifico.AioHttpApp):
             self.log.error("%s inside a request handler", type(e).__name__)
             aborted = True
             return self._respond_shutting_down()
+        except asyncio.CancelledError as e:
+            # this should never happen: we are shielded
+            self.log.error("cancelled %s", self._summarize_request(request))
+            raise e from None
         except Exception as e:  # note: not BaseException
             if self._devenv:
                 raise e from None
             event_id = sentry_sdk.capture_exception(e)
             return ResponseError(ServerCrashedError(event_id)).response
         finally:
-            if traced:
-                self._set_stack_samples_sentry_context(request, start_time)
-            if not aborted:
+            try:
+                if traced:
+                    self._set_stack_samples_sentry_context(request, start_time)
+                if not aborted:
+                    if self._devenv:
+                        # block the response until we execute all the deferred coroutines
+                        await wait_deferred(final=True)
+                    else:
+                        # execute the deferred coroutines in 100ms to not interfere with serving
+                        # parallel requests, but only if not shutting down, otherwise, immediately
+                        launch_defer_from_request(request, delay=0.1 * (1 - self._shutting_down))
+            except Exception as e:
                 if self._devenv:
-                    # block the response until we execute all the deferred coroutines
-                    await wait_deferred(final=True)
+                    raise e from None
                 else:
-                    # execute the deferred coroutines in 100ms to not interfere with serving
-                    # the parallel requests, but only if not shutting down, otherwise, immediately
-                    launch_defer_from_request(request, delay=0.1 * (1 - self._shutting_down))
-            self._requests.remove(request.path)
-            self.load -= load + custom_load_delta
-            if not self._requests and self._shutting_down:
-                asyncio.ensure_future(self._raise_graceful_exit())
+                    sentry_sdk.capture_exception(e)
+            finally:
+                self._requests.remove(self._summarize_request(request))
+                self.load -= load + custom_load_delta
+                if not self._requests and self._shutting_down:
+                    asyncio.ensure_future(self._raise_graceful_exit())
 
     @aiohttp.web.middleware
     async def manhole(self, request: aiohttp.web.Request, handler) -> aiohttp.web.Response:
