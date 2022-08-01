@@ -27,6 +27,7 @@ from athenian.api.db import (
     least,
 )
 from athenian.api.defer import defer
+from athenian.api.internal.account import get_installation_url_prefix
 from athenian.api.internal.logical_repos import (
     coerce_logical_repos,
     contains_logical_repos,
@@ -1287,8 +1288,13 @@ class ReleaseMatcher:
             fetch_precomputed_commit_history_dags(
                 branches_matched, self._account, self._pdb, self._cache,
             ),
+            *(
+                get_installation_url_prefix(meta_id, self._mdb, self._cache)
+                for meta_id in self._meta_ids
+            ),
         ]
-        _, dags = await gather(*tasks)
+        _, dags, *url_prefixes = await gather(*tasks)
+        url_prefixes = dict(zip(self._meta_ids, url_prefixes))
         dags = await fetch_repository_commits(
             dags,
             branches,
@@ -1332,6 +1338,7 @@ class ReleaseMatcher:
             )
             if commits.empty:
                 continue
+            shas_str = commits[PushCommit.sha.name].values.astype("U40")
             pseudo_releases.append(
                 pd.DataFrame(
                     {
@@ -1339,9 +1346,7 @@ class ReleaseMatcher:
                         Release.author_node_id.name: commits[PushCommit.author_user_id.name],
                         Release.commit_id.name: commits[PushCommit.node_id.name],
                         Release.node_id.name: commits[PushCommit.node_id.name],
-                        Release.name.name: commits[PushCommit.sha.name]
-                        .values.astype("U40")
-                        .astype("O"),
+                        Release.name.name: shas_str.astype("O"),
                         Release.published_at.name: commits[PushCommit.committed_date.name],
                         Release.repository_full_name.name: repo,
                         Release.repository_node_id.name: commits[
@@ -1349,7 +1354,14 @@ class ReleaseMatcher:
                         ],
                         Release.sha.name: commits[PushCommit.sha.name],
                         Release.tag.name: None,
-                        Release.url.name: commits[PushCommit.url.name],
+                        Release.url.name: [
+                            f"{url_prefixes[acc_id]}/{repo}/commit/{sha}"
+                            for acc_id, repo, sha in zip(
+                                commits[PushCommit.acc_id.name].values,
+                                commits[PushCommit.repository_full_name.name].values,
+                                shas_str,
+                            )
+                        ],
                         Release.acc_id.name: commits[PushCommit.acc_id.name],
                         matched_by_column: [ReleaseMatch.branch.value] * len(commits),
                     },

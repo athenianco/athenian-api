@@ -659,6 +659,7 @@ async def mdb_rw(mdb, event_loop, worker_id, request):
         return mdb
     # check whether the database is locked
     # IDK why it happens in the CI sometimes
+    url = "https://github.com/organizations/athenianco/settings/installations/777"
     while True:
         try:
             # a canary query
@@ -669,6 +670,7 @@ async def mdb_rw(mdb, event_loop, worker_id, request):
                         Account.owner_id: 1,
                         Account.owner_login: "xxx",
                         Account.name: "src-d",
+                        Account.install_url: url,
                         Account.created_at: datetime.now(timezone.utc),
                         Account.updated_at: datetime.now(timezone.utc),
                     },

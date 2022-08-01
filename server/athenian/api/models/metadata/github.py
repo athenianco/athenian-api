@@ -104,6 +104,7 @@ class Account(
     owner_id = Column(BigInteger, nullable=False)
     owner_login = Column(Text, nullable=False)
     name = Column(Text, nullable=False)
+    install_url = Column(Text, nullable=False)
 
 
 class AccountRepository(
@@ -257,7 +258,6 @@ class PullRequest(
     commits = Column(BigInteger, nullable=False, info={"reset_nulls": True})
     head_ref = Column(Text, nullable=False)
     hidden = Column(Boolean)
-    htmlurl = Column(Text)
     merge_commit_id = Column(BigInteger, info={"reset_nulls": True})
     merge_commit_sha = Column(Text, info={"dtype": "S40"})
     merged = Column(Boolean)
@@ -280,7 +280,6 @@ class PushCommit(Base, GitHubSchemaMixin, IDMixin, RepositoryMixin):
     author_name = Column(Text)
     author_date = Column(Text, nullable=False)
     authored_date = Column(TIMESTAMP(timezone=True), nullable=False)
-    url = Column(Text)
     sha = Column(Text, nullable=False, info={"dtype": "S40", "erase_nulls": True})
     committer_login = Column(Text, info={"dtype": "U40"})
     committer_user_id = Column(BigInteger)

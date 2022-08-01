@@ -811,8 +811,22 @@ async def test_map_releases_to_prs_empty(
         cache,
     )
     assert prs.empty
-    assert len(cache.mem) == 11
+    assert len(cache.mem) == 12
     assert len(releases) == 19
+    assert releases.iloc[0].to_dict() == {
+        "node_id": 2755389,
+        "repository_node_id": 40550,
+        "published_at": pd.Timestamp("2019-11-01 09:08:16+0000", tz="UTC"),
+        "sha": b"1a7db85bca7027d90afdb5ce711622aaac9feaed",
+        "commit_id": 2755389,
+        "repository_full_name": "src-d/go-git",
+        "author_node_id": 39789,
+        "name": "1a7db85bca7027d90afdb5ce711622aaac9feaed",
+        "tag": None,
+        "url": "https://github.com/src-d/go-git/commit/1a7db85bca7027d90afdb5ce711622aaac9feaed",
+        "matched_by": 0,
+        "author": "mcuadros",
+    }
     assert matched_bys == {"src-d/go-git": ReleaseMatch.branch}
 
 

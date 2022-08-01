@@ -9,12 +9,12 @@ from sqlite3 import IntegrityError
 import struct
 import time
 from typing import Any, Callable, Collection, Coroutine, Mapping, Optional, Sequence
+from urllib.parse import urlparse
 
 from aiohttp import web
 import aiomcache
 import aiosqlite
 from asyncpg import UniqueViolationError
-import morcilla.core
 from slack_sdk.web.async_client import AsyncWebClient as SlackWebClient
 import sqlalchemy as sa
 from sqlalchemy import and_, func, insert, select
@@ -533,16 +533,38 @@ async def get_installation_event_ids(
 )
 async def get_installation_owner(
     metadata_account_id: int,
-    mdb_conn: morcilla.core.Connection,
+    mdb: DatabaseLike,
     cache: Optional[aiomcache.Client],
 ) -> str:
     """Load the native user ID who installed the app."""
-    user_login = await mdb_conn.fetch_val(
+    user_login = await mdb.fetch_val(
         select([MetadataAccount.owner_login]).where(MetadataAccount.id == metadata_account_id),
     )
     if user_login is None:
         raise ResponseError(NoSourceDataError(detail="The installation has not started yet."))
     return user_login
+
+
+@cached(
+    exptime=max_exptime,
+    serialize=lambda s: s.encode(),
+    deserialize=lambda b: b.decode(),
+    key=lambda metadata_account_id, **_: (metadata_account_id,),
+    refresh_on_access=True,
+)
+async def get_installation_url_prefix(
+    metadata_account_id: int,
+    mdb: DatabaseLike,
+    cache: Optional[aiomcache.Client],
+) -> str:
+    """Load the installation URL prefix, e.g. "https://github.com"."""
+    url = await mdb.fetch_val(
+        select([MetadataAccount.install_url]).where(MetadataAccount.id == metadata_account_id),
+    )
+    if url is None:
+        raise ResponseError(NoSourceDataError(detail="The installation has not started yet."))
+    url = urlparse(url)
+    return f"{url.scheme}://{url.netloc}"
 
 
 async def fetch_github_installation_progress(
