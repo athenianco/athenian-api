@@ -359,7 +359,7 @@ class WorkType(create_time_mixin(created_at=True, updated_at=True), Base):
     )
     name = Column(Text(), nullable=False)
     color = Column(String(6), nullable=False)
-    rules = Column(JSON, nullable=False)
+    rules = Column(JSONType, nullable=False)
 
 
 class LogicalRepository(create_time_mixin(created_at=True, updated_at=True), Base):
