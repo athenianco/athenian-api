@@ -377,8 +377,8 @@ class LogicalRepository(create_time_mixin(created_at=True, updated_at=True), Bas
     )
     name = Column(Text(), nullable=False)
     repository_id = Column(BigInteger(), nullable=False)
-    prs = Column(JSON, nullable=False, default={}, server_default="{}")
-    deployments = Column(JSON, nullable=False, default={}, server_default="{}")
+    prs = Column(JSONType, nullable=False, default={}, server_default="{}")
+    deployments = Column(JSONType, nullable=False, default={}, server_default="{}")
 
 
 class Goal(create_time_mixin(created_at=True, updated_at=True), Base):
