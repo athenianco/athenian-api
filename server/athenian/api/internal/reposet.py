@@ -3,21 +3,7 @@ from datetime import datetime, timezone
 from http import HTTPStatus
 import logging
 from sqlite3 import IntegrityError, OperationalError
-from typing import (
-    Any,
-    Callable,
-    Collection,
-    Coroutine,
-    Dict,
-    List,
-    Mapping,
-    Optional,
-    Sequence,
-    Set,
-    Tuple,
-    Type,
-    Union,
-)
+from typing import Any, Callable, Collection, Coroutine, Mapping, Optional, Sequence, Type
 
 import aiomcache
 import asyncpg
@@ -60,7 +46,7 @@ async def resolve_reposet(
     uid: str,
     account: int,
     logical_settings,  # LogicalRepositorySettings
-    sdb: Union[Connection, Database],
+    sdb: Connection | Database,
     cache: Optional[aiomcache.Client],
 ) -> Collection[str]:
     """
@@ -101,7 +87,7 @@ async def resolve_reposet(
 @sentry_span
 async def fetch_reposet(
     id: int,
-    columns: Union[Sequence[Type[RepositorySet]], Sequence[InstrumentedAttribute]],
+    columns: Sequence[Type[RepositorySet]] | Sequence[InstrumentedAttribute],
     sdb: DatabaseLike,
 ) -> RepositorySet:
     """
@@ -131,7 +117,7 @@ async def load_all_reposet(
     mdb: Database,
     cache: Optional[aiomcache.Client],
     slack: Optional[SlackWebClient],
-) -> List[Collection[str]]:
+) -> list[Collection[str]]:
     """Fetch the contents (items) of the main reposet with all the repositories to consider."""
     rss = await load_account_reposets(
         account,
@@ -150,21 +136,21 @@ async def load_all_reposet(
 
 @sentry_span
 async def resolve_repos(
-    repositories: List[str],
+    repositories: list[str],
     account: int,
     uid: str,
     login: Callable[[], Coroutine[None, None, str]],
     logical_settings,  # LogicalRepositorySettings
-    meta_ids: Optional[Tuple[int, ...]],
+    meta_ids: Optional[tuple[int, ...]],
     sdb: Database,
     mdb: Database,
     cache: Optional[aiomcache.Client],
     slack: Optional[SlackWebClient],
     strip_prefix=True,
     separate=False,
-    checkers: Optional[Dict[str, AccessChecker]] = None,
+    checkers: Optional[dict[str, AccessChecker]] = None,
     pointer: Optional[str] = "?",
-) -> Tuple[Union[Set[str], List[Set[str]]], str]:
+) -> tuple[set[str] | list[set[str]], str]:
     """
     Dereference all the reposets and produce the joint list of all mentioned repos.
 
@@ -269,7 +255,7 @@ async def load_account_reposets(
     cache: Optional[aiomcache.Client],
     slack: Optional[SlackWebClient],
     check_progress: bool = True,
-) -> List[Mapping[str, Any]]:
+) -> list[Mapping[str, Any]]:
     """
     Load the account's repository sets and create one if no exists.
 
@@ -301,7 +287,7 @@ async def _load_account_reposets(
     mdb: Database,
     cache: Optional[aiomcache.Client],
     slack: Optional[SlackWebClient],
-) -> List[Mapping]:
+) -> list[Mapping]:
     assert isinstance(sdb_conn, Connection)
     assert isinstance(mdb_conn, Connection)
     rss = await sdb_conn.fetch_all(
@@ -409,7 +395,7 @@ async def _load_account_reposets(
             )
         return [rs.explode(with_primary_keys=True)]
     except (UniqueViolationError, IntegrityError, OperationalError) as e:
-        log.error("%s: %s", type(e).__name__, e)
+        log.warning("%s: %s", type(e).__name__, e)
         raise ResponseError(
             DatabaseConflict(detail="concurrent or duplicate initial reposet creation"),
         ) from None
@@ -508,10 +494,10 @@ async def load_account_state(
 
 async def refresh_repository_names(
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     sdb: DatabaseLike,
     mdb: DatabaseLike,
-) -> List[str]:
+) -> list[str]:
     """
     Update repository names in the account's reposets according to github.node_repository.
 
