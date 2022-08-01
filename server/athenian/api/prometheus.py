@@ -1,5 +1,6 @@
 from collections import defaultdict
 from contextvars import ContextVar
+from http import HTTPStatus
 from itertools import chain
 import logging
 import re
@@ -33,7 +34,7 @@ def _after_response(
     sdb_elapsed, mdb_elapsed, pdb_elapsed, rdb_elapsed = (
         db_elapsed[x + "db"] for x in ("s", "m", "p", "r")
     )
-    if response is not None:
+    if has_response := (response is not None):
         response.headers.add(
             "X-Performance-DB",
             "s %.3f, m %.3f, p %.3f, r %.3f"
@@ -52,7 +53,7 @@ def _after_response(
             request.app["requests_rejected_by_load"].labels(__package__, __version__).inc()
         code = response.status
     else:
-        code = 500
+        code = HTTPStatus.INTERNAL_SERVER_ERROR
     request.app["request_in_progress"].labels(
         __package__, __version__, request.path, request.method,
     ).dec()
@@ -77,7 +78,11 @@ def _after_response(
         with sentry_sdk.push_scope() as scope:
             scope.fingerprint = ["{{ default }}", request.path]
             logging.getLogger(f"{__package__}.instrument").error(
-                "%s took %ds -> HTTP %d", request.path, int(elapsed), code,
+                "%s took %ds -> HTTP %d%s",
+                request.path,
+                int(elapsed),
+                code,
+                "" if has_response else " (no response)",
             )
 
 
@@ -92,15 +97,12 @@ async def instrument(request: web.Request, handler) -> web.Response:
     request.app[METRICS_CALCULATOR_VAR_NAME].set(defaultdict(str))
     for v in chain(request.app["cache_context"].values(), request.app["pdb_context"].values()):
         v.set(defaultdict(int))
+    response = None
     try:
-        response = await handler(request)  # type: web.Response
+        response = await handler(request)  # type: Optional[web.Response]
         return response
     finally:
         if request.method != "OPTIONS":
-            try:
-                response
-            except NameError:
-                response = None
             _after_response(request, response, start_time)
 
 
