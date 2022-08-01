@@ -380,8 +380,8 @@ class ReleaseToPullRequestMapper:
         ],
         pd.DataFrame,
     ]:
-        """Find pull requests which were released between `time_from` and `time_to` but merged before \
-        `time_from`.
+        """Find pull requests which were released between `time_from` and `time_to` but merged \
+        before `time_from`.
 
         The returned DataFrame-s with releases are already with logical repositories.
 
