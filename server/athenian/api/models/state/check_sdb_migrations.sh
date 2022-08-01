@@ -21,11 +21,11 @@ fi
 
 python3 -m athenian.api.models.state "postgresql://$PGUSER:$PGPASSWORD@0.0.0.0:5432/$dbname"
 
+alembic-autogen-check
+
+# restore alembic.ini
 if [ -n "$tmpfile" ]; then
     mv "$tmpfile" alembic.ini
 fi
-
-
-alembic-autogen-check
 
 psql -c "DROP DATABASE $dbname" -h 0.0.0.0 -p 5432  -d postgres

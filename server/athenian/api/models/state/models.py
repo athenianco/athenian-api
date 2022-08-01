@@ -28,6 +28,9 @@ from athenian.api.models import always_unequal, create_base
 Base = create_base()
 
 
+JSONType = JSONB().with_variant(JSON(), sqlite.dialect.name)
+
+
 def create_collection_mixin(name: str) -> type:
     """Create the collections mixin according to the required column name."""
 
@@ -37,7 +40,7 @@ def create_collection_mixin(name: str) -> type:
     setattr(
         CollectionMixin,
         name,
-        Column(always_unequal(JSONB().with_variant(JSON(), sqlite.dialect.name)), nullable=False),
+        Column(always_unequal(JSONType), nullable=False),
     )
 
     return CollectionMixin
@@ -262,12 +265,7 @@ class Feature(create_time_mixin(created_at=True, updated_at=True), Base):
     name = Column(String(), nullable=False)
     component = Column(Enum(FeatureComponent), nullable=False)
     enabled = Column(Boolean(), nullable=False, default=False, server_default="false")
-    default_parameters = Column(
-        JSONB().with_variant(JSON(), sqlite.dialect.name),
-        nullable=False,
-        default={},
-        server_default="{}",
-    )
+    default_parameters = Column(JSONType, nullable=False, default={}, server_default="{}")
 
 
 class AccountFeature(create_time_mixin(created_at=True, updated_at=True), Base):
@@ -282,7 +280,7 @@ class AccountFeature(create_time_mixin(created_at=True, updated_at=True), Base):
         Integer(), ForeignKey("features.id", name="fk_account_features_feature"), primary_key=True,
     )
     enabled = Column(Boolean(), nullable=False, default=False, server_default="false")
-    parameters = Column(JSONB().with_variant(JSON(), sqlite.dialect.name))
+    parameters = Column(JSONType)
 
 
 class UserToken(create_time_mixin(created_at=True, updated_at=True), Base):
@@ -361,7 +359,7 @@ class WorkType(create_time_mixin(created_at=True, updated_at=True), Base):
     )
     name = Column(Text(), nullable=False)
     color = Column(String(6), nullable=False)
-    rules = Column(JSON, nullable=False)
+    rules = Column(JSONType, nullable=False)
 
 
 class LogicalRepository(create_time_mixin(created_at=True, updated_at=True), Base):
@@ -379,8 +377,8 @@ class LogicalRepository(create_time_mixin(created_at=True, updated_at=True), Bas
     )
     name = Column(Text(), nullable=False)
     repository_id = Column(BigInteger(), nullable=False)
-    prs = Column(JSON, nullable=False, default={}, server_default="{}")
-    deployments = Column(JSON, nullable=False, default={}, server_default="{}")
+    prs = Column(JSONType, nullable=False, default={}, server_default="{}")
+    deployments = Column(JSONType, nullable=False, default={}, server_default="{}")
 
 
 class Goal(create_time_mixin(created_at=True, updated_at=True), Base):
@@ -421,7 +419,7 @@ class TeamGoal(create_time_mixin(created_at=True, updated_at=True), Base):
         nullable=False,
         primary_key=True,
     )
-    target = Column(JSON, nullable=False)
+    target = Column(JSONType, nullable=False)
 
 
 class Share(create_time_mixin(created_at=True), Base):
@@ -433,4 +431,4 @@ class Share(create_time_mixin(created_at=True), Base):
     id = Column(BigInteger().with_variant(Integer(), sqlite.dialect.name), primary_key=True)
     created_by = Column(String(), nullable=False)
     divine = Column(Boolean, nullable=False, default=False, server_default="false")
-    data = Column(JSONB().with_variant(JSON(), sqlite.dialect.name), nullable=False)
+    data = Column(JSONType, nullable=False)
