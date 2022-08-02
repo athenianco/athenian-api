@@ -112,13 +112,12 @@ class AccountRepository(
     GitHubSchemaMixin,
     AccountMixin,
 ):
-    __tablename__ = "account_repos_log"
+    __tablename__ = "account_repos"
 
     repo_graph_id = Column(BigInteger, primary_key=True)
     repo_full_name = Column(Text, nullable=False)
     event_id = Column(Text, nullable=False)
     updated_at = Column(TIMESTAMP(timezone=True), nullable=False)
-    enabled = Column(Boolean, nullable=False)
 
 
 class OrganizationMember(

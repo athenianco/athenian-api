@@ -1,9 +1,9 @@
 import marshal
-from typing import Dict, Iterable, KeysView, Set, Union
+from typing import Iterable, KeysView, Optional
 
 from sqlalchemy import select
 
-from athenian.api.cache import cached
+from athenian.api.cache import CancelCache, cached
 from athenian.api.internal.miners.access import AccessChecker
 from athenian.api.models.metadata.github import AccountRepository
 from athenian.api.tracing import sentry_span
@@ -22,30 +22,57 @@ class GitHubAccessChecker(AccessChecker):
     @sentry_span
     async def load(self) -> "AccessChecker":
         """Fetch the list of accessible repositories."""
-        self._installed_repos = await self._fetch_installed_repos(self.metadata_ids)
+        self._installed_repos = await self._fetch_installed_repos_cached(self.metadata_ids)
         return self
+
+    def _postprocess_fetch_installed_repos(
+        result: dict[str, int],
+        override_result: Optional[dict[str, int]] = None,
+        **_,
+    ) -> dict[str, int]:
+        if override_result is not None:
+            raise CancelCache()
+        return result
 
     @cached(
         exptime=lambda self, **_: self.cache_ttl,
         serialize=marshal.dumps,
         deserialize=marshal.loads,
         key=lambda metadata_ids, **_: tuple(metadata_ids),
+        postprocess=_postprocess_fetch_installed_repos,
         cache=lambda self, **_: self.cache,
     )
-    async def _fetch_installed_repos(self, metadata_ids: Iterable[int]) -> Dict[str, int]:
-        rows = await self.mdb.fetch_all(
-            select([AccountRepository.repo_full_name, AccountRepository.repo_graph_id]).where(
-                AccountRepository.acc_id.in_(metadata_ids),
+    async def _fetch_installed_repos_cached(
+        self,
+        metadata_ids: Iterable[int],
+        override_result: Optional[dict[str, int]] = None,
+    ) -> dict[str, int]:
+        __tracebackhide__ = True  # noqa: F841
+        if override_result is not None:
+            return override_result
+        return await self._fetch_installed_repos(metadata_ids)
+
+    _postprocess_fetch_installed_repos = staticmethod(_postprocess_fetch_installed_repos)
+
+    async def _fetch_installed_repos(self, metadata_ids: Iterable[int]) -> dict[str, int]:
+        return dict(
+            await self.mdb.fetch_all(
+                select(AccountRepository.repo_full_name, AccountRepository.repo_graph_id).where(
+                    AccountRepository.acc_id.in_(metadata_ids),
+                ),
             ),
         )
-        name_key = AccountRepository.repo_full_name.name
-        node_key = AccountRepository.repo_graph_id.name
-        return {r[name_key]: r[node_key] for r in rows}
 
-    async def check(self, repos: Union[Set[str], KeysView[str]]) -> Set[str]:
+    async def check(self, repos: set[str] | KeysView[str]) -> set[str]:
         """Return repositories which do not belong to the metadata installation.
 
         The names must be *without* the service prefix.
         """
         assert isinstance(repos, (set, KeysView))
-        return repos - self._installed_repos.keys()
+        if diff := repos - self._installed_repos.keys():
+            updated_repos = await self._fetch_installed_repos(self.metadata_ids)
+            if self._installed_repos != updated_repos:
+                self._installed_repos |= updated_repos
+                await self._fetch_installed_repos_cached(self.metadata_ids, self._installed_repos)
+                diff -= updated_repos.keys()
+        return diff

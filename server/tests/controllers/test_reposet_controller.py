@@ -96,8 +96,8 @@ async def test_get_repository_set_bad_account(client, headers):
 @pytest.mark.parametrize(
     "name, items, new_name, new_items",
     [
-        ("xxx", ["github.com/src-d/hercules"], "xxx", ["github.com/src-d/hercules"]),
-        (None, ["github.com/src-d/hercules"], "all", ["github.com/src-d/hercules"]),
+        ("xxx", ["github.com/src-d/gitbase"], "xxx", ["github.com/src-d/gitbase"]),
+        (None, ["github.com/src-d/gitbase"], "all", ["github.com/src-d/gitbase"]),
         ("xxx", None, "xxx", ["github.com/src-d/gitbase", "github.com/src-d/go-git"]),
     ],
 )
@@ -199,7 +199,7 @@ async def test_set_repository_set_access_denied(client, headers, disable_default
 
 
 async def test_create_repository_set_smoke(client, headers, disable_default_user):
-    body = RepositorySetCreateRequest(1, name="xxx", items=["github.com/src-d/hercules"]).to_dict()
+    body = RepositorySetCreateRequest(1, name="xxx", items=["github.com/src-d/gitbase"]).to_dict()
     response = await client.request(
         method="POST", path="/v1/reposet/create", headers=headers, json=body,
     )

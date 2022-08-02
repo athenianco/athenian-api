@@ -26,7 +26,6 @@ class AccountRepositoryFactory(SQLAlchemyModelFactory):
     repo_full_name = factory.Sequence(lambda n: f"athenianco/proj-{n:02}")
     event_id = "event-00"
     updated_at = factory.LazyFunction(lambda: datetime.now(timezone.utc))
-    enabled = True
 
 
 class AccountFactory(SQLAlchemyModelFactory):
