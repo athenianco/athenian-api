@@ -227,8 +227,31 @@ class ReleaseSetting(create_time_mixin(updated_at=True), Base):
     """Release matching rules per repo."""
 
     __tablename__ = "release_settings"
+    __table_args__ = (
+        UniqueConstraint(
+            "repo_id",
+            "logical_name",
+            "account_id",
+            name="uc_release_settings_repo_id_logical_name_account",
+        ),
+    )
 
     repository = Column(String(), primary_key=True)
+
+    repo_id = Column(BigInteger(), nullable=True)
+    """The identifier of the repository the release setting is about.
+
+    Points to the mdb `Repository.node_id` column.
+    """
+
+    logical_name = Column(String(), nullable=True)
+    """
+    The logical name of repository, if the release setting is about a logical repository.
+
+    Empty string if the setting is about a physical repo.
+    This is the "bare" logical name, without prefix and physical repo name.
+    """
+
     account_id = Column(
         Integer(), ForeignKey("accounts.id", name="fk_release_settings_account"), primary_key=True,
     )
