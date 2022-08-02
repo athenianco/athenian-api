@@ -345,7 +345,10 @@ class Auth0:
             await asyncio.sleep(expires_in)
 
     async def _fetch_jwks(self) -> None:
-        req = await self._session.get("https://%s/.well-known/jwks.json" % self._domain)
+        req = await self._session.get(
+            "https://%s/.well-known/jwks.json" % self._domain,
+            timeout=aiohttp.ClientTimeout(total=2),
+        )
         jwks = await req.json()
         self.log.info("Fetched %d JWKS records", len(jwks))
         self._kids = {
@@ -369,7 +372,7 @@ class Auth0:
                     "client_secret": self._client_secret,
                     "audience": "https://%s/api/v2/" % self._domain,
                 },
-                timeout=5,
+                timeout=aiohttp.ClientTimeout(total=5),
             )
             data = await resp.json()
             self._mgmt_token = data["access_token"]
@@ -426,7 +429,9 @@ class Auth0:
     )
     async def _get_user_info_cached(self, token: str) -> User:
         resp = await self._session.get(
-            "https://%s/userinfo" % self._domain, headers={"Authorization": "Bearer " + token},
+            "https://%s/userinfo" % self._domain,
+            headers={"Authorization": "Bearer " + token},
+            timeout=aiohttp.ClientTimeout(total=2),
         )
         try:
             user = await resp.json()
