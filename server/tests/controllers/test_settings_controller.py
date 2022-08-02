@@ -1,9 +1,11 @@
 from datetime import datetime, timezone
 import json
+from typing import Any
 
+from aiohttp import ClientResponse
 from aiohttp.web_runner import GracefulExit
 import pytest
-from sqlalchemy import and_, delete, insert, select, update
+from sqlalchemy import delete, insert, select, update
 
 from athenian.api import auth
 from athenian.api.async_utils import read_sql_query
@@ -45,6 +47,7 @@ from tests.testutils.factory.precomputed import (
     GitHubReleaseFactory,
 )
 from tests.testutils.factory.state import LogicalRepositoryFactory
+from tests.testutils.requester import Requester
 
 
 async def validate_release_settings(body, response, sdb, exhaustive: bool):
@@ -53,7 +56,7 @@ async def validate_release_settings(body, response, sdb, exhaustive: bool):
     assert len(repos) > 0
     assert repos[0].startswith("github.com/")
     df = await read_sql_query(
-        select([ReleaseSetting]),
+        select(ReleaseSetting),
         sdb,
         ReleaseSetting,
         index=[ReleaseSetting.repository.name, ReleaseSetting.account_id.name],
@@ -68,270 +71,221 @@ async def validate_release_settings(body, response, sdb, exhaustive: bool):
     return repos
 
 
-async def test_set_release_match_overwrite(client, headers, sdb, disable_default_user):
-    body = {
-        "repositories": ["{1}"],
-        "account": 1,
-        "branches": "master",
-        "tags": ".*",
-        "match": ReleaseMatchStrategy.TAG,
-    }
-    response = await client.request(
-        method="PUT", path="/v1/settings/release_match", headers=headers, json=body,
-    )
-    repos = await validate_release_settings(body, response, sdb, True)
-    assert repos == ["github.com/src-d/gitbase", "github.com/src-d/go-git"]
-    body.update(
-        {
+class TestSetReleaseMatch(Requester):
+    async def test_overwrite(self, sdb, disable_default_user):
+        body = {
+            "repositories": ["{1}"],
+            "account": 1,
+            "branches": "master",
+            "tags": ".*",
+            "match": ReleaseMatchStrategy.TAG,
+        }
+        response = await self._request(json=body)
+        repos = await validate_release_settings(body, response, sdb, True)
+        assert repos == ["github.com/src-d/gitbase", "github.com/src-d/go-git"]
+        body.update({"branches": ".*", "tags": "v.*", "match": ReleaseMatchStrategy.BRANCH})
+        response = await self._request(json=body)
+        repos = await validate_release_settings(body, response, sdb, True)
+        assert repos == ["github.com/src-d/gitbase", "github.com/src-d/go-git"]
+
+    async def test_different_accounts(self, sdb, disable_default_user):
+        body1 = {
+            "repositories": ["github.com/src-d/go-git"],
+            "account": 1,
+            "branches": "master",
+            "tags": ".*",
+            "match": ReleaseMatchStrategy.TAG,
+        }
+        response1 = await self._request(json=body1)
+        await sdb.execute(delete(AccountGitHubAccount).where(AccountGitHubAccount.account_id == 1))
+        await sdb.execute(
+            insert(AccountGitHubAccount).values(
+                AccountGitHubAccount(id=6366825, account_id=2).explode(with_primary_keys=True),
+            ),
+        )
+        await sdb.execute(
+            update(UserAccount)
+            .where(UserAccount.account_id == 2)
+            .values({UserAccount.is_admin.name: True}),
+        )
+        body2 = {
+            "repositories": ["github.com/src-d/go-git"],
+            "account": 2,
             "branches": ".*",
             "tags": "v.*",
             "match": ReleaseMatchStrategy.BRANCH,
-        },
-    )
-    response = await client.request(
-        method="PUT", path="/v1/settings/release_match", headers=headers, json=body,
-    )
-    repos = await validate_release_settings(body, response, sdb, True)
-    assert repos == ["github.com/src-d/gitbase", "github.com/src-d/go-git"]
+        }
+        response2 = await self._request(json=body2)
+        await validate_release_settings(body1, response1, sdb, False)
+        await validate_release_settings(body2, response2, sdb, False)
 
+    async def test_default_user(self):
+        body1 = {
+            "repositories": ["github.com/src-d/go-git"],
+            "account": 1,
+            "branches": "master",
+            "tags": ".*",
+            "match": ReleaseMatchStrategy.TAG,
+        }
+        response = await self._request(json=body1)
+        assert response.status == 403
 
-async def test_set_release_match_different_accounts(client, headers, sdb, disable_default_user):
-    body1 = {
-        "repositories": ["github.com/src-d/go-git"],
-        "account": 1,
-        "branches": "master",
-        "tags": ".*",
-        "match": ReleaseMatchStrategy.TAG,
-    }
-    response1 = await client.request(
-        method="PUT", path="/v1/settings/release_match", headers=headers, json=body1,
+    @pytest.mark.parametrize(
+        "code, account, repositories, branches, tags, events, match",
+        [
+            (400, 1, ["{1}"], None, ".*", {}, ReleaseMatchStrategy.BRANCH),
+            (400, 1, ["{1}"], "", ".*", {}, ReleaseMatchStrategy.TAG_OR_BRANCH),
+            (200, 1, ["{1}"], "", ".*", {}, ReleaseMatchStrategy.TAG),
+            (200, 1, [], "", ".*", {}, ReleaseMatchStrategy.TAG),
+            (400, 1, ["{1}"], None, ".*", {}, ReleaseMatchStrategy.TAG),
+            (400, 1, ["{1}"], "", ".*", {}, ReleaseMatchStrategy.BRANCH),
+            (400, 1, ["{1}"], "(f", ".*", {}, ReleaseMatchStrategy.BRANCH),
+            (400, 1, ["{1}"], ".*", None, {}, ReleaseMatchStrategy.TAG),
+            (400, 1, ["{1}"], ".*", None, {}, ReleaseMatchStrategy.BRANCH),
+            (200, 1, ["{1}"], ".*", "", {}, ReleaseMatchStrategy.BRANCH),
+            (400, 1, ["{1}"], ".*", "", {}, ReleaseMatchStrategy.TAG),
+            (400, 1, ["{1}"], ".*", "", {}, ReleaseMatchStrategy.TAG_OR_BRANCH),
+            (400, 1, ["{1}"], ".*", "(f", {}, ReleaseMatchStrategy.TAG),
+            (422, 2, ["{1}"], ".*", ".*", {}, ReleaseMatchStrategy.BRANCH),
+            (
+                403,
+                2,
+                ["github.com/athenianco/athenian-api"],
+                ".*",
+                ".*",
+                {},
+                ReleaseMatchStrategy.BRANCH,
+            ),
+            (404, 3, ["{1}"], ".*", ".*", {}, ReleaseMatchStrategy.BRANCH),
+            (403, 1, ["{2}"], ".*", ".*", {}, ReleaseMatchStrategy.BRANCH),
+            (400, 1, ["{1}"], ".*", ".*", {}, "whatever"),
+            (400, 1, ["{1}"], ".*", ".*", {}, None),
+            (400, 1, ["{1}"], ".*", ".*", {}, ""),
+            (400, 1, [], "", ".*", {"events": "(f"}, ReleaseMatchStrategy.TAG),
+        ],
     )
-    await sdb.execute(delete(AccountGitHubAccount).where(AccountGitHubAccount.account_id == 1))
-    await sdb.execute(
-        insert(AccountGitHubAccount).values(
-            AccountGitHubAccount(id=6366825, account_id=2).explode(with_primary_keys=True),
-        ),
-    )
-    await sdb.execute(
-        update(UserAccount)
-        .where(UserAccount.account_id == 2)
-        .values({UserAccount.is_admin.name: True}),
-    )
-    body2 = {
-        "repositories": ["github.com/src-d/go-git"],
-        "account": 2,
-        "branches": ".*",
-        "tags": "v.*",
-        "match": ReleaseMatchStrategy.BRANCH,
-    }
-    response2 = await client.request(
-        method="PUT", path="/v1/settings/release_match", headers=headers, json=body2,
-    )
-    await validate_release_settings(body1, response1, sdb, False)
-    await validate_release_settings(body2, response2, sdb, False)
+    async def test_nasty_input(
+        self,
+        sdb,
+        code,
+        account,
+        repositories,
+        branches,
+        tags,
+        events,
+        match,
+        disable_default_user,
+    ):
+        if account == 2 and code == 403:
+            await sdb.execute(
+                insert(AccountGitHubAccount).values(
+                    {AccountGitHubAccount.id: 1, AccountGitHubAccount.account_id: 2},
+                ),
+            )
+        body = {
+            "repositories": repositories,
+            "account": account,
+            "branches": branches,
+            "tags": tags,
+            "match": match,
+            **events,
+        }
+        response = await self._request(json=body)
+        assert response.status == code
 
+    async def test_login_failure(self, sdb, lazy_gkwillie, disable_default_user):
+        await self._cleanup_gkwillie(sdb)
+        await sdb.execute(delete(RepositorySet))
+        await sdb.execute(delete(AccountGitHubAccount))
+        body = {
+            "repositories": [],
+            "account": 1,
+            "branches": ".*",
+            "tags": ".*",
+            "match": ReleaseMatchStrategy.TAG_OR_BRANCH,
+        }
+        auth.GracefulExit = ValueError
+        try:
+            response = await self._request(json=body)
+        finally:
+            auth.GracefulExit = GracefulExit
+        assert response.status == 403, await response.read()
 
-async def test_set_release_match_default_user(client, headers):
-    body1 = {
-        "repositories": ["github.com/src-d/go-git"],
-        "account": 1,
-        "branches": "master",
-        "tags": ".*",
-        "match": ReleaseMatchStrategy.TAG,
-    }
-    response = await client.request(
-        method="PUT", path="/v1/settings/release_match", headers=headers, json=body1,
+    @pytest.mark.parametrize(
+        "code, clear_kind",
+        [
+            (200, None),
+            (200, "reposets"),
+            (422, "account"),
+            (422, "repos"),
+        ],
     )
-    assert response.status == 403
+    async def test_422(self, sdb, gkwillie, disable_default_user, code, clear_kind):
+        await self._cleanup_gkwillie(sdb)
+        if clear_kind == "reposets":
+            await sdb.execute(delete(RepositorySet))
+        elif clear_kind in ("account", "repos"):
+            await sdb.execute(delete(AccountGitHubAccount))
+        body = {
+            "repositories": ["github.com/src-d/go-git"] if clear_kind == "repos" else [],
+            "account": 1,
+            "branches": ".*",
+            "tags": ".*",
+            "match": ReleaseMatchStrategy.TAG_OR_BRANCH,
+        }
+        response = await self._request(json=body)
+        assert response.status == code, await response.read()
 
-
-@pytest.mark.parametrize(
-    "code, account, repositories, branches, tags, events, match",
-    [
-        (400, 1, ["{1}"], None, ".*", {}, ReleaseMatchStrategy.BRANCH),
-        (400, 1, ["{1}"], "", ".*", {}, ReleaseMatchStrategy.TAG_OR_BRANCH),
-        (200, 1, ["{1}"], "", ".*", {}, ReleaseMatchStrategy.TAG),
-        (200, 1, [], "", ".*", {}, ReleaseMatchStrategy.TAG),
-        (400, 1, ["{1}"], None, ".*", {}, ReleaseMatchStrategy.TAG),
-        (400, 1, ["{1}"], "", ".*", {}, ReleaseMatchStrategy.BRANCH),
-        (400, 1, ["{1}"], "(f", ".*", {}, ReleaseMatchStrategy.BRANCH),
-        (400, 1, ["{1}"], ".*", None, {}, ReleaseMatchStrategy.TAG),
-        (400, 1, ["{1}"], ".*", None, {}, ReleaseMatchStrategy.BRANCH),
-        (200, 1, ["{1}"], ".*", "", {}, ReleaseMatchStrategy.BRANCH),
-        (400, 1, ["{1}"], ".*", "", {}, ReleaseMatchStrategy.TAG),
-        (400, 1, ["{1}"], ".*", "", {}, ReleaseMatchStrategy.TAG_OR_BRANCH),
-        (400, 1, ["{1}"], ".*", "(f", {}, ReleaseMatchStrategy.TAG),
-        (422, 2, ["{1}"], ".*", ".*", {}, ReleaseMatchStrategy.BRANCH),
-        (
-            403,
-            2,
-            ["github.com/athenianco/athenian-api"],
-            ".*",
-            ".*",
-            {},
-            ReleaseMatchStrategy.BRANCH,
-        ),
-        (404, 3, ["{1}"], ".*", ".*", {}, ReleaseMatchStrategy.BRANCH),
-        (403, 1, ["{2}"], ".*", ".*", {}, ReleaseMatchStrategy.BRANCH),
-        (400, 1, ["{1}"], ".*", ".*", {}, "whatever"),
-        (400, 1, ["{1}"], ".*", ".*", {}, None),
-        (400, 1, ["{1}"], ".*", ".*", {}, ""),
-        (400, 1, [], "", ".*", {"events": "(f"}, ReleaseMatchStrategy.TAG),
-    ],
-)
-async def test_set_release_match_nasty_input(
-    client,
-    headers,
-    sdb,
-    code,
-    account,
-    repositories,
-    branches,
-    tags,
-    events,
-    match,
-    disable_default_user,
-):
-    if account == 2 and code == 403:
-        await sdb.execute(
-            insert(AccountGitHubAccount).values(
-                {
-                    AccountGitHubAccount.id: 1,
-                    AccountGitHubAccount.account_id: 2,
-                },
+    async def test_logical(
+        self,
+        sdb,
+        disable_default_user,
+        release_match_setting_tag_logical_db,
+    ):
+        body = {
+            "repositories": ["github.com/src-d/go-git/alpha"],
+            "account": 1,
+            "branches": "master",
+            "tags": ".*",
+            "match": ReleaseMatchStrategy.EVENT,
+        }
+        response = await self._request(json=body)
+        assert response.status == 200, await response.read()
+        match = await sdb.fetch_val(
+            select([ReleaseSetting.match]).where(
+                ReleaseSetting.repository == "github.com/src-d/go-git/alpha",
             ),
         )
-    body = {
-        "repositories": repositories,
-        "account": account,
-        "branches": branches,
-        "tags": tags,
-        "match": match,
-        **events,
-    }
-    response = await client.request(
-        method="PUT", path="/v1/settings/release_match", headers=headers, json=body,
-    )
-    assert response.status == code
+        assert match == 3
 
+    async def test_logical_fail(
+        self,
+        sdb,
+        disable_default_user,
+        release_match_setting_tag_logical_db,
+    ):
+        body = {
+            "repositories": ["github.com/src-d/go-git/alpha"],
+            "account": 1,
+            "branches": "master",
+            "tags": ".*",
+            "match": ReleaseMatchStrategy.TAG_OR_BRANCH,
+        }
+        response = await self._request(json=body)
+        assert response.status == 400, await response.read()
 
-async def cleanup_gkwillie(sdb):
-    await sdb.execute(
-        insert(UserAccount).values(
-            UserAccount(user_id="github|60340680", account_id=1, is_admin=True)
-            .create_defaults()
-            .explode(with_primary_keys=True),
-        ),
-    )
+    async def _request(self, **kwargs: Any) -> ClientResponse:
+        path = "/v1/settings/release_match"
+        return await self.client.request(method="PUT", path=path, headers=self.headers, **kwargs)
 
-
-async def test_set_release_match_login_failure(
-    client,
-    headers,
-    sdb,
-    lazy_gkwillie,
-    disable_default_user,
-):
-    await cleanup_gkwillie(sdb)
-    await sdb.execute(delete(RepositorySet))
-    await sdb.execute(delete(AccountGitHubAccount))
-    body = {
-        "repositories": [],
-        "account": 1,
-        "branches": ".*",
-        "tags": ".*",
-        "match": ReleaseMatchStrategy.TAG_OR_BRANCH,
-    }
-    auth.GracefulExit = ValueError
-    try:
-        response = await client.request(
-            method="PUT", path="/v1/settings/release_match", headers=headers, json=body,
+    async def _cleanup_gkwillie(self, sdb):
+        await sdb.execute(
+            insert(UserAccount).values(
+                UserAccount(user_id="github|60340680", account_id=1, is_admin=True)
+                .create_defaults()
+                .explode(with_primary_keys=True),
+            ),
         )
-    finally:
-        auth.GracefulExit = GracefulExit
-    assert response.status == 403, await response.read()
-
-
-@pytest.mark.parametrize(
-    "code, clear_kind",
-    [
-        (200, None),
-        (200, "reposets"),
-        (422, "account"),
-        (422, "repos"),
-    ],
-)
-async def test_set_release_match_422(
-    client,
-    headers,
-    sdb,
-    gkwillie,
-    disable_default_user,
-    code,
-    clear_kind,
-):
-    await cleanup_gkwillie(sdb)
-    if clear_kind == "reposets":
-        await sdb.execute(delete(RepositorySet))
-    elif clear_kind in ("account", "repos"):
-        await sdb.execute(delete(AccountGitHubAccount))
-    body = {
-        "repositories": ["github.com/src-d/go-git"] if clear_kind == "repos" else [],
-        "account": 1,
-        "branches": ".*",
-        "tags": ".*",
-        "match": ReleaseMatchStrategy.TAG_OR_BRANCH,
-    }
-    response = await client.request(
-        method="PUT", path="/v1/settings/release_match", headers=headers, json=body,
-    )
-    assert response.status == code, await response.read()
-
-
-async def test_set_release_match_logical(
-    client,
-    headers,
-    sdb,
-    disable_default_user,
-    release_match_setting_tag_logical_db,
-):
-    body = {
-        "repositories": ["github.com/src-d/go-git/alpha"],
-        "account": 1,
-        "branches": "master",
-        "tags": ".*",
-        "match": ReleaseMatchStrategy.EVENT,
-    }
-    response = await client.request(
-        method="PUT", path="/v1/settings/release_match", headers=headers, json=body,
-    )
-    assert response.status == 200, await response.read()
-    match = await sdb.fetch_val(
-        select([ReleaseSetting.match]).where(
-            ReleaseSetting.repository == "github.com/src-d/go-git/alpha",
-        ),
-    )
-    assert match == 3
-
-
-async def test_set_release_match_logical_fail(
-    client,
-    headers,
-    sdb,
-    disable_default_user,
-    release_match_setting_tag_logical_db,
-):
-    body = {
-        "repositories": ["github.com/src-d/go-git/alpha"],
-        "account": 1,
-        "branches": "master",
-        "tags": ".*",
-        "match": ReleaseMatchStrategy.TAG_OR_BRANCH,
-    }
-    response = await client.request(
-        method="PUT", path="/v1/settings/release_match", headers=headers, json=body,
-    )
-    assert response.status == 400, await response.read()
 
 
 async def test_get_release_match_settings_defaults(client, headers):
@@ -437,7 +391,7 @@ JIRA_PROJECTS = [
         avatar_url=(
             "https://athenianco.atlassian.net/secure/projectavatar?pid=10013&avatarId=10424"
         ),
-    ),  # noqa
+    ),
     JIRAProject(
         name="Customer Success",
         key="CS",
@@ -448,7 +402,7 @@ JIRA_PROJECTS = [
         avatar_url=(
             "https://athenianco.atlassian.net/secure/projectavatar?pid=10012&avatarId=10419"
         ),
-    ),  # noqa
+    ),
     JIRAProject(
         name="Product Development",
         key="DEV",
@@ -459,7 +413,7 @@ JIRA_PROJECTS = [
         avatar_url=(
             "https://athenianco.atlassian.net/secure/projectavatar?pid=10009&avatarId=10551"
         ),
-    ),  # noqa
+    ),
     JIRAProject(
         name="Engineering",
         key="ENG",
@@ -470,7 +424,7 @@ JIRA_PROJECTS = [
         avatar_url=(
             "https://athenianco.atlassian.net/secure/projectavatar?pid=10003&avatarId=10404"
         ),
-    ),  # noqa
+    ),
     JIRAProject(
         name="Growth",
         key="GRW",
@@ -481,7 +435,7 @@ JIRA_PROJECTS = [
         avatar_url=(
             "https://athenianco.atlassian.net/secure/projectavatar?pid=10008&avatarId=10419"
         ),
-    ),  # noqa
+    ),
     JIRAProject(
         name="Operations",
         key="OPS",
@@ -492,7 +446,7 @@ JIRA_PROJECTS = [
         avatar_url=(
             "https://athenianco.atlassian.net/secure/projectavatar?pid=10002&avatarId=10421"
         ),
-    ),  # noqa
+    ),
     JIRAProject(
         name="Product",
         key="PRO",
@@ -503,7 +457,7 @@ JIRA_PROJECTS = [
         avatar_url=(
             "https://athenianco.atlassian.net/secure/projectavatar?pid=10001&avatarId=10414"
         ),
-    ),  # noqa
+    ),
 ]
 
 
@@ -529,12 +483,7 @@ async def test_get_jira_projects_nasty_input(client, headers, account, code):
 # TODO: fix response validation against the schema
 @pytest.mark.app_validate_responses(False)
 async def test_set_jira_projects_smoke(client, headers, disable_default_user):
-    body = {
-        "account": 1,
-        "projects": {
-            "DEV": False,
-        },
-    }
+    body = {"account": 1, "projects": {"DEV": False}}
     response = await client.request(
         method="PUT", path="/v1/settings/jira/projects", json=body, headers=headers,
     )
@@ -565,12 +514,7 @@ async def test_set_jira_projects_nasty_input(
     key,
     code,
 ):
-    body = {
-        "account": account,
-        "projects": {
-            key: False,
-        },
-    }
+    body = {"account": account, "projects": {key: False}}
     response = await client.request(
         method="PUT", path="/v1/settings/jira/projects", json=body, headers=headers,
     )
@@ -630,12 +574,7 @@ async def test_get_jira_identities_nasty_input(client, headers, account, code):
 async def test_set_jira_identities_smoke(client, headers, sdb, denys_id_mapping):
     body = {
         "account": 1,
-        "changes": [
-            {
-                "developer_id": "github.com/dennwc",
-                "jira_name": "Vadim Markovtsev",
-            },
-        ],
+        "changes": [{"developer_id": "github.com/dennwc", "jira_name": "Vadim Markovtsev"}],
     }
     response = await client.request(
         method="PATCH", path="/v1/settings/jira/identities", headers=headers, json=body,
@@ -764,15 +703,7 @@ async def test_set_jira_identities_nasty_input(client, headers, account, github,
             .where(UserAccount.account_id == 2)
             .values({UserAccount.is_admin: True}),
         )
-    body = {
-        "account": account,
-        "changes": [
-            {
-                "developer_id": github,
-                "jira_name": jira,
-            },
-        ],
-    }
+    body = {"account": account, "changes": [{"developer_id": github, "jira_name": jira}]}
     response = await client.request(
         method="PATCH", path="/v1/settings/jira/identities", json=body, headers=headers,
     )
@@ -831,12 +762,7 @@ async def test_delete_work_type_smoke(client, headers, sdb):
     assert response.status == 200, "Response body is : " + body
     assert body == ""
     row = await sdb.fetch_one(
-        select([WorkType]).where(
-            and_(
-                WorkType.account_id == 1,
-                WorkType.name == "Bug Fixing",
-            ),
-        ),
+        select(WorkType).where(WorkType.account_id == 1, WorkType.name == "Bug Fixing"),
     )
     assert row is None
 
@@ -858,12 +784,7 @@ async def test_delete_work_type_nasty_input(client, headers, body, status, sdb):
     body = (await response.read()).decode("utf-8")
     assert response.status == status, "Response body is : " + body
     row = await sdb.fetch_one(
-        select([WorkType]).where(
-            and_(
-                WorkType.account_id == 1,
-                WorkType.name == "Bug Fixing",
-            ),
-        ),
+        select(WorkType).where(WorkType.account_id == 1, WorkType.name == "Bug Fixing"),
     )
     assert row is not None
 
@@ -902,12 +823,7 @@ async def test_set_work_type_create(client, headers, sdb):
         "work_type": {
             "name": "Bug Making",
             "color": "00ff00",
-            "rules": [
-                {
-                    "name": "xxx",
-                    "body": {"arg": 777},
-                },
-            ],
+            "rules": [{"name": "xxx", "body": {"arg": 777}}],
         },
     }
     response = await client.request(
@@ -923,10 +839,7 @@ async def test_set_work_type_create(client, headers, sdb):
     }
     row = await sdb.fetch_one(
         select([WorkType.name, WorkType.color, WorkType.rules]).where(
-            and_(
-                WorkType.account_id == 1,
-                WorkType.name == "Bug Making",
-            ),
+            WorkType.account_id == 1, WorkType.name == "Bug Making",
         ),
     )
     assert dict(row) == {
@@ -942,12 +855,7 @@ async def test_set_work_type_update(client, headers, sdb):
         "work_type": {
             "name": "Bug Fixing",
             "color": "00ff00",
-            "rules": [
-                {
-                    "name": "xxx",
-                    "body": {"arg": 777},
-                },
-            ],
+            "rules": [{"name": "xxx", "body": {"arg": 777}}],
         },
     }
     response = await client.request(
@@ -963,10 +871,7 @@ async def test_set_work_type_update(client, headers, sdb):
     }
     rows = await sdb.fetch_all(
         select([WorkType.name, WorkType.color, WorkType.rules]).where(
-            and_(
-                WorkType.account_id == 1,
-                WorkType.name == "Bug Fixing",
-            ),
+            WorkType.account_id == 1, WorkType.name == "Bug Fixing",
         ),
     )
     assert len(rows) == 1
@@ -991,12 +896,7 @@ async def test_set_work_type_nasty_input(client, headers, sdb, acc, name, color,
         "work_type": {
             "name": name,
             **color,
-            "rules": [
-                {
-                    "name": "xxx",
-                    "body": {"arg": 777},
-                },
-            ],
+            "rules": [{"name": "xxx", "body": {"arg": 777}}],
         },
     }
     response = await client.request(
@@ -1005,9 +905,7 @@ async def test_set_work_type_nasty_input(client, headers, sdb, acc, name, color,
     body = (await response.read()).decode("utf-8")
     assert response.status == status, "Response body is : " + body
     rows = await sdb.fetch_all(
-        select([WorkType.name, WorkType.color, WorkType.rules]).where(
-            and_(WorkType.name == "Bug Fixing"),
-        ),
+        select(WorkType.name, WorkType.color, WorkType.rules).where(WorkType.name == "Bug Fixing"),
     )
     assert len(rows) == 1
     assert dict(rows[0]) == {
@@ -1033,7 +931,7 @@ async def test_set_work_type_empty_rules(client, headers, sdb):
     assert response.status == 200, "Response body is : " + body
     rows = await sdb.fetch_all(
         select([WorkType.account_id, WorkType.name, WorkType.color, WorkType.rules]).where(
-            and_(WorkType.name == "Bug Fixing"),
+            WorkType.name == "Bug Fixing",
         ),
     )
     assert len(rows) == 2
