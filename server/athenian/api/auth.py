@@ -341,26 +341,61 @@ class Auth0:
 
     async def _acquire_management_token_loop(self) -> None:
         while True:
-            expires_in = await self._acquire_management_token(1)
+            expires_in = await self._acquire_management_token()
             await asyncio.sleep(expires_in)
 
-    async def _fetch_jwks(self) -> None:
-        req = await self._session.get(
-            "https://%s/.well-known/jwks.json" % self._domain,
-            timeout=aiohttp.ClientTimeout(total=2),
-        )
-        jwks = await req.json()
-        self.log.info("Fetched %d JWKS records", len(jwks))
-        self._kids = {
-            key["kid"]: {k: key[k] for k in ("kty", "kid", "use", "n", "e")}
-            for key in jwks["keys"]
-        }
-        self._kids_event.set()
+    async def _critical_call_with_retry(
+        self,
+        request: Callable[[], Coroutine[None, None, aiohttp.ClientResponse]],
+        msg: str,
+    ) -> None:
+        for attempt in range(1, (max_attempts := 10) + 1):
+            resp = None
+            try:
+                resp = await request()
+                if resp.status != 200:
+                    raise RuntimeError(f"HTTP {resp.status}")
+                return
+            except Exception as e:
+                try:
+                    resp_text = await resp.text()
+                except Exception:
+                    resp_text = "N/A"
+                # do not use %s - Sentry does not display it properly
+                if attempt >= max_attempts:
+                    self.log.exception(msg + ": " + resp_text)
+                    raise GracefulExit() from e
+                else:
+                    self.log.warning(
+                        msg + " %d / %d: %s: %s",
+                        attempt,
+                        max_attempts,
+                        e,
+                        resp_text,
+                    )
+                    await asyncio.sleep(1)
 
-    async def _acquire_management_token(self, attempt: int) -> float:
-        max_attempts = 10
-        error = None
-        try:
+    async def _fetch_jwks(self) -> None:
+        async def _fetch() -> aiohttp.ClientResponse:
+            resp = await self._session.get(
+                "https://%s/.well-known/jwks.json" % self._domain,
+                timeout=aiohttp.ClientTimeout(total=2),
+            )
+            jwks = await resp.json()
+            self._kids = {
+                key["kid"]: {k: key[k] for k in ("kty", "kid", "use", "n", "e")}
+                for key in jwks["keys"]
+            }
+            self.log.info("Fetched %d JWKS records", len(jwks["keys"]))
+            self._kids_event.set()
+            return resp
+
+        await self._critical_call_with_retry(_fetch, "failed to fetch JWKS records")
+
+    async def _acquire_management_token(self) -> float:
+        expires_in = 0
+
+        async def _fetch() -> aiohttp.ClientResponse:
             resp = await self._session.post(
                 "https://%s/oauth/token" % self._domain,
                 headers={
@@ -376,37 +411,21 @@ class Auth0:
             )
             data = await resp.json()
             self._mgmt_token = data["access_token"]
-            self._mgmt_event.set()
+            nonlocal expires_in
             expires_in = int(data["expires_in"])
-        except Exception as e:
-            error = e
-            try:
-                resp_text = await resp.text()
-            except Exception:
-                resp_text = "N/A"
-            # do not use %s - Sentry does not display it properly
-            if attempt >= max_attempts:
-                self.log.exception("Failed to renew the Auth0 management token: " + resp_text)
-                raise GracefulExit() from e
-        if error is not None:
-            self.log.warning(
-                "Failed to renew the Auth0 management token %d / %d: %s: %s",
-                attempt,
-                max_attempts,
-                error,
-                resp_text,
+            self._mgmt_event.set()
+            self.log.info(
+                "Acquired new Auth0 management token %s...%s for the next %s",
+                self._mgmt_token[:12],
+                self._mgmt_token[-12:],
+                timedelta(seconds=expires_in),
             )
-            await asyncio.sleep(1)
-            return await self._acquire_management_token(attempt + 1)
-        self.log.info(
-            "Acquired new Auth0 management token %s...%s for the next %s",
-            self._mgmt_token[:12],
-            self._mgmt_token[-12:],
-            timedelta(seconds=expires_in),
-        )
-        expires_in -= 5 * 60  # 5 minutes earlier
-        if expires_in < 0:
-            expires_in = 0
+            expires_in -= 5 * 60  # 5 minutes earlier
+            if expires_in < 0:
+                expires_in = 0
+            return resp
+
+        await self._critical_call_with_retry(_fetch, "failed to renew the Auth0 management token")
         return expires_in
 
     def _is_whitelisted(self, request: aiohttp.web.Request) -> bool:
