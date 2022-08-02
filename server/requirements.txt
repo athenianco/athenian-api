@@ -45,3 +45,4 @@ pyarrow==8.0.0
 email-validator==1.2.1
 croniter==1.3.5
 ariadne==0.15.1
+aiomonitor==0.4.5
