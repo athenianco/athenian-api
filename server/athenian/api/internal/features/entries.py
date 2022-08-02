@@ -7,7 +7,7 @@ from functools import partial, reduce
 from itertools import chain
 import logging
 import pickle
-from typing import Any, Collection, Dict, List, Mapping, Optional, Sequence, Set, Tuple, Union
+from typing import Any, Collection, Mapping, Optional, Sequence
 
 import aiomcache
 import numpy as np
@@ -121,10 +121,10 @@ unfresh_participants_threshold = 50
 
 
 def _postprocess_cached_facts(
-    result: Tuple[Dict[str, List[PullRequestFacts]], bool],
+    result: tuple[dict[str, list[PullRequestFacts]], bool],
     with_jira_map: bool,
     **_,
-) -> Tuple[Dict[str, List[PullRequestFacts]], bool]:
+) -> tuple[dict[str, list[PullRequestFacts]], bool]:
     if with_jira_map and not result[1]:
         raise CancelCache()
     return result
@@ -149,7 +149,7 @@ class MetricEntriesCalculator:
     def __init__(
         self,
         account: int,
-        meta_ids: Tuple[int, ...],
+        meta_ids: tuple[int, ...],
         quantile_stride: int,
         mdb: Database,
         pdb: Database,
@@ -169,12 +169,12 @@ class MetricEntriesCalculator:
         self._rdb = rdb
         self._cache = cache
 
-    def is_ready_for(self, account: int, meta_ids: Tuple[int, ...]) -> bool:
+    def is_ready_for(self, account: int, meta_ids: tuple[int, ...]) -> bool:
         """Check whether the calculator is ready for the given account and meta ids."""
         return True
 
     @staticmethod
-    def align_time_min_max(time_intervals, stride: int) -> Tuple[datetime, datetime]:
+    def align_time_min_max(time_intervals, stride: int) -> tuple[datetime, datetime]:
         """Widen the min and max timestamp so that it spans an integer number of several days."""
         ts_arr = np.array(
             [
@@ -204,7 +204,7 @@ class MetricEntriesCalculator:
         self,
         time_intervals,
         quantiles: Sequence[float],
-    ) -> Tuple[datetime, datetime]:
+    ) -> tuple[datetime, datetime]:
         if quantiles[0] == 0 and quantiles[1] == 1:
             return self.align_time_min_max(time_intervals, 100500)
         return self.align_time_min_max(time_intervals, self._quantile_stride)
@@ -334,20 +334,20 @@ class MetricEntriesCalculator:
         self,
         metrics: Sequence[str],
         time_intervals: Sequence[Sequence[datetime]],
-        quantiles: Sequence[Union[float, int]],
+        quantiles: Sequence[float | int],
         lines: Sequence[int],
         environments: Sequence[str],
         repositories: Sequence[Collection[str]],
-        participants: List[PRParticipants],
+        participants: list[PRParticipants],
         labels: LabelFilter,
         jira: JIRAFilter,
         exclude_inactive: bool,
-        bots: Set[str],
+        bots: set[str],
         release_settings: ReleaseSettings,
         logical_settings: LogicalRepositorySettings,
         prefixer: Prefixer,
         branches: pd.DataFrame,
-        default_branches: Dict[str, str],
+        default_branches: dict[str, str],
         fresh: bool,
     ) -> np.ndarray:
         """
@@ -423,29 +423,29 @@ class MetricEntriesCalculator:
     )
     async def calc_pull_request_histograms_github(
         self,
-        defs: Dict[HistogramParameters, List[str]],
+        defs: dict[HistogramParameters, list[str]],
         time_from: datetime,
         time_to: datetime,
         quantiles: Sequence[float],
         lines: Sequence[int],
         environment: Optional[str],
         repositories: Sequence[Collection[str]],
-        participants: List[PRParticipants],
+        participants: list[PRParticipants],
         labels: LabelFilter,
         jira: JIRAFilter,
         exclude_inactive: bool,
-        bots: Set[str],
+        bots: set[str],
         release_settings: ReleaseSettings,
         logical_settings: LogicalRepositorySettings,
         prefixer: Prefixer,
         branches: Optional[pd.DataFrame],
-        default_branches: Optional[Dict[str, str]],
+        default_branches: Optional[dict[str, str]],
         fresh: bool,
     ) -> np.ndarray:
         """
         Calculate the pull request histograms on GitHub.
 
-        :return: defs x lines x repositories x participants -> List[Tuple[metric ID, Histogram]].
+        :return: defs x lines x repositories x participants -> list[tuple[metric ID, Histogram]].
         """
         all_repositories = set(chain.from_iterable(repositories))
         all_participants = _merge_participants(participants)
@@ -522,7 +522,7 @@ class MetricEntriesCalculator:
         with_committer: Optional[Collection[str]],
         only_default_branch: bool,
         prefixer: Prefixer,
-    ) -> List[CodeStats]:
+    ) -> list[CodeStats]:
         """Filter code pushed on GitHub according to the specified criteria."""
         time_from, time_to = self.align_time_min_max(time_intervals, 100500)
         x_commits = await extract_commits(
@@ -582,13 +582,13 @@ class MetricEntriesCalculator:
         devs: Sequence[Collection[str]],
         repositories: Sequence[Collection[str]],
         time_intervals: Sequence[Sequence[datetime]],
-        topics: Set[DeveloperTopic],
+        topics: set[DeveloperTopic],
         labels: LabelFilter,
         jira: JIRAFilter,
         release_settings: ReleaseSettings,
         logical_settings: LogicalRepositorySettings,
         prefixer: Prefixer,
-    ) -> Tuple[np.ndarray, List[DeveloperTopic]]:
+    ) -> tuple[np.ndarray, list[DeveloperTopic]]:
         """
         Calculate the developer metrics on GitHub.
 
@@ -747,7 +747,7 @@ class MetricEntriesCalculator:
         time_intervals: Sequence[Sequence[datetime]],
         quantiles: Sequence[float],
         repositories: Sequence[Collection[str]],
-        participants: List[ReleaseParticipants],
+        participants: list[ReleaseParticipants],
         labels: LabelFilter,
         jira: JIRAFilter,
         release_settings: ReleaseSettings,
@@ -755,7 +755,7 @@ class MetricEntriesCalculator:
         prefixer: Prefixer,
         branches: pd.DataFrame,
         default_branches: dict[str, str],
-    ) -> Tuple[np.ndarray, dict[str, ReleaseMatch]]:
+    ) -> tuple[np.ndarray, dict[str, ReleaseMatch]]:
         """
         Calculate the release metrics on GitHub.
 
@@ -827,13 +827,13 @@ class MetricEntriesCalculator:
         time_intervals: Sequence[Sequence[datetime]],
         quantiles: Sequence[float],
         repositories: Sequence[Collection[str]],
-        pushers: List[Sequence[str]],
+        pushers: list[Sequence[str]],
         split_by_check_runs: bool,
         labels: LabelFilter,
         jira: JIRAFilter,
         lines: Sequence[int],
         logical_settings: LogicalRepositorySettings,
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Calculate the check run metrics on GitHub.
 
@@ -884,25 +884,27 @@ class MetricEntriesCalculator:
     )
     async def calc_check_run_histograms_line_github(
         self,
-        defs: Dict[HistogramParameters, List[str]],
+        defs: dict[HistogramParameters, list[str]],
         time_from: datetime,
         time_to: datetime,
         quantiles: Sequence[float],
         repositories: Sequence[Collection[str]],
-        pushers: List[Sequence[str]],
+        pushers: list[Sequence[str]],
         split_by_check_runs: bool,
         labels: LabelFilter,
         jira: JIRAFilter,
         lines: Sequence[int],
         logical_settings: LogicalRepositorySettings,
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Calculate histograms over check runs on GitHub.
 
-        :return: 1. defs x pushers x repositories x lines x check runs count groups -> List[Tuple[metric ID, Histogram]].
-                 2. how many suites in each check runs count group (meaningful only if split_by_check_runs=True).
+        :return: 1. defs x pushers x repositories x lines x check runs count groups ->
+                      list[tuple[metric ID, Histogram]].
+                 2. how many suites in each check runs count group
+                      (meaningful only if split_by_check_runs=True).
                  3. suite sizes (meaningful only if split_by_check_runs=True).
-        """  # noqa
+        """
         try:
             calc = CheckRunBinnedHistogramCalculator(defs.values(), quantiles)
         except KeyError as e:
@@ -967,8 +969,8 @@ class MetricEntriesCalculator:
         time_intervals: Sequence[Sequence[datetime]],
         quantiles: Sequence[float],
         repositories: Sequence[Collection[str]],
-        participants: List[ReleaseParticipants],
-        environments: List[List[str]],
+        participants: list[ReleaseParticipants],
+        environments: list[list[str]],
         pr_labels: LabelFilter,
         with_labels: Mapping[str, Any],
         without_labels: Mapping[str, Any],
@@ -977,7 +979,7 @@ class MetricEntriesCalculator:
         logical_settings: LogicalRepositorySettings,
         prefixer: Prefixer,
         branches: pd.DataFrame,
-        default_branches: Dict[str, str],
+        default_branches: dict[str, str],
         jira_ids: Optional[JIRAConfig],
     ) -> np.ndarray:
         """
@@ -1047,11 +1049,11 @@ class MetricEntriesCalculator:
         split_by_label: bool,
         priorities: Collection[str],
         types: Collection[str],
-        epics: Union[Collection[str], bool],
+        epics: Collection[str] | bool,
         exclude_inactive: bool,
         release_settings: ReleaseSettings,
         logical_settings: LogicalRepositorySettings,
-        default_branches: Dict[str, str],
+        default_branches: dict[str, str],
         jira_ids: Optional[JIRAConfig],
     ) -> Sequence[np.ndarray]:
         """Execute a set of requests for jira metrics.
@@ -1133,18 +1135,18 @@ class MetricEntriesCalculator:
         metrics: Sequence[str],
         time_intervals: Sequence[Sequence[datetime]],
         quantiles: Sequence[float],
-        participants: List[JIRAParticipants],
+        participants: list[JIRAParticipants],
         label_filter: LabelFilter,
         split_by_label: bool,
         priorities: Collection[str],
         types: Collection[str],
-        epics: Union[Collection[str], bool],
+        epics: Collection[str] | bool,
         exclude_inactive: bool,
         release_settings: ReleaseSettings,
         logical_settings: LogicalRepositorySettings,
-        default_branches: Dict[str, str],
+        default_branches: dict[str, str],
         jira_ids: Optional[JIRAConfig],
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         """
         Calculate the JIRA issue metrics.
 
@@ -1209,19 +1211,19 @@ class MetricEntriesCalculator:
     )
     async def calc_jira_histograms(
         self,
-        defs: Dict[HistogramParameters, List[str]],
+        defs: dict[HistogramParameters, list[str]],
         time_from: datetime,
         time_to: datetime,
         quantiles: Sequence[float],
-        participants: List[JIRAParticipants],
+        participants: list[JIRAParticipants],
         label_filter: LabelFilter,
         priorities: Collection[str],
         types: Collection[str],
-        epics: Union[Collection[str], bool],
+        epics: Collection[str] | bool,
         exclude_inactive: bool,
         release_settings: ReleaseSettings,
         logical_settings: LogicalRepositorySettings,
-        default_branches: Dict[str, str],
+        default_branches: dict[str, str],
         jira_ids: Optional[JIRAConfig],
     ) -> np.ndarray:
         """Calculate histograms over JIRA issues."""
@@ -1259,7 +1261,7 @@ class MetricEntriesCalculator:
     @staticmethod
     def _compile_jira_participants(
         participants: list[JIRAParticipants],
-    ) -> Tuple[Collection[str], Collection[str], Collection[str]]:
+    ) -> tuple[Collection[str], Collection[str], Collection[str]]:
         reporters = list(
             set(
                 chain.from_iterable(
@@ -1294,13 +1296,13 @@ class MetricEntriesCalculator:
         time_from: datetime,
         time_to: datetime,
         repositories: Sequence[Collection[str]],
-        pushers: List[Sequence[str]],
+        pushers: list[Sequence[str]],
         split_by_check_runs: bool,
         labels: LabelFilter,
         jira: JIRAFilter,
         lines: Sequence[int],
         logical_settings: LogicalRepositorySettings,
-    ) -> Tuple[
+    ) -> tuple[
         pd.DataFrame,
         np.ndarray,  # groups
         np.ndarray,  # how many suites in each group
@@ -1329,7 +1331,7 @@ class MetricEntriesCalculator:
         else:
             suite_sizes = np.array([])
 
-            def check_runs_grouper(df: pd.DataFrame) -> List[np.ndarray]:
+            def check_runs_grouper(df: pd.DataFrame) -> list[np.ndarray]:
                 return [np.arange(len(df))]
 
         lines_grouper = partial(group_check_runs_by_lines, lines)
@@ -1354,19 +1356,19 @@ class MetricEntriesCalculator:
         self,
         time_from: datetime,
         time_to: datetime,
-        repositories: Set[str],
+        repositories: set[str],
         participants: PRParticipants,
         labels: LabelFilter,
         jira: JIRAFilter,
         exclude_inactive: bool,
-        bots: Set[str],
+        bots: set[str],
         release_settings: ReleaseSettings,
         logical_settings: LogicalRepositorySettings,
         prefixer: Prefixer,
         fresh: bool,
         with_jira_map: bool,
         branches: Optional[pd.DataFrame] = None,
-        default_branches: Optional[Dict[str, str]] = None,
+        default_branches: Optional[dict[str, str]] = None,
     ) -> pd.DataFrame:
         """
         Calculate facts about pull request on GitHub.
@@ -1424,20 +1426,20 @@ class MetricEntriesCalculator:
         self,
         time_from: datetime,
         time_to: datetime,
-        repositories: Set[str],
+        repositories: set[str],
         participants: PRParticipants,
         labels: LabelFilter,
         jira: JIRAFilter,
         exclude_inactive: bool,
-        bots: Set[str],
+        bots: set[str],
         release_settings: ReleaseSettings,
         logical_settings: LogicalRepositorySettings,
         prefixer: Prefixer,
         fresh: bool,
         with_jira_map: bool,
         branches: Optional[pd.DataFrame],
-        default_branches: Optional[Dict[str, str]],
-    ) -> Tuple[pd.DataFrame, bool]:
+        default_branches: Optional[dict[str, str]],
+    ) -> tuple[pd.DataFrame, bool]:
         assert isinstance(repositories, set)
         if branches is None or default_branches is None:
             branches, default_branches = await self.branch_miner.extract_branches(
@@ -1718,7 +1720,7 @@ def _compose_cache_key_participants(participants: Sequence[AnyParticipants]) -> 
 
 def make_calculator(
     account: int,
-    meta_ids: Tuple[int, ...],
+    meta_ids: tuple[int, ...],
     mdb: Database,
     pdb: Database,
     rdb: Database,
@@ -1776,7 +1778,7 @@ class ReleaseMetricsLineRequest(MetricsLineRequest):
     """Information for a single release metrics request."""
 
     repositories: Sequence[Collection[str]]
-    participants: List[ReleaseParticipants]
+    participants: list[ReleaseParticipants]
 
     def __str__(self) -> str:
         """Return the string representation of the object.
@@ -1804,7 +1806,7 @@ class ReleaseMetricsLineRequest(MetricsLineRequest):
 class JIRAMetricsLineRequest(MetricsLineRequest):
     """Information for a single jira metrics request."""
 
-    participants: List[JIRAParticipants]
+    participants: list[JIRAParticipants]
 
     def __str__(self) -> str:
         """Return the string representation of the object.
