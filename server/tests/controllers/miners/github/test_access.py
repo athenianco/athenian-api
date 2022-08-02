@@ -1,7 +1,12 @@
+import marshal
+
+import lz4.frame
 import pytest
+from sqlalchemy import update
 
 from athenian.api.defer import wait_deferred, with_defer
 from athenian.api.internal.miners.github.access import GitHubAccessChecker
+from athenian.api.models.metadata.github import AccountRepository
 
 
 @pytest.mark.parametrize("has_cache", [True, False])
@@ -26,3 +31,33 @@ async def test_check_access_connections(mdb, sdb):
 async def test_check_access_empty(mdb, sdb):
     with pytest.raises(AssertionError):
         GitHubAccessChecker(1, (), sdb, mdb, None)
+
+
+@with_defer
+async def test_check_access_rename(mdb_rw, sdb, cache):
+    checker = await GitHubAccessChecker(1, (6366825,), sdb, mdb_rw, cache).load()
+    assert await checker.check({"src-d/go-git"}) == set()
+    await wait_deferred()
+    try:
+        await mdb_rw.execute(
+            update(AccountRepository)
+            .where(AccountRepository.repo_full_name == "src-d/go-git")
+            .values({AccountRepository.repo_full_name: "src-d/go-buck"}),
+        )
+        assert await checker.check({"src-d/go-buck"}) == set()
+        assert checker._installed_repos == {
+            "src-d/go-git": 40550,
+            "src-d/go-buck": 40550,
+            "src-d/gitbase": 39652699,
+        }
+        await wait_deferred()
+        assert (
+            marshal.loads(lz4.frame.decompress(next(iter(cache.mem.values()))[0]))
+            == checker._installed_repos
+        )
+    finally:
+        await mdb_rw.execute(
+            update(AccountRepository)
+            .where(AccountRepository.repo_full_name == "src-d/go-buck")
+            .values({AccountRepository.repo_full_name: "src-d/go-git"}),
+        )

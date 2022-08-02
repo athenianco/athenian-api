@@ -1438,18 +1438,26 @@ async def _fetch_commit_stats(
         rebased_map = {}
 
     if len(commit_rows) != len(all_mentioned_hashes):
-        log = logging.getLogger(f"{__name__}._fetch_commit_stats")
-        log.error(
-            "number of retrieved commit rows is different than requested hashes, "
-            "probably multiple PRs in mdb github.node_pull_request have "
-            "the same commit as their merge commit",
-        )
-        seen_commit_ids: set[int] = set()
+        seen_commit_shas: set[str] = set()
+        dupes: set[str] = set()
         dedup_commit_rows = []
         for r in commit_rows:
-            if (id_ := r[NodeCommit.id.name]) not in seen_commit_ids:
+            if (sha := r[NodeCommit.sha.name]) not in seen_commit_shas:
                 dedup_commit_rows.append(r)
-                seen_commit_ids.add(id_)
+                seen_commit_shas.add(sha)
+            else:
+                dupes.add(sha)
+        del seen_commit_shas
+        log = logging.getLogger(f"{__name__}._fetch_commit_stats")
+        msg = "number of retrieved commit rows is different than of requested hashes"
+        if dupes:
+            msg += (
+                " because some PRs in github.node_pull_request (acc_id %s) have "
+                "the same merge commit: %s"
+            )
+            log.error(msg, meta_ids, dupes)
+        else:
+            log.error(msg)
         commit_rows = dedup_commit_rows
 
     shas = np.zeros(len(commit_rows), "S40")

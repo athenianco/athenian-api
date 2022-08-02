@@ -768,7 +768,7 @@ complete_progress = {
     "started_date": "2020-03-10T09:53:41Z",
     "finished_date": "2020-03-10T14:46:29Z",
     "owner": "vmarkovtsev",
-    "repositories": 19,
+    "repositories": 2,
     "tables": [
         {"fetched": 44, "name": "AssignedEvent", "total": 44},
         {"fetched": 5, "name": "BaseRefChangedEvent", "total": 5},
