@@ -21,6 +21,7 @@ import warnings
 import aiohttp.web
 from aiohttp.web_runner import GracefulExit
 import aiomcache
+import aiomonitor
 from especifico.decorators import validation
 from flogging import flogging
 import jinja2
@@ -30,6 +31,7 @@ import numpy
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=DeprecationWarning)
     import pandas
+
 from sentry_sdk.integrations.aiohttp import AioHttpIntegration
 from sentry_sdk.integrations.executing import ExecutingIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
@@ -508,6 +510,7 @@ def main() -> Optional[AthenianApp]:
         return None
     patch_pandas()
     set_endpoint_weights(args.weights, log)
+    asyncio.set_event_loop(loop := asyncio.new_event_loop())
     app = AthenianApp(
         mdb_conn=args.metadata_db,
         sdb_conn=args.state_db,
@@ -524,7 +527,8 @@ def main() -> Optional[AthenianApp]:
         segment=create_segment(),
         google_analytics=os.getenv("GOOGLE_ANALYTICS", ""),
     )
-    app.run(host=args.host, port=args.port, print=lambda s: log.info("\n" + s))
+    with aiomonitor.start_monitor(loop):
+        app.run(host=args.host, port=args.port, print=lambda s: log.info("\n" + s))
     return app
 
 
