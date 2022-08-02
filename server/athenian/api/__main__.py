@@ -501,6 +501,7 @@ def set_endpoint_weights(file_name: str, log: logging.Logger) -> None:
 def main() -> Optional[AthenianApp]:
     """Server's entry point."""
     uvloop.install()
+    asyncio.set_event_loop(loop := asyncio.new_event_loop())
     args = parse_args()
     log = logging.getLogger(metadata.__package__)
     setup_context(log)
@@ -510,7 +511,6 @@ def main() -> Optional[AthenianApp]:
         return None
     patch_pandas()
     set_endpoint_weights(args.weights, log)
-    asyncio.set_event_loop(loop := asyncio.new_event_loop())
     app = AthenianApp(
         mdb_conn=args.metadata_db,
         sdb_conn=args.state_db,
