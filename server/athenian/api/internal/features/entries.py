@@ -192,6 +192,17 @@ class _ReleaseMetricsLineGHCache(_CalcMetricsCache[tuple[np.ndarray, dict[str, R
         return (values, result[1])
 
 
+class _JIRAMetricsLineGHCache(_CalcMetricsCache[tuple[np.ndarray, np.ndarray]]):
+    @classmethod
+    def sort_metric_values_in_result(
+        cls,
+        result: tuple[np.ndarray, np.ndarray],
+        sort_indexes: Iterable[int],
+    ) -> tuple[np.ndarray, np.ndarray]:
+        values = cls._sorted_metric_values(result[0], sort_indexes)
+        return (values, result[1])
+
+
 class UnsupportedMetricError(Exception):
     """Raised on attempt to calculate a histogram on a metric that's not possible."""
 
@@ -1094,8 +1105,7 @@ class MetricEntriesCalculator:
         serialize=pickle.dumps,
         deserialize=pickle.loads,
         key=lambda metrics, time_intervals, quantiles, participants, label_filter, split_by_label, priorities, types, epics, exclude_inactive, release_settings, logical_settings, default_branches, jira_ids, **_: (  # noqa
-            # TODO: use sorted(metrics), see TODO in calc_pull_request_metrics_line_github
-            ",".join(metrics),
+            ",".join(sorted(metrics)),
             ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
             ",".join(str(q) for q in quantiles),
             # don't use _compose_cache_key_participants, it doesn't bear None-s
@@ -1113,7 +1123,10 @@ class MetricEntriesCalculator:
             release_settings,
             logical_settings,
         ),
+        preprocess=_JIRAMetricsLineGHCache.preprocess,
+        postprocess=_JIRAMetricsLineGHCache.postprocess,
         cache=lambda self, **_: self._cache,
+        version=2,
     )
     async def calc_jira_metrics_line_github(
         self,

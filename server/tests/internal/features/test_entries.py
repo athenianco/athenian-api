@@ -466,7 +466,69 @@ class TestBatchCalcReleaseMetrics:
         assert second_res[0][0][0][0][0][1].value == first_res[0][0][0][0][0][1].value
 
 
-class TestBatchCalcJIRAMetrics:
+class BaseCalcJIRAMetricsTest:
+    @classmethod
+    async def _base_kwargs(
+        cls,
+        meta_ids: tuple[int, ...],
+        sdb: Database,
+        mdb: Database,
+    ) -> dict[str, Any]:
+        jira_ids = await get_jira_installation(1, sdb, mdb, None)
+        jira_config = JIRAConfig(jira_ids.acc_id, jira_ids.projects, jira_ids.epics)
+
+        shared_kwargs = await _calc_shared_kwargs(meta_ids, mdb, sdb)
+        for f in ("prefixer", "branches", "labels", "jira"):
+            shared_kwargs.pop(f)
+
+        return {
+            "quantiles": [0, 1],
+            "label_filter": LabelFilter.empty(),
+            "split_by_label": False,
+            "priorities": [],
+            "types": [],
+            "epics": [],
+            "exclude_inactive": False,
+            "jira_ids": jira_config,
+            **shared_kwargs,
+        }
+
+
+class TestCalcJIRAMetricsLineGithub(BaseCalcJIRAMetricsTest):
+    @with_defer
+    async def test_cache_shared_with_different_metrics_order(
+        self,
+        mdb: Database,
+        pdb: Database,
+        rdb: Database,
+        sdb: Database,
+    ) -> None:
+        cache = build_fake_cache()
+        meta_ids = await get_metadata_account_ids(1, sdb, None)
+        calculator = MetricEntriesCalculator(1, meta_ids, 28, mdb, pdb, rdb, cache)
+        time_intervals = [[dt(2020, 5, 1), dt(2020, 5, 5)]]
+
+        metrics0 = [JIRAMetricID.JIRA_RAISED, JIRAMetricID.JIRA_OPEN, JIRAMetricID.JIRA_LEAD_TIME]
+        metrics1 = [JIRAMetricID.JIRA_LEAD_TIME, JIRAMetricID.JIRA_OPEN, JIRAMetricID.JIRA_RAISED]
+
+        base_kwargs = await self._base_kwargs(meta_ids, sdb, mdb)
+        kwargs = {"time_intervals": time_intervals, "participants": [], **base_kwargs}
+
+        with mock.patch(
+            f"{MetricEntriesCalculator.__module__}.fetch_jira_issues", wraps=fetch_jira_issues,
+        ) as fetch_issues_mock:
+            res0 = await calculator.calc_jira_metrics_line_github(metrics=metrics0, **kwargs)
+            await wait_deferred()
+            res1 = await calculator.calc_jira_metrics_line_github(metrics=metrics1, **kwargs)
+
+        fetch_issues_mock.assert_called_once()
+
+        assert res0[0][0][0][0][0][0].value == res1[0][0][0][0][0][2].value
+        assert res0[0][0][0][0][0][1].value == res1[0][0][0][0][0][1].value
+        assert res0[0][0][0][0][0][2].value == res1[0][0][0][0][0][0].value
+
+
+class TestBatchCalcJIRAMetrics(BaseCalcJIRAMetricsTest):
     @with_defer
     async def test_compare_with_unbatched_calc(
         self,
@@ -548,32 +610,6 @@ class TestBatchCalcJIRAMetrics:
         fetch_issues_mock.assert_not_called()
 
         assert first_res[0][0][0][0][0][0].value == second_res[0][0][0][0][0][0].value
-
-    @classmethod
-    async def _base_kwargs(
-        cls,
-        meta_ids: tuple[int, ...],
-        sdb: Database,
-        mdb: Database,
-    ) -> dict[str, Any]:
-        jira_ids = await get_jira_installation(1, sdb, mdb, None)
-        jira_config = JIRAConfig(jira_ids.acc_id, jira_ids.projects, jira_ids.epics)
-
-        shared_kwargs = await _calc_shared_kwargs(meta_ids, mdb, sdb)
-        for f in ("prefixer", "branches", "labels", "jira"):
-            shared_kwargs.pop(f)
-
-        return {
-            "quantiles": [0, 1],
-            "label_filter": LabelFilter.empty(),
-            "split_by_label": False,
-            "priorities": [],
-            "types": [],
-            "epics": [],
-            "exclude_inactive": False,
-            "jira_ids": jira_config,
-            **shared_kwargs,
-        }
 
 
 async def _calc_shared_kwargs(
