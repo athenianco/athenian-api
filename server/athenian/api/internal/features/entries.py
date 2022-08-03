@@ -240,6 +240,100 @@ class MetricEntriesCalculator:
         exptime=short_term_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
+        key=lambda metrics, time_intervals, quantiles, lines, repositories, participants, labels, jira, environments, exclude_inactive, release_settings, logical_settings, **_: (  # noqa
+            # result can be cached independently from metrics order, see _PRMetricsLineGHCache
+            ",".join(sorted(metrics)),
+            ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
+            ",".join(str(q) for q in quantiles),
+            ",".join(str(n) for n in lines),
+            _compose_cache_key_repositories(repositories),
+            _compose_cache_key_participants(participants),
+            labels,
+            jira,
+            ",".join(sorted(environments)),
+            exclude_inactive,
+            release_settings,
+            logical_settings,
+        ),
+        preprocess=_PRMetricsLineGHCache.preprocess,
+        postprocess=_PRMetricsLineGHCache.postprocess,
+        cache=lambda self, **_: self._cache,
+        version=3,
+    )
+    async def calc_pull_request_metrics_line_github(
+        self,
+        metrics: Sequence[str],
+        time_intervals: Sequence[Sequence[datetime]],
+        quantiles: Sequence[float | int],
+        lines: Sequence[int],
+        environments: Sequence[str],
+        repositories: Sequence[Collection[str]],
+        participants: list[PRParticipants],
+        labels: LabelFilter,
+        jira: JIRAFilter,
+        exclude_inactive: bool,
+        bots: set[str],
+        release_settings: ReleaseSettings,
+        logical_settings: LogicalRepositorySettings,
+        prefixer: Prefixer,
+        branches: pd.DataFrame,
+        default_branches: dict[str, str],
+        fresh: bool,
+    ) -> np.ndarray:
+        """
+        Calculate pull request metrics on GitHub.
+
+        :return: lines x repositories x participants x granularities x time intervals x metrics.
+        """
+        assert isinstance(repositories, (tuple, list))
+        all_repositories = set(chain.from_iterable(repositories))
+        all_participants = _merge_participants(participants)
+        calc = PullRequestBinnedMetricCalculator(
+            metrics,
+            quantiles,
+            self._quantile_stride,
+            exclude_inactive=exclude_inactive,
+            environments=environments,
+        )
+        time_from, time_to = self._align_time_min_max(time_intervals, quantiles)
+        df_facts = await self.calc_pull_request_facts_github(
+            time_from,
+            time_to,
+            all_repositories,
+            all_participants,
+            labels,
+            jira,
+            exclude_inactive,
+            bots,
+            release_settings,
+            logical_settings,
+            prefixer,
+            fresh,
+            pr_metrics_need_jira_mapping(metrics),
+            branches,
+            default_branches,
+        )
+        lines_grouper = partial(group_prs_by_lines, lines)
+        repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.name, repositories)
+        with_grouper = partial(group_prs_by_participants, participants)
+        dedupe_mask = calculate_logical_prs_duplication_mask(
+            df_facts, release_settings, logical_settings,
+        )
+        groups = group_to_indexes(
+            df_facts,
+            lines_grouper,
+            repo_grouper,
+            with_grouper,
+            deduplicate_key=PullRequestFacts.f.node_id if dedupe_mask is not None else None,
+            deduplicate_mask=dedupe_mask,
+        )
+        return calc(df_facts, time_intervals, groups)
+
+    @sentry_span
+    @cached(
+        exptime=short_term_exptime,
+        serialize=pickle.dumps,
+        deserialize=pickle.loads,
         key=lambda requests, quantiles, labels, jira, exclude_inactive, bots, release_settings, logical_settings, **kwargs: (  # noqa
             ",".join(str(req) for req in requests),
             ",".join(str(q) for q in quantiles),
@@ -332,100 +426,6 @@ class MetricEntriesCalculator:
             results.append(calc(df_facts, request.time_intervals, groups))
 
         return results
-
-    @sentry_span
-    @cached(
-        exptime=short_term_exptime,
-        serialize=pickle.dumps,
-        deserialize=pickle.loads,
-        key=lambda metrics, time_intervals, quantiles, lines, repositories, participants, labels, jira, environments, exclude_inactive, release_settings, logical_settings, **_: (  # noqa
-            # result can be cached independently from metrics order, see _PRMetricsLineGHCache
-            ",".join(sorted(metrics)),
-            ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
-            ",".join(str(q) for q in quantiles),
-            ",".join(str(n) for n in lines),
-            _compose_cache_key_repositories(repositories),
-            _compose_cache_key_participants(participants),
-            labels,
-            jira,
-            ",".join(sorted(environments)),
-            exclude_inactive,
-            release_settings,
-            logical_settings,
-        ),
-        preprocess=_PRMetricsLineGHCache.preprocess,
-        postprocess=_PRMetricsLineGHCache.postprocess,
-        cache=lambda self, **_: self._cache,
-        version=3,
-    )
-    async def calc_pull_request_metrics_line_github(
-        self,
-        metrics: Sequence[str],
-        time_intervals: Sequence[Sequence[datetime]],
-        quantiles: Sequence[float | int],
-        lines: Sequence[int],
-        environments: Sequence[str],
-        repositories: Sequence[Collection[str]],
-        participants: list[PRParticipants],
-        labels: LabelFilter,
-        jira: JIRAFilter,
-        exclude_inactive: bool,
-        bots: set[str],
-        release_settings: ReleaseSettings,
-        logical_settings: LogicalRepositorySettings,
-        prefixer: Prefixer,
-        branches: pd.DataFrame,
-        default_branches: dict[str, str],
-        fresh: bool,
-    ) -> np.ndarray:
-        """
-        Calculate pull request metrics on GitHub.
-
-        :return: lines x repositories x participants x granularities x time intervals x metrics.
-        """
-        assert isinstance(repositories, (tuple, list))
-        all_repositories = set(chain.from_iterable(repositories))
-        all_participants = _merge_participants(participants)
-        calc = PullRequestBinnedMetricCalculator(
-            metrics,
-            quantiles,
-            self._quantile_stride,
-            exclude_inactive=exclude_inactive,
-            environments=environments,
-        )
-        time_from, time_to = self._align_time_min_max(time_intervals, quantiles)
-        df_facts = await self.calc_pull_request_facts_github(
-            time_from,
-            time_to,
-            all_repositories,
-            all_participants,
-            labels,
-            jira,
-            exclude_inactive,
-            bots,
-            release_settings,
-            logical_settings,
-            prefixer,
-            fresh,
-            pr_metrics_need_jira_mapping(metrics),
-            branches,
-            default_branches,
-        )
-        lines_grouper = partial(group_prs_by_lines, lines)
-        repo_grouper = partial(group_by_repo, PullRequest.repository_full_name.name, repositories)
-        with_grouper = partial(group_prs_by_participants, participants)
-        dedupe_mask = calculate_logical_prs_duplication_mask(
-            df_facts, release_settings, logical_settings,
-        )
-        groups = group_to_indexes(
-            df_facts,
-            lines_grouper,
-            repo_grouper,
-            with_grouper,
-            deduplicate_key=PullRequestFacts.f.node_id if dedupe_mask is not None else None,
-            deduplicate_mask=dedupe_mask,
-        )
-        return calc(df_facts, time_intervals, groups)
 
     @sentry_span
     @cached(
@@ -667,6 +667,87 @@ class MetricEntriesCalculator:
         exptime=short_term_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
+        key=lambda metrics, time_intervals, quantiles, repositories, participants, labels, jira, release_settings, logical_settings, **_: (  # noqa
+            # TODO: use sorted(metrics), see TODO in calc_pull_request_metrics_line_github
+            ",".join(metrics),
+            ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
+            ",".join(str(q) for q in quantiles),
+            ",".join(str(sorted(r)) for r in repositories),
+            _compose_cache_key_participants(participants),
+            labels,
+            jira,
+            release_settings,
+            logical_settings,
+        ),
+        cache=lambda self, **_: self._cache,
+    )
+    async def calc_release_metrics_line_github(
+        self,
+        metrics: Sequence[str],
+        time_intervals: Sequence[Sequence[datetime]],
+        quantiles: Sequence[float],
+        repositories: Sequence[Collection[str]],
+        participants: list[ReleaseParticipants],
+        labels: LabelFilter,
+        jira: JIRAFilter,
+        release_settings: ReleaseSettings,
+        logical_settings: LogicalRepositorySettings,
+        prefixer: Prefixer,
+        branches: pd.DataFrame,
+        default_branches: dict[str, str],
+    ) -> tuple[np.ndarray, dict[str, ReleaseMatch]]:
+        """
+        Calculate the release metrics on GitHub.
+
+        :return: 1. participants x repositories x granularities x time intervals x metrics.
+                 2. matched_bys - map from repository names to applied release matches.
+        """
+        time_from, time_to = self._align_time_min_max(time_intervals, quantiles)
+        all_repositories = set(chain.from_iterable(repositories))
+        calc = ReleaseBinnedMetricCalculator(metrics, quantiles, self._quantile_stride)
+        all_participants = merge_release_participants(participants)
+        releases, _, matched_bys, _ = await mine_releases(
+            all_repositories,
+            all_participants,
+            branches,
+            default_branches,
+            time_from,
+            time_to,
+            labels,
+            jira,
+            release_settings,
+            logical_settings,
+            prefixer,
+            self._account,
+            self._meta_ids,
+            self._mdb,
+            self._pdb,
+            self._rdb,
+            self._cache,
+            with_avatars=False,
+            with_pr_titles=False,
+        )
+        df_facts = df_from_structs([f for _, f in releases])
+        repo_grouper = partial(group_by_repo, Release.repository_full_name.name, repositories)
+        participant_grouper = partial(group_releases_by_participants, participants)
+        dedupe_mask = calculate_logical_release_duplication_mask(
+            df_facts, release_settings, logical_settings,
+        )
+        groups = group_to_indexes(
+            df_facts,
+            participant_grouper,
+            repo_grouper,
+            deduplicate_key=ReleaseFacts.f.node_id if dedupe_mask is not None else None,
+            deduplicate_mask=dedupe_mask,
+        )
+        values = calc(df_facts, time_intervals, groups)
+        return values, matched_bys
+
+    @sentry_span
+    @cached(
+        exptime=short_term_exptime,
+        serialize=pickle.dumps,
+        deserialize=pickle.loads,
         key=lambda requests, quantiles, labels, jira, release_settings, logical_settings, **kwargs: (  # noqa
             ",".join(str(req) for req in requests),
             ",".join(str(q) for q in quantiles),
@@ -749,87 +830,6 @@ class MetricEntriesCalculator:
             results.append(calc(df_facts, request.time_intervals, groups))
 
         return results
-
-    @sentry_span
-    @cached(
-        exptime=short_term_exptime,
-        serialize=pickle.dumps,
-        deserialize=pickle.loads,
-        key=lambda metrics, time_intervals, quantiles, repositories, participants, labels, jira, release_settings, logical_settings, **_: (  # noqa
-            # TODO: use sorted(metrics), see TODO in calc_pull_request_metrics_line_github
-            ",".join(metrics),
-            ";".join(",".join(str(dt.timestamp()) for dt in ts) for ts in time_intervals),
-            ",".join(str(q) for q in quantiles),
-            ",".join(str(sorted(r)) for r in repositories),
-            _compose_cache_key_participants(participants),
-            labels,
-            jira,
-            release_settings,
-            logical_settings,
-        ),
-        cache=lambda self, **_: self._cache,
-    )
-    async def calc_release_metrics_line_github(
-        self,
-        metrics: Sequence[str],
-        time_intervals: Sequence[Sequence[datetime]],
-        quantiles: Sequence[float],
-        repositories: Sequence[Collection[str]],
-        participants: list[ReleaseParticipants],
-        labels: LabelFilter,
-        jira: JIRAFilter,
-        release_settings: ReleaseSettings,
-        logical_settings: LogicalRepositorySettings,
-        prefixer: Prefixer,
-        branches: pd.DataFrame,
-        default_branches: dict[str, str],
-    ) -> tuple[np.ndarray, dict[str, ReleaseMatch]]:
-        """
-        Calculate the release metrics on GitHub.
-
-        :return: 1. participants x repositories x granularities x time intervals x metrics.
-                 2. matched_bys - map from repository names to applied release matches.
-        """
-        time_from, time_to = self._align_time_min_max(time_intervals, quantiles)
-        all_repositories = set(chain.from_iterable(repositories))
-        calc = ReleaseBinnedMetricCalculator(metrics, quantiles, self._quantile_stride)
-        all_participants = merge_release_participants(participants)
-        releases, _, matched_bys, _ = await mine_releases(
-            all_repositories,
-            all_participants,
-            branches,
-            default_branches,
-            time_from,
-            time_to,
-            labels,
-            jira,
-            release_settings,
-            logical_settings,
-            prefixer,
-            self._account,
-            self._meta_ids,
-            self._mdb,
-            self._pdb,
-            self._rdb,
-            self._cache,
-            with_avatars=False,
-            with_pr_titles=False,
-        )
-        df_facts = df_from_structs([f for _, f in releases])
-        repo_grouper = partial(group_by_repo, Release.repository_full_name.name, repositories)
-        participant_grouper = partial(group_releases_by_participants, participants)
-        dedupe_mask = calculate_logical_release_duplication_mask(
-            df_facts, release_settings, logical_settings,
-        )
-        groups = group_to_indexes(
-            df_facts,
-            participant_grouper,
-            repo_grouper,
-            deduplicate_key=ReleaseFacts.f.node_id if dedupe_mask is not None else None,
-            deduplicate_mask=dedupe_mask,
-        )
-        values = calc(df_facts, time_intervals, groups)
-        return values, matched_bys
 
     @sentry_span
     @cached(
@@ -1055,87 +1055,6 @@ class MetricEntriesCalculator:
         exptime=short_term_exptime,
         serialize=pickle.dumps,
         deserialize=pickle.loads,
-        key=lambda requests, quantiles, label_filter, split_by_label, priorities, types, epics, exclude_inactive, release_settings, logical_settings, **_: (  # noqa
-            ",".join(str(req) for req in requests),
-            ",".join(str(q) for q in quantiles),
-            label_filter,
-            split_by_label,
-            ",".join(sorted(priorities)),
-            ",".join(sorted(types)),
-            ",".join(sorted(epics) if not isinstance(epics, bool) else ["<flying>"]),
-            exclude_inactive,
-            release_settings,
-            logical_settings,
-        ),
-        cache=lambda self, **_: self._cache,
-    )
-    async def batch_calc_jira_metrics_line_github(
-        self,
-        requests: Sequence[JIRAMetricsLineRequest],
-        quantiles: Sequence[float],
-        label_filter: LabelFilter,
-        split_by_label: bool,
-        priorities: Collection[str],
-        types: Collection[str],
-        epics: Collection[str] | bool,
-        exclude_inactive: bool,
-        release_settings: ReleaseSettings,
-        logical_settings: LogicalRepositorySettings,
-        default_branches: dict[str, str],
-        jira_ids: Optional[JIRAConfig],
-    ) -> Sequence[np.ndarray]:
-        """Execute a set of requests for jira metrics.
-
-        A numpy array is returned for every request in `requests`.  The numpy array has the same
-        format as the first item returned by `calc_jira_metrics_line_github()`.
-
-        Calling this method with multiple `requests` is more efficient than calling
-        `calc_jira_metrics_line_github()` multiple times.
-
-        """
-        all_intervals = list(chain.from_iterable(request.time_intervals for request in requests))
-        time_from, time_to = self._align_time_min_max(all_intervals, quantiles)
-        all_participants = list(chain.from_iterable(req.participants for req in requests))
-        reporters, assignees, commenters = self._compile_jira_participants(all_participants)
-        issues = await fetch_jira_issues(
-            jira_ids,
-            time_from,
-            time_to,
-            exclude_inactive,
-            label_filter,
-            priorities,
-            types,
-            epics,
-            reporters,
-            assignees,
-            commenters,
-            False,
-            default_branches,
-            release_settings,
-            logical_settings,
-            self._account,
-            self._meta_ids,
-            self._mdb,
-            self._pdb,
-            self._cache,
-            extra_columns=participant_columns if len(all_participants) > 1 else (),
-        )
-        label_splitter = IssuesLabelSplitter(split_by_label, label_filter)
-
-        results = []
-        for request in requests:
-            calc = JIRABinnedMetricCalculator(request.metrics, quantiles, self._quantile_stride)
-            groupers = partial(split_issues_by_participants, request.participants), label_splitter
-            groups = group_to_indexes(issues, *groupers)
-            results.append(calc(issues, request.time_intervals, groups))
-
-        return results
-
-    @sentry_span
-    @cached(
-        exptime=short_term_exptime,
-        serialize=pickle.dumps,
-        deserialize=pickle.loads,
         key=lambda metrics, time_intervals, quantiles, participants, label_filter, split_by_label, priorities, types, epics, exclude_inactive, release_settings, logical_settings, default_branches, jira_ids, **_: (  # noqa
             # TODO: use sorted(metrics), see TODO in calc_pull_request_metrics_line_github
             ",".join(metrics),
@@ -1211,6 +1130,87 @@ class MetricEntriesCalculator:
         groupers = partial(split_issues_by_participants, participants), label_splitter
         groups = group_to_indexes(issues, *groupers)
         return calc(issues, time_intervals, groups), label_splitter.labels
+
+    @sentry_span
+    @cached(
+        exptime=short_term_exptime,
+        serialize=pickle.dumps,
+        deserialize=pickle.loads,
+        key=lambda requests, quantiles, label_filter, split_by_label, priorities, types, epics, exclude_inactive, release_settings, logical_settings, **_: (  # noqa
+            ",".join(str(req) for req in requests),
+            ",".join(str(q) for q in quantiles),
+            label_filter,
+            split_by_label,
+            ",".join(sorted(priorities)),
+            ",".join(sorted(types)),
+            ",".join(sorted(epics) if not isinstance(epics, bool) else ["<flying>"]),
+            exclude_inactive,
+            release_settings,
+            logical_settings,
+        ),
+        cache=lambda self, **_: self._cache,
+    )
+    async def batch_calc_jira_metrics_line_github(
+        self,
+        requests: Sequence[JIRAMetricsLineRequest],
+        quantiles: Sequence[float],
+        label_filter: LabelFilter,
+        split_by_label: bool,
+        priorities: Collection[str],
+        types: Collection[str],
+        epics: Collection[str] | bool,
+        exclude_inactive: bool,
+        release_settings: ReleaseSettings,
+        logical_settings: LogicalRepositorySettings,
+        default_branches: dict[str, str],
+        jira_ids: Optional[JIRAConfig],
+    ) -> Sequence[np.ndarray]:
+        """Execute a set of requests for jira metrics.
+
+        A numpy array is returned for every request in `requests`.  The numpy array has the same
+        format as the first item returned by `calc_jira_metrics_line_github()`.
+
+        Calling this method with multiple `requests` is more efficient than calling
+        `calc_jira_metrics_line_github()` multiple times.
+
+        """
+        all_intervals = list(chain.from_iterable(request.time_intervals for request in requests))
+        time_from, time_to = self._align_time_min_max(all_intervals, quantiles)
+        all_participants = list(chain.from_iterable(req.participants for req in requests))
+        reporters, assignees, commenters = self._compile_jira_participants(all_participants)
+        issues = await fetch_jira_issues(
+            jira_ids,
+            time_from,
+            time_to,
+            exclude_inactive,
+            label_filter,
+            priorities,
+            types,
+            epics,
+            reporters,
+            assignees,
+            commenters,
+            False,
+            default_branches,
+            release_settings,
+            logical_settings,
+            self._account,
+            self._meta_ids,
+            self._mdb,
+            self._pdb,
+            self._cache,
+            extra_columns=participant_columns if len(all_participants) > 1 else (),
+        )
+        label_splitter = IssuesLabelSplitter(split_by_label, label_filter)
+
+        results = []
+        for request in requests:
+            calc = JIRABinnedMetricCalculator(request.metrics, quantiles, self._quantile_stride)
+            groupers = partial(split_issues_by_participants, request.participants), label_splitter
+            groups = group_to_indexes(issues, *groupers)
+            results.append(calc(issues, request.time_intervals, groups))
+
+        return results
 
     @sentry_span
     @cached(

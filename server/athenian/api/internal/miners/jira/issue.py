@@ -937,12 +937,11 @@ async def fetch_jira_issues_for_prs(
             ),
         )
         .where(
-            sql.and_(
-                prmap.node_id.in_(pr_nodes),
-                prmap.node_acc.in_(meta_ids),
-                regiss.project_id.in_(jira_ids[1]),
-                regiss.is_deleted.is_(False),
-            ),
+            prmap.node_id.in_(pr_nodes),
+            prmap.node_acc.in_(meta_ids),
+            prmap.jira_acc == jira_ids[0],
+            regiss.project_id.in_(jira_ids[1]),
+            regiss.is_deleted.is_(False),
         ),
     )
 
