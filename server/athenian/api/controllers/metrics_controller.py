@@ -270,7 +270,6 @@ async def compile_filters_prs(
     for i, for_set in enumerate(for_sets):
         repos, prefix, service = await _extract_repos(
             request,
-            logical_settings,
             account,
             meta_ids,
             for_set.repositories,
@@ -347,7 +346,6 @@ async def _compile_filters_devs(
     for i, for_set in enumerate(for_sets):
         repos, prefix, service = await _extract_repos(
             request,
-            logical_settings,
             account,
             meta_ids,
             for_set.repositories,
@@ -394,7 +392,6 @@ async def compile_filters_checks(
     for i, for_set in enumerate(for_sets):
         repos, prefix, service = await _extract_repos(
             request,
-            logical_settings,
             account,
             meta_ids,
             for_set.repositories,
@@ -452,7 +449,6 @@ async def _compile_filters_deployments(
     for i, for_set in enumerate(for_sets):
         repos, prefix, service = await _extract_repos(
             request,
-            logical_settings,
             account,
             meta_ids,
             for_set.repositories,
@@ -515,7 +511,6 @@ async def _compile_jira(for_set, account: int, request: AthenianWebRequest) -> J
 
 async def _extract_repos(
     request: AthenianWebRequest,
-    logical_settings: LogicalRepositorySettings,
     account: int,
     meta_ids: Tuple[int, ...],
     for_set: List[str],
@@ -532,7 +527,6 @@ async def _extract_repos(
         account,
         request.uid,
         login_loader,
-        logical_settings,
         meta_ids,
         request.sdb,
         request.mdb,
@@ -561,8 +555,6 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
 
     meta_ids = await get_metadata_account_ids(filt.account, request.sdb, request.cache)
     prefixer = await Prefixer.load(meta_ids, request.mdb, request.cache)
-    settings = Settings.from_request(request, filt.account)
-    logical_settings = await settings.list_logical_repositories(prefixer)
 
     async def login_loader() -> str:
         return (await request.user()).login
@@ -572,7 +564,6 @@ async def calc_code_bypassing_prs(request: AthenianWebRequest, body: dict) -> we
         filt.account,
         request.uid,
         login_loader,
-        logical_settings,
         meta_ids,
         request.sdb,
         request.mdb,
@@ -733,7 +724,7 @@ async def _compile_filters_releases(
     logical_settings = await settings.list_logical_repositories(prefixer)
     for i, for_set in enumerate(for_sets):
         repos, prefix, service = await _extract_repos(
-            request, logical_settings, account, meta_ids, for_set, i, all_repos, checkers,
+            request, account, meta_ids, for_set, i, all_repos, checkers,
         )
         filters.append((service, prefix, (set(chain.from_iterable(repos)), for_set)))
     withgroups = await resolve_withgroups(

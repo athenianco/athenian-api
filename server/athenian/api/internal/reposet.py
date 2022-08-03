@@ -44,7 +44,6 @@ async def resolve_reposet(
     pointer: str,
     uid: str,
     account: int,
-    logical_settings,  # LogicalRepositorySettings
     sdb: Connection | Database,
     cache: Optional[aiomcache.Client],
 ) -> Collection[str]:
@@ -111,7 +110,6 @@ async def fetch_reposet(
 async def load_all_reposet(
     account: int,
     login: Callable[[], Coroutine[None, None, str]],
-    logical_settings,  # LogicalRepositorySettings
     sdb: Database,
     mdb: Database,
     cache: Optional[aiomcache.Client],
@@ -139,7 +137,6 @@ async def resolve_repos(
     account: int,
     uid: str,
     login: Callable[[], Coroutine[None, None, str]],
-    logical_settings,  # LogicalRepositorySettings
     meta_ids: Optional[tuple[int, ...]],
     sdb: Database,
     mdb: Database,
@@ -162,13 +159,13 @@ async def resolve_repos(
     """
     if not repositories:
         # this may initialize meta_ids, so execute serialized
-        reposets = await load_all_reposet(account, login, logical_settings, sdb, mdb, cache, slack)
+        reposets = await load_all_reposet(account, login, sdb, mdb, cache, slack)
         if meta_ids is None:
             meta_ids = await get_metadata_account_ids(account, sdb, cache)
     else:
         assert meta_ids is not None
         tasks = [
-            resolve_reposet(r, f"{pointer}[{i}]", uid, account, logical_settings, sdb, cache)
+            resolve_reposet(r, f"{pointer}[{i}]", uid, account, sdb, cache)
             for i, r in enumerate(repositories)
         ]
         reposets = await gather(*tasks, op="resolve_reposet-s + meta_ids")
