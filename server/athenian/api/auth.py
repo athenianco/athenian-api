@@ -525,6 +525,8 @@ class Auth0:
                 email = {"email": user_info.email}
             else:
                 email = {}
+            if self.force_user:
+                user_info.id = self.force_user
             sentry_sdk.set_user({"id": request.uid, "username": user_info.login, **email})
             return user_info
 
