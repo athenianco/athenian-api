@@ -134,8 +134,8 @@ class _PRMetricsLineGHCache:
     @staticmethod
     def postprocess(result: np.ndarray, *, metrics: Sequence[str], **kwargs: Any) -> np.ndarray:
         # cache value has been stored with sorted(metrics), adapt before returning to caller
-        if sorted(metrics) != metrics:
-            sort_indexes = np.argsort(metrics)
+        if (sorted_metrics := sorted(metrics)) != metrics:
+            sort_indexes = np.searchsorted(sorted_metrics, metrics)
             return _sorted_result_metrics(result, sort_indexes)
 
         return result
@@ -143,8 +143,8 @@ class _PRMetricsLineGHCache:
     @staticmethod
     def preprocess(result: np.ndarray, *, metrics: Sequence[str], **kwargs: Any) -> np.ndarray:
         # cache value must be stored with sorted(metrics), adapt if needed
-        if (sorted_metrics := sorted(metrics)) != metrics:
-            sort_indexes = np.searchsorted(sorted_metrics, metrics)
+        if sorted(metrics) != metrics:
+            sort_indexes = np.argsort(metrics)
             return _sorted_result_metrics(result, sort_indexes)
         return result
 
@@ -356,7 +356,7 @@ class MetricEntriesCalculator:
         preprocess=_PRMetricsLineGHCache.preprocess,
         postprocess=_PRMetricsLineGHCache.postprocess,
         cache=lambda self, **_: self._cache,
-        version=2,
+        version=3,
     )
     async def calc_pull_request_metrics_line_github(
         self,

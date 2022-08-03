@@ -70,7 +70,6 @@ class TestCalcPullRequestFactsGithub:
         facts = await calculator.calc_pull_request_facts_github(
             time_from=dt(2017, 8, 10), time_to=dt(2017, 9, 1), **base_kwargs,
         )
-        # await wait_deferred()
         last_review = facts[facts.node_id == 163078].last_review.values[0]
 
         await calculator.calc_pull_request_facts_github(
@@ -88,6 +87,17 @@ class TestCalcPullRequestFactsGithub:
 
 
 class TestCalcPullRequestMetricsLineGithub:
+    _default_kwargs = {
+        "quantiles": [0, 1],
+        "exclude_inactive": False,
+        "bots": set(),
+        "fresh": False,
+        "lines": [],
+        "environments": [],
+        "repositories": [{"src-d/go-git"}],
+        "participants": [{}],
+    }
+
     @with_defer
     async def test_cache_shared_with_different_metrics_order(
         self,
@@ -100,18 +110,7 @@ class TestCalcPullRequestMetricsLineGithub:
         meta_ids = await get_metadata_account_ids(1, sdb, None)
         shared_kwargs = await _calc_shared_kwargs(meta_ids, mdb, sdb)
         time_intervals = [[dt(2017, 8, 10), dt(2017, 8, 12)], [dt(2017, 8, 13), dt(2017, 9, 1)]]
-        kwargs = {
-            "quantiles": [0, 1],
-            "exclude_inactive": False,
-            "bots": set(),
-            "fresh": False,
-            "time_intervals": time_intervals,
-            "lines": [],
-            "environments": [],
-            "repositories": [{"src-d/go-git"}],
-            "participants": [{}],
-            **shared_kwargs,
-        }
+        kwargs = {"time_intervals": time_intervals, **self._default_kwargs, **shared_kwargs}
         calculator = MetricEntriesCalculator(
             1, meta_ids, DEFAULT_QUANTILE_STRIDE, mdb, pdb, rdb, cache,
         )
@@ -139,6 +138,54 @@ class TestCalcPullRequestMetricsLineGithub:
         assert res1[0][0][0][0][0][1].value == res0[0][0][0][0][0][0].value
         assert res1[0][0][0][1][0][0].value == res0[0][0][0][1][0][1].value
         assert res1[0][0][0][1][0][1].value == res0[0][0][0][1][0][0].value
+
+    @with_defer
+    async def test_cache_different_metrics_order_multiple_intervals(
+        self,
+        mdb: Database,
+        pdb: Database,
+        rdb: Database,
+        sdb: Database,
+    ) -> None:
+        cache = build_fake_cache()
+        meta_ids = await get_metadata_account_ids(1, sdb, None)
+        shared_kwargs = await _calc_shared_kwargs(meta_ids, mdb, sdb)
+        time_intervals = [[dt(2017, 8, 10), dt(2017, 8, 12), dt(2017, 9, 1)]]
+        kwargs = {"time_intervals": time_intervals, **self._default_kwargs, **shared_kwargs}
+        calculator = MetricEntriesCalculator(
+            1, meta_ids, DEFAULT_QUANTILE_STRIDE, mdb, pdb, rdb, cache,
+        )
+
+        metrics0 = [
+            PullRequestMetricID.PR_REVIEW_TIME,
+            PullRequestMetricID.PR_CLOSED,
+            PullRequestMetricID.PR_REVIEW_COUNT,
+        ]
+        metrics1 = [
+            PullRequestMetricID.PR_REVIEW_COUNT,
+            PullRequestMetricID.PR_REVIEW_TIME,
+            PullRequestMetricID.PR_CLOSED,
+        ]
+
+        with mock.patch.object(
+            calculator,
+            "calc_pull_request_facts_github",
+            wraps=calculator.calc_pull_request_facts_github,
+        ) as calc_mock:
+            res0 = await calculator.calc_pull_request_metrics_line_github(
+                metrics=metrics0, **kwargs,
+            )
+            await wait_deferred()
+            res1 = await calculator.calc_pull_request_metrics_line_github(
+                metrics=metrics1, **kwargs,
+            )
+
+        calc_mock.assert_called_once()
+
+        for intvl_idx in range(1):
+            assert res0[0][0][0][0][intvl_idx][0].value == res1[0][0][0][0][intvl_idx][1].value
+            assert res0[0][0][0][0][intvl_idx][1].value == res1[0][0][0][0][intvl_idx][2].value
+            assert res0[0][0][0][0][intvl_idx][2].value == res1[0][0][0][0][intvl_idx][0].value
 
 
 class TestBatchCalcPullRequestMetrics:
