@@ -381,6 +381,8 @@ class Auth0:
                 "https://%s/.well-known/jwks.json" % self._domain,
                 timeout=aiohttp.ClientTimeout(total=2),
             )
+            if resp.status != 200:
+                return resp
             jwks = await resp.json()
             self._kids = {
                 key["kid"]: {k: key[k] for k in ("kty", "kid", "use", "n", "e")}
@@ -409,6 +411,8 @@ class Auth0:
                 },
                 timeout=aiohttp.ClientTimeout(total=5),
             )
+            if resp.status != 200:
+                return resp
             data = await resp.json()
             self._mgmt_token = data["access_token"]
             nonlocal expires_in
