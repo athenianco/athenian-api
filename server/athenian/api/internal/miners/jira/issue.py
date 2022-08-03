@@ -619,7 +619,8 @@ async def _fetch_issues(
         for alias in (epics_major, epics_self):
             and_filters.append(alias.name.is_(None))
     elif len(epics):
-        and_filters.append(Epic.key.in_(epics))
+        epic = aliased(Issue, name="epic")
+        and_filters.append(epic.key.in_(epics))
     or_filters = []
     if labels:
         components = await _load_components(labels, ids[0], mdb, cache)
@@ -686,10 +687,10 @@ async def _fetch_issues(
         elif len(epics):
             seed = sql.join(
                 seed,
-                Epic,
+                epic,
                 sql.and_(
-                    Issue.epic_id == Epic.id,
-                    Issue.acc_id == Epic.acc_id,
+                    Issue.epic_id == epic.id,
+                    Issue.acc_id == epic.acc_id,
                 ),
             )
         return sql.select(columns).select_from(
@@ -906,9 +907,10 @@ async def fetch_jira_issues_for_prs(
 ) -> List[Mapping[str, Any]]:
     """Load brief information about JIRA issues mapped to the given PRs."""
     regiss = aliased(Issue, name="regular")
-    epiciss = aliased(Epic, name="epic")
+    epiciss = aliased(Issue, name="epic")
     prmap = aliased(NodePullRequestJiraIssues, name="m")
-    return await mdb.fetch_all(
+    in_any_values = len(pr_nodes) > 100
+    query = (
         sql.select(
             [
                 prmap.node_id.label("node_id"),
@@ -937,13 +939,22 @@ async def fetch_jira_issues_for_prs(
             ),
         )
         .where(
-            prmap.node_id.in_(pr_nodes),
+            prmap.node_id.in_any_values(pr_nodes)
+            if in_any_values
+            else prmap.node_id.in_(pr_nodes),
             prmap.node_acc.in_(meta_ids),
             prmap.jira_acc == jira_ids[0],
             regiss.project_id.in_(jira_ids[1]),
             regiss.is_deleted.is_(False),
-        ),
+        )
     )
+    if in_any_values:
+        (
+            query.with_statement_hint("Leading((((m *VALUES*) regular) epic))")
+            .with_statement_hint(f"Rows(m *VALUES* #{len(pr_nodes)})")
+            .with_statement_hint(f"Rows(m *VALUES* regular #{len(pr_nodes)})")
+        )
+    return await mdb.fetch_all(query)
 
 
 participant_columns = [
